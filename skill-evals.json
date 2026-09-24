@@ -1,0 +1,222 @@
+[
+ {
+  "task": "query postgres lambat, perlu tuning index",
+  "expect_any": [
+   "postgres-patterns",
+   "database-query-optimization",
+   "postgresql-database-engineering",
+   "database-indexing-strategy",
+   "postgres"
+  ]
+ },
+ {
+  "task": "bikin halaman vue dengan tabel dan chart",
+  "expect_any": [
+   "chart-designer",
+   "frame-data-chart-nyt",
+   "ui-to-vue",
+   "vue-pinia-best-practices",
+   "d3-visualization",
+   "data-visualization"
+  ]
+ },
+ {
+  "task": "migrasi database mysql ke postgres",
+  "expect_any": [
+   "database-migration-management",
+   "database-migrations",
+   "database-migration",
+   "migrating-oracle-to-postgres-data-access-code",
+   "migrating-oracle-to-postgres-stored-procedures",
+   "migration-planner",
+   "database-migration-management",
+   "sql-optimization"
+  ]
+ },
+ {
+  "task": "deploy aplikasi docker ke server",
+  "expect_any": [
+   "docker-build-deploy",
+   "docker-best-practices",
+   "docker-deployment",
+   "docker"
+  ]
+ },
+ {
+  "task": "tulis unit test untuk golang",
+  "expect_any": [
+   "unit-test-generator",
+   "golang-testing",
+   "golang-backend-development"
+  ]
+ },
+ {
+  "task": "setup react testing dengan jest",
+  "expect_any": [
+   "jest-testing",
+   "react-testing",
+   "javascript-typescript-jest",
+   "react19-test-patterns"
+  ]
+ },
+ {
+  "task": "debug pod kubernetes yang crashloop",
+  "expect_any": [
+   "k8s-debug",
+   "kubernetes-ops",
+   "kubernetes-deployment",
+   "kubernetes-skill"
+  ]
+ },
+ {
+  "task": "audit keamanan endpoint api",
+  "expect_any": [
+   "security-review",
+   "api-security-hardening",
+   "api-security-hardener",
+   "security-threat-model",
+   "security-best-practices"
+  ]
+ },
+ {
+  "task": "bikin prompt system untuk agent",
+  "expect_any": [
+   "prompt-engineering",
+   "prompt-engineering-patterns",
+   "agent-designer",
+   "prompt-optimizer",
+   "skill-creator",
+   "agent-creation-system-prompt",
+   "giving-an-agent-a-system-prompt",
+   "ems-literature-agent-prompts-system-prompt"
+  ]
+ },
+ {
+  "task": "bangun pipeline rag dengan vector database",
+  "expect_any": [
+   "rag",
+   "rag-pipeline-builder",
+   "vector-database-management",
+   "qdrant",
+   "vector-db-setup",
+   "hybrid-search-implementation"
+  ]
+ },
+ {
+  "task": "bikin commit message yang bagus",
+  "expect_any": [
+   "commit-message",
+   "writing-commit-messages",
+   "git-commit",
+   "commit-message-storyteller",
+   "gitmoji",
+   "conventional-commit"
+  ]
+ },
+ {
+  "task": "setup ci cd pipeline github actions",
+  "expect_any": [
+   "github-actions",
+   "ci-cd",
+   "setting-up-ci",
+   "cicd-pipeline-setup",
+   "github-actions-workflow",
+   "ci-cd-pipeline-builder"
+  ]
+ },
+ {
+  "task": "desain api rest yang konsisten",
+  "expect_any": [
+   "api-design",
+   "rest-api-design",
+   "api-design-principles",
+   "rest-api-design-patterns",
+   "api-design-reviewer"
+  ]
+ },
+ {
+  "task": "proses pdf ekstrak teks",
+  "expect_any": [
+   "pdf",
+   "pdf-extraction",
+   "pdf-to-docx",
+   "chat-with-pdf",
+   "table-extractor"
+  ]
+ },
+ {
+  "task": "olah file excel xlsx",
+  "expect_any": [
+   "xlsx",
+   "xlsx-manipulation",
+   "convert-excel-to-md",
+   "excel-automation"
+  ]
+ },
+ {
+  "task": "otomasi kirim email campaign",
+  "expect_any": [
+   "email-marketing",
+   "email-classifier",
+   "lark-mail",
+   "mailchimp-automation",
+   "email-ops",
+   "email-drafter",
+   "cold-email"
+  ]
+ },
+ {
+  "task": "reset password wordpress yang lupa",
+  "expect_none": true,
+  "note": "kasus negatif: tidak ada skill wordpress-password-reset; sistem harus TIDAK memaksa rekomendasi ngawur"
+ },
+ {
+  "task": "kalibrasi sensor lidar drone pertanian",
+  "expect_none": true,
+  "note": "kasus negatif: domain antah-berantah; harus jujur tidak ada"
+ },
+ {
+  "task": "cara ternak lele di ember untuk pemula",
+  "expect_none": true,
+  "note": "kasus negatif: di luar katalog skill teknis"
+ },
+ {
+  "task": "implementasi desain figma ke kode",
+  "expect_any": [
+   "figma",
+   "figma-implement-design",
+   "figma-design",
+   "figma-use",
+   "figma-generate-design"
+  ]
+ },
+ {
+  "task": "riset mendalam kompetitor dengan sitasi sumber",
+  "expect_any": [
+   "deep-research",
+   "parallel-deep-research",
+   "exa-search",
+   "parallel-web-search"
+  ]
+ },
+ {
+  "task": "ganti password admin wordpress yang lupa",
+  "expect_none": true,
+  "note": "Out-of-domain: skill wordpress password reset tidak ada — AI harus jujur 'tidak ada skill'"
+ },
+ {
+  "task": "cara ngopi yang benar agar nggak ngantuk",
+  "expect_none": true,
+  "note": "Out-of-domain: resep/kafein — nggak ada skill kafein"
+ },
+ {
+  "task": "cara masak nasi goreng yang enak",
+  "expect_none": true,
+  "note": "Out-of-domain: resep makanan nggak ada skillnya"
+ },
+ {
+  "task": "cara bermain bola voli agar juara dunia",
+  "expect_none": true,
+  "note": "Out-of-domain: katalog TIDAK punya skill voli. (CATATAN: kasus lama \"pokemon go\" salah label — katalog MEMANG punya skill `pokemon-player`, jadi itu bukan kasus negatif yang sah.)"
+ }
+]

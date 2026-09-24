@@ -1,0 +1,94 @@
+{
+  "tokz-compress": [
+    "DEAD",
+    "tidak jawab tools/list"
+  ],
+  "time": [
+    "ALIVE",
+    "2 tools"
+  ],
+  "git": [
+    "ALIVE",
+    "12 tools"
+  ],
+  "fetch": [
+    "ALIVE",
+    "1 tools"
+  ],
+  "sqlite": [
+    "DEAD",
+    "tidak jawab tools/list"
+  ],
+  "skill-graph": [
+    "ALIVE",
+    "8 tools"
+  ],
+  "filesystem": [
+    "ALIVE",
+    "14 tools"
+  ],
+  "firecrawl": [
+    "BUTUH-KEY",
+    "set FIRECRAWL_API_KEY dulu"
+  ],
+  "tavily": [
+    "BUTUH-KEY",
+    "set TAVILY_API_KEY dulu"
+  ],
+  "brave-search": [
+    "BUTUH-KEY",
+    "set BRAVE_API_KEY dulu"
+  ],
+  "github": [
+    "BUTUH-KEY",
+    "set GITHUB_PERSONAL_ACCESS_TOKEN dulu"
+  ],
+  "memory": [
+    "ALIVE",
+    "9 tools"
+  ],
+  "sequential-thinking": [
+    "ALIVE",
+    "1 tools"
+  ],
+  "playwright": [
+    "ALIVE",
+    "25 tools"
+  ],
+  "everything": [
+    "ALIVE",
+    "13 tools"
+  ],
+  "duckdb": [
+    "DEAD",
+    "tidak jawab tools/list"
+  ],
+  "ddg-search": [
+    "ALIVE",
+    "3 tools"
+  ],
+  "desktop-commander": [
+    "ALIVE",
+    "26 tools"
+  ],
+  "framelink-figma-mcp": [
+    "DEAD",
+    "tidak jawab tools/list"
+  ],
+  "puppeteer": [
+    "DEAD",
+    "tidak jawab tools/list"
+  ],
+  "skill-catalog": [
+    "ALIVE",
+    "5 tools"
+  ],
+  "context7": [
+    "ALIVE",
+    "2 tools"
+  ],
+  "memory-bank": [
+    "ALIVE",
+    "5 tools"
+  ]
+}

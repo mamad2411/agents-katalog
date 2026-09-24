@@ -1,0 +1,37 @@
+# === Arsip besar (jangan masuk git) ===
+skills-expanded/
+repo-refs/
+_symlink-farm-archive/
+
+# === DB & generated besar (bisa dibangun ulang dengan build_skills_index.py) ===
+skills-index.db
+SKILLS-AVAILABLE.md
+SKILLS-ALL-PATHS.md
+SKILLS-SKILLSH-DIRECTORY.md
+SKILLS-AIHEro-DIRECTORY.md
+skills-index.json
+.skill-lock.json
+.symlink-manifest.json
+
+# === Lock & state runtime ===
+*.lock
+.gc-state.json
+
+# === Backup (sudah punya git sebagai versioning) ===
+*.bak-*
+*.bak
+README.md.bak-*
+
+# === OS noise ===
+.DS_Store
+**/.DS_Store
+.metadata_never_index
+.noindex
+.volofficii
+
+# === Payload scraping besar (STYLE-*.md ratusan KB tiap file) ===
+STYLE-*.md
+SKILLS-AVAILABLE.md
+
+# === Zip besar di folder ini (kalau ada) ===
+*.zip

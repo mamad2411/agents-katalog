@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "description": "Dynamic MCP Proxy — auto promote/demote tools based on usage frequency. 3 fixed tools + dynamic promotion after 3x calls. Demote after 7 days unused.",
+  "fixed_tools": [
+    {
+      "name": "skill_search",
+      "description": "Search skill catalog by keyword",
+      "endpoint": "http://127.0.0.1:27125/search",
+      "always_on": true,
+      "token_cost": 150
+    },
+    {
+      "name": "skill_load",
+      "description": "Load full skill content from gzip catalog",
+      "endpoint": "http://127.0.0.1:27125/load",
+      "always_on": true,
+      "token_cost": 500
+    },
+    {
+      "name": "skill_related",
+      "description": "Get related skills via Obsidian graph",
+      "endpoint": "http://127.0.0.1:27125/related",
+      "always_on": true,
+      "token_cost": 200
+    }
+  ],
+  "dynamic_tools": {},
+  "promotion_rules": {
+    "promote_after_calls": 3,
+    "demote_after_days_unused": 7,
+    "max_dynamic_tools": 5,
+    "token_budget_per_tool": 400
+  },
+  "call_history": {},
+  "status": "disabled",
+  "disabled_reason": "Server :27125 tidak listening dan skills-catalog/ (gzip yang dibaca endpoint /load) sudah tidak ada. Diverifikasi 2026-09-18.",
+  "replacement": "~/.agents/skill-search.sh (SQLite FTS5 di skills-index.db) — ringan, tanpa daemon/port.",
+  "re_enable_notes": "Kalau mau dihidupkan lagi: (1) jalankan skill-graph-api.py, (2) bangun ulang skills-catalog/ (gzip per skill) yang dirujuk endpoint /load, (3) daftarkan MCP-nya di config tool (maks 20 server)."
+}

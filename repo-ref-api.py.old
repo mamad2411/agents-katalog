@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""
+Skill & Repo Reference API — Extended Graph API
+================================================
+Extends skill-graph-api.py with repo reference endpoints:
+- /repos                    → list all repo references
+- /repos/search?q=keyword    → search repos by name/tech
+- /repos/tree?name=X         → get file tree of a repo
+- /repos/readme?name=X       → get README of a repo
+- /repos/patterns?name=X     → get extracted patterns
+- /repos/structure?name=X    → get structure overview for AI learning
+
+All responses capped at 2000 chars. Zero idle cost.
+"""
+
+import os
+import json
+
+REFS_DIR = os.path.expanduser("~/.agents/repo-refs")
+REPO_INDEX = os.path.join(REFS_DIR, "repo-master-index.json")
+MAX_RESPONSE_CHARS = 2000
+
+def truncate(s, maxlen=MAX_RESPONSE_CHARS):
+    if len(s) > maxlen:
+        return s[:maxlen] + "\n... [truncated]"
+    return s
+
+def load_repo_index():
+    try:
+        with open(REPO_INDEX) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"repos": []}
+
+def get_all_repos():
+    idx = load_repo_index()
+    return idx.get("repos", [])
+
+def get_repo_tree(repo_name):
+    path = os.path.join(REFS_DIR, repo_name, "TREE.txt")
+    if os.path.exists(path):
+        with open(path) as f:
+            return truncate(f.read())
+    return None
+
+def get_repo_readme(repo_name):
+    for readme_path in [
+        os.path.join(REFS_DIR, repo_name, "README.md"),
+        os.path.join(REFS_DIR, repo_name, "docs", "README.md"),
+        os.path.join(REFS_DIR, repo_name, "README"),
+    ]:
+        if os.path.exists(readme_path):
+            with open(readme_path) as f:
+                return truncate(f.read())
+    return None
+
+def get_repo_patterns(repo_name):
+    path = os.path.join(REFS_DIR, repo_name, "PATTERNS.md")
+    if os.path.exists(path):
+        with open(path) as f:
+            return truncate(f.read())
+    return None
+
+def get_repo_structure(repo_name):
+    tree = get_repo_tree(repo_name) or ""
+    patterns = get_repo_patterns(repo_name) or ""
+    combined = f"# {repo_name} Structure\n\n{tree[:1000]}\n\n---\n{patterns[:1000]}"
+    return truncate(combined)
+
+def search_repos(keyword):
+    repos = get_all_repos()
+    kw = keyword.lower()
+    matches = [r for r in repos if kw in r.get("name", "").lower() or kw in r.get("tree_preview", "").lower()]
+    return matches[:20]
+
+REPO_ROUTES = {
+    "/repos": lambda params: {"repos": [r["name"] for r in get_all_repos()], "count": len(get_all_repos())},
+    "/repos/search": lambda params: {"query": params.get("q", [""])[0], "results": [r["name"] for r in search_repos(params.get("q", [""])[0])]},
+    "/repos/tree": lambda params: {"tree": get_repo_tree(params.get("name", [""])[0]) or "not found"},
+    "/repos/readme": lambda params: {"readme": get_repo_readme(params.get("name", [""])[0]) or "not found"},
+    "/repos/patterns": lambda params: {"patterns": get_repo_patterns(params.get("name", [""])[0]) or "not found"},
+    "/repos/structure": lambda params: {"structure": get_repo_structure(params.get("name", [""])[0]) or "not found"},
+}

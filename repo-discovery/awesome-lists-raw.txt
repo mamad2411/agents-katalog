@@ -1,0 +1,30 @@
+ruvnet/RuView|94380|π RuView turns commodity WiFi signals into real-time spatial intellige
+ComposioHQ/awesome-claude-skills|75280|A curated list of awesome Claude Skills, resources, and tools for cust
+hesreallyhim/awesome-claude-code|54262|A hand-picked collection of the finest of resources for the most aweso
+sickn33/agentic-awesome-skills|46558|AAS Core is the local, agent-first control plane for complete catalog 
+VoltAgent/awesome-agent-skills|34567|A curated collection of 1000+ agent skills from official dev teams and
+travisvn/awesome-claude-skills|15105|A curated list of awesome Claude Skills, resources, and tools for cust
+BehiSecc/awesome-claude-skills|10153|A curated list of Claude Skills.
+heilcheng/awesome-agent-skills|6211|Tutorials, Guides and Agent Skills Directories
+heilcheng/awesome-agent-skills|6211|Tutorials, Guides and Agent Skills Directories
+appcypher/awesome-mcp-servers|5771|Awesome MCP Servers - A curated list of Model Context Protocol servers
+0xNyk/awesome-hermes-agent|5687|Independent directory of useful skills, plugins, memory providers, too
+wong2/awesome-mcp-servers|4317|A curated list of Model Context Protocol (MCP) servers
+taishi-i/awesome-ChatGPT-repositories|3252|A curated list of open source GitHub repositories related to ChatGPT, 
+wesammustafa/Claude-Code-Everything-You-Need-to-Know|3024|A practical Claude Code guide with clear mental models and copy-paste 
+wesammustafa/Claude-Code-Everything-You-Need-to-Know|3024|A practical Claude Code guide with clear mental models and copy-paste 
+bergside/awesome-design-skills|2840|List of 67 awesome DESIGN.md and SKILL.md design skill files for agent
+rohitg00/awesome-claude-code-toolkit|2623|The most comprehensive toolkit for Claude Code -- 135 agents, 35 curat
+composio-community/awesome-claude-plugins|1969|A curated list of Plugins that let you extend Claude Code with custom 
+YuzeHao2023/Awesome-MCP-Servers|1065|A curated list of Model Context Protocol (MCP) servers 
+rohitg00/awesome-devops-mcp-servers|1022|A curated list of awesome MCP servers focused on DevOps tools and capa
+ccplugins/awesome-claude-code-plugins|946|Awesome Claude Code plugins — a curated list of slash commands, subage
+MobinX/awesome-mcp-list|881|A concise list for mcp servers
+LLMQuant/awesome-trading-agents|821|Curated list of LLM-driven trading agents, MCP servers, and agent skil
+LLMQuant/awesome-trading-agents|821|Curated list of LLM-driven trading agents, MCP servers, and agent skil
+Code-and-Sorts/awesome-copilot-agents|572|✨ A curated list of awesome GitHub instructions, prompt, skills, MCPs 
+ZeroPointRepo/awesome-hermes-skills|551|Hermes Agent skills and plugins: 350+ tools, memory providers, and gui
+soxoj/awesome-osint-mcp-servers|493|🔌 A curated list of OSINT MCP servers. Pull requests are welcomed!
+punkpeye/awesome-mcp-devtools|483|A curated list of developer tools, SDKs, libraries, and testing utilit
+Awesome-AI-Pedia/Awesome-AI-Pedia|389|AI skills大全 mcp ai知识库 Agent 全维度 AI 资源百科，DSH插件 收录大模型、智能 Agent、RAG 检索增强、
+Dominic789654/awesome-deepseek-harness|341|A curated list of plugins, skills, MCP servers, patch/profile layers, 

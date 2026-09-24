@@ -1,0 +1,65 @@
+{
+  "server-filesystem": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "/Users/chaali0324"
+    ],
+    "env": {}
+  },
+  "server-fetch": {
+    "command": "uvx",
+    "args": [
+      "mcp-server-fetch"
+    ]
+  },
+  "server-git": {
+    "command": "uvx",
+    "args": [
+      "mcp-server-git",
+      "--repository",
+      "/Users/chaali0324"
+    ]
+  },
+  "server-puppeteer": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-puppeteer"
+    ]
+  },
+  "server-sqlite": {
+    "command": "uvx",
+    "args": [
+      "mcp-server-sqlite",
+      "--db-path",
+      "/Users/chaali0324/mcp.db"
+    ]
+  },
+  "server-postgres": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-postgres",
+      "postgresql://localhost/db"
+    ]
+  },
+  "server-google-maps": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-google-maps"
+    ],
+    "env": {
+      "GOOGLE_MAPS_API_KEY": "ISI_API_KEY"
+    }
+  },
+  "server-memory": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-memory"
+    ]
+  }
+}

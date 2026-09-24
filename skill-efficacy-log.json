@@ -1,0 +1,12 @@
+[
+ {
+  "ts": "2026-09-19T17:10:02",
+  "skill": "chart-designer",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-09-20T12:07:12",
+  "skill": "golang-testing",
+  "via": "skill_load"
+ }
+]

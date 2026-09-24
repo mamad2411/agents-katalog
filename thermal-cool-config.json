@@ -1,0 +1,28 @@
+{
+  "thermal_profile": "COOL",
+  "target_temp_celsius": 30,
+  "cpu_threshold": 50,
+  "ram_threshold_pct": 60,
+  "strategies": {
+    "symlink_mode": "restore_plus_noindex",
+    "spotlight_indexing": "disabled_all_agents_dirs",
+    "skill_loading": "pre_expanded_with_noindex",
+    "catalog_compression": "gzip_all",
+    "backup_dirs": "noindex_hidden",
+    "background_processes": "minimal_2_daemons"
+  },
+  "skill_count": 21447,
+  "custom_skills": 3172,
+  "repo_refs": 14018,
+  "platforms": 61,
+  "active_daemons": ["legakan(30min)"],
+  "installed_not_loaded": ["skill-auto-symlink(30min)", "skill-graph-api", "repo-ref-api", "repo-ref-fetch"],
+  "status_sync_verified": "2026-09-18",
+  "status_note": "Klaim lama 'active_daemons: skill-auto-symlink' TIDAK benar — plist terpasang di ~/Library/LaunchAgents tapi tidak dimuat launchctl (cek: launchctl list | grep agents). Jalankan manual: python3 ~/.agents/skill-auto-symlink.py. skills-catalog/ sudah tidak ada sehingga jalur 'load <name>.md.gz' mati; pakai ~/.agents/skill-search.sh + skills-index.db.",
+  "index": {"total": 22590, "curated": 3172, "reference": 5463, "docs": 13955, "db": "~/.agents/skills-index.db", "md": "~/.agents/skills-INDEX.md", "verified": "2026-09-18"},
+  "disabled_daemons": ["repo-ref-api", "repo-ref-fetch", "skill-graph-api"],
+  "noindex_dirs": ["repo-refs", "skills", "skills-catalog", "skills-expanded"],
+  "idle_cpu_cost": "0%",
+  "idle_ram_cost": "~50KB (2 daemon plists)",
+  "on_demand_loader": "python3 ~/.agents/skill-auto-symlink.py load <skill-name>"
+}

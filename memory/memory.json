@@ -1,0 +1,120 @@
+{
+ "entities": [
+  {
+   "name": "user-setup",
+   "entityType": "config",
+   "observations": [
+    "vault: ~/Documents/AgentsMemory (Obsidian, 21 plugins, 19 ON)",
+    "custom skills: prompt-booster, skill-router, linkedin-obsidian-memory-graph, device-cool, browser-use-local, baca-gambar, obsidian-llm-bridge, skill-combinator",
+    "rules: tanpa slash, hemat token, gratis tanpa API key, xweb_search dilarang",
+    "device: M1 8GB, jaga adem, plugin berat OFF"
+   ]
+  },
+  {
+   "name": "user",
+   "entityType": "person",
+   "observations": [
+    "Berbahasa Indonesia, gaya santai",
+    "Mau resource hemat: MCP idle dimatikan, bukan nyala 24 jam",
+    "Mau katalog skill besar (target 20k), tidak duplikat, semua aktif",
+    "Suka verifikasi nyata (handshake/test), bukan klaim"
+   ]
+  },
+  {
+   "name": "~/.agents",
+   "entityType": "system",
+   "observations": [
+    "Katalog skill: 14.326 aktif (curated 3173 + reference 11.153); junk 7.306 dipisah",
+    "Cari skill: skill-search.sh (FTS5) atau MCP skill_for_task/skill_search/skill_load",
+    "Tambah skill: skill-miner.py (tambang komunitas, dedup md5) / skill-factory.py (bikin meniru struktur referensi curated)",
+    "Regen katalog: build_skills_index.py lalu skills-router.py",
+    "Nama kanonik dari frontmatter name:, bukan nama folder"
+   ]
+  },
+  {
+   "name": "skill-first-protocol",
+   "entityType": "rule",
+   "observations": [
+    "Sebelum kerja: cari skill dulu -> cek MCP relevan -> cek repo-ref; jangan mengarang kalau skill ada",
+    "Disuntik tiap sesi via session-brief.sh (hook SessionStart Claude)"
+   ]
+  },
+  {
+   "name": "mcp-core-12",
+   "entityType": "config",
+   "observations": [
+    "Claude Code: 12 server ALIVE terverifikasi mcp-doctor: playwright, filesystem, git, memory, memory-bank, desktop-commander, context7, sequential-thinking, fetch, time, skill-catalog, skill-graph",
+    "DEAD (jangan pakai): sqlite, duckdb, puppeteer, tokz-compress",
+    "Total semua provider 191 server (sudah dipangkas dari 73.652)",
+    "Sumber kebenaran: ~/.agents/mcp-allowlist.txt"
+   ]
+  },
+  {
+   "name": "mcp-lifecycle",
+   "entityType": "tool",
+   "observations": [
+    "Parkir MCP idle >14 hari (maks 200/pass, mingguan); core 12 dikecualikan",
+    "Perintah: python3 ~/.agents/mcp-lifecycle.py [--on|--off|--gc <n>]"
+   ]
+  },
+  {
+   "name": "voralens-v2",
+   "entityType": "project",
+   "observations": [
+    "Repo: /Users/chaali0324/receptor/voralens-v2 (Go Gin + Vue)",
+    "12 skill project-scope di .claude/skills (termasuk voralens-api-conventions hasil skill-factory)"
+   ]
+  },
+  {
+   "name": "conventions",
+   "entityType": "rule",
+   "observations": [
+    "Backup file lama: .bak-YYYYMMDD sebelum edit",
+    "Selalu UTC & idempotent (script jalan 2x tanpa efek samping)",
+    "Jangan hapus apa pun tanpa izin user",
+    "Nama skill kebab-case, description wajib 1 kalimat",
+    "MCP: 1 file per tool, kurasi terbatas, tanpa daemon/port kalau bisa"
+   ]
+  },
+  {
+   "name": "repo-registry",
+   "entityType": "asset",
+   "observations": [
+    "322 repo komunitas (awesome lists, bintang >=100) di repo-registry.json",
+    "Batch-3 mining (--registry) belum jalan; target 20k skill"
+   ]
+  }
+ ],
+ "relations": [
+  {
+   "from": "user",
+   "to": "~/.agents",
+   "relationType": "memiliki"
+  },
+  {
+   "from": "skill-first-protocol",
+   "to": "~/.agents",
+   "relationType": "mengatur"
+  },
+  {
+   "from": "mcp-lifecycle",
+   "to": "mcp-core-12",
+   "relationType": "mengelola"
+  },
+  {
+   "from": "voralens-v2",
+   "to": "~/.agents",
+   "relationType": "memakai-skill-dari"
+  },
+  {
+   "from": "conventions",
+   "to": "~/.agents",
+   "relationType": "mengikat"
+  },
+  {
+   "from": "repo-registry",
+   "to": "~/.agents",
+   "relationType": "menyuplai-skill-ke"
+  }
+ ]
+}

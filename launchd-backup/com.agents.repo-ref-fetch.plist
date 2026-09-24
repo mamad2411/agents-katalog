@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agents.repo-ref-fetch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-u</string>
+        <string>/Users/chaali0324/.agents/repo-ref-fetch.py</string>
+        <string>--workers</string>
+        <string>16</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+    <key>StartInterval</key>
+    <integer>600</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>15</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/repo-fetch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/repo-fetch.err</string>
+</dict>
+</plist>
