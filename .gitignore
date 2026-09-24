@@ -29,6 +29,10 @@ README.md.bak-*
 .noindex
 .volofficii
 
+# === Python cache ===
+__pycache__/
+*.pyc
+
 # === Payload scraping besar (STYLE-*.md ratusan KB tiap file) ===
 STYLE-*.md
 SKILLS-AVAILABLE.md
