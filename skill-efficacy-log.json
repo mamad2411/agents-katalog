@@ -8,5 +8,20 @@
   "ts": "2026-09-20T12:07:12",
   "skill": "golang-testing",
   "via": "skill_load"
+ },
+ {
+  "ts": "2026-09-24T16:19:30",
+  "skill": "pdf-merge-split",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-09-24T17:40:46",
+  "skill": "database-schema-design",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-09-25T10:52:43",
+  "skill": "obsidian-automation",
+  "via": "skill_load"
  }
 ]

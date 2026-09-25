@@ -42,3 +42,15 @@ SKILLS-AVAILABLE.md
 
 # === Backup migration (jangan masuk git) ===
 backup-skills-migrate-*.tar.gz
+
+# === Aset berat di dalam skill (jangan masuk git) ===
+skills-store/**/fonts/
+skills-store/**/node_modules/
+skills-store/**/vendor/
+skills-store/**/images/
+skills-store/**/*.png
+skills-store/**/*.jpg
+skills-store/**/*.pdf
+skills-store/**/*.zip
+skills-store/**/*.mp4
+skills-store/**/*.min.js

@@ -1,3 +1,27 @@
 {
-  "_today": "2026-09-19"
+  "_today": "2026-09-19",
+  "skill_for_task": {
+    "count": 1,
+    "first_used": 1790308363.102293,
+    "last_used": 1790308363.102293,
+    "days_active": [
+      "2026-09-25"
+    ]
+  },
+  "skill_load": {
+    "count": 1,
+    "first_used": 1790308363.105174,
+    "last_used": 1790308363.105174,
+    "days_active": [
+      "2026-09-25"
+    ]
+  },
+  "skill-graph": {
+    "count": 4,
+    "first_used": 1790308365.4186509,
+    "last_used": 1790308724.7699578,
+    "days_active": [
+      "2026-09-25"
+    ]
+  }
 }

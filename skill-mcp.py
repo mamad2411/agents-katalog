@@ -129,6 +129,10 @@ ID_EN = {
     "ekstrak": ("extract", "extraction"),
     "teks": ("text",),
     "gambar": ("image", "picture"),
+    # Tambahan 2026-09-24 (bukti dari skill-bench: "kompres gambar" tidak pernah
+    # menemukan image-optimization; "gagal" tidak nyambung ke skill debug).
+    "kompres": ("compress", "compression", "optimize"),
+    "gagal": ("fail", "failed", "error", "crash"),
     "galat": ("error",),
     "kesalahan": ("error", "bug"),
     "perbaiki": ("fix", "repair"),
@@ -301,11 +305,13 @@ def _score_row(toks, name, tier, desc):
     return sig
 
 
-def rank_with_scores(task, top=8, pool=60):
+def rank_with_scores(task, top=8, pool=120):
     """Kandidat + SINYAL — dipakai tool_skill_for_task DAN skill-eval.py (satu logika).
 
     Urutan akhir = sinyal + bonus tier (curated lebih diutamakan bila sinyal mirip),
     tapi yang dilaporkan sebagai skor adalah SINYAL-nya (jujur, tanpa tiupan tier).
+    pool 120 (dulu 60): bukti skill-bench — image-optimization lolos FTS tapi
+    terpotong di ambang 60 saat query Indonesia ("kompres gambar").
     """
     rows = search(task, None, pool)
     toks = set(expand(tokens(task)))

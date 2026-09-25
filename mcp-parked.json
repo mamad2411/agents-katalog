@@ -61,5 +61,27 @@
       "-y",
       "@modelcontextprotocol/server-memory"
     ]
+  },
+  "context7": {
+    "command": "context7-mcp"
+  },
+  "filesystem": {
+    "command": "mcp-server-filesystem",
+    "args": [
+      "/Users/chaali0324"
+    ]
+  },
+  "fetch": {
+    "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-fetch"
+  },
+  "git": {
+    "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-git"
+  },
+  "skill-graph": {
+    "command": "/opt/homebrew/bin/skill-graph",
+    "args": [],
+    "env": {
+      "SKILL_GRAPH_PATH": "/Users/chaali0324/mamatXobsidian"
+    }
   }
 }

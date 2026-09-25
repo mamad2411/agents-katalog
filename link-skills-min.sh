@@ -9,7 +9,7 @@
 #   link-skills-min.sh --status                  # lihat kondisi wiring tiap tool
 set -euo pipefail
 
-AGENTS_SKILLS="$HOME/.agents/skills"
+AGENTS_SKILLS="$HOME/.agents/skills-store"
 
 # Set minimal & relevan untuk kerja sehari-hari (Go/DB/Vue/QA/docs).
 STARTER="postgresql-database-engineering unit-test-generator api-test-suite-generator \

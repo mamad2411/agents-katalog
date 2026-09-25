@@ -341,6 +341,7 @@ apsr-transparency-and-data-policy
 ar-income-tax
 ar-social-contributions
 arbor
+arc-studio
 arch-nuxt
 arch-nuxt-lite
 arch-nuxt-module-builder
@@ -2620,6 +2621,7 @@ obsidian-log-commits
 obsidian-vault-maintainer
 octocat
 odai
+odai-orchestration
 odoo-commit
 office-files
 office-repair
@@ -3890,6 +3892,7 @@ verification-mastery
 verified-agent-identity
 verified-email
 verify-bidirectional
+verify-cascade
 version
 vertical-creator
 vertical-fintech-mobile

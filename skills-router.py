@@ -19,7 +19,10 @@ OUT_MD = AGENTS / "SKILLS-AVAILABLE.md"
 OUT_CAT = AGENTS / "SKILLS-CATEGORIES.md"
 OUT_JSON = AGENTS / "skills-index.json"
 
-PER_CATEGORY = 0           # 0 = TANPA CAP: semua skill aktif dimasukkan ke katalog
+PER_CATEGORY = 55          # cap per kategori (sesuai desain docstring); 0 = tanpa cap
+                           # → 55 mencegah SKILLS-AVAILABLE.md membengkak & jadi
+                           #   jebakan baca-utuh (379 KB ≈ 114k token). Sisa entri
+                           #   tetap lewat MCP skill_search / skill-search.sh.
 DESC_CHARS = 88
 
 
@@ -29,16 +32,23 @@ def main():
         return 1
     conn = sqlite3.connect("file:%s?mode=ro" % DB, uri=True)
 
+    # BUG FIX (2026-09-24): dulu query ini memakai `tier != 'junk'` (curated+reference)
+    # TAPI dilabeli "curated" di output → drastis menyesatkan (17.874 vs 601 sebenarnya).
+    # Sekarang: katalog = CURATED saja; reference dilaporkan terpisah sebagai angka.
     rows = conn.execute(
         "SELECT COALESCE(category,''), name, COALESCE(description,'') FROM skills "
-        "WHERE tier != 'junk' ORDER BY category, name"
+        "WHERE tier = 'curated' ORDER BY category, name"
     ).fetchall()
-    total_active = conn.execute("SELECT COUNT(*) FROM skills WHERE tier != 'junk'").fetchone()[0]
-    total_curated = conn.execute("SELECT COUNT(*) FROM skills WHERE tier='curated'").fetchone()[0]
+    total_active = conn.execute("SELECT COUNT(*) FROM skills WHERE tier = 'curated'").fetchone()[0]
+    total_curated = total_active
     total_all = conn.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
+    total_reference = conn.execute("SELECT COUNT(*) FROM skills WHERE tier='reference'").fetchone()[0]
     counts = conn.execute(
-        "SELECT COALESCE(category,''), COUNT(*) FROM skills WHERE tier != 'junk' GROUP BY category"
+        "SELECT COALESCE(category,''), COUNT(*) FROM skills WHERE tier = 'curated' GROUP BY category"
     ).fetchall()
+    ref_by_cat = dict(conn.execute(
+        "SELECT COALESCE(category,''), COUNT(*) FROM skills WHERE tier='reference' GROUP BY category"
+    ).fetchall())
 
     by_cat, tier1 = {}, []
     for cat, name, desc in rows:
@@ -50,11 +60,17 @@ def main():
         tier1.append((cat, name))
 
     md = [
-        "# SKILLS AVAILABLE — katalog siap pakai (%d skill)" % len(tier1),
+        "# SKILLS AVAILABLE — katalog CURATED (%d ditampilkan dari %d · cap 55/kategori)"
+        % (len(tier1), total_curated),
         "",
         "> **Untuk AI: baca ini SEBELUM mengerjakan apa pun.** Kalau ada skill yang cocok,",
         "> pakai skill itu dulu — jangan mengarang dari nol.",
         "> Cari cepat: `~/.agents/skill-search.sh \"<kata kunci>\"` atau tool MCP `skill_search`.",
+        "",
+        "> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (%d entri scraping)"
+        % total_reference,
+        "> **tidak** ditampilkan karena tidak terawat — cari lewat `skill-search.sh` bila perlu.",
+        "> Ini memperbaiki bug lama yang mencampur curated+reference sebagai \"curated\".",
         "",
         "Sumber: `%d` skill curated (dari `%d` entri total di index). Katalog penuh: `skills-index.db`."
         % (total_curated, total_all),
@@ -62,16 +78,16 @@ def main():
         "",
         "## Peta cepat kategori",
         "",
-        "| Kategori | Tersedia di sini | Total curated |",
+        "| Kategori | Curated | Reference (cari manual) |",
         "|---|---|---|",
     ]
     cmap = dict(counts)
     for cat in sorted(by_cat, key=lambda c: -cmap.get(c, 0)):
-        md.append("| %s | %d | %d |" % (cat, len(by_cat[cat]), cmap.get(cat, 0)))
+        md.append("| %s | %d | %d |" % (cat, len(by_cat[cat]), ref_by_cat.get(cat, 0)))
     md += ["", "---", ""]
 
     for cat in sorted(by_cat, key=lambda c: (-cmap.get(c, 0), c)):
-        md.append("## %s (%d)" % (cat, cmap.get(cat, 0)))
+        md.append("## %s (%d curated)" % (cat, cmap.get(cat, 0)))
         md.append("")
         for name, desc in by_cat[cat]:
             md.append("- **%s** — %s" % (name, desc) if desc else "- **%s**" % name)
@@ -83,12 +99,16 @@ def main():
         "",
         "Cari peran yang cocok → buka kategori di `SKILLS-AVAILABLE.md`.",
         "",
-        "| Kategori | Tier-1 | Curated | Contoh |",
+        "**Curated** = skill terawat (layak di-invoke). **Reference** = hasil scraping,",
+        "cari dulu sebelum pakai. Keduanya sengaja dipisah agar tidak menyesatkan.",
+        "",
+        "| Kategori | Curated | Reference | Contoh (curated asli) |",
         "|---|---|---|---|",
     ]
     for cat in sorted(by_cat, key=lambda c: -cmap.get(c, 0)):
         ex = ", ".join("`%s`" % n for n, _ in by_cat[cat][:6])
-        cat_md.append("| %s | %d | %d | %s |" % (cat, len(by_cat[cat]), cmap.get(cat, 0), ex))
+        cat_md.append("| %s | %d | %d | %s |"
+                      % (cat, len(by_cat[cat]), ref_by_cat.get(cat, 0), ex))
     OUT_CAT.write_text("\n".join(cat_md) + "\n", encoding="utf-8")
 
     data = {
@@ -96,13 +116,16 @@ def main():
         "tier1_count": len(tier1),
         "total_curated": total_curated,
         "total_index": total_all,
+        "total_reference": total_reference,
         "per_category_cap": PER_CATEGORY,
         "categories": {c: [n for n, _ in v] for c, v in sorted(by_cat.items())},
-        "summary": {c: {"tier1": len(v), "curated": cmap.get(c, 0)} for c, v in sorted(by_cat.items())},
+        "summary": {c: {"curated": len(v), "reference": ref_by_cat.get(c, 0)}
+                    for c, v in sorted(by_cat.items())},
     }
     OUT_JSON.write_text(json.dumps(data, indent=1), encoding="utf-8")
 
-    print("tier-1 tersedia : %d skill (cap %d/kategori)" % (len(tier1), PER_CATEGORY))
+    print("curated tersedia: %d skill (cap %d/kategori)" % (len(tier1), PER_CATEGORY))
+    print("reference (cari manual): %d" % total_reference)
     print("kategori        : %d" % len(by_cat))
     print("ditulis         : %s (%.0f KB)" % (OUT_MD, OUT_MD.stat().st_size / 1024))
     print("                  %s" % OUT_CAT)

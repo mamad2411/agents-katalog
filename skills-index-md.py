@@ -42,11 +42,24 @@ def main():
     label = {
         "curated": "skill terpilih — sudah dirawat, layak di-invoke",
         "reference": "hasil scraping, punya deskripsi (cari dulu sebelum pakai)",
+        "junk": "BUKAN skill (API doc/HTML/license/terlalu pendek) — jangan di-link",
         "docs": "BUKAN skill (tanpa deskripsi / halaman dokumentasi) — jangan di-link",
     }
     for t, n in tiers:
         lines.append(f"- `{t}`: **{n}** — {label.get(t, '-')}")
     lines += [
+        "",
+        "> **Baca angka dengan benar:** hanya `curated` yang boleh muncul sebagai kandidat",
+        "> otomatis (hook/MCP). `reference` = bahan tambang — **wajib** dicek isinya dulu.",
+        "> Kalau sebuah katalog atau laporan menampilkan angka jauh lebih besar dari",
+        "> `curated` di atas sambil menyebutnya \"curated\", itu bug pelabelan.",
+        "",
+        "## Cek kesehatan katalog",
+        "",
+        "```bash",
+        "python3 ~/.agents/skill-curate.py --report      # angka jujur + kandidat sampah",
+        "python3 ~/.agents/skill-curate.py --dry-run      # lihat rencana tanpa ubah apa pun",
+        "```",
         "",
         "## Cara pakai (ringan, tanpa MCP)",
         "",
@@ -84,9 +97,15 @@ def main():
         "",
         "## Maintenance",
         "",
-        "- Sumber tunggal: `~/.agents/skills` (curated). `skills-expanded/` = arsip scraping.",
+        "- Sumber tunggal: `~/.agents/skills-store` (curated). `skills-expanded/` = arsip scraping.",
         "- Jangan klon katalog ke folder tool — pakai `link-skills-min.sh` (symlink).",
         "- MCP: audit dengan `python3 ~/.agents/mcp-hygiene.py` (laporan) / `--apply`.",
+        "- **Urutan regenerate yang benar** (jangan dibalik — dua generator terakhir baca DB):",
+        "  ```bash",
+        "  python3 ~/.agents/build_skills_index.py   # 1. tulis DB dari skills-store + skills-expanded",
+        "  python3 ~/.agents/skills-index-md.py      # 2. tulis skills-INDEX.md (baca DB)",
+        "  python3 ~/.agents/skills-router.py        # 3. tulis SKILLS-AVAILABLE / CATEGORIES / json",
+        "  ```",
     ]
     OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"ditulis: {OUT} ({OUT.stat().st_size/1024:.1f} KB) · total={total} · kategori={len(cats)}")

@@ -22,7 +22,7 @@ import sys
 import json
 from datetime import datetime
 
-SKILLS = os.path.expanduser("~/.agents/skills")
+SKILLS = os.path.expanduser("~/.agents/skills-store")
 REFS = os.path.expanduser("~/.agents/repo-refs")
 LOCK = os.path.expanduser("~/.agents/.skill-lock.json")
 MAP = os.path.expanduser("~/.agents/skills-repo-map.json")

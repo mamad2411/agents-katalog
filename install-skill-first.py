@@ -94,7 +94,7 @@ def rule_block(n_skills, n_curated, n_repos, skills_dir=None):
     tambang/buat skill) TIDAK di-inject — AI membacanya on-demand dari
     ~/.agents/SKILL-FIRST.md hanya saat dibutuhkan.
     """
-    local = (" — termasuk skill lokal `%s` (symlink ke `~/.agents/skills/`)" % skills_dir) if skills_dir else ""
+    local = (" — termasuk skill lokal `%s` (symlink ke `~/.agents/skills-store/`)" % skills_dir) if skills_dir else ""
     body = (
         "## Auto-Skill (MANDIRI — tanpa harus diminta user)\n\n"
         "Katalog **≈{n:,} skill** di `~/.agents/`{local} + MCP `skill-catalog` (tools: `skill_for_task`, `skill_search`, `skill_load`, `agent_context`).\n"

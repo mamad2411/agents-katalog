@@ -57,6 +57,7 @@ def catalog_health():
                 issues.append("%d skill %s tanpa nama/deskripsi" % (n, tier))
         src = conn.execute("SELECT COUNT(*) FROM skills WHERE source!=''").fetchone()[0]
         act = conn.execute("SELECT COUNT(*) FROM skills WHERE tier!='junk'").fetchone()[0]
+        cur = conn.execute("SELECT COUNT(*) FROM skills WHERE tier='curated'").fetchone()[0]
     finally:
         conn.close()
     if IDX.exists():
@@ -65,7 +66,7 @@ def catalog_health():
             issues.append("katalog basi (%.0f jam) — jalankan skills-router.py" % age_h)
     else:
         issues.append("skills-index.json tidak ada")
-    return issues, {"aktif": act, "dengan_source": src}
+    return issues, {"aktif": act, "curated": cur, "dengan_source": src}
 
 
 def main():
@@ -115,7 +116,8 @@ def main():
     print("-" * 60)
     print("pass@1: %d/%d (%.0f%%) · pass@3: %d/%d (%.0f%%) · jujur-negatif: %d/%d (%.0f%%)"
           % (passed1, n, p1, passed3, n, p3, neg_ok, neg_total, pn))
-    print("katalog: %d aktif · %d dengan provenance" % (extra["aktif"], extra["dengan_source"]))
+    print("katalog: %d entri siap-cari (curated %d layak-invoke + reference) · %d dengan provenance"
+          % (extra["aktif"], extra.get("curated", 0), extra["dengan_source"]))
     if issues:
         print("HEALTH ISSUES:")
         for i in issues:

@@ -176,5 +176,35 @@
   "neg_honest": 86,
   "aktif": 14916,
   "issues": []
+ },
+ {
+  "ts": "2026-09-24T17:25:58",
+  "n": 18,
+  "neg": 7,
+  "pass1": 67,
+  "pass3": 89,
+  "neg_honest": 57,
+  "aktif": 63451,
+  "issues": []
+ },
+ {
+  "ts": "2026-09-24T17:36:36",
+  "n": 18,
+  "neg": 7,
+  "pass1": 67,
+  "pass3": 89,
+  "neg_honest": 57,
+  "aktif": 63451,
+  "issues": []
+ },
+ {
+  "ts": "2026-09-24T17:37:07",
+  "n": 18,
+  "neg": 7,
+  "pass1": 67,
+  "pass3": 89,
+  "neg_honest": 57,
+  "aktif": 63451,
+  "issues": []
  }
 ]
