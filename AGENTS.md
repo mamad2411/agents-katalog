@@ -26,13 +26,31 @@ Kamu agen AI yang bekerja di katalog skill bersama. Baca ini dulu (1 menit), lal
   Audit `python3 mcp-hygiene.py`, apply hanya kalau yakin (`--apply`, backup otomatis).
 - **Port mati jangan diandalkan:** `:27125` (skill-graph/proxy), `:27126` (repo-ref).
   Untuk pencarian pakai `skill-search.sh` (SQLite FTS5).
+- **Angka curated jangan ditampilkan menyesatkan.** Aturan: katalog yang dibaca AI
+  hanya boleh berisi tier `curated`. Tier `reference` (60k scraping) **wajib**
+  dilaporkan sebagai angka terpisah, jangan pernah dilabeli "curated".
+  Cek: `python3 skill-curate.py --report` (3176 curated → 3161 bersih, 15 review).
+- **Regenerate berurutan**, jangan paralel: `build_skills_index.py` →
+  `skills-index-md.py` → `skills-router.py` (dua terakhir membaca DB).
 - **Selalu UTC & idempotent:** script harus bisa dijalankan 2× tanpa efek samping.
   Setiap perubahan file lama → tulis backup `.bak-YYYYMMDD`.
+- **Sumber katalog WAJIB `skills-store`**, BUKAN `skills/` (itu folder symlink flow,
+  hanya ~79 entri). Salah sumber = curated anjlok 3.176 → 79 saat rebuild.
+  Berlaku untuk `build_skills_index.py` + `sync-wire.py`.
+- **MCP default MATI** (2026-09-25): hanya `skill-catalog` + `mcp-router` (+`skill-graph`
+  di Codex) yang terdaftar. Sisanya di `mcp-parked.json` → hidup on-demand via
+  `mcp_use(name=..., tool=...)`. Jangan `--on` bulk; cukup hidup saat dipanggil.
+- **Mining publik SATURASI** (2026-09-25): yield registry ~2,6%, skills.sh 0%.
+  Jangan ulang `skill-miner.py --registry` / `skill-miner-skillsh.py` untuk mengejar
+  100k — sumbernya sudah diserap. Butuh sumber baru.
+- **Jangan `claude --resume` sesi lama**: file history 53,9 MB = jauh lebih boros
+  daripada seluruh fixed-cost. Pakai `claude -c` (sesi terakhir) atau sesi baru.
 
 ## Alur kerja standar
 
 ```bash
 # 0. WAJIB: cari skill dulu (jangan mengarang dari nol)
+#    Cheatsheet perintah: ~/.agents/CHEATSHEET.md (36 baris) · lengkap: COMMANDS.md
 skill-search.sh --tier curated "<topik>"          # CLI
 # atau MCP: skill_for_task(task="...") / skill_search(query="...") / agent_context()
 

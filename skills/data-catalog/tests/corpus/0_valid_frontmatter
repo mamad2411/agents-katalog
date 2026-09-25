@@ -1,6 +1,0 @@
----
-schema_version: DS_CATALOG_V1
-datasets:
-  - name: orders
-    owner: data-platform
----

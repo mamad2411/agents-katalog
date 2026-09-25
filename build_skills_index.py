@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build one fast, deduplicated SQLite FTS5 index dari ~/.agents/skills (curated)
+"""Build one fast, deduplicated SQLite FTS5 index dari ~/.agents/skills-store (curated)
 dan ~/.agents/skills-expanded (scraped reference).
 
 v2 (2026-09-18) - P0 ringan:
@@ -17,7 +17,10 @@ from pathlib import Path
 
 HOME = Path.home()
 AGENTS = HOME / ".agents"
-CURATED_DIR = AGENTS / "skills"
+# sumber curated HARUS skills-store (katalog lengkap), BUKAN skills/ (folder symlink
+# flow hanya berisi ~79 skill aktif). memakai skills/ = rebuild Licensed curated
+# 3.176 -> 79 dan membanjiri tier reference.
+CURATED_DIR = AGENTS / "skills-store"
 REF_DIR = AGENTS / "skills-expanded"
 DB_PATH = AGENTS / "skills-index.db"
 LOCK_FILE = AGENTS / ".skill-lock.json"

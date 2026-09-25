@@ -39,3 +39,6 @@ SKILLS-AVAILABLE.md
 
 # === Zip besar di folder ini (kalau ada) ===
 *.zip
+
+# === Backup migration (jangan masuk git) ===
+backup-skills-migrate-*.tar.gz

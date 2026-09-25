@@ -23,7 +23,7 @@ import os
 import time
 
 HOME = os.path.expanduser("~")
-SRC = os.path.join(HOME, ".agents", "skills")
+SRC = os.path.join(HOME, ".agents", "skills-store")  # sumber katalog curated (bukan folder symlink flow)
 EXPANDED = os.path.join(HOME, ".agents", "skills-expanded")
 CORE_F = os.path.join(HOME, ".agents", "skill-core.json")
 LOG_F = os.path.join(HOME, ".agents", "sync-wire-log.json")

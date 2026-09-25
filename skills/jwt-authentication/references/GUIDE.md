@@ -1,1 +1,0 @@
-# jwt-authentication Guide

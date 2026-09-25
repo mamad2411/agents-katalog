@@ -1,5 +1,0 @@
-{
-  // trailing comment form the upsert must preserve
-  "github.copilot.chat.otel.enabled": true,
-  "github.copilot.chat.otel.captureContent": false /* inline */
-}

@@ -33,7 +33,7 @@ Alur wajib untuk agen (semua tool): **cari skill → cek MCP → cek repo ref �
 
 | Lapis | Cara akses |
 |---|---|
-| Katalog "available" | `SKILLS-AVAILABLE.md` (14.916 skill tier-1, per kategori) |
+| Katalog "available" | `SKILLS-AVAILABLE.md` (3.176 skill curated, per kategori) |
 | Peta kategori | `SKILLS-CATEGORIES.md` |
 | Rekomendasi per tugas | MCP `skill_for_task(task="...")` (bahasa natural) |
 | Cari kata kunci | MCP `skill_search(query="...")` atau `skill-search.sh "..."` |
@@ -83,7 +83,52 @@ python3 skill-auto-symlink.py [--verbose]   # daemon/patch symlink (on-demand ju
 5. Semua script di sini idempotent; yang mengubah data selalu menyimpan backup
    (`.bak-YYYYMMDD`).
 
-## Status & drift (diverifikasi 2026-09-20)
+## Status & drift (diverifikasi 2026-09-25)
+
+- **2026-09-25 (1) — Sesi overhaul: token, keamanan, Obsidian, dan keputusan mining.**
+
+  **A. Token Claude turun ~34%** (18.017 → ~12.000 token sebelum pesan pertama):
+  - MCP dipangkas jadi **mati by default**: Claude/Gemini = `skill-catalog` + `mcp-router`,
+    Codex = +`skill-graph` (sebelumnya 13/3/7). **13 server diparkir** di `mcp-parked.json`
+    → hidup on-demand via `mcp_use(name=..., tool=...)`, auto-mati setelah pakai.
+  - `~/.claude/CLAUDE.md` 16.268 → 7.489 B (hantu `store_fr3k`/`md-mcp`/folder `templates/`
+    yang tidak pernah ada dihapus; angka 63.436 → 3.176).
+  - `SKILLS-AVAILABLE.md` 7,6 MB → 120 KB (cap 55/kategori, sesuai desain docstring).
+  - **Nasihat utama:** JANGAN `claude --resume` sesi lama — file 53,9 MB memuat
+   /history penuh = jauh lebih boros daripada seluruh fixed-cost.
+  - Penyebab build curated salah baca `skills/` (79 symlink flow) → **`skills-store`
+    (3.176)**. Bug sama di `sync-wire.py`. curated sempat 3.176 → 79, sudah pulih.
+
+  **B. Scan keamanan (`skill-sec-scan.py`, statis tanpa eksekusi):**
+  251.843 file dipindai → 3.556 temuan → **0 malware nyata** (semua false positive:
+  installer resmi `curl|bash`, BOM UTF-8, fixture red-team NVIDIA skillspector).
+  Nol biner tersembunyi, nol exfiltrasi di curated. 14/14 self-test lulus.
+
+  **C. Obsidian tersambung ke semua AI:**
+  - 3 skill Obsidian (`linkedin-obsidian-memory-graph`, `obsidian-automation`,
+    `obsidian-llm-bridge`) masuk core → native di Claude/Gemini/Codex/OpenCode/Pi (82 total).
+  - Hook kata `obsidian|vault|note|catat` → kategori `memori` → 3 skill itu.
+  - `skill-graph` (vault `~/mamatXobsidian`, 11.878 note) diparkir = on-demand.
+  - Vault diberi entry point **`Agent Skills.md`** (skill-graph cari node bernama
+    persis "Agent Skills" dengan description) + `00-Index.md`; `skill_graph_index`
+    kini_ISI bukan "No index note found".
+
+  **D. Kontrak skill untuk 14 AI tanpa hook** (`install-skill-contract.py`):
+  Cursor/Windsurf/Aider/Continue/Trae/Roo/Qwen/OpenCode/Pi/Kilo/Cline dapat blok
+  "WAJIB cari & muat skill" di file rules masing-masing. Hantu `animation-workflow`
+  (MCP tak terdaftar) dibersihkan dari Trae settings.json.
+
+  **E. MINING DIHENTIKAN — sumberjenuh (keputusan sadar).**
+  Registry batch: 116 download → **+3** index. Skills.sh batch: 192 download →
+  **+0** (191 sudah ada). Keduanya yield 0–2,6% ⇒ sumber publik yang dipakai sudah
+  diserap katalog. 100k **tidak realistis** dari sumber ini; batas ±70–80k.
+  4 folder duplikat dipindah ke `duplikat-mining-20260925/` (bukan dihapus).
+  Miner/daemon dimatikan. Butuh sumber BARU (bukan registry/skills.sh) untuk 100k.
+
+  **F. Dokumentasi:** `COMMANDS.md` 26→54 script + shortcut di atas;
+  `CHEATSHEET.md` (97 baris) untuk akses cepat. Semua angka basi dibersihkan.
+
+## Status & drift (sebelum: diverifikasi 2026-09-20)
 
 - **2026-09-20 (11)** — **STYLE dipecah jadi sub-kategori (212 file, verifikasi 26.731/26.731).**
   16 parent besar → ~200 file `STYLE-<CAT>-<SUB>.md` tematik (mis. DESIGNER → UI-UX-DESIGN 225, BRAND-IDENTITY 139, PRESENTATION-DOCUMENT-DESIGN 19, dst; BACKEND → API-REST-GRAPHQL 464, DATABASE-ORM 439, dst) + shard alfabetis GENERAL-<CAT>-A-D/…/U-Z utk sisa tak terpola.
