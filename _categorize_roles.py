@@ -15,6 +15,24 @@ CUSTOM = os.path.join(AGENTS, "skills")
 # Each role has: keywords (to match in skill names), description
 # Priority order matters — first match wins. More specific roles first.
 ROLES = {
+    # OVERRIDE SPESIFIK (A): keyword infra/AI spesifik MENANG atas backend generik.
+    # backend punya keyword rakus ("server","api","hook","patterns","event") yg
+    # menelan terraform-*, *-mcp-server-*, *-prompt-*. Override ini dicek DULUAN.
+    "_override-devops": {
+        "keywords": ["terraform", "kubernetes", "k8s", "helm", "ansible", "docker-compose", "kustomize", "skaffold", "cloudformation", "pulumi", "infrastructure-as-code", "azure-kubernetes", "gpu-kubernetes", "kubernetes-deploy", "kubernetes-manifest", "kubernetes-operator", "kubernetes-ops", "kubernetes-hardening", "setting-up-terraform", "terraform-aws", "terraform-azure", "terraform-gcp", "terraform-generator", "terraform-infrastructure"],
+        "desc": "OVERRIDE → devops-engineer",
+        "maps_to": "devops-engineer"
+    },
+    "_override-ai": {
+        "keywords": ["mcp-server", "prompt-booster", "prompt-engineering", "prompt-optimization", "prompt-management", "enhance-prompt", "boost-prompt", "finalize-agent-prompt", "sanitize-prompt", "prompt-safety", "ai-prompt", "agent-platform-prompt", "arize-prompt"],
+        "desc": "OVERRIDE → ai-engineer",
+        "maps_to": "ai-engineer"
+    },
+    "_override-uncat": {
+        "keywords": ["ultrathink", "suggesting-skills", "structured-autonomy-plan", "image-annotations", "tong-jincheng"],
+        "desc": "OVERRIDE → 5 curated uncategorized",
+        "maps_to": {"ultrathink": "ai-engineer", "suggesting-skills": "agent-ux", "structured-autonomy-plan": "agent-orchestrator", "image-annotations": "designer", "tong-jincheng": "productivity-automator"}
+    },
     "designer": {
         "keywords": ["design", "ui-design", "ux-design", "figma", "sketch-app", "adobe-illustrator", "adobe-photoshop", "canva", "framer", "principle-design", "protopie", "motion-design", "typography", "color-palette", "color-scheme", "theme-design", "dark-mode", "light-mode", "brand", "logo", "identity", "brand-guidelines", "style-guide", "design-token", "design-system", "wireframe", "mockup", "persona", "user-research", "usability", "accessibility-design", "a11y-design", "responsive-design", "mobile-first", "grid-layout", "spacing", "icon-set", "illustration", "image-edit", "gradient-design", "shadow", "border-radius", "glassmorphism", "neumorphism", "skeuomorphism", "flat-design", "material-design", "fluent-design", "carbon-design", "figma-plugin", "figma-to-code", "design-review", "design-audit", "design-handoff", "zeplin", "invision", "marvel-app", "flinto", "designops", "creative-direction", "visual", "artboard", "component-library-weaver", "brand-identity"],
         "desc": "UI/UX, brand, design systems, Figma, motion, accessibility"
@@ -59,8 +77,24 @@ ROLES = {
         "keywords": ["etl", "pipeline-data", "data-pipeline", "ingest", "extract", "transform", "load", "elt", "dagster", "prefect", "luigi", "dbt", "spark", "databricks", "emr", "glue", "snowflake", "bigquery", "redshift", "athena", "presto", "trino", "kafka", "kinesis", "pubsub", "rabbitmq", "sqs", "sns", "eventbridge", "celery", "dramatiq", "rq", "bull", "sidekiq", "resque", "data-lake", "data-warehouse", "lakehouse", "delta-lake", "iceberg", "hudi", "parquet", "avro", "orc", "schema-registry", "data-governance", "lineage", "catalog", "data-quality", "data-validation", "great-expectations", "soda", "monte-carlo", "search", "index", "elasticsearch", "opensearch", "solr", "meilisearch", "typesense", "algolia"],
         "desc": "ETL, data pipelines, streaming, data lakes, search, data quality"
     },
+    # JILID-2: 3 role spesifik DULU (first-match wins — spesifik sebelum generik)
+    # Homonim dijaga: "hooks" generik TIDAK masuk sini (react-hooks, git-hooks,
+    # webhook, viral-hooks = kamar masing2). Yg masuk = claude-hooks/openclaw/
+    # cursor-rules/windsurf/subagent/slash-command saja.
+    "agent-orchestrator": {
+        "keywords": ["orchestrat", "multi-agent", "swarm", "hive", "crew", "fleet", "coordinator", "delegation", "handover", "router-agent", "supervisor-agent", "manager-agent", "langgraph", "subagent-dag", "subagent-driven", "subagent-patterns", "public-subagent", "verifier-subagent", "implementation-subagent", "review-subagent", "reviewer-subagent", "plan-document-reviewer-subagent", "adr-compliance-reviewer-subagent", "subagent-creator", "subagents-creator", "skillful-subagent", "skill-to-subagent", "cursor-subagent", "testing-skills-with-subagents", "deep-agents-orchestration", "ask-pi-native-subagent"],
+        "desc": "Multi-agent orchestration, swarms, delegation, subagent patterns (LangGraph, AutoGen, CrewAI)"
+    },
+    "agent-memory": {
+        "keywords": ["memory", "memgpt", "letta", "recall", "remember", "context-window", "context-compact", "long-context", "episodic", "semantic-memory", "knowledge-graph", "mem0", "mcp-memory", "semantic-memory-store", "parallel-memory", "basic-memory", "using-memory", "trading-memory", "memory-lancedb"],
+        "desc": "Agent memory, context management, recall, knowledge graphs (Letta/MemGPT)"
+    },
+    "agent-ux": {
+        "keywords": ["slash-command", "slashcommand", "subagent", "claude-hooks", "openclaw", "cursor-rules", "windsurf", "claude-code-plugin", "claude-plugin", "statusline", "skill-creator", "mcp-builder", "command-vs-prompt-hooks", "ac-stop-hook", "hook-stack-evaluator", "hook-factory", "token-zero-waste-hooks", "hooks-designer", "suggesting-cursor-hooks", "suggesting-cursor-rules", "import-cursor-rules", "cursor-rules-master", "cursor-rules-guide", "cursor-rules-format", "creating-cursor-rules", "cursor-rules-agent", "cursor-rules-ai-agent-camp", "best-cursor-rules", "openclaw-beam", "openclaw-config", "openclaw-control-center", "openclaw-debugger", "openclaw-marketing", "openclaw-persona-forge", "lycheemem-openclaw", "memclaw", "nbj-ob1-agent-memory-openclaw", "gstack-openclaw"],
+        "desc": "Agent UX: slash commands, subagents, hooks, IDE rules (Claude Code, Cursor, OpenClaw)"
+    },
     "ai-engineer": {
-        "keywords": ["ai", "ai-agent", "agent", "llm", "prompt", "rag", "retrieval", "vector-store", "vector-db", "pinecone", "weaviate", "milvus", "qdrant", "chroma", "langchain", "llamaindex", "autogen", "crewai", "semantic-kernel", "prompt-engineer", "prompt-template", "system-prompt", "few-shot", "zero-shot", "chain-of-thought", "cot", "reasoning", "planning", "tool-use", "function-call", "mcp", "model-context-protocol", "openai", "anthropic", "gemini", "mistral", "falcon", "phi-model", "qwen", "deepseek", "groq", "together", "huggingface", "transformers", "diffusers", "accelerate", "peft", "lora", "qlora", "adapter", "quantiz", "gguf", "ggml", "onnx", "tensorrt", "vllm", "tgi", "triton", "inference-server", "model-server", "guardrail", "alignment", "dpo", "ppo", "preference", "constitution", "agent-eval", "agent-orchestrat", "agent-workflow", "multi-agent", "agentic", "skill-creator", "mcp-builder", "orchestrat", "agent-designer", "agent-architecture", "agent-browser", "agent-protocol", "agent-governance", "agent-observability", "agent-harness", "agent-self-eval", "agent-platform", "agentic"],
+        "keywords": ["ai-agent", "agent", "llm", "prompt", "retrieval", "vector-store", "vector-db", "pinecone", "weaviate", "milvus", "qdrant", "chroma", "langchain", "llamaindex", "autogen", "crewai", "semantic-kernel", "prompt-engineer", "prompt-template", "system-prompt", "few-shot", "zero-shot", "chain-of-thought", "cot", "reasoning", "planning", "tool-use", "function-call", "model-context-protocol", "openai", "anthropic", "gemini", "mistral", "falcon", "phi-model", "qwen", "deepseek", "groq", "together", "huggingface", "transformers", "diffusers", "accelerate", "peft", "lora", "qlora", "adapter", "quantiz", "gguf", "ggml", "onnx", "tensorrt", "vllm", "tgi", "triton", "inference-server", "model-server", "guardrail", "alignment", "dpo", "ppo", "preference", "constitution", "agent-eval", "agent-workflow", "agentic", "agent-designer", "agent-architecture", "agent-browser", "agent-protocol", "agent-governance", "agent-observability", "agent-harness", "agent-self-eval", "agent-platform", "agentic"],
         "desc": "AI agents, LLMs, prompt engineering, RAG, MCP, model deployment"
     },
     "productivity-automator": {
@@ -157,7 +191,11 @@ def categorize(skills):
             for kw in info["keywords"]:
                 kw_norm = kw.lower().replace("-", " ").replace("_", " ")
                 if kw_norm in norm:
-                    role_map[role].append(skill)
+                    # OVERRIDE SPESIFIK: role _override-* pindah ke kamar asli
+                    target = info.get("maps_to", role)
+                    if isinstance(target, dict):
+                        target = target.get(kw, role)
+                    role_map[target].append(skill)
                     matched = True
                     break
             if matched:

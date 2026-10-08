@@ -1,0 +1,1094 @@
+---
+name: ge-demo-generator
+description: Synthesizes and deploys complete, domain-specific Gemini Enterprise demo environments directly to Google Cloud. Use when the user asks to create an AI agent demo for any customer domain (e.g. 'example.com', 'example.co.jp', 'example.de', 'example.fr' - any company, any industry, any region) or business goal, generate realistic BigQuery/Firestore sample datasets, create external demo files (PDF, Excel, scanned images), stage them in Cloud Storage and upload them to the deploying account's Google Drive, scaffold ADK multi-agent architectures with MCP tools and A2UI cards, deploy to Cloud Run, publish to Gemini Enterprise, and generate 7 structured demo prompts in any language. Confirms the requirements interactively and presents a demo architecture & data model plan (Mermaid ER diagram, external file lineage, target project) for approval before anything is deployed. Also triggered by /ge-demo-generator.
+metadata:
+  author: Google Cloud Customer Engineering
+  version: 2.29.1
+---
+
+# GE Demo Generator Skill (v2.29.1)
+
+Synthesizes production-grade, domain-tailored AI agent demo environments using **Gemini 3.8 Flash** for reasoning and **Gemini 3.1 Flash Image** for visual generation, adhering to a strict **6-step infrastructure dependency graph**, rich **A2UI interactive component streaming**, **Google Workspace OAuth authorization**, **external sample files staged in Cloud Storage and, when the credentials carry the Drive scope, in the deploying account's Google Drive**, **7 structured demo prompts**, **automated browser video recording & Remotion highlight reel delivery to Google Drive**, and **global multilingual localization (i18n/l10n)**.
+
+---
+
+## 🌐 Multilingual Support & Localization Architecture (i18n/l10n)
+
+The skill is implemented entirely in **English** at the system specification and codebase layer, while providing **complete, dynamic multilingual support** for any enterprise domain worldwide:
+
+1. **Automatic Language & Locale Detection**:
+   - **From Domain TLD**:
+     - `.co.jp`, `.jp`, `.ne.jp`, `.or.jp` ➔ Japanese (`日本語`, `locale: "ja"`, `currency: "JPY"`, `symbol: "¥"`)
+     - `.de` ➔ German (`Deutsch`, `locale: "de"`, `currency: "EUR"`, `symbol: "€"`)
+     - `.fr` ➔ French (`Français`, `locale: "fr"`, `currency: "EUR"`, `symbol: "€"`)
+     - `.es` ➔ Spanish (`Español`, `locale: "es"`, `currency: "EUR"`, `symbol: "€"`)
+     - `.it` ➔ Italian (`Italiano`, `locale: "it"`, `currency: "EUR"`, `symbol: "€"`)
+     - `.cn`, `.tw` ➔ Chinese (`中文`, `locale: "zh"`, `currency: "CNY"/"TWD"`)
+     - `.kr` ➔ Korean (`한국어`, `locale: "ko"`, `currency: "KRW"`, `symbol: "₩"`)
+     - `.br` ➔ Portuguese (`Português`, `locale: "pt"`, `currency: "BRL"`, `symbol: "R$"`)
+     - `.co.uk`, `.com.au`, `.com`, `.io`, `.org`, etc. ➔ English (`locale: "en"`, `currency: "USD"/"GBP"`)
+   - **From User Interaction**:
+     - If the user provides a prompt in Japanese, all user-facing demo assets are synthesized in Japanese. If in German, all in German.
+
+2. **Strict Language Consistency Rule (MANDATORY)**:
+   - ALL user-facing text elements MUST strictly match the detected target language:
+     - Company overview & operational challenges.
+     - Table and column business descriptions (harvested into Knowledge Catalog).
+     - CSV string values (product names, category names, person names, address strings, remarks).
+     - External files: PDF title, body sections, audit summary tables; Excel headers, KPI cards, and notes; Scanned image prompts and handwritten ink text values.
+     - System instructions (`businessInstruction`), Welcome Card greeting, and A2UI Button labels.
+     - The 7 Structured Demo Prompts (`demoGuide`).
+   - **Technical Names Isolation**: Table names, column names, and primary/foreign key ID fields (e.g. `order_id`, `supplier_id`) MUST always remain in English `snake_case` for database engine stability and SQL parser reliability.
+   - **Currency symbol**: write the detected symbol to `.env` as `CURRENCY_SYMBOL` (e.g. `CURRENCY_SYMBOL=¥`). The A2UI few-shot examples ship with a literal `[CURRENCY]` placeholder instead of a hardcoded symbol; `setup_and_deploy.sh` substitutes it before the image is built and aborts the deploy if any occurrence survives. Defaults to `$` when unset.
+
+---
+
+## Complete Lifecycle & Infrastructure Dependency Graph
+
+```
+Phase 1: Customer Domain & Business Goal Research (Search Grounding & Language Detection)
+   ↓
+Phase 2: Requirements confirmed interactively ➔ Demo Architecture & Data Model Plan ➔ APPROVAL
+   ↓
+Phase 3: Synthetic Data & External Sample Files Generation (PDF, Excel, Images) + Google Drive Upload (Step 1/6)
+   ↓
+Phase 4: ADK Multi-Agent Project Scaffolding & A2UI System Prompts
+   ↓
+Phase 5: Ordered Cloud Provisioning & Deployment:
+   ├── Step 1: BigQuery (with Knowledge Catalog Metadata) & Firestore Initial Data
+   ├── Step 2: Agent Engine Sandbox (Code Execution Environment) [CRITICAL DEPENDENCY]
+   ├── Step 3: Data Viewer Dashboard Cloud Run Deployment (Gets VIEWER_URL)
+   ├── Step 4: Main Multi-Agent Cloud Run Deployment (Injects SANDBOX_RESOURCE_NAME & VIEWER_URL)
+   └── Step 5: Background Task Pub/Sub Push Subscription (/execute_task & SELF_URL)
+   ↓
+Phase 6: Gemini Enterprise App Discovery, Workspace Authorization & Registration (Step 6/6)
+   ↓
+Phase 7: Comprehensive Results Output:
+   ├── 💬 Direct Gemini Enterprise Console Chat Link
+   ├── 📁 External Sample Files: Cloud Storage links, plus Drive links when the upload ran
+   ├── 📊 Firestore Data Viewer Dashboard Link
+   ├── 🔎 BigQuery Console Link
+   └── 🎯 7 Structured Demo Prompts Playbook (Localized to Target Language)
+   ↓
+Phase 8: Automated Browser Demo Video Production & Drive Delivery (Optional)
+   ├── Step 1: Playwright CDP Screen Recording of GE Web UI (Prompt 1, 3, 4)
+   ├── Step 2: Google Cloud TTS Narration Audio & Subtitle Timecodes
+   ├── Step 3: Remotion Programmatic Video Composition (Dynamic Camera, 4x Fast-Forward, Pure Voice Narration)
+   └── Step 4: Google Drive Upload to Demo Folder & Sharable Link
+```
+
+---
+
+## Phase 1: Customer Domain & Business Goal Research
+
+1. **Extract Domain & Company**:
+   - If a domain is provided (e.g., `example.com`, `example.co.jp`, `example.de`), determine company name, primary industry, and regional language from the domain itself — never from a list baked into this skill.
+   - If a business goal or company name is provided, identify the corresponding corporate entity and language.
+
+2. **Grounded Deep Research (via `search_web`)**:
+   - Search for the company's latest corporate profile, business units, IR reports, and known operational challenges.
+   - Identify:
+     - **3-5 Key Business Challenges** (e.g., "yield rate drop in semiconductor fabrication", "supply chain lead-time anomalies").
+     - **5-8 Operational Workflows** and evaluate which ones are **automatable** with AI agents.
+     - **Authentic Domain Entities & Nomenclature** (e.g., real facility names like "Kumamoto Technology Center", actual product codes, industry status codes).
+
+3. **Interactive Use Case Selection (Customer Domain Selection Flow)**:
+   - Present the research findings to the user in their language:
+     - 🏢 **Company Profile**: Official name, summary, primary industry.
+     - ⚠️ **Key Business Challenges**: 3-5 detected operational pain points.
+     - 🎯 **Candidate Workflows**: 3-5 top automatable workflows with automation feasibility ratings.
+   - **Prompt the user to select or customize the use case**:
+     - Use `ask_question` or present a structured choice so the user can pick the target scenario or write in specific requirements.
+
+---
+
+## Phase 2: Requirements Alignment & Demo Architecture Plan (Approval Gate)
+
+Phase 2 has two steps, in this order and never merged into one:
+
+**Step 2.1 — ask** the handful of questions the design genuinely depends on, interactively.
+**Step 2.2 — show** the finished design brief as the alignment artifact, and ask for a go.
+
+The order is what makes the brief worth reading. A brief that still contains open questions
+is a questionnaire, and the user has to hold the design in their head while answering it; a
+brief written *after* the answers is a mirror — the user is checking whether what you
+understood matches what they meant, which is a much easier thing to do and the last cheap
+moment to change the entities, the narrative, the file lineage or the target project.
+
+Until the user approves the brief, **nothing is created** — no CSVs, no Drive folder, no
+BigQuery dataset, no Cloud Run service. Everything after this point takes 15-30 minutes and
+spends real quota in someone's project.
+
+### Step 2.1 — Confirm the requirements interactively
+
+Ask only what you cannot responsibly decide, and ask it *before* writing the brief. Keep it
+short — two to four questions, batched into one message (`ask_question` where available), each
+with a stated default so the user can answer "all defaults" in three words:
+
+1. **Anchor persona** — who is the primary user of this agent (job title, and a sentence of
+   context if useful)? That persona becomes the demo's protagonist: the agent is framed as
+   *their* process operator, prompt 1 opens from their daily situation, approval gates are
+   decisions they or their manager own, and every other persona appears only as a hand-off
+   counterpart. If the user declines, rotate personas freely instead.
+2. **Scope of the narrative** — which single process instance the demo follows, if Phase 1
+   left more than one plausible reading of the chosen scenario.
+3. **Advanced settings** — ask about the two or three the demo is a plausible candidate for
+   (Workspace OAuth when the scenario touches Gmail/Drive/Calendar, `rag` when it turns on
+   documents rather than numbers, `dataScale` when the narrative claims enterprise volume),
+   and say the rest keep their defaults. Keep the *question* short — brief section 6 lists
+   every option with its resolved value, so nothing is hidden by asking about a few. Add
+   **a warm Cloud Run instance** (`MIN_INSTANCES=1`) to that question whenever the user has
+   named a date, an audience or a live session: it is the one option that is about the
+   *presentation* rather than the demo, and the only thing that removes the cold start — and
+   the occasional cold-start error — from the first message. Offer it with its price in the
+   same breath (see brief section 6).
+4. **Target environment** — only if what `gcloud` reports (read it now, see below) is not
+   obviously the project the user means.
+
+Anything the user has already stated — in the original request or in Phase 1 — is *decided*.
+Re-asking it reads as not having listened.
+
+**Zero-Touch Environment, Project & IAM Pre-flight Probe**:
+
+Read and verify the target environment before writing the brief, ensuring zero-touch deployment readiness so the brief's section 5 states verified facts rather than unvalidated assumptions:
+
+```bash
+# 1. Target Project Synchronization: align project if specified by user
+TARGET_PROJECT="${TARGET_PROJECT:-}"
+CURRENT_PROJECT=$(gcloud config get-value project 2>/dev/null || echo "")
+if [ -n "$TARGET_PROJECT" ] && [ "$CURRENT_PROJECT" != "$TARGET_PROJECT" ]; then
+  gcloud config set project "$TARGET_PROJECT" >/dev/null 2>&1 || true
+fi
+PROJECT_ID=$(gcloud config get-value project 2>/dev/null || echo "")
+
+# 2. Account Verification & Auto-Discovery: probe project access; auto-switch if active account lacks access
+GCP_ACCOUNT=$(gcloud config get-value account 2>/dev/null || echo "Unknown")
+if ! gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1; then
+  for acc in $(gcloud auth list --format="value(account)" 2>/dev/null); do
+    if gcloud projects describe "$PROJECT_ID" --account="$acc" >/dev/null 2>&1; then
+      gcloud config set account "$acc" >/dev/null 2>&1 || true
+      GCP_ACCOUNT="$acc"
+      break
+    fi
+  done
+fi
+
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)" 2>/dev/null || echo "")
+REGION=${CLOUD_RUN_REGION:-"asia-northeast1"}
+
+# 3. Google Drive Scope Pre-flight
+DRIVE_OK=$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $(gcloud auth print-access-token 2>/dev/null)" \
+  'https://www.googleapis.com/drive/v3/about?fields=user')
+```
+
+`DRIVE_OK` is `200` when the Drive copy will happen, and the owner is `${GCP_ACCOUNT}` — the
+same account, because the upload uses this token. Anything else (usually `403`, a token
+carrying no Drive scope, which is what a plain `gcloud auth login` gives you) means **this
+demo will have no Google Drive copy of the sample documents at all**. That is a fact the
+brief has to state, not discover at deploy time — see brief sections 3 and 5. It is also one
+command to fix, so say it now: `gcloud auth login --enable-gdrive-access --no-launch-browser` (using `--no-launch-browser` since an agentic IDE terminal usually has no local browser), then re-read.
+
+The demo video follows the same account. `generate_and_upload_external_files.py` records the
+Drive owner in `drive_upload_summary.json`, and the video delivery reads it, so the recording
+lands in the same folder as the documents it is a recording of. See
+`skills/ge-demo-video/SKILL.md`, Phase 6, for the full precedence.
+
+#### Multi-OS Google Cloud Authentication & Setup Protocol
+Before proceeding with deployment, verify both user CLI authentication (`gcloud auth print-access-token`) and Application Default Credentials (`gcloud auth application-default print-access-token`). If missing or expired:
+- **Interactive TTY Mode (`[ -t 0 ]`)**: The script automatically detects the host OS environment, prints the tailored authentication commands, and pauses (`read -p`), allowing the user to authenticate in a separate terminal or browser window and resume seamlessly by pressing Enter.
+- **Non-Interactive / CI Mode**: Strictly fail-fast (Exit 1) with descriptive error logs and the single command to resume.
+- **Host OS Detection & Authentication Matrix**:
+
+  | Host OS / Environment | Detection Signal | Authentication Commands | Notes |
+  |---|---|---|---|
+  | **Linux / Remote VM (Headless)** | No `$DISPLAY`, SSH, or Cloud Shell | `gcloud auth login --enable-gdrive-access --no-launch-browser`<br>`gcloud auth application-default login --no-launch-browser`<br>`gcloud auth application-default set-quota-project $PROJECT_ID` | Copy verification URL to local browser, sign in, and paste auth code back. |
+  | **macOS (Terminal / iTerm)** | `uname -s == Darwin` | `gcloud auth login --enable-gdrive-access`<br>`gcloud auth application-default login`<br>`gcloud auth application-default set-quota-project $PROJECT_ID` | Browser opens automatically for OAuth consent. |
+  | **Windows (WSL / WSL2)** | `/proc/version` contains `microsoft` or `wsl` | `gcloud auth login --enable-gdrive-access`<br>`gcloud auth application-default login`<br>`gcloud auth application-default set-quota-project $PROJECT_ID` | If browser interop is disabled, append `--no-launch-browser`. |
+  | **Linux Desktop (GUI)** | Linux with active `$DISPLAY` | `gcloud auth login --enable-gdrive-access`<br>`gcloud auth application-default login`<br>`gcloud auth application-default set-quota-project $PROJECT_ID` | Browser opens automatically for OAuth consent. |
+
+- **Quota Project Auto-Configuration**: The deployment script and self-healing engine automatically execute `gcloud auth application-default set-quota-project $PROJECT_ID` to prevent HTTP 403 `PERMISSION_DENIED: The discoveryengine.googleapis.com API requires a quota project`.
+
+#### Deployer IAM Audit & Autonomous Self-Healing Protocol
+To guarantee a seamless zero-touch deployment, probe whether the deploying account `${GCP_ACCOUNT}` possesses the necessary permissions on `${PROJECT_ID}`:
+
+1. **Owner / IAM Admin Auto-Healing**:
+   - Check if `${GCP_ACCOUNT}` is Project Owner, Editor, or has Project IAM Admin on `${PROJECT_ID}`.
+   - If `${GCP_ACCOUNT}` has IAM administrative privileges but lacks specific service roles (or if granular roles are in use), **automatically grant missing deployment roles** before starting deployment:
+```text
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:$GCP_ACCOUNT" \
+  --role="roles/run.admin" --condition=None
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:$GCP_ACCOUNT" \
+  --role="roles/discoveryengine.admin" --condition=None
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:$GCP_ACCOUNT" \
+  --role="roles/bigquery.admin" --condition=None
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:$GCP_ACCOUNT" \
+  --role="roles/iam.serviceAccountUser" --condition=None
+```
+
+2. **Non-Admin Permission Denial Handling (Zero-Touch Guidance)**:
+   - If `${GCP_ACCOUNT}` lacks `roles/resourcemanager.projectIamAdmin` or `roles/owner` and `gcloud projects describe` or service checks return `PERMISSION_DENIED`:
+   - **DO NOT** stop with a vague error or ask the user to manually run setup scripts in their terminal.
+   - Present the exact, copy-pasteable command for their Google Cloud Project Administrator:
+     ```text
+     gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+       --member="user:$GCP_ACCOUNT" \
+       --role="roles/owner"
+     ```
+   - Prompt the user interactively (using `ask_question` if available) to notify their administrator or switch accounts (`gcloud config set account <admin-account>`), then cleanly re-test and proceed with automated deployment.
+
+3. **Capsule / Sandbox Policy Detection**:
+   - If `${PROJECT_ID}` starts with `cpl-*` or `mpl-*` (Google Cloud Capsule or restricted sandbox), inspect whether organizational policy constraints (such as `constraints/run.allowedIngress` or Service Directory restrictions) are active. Warn the user before data generation so expectations match sandbox capabilities.
+
+### Step 2.2 — Present the Demo Architecture & Data Model Plan
+
+One message, six sections, in this order, then the gate. Every answer from Step 2.1 is already
+folded in — the brief **states** decisions, it does not ask for them, and it contains no
+"tell me which…" or "TBD" anywhere.
+
+Write it in **the demo's language** (§ i18n above) — headings, table headers and prose alike.
+Only the technical identifiers stay English `snake_case`: table names, column names and
+`.env` keys.
+
+Open with a title line naming the company and the selected scenario, so the brief is
+self-contained when it is pasted into a chat with a colleague:
+
+> ### 🏗️ `<Company>` — Demo Architecture & Data Model Plan
+> Based on the selected scenario **"`<scenario>`"**, here is the data layer design, the
+> Mermaid ER diagram and the cross-source reconciliation lineage.
+
+### § Brief section 1 — 🏢 Target Company & Demo Overview
+
+- **Company / group**: official name, and the group entity the demo actually models.
+- **Industry**: the specific one, in the company's own vocabulary.
+- **Demo narrative**: 2-3 sentences following **one** business process instance (one
+  problematic order, one flagged application) end to end, naming the departments it passes
+  through. All 7 demo prompts later trace this same instance; see
+  `references/demo_prompts_guide.md` §1.1-§1.2.
+- **Anchor persona**: the persona confirmed in Step 2.1, stated as a fact ("the agent is
+  operated by the production control manager of the main works"). If the user declined to
+  name one, say that personas rotate instead — do not re-ask here.
+
+### § Brief section 2 — 📊 Data Layer Design & Mermaid ER Diagram
+
+- **Render a Mermaid `erDiagram`** in a ```mermaid fenced block: every table, every column
+  with its type, `PK`/`FK` markers, cardinality labels on each relationship, and a short
+  business gloss in quotes after each column (`string order_id PK "order number (ORD-2026-XXXX)"`).
+  The gloss is the same sentence that later becomes the column description in the Knowledge
+  Catalog, so writing it here is not duplicated work.
+- Include the Firestore task collection as an entity too — it is part of the model the demo
+  reasons over, even though it is not in BigQuery.
+- **Shared core-system model**: design the tables as a slice of the company's system of
+  record, not one team's dataset — a transactional table two departments both write, a
+  rules/threshold table owned by one department that another's workflow must consult, and
+  an audit seed visible only when the departments' views are joined. Details and the
+  single-department escape hatch: `references/data_generation.md` §1.3.
+
+### § Brief section 3 — 📁 External Sample Files & Cross-Source Lineage
+
+Title this section after where the files will actually be, not after where people assume they
+go. Cloud Storage is the only guaranteed destination (below), so a heading that says "Google
+Drive" is wrong in every run whose token lacks the Drive scope — and it was, in most of them.
+
+A table with one row per external file — type, filename, and what binds it to BigQuery:
+
+| External file | Filename | Content & data binding |
+|---|---|---|
+| 📄 PDF audit report | `<domain>_audit_report.pdf` | which tables it summarizes, and the deliberate 5-15% variance that makes cross-source reconciliation necessary |
+| 📊 Excel ledger | `<domain>_external_ledger.xlsx` | which FK column it joins on, and the row count |
+| 🖼️ Scanned form 1 | `handwritten_order_1.jpg` | what the form is, in-domain, generated by `gemini-3.1-flash-image` |
+| 🖼️ Scanned form 2 | `handwritten_order_2.jpg` | the second form, and the discrepancy it carries |
+
+State the join key explicitly. A lineage row that says "related to orders" is not a design —
+the whole point of the external files is that a question can only be answered by reading a
+document *and* querying a table, and that only works if the keys line up (70%+ FK match,
+5-15% audit variance). See `references/external_files_and_drive.md`.
+
+Close the section with where the files will actually live, in one line, because it is the
+part users assume wrongly. Write the line that matches the `DRIVE_OK` read above:
+
+| `DRIVE_OK` | The line to write |
+| --- | --- |
+| `200` | Staged to `gs://<project>-<domain>-<suffix>-docs/` **and** uploaded at deploy time to the Google Drive of `${GCP_ACCOUNT}`, which owns the folder. |
+| anything else | Staged to `gs://<project>-<domain>-<suffix>-docs/`. **No Google Drive copy** — this machine's `gcloud` credentials carry no Drive scope, so a Drive or Sheets step in the demo script would find nothing. |
+
+The Cloud Storage staging happens in **both** `mcp` and `rag` mode; the deploy-time upload is
+the *only* path into any Drive. The deployed agent has no way to put them in anyone's Drive —
+v2.11.0 removed the in-conversation import, deliberately. If the user wants them in Drive and
+`DRIVE_OK` is not `200`, say so here, while it can still be sorted out
+(`gcloud auth login --enable-gdrive-access --no-launch-browser` and re-run, or upload `./external_files/` by hand
+afterwards).
+
+### § Brief section 4 — 🤖 Agent Profile & Runtime
+
+- **Agent Name (`DEMO_DISPLAY_NAME`)**: Concise 2–4 word domain role (e.g. `TWG Tea Retail Operations Director`, `Mercari Trust & Safety Specialist`). Registered in Gemini Enterprise as `${DEMO_DISPLAY_NAME} (${SERVICE_NAME})`, matching the Web UI (GAS) version.
+- **Description (`DEMO_DESCRIPTION`)**: Concrete, professional 1–2 sentence mission summary specifying the business domain, core datasets, and operational goals (e.g. `Orchestrates boutique inventory balancing, central commissary replenishment, and plantation harvest orders across Singapore.`). Matches `oneSentenceSummary` in the Web UI (GAS).
+- **Reasoning / orchestration**: **`gemini-3.8-flash`** for all agent instances (Root Coordinator, Deep Analysis Sub-Agent, Background Worker).
+- **Image generation**: **`gemini-3.1-flash-image`** (with localized prompt reinforcement and GCS artifact persistence).
+- **Code execution**: Agent Engine Sandbox (`us-central1` — fixed, not `$REGION`).
+- **UI**: Gemini Enterprise A2UI v0.9 composite catalog (name the components this demo will actually lean on — `MaterialTable`, `VegaChart`, `MaterialCard`).
+
+### § Brief section 5 — ⚙️ Deployment Target Environment
+
+Show what the commands above returned, verbatim, in a fenced block:
+
+```
+👤 Active User Account : ${GCP_ACCOUNT}
+🏢 Target Project      : ${PROJECT_ID} (${PROJECT_NUMBER})
+🌐 Target Region       : ${REGION}
+🛡️ Deployer IAM Status  : Verified (Owner/Admin) / Auto-healed
+🗂️ Sample File Storage : gs://${PROJECT_ID}-<domain>-<suffix>-docs/
+📁 Google Drive Copy   : <the DRIVE_OK line, below>
+```
+
+This is the section users most often stop on, because the answer is frequently "wrong
+project". Do not paraphrase the values and do not print a project the user named unless
+`gcloud` agrees — the deploy will use what `gcloud` says, not what the brief claims.
+
+Both storage lines are mandatory, and neither is optional wording: the Cloud Storage bucket is
+created in every mode, and the Drive line is the one users read as a promise. Write it from
+`DRIVE_OK`, never from intent:
+
+| `DRIVE_OK` | `📁 Google Drive Copy` |
+| --- | --- |
+| `200` | `Google Drive of ${GCP_ACCOUNT}` |
+| anything else | `none - these credentials have no Drive scope (fix: gcloud auth login --enable-gdrive-access --no-launch-browser)` |
+
+Never print a Drive destination the deploy cannot reach, and never describe the copy as
+something the agent will do later — nothing after the deploy writes to a Drive. See
+`references/external_files_and_drive.md` §5.
+
+### § Brief section 6 — 🎛️ Advanced Settings & Integrations
+
+   State the settings **this** demo will deploy with — the answers from Step 2.1, plus the
+   defaults for everything the user did not touch. These names are the `.env` keys,
+   upper-snake-cased: `enableManagedAgent` is `ENABLE_MANAGED_AGENT`. Every one of them is a
+   real switch in the deployed container, so an option discussed here but not written to
+   `.env` is a feature the demo will not have.
+
+   **List all eleven, every time**, in this order, with the value this deploy will use in the
+   second column — `✅ true` / `❌ false` / the literal value / `— (unset)`. An option the
+   brief leaves out is an option the user cannot ask for: they do not know it exists, and by
+   the time the deploy banner mentions it the 15-30 minutes are already spent. The gate is the
+   last cheap moment to turn one on, so the gate has to show the whole board. Keep the third
+   column as written here — it is what makes a `false` decidable rather than merely visible —
+   and reword only where this demo's scenario changes what an option would buy.
+
+   | Option | This demo | Default | What it buys, and what it costs |
+   |---|---|---|---|
+   | 🤖 `enableManagedAgent` | `<value>` | **`true`** | Agent Engine Sandbox code execution, asynchronous background delegation (`delegate_autonomous_task`), scheduled tasks and Drive deliverable exports. The delegation prompts in the demo playbook exercise this, which is why it is the one default-on capability. Adds ~8-10 min of provisioning, overlapped with the rest of the deploy. |
+   | 📡 `enableCloudTelemetry` | `<value>` | **`true`** | OpenTelemetry Cloud Trace instrumentation. Fully tracks per-turn LLM token consumption (`input_tokens`, `output_tokens`), latency breakdown waterfall, and tool execution. PII-safe via `NO_CONTENT` (zero chat prompt text transmitted), 0ms warm-turn overhead (async background batching), and free under monthly Cloud Trace quota. Set to `false` to opt out. |
+   | 🛡️ `enableModelArmor` | `<value>` | `false` | Vertex AI Agent Platform Model Armor integration. Enforces prompt injection & jailbreak defense, automatic sensitive data protection (SDP credentials/PII masking), and RAI safety filters. Auto-provisions and binds `ge-demo-default-armor` in `us-central1` if no custom template is specified. |
+   | 🔎 `dataExplorationMode` | `<value>` | **`mcp`** | How the agent reads the demo's data. **`mcp`** (default) provisions no search index: the data-asset catalog is already in the agent's system instruction, so a figure question is *one* `execute_sql` call — the four-to-five round trips people blame on "no index" came from the metadata expedition in front of the query, and the mcp routing block overrides exactly that. **`rag`** additionally builds a Discovery Engine index over the BigQuery dataset and the staged files and makes it the read path: lookups and document questions return in one sub-second `search_datastore` call, while computed figures, joins and every write stay on MCP because the index lags the tables. Pick `rag` when the demo turns on documents rather than on numbers, and note it also attaches data stores to the (often shared) Gemini Enterprise app — see `references/datastore_connectors.md`. |
+   | 📁 `enableDatastoreFs` | `<value>` | `false` | When `dataExplorationMode=rag`, provisions a semi-structured Discovery Engine DataStore (`ds-${SERVICE_NAME}-fs`) from `FIRESTORE_COLLECTION` via `FirestoreSource` (GCS export staging). Enables semantic search over historical incident tickets, resolved remediation logs, and SOP archives. Note: live task mutations, approvals, and Operations Viewer synchronization continue to use Firestore MCP for sub-100ms real-time state tracking. |
+   | 🔑 `enableWorkspaceAuth` | `<value>` | `false` | User-OAuth passthrough — the agent acts as the signed-in user for the Drive handoff and Workspace token plumbing. Commonly wanted, since Workspace is usually available in the target environment, but **not** default-on: some organizations refuse to authorize an OAuth client they have not vetted, and there sign-in fails for every demo user. Confirm the target org permits it before enabling. |
+   | 🔑 `enableWorkspaceMcp` | `<value>` | `false` | **Advanced, rarely used.** Adds the Gmail / Drive / Calendar / Docs / Chat MCP toolsets on top of the auth passthrough. The Workspace MCP servers are Developer Preview and the project must be allowlisted first — enable it without that and every Workspace call 403s. Kept separate from `enableWorkspaceAuth` for exactly this reason. |
+   | 🖥️ `enableComputerUse` | `<value>` | `false` | Headless browser automation (Playwright). Also requires uncommenting the Playwright block in **both** `requirements.txt` and the `Dockerfile`; the deploy pre-flights this and refuses a half-configured build. |
+   | 📦 `customMcpRepos` | `<value>` | empty | Third-party MCP servers. Both GitHub sidecars and remote managed servers (Slack included — it is one entry in this list, not a flag of its own) go here. |
+   | 🌐 `publicDatasetId` | `<value>` | unset | Ground the demo in a real BigQuery public dataset (e.g. NOAA Weather, Google Trends) alongside the synthetic data. |
+   | 📈 `dataScale` | `<value>` | unset (hero rows only) | Row count to grow the fact tables to before loading — thousands to tens of thousands. You still write only the 50-200 hero rows the demo script names; `scripts/amplify_data.py` expands the tables around them deterministically, keeping the hero rows verbatim and foreign keys intact. Ask for it when the narrative claims enterprise volume or the demo opens with an aggregate — a `COUNT(*)` of 63 undercuts both. Costs ~10-30s of setup and a longer Discovery Engine ingest. |
+
+Only list the options that are on, plus the two or three the demo is a plausible candidate
+for. A user reading eight defaults they did not ask about is a user who skims the whole brief.
+
+**One more switch, and it is deliberately not in that table** — it is not an `.env` key and it
+changes nothing inside the container. Cloud Run scales this demo to zero when nobody is talking
+to it, which is why an idle demo costs nothing, and why the first message after an idle gap
+waits ~20-25s for a cold start and can come back as an error instead: Cloud Run sometimes
+refuses a request outright while the container is still starting. Deploying with
+`MIN_INSTANCES=1` — the environment variable `setup_and_deploy.sh` reads in Step 4/6, exported
+before the deploy runs — keeps one instance always up and removes both.
+
+State it as a line under the table when you offer it, with the price attached rather than in a
+footnote:
+
+> 🔥 **Warm instance** — `MIN_INSTANCES=1` · default `0` (scale-to-zero). No cold start and no
+> cold-start error on the first message. **Cost:** one 8 GiB / 2 vCPU instance is then billed
+> continuously for as long as the demo exists — not just during the presentation.
+
+The honest default is `0`: for a demo deployed now and shown next week, sending the first
+message twice is far cheaper than a week of idle billing. It is also not a decision that has to
+be made now — it is read at deploy time, so re-running the deploy with the variable set (or
+unset) flips an existing demo either way.
+
+### § The gate — ask once, then stop
+
+Close the message by triggering an interactive approval and option selection modal using the `ask_question` tool (with plain text fallback only if `ask_question` is not supported in the active environment). This allows the user to review all capabilities and toggle any extra features directly:
+
+- Call `ask_question` with `is_multi_select: true`:
+  - `question`: "Do you approve this architecture and deployment plan? Select '(Recommended) Proceed with default configuration' to start deployment immediately, or check any additional options you want enabled:" (in the demo's language)
+  - `options`:
+    1. `"(Recommended) Proceed with default configuration (Managed Agent: Enabled, Cloud Trace Telemetry: Enabled, other options: default)"`
+    2. `"🛡️ Enable Model Armor Guardrails (Auto-provisions and binds ge-demo-default-armor in us-central1 for jailbreak defense and PII masking)"`
+    3. `"🔑 Enable Google Workspace OAuth (Drive/Slides/Docs export as signed-in user)"`
+    4. `"🔎 Enable RAG Data Exploration Mode (Build Discovery Engine search index for document & table reads)"`
+    5. `"📁 Enable Firestore DataStore (Semantic search over historical tickets & SOPs in RAG mode)"`
+    6. `"🔥 Enable Warm Instance (Cloud Run min-instances=1 to eliminate cold-start delay)"`
+    7. `"🖥️ Enable Computer Use (Gemini 3.8 Flash Chromium browser automation)"`
+    8. `"📈 Enable Enterprise Data Scale (Grow fact tables to thousands of rows via amplify_data.py)"`
+    9. `"📡 Disable Cloud Trace Telemetry (Opt-out from OpenTelemetry token & latency tracking)"`
+
+- In non-interactive or headless environments where `ask_question` is unavailable, output the equivalent choices in chat text and pause for user reply.
+- When the user selects options, update `.env` (`ENABLE_MODEL_ARMOR=1`, `ENABLE_WORKSPACE_AUTH=1`, `ENABLE_CLOUD_TELEMETRY=0`, `DATA_EXPLORATION_MODE=rag`, etc.) and deployment flags accordingly before proceeding to Phase 3.
+
+Then **stop and wait**. Do not start Phase 3 in the same turn, and do not treat "looks good" on
+a *previous* message — the scenario choice in Phase 1 or an answer in Step 2.1 — as approval of
+this brief.
+
+When the user changes something, re-render the affected sections and ask again; an approved
+brief is the specification the rest of the run is built from, so it has to be the version the
+user actually said yes to.
+
+---
+
+## Phase 3: Synthetic Data & External Sample Files Generation + Google Drive Upload
+
+**Entry condition: the Phase 2 brief was presented in full and the user approved it.** If you
+arrive here without that, go back and present it.
+
+1. **Derive the demo's identifiers, concrete name, and description**:
+   ```bash
+   SUFFIX=$(date +%s | tail -c 5)
+   DEMO_ID="${DOMAIN_SLUG}-${SUFFIX}"
+   SERVICE_NAME="ge-demo-${DOMAIN_SLUG}-${SUFFIX}"
+   DATASET_ID="demo_${DOMAIN_SLUG}_${SUFFIX}"
+   FIRESTORE_COLLECTION="demo-${DOMAIN_SLUG}-${SUFFIX}-tasks"
+
+   # Set concrete, domain-specific display name & description (matching Web UI / GAS version)
+   DEMO_DISPLAY_NAME="${COMPANY_NAME} ${AGENT_ROLE:-Operations Specialist}"
+   DEMO_DESCRIPTION="Orchestrates ${SCENARIO_SUMMARY:-operations and intelligent data analytics} across ${COMPANY_NAME}."
+   ```
+   *Always write `DEMO_DISPLAY_NAME` and `DEMO_DESCRIPTION` into `.env` so `setup_and_deploy.sh` and `register_agent.py` register the agent with concrete domain details.*
+
+2. **Generate Real-World Synthetic Data & Display Previews**:
+   - Generate CSV files with realistic addresses, valid foreign keys across tables, and varied statuses in `data/<table_name>.csv`.
+   - Ensure all string data is generated in the detected target language.
+   - Run validation script: `python3 scripts/validate_csv.py data/*.csv`.
+   - **Render Dataset Preview & Record Counts**: Output a Dataset Summary Table with total generated record counts for each BigQuery table, Firestore collection, and external Drive file, followed by 3–5 representative sample rows per table in clean Markdown preview tables (or `<carousel>` sliders) clearly indicating the total row count in each table title.
+   - Write one line of grain per table into `data/<table_name>_description.txt` ("one row per
+     POS transaction line", "one row per store"). The deploy folds it, the column
+     descriptions from `data/<table_name>_schema.json`, the row counts and the real date
+     range of every date column into `adk_agent/app/data_assets.md` — the DATA ASSET CATALOG
+     the agent's prompt is written around. Skipping the grain line costs only that line;
+     skipping the column descriptions costs the agent its schema.
+
+2b. **Amplify to Demo Volume (only when `dataScale` was agreed in Phase 2)**:
+- Do **not** try to write thousands of rows yourself. Write the 50-200 hero rows as
+  above — the ones the demo prompts name by id — and let the amplifier expand the
+  tables around them. It resamples each column from what the hero rows already show,
+  draws foreign keys from the parent table's amplified key set, and keeps the hero
+  rows verbatim at the top of every file, so every id a prompt refers to still resolves.
+- Write `data/data_scale_spec.json` with a per-table `target_rows` map. Describe a
+  column only where the hero rows misrepresent it — in practice that means date
+  columns, because hand-written rows cluster into one week while the narrative spans
+  a fiscal year. Everything you leave out is inferred. See the module docstring of
+  `scripts/amplify_data.py` for the format and for the two things the spec will not do.
+  ```bash
+  python3 scripts/amplify_data.py --data-dir ./data --spec ./data/data_scale_spec.json
+  for f in data/*.csv; do case "$f" in *.hero.csv) ;; *) python3 scripts/validate_csv.py "$f" ;; esac; done
+  ```
+- Alternatively set `DATA_SCALE=<rows>` in `.env` and let the deploy run it: the step
+  is idempotent and deterministic, so doing it in both places is harmless.
+- Report the amplified counts in the Dataset Summary Table, and say which tables were
+  left at hero size — master data that the narrative describes as small must stay small.
+- `python3 scripts/amplify_data.py --data-dir ./data --restore` puts the hero CSVs back.
+
+3. **Generate External Sample Files & Upload Directly to Google Drive**:
+   - Synthesize external demo files in `./external_files/`:
+     1. **PDF Audit Report** (`<domain>_audit_report.pdf`): Multi-section structured document in target language with summary, details, and intentional 5-15% variance from BigQuery to trigger cross-source reasoning.
+     2. **Excel Spreadsheet Ledger** (`<domain>_external_ledger.xlsx`): Semi-structured workbook with localized KPI headers, units, and 40-80 transaction rows with FK references matching BigQuery tables.
+     3. **Simulated Operational Document Images** (`handwritten_order_1.jpg`, `handwritten_order_2.jpg`): Realistic scanned forms generated via `gemini-3.1-flash-image` with localized text.
+   - **Upload to Google Drive**:
+     ```bash
+     uv run --isolated --no-project \
+       --with "openpyxl>=3.1.0,<4.0.0" \
+       --with "reportlab>=4.0.0,<6.0.0" \
+       --with "pillow>=10.0.0,<13.0.0" \
+       python3 scripts/generate_and_upload_external_files.py \
+       --domain "$DOMAIN_SLUG" \
+       --company "$COMPANY_NAME" \
+       --suffix "$SUFFIX" \
+       --outdir "./external_files" \
+       --spec-file "./data/external_files_spec.json"
+     ```
+     - `--spec-file` carries THIS demo's content (titles, sections, table rows, and the
+       `style` wording for the scanned forms), written in the demo's own language and
+       domain. Without it the script emits generic placeholder documents - it holds no
+       built-in industry content by design.
+     - Creates dedicated Drive folder: `GE Demo - <Company Name> (<Suffix>)`, reusing one
+       of that name if a previous run already made it.
+     - Uploads `.pdf`, `.xlsx`, and `.jpg` files.
+     - Saves links to `external_files/drive_upload_summary.json` and creates `.url.json` artifacts.
+     - **The folder is owned by `${GCP_ACCOUNT}`** — the upload is a Drive v3 REST call
+       carrying this machine's own `gcloud` access token, so the account deploying the
+       demo owns what it creates and nothing has to be shared with it. Report that owner
+       and the folder URL. The script also asks for "anyone with the link (Reader)" as a
+       convenience; plenty of organizations refuse it, in which case the summary carries
+       `share_error` and the banner notes `ℹ️ LINK SHARING OFF` — the owner can still open
+       everything, so this is a footnote, not a failure.
+     - When the token has no Drive scope the upload is skipped and the summary carries
+       `upload_skipped_reason`. The documents are not lost — `setup_and_deploy.sh` stages
+       every file to `gs://$GCS_BUCKET_NAME/` in **both** data-exploration modes — but
+       there will be no Drive folder, and nothing downstream creates one: report the
+       skip and its reason on the completion screen, point at the Cloud Storage links,
+       and give the fix, which is one command — `gcloud auth login --enable-gdrive-access --no-launch-browser`
+       and re-run, or upload `./external_files/` by hand. See
+       `references/external_files_and_drive.md` §5.
+
+4. **Provision BigQuery Dataset & Tables (Step 1/6)** (Idempotent + Knowledge Catalog Metadata):
+   ```bash
+   # US, not $REGION: a dataset's location is fixed at creation, the Discovery
+   # Engine BigQuery connector imports from a global datastore, and the public
+   # datasets a demo may join against (bigquery-public-data) live in US.
+   bq show "${PROJECT_ID}:${DATASET_ID}" >/dev/null 2>&1 || bq --location=US mk -d "${PROJECT_ID}:${DATASET_ID}"
+   for f in data/*.csv; do
+     tbl=$(basename "$f" .csv)
+     bq load --source_format=CSV --autodetect --skip_leading_rows=1 --replace "${DATASET_ID}.${tbl}" "$f"
+     if [ -f "data/${tbl}_schema.json" ]; then
+       bq update "${DATASET_ID}.${tbl}" "data/${tbl}_schema.json" >/dev/null 2>&1 || true
+     fi
+   done
+   ```
+
+5. **Initialize Firestore Collection**:
+   - Write 5-10 initial operational documents - task queues, anomalies, approvals pending -
+     to `data/firestore_seed.json` as a list of `{"id": ..., "data": {...}}` objects, in the
+     demo's own language and domain, then upload them:
+     ```bash
+     uv run --isolated --no-project --with "google-cloud-firestore>=2.16.0,<3.0.0" \
+       --with "google-api-core>=2.28.0,<2.35.0" \
+       python3 scripts/setup_fs.py \
+       --collection "$FIRESTORE_COLLECTION" \
+       --docs ./data/firestore_seed.json
+     ```
+   - `scripts/setup_fs.py` holds no seed content itself; see its module docstring for the
+     expected document shape.
+
+---
+
+## Phase 4: ADK Multi-Agent Project Scaffolding & System Instructions
+
+Scaffold the project in `./ge-demo-<domain>-<suffix>/`.
+
+**Do not retype these files.** Copy them from this skill's `templates/` directory, which is
+the single source of truth for every scaffolded file, then edit only the placeholders each
+file marks. `templates/` mirrors the tree below one-for-one (`templates/agent.py` ->
+`adk_agent/app/agent.py`, `templates/scripts/` -> `scripts/`, and so on):
+
+```
+ge-demo-<domain>-<suffix>/
+├── adk_agent/
+│   ├── __init__.py            # empty; makes adk_agent importable as a package
+│   └── app/
+│       ├── __init__.py
+│       ├── agent.py           # Triple-Agent (gemini-3.8-flash) + Code Executor + A2UI System Prompts
+│       ├── tools.py           # MCP Toolsets + gemini-3.1-flash-image generate_image tool
+│       ├── part_converters.py # A2A <-> Gen AI DataPart Converters
+│       ├── fast_api_app.py    # A2A Server + A2UI StreamParser + Token Middleware + /execute_task
+│       ├── data_assets.md     # DATA ASSET CATALOG (written at deploy time; do not hand-edit)
+│       ├── catalogs/          # A2UI v0.9 Gemini Enterprise composite catalog
+│       └── examples/0.9/      # A2UI few-shot example surfaces
+├── viewer_app/                # Real-Time Operations Viewer Flask App
+│   ├── main.py
+│   └── requirements.txt
+├── data/                      # Generated CSV files + Knowledge Catalog schemas
+├── external_files/            # Generated PDF, Excel & Scanned Images
+├── scripts/
+│   ├── managed_agent_instruction.txt # Autonomous sandbox agent's system instruction
+│   ├── validate_csv.py        # CSV formatting & schema auto-repair
+│   ├── amplify_data.py        # Grows hero CSVs to demo volume (deterministic, FK-safe)
+│   ├── build_data_catalog.py  # CSVs -> adk_agent/app/data_assets.md (the agent's schema)
+│   ├── generate_and_upload_external_files.py # External files & Google Drive uploader
+│   ├── setup_fs.py            # Firestore seed documents
+│   ├── setup_datastores.py    # Discovery Engine DataStore creation & import
+│   ├── register_agent.py      # Gemini Enterprise agent registration
+│   ├── create_managed_agent.py / warmup_managed_agent.py # Agent Engine managed agent
+│   ├── dep_smoke_test.py      # Pinned-dependency import smoke test
+│   ├── preflight_check.py     # Pre-deploy static checks
+│   ├── verify_and_heal.py     # Post-deploy verification & auto-repair
+│   └── cleanup.sh             # One-click teardown (Cloud Run, Agent Engine Sandbox, Managed Agent, BQ, FS, GCS)
+├── .env                       # Configuration shared by setup_and_deploy.sh and cleanup.sh
+│                              # (full key reference: references/deployment_and_iam.md §3)
+├── Dockerfile                 # Multi-stage container build
+├── requirements.txt           # Python dependencies
+└── setup_and_deploy.sh        # Standalone reproducible deployment script (strictly ordered)
+```
+
+**Two files carry this demo's domain knowledge and BOTH must be filled in:**
+
+1. `adk_agent/app/agent.py` - the `gen_instruction` block, marked
+   `TEMPLATE PLACEHOLDER`. This is the conversational agent's business context.
+2. `scripts/managed_agent_instruction.txt` - the same context for the autonomous
+   sandbox agent, in its `[BUSINESS_CONTEXT]` slot. Leave the file untouched and
+   `enableManagedAgent` - the one default-on capability - is *silently skipped*
+   at deploy time, taking `delegate_autonomous_task` and demo prompts 5 and 7
+   with it. `[DATASET_ID]` and `[COLLECTION_ID]` are substituted by
+   `setup_and_deploy.sh`; leave those alone. When a Workspace, computer-use or
+   operating-model option is on, the matching block has to be added too - see
+   `references/multi_agent_architecture.md` §4.
+
+### Critical A2UI System Instruction Requirements (v0.9 Composite Catalog)
+1. **Output Placement Rule (Rule #0)**: Any text in the same response turn as a tool call is hidden. Only output `🔍 Analyzing...` during tool execution. Final analytical reports, A2UI cards, and chips MUST appear in a separate turn with ZERO tool calls.
+2. **Mandatory A2UI Cards (v0.9 Standard)**: Plain text markdown tables and bullet lists are forbidden for data presentation. Wrap results in `<a2ui-json> ... </a2ui-json>` using `MaterialCard`, `MaterialTabs`, `MaterialTable`, `VegaChart`, `MaterialRow`, `MaterialColumn`, and `MaterialDivider`. Never emit `IFrameSrcdoc` or `IFrameUrl` (Gemini Enterprise disables inline iframe rendering by default, so they appear as blank 0px boxes); use native A2UI components for inline dashboards, or `publish_dashboard` returning a signed URL Markdown link alongside a summary card for full interactive browser dashboards.
+3. **A2UI v0.9 Component Model (CRITICAL)**:
+   - Every message stamped with `"version": "v0.9"`.
+   - `createSurface` has **NO `root` key**: `{"version": "v0.9", "createSurface": {"surfaceId": "...", "catalogId": "https://www.gstatic.com/vertexaisearch/a2ui/v0_9/gemini_enterprise_composite_catalog.json"}}`.
+   - Root component MUST have `id: "root"`.
+   - Components use flat type names (`"component": "MaterialButton"`), plain strings (`"title": "..."`), and plain arrays (`"children": ["id1", "id2"]`).
+   - `MaterialButton` has a flat `label: "..."` and event action: `{"action": {"event": {"name": "action_name", "context": {"prompt": "User message prompt"}}}}`.
+4. **Welcome Card on Greeting**: On initial turn / greeting, DO NOT call tools. Output ONE line of plain-text greeting in user's language, followed by `<a2ui-json>` onboarding card with surfaceId `welcome-card` and 3 action buttons. Do not emit suggestion chips on the welcome turn.
+5. **Suggestion Chips**: Append 3-4 follow-up `MaterialButton`s with `action.event.context.prompt` at the end of every normal response, ALWAYS in their own trailing surface with surfaceId `suggestions`, emitted after the card — never as a `MaterialRow` inside the card. A turn's second A2UI surface does render; the rule that once said otherwise was wrong. Keeping the follow-ups out of the card keeps the answer card a clean read and makes the next actions a footer under it. (This layout is *not* a scroll fix — a press scrolls to the element of the user's PREVIOUS press, which no arrangement of surfaces can change; the server retires the pressed surface instead, see `references/a2ui_catalog.md`.) For the same readability reason a card carries no footer action row of its own — the exceptions are a button bound to its own card's fields (a binding only resolves within its surface) and the welcome card, whose buttons are its own content and which opens the conversation.
+
+---
+
+## Phase 5: High-Speed & Resilient Deployment Sequence (Zero-Timeout)
+
+Follow the optimized dependency sequence with local pre-flight checks and fast builds:
+
+1. **Step 0: Local Pre-flight Verification (1-Second Syntax & Import Check)**:
+   *Prevents 5-minute remote Cloud Build / Cloud Run startup health check timeouts by catching syntax/import errors instantly.*
+   ```bash
+   python3 scripts/preflight_check.py
+   ```
+
+2. **Step 2/6: Provision Agent Engine Sandbox (Code Execution Environment)**:
+   *Must be executed from a clean temporary directory (`mktemp -d`) to prevent SDK build hangs.*
+   *The heredoc runs in a child process, so the variables it reads must be **exported** — a plain
+   `source .env` leaves them shell-local and every `os.environ.get()` below silently returns the default.*
+   ```bash
+   set -a; [ -f .env ] && source .env; set +a
+   export PROJECT_ID SERVICE_NAME
+   SANDBOX_TMPDIR=$(mktemp -d)
+   pushd "$SANDBOX_TMPDIR" > /dev/null
+   python3 - << '__SANDBOX_EOF__'
+   import os, vertexai
+   from vertexai import types
+   client = vertexai.Client(project=os.environ.get('PROJECT_ID', ''), location='us-central1')
+   ae = client.agent_engines.create(config={'display_name': os.environ.get('SERVICE_NAME', 'demo') + '-sandbox'})
+   sb = client.agent_engines.sandboxes.create(
+       name=ae.api_resource.name,
+       config=types.CreateAgentEngineSandboxConfig(display_name='code-sandbox'),
+       spec={'code_execution_environment': {}}
+   )
+   with open('/tmp/sb_out.txt', 'w') as f:
+       f.write(f"{ae.api_resource.name}|{sb.response.name}")
+   __SANDBOX_EOF__
+   popd > /dev/null
+   rm -rf "$SANDBOX_TMPDIR"
+   AGENT_ENGINE_NAME=$(cat /tmp/sb_out.txt | cut -d'|' -f1)
+   SANDBOX_RESOURCE_NAME=$(cat /tmp/sb_out.txt | cut -d'|' -f2)
+   ```
+
+3. **Step 3/6: Deploy Data Viewer Dashboard (Cloud Run with --no-allow-unauthenticated + IAP)**:
+   *The service name MUST be `ge-viewer-${SERVICE_NAME}`. `scripts/cleanup.sh` reconstructs it
+   from that exact expression; any other name leaves the viewer running and billing after teardown.*
+   ```bash
+   VIEWER_SERVICE_NAME="ge-viewer-${SERVICE_NAME}"
+   gcloud run deploy "$VIEWER_SERVICE_NAME" \
+     --source viewer_app \
+     --region "$REGION" \
+     --platform managed \
+     --ingress all \
+     --no-allow-unauthenticated \
+     --set-env-vars="PROJECT_ID=${PROJECT_ID},FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},DEMO_ID=${DEMO_ID},DASHBOARD_TITLE=${DOMAIN_SLUG} Operations Console,SYSTEM_DESCRIPTION=Real-Time Operational Intelligence Dashboard"
+
+   # Enable IAP and grant deployer access
+   PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+   gcloud beta services identity create --service=iap.googleapis.com --project="$PROJECT_ID" >/dev/null 2>&1 || true
+   gcloud run services add-iam-policy-binding "$VIEWER_SERVICE_NAME" --region="$REGION" --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-iap.iam.gserviceaccount.com" --role="roles/run.invoker" --project="$PROJECT_ID" >/dev/null 2>&1 || true
+   gcloud beta run services update "$VIEWER_SERVICE_NAME" --region="$REGION" --iap --project="$PROJECT_ID"
+   DEPLOYER_EMAIL=$(gcloud config get-value account 2>/dev/null)
+   if [ -n "$DEPLOYER_EMAIL" ]; then
+     gcloud beta iap web add-iam-policy-binding --project="$PROJECT_ID" --resource-type=cloud-run --region="$REGION" --service="$VIEWER_SERVICE_NAME" --member="user:$DEPLOYER_EMAIL" --role="roles/iap.httpsResourceAccessor" >/dev/null 2>&1 || true
+   fi
+   VIEWER_URL=$(gcloud run services describe "$VIEWER_SERVICE_NAME" --region="$REGION" --format="value(status.url)")
+   ```
+
+4. **Step 4/6: Deploy Main Multi-Agent Service (Cloud Run with uv Acceleration)**:
+   *Uses uv inside Dockerfile to slash Cloud Build container creation time from ~4 minutes to ~20 seconds.*
+
+   > [!IMPORTANT]
+   > **Every capability in this runtime is switched on by an environment variable, not by the
+   > code that was shipped.** The templates read their flags at import time, so a variable you
+   > do not pass is not "left at its default" — it is OFF, and the matching tool answers
+   > `{"status": "unavailable"}` for the life of the demo. `setup_and_deploy.sh` builds the
+   > full list in `$CR_ENV_VARS`; run the script rather than retyping it. The abbreviated
+   > command below is for understanding the shape, not for copying.
+
+   ```bash
+   # setup_and_deploy.sh assembles this; see references/deployment_and_iam.md for the
+   # complete table and for which variables are applied later, in Step 5.
+   MIN_INSTANCES="${MIN_INSTANCES:-0}"   # export MIN_INSTANCES=1 to stay warm for a live demo
+                                         # (brief section 6 - it bills while idle, so ask first)
+   gcloud beta run deploy "$SERVICE_NAME" \
+     --source . \
+     --region "$REGION" \
+     --platform managed \
+     --memory 8Gi \
+     --cpu 2 \
+     --no-cpu-throttling \
+     --cpu-boost \
+     --min-instances "$MIN_INSTANCES" \
+     --max-instances 1 \
+     --timeout 1800 \
+     --no-allow-unauthenticated \
+     --ingress internal \
+     --labels "created-by=adk" \
+     --set-env-vars="$CR_ENV_VARS" \
+     --quiet \
+     $SECRETS_FLAG
+   SERVICE_URL=$(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --format="value(status.url)")
+   ```
+
+   `$CR_ENV_VARS` carries, at minimum: `PROJECT_ID`, `GOOGLE_CLOUD_PROJECT`,
+   `GOOGLE_CLOUD_LOCATION=global`, `BIGQUERY_DATASET`, `FIRESTORE_COLLECTION`, `DEMO_ID`,
+   `SANDBOX_RESOURCE_NAME`, `AGENT_ENGINE_NAME`, `DATA_VIEWER_URL`, `GEMINI_AUTHORIZATION_ID`,
+   `DASHBOARDS_BUCKET`, `RUNTIME_SA_EMAIL`, `WORKER_QUEUE`, `WORKER_QUEUE_LOCATION`, the two
+   `ADK_*` compatibility switches, the five `ENABLE_*` flags in their `1`/`0` form, and
+   `MANAGED_AGENT_ID` / `MANAGED_AGENT_SKILLS_SOURCE` when the autonomous agent is on.
+   `$SECRETS_FLAG` binds `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` from Secret Manager when
+   either Workspace flag is set.
+
+   > [!IMPORTANT]
+   > **If this deploy is refused by an organization policy, it is not a build failure and
+   > there is nothing to debug in the container.** `constraints/run.allowedVPCEgress` and
+   > `constraints/run.allowedBinaryAuthorizationPolicies` reject a service for an annotation
+   > it never set, before Cloud Build is asked for anything. `setup_and_deploy.sh` prints
+   > which constraint refused it and the flags that satisfy it; set `GE_RUN_NETWORK`,
+   > `GE_RUN_SUBNET`, `GE_RUN_VPC_EGRESS` and `GE_RUN_BINAUTHZ` in `.env` and re-run. Do not
+   > loosen `--ingress` or drop `--no-allow-unauthenticated` to get around it - that changes
+   > the security posture of the demo and does not address either constraint. Full
+   > explanation in `references/deployment_and_iam.md` § Step 4.
+
+5. **Step 5/6: Finalize Background Task Infrastructure & Post-Deploy Wire-up**:
+   *Background runs travel over Cloud Tasks, not an in-process self-call: the service deploys
+   with `--min-instances 0`, so a localhost fallback would die with the turn that started it
+   and could never wake a cold instance.*
+   ```bash
+   SCHED_TOPIC="${SERVICE_NAME}-sched-topic"
+   gcloud pubsub topics create "$SCHED_TOPIC" --project="$PROJECT_ID" 2>/dev/null || true
+   gcloud pubsub subscriptions create "${SCHED_TOPIC}-push" \
+     --topic="$SCHED_TOPIC" \
+     --push-endpoint="${SERVICE_URL}/execute_task" \
+     --push-auth-service-account="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+     --ack-deadline=600 \
+     --project="$PROJECT_ID" 2>/dev/null || true
+
+   # max-concurrent-dispatches matches the runtime's worker semaphore, so work waits in
+   # the queue instead of piling up inside one container.
+   gcloud tasks queues create "$WORKER_QUEUE" \
+     --location="$WORKER_QUEUE_LOCATION" \
+     --max-attempts=5 --max-concurrent-dispatches=2 --max-dispatches-per-second=5 \
+     --min-backoff=15s --max-backoff=300s \
+     --project="$PROJECT_ID" 2>/dev/null || true
+
+   # Values that cannot exist until after the deploy: the assigned service URL, the
+   # Gemini Enterprise app discovered in Phase 6, and the warmed sandbox environment.
+   gcloud run services update "$SERVICE_NAME" \
+     --update-env-vars="SELF_URL=${SERVICE_URL},GEMINI_ENTERPRISE_APP_ID=${SELECTED_APP_ID},DATASTORE_LOCATION=${SELECTED_LOC}" \
+     --region="$REGION" \
+     --quiet 2>/dev/null || true
+   ```
+
+---
+
+## Phase 6: Gemini Enterprise App Discovery, Authorization & Registration (Step 6/6)
+
+1. **Check Discovery Engine / Gemini Enterprise App Existence**:
+   - Query Discovery Engine API across regions (`global`, `us`, `eu`).
+   - If 1 GE App found: select it automatically.
+   - If 0 GE Apps found: automatically create `default-gemini-enterprise-app` via Discovery Engine API.
+
+2. **Google Workspace OAuth Authorization Linking (when either `enableWorkspaceAuth` or `enableWorkspaceMcp` is on)**:
+   - Check Secret Manager for `ge-demo-oauth-client-id` and `ge-demo-oauth-client-secret`.
+   - If missing, guide user through step-by-step setup in Console and save credentials.
+   - Create Discovery Engine Authorization resource with stored credentials.
+   - Pass `--authorization-id=projects/$PROJECT_ID/locations/global/authorizations/$AUTH_ID` during registration.
+
+3. **Register Agent to Gemini Enterprise**:
+   ```bash
+   # Discovery Engine Service Account permissions
+   gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
+     --region="$REGION" \
+     --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
+     --role="roles/run.servicesInvoker"
+
+   # Register via agents-cli
+   agents-cli publish gemini-enterprise \
+     --agent-card-url "${SERVICE_URL}/a2a/app/.well-known/agent-card.json" \
+     --display-name "${COMPANY_NAME} Demo Agent" \
+     --description "${DEMO_DESCRIPTION}" \
+     ${AUTH_FLAG}
+   ```
+
+---
+
+## Phase 6.5: Autonomous Verification & Real-Time Self-Healing Engine (Mandatory Gate)
+
+Immediately after deployment and registration complete, execute the automated 8-layer verification and self-healing engine before presenting results to the user:
+
+```bash
+python3 scripts/verify_and_heal.py
+```
+
+### The 9-Layer Autonomous Verification & Healing Matrix (v2.20.0)
+1. **Layer 1: BigQuery Schema & Primary Keys**: Inspects all tables in `${DATASET_ID}`, verifies row counts, and **auto-heals** missing `_id` document columns (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS _id STRING; UPDATE ... SET _id = <PK>`) to guarantee Discovery Engine DataStore ingestion compatibility.
+2. **Layer 2: Firestore Operations Collection**: Verifies operational task documents count >= 3. Auto-seeds initial documents if missing via `setup_fs.py`.
+3. **Layer 3: Data Viewer & IAP**: Verifies Cloud Run dashboard service status and guarantees `roles/run.invoker` binding for `service-${PROJECT_NUMBER}@gcp-sa-iap.iam.gserviceaccount.com`.
+4. **Layer 4: Agent Engine Sandbox**: Confirms Agent Engine Code Sandbox resource accessibility in Vertex AI Agent Platform.
+5. **Layer 5: Cloud Run A2A & Fallback Routing**: Probes `/openapi.json`, `/a2a/app/.well-known/agent-card.json`, and root POST fallback alias `@app_instance.post("/")`.
+6. **Layer 6: Discovery Engine DataStores & Engine Binding**: Inspects indexed document count in `ds-<service>-bq` and `ds-<service>-gcs`, auto-restarts table ingestion if 0 documents, and verifies `dataStoreIds` attachment on the Gemini Enterprise Assistant Engine.
+7. **Layer 7: Agent Registry URL & Authorization**:
+   - Refreshes auth token dynamically before invocation to prevent expiration during long deploys.
+   - Automatically grants `roles/run.invoker` to `service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com` on Cloud Run.
+   - Verifies registered agent URL strictly ends with `/a2a/app`, auto-patches Gemini Enterprise agent card if missing, and verifies Authorization resource formatting (`projects/${PROJECT_NUMBER}/...`).
+   - Resolves direct chat link `https://vertexaisearch.cloud.google.com/home/cid/${CONFIG_ID}/r/agent/${AGENT_ID}/session/-`.
+   - **Fail-Fast & Zero False Positives**: If registration fails or authentication is rejected (HTTP 401/403), records `FAIL` (never `WARN`), prints tailored host OS authentication commands, and exits with code 1.
+8. **Layer 8: External Files & Google Drive Delivery**: Verifies external PDF, Excel, and Scanned Image files staging in GCS, and audits `external_files/drive_upload_summary.json` for deterministic delivery to the target Google Drive folder. If Drive upload is missing or incomplete, dynamically probes Drive token scope and autonomously executes `generate_and_upload_external_files.py --upload-only` to self-heal.
+9. **Layer 9: AI Governance & Telemetry**: Audits and auto-grants `roles/cloudtrace.agent` and `roles/modelarmor.user` to the Compute Service Account.
+
+### 🛡️ Autonomous Self-Healing & Zero-Touch Deployment Protocol (MANDATORY INVARIANT)
+
+- **The Zero-Touch Fallback Invariant**:
+  - **NEVER** instruct the user to "manually execute `setup_and_deploy.sh` in your terminal" or "run the shell script by hand" when an authentication error, permission denial, or deployment failure occurs.
+  - As an autonomous pair-programming agent, your objective is to resolve errors in-place and drive the deployment to completion.
+
+- **Automated Root-Cause Remediation Matrix**:
+  1. **IAM Permission Denied (`403 PERMISSION_DENIED`)**:
+     - **Inspect Identity & Privileges**: Determine whether `${GCP_ACCOUNT}` has administrative access (Project Owner or IAM Admin) to grant missing roles.
+     - **Self-Healing Path**: If `${GCP_ACCOUNT}` has admin rights, immediately execute `gcloud projects add-iam-policy-binding` to grant the missing role (e.g. `roles/run.admin`, `roles/discoveryengine.admin`, `roles/bigquery.admin`, or `roles/iam.serviceAccountUser`) and resume the deployment step.
+     - **Service Account Auto-Grant**: If Cloud Run or Discovery Engine reports that `${PROJECT_NUMBER}-compute@developer.gserviceaccount.com` or `service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com` lacks required bindings, auto-grant the specific role directly.
+     - **Non-Admin Guidance**: If the user lacks IAM administration permissions, provide the exact copy-pasteable command for their Project Administrator in a `text` block:
+
+       ```text
+       gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+         --member="user:$GCP_ACCOUNT" \
+         --role="roles/owner"
+       ```
+
+     - Prompt the user interactively (e.g. via `ask_question` or chat) to confirm once the role is granted or to switch to an authorized account (`gcloud config set account <admin-account>`), then seamlessly re-probe and proceed with automated deployment.
+
+  2. **API Enablement & Service Directory**:
+     - If an API call fails with `SERVICE_DISABLED`, immediately enable the required service via `gcloud services enable <service>.googleapis.com` and retry the operation.
+
+  3. **Capsule / Org Policy Constraints (`constraints/run.allowedIngress`)**:
+     - If Cloud Run rejects deployment with an allowed ingress constraint violation, automatically adapt to `--ingress internal` or report the required policy adjustment to the user.
+
+  4. **Drive Scope Absence (`DRIVE_OK != 200`)**:
+     - Verify that Cloud Storage staging (`gs://${PROJECT_ID}-<domain>-<suffix>-docs/`) succeeds. If the user desires Google Drive sync, provide the exact headless re-authentication command (`gcloud auth login --enable-gdrive-access --no-launch-browser`) without blocking or crashing the automated deployment pipeline.
+
+---
+
+## Phase 7: Comprehensive Results Output & 7 Demo Prompts Playbook
+
+Upon deployment completion, ALWAYS output the structured results containing direct links and the **7 Structured Demo Prompts Playbook** localized into the customer's target language:
+
+### 1. Deployment Identity & Direct Links Section
+```markdown
+### 👤 Deployment Identity & Environment
+- 👤 **Deployed By Account**: `${GCP_ACCOUNT}`
+- 🏢 **Target Project**: `${PROJECT_ID}` (Project Number: `${PROJECT_NUMBER}`)
+- 🌐 **Deployed Region**: `${REGION}`
+- 🤖 **Cloud Run Service Account**: `${PROJECT_NUMBER}-compute@developer.gserviceaccount.com`
+
+---
+
+### 🔗 Quick Access Links
+> [!IMPORTANT]
+> **Account Notice:**
+> Open these links in a browser whose Google Cloud / Workspace session is the deploying account **`${GCP_ACCOUNT}`**. Opening them as a different account returns a permission error (403 Forbidden).
+
+> Write this hand-off summary in the language the user is conversing in - the wording above is the English form, not a fixed string.
+
+💬 **Start Chatting with Your Agent (Direct Chat Link):**
+👉 https://vertexaisearch.cloud.google.com/home/cid/${CONFIG_ID}/r/agent/${AGENT_ID}/session/-
+⚠️ The FIRST message right after a deploy can come back as an error. Gemini Enterprise takes up to ~90 seconds to start routing to a brand new agent, and a cold Cloud Run instance can refuse one request while it starts. Both are transient — send the message again.
+
+💻 **Gemini Enterprise Console (Overview):**
+👉 https://console.cloud.google.com/gemini-enterprise/locations/${SELECTED_LOC}/engines/${SELECTED_APP_ID}/overview/dashboard?&project=${PROJECT_ID}
+*(Or fallback console if no app registered: `https://console.cloud.google.com/gemini-enterprise/overview?&project=${PROJECT_ID}`)*
+
+📁 **Google Drive External Sample Files** (when the deploy-time upload ran):
+- 👑 **Folder Owner**: `${DRIVE_OWNER_ACCOUNT}` (the account that ran the deploy — switch
+  the browser to it before opening these links)
+- 🔑 **Link Sharing**: "Anyone with link (Reader)" when the organization allows it
+- 📂 **Open the Folder**: https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}
+- 📄 Audit Report (PDF, Japanese CJK Font): ${PDF_URL}
+- 📊 Supplier Ledger (Excel): ${XLSX_URL}
+- 🖼️ Simulated Document 1 (JPG): ${IMG1_URL}
+- 🖼️ Simulated Document 2 (JPG, Discrepancy Embedded): ${IMG2_URL}
+- ℹ️ If `drive_upload_summary.json` carries `share_error`, link sharing was refused: say
+  the owner can open the folder but the audience needs an explicit share from the Drive
+  UI, and offer the Cloud Storage links below in the meantime.
+
+📦 **External Sample Files in Cloud Storage** (always — the staging copy is unconditional):
+- 🗂️ **Browse the bucket**: https://console.cloud.google.com/storage/browser/${GCS_BUCKET_NAME}?project=${PROJECT_ID}
+- 📄 **Open a file directly** (signed-in browser): one line per uploaded file,
+  `https://storage.cloud.google.com/${GCS_BUCKET_NAME}/<filename>` — print the real
+  filenames, never a bare `gs://` URI on its own; `gs://` is not clickable.
+- 📂 Also on this machine: `./external_files/`
+
+📁 **When the Drive upload was skipped** (the credentials carry no Drive scope) — say it
+plainly, this is the only notice the user gets:
+- ℹ️ **There is no Drive copy of these documents.** Print `upload_skipped_reason` verbatim.
+  The documents themselves are complete, in Cloud Storage and `./external_files/`; only the
+  Drive folder is missing, so a Drive or Sheets step in the demo script will find nothing.
+- 🛠️ **To get one**: run `gcloud auth login --enable-gdrive-access --no-launch-browser` and re-run this script
+  (a plain `gcloud auth login` grants no Drive scope, which is why this is the usual
+  cause; `--no-launch-browser` prints the OAuth consent URL to copy into any browser when the terminal environment lacks a browser), or upload `./external_files/` to a Drive folder by hand and share it with the
+  audience. Never suggest asking the agent to do it — it cannot.
+
+📊 **Firestore Data Viewer Dashboard:** 👉 ${VIEWER_URL}
+🔎 **BigQuery Console:** 👉 https://console.cloud.google.com/bigquery?referrer=search&project=${PROJECT_ID}&ws=!1m4!1m3!3m2!1s${PROJECT_ID}!2s${DATASET_ID}
+```
+
+### 2. The 7 Structured Demo Prompts Playbook (Localized)
+
+Present all 7 demo prompts formatted with Title/Persona, Category Tags, Copyable Prompt Text,
+Expected Outcome, and a one-sentence **Watch Point** for the person running the demo (what to
+look at on screen while this prompt runs). All 7 trace the one process instance from Phase 2,
+and the last one closes with quantified outcomes — before/after cycle time, items resolved,
+hand-offs completed.
+
+Slot 5 and slot 7 carry the two autonomous delegation prompts whenever `enableManagedAgent`
+is on (the default), which moves the interactive-dashboard prompt into slot 1 or 2. If the
+enabled capabilities still do not fit, append up to three prompts tagged `encore` rather than
+cramming two showcases into one prompt. Both rules, and the per-capability chains for
+Workspace and computer use, are in `references/demo_prompts_guide.md` §5-§6.
+
+The template below is the base progression, before those overrides:
+
+```markdown
+### 🎯 7 Structured Demo Prompts Playbook (Dynamically Localized to Target Language)
+
+#### 1. [Role Title] Foundation & Data Overview
+- **Tags**: `[Foundation]` `[Data Overview]`
+- **Attachment / Data Source**: None — Direct DB Query (`<master_table>`, `<transaction_table>`)
+- **Prompt Text**: (Generically phrased request to explore data landscape and operational KPIs in target language)
+- **Expected Outcome**: Analyzes master/transaction tables and renders KPI summary in an A2UI Card.
+- **Watch Point**: (What the operator should notice - e.g. the console already shows items mid-process across departments)
+
+#### 2. [Role Title] Metadata & Knowledge Catalog Discovery
+- **Tags**: `[Metadata Discovery]` `[Knowledge Catalog]`
+- **Attachment / Data Source**: None — Direct Knowledge Catalog + DB Query
+- **Prompt Text**: (Generically phrased request inquiring about available data resources, metrics definitions, and relationships)
+- **Expected Outcome**: Consults Knowledge Catalog MCP (`search_entries`, `lookup_entry`) before writing queries.
+- **Watch Point**: (e.g. the agent reads the catalog before it writes a single query)
+
+#### 3. [Role Title] Cross-Source Anomaly & Risk Detection [WOW MOMENT]
+- **Tags**: `[Cross-Source WOW]` `[Drive File Binding]`
+- **Attachment / Data Source**: Attach `<domain>_audit_report.pdf` + `<domain>_external_ledger.xlsx` (or read from Drive when Workspace MCP is enabled)
+- **Prompt Text**: (Strategic inquiry about untracked discrepancies across recent deliveries/records)
+- **Expected Outcome**: Autonomously cross-references the external PDF/Excel against BigQuery tables, isolates the 5-15% discrepancy, and renders discrepancy cards and infographics.
+- **Watch Point**: (e.g. nobody told it to open the external report - it decided to)
+
+#### 4. [Role Title] Multi-Step Dependent Immediate Workflow [WOW MOMENT]
+- **Tags**: `[Immediate Workflow WOW]` `[A2UI Batch Editor]`
+- **Attachment / Data Source**: Attach `handwritten_order_1.jpg` (alternate scan: `handwritten_order_2.jpg`)
+- **Prompt Text**: (Request to scan unverified items, resolve mappings, and update records)
+- **Expected Outcome**: Executes `SCAN -> RESOLVE -> PRESENT -> EXECUTE -> AUDIT`, presenting the (J) Dynamic Multi-Entity Batch Editor A2UI form for human confirmation before writing to DB.
+- **Watch Point**: (e.g. after the approval click, the item moves to the next department on the operations console)
+
+#### 5. [Role Title] Large-Scope Batch / Background Reconciliation [WOW MOMENT]
+- **Tags**: `[Background Workflow WOW]` `[Execution Mode Dialog]`
+- **Attachment / Data Source**: None — Direct DB + Operational Queue Batch
+- **Prompt Text**: (Comprehensive quarterly reconciliation request across all historical records)
+- **Expected Outcome**: Recognizes large batch scope and presents Execution Mode Dialog (Immediate vs Background vs Scheduled), kicking `/execute_task` when background mode is selected.
+- **Watch Point**: (e.g. the agent proposes background mode on its own, then keeps the chat usable while it runs)
+
+#### 6. [Role Title] Scheduled Automated Monitoring Setup
+- **Tags**: `[Scheduled Monitoring]` `[Pub/Sub Task]`
+- **Attachment / Data Source**: None — Scheduled Background Task Registration
+- **Prompt Text**: (Request to set up automated recurring threshold monitoring every morning at 09:00 AM)
+- **Expected Outcome**: Explains monitoring logic, registers recurring cron schedule with Pub/Sub.
+- **Watch Point**: (e.g. the schedule it proposes matches the department's own escalation rule)
+
+#### 7. [Role Title] End-to-End Strategic Automation
+- **Tags**: `[Strategic Automation]` `[End-to-End]`
+- **Attachment / Data Source**: Live Web Research + Internal DB (no manual file attachment unless explicitly specified)
+- **Prompt Text**: (Comprehensive executive request combining cross-source analytics, workflow execution, notification drafting, and audit logging)
+- **Expected Outcome**: Synthesizes all data sources, produces executive summary infographic, updates records, and logs audit trail.
+- **Watch Point**: (e.g. the closing summary states the before/after cycle time for the instance the whole demo followed)
+```
+
+### 3. Automated Executive Demo Video Production (/ge-demo-video)
+
+When the user asks to **create a demo video** (e.g. "デモ動画を作成して", "generate a demo video", "record executive video"):
+- **ALWAYS** invoke the dedicated `/ge-demo-video` skill (`npm run demo:video` or `python3 scripts/generate_demo_video.py`).
+- **Strict Invariant**: Never write a custom presentation script, presentation video, or synthetic mock screen from scratch.
+- The `/ge-demo-video` skill connects directly to the deployed agent's live Gemini Enterprise session via Chrome CDP (`localhost:9222`), verifies the live chat input interface, auto-probes and provisions multi-language typography fonts (`ensure_fonts.py`), presents the demonstration plan with `ask_question` for interactive user approval, and records the authentic agent in action.
+
+---
+
+## Executive AI Governance Showcase (Cloud Trace & Model Armor)
+
+For executive roundtables, enterprise security reviews, and AI governance demonstrations:
+- **Cloud Trace Telemetry & Token Tracking**: Enabled by **default** (`ENABLE_CLOUD_TELEMETRY=1`), providing out-of-the-box observability without requiring extra flags. (To opt out, set `ENABLE_CLOUD_TELEMETRY=0`).
+- **Model Armor Guardrails**: Enabled via `ENABLE_MODEL_ARMOR=1`. If no custom template is specified, the deployment script **automatically provisions and binds a standard generic template** (`ge-demo-default-armor` in `us-central1`) configured with Prompt Injection/Jailbreak defense, Sensitive Data Protection (SDP Basic for PII/API key masking), Malicious URI filtering, and Responsible AI safety filters.
+
+### 1. Key Governance Capabilities
+1. **Full-Stack Traceability & Observability (OpenTelemetry + Cloud Trace)**:
+   - Tracks LLM token usage (input tokens, output tokens, cached tokens) out of the box.
+   - Generates distributed trace spans across the entire request lifecycle (`invocation -> agent_run -> call_llm -> execute_tool`).
+   - Automatically masks message content on the wire (`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=NO_CONTENT`) to preserve privacy and prevent PII leakage into trace logs.
+2. **Sensitive Data Protection & Guardrails (Model Armor)**:
+   - Native Vertex AI Agent Platform Model Armor integration via `types.ModelArmorConfig`.
+   - Real-time protection against prompt injection, jailbreak attempts, and sensitive data (PII/financial data) exfiltration.
+   - Auditable security logs in Security Command Center (SCC) and Model Armor Console.
+
+### 2. Enabling Governance for Demos
+Telemetry is active automatically. To also activate Model Armor guardrails for a demo:
+
+```bash
+# Enable Model Armor guardrails (automatically creates and attaches ge-demo-default-armor in us-central1)
+ENABLE_MODEL_ARMOR=1
+
+# (Optional) Specify a custom existing Model Armor template instead of the default:
+# MODEL_ARMOR_TEMPLATE="projects/<PROJECT_ID>/locations/<LOCATION>/templates/<TEMPLATE_ID>"
+```
+
+### 3. Live Demonstration Walkthrough
+During an executive presentation:
+1. **Show Live Trace Explorer**:
+   - Open `https://console.cloud.google.com/traces/explorer?project=${PROJECT_ID}`.
+   - Demonstrate request latency breakdown, tool execution durations, and exact Gemini token consumption per turn.
+2. **Demonstrate Guardrails / Model Armor**:
+   - Issue a simulated prompt injection or prompt asking for restricted personal data.
+   - Open `https://console.cloud.google.com/security/model-armor?project=${PROJECT_ID}` to show violation logs and blocked/sanitized execution.
+
+---
+
+## Phase 8: Cleanup & Teardown (On-Demand)
+
+When the demo is concluded, delete all provisioned resources (including the Agent Engine
+Sandbox and the Managed Autonomous Agent):
+```bash
+bash scripts/cleanup.sh
+```
+
+Read the per-resource lines, not the closing banner. Every job runs under `|| true` so that one
+failure cannot strand the rest, which means the script finishes whatever happened: `✅` deleted,
+`⚠️` already gone or skipped, `❌` still there. A `❌`, or a `⚠️` for something you know existed,
+needs a manual delete — an Agent Engine, a bucket or a Firestore collection left behind keeps
+billing. Run it from the demo directory so it picks up `.env`; without `DOMAIN_SLUG`/`SUFFIX` it
+cannot name the two GCS buckets and says so rather than guessing.
+
+---
+
+## References & Templates
+
+- For Discovery Engine DataStore Connectors & Search: read `references/datastore_connectors.md`.
+- For Deployment sequence, Dependency graph & the full `.env` key reference: read `references/deployment_and_iam.md`.
+- For External sample files & Google Drive upload: read `references/external_files_and_drive.md`.
+- For 7 Demo prompts specification: read `references/demo_prompts_guide.md`.
+- For Multi-Agent routing & Sandbox code execution: read `references/multi_agent_architecture.md`.
+- For MCP server integrations & Workspace Auth: read `references/mcp_catalog.md`.
+- For Data generation & Knowledge Catalog metadata: read `references/data_generation.md`.
+- For A2UI JSON payload format & system instructions: read `references/a2ui_catalog.md`.

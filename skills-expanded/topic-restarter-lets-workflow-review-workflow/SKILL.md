@@ -1,0 +1,61 @@
+---
+name: review-workflow
+description: Internal Dynamic Workflow asset for /lets:review --workflow. Not auto-triggered - it is a workflow script invoked via scriptPath, not a conversational skill. Holds the fan-out -> dedupe -> adversarial-verify -> aggregate chain that runs off-context.
+user-invocable: false
+---
+
+# review-workflow (Dynamic Workflow asset)
+
+This folder is the **reference example** of the Dynamic Workflow asset standard (see `CLAUDE.md` -> "Dynamic Workflow assets"). It is NOT a conversational skill: `review.workflow.js` is executed by the `Workflow` tool, invoked from `/lets:review`'s Workflow Mode via:
+
+```
+Workflow({ scriptPath: "${CLAUDE_PLUGIN_ROOT}/skills/review-workflow/review.workflow.js", args })
+```
+
+`${CLAUDE_PLUGIN_ROOT}` is substituted at command-load time, so `review.md` carries the literal absolute path. Treat `review.workflow.js` as a **template** the command points at, not a script to reproduce inline.
+
+## What it does (off-context)
+
+A multi-stage chain so per-agent reports never enter the conversation - only the final aggregate returns:
+
+1. **Review** - fan out the selected `lets:<name>` review agents in parallel (structured `FINDING_SCHEMA` output).
+2. **Reduce** - split systemic (any tier) into its own section, NIT-filter the rest (unless small diff), dedupe (keep highest tier), sort by tier.
+3. **Verify** - for each BLOCKER/SUGGESTION, fan out `lets:skeptic` agents (2, or 3 for BLOCKER) to refute it. Apply the **asymmetric drop rule**: SUGGESTION drops on a simple majority `real=false`; BLOCKER drops only on near-unanimous high-confidence refute, otherwise downgrades. Count `refuted`.
+4. **Aggregate** - verdict over the verified set, per-agent summary, counts.
+
+## `args` contract (built by the command, passed as a JSON value)
+
+| key | type | meaning |
+|---|---|---|
+| `agents` | `[{name}]` | selected review agents (short names, no `lets:` prefix; exclude `actor`) |
+| `mode` | string | `PR-{n}` \| `local-review` \| `branch-review` \| `file` |
+| `projectRoot` | string | absolute project root (agents must not read outside it) |
+| `claudeMd` | string | CLAUDE.md context |
+| `changedFiles` | string | changed-file list with stats (or single path for `--file`) |
+| `code` | string | the diff (or full file content for `--file`) |
+| `smallDiff` | bool | `true` keeps NIT findings (diff < 50 lines) |
+| `systemicCheck` | bool | `false` for `--file` (no diff baseline) |
+| `spec` | string | task description from the tracker's `show` (or the PR body); **empty when unavailable** - never a sentinel. Drives `specBlock` in the review prompt, and `specBlockSkeptic` in the verify prompt - the latter ONLY outside PR mode, since a PR-mode spec is the PR author's own task or plan file and a skeptic's `real=false` is a deterministic drop. No flag: PR mode is derived from `mode`, so it cannot be forgotten. Normalized in the script (non-string/whitespace-only → empty, 150 lines / 8000 chars, `BEGIN/END SPEC` delimiters inside the value neutralized on both sides - across every Unicode dash and with format characters stripped first - so it cannot escape its own fence) |
+| `specSource` | string | where `spec` came from, per the command's Step 2.5 question: `task` \| `file` \| `none` \| `unresolved`. Only `none` vs `unresolved` changes rendering, and the difference matters: `none` is the user saying no spec exists, so NO spec block is emitted at all; `unresolved` is a failed lookup, which still gets the "none reached this review" block because something may exist that we failed to read |
+| `prBody` | string | the PR's own description, **empty outside PR mode**. Sanitized by the same `fenced()` as `spec`, 150 lines / 8000 chars |
+| `prDiscussion` | string | the PR's gathered discussion - issue comments + non-empty review bodies + inline threads - **empty outside PR mode**. Same `fenced()`, 400 lines / 20000 chars: a discussion is legitimately longer than a spec. Kept SEPARATE from `prBody` so the script can label each half; merging them would make "what the author says" unattributable |
+| | | Both drive `prContextBlock` in the review prompt and **nothing else**. There is no skeptic counterpart by design: every word is written by the author of the code under judgement or by people commenting on it, and a skeptic's `real=false` is a deterministic drop. Like the spec in PR mode, there is no trusted case to carve out and therefore no flag to forget |
+| `prTree` | bool | does the working tree hold the reviewed code? `true` for all non-PR modes and for PR mode after a checkout; `false` adds a REVIEW TREE warning to both prompts. **Omitted on a `PR-*` mode is treated as `false`** - failing toward "the tree may be wrong" rather than silently trusting it |
+
+## Returns
+
+`{ verdict, findings[], systemic[], summary{}, counts{blockers,suggestions,total,refuted,verify_failed}, refuted_findings[] }` - the same shape `review.md` Step 8/8.5 persists. `verify_failed` > 0 means that many findings could not be verified (skeptics errored) and were kept unverified - surface it, never treat as "verified clean". `findings` + `verdict` are the `/lets:github-pr --json` contract; do not rename them. Each verified finding carries `verification: {action: 'keep'|'downgrade', real, votes}` (a `[NIT]` passthrough carries none - it is never verified), and `refuted_findings[]` lists the dropped ones as `{title, file, line, tier}` - both additive, read by `/lets:review --fix` (Step 10.5).
+
+## Constraints (Dynamic Workflow runtime)
+
+- No filesystem - the script returns data; `/lets:review` persists files.
+- No sibling `import` - all logic stays inline in `review.workflow.js`.
+- No `Date.now()` / `Math.random()` / `new Date()`.
+- Top-level `await`/`return` are used (the runtime wraps the body), so the file is NOT Node-importable - it has no clean unit test; the verdict/dedupe/verify logic is kept in sync with `review.md` prose by discipline and validated by the live smoke test.
+- **Syntax IS checkable** - but NOT with bare `node --check`: because line 2 is `export const meta`, it exits 0 on syntactically broken input (verified on node v22), including an unterminated template literal - the exact failure mode of the long backticked prompt strings. Copying to `.mjs` fails the other way (`Illegal return statement`). Wrap the body instead, mirroring the runtime:
+
+  ```bash
+  { echo 'async function __w(){'; sed 's/^export //' review.workflow.js; echo '}'; } | node --check /dev/stdin
+  ```
+
+  Verified to exit 0 on the real file and 1 on a copy with a broken template literal.

@@ -1,0 +1,52 @@
+# Vyges IP Development Rules
+
+This project follows Vyges conventions for hardware IP development. Context is provided via the **vyges.vycontext** extension:
+
+## Extension-Based Context
+- **Extension**: `vyges.vycontext` (install from Cursor Marketplace or VSCode Marketplace)
+- **Context Source**: MCP server at `agent.services.vyges.com`
+- **Authentication**: OAuth via Keycloak (auto-detected in Codespaces)
+- **Status Check**: `Ctrl+Shift+P` → "Vyges VyContext: Show Status"
+
+## Code Generation Rules
+- Use SystemVerilog for RTL
+- Follow snake_case naming for modules and files
+- Include required module headers with description and author
+- Place RTL in rtl/ directory
+- Place testbenches in tb/ directory
+
+## Project Structure
+- Each repository = one functional IP
+- Use vyges CLI commands for project management
+- Follow metadata-driven generation from vyges-metadata.json
+
+## Naming Conventions
+- Repository: {orgname}/{repo-name} format
+- IP name: lowercase with hyphens, 3-50 chars
+- Modules: snake_case (e.g., pwm_controller)
+- Files: snake_case.sv (e.g., pwm_controller.sv)
+- Parameters: UPPER_SNAKE_CASE
+- Signals: snake_case with direction suffix (_i, _o, _io)
+
+## Required Patterns
+- All modules must have clock_i and reset_n_i signals
+- Include proper interface patterns (APB, AXI, etc.)
+- Testbenches must include clock generation and reset sequence
+- Documentation must include pinout tables from metadata
+
+## CLI Integration
+- Use vyges init --interactive for project setup
+- Use vyges expand for adding complexity
+- Use vyges validate for checking compliance
+- Use vyges generate for code generation
+
+## Context Access
+The **vyges.vycontext** extension automatically provides:
+- RTL design patterns and coding standards
+- Synthesis and testbench guidance
+- Tool-specific flags and configurations
+- DFT/JTAG implementation patterns
+- Pin/pad consistency validation
+- Metadata generation workflows
+
+**No local context files needed** - all context is loaded from the extension's MCP server.

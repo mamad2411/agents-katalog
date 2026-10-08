@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/alibaba/skill-up (path: e2e/testdata/mcp-case-overrides/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Per-case mocked MCP override smoke skill used by skill-up e2e tests.

@@ -1,0 +1,301 @@
+---
+name: haiku-pilot
+description: |
+  Haiku-first execution playbook: through deliberate prompt structure, sub-agent
+  delegation, and quantitative escalation gates, get Haiku 4.5 to produce
+  near-Opus quality on most tasks. Escalate to Sonnet/Opus only when gates
+  trigger.
+  Triggers: "haiku", "Haiku", "Haiku mode", "haiku-pilot".
+
+  Do NOT use for: cost-only token optimization, file-count cognitive heuristic,
+  agent dispatch table, CLAUDE.md / rules audit, harness health check.
+  This SKILL is a runtime router + escalation gate, not a decision tree
+  or directory.
+allowed-tools: Read, Grep, Glob, Bash, TodoWrite
+---
+
+# Haiku Pilot — Default-Haiku Execution Playbook
+
+## Thesis
+
+**Weak planner + strong delegation > strong planner doing everything.**
+
+> AgentOpt (arxiv 2604.06296): On HotpotQA, Opus alone = 31.71%; Ministral 3 8B planner + Opus solver = 74.27%.
+> Augment Code eval (2026-04): Best-quality AGENTS.md provides performance gain equivalent to one model tier (Haiku → Sonnet effective).
+
+→ Default parent session to **Haiku 4.5**; aggressively delegate to sub-agents; **escalate only on quantitative gate trigger**.
+
+> "Documentation / process design improvements ≥ model upgrade" is the engineering basis. Blindly upgrading models in multi-stage pipelines often *reduces* performance (planner doesn't delegate).
+
+---
+
+## Per-Session Pre-flight (run once per task)
+
+### 1. Reference Pattern Technique
+
+| ❌ Verbal description | ✅ Point to a file |
+|---------------------|-------------------|
+| "Write a login-like function" | "Follow the pattern in `src/auth/login.ts`" |
+| "Add a hook similar to useUser" | "Pattern: `hooks/useUser.ts:42-78`" |
+
+**Why it matters**: Haiku diverges easily from abstract descriptions; pointing to a concrete file = strongest possible context.
+
+### 2. Think-Before-Coding (compensates Haiku tendency)
+
+Before implementation, output:
+- 1–2 sentence **task understanding restatement** (your interpretation, not parroting)
+- Key assumptions (≥ 1, prefixed with "Assumption: ...")
+- If multiple interpretations are reasonable → **list options for user confirmation**, don't pick one yourself
+
+> Source: `core.md` § "Think-Before-Coding". Haiku tends to skip this step; this SKILL enforces it.
+
+### 3. Diff-Review Pledge
+
+Before declaring "complete", run:
+```bash
+git diff --stat
+git status
+```
+
+**Explain each change in one sentence**. Catches Haiku quietly modifying out-of-scope files (surgical-changes discipline).
+
+### 4. Citation Anchor Enforcement
+
+When citing wiki / docs / spec for numbers, conclusions, or anti-patterns, attach a structured anchor:
+- `(P0X §Y.Z)` — paper section ref (e.g. `(P03 §4.2)`) — **preferred** for paper-grounded citations
+- `(<source> Step N)` — wiki step number
+- `(anti-pattern #N)` — wiki anti-pattern number
+- `(<file>:line-range)` — code / config line ref
+
+**Anchor count requirement** (per answer paragraph):
+- Easy / medium tasks: ≥ 3 structured anchors
+- **Hard tasks** (architecture / counter-factual / synthesis): **≥ 5 structured anchors** — `(P0X §Y.Z)` format strongly preferred
+
+If no precise anchor available → tag `[unverified]`. Never fake a source.
+Violation: retry that paragraph; do NOT declare done.
+
+> Empirical basis: anchor density discrepancy is the primary driver of citation accuracy variance between Haiku and Sonnet/Opus on benchmark tasks. 2026-05-08 6-agent 10Q benchmark: Haiku-Pilot hard-question anchor density collapsed from 7/100w (medium) to 1/100w (hard), the primary D2 gap (−1.0) vs vanilla Opus. Pre-flight previously did not require ≥ 5 anchors on hard tasks; this rule closes that gap.
+> Per-source-type anchor vocabulary (wiki / code / API doc / RFC / paper): see shared reference `anchor-dictionary.md` (suite-internal) if available.
+
+### 5. Source-Verify Loop (required for citation tasks)
+
+After drafting an answer that cites numbers, model names, or verbatim quotes, run this 3-step loop **before declaring done**:
+
+1. **Identify**: list every numeric / proper-noun citation in your answer (e.g. "31.71%", "Claude Opus 4.6", "≥ 100 lines").
+2. **Grep**: for each citation, run `grep -i "<number-or-name>" <source-path>`. If absent → the citation is fabricated.
+3. **Record**: in the self-check table § "Source-verify" row, mark ✓ only when **every** citation passes step 2.
+
+| Failure mode caught | Example from v0.2.1 benchmark |
+|---------------------|-------------------------------|
+| Cross-paper number mis-attribution | Q06: "5.6× cognitive load" attributed to P06/P07 (actually a benchmark-internal number) |
+| Fabricated benchmark scores | Q12: "Opus+HumanLayer=55%, Haiku=40%" — neither in source |
+| Non-existent model version | Q13: "Claude 3.5 Opus" — no such Anthropic-published version |
+| Invented latency / token claims | Q17: "p99 < 100ms / 500K tokens" — not in P08 |
+| Vague paper-grounded targets | Q18: "failure rate ↓ 60–80%" — paper has no such range |
+
+If any cited number fails grep, **rewrite that paragraph** before completion. **Do not** ship with `[unverified]` tags as a workaround on citation tasks; the gate is binary.
+
+> Empirical basis: 2026-05-06 v0.2.1 benchmark — 5 of 20 haiku-pilot responses (25%) shipped fabrications, capping Haiku→Opus gap closure at 45.3%. Adding this gate is the highest-ROI lever per gap analysis.
+
+### 6. Content-First Structure (not Template-First)
+
+**Forbidden**: filling every question with a fixed sub-heading template; restating in prose what the table already says.
+
+**Use instead**: the question's nature determines the structure:
+- Single decision → bulleted list
+- ≥ 3 anti-patterns → 1 combined table (with "trigger / solution / Lab vs Prod" columns), NOT N separate tables
+- Multi-option comparison → table lists only "final decision + exclusion rationale", does NOT enumerate all rejected options
+- Emoji budget: ≤ 3 per section (✅/❌/🔴); neutral statements get none
+
+> Empirical basis: template-first wastes ~30% tokens AND lowers detail density vs content-first.
+
+---
+
+## Per-Task Router (decision table → existing skills)
+
+> This router does NOT duplicate the full skill directory. See your workspace's skill resolver / index for the full list.
+
+### Task-Type Fast-Path (skip mandatory pre-flight when overhead > value)
+
+| Task type | Required pre-flight | Self-check |
+|-----------|--------------------|------------|
+| **Easy recall** (≤ 100w answer; ≤ 5 facts; single source; pure definition / number lookup) | #4 Citation Anchor only (no #2 Think-Before, no #3 Diff-Review) | single-line `fast-path: <reason>` |
+| **Wiki / ref citation** (multi-paragraph extraction with anchors) | #4 Citation Anchor + #5 Source-Verify | full single-table self-check |
+| **Code task** (any LoC) | #1 Reference Pattern + #2 Think-Before-Coding + #3 Diff-Review | n/a (code task, not citation) |
+| **Architecture / counter-factual / synthesis** | All 6 pre-flight checks | mandatory single-table |
+
+> Empirical basis: 2026-05-06 v0.2.1 benchmark Q04 — vanilla Haiku at 51/60 (135w) beat haiku-pilot at 49/60 (182w) on a 4-number recall. Fast-path captures this region by skipping pre-flight overhead on tiny answers.
+
+### Coding tasks
+
+| Task | Sub-agent (suggested) | Model |
+|------|----------------------|-------|
+| Single-file ≤ 30 LoC surgical edit | `haiku-implementer` (or your equivalent) | Haiku 4.5 |
+| Cross-module / > 30 LoC / requires design | `implementer` | Sonnet 4.6 |
+| Bug with failing test | `bugfix` skill (if installed) | Haiku 4.5 |
+| Bug without test | `debug` skill (if installed) | Haiku → Sonnet if stuck |
+| Test writing | `test-writer` | Sonnet 4.6 |
+
+### Research tasks
+
+| Task | Sub-agent | Model |
+|------|----------|-------|
+| ≥ 10-file fact-finding | `researcher` | Haiku 4.5 |
+| Codebase structure inventory | `architecture-explorer` | Haiku 4.5 |
+
+### Review tasks
+
+| Task | Sub-agent | Model |
+|------|----------|-------|
+| Pre-commit multi-dimension review | `/deep-review` | mixed (parallel) |
+| Single-file / single-function review | `quick-code-reviewer` | Sonnet 4.6 |
+| Cross-module architecture / tech selection | `reviewer` | Opus 4.7 |
+| Auth / payment / user-data touchpoints | `security-reviewer` | Sonnet 4.6 |
+| OWASP / proactive threat modeling | `security-auditor` | Sonnet 4.6 |
+
+### Docs tasks
+
+| Task | Sub-agent | Model |
+|------|----------|-------|
+| README / CHANGELOG / API docs | `doc-writer` | Haiku 4.5 |
+| Major doc rewrite | `doc-writer` | Sonnet 4.6 |
+
+> *Customize for your workspace*: replace agent names with the agents that exist in your `.claude/agents/` directory. If you don't have specialized agents yet, the `general-purpose` agent + a model override works as a fallback.
+
+---
+
+## Escalation Gates (quantitative, not "when complex")
+
+> **Decompose first, escalate second**: before deciding "should I upgrade to Sonnet/Opus?", **try sub-agent decomposition** (researcher / implementer / test-writer / reviewer parallel fan-out). Decomposable = stay Haiku + delegate; non-decomposable = upgrade.
+
+**Stay on Haiku** (any one true):
+- Task touches ≤ 9 independent files
+- Same problem attempted < 3 times
+- No trigger keywords ("architecture decision", "design review", "security review", "threat modeling")
+- Code-gen single response ≤ 300 LoC
+- User hasn't explicitly requested upgrade
+
+**Escalate to Sonnet 4.6**:
+- Same problem failed ≥ 3 times
+- Task touches ≥ 10 independent files OR cross-module design
+- Test writing (boundary cases + mocks)
+- User said "use Sonnet"
+
+**Escalate to Opus 4.7 (or `advisor()`)**:
+- Trigger keywords: "architecture decision", "design review", "tech selection", "security review", "threat modeling"
+- Multiple Sonnet attempts haven't converged (rare)
+- User explicitly says "use Opus" / "consult advisor"
+
+> Escalation isn't linear: context pollution → try `/compact` first; do NOT directly upgrade the model. See `context-management.md`.
+
+**Escalation Decision Tree**:
+```
+New task arrives
+    ├── Can it be decomposed into ≥3 independent sub-tasks?
+    │   ├── Yes → fan-out to sub-agents (stay Haiku as planner)
+    │   └── No  → continue below
+    ├── Touches ≥10 files OR cross-module design?
+    │   ├── Yes → Sonnet implementer
+    │   └── No  → stay Haiku
+    ├── Failed ≥3 times on same problem?
+    │   ├── Yes → Sonnet (not context issue confirmed)
+    │   └── No  → retry / compact
+    └── Architecture/security/design keyword?
+        ├── Yes → Opus / advisor()
+        └── No  → stay Haiku
+```
+
+---
+
+## Failure Diagnostic Flow (when Haiku gets stuck)
+
+```
+Haiku fails 1×
+    ↓
+ Is it a context problem? (symptoms: misrestating requirements, lost-in-middle questions, ignoring given files)
+    ├── Yes → /compact or /rewind, retry (still Haiku)
+    └── No  → model insufficient
+              ↓
+          Try once more (redo pre-flight: Reference Pattern + assumption disclosure)
+              ↓
+          Still fails (3rd attempt)
+              ↓
+          Escalate to Sonnet (do NOT jump straight to Opus; 3 Haiku failures ≠ Opus needed)
+```
+
+---
+
+## Expected Cost Savings
+
+> Assumption: 80% of tasks fit Haiku conditions, 15% upgrade to Sonnet, 5% upgrade to Opus.
+
+Reference pricing (2026-04 public, per 1M tokens, input/output):
+- Haiku 4.5: $1 / $5
+- Sonnet 4.6: $3 / $15
+- Opus 4.7: $15 / $75
+
+Weighted average vs full-Opus baseline:
+```
+Haiku  0.80 × ($1 + $5) / 2  = $2.40
+Sonnet 0.15 × ($3 + $15) / 2 = $1.35
+Opus   0.05 × ($15 + $75) / 2= $2.25
+Total                         = $6.00 / 1M token (rough — input >> output in practice)
+
+vs full-Opus baseline: ($15 + $75) / 2 = $45
+Savings: 1 - 6/45 = 86.7%
+```
+
+**Conservative estimate: 70–85% savings** (depends on input/output ratio and cache hit rate).
+
+---
+
+## Known Gotchas (Haiku 4.5 specific)
+
+- **Skips assumption-disclosure**: Haiku tends to write code directly, violating `core.md` § "Think-Before-Coding". Mitigation: this SKILL § Pre-flight #2 enforces it.
+- **Verbose comments**: Haiku writes 1.5–2× more comments than Sonnet. Mitigation: `output-discipline.md` § "minimal comments" + default no comments.
+- **Misses regression check**: when debugging, doesn't proactively ask "which of the last N commits could have caused this?". Mitigation: explicitly require it at debug task start.
+- **Long-context degradation**: > 300K tokens, Haiku degrades more visibly than Sonnet. Mitigation: compact at 30–35% context, not at 70%.
+- **Over-reliance on examples**: Haiku copies a pattern blindly, including anti-patterns. Mitigation: reference must be a "positive example"; put counter-examples in a separate `Don't` block.
+- **Inconsistency on multi-file changes**: rename / API changes across 5+ files often miss spots. Mitigation: ≥ 5-file mechanical change → upgrade Sonnet `implementer` OR use `grep -rn` to enumerate first, then surgical-edit each file.
+- **"3 failures before escalation" anti-pattern**: users get impatient quickly. Mitigation: at first failure, announce "I'll try once more; if it fails again I'll escalate to Sonnet" — gives user opt-out.
+- **Template-first anti-pattern**: Haiku defaults to filling fixed sub-headings, leading to table + prose redundancy. See § Pre-flight #5 (Content-first principle).
+- **Emoji inflation**: Haiku tends to use ✅❌🔴 to emphasize every point, wasting 5–10% tokens and lowering info density. Mitigation: ≤ 3 emotion symbols per section; neutral statements get none.
+- **Anti-pattern count free-listing**: Haiku adds new items beyond the source's actual list to seem complete. Mitigation: if source lists N → answer with N. Derived inferences go in a separate `[derived]` section.
+- **Citation semantic drift**: Haiku uses vague phrasing ("the wiki mentions X", "as the wiki example shows") instead of anchored citations (`Anti-pattern #N: ...`, `Step N: ...`, `Gotcha [Source]: ...`). 2026-05-04 benchmark measured anchor density at 0.75/100w vs Sonnet 3.43/100w (4.6× gap). Mitigation: vague phrases trigger a retry — every claim about a source document must cite a specific anchor, not just describe it.
+- **Number fabrication on hard tasks**: when a question demands specific numbers and the cited source is dense, Haiku tends to invent or compound values rather than admit absence. 2026-05-06 v0.2.1 benchmark caught 5 fabrication cases in 20 questions (Q06, Q12, Q13, Q17, Q18). Mitigation: this SKILL § Pre-flight #5 (Source-Verify Loop) — every numeric citation must pass `grep -i` against source path before completion; this is a hard gate, not a soft threshold.
+
+---
+
+## Verification
+
+| Hypothesis | How to verify |
+|-----------|---------------|
+| Haiku + this SKILL ≈ Opus baseline quality | A/B run 5 typical tasks; compare with `/deep-review` scoring |
+| Escalation gate quantitative thresholds are accurate | After 1 week, audit escalation events: how many fit a gate, how many were gut feel? |
+| Actually saving 70–85%? | Use your cost tracking tool; compare to baseline |
+| Citation Anchor (Pre-flight #4) compliance | Pre-completion grep on Haiku-completed answer files: `grep -cE "Step [0-9]+\|anti-pattern #[0-9]+\|:[0-9]+-[0-9]+" <answer_file>` ≥ 1 per 200 words. If not, retry to fix. |
+| Source-Verify (Pre-flight #5) compliance | For each numeric citation in the answer, run `grep -i "<number>" <source_path>`. Zero fabrications allowed. Audit cadence: post-task on every citation-heavy answer; weekly aggregate on completed batches. |
+
+> Don't trust LLM self-evaluation. External tool verification is the basis.
+
+---
+
+## Relationship to Other Infrastructure
+
+- `output-discipline.md` rule = "no fluff in plain text"
+- `subagent-strategy.md` rule = "who delegates to whom"
+- `context-management.md` rule = "when to compact"
+- This SKILL = "Haiku-default router + escalation gate"
+- `sonnet-pilot` SKILL = quality-first counterpart (the same suite covers both modes)
+- (Optional) `harness-eval` skill = harness health audit
+- Citation enforcement is **built into this SKILL** (Pre-flight #4 Anchor + #5 Source-Verify). Per-source-type anchor vocabulary: shared reference `anchor-dictionary.md` (if available alongside the suite).
+
+This SKILL is the **execution layer**, not the decision layer.
+
+---
+
+## Sub-Agent Inheritance
+
+Sub-agents do NOT inherit this SKILL's triggers. When dispatching, the parent prompt should include:
+
+> "Run in Haiku Pilot Mode: read `.claude/rules/haiku-pilot.md` first, apply pre-flight, dispatch downstream per the router."

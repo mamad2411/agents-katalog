@@ -1,0 +1,109 @@
+# my-team — Project Conventions
+
+This file is read at the start of every Claude Code session in this repo. Treat it as standing orders.
+
+## Source of truth
+
+`SPEC.md` at the repo root is the spec. If the user asks for something that contradicts it, point at the spec and ask whether it should be updated. Do not silently deviate.
+
+## Working style
+
+- **Build phase by phase.** SPEC.md section 12 lists the phases. Don't pull features from later phases into earlier ones unless the user asks. The point of phasing is to validate the architecture early on a small surface.
+- **End-to-end happy path before edge cases.** For each phase, get the smallest version working all the way through before adding error handling, edge cases, or polish.
+- **Commit frequently.** After each meaningful working piece (a passing test, a working API endpoint, a rendered component), commit. Use Conventional Commits: `feat(wrapper): spawn claude with captain prompt`, `fix(cli): handle missing repo gracefully`, etc.
+- **No big-bang changes.** Refactors should land as their own commits, separately from feature work.
+
+## Code style
+
+- TypeScript strict mode. No `any`. If you must escape the type system, use `unknown` and narrow.
+- ESM modules everywhere (`"type": "module"` in package.json, `.js` extensions in imports).
+- Functional over class-based unless there's a reason. Plain functions in the wrapper.
+- Errors: throw typed errors that extend a base `MyTeamError` class. Catch at API boundaries, log with `pino`, return structured error responses.
+- No console.log in committed code. Use `pino` in the wrapper, `console.error` for fatal CLI errors only.
+- Async/await over `.then`. No callback-style code unless interfacing with a library that requires it (and even then, wrap in `promisify`).
+- Top-level imports first, then types, then code. No mid-file imports.
+
+## File naming
+
+- Files: `kebab-case.ts`
+- React components: `PascalCase.tsx`, one component per file
+- Types: live in `types.ts` per package, or in `packages/shared/src/types.ts` if used across packages
+- Tests: `<name>.test.ts` colocated with the source file
+
+## Testing
+
+- `vitest` for everything.
+- Unit tests for pure functions and reducers.
+- Integration tests for HTTP endpoints (use supertest).
+- For the wrapper, mock `node-pty` and `simple-git` at the boundary.
+- Aim for tests that verify behavior, not implementation. Don't test private internals.
+- Don't ship a phase without tests for the happy path of every public surface added in that phase.
+
+## Dependencies
+
+- Add new dependencies sparingly. If a feature can be done with the standard library or an existing dep, prefer that.
+- Pin major versions. Use `^` for minor.
+- Document non-obvious deps in `README.md`.
+
+## When in doubt
+
+Ask the user. The spec covers the major shape; small ambiguities (naming, exact file paths, whether to log a thing or not) are fine to make a call on and note. Architectural ambiguities should be raised.
+
+## Things to be loud about
+
+If any of these come up, stop and tell the user before continuing:
+- A spec section is internally inconsistent.
+- A dependency in the spec doesn't work as described (e.g., a `claude` CLI flag doesn't exist in the installed version).
+- Something in the spec assumes a capability that isn't there (e.g., assuming Claude Code subagents can run in parallel when they can't).
+- The build is going significantly differently from the spec.
+
+Better to surface a problem at line 100 than discover it at line 5000.
+
+## Deployments
+
+The public landing page deploys from the **`docs` Vercel project** at <https://docs-olive-eight-29.vercel.app/>. It is wired to GitHub with Git integration on `main` — every push auto-deploys to production. Root Directory is set to `apps/landing` in the project settings.
+
+Do NOT:
+- Create another Vercel project for `apps/landing`. There was a duplicate `landing` project; it has been deleted.
+- Add a repo-root `vercel.json` for the landing page — the `docs` project uses default Next.js settings from `apps/landing` and does not need one.
+- Reference the old `landing-eosin-mu.vercel.app` URL anywhere; it is no longer maintained.
+
+## UI conventions (apps/ui/)
+
+The UI package (`apps/ui/`) is a Tauri v2 macOS app + Vite web frontend built with React 19 and Tailwind 4. It shares the following conventions beyond the project defaults:
+
+**Stack:**
+- React 19 + TypeScript strict
+- Tailwind 4 CSS (`@import "tailwindcss"` in `src/index.css`)
+- Vite for bundling (both dev and production)
+- Tauri v2 for the native macOS shell
+- TanStack Query for server state (cache + mutations)
+- Zustand for ephemeral UI state (selected session, active tab)
+- xterm.js for the terminal tab; @codemirror/6 for the prompt editor
+  - **xterm.js options** live in `apps/ui/src/components/Terminal.tsx`; `convertEol` must remain `false` because the PTY (`xterm-256color`) emits CRLF already. Setting it to `true` causes spinner lines to stack instead of overwrite.
+
+**Component structure:**
+- Components: `PascalCase.tsx`, one component per file
+- Tabs: under `src/components/tabs/`
+- Hooks: under `src/hooks/`
+- Utilities: under `src/lib/` (api.ts, ws.ts, markdown.tsx, diff.ts)
+- Tests colocated: `*.test.tsx` / `*.test.ts` alongside source
+
+**Testing:**
+- `vitest` + `@testing-library/react` in jsdom
+- Tests in `apps/ui/vitest.config.ts` (shared setup in `src/test-setup.ts`)
+- Mock WebSocket using `mock-socket` library; mock xterm/ResizeObserver in component tests
+
+**Workflow customization:**
+- The Workflow tab reads/writes `.team/.claude/agents/<name>.md` (session-scoped prompts) and `.team/workflow.json` (disabled/forced specialists, effort override) via wrapper API endpoints.
+- These files are read by the captain on dispatch, allowing per-session customization without touching repo-level defaults.
+
+**WebSocket protocol:**
+- Web and CLI WebSocket clients identify themselves via `{type:'hello',role:'web'|'cli'}` on connect. When any CLI client is attached, the wrapper drops `resize` messages from `web` clients so the CLI remains the authoritative dimension source. The wrapper is backwards-tolerant of legacy clients that don't send a hello (treated as `web`).
+
+## Environment
+
+- **Node**: v22 (required by pnpm 11)
+- **pnpm**: v11 (installed via homebrew)
+- **GitHub**: `gh` authenticated as `vik-srinivasan`, repo at `vik-srinivasan/my-team`
+- **Session IDs**: human-readable format (`adjective-noun-number`)

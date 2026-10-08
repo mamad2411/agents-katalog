@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/existential-birds/beagle (path: plugins/beagle-ai/skills/deepagents-code-review/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Reviews Deep Agents code for bugs, anti-patterns, and improvements. Use when reviewing code that uses create_deep_agent, backends, subagents, middleware, or human-in-the-loop patterns. Catches common 

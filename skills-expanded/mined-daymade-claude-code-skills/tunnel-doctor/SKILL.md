@@ -1,0 +1,1330 @@
+---
+name: tunnel-doctor
+description: >-
+  Diagnoses concrete tunnel and proxy-path failures across macOS and Windows/WSL:
+  Tailscale routing, proxy env/system bypass, SSH double tunneling, VM/container
+  propagation, stalled DNS, TUN DIRECT split-brain, Windows-host TUN cascades, and
+  single-hop or chained proxy node/exit throughput. Use when Tailscale ping works but
+  SSH/HTTP fails, browser returns 503 while curl works, Git SSH closes through the
+  proxy, Docker pull/build fails behind TUN, getaddrinfo stalls while nslookup is fast,
+  raw probes report physically impossible results, domestic DIRECT-routed sites fail
+  while proxied sites work, a blocked port could be your tunnel or the destination's
+  firewall, or the proxy is reachable but real downloads and full Git clones crawl. Also
+  use when Git reports "failed to begin relaying via HTTP", ssh -vvv freezes at "debug2:
+  resolving", ping works but dig times out, or setting up Tailscale SSH to WSL. Use
+  debugging-network-issues only when the root cause remains unknown or belongs to an
+  application/protocol layer.
+allowed-tools: Read, Grep, Edit, Bash
+---
+
+# Tunnel Doctor
+
+Diagnose and fix conflicts when Tailscale coexists with proxy/VPN tools on macOS, with specific guidance for SSH access to WSL instances.
+
+> **Methodology base:** the general diagnostic discipline this skill builds on — evidence over assumption, falsification over confirmation, layered isolation, counter-review — lives in the **debugging-network-issues** skill. This skill is the macOS Tailscale⨯proxy *domain* layer on top of it; reach for the base skill when the symptom is *not* a known Tailscale/proxy conflict.
+
+**Ownership boundary:** this skill owns concrete local network-path operations:
+Tailscale, route/DNS/proxy interception, VM/WSL propagation, TUN forwarding
+planes, and proxy node/exit/chain capacity. Use `debugging-network-issues` as the
+general method when the boundary is still unknown or the symptom belongs to
+SSE/CDN/application protocol behavior. This keeps one concrete operator instead
+of forcing the user to choose between two overlapping proxy doctors.
+
+## Target and task scope
+
+Before remote probes or changes, establish whether the target is a designated test machine,
+an explicitly requested colleague's working computer, or unknown. Use the owner's existing
+machine-purpose ledger and current task; do not log into a colleague's machine to classify it.
+Saved SSH access and previous successful tests do not grant ongoing use. Use designated test
+machines for routine testing; their unavailability does not authorize another person's computer.
+
+Keep an explicitly requested one-off test on a colleague's computer within its stated result
+and necessary verification. Stop there on completion, cancellation, or a need for an unapproved
+environment change. Move later performance, migration, and regression tests to designated test
+machines. A test failure does not authorize disabling that person's proxy/VPN, quitting apps,
+changing routes, or installing a background task. Proceed with disruptive repair there only
+when the user has explicitly requested that repair and its interruption. Existing authorization
+for owner test-machine maintenance remains valid; do not ask again for its routine steps.
+
+Apply this boundary even when invoked directly, through another Skill, after compaction, or
+through a peer handoff. After access is stopped, use existing records rather than another SSH
+probe to verify that it stopped.
+
+## Disruptive network changes
+
+Before any authorized VPN disconnect, app termination, route cutover, or service restart,
+read [network_change_recovery.md](references/network_change_recovery.md). Validate prerequisites
+before interruption, arm bounded recovery before the first disruptive action, and verify both
+the repaired path and the user's original network use. A successful stop command, a detached
+process, or a restart placed at the end of a script is not recovery evidence.
+
+## Conflict Layers
+
+Proxy/VPN tools on macOS create conflicts at several independent layers. Layers 1-3 affect Tailscale connectivity; Layer 4 affects SSH git operations; Layer 5 affects VM/container runtimes. TUN-state failure modes beyond this table — SSH/git connection drops, resolver stall, DIRECT split-brain — are covered in Steps 2H–2J:
+
+| Layer | What breaks | What still works | Root cause |
+|-------|-------------|------------------|------------|
+| 1. Route table | Everything (SSH, curl, browser) | `tailscale ping` | `tun-excluded-routes` adds `en0` route overriding Tailscale utun |
+| 2. HTTP env vars | `curl`, Python requests, Node.js fetch | SSH, browser | `http_proxy` set without `NO_PROXY` for Tailscale |
+| 3. System proxy (browser) | Browser only (HTTP 503) | SSH, `curl` (both with/without proxy) | Browser uses VPN system proxy; DIRECT rule routes via Wi-Fi, not Tailscale utun |
+| 4. SSH ProxyCommand double tunnel | `git push/pull` (intermittent) | `ssh -T` (small data) | `connect -H` creates HTTP CONNECT tunnel redundant with Shadowrocket TUN; landing proxy drops large/long-lived transfers |
+| 5. VM/Container proxy propagation | `docker pull`, `docker build` | Host `curl`, running containers | VM runtime (OrbStack/Docker Desktop) auto-injects or caches proxy config; removing proxy makes it worse (VM traffic via TUN → TLS timeout) |
+
+## Diagnostic Workflow
+
+### Step 1: Identify the Symptom
+
+Determine which scenario applies:
+
+- **Browser returns HTTP 503, but `curl` and SSH both work** → System proxy bypass conflict (Step 2C)
+- **`local.<domain>` fails in browser/default `curl`, but direct/no-proxy request works** → Local vanity domain proxy interception (Step 2C-1)
+- **Tailscale ping works, SSH works, but curl/HTTP times out** → HTTP proxy env var conflict (Step 2A)
+- **Tailscale ping works, SSH/TCP times out** → Route conflict (Step 2B)
+- **Remote dev server auth redirects to `localhost` → browser can't follow** → SSH tunnel needed (Step 2D)
+- **`make status` / scripts curl to localhost fail with proxy** → localhost proxy interception (Step 2E)
+- **`git push/pull` fails with `FATAL: failed to begin relaying via HTTP`** → SSH double tunnel (Step 2F)
+- **`docker build` `RUN apk/apt` fails with `Connection refused` instantly** → OrbStack transparent proxy + TUN conflict (Step 2G-1, fix: `--network host`)
+- **`docker pull` fails with `TLS handshake timeout`** → VM proxy misconfiguration (Step 2G-2, fix: `docker.json` with `host.internal`)
+- **Container healthcheck `(unhealthy)` but app runs fine** → Lowercase proxy env var leak (Step 2G-4, fix: clear `http_proxy`+`HTTP_PROXY`)
+- **`docker build` can't fetch base images** → VM/container proxy propagation (Step 2G)
+- **`docker pull` works but `docker build` still dies fetching base-image tokens (TLS/i-o timeout) on a WSL2 + Docker Desktop host, or every runbook proxy port on a Windows+v2rayN host silently died after a v2rayN upgrade** → buildkit direct-dials past the DD proxy override / v2rayN ≥7.17 LAN-port split (references/windows_host_tun_wsl_cascade.md §2026-08-23)
+- **`git clone` fails with `Connection closed by 198.18.x.x`** → two different mechanisms produce this; Step 2H separates them
+- **Every domestic/DIRECT-rule site fails at once (TLS `unexpected EOF` mid-handshake, proxy-port CONNECT returns 503, Node CLIs report `UNKNOWN_CERTIFICATE_VERIFICATION_ERROR`) while proxied overseas sites keep working** → TUN DIRECT split-brain (Step 2J)
+- **Everything on macOS fails at once — domestic AND overseas, and even Step 2J's real-IP probe fails** → do not declare an outage yet; run the physical-interface discriminator in "TUN full-stall vs genuine outage" (above Step 2A)
+- **SSH connects but `operation not permitted`** → Tailscale SSH config issue (Step 4)
+- **SSH connects but `be-child ssh` exits code 1** → WSL snap sandbox issue (Step 5)
+- **TCP port 22 reachable (`nc -z` succeeds) but SSH fails with `kex_exchange_identification: Connection closed`** → Tailscale SSH proxy intercept on WSL (Step 5A)
+- **Same `kex_exchange_identification` / `Connection closed by UNKNOWN port 65535`, but there is no Tailscale — you are behind a TUN and the host is a public cloud VM whose HTTPS still works** → could be your TUN *or* the destination's firewall allowlist; they are indistinguishable from the client. Step 2K settles it out-of-band
+- **`tailscale ssh` returns "not available on App Store builds"** → Wrong Tailscale distribution on macOS (Step 5B)
+- **Any tool using system DNS (`ssh`, `curl`, `git`) hangs ~60s before resolving, but `nslookup` returns instantly** → Stalled resolver in `getaddrinfo` chain (Step 2I)
+- **Windows+WSL host: everything offline at once (domestic AND overseas), WSL dead too, "even Tailscale won't come online" — and/or the user tried several recovery actions (switched NICs, toggled TUN) and can't tell which one fixed it** → Windows host TUN cascade + event-log forensics (Step 5C)
+- **Tailscale, DNS, route ownership, and proxy reachability all pass, but large transfers remain slow and switching the active proxy node changes throughput** → proxy node / exit / chain capacity workflow in [references/proxy_node_chain_throughput.md](references/proxy_node_chain_throughput.md)
+- **You want one app's bulk traffic (BaiduNetdisk downloads, Feishu/Lark uploads) off the metered proxy — or out of the status-bar counter entirely** → not a conflict; a splitting task. On this Mac the `shadowrocket-splitting` skill owns the whole workflow (target list, replay, CIDR capture, wipe guard); the mechanism background is [references/proxy_conflict_reference.md](references/proxy_conflict_reference.md) § "Per-app traffic splitting on macOS" — which of the three mechanisms (DIRECT rule / `tun-excluded-routes` / `always-real-ip`) can work for the app depends on whether it connects to literal IPs or the system resolver, and the DNS-layer keys are inert on the macOS Catalyst build.
+
+**Key distinctions**:
+- SSH does NOT use `http_proxy`/`NO_PROXY` env vars. If SSH works but HTTP doesn't → Layer 2.
+- `curl` uses `http_proxy` env var, NOT the system proxy. Browser uses system proxy (set by VPN). If `curl` works but browser doesn't → Layer 3.
+- If `tailscale ping` works but regular `ping` doesn't → Layer 1 (route table corrupted).
+- If `ssh -T git@github.com` works but `git push` fails intermittently → Layer 4 (double tunnel).
+- If host `curl https://...` works but `docker pull` times out → Layer 5 (VM proxy propagation).
+- If `docker pull` works but `docker build` `RUN apk add` fails instantly with `Connection refused` → OrbStack transparent proxy broken by TUN (Step 2G-1).
+- If container healthcheck shows `(unhealthy)` but app works → lowercase `http_proxy` leaked into container (Step 2G-4).
+- If DNS resolves to `198.18.x.x` virtual IPs → a TUN is active, which is **not** by itself a diagnosis: under TUN every hostname resolves this way, on success as well as failure. Go to Step 2H to find out which mechanism you have.
+- If connections to fake-IP-resolved domains die but the same host works via `curl --resolve <host>:443:<real-ip>` (real IP from `dig @<public-resolver>`) → the TUN tool's DIRECT forwarding state is broken, not your network and not the destination (Step 2J).
+- If `nc -z` succeeds on port 22 but SSH gets no banner (`kex_exchange_identification`) → Tailscale SSH proxy intercept (Step 5A). Confirm with `tcpdump -i any port 22` on the remote — 0 packets means Tailscale intercepts above the kernel.
+- If `nc -z` also succeeds on a port the destination does **not** serve (probe 65001) → under a TUN the local stack answers for the destination, so **no `nc -z` result on that host means anything**. Never read a port probe you have not calibrated this way. This supersedes the plain `nc -z` reading in the bullet above whenever a TUN — not just Tailscale — is in the path (Step 2K).
+- If the destination's own `journalctl -u ssh` shows **zero** entries for your attempts → something before `sshd` is eating them, but **not necessarily the network**: a host-local packet filter drops them just as silently. `tcpdump` on the host separates "never arrived" from "arrived and was dropped locally"; only the first implicates your TUN. Reach the machine through the cloud provider's guest-agent channel to ask, since that path does not use the port you cannot reach. Check the journal, not `auth.log`: on Ubuntu 24.04 `sshd` writes nothing to `auth.log`, so an empty file there is not evidence (Step 2K).
+- A cloud host enforces an inbound port **twice** — provider security group *and* host firewall (`ufw`/`firewalld`/`nftables`). Adding your IP to one leaves the other blocking, with no signal that you only did half the job (Step 2K).
+- If `tailscale ssh` fails with "not available on App Store builds" → install Standalone Tailscale (Step 5B).
+- If `nslookup <host>` is fast (<0.1s) but `dscacheutil -q host -a name <host>` takes 60s+ → a supplemental resolver in `scutil --dns` is dead (Step 2I).
+- If `ping <resolver-ip>` succeeds but `dig @<resolver-ip>` times out → daemon dead, `utun` interface zombied. ICMP is answered by the interface; the actual port-53 service is gone (Step 2I).
+- If `ssh -vvv` hangs immediately after `debug2: resolving "<host>" port <port>` and never reaches `debug1: connect to address` → DNS resolution stage, not network connect stage. This is Step 2I, not Step 2B/2H.
+
+### Diagnosis Discipline (Read Before Committing to a Hypothesis)
+
+When symptoms point at a component (proxy, VPN, route table, DNS), **don't commit to a hypothesis from circumstantial evidence — verify with that component's own health endpoint first.** Each component has a one-line health check faster and more reliable than ruling out neighbors:
+
+| Suspected component | Authoritative health check (run this first) |
+|---------------------|---------------------------------------------|
+| HTTP proxy (Shadowrocket / Clash / Surge) | `curl -x http://127.0.0.1:<port> -m 10 https://api.github.com` returns 200 |
+| Tailscale daemon | `tailscale status` returns peer list (not connection error) |
+| A specific DNS resolver | `dig @<nameserver-ip> +tries=1 +timeout=3 example.com` <100ms |
+| Routing for an IP | `route -n get <ip>` shows expected interface |
+| Per-resolver bisection (when DNS is suspect) | The `for ns in ...; do dig @$ns ...` loop in Step 2I |
+
+**Why this matters**: A symptom that matches the description of Step 2X does not, by itself, prove component X is the problem. Multiple layers can produce overlapping symptoms (a 60-second hang during `git push` could be proxy node death, fakeip route corruption, or DNS resolver stall — all plausible from the user-visible symptom alone). Reaching for the most specific verification first avoids committing to a wrong layer and chasing it down a dead end.
+
+If the failing operation involves DNS at all, **run the per-nameserver bisection from Step 2I before suspecting proxy or routing**. It rules in/out the largest single class of macOS-on-China-network failures in under 15 seconds.
+
+### TUN Measurement Contamination (what your probes lie about while a TUN proxy is up)
+
+When a proxy tool runs in **TUN / global mode** (Shadowrocket, Clash, Surge), it intercepts traffic at the routing layer and fabricates parts of the network stack locally. Several everyday diagnostic commands then return **fabricated or misrouted numbers** — trusting them sends the whole investigation the wrong way. Know what each probe actually measures under TUN:
+
+| Probe | What it looks like | What it actually is under TUN | Trust? |
+|-------|-------------------|-------------------------------|--------|
+| `nc -z <node-ip> <port>` / raw TCP connect showing `0.00s` | "node reachable, instant" | TUN completes the TCP handshake **locally** before tunneling. `0.00s` to an overseas host is physically impossible (light alone is tens of ms each way) — you connected to the TUN, not the node. | ❌ |
+| `ping <host>` with near-zero loss / sub-ms RTT | "link healthy" | TUN can answer ICMP locally; loss and RTT are fabricated and uncorrelated with TCP. (Separately: ICMP ≠ TCP even with no TUN.) | ❌ |
+| `curl … -w '%{remote_ip}'` | "connected to peer X" | Always the local TUN endpoint (`127.0.0.1` / loopback), never the real remote peer. | ❌ |
+| IP-geo lookup via a **foreign** service (an `ip-api`-style endpoint) | "my egress / home IP is …" | A foreign-domain request gets routed **through the proxy**, so it reports the **exit IP**, not your real local/home IP. | ❌ for "what is my real local IP" |
+| IPv4-vs-IPv6 path choice, HTTP/3 / QUIC speedup | varies | TUN typically does not forward UDP/443, so QUIC never leaves. The comparison is meaningless. | ❌ |
+
+**What you *can* trust under TUN:**
+- **`time_appconnect` / `time_starttransfer`** from `curl` (application-layer handshake / TTFB) — these complete only after the tunneled connection actually establishes, so they reflect the real end-to-end path.
+- **An in-region / domestic IP-geo source** for "what is my real local ISP" — an in-region domain hits the proxy's DIRECT rule and exits your real last mile (the foreign source gets tunneled and lies; see table).
+- **The proxy/TUN config decoded from disk + the tool's own GUI** — the authoritative source of which node/route is actually active. Cross-check a file parse against the GUI; do not infer the active node from a network probe.
+
+**Counter-move**: before citing any latency / reachability number while a TUN is up, ask *"would this number be physically possible if the packet really traversed to the destination?"* A `0.00s` connect or a `0.2ms` ping to another continent is the tell that you measured the TUN, not the network. Switch to `time_appconnect`, or temporarily disable the TUN to get a clean baseline (raw probes become meaningful again once it is off).
+
+### TUN full-stall vs genuine outage (when EVERYTHING fails, prove the wire is dead before standing down)
+
+The contamination table has a systemic limit: every probe that goes *through* the TUN shares one fate. That includes "real-IP" probes (`dig @<resolver>` + `curl --resolve`) — the TUN intercepts UDP/53 too. When the TUN's forwarder stalls completely, domain probes, real-IP probes and proxied probes all fail together, and the picture is **indistinguishable from a genuine physical outage**. A watchdog or investigator that reads "all probes dead" as "the network is down" will stand down through a recoverable TUN stall — or worse, blame the router (observed 2026-09-10: a proxy health daemon recorded 13 "genuine network outage, standing down" windows in one day; the layer was never proven either way until a physical-path probe was added).
+
+The discriminator is a probe that **bypasses the TUN entirely** — bind the physical interface (curl `--interface` = `IP_BOUND_IF`, scoped routes take the packet straight out the physical NIC):
+
+```bash
+# 1) Find the physical interface that actually carries the LAN. Do NOT use
+#    `route -n get default` here — under TUN it answers with the utun itself.
+for i in en0 en1 en2 en3; do
+  addr=$(ipconfig getifaddr $i 2>/dev/null) && echo "$i $addr"
+done
+ping -c 1 -t 2 <gateway-ip>   # sanity: is the LAN itself alive at all
+
+# 2) Probe bare-IP targets through that interface — two independent ones.
+#    Both verified answering on a healthy link 2026-09-10 (AliDNS 443 → 404,
+#    DNSPod 80 → 404). Targets rot: 114.114.114.114 and 180.76.76.76 returned
+#    000 on a healthy wire that same day — re-verify a target before trusting it.
+for u in "https://223.5.5.5/" "http://119.29.29.29/"; do
+  curl -s --noproxy '*' --interface en0 -k --connect-timeout 3 --max-time 6 \
+    -o /dev/null -w "$u: %{http_code}\n" "$u"
+done
+```
+
+- Any non-`000` answer (even 404) → the physical path (NIC → AP → gateway → ISP) is alive and the TUN is the suspect: reconnect the tunnel **under the [recovery contract](references/network_change_recovery.md)** (the disconnect/connect mechanism lives in Step 2J) — do not stand down, do not reboot the router.
+- `000` from **both** targets → a genuine outage is earned. A single target's 000 proves only that target: enterprise/campus egress whitelists and resolver-side changes each produce a lone 000 on a healthy wire.
+
+Calibrate before trusting: on a healthy link each answer arrives in ~0.1s; a deliberately wrong interface must fail — `--interface en9` returns `000` with a nonzero exit (45 when the interface doesn't exist, 7/28 when it exists but is down or unrouted — the `000`, not the exit number, is the signal).
+
+### Fast Path: Run Automated Checks
+
+For common macOS conflicts (env proxy, system proxy exceptions, direct/proxy path split, local TLS trust), run:
+
+```bash
+python3 scripts/quick_diagnose.py --host local.example.com --url https://local.example.com/health
+```
+
+Optional route ownership check for a Tailscale destination:
+
+```bash
+python3 scripts/quick_diagnose.py --host <target-host> --url http://<target-host>:<port>/health --tailscale-ip <100.x.x.x>
+```
+
+Interpretation:
+- `direct=PASS` + `forced_proxy=FAIL` = host must bypass proxy (`skip-proxy` + `NO_PROXY`).
+- `strict_tls=FAIL` + `direct=PASS` = path is reachable; trust issue only (install/trust local CA).
+- `host in scutil exceptions: no` = browser/system clients still likely proxied.
+
+### Step 2A: Fix HTTP Proxy Environment Variables
+
+Check if proxy env vars are intercepting Tailscale HTTP traffic:
+
+```bash
+env | grep -i proxy
+```
+
+**Broken output** — proxy is set but `NO_PROXY` doesn't exclude Tailscale:
+```
+http_proxy=http://127.0.0.1:1082
+https_proxy=http://127.0.0.1:1082
+NO_PROXY=localhost,127.0.0.1          ← Missing Tailscale!
+```
+
+**Fix** — add Tailscale MagicDNS domain + CIDR to `NO_PROXY`:
+
+```bash
+export NO_PROXY=localhost,127.0.0.1,.ts.net,100.64.0.0/10,192.168.*,10.*,172.16.*
+```
+
+| Entry | Covers | Why |
+|-------|--------|-----|
+| `.ts.net` | MagicDNS domains (`host.tailnet.ts.net`) | Matched before DNS resolution |
+| `100.64.0.0/10` | Tailscale IPs (`100.64.*` – `100.127.*`) | Precise CIDR, no public IP false positives |
+| `192.168.*,10.*,172.16.*` | RFC 1918 private networks | LAN should never be proxied |
+
+**Two layers complement each other**: `.ts.net` handles domain-based access, `100.64.0.0/10` handles direct IP access.
+
+**NO_PROXY syntax pitfalls** — see [references/proxy_conflict_reference.md](references/proxy_conflict_reference.md) for the compatibility matrix.
+
+**Go `net/http` CIDR caveat**: Go's standard `net/http` does NOT support CIDR notation in `NO_PROXY`. Setting `NO_PROXY=100.64.0.0/10` works for curl and Python, but Go programs (including Tailscale-adjacent tooling) will still send traffic through the proxy. The fix is to use MagicDNS hostnames (e.g., `my-wsl-box`) instead of raw IPs, or add explicit hostnames to `NO_PROXY`:
+
+```bash
+# WRONG for Go programs — CIDR is silently ignored
+NO_PROXY=100.64.0.0/10 go-program http://100.101.102.103:8002/health  # → goes through proxy
+
+# CORRECT — use hostname (matched as suffix) or explicit IP
+export NO_PROXY=localhost,127.0.0.1,.ts.net,my-wsl-box,100.101.102.103,192.168.*,10.*,172.16.*
+```
+
+This is especially relevant when accessing Tailscale services from Go-based tools (e.g., custom CLIs, Go test suites hitting remote APIs).
+
+Verify the fix:
+
+```bash
+# Both must return HTTP 200:
+NO_PROXY="...(new value)..." curl -s --connect-timeout 5 http://<host>.ts.net:<port>/health -w "HTTP %{http_code}\n"
+NO_PROXY="...(new value)..." curl -s --connect-timeout 5 http://<tailscale-ip>:<port>/health -w "HTTP %{http_code}\n"
+```
+
+Then persist in shell config (`~/.zshrc` or `~/.bashrc`).
+
+### Step 2B: Detect Route Conflicts
+
+Check if a proxy tool hijacked the Tailscale CGNAT range:
+
+```bash
+route -n get <tailscale-ip>
+```
+
+**Healthy output** — traffic goes through Tailscale interface:
+```
+destination: 100.64.0.0
+interface: utun7    # Tailscale interface (utunN varies)
+```
+
+**Broken output** — proxy hijacked the route:
+```
+destination: 100.64.0.0
+gateway: 192.168.x.1    # Default gateway
+interface: en0           # Physical interface, NOT Tailscale
+```
+
+**Important**: Not all `utun` interfaces are Tailscale's. Verify which utun belongs to Tailscale before concluding the route is correct:
+
+```bash
+# Find Tailscale's utun interface (has a 100.x.x.x IP)
+ifconfig | grep -A2 'inet 100\.'
+```
+
+Quick indicators by MTU:
+- **MTU 1280** → typically Tailscale
+- **MTU 4064** → typically Shadowrocket TUN
+
+If `route -n get` shows traffic going to a utun with MTU 4064, it is hitting Shadowrocket's TUN, not Tailscale — this is still a route conflict even though the interface name starts with `utun`.
+
+Confirm with full route table:
+
+```bash
+netstat -rn | grep 100.64
+```
+
+Two competing routes indicate a conflict:
+```
+100.64/10  192.168.x.1   UGSc  en0       ← Proxy added this (wins)
+100.64/10  link#N        UCSI  utun7     ← Tailscale route (loses)
+```
+
+**Root cause**: On macOS, `UGSc` (Static Gateway) takes priority over `UCSI` (Cloned Static Interface) for the same prefix length.
+
+### Step 2C: Fix System Proxy Bypass (Browser 503)
+
+**Symptom**: Browser shows HTTP 503 for `http://<tailscale-ip>:<port>`, but both `curl --noproxy '*'` and `curl` (with proxy env var) return 200. SSH also works.
+
+**Root cause**: The browser uses the system proxy configured by the VPN profile (Shadowrocket/Clash/Surge). The proxy matches `IP-CIDR,100.64.0.0/10,DIRECT` and tries to connect directly — but "directly" means via the Wi-Fi interface (en0), NOT through Tailscale's utun interface. The proxy process itself doesn't have a route to Tailscale IPs, so the connection fails with 503.
+
+**Diagnosis**:
+
+```bash
+# curl with proxy env var works (curl connects to proxy port, but traffic flows differently)
+curl -s -o /dev/null -w "%{http_code}" http://<tailscale-ip>:<port>/
+# → 200
+
+# Browser gets 503 because it goes through the VPN system proxy, not http_proxy env var
+```
+
+**Fix** — add Tailscale CGNAT range to `skip-proxy` in the proxy tool config:
+
+For Shadowrocket, in `[General]`:
+```
+skip-proxy = 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 100.64.0.0/10, localhost, *.local, captive.apple.com
+```
+
+`skip-proxy` tells the system "bypass the proxy entirely for these addresses." The browser then connects directly through the OS network stack, where Tailscale's routing table correctly handles the traffic.
+
+**Why `skip-proxy` works but `tun-excluded-routes` doesn't**:
+- `skip-proxy`: Bypasses the HTTP proxy layer only. Traffic still flows through the TUN interface and Tailscale utun handles it. Safe.
+- `tun-excluded-routes`: Removes the CIDR from the TUN routing entirely. This creates a competing `en0` route that overrides Tailscale. Breaks everything.
+
+#### Step 2C-1: Fix Local Vanity Domain Interception (`local.<domain>`)
+
+**Symptom**: `https://local.<domain>` fails in browser or default `curl`, but succeeds with direct/no-proxy command:
+
+```bash
+env -u http_proxy -u https_proxy curl -k -I https://local.<domain>/health
+# -> 200
+curl -I https://local.<domain>/health
+# -> proxy CONNECT then TLS reset/failure
+```
+
+**Root cause**: The domain is routed through system/shell proxy instead of local direct path.
+
+**Fix**:
+1. Add domain to proxy app bypass list (`skip-proxy` for Shadowrocket).
+2. Add domain to shell bypass list (`NO_PROXY`/`no_proxy`).
+3. If local TLS uses internal CA, trust the local root certificate.
+
+```bash
+# ~/.zshrc
+export NO_PROXY=localhost,127.0.0.1,.ts.net,100.64.0.0/10,192.168.*,10.*,172.16.*,local.<domain>,www.local.<domain>
+export no_proxy="$NO_PROXY"
+```
+
+**Verification**:
+
+```bash
+python3 scripts/quick_diagnose.py --host local.<domain> --url https://local.<domain>/health
+```
+
+Expected:
+- `host in NO_PROXY: yes`
+- `host in scutil exceptions: yes`
+- `ambient=PASS` and `direct=PASS`
+
+### Step 2D: Fix Auth Redirect for Remote Dev (SSH Tunnel)
+
+**Symptom**: Dev server runs on a remote machine (e.g., Mac Mini via Tailscale). You access `http://<tailscale-ip>:3010` in the browser. Login/signup works, but after auth, the app redirects to `http://localhost:3010/` which fails — `localhost` on your machine isn't running the dev server.
+
+**Root cause**: The app's `APP_URL` (or equivalent) is set to `http://localhost:3010`. Auth libraries (Better-Auth, NextAuth, etc.) use this URL for callback redirects. Changing `APP_URL` to the Tailscale IP introduces Shadowrocket proxy conflicts and breaks local development on the remote machine.
+
+**Fix** — SSH local port forwarding. This avoids all three conflict layers entirely:
+
+```bash
+# Forward local port 3010 to remote machine's localhost:3010
+ssh -NL 3010:localhost:3010 <tailscale-ip>
+
+# Or with autossh for auto-reconnect (recommended for long sessions)
+autossh -M 0 -f -N -L 3010:localhost:3010 \
+    -o "ServerAliveInterval=30" \
+    -o "ServerAliveCountMax=3" \
+    -o "ExitOnForwardFailure=yes" \
+    <tailscale-ip>
+```
+
+Now access `http://localhost:3010` in the browser. Auth redirects to `localhost:3010` → tunnel → remote dev server → works correctly.
+
+**Why this is the best approach**:
+- No `.env` changes needed — `APP_URL=http://localhost:3010` works everywhere
+- No Shadowrocket conflicts — `localhost` is always in `skip-proxy`
+- No code changes — same behavior as local development
+- Industry standard — VS Code Remote SSH, GitHub Codespaces use the same pattern
+
+**Install autossh**: `brew install autossh` (macOS) or `apt install autossh` (Linux)
+
+**Kill background tunnel**: `pkill -f 'autossh.*<tailscale-ip>'`
+
+### Step 2E: Fix localhost Proxy Interception in Scripts
+
+**Symptom**: Makefile targets or scripts that `curl` localhost (health checks, warmup routes) fail or timeout when `http_proxy` is set globally in the shell.
+
+**Root cause**: `http_proxy=http://127.0.0.1:1082` is set in `~/.zshrc` but `no_proxy` doesn't include `localhost`. All curl commands send localhost requests through the proxy.
+
+**Fix** — add `--noproxy localhost` to all localhost curl commands in scripts:
+
+```makefile
+# WRONG — fails when http_proxy is set
+@curl -sf http://localhost:9000/minio/health/live && echo "OK"
+
+# CORRECT — always bypasses proxy for localhost
+@curl --noproxy localhost -sf http://localhost:9000/minio/health/live && echo "OK"
+```
+
+Alternatively, set `no_proxy` globally in `~/.zshrc`:
+
+```bash
+export no_proxy=localhost,127.0.0.1
+```
+
+### Step 2F: Fix SSH ProxyCommand Double Tunnel (git push/pull failures)
+
+**Symptom**: `ssh -T git@github.com` succeeds consistently, but `git push` or `git pull` fails intermittently with:
+
+```
+FATAL: failed to begin relaying via HTTP.
+Connection closed by UNKNOWN port 65535
+```
+
+Small operations (auth, fetch metadata) work; large data transfers fail.
+
+**Root cause**: When Shadowrocket TUN is active, it already routes all TCP traffic through its VPN tunnel. If SSH config also uses `ProxyCommand connect -H`, data flows through two proxy layers — the landing proxy drops large/long-lived HTTP CONNECT connections.
+
+**Diagnosis**:
+
+```bash
+# 1. Confirm Shadowrocket TUN is active
+ifconfig | grep '^utun'
+
+# 2. Check SSH config for ProxyCommand
+grep -A5 'Host github.com' ~/.ssh/config
+
+# 3. Confirm: removing ProxyCommand fixes push
+GIT_SSH_COMMAND="ssh -o ProxyCommand=none" git push origin main
+```
+
+**Fix** — remove ProxyCommand and switch to `ssh.github.com:443`. See [references/proxy_conflict_reference.md § SSH ProxyCommand and Git Operations](references/proxy_conflict_reference.md) for the full SSH config, why port 443 helps, and fallback options when VPN is off.
+
+### Step 2G: Fix VM/Container Runtime Proxy Propagation (Docker pull/build failures)
+
+**Symptom**: `docker pull` or `docker build` fails with `net/http: TLS handshake timeout`, `Connection refused` from Alpine/Debian repos, or `Internal Server Error` from `auth.docker.io`, while host `curl` to the same URLs works fine.
+
+**Applies to**: OrbStack, Docker Desktop, or any VM-based Docker runtime on macOS with Shadowrocket/Clash TUN active.
+
+**Root cause**: VM-based Docker runtimes (OrbStack, Docker Desktop) run the Docker daemon inside a lightweight VM. The VM's outbound traffic takes a different network path than host processes:
+
+```
+Host process (curl):   Process → TUN (Shadowrocket) → landing proxy → internet ✅
+VM process (Docker):   Docker daemon → VM bridge → host network → TUN → ??? ❌
+```
+
+The TUN handles host-originated traffic correctly but may drop or delay VM-bridged traffic (different TCP stack, MTU, keepalive behavior).
+
+**Critical distinction: `docker pull` vs `docker build` use different proxy paths**:
+
+| Operation | Proxy source | What controls it |
+|-----------|-------------|------------------|
+| `docker pull` | Docker daemon config | `~/.orbstack/config/docker.json` or `docker info` |
+| `docker build` (`RUN apt/apk`) | Build container env | `--build-arg http_proxy=...` or `--network host` |
+| `docker run` | Container env | `-e http_proxy=...` or inherited from daemon |
+
+Fixing `docker.json` alone will NOT fix `docker build` — the `RUN` commands inside the build container don't inherit daemon proxy settings.
+
+**Diagnosis** — identify which sub-problem:
+
+```bash
+# 1. Can the Docker daemon pull images?
+docker pull --quiet alpine:latest 2>&1
+
+# 2. Can a RUN command inside a build reach the internet?
+docker build --no-cache - <<'EOF' 2>&1
+FROM alpine:latest
+RUN apk update && echo "APK OK"
+EOF
+
+# 3. Can a running container reach the internet?
+docker run --rm alpine:latest sh -c "apk update 2>&1 | head -3"
+```
+
+**Four sub-problems and their fixes**:
+
+#### 2G-1: `docker build` fails but host works (most common with OrbStack + Shadowrocket)
+
+**Symptom**: `RUN apk add` or `RUN apt-get install` inside `docker build` fails with `Connection refused` instantly (< 0.2s), even though host `curl` to the same URL works.
+
+**Root cause**: OrbStack's `network_proxy: auto` creates a transparent proxy inside the VM that intercepts all HTTPS traffic. When Shadowrocket TUN is also active, the transparent proxy's upstream connection breaks — it redirects HTTPS to `127.0.0.1` inside the VM, which has nothing listening.
+
+**Diagnosis**:
+
+```bash
+# Verify: inside the container, HTTPS goes to 127.0.0.1 (broken transparent proxy)
+docker run --rm alpine:latest sh -c "wget -q --timeout=5 -O /dev/null https://dl-cdn.alpinelinux.org/ 2>&1"
+# → "wget: can't connect to remote host (127.0.0.1): Connection refused"
+#                                        ^^^^^^^^^^^^ This is the smoking gun
+
+# Verify: --network host bypasses the VM bridge and works
+docker run --rm --network host alpine:latest sh -c "apk update 2>&1 | head -3"
+# → "v3.23.x ... OK: 27431 distinct packages available"  ← Works!
+```
+
+**Fix** — use `--network host` for docker build:
+
+```bash
+docker build --network host -f Dockerfile -t myimage .
+```
+
+This bypasses OrbStack's VM network bridge entirely. The build container uses the host's network stack directly, where Shadowrocket TUN correctly handles traffic.
+
+**Trade-off**: `--network host` disables build-time network isolation. For CI/CD, prefer fixing the proxy config (2G-2). For local development, `--network host` is the pragmatic fix.
+
+**Permanent fix** — if all your builds need this, add to `~/.docker/daemon.json` or use a shell alias:
+
+```bash
+# Shell alias (add to ~/.zshrc)
+alias docker-build='docker build --network host'
+```
+
+#### 2G-2: OrbStack auto-detects and caches proxy config
+
+OrbStack's `network_proxy: auto` reads `http_proxy` from the shell environment and configures the Docker daemon. The config is stored in `~/.orbstack/config/docker.json`.
+
+**Key behaviors**:
+- `network_proxy: auto` — OrbStack reads host env, creates transparent proxy in VM
+- `network_proxy: none` — Disables transparent proxy, but VM bridge traffic still routes through TUN (may timeout)
+- `docker.json` — Controls `docker pull` proxy, NOT `docker build` RUN commands
+
+**Diagnosis**:
+
+```bash
+# Check all three layers
+echo "=== OrbStack config ==="
+orbctl config get network_proxy
+
+echo "=== docker.json (daemon proxy) ==="
+cat ~/.orbstack/config/docker.json
+
+echo "=== Docker info (effective proxy) ==="
+docker info | grep -iE "proxy|No Proxy"
+```
+
+**Fix** — configure `docker.json` with `host.internal` (OrbStack resolves this to the host IP):
+
+```bash
+python3 -c "
+import json, os
+config = {
+    'proxies': {
+        'http-proxy': 'http://host.internal:1082',
+        'https-proxy': 'http://host.internal:1082',
+        'no-proxy': 'localhost,127.0.0.1,::1,192.168.128.0/24,100.64.0.0/10,host.internal,*.local'
+    }
+}
+path = os.path.expanduser('~/.orbstack/config/docker.json')
+json.dump(config, open(path, 'w'), indent=2)
+print('Written:', path)
+"
+
+# Full restart required
+orbctl stop && sleep 3 && orbctl start
+```
+
+**Important**: Use `host.internal` (OrbStack-specific), NOT `127.0.0.1` (points to VM loopback) and NOT `host.docker.internal` (may not resolve in all contexts).
+
+**Why NOT remove the proxy**: When TUN is active, removing the Docker proxy means VM traffic goes directly through the bridge → TUN path, which causes TLS handshake timeouts. The proxy provides a working outbound channel.
+
+#### 2G-3: Removing proxy makes Docker worse (counter-intuitive)
+
+| Docker config | Traffic path | Result |
+|---------------|-------------|--------|
+| Proxy ON (`127.0.0.1`), no `no-proxy` | Docker → VM proxy → ??? | `docker pull` may work, localhost probes ❌ |
+| Proxy ON (`host.internal`), + `no-proxy` | External: Docker → host proxy → internet; Local: direct | **Both work ✅** |
+| Proxy OFF (`network_proxy: none`) | Docker → VM bridge → host → TUN → internet | TLS timeout ❌ |
+| **`--network host` (build only)** | **Build container → host network → TUN → internet** | **Build works ✅** |
+
+**Decision tree**:
+- `docker pull` broken → Fix `docker.json` with `host.internal` proxy (2G-2)
+- `docker build` broken → Use `--network host` (2G-1) OR pass `--build-arg http_proxy=http://host.internal:1082`
+- Both broken → Fix both: `docker.json` + `--network host`
+
+#### 2G-4: Deploy scripts and container healthchecks probe localhost through proxy
+
+Deploy scripts that `curl localhost` inside containers or Docker healthchecks that use `wget http://localhost` will route through the proxy if env vars leak into the container.
+
+**Common symptoms**:
+- Container healthcheck shows `(unhealthy)` but the app inside is running fine
+- `wget: can't connect to remote host (127.0.0.1): Connection refused` in healthcheck logs (proxy port, not app port)
+
+**Root cause**: Docker inherits uppercase AND lowercase proxy env vars from the host. Many tools only clear uppercase (`HTTP_PROXY=`) but forget lowercase (`http_proxy=http://127.0.0.1:1082`). The healthcheck `wget` uses lowercase.
+
+**Fix in docker-compose.yml** — clear BOTH cases:
+
+```yaml
+environment:
+  # Must clear both uppercase and lowercase — wget/curl check different vars
+  - HTTP_PROXY=
+  - HTTPS_PROXY=
+  - http_proxy=
+  - https_proxy=
+  - NO_PROXY=*
+  - no_proxy=*
+```
+
+**Fix in deploy scripts**:
+
+```bash
+_local_bypass="localhost,127.0.0.1,::1"
+export NO_PROXY="${_local_bypass}${NO_PROXY:+,${NO_PROXY}}"
+export no_proxy="$NO_PROXY"
+
+# Use 127.0.0.1 instead of localhost in probe URLs (some proxy implementations
+# only match exact string "localhost" in no-proxy, not the resolved IP)
+curl http://127.0.0.1:3001/health   # ✅ bypasses proxy
+curl http://localhost:3001/health    # ❌ may still go through proxy
+```
+
+**Verify the fix**:
+
+```bash
+# Docker proxy check (should show proxy + no-proxy)
+docker info | grep -iE "proxy|No Proxy"
+
+# Pull test
+docker pull --quiet hello-world
+
+# Build test (the real verification)
+docker build --network host --no-cache - <<'EOF'
+FROM alpine:latest
+RUN apk update && echo "BUILD OK"
+EOF
+
+# Container env check (no proxy leak)
+docker exec <container> env | grep -i proxy
+# Expected: all empty or not set
+```
+
+### Step 2H: SSH/Git Failing Through a TUN (`Connection closed by 198.18.x.x`)
+
+**Symptom**: `git clone/fetch/push` fails with `Connection closed by 198.18.0.x port 443`. `ssh -T git@github.com` may also fail. DNS resolution returns `198.18.x.x` addresses instead of real IPs.
+
+**First, a warning about this symptom**: the `198.18.x.x` in the error message is **not evidence that fake-IP caused the failure**. Under TUN, *every* hostname resolves to a fake IP, so that address appears in the error whether the connection failed for this reason or any other. It tells you a TUN is active — nothing more. Two very different mechanisms produce an identical error line, and they need opposite fixes:
+
+| | (A) Protocol-aware mishandling | (B) Episodic forwarding-path instability |
+|---|---|---|
+| Claim | TUN sees port 443, expects HTTPS, drops the SSH handshake | The tunnel's forwarding path drops connections in bursts, regardless of protocol, port, or destination |
+| Predicts | SSH-over-443 fails **deterministically**; HTTPS through the same proxy is fine | SSH and HTTPS both fail at a **similar rate**, in time-clustered windows |
+| Correct fix | Route SSH around the TUN | Retry — the next connection usually succeeds |
+
+**Tell them apart before doing anything** — run the *same* proxy path with plain HTTPS to an unrelated host, enough times to see a rate rather than an anecdote:
+
+```bash
+# Same proxy, plain HTTPS, unrelated destination — does it also fail?
+for i in $(seq 1 40); do
+  curl -s -o /dev/null -x http://127.0.0.1:<proxy-port> \
+       -w '%{http_code}\n' -m 10 https://www.google.com/generate_204
+done | sort | uniq -c
+```
+
+- Some HTTPS requests fail too (`000`) at a rate comparable to your SSH failures → **(B)**. The failure is not protocol- or port-specific. Rerouting SSH will not help, because the thing dropping connections is upstream of the protocol.
+- HTTPS is 100% clean across many trials while SSH reliably fails → **(A)**, and the DIRECT-rule fix below is warranted.
+
+One measured data point for (B), so the rate is concrete rather than hand-waved: on a macOS host running Shadowrocket in TUN mode, `ssh -T git@github.com` succeeded 20/20 in a good window and failed roughly 15–20% of attempts in a bad one — while plain HTTPS through the explicit proxy to an unrelated host failed at a comparable rate in the same window. Same-day `git push` failed twice in a row and then succeeded on the third try, unchanged. That machine was (B), so the port-443 story did not survive contact with the measurement. **This is one host, not a universal refutation** — run the test above and find out which one you have.
+
+**Fix for (B) — retry, and make it automatic.** The failure is episodic, so the cheapest correct response is to try again. Make it transparent at git's transport layer rather than remembering to re-run commands:
+
+```bash
+git config --global core.sshCommand /path/to/ssh-retry-wrapper.sh
+```
+
+Two things that wrapper must get right:
+
+- **Only retry failures that happen before key exchange completes.** Match on stderr signatures such as `kex_exchange_identification`, `Connection closed|reset by <host> port <n>`, and `Connection timed out during banner exchange`. If key exchange never completed, ssh never ran the remote command, so git received zero protocol bytes and reopening the connection is invisible to it. A mid-transfer drop carries none of those signatures and **must** pass through untouched — retrying there is what corrupts things.
+- **Don't reach for `ConnectionAttempts` instead; it does not work here.** It retries only the TCP connect phase, and under TUN the handshake completes *locally* no matter what the destination does — so connect always "succeeds" and the failure lands afterwards, in the banner exchange. Measured with a listener that accepts and immediately closes: `ConnectionAttempts=1`, `3`, and `5` all produced exactly **one** accept.
+
+⚠️ Beware stacking retries. If a wrapper script or cron job already retries pushes, adding a transport-layer retry underneath multiplies them (5 × 3 = 15 connections), and the outer layer's logs will undercount actual connection attempts.
+
+**(C) "The SSH channel is down entirely" — a verdict shape to resist, not a mechanism.** A window of back-to-back SSH failures (`ssh.github.com:443` banner timeouts, port 22 also `Connection closed`) with HTTPS 100% clean looks like a new mechanism. It isn't: re-measured across windows the same host showed `ssh -T git@github.com` succeeding 75–84% over 25 attempts — mechanism (B)'s bad-window peak all along. **N consecutive failures inside one time window are not N independent samples**: forwarding instability is time-varying, and a bad window produces 5-in-a-row failures routinely. Before concluding "the channel is dead," re-measure minutes later.
+
+How much sampling is enough depends on the **shape of the refusal**, not the count of failures. A named policy code (e.g. an API returning `KEYLESS_ACCESS_NOT_AVAILABLE`) is the endpoint *stating a rule* — a few same-session samples settle it. A challenge page, a rate limit, or a connection reset is *state* — it drifts with time and IP reputation, so a same-window losing streak counts as one sample, and only a cross-window re-measure can separate "dead" from "bad window."
+
+Two facts to keep regardless:
+
+- `nc -vz github.com 22` reporting **succeeded** proves nothing — under a TUN the local stack answers for the destination on any port. Only trust a real handshake (`ssh -T`).
+- When the retry wrapper's attempts are genuinely exhausted, the one-shot HTTPS bypass leaves shared remote config untouched: `git push https://github.com/<owner>/<repo>.git HEAD:refs/heads/main` (prefix `HTTPS_PROXY=http://127.0.0.1:<proxy-port>` if the direct attempt dies with `SSL_ERROR_SYSCALL`).
+
+**Fix for (A) — a DIRECT rule** (requires proxy tool config access), so the TUN passes this traffic through without protocol inspection:
+
+```
+IP-CIDR,140.82.112.0/24,DIRECT
+IP-CIDR,192.30.252.0/22,DIRECT
+```
+
+This degrades softly: if it doesn't help, you are back where you started.
+
+**Not recommended: hardcoding GitHub's IP in `~/.ssh/config`.** Earlier versions of this skill prescribed `HostName 140.82.112.35`. Three reasons to avoid it:
+
+1. **It goes stale, and fails hard when it does.** GitHub rotates these addresses; a dead hardcoded IP surfaces as `connection refused`, which reads like an outage. Prescribing a weekly cron job to babysit an IP is a sign the fix is in the wrong place.
+2. **It may not bypass what it claims to.** Proxy tools route by *rule*, not by whether the destination happens to be a fake IP — so unless a matching DIRECT rule exists, a literal IP takes the same forwarding path as the hostname did, and inherits the same instability.
+3. **It introduces a new `known_hosts` lookup key.** `known_hosts` is keyed by connection string, not by host key, so `[140.82.112.35]:443` is unseen and triggers a TOFU prompt — which either blocks unattended automation or pressures you into loosening `StrictHostKeyChecking`. That is a real cost paid for an uncertain benefit.
+
+If you already applied the hardcoded-IP fix and things improved, run the HTTPS test above before concluding it was the IP: episodic failures also "improve" on their own when the bad window ends.
+
+### Step 2I: Fix Stalled DNS Resolver in `getaddrinfo` Chain
+
+**Symptom**: `ssh`, `curl` (no `-x`), `git`, and any other tool using system DNS hangs ~60 seconds before resolving. `ssh -vvv` freezes immediately after:
+
+```
+debug2: resolving "<host>" port <port>
+debug3: resolve_host: lookup <host>:<port>
+```
+
+…and never reaches `debug1: connect to address`. After the wait it eventually succeeds — but every new connection pays the same penalty. `nslookup <host>` returns instantly (~10ms) but `dscacheutil -q host -a name <host>` takes 60s+.
+
+**Root cause**: macOS `getaddrinfo` consults every entry in `scutil --dns` whose `domain` filter matches (or has no filter at all). If one resolver's nameserver is unreachable but its interface is still in the routing table, `getaddrinfo` waits the full UDP retry timeout (typically 30-60s) before falling through to the next resolver. The most common real-world trigger is a tunneling daemon (Tailscale, Cisco AnyConnect, Pulse Secure) that crashed without unwinding its `utun` and DNS injection.
+
+**Why `nslookup` lies**: `nslookup` reads only `/etc/resolv.conf` (one nameserver). `dscacheutil` and `getaddrinfo` go through DirectoryService, which queries the whole resolver chain in `scutil --dns`. A divergence between these two is the smoking gun.
+
+**The "ping ok but DNS dead" trap**: `ping <resolver-ip>` may answer in <1ms even when port 53 is dead, because the `utun` interface still claims the IP and replies to ICMP locally. Don't infer resolver health from `ping`. Test the actual service: `dig @<ip> +tries=1 +timeout=3 example.com`.
+
+#### Diagnosis: Bisect by Nameserver
+
+Find the dead resolver in under 15 seconds:
+
+```bash
+# 1. Read every resolver's nameserver, interface, and matching scope
+scutil --dns | grep -E "^resolver|nameserver|domain :|search domain|if_index"
+
+# 2. Time each nameserver in isolation (3-second cap)
+for ns in <each_unique_nameserver_from_step_1>; do
+  printf "  %s: " "$ns"
+  /usr/bin/time -p dig @$ns +tries=1 +timeout=3 +short example.com 2>&1 | tr '\n' ' '
+  echo
+done
+```
+
+Healthy nameservers respond in <0.1s. The dead one returns `connection timed out; no servers could be reached` after exactly 3.01s.
+
+For IPv6 resolvers, run the same `dig @<ipv6>` test — Tailscale and several VPNs inject both v4 and v6 addresses, and either side dying produces the same symptom.
+
+#### Read Resolver Attributes — Determines Blast Radius
+
+Each `scutil --dns` resolver has attributes that decide which queries it participates in:
+
+| Attribute | Matches | Stall radius if this resolver dies |
+|-----------|---------|------------------------------------|
+| `domain : foo.com` | Only `*.foo.com` queries | Bounded — only `foo.com` lookups stall |
+| `search domain : foo` | All queries (search suffix appended) | Unbounded — every lookup stalls |
+| No `domain` field at all | All queries (default participation) | Unbounded — every lookup stalls |
+
+A dead resolver with a `domain` filter is annoying but localized. A dead resolver with no `domain` filter (very common with VPN-injected DNS like Tailscale's `100.100.100.100`) tanks every system lookup until you fix it.
+
+#### Confirm the Suspect Component
+
+Once the bisection identifies the dead nameserver, identify which app injected it (interface name in `if_index` is the strongest hint — `utun*` interfaces usually trace back to a VPN daemon).
+
+For Tailscale specifically:
+
+```bash
+tailscale status
+# Healthy: lists peers
+# Dead:    failed to connect to local Tailscale service; is Tailscale running?
+```
+
+The "failed to connect" error means the daemon process is gone but the network configuration it injected (utun interface + DNS resolver entry) hasn't been cleaned up. The same pattern applies to any VPN/tunneling tool.
+
+#### Fix
+
+Restart the responsible app at the application level so its cleanup hooks run and remove the stale interface:
+
+**Tailscale (App Store and Standalone macOS builds)**:
+
+```bash
+osascript -e 'quit app "Tailscale"' && sleep 3 && open -a Tailscale
+```
+
+For other VPN/tunneling tools, prefer a clean app-level quit (menu bar → Quit, or `osascript -e 'quit app "<name>"'`) over `kill -9`. Forced kill skips cleanup and can leave the same dead-interface state. Only escalate to `pkill -9 <name>` if the app refuses to exit normally.
+
+**Why "restart the app" beats "flush DNS cache"**: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` flushes cached results, but the resolver chain in `scutil --dns` is rebuilt from network configuration, not from the cache. The dead resolver is still there after a flush. The fix has to come from the app that registered the resolver in the first place.
+
+#### Verify End-to-End (4 Dimensions)
+
+A DNS-resolver fix is easy to half-verify. All four must pass before declaring the system path healed:
+
+```bash
+# 1. The owning daemon is back (not just its UI)
+tailscale status | head -3
+
+# 2. The previously-dead nameserver responds fast
+dig @<previously-dead-ns> +tries=1 +timeout=3 +short example.com
+# Expected: <0.1s, returns IP
+
+# 3. macOS system path is unblocked (proves getaddrinfo recovered)
+/usr/bin/time -p dscacheutil -q host -a name example.com
+# Expected: <0.1s, returns IP
+
+# 4. The original failing command works WITHOUT any workaround
+ssh -o "ProxyCommand=none" -T git@github.com
+# Expected: "Hi <user>! You've successfully authenticated..."
+```
+
+The fourth dimension is the one that matters most. If you applied a workaround during diagnosis (a `ProxyCommand` that delegates DNS to a SOCKS5 proxy, a `/etc/hosts` entry, a hardcoded IP), running the original command with the workaround disabled (`ProxyCommand=none`) is the only way to know you actually healed the system DNS path rather than just routed around it.
+
+See [references/dns_resolver_chain_stall.md](references/dns_resolver_chain_stall.md) for the full mental model of macOS resolver ordering, the IPv4-vs-IPv6 split, and a worked example walking through every diagnostic command and its real output.
+
+### Step 2J: Fix TUN DIRECT Split-Brain (domain connections die, real-IP connections work)
+
+**Symptom**: every site that the TUN tool routes DIRECT (domestic sites, cloud-provider APIs, your own API domain) fails **at the same time**, while proxied overseas sites keep working. The failures wear several disguises depending on the client:
+
+- `curl` direct: `SSL routines::unexpected eof while reading` mid-handshake
+- `curl -x http://127.0.0.1:<proxy-port>`: `CONNECT tunnel failed, response 503`
+- Node-based CLIs (Claude Code, npm, etc.): `UNKNOWN_CERTIFICATE_VERIFICATION_ERROR` with endless retries — the fake-IP↔domain table is mismapped, so the TUN forwards your SNI to the **wrong backend**, which presents another site's certificate
+- A proxy health watchdog, if you run one, keeps reporting **healthy** — see the warning below
+
+**Root cause**: the TUN tool (Shadowrocket / Clash / Surge in fake-IP mode) has two independent forwarding planes: proxied traffic (overseas, via the node) and DIRECT traffic (matched by domain rules, forwarded from the tool's own network stack). The DIRECT plane's state can break alone — DNS-over-tunnel failure, stale fake-IP table after a network change, or internal state corruption — while the proxied plane stays perfectly healthy. Everything resolved to a fake IP whose domain matches a DIRECT rule then dies inside the tool.
+
+**Diagnosis** — three commands separate this from a real network outage:
+
+```bash
+# 1. Confirm fake-IP DNS is in effect (domain resolves into 198.18.0.0/15)
+dig +short <any-direct-rule-domain>
+# → 198.18.x.x
+
+# 2. Get the real IP from a public resolver (UDP/53 usually bypasses the broken path)
+dig +short @223.5.5.5 <domain>   # or @1.1.1.1 / @8.8.8.8
+# → real address
+
+# 3. Connect by real IP with correct SNI — bypasses the fake-IP table
+curl -sS -o /dev/null -w '%{http_code}\n' --resolve <domain>:443:<real-ip> https://<domain>/
+# → normal HTTP status  ← physical network is FINE; the TUN's DIRECT state is broken
+```
+
+If step 3 also fails, this is not split-brain — but it is not a proven outage either: step 3 still rides the TUN (UDP/53 is intercepted too). Run the interface-bound physical probe in "TUN full-stall vs genuine outage" (above Step 2A); only a double-000 there earns "real local-network outage".
+
+**Fix** — when network maintenance and its interruption are authorized, restart the exact
+tunnel under the [recovery contract](references/network_change_recovery.md), then flush the OS
+DNS cache if stale fake-IP entries remain. Identify the service from its current configuration;
+never substitute the Tailscale control tunnel or terminate the proxy app as a shortcut. For
+Shadowrocket, `shadowrocket://disconnect` and `shadowrocket://connect` request transitions;
+verify the actual VPN state after each. Do not chain them with `&&`: a failure between them
+must still reach the armed recovery action. Use the corresponding API or GUI for other clients.
+
+Run `sudo killall -HUP mDNSResponder` only within the authorized maintenance scope after the
+tunnel is confirmed connected; DNS cache flushing does not restore a disconnected VPN.
+
+**Verify all four planes** — a fix that restores one plane can leave (or put) another down:
+
+```bash
+curl -sS -o /dev/null -w 'domestic direct: %{http_code}\n' --max-time 10 https://<domestic-site>/
+curl -sS -o /dev/null -w 'own DIRECT-rule domain: %{http_code}\n' --max-time 12 https://<your-api-domain>/health
+curl -sS -o /dev/null -w 'cloud API: %{http_code}\n' --max-time 10 https://<cloud-provider-endpoint>/
+curl -x http://127.0.0.1:<proxy-port> -sS -o /dev/null -w 'overseas via proxy: %{http_code}\n' --max-time 10 https://www.google.com/generate_204
+```
+
+**Watchdog blind spot**: if you run an automated proxy health checker, check what it actually probes. A watchdog that only tests an overseas endpoint through the proxy certifies the proxied plane and nothing else — in the incident that produced this section, the watchdog reported "healthy" every 5 minutes for 2+ hours while the DIRECT plane was completely down. A green health check is evidence only for the path it probes; probe each plane the tool forwards.
+
+### Step 2K: Decide Whether the Blocker Is Your Tunnel or the Destination's Firewall
+
+**Symptom**: SSH to a public host fails with `kex_exchange_identification: Connection closed by <ip>` — or `Connection closed by UNKNOWN port 65535` — while HTTPS to the *same* host keeps working. `nc -z <ip> 22` reports the port open. The method below is written for SSH; for another blocked service substitute its own port, log path and service unit throughout.
+
+**Why this needs its own step**: it looks exactly like Step 2H, and Step 2H's fix (restart the TUN, flush DNS) will not help, because the cause may not be local at all. It also looks exactly like Step 5A — but 5A is specifically Tailscale-on-WSL, while this step is for a TUN with no Tailscale in the path. The third mechanism neither of those covers is the destination's own firewall silently dropping you — at **either** of the two layers a cloud host enforces (the provider's security group outside the machine, and `ufw`/`firewalld`/`nftables` inside it). From the client, a dropped-by-allowlist connection and a TUN forwarding failure are **indistinguishable**: both show "the connection opens, then dies before the protocol banner." Under a TUN, every additional local probe produces more misleading evidence rather than less.
+
+**First: stop trusting `nc -z`.** Under a TUN the local stack completes the TCP handshake on the destination's behalf, so `nc -z` succeeds for **every** port, including ports the destination has closed. Calibrate before reading any port probe:
+
+```bash
+# Probe a port the destination certainly does NOT serve
+nc -z -G 5 -w 5 <destination-ip> 65001 && echo "nc is lying: the TUN answered for a closed port"
+# Control: an address that cannot answer at all (TEST-NET-3, RFC 5737)
+nc -z -G 5 -w 5 203.0.113.199 443 || echo "control OK: this probe can still report failure"
+```
+
+- **First line prints** → on this machine `nc -z <that host> <any port>` carries **zero information** about the destination. Continue with this step and ignore every port probe from here on.
+- **First line does not print** (and the control line does) → `nc -z` is trustworthy on this path, so this step's premise does not hold. Re-check whether a TUN is actually in play before continuing; if it is not, an open/closed port reading is real evidence and Step 2B/5A may fit better.
+
+The same trap applies to hostnames: fake-IP DNS answers for names that do not exist, so an HTTP 200 does not identify which machine served it. Calibrate that too — `dig +short @1.1.1.1 <a-name-you-just-invented>` should come back empty. If it returns an address (typically `198.18.x.x`), DNS answers are synthetic and no name-based result on this machine identifies a host.
+
+**Then ask the destination out-of-band.** The only way to settle "did my packets arrive?" is a channel that does not traverse the failing data path. On a cloud VM that is the provider's guest-agent control plane: it reaches the instance over the provider's own network, so it works even when every port you can dial is blocked.
+
+- **Alibaba Cloud** — `aliyun ecs DescribeCloudAssistantStatus --RegionId <region> --InstanceId.1 <instance-id>` (a `LastHeartbeatTime` within the last minute proves the machine is alive and its agent is healthy), then `aliyun ecs RunCommand --RegionId <region> --InstanceId.1 <instance-id> --Type RunShellScript --ContentEncoding Base64 --CommandContent <base64> --Timeout 60`, and `aliyun ecs DescribeInvocationResults --RegionId <region> --InvokeId <id>` to collect output (the `Output` field is base64). *Commands executed and verified 2026-08-30.*
+- **AWS / GCP / Azure** have equivalents (SSM Run Command, guest-agent based access, the Run Command extension). Syntax not verified here — check the provider's docs.
+- **No guest agent, or the host is not on a provider that offers one** → this step cannot settle the question; you need someone with physical or console access to read the host's logs. Do not substitute another client-side probe.
+- **Heartbeat stale or absent** → the agent or the host is down. That is a fact about the host, not evidence for either side of the tunnel-vs-firewall question; fix or investigate that first.
+
+Ask the one question that settles ownership:
+
+```bash
+# run these INSIDE the destination, through the out-of-band channel
+journalctl -u ssh -n 20 --no-pager || journalctl -u sshd -n 20 --no-pager   # unit is `ssh` on Debian/Ubuntu, `sshd` on RHEL
+grep -a sshd /var/log/auth.log 2>/dev/null | tail -20    # Debian/Ubuntu, only if rsyslog is installed
+grep -a sshd /var/log/secure   2>/dev/null | tail -20    # RHEL family
+```
+
+⚠️ **Check the journal first, and do not read an empty `auth.log` as an answer.** On Ubuntu 24.04 the file still exists and still receives `CRON` and `sudo` lines, but `rsyslog` is not installed by default and **`sshd` writes nothing to it** — measured on a live 24.04 host: 90 lines in `auth.log`, 0 of them from `sshd`, while `journalctl -u ssh` had the full record. Reading `auth.log` alone there manufactures exactly the false "no attempts arrived" this step exists to prevent.
+
+To see an attempt land in real time, run this on the host **while you retry the connection from the client** — it shows only sockets open at that instant, so it says nothing about an attempt that already failed and was torn down:
+
+```bash
+ss -tn | grep ':22 '
+```
+
+- **Entries present** → packets arrive and `sshd` is closing you. That is a server-side problem (`MaxStartups` exhaustion, `AllowUsers`/`DenyUsers`, `hosts.deny`, full disk, fork failure) — not a tunnel problem, and outside this skill.
+- **No entries for your attempts** → **do not conclude "the packets never arrived."** Zero journal entries only proves nothing reached `sshd`, which a host-local packet filter produces just as reliably as a network that never delivered anything. The two have opposite fixes and are separated by one command:
+
+```bash
+# on the host, while the client retries; needs root
+timeout 20 tcpdump -nni any "tcp port 22 and host <your-egress-ip>" -c 10
+ss -tan '( sport = :22 )'          # look for SYN-RECV, not just LISTEN
+```
+
+- **SYNs appear in `tcpdump`, but `ss` shows only `LISTEN` and no `SYN-RECV`** → the packets **did** arrive and a **host-local firewall** dropped them before the socket layer. The network path is fine; stop looking at your tunnel. Go to the host-firewall check below.
+- **No SYNs in `tcpdump` at all** → now you have earned "never arrived." The blocker sits before the host: its cloud firewall / network ACL, or your own TUN. Continue below.
+
+⚠️ Retransmitted SYNs (the same sequence number every second) are the giveaway for a silent drop; a *rejected* connection produces an RST instead, and a *closed* port produces one immediately.
+
+**If nothing arrived, check the allowlist against your *real* egress IP.** Under a TUN, `curl ifconfig.me` returns the proxy exit, not the address the destination's firewall sees. The authoritative value is the source IP the provider recorded for **your own API calls**:
+
+```bash
+# Alibaba Cloud example. Do NOT grep for '"sourceIpAddress":"' — the CLI pretty-prints with a
+# space after the colon, so that pattern silently matches nothing. Parse the JSON instead.
+aliyun actiontrail LookupEvents --RegionId <region> --MaxResults 20   | python3 -c 'import json,sys,re; d=json.load(sys.stdin);       print("\n".join(sorted({e.get("sourceIpAddress","") for e in d.get("Events",[])
+            if re.fullmatch(r"[0-9.]+", e.get("sourceIpAddress",""))})))'
+```
+
+The IP filter is load-bearing: internal service-to-service events carry a **hostname** in that field (e.g. `rmc.resourcemanager.aliyuncs.com`), not your address.
+
+⚠️ This is authoritative **only if your provider-API traffic and your blocked connection take the same forwarding plane** (both DIRECT, or both proxied). Step 2J is the reason: a TUN routes by rule, so the provider's API domain and your destination host can sit on different planes with different exits — in which case the recorded IP is not the IP the destination's firewall sees. Confirm the two match a common rule before trusting the comparison.
+
+**There are usually two allowlists, and fixing one is not fixing the problem.** A cloud host typically enforces the port twice: at the provider's security group (outside the machine) and again at the host's own firewall (`ufw`, `firewalld`, raw `iptables`/`nftables`). They are edited by different tools, drift independently, and a rule added to one is invisible in the other. Check **both**, always:
+
+```bash
+# outside the machine — provider security group (Alibaba Cloud shown)
+aliyun ecs DescribeSecurityGroupAttribute --RegionId <region> --SecurityGroupId <sg-id>
+
+# inside the machine, via the out-of-band channel — host firewall
+ufw status verbose 2>/dev/null            # Debian/Ubuntu, if ufw is in use
+firewall-cmd --list-all 2>/dev/null       # RHEL family
+iptables -S 2>/dev/null | head -30        # raw rules, and the INPUT policy
+nft list ruleset 2>/dev/null | head -60
+```
+
+- **Your current egress IP is missing from *either* list** → that is the fix. Add it to that layer (security group: `aliyun ecs AuthorizeSecurityGroup`, reverse `RevokeSecurityGroup`; `ufw allow from <ip> to any port <n> proto tcp`, reverse `ufw delete allow ...`). Allowlists pinned to a dynamic residential or mobile address rot silently: the rule still reads as correct, and nothing logs the day your address changes.
+- **It is present in the security group but packets still never reach `sshd`** → this is the case the previous bullet's older wording got wrong. It does **not** mean the blocker is local. Run the `tcpdump` + `ss` pair above first: arriving SYNs with no `SYN-RECV` mean the *host* firewall is dropping you, and no amount of work on your own machine will change it. Only after `tcpdump` shows nothing arriving is the blocker local; continue below.
+
+⚠️ **`iptables -S` first, not just the service-level tools.** A default `-P INPUT DROP` with explicit accepts for 80/443 looks like a healthy machine from every angle this skill checks elsewhere — `sshd` active and listening on `0.0.0.0:22`, config valid, no `fail2ban`, empty `hosts.deny`, disk and memory fine — and still drops every SSH packet. Checking `fail2ban` and `hosts.deny` while skipping the packet filter is the single easiest way to certify a blocked host as "completely healthy."
+
+**Borrow a second vantage point before blaming your own machine.** If any other host shares your egress (another machine on the same LAN, a phone hotspot, a colleague's laptop) but *not* your network stack, run the same probe from there. It is the cheapest control that exists for "is it me or is it them," and it is the one instrument a TUN cannot corrupt, because it does not traverse the TUN. Two readings, two meanings:
+
+- **The clean host fails too, and its egress IP matches yours** → the destination is refusing you; your tunnel was never the problem.
+- **The clean host succeeds** → the blocker really is local, and you now also have a working path (`ssh -J <clean-host> <destination>` relays TCP while your key stays on your own machine).
+
+**Confirm a local blocker** by asking the proxy to relay explicitly instead of letting the TUN intercept:
+
+```bash
+ssh -o ProxyCommand="nc -X connect -x 127.0.0.1:<proxy-port> %h %p" <host>
+```
+
+- **`HTTP/1.1 503 Service Unavailable`** (or `SOCKS error 1`) → the proxy refuses to relay that port. Common for 22, which many rule sets allow only for HTTP/HTTPS ports.
+- **It connects** → the proxy *can* carry this traffic, so the blocker is specifically the TUN's automatic interception, and fix 1 below is the targeted remedy.
+
+Two fixes:
+
+1. Add a DIRECT rule for that host/port in the TUN tool, then re-test. This is a config change to someone's proxy — get the machine owner's agreement first if it is not yours.
+2. Better for anything unattended: move the automation off SSH and onto the out-of-band channel you just used. It survives **both** failure modes — the allowlist rotting *and* the proxy refusing the port — and depends on no local network state.
+
+### Step 3: Fix Proxy Tool Configuration
+
+Identify the proxy tool and apply the appropriate fix. See [references/proxy_conflict_reference.md](references/proxy_conflict_reference.md) for detailed instructions per tool.
+
+**Key principle**: Do NOT use `tun-excluded-routes` to exclude `100.64.0.0/10`. This causes the proxy to add a `→ en0` route that overrides Tailscale. Instead, let the traffic enter the proxy TUN and use a DIRECT rule to pass it through.
+
+**Universal fix** — add this rule to any proxy tool:
+```
+IP-CIDR,100.64.0.0/10,DIRECT
+IP-CIDR,fd7a:115c:a1e0::/48,DIRECT
+```
+
+After applying fixes, verify:
+
+```bash
+route -n get <tailscale-ip>
+# Should show Tailscale utun interface, NOT en0
+```
+
+### Step 4: Configure Tailscale SSH ACL
+
+If SSH connects but returns `operation not permitted`, the Tailscale ACL may require browser authentication for each connection.
+
+At [Tailscale ACL admin](https://login.tailscale.com/admin/acls), ensure the SSH section uses `"action": "accept"`:
+
+```json
+"ssh": [
+    {
+        "action": "accept",
+        "src": ["autogroup:member"],
+        "dst": ["autogroup:self"],
+        "users": ["autogroup:nonroot", "root"]
+    }
+]
+```
+
+**Note**: `"action": "check"` requires browser authentication each time. Change to `"accept"` for non-interactive SSH access.
+
+### Step 5: Fix WSL Tailscale Installation
+
+If SSH connects and ACL passes but fails with `be-child ssh` exit code 1 in tailscaled logs, the snap-installed Tailscale has sandbox restrictions preventing SSH shell execution.
+
+**Diagnosis** — check WSL tailscaled logs:
+
+```bash
+# For snap installs:
+sudo journalctl -u snap.tailscale.tailscaled -n 30 --no-pager
+
+# For apt installs:
+sudo journalctl -u tailscaled -n 30 --no-pager
+```
+
+Look for:
+```
+access granted to user@example.com as ssh-user "username"
+starting non-pty command: [/snap/tailscale/.../tailscaled be-child ssh ...]
+Wait: code=1
+```
+
+**Fix** — replace snap with apt installation:
+
+```bash
+# Remove snap version
+sudo snap remove tailscale
+
+# Install apt version
+curl -fsSL https://tailscale.com/install.sh | sh
+
+# Start with SSH enabled
+sudo tailscale up --ssh
+```
+
+**Important**: The new installation may assign a different Tailscale IP. Check with `tailscale status --self`.
+
+### Step 5A: Fix Tailscale SSH Proxy Silent Failure on WSL
+
+**Symptom**: TCP port 22 is reachable (`nc -z -w 5 <ip> 22` succeeds), but SSH fails immediately with:
+
+```
+kex_exchange_identification: Connection closed by remote host
+```
+
+No SSH banner is ever received. This happens even with apt-installed Tailscale (not snap).
+
+**Root cause**: When `tailscale up --ssh` is enabled on WSL, Tailscale intercepts port 22 connections at the application layer (above the kernel network stack). If Tailscale's built-in SSH proxy malfunctions, it accepts the TCP connection but immediately closes it before sending the SSH banner.
+
+**Key diagnostic** — on the WSL instance:
+
+```bash
+# This will show 0 packets even during active SSH attempts
+sudo tcpdump -i any port 22 -c 5 -w /dev/null 2>&1
+```
+
+Zero packets means Tailscale is intercepting connections before they reach the kernel network stack. The kernel's `sshd` never sees the connection.
+
+**Distinction from Step 5**: Step 5 covers snap sandbox issues where `be-child ssh` fails. This is a different problem — Tailscale's SSH proxy itself silently fails, regardless of installation method.
+
+**Fix** — disable Tailscale's SSH proxy and use regular sshd:
+
+```bash
+# On the WSL instance:
+sudo tailscale up --ssh=false
+
+# Verify sshd is running
+sudo service ssh status
+# If not running:
+sudo service ssh start
+
+# Verify from the client machine:
+ssh -o ConnectTimeout=10 <user>@<tailscale-ip> 'echo SSH_OK'
+```
+
+After disabling Tailscale SSH, connections go through the kernel network stack to `sshd` as normal. The Tailscale ACL `"action": "accept"` in Step 4 is no longer relevant — authentication is handled by `sshd` using SSH keys or passwords.
+
+**When to keep `--ssh` enabled**: Only if you specifically need Tailscale's SSH features (ACL-based access control, no SSH key management). If standard sshd works, prefer `--ssh=false` for reliability.
+
+### Step 5B: Fix App Store Tailscale on macOS (Missing `tailscale ssh`)
+
+**Symptom**: Running `tailscale ssh` returns:
+
+```
+The 'tailscale ssh' subcommand is not available on macOS builds
+distributed through the App Store or TestFlight.
+```
+
+**Root cause**: The App Store version of Tailscale for macOS is sandboxed and does not include the `tailscale ssh` subcommand.
+
+**Fix** — install the Standalone version:
+
+1. Uninstall the App Store version (delete from /Applications)
+2. Download the Standalone build from https://pkgs.tailscale.com/stable/#macos
+3. Install to /Applications
+
+**Post-install CLI setup**: The standalone `tailscale` CLI binary is embedded inside the app bundle. Add an alias to your shell config:
+
+```bash
+# ~/.zshrc
+alias tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+```
+
+Verify:
+
+```bash
+source ~/.zshrc
+tailscale version
+tailscale ssh <user>@<hostname>   # Should work now
+```
+
+### Step 5C: Windows Host TUN Proxy Takes Down the Whole Machine (Including WSL and Its Tailscale)
+
+**Symptom**: On a Windows + WSL2 workstation, everything goes offline at once — domestic and overseas, host and WSL — and Tailscale won't come online either ("even Tailscale is down"). Recovery follows toggling the host's TUN proxy (v2rayN sing-box TUN, Clash TUN) off, not switching NICs.
+
+**Root cause shape**: WSL2 NAT has no network path of its own; a host TUN owns the default route, so a dead proxy node black-holes the host **and** everything behind it, including the WSL tailscaled's control-plane connection. This differs from the macOS split-brain (Step 2J): both planes die, not one.
+
+This scenario has its own reference covering four things this SKILL.md doesn't repeat: the event-log timeline method for proving **which** of several recovery actions actually fixed the network (`Microsoft-Windows-NetworkProfile/Operational` events 10000/10001 name the TUN adapter, e.g. `singbox_tun`), the three WSL→Windows interop pitfalls that silently produce fake "no output" during diagnosis (PATH, GBK codepage, no-tty pipe death), how to tell apart the Windows vs in-WSL tailscaled when only one is really online (APIPA `169.254.x.x` on the Tailscale adapter = engine never came up), and prevention (per-process proxy from WSL instead of host TUN).
+
+Read [references/windows_host_tun_wsl_cascade.md](references/windows_host_tun_wsl_cascade.md) before diagnosing this shape.
+
+### Step 6: Verify End-to-End
+
+Run a complete connectivity test:
+
+```bash
+# 1. Check route is correct (must show Tailscale's utun, not en0 or Shadowrocket's utun)
+route -n get <tailscale-ip>
+# Also confirm which utun is Tailscale's:
+ifconfig | grep -A2 'inet 100\.'
+
+# 2. Test TCP connectivity
+nc -z -w 5 <tailscale-ip> 22
+
+# 3. Test SSH
+ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no <user>@<tailscale-ip> 'echo SSH_OK && hostname && whoami'
+```
+
+All three must pass. If step 1 fails, revisit Step 3. If step 1 shows wrong utun (e.g., Shadowrocket's utun with MTU 4064 instead of Tailscale's with MTU 1280), that is also a route conflict. If step 2 passes but step 3 fails with `kex_exchange_identification`, revisit Step 5A (Tailscale SSH proxy intercept). If step 2 fails, check WSL sshd or firewall. If step 3 fails with other errors, revisit Steps 4-5.
+
+**For DNS-related fixes (Step 2I)**, the three steps above are not sufficient — they don't cover system-DNS recovery. Use the four-dimensional verification at the end of Step 2I instead: daemon health, per-resolver `dig`, `dscacheutil`, and the original failing command run **without** any workaround.
+
+## SOP: Remote Development via Tailscale
+
+Proactive setup guide for remote development over Tailscale with proxy tools. Follow these steps **before** encountering problems.
+
+### Prerequisites
+
+- Tailscale installed and running on both machines
+- Proxy tool (Shadowrocket/Clash/Surge) configured with Tailscale compatibility (see Step 3 above)
+- SSH access working: `ssh <tailscale-ip> 'echo ok'`
+
+### 1. Proxy-Safe Makefile Pattern
+
+Any Makefile target that curls `localhost` must use `--noproxy localhost`. This is required because `http_proxy` is often set globally in `~/.zshrc` (common in China), and Make inherits shell environment variables.
+
+```makefile
+## ── Health Checks ─────────────────────────────────────
+
+status:                ## Health check dashboard
+	@echo "=== Dev Infrastructure ==="
+	@docker exec my-postgres pg_isready -U postgres 2>/dev/null && echo "PostgreSQL: OK" || echo "PostgreSQL: FAIL"
+	@curl --noproxy localhost -sf http://localhost:9000/minio/health/live >/dev/null 2>&1 && echo "MinIO: OK" || echo "MinIO: FAIL"
+	@curl --noproxy localhost -sf http://localhost:3001/api/status >/dev/null 2>&1 && echo "API: OK" || echo "API: FAIL"
+
+## ── Route Warmup ──────────────────────────────────────
+
+warmup:                ## Pre-compile key routes (run after dev server is ready)
+	@echo "Warming up dev server routes..."
+	@echo -n "  /api/health → " && curl --noproxy localhost -s -o /dev/null -w '%{http_code} (%{time_total}s)\n' http://localhost:3010/api/health
+	@echo -n "  /            → " && curl --noproxy localhost -s -o /dev/null -w '%{http_code} (%{time_total}s)\n' http://localhost:3010/
+	@echo "Warmup complete."
+```
+
+**Rules**:
+- Every `curl http://localhost` call MUST include `--noproxy localhost`
+- Docker commands (`docker exec`) are unaffected by `http_proxy` — no fix needed
+- `redis-cli`, `pg_isready` connect via TCP directly — no fix needed
+
+### 2. SSH Tunnel Makefile Targets
+
+Add these targets for remote development via Tailscale SSH tunnels:
+
+```makefile
+## ── Remote Development ────────────────────────────────
+
+REMOTE_HOST    ?= <tailscale-ip>
+TUNNEL_FORWARD ?= -L 3010:localhost:3010
+
+tunnel:                ## SSH tunnel to remote machine (foreground)
+	ssh -N $(TUNNEL_FORWARD) $(REMOTE_HOST)
+
+tunnel-bg:             ## SSH tunnel to remote machine (background, auto-reconnect)
+	autossh -M 0 -f -N $(TUNNEL_FORWARD) \
+		-o "ServerAliveInterval=30" \
+		-o "ServerAliveCountMax=3" \
+		-o "ExitOnForwardFailure=yes" \
+		$(REMOTE_HOST)
+	@echo "Tunnel running in background. Kill with: pkill -f 'autossh.*$(REMOTE_HOST)'"
+```
+
+**Design decisions**:
+
+| Choice | Rationale |
+|--------|-----------|
+| `?=` (conditional assign) | Allows override: `make tunnel REMOTE_HOST=100.x.x.x` |
+| `TUNNEL_FORWARD` as variable | Supports multi-port: `make tunnel TUNNEL_FORWARD="-L 3010:localhost:3010 -L 9000:localhost:9000"` |
+| `autossh -M 0` | Disables autossh's own monitoring port; relies on `ServerAliveInterval` instead (more reliable through NAT) |
+| `ExitOnForwardFailure=yes` | Fails immediately if port is already bound, instead of silently running without tunnel |
+| Kill hint uses `autossh.*$(REMOTE_HOST)` | Precise pattern — won't accidentally kill other SSH sessions |
+
+**Install autossh**: `brew install autossh` (macOS) or `apt install autossh` (Linux/WSL)
+
+### 3. Multi-Port Tunnels
+
+When the project requires multiple services (dev server + object storage + API gateway):
+
+```bash
+# Forward multiple ports in one tunnel
+make tunnel TUNNEL_FORWARD="-L 3010:localhost:3010 -L 9000:localhost:9000 -L 3001:localhost:3001"
+
+# Or define a project-specific default in Makefile
+TUNNEL_FORWARD ?= -L 3010:localhost:3010 -L 9000:localhost:9000
+```
+
+Each `-L` flag is independent. If one port is already bound locally, `ExitOnForwardFailure=yes` will abort the entire tunnel — fix the port conflict first.
+
+### 4. SSH Non-Login Shell Setup
+
+**This is a frequent source of "it works interactively but fails in scripts" bugs.** SSH non-login shells don't load `~/.zshrc` (or `~/.bashrc` on Linux), so tools installed via nvm, Homebrew, uv, cargo, or any shell-level manager won't be in `$PATH`. Proxy env vars set in `~/.zshrc` also won't be loaded.
+
+This affects **all** remote commands run via `ssh user@host "command"`, including CI/CD pipelines, cron-triggered SSH, and Makefile remote targets. Prefix all remote commands with `source ~/.zshrc 2>/dev/null;` (macOS) or `source ~/.bashrc 2>/dev/null;` (Linux/WSL).
+
+**Common failure**: `ssh user@host "uv run ..."` or `ssh user@host "node ..."` returns `command not found` even though the command works in an interactive SSH session.
+
+See [references/proxy_conflict_reference.md § SSH Non-Login Shell Pitfall](references/proxy_conflict_reference.md) for details and examples.
+
+For Makefile targets that run remote commands:
+
+```makefile
+REMOTE_CMD = ssh $(REMOTE_HOST) 'source ~/.zshrc 2>/dev/null; $(1)'
+
+remote-status:         ## Check remote dev server status
+	$(call REMOTE_CMD,curl --noproxy localhost -sf http://localhost:3010/api/health && echo "OK" || echo "FAIL")
+```
+
+### 5. End-to-End Workflow
+
+#### First-time setup (remote machine)
+
+```bash
+# 1. Clone repo and install dependencies
+ssh <tailscale-ip>
+cd /path/to/project
+git clone git@github.com:user/repo.git && cd repo
+pnpm install  # Add --registry https://registry.npmmirror.com if in China
+
+# 2. Copy .env from local machine (run on local)
+scp .env <tailscale-ip>:/path/to/project/repo/.env
+
+# 3. Start Docker infrastructure
+make up && make status
+
+# 4. Run database migrations
+bun run db:migrate
+
+# 5. Start dev server
+bun run dev
+```
+
+#### Daily workflow (local machine)
+
+```bash
+# 1. Start tunnel
+make tunnel-bg
+
+# 2. Open browser
+open http://localhost:3010
+
+# 3. Auth, coding, testing — everything works as if local
+
+# 4. When done, kill tunnel
+pkill -f 'autossh.*<tailscale-ip>'
+```
+
+#### Why this works
+
+```
+Browser → localhost:3010 → SSH tunnel → Remote localhost:3010 → Dev server
+                                     ↓
+                              Auth redirects to localhost:3010
+                                     ↓
+                              Browser follows redirect → same tunnel → works
+```
+
+The key insight: `APP_URL=http://localhost:3010` in `.env` is correct for **both** local and remote development. The SSH tunnel makes the remote server's localhost accessible as the local machine's localhost. Auth callback redirects to `localhost:3010` always resolve correctly.
+
+### 6. Checklist
+
+Before starting remote development, verify:
+
+- [ ] Tailscale connected: `tailscale status`
+- [ ] SSH works: `ssh <tailscale-ip> 'echo ok'`
+- [ ] Proxy tool configured: `[Rule]` has `IP-CIDR,100.64.0.0/10,DIRECT`
+- [ ] `skip-proxy` includes `100.64.0.0/10`
+- [ ] `tun-excluded-routes` does NOT include `100.64.0.0/10`
+- [ ] `NO_PROXY` includes `.ts.net,100.64.0.0/10`
+- [ ] `autossh` installed: `which autossh`
+- [ ] Makefile curl commands have `--noproxy localhost`
+- [ ] Remote dev server running: `ssh <ip> 'source ~/.zshrc 2>/dev/null; curl --noproxy localhost -sf http://localhost:3010/'`
+- [ ] Tunnel works: `make tunnel-bg && curl -sf http://localhost:3010/`
+
+## References
+
+- [references/proxy_node_chain_throughput.md](references/proxy_node_chain_throughput.md) — single-hop and chained proxy capacity diagnosis, serial node comparison, real-client verification, and full-workload replay
+- [references/proxy_conflict_reference.md](references/proxy_conflict_reference.md) — Per-tool configuration (Shadowrocket, Clash, Surge), NO_PROXY syntax, SSH ProxyCommand, and conflict architecture
+- [references/windows_host_tun_wsl_cascade.md](references/windows_host_tun_wsl_cascade.md) — Windows host TUN outage cascading into WSL and its Tailscale: event-log timeline forensics, WSL→Windows interop pitfalls, dual-tailscaled disambiguation, prevention

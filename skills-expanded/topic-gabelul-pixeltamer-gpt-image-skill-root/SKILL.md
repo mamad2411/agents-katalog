@@ -1,0 +1,330 @@
+---
+name: pixeltamer
+description: |
+  Generate, edit, and compose images with GPT Image 2.5, including transparent PNGs
+  with a real alpha channel. Two backends — OpenAI API key or codex CLI (uses your
+  ChatGPT subscription, no key needed). Four modes — one-shot generate, edit or
+  inpaint an existing image, multi-reference composition (up to 16 inputs blended
+  into one), and multi-image batch with verification. Use when the user asks to
+  make an image, generate a poster, draw a mockup, design an icon or sticker,
+  create an ad creative, build an infographic, blend reference images, edit or
+  inpaint an existing image, or produce a cutout asset with a transparent
+  background — "transparent PNG", "no background", "alpha channel", "works on any
+  background". Not for: stripping the background off an existing image you want to
+  keep (that's rembg or ImageMagick, not a generator); file operations that don't
+  change the picture (compression, format conversion, resizing); reading,
+  describing or OCRing an image; video.
+license: MIT
+metadata:
+  author: gabelul
+  version: "0.1.0"
+  tags:
+    - image-generation
+    - gpt-image
+    - claude-code-skill
+    - codex-cli
+    - opencode
+    - openai-api
+    - chatgpt-subscription
+    - infographic
+    - ui-mockup
+    - poster
+    - editorial
+    - ai-image
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - AskUserQuestion
+---
+
+# pixeltamer — generate, edit, and compose images with GPT Image 2.5
+
+Image generation that actually does what you asked for. Two backends so you don't have to pick a side: bring an OpenAI API key OR use the codex CLI signed in to your ChatGPT subscription. The API backend defaults to `gpt-image-2.5-flare` and accepts `--model`; Codex selects its image model server-side. Same skill, same prompts, your choice of how to pay.
+
+## When to use this
+
+Trigger this skill when the user asks for any of:
+
+- A new image, poster, illustration, photograph, mockup, icon, sticker, sprite, logo, hero, infographic, ad creative, scroll-stop card, magazine cover, podcast art, product shot, banner, OG image, social card, character reference sheet, app screen, dashboard mockup
+- An *edit* of an existing image (modify, inpaint, mask, change-only-X)
+- A *composition* of multiple reference images blended into one
+- A batch of related images to be generated together with verification
+
+If the request is "make me an image" or any flavor of it, this is the skill.
+
+## Prerequisites — check the install (do this BEFORE the first generation)
+
+Run this first to see what's available:
+
+```bash
+pixeltamer doctor
+```
+
+If the output shows at least one backend with a `✓` marker, you're set — go generate. Auto-detect picks API if a key is set, otherwise codex. Override with `--backend api|codex` per-call or set `PIXELTAMER_BACKEND` env var.
+
+**If `pixeltamer doctor` fails with `permission denied` instead of printing backend status:** the `skills` CLI stripped the dispatcher's execute bit on install/update. The dispatcher can't restore its own bit (it has to run to do that), so bootstrap it once via bash — it self-heals everything else from there:
+
+```bash
+# run it through bash (works even without +x):
+bash ~/.claude/skills/pixeltamer/scripts/pixeltamer doctor
+# or restore the bit permanently:
+chmod +x ~/.claude/skills/pixeltamer/scripts/pixeltamer
+```
+
+Every other script now runs via its interpreter, so the dispatcher is the only file this bit can break.
+
+If BOTH backends show `✗`, **do not run `pixeltamer config`** — it's an interactive prompt that needs a real TTY, which the Bash tool doesn't have, so the call hangs forever. Use `AskUserQuestion` instead and offer the user this choice:
+
+> "Pixeltamer needs one of two backends. Pick:
+>  **API key** — fastest, full feature set (edit + compose), per-image cost.
+>  **Codex CLI** — uses your existing ChatGPT Plus/Team/Enterprise subscription, no key, generation only."
+
+### If the user picks API
+
+Tell them to drop their key in pixeltamer's config dir. This is the cleanest path because the Python script auto-loads it on every invocation — no shell restart, no env-var management:
+
+```bash
+mkdir -p ~/.config/pixeltamer
+echo 'OPENAI_IMAGE_API_KEY=sk-yourkeyhere' > ~/.config/pixeltamer/.env
+chmod 600 ~/.config/pixeltamer/.env
+```
+
+If their org isn't verified for GPT Image access, the first call returns 403 — point them at https://platform.openai.com/settings/organization/general for the one-time verification.
+
+If they prefer dotfiles instead, `export OPENAI_API_KEY="sk-..."` in `~/.zshrc` (or `.bashrc`) works too — but they'll need to **restart the agent** so the new env is inherited. The `.env` file path doesn't have that requirement.
+
+### If the user picks codex
+
+```bash
+# 1. install codex if missing
+npm install -g @openai/codex
+
+# 2. log in (opens a browser, OAuth via ChatGPT)
+codex login
+
+# 3. confirm
+codex login status
+```
+
+No restart needed. The bash backend reads codex auth fresh on every invocation.
+
+codex updates **separately** from the skill — `npx skills update` won't touch it. `pixeltamer doctor` now reports the installed codex version and flags when it's behind npm latest (a stale codex is a known failure mode — an old schema version once caused indefinite hangs). If doctor says an update's available, run `npm install -g @openai/codex@latest`.
+
+### After the user sets things up
+
+Re-run `pixeltamer doctor` to confirm. Then proceed with the original request.
+
+## Three modes
+
+### Mode 1 — One-shot generation
+
+```bash
+pixeltamer generate -p "<prompt>" --size 1024x1024 --quality high -o output.png
+```
+
+Or the shortcut, which infers `generate`:
+
+```bash
+pixeltamer "Create a pitch-deck slide titled..."
+```
+
+For exploration, fire 4 in parallel:
+
+```bash
+pixeltamer generate -p "..." -n 4 --concurrency 4 -o variants/
+```
+
+#### Transparent assets
+
+Anything that gets composited onto a background you don't control — icons, logos,
+mascots, product cutouts, chart layers, stickers — should be generated with real
+alpha, not a green screen you clean up afterwards:
+
+```bash
+pixeltamer generate -p "<isolated subject>" --background transparent -o asset.png
+```
+
+Works on **both backends** for `generate`. On API it's a request parameter; on
+codex it's translated into prompt instructions (codex has no background param)
+plus an automatic alpha check that warns on stderr if the PNG came back RGB.
+Codex `edit`/`compose` can't do it — the dispatcher says so.
+
+The catch worth knowing before you write the prompt: **the prompt outranks the
+flag.** Any backdrop, surface, scene, or cast shadow you describe gets painted,
+and you get a fully-opaque PNG with no error anywhere. Load
+`references/transparency.md` for the constraint block and the verification steps.
+
+### Mode 2 — Edit / inpaint
+
+```bash
+# Modify a single existing image
+pixeltamer edit -i source.png -p "Change ONLY the sky to overcast. Preserve everything else exactly." -o edited.png
+
+# With a mask — white pixels regenerate
+pixeltamer edit -i source.png --mask mask.png -p "..." -o edited.png
+```
+
+Edit works on both backends. The API path uses `/v1/images/edits` (supports `--mask` for region-based inpainting). The codex path uses the OAuth Responses API directly (`scripts/pixeltamer_codex_oauth.py`) — same ChatGPT credentials as `codex exec`, different transport, no API key required. Codex-OAuth doesn't support `--mask`; if the user needs mask-based inpainting they need the API path.
+
+### Mode 3 — Multi-reference composition
+
+Pass 2–16 reference images to be blended into a single output via `/images/edits`:
+
+```bash
+pixeltamer compose \
+  -p "Reference 1 is the product. Reference 2 is the kitchen scene. Compose: place the product on the counter with morning window light from the left." \
+  -i product.png \
+  -i kitchen.png \
+  -o composed.png \
+  --size 1536x1024
+```
+
+This is the killer feature. See `references/multi-reference.md` for the labeling pattern that actually works.
+
+Reference order still matters: put the face, logo, or product detail you can
+least afford to lose first. GPT Image 2.5 improves subject preservation by
+default. `--input-fidelity high` remains available on direct API edits for
+models and hosts that expose that control.
+
+### Mode 4 — Batch (multi-image plan with verification)
+
+For projects that need 4+ related images (a website's hero + features + footer + social), use the batch state machine. Workflow:
+
+1. Survey what images are needed.
+2. Plan a `prompts.md` with one entry per image (target path, format, native size, optional reference, status, prompt).
+   Entries whose `Format` says `PNG transparent` must be generated with `--background transparent` — the verifier checks for a real alpha channel and fails them otherwise.
+   When the batch is a *collection* (product range, icon family, sticker pack), write one shared style-and-constraint block and append it verbatim to every entry's prompt. That constant suffix is what makes N separate generations read as one set — see `references/transparency.md`.
+3. Generate each one, calling the right backend per entry.
+4. Run `pixeltamer batch <path-to-prompts.md>` to verify every output (file exists, dimensions match, file size sane).
+5. Visually self-review each generated PNG using the `Read` tool; demote to `failed:<reason>` if it doesn't match the prompt.
+6. Re-generate only the failed entries.
+
+The `prompts.md` format is parsed by the verifier in `scripts/verify-images.mjs`. See `references/multi-reference.md` for the structure.
+
+## Workflow — what to do when invoked
+
+0. **Read `references/index.md` first.** Find the closest match for the request in the routing map. Load the smallest useful slice — one recipe or one playbook file or one reference, not all of them. Never write a prompt from scratch when a similar pattern exists in our recipes or playbooks. If no match, fall back to `references/prompting.md` plus the closest recipe.
+1. **Understand the request.** Identify the mode (generate / edit / compose / batch). Confirm the recipe / playbook / reference loaded in Step 0 actually fits — if not, route again.
+2. **Read references when relevant.** Beyond the file `index.md` pointed you to: load `references/prompting.md` for any non-trivial prompt. Load `references/multi-reference.md` for compose mode. Load `references/transparency.md` for any transparent-alpha asset. Load `references/prompt-patterns.md` when you're composing the prompt programmatically, hitting one of the doctrine categories (UI / infographic / brand identity / e-commerce hero / architectural render / scientific atlas / typography poster), or need brand consistency across many images. Don't dump every reference into context — pull only what's needed.
+3. **Resolve unspecified params.** Pick a sensible size based on the use case (see the size table in `references/prompting.md`). Default `--quality high`. Pick a backend if the user didn't specify. If the asset will be composited onto something else — icon, logo, mascot, cutout, chart layer — reach for `--background transparent` and load `references/transparency.md` before writing the prompt.
+4. **Build the prompt.** Apply the canonical structure: Intent → Scene → Subject → Details → Text → Style → Constraints. Drop magic words ("8K, ultra detailed, masterpiece, professional"). Quote any text that should appear in the image. Specify what to preserve on edits. For UI screens, infographics, brand renders, scientific atlases, or any request where you're composing the prompt programmatically, escalate to the JSON-config schema and other advanced patterns in `references/prompt-patterns.md`.
+5. **Generate.** Call the right `pixeltamer` subcommand. Print the resulting absolute path.
+6. **Visually self-verify.** Use the `Read` tool to view the generated PNG. Judge it against the prompt:
+   - Does the subject match?
+   - Is the text rendered correctly and spelled exactly as quoted?
+   - Are there obvious artifacts (warped anatomy, misspellings, glitched typography)?
+   - Does the composition match what was asked?
+   - If you asked for transparency: is the alpha actually transparent? An opaque
+     alpha channel is the standard silent failure — check it, don't assume it.
+   If it fails — say so honestly. Don't paper over a bad result with "looks great!"
+7. **Iterate or hand off.** If the result is wrong, change ONE dimension and regenerate (see iteration table in `references/prompting.md`). If the result is good, surface the file path to the user.
+
+## Flags control properties, the prompt controls content
+
+The cleanest mental model in this whole skill, and the one agents get wrong most
+often. Output **properties** are flag-controlled. Describing them in the prompt
+is unreliable and backend-dependent.
+
+| Property | Use the flag | Not the prompt |
+|---|---|---|
+| Dimensions | `--size 1536x1024`, `2K`, `4K` | "a 1536x1024 image of…" |
+| Output container | `--output-format png\|jpeg\|webp` | "save it as a webp" |
+| Compression | `--output-compression 0-100` | "compress it a bit" |
+| Render quality | `--quality low\|medium\|high` | "high quality, detailed" |
+| Variant count | `-n 4` | "give me four versions" |
+| Edit region | `--mask region.png` | "only change the top left" |
+| Reference fidelity | GPT Image 2.5: critical reference first; older models: `--input-fidelity high` | "keep the face exactly" |
+
+The prompt is for what is *in* the picture. Size, format, count and masking are
+not in the picture.
+
+**Background is the exception, and only on codex.** On the API backend
+`--background` is a real parameter and the rule above holds. On codex there is no
+such parameter, so transparency genuinely is prompt-driven — which is why
+`--background transparent` there rewrites your prompt rather than setting a flag.
+Both facts live in `references/transparency.md`.
+
+## Visual self-verification — non-negotiable
+
+Every generated image gets `Read`-loaded back and visually judged before claiming success. Image generation is stochastic; "API call succeeded" doesn't mean "the image is what was asked for". This step catches:
+
+- Misspelled or paraphrased text overlays
+- Wrong subject (a coffee shop instead of a coffee cup)
+- Visual artifacts (warped hands, glitched typography, extra limbs)
+- Wrong aspect ratio framing (subject too small or cropped)
+- Off-brand color or tone
+
+When something is wrong, the right move is usually to change ONE thing in the prompt and regenerate, not to bolt three new clauses on hoping one helps.
+
+## Output format — what to tell the user
+
+After a successful generation, surface:
+
+- Absolute file path (the script prints this on stdout)
+- One sentence on what was generated (e.g. "Generated a 1024×1536 portrait cover with the headline rendered exactly")
+- If multiple variants (`-n N`), list all paths
+
+After a self-verified failure:
+
+- Explain what went wrong (text was paraphrased, subject was generic, etc.)
+- Suggest the single most likely fix and offer to regenerate
+- Don't auto-regenerate without the user's nod — they may want to tweak the prompt themselves
+
+## Recipes available
+
+`recipes/infographic.md` · `recipes/meta-ad.md` · `recipes/viral-linkedin.md` · `recipes/ui-mockup.md` · `recipes/editorial-cover.md` · `recipes/product-photo.md` · `recipes/mascot.md`
+
+Load the matching one when its trigger fits. They contain prompt skeletons, worked examples, sizing defaults, and common-failure tables.
+
+**Mascot / brand character / app icon character requests — always load `recipes/mascot.md` BEFORE writing the prompt.** The model's default for "cute character" is a generic Slack-blob; the recipe codifies the context-to-anchor decision tree, the silhouette/scale rules, and the explicit anti-patterns to suppress. Skipping it is the single most common cause of bland mascot results.
+
+## References available
+
+`references/prompting.md` — the doctrine. Canonical structure, what NOT to say, style/composition/lighting vocabulary.
+`references/api-backend.md` — API specifics, env vars, troubleshooting.
+`references/codex-backend.md` — codex CLI specifics, both invocation patterns, tradeoffs.
+`references/multi-reference.md` — compose mode mastery, labeling patterns, reference set sizing.
+`references/post-process.md` — compress, resize, convert, alpha-extract, combine.
+`references/ui-mockup-prompting.md` — analogy vs inventory style, real-data over placeholders, asset codification.
+
+Pull only what's needed for the current job. Don't dump them all.
+
+## Common mistakes — drop these patterns
+
+| Don't | Why |
+|---|---|
+| "8K, ultra detailed, masterpiece, trending on artstation" | Magic words don't specify a visual result. Describe materials, light, framing, and texture instead. |
+| "professional, beautiful, premium, stunning" | Praise language with zero instructional content. |
+| Generating before checking which backend is available | Run `pixeltamer doctor` first if it's the first call this session. |
+| Edit / compose on codex backend | Works since 0.3.0 via the OAuth Responses API (`pixeltamer_codex_oauth.py`). Mask-based inpainting still requires the API path — the Responses API doesn't take a mask parameter. So does any edit needing a specific output size: codex returns the input's aspect and ignores `--size`. |
+| Chroma-key green screens for cutout assets | Stale advice. `--background transparent` gives real alpha on **both** backends for `generate`. Key only when the edges come out dirty, or for codex `edit`/`compose`. |
+| Describing a backdrop while asking for transparency | The prompt outranks the flag. "Clean white studio" beats `--background transparent` and you get a white rectangle. |
+| Skipping visual self-verification | Image gen is stochastic. "API succeeded" ≠ "image is correct". |
+| Stacking three new clauses when one isn't working | Change one dimension at a time. You won't know what helped otherwise. |
+| Running examples folder PNGs as ground truth | They're demonstrations, not specs. Composition will vary on regen. |
+
+## Backend cheat sheet
+
+| Need | Use |
+|---|---|
+| Fastest single image | API with the default `gpt-image-2.5-flare` |
+| Don't have / don't want an API key | codex |
+| Edit an existing image (no mask) | Either backend — API or codex-OAuth |
+| Mask-based inpainting | API only — Responses API doesn't take a mask parameter |
+| Preserving a face / logo / label type across an edit | API; use Sunburst and keep the critical reference first |
+| A guaranteed output size when editing | API only — codex ignores `--size` for `edit`/`compose` and returns the input's aspect |
+| Compose 2–16 references into one | Either backend — API or codex-OAuth |
+| Run on a teammate's machine without sharing credentials | codex (each user signs in separately) |
+| Transparent background / real alpha channel | Both, for `generate` — API takes it as a param, codex via prompt + verification. Codex `edit`/`compose`: API only |
+| A specific output file format (png / jpeg / webp) | API only via `--output-format` — both codex transports always return PNG |
+| Custom OpenAI-compatible host (jmrai, ZenMux, OpenRouter) | API with `OPENAI_IMAGE_BASE_URL` set |
+| Maximum quality / edit precision | API with `OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst` |
+| Largest sizes (4K) at high quality | API; on codex, `--size` is honoured for `generate` only and its reasoning loop slows on large outputs |
+
+## Persona note
+
+Output (file path, success message, failure explanation) should be terse and useful. No hype, no "here's your stunning generated masterpiece" framing — that's the kind of slop pixeltamer is supposed to help kill, not produce. Just: what was generated, where it lives, and what to do next.

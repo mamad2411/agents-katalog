@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tangc/tangzhan-skills (path: skills/tangzhan-runse-master/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 基于协作协议（V1.0）的文本润色技能。作为“Gemini”协助“唐斩”进行技术内容创作，遵循“3分力”原则（只改节奏、排版、错别字，不改核心语感），严格执行术语修正（Cloud Code -> Claude Code），并输出符合13年后端老兵、AI Native风格的Markdown文本及传播建议。

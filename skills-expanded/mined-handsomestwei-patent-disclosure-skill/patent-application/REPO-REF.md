@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/handsomestwei/patent-disclosure-skill (path: skills/patent-application/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 申请文件：把已有交底写成权利要求书、说明书、摘要与说明书附图。须指定交底目录；仅缺材料才终止。内容争议写入问题清单，不阻塞主文件。交付后请确认须摘要清单。已有产出上改稿则另存新时间戳目录。须显式触发。"

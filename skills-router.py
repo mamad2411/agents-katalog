@@ -63,8 +63,8 @@ def main():
         "# SKILLS AVAILABLE — katalog CURATED (%d ditampilkan dari %d · cap 55/kategori)"
         % (len(tier1), total_curated),
         "",
-        "> **Untuk AI: baca ini SEBELUM mengerjakan apa pun.** Kalau ada skill yang cocok,",
-        "> pakai skill itu dulu — jangan mengarang dari nol.",
+        "> **Untuk AI: JANGAN baca file ini utuh (123 KB = boros). Baca `TOKEN-SAVER.md` (2 KB) dulu.**",
+        "> Kalau ada skill yang cocok, pakai skill itu dulu — jangan mengarang dari nol.",
         "> Cari cepat: `~/.agents/skill-search.sh \"<kata kunci>\"` atau tool MCP `skill_search`.",
         "",
         "> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (%d entri scraping)"
@@ -74,7 +74,8 @@ def main():
         "",
         "Sumber: `%d` skill curated (dari `%d` entri total di index). Katalog penuh: `skills-index.db`."
         % (total_curated, total_all),
-        "Kategori: **%d** · maks %d skill/kategori ditampilkan di sini." % (len(by_cat), PER_CATEGORY),
+        "Kategori: **%d** · maks %d skill/kategori ditampilkan di sini. Peta hemat: `SKILLS-CATEGORIES.md` (4 KB)."
+        % (len(by_cat), PER_CATEGORY),
         "",
         "## Peta cepat kategori",
         "",

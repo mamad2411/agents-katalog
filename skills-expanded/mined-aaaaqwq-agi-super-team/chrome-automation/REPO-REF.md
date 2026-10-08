@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aaaaqwq/agi-super-team (path: skills/chrome-automation/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Chrome 浏览器自动化操作。当用户需要自动化浏览器操作、网页测试、数据抓取或 UI 自动化时使用此技能。"

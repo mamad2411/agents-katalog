@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bytedance/agentkit-samples (path: skills/byted-volcengine-finops/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 火山引擎费用中心账单分析技能，根据用户场景，使用 Python SDK 查询账单明细、成本账单明细、账号汇总、产品汇总与分账账单，支持按账期、分摊月、日期、产品、账号、实例、分拆项进行多维度的账单分析。

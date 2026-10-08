@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aiskillstore/marketplace (path: skills/dwsy/knowledge-base/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 专业的知识库管理系统，旨在解决“知识诅咒”和认知偏差问题。通过显式化隐性知识、扫描代码提取领域概念、整合行业最佳实践，构建结构化的 Markdown 知识库。

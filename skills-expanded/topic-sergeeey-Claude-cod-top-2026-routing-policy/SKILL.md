@@ -1,0 +1,209 @@
+<!-- BSV — Brief Skill View | поиск: BSV
+Скил   : routing-policy
+TL;DR  : Маршрутизатор задач — выбирает тип и путь решения
+Вызов  : Автоматически при любой задаче
+НЕ для : Самостоятельная работа без задачи
+-->
+
+---
+name: routing-policy
+description: >
+  [STATUS: review] [CONFIDENCE: high] [REVIEWED: 2026-03-13]
+  ALWAYS CHECK before starting ANY task. Decision routing matrix for
+  task→skill→agent→tools selection. Determines optimal execution path.
+  Triggers: any task, start of work, new request, plan, task,
+  implement, fix, debug, review, add, create, build, change.
+  Do NOT use as an execution skill — it routes only, never implements.
+---
+
+# Routing Policy — Task Routing Matrix
+
+## Current State (auto-injected)
+```
+!`git status --short 2>/dev/null | head -15`
+```
+```
+!`git diff --stat 2>/dev/null | tail -5`
+```
+
+## How to Use
+
+Before starting ANY task: (1) know the PROJECT type, then (2) identify the TASK type and follow the route.
+
+## Picking between similar skills
+
+Several skills overlap by topic but differ by mechanism (skeptic vs codex-skeptic vs
+grill-me; research vs research-scout vs deep-research). They are modes, not duplicates.
+When unsure which to invoke, consult `docs/skill-disambiguation.md` — it maps each
+family to "when to take this one". Do not fire all of them; pick by mechanism.
+
+## Stage 0 — Project Type (sets the methodology baseline)
+
+Task routing alone is not enough — the SAME task needs different rigor in different projects
+(a "quick fix" in a research repo still affects conclusions; in an MVP it just ships).
+
+1. Read `.claude/memory/_auto/project_profile.md` (auto-written by the `project_classifier` hook
+   at SessionStart). It gives project type + confidence.
+2. If confidence is LOW / `ambiguous`, invoke the **dispatcher** skill — it arbitrates by reading
+   CLAUDE.md/README intent, not folder structure. When you invoke it this way, dispatcher will
+   NOT call back into routing-policy for task classification (that would cycle) -- pass it the
+   task type you already have, or classify it yourself once dispatcher returns the project type.
+3. The project type sets the **methodology baseline**; the task type (below) refines the route:
+
+| Project type | Baseline | FL tier default |
+|--------------|----------|-----------------|
+| research | EstimandOps L0 + skeptic-triggers, claims `[VERIFIED]/[HYPOTHESIS]` | Full |
+| data-science | validate on REAL data `[VERIFIED-REAL]` | Standard |
+| production | reviewer mandatory + coverage ≥80% | Standard |
+| MVP | speed > rigor, tests optional | Micro |
+
+Then apply the task matrix below within that baseline.
+
+## Absolute Safety Floor (applies on EVERY route — confidence or dispatcher-invocation does not matter)
+
+The table above sets **rigor**, never an on/off switch for these. They apply whether confidence
+was HIGH (dispatcher never ran) or LOW/ambiguous (dispatcher ran and returned a verdict):
+
+| Always mandatory | Even if project type = |
+|---|---|
+| Security/PII/payments/secrets review | MVP, production, any |
+| Tests for migrations, destructive operations, releases | MVP |
+| Evidence-marking for external claims ([VERIFIED]/[HYPOTHESIS]/[UNKNOWN]) | MVP, research |
+| User confirmation for irreversible actions | any |
+
+`MVP × "change token auth handling"` is **not** the "tests optional" MVP row above — it falls
+under the security floor regardless of project type. This is a minimal addition, not a rearchitecture:
+routing-policy still owns task routing; dispatcher still owns project-type arbitration on
+ambiguous cases. The floor text is duplicated intentionally (see dispatcher/SKILL.md's own
+Safety Floor) so it holds even when dispatcher is never invoked.
+
+## 4-Stage Workflow
+
+Every task passes through these stages in order. Use them as a mental checklist:
+
+| Stage | Goal | Maps to |
+|-------|------|---------|
+| **1 — Research** | Understand before acting | Type 1, or Explore agent for Types 2-5 |
+| **2 — Planning** | Design before coding | Types 2-3 (brief plan or EnterPlanMode) |
+| **3 — Acting** | Execute with evidence | Types 2-6 execution routes |
+| **4 — Review** | Verify and capture | reviewer agent + session-retrospective skill |
+
+**Hard rule:** Never skip Stage 1 to jump directly to Stage 3.
+Symptoms of skipping: editing without reading, committing without testing, closing task without review.
+
+## Routing Matrix
+
+### Type 1: Research / Question
+**Signals:** "what is this", "how does it work", "where is it", "why", explain, find, search
+
+**Route:**
+1. Explore subagent → Read/Grep/Glob (local tools)
+2. If not found locally → MCP (Context7, PubMed, WebSearch)
+3. Mark every fact according to Evidence Policy
+
+**Hard rule:** local tools first, then MCP. Do not call MCP without first trying locally.
+
+### Type 2: Code Change (1-2 files)
+**Signals:** "change", "add", "fix" + specific file/function
+
+**Route:**
+1. Read target file(s) in full
+2. Brief plan in response (not EnterPlanMode)
+3. Edit/Write
+4. Run tests (`pytest -x -q` or equivalent)
+5. If tests fail → Read the error, understand the cause, THEN fix
+6. Commit
+
+### Type 3: Code Change (3+ files)
+**Signals:** "refactor", "new feature", "migration", multi-file change
+
+**Route:**
+1. EnterPlanMode (plan_mode_guard fires automatically)
+2. boyko-agent (Opus) → decompose into tasks
+   (correction 2026-07-22: a prior edit this session changed this to "navigator", reasoning
+   "there is no agents/boyko-agent.md" -- that check only looked for the FILENAME. PR #207
+   (2026-07-17) renamed the agent by changing agents/navigator.md's frontmatter `name:` field
+   from navigator to boyko-agent; per agents/navigator.md's own "identity is defined by
+   frontmatter, not the filename", boyko-agent IS the real, currently-resolving Agent-tool
+   invocation name -- verified via the live Agent-tool roster, which lists boyko-agent and no
+   longer lists navigator. The file is still named navigator.md for git-history continuity.)
+3. builder agent (Sonnet) → implement each file
+4. tester agent (Sonnet) → tests
+5. reviewer agent (Sonnet, high effort) → code review
+   (was "Opus" here -- agents/reviewer.md is model: sonnet, effort: high; fixed 2026-07-21)
+6. Commit
+
+### Type 4: Writing Tests / TDD
+**Signals:** "tests", "test", "coverage", "TDD", "with tests", "cover with tests"
+
+**Route:**
+1. Load tdd-workflow skill (auto-loaded by trigger)
+2. RED → GREEN → REFACTOR
+3. NEVER write implementation before tests — because tests written after code
+   validate the implementation, not the requirements (post-hoc confirmation bias)
+
+### Type 5: Debugging
+**Signals:** "crashes", "error", "not working", "bug", error, fail, broken, debug
+
+**Route:**
+1. Read full traceback / error message
+2. Explore subagent → search context in codebase
+3. Hypothesis [INFERRED] with chain of reasoning
+4. Verify hypothesis with a tool → [VERIFIED]
+5. If 3 attempts failed → Stuck Detection → STOP → ask user
+
+### Type 6: Security / Compliance
+**Signals:** "audit", "security", PII, SQL, auth, payments, .env
+
+**Route:**
+1. Load security-audit skill
+2. reviewer agent → code review
+3. Check deny-list (17 patterns)
+4. If working with PII → confirm redaction hook is active
+
+## Hard Guards — Absolute Rules
+
+These rules override ANY rationalization:
+
+| Guard | Rule | Prevents |
+|-------|------|---------|
+| **Read Before Edit** | Do NOT edit a file without reading it first | Hallucination Loops |
+| **Local Before MCP** | Do NOT call MCP without trying locally first | Wasted tokens |
+| **Plan Before Multi-Edit** | Do NOT edit 3+ files without a plan | Chaotic changes |
+| **Test Before Commit** | Do NOT commit without running tests (if tests exist) | Broken commits |
+| **Evidence Before Claim** | Do NOT assert a fact without an Evidence Policy marker | Hallucinations |
+
+## Task Type Identification
+
+If the task does not clearly fall into one type:
+- Contains "test/coverage" → **Type 4** (TDD) takes priority
+- Contains "error/bug" → **Type 5** (Debugging) takes priority
+- Contains "security/PII/auth" → **Type 6** (Security) takes priority
+- Touches 3+ files → **Type 3** (Multi-file) is mandatory
+- Direction is genuinely unclear (not just "little context in the prompt"),
+  or the task is explicitly exploratory/hypothesis-driven/cross-domain →
+  invoke `Agent(boyko-agent, ...)` first instead of defaulting to Type 2/3.
+  boyko-agent's own `whenToUse` names exactly this case ("when direction is
+  unclear... exploratory, cross-domain, hypothesis-driven") — routing
+  straight to Type 2/3 here skips the one component built for it.
+- Anything else → **Type 2** (Simple change) by default
+
+## Skill Execution Order (Layers)
+
+When multiple skills could activate, follow this priority:
+
+| Layer | Priority | Skills | Rule |
+|-------|----------|--------|------|
+| 1 — SAFETY | Mandatory, always first | security-audit, routing-policy | Never skip. Check before any code change touching auth/PII/payments |
+| 2 — QUALITY | Before implementation | tdd-workflow, brainstorming (if 3+ files) | RED before GREEN. Design before code |
+| 3 — EXECUTION | Task-specific work | archcode-genomics, geoscan, notebooklm, mentor-mode, reference-registry | Load on trigger, one at a time |
+| 4 — ENHANCEMENT | Post-task | git-worktrees, last30days, research-pipeline | Isolation, research, supplementary |
+| 5 — REVIEW | Post-task | session-retrospective | Capture decisions, patterns, next focus |
+
+If skills conflict: higher layer wins. Layer 1 can block Layer 3 (security blocks unsafe code). Layer 5 always runs last — it reviews, never blocks.
+
+## Gotchas
+- This skill is meta — it routes, not executes. Don't let it become a bottleneck
+- If task type is unclear after 5 seconds, first check the boyko-agent
+  criterion under "Task Type Identification" above — only default to Type 3
+  (code change) if that criterion doesn't apply

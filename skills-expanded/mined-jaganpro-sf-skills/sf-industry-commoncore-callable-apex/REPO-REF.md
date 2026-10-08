@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jaganpro/sf-skills (path: skills/sf-industry-commoncore-callable-apex/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: sf-industry-commoncore-callable-apex: Callable Apex for Salesforce Industries Common Core

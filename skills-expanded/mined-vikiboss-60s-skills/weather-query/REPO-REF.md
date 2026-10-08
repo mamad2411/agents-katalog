@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vikiboss/60s-skills (path: skills/weather-query/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 查询中国各地实时天气和天气预报，包括温度、湿度、风速、空气质量等信息。Use when users ask about weather conditions, forecasts, or climate information for locations in China.

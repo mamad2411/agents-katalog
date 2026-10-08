@@ -1,0 +1,226 @@
+---
+name: bibcli
+description: "로컬 BibTeX SSOT 검색/조회 + URL 원샷 입수. 유튜브·X(트위터)·책·블로그·웹 URL을 에이전트에게 주면 save→스타일·키 판단→pin --sync 로 같은 세션에 Zotero 적소 분류 + 인용 키 확정(시점 분리 금지). X는 수동 메타데이터 보정, YouTube는 무의미한 플랫폼 안내문을 abstract로 남기지 않는다. 폰 캡처 후엔 bib sync. orphan #+print_bibliography: 금지."
+---
+
+# bibcli — meta-bib SSOT + URL 입수 (org 에이전트 기본)
+
+Binary: `{baseDir}/bibcli`
+Live bibliography: `~/sync/org/resources/bib` (always pass `--dir` until the installed binary is rebuilt)
+Renderer/operator logic: `~/repos/gh/zotero-config/.claude/skills/zotero-config/SKILL.md`
+공개 담당자 문서: `denote:20260304T105300` (§zotero-config) — 교리·경계가 바뀌면 그 방 갱신 (새 llmlog 금지)
+
+**역할:** GLG가 유튜브·책(yes24)·블로그·웹 URL만 넘기면, 이 스킬 하나로  
+Zotero 적소에 담고 → 로컬 SSOT에 키를 확정해 → org 글에 바로 쓴다.  
+“서지 없어요”로 멈추지 않는다.
+
+## 0) Doctrine
+
+```text
+Zotero Cloud                    = 여러 기기에서 함께 쓰는 캡처 금고 + 컬렉션 분류
+~/sync/org/resources/bib/*.bib  = 메타 서지 SSOT (Syncthing 공유) ← bibcli가 읽는 유일한 면
+각 기기의 zotero-config/.sync/ = 증분 cache만; Git·Syncthing으로 공유 금지
+org note                        = #+reference: KEY 로 소비
+```
+
+어느 기기의 org 담당자든 자기 기기에서 URL을 바로 `save → pin --sync` 한다.
+일상 입수·인용에 Git pull/push는 없다. Zotero Cloud와 결정론적 렌더가 기기별
+cache 순서를 지우고, Syncthing은 완성된 `bib/*.bib`만 나른다.
+
+| 규칙 | 내용 |
+|---|---|
+| 한 세션 | URL 입수와 인용 키 확정을 **나누지 않는다** |
+| SSOT | `bibcli show` 되는 키만 서지로 인정 |
+| dateAdded | 성스러움 — `pin` whitelist만, 일괄 enrich 금지 |
+| 손편집 `*.bib` | 금지 (다음 sync에 덮임) |
+| 별표 스크랩 | 경계 밖 (YouTube 별표 목록 등 직접 수집 금지) |
+
+## 1) 읽기 (로컬 only)
+
+```bash
+{baseDir}/bibcli search "words" [--type Book|Online|Video|…] --dir ~/sync/org/resources/bib --max 10
+{baseDir}/bibcli show "citation-key" --dir ~/sync/org/resources/bib
+{baseDir}/bibcli list --type Book --dir ~/sync/org/resources/bib --max 20
+{baseDir}/bibcli stats --dir ~/sync/org/resources/bib
+{baseDir}/bibcli lookup ISBN|제목   # 선택 보조, 타임아웃 가능, 필수 아님
+```
+
+## 2) URL → 글에 쓸 키 (모든 유형 공통 원샷)
+
+```text
+[1] save --json URL     Translation Server → Cloud (날것, zoteroKey)
+[2] style + key         에이전트 판단 (유형별 아래)
+[3] pin --sync          스타일·키 PATCH + 컬렉션 분류 + bib sync
+[4] show + cite         bibcli show → #+reference: KEY
+```
+
+```bash
+cd ~/repos/gh/zotero-config
+./run.sh server status || ./run.sh server start
+./run.sh save --json "URL"
+# → { saved:[{zoteroKey, title}], … }
+
+# 같은 턴에서 스타일·유일 키 결정 후:
+./run.sh pin --sync --json '{
+  "zoteroKey": "FROM_SAVE",
+  "citationKey": "UNIQUE-KEY",
+  "title": "…",
+  "creators": [{"creatorType":"author","name":"…"}],
+  "date": "YYYY",
+  "url": "URL",
+  "abstractNote": "…",
+  "language": "ko"
+}'
+# → { citationKey, collections:[…], synced:true, dateAdded preserved }
+
+{baseDir}/bibcli show "UNIQUE-KEY" --dir ~/sync/org/resources/bib
+```
+
+**컨테이너(OpenClaw gateway)에서:** `ZOTERO_TRANSLATION_SERVER`(호스트 TS)와
+`ZOTERO_BIB_DIR`(/home/junghan/org/resources/bib)가 환경에 이미 박혀 있다 —
+`cd ~/repos/gh/zotero-config && ./run.sh save/pin` 그대로 쓰면 된다.
+`server start/stop/restart`는 원격 모드에서 정직하게 거부된다: Translation Server는
+호스트 자산(oracle: systemd unit `translation-server.service`, 부팅 시 자동)이며
+컨테이너가 중복 실행하면 안 된다. `bib sync`의 flock(.sync/.lock)은 호스트와 같은
+inode를 공유하므로 상호배제가 그대로 성립한다.
+
+**금지:** `save`만 하고 키·분류를 다음 세션으로 미루기.  
+**금지:** 책 최종 키를 `book-…` 폴백으로 남기기.
+
+### 2a) 유형별 라우팅
+
+| URL / 유형 | 스타일 포인트 | citationKey | pin 자동 컬렉션 (Unfiled 탈출) | 로컬 bib |
+|---|---|---|---|---|
+| **책** yes24 등 | 제목 파이프 제거, `저`/`역` creators, date·ISBN·publisher·abstract | KDC 감각 `001.3-김74ㅁ` (동저자 `search` 참고, **유일**) | `Book` + `000-정보`…`900-역사` (키 앞자리) | `Book.bib` |
+| **유튜브 / 영상** | 제목 정리, 채널→author, date, **의미 있는 abstractNote** | `…` 기존 영상 패턴 또는 save 직후 키 개선 | **`fileUnder: "Video"` 명시** | 보통 `Online.bib`* |
+| **X (Twitter)** | **포스트 원문을 직접 읽어** 제목·작성자(handle)·date·본문 요약 수동 보정 | `web-…` 또는 개선 키 | `Category → @Web` | `Online.bib` |
+| **블로그** | 제목·author·date | `blog-…` 또는 개선 키 | `Category → BlogPost` | `Online.bib` |
+| **일반 웹** | 제목 정리 (사이트 접미 제거) | `web-…` 또는 개선 키 | `Category → @Web` | `Online.bib` |
+| **위키** | 표제어 정리 | `wiki-…` | `Category → Wikipedia` | `Reference.bib` |
+| **소프트웨어/레포** | name·url | 관례 키 | `Category → Software` | `Software.bib` |
+
+컬렉션은 `pin`이 **자동**으로 넣는다 (로컬 type-split bib의 역방향).
+
+- 책: **KDC 모양** `DDD(.D…)-저자기호` citationKey만 → Book + N00. 숫자 접두사만인 키는 책이 아니다.
+- 비책: Cloud `itemType` → Category 리프
+- YouTube는 Translation Server가 `youtu.be`와 canonical URL 모두 `webpage`로 낼 수 있다.
+  그러므로 payload에 **`fileUnder: "Video"`를 명시**해 Cloud 컬렉션을 Video로 넣는다.
+  렌더러는 itemType 기준이므로 webpage는 정직하게 `Online.bib`에 남는다; `Video.bib`는
+  `videoRecording`/film/tvBroadcast만이다.
+- 덮어쓰기/수선: `fileUnder: "Video"` / `collections: ["…"]` /
+  `removeCollections: ["…"]` (지정한 기존 컬렉션만 제거) / `noCollections: true`
+
+*YouTube의 Cloud 컬렉션 Video와 로컬 `Video.bib`는 같은 분류 축이 아니다. 전자는
+`fileUnder`가 정하는 사람용 정리이고, 후자는 Zotero `itemType` 기반 렌더 결과다.
+
+YouTube pin 예시:
+
+```bash
+./run.sh pin --sync --json '{
+  "zoteroKey": "FROM_SAVE",
+  "citationKey": "VIDEO-KEY",
+  "fileUnder": "Video",
+  "abstractNote": "영상 설명에서 회수한 핵심 내용 또는 제목·채널·공개 메타데이터에 근거한 짧은 요약"
+}'
+```
+
+### 2b) X와 YouTube — 저장은 자동이어도 내용은 확인한다
+
+Translation Server의 `save` 결과는 **캡처 초안**이다. 다음 경우에는 자동 메타데이터를
+그대로 `pin`하지 말고, 링크의 실제 내용을 확인해 payload로 덮어쓴다.
+
+| 링크 | 버려야 할 초안 | pin 전에 할 일 |
+|---|---|---|
+| **X (Twitter)** | `x.com` 제목, `session not provided`/HTTP 400, X의 일반 소개문 | 포스트 원문을 직접 읽어 제목(짧은 내용 요약 가능)·작성자 이름과 `@handle`·게시일·본문의 짧은 abstractNote를 채운다. 원문을 읽을 수 없으면 추측으로 만들지 말고 GLG에게 내용/스크린샷을 요청한다. |
+| **YouTube** | “YouTube에서 마음에 드는 동영상과 음악을 감상하고…” 같은 플랫폼 소개문 | 영상 설명(description)을 먼저 회수해 `abstractNote`로 넣는다. 설명이 없거나 무의미하면 제목·채널·페이지에서 읽힌 정보에 근거한 1–2문장 요약을 직접 쓴다. 영상을 보았다고 꾸미지 않으며, 내용 요약을 요청받았거나 공개 정보가 부족하면 `youtube-transcript`로 자막 정본을 회수한다. |
+
+즉, URL을 받으면 **제목·저자·날짜뿐 아니라 abstractNote가 그 링크 자체를 식별하는 정보를
+갖는지** 마지막으로 확인한다. 일반 플랫폼 안내문·로그인 유도문·빈 abstract는 정보가 아니다.
+
+### 2c) 책 스타일 (yes24)
+
+| Raw | Styled |
+|---|---|
+| `제목 \| 저자 \| 출판사 - 예스24` | `제목` |
+| `lastName=저, firstName=김정운` | `{"creatorType":"author","name":"김정운"}` |
+| date/ISBN 공백 | 페이지 meta (`datePublished`, `books:isbn`)에서 채움 |
+| citationKey 없음 | 에이전트 KDC 판단 — `bibcli show`로 중복 확인 |
+
+KDC는 **완벽할 필요 없음**. 분류 축 + SSOT 유일성이 핵심.  
+`lookup`/도서관 API는 선택; 실패해도 판단으로 진행.
+
+### 2d) 키 유일성
+
+```bash
+{baseDir}/bibcli show "후보키" --dir ~/sync/org/resources/bib
+# entry not found 여야 신규 핀 가능 (같은 항목 재핀은 예외)
+```
+
+### 2e) 이미 금고에만 있음 (폰/브라우저 Connector)
+
+```bash
+cd ~/repos/gh/zotero-config && ./run.sh bib sync
+{baseDir}/bibcli search "제목|url조각" --dir ~/sync/org/resources/bib --max 10
+```
+
+미분류·키 부실이면 `zoteroKey` 확보 후 **2) pin --sync**로 수선 (같은 세션).
+
+### 2f) 빠른 웹만 (예외)
+
+메타가 깨끗하고 Unfiled여도 당장은 키만 필요할 때:
+
+```bash
+./run.sh save --sync --json "URL"   # resolved[].citationKey
+```
+
+가능하면 그래도 **pin**으로 컬렉션까지 닫는 쪽을 기본으로 한다.
+
+## 3) Decision table
+
+| 상황 | 행동 |
+|---|---|
+| 키 있음 | `show` |
+| 로컬에 있을 듯 | `search` (방금 폰 저장 → 먼저 `bib sync`) |
+| URL = 책/yes24 | save → style+KDC → **pin --sync** |
+| URL = X (Twitter) | 원문 확인 → 수동 메타데이터·abstractNote → **pin --sync** |
+| URL = YouTube | 설명/공개 정보 확인 → 의미 있는 abstractNote + `fileUnder: Video` → **pin --sync** |
+| URL = 블로그·웹 | save → 가벼운 스타일+키 → **pin --sync** |
+| “서지 없어요” + 스레드에 URL | **지금 2)** — 보고만 하고 끝 금지 |
+| org 노트 인용 | `#+reference:` + `#+print_bibliography:` (orphan 금지) |
+
+## 4) Mutation boundary
+
+| 명령 | Cloud | 메모 |
+|---|---|---|
+| `bib sync` / `full` | 읽기 only | 렌더 네트워크 없음; KDC API 없음 |
+| `save --json` | 항목 생성 | 날것 캡처 |
+| **`pin --sync`** | whitelist PATCH | 스타일+키+**컬렉션**; dateAdded 불변; 유일 키 |
+| `writeback` / `enrich` | PATCH | 레거시·위험 — 기본 경로 아님 |
+| `*.bib` 손편집 | — | 금지 |
+
+## 5) org 패턴
+
+```org
+#+reference: citation-key
+#+print_bibliography:
+```
+
+## 6) Environment
+
+| 변수 | 용도 |
+|---|---|
+| `ZOTERO_API_KEY` / `ZOTERO_USER_ID` | save, pin, bib |
+| `ZOTERO_TRANSLATION_SERVER` | 기본 `http://localhost:1969` |
+| `DATA4LIBRARY_API_KEY` | 선택 `lookup` only |
+| `ZOTERO_BIB_DIR` | renderer 출력면 override; 기본 `~/sync/org/resources/bib` |
+| `BIBCLI_DIR` | 옛 output 경로 변수일 수 있음. 새 binary는 이를 무시하며, 일상 에이전트는 항상 `--dir ~/sync/org/resources/bib` 명시 |
+
+Translation Server 실패 시 클론 위치: `~/repos/3rd/translation-server`.
+
+## 7) 한 줄 요약
+
+```text
+URL 전달 → save → (에이전트 스타일·키) → pin --sync → bibcli show → 글에 인용
+책이면 Book/N00, 유튜브면 Video, 블로그면 BlogPost, 웹이면 @Web.
+시점을 나누지 않는다.
+```

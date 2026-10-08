@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aiskillstore/marketplace (path: skills/labring/workflow-interactive-dev/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 用于开发 FastGPT 工作流中的交互响应。详细说明了交互节点的架构、开发流程和需要修改的文件。

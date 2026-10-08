@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wot-ui/open-wot (path: skills/wot-ui-v2/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 回答、生成、重构、排查 wot-ui v2 相关代码时使用。关键词：wot-ui、uni-app、Vue3、wd-、ConfigProvider、useToast、useDialog、Form、Popup、theme、llms-full。适用于组件选型、API 查询、示例页面生成、主题定制、常见坑排查。'

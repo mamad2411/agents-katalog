@@ -1,0 +1,546 @@
+---
+name: yolo-chorus
+description: Full-auto AI-DLC pipeline — from prompt to done. Automates the entire Idea -> Proposal -> Execute -> Verify lifecycle.
+license: AGPL-3.0
+metadata:
+  author: chorus
+  version: "0.21.1"
+  category: project-management
+  mcp_server: chorus
+---
+
+# Yolo Skill
+
+Full-auto AI-DLC pipeline. User provides a prompt; agent drives the entire lifecycle: Idea -> Elaboration -> Proposal -> Review -> Execute -> Verify -> Done.
+
+> **Tool namespace:** Chorus tools are exposed by the connected MCP server under a `mcp__chorus__` prefix on dsh (e.g. `mcp__chorus__chorus_pm_create_proposal`). Bare names are used below for readability — prepend `mcp__chorus__` when invoking. See `chorus` for the full rule.
+
+> **dsh adaptations summarized (details inline below):** (1) elaboration is self-answered with no user interaction; (2) reviewers run inline after each submit by loading the exact reviewer through the `skill` tool in a foreground `subagent` (`run_in_background: false`, so the call waits for the reviewer to finish; the verdict is then read from the Chorus comment), with a read-only self-review fallback; (3) sessions are manual if you dispatch sub-agents; (4) task execution dispatches **one `subagent` per unblocked task** (`run_in_background: true`, whole wave in one message), falling back to **sequential main-agent waves** when `subagent` is unavailable or workers fail repeatedly — there is no team object to create first.
+
+---
+
+## Overview
+
+`yolo-chorus` automates the complete AI-DLC workflow. You provide a natural language description of what you want built, and the agent handles everything:
+
+1. **Planning** -- create project, idea, self-elaboration, proposal with docs & tasks
+2. **Proposal Review** -- proposal-reviewer adversarial loop
+3. **Execution** -- dependency-ordered waves: one worker sub-agent per unblocked task, or sequential main-agent execution as fallback
+4. **Verification** -- task-reviewer adversarial loop + admin verify
+5. **Report** -- completion summary
+
+```
+/yolo <prompt>
+       |
+       v
+  Project + Idea + Elaboration (self-answered) + Proposal
+       |
+       v
+  Proposal Reviewer (inline, up to maxProposalReviewRounds)
+       |
+       v
+  Admin Approve --> Tasks materialize
+       |
+       v
+  Wave execution (loop chorus_get_unblocked_tasks; one subagent per task,
+                  or sequential main-agent fallback)
+       |  (implement task + task-reviewer per task)
+       v
+  Admin Verify each task --> unblock next
+       |
+       v
+  Done. Report summary.
+```
+
+**Escape hatch:** interrupt at any time. All created entities (project, idea, proposal, tasks) persist in Chorus. Resume manually via `develop-chorus` or `review-chorus`.
+
+---
+
+## Prerequisites
+
+The API key needs write + admin on every resource it touches:
+
+| Needs | Why |
+|------|-----|
+| `idea: [write]` | Create ideas, run elaboration |
+| `proposal: [write, admin]` | Create proposals; approve them |
+| `task: [write, admin]` | Create, execute, verify tasks |
+| `project: [write]` | Create the project if none is given |
+
+**Check at startup:**
+
+```
+perms = chorus_checkin().agent.permissions
+need = { idea: ["write"], proposal: ["write","admin"],
+         task: ["write","admin"], project: ["write"] }
+
+for resource, actions in need:
+  missing = [a for a in actions if a not in (perms[resource] or [])]
+  if missing: ABORT "/yolo needs {resource}: {missing}. Use an Admin-preset API key."
+```
+
+---
+
+## Input
+
+```
+/yolo <natural language prompt>
+/yolo <prompt> --project <project-uuid>
+```
+
+- `<prompt>` -- what you want built (becomes the Idea content)
+- `--project <uuid>` -- optional; use an existing project instead of creating a new one
+
+---
+
+## Research routing
+
+During planning, follow the Idea and Proposal routes to `research-chorus` ([shared rules](../research-chorus/SKILL.md)): Idea before formal clarification once focused, Proposal after reusing evidence and only for new gaps or an explicit request. Carry findings and the request context across wakes and brainstorm; do not restart the same investigation on resume. Preserve the existing yolo decision/review gates. A Tracker Research action is research-only even inside a yolo-associated conversation: use the Idea research-only branch, save/report, and return without advancing to elaboration, proposal submission, or development. A yolo request alone does not prove development started; use actual execution facts.
+
+## Workflow
+
+### Phase 1: Planning
+
+#### Step 1.1: Resolve Project
+
+Parse the arguments for `--project <uuid>`.
+
+**If `--project` is provided:**
+```
+chorus_get_project({ projectUuid: "<uuid>" })
+```
+Verify it exists and proceed.
+
+**If not provided**, search for a suitable existing project first:
+```
+# 1. Search for projects matching the prompt topic
+chorus_search({ query: "<key terms from prompt>", entityTypes: ["project"] })
+
+# 2. Or list recent projects to find a match
+chorus_list_projects()
+```
+
+Review the results. If a project clearly matches the user's intent (same topic, active, relevant scope), use it. If no suitable project exists, create a new one:
+```
+chorus_admin_create_project({
+  name: "<short title derived from prompt>",
+  description: "<1-2 sentence summary of the prompt>"
+})
+```
+
+#### Step 1.2: Create Idea
+
+```
+chorus_pm_create_idea({
+  projectUuid: "<project-uuid>",
+  title: "<concise title derived from prompt>",
+  content: "<full user prompt as-is>"
+})
+```
+
+Then claim it:
+```
+chorus_claim_idea({ ideaUuid: "<idea-uuid>" })
+```
+
+#### Step 1.3: Self-Elaboration
+
+In /yolo mode, the agent generates elaboration questions and answers them itself -- **no user interaction at all**. When `CHORUS_DAEMON_HEADLESS=1`, `ask_user_question` is prohibited, and yolo deliberately does not prompt the user; it self-answers to preserve an audit trail without interrupting the run.
+
+> **Self-elaboration is still a loop.** If answering your own questions surfaces a **new question, contradiction, or gap**, loop back to `chorus_pm_start_elaboration` for another self-answered round before resolving — don't force a resolve over unresolved ambiguity. There is no human gate in YOLO, so the loop exits on **your** judgment that nothing material is left open (round cap 10). Steps 1–2 are one round; repeat them as needed, then resolve once in Step 3.
+
+1. **Generate and submit questions:**
+   ```
+   chorus_pm_start_elaboration({
+     ideaUuid: "<idea-uuid>",
+     depth: "standard",
+     questions: [
+       {
+         id: "q1",
+         text: "<question about scope, architecture, etc.>",
+         category: "functional",
+         options: [
+           { id: "a", label: "<option A>" },
+           { id: "b", label: "<option B>" }
+         ]
+       }
+       // ... 5-8 questions covering functional, technical_context, scope aspects
+     ]
+   })
+   ```
+
+2. **Answer immediately** (agent selects best options based on the prompt — no user prompt):
+   ```
+   chorus_answer_elaboration({
+     ideaUuid: "<idea-uuid>",
+     roundUuid: "<round-uuid>",
+     answers: [
+       { questionId: "q1", selectedOptionId: "a", customText: "Rationale: ..." },
+       // ...
+     ]
+   })
+   ```
+
+3. **Resolve** — in YOLO mode the agent resolves elaboration **autonomously, with no human-confirmation gate** (the human-confirmation requirement that applies to the interactive `idea-chorus` flow is explicitly waived under `yolo-chorus` automation):
+
+   ```
+   chorus_pm_validate_elaboration({
+     ideaUuid: "<idea-uuid>"
+   })
+   ```
+
+   > `chorus_pm_validate_elaboration` requires `idea:admin`. `yolo-chorus` already mandates an Admin-preset key in Prerequisites, so this is satisfied. To open another self-elaboration round instead of resolving, just call `chorus_pm_start_elaboration` again.
+
+#### Step 1.4: Create Proposal
+
+1. **Read the spec mode (already computed).** The chorus-dsh bundle resolved it at plugin load and injected a `## Spec Mode` block into your context — do NOT re-derive. Read `CHORUS_SPEC_MODE=<lite|openspec|off>` + its routing note (also on the `CHORUS_SPEC_MODE` / `CHORUS_OPENSPEC_ACTIVE` env vars). Act on it: `openspec` (usable, shows `CHORUS_OPENSPEC_ACTIVE=1`) → **2a**; `off` → **2b**; `lite` → **2c**. If it says the mode **cannot be honored** (explicit `openspec` but unusable), **halt** and surface it — do NOT fall back or enter 2a with no OpenSpec.
+
+   > **dsh note:** there is no Claude Code SessionStart hook, but the bundle precomputes the mode the same way (see `openspec-aware-chorus` §1). This matters because yolo runs unattended — silently picking the wrong mode is exactly the failure the resolved-mode contract prevents. Only if the `## Spec Mode` context is genuinely absent, resolve the full mode (never hand-roll an OpenSpec-only check that ignores `CHORUS_SPEC_MODE`).
+
+2. **Create the empty proposal container.** The `description` MUST carry the resolved mode's locator line — OpenSpec: `OpenSpec change slug: <slug>`; spec-lite: `Spec-lite: .chorus/specs/<slug>/<YYYY-MM-DD>-<change-slug>/`; free-form: none. `description` is only settable at creation, so decide the slug / dated path first.
+
+   ```
+   chorus_pm_create_proposal({
+     projectUuid: "<project-uuid>",
+     title: "<feature name>",
+     description: "<summary>\n\nOpenSpec change slug: <slug>",                          // OpenSpec (2a)
+     // description: "<summary>\n\nSpec-lite: .chorus/specs/<slug>/<YYYY-MM-DD>-<change-slug>/", // spec-lite (2c)
+     // description: "<summary>",                                                        // free-form (2b)
+     inputType: "idea",
+     inputUuids: ["<idea-uuid>"]
+   })
+   ```
+
+   Then branch:
+
+   **2a. OpenSpec mode (`CHORUS_OPENSPEC_ACTIVE=1`).** Follow `openspec-aware-chorus` §3 end-to-end:
+   - Pick `$SLUG`, run `openspec new change "$SLUG"` (§3.1–§3.2).
+   - Author `proposal.md`, `design.md`, and one `specs/<capability>/spec.md` per capability locally on disk (§3.3). ADDED Requirements only; per-spec fallback to free-form Markdown if MODIFIED/REMOVED is needed.
+   - Define the `chorus_check_response` helper (§6); prefer `chorus mcp call … --arg-file content=<file>` for mirrors (§3.4/§3.6) — the bash-wrapper fallback's `$CHORUS_MCP_CALL` + `json_encode_file` are only needed when `chorus` is not on `PATH`.
+   - Mirror each local file via `chorus mcp call chorus_pm_add_document_draft … --arg-file content=<file>` (§3.6; fallback = `"$CHORUS_MCP_CALL" chorus_pm_add_document_draft "$PAYLOAD"`) — one call per file, with the document type from `openspec-aware-chorus` §5.
+
+   > **⛔ Do not** invoke `chorus_pm_add_document_draft` / `chorus_pm_update_document_draft` / `chorus_pm_update_document` from the MCP harness with a hand-typed `content` field in this branch. Re-typing the markdown body wastes 20k+ tokens per proposal and breaks byte-equality with the local files. See `openspec-aware-chorus` §2 Rule 1.
+
+   Then continue to step 3 (task drafts).
+
+   **2b. Free-form mode (resolved mode = free-form).** Only when step 1 resolved to free-form — i.e. explicit `CHORUS_SPEC_MODE=off` (unset never comes here: it resolves to OpenSpec when usable, else spec-lite/2c). Add a tech design document draft directly via MCP, content authored inline:
+
+   ```
+   chorus_pm_add_document_draft({
+     proposalUuid: "<proposal-uuid>",
+     type: "tech_design",
+     title: "Tech Design: <feature>",
+     content: "<markdown tech design covering architecture, data model, API, module contracts>"
+   })
+   ```
+
+   **2c. spec-lite mode (resolved mode = lite).** Load the `spec-lite-chorus` skill (via the `skill` tool). Pick `$SLUG` (a **capability**). Ensure the durable `.chorus/specs/<slug>/spec.md` exists (local-only, no ids; use the `spec-lite` skill's inline durable-spec template) and update it in place. Create this change's **dated folder** `.chorus/specs/<slug>/<YYYY-MM-DD>-<change-slug>/` with its **synced** Chorus-typed docs (shape = the `spec-lite` skill's inline dated-folder document template) — `prd.md` (primary), optional `tech_design.md`… The `description` carries the `Spec-lite: .chorus/specs/<slug>/<YYYY-MM-DD>-<change-slug>/` locator (step 2). Mirror **each** dated-folder `<type>.md` to its persistent Document byte-exact — first time `chorus mcp call chorus_pm_add_document_draft "{\"proposalUuid\":\"<uuid>\",\"type\":\"prd\",\"title\":\"PRD: <feature>\"}" --arg-file content=.chorus/specs/<slug>/<YYYY-MM-DD>-<change-slug>/prd.md`, later edits via `chorus_pm_update_document` against the recorded `documentUuid` (package-local `$CHORUS_MCP_CALL` / `chorus-mcp-call.mjs` fallback when `chorus` not on `PATH`). **`spec.md` is never mirrored.** No `openspec/changes/` scaffold; no `tasks.md`. Then continue to step 3.
+
+3. **Add task drafts incrementally** (use returned `draftUuid` for dependency chaining). `acceptanceCriteriaItems` is **required** on every draft — at least one non-blank criterion, or the call is rejected:
+   ```
+   # First task
+   result1 = chorus_pm_add_task_draft({
+     proposalUuid: "<proposal-uuid>",
+     title: "<module name>",
+     description: "<what to build, referencing tech design>",
+     priority: "high",
+     storyPoints: 3,
+     acceptanceCriteriaItems: [
+       { description: "<testable criterion>", required: true },
+       // ...
+     ]
+   })
+
+   # Second task, depends on first
+   chorus_pm_add_task_draft({
+     proposalUuid: "<proposal-uuid>",
+     title: "<dependent module>",
+     description: "...",
+     priority: "medium",
+     storyPoints: 2,
+     acceptanceCriteriaItems: [...],
+     dependsOnDraftUuids: ["<result1.draftUuid>"]
+   })
+   ```
+
+4. **Validate:**
+   ```
+   chorus_pm_validate_proposal({ proposalUuid: "<proposal-uuid>" })
+   ```
+   Fix any errors, then proceed.
+
+5. **Submit:**
+   ```
+   chorus_pm_submit_proposal({ proposalUuid: "<proposal-uuid>" })
+   ```
+   Immediately proceed to Phase 2 and run the proposal reviewer **inline** — dsh has no PostToolUse hook to remind you.
+
+---
+
+### Reviewer contract (applies to every review gate below)
+
+Every gate in Phases 2, 4 and 4.5 follows the same three steps. They are written once here; the phases below only name their entity and their stage-specific actions.
+
+1. **Spawn and wait.** Spawn the reviewer as a read-only sub-agent, then wait for it: spawn it with the `subagent` tool and **`run_in_background: false`** so the call waits. The verdict is the `VERDICT:` comment the reviewer posts, not the call's return value.
+2. **Read THIS round's VERDICT.** Call `chorus_get_comments` on the entity and find the `VERDICT:` comment posted **after your dispatch**, not an older round's. Do not advance the gate before you have read it.
+3. **No VERDICT for this round?** Check what the reviewer *did* post:
+   - **A reported round limit, or any other explicit refusal to review** — a deliberate escalation to a human. STOP: do not respawn, do not self-review, do not post a VERDICT of your own.
+   - **Nothing at all** — respawn ONCE, telling it to stay within its turn budget and reserve its last turns for the VERDICT, then apply this same check again to what the retry posts. An explicit refusal from the retry still means STOP; only a second true silence lets you review the entity yourself as a read-only pass and POST the VERDICT, then proceed on what you posted rather than looping forever.
+
+**Absence is never a PASS**, and a round limit reached by someone else is never yours to clear.
+
+---
+
+### Phase 2: Proposal Review Loop
+
+> **dsh difference:** there is no PostToolUse hook injecting a "spawn the reviewer" reminder. Run the reviewer **inline**, right after `chorus_pm_submit_proposal`.
+
+Obtain an independent VERDICT on the proposal:
+
+- **Preferred — spawn a reviewer sub-agent (foreground).** Use the dsh `subagent` tool to spawn a sub-agent with **`run_in_background: false`** (foreground — the call waits for the reviewer to finish, and the verdict is the `VERDICT:` comment it posts rather than the call's return value; the approve/reject decision depends on the verdict) whose task tells it to call the `skill` tool with `proposal-reviewer-chorus`, then review the proposal. The authoritative result is this round's `VERDICT:` comment on the proposal. Set `run_in_background: true` (a continuable/background sub-agent whose settlement notice you collect later) only when you deliberately want to fan out and don't need the verdict before your next step.
+  > `Load and run the proposal-reviewer-chorus skill to review proposalUuid <uuid>. This is review round <N>. Read the proposal, its documents, the idea, and the elaboration; classify findings as BLOCKER/NOTE; post your VERDICT comment on the proposal when done.`
+- **Fallback — review it yourself.** If `subagent` is unavailable (e.g. spawning disabled by policy), do the review yourself as a **focused, read-only pass** following the `proposal-reviewer-chorus` skill's procedure (read proposal + comments + idea + elaboration; check doc completeness, task granularity, AC↔requirement coverage, the DAG, and integration checkpoints; classify BLOCKER/NOTE) and record the result via `chorus_add_comment` ending with a `VERDICT:` line. Do not modify drafts during the review pass.
+
+Then:
+
+1. **Read the reviewer's VERDICT:**
+   ```
+   chorus_get_comments({ targetType: "proposal", targetUuid: "<proposal-uuid>" })
+   ```
+   Look for THIS round's `VERDICT:` comment — the one posted after your dispatch, not an older round's.
+
+2. **Act on the VERDICT:**
+
+   - **PASS** or **PASS WITH NOTES** --
+     ```
+     chorus_admin_approve_proposal({
+       proposalUuid: "<proposal-uuid>",
+       reviewNote: "PASS from reviewer. <brief summary of notes if any>"
+     })
+     ```
+     Tasks and documents materialize automatically. Proceed to Phase 3.
+
+   - **FAIL** --
+     Read the BLOCKERs from the reviewer comment. Then:
+     ```
+     chorus_pm_reject_proposal({
+       proposalUuid: "<proposal-uuid>",
+       reviewNote: "FAIL from reviewer. Fixing BLOCKERs: <list>"
+     })
+     ```
+     Revise the drafts (`chorus_pm_update_document_draft`, `chorus_pm_update_task_draft`) to address each BLOCKER, then resubmit:
+     ```
+     chorus_pm_submit_proposal({ proposalUuid: "<proposal-uuid>" })
+     ```
+     After resubmission, run the reviewer inline again for Round 2 (same as above).
+
+3. **Max rounds:** Loop up to `maxProposalReviewRounds` (from plugin config, default 3). If exhausted:
+   ```
+   STOP: "Proposal review failed after {maxRounds} rounds.
+          Remaining BLOCKERs: <list>. Human review needed.
+          Proposal UUID: <uuid>"
+   ```
+
+4. **No new VERDICT for this round?** Apply step 3 of the **Reviewer contract**, reviewing the proposal yourself if the reviewer stays silent.
+
+---
+
+### Phase 3: Task Execution (Waves)
+
+After proposal approval, tasks exist in `open` status. Execute them in dependency-ordered waves.
+
+> **dsh difference:** there is no team or group object to create. To run a wave in parallel, dispatch **one `subagent` per unblocked task** with `run_in_background: true`, issuing the whole wave in a single message, then collect their settlement notices. If `subagent` is unavailable on your host (spawning disabled by policy) or workers fail repeatedly, run waves **sequentially as the main agent** using the loop below: `chorus_get_unblocked_tasks`, implement each ready task yourself, verify it, then loop again for the next wave.
+
+```
+wave = 1
+
+loop:
+  # 1. Find ready tasks (all dependencies done/closed)
+  unblocked = chorus_get_unblocked_tasks({ projectUuid: "<project-uuid>" })
+
+  if no unblocked tasks and all tasks done/closed:
+    break  # All complete
+
+  if no unblocked tasks and some tasks not done:
+    # Stuck -- tasks failed review and can't proceed
+    break with escalation report
+
+  # 2. Implement each unblocked task, in order, AS THE MAIN AGENT:
+  for each task in unblocked:
+    chorus_claim_task({ taskUuid: task.uuid })
+    chorus_update_task({ taskUuid: task.uuid, status: "in_progress" })
+
+    # ... read task + proposal + project documents for context,
+    #     write code, run tests ...
+
+    chorus_report_work({ taskUuid: task.uuid, report: "...", status: "to_verify" })
+    chorus_report_criteria_self_check({ taskUuid: task.uuid, criteria: [...] })
+    chorus_submit_for_verify({ taskUuid: task.uuid, summary: "..." })
+
+    # 3. Proceed to Phase 4 (verification) for THIS task before moving to the next.
+
+  wave += 1
+```
+
+> **Parallel form:** to run a wave in parallel instead of serially, dispatch one worker `subagent` per unblocked task with `run_in_background: true`, issuing the whole wave in a single message, then collect their settlement notices before verifying. Because there is no SubagentStart hook, each worker prompt **must** include the manual session instructions explicitly — see `develop-chorus` "Optional: sub-agent dispatch". The main agent still owns review + verification, and the wave-by-wave dependency structure above is unchanged.
+
+---
+
+### Phase 4: Verification
+
+After each task is submitted (Phase 3 step 3), verify it before moving on:
+
+```
+for the just-submitted task:
+  # 1. Check task status
+  task = chorus_get_task({ taskUuid: "<task-uuid>" })
+
+  if task.status != "to_verify":
+    # implementation may have failed; handle or skip
+    continue
+
+  # 2. Run the task-reviewer INLINE (no hook on dsh):
+  #    - Preferred: use the subagent tool to spawn a sub-agent with run_in_background:false (foreground; the call waits for the reviewer to finish) whose
+  #      task says: "Call the skill tool with task-reviewer-chorus, verify taskUuid
+  #      <uuid> (round <N>), and post the VERDICT comment." Let it finish, then
+  #      read THIS round's VERDICT comment on the task (posted after your dispatch,
+  #      not an older round's) and decide from that comment, not from what the
+  #      subagent call returned.
+  #    - Fallback (subagent unavailable): review it yourself as a focused read-only
+  #      pass following the task-reviewer-chorus procedure (read task + proposal + docs + code,
+  #      run read-only tests, classify findings BLOCKER/NOTE) and post the VERDICT via
+  #      chorus_add_comment.
+
+  # 3. Read task-reviewer VERDICT
+  comments = chorus_get_comments({ targetType: "task", targetUuid: "<task-uuid>" })
+  # Find THIS round's "VERDICT:" comment — the one posted after your dispatch, not an older round's
+
+  # 4. Act on VERDICT — three possible outcomes:
+  if VERDICT is "PASS":
+    chorus_mark_acceptance_criteria({
+      taskUuid: "<task-uuid>",
+      criteria: [
+        { uuid: "<ac-uuid>", status: "passed", evidence: "<from reviewer>" },
+        // ...
+      ]
+    })
+    chorus_admin_verify_task({ taskUuid: "<task-uuid>" })
+    # Task is now "done" -- unblocks dependents for the next wave
+
+  if VERDICT is "PASS WITH NOTES":
+    chorus_mark_acceptance_criteria({ ... })
+    chorus_admin_verify_task({ taskUuid: "<task-uuid>" })
+
+  if VERDICT is "FAIL":
+    # BLOCKERs found. Do NOT verify. Reopen for rework.
+    chorus_admin_reopen_task({ taskUuid: "<task-uuid>" })
+    # Fix the BLOCKERs in a later pass (the task returns to in_progress/open)
+```
+
+After verifying the wave's tasks, return to Phase 3's loop to pick up newly unblocked tasks. Remember: only `done` (not `to_verify`) unblocks dependents.
+
+**Max rounds per task:** Tracked by `maxTaskReviewRounds` from plugin config (default 3). If a task has been reopened `maxRounds` times, skip it and flag for human escalation:
+
+```
+ESCALATE: "Task '{title}' failed review after {maxRounds} rounds.
+           Last BLOCKERs: <list>. Manual intervention needed.
+           Task UUID: <uuid>"
+```
+
+Continue with remaining tasks -- do not halt the entire pipeline for one stuck task.
+
+**No new VERDICT for this round?** Apply step 3 of the **Reviewer contract**, reviewing the task yourself if the reviewer stays silent.
+
+---
+
+### Phase 4.5: Code-Review Gateway (mandatory pre-ship)
+
+Once **every** task of the idea's proposal is verified (`done`) — Phase 3 finds no more unblocked tasks and none remain non-terminal — run the final ship-time code-review gateway **before** the Phase 5b completion report. It reviews the **whole Idea's aggregate code change** across all tasks (not a single task) and posts its verdict on the **idea**. Inline (no hook on dsh), same mechanism as Phase 4:
+
+- **Preferred — spawn a reviewer sub-agent (foreground).** Use `subagent` to spawn a sub-agent with **`run_in_background: false`** (foreground — the call waits for the reviewer to finish, and the verdict is the `VERDICT:` comment it posts rather than the call's return value; the ship decision depends on it; do NOT detach — set `run_in_background: true` only to deliberately fan out) whose `task` tells it to **call the `skill` tool with `code-reviewer-chorus` and follow it** against the idea. Example task prompt: `Load and run the code-reviewer-chorus skill to review the aggregate code for ideaUuid <uuid> (round <N>); post your VERDICT comment on the idea when done.`
+- **Fallback — review it yourself.** If `subagent` is unavailable, perform the review as a focused read-only pass following the `code-reviewer-chorus` procedure (read the idea, its approved proposals + documents + tasks; infer the aggregate diff from task reports + `git log/diff`; review cross-task integration, architecture, security, regression, feature-level coverage; run the project build/test) and post the `VERDICT:` comment on the idea yourself.
+
+Act on the VERDICT:
+
+- **PASS** / **PASS WITH NOTES** — the feature is cleared to ship. Proceed to Phase 5 / 5b.
+- **FAIL** — do NOT ship. Read the BLOCKERs, then fix them via the **quick-dev** workflow (`quick-dev-chorus`): call `chorus_create_tasks` with `proposalUuid` set to the **current approved proposal** so the fix tasks attach to it — do **not** reopen the already-verified tasks or apply untracked fixes. Group related small BLOCKERs into one cohesive task by default; split only materially large or independently testable fixes. Drive every fix task through Phase 3 → Phase 4, including AC self-check, independent task review, and admin verification. Re-run the gateway only after every fix task is successfully `done`; a failed or cancelled fix task, stop the automatic loop and escalate. Loop bounded by `maxCodeReviewRounds` (default 3; 0 = unlimited).
+
+```
+ESCALATE: "Idea '{title}' failed code review after {maxCodeReviewRounds} rounds.
+           Last BLOCKERs: <list>. Manual intervention needed. Idea UUID: <uuid>"
+```
+
+**No new VERDICT for this round?** Apply step 3 of the **Reviewer contract**, reviewing the idea's aggregate change yourself if the reviewer stays silent.
+
+> The gateway is **behavioral** like the other two reviewers: its verdict is advisory and does not change the Idea's stored status; the orchestrator honors it. It runs **before** the completion report so the report is never written while a FAIL is outstanding.
+
+---
+
+### Phase 5: Report
+
+After all waves complete, output a markdown summary:
+
+```markdown
+## /yolo Complete
+
+**Project:** <project-name> (<project-uuid>)
+**Proposal:** <proposal-title> (<proposal-uuid>)
+**Idea:** <idea-title> (<idea-uuid>)
+
+### Tasks
+| Task | Status | Review Rounds |
+|------|--------|---------------|
+| <title> | done | 1 |
+| <title> | done | 2 |
+| <title> | ESCALATED | 3 (max) |
+
+### Summary
+- Total tasks: N
+- Completed: X / N
+- Escalated: Y (need human review)
+- Waves executed: W
+```
+
+---
+
+### Phase 5b: Idea Completion Report (mandatory)
+
+A successful `yolo-chorus` run always finishes the Idea — call `chorus_create_report` once with `proposalUuid` set to the last verified proposal. The call requires `title` (a short report title) plus `content`; `content`'s parameter description carries the three-section template (`## Summary` / `## Decisions` / `## Follow-ups`); follow it. Surface the returned `documentUuid` in the Phase 5 summary. Skipping is a protocol violation.
+
+> **Order:** write the completion report only **after** the Phase 4.5 code-review gateway returns PASS / PASS WITH NOTES — never while a code-review FAIL is outstanding.
+
+> **OpenSpec archive:** if you ran in OpenSpec mode (Step 1.4 branch 2a), the last verified task also triggers the archive flow. dsh has no PostToolUse hook to remind you — after verifying the final task, run `openspec-aware-chorus` §3.9 yourself (`openspec archive <slug> --yes`, then mirror each emitted `openspec/specs/<capability>/spec.md` back via §3.8).
+
+---
+
+## Error Handling
+
+| Scenario | Action |
+|----------|--------|
+| Missing permissions at startup | Abort with message listing the missing resource/action pairs (see Prerequisites). Recommend an Admin-preset API key. |
+| Project creation fails | Report error, suggest user create project manually and retry with `--project` |
+| Proposal reviewer FAIL after maxRounds | Stop pipeline, report persisting BLOCKERs, suggest manual review |
+| Task reviewer FAIL after maxRounds | Flag task as escalation-needed, continue with other tasks |
+| Task implementation fails / no submit | Log error, skip task, pick it up in next wave if possible |
+| Reviewer sub-agent unavailable (`subagent` disabled) | Run the review yourself as a focused read-only pass following the `proposal-reviewer-chorus` or `task-reviewer-chorus` skill, then post the VERDICT |
+| Interrupted | All entities persist in Chorus. User can resume via `develop-chorus` or `review-chorus` |
+
+---
+
+## Tips
+
+- Keep the initial prompt detailed -- the more context you provide, the better the auto-generated proposal quality
+- The proposal-reviewer is your quality gate -- if it keeps FAILing, the prompt may be too vague
+- Watch the wave count -- if tasks keep getting reopened, consider stopping and reviewing the feedback manually
+- All audit trail is preserved: elaboration Q&A, reviewer VERDICTs, work reports. Check Chorus UI for full history
+- For small/simple tasks, consider `quick-dev-chorus` instead -- it skips the Idea->Proposal overhead
+- Sub-agents (if you dispatch any) share your API key; ensure it has the permissions listed in Prerequisites before starting
+
+---
+
+## Next
+
+- To manually review proposals: `review-chorus`
+- To manually develop tasks: `develop-chorus`
+- To create quick standalone tasks: `quick-dev-chorus`
+- For platform overview: `chorus`

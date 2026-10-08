@@ -1,0 +1,236 @@
+---
+name: dos-supervise-loop
+description: "Keep a target count of dispatch loops alive across the workspace lane roster: spawn missing loops, scavenge stalled leases, and surface spinning workers. Use when supervising a DOS dispatch-loop fleet."
+---
+
+# dos-supervise-loop — the generic worker-population supervisor
+
+> **The init/PID-1 of a dispatch fleet.** It keeps `--target` worker
+> dispatch-loops alive across the lane roster: each tick it counts live lane
+> leases, classifies each worker's liveness, and fills the roster up to target by
+> launching one `/dos-dispatch-loop` per free admissible lane. The *what to do*
+> is a typed kernel verdict — `dos loop` emits a spawn/reap/flag plan; this skill
+> only carries it out. It reaps a worker ONLY when the kernel says STALLED, never
+> a healthy one, and it FLAGs a SPINNING worker to the operator rather than
+> killing it (acting on a spin is not the supervisor's job).
+
+The supervisor's whole contract is one rule the kernel owns: **the population is
+filled from the plan, not from a guess.** A tick is `gather evidence → ask
+`dos loop` → carry out spawn/reap/flag`. The four dispositions are the kernel's:
+
+1. **SPAWN** — a free, admissible lane below target: launch one worker on it.
+2. **REAP** — a STALLED lease: scavenge it so the lane is free to refill.
+3. **HOLD** — an ADVANCING (or alive-counted SPINNING) worker: leave it alone.
+4. **FLAG** — a SPINNING worker (advisory) or an excess over target: surface it,
+   do not kill it.
+
+## Inputs
+
+- `--target <N>` (default 1) — the desired live-worker population. The kernel
+  caps the achievable population at the *admissible* count (how many roster lanes
+  can simultaneously hold a worker given their disjointness); a `--target` above
+  that yields a TARGET_UNREACHABLE verdict naming the fix.
+- `--max-concurrency <N>` (optional, docs/283) — the **derived-claim concurrency
+  budget**. On a DYNAMIC-CLAIM workspace (`concurrent = []`, where a lane is a
+  HANDLE whose disjointness is enforced per-pick at acquire time, not by a fixed
+  tree), the static admissible count is 1, so a `--target` above 1 is structurally
+  unreachable. Declaring this budget lets the supervisor keep up to N workers alive
+  on a fungible auto-pick handle WITHOUT pre-enumerating N disjoint trees — the
+  arbiter still narrows each worker's per-pick claim at its Step 0. Declare ONE
+  number, not N trees. Set it standing in `dos.toml [supervise] max_concurrency`,
+  or pass `--max-concurrency` for a one-off run. Off by default (admissible stays
+  the static disjoint-lane count — byte-for-byte today's).
+- `--interval <seconds>` (long default) — the wakeup cadence between ticks. A
+  supervisor wakes rarely; it is a watchdog, not a busy-loop.
+- `--max-ticks <N>` (optional) — stop after N ticks. Omit for an open-ended run
+  that stops only on an operator interrupt.
+
+## Step 0 — Read the taxonomy, compute the plan
+
+```bash
+dos doctor --workspace . --json
+dos loop --workspace . --target N --json
+```
+
+The doctor report carries the active lane roster (the concurrent + exclusive
+lanes and their trees) — **read it, never assume a lane name.** `dos loop` then
+gathers the evidence (the live lane leases from the journal + each lease's
+liveness) and returns the typed plan: a `verdict` (AT_TARGET / FILLING /
+OVER_TARGET / TARGET_UNREACHABLE), the `alive`/`admissible`/`target` tally, and
+the `spawn`/`reap`/`flag` lane lists. **This plan is the kernel's decision; the
+remaining steps only enact it.** If the verdict is TARGET_UNREACHABLE, read its
+reason (the roster cannot reach the number) and stop — see the anti-patterns.
+
+## Step 1 — Launch one worker per SPAWN
+
+For each lane in the plan's `spawn` list, launch a worker dispatch-loop focused
+on that lane:
+
+```
+/dos-dispatch-loop --lane <LANE>
+```
+
+The worker takes its own lane lease via `dos arbitrate` at its Step 0 and
+**journals its ACQUIRE early** — that early write is what shrinks the
+double-spawn window: by the next tick the lease is visible in the journal, so
+the supervisor counts it alive and does not launch a second worker on the same
+lane. The supervisor itself never takes a lease; it only counts them and fills
+the gap. Launch exactly the lanes the plan named — no more, no fewer.
+
+## Step 2 — Per REAP consult resume then scavenge, per FLAG surface
+
+For each lane in the plan's `reap` list (a STALLED worker): **before scavenging,
+ask `dos resume` whether the run can be continued** (docs/107, issue #19):
+
+```bash
+dos resume --workspace . --run-id <run_id> --json
+```
+
+The verdict shapes the action:
+
+- **RESUMABLE** — the kernel minted a re-entry point and recorded a
+  `RESUME_PROPOSED` on the ledger. **Do NOT scavenge**; the proposal surfaces
+  automatically in `dos decisions` for the operator to re-dispatch. The lane
+  remains held until the operator acts.
+- **DIVERGED** — ground truth advanced past the resume point; re-dispatch would
+  overwrite fresh work. **Do NOT scavenge**; surface the decision to the operator
+  through the `RESUME_DIVERGED` row in `dos decisions`. There is no safe
+  re-dispatch command for this case; a human must decide how to merge or retire
+  the stale residual.
+- **UNRESUMABLE** or **COMPLETE** — no viable continuation (no intent, corrupt
+  ledger, or all steps already verified). **Scavenge** as before: release the
+  lease so the lane is free to refill on the next tick.
+
+`dos resume` records DIVERGED as a decision, not as a proposal: it does not print a
+re-dispatch command, but it does leave a durable `RESUME_DIVERGED` row for
+`dos decisions` to project. For COMPLETE/UNRESUMABLE the scavenge path is
+unchanged — only the RESUMABLE/DIVERGED branch is new.
+
+For each lane in the plan's `flag` list (a SPINNING worker, or an excess over
+target): **surface it to the operator and move on.** Do NOT kill a SPINNING
+worker and do NOT reap an excess healthy one — a flag is advisory. Acting on a
+spin (deciding a busy-but-not-advancing worker should be stopped) is an open
+question the supervisor deliberately leaves to a human; its job is to make the
+spin visible, not to adjudicate it.
+
+## Step 3 — Beat, sleep, re-tick, stop on interrupt or --max-ticks
+
+At the END of each tick — after the plan is enacted — record the supervisor's own
+proof-of-fire, so its liveness is itself observable (the cron dead-man's switch,
+docs/384):
+
+```bash
+dos beat supervise --workspace .
+```
+
+A supervisor is an always-on job, and its deadliest failure is silent death: it
+just stops ticking, and because a healthy supervisor on a quiet roster also does
+nothing visible, the silence reads as "all fine." Declare `[heartbeats] supervise
+= "<your --interval>"` in `dos.toml`; then `dos pulse` / `dos beat --check` fold
+the beat ledger into a FRESH/LATE/MISSING verdict, so a supervisor that has
+stopped ticking surfaces as MISSING instead of going quiet. (The beat proves the
+tick FIRED; the FLAG ratchet above is the did-it-progress half.)
+
+Sleep `--interval` seconds, then re-run from Step 0: re-read the taxonomy,
+recompute the plan, enact it. Each tick is independent and idempotent — it
+re-derives the whole plan from the current journal state, so a missed or extra
+tick self-corrects. A lane launched within the last cooldown window is treated
+as *pending* (alive-or-coming) for the next tick, so a slow ACQUIRE does not
+trigger a re-spawn.
+
+Stop when the operator interrupts the run, or when `--max-ticks` is reached.
+There is no "all done" terminal state — a supervisor's job is to *stay up*; it
+ends only on an explicit bound or an interrupt.
+
+## The outer ratchet for this loop (docs/351)
+
+A supervisor does not itself produce a net gain — it keeps a population alive — so
+its docs/351 ratchet is at the **population** level, and it already exists as the
+**FLAG** disposition: a worker the kernel classifies SPINNING (alive, but landing
+zero forward delta — the per-worker `liveness` ground-truth verdict) is surfaced to
+the operator, never killed. That is this loop's "running but not improving" signal:
+a worker that is up but not making witnessed progress is flagged for a human, the
+same doctrine the dispatch loop's `not-ratcheting` and the replan loop's
+`REPLAN_STALLED` express at their own level. The supervisor's contract keeps the
+*act* (reap/halt) a human-rung decision — it FLAGs the spin, it does not act on it
+— so the ratchet here is "surface the worker that is not ratcheting," not an
+auto-stop. (An optional aggregate "fleet not ratcheting" rung — K consecutive ticks
+where every worker is FLAGGED — is a `supervise.py` policy change, deferred.)
+
+## What this skill deliberately does NOT do (no silent gap, `CLAUDE.md` heavy tier)
+
+- **No auto-kill of a SPINNING worker.** A spin is FLAGged (advisory) and
+  surfaced; the supervisor never terminates a busy worker. Acting on a spin is
+  open research, deliberately left to the operator.
+- **No reap of a healthy worker to hit a number.** A REAP fires ONLY on the
+  kernel's STALLED verdict. An ADVANCING (or alive-counted SPINNING) worker is
+  HELD even when the population is over target — the excess is FLAGged, not
+  killed.
+- **No hardcoded lane or trunk.** Every host fact — which lanes exist, their
+  trees, the ship grammar — comes from `dos doctor --json` and the workspace's
+  `dos.toml`. The supervisor names the generic roster the kernel reports, nothing
+  else.
+- **No value-aware spawn ranking.** It fills free admissible lanes in roster
+  order; a yield-greedy "spawn the highest-value lane first" picker is a driver
+  concern outside this loop.
+
+## Worked example (live transcript)
+
+> A supervisor tick, hand-run with real `dos` verbs against this workspace
+> (`dos doctor` reports `is_kernel_repo: true`, 11 runtime files). The verdicts
+> below are live-captured; the per-run digest is the antidote to re-reading state.
+
+Step 0 — read the roster, then ask the kernel who is alive:
+
+```bash
+$ dos doctor --workspace . --json
+# lanes.concurrent = [benchmark, docs, examples, scripts, spikes, src, tests]
+# lanes.exclusive  = [global]   stamp.style = grep   overlap_policy.active = prefix
+```
+
+A worker's lease is what the supervisor counts — and the arbiter never double-books:
+
+```bash
+$ dos arbitrate --workspace . --lane src
+{"auto_picked":true,"free_clusters":[],"lane":"benchmark","lane_kind":"cluster","outcome":"acquire","pick_count":null,"reason":"auto-picked free cluster lane benchmark (requested src was refused: lane src would edit the orchestrator's own running code … (SELF_MODIFY) …)."}
+```
+
+You asked for `src`; the admission conjunction refused the hint (here SELF_MODIFY —
+`src/**` is the running kernel on its own repo; a lane contended by a live lease
+redirects the same way), so the arbiter redirected to `benchmark` — exit `0`
+(acquire), the real reason named in the parenthetical. A free, admissible lane
+you name is granted directly.
+
+Per run, fold ONE digest instead of re-reading state files (no `claimed` field):
+
+```bash
+$ dos status RUN_ID --json     # ILLUSTRATIVE shape — folds liveness+ledger+lease+resume
+# {"liveness":"SPINNING", ...}   exit 3 (SPINNING) → this run is the FLAG candidate
+```
+
+`dos status`/`dos liveness` share the liveness exit codes — `0` ADVANCING (HOLD),
+`3` SPINNING (FLAG, advisory), `4` STALLED (REAP). On SPINNING the supervisor records
+an OP_HALT **proposal** and surfaces it; it never signals the process. A worker can
+be paused for clean re-entry instead:
+
+```bash
+$ dos halt --resumable     # ILLUSTRATIVE — SUSPEND op; run-dir retained, dos resume continues it
+```
+
+## Anti-patterns
+
+- ❌ Re-spawning a pending lane — a worker launched last tick whose ACQUIRE has
+  not yet journalled is alive-or-coming; the kernel marks it pending and the plan
+  omits it. Honor that; do not double-launch.
+- ❌ Reaping an ADVANCING worker — only a STALLED lease is a REAP. A worker that
+  is moving keeps its lane; trust the temporal verdict, do not second-guess it.
+- ❌ Killing a SPINNING worker — it is a FLAG, not a REAP. Surface it; let the
+  operator decide.
+- ❌ Running the supervisor where the roster cannot reach `--target` — a
+  TARGET_UNREACHABLE verdict means no further disjoint concurrent lanes exist to
+  fill. Two honest fixes: (a) on a STATIC-tree roster, declare more disjoint
+  concurrent lanes in `dos.toml [lanes]`; (b) on a DYNAMIC-CLAIM roster
+  (`concurrent = []`, per-pick disjointness), declare a `--max-concurrency` budget
+  (docs/283) so the supervisor rides a fungible auto-pick handle up to N workers —
+  one number instead of N trees. Do NOT force the number by inventing fake disjoint
+  trees a worker would over-claim.

@@ -1,0 +1,1264 @@
+---
+alwaysApply: true
+---
+# PASCS Frontend Development Guidelines
+
+**Dự án:** Public Administrative Service Consultation System (PASCS)  
+**Tech Stack:** Next.js 15 + React 19 + TypeScript + TailwindCSS  
+**Mục tiêu:** Đảm bảo code nhất quán, dễ maintain và scalable
+
+---
+
+## 🎯 Rules
+
+### 1. **Ngôn Ngữ & Documentation**
+- ✅ Toàn bộ UI content và user messages phải bằng **Tiếng Việt**
+- ✅ Code comments và technical docs có thể dùng Tiếng Anh
+- ✅ Variable/function names dùng Tiếng Anh theo convention
+
+### 2. **Architecture Principles**
+- ✅ **Module-based Structure**: Mỗi feature là một module độc lập
+- ✅ **Separation of Concerns**: Tách biệt UI, Logic, Data
+- ✅ **Component Composition**: Chia nhỏ components, mỗi component một nhiệm vụ
+- ✅ **Custom Hooks**: Tách logic phức tạp ra khỏi UI components
+- ✅ **Type Safety**: TypeScript strict mode, tránh `any`
+
+### 3. **No Hardcoding**
+- ❌ Không hardcode API URLs
+- ❌ Không hardcode business logic trong components
+- ❌ Không hardcode constants trong code
+- ✅ Dùng centralized configuration (`@core/config/`)
+
+---
+
+## 📁 Cấu Trúc Project
+
+```
+src/
+├── app/                          # Next.js App Router
+│   ├── (client)/                 # Public routes với layout
+│   ├── (private)/                # Protected routes
+│   ├── (auth)/                   # Auth pages (login, register)
+│   ├── api/                      # API routes (Next.js API handlers)
+│   ├── layout.tsx                # Root layout với providers
+│   └── globals.css               # Global styles
+│
+├── core/                         # Core infrastructure
+│   ├── config/                   # Configuration files
+│   │   ├── api.path.ts          # Centralized API endpoints
+│   │   ├── constants.ts         # Global constants
+│   │   ├── env.ts               # Environment variables
+│   │   └── aws.config.ts        # AWS S3 config
+│   ├── http/                     # HTTP client
+│   │   └── client.ts            # Axios instance với interceptors
+│   ├── patterns/                 # Design patterns
+│   │   └── SingletonHook.ts     # Singleton pattern (Toast, etc.)
+│   ├── services/                 # Core services
+│   │   └── upload.service.ts    # File upload service
+│   └── stores/                   # Global state stores
+│
+├── modules/                      # Feature modules
+│   └── <feature>/               # Feature-specific code
+│       ├── api/                 # HTTP API calls
+│       │   └── <feature>.api.ts
+│       ├── components/          # UI Components
+│       │   ├── view/           # Page components
+│       │   │   └── <Feature>ListPage.ui.tsx
+│       │   └── ui/             # Reusable UI components
+│       │       ├── header/     # Header components
+│       │       ├── filter/     # Filter components
+│       │       ├── table/      # Table components
+│       │       ├── modal/      # Modal components
+│       │       ├── detail/     # Detail view components
+│       │       ├── pagination/ # Pagination components
+│       │       └── index.ts    # Barrel export
+│       ├── services/            # Business logic
+│       │   └── <feature>.service.ts
+│       ├── hooks/               # Feature hooks
+│       │   ├── index.ts        # React Query hooks
+│       │   └── use<Feature>Form.ts  # Form hooks
+│       ├── types/               # TypeScript types
+│       │   └── index.ts
+│       ├── constants/           # Feature constants
+│       ├── enums/               # Feature enums
+│       ├── utils/               # Feature utilities
+│       └── index.ts             # Module exports
+│
+└── shared/                       # Shared code
+    ├── components/              # Shared components
+    │   ├── common/             # Common UI components
+    │   ├── forms/              # Form components
+    │   ├── layout/             # Layout components
+    │   ├── manager/            # Manager-specific components
+    │   └── ui/                 # Base UI primitives
+    ├── hooks/                   # Shared hooks
+    ├── lib/                     # Utilities & helpers
+    ├── providers/               # React context providers
+    └── types/                   # Shared TypeScript types
+```
+
+---
+
+## 🏗️ Module Structure Pattern
+
+### 1. **Cấu Trúc Module Chuẩn**
+
+Khi tạo feature mới, follow structure này:
+
+```typescript
+modules/<feature>/
+├── api/
+│   └── <feature>.api.ts         # Raw HTTP calls
+├── services/
+│   └── <feature>.service.ts     # Business logic
+├── components/
+│   ├── view/
+│   │   └── <Feature>ListPage.ui.tsx    # Main page
+│   └── ui/
+│       ├── header/
+│       ├── filter/
+│       ├── table/
+│       ├── modal/
+│       ├── detail/
+│       ├── pagination/
+│       └── index.ts
+├── hooks/
+│   ├── index.ts                 # React Query hooks
+│   └── use<Feature>Form.ts      # Custom form hooks
+├── types/
+│   └── index.ts                 # TypeScript definitions
+├── constants/
+│   └── index.ts                 # Feature constants
+├── enums/
+│   └── index.ts                 # Feature enums
+└── index.ts                     # Barrel export
+```
+
+### 2. **Types Layer** (`types/`)
+
+**MUST**: Separate request and response types into different files
+
+```typescript
+// modules/<feature>/types/request.ts
+export type CreateFeatureRequest = {
+  name: string;
+  description: string;
+  isActive: boolean;
+};
+
+export type UpdateFeatureRequest = {
+  id: string;
+} & CreateFeatureRequest;
+
+export type FeatureFilters = {
+  keyword?: string;
+  isActive?: boolean;
+  page: number;
+  size: number;
+};
+
+// modules/<feature>/types/response.ts
+export type Feature = {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string | Date;
+  modifiedAt?: string | Date;
+};
+
+// modules/<feature>/types/index.ts
+export * from './request';
+export * from './response';
+```
+
+### 3. **API Layer** (`api/`)
+
+**Flow**: API → Service → Hooks → Components → Page
+
+```typescript
+// modules/<feature>/api/<feature>.api.ts
+import { http } from '@core/http/client';
+import { API_PATH } from '@core/config/api.path';
+import type { RestResponse, RestPaged } from '@/types/rest';
+import type { Feature } from '../types/response';
+import type { CreateFeatureRequest, UpdateFeatureRequest, FeatureFilters } from '../types/request';
+
+export const featureApi = {
+  /**
+   * Get all features with filters and pagination
+   */
+  getList: (filters: FeatureFilters) => {
+    return http.get<RestPaged<Feature>>(
+      API_PATH.MANAGER.FEATURE.GET_ALL(
+        filters.keyword || '',
+        filters.isActive ?? true,
+        filters.page,
+        filters.size
+      )
+    );
+  },
+
+  /**
+   * Get feature by ID
+   */
+  getById: (id: string) => {
+    return http.get<RestResponse<Feature>>(
+      API_PATH.MANAGER.FEATURE.GET_BY_ID(id)
+    );
+  },
+
+  /**
+   * Create new feature
+   */
+  create: (data: CreateFeatureRequest) => {
+    return http.post<RestResponse<Feature>>(
+      API_PATH.MANAGER.FEATURE.POST,
+      data
+    );
+  },
+
+  /**
+   * Update existing feature
+   */
+  update: (id: string, data: UpdateFeatureRequest) => {
+    return http.put<RestResponse<Feature>>(
+      API_PATH.MANAGER.FEATURE.PUT(id),
+      data
+    );
+  },
+
+  /**
+   * Delete feature
+   */
+  delete: (id: string) => {
+    return http.delete<RestResponse<{ success: boolean }>>(
+      API_PATH.MANAGER.FEATURE.DELETE(id)
+    );
+  },
+};
+```
+
+### 4. **Service Layer** (`services/`)
+
+```typescript
+// modules/<feature>/services/<feature>.service.ts
+import type { RestResponse, RestPaged } from '@/types/rest';
+import { featureApi } from '../api/feature.api';
+import type { Feature } from '../types/response';
+import type { CreateFeatureRequest, UpdateFeatureRequest, FeatureFilters } from '../types/request';
+
+export const featureService = {
+  /**
+   * Get features list with filters
+   */
+  async getFeatures(filters: FeatureFilters): Promise<RestPaged<Feature>> {
+    const response = await featureApi.getList(filters);
+    return response.data;
+  },
+
+  /**
+   * Get feature by ID
+   */
+  async getFeatureById(id: string): Promise<Feature | null> {
+    const response = await featureApi.getById(id);
+    if (!response.data?.success || !response.data?.data) {
+      return null;
+    }
+    return response.data.data as Feature;
+  },
+
+  /**
+   * Create new feature
+   */
+  async createFeature(data: CreateFeatureRequest): Promise<Feature> {
+    const response = await featureApi.create(data);
+    if (!response.data?.success || !response.data?.data) {
+      throw new Error('Failed to create feature');
+    }
+    return response.data.data as Feature;
+  },
+
+  /**
+   * Update existing feature
+   */
+  async updateFeature(id: string, data: UpdateFeatureRequest): Promise<Feature> {
+    const response = await featureApi.update(id, data);
+    if (!response.data?.success || !response.data?.data) {
+      throw new Error('Failed to update feature');
+    }
+    return response.data.data as Feature;
+  },
+
+  /**
+   * Delete feature
+   */
+  async deleteFeature(id: string): Promise<void> {
+    await featureApi.delete(id);
+  },
+};
+```
+
+### 5. **Hooks Layer** (`hooks/`)
+
+```typescript
+// modules/<feature>/hooks/index.ts
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { featureService } from '../services/<feature>.service';
+import { QUERY_KEYS, CACHE_TIME, STALE_TIME } from '../constants';
+import type { CreateRequest, UpdateRequest, Filters } from '../types';
+
+// GET list hook
+export const useFeatureList = (filters: Filters) => {
+  return useQuery({
+    queryKey: QUERY_KEYS.FEATURE_LIST(filters),
+    queryFn: () => featureService.getFeatureList(filters),
+    gcTime: CACHE_TIME,
+    staleTime: STALE_TIME,
+  });
+};
+
+// GET detail hook
+export const useFeatureDetail = (id: string) => {
+  return useQuery({
+    queryKey: QUERY_KEYS.FEATURE_DETAIL(id),
+    queryFn: () => featureService.getFeatureById(id),
+    enabled: !!id,
+  });
+};
+
+// CREATE mutation
+export const useCreateFeature = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data: CreateRequest) => featureService.createFeature(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        queryKey: QUERY_KEYS.FEATURE_BASE 
+      });
+    },
+  });
+};
+
+// UPDATE mutation
+export const useUpdateFeature = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; request: UpdateRequest }) =>
+      featureService.updateFeature(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        queryKey: QUERY_KEYS.FEATURE_BASE 
+      });
+    },
+  });
+};
+
+// DELETE mutation
+export const useDeleteFeature = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id: string) => featureService.deleteFeature(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ 
+        queryKey: QUERY_KEYS.FEATURE_BASE 
+      });
+    },
+  });
+};
+```
+
+### 6. **Custom Form Hook** (`hooks/use<Feature>Form.ts`)
+
+```typescript
+// modules/<feature>/hooks/use<Feature>Form.ts
+import { useEffect } from 'react';
+import { useForm } from '@tanstack/react-form';
+import { useGlobalToast } from '@core/patterns/SingletonHook';
+import { useCreateFeature, useUpdateFeature } from './index';
+import type { FeatureType, CreateRequest } from '../types';
+
+type FormValues = {
+  name: string;
+  description: string;
+  isActive: boolean;
+  // ... form fields
+};
+
+interface UseFeatureFormProps {
+  initData?: FeatureType | null;
+  open: boolean;
+  onSuccess?: () => void;
+  onClose: () => void;
+}
+
+export const useFeatureForm = ({
+  initData,
+  open,
+  onSuccess,
+  onClose,
+}: UseFeatureFormProps) => {
+  const createMutation = useCreateFeature();
+  const updateMutation = useUpdateFeature();
+  const { addToast } = useGlobalToast();
+
+  const toFormValues = (data?: Partial<FeatureType> | null): FormValues => ({
+    name: data?.name ?? '',
+    description: data?.description ?? '',
+    isActive: data?.isActive ?? true,
+    // ... map fields
+  });
+
+  const form = useForm({
+    defaultValues: toFormValues(initData),
+    onSubmit: async ({ value }) => {
+      try {
+        const request: CreateRequest = {
+          name: value.name,
+          description: value.description,
+          isActive: value.isActive,
+          // ... map request
+        };
+
+        if (initData?.id) {
+          // Update
+          const res = await updateMutation.mutateAsync({
+            id: initData.id,
+            request: { ...request, id: initData.id },
+          });
+          if (res?.success) {
+            addToast({ message: 'Cập nhật thành công', type: 'success' });
+            onSuccess?.();
+            onClose();
+          }
+        } else {
+          // Create
+          const res = await createMutation.mutateAsync(request);
+          if (res?.success) {
+            addToast({ message: 'Tạo mới thành công', type: 'success' });
+            onSuccess?.();
+            onClose();
+          }
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        addToast({ message: 'Đã xảy ra lỗi', type: 'error' });
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (open) {
+      form.reset(toFormValues(initData));
+    }
+  }, [open, initData?.id]);
+
+  return {
+    form,
+    isLoading: createMutation.isPending || updateMutation.isPending,
+    handleSubmit: () => form.handleSubmit(),
+  };
+};
+```
+
+---
+
+## 🧩 Component Patterns
+
+### 1. **Component Naming Convention**
+
+```typescript
+// ✅ CORRECT - Component files end with .ui.tsx
+components/
+  ├── view/
+  │   └── ServiceGroupListPage.ui.tsx     # Main page
+  └── ui/
+      ├── header/
+      │   └── ServiceGroupHeader.ui.tsx
+      ├── filter/
+      │   └── ServiceGroupFilter.ui.tsx
+      ├── table/
+      │   ├── ServiceGroupTable.ui.tsx
+      │   ├── ServiceGroupTableHeader.ui.tsx
+      │   └── ServiceGroupTableRow.ui.tsx
+      └── modal/
+          └── CreateServiceGroupModal.ui.tsx
+
+// ❌ WRONG - Without .ui suffix
+components/
+  └── ServiceGroupList.tsx
+```
+
+### 2. **Component Composition**
+
+#### Main Page Component
+```typescript
+// components/view/<Feature>ListPage.ui.tsx
+'use client';
+
+import React, { useState } from 'react';
+import { useFeatureList, useDeleteFeature } from '../../hooks';
+import { 
+  FeatureHeader, 
+  FeatureFilter, 
+  FeatureTable, 
+  FeaturePagination,
+  CreateFeatureModal,
+  FeatureDetailModal,
+} from '../ui';
+import type { FeatureType } from '../../types';
+import { useGlobalToast } from '@core/patterns/SingletonHook';
+import { getValuesPage } from '@/types/rest';
+
+export const FeatureListPage: React.FC = () => {
+  // State management
+  const [page, setPage] = useState(1);
+  const [keyword, setKeyword] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<FeatureType | null>(null);
+
+  // Data fetching
+  const { data, isLoading, refetch } = useFeatureList({
+    keyword,
+    isActive,
+    page,
+    size: 10,
+  });
+
+  const deleteMutation = useDeleteFeature();
+  const { addToast } = useGlobalToast();
+
+  // Handlers
+  const handleCreate = () => {
+    setSelectedItem(null);
+    setModalOpen(true);
+  };
+
+  const handleEdit = (item: FeatureType) => {
+    setSelectedItem(item);
+    setModalOpen(true);
+  };
+
+  const handleViewDetail = (item: FeatureType) => {
+    setSelectedItem(item);
+    setDetailModalOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa?')) return;
+    
+    try {
+      await deleteMutation.mutateAsync(id);
+      addToast({ message: 'Xóa thành công', type: 'success' });
+      refetch();
+    } catch (error) {
+      addToast({ message: 'Xóa thất bại', type: 'error' });
+    }
+  };
+
+  // Data processing
+  const pageResult = data ? getValuesPage(data) : null;
+  const items = pageResult?.items || [];
+  const totalPages = pageResult?.totalPages || 1;
+
+  return (
+    <div className="p-6">
+      <FeatureHeader onCreateClick={handleCreate} />
+      
+      <FeatureFilter
+        keyword={keyword}
+        onKeywordChange={setKeyword}
+        isActive={isActive}
+        onStatusChange={setIsActive}
+      />
+
+      <FeatureTable
+        items={items}
+        isLoading={isLoading}
+        onView={handleViewDetail}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+        isDeleting={deleteMutation.isPending}
+      />
+
+      <FeaturePagination
+        currentPage={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
+
+      <CreateFeatureModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        initData={selectedItem}
+        onSuccess={refetch}
+      />
+
+      <FeatureDetailModal
+        open={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        item={selectedItem}
+      />
+    </div>
+  );
+};
+```
+
+#### Header Component
+```typescript
+// components/ui/header/<Feature>Header.ui.tsx
+'use client';
+
+import React from 'react';
+
+interface Props {
+  onCreateClick: () => void;
+}
+
+export const FeatureHeader: React.FC<Props> = ({ onCreateClick }) => {
+  return (
+    <div className="mb-6 flex items-center justify-between">
+      <h1 className="text-2xl font-bold text-slate-900">
+        Quản lý Feature
+      </h1>
+      <button
+        onClick={onCreateClick}
+        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+      >
+        + Tạo mới
+      </button>
+    </div>
+  );
+};
+```
+
+#### Filter Component
+```typescript
+// components/ui/filter/<Feature>Filter.ui.tsx
+'use client';
+
+import React from 'react';
+
+interface Props {
+  keyword: string;
+  onKeywordChange: (value: string) => void;
+  isActive: boolean;
+  onStatusChange: (value: boolean) => void;
+}
+
+export const FeatureFilter: React.FC<Props> = ({
+  keyword,
+  onKeywordChange,
+  isActive,
+  onStatusChange,
+}) => {
+  return (
+    <div className="mb-4 flex gap-4">
+      <input
+        type="text"
+        placeholder="Tìm kiếm..."
+        value={keyword}
+        onChange={(e) => onKeywordChange(e.target.value)}
+        className="flex-1 rounded-lg border border-slate-300 px-4 py-2"
+      />
+      <select
+        value={String(isActive)}
+        onChange={(e) => onStatusChange(e.target.value === 'true')}
+        className="rounded-lg border border-slate-300 px-4 py-2"
+      >
+        <option value="true">Hoạt động</option>
+        <option value="false">Ngừng</option>
+      </select>
+    </div>
+  );
+};
+```
+
+#### Table Component
+```typescript
+// components/ui/table/<Feature>Table.ui.tsx
+'use client';
+
+import React from 'react';
+import { FeatureTableHeader } from './FeatureTableHeader.ui';
+import { FeatureTableRow } from './FeatureTableRow.ui';
+import type { FeatureType } from '../../../types';
+
+interface Props {
+  items: FeatureType[];
+  isLoading: boolean;
+  onView: (item: FeatureType) => void;
+  onEdit: (item: FeatureType) => void;
+  onDelete: (id: string) => void;
+  isDeleting?: boolean;
+}
+
+export const FeatureTable: React.FC<Props> = ({
+  items,
+  isLoading,
+  onView,
+  onEdit,
+  onDelete,
+  isDeleting,
+}) => {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow">
+      <table className="w-full">
+        <FeatureTableHeader />
+        <tbody className="divide-y divide-slate-200">
+          {isLoading ? (
+            <tr>
+              <td colSpan={99} className="px-6 py-4 text-center">
+                Đang tải...
+              </td>
+            </tr>
+          ) : items.length === 0 ? (
+            <tr>
+              <td colSpan={99} className="px-6 py-4 text-center">
+                Không có dữ liệu
+              </td>
+            </tr>
+          ) : (
+            items.map((item) => (
+              <FeatureTableRow
+                key={item.id}
+                item={item}
+                onView={onView}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                isDeleting={isDeleting}
+              />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+```
+
+#### Modal Component
+```typescript
+// components/ui/modal/Create<Feature>Modal.ui.tsx
+'use client';
+
+import React from 'react';
+import { BaseModal } from '@/shared/components/manager/modal/BaseModal';
+import { FeatureForm } from './FeatureForm.ui';
+import { useFeatureForm } from '../../../hooks/useFeatureForm';
+import type { FeatureType } from '../../../types';
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  initData?: FeatureType | null;
+  onSuccess?: () => void;
+}
+
+export const CreateFeatureModal: React.FC<Props> = ({
+  open,
+  onClose,
+  initData,
+  onSuccess,
+}) => {
+  const { form, isLoading, handleSubmit } = useFeatureForm({
+    initData,
+    open,
+    onSuccess,
+    onClose,
+  });
+
+  return (
+    <BaseModal
+      open={open}
+      onClose={onClose}
+      title={initData?.id ? 'Cập nhật' : 'Tạo mới'}
+      onOk={handleSubmit}
+      onCancel={onClose}
+      okText="Lưu"
+      cancelText="Hủy"
+      centered
+      size="large"
+      confirmLoading={isLoading}
+    >
+      <FeatureForm 
+        form={form} 
+        isLoading={isLoading}
+        isEdit={!!initData?.id}
+      />
+    </BaseModal>
+  );
+};
+```
+
+---
+
+## 🎨 UI Component Guidelines
+
+### 1. **Shared Components Priority**
+```typescript
+// ✅ CORRECT - Use shared components first
+import { BaseModal } from '@/shared/components/manager/modal/BaseModal';
+import { InputField, TextareaField, CheckboxField } from '@/shared/components/manager/form/BaseForm';
+import { ImageUpload } from '@/shared/components/common/ImageUpload';
+
+// ❌ WRONG - Creating duplicate components
+// Don't create new modal if BaseModal exists
+```
+
+### 2. **Image Handling**
+```typescript
+// ✅ CORRECT - Use next/image for optimization
+import Image from 'next/image';
+
+<Image
+  src={imageUrl}
+  alt="Description"
+  width={40}
+  height={40}
+  className="object-cover"
+/>
+
+// ❌ WRONG - Using <img> tag
+<img src={imageUrl} alt="Description" />
+```
+
+### 3. **Form Components**
+```typescript
+// Use shared form components
+import { InputField, TextareaField, CheckboxField, SelectField } from '@/shared/components/manager/form/BaseForm';
+
+// Form with TanStack Form
+<InputField<FormValues>
+  form={form as FormApiOf<FormValues>}
+  name="fieldName"
+  label="Nhãn"
+  required
+  placeholder="Placeholder"
+/>
+```
+
+---
+
+## 🔌 API Integration
+
+### 1. **API Path Configuration**
+```typescript
+// src/core/config/api.path.ts
+export const API_PATH = {
+  // Auth
+  AUTH: {
+    LOGIN: '/auth/login',
+    LOGOUT: '/auth/logout',
+    REGISTER: '/auth/register',
+  },
+  
+  // Service Group
+  SERVICE_GROUP: {
+    LIST: '/service-groups',
+    DETAIL: '/service-groups',
+    CREATE: '/service-groups',
+    UPDATE: '/service-groups',
+    DELETE: '/service-groups',
+  },
+  
+  // Add more features...
+} as const;
+```
+
+### 2. **HTTP Client Usage**
+```typescript
+// ✅ CORRECT
+import { http } from '@core/http/client';
+import { API_PATH } from '@core/config/api.path';
+
+const response = await http.get(API_PATH.FEATURE.LIST);
+
+// ❌ WRONG - Hardcoded URLs
+const response = await http.get('https://api.example.com/features');
+```
+
+### 3. **Response Type Handling**
+```typescript
+import type { RestResponse, RestMany } from '@/types/rest';
+import { getValuesPage } from '@/types/rest';
+
+// Single item response
+const response = await http.get<RestResponse<FeatureType>>(...);
+const item = response.data.data;
+
+// List response with pagination
+const response = await http.get<RestMany<FeatureType>>(...);
+const pageResult = getValuesPage(response.data);
+const items = pageResult?.items || [];
+const totalPages = pageResult?.totalPages || 1;
+```
+
+---
+
+## 📦 File Upload (AWS S3)
+
+### 1. **AWS Configuration**
+```typescript
+// src/core/config/aws.config.ts
+export const AWS_CONFIG = {
+  REGION: process.env.NEXT_PUBLIC_AWS_REGION || 'ap-southeast-1',
+  BUCKET: process.env.NEXT_PUBLIC_AWS_S3_BUCKET || 'your-bucket',
+  
+  FOLDERS: {
+    SERVICE_GROUP_ICONS: 'service-groups/icons',
+    PROFILE_IMAGES: 'profiles/images',
+    DOCUMENTS: 'documents',
+  },
+  
+  MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
+  ALLOWED_IMAGE_TYPES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+} as const;
+```
+
+### 2. **Using ImageUpload Component**
+```typescript
+import { ImageUpload } from '@/shared/components/common/ImageUpload';
+import { AWS_CONFIG } from '@core/config/aws.config';
+
+<form.Field name="iconUrl">
+  {(field: any) => (
+    <ImageUpload
+      value={field.state.value as string}
+      onChange={(url) => field.handleChange(url as never)}
+      folder={AWS_CONFIG.FOLDERS.SERVICE_GROUP_ICONS}
+      label="Icon"
+      required
+      disabled={isLoading}
+    />
+  )}
+</form.Field>
+```
+
+---
+
+## 🎭 State Management
+
+### 1. **Local State** (useState)
+```typescript
+// Simple component state
+const [isOpen, setIsOpen] = useState(false);
+const [keyword, setKeyword] = useState('');
+```
+
+### 2. **Server State** (React Query)
+```typescript
+// Fetching and caching server data
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+const { data, isLoading, error } = useQuery({
+  queryKey: ['features', filters],
+  queryFn: () => featureService.getList(filters),
+});
+
+const mutation = useMutation({
+  mutationFn: (data) => featureService.create(data),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['features'] });
+  },
+});
+```
+
+### 3. **Global State** (Zustand)
+```typescript
+// modules/<feature>/stores/use<Feature>Store.ts
+import { create } from 'zustand';
+
+interface FeatureStore {
+  items: FeatureType[];
+  setItems: (items: FeatureType[]) => void;
+}
+
+export const useFeatureStore = create<FeatureStore>((set) => ({
+  items: [],
+  setItems: (items) => set({ items }),
+}));
+```
+
+### 4. **Singleton Pattern** (Toast, etc.)
+```typescript
+// Using global toast
+import { useGlobalToast } from '@core/patterns/SingletonHook';
+
+const { addToast } = useGlobalToast();
+
+addToast({
+  message: 'Thành công!',
+  type: 'success', // 'success' | 'error' | 'info' | 'warning'
+});
+```
+
+---
+
+## 🎯 TypeScript Best Practices
+
+### 1. **Type Definitions**
+```typescript
+// ✅ CORRECT - Explicit types
+interface Props {
+  id: string;
+  name: string;
+  isActive: boolean;
+  onUpdate: (data: UpdateData) => void;
+}
+
+const Component: React.FC<Props> = ({ id, name, isActive, onUpdate }) => {
+  // ...
+};
+
+// ❌ WRONG - Using any
+const Component = ({ id, name }: any) => {
+  // ...
+};
+```
+
+### 2. **Generic Types**
+```typescript
+// Form fields with generic
+<InputField<FormValues>
+  form={form as FormApiOf<FormValues>}
+  name="fieldName"
+  // ...
+/>
+
+// API response with generic
+const response = await http.get<RestResponse<FeatureType>>(...);
+```
+
+### 3. **Type Guards**
+```typescript
+// Type narrowing
+if (data && 'items' in data) {
+  // data is array type
+}
+
+// Nullish checking
+const items = data?.items ?? [];
+```
+
+---
+
+## 📝 Naming Conventions
+
+### 1. **Files & Directories**
+```
+kebab-case for files and folders:
+- service-group.api.ts
+- use-feature-form.ts
+- create-modal.ui.tsx
+```
+
+### 2. **Components**
+```typescript
+PascalCase for React components:
+- ServiceGroupListPage
+- CreateServiceGroupModal
+- ServiceGroupTable
+```
+
+### 3. **Functions & Variables**
+```typescript
+camelCase for functions and variables:
+- getUserProfile()
+- handleSubmit()
+- isLoading
+- selectedItem
+```
+
+### 4. **Constants**
+```typescript
+SCREAMING_SNAKE_CASE for constants:
+- API_BASE_URL
+- MAX_FILE_SIZE
+- QUERY_KEYS
+```
+
+### 5. **Types & Interfaces**
+```typescript
+PascalCase for types and interfaces:
+- ServiceGroup
+- CreateServiceGroupRequest
+- UseFeatureFormProps
+```
+
+---
+
+## 🚫 Prohibited Practices
+
+### ❌ Don't Do This:
+
+```typescript
+// ❌ Hardcoding API URLs
+fetch('https://api.example.com/users')
+
+// ❌ Business logic in components
+const MyComponent = () => {
+  const data = await fetch(...).then(r => r.json());
+  // complex calculations...
+  // data transformation...
+  return <div>...</div>
+};
+
+// ❌ Using any type
+const handleChange = (value: any) => { ... };
+
+// ❌ Inline styles (use Tailwind)
+<div style={{ color: 'red', fontSize: '14px' }}>
+
+// ❌ Direct img tag
+<img src={url} />
+
+// ❌ console.log in production code
+console.log('debug:', data);
+
+// ❌ Creating duplicate components
+// Check shared components first!
+```
+
+### ✅ Do This Instead:
+
+```typescript
+// ✅ Use API_PATH
+http.get(API_PATH.USERS.LIST)
+
+// ✅ Extract logic to service/hook
+const useUserData = () => {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: userService.getList,
+  });
+};
+
+// ✅ Proper typing
+const handleChange = (value: string) => { ... };
+
+// ✅ Tailwind classes
+<div className="text-red-500 text-sm">
+
+// ✅ next/image
+<Image src={url} alt="..." width={100} height={100} />
+
+// ✅ Use logger or remove
+// logger.debug('data:', data);
+```
+
+---
+
+## ⚡ Performance Guidelines
+
+### 1. **Code Splitting**
+```typescript
+// Dynamic imports for heavy components
+const HeavyComponent = dynamic(() => import('./HeavyComponent'), {
+  loading: () => <LoadingSkeleton />,
+});
+```
+
+### 2. **Memoization**
+```typescript
+// Memoize expensive components
+import { memo } from 'react';
+
+export const ExpensiveComponent = memo<Props>(({ data }) => {
+  // ...
+});
+
+// Memoize expensive calculations
+const expensiveValue = useMemo(() => {
+  return heavyCalculation(data);
+}, [data]);
+```
+
+### 3. **React Query Cache**
+```typescript
+// Configure cache times
+export const CACHE_TIME = 5 * 60 * 1000; // 5 minutes
+export const STALE_TIME = 1 * 60 * 1000; // 1 minute
+
+useQuery({
+  queryKey: ['data'],
+  queryFn: fetchData,
+  gcTime: CACHE_TIME,
+  staleTime: STALE_TIME,
+});
+```
+
+---
+
+## 🧪 Testing Guidelines
+
+### 1. **Unit Tests**
+```typescript
+// Component tests
+describe('FeatureComponent', () => {
+  it('should render correctly', () => {
+    // ...
+  });
+  
+  it('should handle user interaction', () => {
+    // ...
+  });
+});
+```
+
+### 2. **Integration Tests**
+```typescript
+// API integration tests
+describe('FeatureService', () => {
+  it('should fetch data correctly', async () => {
+    // ...
+  });
+});
+```
+
+---
+
+## 📚 Additional Resources
+
+### Key Files to Reference:
+- `src/core/config/api.path.ts` - API endpoints
+- `src/core/http/client.ts` - HTTP client
+- `src/types/rest.ts` - Response types
+- `src/shared/components/` - Reusable components
+- `src/modules/manager/service-group/` - Example module
+
+### Documentation:
+- Next.js 15: https://nextjs.org/docs
+- React Query: https://tanstack.com/query/latest
+- TanStack Form: https://tanstack.com/form/latest
+- Tailwind CSS: https://tailwindcss.com/docs
+
+---
+
+## ✨ Summary Checklist
+
+Before committing code, ensure:
+
+- [ ] ✅ All API endpoints defined in `API_PATH`
+- [ ] ✅ Business logic in service layer
+- [ ] ✅ UI logic extracted to custom hooks when complex
+- [ ] ✅ Components follow naming convention (`.ui.tsx`)
+- [ ] ✅ Components are small and focused (single responsibility)
+- [ ] ✅ TypeScript types are properly defined
+- [ ] ✅ Using shared components where possible
+- [ ] ✅ Images use `next/image` component
+- [ ] ✅ No `any` types (or properly justified with eslint-disable)
+- [ ] ✅ No hardcoded strings (use constants)
+- [ ] ✅ Toast notifications use `useGlobalToast`
+- [ ] ✅ Forms use TanStack Form
+- [ ] ✅ Server state uses React Query
+- [ ] ✅ Code passes linter without errors
+- [ ] ✅ UI content in Vietnamese
+- [ ] ✅ Proper error handling
+
+---

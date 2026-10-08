@@ -1,0 +1,531 @@
+---
+name: glab-mr
+description: "Create, view, manage, approve, and merge GitLab merge requests. Use when working with MRs: creating from branches/issues, reviewing, approving, adding comments, resolving discussion threads, checking out locally, viewing diffs, rebasing, merging, or managing state. Triggers on merge request, MR, pull request, PR, review, approve, merge, resolve thread."
+---
+
+# glab mr
+
+Create, view, and manage GitLab merge requests.
+
+## Quick start
+
+```bash
+# Create MR from current branch
+glab mr create --fill
+
+# Create or update with a multi-line description from a file
+glab mr create --title "Fix login bug" --description-file description.md
+glab mr update 123 --description-file description.md
+
+# Attach local files to a description
+glab mr create --title "Fix login bug" --description "Before and after:" \
+  --attach ./before.png --attach ./after.png
+glab mr update 123 --attach ./latest.png
+
+# List my MRs
+glab mr list --assignee=@me
+
+# Review an MR
+glab mr checkout 123
+glab mr diff
+glab mr approve
+
+# Merge an MR
+glab mr merge 123 --when-pipeline-succeeds --remove-source-branch
+```
+
+## Common workflows
+
+### Creating MRs
+
+**From current branch:**
+```bash
+glab mr create --fill --label bugfix --assignee @reviewer
+
+# Create now, merge automatically when checks pass
+glab mr create --fill --auto-merge
+
+# Start from an MR template file when your project uses one
+glab mr create --fill --template .gitlab/merge_request_templates/default.md
+```
+
+For one-off multi-line descriptions, use `--description-file <path>` or `--description-file -` for stdin. It is mutually exclusive with `--description`; on create, it is also mutually exclusive with `--template`. A file containing exactly `-` is rejected because `--description -` means "open an editor".
+
+Use the experimental `--attach <path>` repeatedly to upload files and append GitLab-provided Markdown references to the description. `--attach -` reads one file from stdin and cannot share stdin with `--description-file -`. On update, attachments append to the existing description unless a replacement description is supplied. For fork merge requests, `mr create` uploads attachments to the target project so the references resolve there.
+
+In a non-interactive environment, an explicit `--title` is sufficient; glab can create the MR with an empty description instead of requiring a TTY or `--description`. Interactive terminals still prompt for a missing description/template. For deterministic automation, pass `--yes` plus any source/target/repository selectors explicitly.
+
+```bash
+GLAB_NO_PROMPT=1 glab mr create \
+  --title "Fix login timeout" \
+  --source-branch fix/login-timeout \
+  --target-branch main \
+  --yes
+```
+
+**Without a local Git checkout:**
+
+`glab mr create` can create an MR outside a Git repository when every
+remote-dependent input is supplied as a flag. The source branch must already exist on
+the selected source project. Do not use `--push`, `--fill`, or `--template`,
+because those require local repository state.
+
+```bash
+glab mr create \
+  --repo group/project \
+  --source-branch feature-branch \
+  --target-branch main \
+  --title "Add feature" \
+  --description "Details..." \
+  --yes
+
+# Fork source into an upstream target
+glab mr create \
+  --repo upstream/project \
+  --head your-namespace/project \
+  --source-branch feature-branch \
+  --target-branch main \
+  --title "Add feature" \
+  --description "Details..." \
+  --yes
+```
+
+**From issue:**
+```bash
+glab mr for 456  # Creates MR linked to issue #456
+```
+
+**Draft MR:**
+```bash
+glab mr create --draft --title "WIP: Feature X"
+```
+
+### Review workflow
+
+1. **List pending reviews:**
+   ```bash
+   glab mr list --reviewer=@me --state=opened
+   ```
+
+2. **Checkout and test:**
+   ```bash
+   glab mr checkout 123
+   npm test
+   ```
+
+3. **Leave feedback:**
+   ```bash
+   # Forward command surface for new MR comments/discussions
+   glab mr note create 123 -m "Looks good, one question about the cache logic"
+
+   # Automation/status update that should not create a resolvable thread
+   glab mr note create 123 -m "Build status: green" --resolvable=false
+
+   # Reply inside an existing discussion thread
+   glab mr note create 123 --reply abc12345 -m "Good catch — updated"
+
+   # Native diff comments on the latest MR version
+   glab mr note create 123 --file src/cache.ts --line 42 -m "Please extract this branch"
+   glab mr note create 123 --file src/cache.ts --old-line 17 -m "Why was this removed?"
+
+   # Attach evidence to a new or existing note
+   glab mr note create 123 -m "Rendered result" --attach ./result.png
+   glab mr note update 123 456789 --attach ./updated.png
+
+   # List discussion threads and expose note/discussion IDs (experimental)
+   glab mr note list 123
+   glab mr note list 123 --state unresolved --type diff
+   glab mr note list 123 --output json
+
+   # Resolve or reopen a discussion by note/discussion ID (experimental)
+   glab mr note resolve 3107030349 123
+   glab mr note reopen 3107030349 123
+   ```
+
+   For `glab mr note update`, the note ID is always the final positional argument. The help renderer shows required arguments before optional ones, but the command parses the last argument as `<note-id>`; use `glab mr note update <mr> <note-id>` when specifying an MR.
+
+4. **Approve:**
+   ```bash
+   glab mr approve 123
+   ```
+
+**Automated review workflow:**
+
+For repetitive review tasks, use the automation script bundled with this skill
+under `scripts/` (paths below are relative to the skill's own directory):
+```bash
+scripts/mr-review-workflow.sh 123
+scripts/mr-review-workflow.sh 123 "pnpm test"
+```
+
+This automatically: checks out → runs tests → posts result → approves if passed.
+
+### Merge strategies
+
+**Auto-merge when pipeline passes:**
+```bash
+glab mr merge 123 --when-pipeline-succeeds --remove-source-branch
+```
+
+Merge output reports the resulting merge request state accurately. Do not assume a successful `glab mr merge --auto-merge` prints `Merged!`; when the MR is only armed for auto-merge, automation should treat the accepted state as pending rather than already merged.
+
+**Squash commits:**
+```bash
+glab mr merge 123 --squash
+```
+
+**Rebase before merge:**
+```bash
+glab mr rebase 123
+glab mr merge 123
+```
+
+## Troubleshooting
+
+**Merge conflicts:**
+- Checkout MR: `glab mr checkout 123`
+- Resolve conflicts manually in your editor
+- Commit resolution: `git add . && git commit`
+- Push: `git push`
+
+**Cannot approve MR:**
+- Check if you're the author (can't self-approve in most configs)
+- Verify permissions: `glab mr approvers 123`
+- Ensure MR is not in draft state
+
+**Pipeline required but not running:**
+- Check `.gitlab-ci.yml` exists in branch
+- Verify CI/CD is enabled for project
+- Trigger manually: `glab ci run`
+
+**"MR already exists" error:**
+- List existing MRs from branch: `glab mr list --source-branch <branch>`
+- Close old MR if obsolete: `glab mr close <id>`
+- Or update existing: `glab mr update <id> --title "New title"`
+
+## Related Skills
+
+**Working with issues:**
+- See `glab-issue` for creating/managing issues
+- Use `glab mr for <issue-id>` to create MR linked to issue
+- Script: `scripts/create-mr-from-issue.sh` automates branch + MR creation
+
+**CI/CD integration:**
+- See `glab-ci` for pipeline status before merging
+- Use `glab mr create --auto-merge` to request auto-merge up front, or `glab mr merge --when-pipeline-succeeds` on an existing MR
+
+**Automation:**
+- Script: `scripts/mr-review-workflow.sh` for automated review + test workflow
+
+## Listing and targeting MR discussions
+
+`glab mr note list` text output includes each note ID and an eight-character discussion ID prefix for every non-system discussion, plus both relative and absolute timestamps. Pass the characters before the ellipsis directly to `--reply`; use JSON when a workflow needs the full discussion ID. Use verified identifiers with `resolve`, `reopen`, or `--reply` rather than scraping author/body text.
+
+```bash
+# Filter the text view
+glab mr note list 123 --type diff --state unresolved
+glab mr note list 123 --file src/app.ts
+
+# Prefer JSON when an automation needs stable IDs
+glab mr note list 123 --output json \
+  --jq '.[] | {discussion_id: .id, note_ids: [.notes[].id]}'
+
+# Extract full discussion IDs
+glab mr note list 123 -F json --jq '.[].id'
+
+# Act on the verified identifier
+glab mr note resolve <discussion-or-note-id> 123
+glab mr note reopen <discussion-or-note-id> 123
+```
+
+Upstream's generated help demonstrates the same extraction with an external `jq` pipe. This skill set prefers the supported built-in `--jq` flag so filtering stays inside `glab` and avoids a separate shell process.
+
+`--type` accepts `all`, `general`, `diff`, or `system`; `--state` accepts `all`, `resolved`, or `unresolved`; `--file` limits results to diff notes on one path. These subcommands remain experimental, so confirm live help when scripting across mixed `glab` versions.
+
+In text output, the default `--type all` includes system notes as well as regular discussions. Use `--type system` when you want only system activity, or select a narrower note type when automation should not parse assignment/status events as user feedback.
+
+## Native MR note flow (`glab mr note create`)
+
+`glab mr note create` is the preferred command surface for posting new MR discussions.
+
+### Use native `glab mr note create` when
+
+```bash
+# New top-level discussion/comment
+glab mr note create 123 -m "Please add a regression test"
+
+# Non-resolvable note for automation/status output
+glab mr note create 123 -m "Build status: green" --resolvable=false
+
+# Reply to an existing discussion thread
+glab mr note create 123 --reply abc12345 -m "Fixed in the latest push"
+
+# File-level diff comment
+glab mr note create 123 --file src/app.ts -m "General concern on this file"
+
+# Line comment on the new side of the diff
+glab mr note create 123 --file src/app.ts --line 84 -m "This branch can return null"
+
+# Range comment on the new side
+glab mr note create 123 --file src/app.ts --line 84:96 -m "Consider extracting this block"
+
+# Comment on a removed line from the old side
+glab mr note create 123 --file src/app.ts --old-line 37 -m "Why was this guard removed?"
+```
+
+Flag rules worth remembering from the upstream help/docs:
+- `--reply` targets an existing discussion thread instead of starting a new one.
+- `--reply` accepts a full discussion ID or a unique prefix of at least 8 characters.
+- By default, new top-level notes are created as resolvable discussion threads. Use `--resolvable=false` for bot/status comments that should not block projects requiring all threads to be resolved.
+- `--line` and `--old-line` require `--file` and cannot be used together.
+- `--file`, `--reply`, and `--unique` are mutually exclusive.
+- `--resolvable=false` cannot be combined with `--reply`, `--file`, `--line`, or `--old-line`.
+- `--attach` can be repeated and may provide the entire note body; it cannot be combined with `--unique` because each upload produces a fresh URL.
+- On `mr note update`, attachment-only input appends to the current note body; pairing `--message` with attachments replaces the body and then appends the new references.
+- Omit both `--line` and `--old-line` when you want a file-level diff comment.
+
+### Keep the helper/script path when
+
+Use the bundled inline-comment helper or raw `glab api` JSON-body approach when you need stronger anchoring guarantees for automation, especially when:
+- you must verify that GitLab created an actual inline discussion rather than a root MR note
+- you are posting many comments in batch
+- you are targeting tricky diffs (new files, renamed files, complex paths, or line-code fallback cases)
+
+`glab mr note create` is now enough for most interactive reply and diff-comment workflows. The helper remains valuable for robust automated review pipelines.
+
+## Posting Inline Comments on MR Diffs
+
+### The `glab api --field` Problem
+
+In glab v1.118.0, `glab api --field position[new_line]=N` fails fast when it would create a JSON request body:
+
+```text
+a field name containing a bracket is not supported in a JSON request body
+```
+
+Do not use bracketed field names to build inline MR discussion bodies. Older form-style position payloads were also fragile with:
+- Entirely new files (`new_file: true` in the diff)
+- Files with complex/encoded paths
+- Any nested position field that doesn't survive form encoding
+
+Use `--input -` with a JSON body for inline discussion creation. Always check the returned note's `position` field so automation can detect a root MR note or failed anchor.
+
+### The Fix: Always Use JSON Body
+
+Post inline comments through `glab api` with a literal JSON request body. Keep authentication inside `glab`; never read, copy, log, or print stored token values:
+
+```bash
+set -euo pipefail
+
+HOST="gitlab.com"
+PROJECT_PATH="mygroup/myproject"
+MR_IID="42"
+FILE_PATH="src/utils/helpers.ts"
+LINE="16"
+BODY="Your comment here"
+
+# Confirm the exact GitLab host and visible account before creating a discussion.
+glab auth status --hostname "$HOST"
+glab api --hostname "$HOST" /user | jq '{username: .username, name: .name}'
+
+PROJECT_ID="$(python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PROJECT_PATH")"
+
+# Always fetch fresh SHAs from the current MR version; never use cached values.
+VERSION_JSON="$(glab api --hostname "$HOST" "/projects/$PROJECT_ID/merge_requests/$MR_IID/versions" | jq '.[0]')"
+
+python3 - "$VERSION_JSON" "$FILE_PATH" "$LINE" "$BODY" <<'PY' |
+import json
+import sys
+
+version = json.loads(sys.argv[1])
+file_path = sys.argv[2]
+line = int(sys.argv[3])
+body = sys.argv[4]
+
+json.dump({
+    "body": body,
+    "position": {
+        "base_sha": version["base_commit_sha"],
+        "start_sha": version["start_commit_sha"],
+        "head_sha": version["head_commit_sha"],
+        "position_type": "text",
+        "new_path": file_path,
+        "new_line": line,
+        "old_path": file_path,
+        "old_line": None
+    }
+}, sys.stdout)
+PY
+glab api --hostname "$HOST" --method POST --header "Content-Type: application/json" --input - \
+  "/projects/$PROJECT_ID/merge_requests/$MR_IID/discussions" |
+  jq '{discussion_id: .id, inline: ((.notes[0].position // null) != null)}'
+```
+
+The returned `inline` value must be `true`. If it is `false`, treat the result as a root MR discussion and do not claim that inline anchoring succeeded.
+
+### Finding the Correct Line Number
+
+Line numbers must point to an **added line** (`+` prefix) in the diff — context lines and removed
+lines will cause the position to be rejected:
+
+```python
+import re
+
+def get_new_line_number(diff_text, keyword):
+    """Find the new_file line number of the first added line containing keyword."""
+    new_line = 0
+    for line in diff_text.split("\n"):
+        hunk = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+        if hunk:
+            new_line = int(hunk.group(1)) - 1
+            continue
+        if line.startswith("-") or line.startswith("\\"):
+            continue
+        new_line += 1
+        if line.startswith("+") and keyword in line:
+            return new_line
+    return None
+
+# Usage
+diffs = json.loads(...)  # from /merge_requests/{iid}/diffs
+for d in diffs:
+    if d["new_path"] == "src/utils/helpers.ts":
+        line = get_new_line_number(d["diff"], "safeParse")
+        print("line:", line)
+```
+
+### Reusable Script
+
+For scripted or automated MR reviews, use the helper bundled with this skill
+under `scripts/` (paths below are relative to the skill's own directory):
+
+```bash
+# Single comment
+python3 scripts/post-inline-comment.py \
+  --project "mygroup/myproject" \
+  --mr 42 \
+  --file "src/utils/helpers.ts" \
+  --line 16 \
+  --body "This returns the wrapper object — use .data instead."
+
+# Batch from JSON file
+python3 scripts/post-inline-comment.py \
+  --project "mygroup/myproject" \
+  --mr 42 \
+  --batch comments.json
+```
+
+Batch file format:
+```json
+[
+  { "file": "src/utils/helpers.ts", "line": 16, "body": "Comment 1" },
+  { "file": "src/routes/+page.svelte", "line": 58, "body": "Comment 2" }
+]
+```
+
+The script lets `glab` handle authentication, fetches fresh SHAs and diffs through `glab api`, and uses a two-step anchoring strategy:
+1. Try the normal JSON `position.new_line` inline payload first.
+2. If GitLab rejects it with a `line_code` validation error, compute the diff anchor and retry with JSON `position.line_range.start.line_code` / `position.line_range.end.line_code`.
+
+That retry path is the preferred recovery for failures like:
+- `400 Bad request - Note {:line_code=>["can't be blank", "must be a valid line code"]}`
+
+Only if that retry also fails should your broader review workflow fall back to a root MR note that clearly says inline anchoring failed while preserving the exact finding text and reviewer identity.
+
+---
+
+### Filtering discussion threads by resolution
+
+```bash
+# Show only unresolved discussion threads on an MR
+glab mr view 123 --unresolved
+
+# Show only resolved threads
+glab mr view 123 --resolved
+```
+
+Useful for quickly checking which review threads still need attention before merging.
+
+Normal text output from `glab mr view` now shows the source and target branches. Confirm the displayed `source → target` direction before reviewing, rebasing, or merging, especially for fork merge requests. Use `--output json` when automation needs stable branch fields rather than parsing the rendered line.
+
+## `glab mr list` filtering flags
+
+`glab mr list` supports the following filtering and sorting flags:
+
+```bash
+# Filter by author
+glab mr list --author <username>
+
+# Filter by source or target branch
+glab mr list --source-branch feature/my-branch
+glab mr list --target-branch main
+
+# Filter by draft status
+glab mr list --draft
+glab mr list --not-draft
+
+# Filter by label or exclude label
+glab mr list --label bugfix
+glab mr list --not-label wip
+
+# Order and sort
+glab mr list --order updated_at --sort desc
+glab mr list --order merged_at --sort asc
+
+# Date range filtering
+glab mr list --created-after 2026-01-01
+glab mr list --created-before 2026-03-01
+
+# Search in title/description
+glab mr list --search "login fix"
+
+# Full flag reference (all available flags)
+glab mr list \
+  --assignee @me \
+  --author vince \
+  --reviewer @me \
+  --label bugfix \
+  --not-label wip \
+  --source-branch feature/x \
+  --target-branch main \
+  --milestone "v2.0" \
+  --draft \
+  --state opened \
+  --order updated_at \
+  --sort desc \
+  --search "auth" \
+  --created-after 2026-01-01
+```
+
+## Structured output
+
+`glab mr approvers` supports `--output json` / `-F json` for structured output, which is useful for agent automation.
+
+```bash
+# View MR approvers with JSON output
+glab mr approvers 123 --output json
+glab mr approvers 123 -F json
+```
+
+## Command reference
+
+For complete command documentation and all flags, see [references/commands.md](references/commands.md).
+
+**Available commands:**
+- `approve` - Approve merge requests
+- `checkout` - Check out an MR locally
+- `close` - Close merge request
+- `create` - Create new MR
+- `delete` - Delete merge request
+- `diff` - View changes in MR
+- `for` - Create MR for an issue
+- `list` - List merge requests
+- `merge` - Merge/accept MR
+- `note` - MR discussion commands; use `glab mr note create` for new comments, plus `list`, `resolve`, and `reopen`
+- `rebase` - Rebase source branch
+- `reopen` - Reopen merge request
+- `revoke` - Revoke approval
+- `subscribe` / `unsubscribe` - Manage notifications
+- `todo` - Add to-do item
+- `update` - Update MR metadata
+- `view` - Display MR details

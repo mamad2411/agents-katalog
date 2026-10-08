@@ -16,6 +16,9 @@ Satu tempat untuk katalog skill, indeks, dan utilitas lintas-agen.
 | `skill-mcp.py` | **MCP server** `skill-catalog`: skill_for_task, skill_search, skill_load, skills_available, agent_context | ✅ aktif |
 | `skill-search.sh` | cari skill via CLI (FTS5 + bm25, bahasa natural) | ✅ |
 | `session-brief.sh` | brief 720 B disuntik ke tiap sesi (hook SessionStart) | ✅ aktif |
+| `context-guard.py/.sh` | hook penjaga konteks: 0 token di bawah ambang, 1 baris kalau sesi >10 MB | ✅ aktif |
+| `skill-load-lite.sh` | muat skill ringkas (≤80 baris/≤2 KB) — skill tetap dipakai, konteks tetap hemat | ✅ |
+| `usage-audit.py/.sh` | ukur token harian/7 hari + sesi terboros dari transcript lokal (read-only) | ✅ |
 | `install-skill-first.py` | pasang MCP+hook ke semua agen (idempotent, backup) | ✅ |
 | `skills-router.py` | generator katalog (cap 60/kategori) | ✅ |
 | `link-skills-min.sh` | wiring skill via symlink (repo/user scope) | ✅ |
@@ -83,7 +86,318 @@ python3 skill-auto-symlink.py [--verbose]   # daemon/patch symlink (on-demand ju
 5. Semua script di sini idempotent; yang mengubah data selalu menyimpan backup
    (`.bak-YYYYMMDD`).
 
+## Status & drift (diverifikasi 2026-10-08)
+
+- **2026-10-08 🎯 TARGET 100K TERCAPAI: index 100.079 entri (dari 69.967).**
+
+  Sumber: **GitHub topic repo-search** (`topic-mine.py`, 5 jilid, 114 topic × 5-15 page,
+  ~40rb repo unik) — SEMUA jalan background `nice -n 15` (nggak panas), token `gh auth`
+  (keyring, TIDAK ditulis ke file/log). Fetch via raw.githubusercontent (no rate limit).
+  - Struktur: curated 3.176 (bersih 99%) · reference ~89rb · junk ~7,9rb · repo-refs 15.929.
+  - **Dimensi baru**: `SKILLS-CONCEPTS.md` + `SKILLS-FLOWS.md` (konsep & alur lifecycle,
+    generator `concept-flow-map.py`, auto via chain) + 3 role baru (agent-orchestrator/
+    agent-memory/agent-ux) + `_override-*` di `_categorize_roles.py` (keyword spesifik
+    menang atas backend generik; homonim diverifikasi aman).
+  - **Token-hemat**: `TOKEN-SAVER.md` (peta AMAN/MAHAL/RACUN) jadi langkah tangga #1 di
+    AGENTS.md; header SKILLS-AVAILABLE larang baca utuh.
+  - File pendukung: `mine-chain-100k.sh`, `topic-chain2.sh`, auto-rebuild loop 25 menit
+    (`/tmp/mine100k/auto-rebuild.sh`). Backup: `*.bak-20261004`, `*.bak-20261006*`.
+  - Catatan: yield unik menipis di akhir (duplikat ~80%) — buat nambah lagi butuh sumber
+    BARU lagi (topic tak tersentuh / code-search varian), BUKAN ulang topic lama.
+
 ## Status & drift (diverifikasi 2026-09-25)
+
+- **2026-10-03 (2) — PANAS/SSD + subagent & skill per-kategori (pinter, bukan murahan).**
+
+  User minta: hemat + jangan bikin device panas + tetap pinter + rekomendasi subagent
+  & skill/MCP/repo per kategori. Audit nyata:
+  - 🔴 **Loop mining jalan 8,2 HARI** di tmux (`while true` → GitHub API → tulis
+    log/state tiap 10 dtk; log 1,3 MB; mining sudah SATURASI per AGENTS.md sendiri)
+    + 2 launchd **KeepAlive 24/7** (`repo-ref-api`, `skill-graph-api` — port-nya sendiri
+    didokumentasi mati) + 2 launchd **tiap 30 menit** (`legakan`, `skill-auto-symlink`).
+  - ⚠️ **TEMUAN KEAMANAN**: token GitHub (`ghp_…`) **terekspos di cmdline proses**
+    (terlihat via `ps` biasa) dan ikut termasuk di log `/tmp/ghchain.log` +
+    tmux tmux server. **SARAN: ROTATE token itu sekarang** di GitHub → Settings →
+    Developer settings → Personal access tokens, dan jangan export di cmdline
+    (pakai file 600). Saya tidak mengulang nilainya di mana pun.
+  - **`device-guard.py` (BARU)**: `--report` read-only (CPU/RAM, umur tmux, churn B/s,
+    interval launchd, kandidat stop) · `--apply` (opt-in, backup): stop loop saturasi,
+    bootout 2 agent 24/7, interval 1800→21600 dtk. Restore: `.device-guard-log.json`.
+    Hasil terukur: tmux **kosong**, loop mining **0**, agent 24/7 **0**, legakan
+    **21600 s**, CPU idle 46→67% (1 sampel). Yang TIDAK tersentuh: docker, dev-stack,
+    cline, 9router (semua masih hidup — diverifikasi).
+  - **`wire-skills-role.sh` (BARU)** — "role pack": 12 preset (backend/frontend/fullstack/
+    data/ai/design/qa/devops/security/mobile/docs/core) → pilih skill **curated** dari DB
+    by `category` (cap `CAP_PER_KAT=10`/kategori) → symlink relatif ke `<repo>/.claude/skills`.
+    Alternatif lama ditolak: `role-skill-map.json` ternyata berisi **nama tier expanded
+    sampah** (`CODE_OF_CONDUCT-ml`, `CacheStorage`) → tidak layak wiring.
+    2 bug ditangkap uji sebelum dipakai nyata: (1) path symlink hardcode `../../../…`
+    → salah utk semua lokasi repo; (2) `/tmp` macOS → `/private/tmp` bikin relpath salah
+    → pake `realpath` + fallback absolut kalau >6 level. Uji lolos utk repo di dalam HOME
+    & di `/tmp`.
+  - **AGENTS.md**: (a) §Pakai subagent (default TANPA · maks 3 paralel · 1 tujuan ·
+    brief ≤30 baris · satu penulis · model murah utk eksplorasi · verifikasi di penulis
+    utama), (b) §Tangga progressive disclosure 7 langkah (FTS cari → kartu 120 B →
+    skill-load-lite ≤2 KB → SKILL.md penuh hanya perlu → repo-ref-api search jangan
+    klon → MCP on-demand → role pack wiring). Ini konsep "bagus" yang ditanya: satu
+    tangga, setiap langkah lebih murah, tidak pernah lompat ke langkah mahal duluan.
+  - Dokumentasi: `CHEATSHEET.md` (3 baris baru), `COMMANDS.md` §🔥PANAS & SSD.
+
+
+- **2026-10-03 (1) — Limit habis KARENA LOOP, bukan pesan panjang (audit tok-tok).**
+
+  User: "Claude sama AI lain masih boros". Audit transcript lokal (bukan tebakan):
+  **02 Okt = ±532 jt token dalam 1.223 pesan** (±10× rata-rata harian Sep).
+  Pola loop: spawn agent → baca → edit → gagal → validasi → `needs_fixes` → ulangi
+  tanpa batas. Opus tidak terlibat (nol pesan opus sejak 24 Sep) dan semua
+  agent file tidak memaksa model (default sonnet ikut `settings.json`).
+  Tokenisasi/RAG **tidak** direkomendasikan sebagai jawaban: tokenisasi milik
+  provider (tidak bisa diubah) + caching tidak mengurangi hitungan limit, dan
+  RAG tetap memakan token IN untuk setiap potongan yang dibaca.
+
+  **Perbaikan: `loop-guard.py` (BARU) — penghitung loop per sesi, 0 token saat normal.**
+  - Hook **PreToolUse Claude** (via `patch-settings-20261003.py`, idempoten, backup
+    `.bak-20261003`) + hook **UserPromptSubmit Cline** — menghitung tool call per
+    `session_id` (fallback: transcript aktif <10 menit, aman untuk Cline tanpa id
+    berkat TTL state 24 jam).
+  - Ambang: **80 tool call/sesi (peringatan lunak, 1× per kelipatan) · 200 tool call
+    ATAU 500 pesan riwayat (keras: perintah hentikan agen + tulis STATUS ke file +
+    lanjut sesi BARU)**. Di bawah ambang = 0 byte (tidak menambah konteks).
+  - Plus **aturan anti-loop keras di `AGENTS.md` §Hemat konteks**: maks 3 spawn
+    paralel, 1 tujuan per agen, tanpa rekuris tanpa izin, tanda-tanda loop +
+    tindakan wajib (`Esc` → status ke file → sesi baru).
+  - Catatan jujur: (a) satu baris `st[sid] = e` sempat hilang → counter tak pernah
+    naik; tertangkap uji 200 panggilan (bukan di sesi nyata). (b) Hook Cline hitung
+    **per prompt**, bukan per tool call — jadi ambang 80 di Cline ≈ 80 pesan
+    (lebih ketat dari Claude; disengaja aman karena Cline CLI limit-nya kecil).
+    (c) `transcript_msgs` pesan pakai heuristik string, bukan parse penuh
+    (±akurat, tapi murah).
+  - Uji: sunyi ke-1–79 → bunyi ke-80 → sunyi 81–159 → bunyi 160 (ulang) → keras 200;
+    JSON rusak/stdin kosong → sunyi; hook Cline utuh (skill+guard+loop) = JSON valid.
+  - Sisa rekomendasi (belum dikerjakan, butuh keputusan user — bukan otomatis):
+    model default turun ke haiku untuk sesi baru, dan `MAX_THINKING_TOKENS` lebih
+    rendah (2 hal yang benar-benar turunkan kualitas kalau dipaksa).
+
+
+- **2026-09-26 (8) — Otomasi arsip mingguan: penumpukan tidak akan terulang.**
+
+  Selama ini semua pembersihan = manual & sekali jalan → riwayat bisa menumpuk lagi
+  (kebiasaan = akar masalah). Sekarang otomatis mengikuti pola repo yang sudah ada
+  (`mcp-lifecycle --gc-if-due`):
+  - `archive-sessions.py` (BARU) — scan Claude/Cline/CodeBuddy, pindah sesi >7 hari
+    ke folder arsip masing-masing, manifest append ke `~/ARCHIVE-MANIFEST.txt`;
+    gate `.archive-state.json` (**maks 1×/minggu**); dipanggil dari `session-brief.sh`
+    dengan `capture_output=True` → **nol token, nol output, 0,2 dtk**.
+  - Keamanan diuji 2 arah: (1) dry-run 12 sesi muda → 0 bergerak; (2) file tiruan
+    10 hari → tepat 1 itu yang dipindah; sesi aktif & sesi muda utuh dalam kedua uji.
+  - Catatan jujur: saat uji pertama, logika `<=`/`>` sempat TERBALIK (sesi aktif masuk
+    daftar pindah!) — tertangkap oleh uji dry-run SEBELUM ada penulisan nyata.
+    Uji seperti ini wajib untuk setiap skrip yang memindahkan file.
+  - Rollback = `mv` balik mengikuti manifest (cara di `COMMANDS.md` §ROLLBACK).
+    Ambang bisa diubah: `ARCHIVE_AFTER_DAYS` (bukan hari = kebijakan baru, diskusikan dulu).
+
+
+- **2026-09-26 (7) — CodeBuddy: rules lama ketinggalan + riwayat 26 MB diarsip.**
+
+  User: "AI CodeBuddy masih boros". Diagnosa `~/.codebuddy` (305 MB — ke-2 terbesar):
+  - **Riwayat chat**: 25 sesi / 26,6 MB; 21 sesi berumur >48 jam (25,7 MB) → dipindah ke
+    `~/.codebuddy/archived-projects/` (manifest ditambahkan ke `~/ARCHIVE-MANIFEST-20260927.txt`).
+    Sisa riwayat aktif **0,9 MB** (4 sesi muda). Nol file dihapus.
+  - 🔴 **`AGENTS.md` CodeBuddy ketinggalan dua perbaikan** (drift — file ini tidak masuk
+    daftar edit sebelumnya): (a) masih memerintah **"WAJIB baca `SKILL-FLOW.md` penuh"**
+    (5.355 B/sesi) → diganti versi on-demand + pakai `skill-load-lite`; (b) angka basi
+    **"≈63,436 skill"** → "3.176 skill curated" + peringatan jangan baca
+    `SKILLS-AVAILABLE.md` (123 KB). Backup `AGENTS.md.bak-hemat4`.
+  - 🔍 **Cek drift serupa ke 16 rules tool**: ketemu 3 tertinggal — `~/.continue/.continuerules`,
+    `~/.qwen/QWEN.md` (blok Gaya lama) dan `~/.hermes/AGENTS.md` (angka 63,436) → semua
+    diperbaiki (backup `.bak-hemat5`). Setelah ini: **0 rules tersisa blok lama**.
+  - Yang ternyata BUKAN lubang: skills CodeBuddy = symlink bersama `skills-store` (otomatis
+    ikut dipadatkan; 10 deskripsi sisa 301–338 B → hemat hanya ±150 B, tidak sepadan),
+    MCP sudah 2 server, `AGENTS.md` 3,5 KB, memory project kecil (32 KB total), plugin
+    Office = penyedia skill (bukan tool-schema) jadi bukan beban konteks per-request.
+  - Verifikasi: `install-context-guard --check` tetap **0 perlu** · `skill-flow --eval`
+    **31/31** · grep drift `SKILL-FLOW-lama` + `63,436` = **BERSIH** di semua rules.
+
+
+- **2026-09-26 (6) — Arsip sesi lama: 146,6 MB dipindah (bukan dihapus), nol dampak kualitas.**
+
+  Kebijakan (sesuai syarat user "jangan turunkan kualitas"): hanya PINDAH, sesi aktif
+  & sesi <48 jam (Claude) / <24 jam (Cline) tidak disentuh — `--resume` sesi arsip tetap
+  bisa dengan mengembalikan file dari manifest.
+  - **Claude**: 11 file utama + 11 subagent jsonl → `~/.claude/archived-projects/<proj>/`
+    (mtime >48 jam). Total disk sesi **159,5 → 74,5 MB**. Sesi aktif (`dcd21933`, ditulis
+    07:44) utuh; sesi kemarin `c2ed1bd9` (**62 MB, 195 gambar**) diarsip MANUAL menyusul
+    (rekomendasi tegas disetujui user: 1× resume tidak sengaja = limit mati).
+    Audit kini: Claude tersisa 4 sesi / 15 MB, terbesar 7,8 MB (sesi berjalan ini).
+  - **Cline**: 5 sesi >24 jam → `~/.cline/archived-sessions/`. **49 → 1,7 MB** tersisa
+    (tinggal `svm25` kemarin + `5fqj1` yang sedang aktif).
+  - Manifest restore: `~/ARCHIVE-MANIFEST-20260927.txt` (path asal per file).
+  - Verifikasi: semua sesi tersisa berumur muda; `ai-context-audit` jalan normal;
+    tidak ada file yang dihapus (total arsip = total pindah = 146,6 MB).
+  - **Dibatalkan atas syarat user**: `MAX_THINKING_TOKENS` (menurunkan reasoning) &
+    kompresi rules agresif (false saving) — tidak dikerjakan.
+
+
+- **2026-09-26 (5) — Jebakan baca file raksasa + brief sesi yang menyesatkan.**
+
+  - 🔴 **`SKILLS-AVAILABLE.md` (123.273 B ≈ 30 rb token)** dirujuk sebagai "Katalog" di
+    `GEMINI.md` → model bisa membaca penuh sekali baca. Rujukan diganti: cari via
+    MCP `skill_search`/`skill_for_task` atau `skill-search.sh`, **dilarang baca penuh**
+    (perintah eksplisit + ukuran file ditulis di rules).
+  - 🟡 `STYLE-TOKEN-SAVER.md` (16.620 B) dirujuk di **6 file rules** tanpa ukuran →
+    ditambahi "(16 KB, on-demand)" di ke-6nya (backup `.bak-hemat4`). Trade-off sadar:
+    +~45 B/rules × 6 untuk mencegah baca 16,6 KB.
+  - 🟡 `session-brief.sh` (SessionStart tiap sesi Claude): **857 → 533 B**; bagian
+    Auto-SKILLS yang 100% duplikat dengan `CLAUDE.md` dihapus (bagian Anti-ngarang
+    dipertahankan — unik); angka **"MCP: 36 server (semua provider)" yang sudah basi**
+    (sesudah slim tinggal 2) diganti angka benar + arah `--on` on-demand; angka
+    "1018 skill (curated 3176)" yang kontradiktif → "3176 skill curated".
+    Backup `session-brief.sh.bak-20260927`.
+  - Verifikasi: `skill-flow --eval` **31/31** · `install-context-guard --check` **0 perlu** ·
+    `bash -n` OK · rules 6 file tetap utuh (warna/hemat ±21,7 KB total).
+
+
+- **2026-09-26 (4) — Mega hemat lanjutan: biaya PER PESAN & sisa rules gemuk.**
+
+  Temuan: rules `~/.claude/CLAUDE.md` §AUTO-SKILLS memaksa model **"route.sh … baca
+  SKILL.md-nya, ikuti" untuk 2 skill SETIAP pesan** — kalau dipatuhi literal =
+  ±2 × 9 KB = ±18 KB/pesan (100 pesan ≈ 450 rb token). Plus tabel agent 834 B.
+  Perbaikan:
+  - **§AUTO-SKILLS ditulis ulang** (ringkas + makna utuh): routing cukup SEKALI per
+    pesan (pakai kandidat hook `skill-flow` ATAU `route.sh`), muat hasil **wajib lewat
+    `skill-load-lite.sh` (≤2 KB), bukan SKILL.md penuh**. Tabel 15 agent → satu baris
+    padat. Net CLAUDE.md: 8.467 → **7.959 B, tanpa `@import` guard** (basis awal
+    7.910 + 3.784 = 11.694 B).
+  - **9 deskripsi skill round-2** (340–450 B) dipadatkan ke ≤300 B: `pdf` 450→281,
+    `security-review` 422→293, `git-commit` 437→295, `avoid-ai-writing` 416→298,
+    `social-content` 411→294, `email-drafter` 350→299, `seo-audit` 363→298,
+    `linkedin-post-formatter` 372→298, `adversarial-reviewer` 370→295. Hemat 940 B.
+    Total deskripsi 82 skill: **20.091 → 16.946 B**. Backup `.bak-20260927`.
+  - **MCP `skill_load`**: `MAX_LOAD` 6.000 → 4.000 B + pesan potong kini menunjuk
+    `skill-load-lite.sh` (mencegah model baca file penuh 9 KB setelahnya).
+  - **Rebuild indeks urut (ke-2): curated tetap 3.176** (total 69.620).
+  - **Uji recall adil (DB di-salin, limit identik, banding 4 query lama-vs-baru):**
+    "pdf buat laporan" / "security review kode" / "git commit pesan" → hasil **identik
+    baris demi baris**; "social media konten" → beda 1 posisi di #8 dan justru
+    `social-content` (target potongan) yang masuk. **Regresi efektif 0.**
+  - Verifikasi: `skill-flow --eval` **31/31**, `install-context-guard --check` **0 perlu**,
+    `py_compile` OK.
+  - **Akumulasi total sejak awal sesi: konteks tetap Claude 31.785 → 24.905 B
+    (hemat ±6,9 KB ≈ 1,7 rb token/sesi)** + potensi hemat baca-SKILL.md-per-pesan +
+    Gemini 3,8 KB/sesi + MCP ±25%/panggilan + guard riwayat/gambar (jawaban utama
+    limit cepat habis).
+
+
+- **2026-09-26 (3) — "Mega hemat": konteks TETAP per sesi dipangkas (tanpa menghapus skill/repo-refs).**
+
+  Setelah riwayat/gambar/MCP ditangani di (1)+(2), sisa lubang = konteks yang selalu
+  dikirim tiap sesi (bukan riwayat). Terukur & diperbaiki:
+  - **`~/.claude/CLAUDE.md`** meng-`@import` penuh `AI_TOKEN_GUARD.md` (3.784 B) padahal
+    isinya ~50% tumpang tindih dengan isi CLAUDE.md sendiri → diganti ringkasan 3 baris
+    (rules unik dipertahankan: output ≤800 char, no re-read, batch, model murah,
+    off-switch, larangan gambar base64). **Hemat 3,2 KB/sesi Claude.**
+  - **`~/.gemini/GEMINI.md`** menyuruh "read AI_TOKEN_GUARD.md (read it)" padahal
+    ringkasan lengkap sudah inline 6 baris di bawahnya → instruksi baca dibuang.
+    **Hemat 3,8 KB/sesi Gemini.** `AI_TOKEN_GUARD.md` tetap ada sebagai dokumen
+    (tidak dihapus).
+  - **6 deskripsi skill terpanjang dipadatkan** ke ≤300 B: `xlsx` 965→300, `docx` 850→300,
+    `pptx` 753→300, `anti-ui-slop` 498→300, `content-humanizer` 484→300,
+    `typescript-security-review` 451→300. **Skill TIDAK dihapus/diubah isinya** — hanya
+    baris `description:` dipotong (batas kata). Hemat 2.201 B. Backup per-file
+    `SKILL.md.bak-20260927` di `skills-store/`.
+  - **MCP `skill-catalog`**: hasil `skill_for_task` default 10→8 baris, potongan deskripsi
+    per baris 150→120 B (hemat ±25% per panggilan).
+  - **Regenerate urut** `build_skills_index.py` → `skills-index-md.py` →
+    `skills-router.py` setelah deskripsi berubah: **curated tetap 3.176** (total 69.620,
+    DB 56,2 MB, junk 4.538) — tidak ada anjlok.
+  - **Uji recall (adil, DB di-salin dulu):** query "spreadsheet excel"/"buat excel"
+    hasil identik dengan deskripsi lama (regresi 0); query "spreadsheet" tunggal — `xlsx`
+    turun dari posisi 8 ke >8 (8 kandidat relevan lain tetap tampil). Diterima, dicatat.
+  - Backup kebijakan: `~/.claude/CLAUDE.md.bak-20260926`, `~/.gemini/GEMINI.md.bak-20260926`.
+  - **Total hemat konteks tetap Claude ≈ 5,4 KB/sesi (±1,3 rb token)** + Gemini 3,8 KB +
+    MCP ±25%/panggilan. Angka kecil dibanding riwayat (4,42 M token) — jujur: lubang
+    terbesar tetap perilaku sesi (sesi >10 MB & gambar base64), yang kini dijaga guard.
+  - Opsi LANJUTAN yang sengaja TIDAK dijalankan (butuh keputusan user): (a) arsip sesi
+    lama Claude 60 MB + Cline 18 MB (pindah, bukan hapus); (b) `MAX_THINKING_TOKENS`
+    lebih rendah (hemat output, turunkan kualitas reasoning); (c) memadatkan 19 sisa
+    deskripsi 300–450 B (nilai makin kecil, risiko recall makin besar).
+
+
+- **2026-09-26 (2) — Cline ikut boros: diperbaiki + aturan hemat ditebar ke SEMUA tool AI.**
+
+  **Diagnosa terukur** (`~/.cline/data/sessions`, 48,8 MB, 6 sesi): total **4.498 M
+  token** (estimasi chars/4) — hampir setara Claude. Sesi terbesar 18,3 MB / 944 pesan
+  = **2.392 M token kumulatif** (riwayat dikirim ulang tiap request); 2026-09-24 sesi
+  1.772 pesan = 1.546 M. **Pemboros #1 = gambar base64 menempel permanen**: pesan
+  `user` tunggal terbesar **2,45 JUTA karakter**; sesi itu menampung **46 gambar /
+  16 MB** (di sesi Claude terbesar: 195 gambar / 48 MB). Penyebab #2: 5 tool memakai
+  8–9 server MCP sekaligus (fixed-cost tools/list per sesi).
+
+  **Perbaikan (baca-saja untuk audit; penulisan rules selalu ber-backup):**
+  - `audit-cline.py` (BARU) — token kumulatif per sesi + N pesan/output terbesar.
+  - `cline-guard.py` (BARU, 48 ms) → disambungkan ke hook resmi Cline
+    `~/.cline/hooks/UserPromptSubmit.py` (jalan bareng `skill-flow`, 0,4 s terukur).
+    Peringatan muncul saat sesi >200 pesan / >10 MB / gambar base64 >2 MB
+    (ambang `CLINE_GUARD_MSGS`/`_MB`/`_IMG_MB`). Uji nyata: sesi 370 pesan → 1 baris peringatan.
+  - `ai-context-audit.py` (BARU) — **satu tabel untuk 13 tool AI** (Claude/Cline/Gemini/
+    Qwen/Codex/OpenCode/OpenClaude/iFlow/Aider + Cursor/Roo/Kilo/Cline-ext sqlite):
+    jumlah sesi, MB, pesan, jumlah gambar base64. `--json` untuk hook/cron; 0,34 s.
+  - `install-context-guard.py` (BARU) — blok aturan "hemat konteks" ke file rules
+    **15 tool** (ditandai `context-guard:start/end`, idempoten, backup `.bak-YYYYMMDD`).
+    Hasil: 14 ditulis + 2 sudah punya aturan sendiri (Claude/Cursor, tidak ditumpuk) +
+    repo dilewati (tidak bikin file baru). Run ke-2 = `0 perlu ditulis` (terbukti idempoten).
+  - `mcp-slim-all.py` (BARU) — ramping MCP di **19 tool** → hanya `skill-catalog`
+    (+`mcp-router`); sisanya diparkir ke `mcp-parked.json` (hidup on-demand via
+    `mcp-lifecycle.py --on <nama>`). Backup `mcp.json.bak-20260926` per tool.
+  - `skill-flow.py` — state dipindah ke path stabil + TTL 6 jam (`SKILL_FLOW_STATE_TTL`)
+    agar tool tanpa `session_id` (Cline dkk) tetap dapat injeksi berbatas 400 B;
+    **`--eval` tetap 31/31 lulus** (routing tidak diubah).
+  - Aturan ditulis di: `~/.cline/.clinerules`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`,
+    Cursor/Windsurf/Continue/Roo/Qwen/Aider/OpenCode/CodeBuddy/Hermes/Trae/OpenClaude/iFlow,
+    + `AI_TOKEN_GUARD.md` (§Session hygiene no. 12–14).
+  - Catatan jujur: (a) estimasi token Cline = chars/4 (tiap model berbeda ±20%);
+    (b) penulisan aturan hemat ke 19 `mcp.json` + 14 file rules **pergi ke backup**
+    di tool lain yang mungkin sudah punya aturan sendiri — rollback per-file ada di
+    `COMMANDS.md` §ROLLBACK; (c) deteksi "sudah punya aturan" memakai heuristik
+    ≥2 penanda substansi (`vendor`, `skill-load-lite`, `base64`, dst) — heuristik
+    pertama (1 penanda longgar) sempat salah melabeli 9 file sebagai "sudah rapi",
+    sudah dikoreksi sebelum `--apply`.
+  - Dokumentasi: `CHEATSHEET.md` §Hemat konteks (perintah lintas tool), `COMMANDS.md`
+    (+`--apply/--check` kedua installer, +env baru, +ROLLBACK MCP & blok context-guard).
+
+
+- **2026-09-26 (1) — Audit limit: 4,42 M token terbakar, diperbaiki di akarnya.**
+
+  **Diagnosa terukur** (bukan tebakan) dari `~/.claude/projects` (162 MB jsonl):
+  total **4.418 M token**; 3 sesi terbesar @ 59/54/18 MB dengan **konteks ±500.000
+  token/pesan** (cache_read 2.525 M ÷ 5.000 pesan). Per hari: 17 Sep **1.846 M**,
+  18 Sep 817 M, 19 Sep 835 M, 26 Sep 400 M. Model: sonnet-5 3.804 M + opus-5-5 601 M
+  (hanya 1.791 pesan). Penyebab: sesi tidak pernah di-clear → tiap pesan baca ulang
+  seluruh konteks. Hook/MCP bukan penyebab (injeksi hook cuma ~4 baris pendek).
+
+  **Perbaikan (skill TETAP diambil — hanya cara memuatnya dihemat):**
+  - `context-guard.py|.sh` (BARU) — hook `SessionStart`+`UserPromptSubmit`: 0 token di
+    bawah ambang, 1 baris peringatan di >10 MB, instruksi tegas di >25 MB, diingat per
+    kenaikan 5 MB (tidak spam). `--report` untuk melihat sesi >10 MB.
+  - `skill-flow.py` — routing/skor TIDAK diubah (**`--eval` tetap 31/31 lulus**), tapi
+    injeksi jadi idempoten per sesi (`/tmp/voralens-skill-flow/<sesi>.json`) + berbatas
+    `SKILL_FLOW_MAX_BYTES` (400 B). Uji nyata: prompt-1 260 B → prompt-2 kategori sama
+    28 B ("Kandidat baru: …") → prompt-3 identik **0 B** → tugas beda 219 B. Baris
+    pendorong "baca SKILL-FLOW.md" dihapus (5.355 B/sesi terbuang).
+  - `skill-load-lite.sh` (BARU) — muat skill ≤80 baris/≤2 KB. Uji: `caveman-token-optimizer`
+    **2.277 B vs 8.907 B penuh (±4× lebih hemat)**, esensi tetap.
+  - `permissions.deny` (docs resmi Claude Code "large codebases") di `~/.claude/settings.json`
+    + repo `.claude/settings.json`: blok `Read` ke `vendor/`, `node_modules/`, `dist/`,
+    `public/template/`, `skills-expanded/`, `*.min.js`.
+  - `usage-audit.py|.sh` (BARU) — laporan token harian/7 hari/model/sesi terboros.
+  - Aturan ditulis di 3 tempat yang sebelumnya justru menyuruh baca SKILL-FLOW.md penuh:
+    `AGENTS.md` (§Hemat konteks), `~/.claude/CLAUDE.md`, `AI_TOKEN_GUARD.md` (§Session hygiene).
+  - Pemasang idempoten: `patch-settings-20260926.py` (run-2 = "sudah lengkap", terbukti).
+    Backup: `skill-flow.py.bak-20260926`, `AGENTS.md.bak-20260926`, `CHEATSHEET.md.bak-20260926`,
+    `COMMANDS.md.bak-20260926`, `settings.json.bak-20260926`, `CLAUDE.md.bak-20260926`,
+    `AI_TOKEN_GUARD.md.bak-20260926`. Catatan jujur: `README.md` (file ini) diedit langsung
+    tanpa backup pra-edit — perubahannya murni aditif (baris tabel + entri status ini);
+    snapshot lama yang tersedia: `README.md.bak-20260925`.
 
 - **2026-09-25 (1) — Sesi overhaul: token, keamanan, Obsidian, dan keputusan mining.**
 

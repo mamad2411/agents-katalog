@@ -1,0 +1,271 @@
+---
+name: lockedin
+description: |
+  Captures the user's work moments — a shipped feature, a meeting
+  outcome, a learning, a decision — from inside their Claude Code
+  session into structured local markdown. Renders English resumes,
+  Korean cover letters, interview answers, and project ideas from the
+  same source on request. Also scores any resume against a calibrated
+  rubric without prior setup.
+
+  Activate when the user mentions lockedin, asks to save / log /
+  track something from their current work as experience, asks to
+  render an English resume / Korean cover letter / interview answer /
+  project idea, drops a resume PDF or DOCX, or asks about their own
+  past work.
+---
+
+# lockedin
+
+Build and grow a personal markdown ontology in `~/Documents/LockedIn/`, then
+render artifacts from it. Single-purpose: one namespace, one demo.
+
+## Use this skill when
+
+- The user says "lockedin" or "career graph" or "experience graph".
+- The user asks to render an artifact from their own experience: a
+  resume, a cover letter, an interview answer, a project idea.
+- The user drops a resume `.pdf` / `.docx` or career notes and asks to
+  absorb them into a structured graph.
+- The user asks to **audit / score / review** a resume against the
+  calibrated rubric — this works with or without an existing vault
+  (drive-by mode requires no install or signup, just a file path).
+- The user asks a query about their own experience.
+
+## Do NOT use this skill when
+
+- The user is doing coding, debugging, or technical work and hasn't
+  signaled they want to save it as experience.
+- The user asks about somebody else's experience or a public dataset.
+- The user wants a one-shot AI answer without keeping notes — point
+  them at Claude Projects on claude.ai instead.
+
+## Execution model
+
+Reasoning runs **inside Claude Code** on the user's subscription; the
+`lockedin` Python CLI is a deterministic helper for non-LLM work.
+
+| Surface | Runs there | When |
+|---|---|---|
+| Skill (host AI) | Q&A interview, ingest ambiguity resolution, render writer + reviewer turns, NL query interpretation | Every user-in-the-loop flow |
+| CLI utility | install, doctor, validate, migrate, template, init --fixture, ingest --dry-run, experience, PDF/DOCX text extraction, hud | Deterministic; called by skill via Bash, or by user directly |
+
+If a skill-only command (`render jaso/resume`, interactive `init`,
+smart `ingest`, `query`) is typed in a plain terminal, the CLI prints
+a redirect message — that's expected.
+
+## First activation — safety net for skipped setup
+
+Recommended onboarding is the explicit `/lockedin:setup` wizard. This
+section is the safety net for users who skipped it and started using
+the skill directly.
+
+1. Read `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/lockedin/config.json`. If
+   the file exists and has a `setup_completed` timestamp, do nothing —
+   the user already ran the wizard.
+2. If the config is missing or has no `setup_completed`, offer the
+   wizard ONCE per session: *"Looks like setup hasn't run. Want me to
+   walk through it now? Wires the bottom HUD and a couple of defaults.
+   `/lockedin:setup` runs the full wizard; I can also do just the HUD
+   step inline."*
+3. If the user accepts the inline shortcut, run the HUD step from
+   `/lockedin:setup` (Step 1) only. Otherwise, run the full wizard, or
+   continue with the user's original request and remember not to ask
+   again this session.
+
+The skill is fully functional without setup — only the bottom HUD line
+will not appear until the user wires it.
+
+## Core flow
+
+The fastest first try is **drive-by audit**: zero vault, zero install
+beyond the plugin itself. Past that, vault-backed flows give every
+artifact LockedIn produces.
+
+0. **Audit (drive-by, no vault)** — `/lockedin audit <path>` or "audit
+   this resume". Extracts text via the deterministic ingest pipeline,
+   scores against `lockedin-render-resume-en` or `lockedin-render-jaso`
+   rubric depending on detected language, returns a 5-dimension score
+   and a banned-phrase / weak-verb hit list. No mutation. Most natural
+   first artifact for a new user. Three modes:
+   - `--mode score` (default): rubric pass only.
+   - `--mode refine`: propose diff-based refinements; user approves.
+   - `--mode refine-score`: refine, then score the refined output to
+     quantify the lift.
+Capture intents ("save this", "log this", "track this") route through
+`lockedin-capture`, which runs writer/reviewer with dedup detection
++ reconciliation.
+
+1. **Init** — `/lockedin init` (or natural language) runs a Q&A
+   interview that seeds the vault. 49 questions across 9 sections;
+   pause-and-resume is supported.
+2. **Ingest** — `/lockedin ingest <path>` reads `.pdf` / `.docx` /
+   `.md` / `.txt`, emits a typed diff, asks the user about ambiguities
+   one at a time, then merges. After merge, offers the audit 3-mode
+   choice (Score / Refine / Refine→Score).
+3. **Render** — `/lockedin render <kind>` produces the artifact (`jaso`,
+   `resume`, `interview`, `ideas`). Writer turn drafts; reviewer turn
+   re-loads `RUBRIC.md` fresh and scores. If any rubric dimension < 4,
+   revise once with the notes.
+4. **Iterate** — every conversation grows the graph. Renders and audits
+   are queries against it.
+
+See `AGENTS.md` for the four sub-roles (Interviewer / Ingester /
+Renderer / GraphCurator). See `TOOLS.md` for the canonical CLI calls
+each role issues, with skill-only-path fallbacks.
+
+## Write-before-confirm
+
+Before writing to the user's experience, briefly state what's going
+in: *"Saving 3 entries — project X, achievement Y, skill Z. OK?"*.
+This applies even if write permission is cached for the experience
+path from an earlier turn.
+
+Deterministic bookkeeping (`refresh_master_view`, state-file atomic
+writes) does not need confirmation — it adds no user-visible content.
+
+## Interview principles — gentle and short
+
+All interview questions are general, gentle, short, and intuitive.
+The experience layer accepts entries with thin information; never
+force the user to provide a specific metric, structure, or
+completeness level to create one. A toy project, a meeting note, a
+learning, and a shipped feature with hard numbers are all first-class.
+
+Metric pressure belongs to the renderer's writer turn, not the
+interview. If the user later asks for a resume and a particular
+achievement lacks a metric, the writer turn asks one focused
+question at that moment.
+
+## Capture quality — writer/reviewer pattern
+
+When the user signals a capture intent ("save this", "log this",
+"track this", "absorb this"), do not write to the experience layer
+in one shot. Route through `lockedin-capture` (or, when that skill
+is unavailable, replicate its pattern inline):
+
+1. **Writer pass** — read the user's input plus any available
+   context (the current file, recent git log, README of cwd, an
+   attached document). Propose entity / field / edge structure.
+2. **Deterministic check** — required fields present, types match
+   the schema. Slug-grep the existing vault for candidate
+   duplicates by name, alias, and proximity.
+3. **Reviewer pass** (fresh context) — re-read the user's input
+   and the writer's proposal. Score against five dimensions:
+   schema conformance, edge completeness, field specificity,
+   semantic accuracy, and duplicate detection. Surface candidate
+   duplicates as questions for the user rather than deciding for
+   them.
+4. **Write-before-confirm** — show the proposed diff (entities,
+   edges, any merge actions) and ask the user once before writing.
+
+Reconciliation policy is load-bearing:
+
+- **No candidate duplicate**: write smoothly. Don't bother the
+  user with confirmation prompts beyond write-before-confirm.
+- **Candidate duplicate found**: surface it explicitly.
+  *"Looks like [[project/payment-pipeline-2024]] already exists.
+  Same thing, or new project?"* The user picks: merge into
+  existing (enrich fields, add edges), keep separate (both
+  preserved as distinct), or partial overlap (which fields to
+  copy across).
+- **Never silent-merge.** **Never silent-create-duplicate.**
+
+The point of capture is to make the experience richer over time.
+A surfaced duplicate is an opportunity to enrich an existing
+entity with new evidence, not noise to suppress.
+
+## Subscription, not API keys
+
+This skill assumes the user runs Claude Code on a subscription. If the
+shell environment has `ANTHROPIC_API_KEY` set, run `lockedin doctor` —
+it will warn unless the user explicitly opts in via
+`LOCKEDIN_ALLOW_API_KEY=1`.
+
+## Language policy
+
+- All instruction prose in this skill directory is English (CI lint
+  enforces this for every file except `render-jaso/`, whose domain is
+  Korean output).
+- Korean reference examples elsewhere must sit inside fenced
+  `<!-- ko-example -->...<!-- /ko-example -->` blocks.
+- Rendered artifacts use the artifact's native language: `render-jaso`
+  emits Korean, `render-resume-en` emits English.
+
+## Source of truth
+
+- Schema: `lockedin/ontology/schema.py` (15 entity types, 15 edge predicates, schema v3)
+- Architecture: `docs/architecture.md`
+- Vault contract: `docs/ontology-spec.md`
+
+## Master view at the vault root
+
+Every vault write also regenerates `<vault>/EXPERIENCE.md`, a single
+human-readable markdown file that lists all entities grouped by type.
+The user can open this file in any markdown viewer to see their whole
+vault at a glance without navigating per-type folders. This is
+automatic and does not require an explicit step from the skill —
+`lockedin/storage/notes.py::write_entity` invokes
+`lockedin/render/master_view.py::refresh_master_view` after every
+successful write.
+
+## Drift detection — be proactive, not reactive
+
+Treat the vault as a living document. The user should rarely need
+to type `lockedin refresh` themselves. When you start a conversation
+or the user mentions experience, check for drift between three
+sources of truth:
+
+- (a) what the user is saying now,
+- (b) the existing vault entities,
+- (c) the master `EXPERIENCE.md` view.
+
+When you detect drift, reconcile actively rather than pointing the
+user at a CLI:
+
+- **User mentions something that conflicts with an existing vault
+  entity** → surface the contradiction and ask one focused question
+  ("You said you joined Acme in 2021, but the vault has 2022 — which
+  is right?"), then update the entity.
+- **User mentions something new that fits an existing entity** →
+  propose merging into the existing entity rather than creating a
+  duplicate. Ask one confirm question, then write.
+- **Files on disk are newer than the master view** (compare `stat`
+  mtime of vault notes vs `EXPERIENCE.md`) → silently call
+  `lockedin/render/master_view.py::refresh_master_view` to bring the
+  master current. This is deterministic bookkeeping; do not bother
+  the user.
+- **A vault entity references a slug that doesn't exist** (dangling
+  reference) → surface in a small batch ("3 dangling references; fix
+  now?") rather than one-at-a-time spam.
+- **The user's natural-language description of their career conflicts
+  with multiple existing entities at once** → summarize the conflict
+  briefly, ask the user how they want to reconcile (replace / merge /
+  keep both), then act.
+- **Edge reconciliation during interview** — when the Q&A interview
+  engine completes a session, edges are inferred automatically from
+  entity co-presence using the domain/range rules in
+  `lockedin/ontology/schema.py` (e.g. person + company → `held_role_at`,
+  project + skill → `uses_skill`). When the user mentions a new project
+  that fits an existing role mid-conversation, propose adding the
+  `uses_skill` or `produced` edge as part of the reconcile step — the
+  same rules that drive automatic inference also tell you which
+  predicates are valid between those two entity types.
+
+Pointing the user at `lockedin refresh` is a fallback for cases where
+you cannot reconcile programmatically — not a default behavior. The
+spirit of this skill is "AI notices and asks", not "user runs a
+command".
+
+## Final checklist (self-verify before declaring a flow done)
+
+- Vault writes only happened with user confirmation (or via deterministic
+  CLI fixture path).
+- Renderer ran writer turn → reviewer turn (RUBRIC.md re-loaded fresh).
+- For `render-jaso`: banned-phrase regex check ran before rubric scoring.
+- Concrete ontology nodes (slugs) quoted in rendered draft; resolved to
+  natural-language labels in the final artifact via
+  `lockedin/render/resolve_slugs.py::resolve_file`.
+- Output artifact written under `<vault>/outputs/` with timestamp slug.
+- Master view at `<vault>/EXPERIENCE.md` is current (auto-refreshed by
+  `write_entity`, but check it once at the end of multi-step flows).

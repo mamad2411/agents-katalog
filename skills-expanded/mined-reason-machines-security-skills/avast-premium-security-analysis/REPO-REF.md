@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/reason-machines/security-skills (path: skills/avast-premium-security-analysis/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Analyze and understand Avast Premium Security components, antivirus protection mechanisms, and security software implementation patterns

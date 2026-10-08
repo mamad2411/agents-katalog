@@ -1,0 +1,15 @@
+changelog-automation
+changelog-generator
+changelog-maintenance
+changelog-writer
+changelog-writing
+gws-gmail-send
+mcp-create-adaptive-cards
+mcp-create-declarative-agent
+mcp-deploy-manage-agents
+release-notes-one-pager
+rivet-workflows
+structured-autonomy-generate
+structured-autonomy-implement
+structured-autonomy-plan
+suggesting-cursor-rules

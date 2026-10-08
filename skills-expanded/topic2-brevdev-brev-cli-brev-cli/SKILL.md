@@ -1,0 +1,347 @@
+---
+name: brev-cli
+description: Manage GPU and CPU cloud instances with the Brev CLI for ML workloads and general compute. Use when users want to create instances, search for GPUs or CPUs, SSH into instances, open editors, copy files, port forward, manage organizations, or work with cloud compute. Supports fine-tuning, reinforcement learning, training, inference, batch processing, and other ML/AI workloads. Trigger keywords - brev, gpu, cpu, instance, create instance, ssh, vram, vcpu, A100, H100, cloud gpu, cloud cpu, remote machine, finetune, fine-tune, RL, RLHF, training, inference, deploy model, serve model, batch job.
+allowed-tools: Bash, Read, AskUserQuestion
+argument-hint: "[create|search|shell|exec|open|ls|delete] [instance-name]"
+---
+<!--
+Token Budget:
+- Level 1 (YAML): ~100 tokens
+- Level 2 (This file): ~1900 tokens (target <2000)
+- Level 3 (prompts/, reference/): Loaded on demand
+-->
+
+# Brev CLI
+
+Manage GPU and CPU cloud instances from the command line. Create, search, connect, and manage remote machines.
+
+## When to Use
+
+Use this skill when users want to:
+- Create GPU or CPU instances (with smart defaults or specific types)
+- Search for available GPU types (A100, H100, L40S, etc.)
+- Search for CPU-only instance types (no GPU)
+- SSH into instances or run commands remotely
+- Open editors (VS Code, Cursor, Windsurf) on remote instances
+- Copy files to/from instances
+- Port forward from remote to local
+- Manage organizations and instances
+
+**Trigger Keywords:** brev, gpu, cpu, instance, create instance, ssh, vram, vcpu, A100, H100, cloud gpu, cloud cpu, remote machine, shell
+
+## Quick Start
+
+```bash
+# Search for GPUs (sorted by price)
+brev search
+
+# Search for CPU-only instances
+brev search cpu
+
+# Create an instance with smart defaults
+brev create my-instance
+
+# Create with specific type
+brev create my-instance --type g5.xlarge
+
+# List your instances
+brev ls
+
+# List Brev Connect machines (a separate list from `brev ls`)
+brev ls nodes
+
+# SSH into an instance (interactive)
+brev shell my-instance
+
+# Run a command on an instance (non-interactive)
+brev exec my-instance "nvidia-smi"
+
+# Open in VS Code/Cursor
+brev open my-instance code
+brev open my-instance cursor
+```
+
+## Core Commands
+
+### Search GPUs
+```bash
+# All available GPUs (default)
+brev search
+brev search gpu
+
+# GPU search with wide mode (shows RAM and ARCH columns)
+brev search gpu --wide
+
+# Filter by GPU name
+brev search --gpu-name A100
+brev search --gpu-name H100
+
+# Filter by VRAM, sort by price
+brev search --min-vram 40 --sort price
+
+# Filter by boot time
+brev search --max-boot-time 5 --sort price
+
+# Filter by instance features
+brev search --stoppable --min-total-vram 40 --sort price
+```
+
+### Search CPUs
+```bash
+# All available CPU-only instances
+brev search cpu
+
+# Filter by provider
+brev search cpu --provider aws
+
+# Filter by minimum RAM
+brev search cpu --min-ram 64
+
+# Filter by architecture
+brev search cpu --arch arm64
+
+# Filter by vCPUs
+brev search cpu --min-vcpu 16
+
+# Sort by price
+brev search cpu --sort price
+
+# JSON output
+brev search cpu --json
+```
+
+CPU search shows: TYPE, PROVIDER, VCPUs, RAM, ARCH, DISK, $/GB/MO, BOOT, FEATURES, $/HR
+
+### Create Instances
+```bash
+# Smart defaults (cheapest matching GPU)
+brev create my-instance
+
+# Specific type
+brev create my-instance --type g5.xlarge
+
+# Multiple types (fallback chain)
+brev create my-instance --type g5.xlarge,g5.2xlarge
+
+# Pipe from search
+brev search --gpu-name A100 | brev create my-instance
+
+# Use search filters directly on create
+brev create my-instance --gpu-name A100 --min-vram 40
+
+# Multiple instances
+brev create my-cluster --count 3
+
+# With startup script
+brev create my-instance --startup-script @setup.sh
+brev create my-instance --startup-script 'pip install torch'
+
+# Dry run (preview matching types without creating)
+brev create my-instance --dry-run
+```
+
+### Instance Access
+```bash
+# SSH into instance (interactive shell)
+brev shell my-instance
+
+# Run command on instance (non-interactive)
+brev exec my-instance "nvidia-smi"
+brev exec my-instance "python train.py"
+
+# Run a local script on the instance (@ prefix reads local file)
+brev exec my-instance @setup.sh
+brev exec my-instance @/path/to/script.sh
+
+# Run on multiple instances
+brev exec instance1 instance2 instance3 "nvidia-smi"
+
+# Open in editor
+brev open my-instance           # default editor
+brev open my-instance code      # VS Code
+brev open my-instance cursor    # Cursor
+brev open my-instance windsurf  # Windsurf
+brev open my-instance terminal  # Terminal window
+brev open my-instance tmux      # Terminal + tmux
+
+# Copy files
+brev copy ./local-file my-instance:/remote/path/
+brev copy my-instance:/remote/file ./local-path/
+
+# Port forward
+brev port-forward my-instance -p 8080:8080
+
+# List Brev-managed ports for an instance or Brev Connect machine
+brev ports ls my-instance
+brev ports ls my-connect-machine --json
+
+# Get all data for one port by exact ID
+brev ports get nport-abc123
+brev ports get nport-abc123 --json
+
+# Open a port or an inclusive sequential TCP/UDP range (TCP by default)
+brev ports open my-instance 8080
+brev ports open my-instance 8000-8031
+brev ports open my-connect-machine 53 --protocol udp --allow 203.0.113.10/32
+brev ports open my-instance 3000 --protocol http --public
+brev ports open my-instance 8888 --protocol http --authorize me@example.com
+
+# Update one mapping by its globally unique ID
+brev ports update nport-abc123 --destination-port 8081
+brev ports update nport-abc123 --allow 203.0.113.10/32
+brev ports update nport-abc123 --public
+
+# Remove one port by destination port or exact ID
+brev ports remove my-instance 8080
+brev ports rm nport-abc123
+```
+
+### Listing Instances and Nodes
+`brev ls` covers two separate namespaces. Brev Connect machines never appear in
+`brev ls`, so check `brev ls nodes` before concluding a machine doesn't exist.
+
+```bash
+brev ls              # cloud instances
+brev ls instances    # same as above, explicit
+brev ls nodes        # Brev Connect machines only
+brev ls orgs         # organizations
+brev ls --json       # machine-readable
+brev ls nodes --json
+```
+
+|  | `brev ls` | `brev ls nodes` |
+|---|---|---|
+| Status values | `RUNNING` / `STOPPED` | `Connected` / `Disconnected` |
+| Columns | NAME, STATUS, BUILD, SHELL, ID, MACHINE, GPU | NAME, STATUS |
+| `stop` / `start` / `delete` | yes | no — Brev doesn't manage their lifecycle |
+
+The two `--json` shapes differ: `brev ls nodes --json` is a top-level array,
+while `brev ls --json` wraps rows in `.workspaces`.
+
+```bash
+brev ls nodes --json | jq -r '.[].name'
+brev ls       --json | jq -r '.workspaces[].name'
+
+# Names of nodes that are currently connected
+brev ls nodes --json | jq -r '.[] | select(.status=="Connected") | .name'
+```
+
+### Instance Management
+```bash
+# List instances
+brev ls
+brev ls --json
+
+# Delete instance
+brev delete my-instance
+
+# Stop/start (if supported)
+brev stop my-instance
+brev start my-instance
+
+# Reset (recover from errors)
+brev reset my-instance
+```
+
+### Pipeable Workflows
+```bash
+# Stop all running instances
+brev ls | awk '/RUNNING/ {print $1}' | brev stop
+
+# Delete all stopped instances
+brev ls | awk '/STOPPED/ {print $1}' | brev delete
+
+# Start all stopped instances
+brev ls | awk '/STOPPED/ {print $1}' | brev start
+
+# Stop instances matching pattern
+brev ls | grep "test-" | awk '{print $1}' | brev stop
+
+# Run command on all running instances
+brev ls | awk '/RUNNING/ {print $1}' | brev exec "nvidia-smi"
+
+# Create and run setup
+brev search --gpu-name A100 | brev create my-box | brev exec @setup.sh
+
+# Create and open in one command
+brev search --gpu-name A100 | brev create my-box | brev open cursor
+```
+
+### Organizations
+```bash
+# List orgs
+brev org ls
+
+# Set active org
+brev org set my-org
+brev set my-org  # alias
+
+# Generate invite link
+brev invite
+```
+
+## Common Workflows
+
+1. **Quick GPU Session** ([prompts/quick-session.md](prompts/quick-session.md))
+   - Search → Create → Open editor
+
+2. **ML Training Setup** ([prompts/ml-training.md](prompts/ml-training.md))
+   - Find high-VRAM GPU → Create with startup script → Copy data → Run training
+
+3. **Instance Cleanup** ([prompts/cleanup.md](prompts/cleanup.md))
+   - List instances → Identify unused → Delete
+
+## Safety Rules - CRITICAL
+
+**NEVER do these without explicit user confirmation:**
+- Delete instances (`brev delete`)
+- Stop running instances (`brev stop`)
+- Create multiple instances (`--count > 1`)
+- Create expensive instances (H100, multi-GPU)
+
+**ALWAYS do these:**
+- Show instance cost/type before creating
+- Confirm instance name before deletion
+- Check `brev ls` before assuming instance exists
+
+## Feedback
+
+If you get stuck, encounter bugs, can't achieve what you're trying to do, or have ideas for improvements, send feedback to the Brev team:
+
+```bash
+brev feedback "description of issue or suggestion"
+```
+
+**IMPORTANT: Never include secrets, passwords, API keys, or sensitive information in feedback.**
+
+Do this proactively when:
+- A brev command fails unexpectedly or returns confusing errors
+- You can't figure out how to accomplish a task with the available commands
+- You notice missing features or rough edges
+- A workflow feels harder than it should be
+
+## Troubleshooting
+
+**"Instance not found":**
+- Run `brev ls` to see available instances
+- Run `brev ls nodes` — Brev Connect machines are a separate list and never show up in `brev ls`
+- Check if you're in the correct org: `brev org ls`
+
+**"Failed to create instance":**
+- Try a different instance type: `brev search --sort price`
+- Check quota/credits with org admin
+
+**SSH connection fails:**
+- Run `brev refresh` to update SSH config
+- Ensure instance is running: `brev ls`
+
+**Editor won't open:**
+- Verify editor is in PATH: `which code` / `which cursor`
+- Set default: `brev open --set-default code`
+
+## References
+
+- **[reference/commands.md](reference/commands.md)** - Full command reference
+- **[reference/search-filters.md](reference/search-filters.md)** - GPU and CPU search options
+- **[prompts/](prompts/)** - Workflow guides
+- **[examples/](examples/)** - Common patterns

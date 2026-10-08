@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fatfingererr/macro-skills (path: skills/evaluate-exponential-trend-deviation-regimes/SKILL.md, branch: master)
+- mined: 2026-09-20
+- desc: 計算資產價格相對長期指數成長趨勢線的偏離度，衡量當前是否處於歷史極端區間，並可選擇性地進行宏觀因子分析以判斷行情體質。

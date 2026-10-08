@@ -1,0 +1,84 @@
+---
+name: flow-next-prospect
+description: Generate ranked candidate ideas grounded in the repo. Use when asked what to build next.
+user-invocable: false
+allowed-tools: Read, Bash, Grep, Glob, Write, Edit, Task
+---
+
+# Prospect — upstream-of-plan idea generation
+
+**Read [workflow.md](workflow.md) for full phase-by-phase execution.**
+
+Generate many candidate ideas grounded in the repo, critique every one with explicit rejection reasons, and surface only the survivors bucketed by leverage. Output is a ranked artifact under `.flow/prospects/<slug>-<date>.md` that feeds promote / capture / chart / interview - never a fixed conveyor.
+
+### Chart boundary
+
+Prospect is plural ("what should we do?"). Chart is singular ("how do we get this one idea to something specifiable?"). A **selected** survivor routes to `/flow-next:chart` **only when** it is still singular, oversized, and unclear. Otherwise promote or capture - do not manufacture a chart for a clear candidate. Unsure of the next hop: `/flow-next:flow --explain`.
+
+**Role**: idea-prospecting coordinator (sequential single-chat - generate -> critique -> rank -> write -> handoff). Personas are prompt-level scaffolding inside this skill, not parallel subagent dispatch.
+
+Read [working-rules.md](../../references/working-rules.md) first unless you already have this run; it holds for every step of this skill.
+
+## Preamble
+
+**CRITICAL: flowctl is BUNDLED — NOT installed globally.** `which flowctl` will fail (expected). Define once; subsequent blocks (here and in `workflow.md`) use `$FLOWCTL`:
+
+```bash
+FLOWCTL="${CODEX_HOME:-$HOME/.codex}/scripts/flowctl"
+[ -x "$FLOWCTL" ] || FLOWCTL="<plugin-root>/scripts/flowctl"   # <plugin-root> = the directory two levels above this skill's SKILL.md file (the harness gave you that file's absolute path when the skill loaded); substitute it literally
+[ -x "$FLOWCTL" ] || FLOWCTL=".flow/bin/flowctl"
+```
+
+**Inline skill (no `context: fork`)** — keeps `plain-text numbered prompt` available throughout. Subagents can't call plain-text numbered prompts (Claude Code issues #12890, #34592), and Phases 0 + 6 both require user choice.
+
+## Input
+
+Arguments: `$ARGUMENTS`
+
+Format: `[focus hint]` — freeform single string. Optional. May be:
+
+- **Concept** — `DX improvements`, `review-skill polish`, `test-suite health`
+- **Path** — `src/billing/` (ideate inside a subtree)
+- **Constraint** — `quick wins under 200 LOC`, `minor-bump only`, `no new deps`
+- **Volume hint** — `top 3` (exactly 3 survivors), `50 ideas` (generate ≥50), `raise the bar` (60-70% rejection target)
+
+If empty, the skill picks its own coverage targets (15-25 candidates → 5-8 survivors).
+
+## Autonomy block
+
+`/flow-next:prospect` is exploratory and human-in-the-loop. Autonomous loops have no business deciding what a repo should tackle next — that's a judgement call. Hard-error with exit 2 when running autonomously.
+
+```bash
+if [[ "${FLOW_AUTONOMOUS:-}" == "1" || "${AUTONOMOUS:-}" == "1" \
+   || " ${ARGUMENTS:-} " == *" mode:autonomous "* ]]; then
+  echo "Error: /flow-next:prospect requires a user at the terminal; not compatible with autonomous mode." >&2
+  exit 2
+fi
+```
+
+No env-var opt-in. Autonomous runs never decide direction.
+
+## Workflow
+
+Execute the phases in [workflow.md](workflow.md) in order:
+
+**Ask the user via plain text.** Render the options below as a numbered list `1.` … `N.`, followed by a final option `N+1. Other — type your own answer`. Print the question, then the numbered list, then **stop and wait for the user's next message before continuing**. Parse the reply as: a bare number `1`–`N+1` → that option; the literal text of an option label → that option; free text after `Other` → custom answer.
+
+0. **Resume check** — list active artifacts <30d; ask fresh / open via plain-text numbered prompt. Corrupt artifacts surfaced but never offered.
+1. **Ground** — scan repo with graceful degradation: git log (30d), open specs, CHANGELOG top, memory matches, memory audit (if present), strategy snapshot (verbatim `name` / `target_problem` / `approach` / `tracks` / `last_updated` from `flowctl strategy read --json` when `sections_filled >= 1`; husk-vs-presence gate uses `sections_filled`, NOT `[[ -f STRATEGY.md ]]`). Emit a structured 30-50 line snapshot — titles + tags only, never raw bodies.
+2. **Generate** — divergent-convergent + persona seeding (≥2 of `senior-maintainer` / `first-time-user` / `adversarial-reviewer`, picked by focus hint per [personas.md](personas.md)). One divergent prompt; no self-judging.
+3. **Critique** — separate prompt pass that does NOT see the focus hint or persona texts; rejection floor ≥40% (≥60% under `raise the bar`); fixed taxonomy (`duplicates-open-epic | out-of-scope | out-of-scope-vs-strategy | insufficient-signal | too-large | backward-incompat | other`); `out-of-scope-vs-strategy` is advisory only (to pursue a rejected idea anyway, capture it with `/flow-next:capture`); floor violation surfaces plain-text numbered prompt with frozen options `regenerate | loosen-floor | ship-anyway`.
+4. **Rank** — bucketed: high leverage 1-3, worth-considering 4-7, if-you-have-the-time 8+. Forced-format leverage sentence per survivor (`Small-diff lever because X; impact lands on Y.`); no numeric scores.
+5. **Write artifact** — atomic write-then-rename to `.flow/prospects/<slug>-<date>.md` via `flowctl prospect write --from-json`. Same-day collisions suffix with `-2`, `-3`. Optional `floor_violation` / `generation_under_volume` flags round-trip when upstream phases set them.
+6. **Handoff** - plain-text numbered prompt for promote / chart (only if still singular+oversized+unclear) / interview / skip via the plain-text numbered prompt; frozen numbered-options fallback when plain text is the prompt mechanism.
+
+The artifact verbs are `flowctl prospect promote` and `flowctl prospect archive`; there is no list/read verb, so read `.flow/prospects/*.md` directly.
+
+## Forbidden
+
+- Running autonomously — hard-block via the guard above.
+- Setting `context: fork` — plain-text numbered prompts must stay reachable.
+- Network calls — grounding is local-filesystem only (git, flowctl, memory, CHANGELOG).
+- Writing to `.flow/specs/` directly — only `flowctl prospect promote` may do that.
+- Auto-archiving artifacts — only the explicit `prospect archive` subcommand moves files.
+- Dumping raw file bodies into the grounding snapshot — titles + tags only; structured 30-50 lines max.

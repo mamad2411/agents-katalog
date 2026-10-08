@@ -1,0 +1,73 @@
+---
+name: recipe-implement
+description: "Orchestrate the complete implementation lifecycle from requirements through verified repository implementation."
+---
+
+## Required Skills [LOAD BEFORE EXECUTION]
+
+1. [LOAD IF NOT ACTIVE] `subagents-orchestration-guide` — agent coordination and workflow routing
+2. [LOAD IF NOT ACTIVE] `documentation-criteria` — scale-selected document path
+3. [LOAD IF NOT ACTIVE] `requirement-convergence` — outcome, exclusion, and rough-cost convergence before design
+4. [LOAD IF NOT ACTIVE] `llm-friendly-context` — cross-agent handoffs and task carrier
+
+**Invocation rule**: Start each named agent with `spawn_agent` and `fork_turns="none"`. When invoking the same named agent again within this flow, use `followup_task` on its existing instance with the inputs specified for the current invocation.
+
+# Full-Cycle Implementation
+
+$ARGUMENTS
+
+## Orchestrator Definition
+
+**Core Identity**: Coordinate the lifecycle, complete lightweight workflow operations directly, and invoke named specialists for their domain work.
+
+Follow the scale-selected flow and its user approval points from subagents-orchestration-guide.
+
+## Step 1: Requirement Analysis
+
+Apply the subagents-orchestration-guide Requirement Evidence Handoff, then invoke requirement-analyzer for compact scope evidence, cost evidence, affected-layer evidence, and decision-changing questions.
+
+At the requirements stop, the orchestrator compares the evidence with its retained user record and applies subagents-orchestration-guide `Requirement Convergence`. User selections establish requirements and exclusions; the orchestrator judges readiness, determines Structural Scale and affected layers, and selects the canonical route.
+
+Immediately before the stop, read `requirement-convergence`'s `references/scope-confirmation.md` and render that output from the retained user record and analyzer evidence. Render each unanswered product, UX, or operational decision under **User decisions** as an unresolved question followed by its answer-dependent effects. Only an explicit user selection moves it into **Confirmed scope**. Record Structural Scale and workflow routing under **Workflow**.
+
+**[STOP — BLOCKING]** Present the Scope Confirmation to the user, then proceed after explicit confirmation.
+
+## Step 2: Canonical Workflow Routing
+
+Apply the subagents-orchestration-guide `Basic Flow for Work Planning` using `scale` as the primary route. Use `affectedLayers` only to select the layer-specific additions and agents within that route:
+
+| affectedLayers | Layer-specific routing |
+|---|---|
+| `["backend"]` only | Backend agents |
+| `["frontend"]` only | UI Spec when required by the canonical flow, then frontend designer, executor, and quality fixer |
+| `["backend", "frontend"]` | Fullstack monorepo flow with complete-scope codebase analysis plus layer-specific design and task routing |
+
+The scale-selected Large, Medium, or Small flow remains authoritative for document creation, codebase analysis, design verification, planning, and execution.
+
+## Autonomous Execution Mode
+
+Enter autonomous execution when the subagents-orchestration-guide `Work Plan Authorization` is satisfied.
+
+### Per-Task Execution Cycle
+
+For a fullstack task set, apply `subagents-orchestration-guide`'s `references/monorepo-flow.md` filename routing. For a single-layer task set, use the executor and quality fixer selected by `affectedLayers`. Execute each task through the canonical autonomous task cycle.
+
+### Post-Implementation Review (After All Tasks Complete)
+
+Apply subagents-orchestration-guide `Post-Implementation Review` to the actual repository changes and governing documents. Use the active Small task file as the governing source when no durable document exists. Resolve required fixes through the normal task cycle.
+
+Apply a security-reviewer finding only when leaving it unresolved would violate an explicit governing requirement or repository rule, or leave a concrete material security failure in the actual reachable trust model. The violated requirement, rule, or failure defines implementation scope: route the smallest correction that resolves it, treating the reviewer's suggestion as one candidate implementation.
+
+### Test Information Communication
+Verify acceptance-test-generator artifact paths and pass them to work-planner.
+
+## Completion Criteria
+
+- [ ] Scope/cost evidence was collected, user-selected requirements and exclusions were confirmed, and orchestrator readiness, scale, and routing decisions were recorded
+- [ ] Layer routing determined (backend / frontend / fullstack)
+- [ ] Correct workflow followed per layer routing
+- [ ] codebase-analyzer included before Design Doc creation for Medium/Large flows
+- [ ] code-verifier discrepancies passed through Review Resolution before Design Doc review
+- [ ] All stopping points honored with user confirmation obtained
+- [ ] Quality-fixer invoked before every commit
+- [ ] All tasks committed or user input requested

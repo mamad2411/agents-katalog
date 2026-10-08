@@ -1,0 +1,157 @@
+---
+name: iterate-plan
+description: "Update existing implementation plans based on feedback or changed requirements. **ALWAYS use when** the user says 'update the plan', 'change the plan', 'the requirements changed', 'revise the approach', or wants to modify an existing plan in thoughts/shared/plans/ after review feedback or discovered issues."
+disable-model-invocation: false
+allowed-tools: Read, Write, Task, Bash, Grep, Glob
+version: 1.0.0
+---
+
+# Iterate Plan
+
+You are tasked with updating an existing implementation plan based on user feedback, partial implementation results, or changed requirements. You update plans with research-backed modifications, not just text edits.
+
+**Paths.** Commands below name files inside this skill's own directory as `${CLAUDE_SKILL_DIR}/…`. Claude Code fills that in. On any other harness, set CLAUDE_SKILL_DIR to the absolute directory that contains this SKILL.md before running them. If you cannot, stop and report `skill_dir_unresolved`.
+
+## Prerequisites
+
+```bash
+# Thoughts must exist for this skill's documents. CTL-2306: the full host setup check (daemon,
+# registry, house rules) belongs to the setup-catalyst skill, not to a skill that must run anywhere.
+[[ -e thoughts/shared ]] || echo "⚠️ thoughts/shared is missing in $(pwd) — run \`humanlayer thoughts init\` or the setup-catalyst skill; if the prompt names an output path, write there" >&2
+
+# CTL-2306 explicit-input discovery: begin
+# Find the plan to update on disk for the ticket this run was given: $CATALYST_TICKET under a
+# phase, else a ticket named in the skill's argument text (Claude Code substitutes the token in
+# the heredoc below; another harness leaves it literal, which names no ticket). Nothing is
+# remembered between runs. `[!0-9]` keeps PROJ-1 from matching PROJ-10's documents.
+TICKET_ID="${TICKET_ID:-${CATALYST_TICKET:-}}"
+if [[ -z "$TICKET_ID" ]]; then
+  SKILL_ARGS=$(cat <<'CATALYST_SKILL_ARGS'
+$ARGUMENTS
+CATALYST_SKILL_ARGS
+)
+  TICKET_ID=$(printf '%s' "$SKILL_ARGS" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+  [[ -n "$TICKET_ID" ]] || TICKET_ID=$(printf '%s' "$SKILL_ARGS" | tr '[:lower:]' '[:upper:]' | grep -oE '[A-Z]+-[0-9]+' | head -1)
+fi
+RECENT_PLAN=""
+if [[ -n "$TICKET_ID" ]]; then
+  RECENT_PLAN=$(find -H thoughts/shared/plans -type f -name '*.md' -ipath "*${TICKET_ID}[!0-9]*" -exec ls -t {} + 2>/dev/null | head -1)
+elif [[ -z "${CATALYST_PHASE:-}" ]]; then
+  RECENT_PLAN=$(find -H thoughts/shared/plans -type f -name '*.md' -exec ls -t {} + 2>/dev/null | head -1)
+fi
+# CTL-2306 explicit-input discovery: end
+if [[ -n "$RECENT_PLAN" ]]; then
+  echo "📋 Found plan: $RECENT_PLAN"
+else
+  echo "⚠️ No plan found on disk for ${TICKET_ID:-this run}"
+fi
+```
+
+## Initial Response
+
+Auto-discovery has already run in Prerequisites above. Check its output and follow this priority:
+
+1. **If user provided a plan file path**: Use the provided path (user override). Read it FULLY immediately.
+2. **If no path provided AND Prerequisites discovered a plan (📋)**: Show the path and ask "**Update this plan?** [Y/n]"
+3. **If no path AND no plan found (⚠️)**: Ask user to provide the plan file path
+
+Then ask: "What changes need to be made to this plan?"
+
+## Process Steps
+
+### Step 1: Read and Understand the Existing Plan
+
+1. Read the plan document FULLY (no limit/offset)
+2. Identify all phases, success criteria, and current completion state
+3. Note which phases are already completed vs pending
+4. Understand the overall architecture and approach
+
+### Step 2: Understand the Requested Changes
+
+Parse the user's feedback:
+- **Scope changes**: Adding/removing phases or features
+- **Technical corrections**: Wrong approach, better alternative discovered
+- **Feedback from review**: Reviewer comments on the plan
+- **Partial implementation learnings**: Things discovered during implementation
+- **Requirement changes**: Business requirements shifted
+
+### Step 3: Research If Needed
+
+If the changes require new technical understanding:
+
+1. Spawn parallel sub-agents to research the codebase:
+   - **codebase-locator** to find relevant files
+   - **codebase-analyzer** to understand current implementation
+   - **codebase-pattern-finder** to find similar patterns
+
+   Each agent's instructions ship with this skill as `${CLAUDE_SKILL_DIR}/assets/agents/<name>.md` (for example `${CLAUDE_SKILL_DIR}/assets/agents/codebase-locator.md`). With the catalyst-dev Claude Code plugin, spawn them as `catalyst-dev:<name>`. On any other harness, spawn a general-purpose subagent with that file's instructions plus your request, or do the task inline if the harness has no subagents.
+
+2. Wait for ALL agents to complete before modifying the plan
+
+3. Present research findings to user before making changes:
+   ```
+   Based on my research:
+   - [Finding 1 with file:line reference]
+   - [Finding 2 with file:line reference]
+
+   This affects the plan in these ways:
+   - [Impact 1]
+   - [Impact 2]
+
+   Shall I proceed with these updates?
+   ```
+
+### Step 4: Update the Plan
+
+1. Preserve completed phases unchanged (unless explicitly asked to modify)
+2. Update pending phases with new information
+3. Add new phases if scope expanded
+4. Remove phases if scope narrowed
+5. Update success criteria to reflect changes
+6. Add an "Iteration History" section at the bottom:
+
+```markdown
+## Iteration History
+
+### Iteration 1 - YYYY-MM-DD
+**Reason**: [Why the plan was updated]
+**Changes**:
+- [Phase X]: [What changed and why]
+- [Phase Y]: [Added/removed/modified]
+**Research conducted**: [[research-doc-filename]] — [Brief summary, if any]
+```
+
+### Step 5: Save and Sync
+
+1. Save the updated plan (overwrite the existing file)
+2. Sync thoughts: `humanlayer thoughts sync`
+
+### Step 6: Present Summary
+
+```
+Plan updated!
+
+**Plan**: [file path]
+**Changes made**:
+- [Summary of each change]
+
+**Impact on implementation**:
+- Phases affected: [list]
+- New phases added: [list, if any]
+- Phases removed: [list, if any]
+
+Please review the updated plan.
+```
+
+## Important Guidelines
+
+1. **Research before modifying** — Don't just edit text; verify changes against the codebase
+2. **Preserve completed work** — Never modify phases marked as done unless explicitly asked
+3. **Update success criteria** — Every plan change must have corresponding criteria updates
+4. **Track iterations** — Always add to the Iteration History section
+5. **Read fully** — Always read the entire plan before making changes
+6. **No open questions** — Resolve all uncertainties before saving
+
+**IMPORTANT: Document Storage Rules**
+- ALWAYS write to `thoughts/shared/plans/` for plan documents
+- NEVER write to `thoughts/searchable/` — this is a read-only search index

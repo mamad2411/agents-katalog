@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fluxcd/agent-skills (path: skills/gitops-repo-audit/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: GitOps Repository Auditor

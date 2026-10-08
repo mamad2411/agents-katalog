@@ -1,0 +1,366 @@
+---
+name: ops-go
+description: "OPS on-demand: This skill should be used when the user asks to \"morning briefing\", \"/ops:ops-go\", or…"
+argument-hint: '[project-alias]'
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Skill
+  - Agent
+  - TeamCreate
+  - SendMessage
+  - AskUserQuestion
+  - TaskCreate
+  - TaskUpdate
+  - TaskList
+  - CronCreate
+  - CronList
+  - WebFetch
+  # Slack — multi-workspace scan during the briefing. The flow falls back to
+  # direct curl from Bash for workspaces whose token_env is not bound to the MCP.
+  - mcp__claude_ai_Slack__slack_search_public_and_private
+  - mcp__claude_ai_Slack__slack_read_channel
+  # Notion — comments/mentions surfaced in the briefing.
+  - mcp__claude_ai_Notion__notion-search
+  - mcp__claude_ai_Notion__notion-fetch
+  - mcp__claude_ai_Notion__notion-query-data-sources
+  - mcp__claude_ai_Notion__notion-get-comments
+effort: medium
+maxTurns: 40
+---
+
+# OPS ► MORNING BRIEFING
+
+Load `ops-rules` before acting. Public repo (no personal data). Outbound: one draft → one approval → one send. If `AskUserQuestion` / `Workflow` are missing, follow Rule 10 in `ops-rules` (Hermes: numbered options / two-turn Telegram card; `delegate_task`).
+
+## Runtime Context
+
+Before executing, load available context:
+
+1. **Preferences**: Read `${CLAUDE_PLUGIN_DATA_DIR:-$HOME/.claude/plugins/data/ops-ops-marketplace}/preferences.json`
+   - `owner` — use in the greeting header ("Good morning, [owner]")
+   - `timezone` — display all timestamps in this timezone
+   - `default_channels` — which channels to include in unread summary
+
+2. **Daemon health**: Read `${CLAUDE_PLUGIN_DATA_DIR}/daemon-health.json`
+   - If `action_needed` is not null → surface it before the briefing
+   - Check `whatsapp-bridge` status before including WhatsApp unread counts
+   - Also check bridge liveness: `lsof -i :8080 | grep LISTEN`
+
+3. **WhatsApp pre-check**: Only include WhatsApp data if bridge is running (`lsof -i :8080 | grep LISTEN`).
+
+## CLI/API Reference
+
+### whatsapp-bridge (WhatsApp — mcp**whatsapp**\*)
+
+**Bridge health** — check before any WhatsApp operation:
+
+- Running: `lsof -i :8080 | grep LISTEN` → proceed
+- Not running → `launchctl kickstart -k gui/$(id -u)/com.${USER}.whatsapp-bridge`, wait 5s
+
+| Tool                           | Params                     | Output                                            |
+| ------------------------------ | -------------------------- | ------------------------------------------------- |
+| `mcp__whatsapp__list_chats`    | `{sort_by: "last_active"}` | Array of chats with jid, name, last_message_time  |
+| `mcp__whatsapp__list_messages` | `{chat_jid, limit, query}` | Message array with is_from_me, content, timestamp |
+
+### gog CLI (Gmail/Calendar)
+
+| Command                                                             | Usage                                                      | Output                                                  |
+| ------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------- |
+| `gog calendar events --all --today --json --sort start`             | Today's events across all calendars (sorted by start time) | Calendar events with `CalendarID` field for attribution |
+| `gog gmail search -j --results-only --no-input --max 30 "in:inbox"` | Search inbox                                               | JSON array of threads                                   |
+
+---
+
+## Agent Teams support
+
+If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set, use **Agent Teams** when gathering briefing data in parallel. This enables:
+
+- Agents share context and can coordinate mid-flight
+- You can steer priorities in real-time
+- Agents report progress as they complete
+
+**Team setup** (only when flag is enabled):
+
+```
+TeamCreate("go-team")
+Agent(team_name="go-team", name="infra-scanner", prompt="Check ECS health, Vercel status, and CI failures across all clusters")
+Agent(team_name="go-team", name="inbox-scanner", prompt="Scan unread messages across WhatsApp, Email, Slack, Telegram, Notion")
+Agent(team_name="go-team", name="pr-scanner", prompt="Find open PRs needing action — reviews, CI fixes, merge-ready")
+Agent(team_name="go-team", name="sprint-scanner", prompt="Check Linear sprint progress and GSD phase state across projects")
+```
+
+If the flag is NOT set, use standard fire-and-forget subagents.
+
+## Pre-gathered data
+
+All data below was collected by shell scripts in <10 seconds.
+
+### FinOps snapshot (canonical state from finops-dashboard)
+
+Pulls current burn, anomalies, and revenue from the dashboard. Fails open
+to `{}` if `FINOPS_DASHBOARD_URL` / `FINOPS_OPS_API_TOKEN` are unset — in
+that case the briefing falls back to the per-source data below.
+
+```!
+${CLAUDE_PLUGIN_ROOT}/scripts/finops-bridge.sh snapshot 2>/dev/null || echo "{}"
+```
+
+**Interpreting the snapshot — two different empty states, do NOT conflate:**
+
+1. **`{}` or unreachable** → `FINOPS_DASHBOARD_URL` / `FINOPS_OPS_API_TOKEN`
+   genuinely unset (or the dashboard is down). Report "FinOps creds unset" and
+   fall back to per-source AWS Cost Explorer / `Infrastructure` below.
+2. **Snapshot present (non-null `generated_at`) but `services_tracked: 0` and
+   all-zero `current_month_spend`/`revenue_snapshot`** → dashboard reachable +
+   authenticated, but its **ingest pipeline is unpopulated**. This is NOT a
+   creds problem — do NOT report "token unset". Say "FinOps dashboard reachable
+   but ingest empty" and fall back to per-source data for burn/revenue.
+
+When the snapshot has non-zero `services_tracked`, prefer it for the
+burn/runway/anomaly lines. The per-source `Infrastructure` and AWS Cost
+Explorer sections below are the fallback for both empty states above.
+
+**If dashboard `current_month_spend` is ≈ $0**, dual-check with the Usage-only
+helper below — credits often zero the net bill while real burn is hundreds/day.
+
+### AWS Usage burn (RECORD_TYPE=Usage — not credit-masked)
+
+```!
+${CLAUDE_PLUGIN_ROOT}/scripts/aws-usage-cost.sh snapshot 2>/dev/null || echo '{}'
+```
+
+Render in the briefing under a short `AWS BURN` line:
+`MTD usage $X · 7d avg $Y/day · EOM pace $Z · credits mask $W (do not treat net $0 as low spend)`.
+Flag a FIRE if any of the last 7 Usage days is >2× the 7d average.
+
+### Infrastructure
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-infra 2>/dev/null || echo '{"clusters":[],"error":"infra check failed"}'
+```
+
+### Git Status (all projects)
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-git 2>/dev/null || echo '[]'
+```
+
+### Open PRs
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-prs 2>/dev/null || echo '[]'
+```
+
+### CI Failures (last 24h)
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-ci 2>/dev/null || echo '[]'
+```
+
+### Unread Messages
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-unread 2>/dev/null || echo '{}'
+```
+
+### GSD State (active roadmaps)
+
+```!
+for d in $(jq -r '.projects[] | select(.gsd == true) | .paths[]' "${CLAUDE_PLUGIN_ROOT}/scripts/registry.json" 2>/dev/null); do
+  expanded="${d/#\~/$HOME}"
+  if [ -f "$expanded/.planning/STATE.md" ]; then
+    alias=$(basename "$expanded")
+    phase=$(grep -m1 'current_phase' "$expanded/.planning/STATE.md" 2>/dev/null | head -1 || echo "unknown")
+    progress=$(grep -m1 'progress' "$expanded/.planning/STATE.md" 2>/dev/null | head -1 || echo "unknown")
+    echo "$alias: $phase | $progress"
+  fi
+done
+```
+
+### Competitor Intel
+
+```!
+source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/competitor/context.sh" 2>/dev/null \
+  && competitor_context --window-days 7 2>/dev/null \
+  || echo '{"configured":false}'
+```
+
+### External Projects (non-repo)
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-external 2>/dev/null || echo '[]'
+```
+
+### Marketing (live channel data per project)
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-marketing-dash 2>/dev/null || echo '{}'
+```
+
+### Home (smart-home — only if `home_automation` is configured)
+
+```!
+if jq -e '.home_automation' "${CLAUDE_PLUGIN_DATA_DIR:-$HOME/.claude/plugins/data/ops-ops-marketplace}/preferences.json" >/dev/null 2>&1; then
+  ${CLAUDE_PLUGIN_ROOT}/bin/ops-home snapshot 2>/dev/null || echo '{"configured":true,"error":"home probe failed"}'
+else
+  echo '{"configured":false}'
+fi
+```
+
+### Calendar (today — all stores, not primary Google only)
+
+Google Calendar **and** Notion calendars when Notion is configured. A miss on one store is not absence (Rule 9). Shows, travel, and appointments often live in a Notion show-schedule database and never sync to Google.
+
+```!
+gog calendar events --all --today --json --sort start 2>/dev/null | head -60 || echo "calendar unavailable"
+```
+
+Events include a `CalendarID` field (e.g. `work@example.com`, `personal@gmail.com`). When rendering the briefing, attribute each event with a short calendar label in parentheses — derive it from the CalendarID domain or summary (e.g. work account → `(work)`, personal Gmail → `(personal)`). Show total count + top 3 events sorted by start time with format: `HH:MM  Title (calendar)`.
+
+**Notion calendars (required when Notion is configured):** read `$PREFS_PATH` `.channels.notion.calendars` (array of `{name, data_source_url}` — owner-local). If empty, `mcp__claude_ai_Notion__notion-search` for databases titled like "Show Schedule", "Calendar", "Appointments", then `notion-fetch` + `notion-query-data-sources` for today. Merge those rows into the briefing labelled `(notion)`. Do not report "no events today" until both Google `--all` and this Notion query have run.
+
+Fallback: if `gog` is unavailable and `GOOGLE_CALENDAR_IDS` env var is set (comma-separated calendar IDs), fetch each ID individually:
+
+```
+for id in $(echo "$GOOGLE_CALENDAR_IDS" | tr ',' '\n'); do
+  gog calendar events "$id" --today --json 2>/dev/null
+done
+```
+
+## Your task
+
+Analyze ALL the pre-gathered data above and present it as a morning briefing. Follow the ops-briefing output style.
+
+**Format:**
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ OPS ► MORNING BRIEFING — [DATE]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIRES (fix now)
+[table of production issues, CI failures, broken deploys]
+
+AWS BURN (Usage only — not credit-masked net)
+ MTD usage $[X] · 7d avg $[Y]/day · EOM pace $[Z] · credits mask $[W]
+ Top: [service $a] · [service $b] · [service $c]
+[If any day >2× 7d avg: flag as FIRE. Never report plain CE net ≈$0 as low spend.]
+
+PRs NEEDING ACTION
+[table: repo, PR#, title, status, action needed]
+
+PORTFOLIO DASHBOARD
+[table: project, phase, branch, uncommitted, CI, next action]
+
+EXTERNAL PROJECTS
+[table: alias, source, status, details — from ops-external data]
+
+MARKETING
+ Health: [N]/100 ([Healthy/Warning/Critical])  |  Blended ROAS: [X]x  |  Top channel: [channel]
+ Meta: $[X] spent (7d) [X]x ROAS  |  Google: $[X] spent (7d) [X]x ROAS  |  Email: [N] subs
+[If health < 70: "⚠ Run /ops:marketing optimize for recommendations"]
+[If no marketing configured: "(marketing not configured — /ops:marketing setup)"]
+
+COMPETITOR    <brand>: N alerts · M med deltas · last run YYYY-MM-DD
+              <top high-severity event snippet, 1 line, truncated 140 chars>
+[If competitor data returns {configured:false}, omit this section entirely — no "(not configured)" noise]
+[Mobile mode (Rule 7): compress to one line: "comp: N alerts (top: brief snippet)"]
+
+HOME
+ Power: [X]W now · [Y]kWh today  |  Alarms: [N] active ([severity])  |  Presence: [home/empty since HH:MM]  |  Last flow: [name @ HH:MM]
+[If home data returns {configured:false}, omit this section entirely — no clutter]
+[If critical alarm active (smoke/water/security): prepend `⚠ CRITICAL` and route to FIRES at top]
+
+UNREAD
+[WhatsApp: N, Email: N, Slack: N workspace(s) configured (no scan), Notion: N items, Calendar: N events today]
+
+TODAY'S PRIORITIES (ranked by revenue impact + urgency)
+1. [action] — [project] — [why]
+2. ...
+3. ...
+
+──────────────────────────────────────────────────────
+```
+
+**Marketing section data source**: Read from `ops-marketing-dash` pre-gathered output (see Pre-gathered data section). If marketing data is present in the dash output, compute the health score inline (see ops-marketing SKILL.md health score formula). If ops-marketing-dash is not configured or returns empty marketing data, show `(marketing not configured — /ops:marketing setup)`.
+
+**Priority ranking**: fires > degraded infra > CI failures > competitor alerts (high-severity, last 24h) > unread comms > ready-to-merge PRs > revenue-generating GSD work > stale projects.
+
+If `$ARGUMENTS` contains a project alias, focus the briefing on that project only.
+
+After the briefing, use **batched AskUserQuestion calls** (max 4 options each) for the "What's next?" prompt. Show the top 3 priority actions + `[More...]` in the first call, then remaining actions + `[/ops-yolo — let me run your business today]` in the second call. Route to the appropriate ops skill or project.
+
+For Slack counts: read the `channels.slack` object from the pre-gathered data and surface workspace presence ONLY. **Do NOT auto-scan Slack workspaces during briefings** — Slack scans are expensive, noisy, and frequently produce stale/unread counts that don't match the user's actual triage state. The user explicitly opted out of auto-scan on briefing surfaces.
+
+- If `workspaces` array is present: render `Slack: N workspace(s) configured (<name1>, <name2>) — run /ops:ops-inbox to scan`.
+- If `available: false` for all workspaces: show `Slack: not configured` and skip.
+- Never call `mcp__claude_ai_Slack__*` or curl Slack APIs from this skill. Defer all Slack scans to `/ops:ops-inbox` where the user explicitly opts in.
+
+For Notion counts: if `NOTION_MCP_ENABLED=true` and pre-gathered data shows Notion as available, use `mcp__claude_ai_Notion__notion-search` with `query: ""` sorted by `last_edited_time` descending to surface recently active pages. Then call `mcp__claude_ai_Notion__notion-get-comments` on the top results to find comments needing response. Note: Notion search does not support date range filters — sort by recency and limit to the first 10-20 results instead.
+
+---
+
+## Native tool usage
+
+### Tasks — briefing action tracking
+
+After presenting the briefing, create a `TaskCreate` for each recommended priority action. As the user works through them (or delegates via skill routing), update with `TaskUpdate`. This gives continuity across the session.
+
+### Cron — scheduled briefings
+
+After the first briefing, offer to schedule recurring briefings via `AskUserQuestion`:
+
+```
+  [Schedule daily at 9am]  [Schedule weekday mornings]  [No schedule]
+```
+
+Use `CronCreate` to set up the schedule. Show existing schedules with `CronList`.
+
+### WebFetch — calendar enrichment
+
+When `gog calendar` fails, use `WebFetch` with the Google Calendar API as fallback:
+
+```
+WebFetch(url: "https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=<today>T00:00:00Z&timeMax=<today>T23:59:59Z")
+```
+
+---
+
+## Ledger Integration
+
+**CLAIM_KEY:** `daily-brief:<YYYY-MM-DD>` (e.g. `daily-brief:2026-05-28`)
+
+### Pre-flight skip-check
+
+Before generating the briefing, check whether one was already produced today:
+
+```bash
+BRIEF_DATE=$(date +%Y-%m-%d)
+CLAIM_KEY="daily-brief:${BRIEF_DATE}"
+ledger query --claim-key "$CLAIM_KEY" --since=-PT24H
+```
+
+If the query returns a `done` or `in_progress` entry, surface it to the user
+("Briefing already ran today at HH:MM — rerun?") instead of re-fetching all sources.
+
+### Claim + resolve
+
+```bash
+# Claim at briefing start
+ledger write \
+  --claim-key "$CLAIM_KEY" \
+  --kind "file" \
+  --status "in_progress" \
+  --title "Morning briefing ${BRIEF_DATE}" \
+  --ttl-sec 86400
+
+# Resolve after briefing is presented to the user
+ledger write \
+  --claim-key "$CLAIM_KEY" \
+  --kind "file" \
+  --status "done" \
+  --title "Morning briefing ${BRIEF_DATE}" \
+  --context "N fires, N PRs, N unread"
+```

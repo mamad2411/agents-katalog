@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bytedance/agentkit-samples (path: skills/byted-livesaas-master/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 企业直播 / LiveSaaS 控播 Skill。支持通过 `bytedlive` CLI 操作直播间（创建/配置/状态）、评论、系统消息、观众管控，以及 OpenAPI 兜底调用。覆盖场景包括：直播间生命周期管理、直播数据与观众画像分析、商品卡片运营（上架/讲解）、营销互动工具（卡券）与连麦协同控制、媒资库运维及账号/权益信息查询。触发词：企业直播、控播、直播间、ActivityId、评论、弹幕

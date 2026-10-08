@@ -1,0 +1,119 @@
+---
+name: fluencyloop
+description: 'FluencyLoop — stay fluent in code as AI writes it. Router/overview for the per-feature loop (design → build+teach → review), the optional up-front planning stage for large chunks, the woven-in constitution that grows from decisions, plus post-merge backfill. Use when the user mentions FluencyLoop, "fluency", the .fluencyloop/ directory, or wants to set up / understand the workflow but hasn''t named a specific stage.'
+---
+
+# FluencyLoop
+
+*The code and your fluency in it are produced together, or not at all.*
+
+## Literal CLI Fast Path (Codex)
+
+This section takes priority over every later workflow instruction. If the developer gives a
+literal `fluencyloop` CLI command, such as `fluencyloop init`, `fluencyloop -v`, or
+`fluencyloop check`, they requested **only that command**.
+
+1. For `fluencyloop init`, request sandbox elevation for that exact command before its first
+   execution. It may create Codex-protected `.git` metadata; do not first attempt it in the
+   standard sandbox.
+2. Invoke `fluencyloop` immediately.
+3. Do not send an interim update, inspect the workspace, read state, search the web, check PATH,
+   or explain what the command will do.
+4. Do not route to a stage or run a follow-up command after it succeeds. In particular,
+   `fluencyloop init` must not automatically start a feature or plan.
+5. Return the command's result concisely. If Codex requires approval for another write, request
+   it before running the command; do not add setup narration.
+
+## Bundled CLI (Codex)
+
+On macOS, Linux, Git Bash, and WSL, the trusted SessionStart hook maintains an owned
+`~/.local/bin/fluencyloop` shim for this installed plugin. Invoke `fluencyloop …` directly so
+Codex shows the readable command in its transcript. Do not resolve its path, check PATH, or
+describe the shim to the developer.
+
+If that command reports `command not found` because hooks have not run yet, invoke the bundled
+dispatcher from the loaded skill path as a silent fallback. On native Windows, invoke the adjacent
+`fluencyloop.ps1` with `pwsh`.
+
+## Local site — open once
+
+For a non-literal workflow entry, before the first user-visible response, run
+`fluencyloop site --ensure --open-once --json`. This ensures the reader for every workflow entry,
+but opens a browser tab only once while that managed reader is alive. If it reports `running: true`
+and no earlier assistant message in this session starts with `FluencyLoop site:`, say `FluencyLoop
+site: <url> (opened in browser).` once, using its returned URL. Do not mention an unavailable site
+or repeat the announcement. The Literal CLI Fast Path above remains exempt: literal commands receive
+only their requested command result.
+
+## Question delivery
+
+FluencyLoop's stage skills use **`AskUserQuestion` in Claude Code** for genuine prompts. Codex
+has no equivalent question-form tool, so they ask a concise standalone question in chat and pause
+for the answer before continuing.
+
+FluencyLoop keeps the people behind a codebase fluent in it as AI writes more of it. At its core
+is a **per-feature loop** — design → build (teach) → review — driven by whoever is building.
+Nothing gates a merge; work that skips the loop is caught after merge by backfill.
+
+```
+PER BIG CHUNK (optional)     REPEATS, PER FEATURE (contributor-driven)
+( plan )                  →  design    →  build (teach)   →  review
+architecture + roadmap       diagrams     session journal    PR view assembles itself
+```
+
+Planning is **optional** — reach for it only when a chunk of work is too big for one
+feature/branch and needs an architecture + roadmap first. Small work goes straight to
+**`$fluencyloop:feature`**.
+
+The **constitution** (the project's checkable principles) is load-bearing — plan and feature both
+check designs against it — but it is **not a stage you sit down and author**. It's born from your
+first real intent (a plan, or the first feature as backstop) and grows as features harvest
+repeatable stances from real decisions. Same law as the journal and the calibration profile: it
+**accretes from building**, never authored cold unless you explicitly choose to.
+
+## Route to the right stage
+
+| The user wants to…                                   | Skill                  |
+|------------------------------------------------------|------------------------|
+| Plan a large chunk — architecture, task breakdown, roadmap | **`$fluencyloop:plan`**  |
+| Start building something, stay fluent as they go     | **`$fluencyloop:feature`**    |
+| Prepare a PR / summarise a feature for a reviewer     | **`$fluencyloop:review`**     |
+| Document work that shipped without the loop           | **`$fluencyloop:backfill`**   |
+
+For a conversational request to "set up FluencyLoop" (not a literal CLI command), initialise an
+absent `.fluencyloop/` scaffold, then continue with **`$fluencyloop:feature`** (or
+**`$fluencyloop:plan`** for a big chunk). The constitution fills itself in from there.
+
+## Initialise a project
+
+```bash
+fluencyloop init   # initialises Git if needed, then scaffolds .fluencyloop/
+```
+
+This creates `.fluencyloop/` (scripts, templates, constitution stub). Agent skills are activated
+through the agent's installation mechanism and are never copied into the project. A feature is a branch (`feature/<slug>`); sessions are committed journals;
+the per-developer calibration profile lives globally in `~/.fluencyloop/` and is never
+committed.
+
+## Minimal generation — scripts assemble, the model writes the *why*
+
+FluencyLoop is cheap to run because the deterministic scripts do everything mechanical and the
+model spends tokens only on the irreducible rationale. The split, per stage:
+
+| Stage | The scripts assemble (deterministic) | The model writes (irreducible) |
+|-------|--------------------------------------|--------------------------------|
+| **Declare / design** | feature branch, feature record, `state.json` (slug / branch / stage / base) | the taught design rationale, the constitution check |
+| **Build (per slice)** | `slice-context` (diff + metadata + `likely_decision`), the session skeleton, the **decision blocks** (`fluencyloop decision`), `calibration signal` / `compact`, `state.json` updates | the code, the taught **why**, knowledge-transfer prose, the decision field *values* |
+| **Review** | `assemble-pr-view` (sessions inlined, commit range, base), PR creation | the reviewer-facing distillation |
+| **Backfill** | feature + session scaffold, `state.json`, decision blocks, `check` drift | the reconstructed rationale (marked `unverified`) |
+
+The rule: if a stage asks the model to produce something a script could assemble deterministically
+— a file skeleton, a commit range, a formatted block, a state read — that's a bug; move it to a
+script. The model's tokens go to the *why*, never to plumbing.
+
+## The four standing principles
+
+- **Evidence over pitch** — probe demand cheaply before building.
+- **Stay out of the way** — never block the fast path; flag exposure, don't gate.
+- **The developer stays the architect** — the tool serves their authorship.
+- **Honest about tradeoffs** — no claim of free comprehension.

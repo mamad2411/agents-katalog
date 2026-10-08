@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/nomadamas/k-skill (path: ev-subsidy-status/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 한국 지자체별 전기차 구매보조금 민간공고·접수·출고·출고잔여 대수와 공고 상태를 환경부 무공해차 통합누리집에서 조회한다. 사용자가 사는 지역의 전기승용·전기화물·전기승합 보조금 잔여 현황, 접수 가능 여부, 마감·소진·추경 예정, 특정 모델 기준 보조금 환산치를 물을 때 사용한다. 돌쇠에서는 공식 표면을 통한 후속 액션까지 진행한다.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/freestylefly/canghe-skills (path: skills/canghe-post-to-wechat/SKILL.md, branch: master)
+- mined: 2026-09-20
+- desc: Posts content to WeChat Official Account (微信公众号) via API or Chrome CDP. Supports article posting (文章) with HTML, markdown, or plain text input, and image-text posting (贴图, formerly 图文) with multiple i

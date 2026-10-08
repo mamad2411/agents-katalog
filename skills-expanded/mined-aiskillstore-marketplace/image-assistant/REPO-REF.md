@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aiskillstore/marketplace (path: skills/yunshu0909/image-assistant/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 配图助手 - 把文章/模块内容转成统一风格、少字高可读的 16:9 信息图提示词；先定“需要几张图+每张讲什么”，再压缩文案与隐喻，最后输出可直接复制的生图提示词并迭代。

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/grasseed/google-search-browser-use (path: skills/gemini-research-browser-use/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Use Chrome DevTools Protocol to allow the AI to "ask Gemini" or "research with Gemini" directly. This uses the user's logged-in Chrome session, bypassing API limits and leveraging the web interface's 

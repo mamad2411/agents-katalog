@@ -1,0 +1,82 @@
+---
+name: pr-review-toolkit
+description: "Review pull requests and recent code changes across specialized lenses: general code quality, tests, error handling and silent failures, comments and docs, type design, and simplification. Use when the user asks to review a PR, review recent changes, check tests, check error handling, check comments, analyze types, simplify/refine an implementation, run \"review-pr\", or before merging phase PRs in the epic-dev workflow."
+---
+
+# PR Review Toolkit
+
+Portable PR review skill adapted for the project plugin. The upstream Anthropic
+`pr-review-toolkit` inspired the review lenses; this implementation keeps the
+procedure and rubrics in `references/` so Codex, Claude Code, and Copilot can use
+the same source of truth.
+
+## Review Lenses
+
+- `code`: project rules, bugs, contracts, maintainability, security, and performance.
+- `tests`: behavioral coverage, edge cases, negative paths, and brittle tests.
+- `errors`: silent failures, broad catches, hidden fallbacks, and unhelpful user-facing errors.
+- `comments`: comment accuracy, stale documentation, redundant comments, and missing rationale.
+- `types`: invariants, validation boundaries, encapsulation, and illegal states.
+- `simplify`: clarity and refactoring opportunities while preserving behavior.
+- `all`: all applicable lenses. This is the default.
+
+## Dispatch
+
+Prefer a fresh-context reviewer when the current tool supports subagents. The
+reviewer must read `references/review-procedure.md` and
+`references/review-rubrics.md` before producing findings.
+
+For Codex, use `references/review-panel-protocol.md` to select the bounded
+native-subagent panel before falling back. The default panel is three Luna/max
+reviewers grouped by risk; it is not a six-agent lens swarm.
+
+- **Claude Code:** run `Agent(subagent_type: "project:pr-review-toolkit", ...)` if the bundled agent is available; otherwise follow the fallback branch.
+- **Codex CLI:** invoke the `project-preflight` skill's bundled `<project-plugin-root>/bin/project-preflight --format json` executable by absolute path first; do not assume the plugin's `bin/` directory is on `PATH`. When the scope is `all` (default) or the caller requests a pre-merge review, `native_agent_status=available`, and no `single`/`inline` opt-out is present, dispatch the bounded panel in `references/review-panel-protocol.md` through the current native subagent surface. Use `gpt-5.6-luna` at `max` effort by default, cap the panel at three reviewers, require structured accounting, synthesize and verify findings, and close completed agents. If native subagents are unavailable, or the caller selects a single/inline review, use the existing inline procedure. The copied `agents/templates/pr-review-toolkit.toml` remains an opt-in configured-agent path when the current Codex surface lacks direct native dispatch.
+- **Copilot CLI:** plugin installation exposes this skill and, through `.github/plugin/plugin.json`, the `.agent.md` reviewer in `agents/templates/`. Invoke that configured agent when the current Copilot surface supports custom agents. If running outside a plugin install, copy `agents/templates/pr-review-toolkit.agent.md` to `.github/agents/` or `~/.copilot/agents/`. If no custom agent is available, use the fallback branch.
+- **Fallback:** run the review inline in the current context after reading both reference files. This is the portable default path when preflight reports no native subagents or the caller opts out.
+
+## Inputs To Collect
+
+- Scope: PR number, branch range, staged changes, unstaged changes, or explicit files.
+- Lens selection: one or more of `code`, `tests`, `errors`, `comments`, `types`, `simplify`, or `all`.
+- Mode: advisory review by default; `pre-merge` selects the bounded panel when available; `single` and `inline` opt out; edit mode is allowed only when the user explicitly asks to simplify/refine or implement review fixes.
+- Overrides: user-supplied model, effort, panel size, lens grouping, or fallback choice always wins over defaults.
+
+## Required Workflow
+
+1. Read `references/review-procedure.md`.
+2. Read `references/review-rubrics.md`.
+3. For Codex automatic dispatch, read `references/review-panel-protocol.md` and run the preflight gate before choosing panel versus fallback.
+4. Inspect the local project rules before generic preferences: nearest `AGENTS.md`, `CLAUDE.md`, `.rules/`, and relevant framework guidance.
+5. Determine the diff scope with `git status`, `git diff`, `git diff --cached`, `gh pr view`, or `gh pr diff` as appropriate.
+6. Select applicable lenses. Use `code` for every review unless the user explicitly excludes it.
+7. If a panel ran, account for every reviewer and synthesize/deduplicate findings; independently verify load-bearing claims and close completed one-off agents.
+8. Report findings first, ordered by severity, with concrete file and line references.
+9. If no actionable findings exist, say so clearly and list any residual test gaps or verification limits.
+
+## Output Shape
+
+Use this structure unless the user asks for a different format:
+
+```markdown
+**Findings**
+- Critical: ...
+- Important: ...
+- Moderate: ...
+
+**Questions**
+- ...
+
+**Residual Risk**
+- ...
+```
+
+For `simplify` in edit mode, make the smallest behavior-preserving patch, run the
+relevant tests or checks, and summarize what changed.
+
+## Attribution
+
+Inspired by Anthropic's `pr-review-toolkit` plugin in
+`anthropics/claude-code/plugins/pr-review-toolkit`. The upstream plugin README
+identifies the plugin license as MIT; this project implementation is written as
+an original project skill with attribution rather than a verbatim copy.

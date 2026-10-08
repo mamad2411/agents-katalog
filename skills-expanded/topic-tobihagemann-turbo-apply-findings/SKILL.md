@@ -1,0 +1,63 @@
+---
+name: apply-findings
+description: "Apply findings by making the suggested code changes. Applies accepted verdicts, escalates ambiguous findings to the user, and offers to note genuine improvements for later. Use when the user asks to \"apply findings\", \"apply fixes\", \"apply suggestions\", \"apply accepted findings\", \"fix the findings\", or \"apply the review results\"."
+---
+
+# Apply Findings
+
+Apply evaluated findings from the conversation context. Findings must have been through `/evaluate-findings` first.
+
+## Step 1: Identify Findings
+
+Collect all findings from the conversation context. Findings should have Verdict columns (Apply, Skip, Escalate) from `/evaluate-findings`.
+
+If findings are unevaluated (raw output without verdicts), stop and say to run `/evaluate-findings` first.
+
+## Step 2: Apply in File Order
+
+Group Apply findings by file path and apply in file order to minimize context switching. For each finding:
+
+1. Read the full function or logical block at the referenced location
+2. Verify the finding still applies to the current code
+3. Before applying a fix that stops a failure, whether the finding suggested it or you derived it, confirm the fix makes the failure the finding describes unreachable rather than only defeating the finding's reproduction: construct an input that clears the point the fix guards, trace whether it still reaches that failure further along, and write any regression test the fix adds from that input. When the fix encodes, escapes, quotes, or otherwise sanitizes untrusted input, construct such inputs from every character class the target interpreter treats specially and name what in the fix blocks each one; a class with no blocker means the fix is incomplete, including when it reproduces the finding's suggested wording. When the finding carries a suggested fix, also treat the fix as a separate claim from the finding and verify it independently — trace it against the failure modes the finding names, then against the behavior the code had before the fix on inputs the finding never mentioned, since a remedy can address the named mode while regressing an axis alongside it. Where the finding arrives with opposing remedies recorded, verify the measured one first, and where none was measured, measure before applying rather than choosing on the proposer's authority. If a suggested fix does not hold up, treat the finding as Escalate (surface it in Step 3) and record why the remedy fails, rather than applying an unsound fix on the finding's authority. If a fix you derived does not hold up, revise it, and when no revision holds up, treat the finding as Escalate (surface it in Step 3) and record why.
+4. When the fix would reverse a decision the user made earlier — in discussion or recorded in the artifact — treat the finding as Escalate (surface it in Step 3) and name the original decision. Judge by the outcome rather than the wording of the option the user chose: a reversal leaves the user with something materially different from what they chose. When the finding refutes only the factual premise the user's choice rested on and the fix leaves the chosen outcome intact, that is a premise correction: confirm the refutation against whichever of the code, the governing artifact, or authoritative documentation the premise turns on, and when none settles it, treat the finding as Escalate. Otherwise continue with the remaining checks, and state both the corrected premise and the chosen outcome it leaves standing in Step 4.
+5. Check what the fix you are about to make changes about the inputs the code accepts. When the change in accepted inputs is exactly the defect the finding names, apply it normally. When it turns away or newly admits anything beyond that defect — a value or path a legitimate caller could send — that is a behavior change: treat the finding as Escalate (surface it in Step 3) and name the input class that changes.
+6. Make the fix
+7. If the finding renames an identifier or changes a recurring shape — a type signature, call pattern, or wrapper that appears in many places — search every caller and reference the change reaches, not only the changed files, by concept rather than by the literal just replaced: a stem that survives inflection and compounding, or the shape common to every variant. A clean search proves nothing when its pattern was derived from a single instance, and the cited location is often only one of several references. When the finding names several sites, also tick them off against the finding text. Complete the sweep before marking the fix complete.
+8. When the fix adds or edits a comment stating a contract — what is handled, what is excluded, what callers may rely on — verify the code enforces that contract before marking the fix complete. When it does not, add the enforcement rather than narrowing the comment.
+
+If a finding references code that has changed since it was generated (e.g., by a prior fix in this same run), re-assess whether it still applies. Skip if the code has diverged.
+
+When an escalated finding's outcome would change what the other fixes should look like, settle it in Step 3 before applying them.
+
+## Step 3: Handle Escalated Findings
+
+For findings with Escalate verdict, use `AskUserQuestion` to let the user decide. Output the finding's technical detail as text first, including the fact that forces the choice, then state the question as the decision the user owns. When the finding is a disagreement between two artifacts, first establish which artifact changed last and which one the code or content that consumes them follows today. Include that in the detail and weigh it in the recommendation, then ask which behavior is wanted; reconciling the artifacts follows from that answer.
+
+Recommend the genuinely best option: place it first and append `(Recommended)` to its label, judging "best" on technical merit alone (the soundest engineering outcome), independent of how closely the option conforms to the task's original scope. Reserve the **Note for later** recommendation for a fix that is not ready to make: it needs design work of its own, or rests on a cause or fact this session cannot establish. Name what it waits on in that option's description. Treat a finding being pre-existing or outside the changeset as a scope cost to state beside the recommended option, with no bearing on which option that is. When the choice hinges on product intent or domain knowledge you lack and merit cannot settle it, say so instead of forcing a pick. Where an established convention answers a visual or interaction choice, that settles it: recommend the option that follows the convention and name it. Take the project's own treatment of like elements ahead of the platform's, and the platform's ahead of general practice. Give each option a plain-language description that carries the trade-off: its concrete effect and what it costs. Before asking, confirm every claim a description makes about what its remedy does, including its effect on legitimate callers and what it leaves untouched, the way Step 2 items 3 and 5 check a fix. Correct a claim that check contradicts. When the check needs material this session has not read, read it. Mark as unverified in that description only a claim this session cannot establish, and leave `(Recommended)` off the option whose remedy it describes. When a tool available in this session can carry out the remedy directly, make that action the **Apply** option rather than tooling that would carry it out later, and name in its description the system it acts on and whether the action can be undone. When the recommended option also widens the changeset's scope, name both its merit and that scope cost so the user can weigh them. When an earlier escalation already widened the changeset, state the running total alongside this option's increment. When the choice is costly to reverse — it establishes a pattern others will follow, defines an interface, or commits to a data shape — include the consultation option alongside the concrete alternatives, labeled "Get a second opinion". Include it as well whenever no option earns `(Recommended)` with conviction.
+
+- **Apply** — make the change, then run Step 2's post-fix checks (items 7 and 8) against it
+- **Skip** — leave as-is
+- **Note for later** — run the `/note-improvement` skill to capture it
+- **Get a second opinion** — run the `/consult-codex` skill for a second opinion on the choice, or the `/consult-oracle` skill when standard approaches have already failed. Then apply, skip, or note the finding with that answer in hand
+
+## Step 4: Format Output
+
+Report the outcome as a table, one row per finding, keeping every cell to a single line:
+
+| File | Finding | Outcome |
+|------|---------|---------|
+
+Where Outcome is one of:
+
+- **Applied** — the fix was made
+- **Escalated** — name the resolution the user chose: applied, skipped, or noted for later
+- **Skipped** — name the reason
+
+Keep the report to the table. Add prose only where an escalation's resolution changed what the other fixes look like, or where a fix corrected the factual premise a user's choice rested on.
+
+Then use the TaskList tool and proceed to any remaining task.
+
+## Rules
+
+- Only edit files, except for a direct action the user chose as **Apply** in Step 3. Do not stage, build, or test.

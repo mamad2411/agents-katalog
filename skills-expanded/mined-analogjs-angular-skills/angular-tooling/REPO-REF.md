@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/analogjs/angular-skills (path: skills/angular-tooling/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: DEPRECATED - this skill is unmaintained. Use the official Angular skills at https://github.com/angular/skills instead. Use Angular CLI and development tools effectively in Angular v20+ projects. Use f

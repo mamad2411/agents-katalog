@@ -1,0 +1,113 @@
+---
+name: flow-next-drive
+description: Drive any UI surface like a real user - a web app, a Chromium-backed desktop app (Electron / WebView2, reached over CDP), or a genuinely native app (macOS AppKit/SwiftUI, or a non-CDP webview) reached via the Cua Driver / Computer Use. Detects the surface, picks the best available driver, degrades gracefully. Use to navigate sites, verify deployed UI, test web or desktop apps, capture baseline screenshots, drive a sign-in flow, scrape data, fill forms, run an e2e check, or inspect current page state. Triggers on "check the page", "verify UI", "test the site", "test this app", "drive the app", "automate this desktop app", "read docs at", "look up API", "visit URL", "browse", "screenshot", "scrape", "e2e test", "login flow", "capture baseline", "see how it looks", "inspect current", "before redesign", "Electron app", "native app".
+---
+
+> **Codex note — Browser Use vs this skill:** Codex **desktop** (v0.124+) bundles a **Browser Use** plugin (invoke `$browser-use <task>`) controlling its in-app browser. Scope is narrow: `localhost`, `127.0.0.1`, `::1`, `file://`, current in-app tab. No cookies, no auth, no extensions, no production sites, no Electron apps, no mobile sims. For those narrow cases, delegate: use `$browser-use` directly, or just describe the task in prose (Codex routes natural-language plugin calls). Use **this skill** (the prose triggers listed above — `check the page`, `verify UI`, `test this app`, etc.) for everything outside that scope — production sites, authenticated flows, cookies/saved sessions, Electron / native apps, iOS Simulator, proxies, headed browsers, video recording, visual diff. In **Codex CLI** (no desktop app, no in-app browser), always use this skill — Browser Use is not available there.
+
+# flow-next-drive — surface-aware UI automation
+
+Drive any UI surface the way a real user would. Whatever driver the environment has, the work is the same shape: **observe / navigate → snapshot → act on fresh refs → capture evidence → release**. This skill is a *router*: it detects the surface, picks the highest available driver on a ladder, degrades gracefully when a richer driver is absent, and hands off to a per-rung reference for the command detail.
+
+It orchestrates drivers — it does not reimplement them. The default rung (Vercel's `agent-browser` CLI) is the only driver assumed present; every other rung is detected and optional. A pass must succeed with whatever the environment actually has — most cloud VMs, Linux, and CI have no Computer Use, so it is never a hard dependency and never on a headless/no-display path.
+
+> Driver ladder + universal-flow structure adapted from Ray Fernando's `running-bug-review-board` skill (Apache-2.0).
+
+## Step 1 — Detect the surface, then branch
+
+Classify the target into one of three buckets and take the matching path. The universal flow (Step 2) is shared; only the actuation and the per-surface reference differ.
+
+| # | Surface | What it is | Path |
+|---|---------|------------|------|
+| A | **Web app** | A URL in a browser (localhost dev server, staging, production) | **Web ladder** (Step 3) |
+| B | **Chromium-backed desktop app** | Electron / Windows WebView2 — Chromium under the hood, exposes a CDP debug port | **Web ladder** (Step 3), attaching over CDP to the app's remote-debugging port |
+| C | **True-native / non-CDP surface** | macOS AppKit/SwiftUI, Catalyst, or a webview exposing no CDP (macOS WKWebView, which Tauri uses on macOS) | **Native rung** (Step 4) — **Cua Driver** → **Computer Use** (attended); **Cua Sandbox** (headless/CI) |
+
+How to decide:
+
+- A bare URL, or a dev/staging/prod web app → **A**.
+- A desktop app you can launch with `--remote-debugging-port=<n>` (or one already exposing one) → **B**. Electron and Windows WebView2 are Chromium; the web ladder drives them by CDP-attach. Do **not** route these to Computer Use.
+- A desktop app with no CDP port — genuinely native (AppKit/SwiftUI), or a macOS WKWebView / Tauri-on-macOS app — → **C**. Per-platform caveat: **Windows WebView2 is CDP-drivable (→ B); macOS WKWebView generally is not (→ C)** — verify per platform.
+
+When unsure whether a desktop app exposes CDP, probe for B first (try to launch/attach with a debug port). If no port is reachable, fall to C.
+
+When `.flow/features/` exists and the caller did not pass `unmapped`, Read `.flow/features/README.md` and the feature file the caller names, else the one matching feature file, first; never the whole map. They pre-resolve the route, preconditions, and gotchas. Select by `**Surface:**` plus sub-feature IDs ([feature-entry-contract.md](../flow-next-features/references/feature-entry-contract.md), "Live-app stages"). Live detection above remains the fallback when the map is absent or does not cover this target. A mapped route that no longer matches the live app gets a drift note per the contract's "Writers and drift notes" section, then live detection continues; never edit the map mid-run.
+
+### Done when
+
+- The target is classified A, B, or C **before any driving starts**, and the classification is stated. A pass that started acting before naming the surface has broken this.
+- A desktop app was probed for a CDP port before being routed to C.
+- When `.flow/features/` existed, the index and the named or one matching feature file were read before driving (none after a caller's `unmapped`); live detection was the fallback otherwise, and a stale mapped route was filed as a drift note.
+
+## Step 2 — The universal flow (all surfaces)
+
+```
+observe / list what's open
+navigate to the target (URL, or focus the app window)
+snapshot              → fresh element refs (after a DOM change; for ONE known target prefer semantic find)
+act                   → click / fill / type / press / scroll toward the next step
+verify                → expected text/state appeared AND console clean + no failed API/network requests
+capture               → screenshot + console/errors at the moment of interest (and on failure)
+release               → close the tab / end the session when fully done
+```
+
+**`verify` is not DOM-only — every verify checks the console is clean and no API/network request failed, alongside the expected text or state.** A pass declared on a green-looking DOM while a request returned 500 or the console threw an uncaught exception has broken this: that is exactly the silent breakage a real user hits, and the `/flow-next:qa` `qa_verdict` rests on this evidence. The tooling is already on the default rung (`agent-browser console`, `agent-browser network requests --filter api`; the DevTools-MCP rung has richer inspection). A failed request or console error under a green DOM is a finding, not noise.
+
+**Snapshot cost:** a full interactive `snapshot -i` before *every* act is the dominant token cost of a long flow. Re-snapshot after a DOM change, but for a single known target prefer a semantic locator (`find role|text|label … <action>` — no snapshot needed), and use `snapshot -c` / `-d <depth>` when you only need to verify one region.
+
+Refs (`@e1`, `@e2`, …) go **stale** after any navigation, click, or form submit. **Element refs are refreshed by re-snapshotting after any navigation, click, or submit.** A "ref not found" or `pointer-events: none` result reported as a bug before a re-snapshot has broken this — it is a stale snapshot until a fresh one says otherwise.
+
+### Done when
+
+- Every act ran against refs from a snapshot taken after the last DOM change (or against a semantic locator that needs none).
+- Every verify carries three checks — expected text/state, clean console, no failed API/network request. Native rungs (cua, computer use) have no console or network channel: verify the expected state plus any app log, and say those checks were unavailable.
+- Evidence was captured at the moment of interest and on failure — screenshot plus console/network output — so a downstream `/flow-next:qa` verdict rests on artifacts rather than narration.
+- **The session or tab is released when the pass is done.** A left-open session or daemon has broken this.
+
+## Step 3 — Web ladder (surfaces A and B)
+
+Probe availability top-down and use the **highest rung that passes**; fail soft to the next; the terminal rung is manual. Never hard-depend on any rung above the default.
+
+| Rung | Driver | Use when | Reference |
+|------|--------|----------|-----------|
+| 1 (default) | **agent-browser** CLI | Always assumed present. CDP-based, headless-safe, no extra install. Drives web apps; drives Electron / WebView2 over CDP (`--cdp <port>` / `--auto-connect`). | `references/agent-browser.md` |
+| 2 | **chrome-devtools-mcp** | You want built-in auto-wait (fewer stale-ref failures), DevTools-grade network/console inspection, Lighthouse, or to **attach to your real signed-in Chrome** (`--browser-url` / `--autoConnect`) so bot defenses don't challenge an automated profile. | `references/chrome-devtools-mcp.md` |
+| 3 | **Playwright** (CLI or MCP) | The repo already has Playwright configured, or you need a headless CI-style run / large cross-browser regression suite. | `references/playwright.md` |
+| 4 | **cursor-ide-browser** MCP | On a Cursor host: no install, no `command -v`. Probe the server by id `cursor-ide-browser` (a catalog omission is not absence). If that probe fails in an attended session, ask once for `@Browser` (no space) or the Browser pane showing connected, then re-probe once — skip the ask when unattended. Real snapshot YAML + `browser_cdp`. **Cannot satisfy verify (console + network) unaided** — a `/flow-next:qa` pass here must set `QA_OUTCOME=BLOCKED` with `blocked_reason` naming the missing channels (do not invent `console_path` / network path values). When higher rungs are missing, prefer this over instructing an install. | `references/cursor-ide-browser.md` |
+| 5 (terminal) | **Manual + screenshot relay** | No browser driver available — drive yourself, paste console errors and screenshots into chat (attended only; unattended reports no driver and QA records BLOCKED). | — |
+
+**Surface B note: an Electron / WebView2 app is driven through this same web ladder, over its CDP debug port.** Routing a Chromium-backed desktop app to the native rung has broken this. Attach to the app's remote-debugging port (`agent-browser --cdp <port>` / `--auto-connect`; chrome-devtools-mcp `--browser-url=http://127.0.0.1:<port>`). Launch the app with a dedicated debug port and a dedicated user-data-dir; treat the open debug port as a security exposure (any local app can drive that session).
+
+> **agent-browser command detail lives in the rung reference, not here.** The default-rung reference [`references/agent-browser.md`](references/agent-browser.md) is the entry point — setup/version check, the universal flow in agent-browser commands, the Chromium-desktop (Electron / WebView2) CDP driver, the `--headed` daemon-reuse gotcha, and an index into the per-topic references it folds: `commands.md`, `advanced.md` (CDP attach), `auth.md`, `snapshot-refs.md`, `session-management.md`, `proxy.md`, `debugging.md`.
+
+## Step 4 — Native rung (surface C): Cua Driver, then Computer Use
+
+Only for surface C (a genuinely native app or a non-CDP webview): read
+[references/cua.md § Native rung (surface C)](references/cua.md#native-rung-surface-c) first; it holds
+the driver probe order and routes to Computer Use.
+
+## Driver detection & graceful degradation (all surfaces)
+
+**Ask the user via plain text.** Render the options below as a numbered list `1.` … `N.`, followed by a final option `N+1. Other — type your own answer`. Print the question, then the numbered list, then **stop and wait for the user's next message before continuing**. Parse the reply as: a bare number `1`–`N+1` → that option; the literal text of an option label → that option; free text after `Other` → custom answer.
+
+1. **Probe, don't assume.** Detect each non-default rung before planning around it (`command -v`, MCP list, `uname -s` for the macOS-only paths). Treat anything above the default rung — incl. **Cua Driver** and **Computer Use** — as *probably absent*. On a Cursor host, probe `cursor-ide-browser` by exact server id at least once before concluding it is absent — catalog omission alone is not a negative, and there is no install step. If that probe fails in an **attended** session, ask once via `plain-text numbered prompt`: type `@Browser` in chat (no space), or open the Browser pane until it shows connected, and confirm Settings → Tools & MCP → Browser Automation is Browser Tab. On portable hosts without that tool, use a numbered prompt with a final `Other — type your own answer` option. After they confirm, re-probe **once**. Skip the ask when unattended / autonomous / `$CI` / `FLOW_AUTONOMOUS=1` and degrade. A mid-run `MCP server does not exist` after this pass already drove the pane is the lease-drop flake, not a first-use miss — do not ask `@Browser` for that; see `references/cursor-ide-browser.md`.
+2. **Pick the highest rung that passes; fail soft to the next.** The terminal rung is always manual / documented-limitation — the pass still completes.
+3. **No native driver is required or on a headless/CI path.** Neither the local Cua Driver nor Computer Use runs without a real display; most VMs/Linux/CI lack both. (Headless/CI native driving is the opt-in **Cua Sandbox** surface — see `references/cua.md`.)
+4. **Graceful degradation on the native rung (C):** *(Determine attended vs headless first — `$CI` ⇒ headless, else the empirical `cua-driver call get_screen_size` display probe; NOT `$DISPLAY` on macOS. See `references/cua.md` § "Determining headless / CI".)*
+   - **Attended (real display):** prefer **Cua Driver** (background, provider-agnostic) when present → else **Computer Use** (screen-takeover) → else **documented-limitation** (document, don't fail).
+   - **Headless / CI (no display):** the **Cua Sandbox** is the only native option (provision a hermetic VM, drive, tear down each run); local backend is the default, cua.ai cloud is explicit opt-in (bills + egress). No backend and no opted-in cloud → documented-limitation. See `references/cua.md`.
+   - A **Chromium-backed app (B)** still drives via the web-ladder CDP attach (Step 3), or by driving its local dev-server URL in a browser. Note that shell-level integration (system tray, native menus, OS dialogs) can't be reached this way — surface that limitation.
+   - A **genuinely native app (C)** with no native driver at all → document the limitation rather than fail.
+   - On macOS, the Cua Driver's **Accessibility-vs-Screen-Recording permission split** means driving can work while screenshots don't — surface "AX-only evidence, no screenshot" rather than emit an empty one (`references/cua.md`).
+5. **agent-browser stays the only assumed-present driver.** No MCP server, Cua Driver, or Computer Use is ever a hard install dependency; flowctl never imports any of them.
+
+### Done when
+
+- **Every rung above `agent-browser` that the plan relies on was probed first** (`command -v`, MCP list, `uname -s`; for `cursor-ide-browser`, an id-probe — and on an attended Cursor miss, one `@Browser` ask plus one re-probe). A pass that planned around an unprobed rung has broken this.
+- An absent driver degraded to the next rung or to a documented limitation, and the pass still reached a stated outcome rather than ending there.
+
+## Boundaries
+
+- **iOS / iPadOS app driving is out of scope — the request is declined and deferred to the community iOS simulator skills.** A pass that spun up a simulator has broken this.
+- This skill provides driver/actuation + the surface conditional. The full native-desktop QA *workflow* (scenario authoring, bug filing, verdict) is a downstream `/flow-next:qa` concern.
+- Don't reinvent what a driver already does (Playwright, Computer Use) — orchestrate, don't replace.

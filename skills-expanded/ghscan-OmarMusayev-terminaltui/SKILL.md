@@ -1,0 +1,2636 @@
+---
+name: terminaltui
+description: Framework for building TUI websites and applications. Use when a user wants to create a terminal-based website, build a TUI application, or convert an existing website to TUI. Trigger on: "TUI", "terminal website", "terminal UI", "terminal app", "npx site", "terminaltui", converting websites to terminal, building CLI/terminal interfaces.
+---
+
+# terminaltui — TUI Website & Application Framework
+
+## What It Is
+
+terminaltui is a TypeScript framework that turns any website into a fully interactive terminal (TUI) experience. Projects use Next.js-style file-based routing — a `config.ts` for global settings plus a `pages/` directory where each file is a route. The result is an interactive terminal app navigable by keyboard that can be published to npm so anyone can run it with `npx my-site`, or hosted over SSH so anyone can connect with `ssh host -p PORT`.
+
+## Quick Start
+
+```bash
+# Scaffold a new project
+npx terminaltui init [template]
+
+# Start dev preview
+npx terminaltui dev
+
+# Host over SSH (anyone connects with ssh)
+npx terminaltui serve --port 2222
+
+# Bundle for npm publish
+npx terminaltui build
+```
+
+Minimal project:
+
+```ts
+// config.ts
+import { defineConfig } from "terminaltui";
+
+export default defineConfig({
+  name: "My Site",
+  theme: "cyberpunk",
+});
+```
+
+```ts
+// pages/home.ts
+import { markdown } from "terminaltui";
+
+export const metadata = { label: "Home", icon: "◆" };
+
+export default function Home() {
+  return [markdown("Hello world!")];
+}
+```
+
+Project structure:
+
+```
+my-site/
+  config.ts          # theme, banner, global settings
+  pages/             # one file per route
+    home.ts
+  package.json       # must have "type": "module"
+  tsconfig.json
+```
+
+---
+
+## File-Based Routing
+
+terminaltui uses Next.js-style file-based routing. Each page is its own file, layouts nest automatically, and menus are auto-generated from the filesystem.
+
+### Project Structure
+
+```
+my-site/
+├── config.ts          # Theme, site name, global settings
+├── pages/
+│   ├── layout.ts      # Root layout (wraps all pages)
+│   ├── home.ts        # Home page
+│   ├── about.ts       # /about
+│   └── projects/
+│       ├── index.ts   # /projects
+│       └── [slug].ts  # /projects/:slug
+├── api/
+│   └── stats.ts       # GET /api/stats
+├── components/        # Reusable components
+└── lib/               # Shared data/helpers
+```
+
+### config.ts
+
+Uses `defineConfig()` instead of `createSite()`. Contains only global settings — no pages, no content.
+
+```ts
+import { defineConfig } from "terminaltui";
+
+export default defineConfig({
+  name: "My Site",
+  theme: "cyberpunk",
+  banner: { font: "ANSI Shadow" },
+  boot: { spinner: true },
+
+  // Optional: override auto-generated menu
+  menu: {
+    order: ["home", "projects", "about", "contact"],
+    labels: { projects: "Our Work", about: "About Us" },
+    // Items not listed are excluded from menu
+  },
+  // MenuConfig type:
+  // interface MenuConfig {
+  //   items?: Array<{ label: string; page: string; icon?: string }>;
+  //   order?: string[];
+  //   labels?: Record<string, string>;
+  //   icons?: Record<string, string>;
+  //   exclude?: string[];
+  // }
+
+  // Lifecycle hooks
+  onInit: async () => { /* ... */ },
+  onExit: () => { /* ... */ },
+  onError: (err) => { /* ... */ },
+});
+```
+
+Omit `menu` entirely to let the framework auto-generate it from `pages/`.
+
+### Page Files
+
+Every `.ts` file in `pages/` becomes a page. Default export is a function returning `ContentBlock[]`.
+
+```ts
+// pages/about.ts
+import { text, card } from "terminaltui";
+
+export default function About() {
+  return [
+    card({ title: "About Me", body: "Full-stack developer based in..." }),
+  ];
+}
+```
+
+**Metadata export** — optional, controls menu label, order, transition, visibility:
+
+```ts
+// pages/projects/index.ts
+import { card, row, col } from "terminaltui";
+
+export const metadata = {
+  label: "Projects",      // Menu label (default: filename titlecased)
+  order: 2,               // Menu sort order (default: alphabetical)
+  transition: "slide",    // Page transition
+  icon: "code",           // Menu icon
+  hidden: false,          // If true, excluded from auto-generated menu
+};
+
+export default function Projects() {
+  return [
+    row([
+      col([card({ title: "Project A" })], { span: 6 }),
+      col([card({ title: "Project B" })], { span: 6 }),
+    ]),
+  ];
+}
+```
+
+**Async pages** — for data fetching:
+
+```ts
+// pages/dashboard/index.ts
+import { card, row, col, text } from "terminaltui";
+
+export default async function Dashboard() {
+  const stats = await fetch("/api/stats").then(r => r.json());
+  return [
+    row([
+      col([card({ title: "Revenue", content: [text(stats.revenue)] })], { span: 6 }),
+      col([card({ title: "Users", content: [text(String(stats.users))] })], { span: 6 }),
+    ]),
+  ];
+}
+```
+
+**Dynamic routes** — `[param]` in filename, params passed to function:
+
+```ts
+// pages/projects/[slug].ts
+import { card, text, badge } from "terminaltui";
+
+export const metadata = { hidden: true }; // Dynamic routes excluded from menu
+
+export default async function ProjectDetail({ params }: { params: { slug: string } }) {
+  const project = await fetch(`/api/projects/${params.slug}`).then(r => r.json());
+  return [
+    card({ title: project.name, content: [badge({ text: project.status }), text(project.description)] }),
+  ];
+}
+```
+
+### Page Visibility
+
+Control which pages appear in the menu:
+
+- `metadata.hidden = true` — page exists and is navigable but excluded from auto-generated menu
+- Pages without `hidden: true` appear in the menu by default
+- Dynamic route pages (`[slug].ts`) should always be `hidden: true`
+- In `defineConfig({ menu })`:
+  - `menu.order: ["home", "about"]` — reorder the menu by page name
+  - `menu.exclude: ["secret"]` — explicitly hide specific pages
+  - `menu.items: [{ id, label, icon }]` — fully manual menu (overrides auto-generation)
+
+### Layout Files
+
+A `layout.ts` in any directory wraps all sibling and descendant pages. Receives `children` (the rendered page content).
+
+```ts
+// pages/layout.ts — Root layout, wraps everything
+import { columns, panel, menu } from "terminaltui";
+import type { ContentBlock } from "terminaltui";
+
+export default function RootLayout({ children }: { children: ContentBlock[] }) {
+  return [
+    columns([
+      panel({ width: "25%", content: [menu({ source: "auto" })] }),
+      panel({ width: "75%", content: children }),
+    ]),
+  ];
+}
+```
+
+```ts
+// pages/dashboard/layout.ts — wraps /dashboard/* pages only
+import { columns, panel, menu, text } from "terminaltui";
+import type { ContentBlock } from "terminaltui";
+
+export default function DashboardLayout({ children }: { children: ContentBlock[] }) {
+  return [
+    text("Dashboard"),
+    columns([
+      panel({ width: "20%", content: [menu({ items: [
+        { label: "Overview", page: "dashboard" },
+        { label: "Analytics", page: "dashboard/analytics" },
+        { label: "Settings", page: "dashboard/settings" },
+      ]})] }),
+      panel({ width: "80%", content: children }),
+    ]),
+  ];
+}
+```
+
+**Nesting:** Layouts compose from outside in. For `/dashboard/analytics`:
+`RootLayout` -> `DashboardLayout` -> `AnalyticsPage`
+
+If no `layout.ts` exists at a level, pages use the nearest parent layout.
+
+### API Routes
+
+Export named functions matching HTTP methods. File path maps to endpoint.
+
+```ts
+// api/stats.ts → GET /api/stats
+export async function GET() {
+  return { revenue: "$1.2M", users: 45231 };
+}
+```
+
+```ts
+// api/contact.ts → POST /api/contact
+export async function POST(request: { body: any }) {
+  const { name, email, message } = request.body;
+  return { success: true };
+}
+```
+
+```ts
+// api/projects/[id].ts → /api/projects/:id
+export async function GET({ params }: { params: { id: string } }) {
+  return projects.find(p => p.id === params.id) ?? { error: "Not found" };
+}
+
+export async function DELETE({ params }: { params: { id: string } }) {
+  return { success: true };
+}
+```
+
+Route mapping: `api/stats.ts` -> `/api/stats`, `api/projects/[id].ts` -> `/api/projects/:id`.
+
+### Auto-Generated Menu
+
+When `config.ts` omits `menu`, the framework scans `pages/` and builds the menu automatically.
+
+**Rules:**
+- Every `.ts` file directly in `pages/` becomes a top-level menu item
+- Directories with `index.ts` become a top-level menu item (name from directory)
+- Sub-pages inside directories (other than `index.ts`) are NOT in the top menu
+- `home.ts` is always first
+- `layout.ts` files are never menu items
+- `metadata.hidden = true` pages are excluded
+- Dynamic route files (`[param].ts`) are excluded
+
+**Ordering:** `metadata.order` (lowest first), then alphabetical for unordered items.
+
+**Labels:** `metadata.label` > `metadata.icon` + titlecased filename > titlecased filename (`about.ts` -> "About", `our-team.ts` -> "Our Team").
+
+**Manual override in config.ts:**
+
+```ts
+export default defineConfig({
+  name: "My Site",
+  menu: {
+    items: [
+      { label: "Home", page: "home", icon: "terminal" },
+      { label: "Work", page: "projects" },
+      { label: "About Me", page: "about" },
+    ],
+  },
+});
+```
+
+### menu() Component
+
+Use `menu({ source: "auto" })` in any page or layout to render the auto-generated menu:
+
+```ts
+import { hero, menu } from "terminaltui";
+
+export default function Home() {
+  return [
+    hero({ title: "My Site", subtitle: "Welcome" }),
+    menu({ source: "auto" }), // Resolved at render time from pages/
+  ];
+}
+```
+
+**Important:** The framework renders the navigation menu automatically on the home screen. Do NOT add `menu({ source: 'auto' })` to your `home.ts` -- it creates a duplicate menu.
+
+If `home.ts` doesn't exist, the framework auto-generates a home page with `hero()` + `menu({ source: "auto" })`.
+
+---
+
+## Focus & Scroll Model — CRITICAL FOR GOOD UX
+
+TUI navigation is fundamentally **up/down arrow keys** moving a focus cursor between items. The viewport scrolls to follow the focused item. Understanding which components are focusable is essential for building good TUI experiences.
+
+**Default layout philosophy:** Use vertical scrolling with flat card layouts. Use `divider("Label")` to visually separate sections rather than nesting them inside containers like `tabs()`.
+
+### Focusability per Component
+
+| Component | Focusable? | Behavior |
+|-----------|-----------|----------|
+| `card()` | **Yes** — individually | Each card is a separate focus target. Best for browsable lists. |
+| `link()` | **Yes** — individually | Opens URL on Enter. |
+| `hero()` | **Yes** — individually | Opens CTA URL on Enter (if `cta` set). |
+| `accordion()` | **Yes** — per item | Each accordion item is separately focusable. Enter toggles open/close. |
+| `tabs()` | **Yes** — as one block | Enter cycles through tabs. Not ideal for many sections. |
+| `textInput()` | **Yes** — individually | Enter starts editing, Escape exits. |
+| `textArea()` | **Yes** — individually | Same as textInput but multi-line. |
+| `select()` | **Yes** — individually | Enter opens dropdown, arrow keys pick option. |
+| `checkbox()` | **Yes** — individually | Enter/Space toggles. |
+| `toggle()` | **Yes** — individually | Enter/Space toggles. |
+| `radioGroup()` | **Yes** — individually | Enter starts selection, arrows move between options. |
+| `numberInput()` | **Yes** — individually | Left/Right changes value. |
+| `searchInput()` | **Yes** — individually | Type to filter, arrows to pick result, Enter to select. |
+| `chat()` | **Yes** — individually | Enter starts typing, sends message on Enter, Escape exits. |
+| `button()` | **Yes** — individually | Enter triggers action. |
+| `timeline()` | **Yes** — per item | Each timeline item is focusable but display-only (no action on Enter). |
+| `markdown()` | No | Passive text. Not focusable. |
+| `table()` | No | Passive data display. Not focusable. |
+| `list()` | No | Passive list. Items not individually focusable. |
+| `quote()` | No | Passive text. Not focusable. |
+| `progressBar()` / `skillBar()` | No | Passive display. |
+| `badge()` | No | Inline label. Not focusable. |
+| `divider()` | No | Visual separator. Not focusable. |
+| `spacer()` | No | Vertical spacing. Not focusable. |
+| `image()` | No — unless `resizable` | Passive display by default. `image(path, { resizable: true })` takes one focus slot; `+`/`-` resize the frame, `0` resets. |
+| `video()` | No — unless `controls` | Passive poster by default. `video(path, { controls: true })` takes one focus slot; Space plays/pauses and Left/Right seek. |
+| `section()` | No — wrapper | Children inherit their own focusability. |
+| `form()` | No — wrapper | Children (inputs, buttons) are individually focusable. |
+| `dynamic()` | No — wrapper | Children inherit their own focusability. |
+| `columns()` | No — layout | Left/Right + Tab switch panels. Up/Down navigates items. Enter activates. Escape = back. |
+| `rows()` | No — layout | Left/Right + Tab switch panels. Up/Down navigates items. Enter activates. Escape = back. |
+| `grid()` | No — layout | Left/Right + Tab switch panels. Up/Down navigates items. Enter activates. Escape = back. |
+| `panel()` | No — wrapper | Used inside layout components. Children inherit focusability. |
+
+### TUI UX Patterns — What to Use When
+
+| UX Need | Use | Avoid |
+|---------|-----|-------|
+| Scrollable list of items | Flat `card()` blocks | `timeline()`, `list()` |
+| Sectioned long page | `divider("Label")` + cards below | `tabs()` (forces horizontal switching) |
+| Toggle between views of same data | `tabs()` | n/a |
+| Dense reference data | `table()` | Many cards for tabular data |
+| Expandable FAQ / details | `accordion()` | Long `markdown()` blocks |
+| Work history / education | Individual `card()` blocks with period as subtitle | `timeline()` (items aren't actionable) |
+| Skills / tech stack | `skillBar()` or `list()` (passive reference) | Cards (overkill for simple data) |
+| Dashboard with sidebar | `columns()` — sidebar panel + main panel | Flat layout (loses spatial structure) |
+| Monitoring grid | `grid()` with metric panels | Single-column cards (wastes space) |
+| Split editor/preview | `columns([panel({…}), panel({…})])` | Tabs (can't see both at once) |
+| Log viewer + controls | `rows()` — controls on top, logs below | Interleaved cards |
+
+### Bad → Good Patterns
+
+```ts
+// BAD: tabs for resume sections + timeline for entries
+// timeline is one block, tabs force left/right switching
+tabs([
+  { label: "Experience", content: [timeline([
+    { title: "Engineer", subtitle: "Acme", period: "2023–now" }
+  ])] },
+  { label: "Education", content: [timeline([...])] },
+])
+
+// GOOD: flat cards with divider sections — everything scrolls vertically
+divider("Experience"),
+card({ title: "Senior Engineer", subtitle: "Acme Corp — 2023–present", body: "Leading platform team..." }),
+card({ title: "Junior Dev", subtitle: "Startup — 2021–2023", body: "Built core features..." }),
+divider("Education"),
+card({ title: "BS Computer Science", subtitle: "State University — 2021" }),
+// Each card is focusable, everything scrolls naturally with ↑↓
+```
+
+**When to use `timeline()`:** Only when you want a visual connected-dot timeline aesthetic AND the items are passive (no action needed on Enter). For anything users need to browse, navigate, or interact with, use `card()` blocks instead.
+
+**When to use `tabs()`:** Only for mutually exclusive views of the same data (e.g., "Grid view" vs "List view"). NOT for organizing sequential sections of a page — use `divider("Label")` for that. If two views should be visible simultaneously (e.g., Day 1 and Day 2 of a conference schedule), use `columns([panel({…}), panel({…})])` instead.
+
+### Layout Mapping Guide
+
+| Site Pattern | Layout | Example |
+|---|---|---|
+| Dashboard with sidebar navigation | `columns()` — narrow first panel (20-25%), wide main panel | Server dashboard |
+| Dashboard with multiple data views | `columns()` + nested `grid()` | System monitor with CPU/Memory/Disk metrics |
+| Pricing comparison (2-4 tiers) | `columns()` — one panel per tier | SaaS pricing page |
+| Side-by-side content (text + skills) | `columns([panel({…}), panel({…})])` | Portfolio about page |
+| Day 1 / Day 2 schedule | `columns([panel({…}), panel({…})])` | Conference schedule |
+| Food menu (categories) | `columns([panel({…}), panel({…})])` — dishes left, drinks right | Restaurant menu |
+| Hours + location info | `columns()` — hours table left, address right | Restaurant/shop hours |
+| Project/portfolio cards | `grid({ cols: 2 })` — cards in a grid | Freelancer work page |
+| Feature cards | `grid({ cols: 2 })` | SaaS features page |
+| Speaker/team bios | `grid({ cols: 2 })` | Conference speakers |
+| Sponsor logos by tier | `grid({ cols: 3 })` per tier | Conference sponsors |
+| Log viewer | `columns()` — service list left, log stream right | Server logs |
+| Container table + details | `rows([panel({…}), panel({…})])` — table top, details bottom | Container management |
+| Precise multi-column layout | `row()` + `col()` — 12-column grid system | Complex dashboards |
+| Responsive card grid | `row()` with `xs:12, sm:6, lg:4` — cards reflow by terminal width | Portfolio, features |
+| Centered narrow content | `container({ maxWidth: 80 })` — centered with max width | Blog posts, forms |
+
+### 12-Column Grid System
+
+`row()`, `col()`, and `container()` provide a Bootstrap-style 12-column grid for precise layouts.
+
+```ts
+import { row, col, container } from "terminaltui";
+
+// Basic: 2 equal columns (span:6 each = 50%)
+row([
+  col([card({ title: "Left" })], { span: 6 }),
+  col([card({ title: "Right" })], { span: 6 }),
+])
+
+// 3-column layout: sidebar + main + aside
+row([
+  col([menu], { span: 3 }),         // 25%
+  col([mainContent], { span: 6 }),   // 50%
+  col([aside], { span: 3 }),         // 25%
+])
+
+// Responsive — cards reflow based on terminal width
+row([
+  col([card1], { span: 4, sm: 6, xs: 12 }),  // 33% wide, 50% medium, full narrow
+  col([card2], { span: 4, sm: 6, xs: 12 }),
+  col([card3], { span: 4, sm: 12, xs: 12 }),
+], { gap: 1 })
+
+// Container — centers content with max width
+container([
+  row([
+    col([hero(...)], { span: 12 }),    // full width
+  ]),
+  row([
+    col([sidebar], { span: 3 }),
+    col([content], { span: 9 }),
+  ]),
+], { maxWidth: 100, padding: 2 })
+```
+
+**ColConfig options:** `span` (1-12), `offset` (0-11), `xs`/`sm`/`md`/`lg` (responsive spans), `padding`.
+**RowConfig options:** `gap` (between cols, default: 1).
+**ContainerConfig options:** `maxWidth`, `padding`, `center` (default: true).
+
+**Responsive breakpoints:** xs (<60 cols), sm (60-89), md (90-119), lg (>=120).
+
+Spatial navigation works automatically — arrow keys move between col content based on screen position.
+
+---
+
+## Full API Reference
+
+Every function below is imported from `"terminaltui"`.
+
+### defineConfig(config): FileBasedConfig
+
+Top-level project config. Default-export from `config.ts`.
+
+```ts
+interface FileBasedConfig {
+  name: string;                                   // Required. Site name
+  handle?: string;                                // Handle shown on home (e.g. "@user")
+  tagline?: string;                               // Subtitle below the banner
+  banner?: BannerConfig;                          // ASCII art banner (use ascii() helper)
+  theme?: Theme | BuiltinThemeName;               // Theme object or name. Default: "dracula"
+  borders?: BorderStyle;                          // Border style for cards/tables. Default: "rounded"
+  animations?: AnimationConfig;                   // Boot animation + exit message
+  navigation?: NavigationConfig;                  // Navigation behavior options
+  middleware?: MiddlewareFn[];                    // Global middleware chain
+  easterEggs?: EasterEggConfig;                   // Konami code and custom commands
+  footer?: string | ContentBlock;                 // Footer content
+  statusBar?: boolean | StatusBarConfig;          // Status bar configuration
+  menu?: MenuConfig;                              // Auto-menu overrides
+  serve?: ServeConfig;                            // SSH hosting config (see Hosting section)
+  env?: Record<string, unknown>;                  // Env defaults
+  artDir?: string | false;                        // Custom art directory path
+
+  // Lifecycle hooks
+  onInit?: (app: AppContext) => Promise<void> | void;
+  onExit?: (app: AppContext) => Promise<void> | void;
+  onNavigate?: (from: string, to: string, params?: RouteParams) => void;
+  onError?: (error: Error, context: ErrorContext) => ContentBlock[] | void;
+}
+```
+
+```ts
+// config.ts
+export default defineConfig({
+  name: "My Site",
+  handle: "@me",
+  tagline: "a cool terminal site",
+  banner: ascii("My Site", { font: "ANSI Shadow", gradient: ["#ff6b6b", "#4ecdc4"] }),
+  theme: "dracula",
+  borders: "rounded",
+  animations: { boot: true, exitMessage: "Goodbye!", speed: "normal" },
+  middleware: [requireEnv(["API_KEY"])],
+  onInit: async (app) => { /* setup */ },
+  onError: (err, ctx) => [markdown(`Error: ${err.message}`)],
+});
+```
+
+### Page files
+
+A page is any `.ts` file under `pages/`. Default-export a function returning content blocks; optionally export `metadata`.
+
+```ts
+// pages/about.ts
+import { markdown, card } from "terminaltui";
+
+export const metadata = {
+  label: "About Me",            // menu label (default: title-cased filename)
+  icon: "◆",                    // single char shown before label
+  order: 2,                     // sort order in menu (lower first)
+  hidden: false,                // hide from auto-menu (page still routable)
+  middleware: [/* ... */],      // page-level middleware chain
+};
+
+export default function About() {
+  return [markdown("Hello!"), card({ title: "Hi", body: "..." })];
+}
+```
+
+Common icons: `"◆"` `"◈"` `"▣"` `"▤"` `"◉"` `"▸"` `"✦"` `"★"` `"●"` `"■"` `"▲"` `"♦"`
+
+### Dynamic routes — `pages/[param].ts`
+
+A bracketed filename creates a dynamic route. Params come in via the function arg:
+
+```ts
+// pages/projects/[slug].ts
+export const metadata = { hidden: true };
+
+export default async function Project({ params }: { params: { slug: string } }) {
+  const data = await fetchProject(params.slug);
+  return [card({ title: data.name, body: data.description })];
+}
+```
+
+### navigate(pageId: string, params?: RouteParams): void
+
+Programmatic navigation from anywhere (event handlers, middleware, etc.).
+
+```ts
+navigate("home");
+navigate("projects/[slug]", { slug: "my-app" });
+```
+
+---
+
+### Content Blocks
+
+#### markdown(text: string): TextBlock
+
+Renders text with markdown formatting (bold, italic, inline code, code blocks).
+
+```ts
+markdown("This is **bold** and *italic* with `code`.")
+```
+
+#### card(config): CardBlock
+
+A bordered card with title, optional subtitle, body, tags, URL, and action.
+
+```ts
+interface CardBlock {
+  title: string;          // Card heading
+  subtitle?: string;      // Secondary text (price, date, star count)
+  body?: string;          // Body text
+  tags?: string[];        // Tags shown as badges
+  url?: string;           // URL opened on Enter
+  border?: BorderStyle;   // Override border style
+  action?: CardAction;    // Action on select (navigate, onPress, etc.)
+}
+
+interface CardAction {
+  label?: string;
+  style?: "primary" | "secondary" | "danger";
+  confirm?: string;                         // Confirmation prompt text
+  onPress?: () => void | Promise<void>;
+  navigate?: string;                        // Navigate to a page/route
+  params?: RouteParams;                     // Route parameters
+}
+```
+
+```ts
+card({
+  title: "My Project",
+  subtitle: "★ 200",
+  body: "A brief description.",
+  tags: ["TypeScript", "Open Source"],
+  url: "https://github.com/user/repo",
+  action: { navigate: "project", params: { name: "my-project" } },
+})
+```
+
+**List-to-Detail navigation pattern:** Use `action.navigate` on cards to link to detail pages. Mark detail pages as hidden so they don't appear in the menu.
+
+```ts
+// List page (pages/blog.ts)
+export default function Blog() {
+  return [
+    card({ title: "First Post", action: { navigate: "blog-1" } }),
+    card({ title: "Second Post", action: { navigate: "blog-2" } }),
+  ];
+}
+
+// Detail page (pages/blog-1.ts)
+export const metadata = { hidden: true };
+
+export default function BlogPost1() {
+  return [card({ title: "First Post", body: "Full content here..." })];
+}
+```
+
+#### timeline(items: TimelineItem[]): TimelineBlock
+
+Vertical timeline with connected entries. Great for work history, changelog, education.
+
+```ts
+interface TimelineItem {
+  title: string;       // Entry heading
+  subtitle?: string;   // Organization/company
+  period?: string;     // Time range
+  description?: string; // Details
+}
+```
+
+```ts
+timeline([
+  { title: "Senior Engineer", subtitle: "Acme Corp", period: "2023 — present", description: "Leading platform team" },
+  { title: "BS Computer Science", subtitle: "University", period: "2017 — 2021" },
+])
+```
+
+#### table(headers: string[], rows: string[][]): TableBlock
+
+A bordered data table.
+
+```ts
+table(
+  ["Plan", "Price", "Features"],
+  [
+    ["Free", "$0/mo", "Basic features"],
+    ["Pro", "$10/mo", "Everything + priority support"],
+  ]
+)
+```
+
+#### list(items: string[], style?): ListBlock
+
+A styled list. Style: `"bullet"` (default) | `"number"` | `"dash"` | `"check"` | `"arrow"`.
+
+```ts
+list(["First item", "Second item", "Third item"], "check")
+```
+
+#### quote(text: string, attribution?: string): QuoteBlock
+
+Block quote with optional attribution.
+
+```ts
+quote("The best way to predict the future is to invent it.", "— Alan Kay")
+```
+
+#### hero(config): HeroBlock
+
+Large hero section with title, subtitle, CTA, and optional ASCII art.
+
+```ts
+interface HeroBlock {
+  title: string;                              // Large heading
+  subtitle?: string;                          // Description
+  cta?: { label: string; url: string };       // Call-to-action link
+  art?: string;                               // Custom ASCII art string
+}
+```
+
+```ts
+hero({ title: "Welcome", subtitle: "Build terminal apps.", cta: { label: "Get Started →", url: "https://..." } })
+```
+
+#### gallery(items): GalleryBlock
+
+Grid of cards. Items use the same shape as `card()` (without `type`).
+
+```ts
+gallery([
+  { title: "Photo 1", body: "Description", tags: ["nature"] },
+  { title: "Photo 2", body: "Description", tags: ["urban"] },
+])
+```
+
+#### tabs(items): TabsBlock
+
+Tabbed content. Each tab has a label and nested content blocks.
+
+```ts
+tabs([
+  { label: "Frontend", content: [list(["React", "Vue", "Svelte"], "check")] },
+  { label: "Backend", content: [list(["Node.js", "Python", "Go"], "check")] },
+])
+```
+
+#### accordion(items): AccordionBlock
+
+Collapsible sections. Same shape as tabs. Great for FAQs.
+
+```ts
+accordion([
+  { label: "What is terminaltui?", content: [markdown("A framework for building terminal websites.")] },
+  { label: "How do I deploy?", content: [markdown("Run `terminaltui build` then `npm publish`.")] },
+])
+```
+
+#### link(label: string, url: string, options?: LinkOptions): LinkBlock
+
+A clickable link. Opens in the user's browser when selected.
+
+```ts
+interface LinkOptions {
+  icon?: string;   // Icon character before the label
+}
+```
+
+```ts
+link("GitHub", "https://github.com/user")
+link("Email", "mailto:hello@example.com", { icon: "✉" })
+```
+
+#### progressBar(label: string, value: number, max?: number): ProgressBarBlock
+
+Generic progress bar. Max defaults to 100. Always shows percent.
+
+```ts
+progressBar("Project Alpha", 7, 10)
+progressBar("Completion", 65)
+```
+
+#### skillBar(label: string, value: number): ProgressBarBlock
+
+Shorthand for `progressBar(label, value, 100)` with `showPercent: true`.
+
+```ts
+skillBar("TypeScript", 90)
+skillBar("Rust", 75)
+```
+
+#### badge(text: string, color?: string): BadgeBlock
+
+An inline badge/tag. Color is a hex string.
+
+```ts
+badge("v2.0")
+badge("NEW", "#50fa7b")
+```
+
+#### image(path: string, options?): ImageBlock
+
+Renders a real PNG or JPEG. No `sharp` and no native dependency — decoding is `pngjs`/`jpeg-js`, bundled. On most terminals the output is colored cells (styled text, so it works on Apple Terminal, over SSH, in tmux, and in the test emulator); on kitty and Ghostty the framework transmits real pixels automatically. Not focusable unless `resizable: true`.
+
+```ts
+image("./logo.png")                                        // fills available width
+image("./photo.jpg", { width: 60, maxHeight: 20, alt: "Cover art" })
+image("./plot.png", { mode: "braille", width: 60 })        // line art
+image("./hero.png", { width: 40, fit: "cover", border: true })
+image("./nebula.jpg", { width: 40, resizable: true })      // viewer can grow/shrink it
+image("./poster.jpg", { fitPage: true, border: true })     // sizes itself to the page
+```
+
+```ts
+interface ImageOptions {
+  width?: number;          // Cells. Default: fill available width. Max 99
+  height?: number;         // Rows. A ceiling under fit:"contain"
+  maxHeight?: number;      // Cap on derived rows. Default: panel height, else 200
+  fit?: "contain" | "cover" | "fill";                    // Default "contain"
+  align?: "left" | "center" | "right";                   // Default "center"
+  mode?: "auto" | "quadrant" | "half" | "solid"
+       | "shading" | "ascii" | "braille" | "alt";        // Default "auto"
+  dither?: "auto" | "ordered" | "floyd-steinberg" | "none";  // Default "auto"
+  alt?: string;            // Shown in a bordered box on any failure
+  background?: string;     // Hex composited under alpha. Default: theme bg
+  invert?: boolean;
+  charset?: string;        // Ramp for the "ascii" / "shading" tiers
+  border?: boolean | BorderStyle; // Themed border. Adds 2 cols + 2 rows. Default false
+  resizable?: boolean;     // Viewer can resize the frame. Makes the block FOCUSABLE
+                           // and adds 1 hint row. Default false
+  fitPage?: boolean;       // Size to the rows the PAGE has left, not to a hand-picked
+                           // width. Default false. Confers no focus slot
+}
+```
+
+Rules that matter when generating code:
+
+- **Paths are relative to the project root** (the directory containing `pages/`), not the working directory. Absolute paths, `~/`, `file:` URLs and `data:` URIs also work.
+- **PNG, JPEG and GIF.** A still `image()` uses the first GIF frame; use `video()` to animate it. WebP, BMP and `http(s)` URLs render a bordered alt box at exactly the size the image would have taken. Nothing throws and nothing shifts.
+- `mode: "auto"` negotiates from the viewer's terminal: real pixels on kitty/Ghostty, otherwise 2x2 quadrant cells at 256/truecolor, half blocks under tmux, a shading ramp at 16 colors, ASCII when color is off. **Pinning any `mode` also disables the pixel path** — do it only for snapshot tests or when you specifically want `"braille"` (line art, plots — never photographs). There is no `mode: "kitty"`; pixels are negotiated, never authored.
+- `fit: "contain"` (the default) **never letterboxes** — it shrinks the block instead. Use `fit: "fill"` or `"cover"` if an exact `width` x `height` box matters.
+- `dither: "floyd-steinberg"` looks better but re-emits every row on any scroll; use it only for static art. It is a cell-path option and is ignored on kitty/Ghostty.
+- `resizable: true` costs a focus slot and one hint row, and the block answers `+`/`=` (grow 4 cells), `-`/`_` (shrink), `0` (reset). Use it for a hero photograph the viewer may want bigger — the engine samples per cell, so a larger frame is a fresh resample with genuinely more detail, not a magnification. Do **not** sprinkle it across a page: every resizable image inserts a focus stop in the arrow-key order.
+- `fitPage: true` is the answer to "what `width` makes this fit?" — the page composes every other block, then grants this image the rows that are left, and geometry derives the columns from the source aspect. Re-derived every frame, so it re-fits on resize. `width` still applies as a ceiling, so `{ fitPage: true, border: true }` is the usual form. It confers **no** focus slot. A fitted picture is composed against the **whole terminal**, not the 100-column content column — that column is a measure for prose, and capping a picture's width caps its height too (`contain` derives rows from columns), which is what left a quarter of a tall window black. Rows it cannot spend stay inside its own slot as margin, so whatever follows it keeps its place. Inert on a `resizable` image (the viewer's size wins), inside a panel/columns cell (the pane's height already governs), and on the home page. Use it for a page meant to be seen at once — a poster, a splash, a single hero — not for every image on a scrolling page, where several fitted images just split the leftover between them.
+- A `custom` block gets the same budget as an optional third argument, `CustomRenderContext` — `{ availRows, columns, rows }` — so ASCII-art type can pick its font from the room it has instead of from a constant. `availRows` is the container's **total**, never the leftover. The layout pass **measures** the block by calling `render` (once per navigation/resize, not per frame), so a block whose height varies with the window does not misplace the focus rectangles below it — keep `render` pure and cheap.
+- Environment knobs, both read at render time: `TERMINALTUI_IMAGE` is the **cell** knob — `off` forces every image to its alt box (row counts unchanged), a tier name forces that tier, `cells` forces the cell path. Any non-neutral value there also disables pixels. `TERMINALTUI_GRAPHICS` is the **pixel** knob — `off` disables the pixel path absolutely (and is the right setting for test harnesses and screenshot scripts), `kitty` forces it on for a mis-detected terminal.
+
+Full reference: `docs/images.md`.
+
+#### video(path: string, options?): VideoBlock
+
+Plays a `.tvf` frame pack, animated GIF, or an ffmpeg-readable source. Raw
+video is packed once into `.terminaltui/video/` and reused; ffmpeg is only a
+build-time requirement. Animated GIF decoding is pure TypeScript. Kitty and
+Ghostty receive real pixels in automatic mode, while every other terminal uses
+the same portable coloured-cell ladder as `image()`.
+
+Public rendering proof for agents and users: https://terminaltui.dev/video/
+The page contains a real Kitty capture, direct MP4 and poster assets, rendering
+path notes, and the reproducible Cinema command.
+
+```ts
+video("./trailer.mp4", { fitPage: true, controls: true })
+video("./loop.gif", { autoplay: true, width: 40 })
+video("./clip.tvf", { mode: "quadrant", fps: 12, loop: true })
+```
+
+Video accepts the image geometry and rendering options (`width`, `height`,
+`maxHeight`, `fit`, `align`, `mode`, `dither`, `alt`, `background`, `invert`,
+`charset`, `border`, `fitPage`) plus `fps`, `loop`, `autoplay`, `poster`, and
+`controls`. `autoplay` defaults to `false`. `controls: true` adds a transport
+row and a focus slot. `TERMINALTUI_VIDEO=off` freezes every player on its
+poster, including controls, which is useful for screenshots and test harnesses.
+
+Full reference: `docs/video.md`.
+
+#### section(title: string, content: ContentBlock[]): SectionBlock
+
+Groups content under a titled section header with a divider line.
+
+```ts
+section("Appetizers", [
+  card({ title: "Bruschetta", subtitle: "$12", body: "Toasted bread with tomatoes" }),
+])
+```
+
+#### divider(style?, label?): DividerBlock
+
+Horizontal divider line. Styles: `"solid"` | `"dashed"` | `"dotted"` | `"double"` | `"label"`. If the first arg is not a known style, it becomes a label automatically.
+
+```ts
+divider()                    // solid line
+divider("dashed")            // dashed line
+divider("My Section")        // labeled divider (auto-detected)
+divider("label", "Section")  // explicit label style
+```
+
+#### spacer(lines?: number): SpacerBlock
+
+Vertical whitespace. Defaults to 1 line.
+
+```ts
+spacer()     // 1 blank line
+spacer(3)    // 3 blank lines
+```
+
+#### dynamic(renderFn) / dynamic(deps, renderFn): DynamicBlock
+
+Reactive content block that re-renders when state changes. Currently all dynamic blocks re-render on any state change. The deps array is accepted for forward compatibility.
+
+```ts
+// Re-renders on any state change
+dynamic(() => markdown(`Count: ${state.get("count")}`))
+
+// Deps accepted for forward compatibility (currently re-renders on any change)
+dynamic(["count"], () => markdown(`Count: ${state.get("count")}`))
+```
+
+#### asyncContent(config): AsyncContentBlock
+
+Lazily-loaded async content.
+
+```ts
+asyncContent({
+  load: async () => {
+    const data = await fetchData();
+    return [card({ title: data.name, body: data.description })];
+  },
+  loading: "Loading data...",
+  fallback: [markdown("Failed to load.")],
+})
+```
+
+---
+
+### Box Model
+
+Every component uses a unified box model via `computeBoxDimensions()` from `src/layout/box-model.ts`. One function, one contract, one source of truth for width calculations.
+
+```
++---------------- allocated width -----------------+
+| margin                                           |
+|  +------------ outer width -----------------+   |
+|  | border                                    |   |
+|  |  +-------- inner width ---------------+   |   |
+|  |  | padding                            |   |   |
+|  |  |  +---- content width -----------+  |   |   |
+|  |  |  |                              |  |   |   |
+|  |  |  |  Text wraps here.            |  |   |   |
+|  |  |  |  Children render here.       |  |   |   |
+|  |  |  |                              |  |   |   |
+|  |  |  +------------------------------+  |   |   |
+|  |  +------------------------------------+   |   |
+|  +-------------------------------------------+  |
++--------------------------------------------------+
+
+content = allocated - (margin * 2) - (border * 2) - (padding * 2)
+```
+
+**Width cascade:**
+```
+Terminal width (e.g. 120 cols)
+  -> createRenderContext(): ctx.width = Math.min(terminalWidth, 100)
+    -> renderContentPage(): blockWidth = ctx.width - 1 (focus prefix)
+      -> Component gets blockWidth as ctx.width
+        -> dims = computeBoxDimensions(ctx.width, COMPONENT_DEFAULTS.componentType)
+          -> Text wraps at dims.content
+          -> Child blocks receive dims.content as their width
+```
+
+**API:**
+```ts
+import { computeBoxDimensions, COMPONENT_DEFAULTS } from "terminaltui";
+import type { BoxDimensions, BoxOptions } from "terminaltui";
+
+const dims = computeBoxDimensions(80, { border: true, padding: 1 });
+// dims.content = 76 (80 - 2 border - 2 padding)
+
+// Using component defaults
+const cardDims = computeBoxDimensions(80, COMPONENT_DEFAULTS.card);
+// cardDims.content = 76
+
+// Override per-instance
+const widePad = computeBoxDimensions(80, { ...COMPONENT_DEFAULTS.card, padding: 2 });
+// widePad.content = 74
+```
+
+**Defaults quick reference:**
+
+| Component    | Border | Padding | Margin | Chrome | Content at w=80 |
+|-------------|--------|---------|--------|--------|-----------------|
+| card         | 1      | 1       | 0      | 4      | 76              |
+| text         | 0      | 0       | 0      | 0      | 80              |
+| hero         | 0      | 0       | 0      | 0      | 80              |
+| table        | 1      | 0       | 0      | 2      | 78              |
+| quote        | 1      | 1       | 1      | 6      | 74              |
+| timeline     | 1      | 1       | 1      | 6      | 74              |
+| accordion    | 0      | 2       | 0      | 4      | 76              |
+| tabs         | 0      | 2       | 0      | 4      | 76              |
+| textInput    | 1      | 1       | 0      | 4      | 76              |
+| select       | 1      | 1       | 0      | 4      | 76              |
+| button       | 1      | 2       | 1      | 8      | 72              |
+| badge        | 0      | 0       | 0      | 0      | 80              |
+| progressBar  | 0      | 0       | 0      | 0      | 80              |
+| divider      | 0      | 0       | 0      | 0      | 80              |
+| image        | 1      | 0       | 0      | 2      | 78              |
+
+**Rules:**
+- Every component calls `computeBoxDimensions()`, with one exception: `image` sizes itself through `imageCellSize()` (see `docs/images.md`) because its row count is a function of the source file's aspect ratio, and its border is opt-in via `border`. `COMPONENT_DEFAULTS.image` is no longer consulted for image blocks.
+- Layout components (columns, rows, grid, panel, row, col, container) divide width among children — they do NOT call `computeBoxDimensions()` for themselves.
+- Text always wraps at `dims.content`.
+- Child blocks receive `dims.content` as their allocated width.
+- No manual `ctx.width - N` in component files. All chrome subtraction goes through the box model.
+
+---
+
+### Layout Components
+
+Layout components divide the terminal into panels — side-by-side, stacked, or in grids. Each panel is an independent area with its own content. Panels can have borders, titles, and content clipping.
+
+**Navigation**: Tab/Shift+Tab switches between panels. Arrow keys navigate within the active panel. The active panel gets an accent-colored border.
+
+**Responsive**: If the terminal is too narrow for side-by-side panels (<20 chars per panel), columns automatically collapse to vertical stacking.
+
+#### columns(panels: PanelConfig[]): ColumnsBlock
+
+Side-by-side panels. Each panel gets a `width` (percentage, fixed chars, or auto).
+
+```ts
+columns([
+  panel({ width: "60%", content: [
+    table(["Name", "Status"], [["nginx", "running"], ["postgres", "running"]]),
+  ]}),
+  panel({ width: "40%", content: [
+    markdown("## Stats"),
+    progressBar("CPU", 45),
+    progressBar("Memory", 72),
+  ]}),
+])
+```
+
+#### rows(panels: PanelConfig[]): RowsBlock
+
+Vertically stacked panels with fixed/flex heights.
+
+```ts
+rows([
+  panel({ height: "30%", content: [
+    markdown("## Active Containers"),
+    table(["Name", "Status"], [["nginx", "up"], ["postgres", "up"]]),
+  ]}),
+  panel({ height: "70%", content: [
+    markdown("## Logs"),
+    markdown("12:00:01 [nginx] GET /health 200"),
+    markdown("12:00:02 [nginx] GET /users 200"),
+  ]}),
+])
+```
+
+> **Deprecated:** `split({ direction, ratio, first, second })` still works but is now a thin wrapper that returns a `columns()` (horizontal) or `rows()` (vertical) block. Will be removed in v2.0. Prefer the explicit form: `columns([panel({ width: "30%", content: first }), panel({ width: "70%", content: second })])`.
+
+#### grid(config: GridConfig): GridBlock
+
+N×M grid of panels. `cols`: number of columns. `gap`: character gap between cells (default 1).
+
+```ts
+grid({
+  cols: 2,
+  gap: 1,
+  items: [
+    panel({ title: "CPU", content: [progressBar("Usage", 45)] }),
+    panel({ title: "Memory", content: [progressBar("RAM", 72)] }),
+    panel({ title: "Disk", content: [progressBar("Usage", 31)] }),
+    panel({ title: "Network", content: [markdown("125 Mbps")] }),
+  ],
+})
+```
+
+#### panel(config: PanelConfig): PanelBlock
+
+A single panel with optional border, title, padding, and content clipping. Used inside `columns()`, `rows()`, `grid()`, or standalone.
+
+```ts
+interface PanelConfig {
+  content: ContentBlock[];
+  width?: string | number;      // "50%", "40%", 30 (chars). For columns.
+  height?: string | number;     // "50%", "40%", 10 (rows). For rows.
+  title?: string;               // Title in the top border
+  border?: boolean | BorderStyle; // Show border (default: true in layouts)
+  padding?: number;             // Interior padding (default: 0)
+  scrollable?: boolean;         // Independent scrolling (default: true)
+  focusable?: boolean;          // Can receive focus (default: true if has focusable content)
+}
+```
+
+#### Nested Layouts
+
+Layouts can be nested for complex dashboards:
+
+```ts
+columns([
+  panel({ width: "25%", title: "Navigation", content: [
+    link("Dashboard", "#"),
+    link("Logs", "#"),
+    link("Settings", "#"),
+  ]}),
+  panel({ width: "75%", content: [
+    rows([
+      panel({ height: "60%", content: [
+        markdown("## Main Content"),
+        table(["Name", "Status"], [["nginx", "running"]]),
+      ]}),
+      panel({ height: "40%", title: "Logs", content: [
+        markdown("Log output here..."),
+      ]}),
+    ]),
+  ]}),
+])
+```
+
+#### Sizing Reference
+
+| Context | Property | Values |
+|---------|----------|--------|
+| columns | `width` | `"50%"`, `30` (chars), `"auto"` (default: equal split) |
+| rows | `height` | `"50%"`, `10` (rows), `"auto"` (default: equal split) |
+| grid | `cols` | Number of columns |
+| grid | `gap` | Gap in characters (default: 1) |
+
+---
+
+#### container(content: ContentBlock[], config?): ContainerBlock
+
+Wrap content in a centered container with an optional max width and padding. Use as the outermost wrapper of a page when you want a Bootstrap-style centered layout.
+
+```ts
+container([
+  hero({ title: "Welcome" }),
+  row([
+    col([card({ title: "Left" })], { span: 6 }),
+    col([card({ title: "Right" })], { span: 6 }),
+  ]),
+], { maxWidth: 100, padding: 2, center: true })
+```
+
+```ts
+interface ContainerConfig {
+  maxWidth?: number;   // Max width in columns (default: terminal width)
+  padding?: number;    // Horizontal padding (default: 0)
+  center?: boolean;    // Center the container (default: true)
+}
+```
+
+#### row(cols: ColBlock[], config?): RowBlock
+
+A 12-column grid row. Children must be `col(...)` blocks. Rows auto-wrap when the sum of effective spans exceeds 12 at the current breakpoint.
+
+```ts
+row([
+  col([statsCard], { span: 3, xs: 12 }),
+  col([chartCard], { span: 9, xs: 12 }),
+], { gap: 1 })
+```
+
+```ts
+interface RowConfig {
+  gap?: number;  // Spacing between cols, in chars (default: 1)
+}
+```
+
+#### col(content: ContentBlock[], config: ColConfig): ColBlock
+
+A 12-column grid cell. `span` is required; `xs`/`sm`/`md`/`lg` override `span` at each breakpoint.
+
+```ts
+col([card({ title: "Stats" })], {
+  span: 4,
+  offset: 0,
+  xs: 12, sm: 6, md: 4, lg: 3,
+})
+```
+
+```ts
+interface ColConfig {
+  span: number;     // 1-12. Width as a fraction of 12 columns.
+  offset?: number;  // 0-11. Empty columns to the left.
+  padding?: number; // Interior padding
+  xs?: number;      // Override span for xs (<60 cols)
+  sm?: number;      // Override span for sm (60-89)
+  md?: number;      // Override span for md (90-119)
+  lg?: number;      // Override span for lg (≥120)
+}
+```
+
+**Breakpoints:** xs (<60 cols), sm (60-89), md (90-119), lg (≥120). Spatial navigation works automatically across grid cells.
+
+> Removed in this release: `box()`. For a bordered region, use `panel({ border: true, padding: 1, content: […] })`. For padding/margin only, use `container({ padding: 1, content: […] })`.
+
+#### menu(config: MenuConfig): MenuBlock
+
+Inline menu block. The `auto` source resolves at render time from the file-based router's discovered pages.
+
+```ts
+import { menu } from "terminaltui";
+
+menu({ source: "auto" })
+
+menu({
+  source: "manual",
+  items: [
+    { id: "home", label: "Home", icon: "◆" },
+    { id: "projects", label: "Projects", icon: "▣" },
+    { id: "contact", label: "Contact", icon: "◉" },
+  ],
+})
+```
+
+```ts
+interface MenuConfig {
+  source: "auto" | "manual";
+  items?: MenuItemConfig[];   // required when source === "manual"
+}
+
+interface MenuItemConfig {
+  id: string;        // page id or route
+  label: string;
+  icon?: string;
+  hidden?: boolean;
+}
+```
+
+> The framework already renders the home menu automatically. Don't add `menu({ source: "auto" })` to `pages/home.ts` — it'll duplicate the menu.
+
+---
+
+### Input Components
+
+All input components create interactive form elements. In navigation mode, press Enter on an input to enter edit mode; press Escape to return to navigation.
+
+#### textInput(config): TextInputBlock
+
+```ts
+interface TextInputBlock {
+  id: string;                                    // Unique input ID
+  label: string;                                 // Label text
+  placeholder?: string;                          // Placeholder text
+  defaultValue?: string;                         // Initial value
+  maxLength?: number;                            // Max character count
+  validate?: (value: string) => string | null;   // Return error message or null
+  mask?: boolean;                                // Mask input (for passwords)
+  transform?: (value: string) => string;         // Transform input on change
+}
+```
+
+```ts
+textInput({ id: "name", label: "Your Name", placeholder: "Enter name...", maxLength: 50 })
+textInput({ id: "password", label: "Password", mask: true })
+```
+
+#### textArea(config): TextAreaBlock
+
+```ts
+interface TextAreaBlock {
+  id: string;
+  label: string;
+  placeholder?: string;
+  defaultValue?: string;
+  rows?: number;                                 // Visible rows (default varies)
+  maxLength?: number;
+  validate?: (value: string) => string | null;
+}
+```
+
+```ts
+textArea({ id: "bio", label: "Bio", placeholder: "Tell us about yourself...", rows: 4, maxLength: 500 })
+```
+
+#### select(config): SelectBlock
+
+```ts
+interface SelectBlock {
+  id: string;
+  label: string;
+  options: { label: string; value: string }[];
+  defaultValue?: string;
+  placeholder?: string;
+  onChange?: (value: string) => void;
+}
+```
+
+```ts
+select({
+  id: "color",
+  label: "Favorite Color",
+  options: [{ label: "Red", value: "red" }, { label: "Blue", value: "blue" }],
+  onChange: (val) => console.log("Selected:", val),
+})
+```
+
+#### checkbox(config): CheckboxBlock
+
+```ts
+interface CheckboxBlock {
+  id: string;
+  label: string;
+  defaultValue?: boolean;
+  onChange?: (value: boolean) => void;
+}
+```
+
+```ts
+checkbox({ id: "agree", label: "I agree to the terms", onChange: (val) => console.log(val) })
+```
+
+#### toggle(config): ToggleBlock
+
+```ts
+interface ToggleBlock {
+  id: string;
+  label: string;
+  defaultValue?: boolean;
+  onLabel?: string;                              // Text for "on" state
+  offLabel?: string;                             // Text for "off" state
+  onChange?: (value: boolean) => void;
+}
+```
+
+```ts
+toggle({ id: "dark", label: "Dark Mode", onLabel: "ON", offLabel: "OFF", defaultValue: true })
+```
+
+#### radioGroup(config): RadioGroupBlock
+
+```ts
+interface RadioGroupBlock {
+  id: string;
+  label: string;
+  options: { label: string; value: string }[];
+  defaultValue?: string;
+  onChange?: (value: string) => void;
+}
+```
+
+```ts
+radioGroup({
+  id: "plan",
+  label: "Select Plan",
+  options: [{ label: "Free", value: "free" }, { label: "Pro", value: "pro" }],
+  defaultValue: "free",
+  onChange: (val) => console.log("Plan:", val),
+})
+```
+
+#### numberInput(config): NumberInputBlock
+
+```ts
+interface NumberInputBlock {
+  id: string;
+  label: string;
+  defaultValue?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+}
+```
+
+```ts
+numberInput({ id: "qty", label: "Quantity", defaultValue: 1, min: 1, max: 99, step: 1 })
+```
+
+#### searchInput(config): SearchInputBlock
+
+```ts
+interface SearchInputBlock {
+  id: string;
+  label?: string;
+  placeholder?: string;
+  items: { label: string; value: string; keywords?: string[] }[];
+  maxResults?: number;
+  action?: "navigate" | "callback";              // Default: "callback" if onSelect provided
+  onSelect?: (value: string) => void;
+}
+```
+
+```ts
+searchInput({
+  id: "search",
+  placeholder: "Search pages...",
+  items: [
+    { label: "About", value: "about", keywords: ["bio", "info"] },
+    { label: "Projects", value: "projects", keywords: ["work", "code"] },
+  ],
+  action: "navigate",
+})
+```
+
+#### chat(config): ChatBlock
+
+Interactive chat widget that sends messages to an API endpoint. Supports conversation history, suggested questions, and a system prompt.
+
+```ts
+interface ChatBlock {
+  id: string;                        // Unique chat ID
+  endpoint: string;                  // POST endpoint — receives { message, history }, returns { response }
+  placeholder?: string;              // Input placeholder
+  suggestedQuestions?: string[];      // Quick-start prompts shown before first message
+  systemPrompt?: string;             // System prompt sent with every request
+  maxHistory?: number;               // Max messages to keep in history (default: 50)
+}
+```
+
+```ts
+chat({
+  id: "ai-chat",
+  endpoint: "/api/chat",
+  placeholder: "Ask a question...",
+  suggestedQuestions: ["What do you do?", "Tell me about projects"],
+  systemPrompt: "You are a helpful assistant.",
+  maxHistory: 50,
+})
+```
+
+#### button(config): ButtonBlock
+
+```ts
+interface ButtonBlock {
+  label: string;
+  style?: "primary" | "secondary" | "danger";
+  onPress?: () => void | Promise<void>;
+  loading?: boolean;
+}
+```
+
+```ts
+button({ label: "Submit", style: "primary", onPress: async () => { /* ... */ } })
+```
+
+#### form(config): FormBlock
+
+Groups input fields and a submit button. On submit, collects all field values by ID.
+
+```ts
+interface FormBlock {
+  id: string;
+  onSubmit: (data: Record<string, any>) => Promise<ActionResult> | ActionResult;
+  fields: ContentBlock[];
+}
+
+type ActionResult = { success: string } | { error: string } | { info: string };
+```
+
+```ts
+form({
+  id: "contact",
+  onSubmit: async (data) => {
+    await sendEmail(data.name, data.email, data.message);
+    return { success: "Message sent!" };
+  },
+  fields: [
+    textInput({ id: "name", label: "Name" }),
+    textInput({ id: "email", label: "Email" }),
+    textArea({ id: "message", label: "Message", rows: 4 }),
+    button({ label: "Send", style: "primary" }),
+  ],
+})
+```
+
+---
+
+### State Management
+
+#### createState(initial): StateContainer
+
+Reactive state container. Changes trigger UI re-renders.
+
+```ts
+interface StateContainer<T> {
+  get(): T;                                      // Get entire state
+  get<K extends keyof T>(key: K): T[K];          // Get single key
+  set<K extends keyof T>(key: K, value: T[K]): void;
+  update<K extends keyof T>(key: K, fn: (prev: T[K]) => T[K]): void;
+  batch(fn: () => void): void;                   // Batch multiple updates
+  on<K extends keyof T>(key: K, handler: (newVal, oldVal) => void): Unsubscribe;
+  on(key: "*", handler: (key, newVal) => void): Unsubscribe;
+}
+```
+
+```ts
+const state = createState({ count: 0, name: "world" });
+state.set("count", 1);
+state.update("count", (prev) => prev + 1);
+state.on("count", (newVal, oldVal) => console.log(`Changed: ${oldVal} -> ${newVal}`));
+state.batch(() => {
+  state.set("count", 10);
+  state.set("name", "hello");
+});
+```
+
+#### computed(fn): ComputedValue
+
+Cached derived values. Call `.invalidate()` to force recalculation.
+
+```ts
+interface ComputedValue<T> {
+  get(): T;
+  invalidate(): void;
+}
+```
+
+```ts
+const total = computed(() => state.get("price") * state.get("quantity"));
+console.log(total.get());
+```
+
+#### createPersistentState(options): StateContainer
+
+State that persists to disk as JSON. Same API as `createState`.
+
+```ts
+interface PersistentStateOptions<T> {
+  path: string;           // File path for JSON persistence
+  defaults: T;            // Default values
+}
+```
+
+```ts
+const prefs = createPersistentState({
+  path: "./data/prefs.json",
+  defaults: { theme: "dracula", fontSize: 14 },
+});
+```
+
+---
+
+### Data Fetching
+
+#### fetcher(options): FetcherResult
+
+Reactive data fetcher with caching, retry, and auto-refresh.
+
+```ts
+interface FetcherOptions<T> {
+  url?: string;                                  // URL to fetch
+  fetch?: () => Promise<T>;                      // Custom fetch function
+  method?: string;                               // HTTP method
+  headers?: Record<string, string>;
+  body?: any;
+  refreshInterval?: number;                      // Auto-refresh in ms
+  cache?: boolean;                               // Enable caching (default: true)
+  cacheTTL?: number;                             // Cache TTL in ms (default: 60000)
+  retry?: number;                                // Retry count (default: 0)
+  retryDelay?: number;                           // Retry delay in ms (default: 1000)
+  transform?: (data: any) => T;                  // Transform response
+  onError?: (err: Error) => void;
+}
+
+interface FetcherResult<T> {
+  readonly data: T | null;
+  readonly loading: boolean;
+  readonly error: Error | null;
+  refresh(): Promise<void>;
+  mutate(data: T): void;
+  clear(): void;
+  destroy(): void;
+}
+```
+
+```ts
+const api = fetcher({ url: "https://api.example.com/data", refreshInterval: 30000, retry: 3 });
+```
+
+#### request(options) / request.get/post/put/delete/patch
+
+Simple HTTP request helper.
+
+```ts
+interface RequestOptions {
+  url: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+  headers?: Record<string, string>;
+  body?: any;
+  timeout?: number;
+}
+
+interface RequestResult<T> {
+  data: T | null;
+  error: Error | null;
+  status: number;
+  ok: boolean;
+}
+```
+
+```ts
+const res = await request({ url: "https://api.example.com/data", method: "POST", body: { name: "test" } });
+// Shorthand methods:
+const res = await request.get("https://api.example.com/data");
+const res = await request.post("https://api.example.com/data", { name: "test" });
+const res = await request.put("https://api.example.com/data/1", { name: "updated" });
+const res = await request.delete("https://api.example.com/data/1");
+const res = await request.patch("https://api.example.com/data/1", { name: "patched" });
+// Third arg is a flat headers object (not { headers: {...} }):
+const res = await request.post("https://api.example.com/data", { name: "test" }, { Authorization: "Bearer sk-..." });
+```
+
+#### liveData(options): LiveDataConnection
+
+Real-time data via WebSocket or Server-Sent Events.
+
+```ts
+// WebSocket
+const ws = liveData({
+  type: "websocket",
+  url: "wss://api.example.com/ws",
+  onMessage: (data) => { /* handle message */ },
+  onConnect: () => console.log("Connected"),
+  onDisconnect: () => console.log("Disconnected"),
+  onError: (err) => console.error(err),
+  reconnect: true,                               // Auto-reconnect (default: false)
+  reconnectInterval: 5000,
+  protocols: [],
+});
+
+// SSE
+const sse = liveData({
+  type: "sse",
+  url: "https://api.example.com/events",
+  onMessage: (event) => { /* event.data, event.type, event.lastEventId */ },
+  headers: { Authorization: "Bearer ..." },
+});
+
+// LiveDataConnection API:
+ws.send("hello");
+ws.close();
+ws.connected; // boolean
+```
+
+---
+
+### API Routes
+
+Define backend endpoints by dropping `.ts` files into your project's `api/` directory. No Express, no external server — just Node's built-in `http` module on localhost. Each file becomes an HTTP endpoint; each named export (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) becomes a method handler.
+
+```ts
+// api/stats.ts → GET /api/stats
+export async function GET() {
+  return { uptime: process.uptime(), timestamp: Date.now() };
+}
+```
+
+```ts
+// api/items/[id].ts → GET /api/items/:id
+export async function GET(req) {
+  return { id: req.params.id, name: `Item ${req.params.id}` };
+}
+```
+
+```ts
+// api/deploy.ts → POST /api/deploy
+export async function POST(req) {
+  const { image, name } = req.body as any;
+  return { success: true, message: `Deployed ${name}` };
+}
+```
+
+```ts
+// api/search.ts → GET /api/search?q=hello&page=2
+export async function GET(req) {
+  return { query: req.query.q, page: req.query.page };
+}
+```
+
+Then call them from any page via `fetcher`:
+
+```ts
+// pages/dashboard.ts
+import { dynamic, fetcher, markdown } from "terminaltui";
+
+export const metadata = { label: "Dashboard" };
+
+export default function Dashboard() {
+  return [
+    dynamic(["stats"], () => {
+      const stats = fetcher({ url: "/api/stats", refreshInterval: 5000 });
+      if (stats.loading) return markdown("Loading...");
+      return markdown(`Uptime: ${stats.data?.uptime}s`);
+    }),
+  ];
+}
+```
+
+#### How It Works
+
+- When `terminaltui dev` runs, a localhost HTTP server starts on a random port if any `api/*.ts` files are present
+- `fetcher()`, `request.*()`, and `liveData()` calls with relative URLs (starting with `/api/`) auto-route to this server
+- The server **only** binds to `127.0.0.1` — never exposed to the network
+- Projects without an `api/` directory skip the HTTP server entirely
+
+#### ApiRequest Object
+
+```ts
+interface ApiMethodRequest {
+  params: Record<string, string>;        // { id: "42" } from [id]
+  query: Record<string, string>;         // { q: "hello" } from ?q=hello
+  body: unknown;                         // Parsed JSON body (POST/PUT/PATCH)
+  headers: Record<string, string>;
+}
+```
+
+#### Supported Methods
+
+`GET`, `POST`, `PUT`, `DELETE`, `PATCH` — defined as named exports in each `api/` file.
+
+#### Common API Route Patterns
+
+**Shell commands:**
+```ts
+// api/uptime.ts
+import { execSync } from "child_process";
+
+export async function GET() {
+  return { uptime: execSync("uptime -p").toString().trim() };
+}
+```
+
+**File system:**
+```ts
+// api/files.ts
+import { readFileSync, readdirSync } from "fs";
+
+export async function GET() {
+  const files = readdirSync(".").filter(f => !f.startsWith("."));
+  return { files };
+}
+```
+
+**Stateful in-memory data:**
+```ts
+let counter = 0;
+// ...inside api:
+"GET /counter": async () => ({ count: ++counter }),
+"POST /counter/reset": async () => { counter = 0; return { count: 0 }; },
+```
+
+**CRUD with POST body:**
+```ts
+const items: any[] = [];
+// ...inside api:
+"GET /items": async () => ({ items }),
+"POST /items": async (req) => {
+  const item = { id: Date.now(), ...(req.body as any) };
+  items.push(item);
+  return { success: true, item };
+},
+"DELETE /items/:id": async (req) => {
+  const idx = items.findIndex(i => i.id === Number(req.params.id));
+  if (idx === -1) return { error: "not found" };
+  items.splice(idx, 1);
+  return { success: true };
+},
+```
+
+**Error handling (throw → 500):**
+```ts
+"GET /risky": async () => {
+  const result = execSync("some-command").toString();
+  if (!result) throw new Error("Command produced no output");
+  return { result };
+},
+// If the handler throws, the framework returns:
+// HTTP 500 { "error": "Command produced no output" }
+```
+
+#### Using API Routes with fetcher/request
+
+Relative URLs in `fetcher()`, `request.*()`, and `liveData()` auto-resolve to the local API server:
+
+```ts
+// In a dynamic block — fetcher with auto-refresh
+dynamic(["stats"], () => {
+  const data = fetcher({ url: "/stats", refreshInterval: 5000 });
+  if (data.loading) return markdown("Loading...");
+  if (data.error) return markdown(`Error: ${data.error.message}`);
+  return markdown(`Uptime: ${data.data.uptime}`);
+}),
+
+// In a form onSubmit — imperative POST
+form({
+  id: "deploy",
+  onSubmit: async (data) => {
+    const res = await request.post("/deploy", { image: data.image });
+    if (res.ok) return { success: "Deployed!" };
+    return { error: (res.data as any)?.error || "Deploy failed" };
+  },
+  fields: [
+    textInput({ id: "image", label: "Docker Image" }),
+    button({ label: "Deploy", style: "primary" }),
+  ],
+}),
+```
+
+#### When to Use API Routes
+
+| Scenario | Solution |
+|---|---|
+| Site needs system info (uptime, disk, CPU) | API route with `execSync` / `os` module |
+| Dashboard with start/stop/restart actions | POST API routes |
+| Contact form that sends email | API route calling email service |
+| Live metrics that update on screen | API route + `fetcher({ refreshInterval })` |
+| Read/write local files | API routes with `fs` module |
+| Docker container management | API routes wrapping `docker` CLI |
+| Database queries | API routes with your DB driver |
+
+#### Security
+
+API routes have full Node.js capabilities (file system, shell commands, etc). They run on the user's machine and are only accessible from localhost. **Never expose the API port to the network.**
+
+---
+
+### Hosting & Deployment (SSH) — *New in 1.5.0*
+
+terminaltui apps can be hosted over SSH so any user with an SSH client can connect and use the app interactively, no install required.
+
+#### CLI
+
+```bash
+terminaltui serve --port 2222
+# Then from any machine:
+ssh localhost -p 2222
+```
+
+Each connection gets an independent `TUIRuntime` (own state, own focus, own color mode). The host key is auto-generated as Ed25519 at `.terminaltui/host_key` on first run.
+
+#### `serve` config in your site
+
+```ts
+// config.ts
+import { defineConfig } from "terminaltui";
+
+export default defineConfig({
+  name: "My Site",
+  theme: "cyberpunk",
+  serve: {
+    port: 2222,
+    hostKeyPath: ".terminaltui/host_key",
+    maxConnections: 100,
+    colorMode: "auto",       // "auto" | "truecolor" | "256" | "16"
+    openUrls: false,         // see "Server-side caveats" below
+    auth: { passwords: { alice: "hunter2" } },
+  },
+});
+```
+
+#### `TerminalIO` abstraction
+
+The runtime no longer assumes `process.stdin`/`process.stdout`. It talks to a `TerminalIO` interface, with two implementations shipped:
+
+```ts
+import { ProcessTerminalIO, TUIRuntime, runSite } from "terminaltui";
+import type { TerminalIO } from "terminaltui";
+
+// Default for `dev`:
+const io = new ProcessTerminalIO();
+const runtime = new TUIRuntime(siteConfig, io);
+await runtime.start();
+```
+
+`SSHServer` constructs an `SSHTerminalIO` per accepted session.
+
+#### `SSHServer` — programmatic API
+
+```ts
+import { SSHServer, TUIRuntime } from "terminaltui";
+import type { TerminalIO, ServeOptions } from "terminaltui";
+
+const options: ServeOptions = {
+  port: 2222,
+  hostKeyPath: ".terminaltui/host_key",
+  maxConnections: 100,
+  auth: { passwords: { alice: "hunter2" } },
+};
+
+const server = new SSHServer(options, async (io: TerminalIO) => {
+  const runtime = new TUIRuntime(siteConfig, io);
+  await runtime.start();
+  return runtime;
+});
+
+await server.start();
+```
+
+#### `runtime.isServeMode`
+
+`true` when the runtime is hosting an SSH session. Use it to gate code that should only run for local users.
+
+```ts
+if (runtime.isServeMode) {
+  // server-side: don't auto-open browser, don't run shell commands, etc.
+}
+```
+
+#### Server-side caveats
+
+Running on a server with potentially many users changes a few defaults:
+
+- **`openUrl()` is a no-op in serve mode** — the URL is shown as a notification instead of running `open` / `xdg-open` on the server. Override with `serve.openUrls: true` if you really mean it.
+- **Function-valued easter-egg commands are skipped** — connected users can't trigger arbitrary server-side execution.
+- **`createPersistentState`, file/network APIs, and any custom `api/*.ts` handlers run server-side** with shared filesystem and network. Scope state by user explicitly if multi-tenant.
+
+#### `FileRouter` — programmatic file-based routing
+
+For embedding the file-based router in custom hosts:
+
+```ts
+import { FileRouter, detectProject } from "terminaltui";
+
+const detection = detectProject(process.cwd());
+if (detection.type === "file-based") {
+  const router = new FileRouter({
+    config: detection.config,
+    pagesDir: detection.pagesDir,
+    apiDir: detection.apiDir,
+    outDir: ".terminaltui",
+  });
+  await router.initialize();
+  const warnings = router.validate();
+}
+```
+
+`runFileBasedSite(projectDir, options?)` is the all-in-one entry point that wires `FileRouter` into a `TUIRuntime`.
+
+---
+
+### `terminaltui create` — Interactive Prompt Builder
+
+Build a new TUI project from scratch using an interactive questionnaire:
+
+```bash
+terminaltui create
+```
+
+Asks 10 questions:
+1. **Project name** — becomes the `npx` command name
+2. **Description** — what the site/app is about (detailed)
+3. **Pages** — list of pages (one per line)
+4. **Content** — real content to include, or "skip" to let AI generate it
+5. **Theme** — pick from 12 themes or "auto"
+6. **Visual style** — bold, minimal, retro, playful, professional
+7. **ASCII art** — scenes to include, or "auto"/"none"
+8. **Interactive features** — contact form, search, reservation, signup, newsletter, custom
+9. **Animations** — full, subtle, or none
+10. **Extra instructions** — anything else
+
+Creates a project directory with:
+- `TERMINALTUI_SKILL.md` — full framework reference
+- `TERMINALTUI_CREATE_PROMPT.md` — tailored AI prompt from your answers
+
+Then open Claude Code in that directory and paste the instructions.
+
+#### When to use create vs init vs convert
+
+| Command | Use when | What it does |
+|---|---|---|
+| `terminaltui init` | You want a template with placeholder content | Scaffolds a project from a template |
+| `terminaltui create` | You want to describe something new and have AI build it | Generates a tailored AI prompt |
+| `terminaltui convert` | You already have a website to convert | Drops conversion docs into your project |
+
+---
+
+### Themes
+
+12 built-in themes. Use as string name or reference `themes.themeName`.
+
+```ts
+import { themes } from "terminaltui";
+theme: themes.dracula    // or theme: "dracula"
+```
+
+| Theme | Accent | Best For |
+|---|---|---|
+| `cyberpunk` | `#ff2a6d` (hot pink) | Tech startups, gaming, futuristic |
+| `dracula` | `#ff79c6` (pink) | General purpose, developer tools (default) |
+| `nord` | `#88c0d0` (frost blue) | Corporate, professional, SaaS |
+| `monokai` | `#f92672` (magenta) | Developer portfolios, coding tools |
+| `solarized` | `#268bd2` (blue) | Academic, documentation, research |
+| `gruvbox` | `#fe8019` (orange) | Restaurants, cafes, warm brands |
+| `catppuccin` | `#f5c2e7` (pink) | Creative agencies, design portfolios |
+| `tokyoNight` | `#7aa2f7` (blue) | Modern SaaS, product pages |
+| `rosePine` | `#ebbcba` (rose) | Music, art, personal blogs |
+| `hacker` | `#00ff41` (green) | Security, infosec, Matrix-style |
+
+Custom theme:
+
+```ts
+interface Theme {
+  accent: string;       // Primary accent color (hex)
+  accentDim: string;    // Dimmed accent
+  text: string;         // Primary text color
+  muted: string;        // Muted/secondary text
+  subtle: string;       // Subtle elements
+  success: string;      // Success color
+  warning: string;      // Warning color
+  error: string;        // Error color
+  border: string;       // Border color
+  bg?: string;          // Background color
+}
+```
+
+```ts
+theme: {
+  accent: "#e06c75", accentDim: "#be5046", text: "#abb2bf", muted: "#5c6370",
+  subtle: "#3e4452", success: "#98c379", warning: "#e5c07b", error: "#e06c75",
+  border: "#5c6370", bg: "#282c34",
+}
+```
+
+---
+
+### Border Styles
+
+```ts
+type BorderStyle = "single" | "double" | "rounded" | "heavy" | "dashed" | "ascii" | "none";
+```
+
+Used in: `defineConfig({ borders })`, `card({ border })`, `table({ border })`.
+
+---
+
+### ASCII Art System
+
+#### ascii(text, options?): BannerConfig
+
+Creates an ASCII art banner for the `banner` field of `defineConfig()`.
+Both forms are equivalent:
+```ts
+// Using the ascii() helper (recommended):
+banner: ascii("My Site", { font: "ANSI Shadow", gradient: ["#ff6b6b", "#4ecdc4"] })
+
+// Using a plain object (also valid):
+banner: { text: "My Site", font: "ANSI Shadow", gradient: ["#ff6b6b", "#4ecdc4"] }
+```
+
+```ts
+interface BannerConfig {
+  text: string;
+  font?: string;                                 // Font name (see list below)
+  gradient?: string[];                           // Array of hex colors
+  align?: "left" | "center" | "right";           // Default: "left"
+  padding?: number;                              // Padding around banner
+  shadow?: boolean;                              // Drop shadow effect
+  border?: string | false;                       // Border around banner
+  width?: number;                                // Max width
+}
+```
+
+```ts
+banner: ascii("MY SITE", { font: "ANSI Shadow", gradient: ["#ff6b6b", "#4ecdc4"], shadow: true })
+```
+
+#### Fonts (14 built-in)
+
+| Font | Height | Style |
+|---|---|---|
+| `"ANSI Shadow"` | 6 | Clean block letters with shadow — modern default |
+| `"Block"` | 6 | Solid block characters — bold and heavy |
+| `"Slant"` | 6 | Classic italic/slanted — elegant |
+| `"Calvin S"` | 4 | Clean thin letters — professional, compact |
+| `"Small"` | 4 | Tiny but readable — space-constrained |
+| `"Ogre"` | 5 | Chunky and playful — fun, casual |
+| `"DOS Rebel"` | 10 | DOS-era block art — retro, nostalgic |
+| `"Ghost"` | 10 | Spooky hollow letters — horror, creative |
+| `"Bloody"` | 10 | Dripping horror letters — intense |
+| `"Electronic"` | 10 | Digital/LED style — tech, futuristic |
+| `"Sub-Zero"` | 10 | Icy/frozen appearance — cool, sharp |
+| `"Larry 3D"` | 10 | 3D perspective letters — eye-catching |
+| `"Colossal"` | 10 | Massive block letters — impactful |
+| `"Isometric1"` | 10 | Isometric 3D projection — unique |
+
+Font names are case-sensitive. Use exactly as listed.
+
+#### asciiArt.scene(type, options?): string[]
+
+Pre-made decorative scenes. Returns string array.
+
+```ts
+type SceneType = "mountains" | "cityscape" | "forest" | "ocean" | "space"
+  | "clouds" | "coffee-cup" | "rocket" | "cat" | "robot" | "terminal"
+  | "vinyl-record" | "cassette" | "floppy-disk" | "gameboy";
+
+interface SceneOptions { width?: number; color?: string; }
+```
+
+15 scenes:
+- **Landscapes:** `mountains`, `cityscape`, `forest`, `ocean`, `space`, `clouds`
+- **Objects:** `coffee-cup`, `rocket`, `cat`, `robot`, `terminal`
+- **Retro:** `vinyl-record`, `cassette`, `floppy-disk`, `gameboy`
+
+```ts
+const art = asciiArt.scene("mountains", { width: 60 });
+```
+
+#### getIcon(name, size?): string[] | undefined
+
+Pre-made ASCII art icons. Size: `"small"` | `"medium"` | `"large"`.
+
+32 icons: `laptop`, `briefcase`, `person`, `chain`, `chart`, `pen`, `music`, `star`, `globe`, `mail`, `code`, `terminal`, `folder`, `file`, `git`, `heart`, `check`, `cross`, `warning`, `film`, `camera`, `book`, `phone`, `pin`, `clock`, `users`, `cup`, `food`, `car`, `plane`, `fire`, `lightning`
+
+```ts
+const icon = getIcon("terminal");
+// or via asciiArt:
+const icon = asciiArt.getIcon("terminal");
+```
+
+#### asciiArt.pattern(width, height, type, options?): string[]
+
+Decorative fill patterns.
+
+```ts
+type PatternType = "dots" | "crosshatch" | "diagonal" | "waves" | "bricks"
+  | "circuit" | "rain" | "stars" | "confetti" | "static" | "braille-dots" | "grid";
+
+interface PatternOptions { density?: number; seed?: number; }
+```
+
+12 patterns: `dots`, `crosshatch`, `diagonal`, `waves`, `bricks`, `circuit`, `rain`, `stars`, `confetti`, `static`, `braille-dots`, `grid`
+
+```ts
+const bg = asciiArt.pattern(40, 10, "circuit", { density: 0.5 });
+```
+
+#### Shapes (9)
+
+All shapes return `string[]`.
+
+```ts
+asciiArt.box(width: number, height: number, style?: "single"|"double"|"rounded"|"heavy"|"ascii"): string[]
+asciiArt.circle(radius: number, fill?: string): string[]
+asciiArt.diamond(size: number): string[]
+asciiArt.triangle(height: number): string[]
+asciiArt.heart(size: number): string[]
+asciiArt.star(size: number): string[]
+asciiArt.arrow(length: number, direction?: "right"|"left"|"up"|"down"): string[]
+asciiArt.hexagon(size: number): string[]
+asciiArt.line(length: number, style?: string): string[]
+```
+
+```ts
+const box = asciiArt.box(20, 5, "rounded");
+const heart = asciiArt.heart(5);
+```
+
+#### Data Visualization (5)
+
+```ts
+asciiArt.barChart(
+  data: { label: string; value: number }[],
+  options?: { width?: number; horizontal?: boolean; showValues?: boolean; maxBarWidth?: number }
+): string[]
+
+asciiArt.sparkline(data: number[], width?: number): string[]
+
+asciiArt.heatmap(
+  data: number[][],
+  options?: { chars?: string; showScale?: boolean }
+): string[]
+
+asciiArt.pieChart(
+  data: { label: string; value: number }[],
+  radius?: number
+): string[]
+
+asciiArt.graph(data: number[], width?: number, height?: number): string[]
+```
+
+```ts
+const chart = asciiArt.barChart([
+  { label: "TypeScript", value: 85 },
+  { label: "Rust", value: 70 },
+], { width: 50 });
+const spark = asciiArt.sparkline([1, 5, 3, 8, 2, 7], 30);
+const heat = asciiArt.heatmap([[1,2,3],[4,5,6],[7,8,9]], { showScale: true });
+const pie = asciiArt.pieChart([{ label: "A", value: 60 }, { label: "B", value: 40 }], 6);
+const g = asciiArt.graph([10, 20, 15, 30, 25], 40, 10);
+```
+
+#### asciiImage(source, options?): Promise<string[]>
+
+Convert a PNG or JPEG to terminal art, one string per row. **No `sharp` and no other install required** — PNG and JPEG decode with bundled decoders. GIF/WebP/BMP and unreadable files resolve to a single `["[Error: …]"]` row instead of throwing.
+
+Use this when you want rows as strings. Inside a page, use the `image()` block instead — it adds tier negotiation, theming, caching, framing and alt text.
+
+```ts
+interface AsciiImageOptions {
+  width?: number;        // Cells. Default: 60. Capped at 99
+  height?: number;       // Given, the image is stretched to exactly width x height
+  mode?: "ascii" | "braille" | "blocks" | "shading";   // Default "ascii"
+  charset?: string;      // Ramp for "ascii" / "shading", darkest first
+  invert?: boolean;
+  color?: boolean;       // Default false, which emits ZERO escape bytes
+  dithering?: "none" | "floyd-steinberg" | "ordered";  // Default "none".
+                         // No-op in truecolor and whenever color is false
+  threshold?: number;    // 1-bit cut. "braille" ONLY. Omit to let Otsu choose
+}
+```
+
+```ts
+const art = await asciiImage("./logo.png", { width: 40, mode: "braille" });
+const photo = await asciiImage("./photo.jpg", { width: 60, mode: "blocks", color: true });
+```
+
+`mode: "blocks"` with `color: true` is the highest-fidelity mode (`▀` with an independent foreground and background per cell). With `color: false` it falls back to the shading ramp, because a half block with both pens suppressed carries no image. `source` may be a path (resolved against the working directory) or a `Buffer` of encoded bytes.
+
+---
+
+### Animations
+
+```ts
+interface AnimationConfig {
+  boot?: boolean;                                // Boot animation (banner reveal + stagger)
+  exitMessage?: string;                          // Centered message on quit
+  speed?: "slow" | "normal" | "fast";
+}
+```
+
+```ts
+animations: {
+  boot: true,
+  exitMessage: "[ end of transmission ]",
+  speed: "normal",
+}
+```
+
+---
+
+### Middleware
+
+```ts
+// Create middleware
+middleware(fn: MiddlewareFn): MiddlewareFn
+
+// Return a redirect from middleware
+redirect(pageId: string, params?: RouteParams): { redirect: string; params?: RouteParams }
+
+type MiddlewareFn = (context: MiddlewareContext) => Promise<MiddlewareResult> | MiddlewareResult;
+
+interface MiddlewareContext {
+  page: string;
+  params: RouteParams;
+  state: any;
+}
+
+type MiddlewareResult = void | undefined | { redirect: string; params?: RouteParams };
+```
+
+Built-in middleware:
+
+```ts
+requireEnv(vars: string[]): MiddlewareFn          // Throws if env vars missing
+rateLimit({ maxRequests, windowMs }): MiddlewareFn // Throws when limit exceeded
+```
+
+```ts
+// config.ts — global middleware
+defineConfig({
+  name: "My Site",
+  middleware: [requireEnv(["API_KEY"]), rateLimit({ maxRequests: 100, windowMs: 60000 })],
+});
+
+// pages/admin.ts — page-level middleware
+import { middleware, redirect, markdown } from "terminaltui";
+
+export const metadata = {
+  label: "Admin",
+  middleware: [middleware(async (ctx) => {
+    if (!isAdmin(ctx.state)) return redirect("home");
+  })],
+};
+
+export default function Admin() { return [markdown("admin only")]; }
+```
+
+---
+
+### Environment & Config
+
+`.env` files are auto-loaded on startup.
+
+**`defineEnv()`** is for environment variables. Do not confuse with `defineConfig()` which is for site config (file-based routing).
+
+```ts
+import { defineEnv } from "terminaltui";
+
+const env = defineEnv({
+  apiUrl: { env: "API_URL", default: "http://localhost:3000" },
+  apiKey: { env: "API_KEY", required: true },
+  debug: { env: "DEBUG", default: false, transform: (v) => v === "true" },
+});
+env.get("apiUrl"); // string
+env.get("apiKey"); // string
+env.get("debug");  // boolean
+```
+
+```ts
+interface ConfigField<T> {
+  env: string;                                   // Env var name
+  default?: T;                                   // Default if missing
+  required?: boolean;                            // Throw if missing and no default
+  transform?: (value: string) => T;              // Transform string value
+}
+```
+
+**Summary:** `defineConfig()` = site config (file-based routing, theme, menu). `defineEnv()` = environment variables (API keys, URLs, feature flags).
+
+---
+
+### Lifecycle Hooks
+
+Set on `SiteConfig`. All receive an `AppContext`.
+
+```ts
+interface AppContext {
+  state: any;
+  navigate: (pageId: string, params?: RouteParams) => void;
+}
+
+interface ErrorContext {
+  page?: string;
+  params?: RouteParams;
+  phase: "render" | "middleware" | "action" | "fetch";
+}
+```
+
+```ts
+defineConfig({
+  name: "My Site",
+  onInit: async (app) => { /* runs once at startup */ },
+  onExit: async (app) => { /* runs on quit */ },
+  onNavigate: (from, to, params) => { /* runs on every navigation */ },
+  onError: (error, context) => {
+    // Return ContentBlock[] to show custom error page, or void to use default
+    return [markdown(`Error on ${context.page}: ${error.message}`)];
+  },
+  // ...
+});
+```
+
+---
+
+### CLI Commands
+
+```bash
+terminaltui init [template]              # Scaffold project (templates: portfolio, restaurant, saas, blog, band)
+terminaltui dev [path]                   # Dev preview with hot reload
+terminaltui serve [path]                 # Host TUI over SSH (anyone connects with ssh)
+terminaltui build                        # Bundle for npm publish
+terminaltui test [--cols=N] [--sizes] [--verbose]  # Run tests
+terminaltui art list|preview|create|validate       # Manage ASCII art assets
+terminaltui validate                               # Check for common issues (duplicate menus, missing pages, etc.)
+```
+
+#### SSH Hosting (`terminaltui serve`)
+
+Host any TUI app over SSH so users connect with `ssh host -p PORT` — zero install required.
+
+```bash
+terminaltui serve --port 2222
+# Then: ssh localhost -p 2222
+```
+
+Flags:
+- `--port <N>` — SSH port (default: 2222)
+- `--host-key <path>` — host key path (default: `.terminaltui/host_key`, auto-generated)
+- `--max-connections <N>` — max simultaneous connections (default: 100)
+
+Each SSH connection gets an independent TUI session with its own state. Requires `ssh2` (`npm install ssh2`).
+
+---
+
+### Navigation & Keybindings
+
+**Navigation mode (default):**
+
+| Key | Action |
+|---|---|
+| `Up` / `k` | Move selection up |
+| `Down` / `j` | Move selection down |
+| `Enter` | Select item / enter page / enter edit mode on input |
+| `Escape` / `Backspace` | Go back / exit page |
+| `1`-`9` | Jump to page by number (if `numberJump: true`) |
+| `q` / `Ctrl+C` | Quit |
+| `Left` / `h` | Previous panel (in layouts) / go back (non-layout pages) |
+| `Right` / `l` | Next panel (in layouts) / select (non-layout pages) |
+| `Tab` | Next panel (in layouts) / next focusable element |
+| `Shift+Tab` | Previous panel (in layouts) / previous focusable element |
+| `Home` | First item |
+| `End` | Last item |
+| `+` / `=` , `-` / `_` , `0` | Grow / shrink / reset the frame — **only** while a `resizable: true` image is focused |
+
+**Edit mode (when editing an input):**
+
+| Key | Action |
+|---|---|
+| `Escape` | Exit edit mode, return to navigation |
+| `Enter` | Submit (in forms) / confirm selection |
+| `Tab` | Next field |
+| `Up`/`Down` | Navigate options (select, radio) |
+| `Space` | Toggle (checkbox, toggle) |
+| Standard typing | Text input |
+
+---
+
+### TUI Emulator (Testing)
+
+Headless terminal emulator for automated testing. Think Puppeteer for terminal apps.
+
+```ts
+import { TUIEmulator } from "terminaltui";
+
+const emu = await TUIEmulator.launch({
+  command: "terminaltui dev",
+  cwd: "./my-site",
+  cols: 80,                                      // Terminal width (default: 80)
+  rows: 24,                                      // Terminal height (default: 24)
+  timeout: 30000,                                // Kill after timeout
+});
+
+await emu.waitForBoot();                         // Wait for boot animation
+await emu.waitForText("About");                  // Wait for text to appear
+await emu.waitForTextGone("Loading...");         // Wait for text to disappear
+await emu.waitForIdle(500);                      // Wait for screen to stabilize
+await emu.waitFor(() => emu.screen.contains("Ready")); // Custom condition
+
+await emu.press("down");                         // Single key press
+await emu.press("down", { times: 3 });           // Multiple presses
+await emu.pressSequence(["down", "down", "enter"]); // Key sequence
+await emu.type("hello world");                   // Type text
+await emu.navigateTo("About");                   // Navigate to page by name
+
+emu.screen.text();                               // Full screen as text
+emu.screen.ansi();                               // Full screen as ANSI string
+emu.screen.contains("text");                     // Check if text is visible
+emu.screen.find("text");                         // Find text position
+emu.screen.currentPage();                        // Current page name
+emu.screen.menu();                               // Menu items and selected index
+emu.screen.cards();                              // All visible cards
+emu.screen.links();                              // All visible links
+
+emu.assert.textVisible("About");                 // Assert text is on screen
+emu.screenshot();                                // ANSI screenshot string
+emu.snapshot();                                  // { text, ansi, timestamp }
+
+await emu.close();                               // Shut down
+```
+
+---
+
+## Content Extraction Guide
+
+### Component Mapping
+
+**IMPORTANT:** The "Best TUI Pattern" column takes priority. TUI navigation is up/down arrows — optimize for vertical scrolling and per-item focusability, not semantic content matching.
+
+| Web Content | Semantic Match | Best TUI Pattern |
+|---|---|---|
+| Navigation / menu | Becomes `pages` array | `pages` array (automatic) |
+| Hero / banner section | `hero()` | `hero()` — focusable if CTA set |
+| Cards / grid of items | `card()` | Individual `card()` blocks (each focusable) |
+| Pricing tables | `table()` | `table()` — passive, fine for dense data |
+| Testimonials / reviews | `quote()` | `quote()` — passive, or `card()` if users need to browse |
+| Work history / experience | `timeline()` | **Individual `card()` blocks** (each focusable, scrollable) |
+| Education entries | `timeline()` | **Individual `card()` blocks** (subtitle=dates) |
+| FAQ / collapsible sections | `accordion()` | `accordion()` — each item is focusable + expandable |
+| Sectioned page content | `tabs()` | **`divider("Label")` + content below** (vertical scroll) |
+| Toggle between views | `tabs()` | `tabs()` — only for mutually exclusive views |
+| Blog post list | `card()` | Individual `card()` blocks (subtitle=date, body=excerpt) |
+| Contact / social links | `link()` | `link()` per item (each focusable) |
+| Stats / metrics / skills | `skillBar()` | `skillBar()` or `progressBar()` — passive display |
+| Features list | `card()` | Individual `card()` blocks with tags |
+| Menu items (restaurant) | `section()` + `card()` | `divider("Category")` + `card()` items (subtitle=price) |
+| Documentation / prose | `markdown()` | `markdown()` — passive text |
+| Data / comparison | `table()` | `table()` — passive dense data |
+| Step-by-step instructions | `list()` | `list("number")` — passive, or `accordion()` for expandable |
+| Search functionality | `searchInput()` | `searchInput()` with `action: "navigate"` |
+| Contact forms | `form()` | `form()` with inputs + button |
+| Interactive charts | `asciiArt.barChart()` | Custom block with dataviz functions |
+| Real-time data | `liveData()` + `dynamic()` | `dynamic()` blocks with fetcher/state |
+
+### Theme Selection Guide
+
+| Theme | Best For |
+|---|---|
+| `cyberpunk` | Tech startups, gaming, futuristic — neon, electric |
+| `dracula` | Developer tools, general purpose — classic dark (default) |
+| `nord` | Corporate, professional, SaaS — clean, minimal |
+| `monokai` | Coding tools, dev portfolios — code-editor feel |
+| `solarized` | Academic, documentation, research — scholarly |
+| `gruvbox` | Restaurants, cafes, crafts — earthy, warm, retro |
+| `catppuccin` | Creative agencies, design — soft, pastel, friendly |
+| `tokyoNight` | Modern SaaS, product pages — sleek, contemporary |
+| `rosePine` | Music, art, creative portfolios — dreamy, elegant |
+| `hacker` | Security, CTF, infosec — green-on-black, Matrix |
+
+### ASCII Art Selection Guide
+
+- **Banners:** Use `ascii()` with a font. Short names (1-2 words) work best. `"ANSI Shadow"` for modern, `"Calvin S"` for compact, `"Ogre"` for fun, `"Slant"` for elegant.
+- **Hero art:** Use `asciiArt.scene()` — `mountains` for outdoors, `cityscape` for urban, `rocket` for startups, `terminal` for dev tools, `coffee-cup` for cafes.
+- **Decorative icons:** Use `getIcon()` — `laptop` for tech, `music` for bands, `cup` for restaurants, `heart` for personal, `code` for dev.
+- **Backgrounds/borders:** Use `asciiArt.pattern()` — `circuit` for tech, `stars` for night themes, `waves` for ocean.
+- **Data display:** Use `asciiArt.barChart()` for comparisons, `asciiArt.sparkline()` for trends, `asciiArt.pieChart()` for proportions, `asciiArt.graph()` for time series.
+- **Composition:** Combine ASCII art using string-array helpers from your own code (e.g. zip with `padEnd`); the framework no longer ships a dedicated compose API.
+
+---
+
+## Complete Example: a small portfolio
+
+A complete project is a `config.ts` plus one file per page under `pages/`. Below: a 3-page portfolio.
+
+```ts
+// config.ts
+import { defineConfig, ascii } from "terminaltui";
+
+export default defineConfig({
+  name: "Alex Chen",
+  handle: "@alexchen",
+  tagline: "full-stack engineer & open source contributor",
+  banner: ascii("Alex Chen", { font: "ANSI Shadow", gradient: ["#ff6b6b", "#4ecdc4"] }),
+  theme: "dracula",
+  borders: "rounded",
+  animations: { boot: true, exitMessage: "See you in the terminal!" },
+});
+```
+
+```ts
+// pages/about.ts
+import { markdown, spacer, badge } from "terminaltui";
+
+export const metadata = { label: "About", icon: "◆", order: 1 };
+
+export default function About() {
+  return [
+    markdown("Hey! I'm Alex, a full-stack engineer in San Francisco."),
+    spacer(),
+    badge("Available for projects"),
+  ];
+}
+```
+
+```ts
+// pages/projects.ts
+import { card, columns, panel } from "terminaltui";
+
+export const metadata = { label: "Projects", icon: "▣", order: 2 };
+
+export default function Projects() {
+  return [
+    columns([
+      panel({ width: "50%", content: [
+        card({ title: "terminaltui", body: "TUI framework", tags: ["TypeScript"] }),
+      ]}),
+      panel({ width: "50%", content: [
+        card({ title: "another-app", body: "...", tags: ["Rust"] }),
+      ]}),
+    ]),
+  ];
+}
+```
+
+```ts
+// pages/links.ts
+import { link } from "terminaltui";
+
+export const metadata = { label: "Links", icon: "→", order: 3 };
+
+export default function Links() {
+  return [
+    link("GitHub", "https://github.com/alexchen", { icon: ">" }),
+    link("Email", "mailto:alex@example.com", { icon: ">" }),
+  ];
+}
+```
+
+For more substantial examples — restaurant, dashboard with live API data, conference site, server monitor — read the source under `node_modules/terminaltui/demos/<name>/` (or `demos/<name>/` in the repo). Each demo has a `config.ts` and a populated `pages/` directory.
+
+
+## Common Mistakes to Avoid
+
+1. **Missing `page()` wrapper.** Always use `page("id", { ... })`, not raw objects. The first argument is the page ID.
+
+2. **Wrong font name casing.** Font names are case-sensitive: `"ANSI Shadow"` not `"ansi shadow"`, `"Calvin S"` not `"Calvin s"`.
+
+3. **Using `content: markdown("text")` instead of `content: [markdown("text")]`.** Content is always an array of blocks.
+
+4. **Forgetting `type: "module"` in package.json.** terminaltui uses ES modules. Your package.json must include `"type": "module"`.
+
+5. **Not returning ActionResult from form onSubmit.** Must return `{ success: "..." }`, `{ error: "..." }`, or `{ info: "..." }`.
+
+6. **Putting inputs outside a form and expecting submission.** Standalone inputs work for onChange reactivity, but for submit behavior wrap them in `form()`.
+
+7. **Using `.length` instead of `stringWidth()` for terminal display width.** Unicode characters (CJK, emoji, box-drawing) have different display widths. Import `stringWidth` from terminaltui.
+
+8. **Gradient arrays with one color.** Gradients need at least 2 colors: `gradient: ["#ff0000", "#0000ff"]`.
+
+9. **Async content without loading state.** When using `() => Promise<ContentBlock[]>` for page content or `asyncContent()`, always provide a `loading` message.
+
+10. **Not handling errors in async pages.** Provide `onError` on pages with async content to show a fallback instead of crashing.
+
+11. **Calling `navigate()` before runtime init.** Only call `navigate()` from event handlers, middleware, or lifecycle hooks — not at the top level of the file.
+
+12. **Missing `id` on input components.** Every input (textInput, select, checkbox, etc.) must have a unique `id` for form data collection.
+
+13. **Forgetting `onChange` on interactive inputs.** If you want real-time reactivity from a select, checkbox, toggle, or radioGroup, you must pass an `onChange` handler.
+
+14. **Emitting raw truecolor ANSI from a custom render function.** Color depth varies per viewer and is never safe to assume — Apple Terminal below build 470 has no truecolor at all, and `NO_COLOR` or a 16-color session can turn up anywhere. Always go through `fgColor()`/`bgColor()` from terminaltui, which quantize to whatever the session detected. (Apple Terminal 470+ on macOS 26 *does* do 24-bit, and the framework detects it from `TERM_PROGRAM_VERSION` since Terminal.app never sets `COLORTERM` — but that is the detector's problem, not yours.)
+
+15. **Using `timeline()` for browsable content.** `timeline()` renders as individual focusable items but they're display-only — Enter does nothing. If users need to interact with entries (open URLs, see details), use individual `card()` blocks instead.
+
+16. **Using `tabs()` to organize page sections.** `tabs()` forces horizontal left/right switching which is awkward in a TUI. Use `divider("Section Name")` to visually separate sections — everything stays in one vertical scroll flow.
+
+17. **Putting everything inside `section()`.** `section()` adds a header + divider but doesn't change focusability. If you just need a visual label, `divider("Label")` is lighter and doesn't add nesting.
+
+18. **Forgetting the TUI is vertical-first.** Always ask: "can the user reach this content by pressing ↓ repeatedly?" If the answer is no (e.g., content hidden behind a tab or inside a non-focusable block), restructure to be vertically scrollable.
+
+---
+
+## Custom Components (Advanced)
+
+Register custom component renderers using the `componentRegistry`:
+
+```ts
+import { componentRegistry } from "terminaltui";
+import type { RenderContext } from "terminaltui";
+
+// Register a custom block type
+componentRegistry.register("myWidget", (block, ctx: RenderContext) => {
+  return [`  Widget: ${block.label}`];
+}, true /* focusable */);
+```
+
+The registry maps block type strings to render functions. Built-in components are pre-registered. Custom components can be used in content arrays by creating blocks with a matching `type` field.
+
+For internal architecture details, see `ARCHITECTURE.md` in the project root.

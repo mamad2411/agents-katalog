@@ -1,0 +1,125 @@
+---
+name: agent-pipeline
+description: Multi-agent pipeline orchestration skill
+compatibility: omp
+---
+
+# OMP Native Agent Pipeline
+
+Use for `/auto go SPEC-ID [--execution-owner omp|orca]`. This entrypoint selects
+work and context; open only the reference needed for the current step.
+
+| Need | Open |
+|---|---|
+| Phase entry, work, and exit conditions | `references/phases.md` |
+| Worker ownership and context isolation | `references/delegation.md` |
+| Change classification and gate evidence | `references/gates.md` |
+| Tests, smoke checks, and UX verification | `references/verification.md` |
+| Review authority and termination | `references/review.md` |
+| Completion and sync readiness | `references/completion.md` |
+| Configured quality and permissions | `references/quality-modes.md` |
+
+## Execution Decision
+
+Work in the current session by default. Dispatch only genuinely independent
+slices, a necessary specialist review, or work that needs isolated context.
+File count and line count do not justify delegation. Keep dependent or
+same-file work sequential; one migration-numbering lane has one writer.
+
+A verified low-risk compact change contract omits separate planning and test
+scaffold dispatch: implementation still starts with the relevant failing test,
+then validation and review run. Missing, ambiguous, or escalated authorization
+keeps the full route. Report the actual `route_phase_set` from `auto pipeline
+run`, not an imagined phase checklist. Explicit `--solo`, `--team`, and
+`--multi` requests must retain their requested semantics.
+
+## Execution Owner
+
+Choose exactly one DAG owner before any dispatch: `--execution-owner omp|orca`.
+Omission selects `omp`. Reject duplicate, aliased, or conflicting owner flags;
+never retry a failed explicitly selected owner as another owner.
+
+- Owner `omp`: this session owns progress through native `task`, `hub`, and
+  `todo`. `--solo` keeps work in this session; `--team` requests a native batch
+  with explicit responsibilities. The two flags conflict.
+- Owner `orca`: only an explicit `--execution-owner orca` selects it. First run
+  and read `orca skills get orchestration --full`; the Orca Run owns the DAG.
+  Do not create a competing OMP task or progress DAG. `--team` and `--solo`
+  conflict with this owner.
+- `--multi` requests risk-tiered provider-diverse evidence, not a second DAG.
+
+`auto pipeline run SPEC-ID --platform omp --execution-owner orca` performs the
+integrity check and records `pipeline_execution_owner_receipt.v1` before any
+worker session. The body-free `.autopus/pipeline-state/<SPEC-ID>.execution-owner.json`
+records owner, source, identity, and verification status.
+
+## Native Dispatch
+
+Before dispatch, inspect the tools actually exposed by this runtime. Use their
+current schemas rather than copying static payloads. If the selected topology
+requires an unavailable tool, report that blocker; never simulate dispatch.
+
+OMP registers five agents: `scout`, `reviewer`, `security-reviewer`, `task`,
+and `sonic`. There is no Autopus-specific agent to select, so pick by what the
+work needs:
+
+- `task` runs planning, implementation, debugging, test authoring, and UX work.
+  It is the default for every writing slice; omitting the agent selects it.
+- `scout` is read-only exploration only. Never give it work that writes.
+- `reviewer` and `security-reviewer` keep their built-in review boundaries; use
+  them for review and security findings, not for implementation.
+- `sonic` is only for an explicit mechanical request. Never route reasoning,
+  planning, validation, or review to it.
+
+The role a worker plays belongs in its assignment text, not in an agent name.
+State the responsibility, scope, and exit condition in the task itself.
+
+Batch independent owned slices together. Native OMP owns isolated worktree
+creation, integration, and cleanup. Request isolation only if the current
+`task` schema exposes it; do not manually merge or remove its worktrees.
+
+Each worker receives scope, forbidden paths, acceptance criteria, and only its
+needed context. Request the five-field result contract: `owned_paths`,
+`changed_files`, `verification`, `blockers`, `next_required_step`. Use native
+schema validation where supported; worker assertions are not execution proof.
+Record actual dispatch count and the native agents used. Follow up with the
+same revivable worker through `hub`; an isolated worker whose workspace has
+been released needs a new assignment. Only the parent owns `todo`.
+
+## Context and Models
+
+Keep required core/SPEC bodies complete and hash-verified. Ordinary
+`auto workflow context` includes optional architecture only when explicitly
+selected. The managed OMP evidence path independently rebuilds its canonical
+full context: do not substitute a smaller CLI manifest, alter its signed
+protocol, or promote an unmeasured compaction result.
+
+Give workers task deltas and retrievable references instead of replaying raw
+provider/tool output. Validate paths and hashes; reject missing required
+context, traversal, symlinks, stale or wrong-SPEC input before dispatch. Use
+native context management rather than layering an extra summarization loop.
+
+Inherit the current OMP session model and thinking configuration unless an
+explicit validated role-model profile has written `task.agentModelOverrides`
+for the native agent being dispatched. That configuration is the only model
+authority: never pass a guessed model ID, and never pick a cheaper agent to
+fit a larger task.
+
+## Gates and Completion
+
+Use `auto spec gates` for applicability and exact-input evidence reuse.
+Security, validation, data-loss, and deterministic-oracle gates remain active;
+UI changes retain accessibility and UX verification. Annotation is opt-in via
+`--annotation` or a direct request, not an automatic extra worker phase.
+Honor explicit project/route numerical gates; do not invent universal floors.
+
+Integrate changes before the merged verification run. Keep a verdict and real
+evidence per acceptance criterion. Failed tests or security findings cannot be
+overruled by provider consensus. Re-review only changed/open findings; unchanged
+input is not a reason to repeat discovery. Respect the existing retry limits.
+
+Finish only after the changed path has run, required acceptance is satisfied,
+and blocking findings are closed. Use `references/completion.md` for the sync
+receipt. Status combines project/SPEC state with the selected owner's native
+job state; external commands must not inspect user-owned OMP session roots or
+claim they replace native `hub` observations.

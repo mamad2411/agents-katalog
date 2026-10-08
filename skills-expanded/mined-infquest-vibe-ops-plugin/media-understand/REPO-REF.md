@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/infquest/vibe-ops-plugin (path: skills/media-understand/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 使用 AI 理解和分析多媒体内容（图片、视频、音频）。Use when user wants to 理解图片, 分析视频, 音频转文字, 视频问答, understand media, analyze video, transcribe audio, describe image, what is in this video/image/audio.

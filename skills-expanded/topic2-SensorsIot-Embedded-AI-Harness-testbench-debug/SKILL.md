@@ -1,0 +1,527 @@
+---
+name: testbench-debug
+description: Remote GDB debugging of ESP32 devices via the testbench. Covers USB JTAG (C3/S3), dual-USB (S3 two-port), and ESP-Prog (FT2232H) approaches. Use when setting up JTAG debugging, connecting GDB, configuring OpenOCD, or troubleshooting debug connections. Triggers on "GDB", "JTAG", "debug", "OpenOCD", "breakpoint", "ESP-Prog", "step through", "debug session".
+---
+
+# Testbench GDB Debugging
+
+Remote GDB debugging of ESP32 devices through the testbench Pi. OpenOCD runs on the Pi, GDB connects from the container over TCP.
+
+**Architecture:**
+```
+[Container]              [Pi (testbench)]           [ESP32]
+  GDB ──── TCP :3333 ────── OpenOCD ──── USB JTAG ──────── CPU
+                             (or)
+                           OpenOCD ──── ESP-Prog ── JTAG pins
+```
+
+---
+
+## Three Approaches
+
+| Approach | Chips | Extra Hardware | Serial During Debug |
+|----------|-------|:-:|:-:|
+| **USB JTAG** (FR-024) | C3, S3 (native USB only) | None | Yes |
+| **Dual-USB** (FR-025) | S3 (two USB connectors) | None | Yes + app USB |
+| **ESP-Prog** (FR-026) | All ESP32 variants | ESP-Prog (~$15) + cable | Yes |
+
+---
+
+## Auto-Debug (Zero Config)
+
+OpenOCD starts **automatically** when a device is plugged in or at boot. No API call needed.
+
+**How it works:**
+1. Device hotplugged → serial proxy starts → auto-detect tries OpenOCD configs
+2. Chip identified via JTAG TAP ID → OpenOCD starts on the assigned GDB port
+3. If USB JTAG fails (e.g. classic ESP32), falls back to ESP-Prog probe if available
+4. GDB port reported in `/api/devices` response
+
+**Check debug status:**
+```bash
+curl $TESTBENCH_URL/api/devices
+# Look for: "debugging": true, "debug_chip": "esp32s3", "debug_gdb_port": 3335
+```
+
+**Manual override (optional -- only needed to force-stop or force-start):**
+```bash
+# Force stop (won't auto-restart until next hotplug)
+curl -X POST $TESTBENCH_URL/api/debug/stop -d '{}'
+
+# Force start with specific chip
+curl -X POST $TESTBENCH_URL/api/debug/start \
+  -d '{"chip": "esp32c3"}'
+```
+
+---
+
+## JTAG Reset (Preferred When Available)
+
+When a debug session is active, the testbench automatically uses **JTAG reset** instead of DTR/RTS serial reset. This is transparent — the same `/api/serial/reset` API is used.
+
+**Why JTAG reset is better:**
+- No USB re-enumeration (device node stays stable)
+- No flapping risk
+- No 2-second boot delay
+- Works even when serial port is unresponsive
+- Can halt the CPU to stop boot loops
+
+**Via OpenOCD telnet (manual):**
+```bash
+# Soft reset (chip reboots normally)
+echo "reset run" | nc "$BENCH" 4446
+
+# Halt CPU (stops execution immediately)
+echo "halt" | nc "$BENCH" 4446
+
+# Reset and halt (for debugging from first instruction)
+echo "reset halt" | nc "$BENCH" 4446
+```
+
+**Via testbench API (automatic):**
+```bash
+# Uses JTAG reset when debug session is active, DTR/RTS otherwise
+curl -X POST $TESTBENCH_URL/api/serial/reset \
+  -H "Content-Type: application/json" -d '{"slot": "SLOT1"}'
+```
+
+**Availability:**
+| Scenario | JTAG reset? |
+|----------|:-:|
+| C3/S3/C6/H2 with native USB | Yes (auto-started) |
+| Classic ESP32 + ESP-Prog | Yes (when probe wired) |
+| Classic ESP32 without ESP-Prog | No — DTR/RTS fallback |
+
+---
+
+## Prerequisites
+
+OpenOCD is pre-installed on the Pi:
+```
+/usr/local/bin/openocd-esp32           # binary
+/usr/local/share/openocd-esp32/scripts/ # config files
+```
+
+If missing, run `install.sh` or manually:
+```bash
+# On Pi (aarch64)
+wget https://github.com/espressif/openocd-esp32/releases/download/v0.12.0-esp32-20260304/openocd-esp32-linux-arm64-0.12.0-esp32-20260304.tar.gz
+tar xzf openocd-esp32-linux-arm64-*.tar.gz
+sudo cp openocd-esp32/bin/openocd /usr/local/bin/openocd-esp32
+sudo mkdir -p /usr/local/share/openocd-esp32
+sudo cp -r openocd-esp32/share/openocd/scripts /usr/local/share/openocd-esp32/scripts
+```
+
+---
+
+## 1. USB JTAG (ESP32-C3 / ESP32-S3 with Native USB)
+
+### Identify the device
+
+The device must show as `303a:1001` (Espressif USB JTAG/serial debug unit).
+Boards with CH340/CP2102 UART bridges do NOT support USB JTAG.
+
+```bash
+# Check from Pi
+ssh pi@<bench-hostname> "lsusb -d 303a:1001"
+# → Bus 001 Device 066: ID 303a:1001 Espressif USB JTAG/serial debug unit
+```
+
+USB interface layout (no kernel unbind needed):
+- Interface 0: CDC-ACM serial → `/dev/ttyACM*` (RFC2217 proxy)
+- Interface 1: CDC Data
+- Interface 2: Vendor Specific (**unclaimed** — OpenOCD uses via libusb)
+
+### Chip auto-detection
+
+USB PID `303a:1001` is the same for C3 and S3. The JTAG TAP ID identifies the chip:
+
+| TAP ID | Chip | Architecture | Config |
+|--------|------|-------------|--------|
+| `0x00005c25` | ESP32-C3 | RISC-V single-core | `esp32c3-builtin.cfg` |
+| `0x00010c25` | ESP32-H2 | RISC-V single-core | `esp32h2-builtin.cfg` |
+| `0x0000dc25` | ESP32-C6 | RISC-V single-core | `esp32c6-builtin.cfg` |
+| `0x120034e5` | ESP32-S3 | Xtensa dual-core | `esp32s3-builtin.cfg` |
+
+### Start OpenOCD manually (for testing)
+
+```bash
+# ESP32-C3
+ssh pi@<bench-hostname> "openocd-esp32 -s /usr/local/share/openocd-esp32/scripts \
+  -f board/esp32c3-builtin.cfg \
+  -c 'gdb port 3333' -c 'telnet port 4444' -c 'bindto 0.0.0.0'"
+
+# ESP32-S3
+ssh pi@<bench-hostname> "openocd-esp32 -s /usr/local/share/openocd-esp32/scripts \
+  -f board/esp32s3-builtin.cfg \
+  -c 'gdb port 3333' -c 'telnet port 4444' -c 'bindto 0.0.0.0'"
+```
+
+### Connect GDB from container
+
+```bash
+# C3 (RISC-V)
+riscv32-esp-elf-gdb build/project.elf \
+  -ex "target extended-remote $BENCH:3333" \
+  -ex "monitor reset halt"
+
+# S3 (Xtensa)
+xtensa-esp32s3-elf-gdb build/project.elf \
+  -ex "target extended-remote $BENCH:3333" \
+  -ex "monitor reset halt"
+```
+
+### Connect via OpenOCD telnet (quick test)
+
+```python
+import socket, time
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((BENCH, 4444))
+time.sleep(0.5)
+banner = s.recv(4096)  # telnet negotiation + "Open On-Chip Debugger"
+s.sendall(b'halt\n')
+time.sleep(1)
+print(s.recv(4096).decode('latin-1'))  # "Target halted, PC=0x..."
+s.sendall(b'resume\n')
+time.sleep(0.5)
+s.close()
+```
+
+### Serial coexistence
+
+Serial (RFC2217) and JTAG use separate USB interfaces. Both work
+simultaneously — `printf` output visible in serial monitor while GDB
+is connected. No proxy stop needed.
+
+---
+
+## 2. Dual-USB (ESP32-S3 with Two USB Ports)
+
+Some S3 boards expose both USB controllers:
+
+| Port | Controller | Function |
+|------|-----------|----------|
+| USB-Serial/JTAG | Debug controller | Serial + JTAG (same as approach 1) |
+| USB-OTG | Peripheral | Application USB (HID, CDC, MSC) |
+
+Both ports connect to the Pi's USB hub (2 hub ports per DUT). All three
+functions (serial, JTAG, app USB) work simultaneously.
+
+Same OpenOCD commands as approach 1 — the debug port uses `esp32s3-builtin.cfg`.
+
+---
+
+## 3. ESP-Prog (External FT2232H Probe)
+
+### JTAG pin wiring
+
+| ESP-Prog | Signal | ESP32 | ESP32-C3 | ESP32-S3 |
+|----------|--------|-------|----------|----------|
+| Pin 4 | TCK | GPIO13 | GPIO4 | GPIO39 |
+| Pin 8 | TDI | GPIO12 | GPIO5 | GPIO40 |
+| Pin 6 | TDO | GPIO15 | GPIO6 | GPIO41 |
+| Pin 2 | TMS | GPIO14 | GPIO7 | GPIO42 |
+| Pin 3,5,7 | GND | GND | GND | GND |
+
+### Unbind FTDI channel A
+
+The Linux `ftdi_sio` driver claims both FT2232H channels as serial ports.
+Channel A (JTAG) must be released before OpenOCD can use it:
+
+```bash
+# Find the USB bus ID
+ssh pi@<bench-hostname> "lsusb -d 0403:6010"
+# → Bus 001 Device 020: ID 0403:6010 ... FT2232C/D/H
+
+# Unbind channel A (interface 0)
+ssh pi@<bench-hostname> "echo '1-1.4:1.0' | sudo tee /sys/bus/usb/drivers/ftdi_sio/unbind"
+# Channel B (/dev/ttyUSB1) remains for UART
+```
+
+### Start OpenOCD with ESP-Prog
+
+```bash
+ssh pi@<bench-hostname> "openocd-esp32 -s /usr/local/share/openocd-esp32/scripts \
+  -f interface/ftdi/esp_ftdi.cfg \
+  -f target/esp32.cfg \
+  -c 'gdb port 3333' -c 'telnet port 4444' -c 'bindto 0.0.0.0'"
+```
+
+Replace `target/esp32.cfg` with the appropriate target:
+- `target/esp32.cfg` — classic ESP32
+- `target/esp32c3.cfg` — ESP32-C3
+- `target/esp32s3.cfg` — ESP32-S3
+
+### Classic ESP32 caveat: GPIO12 strapping pin
+
+JTAG TDI is GPIO12, which selects flash voltage at boot. If HIGH at
+power-on, the chip configures 1.8V flash (crashes on 3.3V boards).
+
+**Fix:** Burn `VDD_SDIO` eFuse to force 3.3V:
+```bash
+## Port is auto-assigned — read it from /api/devices (the "url" field)
+espefuse.py --port rfc2217://<bench>:<PORT> set_flash_voltage 3.3V
+```
+
+---
+
+## VS Code Integration
+
+### launch.json (C3 / RISC-V)
+```json
+{
+  "type": "cppdbg",
+  "request": "launch",
+  "program": "${workspaceFolder}/build/project.elf",
+  "miDebuggerPath": "riscv32-esp-elf-gdb",
+  "miDebuggerServerAddress": "<bench-ip>:3333",
+  "setupCommands": [
+    {"text": "set remote hardware-breakpoint-limit 2"},
+    {"text": "monitor reset halt"}
+  ]
+}
+```
+
+### launch.json (S3 / Xtensa)
+```json
+{
+  "type": "cppdbg",
+  "request": "launch",
+  "program": "${workspaceFolder}/build/project.elf",
+  "miDebuggerPath": "xtensa-esp32s3-elf-gdb",
+  "miDebuggerServerAddress": "<bench-ip>:3333",
+  "setupCommands": [
+    {"text": "set remote hardware-breakpoint-limit 2"},
+    {"text": "monitor reset halt"}
+  ]
+}
+```
+
+### PlatformIO (platformio.ini)
+```ini
+debug_tool = esp-builtin
+debug_server =
+debug_port = <bench-ip>:3333
+```
+
+---
+
+## Effects on the rest of the bench
+
+A live session is not passive. On a native-USB part serial and JTAG share the one
+interface, so while OpenOCD holds a slot:
+
+| Call | What happens |
+|---|---|
+| `POST /api/flash` | refused — stop debug first |
+| `POST /api/chip/info` | `409` — same reason |
+| `POST /api/serial/reset` | silently switches to a JTAG `reset run` and returns OpenOCD's text, not the boot log (see `testbench-logging`) |
+| `/api/devices` | still reports `state: "idle"` — the give-away is `debugging: true` |
+
+**OpenOCD starts on its own when a device is plugged in**, so a board is usually
+in this state without anyone having asked. `POST /api/debug/stop` releases it.
+
+### A session on one slot can block a different slot
+
+Native-USB parts all enumerate as `303a:1001`, and OpenOCD selects its USB JTAG
+interface by VID:PID rather than by devnode. With two identical boards on the
+bench, a session started for one can claim the other's interface. The symptom is
+on the *innocent* slot:
+
+```
+Serial port /dev/ttyACM1:
+Connecting...
+A serial exception error occurred: Write timeout
+```
+
+`/api/flash`, `/api/chip/info` and esptool all fail this way, while the slot
+reads `idle` with `debugging: false` — because the session belongs to a different
+slot. `detected_chip` going from a chip name to `null` is the other tell.
+
+So the check before flashing is not "is this slot debugging" but **"is any slot
+debugging"**:
+
+```bash
+curl -s $TESTBENCH_URL/api/devices \
+  | python3 -c "import json,sys; print([s['label'] for s in json.load(sys.stdin)['slots'] if s['debugging']])"
+```
+
+Stop every one it lists. A `Write timeout` here is a held interface, not a bad
+cable — retrying at a lower baud will not help.
+
+## API Endpoints
+
+Request and response shapes: [FSD Appendix D.3](../../../docs/Harness-FSD.md#d3-gdb-debug).
+
+**Note:** `POST /api/debug/start` and `POST /api/debug/stop` are optional overrides -- OpenOCD starts automatically when a device is plugged in. No API call is needed for normal use. All parameters are optional; the testbench auto-detects slot, chip, and probe.
+
+---
+
+## You cannot capture a coredump while the debugger is attached
+
+If you induce a panic to test coredump capture — jumping PC to `abort()` /
+`esp_system_abort`, or to an illegal address — while OpenOCD is attached, **no
+coredump is written**. ESP-IDF is OCD-aware (`CONFIG_ESP_DEBUG_OCDAWARE`,
+default on): the panic handler checks `esp_cpu_dbgr_is_attached()` and, finding
+a debugger, executes `ebreak` to hand control to it **instead of** writing the
+coredump to flash and rebooting. You will see the core halted at
+`esp_system_abort` with `debug_reason=1` (Illegal Instruction) — that halt *is*
+the OCD-aware break, not your crash reaching flash.
+
+So a "panic → coredump in flash → decode against the .elf" test is **not doable
+over JTAG**. Trigger the panic with the debugger detached — a test-build-only
+crash command, or a test tier built with `CONFIG_ESP_DEBUG_OCDAWARE=n` so an
+induced panic still dumps and reboots. (Reading an *existing* coredump back over
+JTAG is fine: `flash read_bank 0 <file> <part-offset> <len>` while halted.)
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `could not find or open device!` | Wrong config (C3 vs S3) or device not connected | Check `lsusb -d 303a:1001` |
+| Induced panic never writes a coredump | OpenOCD attached → OCD-aware break to debugger | Detach debugger; crash from a test build (`OCDAWARE=n`) — see above |
+| `JTAG scan chain interrogation failed: all ones` | JTAG cable not connected (ESP-Prog) | Wire TCK/TDI/TDO/TMS + GND |
+| `UNEXPECTED: 0x00005c25` with S3 config | Device is actually a C3 | Use `esp32c3-builtin.cfg` |
+| `UNEXPECTED: 0x120034e5` with C3 config | Device is actually an S3 | Use `esp32s3-builtin.cfg` |
+| SLOT flapping after debug | OpenOCD halt/resume caused USB re-enum | `POST /api/serial/recover` or manual hotplug |
+| `ftdi_sio` blocks OpenOCD | ESP-Prog channel A claimed by kernel | Unbind: `echo <busid>:1.0 > .../ftdi_sio/unbind` |
+| GDB connection refused | OpenOCD not running or wrong port | Check `telnet "$BENCH" 4444` first |
+| Flash voltage crash (classic ESP32) | GPIO12/TDI HIGH at boot | Burn VDD_SDIO eFuse to 3.3V |
+| No `303a:1001` in lsusb | Board uses CH340/CP2102 bridge, not native USB | Use ESP-Prog (FR-026) instead |
+| Auto-debug didn't start | Chip not detected or flapping | Check `journalctl -u rfc2217-portal` for `auto-detect` messages |
+| GDB port not in /api/devices | Auto-detect still running | Wait 10-15s after hotplug, then check again |
+
+---
+
+## ESP32/Xtensa: Reading Registers and GPIOs
+
+On ESP32/Xtensa, all memory reads via OpenOCD require a CPU halt (unlike ARM
+which has an independent debug bus). This means reading GPIO or peripheral
+registers will briefly pause the CPU.
+
+**Be aware**: if the CPU is halted during an I2C or SPI transaction, the
+transaction will be corrupted. The slave device (e.g. SI4735, OLED) may hold
+SDA low, locking the bus. Recovery requires a power cycle. This is normal
+JTAG debugging behavior — accept it and power cycle when needed.
+
+### GPIO input registers
+
+```
+GPIO_IN_REG   0x3FF44038   — GPIO 0-31 input levels
+GPIO_IN1_REG  0x3FF4403C   — GPIO 32-39 input levels
+```
+
+### Reading via OpenOCD telnet
+
+```python
+import socket, time, re
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((BENCH, 4444))
+time.sleep(0.3)
+s.recv(4096)  # banner
+
+s.sendall(b"halt\n"); time.sleep(0.05); s.recv(8192)
+s.sendall(b"mdw 0x3FF44038\n"); time.sleep(0.05)
+r1 = s.recv(4096).decode()
+s.sendall(b"mdw 0x3FF4403C\n"); time.sleep(0.05)
+r2 = s.recv(4096).decode()
+s.sendall(b"resume\n"); time.sleep(0.05); s.recv(4096)
+s.close()
+
+# Parse GPIO values from register
+v = int(re.search(r":\s*([0-9a-fA-F]+)", r1).group(1), 16)
+for pin in range(32):
+    print(f"GPIO{pin}: {(v >> pin) & 1}")
+```
+
+---
+
+## Source-Level Debugging with GDB
+
+### Prerequisites
+
+The PlatformIO GDB for ESP32 requires `libpython2.7.so.1.0`. Install it:
+
+```bash
+wget -q "http://deb.debian.org/debian/pool/main/p/python2.7/libpython2.7_2.7.18-8+deb11u1_amd64.deb" -O /tmp/libpython2.7.deb
+cd /tmp && dpkg -x libpython2.7.deb extracted
+sudo cp extracted/usr/lib/x86_64-linux-gnu/libpython2.7.so.1.0 /usr/lib/
+sudo ldconfig
+```
+
+GDB binary: `~/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-gdb`
+
+### Setting breakpoints by source file and line
+
+```bash
+xtensa-esp32-elf-gdb firmware.elf \
+  -ex "target extended-remote $BENCH:3333" \
+  -ex "monitor halt" \
+  -ex "break radio_controller.cpp:204" \
+  -ex "continue"
+```
+
+When the breakpoint hits, inspect variables, backtrace, and continue:
+
+```
+(gdb) bt                          # backtrace
+(gdb) print variable_name         # inspect variable
+(gdb) info locals                 # all local variables
+(gdb) continue                    # resume execution
+```
+
+### Setting breakpoints by function name
+
+```bash
+xtensa-esp32-elf-gdb firmware.elf \
+  -ex "target extended-remote $BENCH:3333" \
+  -ex "break RadioController::getRSSI" \
+  -ex "continue"
+```
+
+### Batch mode (non-interactive)
+
+```bash
+xtensa-esp32-elf-gdb firmware.elf -batch \
+  -ex "target extended-remote $BENCH:3333" \
+  -ex "monitor halt" \
+  -ex "break radio_controller.cpp:204" \
+  -ex "continue" \
+  -ex "bt" \
+  -ex "print myVar" \
+  -ex "delete breakpoints" \
+  -ex "continue"
+```
+
+### Mapping addresses to source (without GDB)
+
+```bash
+xtensa-esp32-elf-addr2line -e firmware.elf -f 0x400D8678
+# Output: function name + source file:line
+
+xtensa-esp32-elf-nm firmware.elf | grep functionName
+# Output: address of a function
+```
+
+### Hardware breakpoint limit
+
+ESP32 has **2 hardware breakpoints**. GDB uses these automatically for
+flash-resident code. If you need more, set breakpoints in RAM-resident
+code or use watchpoints.
+
+---
+
+## Available Board Configs
+
+```bash
+# List all ESP32 configs on the Pi
+ssh pi@<bench-hostname> "ls /usr/local/share/openocd-esp32/scripts/board/esp32*"
+```
+
+Key configs:
+- `board/esp32c3-builtin.cfg` — C3 via USB JTAG
+- `board/esp32s3-builtin.cfg` — S3 via USB JTAG
+- `board/esp32c3-ftdi.cfg` — C3 via ESP-Prog
+- `board/esp32s3-ftdi.cfg` — S3 via ESP-Prog
+- `board/esp32-wrover-kit-3.3v.cfg` — Classic ESP32 via ESP-Prog

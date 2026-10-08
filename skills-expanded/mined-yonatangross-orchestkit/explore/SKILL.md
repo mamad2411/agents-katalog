@@ -1,0 +1,349 @@
+---
+name: explore
+license: MIT
+compatibility: "Claude Code 2.1.251+. Requires memory MCP server."
+description: "Multi-angle codebase exploration spawning 3-5 parallel agents for code structure, data flow, architecture patterns, and health assessment. Generates ASCII visualizations, import graphs, and design pattern detection with cross-session memory storage. Use when exploring a repo, discovering architecture, onboarding to a new codebase, or analyzing design patterns."
+argument-hint: "[topic-or-feature] [--render=markdown|json-render|both] [--effort=low|medium|high]"
+context: fork
+# user-typed commands stay interactive; CC >= 2.1.218 backgrounds forks by default (#3093)
+background: false
+version: 2.6.0
+author: OrchestKit
+tags: [exploration, code-search, architecture, codebase, health-assessment]
+user-invocable: true
+allowed-tools: [AskUserQuestion, Read, Write, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskStop, mcp__memory__search_nodes, Bash, ToolSearch]
+skills: [glyph, architecture-decision-record, memory, architecture-patterns, chain-patterns]
+complexity: high
+persuasion-type: guidance
+effort: high
+model: sonnet
+hooks:
+  PreToolUse:
+    - matcher: "Glob"
+      command: "${CLAUDE_PLUGIN_ROOT}/hooks/bin/run-hook.mjs skill/repo-structure-indexer"
+      once: true
+metadata:
+  category: workflow-automation
+  mcp-server: memory
+triggers:
+  keywords: [explore, "how does", "walk me through", "big picture", architecture, "trace the", "where is", "find all files", codebase]
+  examples:
+    - "how does the auth system work in this codebase"
+    - "what is the architecture of this repo"
+    - "i just joined this project, walk me through the structure"
+  anti-triggers: [fix, implement, build, commit, review, assess]
+paths: ["src/**", "package.json", "CLAUDE.md"]
+---
+
+# Codebase Exploration
+
+Host-neutral workflow. Invoke by skill name (`explore`). Claude Code slash routing, YAML hook loaders, and `.claude/chain` live in `references/claude-code.md`.
+
+Multi-angle codebase exploration using 3-5 parallel agents.
+
+## 🎯 Quick Start
+
+```bash
+explore authentication
+```
+
+> **Opus 5**: Exploration agents use native adaptive thinking for deeper pattern recognition across large codebases.
+
+---
+
+## STEP -0.5: Effort-Aware Agent Scaling (CC 2.1.120+)
+
+Read `$CLAUDE_EFFORT` to scale exploration depth before any other decision.
+
+```python
+# CC 2.1.120+ env var; explicit --effort= overrides
+EFFORT = os.environ.get("CLAUDE_EFFORT")
+for token in "$ARGUMENTS".split():
+    if token.startswith("--effort="):
+        EFFORT = token.split("=", 1)[1]
+EFFORT = EFFORT or "high"  # default
+```
+
+| Effort | Agent count | Phases | Time |
+|--------|-------------|--------|------|
+| `low` | 1 (structure-only) | 1, 2, 8 | ~1 min |
+| `medium` | 2 (structure + data flow) | 1, 2, 3 (subset), 8 | ~3 min |
+| `high` (default) | 4 (full parallel team) | 1–8 | ~6 min |
+| `xhigh` (Opus 5) | 5 (+ uncertainty pass on health scores) | 1–8 + caveats | ~8 min |
+
+**Override gate:** if the user passes `--effort=high` explicitly while `$CLAUDE_EFFORT` is `low`, the flag wins. `doctor` warns when `xhigh` is requested without Opus 5.
+
+---
+
+## STEP 0: Verify User Intent with AskUserQuestion
+
+**BEFORE creating tasks**, clarify what the user wants to explore:
+
+```python
+AskUserQuestion(
+  questions=[{
+    "question": "What aspect do you want to explore?",
+    "header": "Focus",
+    "options": [
+      {"label": "Full exploration (Recommended)", "description": "Code structure + data flow + architecture + health assessment"},
+      {"label": "Quick scan", "description": "Find relevant files + structure, skip deep analysis"},
+      {"label": "Data flow", "description": "Trace how data moves through the system"},
+      {"label": "Architecture patterns", "description": "Identify design patterns and integrations"}
+    ],
+    "multiSelect": false
+  }]
+)
+```
+
+**Based on answer, adjust workflow:**
+- **Full exploration**: All phases, all parallel agents
+- **Quick scan**: Files + structure only (phases 1-2), skip health/deps/product — no deep agents
+- **Data flow**: Focus phase 3 agents on data tracing
+- **Architecture patterns**: Focus on backend-system-architect agent
+
+---
+
+## STEP 0b: Select Orchestration Mode
+
+### MCP Probe
+
+```python
+# memory is alwaysLoad in .mcp.json (CC 2.1.121+, #1541) — probe below kept as fallback for older CC:
+ToolSearch(query="select:mcp__memory__search_nodes")
+Write(".claude/chain/capabilities.json", { memory, timestamp })
+
+if capabilities.memory:
+  mcp__memory__search_nodes({ query: "architecture decisions for {path}" })
+  # Enrich exploration with past decisions
+```
+
+### Exploration Handoff
+
+After exploration completes, write results for downstream skills:
+
+```python
+Write(".claude/chain/exploration.json", JSON.stringify({
+  "phase": "explore", "skill": "explore",
+  "timestamp": now(), "status": "completed",
+  "outputs": {
+    "architecture_map": { ... },
+    "patterns_found": ["repository", "service-layer"],
+    "complexity_hotspots": ["src/auth/", "src/payments/"]
+  }
+}))
+```
+
+---
+
+Choose **Agent Teams** (mesh) or **Task tool** (star):
+
+1. Agent Teams mode (GA since CC 2.1.33) → **recommended for 4+ agents**
+2. Task tool mode → **for quick/single-focus exploration**
+3. `ORCHESTKIT_FORCE_TASK_TOOL=1` → **Task tool** (override)
+
+| Aspect | Task Tool | Agent Teams |
+|--------|-----------|-------------|
+| Discovery sharing | Lead synthesizes after all complete | Explorers share discoveries as they go |
+| Cross-referencing | Lead connects dots | Data flow explorer alerts architecture explorer |
+| Cost | ~150K tokens | ~400K tokens |
+| Best for | Quick/focused searches | Deep full-codebase exploration |
+
+> **Fallback:** If Agent Teams encounters issues, fall back to Task tool for remaining exploration.
+
+> **Model cost (CC 2.1.198+):** the built-in Explore agent inherits the session model **capped at Opus** — it no longer runs on haiku. From a premium-model session (Opus, Fable), budget Explore fan-outs at Opus rates; there is no knob to pin the built-in Explore back to haiku. ork's own explorer agents can still pin a cheaper model via frontmatter.
+
+---
+
+## 🚨 Task Management (MANDATORY)
+
+**BEFORE doing ANYTHING else, create tasks to show progress:**
+
+```python
+# 1. Create main task IMMEDIATELY
+TaskCreate(subject="Explore: {topic}", description="Deep codebase exploration for {topic}", activeForm="Exploring {topic}")
+
+# 2. Create subtasks for each phase
+TaskCreate(subject="Initial file search", activeForm="Searching files")                # id=2
+TaskCreate(subject="Check knowledge graph", activeForm="Checking memory")              # id=3
+TaskCreate(subject="Launch exploration agents", activeForm="Dispatching explorers")     # id=4
+TaskCreate(subject="Assess code health (0-10)", activeForm="Assessing code health")    # id=5
+TaskCreate(subject="Map dependency hotspots", activeForm="Mapping dependencies")       # id=6
+TaskCreate(subject="Add product perspective", activeForm="Adding product context")     # id=7
+TaskCreate(subject="Generate exploration report", activeForm="Generating report")      # id=8
+
+# 3. Set dependencies for sequential phases
+TaskUpdate(taskId="3", addBlockedBy=["2"])  # Memory check needs file search first
+TaskUpdate(taskId="4", addBlockedBy=["3"])  # Agents need memory context
+TaskUpdate(taskId="5", addBlockedBy=["4"])  # Health needs exploration done
+TaskUpdate(taskId="6", addBlockedBy=["4"])  # Hotspots need exploration done
+TaskUpdate(taskId="7", addBlockedBy=["4"])  # Product needs exploration done
+TaskUpdate(taskId="8", addBlockedBy=["5", "6", "7"])  # Report needs all analysis done
+
+# 4. Update status as you progress
+TaskUpdate(taskId="2", status="in_progress")  # When starting
+TaskUpdate(taskId="2", status="completed")    # When done — repeat for each subtask
+```
+
+---
+
+## 🔄 Workflow Overview
+
+| Phase | Activities | Output |
+|-------|------------|--------|
+| **1. Initial Search** | Grep, Glob for matches | File locations |
+| **2. Memory Check** | Search knowledge graph | Prior context |
+| **3. Deep Exploration** | 4 parallel explorers | Multi-angle analysis |
+| **4. AI System (if applicable)** | LangGraph, prompts, RAG | AI-specific findings |
+| **5. Code Health** | Rate code 0-10 | Quality scores |
+| **6. Dependency Hotspots** | Identify coupling | Hotspot visualization |
+| **7. Product Perspective** | Business context | Findability suggestions |
+| **8. Report Generation** | Compile findings | Actionable report |
+
+### Progressive Output (CC 2.1.76)
+
+Output findings **incrementally** as each phase completes — don't batch until the report:
+
+| After Phase | Show User |
+|-------------|-----------|
+| 1. Initial Search | File matches, grep results |
+| 2. Memory Check | Prior decisions and relevant context |
+| 3. Deep Exploration | Each explorer agent's findings as they return |
+| 5. Code Health | Health score with dimension breakdown |
+
+For Phase 3 parallel agents, output each agent's findings **as soon as it returns** — don't wait for all 4 explorers. Early findings from one agent may answer the user's question before remaining agents complete, allowing early termination.
+
+---
+
+### Phase 1: Initial Search
+
+```python
+# PARALLEL - Quick searches
+Grep(pattern="$ARGUMENTS[0]", output_mode="files_with_matches")
+Glob(pattern="**/*$ARGUMENTS[0]*")
+```
+
+### Phase 2: Memory Check
+
+```python
+mcp__memory__search_nodes(query="$ARGUMENTS[0]")
+mcp__memory__search_nodes(query="architecture")
+```
+
+### Phase 3: Parallel Deep Exploration (4 Agents)
+
+Load `Read("rules/exploration-agents.md")` for Task tool mode prompts.
+
+Load `Read("rules/agent-teams-mode.md")` for Agent Teams alternative.
+
+### Phase 4: AI System Exploration (If Applicable)
+
+For AI/ML topics, add exploration of: LangGraph workflows, prompt templates, RAG pipeline, caching strategies.
+
+### Phase 5: Code Health Assessment
+
+Load `Read("rules/code-health-assessment.md")` for agent prompt. Load `Read("references/code-health-rubric.md")` for scoring criteria.
+
+### Phase 6: Dependency Hotspot Map
+
+Load `Read("rules/dependency-hotspot-analysis.md")` for agent prompt. Load `Read("references/dependency-analysis.md")` for metrics.
+
+### Phase 7: Product Perspective
+
+Load `Read("rules/product-perspective.md")` for agent prompt. Load `Read("references/findability-patterns.md")` for best practices.
+
+### Phase 8: Generate Report
+
+Load `Read("references/exploration-report-template.md")`.
+
+### Phase 8b: Emit Dashboard Spec (json-render)
+
+Parse `--render=` from `$ARGUMENTS`. Default is `both`.
+
+| Mode | Behavior |
+|------|----------|
+| `markdown` | Current behavior — markdown report only. No spec emitted. |
+| `json-render` | Emit `.claude/chain/explore-dashboard.json` only. Skip markdown report. |
+| `both` | Emit spec **and** markdown. Default — gives the human a report and downstream skills a structured handoff. |
+
+When emitting a spec:
+
+1. Load the format and catalog: `Read("references/dashboard-spec.md")`. Reference example: `references/dashboard-example.json`.
+2. Build the spec object using only catalog component types: `Card`, `StatGrid`, `DataTable`, `StatusBadge`, `BarMeter`, `Heatmap`, `Markdown`.
+3. Write to `.claude/chain/explore-dashboard.json` with compact JSON (no indentation) — minimizes token cost for downstream consumers.
+4. Validate before declaring success:
+
+```bash
+node "${CLAUDE_SKILL_DIR}/scripts/render-spec.mjs" .claude/chain/explore-dashboard.json --check
+```
+
+If validation fails (exit ≠ 0), **do not emit** — fall back to markdown-only and surface the error to the user. Never write a partial or invalid spec.
+
+5. For `--render=both`, render the markdown view from the spec for consistency:
+
+```bash
+node "${CLAUDE_SKILL_DIR}/scripts/render-spec.mjs" .claude/chain/explore-dashboard.json
+```
+
+Pipe the output into the user-facing markdown report (or use it as-is). This guarantees the JSON spec and markdown report stay in sync — a single source of truth.
+
+**Why this matters:** Downstream skills (`fix-issue`, `implement`, `create-pr`) parse `.claude/chain/explore-dashboard.json` directly instead of re-reading 3000-token markdown. Measured: spec ≈ 580 tokens for the same content. Backwards-compatible: old chained workflows that read markdown keep working in `both` mode.
+
+## Phase 6.5 — Notebook summary (signal-fired, optional)
+
+After the session synthesis lands, optionally invoke `scripts/post_explore_summary.py <session-dir>` to auto-emit a notebook-backed summary of the exploration. Self-skips on every non-happy-path so it never breaks the run:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/post_explore_summary.py "$CLAUDE_JOB_DIR"
+```
+
+Auto-skip conditions (all exit 0, all WARN-logged):
+
+| Skip reason | Trigger |
+|-------------|---------|
+| `signal absent` | `len(dirs_scanned) < 3` (or field missing on `explore-output.json`) |
+| `yg-mcp-core not importable` | `yg-mcp-core>=0.3.0` not installed (orchestkit is public; yg-mcp-core lives on private `pypi.yonyon.ai` — HQ-only) |
+| `hq-content MCP unreachable` | MCP server down OR `.mcp.json` doesn't define `hq-content` |
+
+Session dir must contain `explore-output.json` (with `dirs_scanned: list[str]`, optional `synthesis: str`, required `notebook_id: str`). Handoff JSON at `<session-dir>/explore-summary.json` records `status` (`fired` / `skipped`) and `summary_path` on success.
+
+Mirrors the `brainstorm` post-synth podcast pattern from PR #1889. Closes orchestkit#1893.
+
+## Notes for long explorations
+
+> **Oversized reads (CC 2.1.144+):** Read returns a `[PARTIAL view]` truncated first page (not a hard error) when a whole-file read exceeds the token limit. When traversing large files, detect that notice and re-read with explicit `offset`/`limit` to page through the rest — never treat the partial as the full file.
+
+> **When context fills (CC 2.1.141+):** Use the rewind menu's "Summarize up to here" to compress earlier turns while keeping recent context, instead of restarting. Reactive compaction (CC 2.1.142+) now sizes the first summarize to the actual overflow, so a second mid-turn pass is rare.
+
+## Common Exploration Queries
+
+- "How does authentication work?"
+- "Where are API endpoints defined?"
+- "Find all usages of EventBroadcaster"
+- "What's the workflow for content analysis?"
+
+## Running unattended with /goal
+
+Set a completion condition with `/goal` (CC 2.1.139+) and this skill will keep working across turns until the condition is met. Works in interactive, `-p`, and Remote Control. The overlay panel shows live elapsed / turns / tokens.
+
+**Example completion condition for this skill:**
+
+```
+/goal until report.has_architecture_diagram AND patterns.detected_count >= 5, or stop after 10 turns
+```
+
+Stops when: codebase architecture diagram is generated and at least 5 design patterns have been classified. Compatible with claude.ai Remote Control runs.
+
+## Quality Bar
+
+Done means all of these hold:
+- Every architectural or data-flow claim cites concrete evidence (file:line or a file path), not prose assertion
+- Code health is reported as 0-10 scores with a per-dimension breakdown, not a bare number
+- Dependency hotspots / coupling are named along with the files that drive them
+- The report includes an architecture or structure visualization for the explored scope
+- If a json-render spec is emitted, it passes `render-spec.mjs --check`; on failure fall back to markdown-only and never write a partial spec
+
+## 📜 Related Skills
+- `ork:implement`: Implement after exploration
+---
+
+**Version:** 2.6.0 (April 2026) — `$CLAUDE_EFFORT` env var scales agent count (CC 2.1.120, #1540)

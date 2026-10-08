@@ -1,0 +1,87 @@
+---
+name: rezi-forms
+description: Set up form input handling with validation and submission. Use when building forms with inputs, selects, checkboxes, etc.
+user-invocable: true
+allowed-tools: Read, Glob, Grep, Edit, Write
+argument-hint: "[form-name]"
+metadata:
+  short-description: Set up forms
+---
+
+## When to use
+
+Use this skill when:
+
+- Building forms with multiple inputs
+- Need field validation and error display
+- Handling form submission with loading states
+
+## Source of truth
+
+- `packages/core/src/forms/useForm.ts` — `useForm()` hook
+- `packages/core/src/widgets/types.ts` — `InputProps`, `FieldProps`, `CheckboxProps`, `SelectProps`
+- `packages/core/src/widgets/ui.ts` — `ui.input()`, `ui.field()`, `ui.checkbox()`, `ui.select()`
+- `packages/core/src/ui/recipes.ts` — `recipe.input()`, `recipe.button()`, `recipe.select()` for design-system styling
+
+## Steps
+
+1. **Use the `useForm()` hook** inside a `defineWidget`:
+   ```typescript
+   import { defineWidget, ui, useForm } from "@rezi-ui/core";
+
+   const MyForm = defineWidget<{ onSubmit: (v: Values) => void }>((props, ctx) => {
+     const form = useForm(ctx, {
+       initialValues: { name: "", email: "" },
+       validate: (values) => {
+         const errors: Record<string, string> = {};
+         if (!values.name) errors.name = "Required";
+         if (!values.email.includes("@")) errors.email = "Invalid email";
+         return errors;
+       },
+       onSubmit: async (values) => props.onSubmit(values),
+     });
+
+     return ui.column({ gap: 1 }, [
+       ui.field({
+         label: "Name",
+         error: form.errors.name,
+         children: ui.input({ id: "field-name", ...form.bind("name") }),
+       }),
+       ui.field({
+         label: "Email",
+         error: form.errors.email,
+         children: ui.input({ id: "field-email", ...form.bind("email") }),
+       }),
+       ui.actions([
+         ui.button({ id: "cancel", label: "Cancel", intent: "secondary", onPress: () => {} }),
+         ui.button({ id: "save", label: "Save", intent: "primary", onPress: form.handleSubmit }),
+       ]),
+     ]);
+   }, { name: "MyForm" });
+   ```
+
+2. **Bind fields** using `form.bind("fieldName")` — returns object-form input props (`value`, `onInput`, `onBlur`, `disabled`)
+
+3. **Use `ui.field()`** to wrap inputs with labels and error display
+
+4. **Access form state** via `form.errors`, `form.touched`, `form.dirty`, `form.submitting`
+
+5. **Use success/warning for non-submit side actions**:
+   ```typescript
+   ui.button({ id: "approve", label: "Approve", intent: "success", onPress: handleApprove });
+   ui.button({ id: "review", label: "Needs Review", intent: "warning", onPress: handleReview });
+   ```
+
+## Design system note
+
+Inputs are recipe-styled by default when semantic color tokens are available (for example via a `ThemeDefinition` preset).
+Manual overrides merge on top via the same `mergeTextStyle(baseStyle, ownStyle)` pattern used by the renderer.
+Use manual `style` only for targeted overrides (merged on top of recipe output).
+For button visuals, use `intent` (`primary`, `secondary`, `danger`, `success`, `warning`, `link`) in app code.
+Do not use `dsVariant`/`dsTone` in app-level form code.
+
+## Verification
+
+- Validation errors display next to fields
+- Submission works and calls `onSubmit`
+- Touched/dirty state tracked correctly

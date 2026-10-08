@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/brycewang-stanford/Awesome-Journal-Skills (path: Computer-Science-Conference-Skills/skills/conference-on-empirical-methods-in-natural-language-processing/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Use when targeting Conference on Empirical Methods in Natural Language Processing (EMNLP) or deciding whether a computer-science manuscript fits this venue. Encodes conference fit, framing, evidence b

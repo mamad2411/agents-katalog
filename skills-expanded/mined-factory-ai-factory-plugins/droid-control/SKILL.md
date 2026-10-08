@@ -1,0 +1,239 @@
+---
+name: droid-control
+description: Control terminal TUIs, browsers, and native desktop apps for testing, demos, QA, and computer-use tasks. Use when you need to operate an app, automate a CLI, record a demo, or capture proof.
+---
+
+# Droid Control
+
+Automate terminals, browsers, and desktop apps. Route by the user's requested method first, then load only the mechanics and evidence stages needed.
+
+## Ground rules
+
+1. **Real apps, real environments.** Non-deterministic behavior (LLM responses, network latency, variable output) is expected. Handle it with `wait` / `wait-idle`. Never substitute fixtures or mocked data.
+2. **Recover from evidence.** After a failed or uncertain action, observe current state before retrying. Honor method constraints and permission boundaries; a refusal does not authorize another driver or broader target.
+3. **Atoms include their references.** Load linked material on demand. Desktop-use does not require a separately installed cua skill.
+4. **`tctl` owns recorded terminal sessions.** It wraps `asciinema rec` around the PTY; browser and desktop drivers own their separate lifecycles. Never call `tuistory launch` directly. Resolve `TCTL` to an absolute path only for terminal workflows or worker handoffs.
+5. **Isolate every run.** Multiple droids may be filming simultaneously on the same machine. Session names and output paths share a global namespace (`/tmp/tctl-sessions/`). At the start of every workflow, generate a run ID (`RUN_ID=$(date +%s)-$$` or similar) and use it as a prefix for all session names and a scoped temp directory for all output files:
+   ```bash
+   RUN_ID="$(date +%s)-$$"
+   RUN_DIR="$(mktemp -d /tmp/droid-run-${RUN_ID}-XXXXXX)"
+   # Session names: -s ${RUN_ID}-before, -s ${RUN_ID}-after
+   # Output paths: ${RUN_DIR}/before.cast, ${RUN_DIR}/after.cast
+   ```
+   Never use bare session names like `-s demo`, `-s before`, `-s after` — they will collide with concurrent runs.
+   Separate names and paths do not isolate shared desktop focus or keyboard input. Keep one controller for a visible desktop.
+
+## Routing
+
+Three independent lookups. Do all three, then load the union of skills they produce.
+
+### 1. Target route — what are you driving?
+
+| Target | Load these skills |
+|---|---|
+| User explicitly requests cua-only, native GUI input, or desktop control (including Electron) | **desktop-use**; method constraints override the defaults below |
+| Droid CLI (`droid-dev`, `droid exec`) | **terminal-use** + **droid-cli** |
+| Other terminal TUI | **terminal-use** |
+| Web page or Electron app | **browser-use** |
+| Native desktop GUI app | **desktop-use** |
+| Raw terminal byte sequences | **terminal-use** + **pty-capture** |
+
+**terminal-use** selects the terminal backend behind `${DROID_PLUGIN_ROOT}/bin/tctl`: `tuistory` by default, and it loads **true-input** when real terminal rendering or keyboard-encoding evidence is needed. Desktop-use includes compositor-specific guidance; inspect live Cua capabilities rather than assuming all Linux targets are X11-only or abandoning the user's chosen method.
+
+### 2. Stage route — what does the workflow need?
+
+Every workflow passes through stages. Load the atoms for each stage you'll use.
+
+| Stage | Skill | When to load |
+|---|---|---|
+| Capture | **capture** | Recording, scripted multi-step evidence, or a demo/QA deliverable; ordinary desktop operation uses the driver's observe/verify loop |
+| Compose | **compose** | When the deliverable is a produced artifact (video, annotated screenshots, comparison image) |
+| Verify | **verify** | Formal proof, demo, or QA deliverable; every action still needs verification even without this stage |
+
+### 3. Artifact route — does compose need polish tools?
+
+Only relevant when **compose** is loaded.
+
+| Artifact need | Also load |
+|---|---|
+| Showcase polish (window chrome, branded frame, cinematic background) | **showcase** |
+| Effects and keystroke overlays | (compose handles this — they're fields in the Remotion props JSON) |
+
+## Workflow shape
+
+```
+Command (intent + commitments)
+  → Target route (load driver atoms)
+  → Capture (record / screenshot / byte-capture)
+  → Compose (assemble deliverable, if needed)
+  → Verify (check against commitments)
+  → Report
+```
+
+Commands declare **what** to produce. Atoms own **how**.
+
+### Layout default
+
+**Default: `single`.** One clip showing the target/final state. Pick this unless the deliverable is fundamentally a comparison.
+
+| Case | Layout |
+|---|---|
+| Brand-new feature (no meaningful prior state) | `single` |
+| Bug fix, single-clip proof of the working path | `single` |
+| Walkthrough / tutorial / readme hero | `single` |
+| Regression proof (broken vs fixed) | `side-by-side` |
+| Behavior-preserving refactor (visual parity is the point) | `side-by-side` |
+| User explicitly asks for a comparison | `side-by-side` |
+
+Do not synthesize a "before" state to justify `side-by-side`. If there is no real baseline, use `single`.
+
+## Delegation
+
+Keep short interactive desktop tasks in the parent: it owns observations, input, user permission waits, and cleanup. Delegate independent capture environments or rendering, not individual screenshots interleaved with another controller's input.
+
+### What to delegate
+
+| Task | Delegate? | Why |
+|---|---|---|
+| **Interactive shared desktop** | NO — parent | One controller owns focus, snapshots, input, permission waits, and cleanup |
+| **Capture clip in an isolated terminal/browser environment** | YES | Worker owns the complete interaction and recording lifecycle |
+| **Capture both clips** (comparison layout) | YES, only with independent environments | Worktrees and session labels alone do not isolate a desktop |
+| **Remotion render** | YES | Needs only props JSON, clip paths, output path. Runs `render-showcase.sh` (handles .cast conversion, per-render staging, fidelity profiles, longest-clip duration, cleanup) |
+| Planning, interaction scripting | NO — parent | Requires PR context and editorial judgment |
+| Layout and prop construction | NO — parent | Requires editorial decisions about effects, timing, labels |
+| Verification | NO — parent | Requires commitment context |
+| Single ffprobe / file-existence check | NO — inline | Too trivial for subagent overhead |
+
+### How to delegate
+
+**Step 0: Resolve paths and generate a run ID.** Workers don't inherit `${DROID_PLUGIN_ROOT}`. Resolve once, paste everywhere:
+
+```bash
+TCTL="$(realpath "${DROID_PLUGIN_ROOT}/bin/tctl")"
+RENDER="$(realpath "${DROID_PLUGIN_ROOT}/scripts/render-showcase.sh")"
+RUN_ID="$(date +%s)-$$"
+RUN_DIR="$(mktemp -d /tmp/droid-run-${RUN_ID}-XXXXXX)"
+```
+
+Use `${RUN_DIR}` for all output files (recordings, props, rendered video). Use `${RUN_ID}-` as a prefix for all session names. Never use bare names like `-s before` or hardcoded paths like `/tmp/before.cast`.
+
+Give workers **exact commands** with the resolved absolute paths — not abstract instructions, not `tuistory`, not `${DROID_PLUGIN_ROOT}`. The parent does the thinking; the worker executes:
+
+```
+Task prompt for a capture worker:
+  "Run these commands in order. Report the output file path and any errors.
+   1. /abs/path/to/bin/tctl launch "droid-dev" -s 1712345678-42-before --backend tuistory \
+        --repo-root /abs/path/to/baseline/worktree \
+        --cols 120 --rows 36 --record /tmp/droid-run-1712345678-42-xxxx/before.cast \
+        --env FORCE_COLOR=3 --env COLORTERM=truecolor
+   2. /abs/path/to/bin/tctl -s 1712345678-42-before wait ">" --timeout 15000
+   3. /abs/path/to/bin/tctl -s 1712345678-42-before type "hello world"
+   4. /abs/path/to/bin/tctl -s 1712345678-42-before press enter
+   5. /abs/path/to/bin/tctl -s 1712345678-42-before wait-idle
+   6. /abs/path/to/bin/tctl -s 1712345678-42-before close"
+```
+
+```
+Task prompt for a Remotion render worker:
+  "Run this command. Report the output file path and any errors.
+   /abs/path/to/scripts/render-showcase.sh \
+     --props /tmp/droid-run-1712345678-42-xxxx/showcase-props.json \
+     --output /tmp/droid-run-1712345678-42-xxxx/demo.mp4 \
+     /tmp/droid-run-1712345678-42-xxxx/before.cast /tmp/droid-run-1712345678-42-xxxx/after.cast"
+```
+
+### Parallel capture pattern (comparison flows only)
+
+Only applicable when the Layout default table selects `side-by-side` and the capture environments are independent. Serialize shared-desktop captures. For a single interactive desktop task, keep control in the parent.
+
+For before/after comparison demos, launch both capture workers simultaneously:
+
+```
+1. Parent constructs the interaction script (identical for both branches)
+2. Launch worker A: capture the baseline/reference branch with `--repo-root` set to that worktree
+3. Launch worker B: capture the candidate/change branch with `--repo-root` set to that worktree
+4. Wait for both to complete (TaskOutput)
+5. Collect .cast paths from results
+6. Continue to compose
+```
+
+## Shared tooling
+
+Terminal drivers use the unified `tctl` wrapper. Browser-use and desktop-use have their own CLIs (`agent-browser`, `cua-driver`) and do not use `tctl`.
+
+Drivers can be combined in one workflow — e.g., `tctl` for a CLI and `agent-browser` for a web UI it interacts with.
+
+## Degraded-tail repro recipe (droid TUI)
+
+Deterministic recipe for reproducing degraded transcript tails in the droid CLI — stranded live tool rows and queued steering messages — without waiting for a slow model turn. The trick: a slow `PreToolUse` hook pins a tool in its executing state for as long as you need.
+
+1. **Scratch project.** Create a throwaway directory (never a real repo — the hook fires on every matching tool call) with a project-local hook that sleeps:
+
+   ```bash
+   SCRATCH="$(mktemp -d /tmp/degraded-tail-XXXXXX)"
+   mkdir -p "$SCRATCH/.factory"
+   cat > "$SCRATCH/.factory/settings.json" <<'JSON'
+   {
+     "hooks": {
+       "PreToolUse": [
+         {
+           "matcher": "TodoWrite",
+           "hooks": [{ "type": "command", "command": "sleep 120" }]
+         }
+       ]
+     }
+   }
+   JSON
+   ```
+
+   Pick a sleep long enough to interact mid-hook (60–180s) and a matcher for a tool the prompt will reliably trigger (`TodoWrite` fires on any multi-step ask).
+
+2. **Launch with `--cwd` pointed at the scratch project** — `--repo-root` stays on your dev worktree so `droid-dev` provenance still records the code under test:
+
+   ```bash
+   $TCTL launch "droid-dev" -s ${RUN_ID}-tail --cwd "$SCRATCH" \
+     --repo-root /abs/path/to/dev/worktree --record ${RUN_DIR}/tail.cast
+   ```
+
+3. **Trigger the hook**, then degrade the tail while the tool row shows executing:
+   - **Interrupt mid-hook** (`press escape`) — strands the live tool row: it never resolves to a completed/canceled state in the transcript tail.
+   - **Steer mid-hook** (`type "..."` + `press enter`) — the steering message queues behind the executing tool instead of interleaving.
+
+**Gotcha:** dev-scope hook settings can silently disable project hooks. If the tool completes instantly, run `/hooks` in the session and check the "Hooks enabled" toggle before debugging the hook config itself.
+
+## Prerequisites
+
+| Stage | Platform | Required | Optional |
+|---|---|---|---|
+| terminal-use (tuistory) | All | `tuistory`, `asciinema`, `agg` | `tmux` |
+| true-input | Linux/Wayland | `cage`, `wtype`, Wayland terminal, `/dev/dri/*` | `grim`, `wf-recorder` |
+| true-input | Windows (KVM) | `libvirt`, `qemu`, KVM VM with SPICE + SSH, `DROID_VM_*` env vars | `virt-manager` |
+| true-input | macOS (QEMU) | `qemu`, `socat`, macOS VM with SSH, `DROID_MAC_*` env vars | — |
+| browser-use | All | `agent-browser` (+ `agent-browser install`) | — |
+| desktop-use | All | `cua-driver` in the intended graphical session; approved OS permissions | Documentation is bundled; no separate skill install |
+| compose | All | `ffmpeg`, `ffprobe`, `agg` | — |
+| showcase | All | Node.js (>= 18), Chrome/Chromium | — |
+
+### Install commands
+
+```bash
+# tuistory driver + recording
+npm install -g tuistory                              # virtual PTY driver
+pip install asciinema                                # terminal recording (tctl wraps this)
+cargo install --git https://github.com/asciinema/agg  # .cast -> .gif converter (compose needs this)
+
+# true-input driver (Linux/Wayland)
+sudo apt-get install -y cage wtype                   # required: headless compositor + keystroke injection
+sudo apt-get install -y grim wf-recorder             # optional: screenshots + video recording
+
+# agent-browser driver
+agent-browser install                                # one-time: downloads bundled Chromium
+
+# desktop-use: follow its setup instructions only if the binary
+# is missing and installation is approved. No separate skill install.
+
+# compose + showcase (video rendering)
+sudo apt-get install -y ffmpeg                       # video processing (includes ffprobe)
+cd ${DROID_PLUGIN_ROOT}/remotion && npm install       # Remotion dependencies
+# Chrome or Chromium must be installed for Remotion rendering
+```

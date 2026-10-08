@@ -1,0 +1,1 @@
+../../../../skills/core/project-layout/SKILL.md

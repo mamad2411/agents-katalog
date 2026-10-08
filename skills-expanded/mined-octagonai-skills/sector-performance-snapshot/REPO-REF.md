@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/octagonai/skills (path: skills/sector-performance-snapshot/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Retrieve a snapshot of market sector performance using Octagon MCP. Use when analyzing sector-wide metrics including revenue, EBITDA, net income, market cap, and enterprise value for companies within 

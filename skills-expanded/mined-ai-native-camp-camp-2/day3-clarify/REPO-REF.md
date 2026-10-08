@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ai-native-camp/camp-2 (path: .claude/skills/day3-clarify/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: AI Native Camp Day 3 Clarify & GitHub. Clarify 플러그인으로 모호한 요구사항을 명확하게 만들고, 나만의 스킬을 만들고, PRD를 작성하여 GitHub에 첫 PR을 제출한다. "3일차", "Day 3", "clarify", "클래리파이", "PRD", "GitHub" 요청에 사용.

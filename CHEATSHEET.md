@@ -12,8 +12,26 @@ bash ~/.agents/sync-all.sh --fast       # versi ringan (tanpa rebuild katalog)
 ~/.agents/skill-search.sh "kata kunci"            # cari (bahasa natural OK)
 ~/.agents/skill-search.sh --tier curated "vue"    # filter tier
 ~/.agents/skill-search.sh -p "playwright"          # lihat PATH file SKILL.md
-~/.agents/skill-search.sh --load "playwright"     # baca isi SKILL.md
+~/.agents/skill-search.sh --load "playwright"     # baca isi SKILL.md (sadar: bisa 3–15 KB)
+bash ~/.agents/skill-load-lite.sh "playwright"    # ⭐ cara hemat: ≤80 baris/≤2 KB, esensi tetap dapat
 bash ~/.agents/session-brief.sh                   # konteks sesi (skill+MCP+repo+aturan)
+
+## Hemat konteks & limit (audit 2026-09-26: Claude 4,42 M token · Cline 4,47 M token)
+python3 ~/.agents/device-guard.py             # ⭐ PANAS & SSD: loop mining, agent 24/7, churn tulis
+python3 ~/.agents/loop-guard.py               # anti-LOOP: 80 tool call lunak / 200 keras
+bash ~/.agents/wire-skills-role.sh --list     # role pack: skill relevan saja per repo (12 preset)
+python3 ~/.agents/ai-context-audit.py             # ⭐ SEMUA tool AI: ukuran sesi + gambar base64
+python3 ~/.agents/usage-audit.py                  # token 7 hari + model + sesi terboros (Claude)
+python3 ~/.agents/audit-cline.py                  # Cline: token kumulatif + 20 output terbesar
+python3 ~/.agents/context-guard.py --report       # sesi >10 MB (wajib /clear sebelum lanjut)
+python3 ~/.agents/install-context-guard.py --check # aturan hemat di file rules semua tool
+python3 ~/.agents/mcp-slim-all.py --apply          # ramping MCP 19 tool ke skill-catalog (+router)
+python3 ~/.agents/archive-sessions.py --dry-run       # rencana arsip sesi >7 hari (otomatis 1×/minggu)
+python3 ~/.agents/skill-flow.py --stats           # injeksi skill per sesi (batas 400 B, dedupe)
+python3 ~/.agents/skill-flow.py --eval            # gerbang mutu routing (31/31)
+python3 ~/.agents/patch-settings-20260926.py      # pasang ulang hook+deny (idempoten, ada backup)
+# aturan: /clear di batas tugas · jangan --resume · jangan read vendor/node_modules/dist
+# aturan: JANGAN tempel gambar di sesi panjang (base64 ikut terkirim tiap request, selamanya)
 
 ## Kualitas & keamanan
 python3 ~/.agents/skill-eval.py                   # pass@1/pass@3 + health katalog

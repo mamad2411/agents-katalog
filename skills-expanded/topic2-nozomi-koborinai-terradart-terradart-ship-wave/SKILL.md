@@ -1,0 +1,151 @@
+---
+name: terradart-ship-wave
+description: Ship a TerraDart Wave release — curated factories, examples/docs debt, catalog counts, CHANGELOG, and agent_verify. Use when landing multiple related google_* resources as one user-visible release.
+---
+# Ship a TerraDart Wave
+
+Read [`CONTEXT.md`](../../../CONTEXT.md) for vocabulary. Generation policy is in [`AGENTS.md`](../../../AGENTS.md). For each new `google_*` factory, follow [`terradart-add-curated-resource`](../terradart-add-curated-resource/SKILL.md) first; this skill covers the **release boundary** around a Wave.
+
+The GA catalog is filled: Waves now originate from new resources the
+weekly schema bump appends to `tool/curation_backlog.yaml`, and catalog counts
+move as increments on the completed baseline. No scheduled agent ships them:
+the maintainer runs this skill (or asks a cloud agent to) for named backlog
+entries, and removes each shipped entry from the backlog in the same PR.
+
+A backlog entry whose `note:` says the schema bump generated its factory
+already has a default override (from `wrap-init`, or the lane scaffold on
+aws / cloudflare) and a published factory: skip `wrap-init`, polish the
+override (`paramOrder`, sealed slots, `curatedDoc`), and replace its
+`ClassName: awaiting-example:` line in `tool/example_debt.yaml` with an
+example (or a reasoned entry). Once a release has published the factory,
+an API change to it is breaking and needs a `MIGRATING.md` entry.
+
+## PR scope
+
+Ship **one Wave per PR** when possible. Do not bundle:
+
+- unrelated example `pubspec.yaml` / workspace version-debt sweeps
+- release version bumps for a different Wave
+- agent-guide-only edits with factory work
+
+If example debt must land with a Wave, limit changes to the quickstart that exercises the new factories. See **PR granularity** in [`AGENTS.md`](../../../AGENTS.md).
+
+## Wave complete definition
+
+A Wave PR is **not done** when wrappers and `curatedDoc` land alone. It is done when:
+
+1. **Curated factories** — overrides linted, `terradart wrap` regenerated, API diff reviewed. The migration manifest (`packages/terradart_migrate/lib/src/manifest/google.g.dart`) regenerates in the same full `wrap --migrate-manifest` run — `wrap --only` skips it, and the `wrap_check` lane fails while it is stale.
+2. **Runnable example** — new `examples/<name>_quickstart` **or** extend an existing example so every new/breaking factory appears in synth output. Machine-checked by `dart tool/example_synth_gates.dart` (synth `tfType` coverage, API-enablement deps, **`terraform validate` on every quickstart**); a factory may instead get a reasoned `tool/example_debt.yaml` entry, but that is an explicit reviewed decision. For pre-existing debt backfill, see [`terradart-backfill-examples`](../terradart-backfill-examples/SKILL.md). **IAM binding/policy preference:** for new `*IamBinding` / `*IamPolicy` when the sibling `*IamMember` is already curated and already in synth, prefer `tool/example_debt.yaml` with reason token `iam-adjunct-debt:` over extending examples solely for coverage. The synth gate enforces the token. If applying the quickstart needs an organization, an entitlement or real external inputs, bills while it exists, or leaves behind something that cannot be deleted (or a name that stays reserved), it must be a **gated example** (README `## Before you apply` section — `AGENTS.md` **Example verification**); apply-ability is never a reason for an `example_debt.yaml` entry. Never `terraform apply` from an agent session.
+3. **Breaking changes** — `MIGRATING.md` entry **and** example updated to the new API.
+4. **Counts & docs** — `tool/doc_expectations.dart`, `catalog_count_test.dart`, `wrap_command_test.dart`, README / package catalog **count phrases** (do not rebuild a per-factory dump in `## What ships` — detail lives on Coverage), agent/website catalog phrases, example `pubspec.yaml` carets.
+5. **CI matrix** — nothing to wire: the `terraform_validate` matrix derives from `examples/` automatically (`tool/select_changed_examples.dart`).
+6. **Verify** — [`terradart-agent-verify`](../terradart-agent-verify/SKILL.md) (`tool/agent_verify.sh`).
+
+`curatedDoc` alone does **not** satisfy (2). README example bullet lists must stay in sync with `examples/`.
+
+## Task progress
+
+- [ ] 1. **Scope the Wave** — list Terraform types, target barrel(s), and which example will exercise them.
+- [ ] 2. **Curate each resource** — `terradart-add-curated-resource` workflow per type (`mm_yaml_sources.yaml`, override, lint, wrap with `--migrate-manifest`).
+- [ ] 3. **Example / docs debt** — implement or extend quickstart **or** (for `*IamBinding`/`*IamPolicy` with sibling `*IamMember` already in synth) add `tool/example_debt.yaml` lines with `iam-adjunct-debt:`; update README Examples only when an example changes; website counts if the minor bumps; sync `tool/example_debt.yaml` (remove covered entries); if the quickstart is gated, write or update its README `## Before you apply` section.
+- [ ] 3b. **Migrator round-trip** — the round-trip gate (`dart tool/migrate_roundtrip_gates.dart --reuse-tf-out`, in the full `agent_verify.sh` and CI) migrates every quickstart back to Dart; a new factory the migrator keeps in Terraform needs a reasoned `tool/migrate_roundtrip_debt.yaml` entry (slug → address → reason) — a maintainer decision, so an agent running this skill stops and asks instead of adding the entry itself.
+- [ ] 4. **Breaking API** — `MIGRATING.md` + migrate any affected examples in the same PR.
+- [ ] 5. **Counts** — bump `catalogEntryCount` / `curatedFactoryCount` and every phrase in `tool/doc_expectations.dart`; sync tests.
+- [ ] 5b. **Coverage pages** — regenerate the site coverage pages (an overview plus one page per provider package): `dart tool/example_synth_gates.dart --skip-validate` then `dart tool/render_coverage_page.dart` (needs ALL tf-out present — the renderer fails closed on partial synth; CI's freshness check fails otherwise).
+- [ ] 6. **Ledger paydown** (release time — not part of a Wave PR) — run `dart tool/release_ledger_check.dart` (`tool/bump_version.sh` runs it first). It fails while `tool/sealed_name_debt.yaml` has an entry, because a temporary `Or` name must not ship. Name the group with `sealedNames` and re-run `wrap`. It also reports the `awaiting-example:` lines in `tool/example_debt.yaml` and the `tool/curation_backlog.yaml` entries, marking the ones new since the last tag. Before the bump, either ship them (Waves, example backfill) or accept them explicitly by putting the report in the release PR body. See `RELEASE.md` **Pre-flight**.
+- [ ] 6b. **Version & CHANGELOG** (maintainer, release time — not part of a Wave PR) — lockstep `0.N.P` across every workspace package (`tool/bump_version.sh`); root + per-package CHANGELOG entries.
+- [ ] 7. **CI** — nothing to wire: the `terraform_validate` matrix derives from `examples/` automatically (tool/select_changed_examples.dart).
+- [ ] 8. **Verify** — `tool/agent_verify.sh` (add `--maintainer` when touching wrap-init / wrap-promote).
+- [ ] 9. **Tag & GitHub release** (maintainer) — after merge and green CI: push `v0.N.P`, publish via `.github/workflows/publish.yml`, create the GitHub release using the template below (title is **`v0.N.P` only** — no Wave subtitle in the release name).
+
+## Example patterns
+
+| Situation | Action |
+|-----------|--------|
+| New service area (e.g. GKE) | Add `examples/gke_quickstart/` from `compute_quickstart` template |
+| Extends existing stack (e.g. WIF provider on IAM pool) | Extend `examples/iam_quickstart/lib/main.dart` |
+| Apply-gated factory (organization, entitlement, billing, undeletable) | Extend the product's gated example, or add one whose README has a `## Before you apply` section |
+| New `*IamBinding` / `*IamPolicy`, sibling `*IamMember` already in synth | Prefer `tool/example_debt.yaml` + `iam-adjunct-debt:` (no example extension) |
+| Breaking constructor change | `MIGRATING.md` + fix all examples importing the factory |
+
+## GitHub release notes
+
+Release tags and GitHub releases are **maintainer manual** (see [`AGENTS.md`](../../../AGENTS.md)). After `v0.N.P` is pushed and pub.dev publish succeeds, create the GitHub release body to match recent releases (canonical examples: [`v0.19.0`](https://github.com/nozomi-koborinai/terradart/releases/tag/v0.19.0), [`v0.20.0`](https://github.com/nozomi-koborinai/terradart/releases/tag/v0.20.0)). Do **not** use a bare CHANGELOG paste or a one-paragraph summary.
+
+### Required sections (in order)
+
+1. **Opening** — lockstep packages list + **No breaking changes** vs the previous published semver (or call out breaking changes + link `MIGRATING.md`).
+2. **Bundled Waves (optional)** — when one semver ships multiple Waves (e.g. `0.19.0` = Wave 71 + 72), explain merge/publish ordering if any intermediate tag was skipped.
+3. **`## Highlights`** — catalog counts (`N curated + 1 data source`, entries, barrels), number of new factories, new/extended examples (linked).
+4. **`## Wave …`** — one subsection per Wave: `## Wave N — Title (\`barrel\` barrel)`; table of Terraform type → Dart factory; 1–2 sentences on sealed types / IAM-member-only policy when relevant.
+5. **`## Tooling` (optional)** — only when the release includes CI/agent-guide changes worth calling out.
+6. **`## Upgrade`** — `pubspec.yaml` snippet with `terradart_core` + `terradart_google` carets at the new version.
+7. **Docs links** — `Waves guide` · `Getting started` (terradart.dev URLs).
+8. **`## What's Changed`** — bullet per merged PR: `* Wave N: … by @author in <PR URL>`.
+9. **`**Full Changelog**`** — compare link `v0.(N-1).0...v0.N.P` (adjust when the previous tag is not the immediate predecessor).
+
+### Template (single Wave)
+
+Replace placeholders; duplicate the Wave section when shipping multiple Waves in one semver.
+
+```markdown
+Lockstep release across every workspace package. **No breaking changes** vs `0.PREV`.
+
+## Highlights
+
+- **`terradart_google` catalog:** **NNN curated resource factories + 1 data source** (**NNN entries**; **NN service barrels**)
+- **K new curated factories** for <service area>
+- **New example:** [`foo_quickstart`](examples/foo_quickstart/)
+- **Extended example:** [`bar_quickstart`](examples/bar_quickstart/) — <one line on what was added> *(omit when N/A)*
+
+## Wave N — <Title> (`<barrel>` barrel)
+
+<K> curated factories:
+
+| Terraform type | Dart factory |
+| --- | --- |
+| `google_foo` | `GoogleFoo` |
+| … | … |
+
+<Optional: sealed dispatch, typed nested blocks, IAM-member-only note.>
+
+## Tooling
+
+- **<Area>:** <one line> *(omit section when nothing user-visible)*
+
+## Upgrade
+
+    dependencies:
+      terradart_core: ^0.N.P
+      terradart_google: ^0.N.P
+
+Docs: [Waves guide](https://terradart.dev/docs/waves/) · [Getting started](https://terradart.dev/docs/getting-started/)
+
+## What's Changed
+
+* Wave N: <title> by @author in https://github.com/nozomi-koborinai/terradart/pull/NNN
+
+**Full Changelog**: https://github.com/nozomi-koborinai/terradart/compare/v0.PREV...v0.N.P
+```
+
+```bash
+# Tag triggers pub.dev publish (.github/workflows/publish.yml)
+git tag -a v0.N.P -m "Release v0.N.P — Wave N <Title>"
+git push origin v0.N.P
+
+# GitHub release (after publish workflow is green)
+gh release create v0.N.P --title "v0.N.P" --notes-file /path/to/notes.md
+```
+
+## Useful commands
+
+```bash
+# Batch scaffold (maintainer)
+dart tool/batch_wrap_init.dart --resources=google_foo,google_bar
+
+# Docs gate
+dart tool/check_docs_consistency.dart
+
+# Full agent gate
+tool/agent_verify.sh
+```

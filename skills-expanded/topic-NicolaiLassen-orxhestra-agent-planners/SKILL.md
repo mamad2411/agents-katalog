@@ -1,0 +1,63 @@
+---
+name: agent-planners
+description: Add planners to orxhestra agents for structured reasoning. Covers BasePlanner, PlanReActPlanner, and TaskPlanner.
+---
+
+# Agent Planners
+
+Planners inject planning instructions into the system prompt before each LLM call.
+
+## Custom planner
+
+```python
+from orxhestra import BasePlanner, ReadonlyContext, LlmRequest, LlmResponse
+
+class MyPlanner(BasePlanner):
+    def build_planning_instruction(
+        self, ctx: ReadonlyContext, request: LlmRequest
+    ) -> str | None:
+        return "Think step by step before acting. Plan before calling tools."
+
+    def process_planning_response(
+        self, ctx: ReadonlyContext, response: LlmResponse
+    ) -> LlmResponse | None:
+        return None  # no post-processing needed
+```
+
+## PlanReActPlanner
+
+Enforces structured planning tags — the agent must emit `/*PLANNING*/` and `/*FINAL_ANSWER*/` blocks.
+
+```python
+from orxhestra import PlanReActPlanner, LlmAgent
+
+agent = LlmAgent(
+    name="PlanningAgent",
+    model=model,
+    tools=[...],
+    planner=PlanReActPlanner(),
+)
+```
+
+## TaskPlanner
+
+Maintains a task board in `ctx.state` and injects status into the system prompt. Pairs with `ManageTasksTool`.
+
+```python
+from orxhestra import TaskPlanner, LlmAgent
+
+planner = TaskPlanner()
+
+agent = LlmAgent(
+    name="ProjectAgent",
+    model=model,
+    tools=[planner.get_manage_tasks_tool()],
+    planner=planner,
+    instructions=(
+        "Track your work with manage_tasks. "
+        "Initialize tasks at the start. Mark each complete when done."
+    ),
+)
+```
+
+The agent calls `manage_tasks` with actions: `initialize`, `list`, `create`, `update`, `complete`, `remove`.

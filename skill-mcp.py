@@ -68,7 +68,7 @@ def _record_efficacy(skill_name, via=""):
         pass
 IDX = AG / "skills-index.json"
 CODEX_CFG = Path.home() / ".codex" / "config.toml"
-MAX_LOAD = 6000
+MAX_LOAD = 4000
 TIERS = ("curated", "reference", "docs")
 
 
@@ -226,7 +226,7 @@ def fmt(rows):
     for name, tier, cat, desc in rows:
         line = "- `%s` [%s%s]" % (name, tier, "/" + cat if cat else "")
         if desc:
-            line += " — " + desc[:150]
+            line += " — " + desc[:120]
         out.append(line)
     return "\n".join(out)
 
@@ -267,7 +267,7 @@ def tool_skills_available(args):
 
 
 def tool_skill_search(args):
-    rows = search(args.get("query", ""), args.get("tier"), int(args.get("limit", 10) or 10))
+    rows = search(args.get("query", ""), args.get("tier"), int(args.get("limit", 8) or 8))
     return "Hasil untuk `%s`:\n%s" % (args.get("query", ""), fmt(rows))
 
 
@@ -347,7 +347,7 @@ def tool_skill_load(args):
         return "Skill `%s` tidak ditemukan." % name
     with open(p, encoding="utf-8", errors="ignore") as f:
         text = f.read(MAX_LOAD)
-    more = "" if len(text) < MAX_LOAD else "\n\n[...dipotong; buka file: %s]" % p
+    more = "" if len(text) < MAX_LOAD else ("\n\n[...dipotong — sisa file: %s · ringkas: bash ~/.agents/skill-load-lite.sh %s]" % (p, name))
     return "**%s** — %s\n\n%s%s" % (name, p, text, more)
 
 

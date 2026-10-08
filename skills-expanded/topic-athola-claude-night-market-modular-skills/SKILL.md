@@ -1,0 +1,132 @@
+---
+name: modular-skills
+description: 'Build composable skill modules with hub-and-spoke loading. Use when token budget is tight.'
+alwaysApply: false
+category: workflow-optimization
+tags:
+- architecture
+- modularity
+- tokens
+- skills
+- design-patterns
+- skill-design
+- token-optimization
+dependencies: []
+tools: []
+usage_patterns:
+- skill-design
+- architecture-review
+- token-optimization
+- refactoring-workflows
+complexity: intermediate
+model_hint: standard
+estimated_tokens: 1200
+modules:
+- modules/antipatterns-and-migration.md
+- modules/core-workflow.md
+- modules/design-philosophy.md
+- modules/enforcement-patterns.md
+- modules/implementation-patterns.md
+- modules/optimization-techniques.md
+- modules/troubleshooting.md
+- modules/design-patterns.md
+---
+
+## When NOT To Use
+
+- A single-file skill already inside its token budget (use
+  `abstract:skill-authoring`)
+- The lazy-loading contract itself (use `leyline:progressive-loading`)
+
+# Modular Skills Design
+
+## Overview
+
+This framework breaks complex skills into focused modules to keep token usage predictable and avoid monolithic files. We use progressive disclosure: starting with essentials and loading deeper technical details via `@include` or `Load:` statements only when needed. This approach prevents hitting context limits during long-running tasks.
+
+Modular design keeps file sizes within recommended limits, typically under 150 lines. Shallow dependencies and clear boundaries simplify testing and maintenance. The hub-and-spoke model allows the project to grow without bloating primary skill files, making focused modules easier to verify in isolation and faster to parse.
+
+### Core Components
+
+Three tools support modular skill development:
+- `skill-analyzer`: Checks complexity and suggests where to split code.
+- `token-estimator`: Forecasts usage and suggests optimizations.
+- `module_validator`: Verifies that structure complies with project standards.
+
+### Design Principles
+
+We design skills around single responsibility and loose coupling. Each module focuses on one task, minimizing dependencies to keep the architecture cohesive. Clear boundaries and well-defined interfaces prevent changes in one module from breaking others. This follows Anthropic's Agent Skills best practices: provide a high-level overview first, then surface details as needed to maintain context efficiency.
+
+### Module Ownership (IMPORTANT)
+
+**Deprecated**: `skills/shared/modules/` directories. This pattern caused orphaned references when shared modules were updated or removed.
+
+**Current pattern**: Each skill owns its modules at `skills/<skill-name>/modules/`. When multiple skills need the same content, the primary owner holds the module and others reference it via relative path (e.g., `../skill-authoring/modules/description-writing.md`). The validator flags any remaining `skills/shared/` directories.
+
+## Quick Start
+
+### Skill Analysis
+Analyze modularity using `scripts/skill_analyzer.py`. You can set a custom threshold for line counts to identify files that need splitting.
+```bash
+python scripts/skill_analyzer.py --file path/to/SKILL.md --threshold 100
+```
+From Python, use `analyze_skill` from `abstract.skill_tools`.
+
+### Token Usage Planning
+Estimate token consumption to verify your skill stays within budget. Run this from the skill directory:
+```bash
+python scripts/tokens.py
+```
+
+### Module Validation
+Check for structure and pattern compliance before deployment.
+```bash
+python scripts/abstract_validator.py --scan
+```
+
+## Workflow and Tasks
+
+Start by assessing complexity with `skill_analyzer.py`. If a skill exceeds 150 lines, break it into focused modules following the patterns in `modules/implementation-patterns.md`. Use `token_estimator.py` to check efficiency and `abstract_validator.py` to verify the final structure. This iterative process maintains module maintainability and token efficiency.
+
+## Quality Checks
+
+Identify modules needing attention by checking line counts. A module over 100 lines is a candidate for a split. Do not add a Table of Contents: an anchor list restates the headings below it and costs tokens on every load, and grep finds the headings directly.
+```bash
+# Find modules exceeding 100 lines
+find modules -name "*.md" -exec wc -l {} + | awk '$1 > 100'
+```
+
+### Standards Compliance
+
+Our standards prioritize concrete examples and a consistent voice. Always provide actual commands in Quick Start sections instead of abstract descriptions. Use third-person perspective (e.g., "the project", "developers") rather than "you" or "your". Each code example should be followed by a validation command. For discoverability, descriptions must include at least five specific trigger phrases.
+
+## Resources
+
+### Shared Modules: Cross-Skill Patterns
+Standard patterns for triggers and for deciding whether a skill applies:
+- **Trigger Patterns**: See [enforcement-patterns.md](modules/enforcement-patterns.md)
+- **Skill Selection**: See [skill-selection-judgment.md](../../shared-modules/skill-selection-judgment.md)
+
+### Skill-Specific Modules
+Detailed guides for implementation and maintenance:
+- **Enforcement Patterns**: See `modules/enforcement-patterns.md`
+- **Core Workflow**: See `modules/core-workflow.md`
+- **Implementation Patterns**: See `modules/implementation-patterns.md`
+- **Migration Guide**: See `modules/antipatterns-and-migration.md`
+- **Design Philosophy**: See `modules/design-philosophy.md`
+- **Troubleshooting**: See `modules/troubleshooting.md`
+- **Optimization Techniques**: See `modules/optimization-techniques.md` - reducing large skill file sizes through externalization, consolidation, and progressive loading
+
+### Tools
+- **Tools**: `skill_analyzer.py`, `token_estimator.py`, and `abstract_validator.py` in `../../scripts/`.
+
+## Exit Criteria
+
+- [ ] Every module file produced is at or under 150 lines, and no SKILL.md
+  or module carries a Table of Contents.
+- [ ] No `skills/shared/modules/` directory exists; all modules live under
+  `skills/<skill-name>/modules/`.
+- [ ] `python scripts/abstract_validator.py --scan` exits 0 with no structural warnings on the
+  affected skill directory.
+- [ ] `python scripts/tokens.py` reports total estimated tokens within the declared
+  `estimated_tokens` budget for the hub SKILL.md.

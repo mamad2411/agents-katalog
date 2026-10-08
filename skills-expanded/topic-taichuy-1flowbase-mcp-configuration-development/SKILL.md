@@ -1,0 +1,84 @@
+---
+name: mcp-configuration-development
+description: 用于从 1flowbase 当前源码构建、修复和审计 MCP 配置：只读投影 GUI 用户任务与后端契约，配置 Tool、input/output mapping、参数说明、Group、Binding 与 discovery policy，并通过 mcp_list、mcp_get、mcp_call 验证。只修改 MCP 配置数据；不修改 GUI、业务接口、产品源码或产品语义。
+---
+
+# MCP Configuration Development
+
+## Goal
+
+把当前 1flowbase 源码表达的用户任务与可执行接口，转换为 Agent 可逐层发现、理解并调用的 MCP Virtual UI。GUI 与后端产品源码只作为只读取证；只修改完成任务所需的 MCP 配置数据，不把配置缺口伪装成产品代码任务。
+
+## Source of Truth
+
+- 从 GUI 路由、页面、动作和状态文案提取用户目标、领域术语与操作顺序。
+- 从 backend interface catalog、DTO、领域状态与执行入口确认可调用契约。
+- 从现有 MCP catalog 确认实例、Group、Tool、Binding 和 discovery policy 的真实状态。
+- 以当前源码为原始说明文档，不维护会随产品漂移的静态应用能力清单。
+
+## Read by Change
+
+| 任务 | 必要阅读 |
+| --- | --- |
+| 首次建立领域目录或重组任务路径 | [Virtual UI](references/virtual-ui.md) 与 [Source Routing](references/source-routing.md)；配置前读 [Configuration Contract](references/configuration-contract.md) 的相关对象 |
+| 已有 Tool / mapping / 描述的局部修复 | 先 `mcp_get` 与当前 interface / DTO，再读 Configuration Contract 对应字段；任务语义不明时才补 Source Routing |
+| Group / Binding / discovery 调整 | Virtual UI 的分组与复用规则，加 Configuration Contract 对应对象 |
+| 动态接口或不熟悉的组合契约 | 读 [Configuration Contract](references/configuration-contract.md) 的组合契约与 [Acceptance](references/acceptance.md) 的动态接口 / 缺口分类，不默认读取其他领域 |
+| 验收 | [Acceptance](references/acceptance.md) 的完成判定与命中变化的检查项；保留目标路径的 list/get/call 和关键失败边界 |
+
+```text
+本轮写集 ⊆ 已授权实例内的 MCP 配置对象
+阻断某 Tool ⇒ 暂停该 Tool 及依赖路径；独立路径可继续
+```
+
+范围缩小只减少无关阅读，不免除当前 contract、并发状态和写后回读核对。
+
+## Workflow
+
+以下步骤按缺口应用：局部修复可复用已核实的 GUI 任务路径与 canonical 目录，只检查变化影响的 contract 和引用；不重新执行目录设计或创建批次。新领域建模才完整走任务还原与目录设计。批量写入先验证代表性 Tool，单项修改直接验证该项；两者都保留并发检查、写后回读与目标 list/get/call 证据。
+
+1. 确定一个边界清晰的用户任务范围，列出起点、目标结果和必要前置状态。
+2. 沿 GUI 源码还原人类完成该任务的路径，只提取用户目标和领域词，不复制纯展示组件树。
+3. 沿 backend/interface catalog 找到每个动作的可绑定接口，核对参数、结果、风险、权限和状态约束。
+4. 通过渐进列表、关键词和单项读取盘点现有 MCP catalog；只有结果规模可控时才读取完整 catalog，先判断复用、修复或新增。
+5. 设计 canonical Virtual UI：按用户目标组织 Group 路径，让一个业务能力只有一个规范入口；必要时用搜索和简短描述提高可发现性。
+6. 形成有限变更账本，记录计划创建、复用、更新和删除的 Tool、Group、Binding、mapping 与 policy，以及每项回滚身份；这些对象是本 Skill 的完整允许写集。
+7. 先验证一个代表性 Tool 的创建或更新与 `mcp_get`；通过后按 `Tool → Group → Binding → policy` 应用，避免先留下空目录。
+8. 在每项写入前复核接口仍可绑定、目标记录仍存在且当前值未并发变化；写入后重新读取确认落库结果。
+9. 创建会动态注册后续接口的资源时，先完成创建与生命周期切换，再重新发现 interface catalog；只为已经出现的动态接口配置 canonical Tool。
+10. 用 Agent 视角依次验证 `mcp_list → mcp_get → mcp_call`，覆盖成功路径和至少一个关键失败边界。
+11. 输出覆盖表、未覆盖能力和原因；区分配置、业务接口与运行时缺口。中途停止时按账本回滚本轮无消费者的半成品，不越界修代码。
+
+## Change Rules
+
+- 保持 GUI 的任务顺序和术语，但合并重复出现的相同能力。
+- discovery 保持直观、开放、渐进；权限与状态合法性由后端调用边界统一执行。
+- 先复用已有 Tool，再考虑新增；复用要求执行 contract 与 Agent-facing 名称、描述、mapping 都对新入口真实，不因 interface 相同就复用领域专用 Tool。
+- 使用稳定、任务导向的 `tool_id`、Group path 和显示名称；不要复述 HTTP method/path 充当用户语义。
+- `short_description` 写“调用后得到什么”；普通能力的 `full_description` 使用空字符串 `""`。
+- 仅当跨字段、跨 Tool、跨状态或跨制品的组合契约无法由其他字段表达，且缺失会导致错误调用时填写 `full_description`。
+- 把 Agent 参数名、含义和必填性写入 `input_mapping` 的映射配置；不要要求业务 DTO 重复维护 MCP 专用文案。
+- Agent-facing 描述只写入 Group、Tool、mapping 与 policy 配置记录；不得为补 MCP 描述修改 `web/`、i18n、业务 catalog、后端 DTO / OpenAPI、migration、MCP 协议或运行时代码。
+- 检查必需容器对象是否能由当前接口 request Schema 自动物化；用真实 `mcp_call` 证明空对象可达目标业务边界，不为通过 Schema 伪造 selector 或占位值。
+- `output_mapping` 只表达必要的结果投影；无需投影时使用 `{}`，不得复制 `result_schema` 充当 mapping。
+- 创建父资源后先读取返回值或详情，确认系统是否已原子创建默认子资源；不要假定还需再次创建 Page Tab、默认节点或同类子项。
+- 不配置 `children_count`；它由启用的子 Group、可见 Binding 和启用 Tool 在运行时派生。
+- 不借配置任务调整产品语义、业务权限或产品源码。发现这些缺口时停止对应写入并报告证据。
+
+## Stop Conditions
+
+在以下任一情况停止配置写入并报告：
+
+- GUI 目标与后端行为冲突，无法从源码确定产品语义。
+- 所需接口不存在、不可绑定，或 contract 不能支持目标任务。
+- 配置写入会扩大到生产环境、未知 workspace 或未授权实例。
+- `mcp_get` 暴露的 Schema 与已保存 mapping 不一致，或 `mcp_call` 未按后端约束执行。
+- 现有配置发生并发变化，最小差异不再可靠。
+- 配置管理调用只返回通用错误且本地日志或单项读取仍不能定位失败阶段。
+- 完成配置需要修改产品源码，或本轮准备产生允许写集之外的变更；停止配置并把缺口拆成独立开发任务。
+
+单个候选 Tool 命中停止条件时，只停止依赖该能力的路径并回滚其无消费者配置；不影响已独立验证的同领域能力继续装配。若已发布能力没有可绑定 operation、必需凭据或安全调用 contract，不创建伪 invocation Tool。
+
+## Output
+
+交付时简洁列出：任务范围、源码证据、Virtual UI 路径、配置差异、`list/get/call` 验证证据、关键失败边界、剩余缺口。配置缺口可继续修复；产品决策或代码缺口必须单独提出，不在本 Skill 中实现。

@@ -1,0 +1,71 @@
+---
+name: retellai-debug-bundle
+description: "Retell AI debug bundle \u2014 AI voice agent and phone call automation.\n\
+  Use when working with Retell AI for voice agents, phone calls, or telephony.\nTrigger\
+  \ with phrases like \"retell debug bundle\", \"retellai-debug-bundle\", \"voice\
+  \ agent\".\n"
+allowed-tools: Read, Write, Edit, Bash(npm:*), Bash(curl:*), Grep
+version: 1.9.0
+license: MIT
+author: Jeremy Longshore <jeremy@intentsolutions.io>
+tags:
+- saas
+- retellai
+- voice
+- telephony
+- ai-agents
+compatibility: Designed for Claude Code
+---
+# Retell AI Debug Bundle
+
+## Overview
+
+Implementation patterns for Retell AI debug bundle — voice agent and telephony platform.
+
+## Prerequisites
+
+- Completed `retellai-install-auth` setup
+
+## Instructions
+
+### Step 1: SDK Pattern
+
+```typescript
+import Retell from 'retell-sdk';
+const retell = new Retell({ apiKey: process.env.RETELL_API_KEY! });
+
+const agents = await retell.agent.list();
+console.log(`Agents: ${agents.length}`);
+```
+
+## Output
+
+- Retell AI integration for debug bundle
+
+## Error Handling
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| 401 Unauthorized | Invalid API key | Check RETELL_API_KEY |
+| 429 Rate Limited | Too many requests | Implement backoff |
+| 400 Bad Request | Invalid parameters | Check API documentation |
+
+## Examples
+
+### Assemble a safe support bundle for an intermittent failure
+
+Collect the affected call ID, agent version, webhook status, API response
+headers, and deployment revision from a test or consented call. Exclude API
+keys, raw audio, and full transcripts from the archive; include a redacted
+timeline instead. Reproduce against a preview agent before changing the live
+configuration, and preserve the bundle checksum so the support handoff can be
+matched to the exact evidence reviewed.
+
+## Resources
+
+- [Retell AI Documentation](https://docs.retellai.com)
+- [retell-sdk npm](https://www.npmjs.com/package/retell-sdk)
+
+## Next Steps
+
+See related Retell AI skills for more workflows.

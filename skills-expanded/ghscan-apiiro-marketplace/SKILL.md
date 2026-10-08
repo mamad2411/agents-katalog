@@ -1,0 +1,159 @@
+---
+name: guardian-setup
+description: Install Apiiro CLI, authenticate, verify version, check available features, and configure hooks
+user_invocable: true
+---
+
+You are setting up Apiiro. Do the following in order and confirm each step:
+
+## 1. Install Apiiro CLI
+
+- Check if installed: `which apiiro`
+- If already installed, skip to step 2
+- Detect the user's OS and offer the appropriate install method:
+
+**One-line install (macOS / Linux) — simplest:**
+```bash
+curl -fsSL https://apiiro.com/install.sh | bash
+```
+Verifies the checksum, installs to `~/.local/bin` (no sudo), and configures PATH. On Windows (PowerShell): `irm https://apiiro.com/install.ps1 | iex`.
+
+**macOS (Homebrew):**
+```bash
+brew tap apiiro/tap && brew trust apiiro/tap && brew install apiiro
+```
+
+**Linux (Homebrew):**
+```bash
+brew tap apiiro/tap && brew trust apiiro/tap && brew install apiiro
+```
+
+**Linux (RPM/yum):**
+```bash
+# Get the latest RPM URL (asset name includes the version number)
+RPM_URL=$(curl -s https://api.github.com/repos/apiiro/marketplace/releases/latest | grep "browser_download_url.*\.rpm" | cut -d '"' -f 4)
+sudo yum install -y "$RPM_URL"
+```
+
+**Linux (direct download):**
+```bash
+curl -fsSL https://github.com/apiiro/marketplace/releases/latest/download/apiiro-linux-x64 -o apiiro
+chmod +x apiiro
+sudo mv apiiro /usr/local/bin/apiiro
+```
+
+**Windows:**
+Download `apiiro-win.exe` from https://github.com/apiiro/marketplace/releases
+
+## 2. Authenticate with Apiiro
+
+- Run: `apiiro login`
+- This opens a browser window — sign in with your Apiiro account
+- If the usual browser sign-in cannot complete (no browser opens, or the local callback is blocked), run `apiiro login --device` and enter the printed code in any browser instead
+
+## 3. Verify authentication
+
+- Run: `apiiro auth status`
+
+## 4. Check for a newer version
+
+- Run: `apiiro update --check`
+- If a newer release exists, run `apiiro update` for the compiled binary. It skips Homebrew and npm installs: use `brew upgrade apiiro` or `npm i -g apiiro-cli@latest` for those
+
+## 5. Check available features
+
+Probe which features are enabled for the user's environment. Run these commands and collect results:
+
+```bash
+# Fast Scan (secrets + OSS) — fetches the tenant's scan configuration
+apiiro fast-scan config 2>&1
+
+# Guardian
+apiiro guardian query "test" --global 2>&1
+
+# Threat Modeling
+apiiro threat-model "test" 2>&1
+```
+
+For each command, check the output:
+- If it contains "not enabled" → the feature is **not available** in this environment
+- Otherwise → the feature is **available**
+
+`-f/--file` is an output flag on every command (it saves the result to a file), so do not pass it to probe a feature.
+
+Present a summary table to the user showing which features are enabled and which are not. For disabled features, note: "Contact your Apiiro administrator to enable this feature."
+
+## 6. Configure prevention hooks
+
+- Run: `apiiro init` — detects Claude Code, Cursor, GitHub Copilot CLI, and OpenAI Codex, installs the skills and the prevention hooks (session context, prompt enrichment where the host supports it, and commit scanning); then run `apiiro doctor` to verify the result. The Codex and Copilot CLI hooks need a 2026.09.09 or newer CLI — upgrade first if `apiiro --version` is older
+- Only Claude Code and Codex enrich each prompt; Cursor and Copilot CLI get session context plus commit scanning, because neither host's prompt hook can inject context
+- Codex runs a hook only after it is trusted once: tell the user to run `codex` in a terminal, type `/hooks`, and trust each Apiiro entry. Until then Codex skips the hooks silently, and a changed or newly added entry (for example after `apiiro hooks update`) needs trusting again
+- For skills without prevention hooks, run `apiiro agents install` instead (`--agent claude|cursor|copilot|codex` for one host, `--all` for every known host); `apiiro agents status` shows what is installed
+- Restart Claude Code after setup
+
+## 7. Offer status line setup (Claude Code only)
+
+Apiiro can add a 🛡️ shield to the Claude Code status line that appears when Apiiro Guardian is active.
+
+**Do NOT modify `~/.claude/settings.json` or any scripts directly.** Instead, explain what the status line does and ask the user if they'd like to set it up. If they agree, use the `statusline-setup` agent to configure it.
+
+Tell the user:
+- The shield icon (🛡️) appears in the Claude Code status line when Apiiro Guardian is active in the current session
+- It requires adding a `statusLine` entry to `~/.claude/settings.json`
+- If they already have a custom status line, the Apiiro check will be appended to their existing script (a backup of the original script will be created first)
+
+If the user wants to proceed, delegate to the `statusline-setup` agent with these details:
+
+### Case A: No existing status line
+
+Add to `~/.claude/settings.json`. Use the script that matches the user's OS:
+
+**macOS / Linux:**
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.sh"
+  }
+}
+```
+
+**Windows:**
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "powershell -ExecutionPolicy Bypass -File \"${CLAUDE_PLUGIN_ROOT}/scripts/statusline.ps1\""
+  }
+}
+```
+
+### Case B: User already has a custom status line script
+
+**First, back up the existing script** by copying it to `<script-path>.bak` before making any changes.
+
+Then find the script file referenced in the existing `statusLine.command` setting and append the Apiiro shield check to the **end** of that script. The check should use the same stdin JSON variable the script already captures (commonly `$input`):
+
+```bash
+# Apiiro shield
+SESSION_ID=$(echo "$input" | jq -r '.session_id // empty')
+SESSION_FILE="$HOME/.apiiro/sessions/$SESSION_ID"
+MAX_AGE=600
+if [ -n "$SESSION_ID" ] && [ -f "$SESSION_FILE" ]; then
+  MTIME=$(stat -f %m "$SESSION_FILE" 2>/dev/null || stat -c %Y "$SESSION_FILE" 2>/dev/null || echo 0)
+  [ $(($(date +%s) - MTIME)) -lt $MAX_AGE ] && echo "🛡️ Apiiro Guardian Activated"
+fi
+```
+
+**Important:** Claude Code pipes a JSON object to the status line script via stdin. The script must read stdin once (e.g., `input=$(cat)`) and parse fields from that variable. Do not read stdin again for the Apiiro check — reuse the existing variable. Check the script to confirm the variable name before appending.
+
+## 8. Verify and finish
+
+- Run: `apiiro doctor` — checks CLI version, auth, per-agent skills, plugin status, hook integrity, pre-commit hook, and hook toggles in one report
+- Fix anything it flags before telling the user they are done
+
+Tell the user they are all set! Summarize:
+- Which features are available in their environment
+- The `guardian-*` skills they can invoke from the agent (ask the agent to list available skills if they want a tour)

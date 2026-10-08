@@ -64,6 +64,72 @@ bash ~/.agents/sync-all.sh --fast       # ringan: wiring + MCP + eval saja (tanp
 bash ~/.agents/session-brief.sh
 ```
 
+## 🧠 HEMAT KONTEKS & LIMIT (audit 2026-09-26 — limit harian/mingguan cepat habis)
+
+Latar terukur: 4,42 **miliar** token terpakai, 3 sesi @ 59/54/18 MB → tiap pesan membaca ulang
+**±500.000 token**. Bukan modelnya yang boros — sesinya yang tidak pernah ditutup.
+
+```bash
+# Muat skill TANPA membanjiri konteks (≤80 baris / ≤2 KB; tetap dapat esensinya)
+bash ~/.agents/skill-load-lite.sh <nama>            # default 80 baris/2 KB
+bash ~/.agents/skill-load-lite.sh <nama> --lines 40 # lebih ringkas
+bash ~/.agents/skill-load-lite.sh --list "kata kunci"  # cari kandidat dulu (5 baris)
+bash ~/.agents/skill-load-lite.sh <nama> --full     # baca penuh (sadar biaya, jarang perlu)
+
+# Ukur, jangan menebak
+python3 ~/.agents/ai-context-audit.py               # SEMUA tool AI: ukuran sesi, pesan, gambar base64
+python3 ~/.agents/ai-context-audit.py --json        # mesin (untuk hook/cron)
+python3 ~/.agents/usage-audit.py                    # token 7 hari + model + sesi terboros (Claude)
+python3 ~/.agents/usage-audit.py --days 14 --json   # mesin (idempoten)
+python3 ~/.agents/audit-cline.py                    # Cline CLI: token kumulatif + output terbesar
+python3 ~/.agents/audit-cline.py --top 15           # 15 pesan terbesar
+python3 ~/.agents/context-guard.py --report         # sesi >10 MB (bom waktu limit)
+
+# Aturan hemat ke file rules SEMUA tool (idempoten, backup .bak-YYYYMMDD)
+python3 ~/.agents/install-context-guard.py          # dry-run: rencana per tool
+python3 ~/.agents/install-context-guard.py --apply  # pasang blok context-guard
+python3 ~/.agents/install-context-guard.py --check  # status 17 target
+
+# Ramping MCP lintas tool (hanya skill-catalog + mcp-router yang tersisa)
+python3 ~/.agents/mcp-slim-all.py                   # dry-run: daftar file + server dilepas
+python3 ~/.agents/mcp-slim-all.py --apply           # tulis + parkir ke mcp-parked.json
+
+# Anti-LOOP (audit 2026-10-03: limit habis karena agen berputar, bukan pesan panjang)
+# Loop-guard menghitung tool call per sesi (file kecil /tmp, bukan token).
+# Dipasang otomatis: hook PreToolUse Claude (patch-settings-20261003.py) +
+# hook UserPromptSubmit Cline — counter per sesi, 80 lunak / 200 atau 500 pesan keras.
+# tuning ambang: LOOP_WARN_N / LOOP_HARD_N / LOOP_MSG_N (default 80 / 200 / 500)
+# kalau butuh kembalikan hook lama: cp ~/.claude/settings.json.bak-20261003 ~/.claude/settings.json
+
+## 🔥 PANAS & SSD (audit 2026-10-03)
+python3 ~/.agents/device-guard.py             # laporan read-only: loop mining, agent 24/7, churn B/s
+python3 ~/.agents/device-guard.py --apply     # stop loop saturasi + bootout 24/7 + interval 30mnt→6jam
+# restore perubahan: lihat ~/.agents/.device-guard-log.json (kunci "restore")
+bash ~/.agents/wire-skills-role.sh --list     # 12 preset role pack (skill curated per kategori)
+bash ~/.agents/wire-skills-role.sh <preset> <repo> [--apply]  # symlink relatif, tidak hapus apa pun
+# CAP_PER_KAT=20 bash ~/.agents/wire-skills-role.sh backend /repo --apply
+
+# Hook (otomatis; tidak perlu dipanggil manual)
+bash ~/.agents/context-guard.sh                     # hook Claude: 0 token di bawah ambang, 1 baris di atasnya
+python3 ~/.agents/cline-guard.py                    # hook Cline: deteksi sesi/gambar base64 (48 ms)
+python3 ~/.agents/skill-flow.py --stats             # injeksi skill per sesi (batas 400 B, dedupe)
+python3 ~/.agents/skill-flow.py --eval              # gerbang mutu routing (harus 31/31 lulus)
+
+# Pemasangan ulang (idempoten; membuat backup .bak-YYYYMMDD)
+python3 ~/.agents/patch-settings-20260926.py        # hook context-guard + permissions.deny
+```
+
+Ambang bisa diubah lewat env: `CONTEXT_WARN_MB` (default 10), `CONTEXT_URGENT_MB` (25),
+`CONTEXT_STEP_MB` (5), `SKILL_FLOW_MAX_BYTES` (400), `SKILL_FLOW_STATE_TTL` (21600 s —
+setelah ini, skill diumumkan ulang untuk tool yang tidak kirim `session_id`),
+`CLINE_GUARD_MSGS` (200), `CLINE_GUARD_MB` (10), `CLINE_GUARD_IMG_MB` (2),
+`AMBANG_MB` (10) dan `AMBANG_PESAN` (200) untuk `ai-context-audit.py`.
+
+Aturan `permissions.deny` yang dipasang (blokir `Read` ke file tak relevan, docs resmi
+Claude Code "large codebases"): `./**/vendor/**`, `./**/node_modules/**`, `./**/dist/**`,
+`./**/public/template/**`, `./**/skills-expanded/**`, `./**/*.min.js`.
+Butuh satu baris dari file itu? `sed -n '120,130p' path` via shell — jangan `Read` penuh.
+
 ## EVAL & KUALITAS
 ```bash
 python3 ~/.agents/skill-eval.py         # pass@1/pass@3 + jujur-negatif + health katalog (history otomatis)
@@ -275,4 +341,39 @@ memory/memory.json       graf pengetahuan (persisten)     server 'memory'
 # setiap perubahan file config/back-nya dibuat otomatis: *.bak-YYYYMMDD / *.bak-sync / .bak-prune
 cp ~/.codex/config.toml.bak-YYYYMMDD ~/.codex/config.toml
 cp ~/.agents/skills-junk-paths.txt.bak-YYYYMMDD ~/.agents/skills-junk-paths.txt
+# rollback audit hemat konteks 2026-09-26 (kalau perlu kembali ke perilaku lama):
+cp ~/.agents/skill-flow.py.bak-20260926 ~/.agents/skill-flow.py
+cp ~/.agents/AGENTS.md.bak-20260926 ~/.agents/AGENTS.md
+cp ~/.agents/CHEATSHEET.md.bak-20260926 ~/.agents/CHEATSHEET.md
+cp ~/.agents/COMMANDS.md.bak-20260926 ~/.agents/COMMANDS.md
+cp ~/.claude/settings.json.bak-20260926 ~/.claude/settings.json
+cp ~/.claude/CLAUDE.md.bak-20260926 ~/.claude/CLAUDE.md
+cp ~/AI_TOKEN_GUARD.md.bak-20260926 ~/AI_TOKEN_GUARD.md
+rm -f /Users/chaali0324/receptor/.claude/settings.json   # deny Read repo-level
+# rollback ramping MCP 19 tool (kembalikan 8-9 server ke tiap tool):
+for f in ~/.aider ~/.antigravity ~/.codebuddy ~/.codeium ~/.codex ~/.continue ~/.copilot \
+         ~/.dolphin ~/.gemini ~/.goose ~/.hermes ~/.kiro ~/.mistral ~/.openclaude \
+         ~/.opencode ~/.orca ~/.qwen ~/.tabnine ~/.windsurf; do
+  [ -f "$f/mcp.json.bak-20260926" ] && cp "$f/mcp.json.bak-20260926" "$f/mcp.json"; done
+# atau hidupkan per-server tanpa rollback penuh:
+python3 ~/.agents/mcp-lifecycle.py --on playwright
+# rollback blok "hemat konteks" di file rules (blok ditandai context-guard:start/end):
+for f in ~/.codex/AGENTS.md ~/.gemini/GEMINI.md ~/.cline/.clinerules ~/.windsurf/.windsurfrules \
+         ~/.continue/.continuerules ~/.roo/.roorules ~/.qwen/QWEN.md ~/.aider/CONVENTIONS.md \
+         ~/.opencode/AGENTS.md ~/.codebuddy/AGENTS.md ~/.hermes/AGENTS.md ~/.trae/AGENTS.md; do
+  [ -f "$f.bak-20260926" ] && cp "$f.bak-20260926" "$f"; done
+rm -f ~/.openclaude/CLAUDE.md ~/.iflow/AGENTS.md   # dua file yang baru dibuat
+rm -f ~/.cline/hooks/UserPromptSubmit.py.bak-20260926 2>/dev/null
+# pulihkan hook Cline lama (buang panggilan cline-guard):
+#   edit ~/.cline/hooks/UserPromptSubmit.py → hapus blok "cline-guard"
+# rollback arsip sesi 2026-09-27 (kembalikan sesi ke daftar resume):
+#   daftar path: ~/ARCHIVE-MANIFEST-20260927.txt
+mv ~/.claude/archived-projects/-Users-chaali0324-receptor/<uuid>.jsonl ~/.claude/projects/-Users-chaali0324-receptor/
+# rollback arsip OTOMATIS mingguan (samakan: pindahkan balik file yang dibutuhkan):
+#   lihat ~/ARCHIVE-MANIFEST.txt lalu mv setiap file ke path asalnya (tercantum di manifest)
+python3 ~/.agents/archive-sessions.py --dry-run       # dulu lihat kandidatnya
+mv ~/.cline/archived-sessions/<session-id> ~/.cline/data/sessions/
+# skrip baru (aman dihapus; tidak ada yang memanggil kalau hook dicabut):
+#   context-guard.py/.sh · skill-load-lite.sh · usage-audit.py/.sh · patch-settings-20260926.py
+#   mcp-slim-all.py · audit-cline.py · cline-guard.py · ai-context-audit.py · install-context-guard.py
 ```

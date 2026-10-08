@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/shadowcz007/skills (path: skills/todo-list/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 智能待办事项管理技能。支持自然语言时间解析、事项记录与追踪、进度更新，数据持久化到本 skill 目录下 temp 的 Markdown；可通过 node scripts/time.js 与 node scripts/todo.js 调用。

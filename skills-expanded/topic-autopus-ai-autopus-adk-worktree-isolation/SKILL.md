@@ -1,0 +1,99 @@
+---
+name: worktree-isolation
+description: Worktree isolation for parallel agent execution in the pipeline
+compatibility: omp
+---
+
+# OMP Native Task Isolation
+
+This skill defines isolation policy for implementation fan-out on OMP. The native `task` tool
+owns workspace materialization, patch/branch integration, and cleanup.
+
+## Activation
+
+Use per-item isolation only when all conditions hold:
+
+- the current dynamic `task` schema exposes `isolated`;
+- OMP settings enable a non-`none` isolation mode;
+- the project is a git repository;
+- the item writes files;
+- ownership is disjoint from every concurrent item.
+
+Do not request isolation for `--solo`, read-only work, overlapping ownership, shared migration
+numbering, or an environment where the field is absent. Missing required isolation is a blocker,
+not permission to imitate it with shell commands.
+
+## Native Dispatch Contract
+
+Inspect the current dynamic schema before each wave. When it exposes batch mode, dispatch
+independent isolated work in one batch with top-level `i` and shared `context`. Each item uses a
+unique stable name, a complete assignment, the discovered isolation field enabled, the strict
+five-field receipt schema, and `schemaMode: strict`. Writing items omit the agent field so they
+run on the bundled `task` agent; select `scout`, `reviewer`, `security-reviewer`, or `sonic` only
+when that agent's built-in boundary is what the item needs. When batch mode is absent, dispatch
+the corresponding flat calls and reference one shared `local://` context.
+
+The parent must check dynamic availability before adding `isolated` or `effort`. `isolated` does
+not exist when `task.isolation.mode = none`, and `effort` does not exist when its setting is off.
+Omit either unsupported field rather than sending it from a static example.
+
+## Ownership Preflight
+
+Before fan-out:
+
+1. normalize every owned and forbidden path to a project-relative path;
+2. reject absolute paths, traversal, symlinks, nested ownership, and ambiguous globs;
+3. detect exact overlap and directory-prefix containment;
+4. serialize tasks that share a generated artifact, migration directory, package manifest, lockfile,
+   schema registry, or other mutable authority;
+5. put cross-task interfaces in top-level `context` before dispatch.
+
+A maximum of five isolated implementation items may be active in one wave. Queue overflow by
+task id. This policy is stricter than OMP's session-wide semaphore and prevents excessive
+integration churn.
+
+## Tool-Owned Lifecycle
+
+For an isolated item, OMP:
+
+1. captures the parent baseline;
+2. creates the configured isolated workspace;
+3. runs the child in that workspace;
+4. captures a patch or commits a temporary task branch according to OMP settings;
+5. applies or merges the result into the parent through the task lifecycle;
+6. cleans the isolated workspace;
+7. preserves output, transcript, and patch metadata through `agent://` and `history://`.
+
+The Autopus parent must not run manual worktree creation, branch merge, cherry-pick, stash, reset,
+or removal commands. It verifies the returned `changed_files`, ownership boundary, blockers, and
+parent-tree result after OMP completes integration. Nested repositories are handled by OMP's nested
+patch lifecycle and must not be merged manually.
+
+## Sequential Work
+
+A task is sequential when it depends on an earlier result, overlaps ownership, or shares a migration
+numbering lane. Dispatch it only after the prerequisite result is visible in the parent workspace.
+Do not use an isolated batch to hide a dependency edge.
+
+## Failure and Conflict Handling
+
+- A failed isolated run is terminal and not revivable because its workspace has been cleaned.
+- Keep the transcript and patch metadata as evidence.
+- If integration fails, stop the next wave and report the exact OMP lifecycle error.
+- Never bypass a failed patch/branch integration with destructive git commands.
+- A correction is a new explicitly named task with freshly declared ownership and context.
+- Cancel still-running jobs through `hub` with top-level `i`; preserve user-owned changes and unrelated jobs.
+
+## Receipt Verification
+
+Every isolated worker returns exactly:
+
+- `owned_paths`
+- `changed_files`
+- `verification`
+- `blockers`
+- `next_required_step`
+
+The main session rejects missing fields, out-of-scope changes, body dumps, secret material, or claims
+without observable verification. Integration is complete only after the parent sees the intended
+changes and the next deterministic gate passes.

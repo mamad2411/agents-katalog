@@ -1,0 +1,248 @@
+---
+name: demo-producer
+license: MIT
+compatibility: "Claude Code 2.1.251+."
+description: "Universal demo video creator for skills, agents, plugins, tutorials, CLI commands, and code walkthroughs. Generates scripts, storyboards, VHS terminal recordings, and Remotion video compositions with task-tracked production phases. Use when producing video showcases, marketing content, or terminal recordings."
+argument-hint: "[topic-or-feature]"
+user-invocable: false
+allowed-tools: [AskUserQuestion, Bash, Read, Write, Edit, Grep, Glob, Agent, TaskCreate, TaskUpdate, PushNotification]
+context: inherit
+version: 1.1.0
+author: OrchestKit
+tags: [demo, video, marketing, vhs, remotion, terminal, showcase, tutorial]
+targets:
+  - tool: "vhs"
+    version: ">=0.11.0"
+  - library: "remotion"
+    version: ">=4.0.448"
+complexity: low
+persuasion-type: collaborative
+effort: low
+model: haiku
+metadata:
+  category: document-asset-creation
+---
+
+# Demo Producer
+
+Universal demo video creation for any content type.
+
+> **Tool versions (2026-Q2):** VHS >= 0.11, Remotion >= 4.0.448. VHS 0.11 added:
+>
+> - **`Wait` keyword** — supersedes `Sleep N` with a condition-based wait (`Wait "prompt>"` blocks until the given string appears). Use `Wait` over `Sleep` for any prompt that can appear at variable times.
+> - **`ScrollUp N` / `ScrollDown N`** — explicit scroll steps inside a recorded session; useful for demonstrating TUI apps and long `less`-style output.
+>
+> Keep existing `Sleep N` only for fixed visual pacing where no event is available.
+
+## Quick Start
+
+```bash
+demo-producer                    # Interactive mode - asks what to create
+demo-producer skill explore      # Create demo for a skill
+demo-producer plugin ork     # Create demo for a plugin
+demo-producer tutorial "Building a REST API"  # Custom tutorial
+demo-producer --live 4           # Live preview via dev --live (4-hour public funnel)
+```
+
+## --live mode (M127 #1565)
+
+`--live N` is a thin wrapper around `dev --live N`: it boots the dev stack
+behind `portless --funnel` (publicly exposed via Tailscale Funnel), records an
+expiry of `N` hours into `.claude/state/live-demos.jsonl`, and prints a public
+URL plus `<iframe>` snippet for embedding in customer emails or docs pages.
+
+```bash
+demo-producer --live 4
+
+# Internally runs:
+dev --live 4
+# → public URL: https://app.your-tailnet.ts.net
+#   iframe: <iframe src="..." />
+#   expires: 2026-05-03T20:00Z
+```
+
+`doctor` warns about live demos older than 24 hours so they don't sprawl.
+Tear down with `dev stop`. Tailscale CLI must be installed (only required
+behind `--live` — not for static demo recording modes).
+
+## CRITICAL: Task Management is MANDATORY (CC 2.1.16)
+
+**BEFORE doing ANYTHING else, create tasks to track progress:**
+
+```python
+# 1. Create main task IMMEDIATELY
+TaskCreate(
+  subject="Demo Producer: {topic}",
+  description="Creating polished demo video for content showcase",
+  activeForm="Producing demo for {topic}"
+)
+
+# 2. Create subtasks for each production phase
+TaskCreate(subject="Content analysis", activeForm="Analyzing content for demo")
+TaskCreate(subject="Script & storyboard", activeForm="Generating script and storyboard")
+TaskCreate(subject="Record & compose", activeForm="Recording terminal and composing video")
+TaskCreate(subject="Final output", activeForm="Rendering final video outputs")
+
+# 3. Set dependencies for sequential phases
+TaskUpdate(taskId="3", addBlockedBy=["2"])
+TaskUpdate(taskId="4", addBlockedBy=["3"])
+TaskUpdate(taskId="5", addBlockedBy=["4"])
+
+# 4. Update status as you progress
+TaskUpdate(taskId="2", status="in_progress")  # When starting
+TaskUpdate(taskId="2", status="completed")    # When done
+```
+
+## Supported Content Types
+
+| Type | Source | Example |
+|------|--------|---------|
+| `skill` | skills/{name}/SKILL.md | `demo-producer skill commit` |
+| `agent` | agents/{name}.md | `demo-producer agent debug-investigator` |
+| `plugin` | plugins/{name}/plugin.json | `demo-producer plugin ork` |
+| `marketplace` | Marketplace install flow | `demo-producer marketplace ork` |
+| `tutorial` | Custom description | `demo-producer tutorial "Git workflow"` |
+| `cli` | Any CLI tool | `demo-producer cli "npm create vite"` |
+| `code` | Code walkthrough | `demo-producer code src/api/auth.ts` |
+
+## Interactive Flow
+
+When invoked without arguments, asks 4 questions:
+
+### Question 1: Content Type
+```
+What type of demo do you want to create?
+
+○ Skill - OrchestKit skill showcase
+○ Agent - AI agent demonstration
+○ Plugin - Plugin installation/features
+○ Tutorial - Custom coding tutorial
+○ CLI Tool - Command-line tool demo
+○ Code Walkthrough - Explain existing code
+```
+
+### Question 2: Format
+```
+What format(s) do you need?
+
+☑ Horizontal (16:9) - YouTube, Twitter
+☑ Vertical (9:16) - TikTok, Reels, Shorts
+☐ Square (1:1) - Instagram, LinkedIn
+```
+
+### Question 3: Style
+```
+What style fits your content?
+
+○ Quick Demo (6-10s) - Fast showcase, single feature
+○ Standard Demo (15-25s) - Full workflow, multiple steps
+○ Tutorial (30-60s) - Detailed explanation, code examples
+○ Cinematic (60s+) - Story-driven, high polish
+○ Scrapbook (15-35s) - Warm paper, fast cuts, social proof collage (Anthropic style)
+```
+
+### Question 4: Audio
+```
+Audio preferences?
+
+○ Music Only - Subtle ambient background
+○ Music + SFX - Background + success sounds
+○ Silent - No audio
+```
+
+## Pipeline Architecture
+
+> Load details: `Read("references/demo-pipeline.md")` for the full pipeline diagram, generation commands, and output structure.
+
+Content Detector -> Content Analyzer -> Script Generator -> Terminal Script -> VHS Recorder -> Remotion Composer -> Final Outputs (horizontal/vertical/square).
+
+## Template System
+
+Four template architectures for different demo styles. Load `Read("references/template-system.md")` for detailed configuration and the SkillDemoConfig interface.
+
+| Template | Use Case | Duration | Key Feature |
+|----------|----------|----------|-------------|
+| **TriTerminalRace** | Complexity comparisons | 15-20s | 3-panel split, color-coded difficulty |
+| **ProgressiveZoom** | Tutorials, walkthroughs | 20-30s | Zoom transitions, layered reveals |
+| **SplitThenMerge** | Before/after, transformations | 15-25s | Split screen -> unified merge |
+| **ScrapbookDemo** | Product launches, social proof | 15-35s | Warm paper aesthetic, fast cuts |
+
+Content type templates (skill, agent, plugin, tutorial, cli, code) are mapped in `Read("references/skill-category-mapping.md")`.
+
+## Remotion Composition
+
+> Load details: `Read("references/remotion-composition.md")` for folder structure, adding new compositions, and format variant prefixes.
+
+Compositions organized under `Production/` by format (Landscape, Vertical, Square) and skill category.
+
+## Customization Options
+
+### Visual Themes
+- **Dark mode** (default): Dark backgrounds, neon accents
+- **Light mode**: Clean whites, subtle shadows
+- **Terminal**: Pure terminal aesthetic
+- **Cinematic**: High contrast, dramatic lighting
+- **Scrapbook**: Warm paper (#F0F0E8), serif typography, fast cuts, mixed media collage
+
+### Audio Presets
+- **Ambient**: Subtle background, no SFX
+- **Tech**: Electronic beats, UI sounds
+- **Corporate**: Professional, clean
+- **Energetic**: Upbeat, fast-paced
+
+## PushNotification on Completion (CC 2.1.110+)
+
+VHS recording and Remotion rendering commonly take 10–45 min per video, and full multi-variant productions (landscape + vertical + square) can exceed an hour. **After all output files are written and verified, call `PushNotification`** so the user knows the video is ready for review.
+
+```python
+PushNotification(
+  message=f"ork:demo-producer complete — {topic}: {variants_count} variants · {output_dir}",
+  status="proactive"
+)
+```
+
+Full rule: `Read("${CLAUDE_PLUGIN_ROOT}/skills/chain-patterns/rules/push-notification-on-completion.md")`.
+
+## Best Practices
+
+1. **Keep it focused** - One feature/concept per video
+2. **Show, don't tell** - Demonstrate actual usage
+3. **Use real data** - Show actual command outputs
+4. **Include context** - Brief setup before the demo
+5. **End with CTA** - Always include install command
+
+## Terminal Simulation Patterns
+
+> Load details: `Read("references/terminal-simulation.md")` for TypeScript patterns: pinned header + scrolling content, agent color palette, and task spinner animation.
+
+## Slop Avoidance
+
+> Load details: `Read("rules/slop-avoidance.md")` for text density rules, timing compression, common slop patterns, and hook styles.
+
+Core rule: If content doesn't earn its screen time, cut it.
+
+## Rules Quick Reference
+
+| Rule | Impact | What It Covers |
+|------|--------|----------------|
+| analyzer-patterns (load `rules/analyzer-patterns.md`) | MEDIUM | Frontmatter parsing, phase detection, example extraction |
+| production-pipeline (load `rules/production-pipeline.md`) | HIGH | Pre-production, storyboarding, recording, VHS, manim |
+| production-composition (load `rules/production-composition.md`) | HIGH | Remotion composition, audio mixing, thumbnails, captions |
+| slop-avoidance (load `rules/slop-avoidance.md`) | HIGH | Text density, timing compression, hook styles |
+
+## Related Skills
+
+- `video-production`: Full video production pipeline (recording, composition, audio, pacing)
+
+## References
+
+Load on demand with `Read("references/<file>")`:
+| File | Content |
+|------|---------|
+| `template-system.md` | Template architecture and SkillDemoConfig interface |
+| `content-types.md` | Detailed content type specs |
+| `format-selection.md` | Platform requirements and multi-format support |
+| `script-generation.md` | Script templates and generation patterns |
+| `demo-pipeline.md` | Pipeline architecture, generation commands, output structure |
+| `remotion-composition.md` | Remotion folder structure and composition guide |
+| `skill-category-mapping.md` | Skill category mapping and content type templates |

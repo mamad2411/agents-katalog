@@ -46,6 +46,67 @@ Kamu agen AI yang bekerja di katalog skill bersama. Baca ini dulu (1 menit), lal
 - **Jangan `claude --resume` sesi lama**: file history 53,9 MB = jauh lebih boros
   daripada seluruh fixed-cost. Pakai `claude -c` (sesi terakhir) atau sesi baru.
 
+## Hemat konteks (alasan: limit cepat habis)
+
+Audit 2026-09-26 (transcript nyata): **4,42 miliar token** terpakai, 3 sesi @ 59/54/18 MB
+→ tiap pesan membaca ulang **±0,5 juta token**. Penyebabnya bukan model, tapi sesi panjang.
+
+- `/clear` di **setiap batas tugas**. Sesi > 10 MB = wajib ditutup untuk tugas berikutnya
+  (hook `context-guard.sh` memperingatkan otomatis; ambang `CONTEXT_WARN_MB`/`CONTEXT_URGENT_MB`).
+- **DILARANG `claude --resume`** sesi lama — sesi baru + catatan handoff.
+- **LOOP = PEMBOROS #1 (audit 2026-10-03).** 02 Okt: 1.223 pesan/±500 jt token sehari
+  karena agen berputar (spawn→baca→edit→gagal→validasi→ulangi). Tanda loop: pesan sama
+  berulang, error yang sama >2×, spawn tanpa progres. Tindakan WAJIB saat
+  `[loop-guard]` memperingatkan / tanda ini muncul: **HENTIKAN agen (`Esc`),
+  tulis STATUS + LANGKAH SELANJUTNYA ke file, tutup sesi, lanjut di sesi BARU**
+  yang membaca file itu. DILARANG membiarkan agen berjalan tanpa batas.
+  Ambang peringatan: 80 tool call/sesi (lunak), 200 tool call ATAU 500 pesan (keras).
+  Sempitkan spawn/subagent: maks 3 paralel, 1 tujuan per agen, tanpa rekuris tanpa izin.
+  (`LOOP_WARN_N`/`LOOP_HARD_N`/`LOOP_MSG_N` di `~/.agents/loop-guard.py`.)
+- **DILARANG** `Read`/grep ke `vendor/`, `node_modules/`, `dist/`, `public/template/`,
+  `skills-expanded/`, `*.min.js` (sudah diblok `permissions.deny` di `~/.claude/settings.json`
+  dan `.claude/settings.json` repo). Butuh 1 baris dari sana → `sed -n`/`grep -n` via shell,
+  jangan `Read` penuh.
+- Alur kerja tetap dijalankan penuh, tapi **baca SKILL-FLOW.md hanya on-demand** (5,3 KB/sesi terbuang).
+- **Skill tetap diambil** — hanya cara memuatnya dibuat hemat: `bash ~/.agents/skill-load-lite.sh <nama>`
+  (≤80 baris / ≤2 KB). Baca `SKILL.md` penuh hanya kalau lite kurang. Jangan muat ulang skill
+  yang sudah dimuat di sesi yang sama.
+- Ukur, jangan menebak: `python3 ~/.agents/usage-audit.py` (token 7 hari + sesi terboros)
+  dan `python3 ~/.agents/context-guard.py --report`.
+
+## Pakai subagent (pintar, bukan boros)
+
+- **Default TANPA subagent.** Pakai HANYA kalau ketiganya benar: (1) lepas dari tugas
+  utama, (2) perkiraan >20 menit, (3) butuh konteks terpisah (eksplorasi besar).
+- Maks **3 paralel** · **1 tujuan per agen** · DILARANG subagent memanggil subagent
+  tanpa izin user.
+- **Brief wajib terbatas**: tujuan + ruang lingkup file + definisi selesai + batas
+  keluaran (≤30 baris ringkasan, dilarang dump file besar/daftar panjang).
+- Model: eksplorasi/rutin → model murah; reasoning berat → model utama.
+- **Satu penulis**, sisanya read-only (hindari konflik edit & edit→gagal→ulangi).
+- Agen TIDAK menandai "selesai" untuk perubahan kode produksi — verifikasi ada di
+  penulis utama (uji nyata), bukan di agen.
+- Tanda loop (error sama >2×, pesan berulang, spawn tanpa progres) → **berhenti**,
+  tulis STATUS + LANGKAH SELANJUTNYA ke file, tutup sesi, lanjut di sesi baru.
+
+## Tangga progressive disclosure (skill · MCP · repo) — jangan lompat
+
+1. **Baca `TOKEN-SAVER.md` (2 KB) dulu** — panduan hemat untuk semua AI.
+2. **Cari, jangan baca katalog**: DB FTS (`skill-search.sh` / MCP `skill_for_task`).
+   JANGAN buka `SKILLS-AVAILABLE.md` (123 KB) / `SKILLS-ALL-PATHS.md` (3,4 MB, RACUN) /
+   `SKILLS-SKILLSH-DIRECTORY.md` (1,8 MB, RACUN). Peta aman: `SKILLS-CATEGORIES.md`
+   (4 KB) · `SKILLS-CONCEPTS.md` (2 KB) · `SKILLS-FLOWS.md` (2 KB).
+2. **Kartu hasil** (8 baris, deskripsi 120 B) → pilih max 2 skill.
+3. **Muat ringkas**: `bash ~/.agents/skill-load-lite.sh <nama>` (≤80 baris/≤2 KB).
+4. **SKILL.md penuh** hanya kalau lite kurang (3–15 KB → sadar biaya).
+5. **Sumber asli**: `REPO-REF.md` atau `python3 ~/.agents/repo-ref-api.py --search "<kata>"`
+   (jangan klon/`cat` repo besar; grep baris spesifik).
+6. **MCP hemat**: nyala default hanya `skill-catalog` + `mcp-router`; server lain
+   on-demand `mcp-use`/`mcp-lifecycle.py --on <nama>` lalu matikan lagi.
+7. **Wiring per-repo = role pack**: `bash ~/.agents/wire-skills-role.sh <preset> <repo> --apply`
+   (backend/frontend/fullstack/data/ai/design/qa/devops/security/mobile/docs/core).
+   Repo Vue+Go tidak perlu skill blockchain/game → konteks lebih ramping tapi tetap pintar.
+
 ## Alur kerja standar
 
 ```bash

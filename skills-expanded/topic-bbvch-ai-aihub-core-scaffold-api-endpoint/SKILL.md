@@ -1,0 +1,259 @@
+---
+name: scaffold-api-endpoint
+description: Generate a new REST API controller with fluent builder pattern, typed endpoints, permission-based auth, DTOs, and main.py registration. Use when user says "create API endpoint", "scaffold controller", "new REST endpoint", "add CRUD API", "generate API route", "build endpoint for X", or "add API controller". Do NOT use for service layer business logic (use scaffold-api-service), frontend SDK generation (use generate-sdk), or entity/repository scaffolding (use scaffold-api-repository).
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+---
+
+# Scaffold a New REST API Controller
+
+Generate a new controller with endpoints. The resource name should be provided via `$ARGUMENTS`.
+
+## Step 1: Read Reference Materials
+
+1. Read the API scope guide: `packages/api/CLAUDE.md`
+2. Study these reference controllers:
+   - CRUD: `packages/api/swiss_ai_hub/api/routes/agent/agent_controller.py`
+   - Simple: `packages/api/swiss_ai_hub/api/routes/role/role_controller.py`
+   - Complex: `packages/api/swiss_ai_hub/api/routes/thread/thread_controller.py`
+   - Base class: `packages/core/swiss_ai_hub/core/routes/controller.py`
+   - Registration: `packages/api/app/main.py`
+3. Extract the resource name from `$ARGUMENTS` and derive `snake_case` (dirs/files) and `CamelCase` (classes)
+
+## Step 2: Create Directory Structure
+
+```
+packages/api/swiss_ai_hub/api/routes/<resource>/
+├── __init__.py
+├── <resource>_controller.py
+├── <resource>_service.py
+└── dto/
+    ├── __init__.py
+    ├── <resource>_dto.py
+    ├── create_<resource>_request.py
+    ├── update_<resource>_request.py
+    └── paginated_<resource>s_response.py
+```
+
+## Step 3: Create the Controller
+
+File: `packages/api/swiss_ai_hub/api/routes/<resource>/<resource>_controller.py`
+
+```python
+from typing import Annotated, Self
+
+from swiss_ai_hub.core.auth.dependencies.auth_handler import AuthHandler
+from swiss_ai_hub.core.auth.identity.user_identity import UserIdentity
+from swiss_ai_hub.core.i18n.locale_handler import LocaleHandler
+from swiss_ai_hub.core.routes.controller import Controller
+from fastapi import Depends, Response, Security, status
+
+from swiss_ai_hub.api.i18n.api_locale_string import ApiLocaleString
+from swiss_ai_hub.api.i18n.dependencies.use_locale import use_locale
+from swiss_ai_hub.api.pagination.type.page_number import PageNumber
+from swiss_ai_hub.api.pagination.type.page_size import PageSize
+from swiss_ai_hub.api.routes.<resource>.dto.create_<resource>_request import Create<Resource>Request
+from swiss_ai_hub.api.routes.<resource>.dto.<resource>_dto import <Resource>DTO
+from swiss_ai_hub.api.routes.<resource>.dto.paginated_<resource>s_response import Paginated<Resource>sResponse
+from swiss_ai_hub.api.routes.<resource>.dto.update_<resource>_request import Update<Resource>Request
+from swiss_ai_hub.api.routes.<resource>.<resource>_service import <Resource>Service
+
+
+class <Resource>Controller(Controller):
+    """Controller for <resource> management."""
+
+    name = ApiLocaleString.from_i18n_path("api.controllers.<resource>.name")
+    description = ApiLocaleString.from_i18n_path("api.controllers.<resource>.description")
+    icon = "mage:icon-name"
+
+    def __init__(
+        self,
+        *,
+        auth: AuthHandler,
+        route: str = "/<resource>s",
+        additionally_required_permission: str | None = None,
+    ):
+        super().__init__(auth=auth, route=route, additionally_required_permission=additionally_required_permission)
+
+    # ==================== LIST ====================
+
+    def get_<resource>s(self, route: str = "/") -> Self:
+        @self.router.get(route, tags=self.tags)
+        async def get_<resource>s(
+            user: Annotated[UserIdentity, Security(self.user_with_permission("aihub.user.?>"))],
+            t: Annotated[LocaleHandler, Depends(use_locale)],
+            page: PageNumber = 1,
+            page_size: PageSize = 20,
+        ) -> Paginated<Resource>sResponse:
+            """Retrieve a paginated list of <resource>s."""
+            total, items = await <Resource>Service.get_paginated_<resource>s(
+                user_id=user.id, t=t, page=page, page_size=page_size,
+            )
+            total_pages = (total + page_size - 1) // page_size
+            return Paginated<Resource>sResponse(
+                <resource>s=items, total=total, page=page,
+                page_size=page_size, total_pages=total_pages,
+            )
+        return self
+
+    # ==================== GET ====================
+
+    def get_<resource>(self, route: str = "/{<resource>_id}") -> Self:
+        @self.router.get(route, tags=self.tags)
+        async def get_<resource>(
+            <resource>_id: str,
+            _: Annotated[UserIdentity, Security(self.user_with_permission("aihub.user.<resource>.{<resource>_id}"))],
+            t: Annotated[LocaleHandler, Depends(use_locale)],
+        ) -> <Resource>DTO:
+            """Retrieve details for a specific <resource>."""
+            return await <Resource>Service.get_<resource>_by_id(<resource>_id, t)
+        return self
+
+    # ==================== CREATE ====================
+
+    def create_<resource>(self, route: str = "/") -> Self:
+        @self.router.post(route, tags=self.tags, status_code=status.HTTP_201_CREATED)
+        async def create_<resource>(
+            request: Create<Resource>Request,
+            user: Annotated[UserIdentity, Security(self.user_with_permission("aihub.admin.<resource>"))],
+            t: Annotated[LocaleHandler, Depends(use_locale)],
+        ) -> <Resource>DTO:
+            """Create a new <resource>."""
+            return await <Resource>Service.create_<resource>(request, user, t)
+        return self
+
+    # ==================== UPDATE ====================
+
+    def update_<resource>(self, route: str = "/{<resource>_id}") -> Self:
+        @self.router.put(route, tags=self.tags)
+        async def update_<resource>(
+            <resource>_id: str,
+            request: Update<Resource>Request,
+            _: Annotated[UserIdentity, Security(self.user_with_permission("aihub.admin.<resource>.{<resource>_id}"))],
+            t: Annotated[LocaleHandler, Depends(use_locale)],
+        ) -> <Resource>DTO:
+            """Update an existing <resource>."""
+            return await <Resource>Service.update_<resource>(<resource>_id, request, t)
+        return self
+
+    # ==================== DELETE ====================
+
+    def delete_<resource>(self, route: str = "/{<resource>_id}") -> Self:
+        @self.router.delete(route, tags=self.tags, status_code=status.HTTP_204_NO_CONTENT)
+        async def delete_<resource>(
+            <resource>_id: str,
+            _: Annotated[UserIdentity, Security(self.user_with_permission("aihub.admin.<resource>.{<resource>_id}"))],
+        ) -> Response:
+            """Delete a <resource>."""
+            await <Resource>Service.delete_<resource>(<resource>_id)
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return self
+```
+
+### Controller Architecture Rules
+
+1. **Inherit from `Controller`**: Always extend `swiss_ai_hub.core.routes.controller`
+2. **Fluent builder**: Every endpoint method returns `Self` for chaining
+3. **Metadata**: Set `name` (ApiLocaleString), `description`, `icon` (Iconify)
+4. **Named-only constructor args**: Use `*` to enforce keyword arguments
+5. **Default route**: Set in constructor `route: str = "/<resource>s"`
+6. **Inner function pattern**: Endpoint function is defined inside the method
+7. **Permission templates**: Use `{path_param}` placeholders for dynamic permission checks
+8. **Tags**: Always pass `tags=self.tags` to router decorators
+9. **Status codes**: 201 for create, 204 for delete, 200 (default) for get/update
+
+### Permission Patterns
+
+| Access Level      | Template                                     | Usage                  |
+| ----------------- | -------------------------------------------- | ---------------------- |
+| Any user          | `"aihub.user.?>"`                            | List own resources     |
+| Specific resource | `"aihub.user.<resource>.{<resource>_id}"`    | View specific resource |
+| Admin-only        | `"aihub.admin.<resource>"`                   | Create resources       |
+| Admin + resource  | `"aihub.admin.<resource>.{<resource>_id}"`   | Update/delete          |
+| Service admin     | `f"aihub.admin.service.{self.service_name}"` | Manage entire service  |
+
+### User Identity Usage
+
+```python
+# When you need the identity (e.g., filter by user):
+user: Annotated[UserIdentity, Security(self.user_with_permission("aihub.user.?>"))]
+# Access: user.id, user.name, user.email, user.roles
+
+# When you only need permission check:
+_: Annotated[UserIdentity, Security(self.user_with_permission("aihub.admin.<resource>"))]
+```
+
+## Step 4: Register in main.py
+
+Edit `packages/api/app/main.py`:
+
+```python
+from swiss_ai_hub.api.routes.<resource>.<resource>_controller import <Resource>Controller
+
+runner.mount(
+    # ... existing controllers ...
+    <Resource>Controller(auth=auth)
+        .get_<resource>s()
+        .get_<resource>()
+        .create_<resource>()
+        .update_<resource>()
+        .delete_<resource>(),
+)
+```
+
+## Step 5: Add i18n Keys
+
+Add to all 4 locale files at `packages/api/swiss_ai_hub/api/i18n/translations/api/controllers.{en,de,fr,it}.yml`:
+
+```yaml
+<resource>:
+  name: "<Resource>s"
+  description: "Manage <resource>s"
+```
+
+The `api.controllers.` prefix in `ApiLocaleString.from_i18n_path("api.controllers.<resource>.name")` resolves to the
+file path `translations/api/controllers.{locale}.yml` — only the `<resource>.name` part is a key inside the YAML.
+
+## Step 6: Scaffold Tests
+
+Create test directory and stub at `packages/api/playground/testing/tests/<resource>/test_<resource>_api.py`. Follow the
+patterns in `playground/testing/tests/agent/` or `playground/testing/tests/role/`.
+
+## Step 7: Verify
+
+1. Confirm the controller is importable:
+   `cd packages/api && uv run python -c "from swiss_ai_hub.api.routes.<resource>.<resource>_controller import <Resource>Controller"`
+2. Confirm registration in `packages/api/app/main.py` — the controller must be imported and mounted via `runner.mount()`
+3. Confirm i18n keys exist in all 4 locale files:
+   `packages/api/swiss_ai_hub/api/i18n/translations/api/controllers.{en,de,fr,it}.yml`
+4. Run tests: `cd packages/api && make test`
+
+## Key Conventions
+
+- **Controller is thin**: Delegates to Service, only handles HTTP concerns
+- **`Annotated` for everything**: Params, dependencies, auth — all use `Annotated`
+- **Docstrings on endpoints**: Short description of what the endpoint does
+- **Locale handler**: Always inject `t: Annotated[LocaleHandler, Depends(use_locale)]`
+- **Pagination types**: Use `PageNumber` and `PageSize` type aliases from `swiss_ai_hub.api.pagination.type`
+- **Error handling**: Let services raise `HTTPException` -- don't catch in controllers
+- **Path validation**: Use `Path(pattern=r"^[a-f0-9]{24}$")` for MongoDB ObjectId params
+
+## Examples
+
+**Input**: `$ARGUMENTS = "project"` **Expected output files**:
+
+- `packages/api/swiss_ai_hub/api/routes/project/project_controller.py` with `ProjectController(Controller)`
+- `packages/api/swiss_ai_hub/api/routes/project/project_service.py` (stub -- use `/scaffold-api-service` for full
+  service)
+- `packages/api/swiss_ai_hub/api/routes/project/dto/project_dto.py`, `create_project_request.py`,
+  `update_project_request.py`, `paginated_projects_response.py`
+- Registration added to `packages/api/app/main.py`
+- i18n keys added to `packages/api/swiss_ai_hub/api/i18n/translations/api/controllers.{en,de,fr,it}.yml`
+
+## Troubleshooting
+
+- **404 on new endpoint**: Verify the controller is mounted in `main.py` and the fluent builder methods are chained
+- **Permission denied (403)**: Check the permission template string matches what is configured in the role system (e.g.,
+  `aihub.user.?>` vs `aihub.admin.resource`)
+- **Missing tags in Swagger**: Ensure `tags=self.tags` is passed to every router decorator
+- **i18n key not found**: Verify locale YAML files have the correct nested path under `api.controllers.<resource>`
+- **Duplicate route conflict**: Check that `route` parameter default values do not clash with existing controllers

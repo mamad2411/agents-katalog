@@ -1,0 +1,288 @@
+[
+ {
+  "p": "tolong fix error login react saya crash",
+  "cats": [
+   "debug",
+   "react-next"
+  ],
+  "skills": [
+   "systematic-debugging"
+  ]
+ },
+ {
+  "p": "aplikasi saya gagal jalan muncul traceback python",
+  "cats": [
+   "debug",
+   "python"
+  ],
+  "skills": [
+   "systematic-debugging"
+  ]
+ },
+ {
+  "p": "buat landing page nextjs pakai tailwind",
+  "cats": [
+   "frontend",
+   "react-next"
+  ],
+  "skills": [
+   "anti-ui-slop",
+   "de-sloppify"
+  ]
+ },
+ {
+  "p": "desain ulang tampilan dashboard admin biar modern",
+  "cats": [
+   "frontend"
+  ],
+  "skills": [
+   "frontend-design",
+   "anti-ui-slop"
+  ]
+ },
+ {
+  "p": "tulis artikel blog tentang produktivitas",
+  "cats": [
+   "tulisan"
+  ],
+  "skills": [
+   "avoid-ai-writing",
+   "content-humanizer"
+  ]
+ },
+ {
+  "p": "tulis postingan linkedin tentang ai dan bikin poster",
+  "cats": [
+   "tulisan",
+   "sosmed",
+   "gambar-video"
+  ],
+  "skills": [
+   "linkedin-post-formatter"
+  ]
+ },
+ {
+  "p": "balas email klien soal keterlambatan project",
+  "cats": [
+   "email"
+  ],
+  "skills": [
+   "email-drafter"
+  ]
+ },
+ {
+  "p": "database postgres lemot banget query nya",
+  "cats": [
+   "database",
+   "performa"
+  ],
+  "skills": [
+   "sql-optimization"
+  ]
+ },
+ {
+  "p": "buat schema tabel mysql untuk toko online",
+  "cats": [
+   "database"
+  ],
+  "skills": [
+   "database-schema-design"
+  ]
+ },
+ {
+  "p": "deploy docker ke vps pakai github actions",
+  "cats": [
+   "devops"
+  ],
+  "skills": [
+   "docker-best-practices",
+   "ci-cd"
+  ]
+ },
+ {
+  "p": "buat unit test untuk service golang saya",
+  "cats": [
+   "test",
+   "go"
+  ],
+  "skills": [
+   "tdd-workflow"
+  ]
+ },
+ {
+  "p": "review kode pull request ini sebelum merge",
+  "cats": [
+   "review"
+  ],
+  "skills": [
+   "code-review"
+  ]
+ },
+ {
+  "p": "refactor fungsi ini biar lebih sederhana",
+  "cats": [
+   "refactor"
+  ],
+  "skills": [
+   "refactor"
+  ]
+ },
+ {
+  "p": "cek keamanan api key saya bocor gak di repo",
+  "cats": [
+   "keamanan"
+  ],
+  "skills": [
+   "secrets-scanner"
+  ]
+ },
+ {
+  "p": "riset harga laptop terbaru untuk kuliah",
+  "cats": [
+   "riset"
+  ],
+  "skills": [
+   "deep-research",
+   "doublecheck"
+  ]
+ },
+ {
+  "p": "analisis data penjualan dari file csv ini",
+  "cats": [
+   "data"
+  ],
+  "skills": [
+   "data-analysis"
+  ]
+ },
+ {
+  "p": "buatkan presentasi pptx untuk rapat besok",
+  "cats": [
+   "file-office"
+  ],
+  "skills": [
+   "pptx"
+  ]
+ },
+ {
+  "p": "generate gambar logo untuk brand kopi",
+  "cats": [
+   "gambar-video"
+  ],
+  "skills": [
+   "image-generation"
+  ]
+ },
+ {
+  "p": "tolong ingat keputusan project ini ke obsidian",
+  "cats": [
+   "memori"
+  ],
+  "skills": [
+   "linkedin-obsidian-memory-graph"
+  ]
+ },
+ {
+  "p": "laptop saya panas dan kipas berisik terus",
+  "cats": [
+   "perangkat"
+  ],
+  "skills": [
+   "device-cool"
+  ]
+ },
+ {
+  "p": "buka web ini dan baca halaman pricing nya",
+  "cats": [
+   "browser"
+  ],
+  "skills": [
+   "browser-use-local"
+  ]
+ },
+ {
+  "p": "bikin rencana arsitektur fitur baru pembayaran",
+  "cats": [
+   "rencana"
+  ],
+  "skills": [
+   "create-implementation-plan"
+  ]
+ },
+ {
+  "p": "buat readme dokumentasi untuk repo ini",
+  "cats": [
+   "dokumentasi"
+  ],
+  "skills": [
+   "documentation-writer"
+  ]
+ },
+ {
+  "p": "buat aplikasi mobile react native untuk absensi",
+  "cats": [
+   "mobile"
+  ],
+  "skills": [
+   "react-native-patterns"
+  ]
+ },
+ {
+  "p": "buat komponen vue dengan pinia store",
+  "cats": [
+   "vue",
+   "frontend"
+  ],
+  "skills": [
+   "vue-best-practices"
+  ]
+ },
+ {
+  "p": "tolong buat prompt yang bagus untuk chatbot customer service",
+  "cats": [
+   "prompt-ai"
+  ],
+  "skills": [
+   "prompt-engineering"
+  ]
+ },
+ {
+  "p": "buat notulen meeting dari catatan rapat tadi",
+  "cats": [
+   "meeting"
+  ],
+  "skills": [
+   "meeting-notes"
+  ]
+ },
+ {
+  "p": "commit perubahan ini dengan pesan yang rapi",
+  "cats": [
+   "git"
+  ],
+  "skills": [
+   "git-commit"
+  ]
+ },
+ {
+  "p": "context penuh token habis tolong ringkas sesi",
+  "cats": [
+   "konteks"
+  ],
+  "skills": [
+   "strategic-compact"
+  ]
+ },
+ {
+  "p": "halo apa kabar",
+  "cats": [],
+  "skills": []
+ },
+ {
+  "p": "claude ambil skill dari skill storage di agents kan",
+  "cats": [
+   "prompt-ai"
+  ],
+  "skills": []
+ }
+]

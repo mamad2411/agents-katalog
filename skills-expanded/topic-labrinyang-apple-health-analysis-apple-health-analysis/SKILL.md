@@ -1,0 +1,176 @@
+---
+name: apple-health-analysis
+description: >
+  Clinical-grade deep analysis of Apple Health export data. Parses the XML from iPhone's
+  Health app export and produces a comprehensive clinical-quality health assessment report
+  using 20+ peer-reviewed statistical methods including Granger Causality, Transfer Entropy,
+  Convergent Cross Mapping, Sample Entropy, DFA, Cosinor analysis, Kovatchev glucose risk
+  indices, Bayesian change-point detection, and biological age estimation.
+  Use this skill whenever the user mentions Apple Health data, health export, health XML,
+  CGM data, wants to analyze their fitness/sleep/heart rate/glucose/weight trends,
+  or has an `apple_health_export` directory in their project. Also trigger when the user
+  asks about health data analysis, wearable data analysis, or wants insights from their
+  Apple Watch or iPhone health data. Even if they just say "analyze my health" or
+  "look at my health data" and there's an Apple Health export nearby, use this skill.
+  Trigger on Chinese equivalents too: "分析健康数据", "健康报告", "Apple Watch 数据".
+---
+
+# Apple Health Deep Analysis — Clinical-Grade Report Engine
+
+This skill produces a **comprehensive health assessment report** at the standard of a top-tier academic medical center. It applies 20+ peer-reviewed statistical methods to Apple Health export data, contextualizes every finding against evidence-based clinical reference ranges, grades the confidence of each conclusion, and handles missing or insufficient data transparently.
+
+**Medical Disclaimer**: This analysis is for informational and educational purposes only. It does not constitute medical advice, diagnosis, or treatment. Consult a qualified healthcare provider for medical decisions.
+
+## Workflow
+
+### Step 1: Locate the Export
+
+Find the Apple Health XML file inside `apple_health_export/`. Common names: `导出.xml`, `export.xml`, `Export.xml`.
+
+```bash
+find . -path "*/apple_health_export/*.xml" -size +1M | head -5
+```
+
+### Step 2: Run Both Analysis Engines
+
+```bash
+# Base analysis — comprehensive health metrics
+python3 <skill-path>/scripts/analyze_health.py <xml-path> --output json 2>/dev/null > /tmp/health_base.json
+
+# Advanced analysis — 20 peer-reviewed statistical methods
+python3 <skill-path>/scripts/advanced_analytics.py <xml-path> 2>/dev/null > /tmp/health_advanced.json
+```
+
+Both scripts: streaming XML parsing (handles 1GB+), Python 3.6+ only, no external deps. If >500MB, warn about 2-3 min runtime.
+
+### Step 3: Generate HTML Report Shell
+
+Generate the visual HTML report with charts, gauges, and data tables:
+
+```bash
+python3 <skill-path>/scripts/generate_report_html.py /tmp/health_base.json /tmp/health_advanced.json -o /tmp/health_report.html --lang zh
+```
+
+This produces a self-contained HTML (~160KB) with all visualizations but EMPTY narrative sections.
+The narrative sections are `<div class="ai-narrative" id="narrative-XXX">` elements waiting for your analysis.
+
+### Step 4: Assess Data Quality & Read Clinical Reference
+
+Before interpreting ANY results, read the `data_quality` section from the base analysis output. This tells you which analyses are reliable and which should be presented with caveats or skipped entirely.
+
+**Data sufficiency rules:**
+- If a metric has `reliability: "insufficient"` → **do not present** that section. Mention it in the Data Availability section as "not enough data."
+- If `reliability: "low"` → present with a prominent caveat: "Limited data (X days of Y); interpret with caution."
+- If `reliability: "moderate"` → present normally with a brief note on coverage.
+- If `reliability: "high"` → present with full confidence.
+
+From the advanced analysis, check `data_requirements` — it explicitly states which methods had enough data to run and which were skipped.
+
+Read `references/clinical_interpretation.md` for evidence-based reference ranges and interpretation guidelines. This file contains paper-cited norms for every metric including advanced nonlinear dynamics and glucose risk indices. Every number in the report should be contextualized against these ranges.
+
+### Step 5: Fill Narrative Sections
+
+Read both JSON outputs. For each section in the HTML, use the Edit tool to insert your clinical interpretation directly into the corresponding `<div class="ai-narrative">` element.
+
+The narrative IDs and what to write:
+
+| ID | Content to Write |
+|----|-----------------|
+| narrative-executive-summary | 3-5 bullet points of most critical findings with evidence grades |
+| narrative-body-composition | Weight trajectory interpretation, BMI context, gain decomposition analysis, projection implications |
+| narrative-cardiovascular | RHR assessment vs age norms, HR zone analysis, VO2 Max percentile, recovery assessment |
+| narrative-autonomic | HRV interpretation, Poincaré balance, DFA alpha meaning, nocturnal HR trend |
+| narrative-glucose | CGM interpretation, TIR context, variability assessment, Kovatchev risk, meal pattern insights |
+| narrative-activity | Step trend assessment, exercise consistency, weekly pattern insights |
+| narrative-sleep | Duration adequacy, architecture quality, efficiency assessment |
+| narrative-circadian | Cosinor interpretation, rhythm stability assessment |
+| narrative-causal-inference | Explain which causal relationships are confirmed and what they mean practically |
+| narrative-nonlinear | Complexity assessment, fractal dynamics, what it means for adaptability |
+| narrative-biological-age | Fitness age context, biological age drivers, allostatic load interpretation |
+| narrative-disease-screening | Summarize elevated risks, explain what screenings mean, suggest follow-up |
+| narrative-correlations | Highlight top 3 correlations with physiological explanations |
+| narrative-recommendations | Numbered, prioritized, specific, data-grounded action items |
+
+Each narrative should:
+- Be written as HTML (use `<p>`, `<ul>`, `<li>`, `<strong>`, `<h4>` tags)
+- Reference specific numbers from the data
+- Cite clinical reference ranges from `references/clinical_interpretation.md`
+- Include evidence grades where applicable
+- Be in the user's language
+- Be direct and clinically informative, not generic
+
+Example Edit for body composition:
+```
+old_string: <div class="ai-narrative" id="narrative-body-composition"></div>
+new_string: <div class="ai-narrative" id="narrative-body-composition"><h4>Clinical Assessment</h4><p>Your current weight of <strong>105.0 kg</strong> (BMI 30.5) places you in <strong>Obese Class I</strong>...</p></div>
+```
+
+### Step 6: Open Final Report
+
+After all narrative sections are filled:
+```bash
+open /tmp/health_report.html  # macOS
+```
+
+## Key Principles
+
+### Never Simplify the Analysis
+
+Present the full statistical results. Do not round away precision, omit p-values, or skip advanced metrics to "keep it simple." If a method was computed, present it. Users who export their Apple Health data and ask for analysis want depth, not dumbed-down summaries. Let the report structure (executive summary first, deep dives later) handle the complexity gradient — not omission.
+
+### Handle Missing Data Explicitly
+
+Every health data export is different. Some users have CGM data; most don't. Some have years of Apple Watch data; others have weeks. The report must adapt gracefully:
+
+- **Present only what exists.** Never fabricate or guess at missing data.
+- **State what's missing.** In the Data Availability section, list which data types are present and which are absent, so the user knows what they're NOT seeing.
+- **Explain impact.** If CGM data is absent, note that glucose analysis, MAGE/MODD/LBGI/HBGI, and glucose-exercise correlations cannot be performed. If VO2 Max is missing, note that fitness age cannot be estimated.
+- **Adjust composite scores.** Only score dimensions that have data. If only 4 of 8 dimensions have data, the overall score is the mean of those 4 — don't penalize for missing data.
+
+### Evidence Grading
+
+Every major finding should carry a confidence indicator:
+
+| Grade | Meaning | When to use |
+|-------|---------|-------------|
+| **A — Strong** | Multiple converging metrics, high data quality, statistically significant | p<0.01, >100 data points, confirmed by multiple methods |
+| **B — Moderate** | Single strong metric or multiple weak ones, adequate data | p<0.05, 30-100 data points |
+| **C — Suggestive** | Trend visible but not statistically significant, limited data | p<0.10, 10-30 data points |
+| **D — Insufficient** | Too little data to draw conclusions | <10 data points, >50% missing |
+
+Example: "Your resting heart rate has been rising over the past 3 months (Mann-Kendall tau=0.24, p=0.03; **Evidence: B**)"
+
+### Report Language — MUST Match User Language
+
+The entire report — including the HTML visual report AND the conversational narrative — must be in the user's language. Detection priority:
+1. The language of the user's message (highest priority)
+2. The XML locale attribute (e.g., `zh-Hans_US` → Chinese)
+3. Data source names (Chinese app names → Chinese)
+
+When generating the HTML report, pass the `--lang` flag:
+```bash
+python3 <skill-path>/scripts/generate_report_html.py base.json adv.json -o report.html --lang zh  # Chinese
+python3 <skill-path>/scripts/generate_report_html.py base.json adv.json -o report.html --lang en  # English
+```
+
+For Chinese: use standard medical terminology (静息心率, 心率变异性, 血糖时间达标率, 最大摄氧量, 自主神经功能, 生物年龄, etc.). For the conversational analysis, write entirely in the detected language — do not mix languages unless quoting metric names that have no standard translation.
+
+## What the Scripts Output
+
+### Base Analysis (`analyze_health.py`)
+Outputs JSON with keys: `personal_info`, `data_quality`, `data_overview`, `circadian_rhythm`, `heart_rate`, `heart_rate_variability`, `glucose`, `sleep`, `activity`, `body_composition`, `workouts`, `respiratory`, `correlations`, `lagged_correlations`, `change_points`, `composite_scores`, `trend_momentum`, `audio_exposure`, `risk_stratification`.
+
+### Advanced Analysis (`advanced_analytics.py`)
+Outputs JSON with keys: `methods_applied`, `references` (20+ papers), `data_requirements`, `trend_tests`, `causal_inference`, `nonlinear_dynamics`, `advanced_glucose`, `circadian_quantification`, `statistical_rigor`, `bayesian_changepoints`, `biological_age_models`, `disease_risk_screening`.
+
+The `disease_risk_screening` section screens for up to **30 diseases** across 8 categories (endocrine, cardiovascular, respiratory, neurological, musculoskeletal, sleep disorders, psychiatric, other) with paper-cited thresholds. Each screening returns `{condition, risk_level, score, max_score, risk_pct, factors, recommendation, references}`. Read `references/wearable_screening_literature.md` for the full 1200-line evidence base behind each screening algorithm.
+
+Each section is `null` when data is insufficient — never crashes or produces garbage output.
+
+## Reference Files
+
+| File | Lines | Purpose | When to Read |
+|------|-------|---------|-------------|
+| `references/clinical_interpretation.md` | 480 | Evidence-based reference ranges for ALL metrics, paper-cited | Step 4: before writing narratives |
+| `references/report_template.md` | 221 | Report structure, formatting rules, tone guide | Step 5: while writing narratives |
+| `references/wearable_screening_literature.md` | 1233 | 28 disease screening algorithms with paper citations | Step 5: when writing disease screening narrative |

@@ -1,0 +1,335 @@
+---
+name: jmcomic
+description: Search, browse, inspect album-specific or site-wide comments, list favorite folders, browse, add, and delete favorites, and download manga from JMComic (18comic), obtain the latest Android APK from hect0x7/JMComic-APK, and invoke the upstream jm-view-server `jms` command for local reading. Use for manga discovery, ranking, comment analysis, favorites, downloads, post-processing, configuration, requests to download the JMComic APK, requests to start a local or phone-accessible manga reader, and download-then-read workflows.
+---
+
+# JMComic Skill
+
+This skill enables you to interact with JMComic (18comic), a popular manga platform, to search, browse, and download manga content.
+
+## When to Use This Skill
+
+Activate this skill when the user wants to:
+- Search for manga by keyword or category
+- Browse popular manga rankings (daily, weekly, monthly)
+- Read album-specific or site-wide comments and nested replies, including spoiler flags
+- List favorite folders, browse saved albums, add an album to favorites, or delete an album from favorites
+- Download entire albums or specific chapters (**Returns structured dict with status, paths, and metadata**)
+- Get detailed information about a manga album
+- Configure download settings (paths, concurrency, proxies)
+- Post-process downloaded content (Zip, PDF, LongImage) with **native parameters or `dir_rule`**
+- Download the latest Android APK published by `hect0x7/JMComic-APK`
+- Run `jms --help` to obtain the current upstream options, then invoke `jms` directly for an existing or newly downloaded manga directory
+
+For APK download, local-reader startup, LAN safety, and download-to-read continuation rules, read
+`references/ecosystem.md` before acting.
+
+### 📥 Download Tools Return Structured Data
+
+Both `download_album` and `download_photo` return structured dictionaries:
+
+**`download_album(album_id: str, ctx: Context = None)`** returns:
+```python
+{
+    "status": "success" | "failed",
+    "album_id": str,
+    "title": str,
+    "download_path": str,  # Absolute path to download directory
+    "duration": float | None,  # Total elapsed time in seconds
+    "image_paths": list[str],  # Actual downloaded or cached image paths
+    "export_files": dict[str, list[str]],  # Plugin outputs grouped by suffix
+    "task_id": str,        # Dedicated ID for this download invocation
+    "log_path": str,       # Absolute path to this task's log file
+    "error": str | None
+}
+```
+
+**`download_photo(photo_id: str, ctx: Context = None)`** returns:
+```python
+{
+    "status": "success" | "failed",
+    "photo_id": str,
+    "image_count": int,    # Number of actual image paths in this result
+    "download_path": str,  # Absolute path to download directory
+    "duration": float | None,  # Total elapsed time in seconds
+    "image_paths": list[str],  # Actual downloaded or cached image paths
+    "export_files": dict[str, list[str]],  # Plugin outputs grouped by suffix
+    "task_id": str,        # Dedicated ID for this download invocation
+    "log_path": str,       # Absolute path to this task's log file
+    "error": str | None
+}
+```
+
+**Real-time Progress Tracking**: Both methods accept an optional `ctx: Context` parameter (automatically injected by FastMCP). When provided, progress updates are sent via MCP notifications in real-time, allowing AI agents to monitor download progress.
+
+**Persistent Task Logs**: Every download invocation creates an isolated log file and returns its `task_id` and `log_path`, including failed downloads. Logs default to `~/.jmcomic-ai/logs`; set `JM_TASK_LOG_DIR` to use another directory.
+
+**Artifact Handoff**: Use `image_paths` and `export_files` for packaging, sending, or cleanup instead of rescanning the configured directory. `download_path` comes from the completed upstream download result rather than a pre-download path prediction.
+
+**File-only Logging**: Regular `jmcomic`, `jmcomic_ai`, and MCP runtime logs share `~/.jmcomic-ai/jmcomic_ai.log` and are not emitted to stdout or stderr. Set `JM_LOG_PATH` to override the global log file. MCP protocol messages and explicit CLI result output are unaffected.
+
+**Upstream Rich Terminal Progress**: `jmcomic 2.7.7` includes the optional `download_progress` plugin with `log_file` and `terminal_log_lines`. Recommend it only when the user explicitly wants Rich progress in an interactive terminal. Do not enable it for `jmai` MCP/stdio downloads, which already use MCP Context notifications and isolated task logs.
+
+### Album Comments
+
+Use `get_album_comments(album_id: str, page: int = 1)` to read one page of comments. This is a read-only tool; it does not post comments or replies.
+
+```python
+{
+    "album_id": str,
+    "page": int,
+    "page_size": int,
+    "total": int | None,
+    "page_count": int | None,
+    "comment_count": int,
+    "comments": [
+        {
+            "comment_id": str | None,
+            "album_id": str | None,
+            "user_id": str | None,
+            "parent_comment_id": str | None,
+            "content": str,
+            "username": str,
+            "nickname": str,
+            "is_spoiler": bool,
+            "created_at": object,
+            "likes": int | None,
+            "replies": [...]  # Recursive nested replies
+        }
+    ]
+}
+```
+
+Use `get_forum_comments(page: int = 1)` for the latest site-wide comments. It returns the same comment objects and pagination fields without an `album_id` filter; each comment's own `album_id` identifies its source album. This is also read-only.
+
+### Favorites
+
+All favorite tools require an authenticated client. Call `login` in the same MCP session or configure
+valid cookies. For HTML queries authenticated only by Cookie, pass `username`; after `login`, it can
+be omitted. The API client ignores `username` and always queries the current account. Separate script
+processes need authentication in their configuration; they do not inherit an MCP session's login.
+
+**`get_favorite_folders(username: str = "")`** returns:
+
+```python
+{"folders": [{"id": str, "name": str}]}
+```
+
+The directory can be empty. Use `folder_id="0"` to browse all favorites even if this ID is absent
+from the returned directory.
+
+**`browse_favorite_albums(folder_id: str = "0", page: int = 1, order_by: str = "favorite_time", username: str = "")`** returns:
+
+```python
+{
+    "albums": [{"id": str, "title": str, "tags": list, "cover_url": str}],
+    "total_count": int,
+    "page": int,
+    "folder_id": str,
+    "error": str  # Present only for invalid page, folder ID, or sort parameters
+}
+```
+
+Pagination starts at 1; `folder_id="0"` means all favorites. An empty result retains pagination and
+folder metadata. `order_by` accepts `favorite_time` (default) and `update_time`; the favorites list has
+its own upstream sort vocabulary, which differs from `browse_albums`. The service does not sort a page
+locally. Invalid arguments return an empty list with `error`; authentication and request failures
+propagate as tool errors, not empty collections.
+
+**`add_favorite_album(album_id: str)`** returns:
+
+```python
+{
+    "status": "success" | "error",
+    "album_id": str,
+    "title": str,   # Album title
+    "message": str
+}
+```
+
+`album_id` accepts a numeric ID, a JM-prefixed ID, or an album URL and is normalized when parsing
+succeeds. The album is saved to the account's default favorites placement.
+Adding an album that is already saved returns `status="error"` and leaves the saved state unchanged.
+
+**`delete_favorite_album(album_id: str)`** returns the same fields and takes the same `album_id` forms.
+Deleting an album that is not saved returns `status="error"` and leaves the saved state unchanged.
+
+Both tools behave identically whichever client implementation the configuration selects, and both return
+the album `title`. Name every affected album as `title (ID)`; when `title` is empty or absent, reuse an
+earlier search, browse, or detail result, or fetch the name with `get_album_detail(album_id)` or
+`python scripts/album_info.py --id ID`.
+
+## Core Capabilities
+
+### 🛠️ Post-Processing
+
+This skill supports advanced post-processing of downloaded manga. It returns structured data including the **output path** of the generated file.
+
+- **📦 Zip Compression**: Pack an entire album or individual chapters into a ZIP file.
+- **📄 PDF Conversion**: Merge all images of an album into a single PDF document.
+- **🖼️ Long Image Merging**: Combine all pages of a chapter into one continuous long image.
+
+**`post_process(album_id: str, process_type: str, params: dict = None)`** returns:
+```python
+{
+    "status": "success" | "error",
+    "process_type": str,  # Process type used
+    "album_id": str,  # Album ID processed
+    "output_path": str,  # Absolute path to generated file/directory (empty string on error)
+    "output_paths": list[str],  # All files actually registered by the upstream plugin
+    "is_directory": bool,  # True if output is a directory (e.g., photo-level zip), False on error
+    "message": str  # Success/error message
+}
+```
+
+**All fields are always present**. On error, `output_path` is empty, `output_paths` is empty, and `is_directory` is `False`.
+
+**Output Control**: Use `dir_rule` (a `{"rule": "DSL_STRING", "base_dir": "BASE_PATH"}` dict) for custom output paths. If omitted, files are saved in the configured default directory. The DSL supports `Bd` (base_dir), `Axxx`/`Pxxx` album/photo attributes, and `{attr}` Python format placeholders. When looping over albums into one `base_dir`, include `{Aid}` or `{Atitle}` to avoid overwrites.
+
+For the full set of ZIP/PDF/LongImg × album/photo `dir_rule` examples, see `references/post_process.md`.
+
+This skill provides command-line utilities for JMComic operations. All utilities are Python scripts located in the `scripts/` directory and should be executed using Python.
+
+### Data Structure Notes
+
+Most search and browsing tools (e.g., `search_album`, `browse_albums`) return a consistent structure that supports pagination:
+
+```json
+{
+  "albums": [ ... ],
+  "total_count": 1234
+}
+```
+
+**`total_count`** provides the total number of items available across all pages, allowing you to calculate the number of remaining pages and decide if further searching is needed.
+
+#### Important: Browse Albums Data Limitations
+
+**`browse_albums`** is the unified tool for browsing albums by `category`, `time_range`, and `order_by` (ranking + category browsing in one interface). Its response is lightweight — each album has only `id`, `title`, `tags`, and `cover_url`, and **no** stats (likes/views/author). To get those, call **`get_album_detail(album_id)`** per album.
+
+`order_by` accepts: `latest` (default), `likes`, `views`, `pictures`, `score`, `comments`. For the full enumeration, use-case recipes (rankings, category browsing, combined queries), and the "top 10 with details" workflow, see `references/browse_albums.md`.
+
+
+## Configuration Reference
+
+
+For detailed configuration options, refer to:
+- **`references/reference.md`**: Human-readable configuration guide
+- **`assets/option_schema.json`**: JSON Schema for validation
+
+Common configuration examples:
+
+```yaml
+# Change download directory
+dir_rule:
+  base_dir: "/path/to/downloads"
+  rule: "Bd / Ptitle"
+
+# Adjust concurrency
+download:
+  threading:
+    image: 30  # Max concurrent image downloads
+    photo: 5   # Max concurrent chapter downloads
+
+# Set proxy
+client:
+  async_impl: async_api  # Used by jmcomic native async APIs
+  cache: level_option    # Reuse metadata across clients from this option
+  postman:
+    meta_data:
+      proxies:
+        http: "http://proxy.example.com:8080"
+        https: "https://proxy.example.com:8080"
+
+# Or use system proxy
+client:
+  postman:
+    meta_data:
+      proxies: system
+
+# Configure login cookies
+client:
+  postman:
+    meta_data:
+      cookies:
+        AVS: "your_avs_cookie_value"
+
+# Use plugins
+plugins:
+  after_album:
+    - plugin: zip
+      kwargs:
+        level: photo
+        suffix: zip
+        delete_original_file: true
+```
+
+## Available Command-Line Tools
+
+The `scripts/` directory provides utility tools for common tasks. All tools support the `--help` flag for detailed usage. The table below summarizes each script; for full per-script examples and feature lists, see `references/scripts.md`.
+
+| Script | Purpose |
+| :--- | :--- |
+| `doctor.py` | Environment diagnostics: Python version, deps, config status, network/domain checks. |
+| `check_domains.py` | Comprehensive domain health checker: tests latency, HTTP status, redirect chains (301/302), Cloudflare WAF challenges (403), and SSL validity across API and HTML candidate domains; outputs best recommended domains. |
+| `login.py` | Authenticate with JMComic (API/HTML/both), query user statistics (UID, coins, EXP, level, favorites), and optionally persist session cookies (AVS) directly to `option.yml` (`--save`). |
+| `batch_download.py` | Download multiple albums from a list of IDs (CLI or file) with progress/error summary. |
+| `download_photo.py` | Download specific chapters/photos without fetching whole albums. |
+| `validate_config.py` | Validate `option.yml` and convert between YAML and JSON. |
+| `search_export.py` | Search by keyword/ranking/category and export to CSV or JSON (multi-page); `--tags` keeps only albums carrying every given tag, `--enrich` fills per-album stats. |
+| `album_info.py` | Query detailed metadata for one or many albums; print or export to JSON. |
+| `album_comments.py` | Fetch one page of album comments and recursive replies; print or export to JSON. |
+| `forum_comments.py` | Fetch one page of site-wide comments with source album IDs; print or export to JSON. |
+| `favorite_folders.py` | List favorite folders as JSON; supports `--username`, `--output`, and `--option`. |
+| `favorite_albums.py` | Browse one page of favorites as JSON; supports folder, page, sort, and username filters. |
+| `add_favorite_album.py` | Add one favorite and print its structured result as JSON; failures exit non-zero. |
+| `delete_favorite_album.py` | Delete one favorite and print its structured result as JSON; failures exit non-zero. |
+| `download_covers.py` | Batch download album cover images to a custom output directory. |
+| `ranking_tracker.py` | Track day/week/month rankings over time; export snapshots with timestamps. |
+| `post_process.py` | Convert downloads to ZIP/PDF/LongImg, with optional encryption and `dir_rule` DSL; `--outdir` uses a safe file rule and missing deps are auto-installed (`--no-install-deps` to opt out). |
+| `download_latest_apk.py` | Download the latest APK published by `hect0x7/JMComic-APK`; supports optional `output_dir`, `--force`, and `--json` (run `--help` for current usage). |
+
+## Script Parameters ↔ MCP Tools Mapping
+
+The following table clarifies how script CLI parameters map to MCP tools.
+
+| Script | Target Tool | Mapping Level | Notes |
+| :--- | :--- | :--- | :--- |
+| `search_export.py` | `search_album` / `browse_albums` | Partial | `--keyword` maps to `search_album`; `--ranking` / `--category` maps to `browse_albums`. Ranking is a convenience mode based on `time_range` + configurable sort, not a separate backend API. |
+| `post_process.py` | `post_process` | High | `--id`→`album_id`, `--type`→`process_type`, optional flags to `params`. `--dir-rule` + `--base-dir` map to `params.dir_rule`. |
+| `album_info.py` | `get_album_detail` | Partial | Batch wrapper over repeated single-album calls; output format is script-defined. |
+| `album_comments.py` | `get_album_comments` | High | `--id` maps to `album_id`, `--page` maps to `page`, and the JSON response preserves the MCP result shape. |
+| `forum_comments.py` | `get_forum_comments` | High | `--page` maps to `page`, and each returned comment preserves its source `album_id`. |
+| `favorite_folders.py` | `get_favorite_folders` | High | `--username` maps to `username`; JSON preserves the MCP result shape. |
+| `favorite_albums.py` | `browse_favorite_albums` | High | `--folder-id`, `--page`, `--order-by`, `--username` map to the corresponding tool arguments. |
+| `add_favorite_album.py` | `add_favorite_album` | High | `--id` maps to `album_id`; an error result exits non-zero. |
+| `delete_favorite_album.py` | `delete_favorite_album` | High | `--id` maps to `album_id`; an error result exits non-zero. |
+| `download_covers.py` | `download_cover` | Partial | Batch wrapper over repeated cover calls. |
+| `ranking_tracker.py` | `browse_albums` | Partial | Uses time-range/category browse semantics and exports snapshots. |
+| `batch_download.py` | `download_album` | Partial | Batch wrapper over repeated calls; prints each result's download path and dedicated log path. |
+| `download_photo.py` | `download_photo` | Partial | Batch wrapper over repeated calls; prints each result's download path and dedicated log path. |
+| `validate_config.py` | `update_option` (adjacent) | None | Validation/format conversion utility; not a direct MCP tool wrapper. |
+| `download_latest_apk.py` | None | None | Reads the public `hect0x7/JMComic-APK` GitHub Release API directly. |
+| `login.py` | `login` | High | Supports `--username`, `--password`, `--impl`, `--domain`, `--proxy`, and `--save` to update option.yml. |
+| `check_domains.py` | None | None | Diagnostic domain health checker and benchmark utility; not a direct MCP tool wrapper. |
+
+### Mapping Policy
+
+- **MCP tools are the source of truth** for agent-facing contracts (name, args, return structure).
+- **Scripts are operational helpers** for local package workflows and may expose different output formatting.
+- If strict schema guarantees are required, prefer calling MCP tools directly instead of scripts.
+
+## Important Notes
+
+- **Legal Compliance**: Ensure you have the right to download content
+- **Rate Limiting**: The platform may rate-limit requests; adjust threading if needed
+- **Storage**: Downloads can be large; ensure sufficient disk space
+- **Configuration**: Default config is at `~/.jmcomic/option.yml`
+- **Next action**: After a successful manga download, offer to start the local reader for the returned
+  `download_path`. Start it automatically only when the user also asked to open, read, or view the result.
+
+## Troubleshooting
+
+- **Connection errors**: Try updating the domain list in client config
+- **Slow downloads**: Reduce threading concurrency
+- **Scrambled images**: Ensure `download.image.decode` is set to `true`

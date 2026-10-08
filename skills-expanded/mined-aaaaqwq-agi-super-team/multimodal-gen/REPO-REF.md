@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aaaaqwq/agi-super-team (path: skills/multimodal-gen/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 多模态内容生成（图片、视频）。当用户需要生成图片、生成图像、生成视频、AI绘画、AI作图、画一张图、做个视频、文生图、文生视频时使用此技能。自动调用 multimodal-agent 进行生成。

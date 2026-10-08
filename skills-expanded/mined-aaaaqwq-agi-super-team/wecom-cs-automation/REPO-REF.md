@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aaaaqwq/agi-super-team (path: skills/wecom-cs-automation/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 企业微信客服自动化系统。自动同意好友添加、基于知识库的智能问答、未知问题人工介入提醒。适用于企业微信客服场景的 AI 助手机器人。

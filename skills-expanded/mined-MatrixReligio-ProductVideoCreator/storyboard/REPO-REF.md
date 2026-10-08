@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/MatrixReligio/ProductVideoCreator (path: .claude/skills/storyboard/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 产品视频分镜脚本设计。当需要规划视频内容、设计场景结构、编写配音文案时使用。分镜必须在录制前完成并获得用户确认。

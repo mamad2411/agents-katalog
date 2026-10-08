@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vickyhan924/self-media-script (path: .claude/skills/douyin-viral-content/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 抖音爆款文案智能生成器。当用户说"生成新文案"、"创作抖音内容"、"写短视频文案"时自动触发。自动执行：(1) 读取历史数据分析 (2) 应用9大爆款要素优化 (3) 多维度打分评估 (4) 自动迭代优化直到达到5星标准 (5) 智能预估播放量 (6) 输出完整优化文案。完全自动化，无需手动指定任何分析或优化任务。

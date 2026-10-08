@@ -1,0 +1,145 @@
+---
+name: backlog-groom
+description: Groom a GitHub issue backlog against the code — verify each issue's cited premise at HEAD, cluster and rank what survives, and apply close/relabel/duplicate-link actions through an adversarial gate and a per-project autonomy floor. Triggers on "groom the backlog", "which issues are still real", "find fixed-but-open issues", "cluster the backlog", "prune stale issues".
+---
+
+# backlog-groom
+
+Grooms a GitHub issue backlog **against the code**. The read half verifies every
+issue's cited premise at HEAD and emits a ranked, clustered set; the write half
+applies conclusions back to GitHub, each one gated by a fresh-context
+adversarial review and bounded by the project's autonomy floor.
+
+## The boundary this skill is bound by
+
+**This skill must NEVER mutate GitHub directly.** Never close, reopen, edit,
+comment on, label, lock or transfer an issue through `gh`, and never reach the
+REST API with a write method. Every write flows through `backlog-groom --apply`.
+
+This is not style. One such call here bypasses the autonomy floor, the
+adversarial gate and the comment-first rule **in one call** — structurally the
+same gap as an un-gated Bash surface beside a carefully-gated tool. The core is
+where the rules live; a wrapper that writes is a wrapper that has none of them.
+`packages/backlog-groom/test/skill-no-direct-mutation.test.mjs` enforces this, so
+a mutation added here fails the suite rather than shipping.
+
+That test matches every invocation, on purpose — which means this file cannot
+even *quote* a mutating invocation as an example. That is a deliberate trade: a guard
+that tries to tell a prohibition from an instruction is a guard with a hole in
+it, and the hole is worth more than the example.
+
+Reading is fine: `gh issue list`, `gh issue view` and any other query are how you
+gather what the core cannot.
+
+## What you supply that the core cannot
+
+The core is deterministic and has no model. Two things need judgment:
+
+1. **`model`-route verdicts.** An issue that makes a checkable claim but carries
+   no parseable code reference routes to `model`. Read the issue against the code
+   and emit the same verdict shape the mechanical route does — `valid`, `fixed`,
+   `moved` — with your reasoning as the evidence.
+2. **Relation judgments.** The core's similarity pass only *selects candidate
+   pairs*; it never decides. You decide, and you must distinguish three outcomes,
+   because they are genuinely different and none falls out of similarity:
+   - **duplicate** — the same defect filed twice.
+   - **related-but-distinct** — overlapping vocabulary, different defect. Two
+     issues can share every keyword and be unrelated.
+   - **superseded-by** — one issue's fix makes the other moot, or one is the
+     *cause* of the other rather than a copy of it.
+
+   Cite reasoning, never a score. A similarity number is a filter, never
+   evidence.
+
+## Running it
+
+```bash
+# Read-only: verify, cluster, rank. Writes nothing to GitHub.
+# --threshold: see "Pick the relation threshold from the run's own numbers" below.
+# The 0.2 default surfaces far more candidate pairs than anyone will judge.
+adlc backlog-groom --threshold 0.4 --json --out groomed.json
+
+# Apply conclusions. Every action is gated and floored; nothing is applied
+# without an approve from a provider distinct from the deciding one.
+adlc backlog-groom --apply --set groomed.json
+```
+
+### Pick the relation threshold from the run's own numbers
+
+Relations need a judgment per surfaced pair, and YOU supply it — so the only
+threshold worth running is one whose `pairsSurfaced` you will actually work
+through. Every run prints `relationFilter` with `pairsTotal`, `pairsSurfaced` and
+`excludedRate`; read it and re-run with a different `--threshold` rather than
+accepting whatever the default gives.
+
+The count collapses steeply, so the useful range is narrow. Measured on this repo
+at 381 open issues (72,390 pairs):
+
+| `--threshold` | pairs surfaced |
+|---|---|
+| 0.2 (the default) | 23,327 |
+| 0.3 | 360 |
+| 0.35 | 47 |
+| 0.4 | 13 |
+| 0.5 | 1 |
+| 0.6 and up | 0 |
+
+**0.4 is the starting point above**, because ~13 pairs is a number a run can
+actually judge; 0.35 buys more recall for ~47. The default's 23,327 is not a
+backlog of work, it is a way to emit nothing — and an unjudged pair is not a
+relation, so a threshold you cannot work through surfaces exactly as many
+relations as one that surfaces none.
+
+These figures scale with backlog size and how similar the titles are, so treat
+them as this repo's shape today, not a constant. Re-measure when the backlog
+changes materially: the numbers come free with every run.
+
+Read the run's **route distribution** before trusting its conclusions. A sweep
+that mechanically verified 4% of the backlog is still useful, but it is not a
+thorough one, and the number sits next to the conclusions so you cannot mistake
+the second for the first. Same for `truncated`: a capped issue list is
+indistinguishable from a complete one, so the run says which it had.
+
+## What the gate will and will not do for you
+
+- **One shot.** Each action is reviewed once, per `(issue, contentHash)`. A
+  refusal **demotes the action to a proposal** — it is not an invitation to
+  reword the artifact and ask again. The core records the verdict and refuses a
+  second review of the same revision in this checkout. The record is per-checkout
+  state (`.adlc/backlog-groom-ledger.json`, gitignored): removing it or running
+  from a fresh checkout or a new worktree forgets it. Do not do either to get a
+  second review — that is re-asking by another route, and the key is the
+  boundary that makes it a key-holder's decision rather than yours.
+- **Only an explicit approve licenses a write.** A reviewer error, a timeout and
+  a material finding all demote. "Not blocked" is not "approved".
+- **No key means no writes.** Ledger entries are HMAC-signed with
+  `ADLC_MANIFEST_KEY`, and an unsigned or altered entry authorizes nothing. With
+  no key set, every action demotes to a proposal, the run still reports what it
+  would have done, and it exits 0 — say so plainly rather than treating it as a
+  reviewer problem. Closing an issue is a key-holder act; proposing is not.
+- **No distinct provider means no autonomous writes.** If the profile does not
+  declare both `providers.decider` and a different `providers.reviewer`, every
+  action demotes to a proposal and the run still produces its report. That is the
+  designed behaviour when quota is exhausted or only one provider is configured —
+  not a failure to work around.
+- **The floor outranks the reviewer.** Classes listed in `autonomyFloor` always
+  require a human, however confident the review was. Widening the floor is a
+  privileged change measured against the merge base, not the working copy.
+- **The rest of the policy is the merge base's too.** A working copy whose
+  `providers`, `labels` or `units` differ from the base is refused, and `--apply`
+  refuses `--profile`. To change who reviews or what a relabel may target, land
+  the profile change on the default branch first; do not edit it locally to get
+  a run through.
+- **The baseline comes from the remote, so `--apply` needs network.** The commit
+  the policy is compared against is the remote's own HEAD (`ls-remote --symref`),
+  not a local `refs/remotes/...` ref, and the merge base must be reachable from
+  it. If the remote cannot be reached the run refuses rather than falling back to
+  a local ref. A read-only groom is unaffected and still works offline. `origin`
+  itself is whatever `.git/config` names; never repoint it to get a run through.
+  Against a caller who can, the key is the boundary.
+
+## Reporting back
+
+Lead with the route distribution and the counts, then the actions executed, then
+**the actions the gate demoted and why**. The demoted set is the interesting
+half: it is where the tool's judgment and an independent reviewer disagreed.

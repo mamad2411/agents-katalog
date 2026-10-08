@@ -1,0 +1,232 @@
+---
+name: component-search
+license: MIT
+compatibility: "Claude Code 2.1.251+. Optional: 21st-dev-magic MCP server."
+description: "Search 21st.dev component registry for production-ready React components. Finds components by natural language description, filters by framework and style system, returns ranked results with install instructions. Use when looking for UI components, finding alternatives to existing components, or sourcing design system building blocks."
+argument-hint: "[component description]"
+tags: [components, 21st-dev, react, ui, search, registry, tailwind, shadcn]
+context: fork
+# user-typed commands stay interactive; CC >= 2.1.218 backgrounds forks by default (#3093)
+background: false
+version: 1.1.0
+author: OrchestKit
+user-invocable: true
+complexity: simple
+persuasion-type: collaborative
+effort: low
+model: sonnet
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - WebFetch
+  - WebSearch
+  - AskUserQuestion
+  - TaskCreate
+  - TaskUpdate
+  # 21st-dev-magic MCP. Without these the skill CANNOT reach the server it is
+  # named after and silently degrades to the WebSearch/WebFetch scrape below.
+  # Read-only surface by design: the catalog-mutating tools (submit_component,
+  # edit_component, delete_*, bookmark writes) are deliberately NOT granted —
+  # a search skill has no business publishing to or deleting from the registry.
+  - mcp__21st-dev-magic__search_picker
+  - mcp__21st-dev-magic__search
+  - mcp__21st-dev-magic__get_component
+  - mcp__21st-dev-magic__get_theme
+  - mcp__21st-dev-magic__search_logo
+  - mcp__21st-dev-magic__get_usage
+  - TaskList
+metadata:
+  category: workflow-automation
+  mcp-server: 21st-dev-magic
+triggers:
+  keywords: ["component search", "find component", "search components", "ui component", "react component", "21st.dev"]
+  examples:
+    - "search for a date picker component"
+    - "find a modal component for React"
+    - "are there any good table components on 21st.dev"
+  anti-triggers: [implement, build, design, explore, brainstorm]
+---
+
+# Component Search
+
+Search 21st.dev's registry of production-ready React components. Returns ranked results with code, previews, and install instructions.
+
+```bash
+component-search animated pricing table
+component-search sidebar with collapsible sections
+component-search dark mode toggle switch
+```
+
+## How It Works
+
+```
+Query: "animated pricing table with monthly/annual toggle"
+  │
+  ▼
+┌──────────────────────────────┐
+│ 21st.dev Magic MCP           │  Search the 21st.dev developer registry
+│ @21st-dev/magic              │  Filter: React, Tailwind, shadcn
+└──────────┬───────────────────┘
+           │
+           ▼
+┌──────────────────────────────┐
+│ Results (ranked by relevance)│
+│                              │
+│ 1. PricingToggle (98% match) │  ★ 2.3K views · shadcn/ui
+│ 2. PricingCards (87% match)  │  ★ 1.8K views · Radix
+│ 3. AnimatedPricing (82%)     │  ★ 950 views · Motion
+└──────────────────────────────┘
+```
+
+## Step 0: Parse Query
+
+```python
+QUERY = ""  # Component description
+
+# 1. Create main task IMMEDIATELY
+TaskCreate(subject="Component search: {QUERY}", description="Search 21st.dev registry", activeForm="Searching for {QUERY}")
+
+# 2. Create subtasks for each phase
+TaskCreate(subject="Parse query and detect project context", activeForm="Detecting project context")  # id=2
+TaskCreate(subject="Search component registry", activeForm="Searching registry")                      # id=3
+TaskCreate(subject="Present and deliver results", activeForm="Presenting results")                    # id=4
+
+# 3. Set dependencies for sequential phases
+TaskUpdate(taskId="3", addBlockedBy=["2"])  # Search needs project context first
+TaskUpdate(taskId="4", addBlockedBy=["3"])  # Results need search done
+
+# 4. Update status as you progress
+TaskUpdate(taskId="2", status="in_progress")  # When starting
+TaskUpdate(taskId="2", status="completed")    # When done — repeat for each subtask
+
+# Detect project context for framework filtering
+Glob("**/package.json")
+# Read to determine: React version, Tailwind, shadcn/ui, styling approach
+
+# Detect shadcn/ui style for result ranking
+Glob("**/components.json")
+# Read → "style" field (e.g., "radix-luma", "base-nova")
+# Used to prefer components matching the project's visual language
+```
+
+## Step 1: Search Registry
+
+### Browse first, and let the USER pick
+
+**The reason is choice, not cost.** Search returns a preview image, a video, the
+author and the `installCommand` — enough for a human to recognise the right
+component at a glance. The model cannot. Guessing which of eight "command palette"
+results the user meant is the failure mode this flow exists to prevent, and it
+stays a failure mode on every pricing tier.
+
+**If 21st-dev-magic MCP is available (the real path):**
+
+```python
+# 1. BROWSE. Prefer search_picker: same params and results as search, but it
+#    renders an inline picker so the USER chooses. Do not pre-filter to one
+#    result on their behalf — show the options.
+mcp__21st-dev-magic__search_picker(query="{QUERY}", type="component", limit=8)
+
+# 2. PICK — the user selects. Stop here and wait.
+
+# 3. RETRIEVE — the chosen component.
+mcp__21st-dev-magic__get_component(id=<demo id from the chosen result>)
+```
+
+- If the user only needs to know *whether* something exists, or wants the install
+  command, **stop after step 1** — search already answered it.
+- `search` returns an `installCommand` containing `?api_key=$API_KEY_21ST`. That
+  is a **different env var** from the MCP's `TWENTY_FIRST_API_KEY`; if
+  `npx shadcn add` fails auth, that variable is missing from the environment.
+
+### Tier — check it, do not assume it
+
+`get_component` is the only metered tool; `search`, `search_picker`, `search_logo`,
+`get_theme` and every list/metadata tool are unmetered on all tiers.
+
+**Call `get_usage` rather than assuming a cap.** It returns `tier` plus
+`freeRetrievalsRemaining` (both `null` when unlimited).
+
+| tier | `get_component` |
+|---|---|
+| `free` | **2 / day** — treat each retrieval as the day's budget: never speculative, never in a loop, never "to compare" |
+| `paid` | unlimited — comparing two candidates is fine; the picker step still applies |
+
+Written 2026-08-16 against a free account and corrected 2026-08-17 when the
+account went paid: the original text argued the flow from the 2/day cap, which
+made it read as obsolete the moment the cap lifted. The cap is a constraint;
+letting the user choose is the design.
+
+**If 21st-dev-magic is NOT available (fallback):**
+```python
+# Genuine fallback ONLY — scraping returns no ids, no install commands, and
+# no structured metadata. If the MCP is configured, you should never be here.
+WebSearch("site:21st.dev {QUERY} React component")
+# Or browse the registry
+WebFetch("https://21st.dev", "Search for: {QUERY}")
+```
+
+**Alternative generation path — v0.app MCP (2026):**
+When the registry doesn't have a matching component, fall back to AI
+generation via the v0.app MCP server rather than WebFetch scraping:
+
+```python
+# If @vercel/v0-mcp is available
+# v0.app generates from the same query and can pin to shadcn style
+# (e.g., luma / nova / lyra) via `shadcn apply` after download.
+```
+
+This is a **generation** path, not a registry search — results will not
+have view counts or stars. Prefer registry search when possible so you
+get battle-tested components; use v0.app only when the registry misses.
+
+## Step 2: Present Results
+
+Show top 3 matches with:
+- Component name and description
+- Match relevance score
+- Popularity (views/bookmarks)
+- Framework compatibility
+- Preview (if available)
+- Install command
+
+```python
+AskUserQuestion(questions=[{
+  "question": "Which component to use?",
+  "header": "Component",
+  "options": [
+    {"label": "{name_1} (Recommended)", "description": "{desc_1} — {views_1} views"},
+    {"label": "{name_2}", "description": "{desc_2} — {views_2} views"},
+    {"label": "{name_3}", "description": "{desc_3} — {views_3} views"},
+    {"label": "None — generate from scratch", "description": "Build a custom component instead"}
+  ],
+  "multiSelect": false
+}])
+```
+
+## Step 3: Deliver Component
+
+For the selected component:
+1. Show the full source code
+2. List dependencies (`npm install` commands)
+3. Note any required peer dependencies (Radix, Motion, etc.)
+4. Highlight customization points (props, tokens, slots)
+
+## Framework Compatibility
+
+| Project Stack | Search Filter | Notes |
+|--------------|---------------|-------|
+| React + Tailwind | Default — best coverage | Most 21st.dev components |
+| React + CSS Modules | Filter non-Tailwind | Fewer results |
+| Next.js App Router | Prefer RSC-compatible | Check "use client" directives |
+| Vue / Svelte | Not supported | 21st.dev is React-only |
+| shadcn/ui style | Match visual language | Luma→rounded/pill, Nova→compact, Lyra→sharp |
+
+**shadcn v4 style awareness:** When `components.json` has a style (e.g., `"radix-luma"`), prefer components whose visual language matches — rounded pill shapes for Luma, dense layouts for Nova/Mira, sharp edges for Lyra. Components can be adapted post-install, but a closer match reduces customization work.
+
+## Related Skills
+
+- `ork:design-to-code` — Full mockup-to-component pipeline (uses this skill)
+- `ork:design-system-tokens` — Adapt components to project tokens
+- `ork:ui-components` — Component library patterns

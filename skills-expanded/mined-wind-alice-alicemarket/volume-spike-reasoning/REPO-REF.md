@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wind-alice/alicemarket (path: skills/volume_spike_reasoning_skill/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 对股票盘中或日内放量异动进行归因，判断是消息驱动、资金行为、情绪扩散还是技术性放量。适用于盘中放量时快速判断、缩小排查范围、识别真假异动等场景。

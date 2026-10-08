@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hairyf/skills (path: skills/uniapp-x/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: uni-app x 跨平台应用开发引擎。适用于使用 UTS、uvue、Vue 语法开发 Android/iOS/鸿蒙/Web/小程序应用时的能力与用法。

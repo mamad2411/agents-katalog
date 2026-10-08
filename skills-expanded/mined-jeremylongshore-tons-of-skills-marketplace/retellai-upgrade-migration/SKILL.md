@@ -1,0 +1,71 @@
+---
+name: retellai-upgrade-migration
+description: "Retell AI upgrade migration \u2014 AI voice agent and phone call automation.\n\
+  Use when working with Retell AI for voice agents, phone calls, or telephony.\nTrigger\
+  \ with phrases like \"retell upgrade migration\", \"retellai-upgrade-migration\"\
+  , \"voice agent\".\n"
+allowed-tools: Read, Write, Edit, Bash(npm:*), Bash(curl:*), Grep
+version: 1.9.0
+license: MIT
+author: Jeremy Longshore <jeremy@intentsolutions.io>
+tags:
+- saas
+- retellai
+- voice
+- telephony
+- ai-agents
+compatibility: Designed for Claude Code
+---
+# Retell AI Upgrade Migration
+
+## Overview
+
+Implementation patterns for Retell AI upgrade migration — voice agent and telephony platform.
+
+## Prerequisites
+
+- Completed `retellai-install-auth` setup
+
+## Instructions
+
+### Step 1: SDK Pattern
+
+```typescript
+import Retell from 'retell-sdk';
+const retell = new Retell({ apiKey: process.env.RETELL_API_KEY! });
+
+const agents = await retell.agent.list();
+console.log(`Agents: ${agents.length}`);
+```
+
+## Output
+
+- Retell AI integration for upgrade migration
+
+## Error Handling
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| 401 Unauthorized | Invalid API key | Check RETELL_API_KEY |
+| 429 Rate Limited | Too many requests | Implement backoff |
+| 400 Bad Request | Invalid parameters | Check API documentation |
+
+## Examples
+
+### Upgrade an SDK through a compatibility canary
+
+Pin the candidate SDK version in a branch and run the development agent suite
+against synthetic create-call, retrieval, error, and webhook scenarios. Record
+the old and new package versions and any changed request shapes, then deploy a
+preview configuration before altering production dependencies. Keep the prior
+lockfile and agent version available until the canary has met its error and
+latency limits, so rollback does not require reconstructing the old runtime.
+
+## Resources
+
+- [Retell AI Documentation](https://docs.retellai.com)
+- [retell-sdk npm](https://www.npmjs.com/package/retell-sdk)
+
+## Next Steps
+
+See related Retell AI skills for more workflows.

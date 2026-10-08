@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aaaaqwq/agi-super-team (path: skills/project-management/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 项目管理和产品需求分析。当用户需要制定项目计划、编写 PRD 文档、管理任务或进行需求分析时使用此技能。

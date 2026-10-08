@@ -1,0 +1,326 @@
+---
+name: repomap
+description: Generate architectural maps of repositories as RepoGraph JSON using local deterministic analysis, and serve interactive visualizations
+license: MIT
+compatibility: opencode
+metadata:
+  type: analysis
+  output: json
+---
+
+## Installation
+
+Before using this skill, ensure the required packages are installed:
+
+```bash
+# Dependencies for the analyzer (glob for file matching):
+cd ~/.opencode/skills/repomap && npm install
+
+# Visual server (auto-installed via npx on first serve):
+npm install -g @frannn2114/repomap-visual
+```
+
+The `serve` action will auto-install the visual package via `npx` if missing.
+
+## Actions
+
+### analyze
+
+Analyzes a repository and returns a `RawAnalysis` JSON object with deterministic
+structural data (modules, files, imports, definitions, edges). The agent must then
+use an LLM call to enrich it with semantic interpretation (roles, patterns, labels).
+
+**Input:**
+- `localPath` (string, optional) — Path to a local repository
+- `repoUrl` (string, optional) — GitHub repository URL (e.g. `https://github.com/owner/repo`)
+- `githubToken` (string, optional) — GitHub token for private repos
+- `outputFile` (string, optional) — Write the raw analysis JSON to a file path
+- `resumeFrom` (object, optional) — Previous analysis progress to resume from
+
+At least one of `localPath` or `repoUrl` must be provided.
+
+**How to execute:**
+1. **Before starting the analysis, the agent MUST ask the user:**
+   "Do you want to include git data (branches and commits) in the repository map?"
+   - If yes, follow the [Git data pipeline](#git-data-optional-pipeline-step) section below
+     (ask for commit count, collect token if needed, then call `getGitData`).
+   - If no, proceed without git data.
+   - **Do not skip this question.** The agent must ask before calling the analyzer.
+2. Import and call `analyzeRepository` from `./analyzer.js`:
+    ```js
+    import { analyzeRepository } from './analyzer.js'
+    const raw = await analyzeRepository({ localPath, repoUrl, githubToken, resumeFrom, outputFile })
+    ```
+3. The `raw` object contains `modules`, `fileData`, `nodes`, `edges`, and `meta`.
+4. Build an LLM prompt that sends the module/file/import data (NOT the full source code)
+    and asks the model to:
+    - Assign a `detectedRole` to each module (presentation, api_gateway, business_logic,
+      data_access, authentication, configuration, utility, testing, middleware, messaging,
+      caching, background_jobs, security, observability, database_migration, unknown)
+    - Detect intra-module patterns (repository_pattern, factory_pattern, etc.)
+    - Determine the overall architectural pattern and pick a layout template:
+      `vertical_layers` | `horizontal_three_column` | `concentric_rings` |
+      `left_right_flow` | `grid_clusters` | `force_directed`
+    - Optionally improve module labels for readability.
+5. Merge the LLM output into the final `RepoGraph`:
+   ```js
+   const nodesWithRoles = raw.nodes.map(node => ({
+     ...node,
+     detectedRole: llmRoles[node.id] || 'unknown',
+     patterns: llmPatterns[node.id] || [],
+   }))
+   const graph = {
+     meta: {
+       ...raw.meta,
+       detectedPattern: llmPattern,
+       layoutTemplate: llmLayout,
+       patternConfidence: llmConfidence,
+     },
+     nodes: nodesWithRoles,
+     edges: raw.edges,
+     overlay: { version: 0, nodeOverrides: {}, edgeOverrides: {}, manualNodes: [], manualEdges: [] },
+   }
+   ```
+6. Add the `git` field if the user opted in (step 1):
+    ```js
+    if (gitData) {
+      graph.git = gitData
+    }
+    ```
+7. Return the final `RepoGraph` to the user.
+
+### serve
+
+Analyzes a repository, persists the RepoGraph to `~/.repomap/maps/`, and starts
+the visual server. Maps are stored persistently and can be re-opened later via
+`open` or the CLI.
+
+**Input:**
+- `localPath` (string, optional) — Path to a local repository
+- `repoUrl` (string, optional) — GitHub repository URL
+- `githubToken` (string, optional) — GitHub token for private repos
+- `port` (number, optional, default 3000) — Port for the server
+
+**How to execute:**
+0. **Before starting the analysis, the agent MUST ask the user:**
+   "Do you want to include git data (branches and commits) in the repository map?"
+   - If yes, follow the [Git data pipeline](#git-data-optional-pipeline-step) section
+     below (ask for commit count, collect token if needed, then call `getGitData`).
+   - If no, proceed without git data.
+   - **Do not skip this question.** The agent must ask before calling the analyzer.
+1. Call `serve(input)`. It analyzes, persists to `~/.repomap/maps/`, and starts
+   the visual server automatically.
+2. Inform the user the server is running at `http://localhost:<port>`.
+3. Optionally tell the user they can reopen this map later via the CLI:
+   ```
+   node cli.js open <repoName>
+   ```
+
+### list
+
+Returns a list of all saved maps with metadata (name, date, node count, etc.).
+
+**How to execute:**
+```js
+import { list } from './index.js'
+const maps = list()
+// maps = [{ name, repoName, createdAt, detectedPattern, nodeCount, fileName }]
+```
+
+### open
+
+Opens a previously saved map by name (repo name, partial match, or file name)
+and starts the visual server. If no name is given, opens the most recent map.
+
+**Input:**
+- `name` (string, optional) — Repo name, file name, or partial match
+- `port` (number, optional, default 3000) — Port for the server
+
+**How to execute:**
+```js
+import { open } from './index.js'
+const result = await open({ name: 'my-project' })
+// result = { url, pid, mapPath } or { error, matches? }
+```
+
+## RawAnalysis JSON Format
+
+The deterministric analysis produces a `RawAnalysis` JSON object:
+
+```json
+{
+  "meta": {
+    "repoUrl": "local://my-project",
+    "repoName": "my-project",
+    "analysisVersion": "a1b2c3d4",
+    "analyzedAt": "2026-01-15T10:30:00.000Z",
+    "estimatedSize": "medium",
+    "languages": ["Python", "TypeScript"],
+    "totalFiles": 42,
+    "totalModules": 8
+  },
+  "modules": [
+    {
+      "id": "module__backend_api",
+      "label": "Api",
+      "layerId": "layer__backend",
+      "layerLabel": "Backend",
+      "fileCount": 5,
+      "filePaths": ["backend/api/routes.py", "backend/api/deps.py"]
+    }
+  ],
+  "fileData": {
+    "backend/api/routes.py": {
+      "language": "Python",
+      "lineCount": 120,
+      "imports": ["fastapi", "app.services.users"],
+      "definitions": [
+        { "name": "router", "type": "const" },
+        { "name": "get_users", "type": "function",
+          "params": [{ "name": "user_id", "type": "int" }, { "name": "limit", "type": "int", "optional": true }],
+          "returns": "list[User]"
+        }
+      ]
+    }
+  },
+  "nodes": [
+    { "id": "layer__presentation", "label": "Presentation", "type": "layer", "depth": 0, "parentId": null, "files": [], "metadata": {} },
+    { "id": "module__auth", "label": "Auth", "type": "module", "parentId": "layer__presentation", "depth": 1, "files": ["src/auth.ts"], "metadata": {} },
+    { "id": "file__src_auth_ts", "label": "auth.ts", "type": "file", "parentId": "module__auth", "depth": 2, "files": ["src/auth.ts"], "metadata": {} }
+  ],
+  "edges": [
+    { "id": "edge_1", "source": "file__src_auth_ts", "target": "file__src_api_ts", "edgeType": "engineering", "strength": 3, "label": "imports", "confidence": "high" }
+  ]
+}
+```
+
+## Function signature extraction
+
+The analyzer extracts function/method signatures from source code deterministically (regex, no LLM):
+
+| Convention | Languages |
+|---|---|
+| `name: type` | TypeScript, JavaScript, Python, Rust, Swift, PHP, Ruby |
+| `name type` | Go |
+| `type name` | Java, C#, C++, Dart, Kotlin, Scala |
+
+Fields per definition: `params: [{ name, type?, optional? }]`, `returns: string | undefined`
+
+No external dependencies beyond `glob`.
+
+## Git data (optional pipeline step)
+
+The agent must ask the user **before analyzing** whether they want git data (see `analyze`/`serve` actions above).
+
+If the user says yes, follow this workflow:
+
+1. The agent **asks the user** how many commits to include (configurable, default 30).
+2. If `maxCommits > 60`, the agent must ask the user for a GitHub token (API rate limit: 60 req/h without token, 5000/h with token).
+3. The agent calls `getGitData({ localPath, repoUrl, githubToken, maxCommits })` which returns `{ branches: [{ name, current }], commits: [{ hash, message, author, date, files: [{ path, status }] }] }` or `null` if not a git repo.
+4. The agent adds the returned data as a `git` field in the final `RepoGraph` JSON.
+5. The visualizer shows commits in a sidebar tab. Selecting a commit renders the graph with file nodes colored by change status (🟢 added, 🟠 modified, 🔴 deleted). Branches appear in the Branches tab under "Repository branches".
+
+**Agent workflow for this step:**
+```
+if (gitData) {
+  graph.git = gitData
+}
+```
+
+## LLM Enrichment (Agent Step)
+
+The `RawAnalysis` is meant to be fed to an LLM (without sending source code) to
+produce the semantic interpretation. The agent now receives **full function signatures**
+(params + return types), giving richer context for role assignment and pattern detection
+without any extra token cost. Build a prompt with the module/file/import data and request:
+
+- **Module roles**: For each module, pick from:
+  `presentation`, `api_gateway`, `business_logic`, `data_access`, `authentication`,
+  `configuration`, `utility`, `testing`, `middleware`, `messaging`, `caching`,
+  `background_jobs`, `security`, `observability`, `database_migration`, `unknown`
+- **Patterns**: Per-module design patterns (`repository_pattern`, `factory_pattern`, etc.)
+- **Architectural pattern**: One of `clean_architecture`, `hexagonal`, `mvc`,
+  `layered_monolith`, `microservices`, `feature_modules`, `pipeline_etl`, `unknown`
+- **Layout template**: One of `vertical_layers`, `horizontal_three_column`,
+  `concentric_rings`, `left_right_flow`, `grid_clusters`, `force_directed`
+- **Confidence**: A number 0–1 for the pattern detection confidence
+
+Merge the LLM response into the final `RepoGraph` with this structure:
+
+```json
+{
+  "meta": {
+    "repoUrl": "local://my-project",
+    "repoName": "my-project",
+    "analysisVersion": "a1b2c3d4",
+    "analyzedAt": "2026-01-15T10:30:00.000Z",
+    "detectedPattern": "layered_monolith",
+    "layoutTemplate": "vertical_layers",
+    "patternConfidence": 0.85
+  },
+  "nodes": [
+    { "id": "layer__presentation", "label": "Presentation", "type": "layer", "depth": 0, "parentId": null, "files": [], "detectedRole": "", "patterns": [], "metadata": {} },
+    { "id": "module__auth", "label": "Auth", "type": "module", "parentId": "layer__presentation", "depth": 1, "files": ["src/auth.ts"], "detectedRole": "authentication", "patterns": [], "metadata": {} }
+  ],
+  "edges": [
+    { "id": "edge_1", "source": "file__src_auth_ts", "target": "file__src_api_ts", "edgeType": "engineering", "strength": 3, "label": "imports", "confidence": "high" }
+  ],
+  "overlay": { "version": 0, "nodeOverrides": {}, "edgeOverrides": {}, "manualNodes": [], "manualEdges": [] }
+}
+```
+
+### Node Types
+
+| Type | Depth | Description |
+|------|-------|-------------|
+| `layer` | 0 | Top-level architectural layer |
+| `module` | 1 | Module within a layer |
+| `file` | 2 | Individual source file |
+
+### Edge Types
+
+| Type | Description |
+|------|-------------|
+| `engineering` | Runtime calls, imports, data flow |
+| `architecture` | Contains, part-of, hierarchy |
+
+### Confidence Levels
+
+`high`, `medium`, `uncertain`
+
+## Git branch diff
+
+If the map was generated with git data (`graph.git.branches`), the visualizer shows
+a "Repository branches" section in the sidebar. Clicking a branch:
+
+1. Fetches `git diff --name-status` from the server (`/api/diff`)
+2. Highlights changed nodes with colored borders (🟢 added, 🟠 modified, 🔴 deleted)
+3. Shows a warning banner: "Diff only — ask agent for full analysis"
+
+**Server must be started with `--repo=<path>` for diff support:**
+```bash
+npx @frannn2114/repomap-visual serve graph.json --port=3000 --repo=/path/to/repo
+```
+
+**For a full architectural map of a branch, ask the agent:**
+```
+"Analyze branch feature/auth of the repo and add it to the map"
+```
+The agent will:
+1. Run `analyzeRepository()` on that branch
+2. Enrich with LLM (roles, patterns)
+3. Update the existing `~/.repomap/` JSON with the new branch data
+
+## CLI (standalone)
+
+A standalone CLI script lets users browse and open saved maps without the agent:
+
+```bash
+# List all saved maps
+node .opencode/skills/repomap/cli.js list
+
+# Open a map by name (repo name, partial match, or file name)
+node .opencode/skills/repomap/cli.js open my-project
+```
+
+Maps are stored persistently at `~/.repomap/maps/` with an index at `~/.repomap/index.json`.

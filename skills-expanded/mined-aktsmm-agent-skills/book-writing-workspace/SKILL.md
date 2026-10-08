@@ -1,0 +1,143 @@
+---
+name: book-writing-workspace
+description: "Operate a reusable technical book manuscript workspace with writing structure, reader persona SSOT, review rules, and optional Markdown to Re:VIEW/PDF support. Use when organizing a book manuscript repo, defining or reviewing target readers, standardizing chapter/section files, setting writing/review agents, handling publisher proof comments, or assessing an existing writing workspace. Triggers on book writing workspace, reader persona, reader audience, 読者ペルソナ, persona SSOT, technical book project, 執筆ワークスペース, manuscript workflow, Re:VIEW workspace, proof PDF, annotated proof, publisher proof comments, 校正, 校正注釈, and 初校."
+argument-hint: "本のテーマ、原稿リポジトリ名、使いたい執筆フロー"
+user-invocable: true
+license: CC BY-NC-SA 4.0
+metadata:
+  author: yamapan (https://github.com/aktsmm)
+---
+
+# Book Writing Workspace
+
+Create and maintain a reusable manuscript workspace with folders, writing agents, instructions, review rules, and optional Markdown -> Re:VIEW -> PDF support.
+
+## When to use
+
+- **Book writing**, **technical writing**, **執筆プロジェクト**, **Re:VIEW**
+- Assessing or standardizing an existing book manuscript repository
+- Creating a new technical writing project from templates when needed
+- Setting up Markdown → Re:VIEW → PDF workflow
+- Upgrading an existing manuscript workspace so it can generate Re:VIEW output and printable PDFs
+- Standardizing chapter/section file layout, writing rules, review workflow, and page allocation
+- Adding optional Re:VIEW/PDF support without turning the writing workspace into a general Git or publishing operations toolkit
+
+## Quick Start
+
+Start by assessing the manuscript workspace, even when creating a new project:
+
+1. Confirm the main manuscript lives in `sections/` and uses one file per section.
+2. Confirm outlines or key points live separately from final manuscript files.
+3. Confirm chapter intro files use kebab-case naming (e.g. `00-introduction/00-introduction.md`).
+4. Locate the workspace's declared reader-persona SSOT; do not force a new file when an existing overview or planning document already owns it.
+5. For a new workspace, use `docs/reader-personas.md` to define the primary persona, secondary personas, prior knowledge, and completion outcomes.
+6. Confirm writing, heading, notation, page allocation, and review rules are available.
+7. Decide whether Re:VIEW/PDF output is needed for this project; keep it optional unless the workflow requires it.
+
+## Operating Workflow
+
+When the workspace already exists, do not stop at setup-oriented advice. This skill should also support:
+
+1. Normalizing manuscript folders and section naming.
+2. Keeping outlines, drafts, final manuscript, and images aligned by chapter.
+3. Running focused writing and review loops until P1/P2 issues are resolved.
+4. Applying reviewer fixes without leaving outlines, chapter maps, question digests, and progress trackers out of sync.
+5. Reviewing each chapter against the book-specific reader persona and expected outcome.
+6. Checking word count targets and source confidence before finalizing text.
+7. Measuring the built page count before treating a page-budget overrun as a structural problem; character-count estimates run high, and an author-side build is not the publisher's printed page count.
+8. Ruling on external issues, pull requests, and publisher proof comments point by point, first confirming which revision the proof was typeset from, then verifying each factual claim against its source of truth.
+9. Giving typeset-only elements such as chapter frontispieces a source of truth in the manuscript, marked so the converter can emit them, once it is settled that the author writes them.
+10. Treating an author-introduction page as part of the publication contract: keep its author order, display names, roles, confirmed profiles, and links aligned with the structure map, metadata, cover, and colophon. Do not invent missing biography details; track provisional text until the author confirms it, and visually verify cover wrapping when the author count changes.
+11. Enabling Re:VIEW/PDF support only when the project needs reproducible output.
+12. Freezing a release candidate and running the release-readiness gates before delivery or publication.
+
+## Bootstrap Workflow
+
+Use the setup script only when creating a new workspace or adding missing structure deliberately.
+
+```powershell
+python scripts/setup_workspace.py `
+  --name "project-name" `
+  --title "Book Title" `
+  --path "D:\target\path" `
+  --chapters 8
+
+# Include Re:VIEW/PDF scaffolding only when needed.
+python scripts/setup_workspace.py `
+  --name "project-name" `
+  --title "Book Title" `
+  --path "D:\target\path" `
+  --chapters 8 `
+  --with-review
+```
+
+1. **Gather info**: Project name, title, location, chapter count
+2. **Run script**: `scripts/setup_workspace.py`
+3. **Review output**: Confirm README, agents, instructions, and docs were created
+4. **Customize**: Edit `docs/reader-personas.md`, `docs/page-allocation.md`, `docs/schedule.md`, and `.github/copilot-instructions.md`. If `--with-review` is used, also customize `config/review-metadata/project.yml`.
+
+Git workflows are project-specific. Do not add generic commit/push prompts here; follow the repository's existing version-control conventions.
+
+Metadata, migration, converter verification, and sync-back rules live in references. Keep the main SKILL focused on manuscript structure and writing workflow.
+
+## Generated Workspace
+
+- Manuscript folders under `keypoints/`, `sections/`, and `images/`
+- AI workflow files under `.github/agents/` and `.github/instructions/`
+- Project docs such as `README.md`, `docs/reader-personas.md`, `docs/page-allocation.md`, `docs/schedule.md`, and `docs/release-readiness-record.md`
+- Helper scripts such as `scripts/count_chars.py`
+- Optional Re:VIEW scripts and metadata when `--with-review` is used
+
+## Recommended Writing Unit
+
+- Use **1 file = 1 section** as the default manuscript unit.
+- Keep chapter intro in `{NN}-{slug}/{NN}-{slug}.md` and section files alongside it.
+- For PDF/Re:VIEW output, heading levels define hierarchy, while file split mainly improves authoring and review workflow.
+
+## Agents Overview
+
+| Agent               | Role                          | Default |
+| ------------------- | ----------------------------- | ------- |
+| `@writing`          | Write and edit manuscripts    | Yes     |
+| `@writing-reviewer` | Review manuscripts (P1/P2/P3) | Yes     |
+| `@converter`        | Convert Markdown to Re:VIEW   | Only with `--with-review` |
+
+## Dependencies
+
+| Tool        | Purpose           | Required |
+| ----------- | ----------------- | -------- |
+| Python 3.8+ | Scripts           | Yes      |
+| Git         | Version control   | Yes      |
+| Docker      | Re:VIEW PDF build | Optional, only with `--with-review` |
+
+## Reference Map
+
+| Topic                | Reference                                                                |
+| -------------------- | ------------------------------------------------------------------------ |
+| Folder structure     | [references/folder-structure.md](references/folder-structure.md)         |
+| Setup workflow       | [references/setup-workflow.md](references/setup-workflow.md)             |
+| Customization points | [references/customization-points.md](references/customization-points.md) |
+| External review      | [references/external-review-handling.md](references/external-review-handling.md) |
+| Re:VIEW / PDF tips   | [references/review-pdf-tips.md](references/review-pdf-tips.md)           |
+| Screenshot capture   | [references/screenshot-capture.md](references/screenshot-capture.md)     |
+| Release readiness    | [references/release-readiness-review.md](references/release-readiness-review.md) |
+
+## Optional Build Pipeline
+
+For workspaces that add conversion or PDF rendering, apply [build pipeline gates](templates/docs/build-pipeline-gates.md). Keep project-specific commands, dependency versions, and formatter rules in the generated workspace.
+
+## Done Criteria
+
+- [ ] Workspace folder structure created
+- [ ] Writing and review agents deployed to `.github/agents/`
+- [ ] One reader-persona SSOT is selected; new workspaces use `docs/reader-personas.md` without placeholders
+- [ ] `docs/page-allocation.md` configured
+- [ ] `docs/release-readiness-record.md` is available for release candidates
+- [ ] `README.md` and `docs/schedule.md` customized
+- [ ] Manuscript files follow the chapter/section naming convention
+- [ ] Author introductions, metadata, cover, and colophon agree on author order and display names; provisional profiles are not treated as release-ready
+- [ ] `scripts/count_chars.py` works for target manuscript files
+- [ ] Setup fails before mutation when a required template, script, or asset is missing
+- [ ] A clean temporary-directory smoke test generates `docs/reader-personas.md` and exits successfully
+- [ ] The smoke test also generates `docs/release-readiness-record.md`, expands the title, and includes the Gate 8 row and manifest lock fields
+- [ ] Re:VIEW/PDF output is either explicitly out of scope or enabled and verified

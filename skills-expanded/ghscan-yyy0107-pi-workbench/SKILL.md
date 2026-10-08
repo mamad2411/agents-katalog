@@ -1,0 +1,78 @@
+---
+name: pi-coding-agent-sdk
+description: Use when changing embedded Pi coding-agent sessions, extension lifecycle, tools, resource loading, or their Workbench RPC boundary. Verify the installed SDK's public API.
+---
+
+# Pi Coding Agent SDK
+
+Use Pi coding-agent's public SDK as the backend capability layer for Workbench. Keep Pi runtime objects on the server and adapt only stable, serializable state through the existing Workbench RPC and stream contracts.
+
+## Load the right context
+
+1. Follow the repository `AGENTS.md` and applicable nested instructions; reuse instructions already read and unchanged.
+2. For Pi session, transport, workspace, model, settings, package, skill, or extension changes, locate and read the relevant sections of `packages/agent-runtime/runtimes/pi/README.md`. Read additional sections only for unresolved ownership or behavior questions.
+3. Read [references/source-routing.md](references/source-routing.md) before choosing or importing a Pi API. Resolve the installed package version first.
+4. Read [references/extensions.md](references/extensions.md) when authoring, registering, loading, filtering, or debugging Pi extensions.
+5. Read [references/session-sdk.md](references/session-sdk.md) when creating sessions/services, binding extension contexts, reloading resources, or exposing Pi behavior to Workbench.
+6. If the change also creates a Workbench frontend contribution, use the `extend-workbench-ui` skill for the UI ownership boundary. The [assistant-ui migration](../../../docs/assistant-ui-removal-and-custom-runtime-plan.md) is complete; follow the [Workbench/Pi boundary](../../../docs/agent-runtime-pi-implementation-refactor-plan.md) and do not restore compatibility adapters or Pi dependencies in generic UI.
+
+## Follow the implementation workflow
+
+### 1. Establish the versioned API surface
+
+- Inspect `package.json` and the resolved `node_modules/@earendil-works/pi-coding-agent/package.json`.
+- Treat the installed package's `dist/*.d.ts` and bundled docs as authoritative for code compiled in this repository.
+- Use `/home/wy/projects/pi/packages/coding-agent/src/` to understand implementation and upstream ownership, but do not assume that checkout matches the installed version.
+- Confirm that every import is exported from the package root. The package does not expose arbitrary `dist/core/**` deep imports.
+- Import types with `import type`; do not duplicate Pi interfaces in Workbench.
+
+### 2. Choose the narrowest SDK layer
+
+- Use an `ExtensionFactory` when behavior reacts to Pi lifecycle or must register tools, commands, providers, renderers, flags, or shortcuts.
+- Wrap internal factories in a named `InlineExtension` when injecting them through `resourceLoaderOptions.extensionFactories`.
+- Use `customTools` for a host-owned tool definition or same-name execution override that does not need extension lifecycle hooks.
+- Use `createAgentSession()` for standalone/simple SDK integrations.
+- Use `createAgentSessionServices()` followed by `createAgentSessionFromServices()` when Workbench must resolve cwd-bound settings, models, resources, or session options before constructing the session.
+- Use the existing Workbench RPC/client manager instead of importing Pi into React or opening an independent Pi connection.
+
+### 3. Reuse the current Workbench composition
+
+- Put statically compiled, host-owned Pi extensions under `packages/agent-runtime/runtimes/pi/server/src/internal-extensions/`.
+- Keep user/package extension discovery and mutation in the existing extension/package services; do not disguise internal extensions as user files.
+- Add internal extensions to the stable module-level `workbenchInternalPiExtensions` array with a `workbench.` name and `hidden: true` unless they should appear in Pi's startup extension list.
+- Preserve `extensionsOverride` composition and return the complete `LoadExtensionsResult`. Report scoped failures without discarding unrelated extensions, errors, or the shared runtime.
+- Bind embedded sessions with the correct mode and host-provided UI context after creation. Reuse the current `session.bindExtensions({ mode: "rpc", uiContext })` flow.
+
+### 4. Implement lifecycle-safe behavior
+
+- Keep extension factory initialization finite. Await one-time discovery/configuration when needed, but start processes, sockets, watchers, and timers only from a session event or the action that needs them.
+- Pair long-lived resources with an idempotent `session_shutdown` cleanup path.
+- Use the event-specific return contract; returning an arbitrary object from a handler has no effect and may be incorrect.
+- Guard mode/UI assumptions with `ctx.mode`, `ctx.hasUI`, and the concrete bound `ExtensionUIContext` behavior.
+- Treat tool arguments and external data as untrusted. Use the SDK schema and result shapes rather than casts.
+- For every tool, design field selection/pagination and an output budget before returning data. Follow [Bound tool output](references/extensions.md#bound-tool-output): use Pi's public truncation utilities, retain complete oversized results through a readable source/file, and keep structured summaries valid JSON. Registration and compaction do not enforce this automatically.
+- Handle rejected promises in host callbacks and expose actionable extension-load errors to the server log or existing diagnostics surface.
+
+### 5. Preserve the boundary
+
+- Keep `@earendil-works/pi-coding-agent` imports in server/runtime modules. Never serialize `AgentSession`, `ExtensionAPI`, `ExtensionRuntime`, registries, callbacks, Maps, or tool definitions to the browser.
+- Promote only stable JSON-compatible request/response/event fields into `@workbench/agent-runtime-pi-protocol` or the Workbench-owned adapter contracts when a frontend needs them.
+- Do not copy raw Pi RPC types into Workbench or call legacy `/api/pi/**` routes from a new feature. Follow the transport named by `packages/agent-runtime/runtimes/pi/README.md`.
+- Keep project-trust checks and filesystem/provider credentials on the server side.
+
+## Validate proportionally
+
+- For type/import-only changes, inspect the resolved declarations and run the cheapest relevant TypeScript or targeted test check.
+- For extension behavior, add or update a focused test around the owning server module; simulate events and loader results without real provider calls.
+- For tool output handling, exercise small and oversized results, UTF-8 byte and line limits, and retrieval of complete data. For spill files, check permissions and failure/cancellation; confirm `details` does not retain the oversized snapshot and a committed mutation is still reported as saved.
+- For session creation, binding, reload, or resource discovery changes, run targeted Pi runtime tests. When types cross modules, run `pnpm --filter <affected-package> run typecheck` for the owner and directly affected consumers; use their existing scripts rather than a root `tsc` invocation.
+- Do not open a browser unless a concrete UI synchronization or interaction uncertainty remains.
+
+## Guardrails
+
+- Prefer public root imports from `@earendil-works/pi-coding-agent`; do not deep-import implementation files.
+- Prefer Pi's existing loader, runtime, runner, service, and tool abstractions over parallel lifecycle machinery.
+- Never mutate `LoadExtensionsResult.runtime` casually; it is shared across the loaded extension set and is bound to the active runner.
+- Never start a second Pi service or event stream for a feature already covered by the embedded runtime.
+- Never infer the API from the local Pi checkout alone when its version differs from the installed dependency.
+- Preserve unrelated worktree changes, especially in `packages/agent-runtime/runtimes/pi/server/src/sessions/` and `packages/agent-runtime/runtimes/pi/server/src/extensions/`.

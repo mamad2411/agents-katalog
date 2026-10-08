@@ -1,0 +1,485 @@
+---
+name: add-generation-support
+description: Wire an existing ecosystem into the generation system. Adds generation support to basemodel.constants.ts, creates graph and handler files, and wires them into the ecosystem discriminator, workflow config, and router. Use after add-ecosystem when you need the ecosystem to show up in the generation form. Always checks @civitai/orchestration-client for ecosystem-specific types before writing the handler.
+---
+
+# Add Generation Support
+
+Wires an existing ecosystem (already defined in [basemodel.constants.ts](src/shared/constants/basemodel.constants.ts)) into the generation form. Requires the ecosystem, base model, license, and family to already exist — use the **add-ecosystem** skill first if any of those are missing.
+
+## When to use
+
+- After `add-ecosystem` for a new provider
+- To re-enable generation for an ecosystem that was previously commented out
+- When adding a new graph/handler pair for an existing ecosystem that didn't have one
+
+## Prerequisites check
+
+Before starting, confirm the ecosystem exists in [basemodel.constants.ts](src/shared/constants/basemodel.constants.ts):
+
+- `ECO.<Name>` is defined
+- An `EcosystemRecord` exists in `ecosystems`
+- A `BaseModelRecord` exists in `baseModelRecords`
+
+If any are missing, stop and direct the user to run `add-ecosystem` first.
+
+## Workflow (interactive after research)
+
+### 1. Check @civitai/orchestration-client for ecosystem-specific types
+
+The orchestrator client package is **`@civitai/orchestration-client`**. It is the continuation of the old
+`@civitai/client`, which can no longer be published to and is frozen at `0.2.0-beta.98`; the version line
+carries on unbroken in the new package (`0.2.0-beta.101` and up). **The repo depends on both** — the new
+package for anything recent, the frozen one for the handlers and workflow types that still import it. New
+ecosystem types only ever land in the new package.
+
+**Always** check the latest published client version, even if types aren't in the currently installed version.
+
+```bash
+# Check installed version (either package may be present)
+grep -E '@civitai/(orchestration-)?client' package.json
+
+# Check latest available — the 'latest' dist-tag lags 'beta', so read the version list
+npm view @civitai/orchestration-client versions --json | tail -20
+```
+
+Search the **latest** version's types for the ecosystem:
+
+```bash
+cd /tmp && npm pack @civitai/orchestration-client@<latest-version> 2>/dev/null
+tar -xzf civitai-orchestration-client-<latest-version>.tgz
+grep -n "<EcosystemName>\|<ecosystem-name>" /tmp/package/dist/generated/types.gen.d.ts
+```
+
+Note what you find (or don't find):
+
+- **Ecosystem-specific types** (e.g., `SeedanceVideoGenInput`, `ComfyErnieStandardCreateImageGenInput`): use them — they give you the exact field shape and strict enum literals
+- **Multiple variant types** (e.g., standard vs turbo): the handler will branch on model version and return the appropriate typed input
+- **No types at all**: fall back to the generic `ImageGenStepTemplate` / `VideoGenStepTemplate` with a string `engine` field
+
+If the installed version is older than the latest and the latest has useful types, bump:
+
+```bash
+pnpm add @civitai/orchestration-client@<latest-version>
+```
+
+Import new types from `@civitai/orchestration-client` rather than hand-rolling them. Handlers already
+importing from `@civitai/client` keep working — leave them unless migrating them is the task you were
+asked to do.
+
+### 2. Research model defaults
+
+If the user hasn't already pointed you at docs, check the HuggingFace or official model card for:
+
+- **Model version IDs** on Civitai (the user usually has these — ask if not)
+- **Recommended aspect ratios / resolutions** (exact dimensions)
+- **Recommended guidance scale / cfg scale**
+- **Recommended inference steps**
+- **Supports LoRAs?** (drives resources node)
+- **Supports negative prompts?**
+- **Fixed sampler/scheduler** (if the provider locks these, hardcode in the handler rather than exposing UI controls)
+- **Media type**: image-only, video-only, or mixed
+
+### 3. Decide on graph structure
+
+Based on research, pick the right shape:
+
+- **Single model, simple**: one `sliderNode` per parameter, one aspect ratio set. Seedance is a good reference.
+- **Multiple versions with same controls but different defaults**: use `createCheckpointGraph` with `versions.options`. Parameter defaults can vary via `ctx.model?.id` checks. Seedream is a reference.
+- **Multiple versions with different capability sets**: use a computed `<name>Variant` discriminator and branch into separate subgraphs. Ernie is a reference — base has LoRAs, turbo doesn't.
+- **Model-dependent defaults on the same node key**: if both variants have `cfgScale` but different defaults, just declare each subgraph with its own `sliderNode` defaults. **Do NOT add a `.effect()` that calls `set('cfgScale', ...)` on variant change** — see "Don't use `.effect()` to reset slider values across variants" below.
+
+### 4. Confirm the plan with the user
+
+Summarize:
+
+```
+Adding generation support for: <EcosystemName>
+
+Graph: src/shared/data-graph/generation/<name>-graph.ts
+- Versions: <list with IDs>
+- Aspect ratios: <list>
+- Sliders: cfgScale (<range>, default <n>), steps (<range>, default <n>)
+- Features: [resources, negativePrompt, images for I2V, etc.]
+- Structure: [single graph | discriminator with subgraphs | version-dependent defaults]
+
+Handler: src/server/services/orchestrator/ecosystems/<name>.handler.ts
+- Types: <from @civitai/orchestration-client, or generic>
+- Step type: <imageGen | videoGen | textToImage>
+- Fixed params: sampler=<x>, scheduler=<y> (if applicable)
+
+Wiring:
+- basemodel.constants.ts: uncomment/add ecosystem support + settings
+- workflows.ts: add to <TXT2IMG_IDS | TXT2VID_IDS | etc.>
+- ecosystem-graph.ts: add to grouped discriminator
+- ecosystems/index.ts: import, type, export, router case
+```
+
+Wait for confirmation.
+
+### 5. Make the changes
+
+All files listed below are required edits. Make them in one pass.
+
+#### 5a. `src/shared/constants/basemodel.constants.ts`
+
+Two sections:
+
+1. **`ecosystemSupport`** — add or uncomment the support entry. Use the right model types helper:
+   - `checkpointOnly` — most closed-source providers (Seedance, Seedream, Kling, etc.)
+   - `checkpointAndLora` — open models that allow community LoRAs (Flux, Wan, etc.)
+   - `fullAddonTypes` — SD family, Chroma (LoRA, DoRA, LoCon, TextualInversion)
+   - `loraOnly` — LoRA-only ecosystems
+   - `[ModelType.Checkpoint]` — explicitly checkpoint only (same as `checkpointOnly`)
+
+2. **`ecosystemSettings`** — add the default model config:
+   ```ts
+   {
+     ecosystemId: ECO.<Name>,
+     defaults: {
+       model: { id: <default version ID> },
+       modelLocked: true,  // usually true for closed providers
+       engine: '<engine-string>', // optional — only if getBaseModelEngine needs it
+     },
+   },
+   ```
+
+3. **`crossEcosystemRules`** (only if the ecosystem is cross-compatible with another) — add explicit rules for every directional pair that should allow cross-ecosystem LoRAs (or other addon types). See the "Cross-ecosystem compatibility" section below before writing any.
+
+#### 5b. `src/shared/data-graph/generation/config/workflows.ts`
+
+- Add `ECO.<Name>` to the appropriate workflow array (`TXT2IMG_IDS`, `TXT2VID_IDS`, `EDIT_IMG_IDS`, `I2V_ONLY_IDS`, etc.)
+
+#### 5c. Create the graph file: `src/shared/data-graph/generation/<name>-graph.ts`
+
+Follow the pattern matching your structural decision from step 3. Key imports:
+
+```ts
+import { DataGraph } from '~/libs/data-graph/data-graph';
+import type { GenerationCtx } from './context';
+import {
+  aspectRatioNode,
+  createCheckpointGraph,
+  createResourcesGraph,
+  imagesNode,
+  negativePromptNode,
+  seedNode,
+  sliderNode,
+  // ... etc
+} from './common';
+```
+
+Exports: always export `<name>VersionIds` (as `const` object) so the handler can import it for version-to-model-string mapping.
+
+#### 5d. Create the handler file: `src/server/services/orchestrator/ecosystems/<name>.handler.ts`
+
+Template:
+
+```ts
+import type {
+  <EcosystemSpecificInputType>, // e.g., SeedanceVideoGenInput
+  <StepTemplateType>,            // ImageGenStepTemplate | VideoGenStepTemplate | TextToImageStepTemplate
+} from '@civitai/orchestration-client';
+import { removeEmpty } from '~/utils/object-helpers';
+import type { GenerationGraphTypes } from '~/shared/data-graph/generation/generation-graph';
+import { <name>VersionIds } from '~/shared/data-graph/generation/<name>-graph';
+import { defineHandler } from './handler-factory';
+
+type EcosystemGraphOutput = Extract<GenerationGraphTypes['Ctx'], { ecosystem: string }>;
+type <Name>Ctx = EcosystemGraphOutput & { ecosystem: '<Name>' };
+
+export const create<Name>Input = defineHandler<<Name>Ctx, [<StepTemplateType>]>((data, ctx) => {
+  // Guard on required fields
+  if (!data.aspectRatio) throw new Error('Aspect ratio is required');
+
+  // Branch by model version if multiple variants produce different input types
+  // For LoRA support: map resources to the format the type expects
+  //   - Record<string, number> for comfy-based ecosystems (AIR → strength)
+  //   - Record<string, ImageJobNetworkParams> for textToImage
+  //   - Array of { air, strength } for some video types
+
+  return [
+    {
+      $type: '<imageGen | videoGen | textToImage>',
+      input: removeEmpty({
+        engine: '<engine>',
+        // ecosystem: '<name>',  // only for comfy engine
+        // operation: 'createImage' | 'editImage',  // only when the type requires it
+        prompt: data.prompt,
+        // ... other fields
+        seed: data.seed,
+      }) as <EcosystemSpecificInputType>,
+    } as <StepTemplateType>,
+  ];
+});
+```
+
+Key points:
+- Use `removeEmpty` to strip undefined values
+- Cast the input to the ecosystem-specific type so TypeScript validates field names and enum values
+- For resources, use `ctx.airs.getOrThrow(resource.id)` to get the AIR string
+
+#### 5e. `src/shared/data-graph/generation/ecosystem-graph.ts`
+
+Two edits:
+
+1. Import the graph:
+   ```ts
+   import { <name>Graph } from './<name>-graph';
+   ```
+
+2. Add to the `groupedDiscriminator`:
+   ```ts
+   { values: ['<Name>'] as const, graph: <name>Graph },
+   ```
+
+   Place it with its category (image ecosystems vs video ecosystems) — match the existing groupings.
+
+#### 5f. `src/server/services/orchestrator/ecosystems/index.ts`
+
+Four edits:
+
+1. Import the handler:
+   ```ts
+   import { create<Name>Input } from './<name>.handler';
+   ```
+
+2. Add the context type:
+   ```ts
+   export type <Name>Ctx = EcosystemGraphOutput & { ecosystem: '<Name>' };
+   ```
+
+3. Export the handler:
+   ```ts
+   export { create<Name>Input } from './<name>.handler';
+   ```
+
+4. Add the switch case in `createEcosystemStep` (in the right section comment block):
+   ```ts
+   case '<Name>':
+     return create<Name>Input(normalizedData, handlerCtx);
+   ```
+
+#### 5g. The form-graph lane
+
+The generator runs two lanes side by side, and every ecosystem needs both. Steps 5c–5f are the data-graph lane. This step is the form-graph lane. Ideogram 4 (`e680364460`) is a compact reference for the whole set.
+
+1. **Graph:** `src/shared/form-graph/generation/<image|video|audio|model3d>/<name>.graph.ts`. Build it with `defineGraph<FamilyExt>({ scope: familyScope })`. The field helpers come from `../shared` (`familyResources`, `perModelSlider`, `promptOnlyTextBlock`) and `../defs`. **Copy** the version-ID constants into it instead of importing them from the data-graph file, because that file is deleted along with the data-graph engine.
+2. **Register** the graph in that modality's `hub.graph.ts` as `[['<Name>'], <name>]`.
+3. **Handler:** `src/server/services/orchestrator/form-graph/<name>.handler.ts`, typed as `defineHandler<EcosystemData<'<Name>'>, [<StepTemplate>]>`. For LoRAs, use `resourcesToLoras` from `./types`.
+4. **`form-graph/index.ts`:** add the import, the re-export, and the `createStep` case.
+5. **Tests:** these lists are maintained by hand, so a missing entry isn't flagged anywhere.
+   - Add the key to `ECOSYSTEMS` in `image-parity.test.ts` or `video-parity.test.ts`. Audio and 3D ecosystems go in `AUDIO_ECOSYSTEMS` or `MODEL3D_ECOSYSTEMS` in `audio-model3d-parity.test.ts`.
+   - Add cases to `CASES` in `handlers.differential.test.ts`, covering at least the default request and one with each optional feature (LoRAs, images).
+
+### 6. Typecheck
+
+```bash
+pnpm run typecheck
+pnpm exec vitest run --project 'unit*' src/shared/form-graph/generation/__tests__/image-parity.test.ts src/server/services/orchestrator/form-graph/__tests__/handlers.differential.test.ts
+```
+
+If there are errors, iterate until clean. Common failures:
+
+- **Ecosystem-specific type not found in @civitai/orchestration-client**: fall back to generic `ImageGenStepTemplate`/`VideoGenStepTemplate` with `as <Type>` casts.
+- **Discriminator value not in union**: verify the value in `ecosystem-graph.ts` `groupedDiscriminator` matches the case in `ecosystems/index.ts` exactly (case-sensitive).
+- **Graph context missing a key**: the ecosystemGraph shared nodes (`prompt`, `enhancedCompatibility`) expect certain keys — don't redefine them in your ecosystem subgraph.
+
+### 7. Verify in the form (optional but recommended)
+
+If a dev server is running (check via the `dev-server` skill), ask the user to:
+- Select the new ecosystem in the form
+- Verify controls render correctly
+- Verify the whatIf query returns without errors
+
+## Post-onboarding: generation coverage & auction featurability (manual DB steps)
+
+Three DB tables are keyed off the constants **by string or version id** but are **not derived from them** — nothing reconciles them, so they must be hand-seeded. Miss one and the feature silently half-works (the generation form still lights up from the constants, so it *looks* done). This bit us with Anima and Krea 2. None of these tables are written by app code today; each needs a raw SQL INSERT run against each environment (preview → prod) per our manual-migration rule.
+
+See [docs/features/featured-auction-ecosystem-sync.md](docs/features/featured-auction-ecosystem-sync.md) for the full rationale and architecture; the essentials:
+
+### 0. First: which branch of `GenerationCoverage` will cover this version?
+
+`GenerationCoverage` is a three-branch `OR`. **Read the live definition before writing any SQL** — `SELECT pg_get_viewdef('"GenerationCoverage"'::regclass, true)` — because which branch applies decides which table you need, and picking the wrong one produces SQL that runs cleanly and changes nothing.
+
+| Branch | Condition | Typical ecosystem |
+| --- | --- | --- |
+| 1 | `mv.id IN "EcosystemCheckpoints"` — **no status check, no `NOT m.poi` guard** | file-less API checkpoints, `usageControl = 'Generation'` |
+| 2 | `usageControl = 'ExternalGeneration' AND status = 'Published' AND NOT m.poi` | file-less API checkpoints, mod-published |
+| 3 | files + `allowCommercialUse` + `baseModel IN "GenerationBaseModel"` + `CoveredCheckpoint` | downloadable weights |
+
+`GenerationBaseModel` is consulted by **branch 3 only**. For a file-less API model the row is inert — correct to add for the future, but it is not what makes the model generatable, so don't stop there and assume you're done.
+
+### 1a. `EcosystemCheckpoints` — covers a specific VERSION unconditionally
+
+Keyed by `ModelVersion.id`, not by base model or ecosystem. Needed when the version has no files and is `usageControl = 'Generation'` (branch 2 won't fire). `name` is a free-text label with no behaviour attached — match the base model display name.
+
+```sql
+INSERT INTO "EcosystemCheckpoints" (id, name) VALUES (3207633, 'Qwen 3') ON CONFLICT (id) DO NOTHING;
+```
+
+**This is an unconditional override.** Branch 1 has neither a status check nor a PoI guard, so the version stays covered even if it's later unpublished or the model is flagged. That cuts both ways: it's the only way to exercise generation against a **Draft** version pre-publish, and it's a footgun if you expected coverage to track publish state. When the version is `ExternalGeneration`, prefer letting branch 2 handle it — publishing is then the only step, and unpublishing correctly revokes coverage.
+
+Note that sibling versions on one model page routinely land on **different branches** (e.g. Qwen Image 2.0 via branch 1, 3.0 via branch 2; Seedance 2.0 via branch 1, 2.0 Mini via branch 2). That's expected, not drift.
+
+### 1b. `GenerationBaseModel` — makes downloadable resources GENERATABLE
+
+One of branch 3's inputs is a plain list of base-model strings in `GenerationBaseModel`. A new base model that isn't in this list is **not generatable** even with full form support (this is what silently broke Krea 2).
+
+- **`baseModel` must equal the base model *display name*** (`ModelVersion.baseModel`), e.g. `'Krea 2'`, `'Anima'` — **not** the ecosystem key.
+
+```sql
+INSERT INTO "GenerationBaseModel" ("baseModel") VALUES ('Krea 2') ON CONFLICT DO NOTHING;
+```
+
+### 2. `AuctionBase` — makes an ecosystem FEATURABLE in auctions (only if it should be a paid featured surface)
+
+`AuctionBase` is the FK anchor for `Auction`/`Bid`/`BidRecurring` (Buzz money + history) and holds runtime economics. **There is no `createAuctionBase` mutation** — a new ecosystem's auction can only be created by raw SQL INSERT today. This is a **deliberate, product-gated step, not automatic**: *generatable ≠ should be featured*. Skip it for video / `modelLocked` / experimental ecosystems unless product wants a paid featured auction for them. Admins tune `active`/`minPrice`/`quantity` afterward via `updateAuctionBase` at [moderator/auctions.tsx](src/pages/moderator/auctions.tsx) (no deploy).
+
+- **`ecosystem` must equal the ecosystem *key*** (`'Anima'`, `'Krea2'`, `'ZImageTurbo'`) — what `getBaseModelGroup(baseModel)` returns and what the feature button matches against. **Not** the display name.
+- **Don't touch the two sentinel rows:** `ecosystem = NULL` (Featured Checkpoints) and `ecosystem = 'Misc'` are hand-managed, not per-ecosystem.
+- Conventions from existing rows: `type = 'Model'`, default economics `quantity 40, minPrice 100, runForDays 1, validForDays 1, active true`; `name = 'Featured Resources - <displayName>'`; `slug = 'featured-resources-<keylowercased>'` (e.g. key `Krea2` → slug `featured-resources-krea2`).
+
+```sql
+INSERT INTO "AuctionBase" (type, ecosystem, name, quantity, "minPrice", active, slug, "runForDays", "validForDays")
+VALUES ('Model', 'Krea2', 'Featured Resources - Krea 2', 40, 100, true, 'featured-resources-krea2', 1, 1);
+```
+
+**Operational gotcha — new rows don't appear until an `Auction` instance exists.** The `/auctions` sidebar lists currently-running `Auction` instances, not `AuctionBase` rows. New instances are only spawned by the daily `createNewAuctions` step in `handle-auctions.ts` (`startAt <= now < endAt`). So a fresh `AuctionBase` is invisible for **up to 24h**. To surface it immediately, also insert a live `Auction` mirroring the current window (same `startAt`/`endAt` as today's other auctions):
+
+```sql
+INSERT INTO "Auction" ("startAt","endAt","quantity","minPrice","auctionBaseId","validFrom","validTo","finalized")
+SELECT date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', ab.quantity, ab."minPrice", ab.id,
+       date_trunc('day', now()) + interval '1 day', date_trunc('day', now()) + interval '2 day', false
+FROM "AuctionBase" ab
+WHERE ab.ecosystem = 'Krea2';
+```
+
+Surface every INSERT above to the user as SQL that needs to be applied manually to each environment — do not assume they auto-run. State which coverage branch you determined applies, so the reader can check your reasoning rather than just running the SQL.
+
+## Cross-ecosystem compatibility
+
+Cross-ecosystem compatibility (e.g. "Pony LoRAs work on Illustrious checkpoints") is driven **entirely by explicit entries in `crossEcosystemRules`** in [basemodel.constants.ts](src/shared/constants/basemodel.constants.ts). The `parentEcosystemId` relationship does **not** infer compatibility — it exists solely for identity (AIR URN ecosystem, classification) and for support/defaults inheritance.
+
+This is a deliberate separation because `parentEcosystemId` serves identity concerns that are unrelated to compat. For example, `Flux2Klein_9B` / `Flux2Klein_9B_base` / `Flux2Klein_4B` / `Flux2Klein_4B_base` all declare `parentEcosystemId: ECO.Flux2` so their AIRs emit `urn:air:flux2:...`, but their architectures are distinct and LoRAs do NOT cross between the variants.
+
+### When to add rules
+
+Add explicit rules whenever you expect cross-ecosystem LoRAs (or other addon types) to work. Common patterns:
+
+- **Parent ↔ child ecosystems** (bidirectional, both rules required):
+
+  ```ts
+  { sourceEcosystemId: ECO.Parent, targetEcosystemId: ECO.Child, supportType: 'generation', modelTypes: [...], support: 'partial' },
+  { sourceEcosystemId: ECO.Child, targetEcosystemId: ECO.Parent, supportType: 'generation', modelTypes: [...], support: 'partial' },
+  ```
+
+- **Sibling ecosystems** (both directions between each pair, e.g. Pony ↔ Illustrious ↔ NoobAI is 6 rules)
+- **Unidirectional compat** (e.g. base model LoRAs work on distilled variant but not reverse — add only the supported direction)
+
+### Which `modelTypes` list to use
+
+- `[ModelType.LORA]` — most common; LoRAs trained on one variant work on another
+- `sdxlCrossAddonTypes` — for SDXL parent↔child (includes VAE, TextualInversion, LoRA variants)
+- `sdxlSiblingAddonTypes` — for SDXL sibling↔sibling (excludes VAE)
+- Custom array — for ecosystem-specific cases (e.g. `[ModelType.TextualInversion]` for SD1→SDXL)
+
+### The target-root fallback
+
+`getGenerationSupport` has a fallback: if no direct rule matches, it retries using the checkpoint ecosystem's root (via `parentEcosystemId` chain). This means **one rule targeting a root ecosystem covers all its children**. Example: `SD1 TextualInversion → SDXL` automatically extends to Pony, Illustrious, and NoobAI.
+
+Use this to avoid combinatorial rule duplication, but **be aware**: adding a rule that targets a root ecosystem (e.g. `targetEcosystemId: ECO.Flux2`) would apply it to every child (Flux2Klein variants included) — even if that wasn't the intent. When unsure, prefer explicit per-child rules.
+
+### Checklist when adding a new ecosystem with cross-compat
+
+1. Identify each cross-compatible peer ecosystem.
+2. For each pair, add rules in the correct direction(s).
+3. Pick the appropriate `modelTypes` set — don't default to "all" without checking what actually works.
+4. If children share a root and ALL children should support the same cross rule, target the root to avoid duplication. Otherwise list each child.
+5. If the ecosystem has `parentEcosystemId` purely for identity (not compat — like Flux2Klein variants), add explicit cross rules (if any) only for the pairs that truly work — **do not rely on the parent chain**.
+
+## Gotchas
+
+### Always use the `images` node — never `sourceImage` or a singular `image` node
+
+**Uniformity decision:** every image input in a generation graph uses the shared `imagesNode` (`.node('images', imagesNode({ min, max }))`), even when a workflow accepts exactly one image — cap it with `max: 1` instead of introducing a singular `sourceImage` (or `image`) node. Handlers read `data.images[0]`.
+
+- Single-image example: `.node('images', imagesNode({ min: 1, max: 1 }))` (see `image-preprocess-graph.ts`).
+- `normalizeInput` (in `orchestration-new.service.ts`) folds any legacy `sourceImage` into `images[]`, so older stored/remixed data still resolves — do **not** reintroduce or depend on `sourceImage`.
+- Exception: a per-entry `image` field *inside a list node* (controlnet entries, Krea2 style references — each `{ image, strength }`) is a different shape and stays `image`; those are not top-level source images.
+
+### Don't use `.effect()` to reset slider values across variants
+
+Tempting pattern (DO NOT use):
+
+```ts
+// ❌ WRONG — clobbers user values
+.effect(
+  (ctx, _ext, set) => {
+    const isTurbo = ctx.variant === 'turbo';
+    set('cfgScale', isTurbo ? 1 : 5);
+    set('steps', isTurbo ? 4 : 20);
+  },
+  ['variant']
+)
+```
+
+Why it's wrong:
+
+1. **It overwrites localStorage values.** The user's tuned cfg/steps for the variant they actually use get wiped on every graph evaluation.
+2. **It runs server-side too.** When the submission is validated through the graph on the server, the effect fires and overwrites whatever the user just submitted — they get the defaults instead of their input.
+3. **It's unnecessary.** `sliderNode` already clamps via `snapToStep(val, step, min, max)` in its zod transform ([common.ts](src/shared/data-graph/generation/common.ts)), so an out-of-range value persisted from one variant gets auto-corrected to the new variant's range on the next pass. No effect needed.
+
+Correct pattern: declare the defaults on each subgraph's `sliderNode` and let zod handle clamping.
+
+```ts
+// ✅ CORRECT — defaults live on the sliderNode itself
+const normalGraph = new DataGraph<...>()
+  .node('cfgScale', sliderNode({ min: 1, max: 20, defaultValue: 5, step: 0.5 }))
+  .node('steps', sliderNode({ min: 1, max: 50, defaultValue: 20 }));
+
+const turboGraph = new DataGraph<...>()
+  .node('cfgScale', sliderNode({ min: 1, max: 2,  defaultValue: 1, step: 0.1 }))
+  .node('steps', sliderNode({ min: 1, max: 12, defaultValue: 4 }));
+```
+
+The `.effect()` mechanism is fine for *derived* state that the user shouldn't be editing directly (e.g. computed flags). It is NOT fine for slider values the user has agency over.
+
+### Turbo/distilled variants need per-model storage scoping
+
+When the new ecosystem ships a **turbo (or distilled) variant alongside a base variant** with meaningfully different `cfgScale` / `steps` ranges, the variants will trample each other's stored values without an extra step. Example: a user sets cfg=8 on base, switches to turbo (max=2), `snapToStep` clamps to 2 and persists; switching back to base now shows cfg=2 instead of the prior 8.
+
+The fix lives in [GenerationFormProvider.tsx](src/components/generation_v2/GenerationFormProvider.tsx) — there's a `TURBO_VARIANT_ECOSYSTEMS` `Set<string>` that drives a conditional storage group scoping `cfgScale`/`steps` per `model.id`. **Add your ecosystem's key to that set** when introducing a turbo/distilled variant.
+
+```ts
+// src/components/generation_v2/GenerationFormProvider.tsx
+const TURBO_VARIANT_ECOSYSTEMS = new Set<string>([
+  'Lens',
+  'Ernie',
+  'ZImageTurbo',
+  'ZImageBase',
+  // 'YourNewEcosystem',
+]);
+```
+
+Skip this if the variants share the same slider ranges (e.g. version bumps with identical capabilities) — there's nothing to trample in that case.
+
+## Common patterns reference
+
+| Pattern | Reference file |
+|--------|----------------|
+| Simple image ecosystem (comfy) | `chroma.handler.ts`, `chroma-graph.ts` |
+| Image ecosystem with version variants (different types per variant) | `ernie.handler.ts`, `ernie-graph.ts` |
+| Image ecosystem with version-dependent defaults (same shape) | `seedream.handler.ts`, `seedream-graph.ts` |
+| Simple video ecosystem | `seedance.handler.ts`, `seedance-graph.ts` |
+| Complex video ecosystem (txt/img/ref variants) | `vidu.handler.ts`, `vidu-graph.ts` |
+| Image+video on one ecosystem | `grok.handler.ts`, `grok-graph.ts` |
+
+## Notes
+
+- **Always check `@civitai/orchestration-client` first.** Skipping this step leads to hand-rolled types that drift from the orchestrator API.
+- **`engine` string conventions**: `'comfy'` uses a separate `ecosystem` field; most other engines (`'sdcpp'`, `'seedance'`, `'vidu'`, etc.) use the engine string directly.
+- **Sampler/scheduler**: if the provider recommends a single fixed sampler+scheduler, hardcode them in the handler rather than creating UI controls. Simpler UX and avoids bad user choices.
+- **Model-locked ecosystems**: set `modelLocked: true` in `ecosystemSettings.defaults` unless the ecosystem has multiple user-selectable checkpoints.
+- **Aspect ratio source**: prefer HuggingFace model card recommended resolutions over round-number guesses. They affect output quality significantly.
+- **Aspect ratio `priorityOptions`**: when an ecosystem exposes more than ~5 aspect ratios, pass `priorityOptions` to `aspectRatioNode` so the UI shows a standard preferred subset up front and tucks the rest behind the "More" overflow. Use the standard preferred set `['16:9', '4:3', '1:1', '3:4', '9:16']` (as Lens and NanoBanana do) when the ecosystem supports those ratios; substitute the nearest available ratio for any it lacks (e.g. Krea2 uses `4:5` in place of `3:4`). Without `priorityOptions`, every ratio renders inline, which is noisy for wide ratio sets.

@@ -1,0 +1,175 @@
+---
+name: ql-verify
+description: "Part of the quantum-loop autonomous development pipeline (brainstorm \u2192 spec \u2192 plan \u2192 execute \u2192 review \u2192 verify). Iron Law verification gate. Requires fresh evidence before any completion claim. Use before claiming work is done, before committing, or before marking a story as passed. Triggers on: verify, check, prove it works, ql-verify."
+---
+
+# Quantum-Loop: Verify
+
+## Inline-vs-adversarial review split (P5.A7 / US-007)
+
+The verify gate distinguishes **routine** checks (deterministic verdict, exit-code 0/non-0) from **adversarial** checks (require judgement) and routes them differently:
+
+| Check kind | Examples | Mode | Rationale |
+|---|---|---|---|
+| Routine | typecheck, lint, full test suite, file-org conventions | **inline-only** in implementer prompt before STORY_PASSED | Verdict is deterministic; subagent round-trip adds 25min for zero signal value |
+| Adversarial | cross-story file conflicts, intent drift vs PRD, security review, architecture / API-shape | **subagent dispatch** (spec-reviewer, quality-reviewer, security-reviewer, architect) | Requires judgement, context, and human-readable explanation that grep cannot provide |
+
+Routine checks emit literal tokens the orchestrator greps for evidence:
+- `[INLINE-REVIEW] typecheck OK`
+- `[INLINE-REVIEW] lint OK`
+- `[INLINE-REVIEW] all assigned tests pass`
+- `[INLINE-REVIEW] file-org follows project conventions`
+
+If a routine check fails, the implementer marks the story failed and EXITS — does NOT signal STORY_PASSED. Adversarial review is reserved for cases the inline gate cannot adjudicate. Per Superpowers v5.0.6: 25min -> 30s on the routine path; total throughput improves 10-50x at the same quality bar.
+
+## The Iron Law
+
+```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE.
+```
+
+This is not a guideline. This is not a best practice. This is a law. There are zero exceptions.
+
+## The 5-Step Gate Function
+
+Every claim that something "works", "passes", or "is done" must pass through these 5 steps:
+
+### Step 1: IDENTIFY
+What command or check proves the claim?
+
+Examples:
+- "Tests pass" → `npm test` or `pytest`
+- "Build succeeds" → `npm run build` or `tsc --noEmit`
+- "Lint clean" → `eslint .` or `ruff check`
+- "Feature works" → specific test command + manual check
+- "Bug is fixed" → test that reproduces the original bug
+
+### Step 2: RUN
+Execute the complete command. Right now. Fresh. Not from memory or cache.
+
+Rules:
+- Run the FULL command, not a subset
+- Run it in the current state of the code, not from before your changes
+- Do not use cached results from a previous run
+- Do not skip the command because "it passed last time"
+
+### Step 3: READ
+Read the ENTIRE output. Not just the last line.
+
+Check:
+- Exit code (0 = success, non-zero = failure)
+- Total number of tests (passed, failed, skipped)
+- Warning messages (warnings can hide real problems)
+- Specific error messages (not just "X tests passed")
+
+### Step 4: VERIFY
+Does the output ACTUALLY confirm the claim?
+
+Common traps:
+- "15 tests passed" but 3 were skipped → those 3 might be the important ones
+- "Build succeeded" but with warnings → warnings might indicate runtime failures
+- "0 errors" from linter but build still fails → linter ≠ compiler
+- "Test passed" but the test itself is wrong → test may not test what you think
+
+### Step 5: CLAIM
+ONLY NOW may you state that something works, passes, or is done.
+
+Your claim must include:
+- The exact command you ran
+- The key output (pass count, exit code)
+- Timestamp (when you ran it)
+
+## Verification Requirements by Claim Type
+
+| Claim | Required Evidence |
+|-------|-------------------|
+| "Tests pass" | `0 failures` AND `0 errors` in fresh test run output |
+| "Linter clean" | `0 errors` AND `0 warnings` in fresh lint output |
+| "Build succeeds" | Exit code 0 from fresh build command |
+| "Bug is fixed" | Test reproducing original symptom now passes |
+| "Feature works" | All acceptance criteria verified with specific evidence |
+| "Story is done" | ALL of the above that apply + spec compliance review passed |
+| "Typecheck passes" | Exit code 0 from `tsc --noEmit` or equivalent |
+
+## Red Flags -- STOP Immediately
+
+If you notice ANY of these, you are about to violate the Iron Law:
+
+### Language Red Flags
+- Using "should" → "Tests **should** pass" means you haven't run them
+- Using "probably" → "This **probably** works" means you don't know
+- Using "seems to" → "It **seems to** be working" means you haven't verified
+- Using "I believe" → "I **believe** this is correct" means you're guessing
+- Using "based on" → "**Based on** the changes, it should work" means you haven't checked
+
+### Behavioral Red Flags
+- Expressing satisfaction before running verification ("Great!", "Perfect!", "Done!")
+- Trusting a subagent's report without independent verification
+- Relying on a previous run instead of a fresh one
+- Checking only part of the test suite
+- Skipping verification because "the change was small"
+
+## Anti-Rationalization Table
+
+| Excuse | Reality |
+|--------|---------|
+| "It should work now" | RUN the verification. "Should" is not evidence. |
+| "I'm confident this is correct" | Confidence ≠ evidence. Run the command. |
+| "Just this once we can skip" | No exceptions. The Iron Law has zero exceptions. |
+| "The linter passed, so it works" | Linter ≠ compiler ≠ runtime. Each checks different things. |
+| "The agent said it succeeded" | Verify independently. Agents can hallucinate success. |
+| "I already tested this earlier" | Earlier ≠ now. Code changed since then. Run it fresh. |
+| "This change is too small to break anything" | Small changes cause the hardest-to-debug failures. Verify. |
+| "Partial check is enough" | Partial proves nothing. Run the full verification. |
+| "The test I wrote passes, so the feature works" | Your test might be wrong. Check it tests the right thing. |
+| "Manual testing confirmed it" | Manual testing is not reproducible evidence. Run automated checks. |
+| "It's just a type change, typecheck is enough" | Type changes can break runtime behavior. Run tests too. |
+| "Different words but same idea, so rule doesn't apply" | Spirit over letter. If you're rationalizing, you're violating. |
+
+## Integration with /quantum-loop:execute
+
+When called from the execution loop, this skill:
+1. Receives the claim type and story context
+2. Identifies the verification commands from the task definition in quantum.json
+3. Runs all commands fresh
+4. Reports results back to the execution loop
+5. Updates quantum.json with verification evidence
+
+## Standalone Usage
+
+When invoked directly by the user:
+1. Ask what claim needs verification
+2. Identify the appropriate commands
+3. Run the 5-step gate function
+4. Report results with full evidence
+
+## Integration Verification (for multi-story features)
+
+Before claiming a feature is complete, verify:
+
+1. **All imports resolve:** Run the project's entry point import
+   - Python: `python -c "import <main_module>"`
+   - Node: `node -e "require('./<entry_point>')"`
+   - Go: `go build ./...`
+2. **All new functions have call sites outside tests:** Use LSP "Find References" or grep
+3. **Full test suite passes:** Not just per-story tests — ALL tests
+4. **No type mismatches across story boundaries:** Use LSP "Hover" or manual inspection
+5. **Intent-drift audit (Phase 7 / P1.4):** If `quantum.json.userIntent` exists, consult the most recent `intentDrift` entry (or invoke `/quantum-loop:ql-intent-check` if missing). A `verdict` of `CRITICAL_DRIFT_BLOCKS_MERGE` **MUST** block `STORY_PASSED`/`COMPLETE` signals. A `DRIFT_DETECTED_REVIEW_REQUIRED` verdict requires user acknowledgement in the commit message or a `userClarifications[]` entry explaining the re-negotiation. `NO_DRIFT` and `MINOR_DRIFT` are passing.
+6. **Claim-check signal (Phase 5 / P1.5):** if the orchestrator exposes `SIGNAL_CLAIM_FINDINGS` non-`clean` for the current story's output, do NOT accept exact/high confidence; downgrade or escalate.
+
+This is part of the Iron Law: "it passes unit tests" is NOT evidence that the feature works. Integration evidence is required. "Each story passed its review" is NOT evidence that the stories work together. **Silent scope drift** (user asked for X, implementation delivered Y) is a real-world regression mode — which is why the intent-drift gate is mandatory when the snapshot exists.
+
+### Machine-checkable gate (quantum.json excerpt)
+
+```json
+{
+  "intentDrift": {
+    "feature-task-priority": {
+      "verdict": "NO_DRIFT",
+      "summary": {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    }
+  }
+}
+```
+
+Refuse to emit `<quantum>STORY_PASSED</quantum>` if `.intentDrift[<current-feature>].verdict == "CRITICAL_DRIFT_BLOCKS_MERGE"`. Emit `<quantum>STORY_FAILED</quantum>` with the drift findings in the failureLog instead.

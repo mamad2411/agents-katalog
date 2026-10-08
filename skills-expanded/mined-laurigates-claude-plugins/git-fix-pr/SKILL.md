@@ -1,0 +1,102 @@
+---
+created: 2025-12-16
+modified: 2026-08-15
+reviewed: 2026-04-25
+allowed-tools: Bash(gh pr checks *), Bash(gh pr view *), Bash(gh run view *), Bash(gh run list *), Bash(gh repo view *), Bash(git status *), Bash(git diff *), Bash(git log *), Bash(git add *), Bash(git commit *), Bash(git push *), Bash(pre-commit *), Bash(npm run *), Bash(uv run *), Read, Edit, Grep, Glob, TodoWrite, mcp__github__pull_request_read
+args: "[pr-number] [--auto-fix] [--push]"
+argument-hint: "[pr-number] [--auto-fix] [--push]"
+description: "Failing PR checks — reproduce locally, patch the code, push the fix. Use when asked to fix a PR, resolve red CI, or auto-fix lint/test failures."
+name: git-fix-pr
+---
+
+## When to Use This Skill
+
+| Use this skill when... | Use the alternative when... |
+|---|---|
+| Fixing failing CI checks on an existing PR (lint, type, test) | Use `git-pr-feedback` to address reviewer comments rather than CI failures |
+| Reproducing red GitHub Actions runs locally before pushing corrections | Use `gh-workflow-monitoring` to passively watch a run rather than fix it |
+| Auto-applying lint/format/type fixes and pushing them to the PR branch | Use `git-conflicts` when the failure is a merge conflict, not a check |
+| Diagnosing why a pull request is red after a push | Use `git-triage` to sweep many PRs at once instead of fixing one |
+
+## Context
+
+- Repo: !`git remote -v`
+- Current branch: !`git branch --show-current`
+- Git status: !`git status --porcelain=v2 --branch`
+- Staged changes: !`git diff --cached --numstat`
+- Unstaged changes: !`git diff --numstat`
+- Recent commits: !`git log --format='%h %s' --max-count=5`
+
+## Parameters
+
+Parse these parameters from the command (all optional):
+- `$1`: PR number (if not provided, detect from current branch)
+- `--auto-fix`: Automatically apply fixes for common issues
+- `--push`: Push fixes to the branch after committing
+
+## Your task
+
+Analyze and fix failing PR checks.
+
+### Step 1: Determine PR
+
+1. **Get PR number** from argument or detect from current branch
+2. **Fetch PR status** using `gh pr checks <pr-number>` or mcp__github__pull_request_read
+
+### Step 2: Analyze Failures
+
+1. **Identify failing checks** from PR status
+2. **Research error messages** in workflow logs
+3. **Categorize failures**:
+   - Linting errors
+   - Type errors
+   - Test failures
+   - Build errors
+
+### Step 3: Reproduce Locally
+
+1. **Run tests locally** to reproduce issues
+2. **Run linters** to check for style issues
+3. **Run type checker** if applicable
+
+### Step 4: Apply Fixes (if --auto-fix)
+
+Based on failure type:
+
+- **Linting errors**: Run appropriate linters/formatters
+  ```bash
+  # Python
+  uv run ruff check --fix .
+  uv run ruff format .
+
+  # JavaScript/TypeScript
+  npm run lint -- --fix
+  ```
+
+- **Type errors**: Fix type annotations or implementations
+- **Test failures**: Fix failing tests or implementation bugs
+
+### Step 5: Commit and Push (if --push)
+
+1. **Stage fixes**: `git add -u`
+2. **Commit**: `git commit -m "fix: resolve CI failures"`
+3. **Push**: `git push`
+
+### Step 6: Verify
+
+1. **Re-run checks** locally to verify fixes
+2. **Monitor PR checks** after push
+
+## Common Fix Patterns
+
+| Check Type | Common Fixes |
+|------------|--------------|
+| Linting | Run formatter, fix import order |
+| Types | Add type annotations, fix mismatches |
+| Tests | Fix assertions, update snapshots |
+| Build | Fix imports, resolve dependencies |
+
+## See Also
+
+- **github-actions-inspection** skill for workflow analysis
+- **git-branch-pr-workflow** skill for PR patterns

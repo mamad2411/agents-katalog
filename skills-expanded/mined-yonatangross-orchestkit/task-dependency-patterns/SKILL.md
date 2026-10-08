@@ -1,0 +1,217 @@
+---
+name: task-dependency-patterns
+license: MIT
+compatibility: "Claude Code 2.1.251+."
+description: Task Management patterns with TaskCreate, TaskUpdate, TaskGet, TaskList tools. Decompose complex work into trackable tasks with dependency chains. Use when managing multi-step implementations, coordinating parallel work, or tracking completion status.
+context: fork
+version: 1.0.0
+author: OrchestKit
+agent: workflow-architect
+tags: [task-management, dependencies, orchestration, workflow, coordination]
+user-invocable: false
+disable-model-invocation: true
+complexity: medium
+persuasion-type: reference
+metadata:
+  category: workflow-automation
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - WebFetch
+  - WebSearch
+# Reference skill: fenced calls below teach a pattern, they are not calls this
+# skill makes. Widening allowed-tools to satisfy the coverage gate would grant real
+# permissions (Agent, CronCreate) to something that never acts.
+tool-coverage: illustrative
+---
+
+# Task Dependency Patterns
+
+## Overview
+
+Claude Code 2.1.16 introduces a native Task Management System with four tools:
+> **CC 2.1.233 caveat:** the Task tools are removed for the newest models unless `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` is set in user or managed settings (or the shell). ork cannot ship that flag (CC reads only `permissions` from plugin settings), so treat every Task-tool call in this skill as conditional on the operator's environment.
+
+- **TaskCreate**: Create new tasks with subject, description, and activeForm
+- **TaskUpdate**: Update status (pending → in_progress → completed), set dependencies
+- **TaskGet**: Retrieve full task details including blockers
+- **TaskList**: View all tasks with status and dependency summary
+
+Tasks enable structured work tracking, parallel coordination, and clear progress visibility.
+
+## When to Use
+
+- Breaking down complex multi-step implementations
+- Coordinating parallel work across multiple files
+- Tracking progress on large features
+- Managing dependencies between related changes
+- Providing visibility into work status
+
+## Key Patterns
+
+### 1. Task Decomposition
+
+Break complex work into atomic, trackable units:
+
+```
+Feature: Add user authentication
+
+Tasks:
+#1. [pending] Create User model
+#2. [pending] Add auth endpoints (blockedBy: #1)
+#3. [pending] Implement JWT tokens (blockedBy: #2)
+#4. [pending] Add auth middleware (blockedBy: #3)
+#5. [pending] Write integration tests (blockedBy: #4)
+```
+
+### 2. Dependency Chains
+
+Use `addBlockedBy` to create execution order:
+
+```json
+// Task #3 cannot start until #1 and #2 complete
+{"taskId": "3", "addBlockedBy": ["1", "2"]}
+```
+
+### 3. Status Workflow
+
+```
+pending → in_progress → completed
+   ↓           ↓
+(unblocked)  (active)
+
+pending/in_progress → deleted
+```
+
+- **pending**: Task created but not started
+- **in_progress**: Actively being worked on
+- **completed**: Work finished and verified
+- **deleted**: Task removed — permanently removes the task
+
+### Task Deletion
+
+Use `status: "deleted"` to permanently remove tasks:
+
+```json
+// Delete a task
+{"taskId": "3", "status": "deleted"}
+```
+
+**When to delete:**
+- Orphaned tasks whose blockers have all failed
+- Tasks superseded by a different approach
+- Duplicate tasks created in error
+- Tasks from a cancelled pipeline
+
+**When NOT to delete:**
+- Tasks that might be retried later (keep as pending)
+- Tasks with useful history (mark completed instead)
+- Tasks blocked by in_progress work (wait for resolution)
+
+### 4. activeForm Pattern
+
+Provide present-continuous form for spinner display:
+
+| subject (imperative) | activeForm (continuous) |
+|---------------------|------------------------|
+| Run tests | Running tests |
+| Update schema | Updating schema |
+| Fix authentication | Fixing authentication |
+
+## Agent Teams
+
+Agent Teams provides multi-agent coordination with shared task lists and peer-to-peer messaging.
+
+> **CC 2.1.161 — independent parallel-tool failure:** A failed tool call in a parallel batch no longer cancels siblings; each returns its own result. Teammates must check task status independently and handle failures explicitly rather than assuming a batch-wide abort.
+
+### Team Workflow
+
+```
+1. (implicit team — CC 2.1.178+)       → one team per session; no TeamCreate
+2. TaskCreate(subject, description)    → Add tasks to shared list
+3. Agent(name, team_name, prompt)      → Spawn teammates into the implicit team
+4. TaskUpdate(owner: "teammate-name")  → Assign tasks
+5. SendMessage(to, message, summary)   → Direct teammate communication
+6. (turn / background ends)            → teammates wind down; Ctrl+F x2 for bg
+```
+
+> **Cross-session replies land in the parent (CC 2.1.248):** when a subagent sends `SendMessage` to another session, the reply is delivered to the parent session's conversation, never to the subagent; a subagent sends and moves on, the parent reads the answer. Cross-session `SendMessage` / `ListAgents` also work on Bedrock, Vertex and Foundry and with telemetry disabled (CC 2.1.248).
+
+### When to Use Teams vs Task Tool
+
+| Criteria | Task Tool (subagents) | Agent Teams |
+|----------|----------------------|-------------|
+| Independent tasks | Yes | Overkill |
+| Cross-cutting changes | Limited | Yes |
+| Agents need to talk | No (star topology) | Yes (mesh) |
+| Cost sensitivity | Lower (~1x) | Higher (~2.5x) |
+| Complexity < 3.0 | Yes | No |
+| Complexity > 3.5 | Possible | Recommended |
+
+### Team Task Patterns
+
+```
+# Spawn teammate into shared task list
+Agent(
+  prompt="You are the backend architect...",
+  team_name="my-feature",
+  name="backend-architect",
+  subagent_type="ork:backend-system-architect"
+)
+
+# Teammate claims and works tasks
+TaskList → find unblocked, unowned tasks
+TaskUpdate(taskId, owner: "backend-architect", status: "in_progress")
+# ... do work ...
+TaskUpdate(taskId, status: "completed")
+TaskList → find next task
+```
+
+### Peer Messaging
+
+```
+# Direct message between teammates (params: to, message, summary)
+SendMessage(to: "frontend-dev",
+  message: "API contract ready: GET /users/:id returns {...}",
+  summary: "API contract shared")
+
+# No broadcast primitive — send to each teammate, or post to the shared
+# task list (TaskCreate/TaskUpdate) so every teammate sees it
+SendMessage(to: "backend-dev",
+  message: "Breaking change: auth header format changed",
+  summary: "Breaking auth change")
+```
+
+## Context Exhaustion Handling
+
+When using Agent Teams, if context limit is reached mid-workflow:
+- Collect partial results from completed teammates via `TaskList`
+- Synthesize available outputs — prefer partial results over silent failure
+- Log skipped tasks with `TaskUpdate(taskId: task_id, status: "completed", metadata: {"skipped": "context limit"})`
+
+## Anti-Patterns
+
+- Creating tasks for trivial single-step work
+- Circular dependencies (A blocks B, B blocks A)
+- Leaving tasks in_progress when blocked
+- Not marking tasks completed after finishing
+- Using broadcast for messages that only concern one teammate
+- Spawning teams for simple sequential work (use Task tool instead)
+
+## Related Skills
+
+- `ork:implement` - Implementation workflow with task tracking and progress updates
+- `ork:verify` - Verification tasks and completion checklists
+- `ork:fix-issue` - Issue resolution with hypothesis-based RCA tracking
+- `ork:brainstorm` - Design exploration with parallel agent tasks
+
+## References
+
+Load on demand with `Read("references/<file>")`:
+
+| File | Content |
+|------|---------|
+| `dependency-tracking.md` | Dependency tracking patterns |
+| `status-workflow.md` | Status workflow details |
+| `multi-agent-coordination.md` | Multi-agent coordination |

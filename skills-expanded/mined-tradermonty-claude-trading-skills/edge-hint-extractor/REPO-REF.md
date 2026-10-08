@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tradermonty/claude-trading-skills (path: skills/edge-hint-extractor/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Extract edge hints from daily market observations and news reactions, with optional LLM ideation, and output canonical hints.yaml for downstream concept synthesis and auto detection.

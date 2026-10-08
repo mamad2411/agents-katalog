@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/rjs/shaping-skills (path: kickoff-doc/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Turn a shaped project kickoff transcript into a reference document for the builder. Use when the user has a transcript (VTT, etc.) from a kickoff call and wants to produce a document that captures wha

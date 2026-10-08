@@ -1,0 +1,244 @@
+---
+name: corezoid-create
+description: >
+  Corezoid process creation specialist. Use when the user wants to create a new
+  Corezoid process from scratch, build a new automation flow, or design a new business
+  process. Activate when the user says "create a process", "build a new flow",
+  "new process", "design from scratch", "create an automation", or "add a new process".
+  Not for API connectors — use /corezoid-connector-create.
+---
+
+# Create a New Corezoid Process
+
+You are a specialist in creating Corezoid processes using the `corezoid` MCP server.
+
+## Step 1: Gather Requirements
+
+> ⚠️ If the request is a connector to one API endpoint (any HTTP API — external, internal, or Corezoid's own public API), stop here and use `/corezoid-connector-create` instead — it builds the atomic single-endpoint pattern (input contract, validation, API Call, Reply on every outcome, test, Smart API registration). Exception: the user explicitly invoked `/corezoid-api-connector` — do not intercept that.
+
+Ask the user for the following before proceeding:
+
+- **Process purpose** — what should it do?
+- **Input parameters** — what data does it receive?
+- **Expected output** — what should it return on success?
+- **Process type** — business logic that orchestrates other Corezoid processes (several calls; a single-endpoint API connector belongs to the warning above, not here)
+
+If any required information is missing, ask the user before proceeding.
+
+---
+
+## Step 2: Create the Empty Process
+
+Call MCP tool **`create-process`** with:
+- `folder_path`: Relative path to the folder directory. Omit to use the current directory.
+- `process_name`: the process name
+
+This creates an empty process in Corezoid and saves the file as `<ID>_<Name>.conv.json` inside `folder_path`. The returned file path is `PROCESS_PATH` — all subsequent steps use it.
+
+> ⚠️ Always verify `folder_path` points to the intended target folder. Omitting it places the process in the project root, which may not be the correct location.
+
+> ⚠️ After `create-process`, Corezoid may create default template nodes (Start, a placeholder process node, Final) even with `create_mode: without_nodes`. Before generating the full JSON, check the current `scheme.nodes` array in the created file. If a Start node already exists, do **not** add another — doing so will cause a validation error.
+
+If the process type is **business logic** and it needs to call existing processes, find their `conv_id` values by browsing the already-exported `.conv.json` files in the project folder.
+
+---
+
+## Step 3: Design the Process Structure
+
+Every process follows this base structure:
+
+| # | Node | obj_type | Purpose |
+|---|------|----------|---------|
+| 1 | Start | 1 | Entry point |
+| 2 | Code Node _(optional)_ | 0 | Prepare / transform input data |
+| 3 | **API Call** _or_ **Call a Process** | 0 | Core action (one or more) |
+| 4 | Reply to Process (Success) | 0 | Return result to caller |
+| 5 | Reply to Process (Error) | 3 | Return error to caller — **one dedicated node per failure point**; `err_node_id` targets are escalations (`obj_type: 3`) |
+| 6 | Error | 2 | Terminal error node — **one dedicated, descriptively-named node per failure point** |
+| 7 | Final | 2 | Terminal success node |
+
+**Business logic** uses `type: "api_rpc"` in Step 3 (one node per sub-process call; Code Nodes between calls are allowed). An individual step may still use an `api` Call node alongside `api_rpc` calls — a standalone single-endpoint connector belongs in `/corezoid-connector-create`.
+
+### Node type quick reference
+
+| Node | obj_type | Logic type |
+|------|----------|------------|
+| Start | 1 | `go` |
+| Code Node | 0 | `api_code` |
+| Call a Process | 0 (`4` only for active Stub Mode) | `api_rpc` |
+| API Call | 0 | `api` |
+| Condition (business flow) | 0 | `go_if_const` |
+| Reply to Process (success, via `go`) | 0 | `api_rpc_reply` |
+| Any `err_node_id` target (error Reply, retry Condition/Delay) | 3 | _(escalation)_ |
+| End / Error | 2 | _(no logics)_ |
+
+For complete JSON schemas see `${CLAUDE_PLUGIN_ROOT}/docs/node-structures.md`.
+
+> **Node choice — do NOT default to `git_call`.** `git_call` is deliberately absent
+> from the table above: hosted sandbox measurements show an approximately 60 s
+> execution deadline, so handlers need to finish comfortably below 50 s. Its default
+> 50 MB RAM / 0.1 CPU allocation comes from a shared, super-admin-configurable pool;
+> concurrent calls can contend for it, and local storage is ephemeral. Writing one
+> code block is often *easier* than modelling the flow — that is not a reason to use
+> it. Prefer, in order: native nodes
+> (`set_param`, `condition`, `delay`, `api`/`api_rpc`, `db_call`) → a **Code node
+> (`api_code`)** for transforms/parse/compute → `git_call` **only** when a file to
+> parse, an external library, or a custom runtime leaves no other option. **Never**
+> put long-running work or a latency-critical path that requires predictable
+> execution time in `git_call`. Model loops/polling as process state with
+> `condition`+`delay`, and external waits with a callback; those patterns avoid
+> holding one handler open and remain subject to normal platform/process limits.
+> Full guidance and the decision gate: the `corezoid-gitcall` skill.
+
+---
+
+## Step 4: Generate the Process JSON
+
+Produce a valid `.conv.json` file.
+
+### Root object
+
+```json
+{
+  "obj_type": 1,
+  "obj_id": null,
+  "parent_id": null,
+  "title": "Process Name",
+  "description": "",
+  "status": "active",
+  "params": [],
+  "ref_mask": true,
+  "conv_type": "process",
+  "scheme": {
+    "nodes": [],
+    "web_settings": [[], []]
+  }
+}
+```
+
+Fill in `description` based on the requirements gathered in Step 1 (see Description Update Rule in `corezoid/SKILL.md`): 1–2 sentences starting with a verb, under 200 characters, no *"This process…"* preamble.
+
+`params` — declare all input parameters the caller must pass. See `${CLAUDE_PLUGIN_ROOT}/docs/process/process-with-parameters.md`.
+
+### Core rules
+
+- Node IDs must be unique 24-character hex strings: `^[0-9a-f]{24}$`. These are **temporary placeholders** for new nodes — on `push-process` Corezoid reassigns its own canonical IDs (and rewires references within the push). Run `pull-process` after pushing to get the canonical IDs before any further edits. See [Node ID Lifecycle](${CLAUDE_PLUGIN_ROOT}/docs/process/process-development-guide.md#node-id-lifecycle-server-assignment--stability-on-push).
+- Connect nodes only through the `go` field
+- **Dedicated error cluster per error-prone node.** Every node that can fail (`set_param`, `api`, `api_rpc`, `api_code`, `api_copy`, `db_call`, `git_call`, `api_sum`) gets its **own** error path — never funnel several failing nodes into one shared Reply/Error node. Each cluster is:
+  1. A **Reply to Process** node (`api_rpc_reply`, `obj_type: 3` — it is an escalation, being an `err_node_id` target) that returns the error to the caller — set to **collapsed**: `"extra": "{\"modeForm\":\"collapse\",\"icon\":\"\"}"`.
+  2. → an **Error** end node (`obj_type: 2`, **collapsed** like the rest of the cluster: `"extra": "{\"modeForm\":\"collapse\",\"icon\":\"error\"}"`) **named after the specific failure** so the error is obvious on hover/selection (e.g. `Charge Payment Error`, not generic `Error`).
+  - Wire `err_node_id` of the failing node → its Reply node; the Reply node's `go` → its Error node.
+  - Separate Error nodes per failure point (instead of one shared terminal) make the process far more readable.
+  - For fire-and-forget processes that do not reply to a caller, skip the Reply node and wire `err_node_id` directly to the dedicated named Error node.
+  - A single node's error MAY fan through its own Condition (several `go_if_const` branches) into one Error terminal — that cluster still belongs to that one node. A NEIGHBOUR's error must never join it (direct `err_node_id` or a converging tail) — `lint-process` flags this as a shared error cluster.
+  - When the error path routes a retry (Condition → Delay → back to the failing node), set the error-path **Condition** and the **Delay** to collapsed (`"extra": "{\"modeForm\":\"collapse\",\"icon\":\"\"}"`), same as the Reply node. Business-logic Conditions stay expanded.
+  - **Every `err_node_id` target is `obj_type: 3`** — the error Reply AND the retry/fatal Condition alike. An `obj_type: 0` err target is the legacy old format: the UI shows "Convert process to new format" and rewrites it. Business-flow Conditions reached via `go` stay `obj_type: 0`.
+  - **Never mix an action logic with `go_if_const` in one node** (e.g. `set_param` + a conditional branch). That is old format too — the UI converter splits it. Author it as two nodes: the action node's `go` → a separate Condition node. `lint-process` flags both old-format shapes.
+  - Never create an Escalation node (`obj_type: 3`) that only contains a bare `go` — that is a passthrough anti-pattern flagged by `lint-process`.
+- **A process invoked via Call a Process (`api_rpc`) must execute `api_rpc_reply` on EVERY path — success included.** The caller's task waits in the Call node until the callee replies; a path that reaches a final without a Reply hangs the caller until its timeout semaphor. Put a collapsed success Reply right before the success final. `lint-process` flags finals reachable without a Reply in any process that replies elsewhere.
+- **Do not create active Stub Mode unless the user explicitly asks for a temporary mock.** Stub Mode is `obj_type: 4` plus `condition.stub`; it bypasses the called process and returns configured mock replies. Use it only while the target process is not ready or for controlled integration tests, and avoid production unless the user explicitly confirms `allow_active_stub_mode=true`.
+- All constants (URLs, tokens, IDs) must be Corezoid variables — never hardcoded:
+  1. Check for existing variables: read `_ENV_VARS_.json` (from `pull-folder`) or `.processes/variables.json` (from this session)
+  2. Create a new variable if needed: call **`cz-variables`** with `action: "create-variable"` and `args` `name`, `description`, `value`
+  3. Reference in logic: `{{env_var[@variable-name]}}`
+- Use descriptive `title` values (e.g., "Call Payment Process", not "RPC")
+- Position main-flow nodes top-to-bottom, incrementing `y` by 200–250px
+- **Pin each error cluster tight to the node it protects.** Place the Reply node at the **same `y`** as its failing node and just to the right (`x + ~250`) so the collapsed Reply sits right next to it; place its Error node immediately to the right of the Reply (`x + ~500`), same `y`. Same `y` gives a straight horizontal connector; the small offset keeps the cluster visually attached instead of drifting off with a large gap
+
+### Common pitfalls
+
+- Using `"type": "call_process"` instead of `"type": "api_rpc"` — will fail validation
+- Missing `extra`/`extra_type` in Call a Process node — both required even if empty (`{}`)
+- Leaving active Stub Mode (`obj_type: 4`) in a production path — it returns mock data instead of calling the real process
+- Raw JSON objects as values in `extra` — must be stringified: `"{\"key\":\"val\"}"`
+- Keys in `extra` and `extra_type` must match exactly
+- Missing `rfc_format: true`, `customize_response: true`, or `version: 2` in API Call node
+
+---
+
+## Step 5: Lay Out the Nodes
+
+You built this process, so its positions are yours to arrange: leave the
+node coordinates at `x: 0, y: 0` while generating the JSON (never hand-place
+them by eye) and call MCP tool **`layout-process`** with
+`process_path: "<PROCESS_PATH>"` once the nodes and edges are final. It
+arranges everything deterministically (no overlaps, business flow top-down,
+errors railed to the right) and reports the strategy and canvas size. See the
+`corezoid-node-layout` skill for details and density options.
+
+---
+
+## Step 6: Validate with Lint
+
+Call MCP tool **`lint-process`** with `process_path: "<PROCESS_PATH>"`.
+
+Fix all reported errors and re-run until the output is clean. Do not proceed with lint errors.
+
+---
+
+## Step 7: Deploy and Test
+
+Call MCP tool **`push-process`** with `process_path: "<PROCESS_PATH>"`.
+
+After a successful deploy, run a test task to verify the process behaves as expected:
+
+Call MCP tool **`run-task`** with:
+- `process_path`: `<PROCESS_PATH>`
+- `data`: `{"param1": "value1"}`
+
+---
+
+## Reference Documents
+
+Use the `Read` tool to load these files when specific node or validation details are needed:
+
+| Path | When to read |
+|---|---|
+| `${CLAUDE_PLUGIN_ROOT}/docs/node-structures.md` | JSON schemas for all node types + full Logics fields reference (canonical) |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/set-parameters-built-in-functions.md` | Built-in functions: `$.math`, `$.date`, `$.random`, `$.sha1_hex`, `$.md5_hex`, `$.base64_encode`, `$.unixtime`, `$.map`, `$.filter` |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/set-parameters-dynamic-values.md` | Dynamic values: `{{var}}`, `{{node[id].count}}`, `{{node[id].SumID}}`, `{{conv[@alias].ref[...]}}`, `{{env_var[@name].key[1]}}` |
+| `${CLAUDE_PLUGIN_ROOT}/docs/tasks/task-metadata.md` | Global `root.*` fields: `root.task_id`, `root.ref`, `root.conv_id`, `root.node_id`, `root.prev_node_id`, `root.user_id`, `root.change_time`, `root.create_time` |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/code-node.md` | Code node details and available JS libraries |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/call-process-node.md` | Call a Process node, semaphores, cross-folder calls |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/reply-to-process-node.md` | Reply formats, object stringification |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/api-call-node.md` | HTTP API call configuration |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/delay-node.md` | Delay/timer node; 30s limit is static-literal only — dynamic absolute-timestamp `value` for scheduled or sub-30s delays |
+| `${CLAUDE_PLUGIN_ROOT}/docs/nodes/end-node.md` | End node success/error configuration |
+| `${CLAUDE_PLUGIN_ROOT}/docs/process/process-json-validation.md` | Validation rules and common errors |
+| `${CLAUDE_PLUGIN_ROOT}/docs/process/error-handling.md` | Error handling patterns |
+| `${CLAUDE_PLUGIN_ROOT}/docs/process/node-positioning-best-practices.md` | Coordinate system and layout guidelines |
+| `${CLAUDE_PLUGIN_ROOT}/docs/variables-guide.md` | Variable naming rules, creation workflow, usage examples |
+
+## Example Processes
+
+| Path | Description |
+|---|---|
+| `${CLAUDE_PLUGIN_ROOT}/samples/api-post.json` | A single `api` Call node inside a business-logic process — not the connector pattern; for a standalone connector use `/corezoid-connector-create` (`references/process-skeleton.md` there has the compliant shape: `debug_info: true`, named result fields) |
+| `${CLAUDE_PLUGIN_ROOT}/samples/corezoid-api-node-list.conv.json` | Corezoid API connector (Node List, `api_secret_outer` pattern) |
+| `${CLAUDE_PLUGIN_ROOT}/samples/stripe-checkout.json` | Stripe payment checkout flow |
+| `${CLAUDE_PLUGIN_ROOT}/samples/create-actors.json` | Business logic with multiple process calls |
+| `${CLAUDE_PLUGIN_ROOT}/samples/gpt-calculator.json` | GPT integration example |
+| `${CLAUDE_PLUGIN_ROOT}/samples/create-user.json` | User creation process |
+
+---
+
+## Final Step: Update Git Context
+
+> **Do NOT report the task as complete and do NOT stop until this step is evaluated.**
+> The main task being deployed does not mean the session is over — this step is next.
+
+Immediately after `push-process` or `create-process` succeeds, check whether
+**at least one** of the following is true:
+
+- `push-process` or `create-process` was actually called (not just previewed);
+- a new external host/API/service appeared that is not yet in `dependencies.md`;
+- an architectural decision was made (one approach chosen over another);
+- an issue was found or closed during this session.
+
+**If yes → activate `corezoid-git-context` skill right now.** Do not wait for the
+user to ask. Do not skip because the main task "looks done".
+
+**If none of the above → skip** and tell the user the session is complete.
+
+The skill handles everything autonomously: reads current `_ext/docs/`, proposes
+a unified diff, asks confirmation, writes files, and pushes — one invocation.

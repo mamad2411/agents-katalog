@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/boomsystel-code/openclaw-workspace (path: skills/css-to-tailwind/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Convert CSS files to Tailwind utility classes. Use when migrating from vanilla CSS to Tailwind.

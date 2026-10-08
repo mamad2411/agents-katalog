@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/cat-xierluo/legal-skills (path: skills/md2word/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Markdown转Word文档技能。将Markdown文档转换为符合中文排版标准的专业格式Word文档，支持多种预设格式。适用于正式文档、论文、报告等需要规范排版的文档转换。

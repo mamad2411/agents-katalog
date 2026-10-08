@@ -1,0 +1,253 @@
+---
+created: 2025-12-16
+modified: 2026-08-25
+reviewed: 2026-06-10
+description: "UX testing: Playwright E2E, axe-core a11y, visual regression. Use when setting up E2E testing, screenshot assertions, browser automation, or a11y CI workflows."
+allowed-tools: Glob, Grep, Read, Write, Edit, Bash, AskUserQuestion, TodoWrite, WebSearch, WebFetch
+args: "[--check-only] [--fix] [--a11y] [--visual]"
+argument-hint: "[--check-only] [--fix] [--a11y] [--visual]"
+name: configure-ux-testing
+---
+
+# /configure:ux-testing
+
+Check and configure UX testing infrastructure with Playwright as the primary tool for E2E, accessibility, and visual regression testing.
+
+## When to Use This Skill
+
+| Use this skill when... | Use another approach when... |
+|------------------------|------------------------------|
+| Setting up Playwright E2E testing infrastructure for a project | Running existing Playwright tests (use `bun test:e2e` or test-runner agent) |
+| Adding accessibility testing with axe-core to a project | Performing manual accessibility audits on a live site |
+| Configuring visual regression testing with screenshot assertions | Debugging a specific failing E2E test (use system-debugging agent) |
+| Setting up Playwright CLI or MCP for Claude browser automation | Writing individual test cases (use playwright-testing skill) |
+| Creating CI/CD workflows for E2E and accessibility test execution | Configuring unit or integration tests (use `/configure:tests`) |
+
+## Context
+
+- Package manager: !`find . -maxdepth 1 \( -name 'package.json' -o -name 'bun.lock' -o -name 'bun.lockb' \)`
+- Playwright config: !`find . -maxdepth 1 -name 'playwright.config.*'`
+- Playwright installed: !`find . -maxdepth 1 -name 'package.json' -exec grep -l '@playwright/test' {} +`
+- Axe-core installed: !`find . -maxdepth 1 -name 'package.json' -exec grep -l '@axe-core/playwright' {} +`
+- E2E test dir: !`find . -maxdepth 2 -type d \( -name 'e2e' -o -name 'tests' \)`
+- Visual snapshots: !`find . -maxdepth 4 -type d -name '__snapshots__'`
+- MCP config: !`find . -maxdepth 1 -name '.mcp.json'`
+- CI workflow: !`find . -path '*/.github/workflows/*' -maxdepth 3 -name 'e2e*'`
+
+**UX Testing Stack:**
+- **Playwright** - Cross-browser E2E testing (primary tool)
+- **axe-core** - Automated accessibility testing (WCAG compliance)
+- **Playwright screenshots** - Visual regression testing
+- **Playwright CLI** - Browser automation via CLI (preferred for AI agents with shell access)
+- **Playwright MCP** - Browser automation via MCP (fallback for sandboxed environments)
+
+## Parameters
+
+Parse from command arguments:
+
+- `--check-only`: Report status without offering fixes
+- `--fix`: Apply all fixes automatically without prompting
+- `--a11y`: Focus on accessibility testing configuration
+- `--visual`: Focus on visual regression testing configuration
+
+## Execution
+
+Execute this UX testing configuration check:
+
+### Step 1: Fetch latest tool versions
+
+Verify latest versions before configuring:
+
+1. **@playwright/test**: Check [playwright.dev](https://playwright.dev/) or [npm](https://www.npmjs.com/package/@playwright/test)
+2. **@axe-core/playwright**: Check [npm](https://www.npmjs.com/package/@axe-core/playwright)
+3. **@playwright/cli**: Check [npm](https://www.npmjs.com/package/@playwright/cli)
+4. **playwright MCP**: Check [npm](https://www.npmjs.com/package/@playwright/mcp)
+
+Use WebSearch or WebFetch to verify current versions.
+
+### Step 2: Detect existing UX testing infrastructure
+
+Run the detection script to scan the project for Playwright / axe-core signals
+(package.json deps + config globs), the e2e dir / `__snapshots__` / e2e workflow,
+and the playwright MCP-server entry:
+
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/configure-ux-testing.sh" --home-dir "$HOME" --project-dir "$(pwd)"
+```
+
+Parse `STATUS=` and the `ISSUES:` block from the output. The `KEY=VALUE` lines
+report `PLAYWRIGHT_CONFIG`, `PLAYWRIGHT_DEP`, `AXE_CORE_DEP`, `E2E_DIR`,
+`VISUAL_SNAPSHOTS`, `E2E_WORKFLOW`, `PLAYWRIGHT_MCP`, and the rollup
+`PLAYWRIGHT_DETECTED` / `UX_SIGNALS_PRESENT`.
+
+### Step 3: Generate compliance report
+
+Print a formatted compliance report showing status for Playwright core, accessibility testing, visual regression, and MCP integration.
+
+If `--check-only` is set, stop here.
+
+For the compliance report format, see [REFERENCE.md](REFERENCE.md).
+
+### Step 4: Install dependencies (if --fix or user confirms)
+
+```bash
+# Core Playwright
+bun add --dev @playwright/test
+
+# Accessibility testing
+bun add --dev @axe-core/playwright
+
+# Install browsers
+bunx playwright install
+```
+
+### Step 5: Create Playwright configuration
+
+Create `playwright.config.ts` with:
+- Desktop browser projects (Chromium, Firefox, WebKit)
+- Mobile viewport projects (Pixel 5, iPhone 13)
+- Dedicated a11y test project (Chromium only)
+- WebServer auto-start for local dev
+- Trace/screenshot/video on failure settings
+- JSON and JUnit reporters for CI
+
+For the complete `playwright.config.ts` template, see [REFERENCE.md](REFERENCE.md).
+
+### Step 6: Create accessibility test helper
+
+Create `tests/e2e/helpers/a11y.ts` with:
+- `expectNoA11yViolations(page, options)` - Assert no WCAG violations
+- `getA11yReport(page, options)` - Generate detailed a11y report
+- Configurable WCAG level (wcag2a, wcag2aa, wcag21aa, wcag22aa)
+- Rule include/exclude support
+- Formatted violation output
+
+For the complete a11y helper code, see [REFERENCE.md](REFERENCE.md).
+
+### Step 7: Create example test files
+
+Create example tests:
+
+1. **`tests/e2e/homepage.a11y.spec.ts`** - Homepage accessibility tests (WCAG 2.1 AA violations, post-interaction checks, full report)
+2. **`tests/e2e/visual.spec.ts`** - Visual regression tests (full page screenshots, component screenshots, responsive layouts, dark mode)
+
+For complete example test files, see [REFERENCE.md](REFERENCE.md).
+
+### Step 8: Add npm scripts
+
+Update `package.json` with test scripts:
+
+```json
+{
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:ui": "playwright test --ui",
+    "test:a11y": "playwright test --project=a11y",
+    "test:visual": "playwright test visual.spec.ts",
+    "test:visual:update": "playwright test visual.spec.ts --update-snapshots",
+    "playwright:codegen": "playwright codegen http://localhost:3000",
+    "playwright:report": "playwright show-report"
+  }
+}
+```
+
+### Step 9: Configure browser automation (optional)
+
+Choose the appropriate browser automation approach based on the agent's environment:
+
+**Option A: Playwright CLI (preferred when shell access is available)**
+
+Playwright CLI (`@playwright/cli`) is 4-10x more token-efficient than MCP for AI agent browser automation (~27K vs ~114K tokens per task). Snapshots and screenshots are saved to disk instead of injected into context.
+
+```bash
+# Global install
+npm install -g @playwright/cli@latest
+
+# Or project-local
+bun add --dev @playwright/cli
+```
+
+This enables Claude to navigate pages, take screenshots, fill forms, click elements, and capture page snapshots via CLI commands. See the `playwright-cli` skill for command reference.
+
+**Option B: Playwright MCP (for sandboxed environments without shell access)**
+
+Use MCP when running in environments without shell access (Claude Desktop, browser-based agents):
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "bunx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}
+```
+
+### Step 10: Create CI/CD workflow
+
+Create `.github/workflows/e2e.yml` with parallel jobs for:
+- E2E tests (all browsers)
+- Accessibility tests (Chromium only)
+- Artifact upload for reports and failure screenshots
+
+For the complete CI workflow template, see [REFERENCE.md](REFERENCE.md).
+
+### Step 11: Update standards tracking
+
+Update `.project-standards.yaml`:
+
+```yaml
+components:
+  ux_testing: "2025.1"
+  ux_testing_framework: "playwright"
+  ux_testing_a11y: true
+  ux_testing_a11y_level: "wcag21aa"
+  ux_testing_visual: true
+  ux_testing_cli: true
+  ux_testing_mcp: false
+```
+
+### Step 12: Report configuration results
+
+Print a summary of configuration applied, scripts added, and CI/CD setup. Include next steps for starting the dev server, running tests, updating snapshots, and opening the interactive UI.
+
+For the results report format, see [REFERENCE.md](REFERENCE.md).
+
+## Agentic Optimizations
+
+| Context | Command |
+|---------|---------|
+| Quick compliance check | `/configure:ux-testing --check-only` |
+| Auto-fix all issues | `/configure:ux-testing --fix` |
+| Accessibility focus only | `/configure:ux-testing --a11y` |
+| Visual regression focus only | `/configure:ux-testing --visual` |
+| Run E2E tests compact | `bunx playwright test --reporter=line` |
+| Run a11y tests only | `bunx playwright test --project=a11y --reporter=dot` |
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--check-only` | Report status without offering fixes |
+| `--fix` | Apply all fixes automatically without prompting |
+| `--a11y` | Focus on accessibility testing configuration |
+| `--visual` | Focus on visual regression testing configuration |
+
+## Error Handling
+
+- **No package manager found**: Cannot install dependencies, provide manual steps
+- **Dev server not configured**: Warn about manual baseURL configuration
+- **Browsers not installed**: Prompt to run `bunx playwright install`
+- **Existing config conflicts**: Preserve user config, suggest merge
+
+## See Also
+
+- `/configure:tests` - Unit and integration testing configuration
+- `/configure:all` - Run all compliance checks
+- **Skills**: `playwright-testing`, `playwright-cli`, `accessibility-implementation`
+- **Agents**: `ux-implementation` for implementing UX designs
+- **Playwright documentation**: https://playwright.dev
+- **axe-core documentation**: https://www.deque.com/axe

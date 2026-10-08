@@ -1,0 +1,131 @@
+---
+name: h4tcher-release-prep
+description: Prepare a hatch3r release — version bump, changelog completeness + sync, repo + website docs currency, quality gates, adapter output verification, and release-notes reconciliation with CI.
+effort: high
+allowed-tools: Read Grep Glob Bash(*) Write Edit
+---
+
+> Last updated: 2026-07-11
+
+# Release Prep
+
+Prepare a hatch3r framework release with full quality gates. The dev runs Steps 1-10 locally; CI (`.github/workflows/release.yml`) re-runs the publish-critical subset and extracts the `CHANGELOG.md` section authored here as the GitHub release body.
+
+## Step 0: P8 B1 Ambiguity Gate
+
+Before any version bump or write, scan the release intent against the four B1 triggers from `.claude/rules/clarification-default.md` (verbatim directive from `governance/CONSTITUTION.md` §2 P8 B1):
+
+1. **Ambiguous scope** — release line unclear (patch vs minor vs major); breaking-change scope undeclared; whether website + plugin manifests bump in lock-step.
+2. **Multiple valid interpretations** — release notes grouping (Adapters/Content/CLI/Governance/Dependencies/Chore) when a PR could land in two groups; whether to roll up multiple unreleased patch PRs into a minor.
+3. **Irreversible action** — `npm publish`, force-push of a tag, force-push to main, marketplace re-submission with a public manifest change.
+4. **Missing acceptance criteria** — CHANGELOG section header absent or version-mismatched; orphan PRs missing from the new section; lockfile or audit gate failing without owner assignment.
+
+If any trigger fires, ask via the platform-native question tool per `agents/shared/user-question-protocol.md`: one question per turn; bundle related sub-questions into a single multiple-choice prompt; 2-4 numbered options with one-line trade-offs; declare the default-if-no-response option. Do NOT proceed to Step 1 until the ambiguity is resolved or the user has confirmed the default. This block subsumes the ad-hoc Step 9.31 "Confirm with user before pushing" prompt.
+
+## Step 1: Determine Version
+
+1. Check current version: `node -e "console.log(require('./package.json').version)"`
+2. Review changes since last tag:
+   ```bash
+   git log $(git describe --tags --abbrev=0)..HEAD --oneline
+   ```
+3. Apply semver:
+   - **Major:** Breaking adapter contract changes, breaking canonical format changes
+   - **Minor:** New adapter, new content type, new CLI command
+   - **Patch:** Bug fixes, documentation, dependency updates
+
+## Step 2: Update Version
+
+4. Update `package.json` version field (single source of truth)
+5. Update `.claude-plugin/plugin.json` version field to the same semver
+6. Update the embedded manifest copy in `docs/marketplace-submission.md` (search for `"version":` inside the plugin-manifest JSON block) to the same semver
+7. Run `npm install` to refresh lockfile version
+8. Run `npm run inventory:check-docs` to verify no version drift (the version probes in `scripts/inventory.ts` compare `package.json` against the files above)
+9. `.cursor-plugin/plugin.json` version is tracked independently (Cursor plugin release cadence can diverge from hatch3r package cadence); bump only if the Cursor plugin changes
+
+## Step 3: Quality Gates
+
+Run all gates — ALL must pass:
+
+10. `npm test` — 0 failed tests
+11. `npx tsc --noEmit` — 0 type errors
+12. `npm run lint` — 0 lint errors
+13. `npm run build` — build succeeds, output in `dist/`
+14. `npx hatch3r validate` — 0 validation errors
+
+## Step 4: Adapter Verification
+
+15. Verify all 3 supported adapters (claude, cursor, copilot) are registered in `src/adapters/index.ts` (count tracked dynamically at `governance/inventory.json::counts.adapters` — auto-derived per CONSTITUTION §6 Decision 12)
+16. Verify `ADAPTER_CAPABILITIES` matrix is complete (no undefined entries)
+17. Verify the published tree and bundled content:
+    - `package.json` `files` includes `dist/` — the single published tree; canonical content ships inside it, not as top-level directories
+    - after `npm run build`, spot-check `ls dist/content/` for every canonical directory the readers consume: `agents/`, `checks/`, `commands/`, `rules/`, `skills/`, `prompts/`, `github-agents/`, `mcp/`, `hooks/` (a class with zero canonical files — currently `prompts/` — is skipped by the copy and absent by design)
+    - `scripts/copy-content.ts` (postbuild) enforces parity with the `src/adapters/canonical.ts` readers at build time — packaging drift fails the build — so a green Step 3 build is the primary evidence and the `ls` is the spot-check
+
+## Step 5: Lockfile & Supply Chain
+
+18. Verify lockfile integrity: `npx lockfile-lint --type npm --allowed-schemes https: --path package-lock.json`
+19. Run security audit: `npm audit --audit-level=moderate --omit=dev` (aligned with `.github/workflows/release.yml` — local stricter than CI is fine; never looser)
+
+## Step 6: Changelog + PR Completeness
+
+20. Generate CHANGELOG entries grouped by: Adapters, Content, CLI, Governance, Dependencies, Chore
+21. Verify the new section header matches `package.json` version exactly: `## [{version}] - {YYYY-MM-DD}` (Keep-a-Changelog format — required by Step 9 CI extraction)
+22. **PR-completeness probe (gate).** Every merged PR since the last tag MUST appear in the new CHANGELOG section by its `#NNN` reference, or be explicitly classified as `Chore` and noted as omitted with rationale. Detect orphans:
+    ```bash
+    LAST=$(git describe --tags --abbrev=0)
+    git log "$LAST"..HEAD --merges --pretty=format:"%s" | grep -oE "#[0-9]+" | sort -u > /tmp/prs-merged.txt
+    awk '/^## \[/{n++} n==1' CHANGELOG.md | grep -oE "#[0-9]+" | sort -u > /tmp/prs-changelog.txt
+    diff /tmp/prs-merged.txt /tmp/prs-changelog.txt
+    ```
+    Any line in `prs-merged.txt` not present in `prs-changelog.txt` is an orphan PR. STOP and add the entry (or document the Chore omission inline) before proceeding.
+23. Prepend the new section to `CHANGELOG.md` directly after the file header. Stage with `git add CHANGELOG.md`.
+
+## Step 7: Repo Docs Currency
+
+24. **Adapter capability matrix** (`docs/adapter-capability-matrix.md`) MUST reflect current `ADAPTER_CAPABILITIES` in `src/adapters/index.ts`. Spot-check that every column key from the source object appears as a row/column in the matrix; new capabilities added this cycle that are missing from the matrix are a blocker.
+25. **Feature-surface grep**: any command/adapter/skill renamed or removed in this release MUST NOT appear by old name in `README.md`, `docs/mcp-setup.md`, `docs/troubleshooting.md`, `docs/marketplace-submission.md`. Grep each for the removed names; zero hits required.
+- **SECURITY.md supported-versions table** (`SECURITY.md` §Supported Versions) MUST list the current major as supported on any major/minor bump. A `2.x` release leaves a `1.x`-only row stale — replace the table with the shipped policy (e.g. `2.x | Yes`, `< 2.0 | No`). This table carries no inventory-count literal, so `inventory --check-docs` does not probe it; refresh it here as a manual currency row on every major/minor bump (D4-SA4.5-02).
+26. Re-run `npm run inventory:check-docs` after CHANGELOG and docs edits — must still report 0 drift.
+- **Scale reference currency** (`governance/SCALE.md`, D14-SA14.2-02). If `src/workspace/sync.ts` changed the per-repo write path or `defaultSyncConcurrency()` since the last tag (`git log $(git describe --tags --abbrev=0)..HEAD --oneline -- src/workspace/sync.ts`), re-run the scale harness (`HATCH3R_SCALE=1 npm test -- src/__tests__/workspace/scale.test.ts`), copy the logged per-N wall-clock into the `governance/SCALE.md` grid, and bump its `> Last updated:` header. If that grep is empty, log "sync.ts unchanged this release" — no grid refresh needed. Keeps the operator-populated capacity grid from going stale across releases (`governance/SCALE.md` is overlay-tracked — edit via `scripts/gov`).
+- **Bundle baseline re-anchor** (`.github/bundle-size-baseline.json`, D4-SA4.1-06). After the Step 3 build, compare `dist/cli/index.js` size against the committed `cliBundleBytes`. If it grew within the +10% tolerance (sub-red drift the PR-checks gate absorbed silently), re-anchor in this release PR — set `cliBundleBytes` to the fresh size, `updatedAt` to today, `commit` to the release commit, and `reason` to the release version — so the next cycle measures genuine size regressions from a current anchor with the full +10% window restored. If unchanged, log "bundle unchanged this release" — no re-anchor. If it already exceeds the +10% limit, STOP and route the increase through the Step 0 B1 gate (size regression to investigate vs maintainer-attested intentional growth) before re-anchoring — a re-anchor is an attested threshold change, not a rubber stamp. Use the regen note in the baseline JSON, then hand-set `commit`/`reason`.
+
+## Step 8: Website Build & Sync (`website/`)
+
+The canonical Docusaurus site lives in `website/` and deploys to `docs.hatch3r.com` via `.github/workflows/deploy-docs.yml` on push to main. `onBrokenLinks: 'throw'` in `website/docusaurus.config.ts` means broken links fail the build.
+
+27. Build the website locally to catch broken links before tagging:
+    ```bash
+    cd website && npm ci && NODE_OPTIONS=--max-old-space-size=4096 npm run build && cd ..
+    ```
+    0 errors required.
+28. **Inventory parity.** For any new command/adapter/skill since the last tag, verify a corresponding `website/docs/**/*.md` page exists or is updated. Compare `governance/inventory.json` `counts` against the sidebar groupings in `website/sidebars.ts` and the page set in `website/docs/`.
+29. If `website/` has unstaged edits, commit them alongside the release (`docs(website): sync to v{version}`).
+
+## Step 9: Tag & Release Notes
+
+30. Create annotated git tag:
+    ```bash
+    git tag -a v{version} -m "hatch3r v{version}"
+    ```
+31. **Confirm with user before pushing.** On push, CI runs `.github/workflows/release.yml` which:
+    - Re-validates tag version == `package.json` version
+    - Re-runs `npm ci`, build, test, `npm audit --audit-level=moderate --omit=dev`
+    - Publishes to npm with provenance
+    - Extracts the new `CHANGELOG.md` section (matching `v{version}`) and passes it as the GitHub release body via `body_path`
+32. If the CHANGELOG section is missing or malformed for the tag version, the CI release step fails — fix `CHANGELOG.md`, retag, and force-push the tag only with explicit user approval.
+
+## Step 10: Post-Release Verification
+
+33. After CI green, verify:
+    - npm package is published at the expected version: `npm view hatch3r@{version} version`
+    - GitHub release exists and body matches the CHANGELOG section: `gh release view v{version}`
+    - Docs site rebuilt with the new version (deploy-docs workflow ran on the merge commit): https://docs.hatch3r.com
+34. **Supply-chain floor verification (D4-SA4.4-03).** The release pipeline generates provenance + SBOM evidence; re-read it here instead of treating a green pipeline as the sign-off:
+    - npm provenance attestation is present: `npm view hatch3r@{version} dist.attestations --json` returns a non-null object whose `provenance.predicateType` is `https://slsa.dev/provenance/v1`.
+    - Registry signatures + provenance verify on a fresh install: `npm audit signatures` inside a scratch `npm install hatch3r@{version}` directory reports 0 unverified.
+    - The CycloneDX SBOM asset shipped on the GitHub release: `gh release view v{version} --json assets --jq '.assets[].name'` lists `sbom.cdx.json`.
+
+## Step 11: Launch-Readiness Refresh
+
+35. Satisfy the `docs/launch-readiness.md` §7 maintenance contract at the one artifact that runs on every release cut. Refresh §1 (Last reviewed date) and the §3 status snapshot to the post-release state — at minimum re-verify P6 against the Step 10 item 34 provenance + SBOM evidence just gathered — or explicitly log "no change" with the date. If a launch go/no-go decision was taken this cycle, append the row to §6 (decision log). This closes the D4-SA4.4-03 gap where the per-release re-check ran only from memory.

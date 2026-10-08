@@ -1,0 +1,82 @@
+---
+name: cdn-peek
+description: Uncover the real origin IP behind a CDN or WAF like Cloudflare, using only standard tools. Use to bypass a CDN/WAF or check if an origin leaks.
+
+---
+
+## Scope & authorization
+
+Only run against hosts the user owns or is contractually engaged to test. This is origin discovery for defensive hardening (confirming the edge actually hides the origin), not for attacking third parties. If the target isn't clearly the user's or in-scope, ask before probing.
+
+This skill is deliberately dependency-free: every step is a plain `dig`, `curl`, `openssl`, `whois`, or `nc` one-liner. It covers origin reachability, not WAF signature evasion (payload encoding / rule bypass) - that is a separate discipline. Techniques that need API keys or heavy tooling (favicon-hash pivots on Shodan/Censys/ZoomEye/FOFA, historical-DNS via SecurityTrails, passive-source or brute-force subdomain enumeration, app-callback/SSRF leaks) are intentionally out of scope here; note them as unrun if the target warrants a deeper pass.
+
+## Step 0 - identify the edge
+
+Match the host's IPs/NS/CNAME against known edge fingerprints, then load that provider's client-IP header. Everything after is provider-agnostic; only the IP ranges and the client-IP header name differ.
+
+| Edge | Fingerprint (IP/NS/CNAME) | Client-IP header |
+|---|---|---|
+| Cloudflare | 104.16/13, 172.64/13, 2606:4700::/32, *.ns.cloudflare.com | CF-Connecting-IP |
+| CloudFront | *.cloudfront.net, AWS CLOUDFRONT ranges | CloudFront-Viewer-Address |
+| Akamai | *.akamaiedge.net, *.akamai.net, *.edgekey.net | True-Client-IP |
+| Fastly | *.fastly.net, 151.101/16 | Fastly-Client-IP |
+| Sucuri | *.sucuri.net, 192.88.134/23, 185.93.228/22 | X-Sucuri-ClientIP |
+| Imperva/Incapsula | *.incapdns.net | Incap-Client-IP |
+| Azure Front Door | *.azurefd.net, AzureFrontDoor.Backend tag | X-Azure-ClientIP |
+| Google Cloud CDN | Google ranges, ghs.googlehosted.com | X-Forwarded-For |
+| Gcore / Bunny / Edgio | *.gcdn.co, *.b-cdn.net, *.edgecastcdn.net | X-Forwarded-For |
+
+## Methodology (run in order; each step is a check with a done/result state)
+
+1. **Confirm fronted.** `dig` A/AAAA/NS/CNAME, match IPs against the edge ranges from Step 0. If not fronted, stop - there's nothing to bypass.
+2. **DNS record sweep.** `dig` A/AAAA/CNAME/TXT/MX/SOA/SRV/CAA and `_dmarc`. SPF `ip4:`/`include:`, MX, and autodiscover records frequently name a non-fronted origin or mail IP.
+3. **CT lookup (free, no key, no brute).** One `curl` to crt.sh and certspotter for `*.domain`: enumerates subdomains and the host's own cert history. Flag any subdomain resolving to a non-edge IP; a Let's Encrypt / self-issued cert scoped to just the target host (not the edge's shared cert) is a pivotable leak.
+4. **Fingerprint every non-edge IP.** `dig -x` (reverse DNS), `whois` (ASN/hosting org), `curl` banner, `openssl s_client` cert CN/SAN/issuer. Reveals the hosting footprint even when the box isn't the origin.
+5. **Host-confusion.** `curl --resolve target:443:<IP>` with the target Host + SNI against each non-edge IP; compare title/body/length to the real fronted response. Same content = origin bypass; different (default vhost) = not the origin.
+6. **Response-header & error-page leak.** `curl -I` the target and a bogus path; inspect `Via`, `X-Cache`, `X-Served-By`, `X-Backend-Server`, `Server`, `X-Powered-By`, redirect `Location`, and verbose error bodies for internal hostnames or RFC1918/origin IPs.
+7. **Client-IP header trust.** Send `X-Forwarded-For`, `X-Real-IP`, and the edge's own client-IP header (Step 0) = `127.0.0.1`; compare responses. Bypasses IP allowlist/geo/rate-limit logic - not the origin. A hardened edge rejects a client-supplied copy of its own header (Cloudflare answers 403 `error code: 1000`); if the app instead trusts it, that is the finding.
+8. **Edge header tricks.** `X-Forwarded-Host`, `X-Original-URL`, blank/mismatched `Host` - test for cache/redirect poisoning, routing bypass, and header reflection in links.
+9. **Confirm candidate origin.** For any candidate IP from steps 2/3/4: `curl -skI --resolve target:443:<IP>`. If it returns the target app and isn't firewalled to the edge ranges, it's a full bypass.
+10. **Port check on a confirmed origin.** `nc -z` the non-HTTP services the edge never proxies (SSH/22, k8s API/6443, kubelet/10250, DB/admin ports).
+11. **Shared-egress re-front (origin firewalled to the edge is still reachable).** When step 9's direct fetch is refused because the origin's firewall/SG only admits the edge's IP ranges, that lock is *necessary but not sufficient* on a shared-egress CDN - those ranges are shared by every tenant of the provider. Stand up your own zone on the SAME provider (e.g. a free Cloudflare account: a proxied A record -> the target's origin IP, SSL mode Full), and send traffic through it: it now exits the shared edge IPs and passes the firewall, skipping the victim's WAF, rate limits, bot rules, and geo - all of which lived on *their* edge config, not yours. If the origin answers, the edge-range allowlist is bypassed and only origin authentication closes it. Needs a known origin IP (steps 2-4). This is a distinct bug class ("CDN origin-trust bypass"): the control authenticated a network position, not the request.
+
+## Runnable snippets
+
+```bash
+# 1 confirm fronted
+dig +short TARGET A; dig +short TARGET AAAA; dig +short DOMAIN NS; dig +short TARGET CNAME
+# 2 DNS sweep
+for t in A AAAA CNAME TXT MX SOA SRV CAA; do echo "$t: $(dig +short TARGET $t | tr '\n' ' ')"; done; dig +short _dmarc.DOMAIN TXT
+# 3 CT lookup (subdomains + cert history, no key)
+curl -s "https://crt.sh/?q=%25.DOMAIN&output=json" | python3 -c "import sys,json;print('\n'.join(sorted({n for x in json.load(sys.stdin) for n in x['name_value'].split(chr(10))})))"
+curl -s "https://api.certspotter.com/v1/issuances?domain=DOMAIN&include_subdomains=true&expand=dns_names" | python3 -c "import sys,json;[print(n) for x in json.load(sys.stdin) for n in x.get('dns_names',[])]" | sort -u
+# 4 fingerprint a non-edge IP
+dig -x IP +short; whois IP | grep -iE 'orgname|netname|origin|as[0-9]'; echo | openssl s_client -connect IP:443 -servername TARGET 2>/dev/null | openssl x509 -noout -subject -issuer -ext subjectAltName
+# 5 host-confusion
+curl -sk --resolve TARGET:443:IP https://TARGET/ | python3 -c "import sys,re;h=sys.stdin.read();t=re.search(r'<title>(.*?)</title>',h,re.S);print('title:',t and t.group(1).strip(),'len:',len(h))"
+# 6 header / error leak
+curl -sI https://TARGET/ | grep -iE 'via|x-cache|x-served-by|x-backend|server|x-powered|location'
+curl -sk https://TARGET/nonexistent-$RANDOM | grep -oiE '([0-9]{1,3}\.){3}[0-9]{1,3}|[a-z0-9.-]+\.(internal|local|lan)'
+# 7 client-IP header trust  (swap EDGE_HEADER for the provider's own, from Step 0)
+for h in "X-Forwarded-For: 127.0.0.1" "X-Real-IP: 127.0.0.1" "EDGE_HEADER: 127.0.0.1"; do echo "[$h] $(curl -sk -o /dev/null -w '%{http_code} %{size_download}b' -H "$h" https://TARGET/)"; done
+# 8 edge header tricks
+for h in "X-Forwarded-Host: evil.example" "X-Original-URL: /admin" "Host: example.com"; do echo "[$h] $(curl -sk -o /dev/null -w '%{http_code} %{size_download}b' -H "$h" https://TARGET/)"; done
+# 9 confirm candidate origin
+curl -skI --resolve TARGET:443:CANDIDATE_IP https://TARGET/ | head
+# 10 port check
+for p in 22 6443 10250 3306 5432 8080 8443; do nc -z -G2 CANDIDATE_IP $p 2>/dev/null && echo "open $p"; done
+# 11 shared-egress re-front (needs a known ORIGIN_IP + your own account on the SAME CDN)
+#   Cloudflare: in your own free zone add a *proxied* A record  peek.YOURZONE -> ORIGIN_IP, SSL=Full, then:
+curl -sk -o /dev/null -w '%{http_code}\n' https://peek.YOURZONE/   # 2xx/3xx via YOUR edge = victim's edge-range lock bypassed
+```
+
+## Output
+
+Finish with a `check / done? / result` ledger over all 11 steps, then a one-line verdict:
+- **Clean** - every check exhausted and negative; origin not leaking via DNS/cert/header/edge, and (step 11) origin authentication is in place so the edge-range lock can't be re-fronted.
+- **Exposed** - a confirmed, directly reachable origin IP (name the step that found it + the confirming direct fetch).
+- **Edge-locked but bypassable** - origin firewalled to the edge ranges yet with no origin authentication, so the shared-egress re-front (step 11) reaches it. The lock alone is a false sense of security.
+
+Fix (Exposed or Edge-locked-but-bypassable): firewalling the origin to the edge ranges is necessary but NOT sufficient on a shared-egress CDN - it stops random internet hits, not another tenant re-fronting through the same provider. The origin MUST also authenticate that traffic came from THIS account's edge: Cloudflare Authenticated Origin Pulls (mTLS) or a secret header the edge injects and the origin requires (403 without it); CloudFront's equivalent is custom-header/OAC origin validation. Also strip client-IP headers at the edge.
+
+Report each step's true status - done or not-run - so coverage is honest; never present an unrun step as clean.

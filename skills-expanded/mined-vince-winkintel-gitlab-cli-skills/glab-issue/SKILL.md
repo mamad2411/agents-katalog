@@ -1,0 +1,196 @@
+---
+name: glab-issue
+description: Create, view, update, and manage GitLab issues. Use when working with issue tracking, bug reports, feature requests, or task management. Operations include creating issues, listing with filters, viewing details, adding comments/notes, updating labels/assignees/milestones, closing/reopening, and board management. Triggers on issue, bug, task, ticket, feature request, list issues, create issue.
+---
+
+# glab issue
+
+Create, view, update, and manage GitLab issues.
+
+## Quick start
+
+```bash
+# Create an issue
+glab issue create --title "Fix login bug" --label bug
+
+# Create or update with a multi-line description from a file
+glab issue create --title "Fix login bug" --description-file description.md
+glab issue update 123 --description-file description.md
+
+# Upload a screenshot and append its Markdown reference
+glab issue create --title "Fix login bug" --description "See below." --attach ./repro.png
+glab issue update 123 --attach ./after.png
+
+# List open issues
+glab issue list --state opened
+
+# View issue details
+glab issue view 123
+
+# View or comment on an issue/work item from a GitLab URL
+glab issue view https://gitlab.com/group/project/-/work_items/123
+
+glab issue note https://gitlab.com/group/project/-/issues/123 -m "Working on this now"
+
+# Add comment
+glab issue note 123 -m "Working on this now"
+
+# Close issue
+glab issue close 123
+```
+
+## Common workflows
+
+### Issue and work item URL inputs
+
+Issue argument parsing accepts GitLab work item URLs in addition to issue URLs where the `glab issue` subcommand resolves an issue argument. This is URL compatibility for issue-style operations such as `view`, `note`, `update`, `close`, and related commands; use `glab work-items` when you need dedicated work item fields or work-item-specific lifecycle behavior.
+
+```bash
+glab issue view https://gitlab.com/group/project/-/work_items/123
+glab issue note https://gitlab.com/group/project/-/work_items/123 -m "Follow-up note"
+glab issue update https://gitlab.com/group/project/-/work_items/123 --label needs-triage
+```
+
+### Bug reporting workflow
+
+1. **Create bug issue:**
+   ```bash
+   glab issue create \
+     --title "Login fails with 500 error" \
+     --label bug \
+     --label priority::high \
+     --assignee @dev-lead
+   ```
+
+   If your project keeps reusable issue templates in-repo, use `--template` to start from a template file instead of pasting recurring boilerplate:
+
+   ```bash
+   glab issue create \
+     --title "Login fails with 500 error" \
+     --template .gitlab/issue_templates/bug.md \
+     --label bug
+   ```
+
+   For one-off multi-line descriptions, use `--description-file <path>` or `--description-file -` for stdin. It is mutually exclusive with `--description`; on create, it is also mutually exclusive with `--template`. A file containing exactly `-` is rejected because `--description -` means "open an editor".
+
+   Use the experimental `--attach <path>` repeatedly to upload one or more local files and append GitLab-provided Markdown references to the description. `--attach -` reads one attachment from standard input; do not combine it with `--description-file -`, because both would consume stdin. On create, `--title` plus an attachment is enough for non-interactive operation. On update, attachments append to the existing description unless `--description` or `--description-file` supplies a replacement body.
+
+2. **Add reproduction steps:**
+   ```bash
+   glab issue note 456 -m "Steps to reproduce:
+   1. Navigate to /login
+   2. Enter valid credentials
+   3. Click submit
+   Expected: Dashboard loads
+   Actual: 500 error"
+
+   # A file can accompany a message or be the entire comment
+   glab issue note 456 -m "Screenshot from production" --attach ./repro.png
+   ```
+
+   Repeat `--attach` to preserve multiple uploads in argument order. An attachment-only note skips the editor; use `--attach -` when piping a single file through stdin.
+
+### Issue triage
+
+1. **List untriaged issues:**
+   ```bash
+   glab issue list --label needs-triage --state opened
+   ```
+
+2. **Update labels and assignee:**
+   ```bash
+   glab issue update 789 \
+     --label backend,priority::medium \
+     --assignee @backend-team \
+     --milestone "Sprint 23"
+
+   glab issue update 789 --description-file triage-summary.md
+   ```
+
+3. **Remove triage label:**
+   ```bash
+   glab issue update 789 --unlabel needs-triage
+   ```
+
+**Batch labeling:**
+
+For applying labels to multiple issues at once, use the script bundled with this
+skill under `scripts/` (paths below are relative to the skill's own directory):
+```bash
+scripts/batch-label-issues.sh "priority::high" 100 101 102
+scripts/batch-label-issues.sh bug 200 201 202 203
+```
+
+### Sprint planning
+
+**View current sprint issues:**
+```bash
+glab issue list --milestone "Sprint 23" --assignee @me
+```
+
+**Add to sprint:**
+```bash
+glab issue update 456 --milestone "Sprint 23"
+```
+
+**Board view:**
+```bash
+glab issue board view
+
+# Retrieve every project/group board issue instead of only the first API page
+glab issue board view --paginate
+```
+
+Use `--paginate` for complete board triage when a board can exceed one API page. Without it, the interactive board uses the first page returned by GitLab. The option works for both project and group board issue retrieval and can be combined with `--assignee`, `--labels`, or `--milestone` filters.
+
+### Linking issues to work
+
+**Create MR for issue:**
+```bash
+glab mr for 456  # Creates MR that closes issue #456
+```
+
+**Automated workflow (create branch + draft MR):**
+```bash
+scripts/create-mr-from-issue.sh 456 --create-mr
+```
+
+This automatically: creates branch from issue title → empty commit → pushes → creates draft MR.
+
+**Close via commit/MR:**
+```bash
+git commit -m "Fix login bug
+
+Closes #456"
+```
+
+## Related Skills
+
+**Creating MRs from issues:**
+- See `glab-mr` for merge request operations
+- Use `glab mr for <issue-id>` to create MR that closes issue
+- Script: `scripts/create-mr-from-issue.sh` automates branch creation + draft MR
+
+**Label management:**
+- See `glab-label` for creating and managing labels
+- Script: `scripts/batch-label-issues.sh` for bulk labeling operations
+
+**Project planning:**
+- See `glab-milestone` for release planning
+- See `glab-iteration` for sprint/iteration management
+
+## Command reference
+
+For complete command documentation and all flags, see [references/commands.md](references/commands.md).
+
+**Available commands:**
+- `create` - Create new issue
+- `list` - List issues with filters
+- `view` - Display issue details
+- `note` - Add comment to issue
+- `update` - Update title, labels, assignees, milestone
+- `close` - Close issue
+- `reopen` - Reopen closed issue
+- `delete` - Delete issue
+- `subscribe` / `unsubscribe` - Manage notifications
+- `board` - Work with issue boards

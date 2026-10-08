@@ -1,0 +1,31 @@
+{
+ "at": "2026-10-03T08:51:33Z",
+ "killed": [
+  {
+   "pid": 93321,
+   "cmd": "tmux new-session -d -s skillshfull export GH_TOKEN='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'; bash '/Users/chaali0324/."
+  }
+ ],
+ "bootout": [
+  "com.agents.repo-ref-api",
+  "com.agents.skill-graph-api"
+ ],
+ "interval": [
+  {
+   "label": "com.agents.legakan",
+   "from": "1800",
+   "to": 21600
+  },
+  {
+   "label": "com.agents.skill-auto-symlink",
+   "from": "1800",
+   "to": 21600
+  }
+ ],
+ "restore": {
+  "com.agents.repo-ref-api": "launchctl enable gui/501/com.agents.repo-ref-api && launchctl bootstrap gui/501 /Users/chaali0324/Library/LaunchAgents/com.agents.repo-ref-api.plist",
+  "com.agents.skill-graph-api": "launchctl enable gui/501/com.agents.skill-graph-api && launchctl bootstrap gui/501 /Users/chaali0324/Library/LaunchAgents/com.agents.skill-graph-api.plist",
+  "com.agents.legakan": "cp /Users/chaali0324/Library/LaunchAgents/com.agents.legakan.plist.bak-20261003 /Users/chaali0324/Library/LaunchAgents/com.agents.legakan.plist && launchctl bootout gui/501/com.agents.legakan; launchctl bootstrap gui/501 /Users/chaali0324/Library/LaunchAgents/com.agents.legakan.plist",
+  "com.agents.skill-auto-symlink": "cp /Users/chaali0324/Library/LaunchAgents/com.agents.skill-auto-symlink.plist.bak-20261003 /Users/chaali0324/Library/LaunchAgents/com.agents.skill-auto-symlink.plist && launchctl bootout gui/501/com.agents.skill-auto-symlink; launchctl bootstrap gui/501 /Users/chaali0324/Library/LaunchAgents/com.agents.skill-auto-symlink.plist"
+ }
+}

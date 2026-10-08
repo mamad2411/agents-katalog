@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/olafs-world/airbnb-search (path: SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Search Airbnb listings with prices, ratings, and direct links. No user API key required (uses Airbnb's public frontend API key). Use when searching for Airbnb stays, vacation rentals, or accommodation

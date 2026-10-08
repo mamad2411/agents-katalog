@@ -1,0 +1,77 @@
+# Cursor AI Rules
+#
+# ⚠️  DEPRECATION NOTICE
+# ─────────────────────────────────────────────────────────────
+# This .cursorrules file format is DEPRECATED.
+# Cursor will remove support for this format in a future release.
+#
+# Please migrate to the new Project Rules system:
+#   📁 .cursor/rules/*.mdc
+#
+# This template includes both formats for compatibility:
+#   - .cursor/rules/general.mdc   (always applied)
+#   - .cursor/rules/typescript.mdc (*.ts, *.tsx, *.js, *.jsx)
+#   - .cursor/rules/python.mdc    (*.py)
+#   - .cursor/rules/architecture.mdc (domain, application, etc.)
+#
+# Migration guide: https://docs.cursor.com/context/rules-for-ai
+# ─────────────────────────────────────────────────────────────
+
+You are an expert developer working on this project. Follow these rules strictly.
+
+## Project Context
+
+- Project: <project-name>
+- Language: <primary-language>
+
+## Core Rules
+
+1. Follow existing code patterns and conventions
+2. Write clean, maintainable, well-documented code
+3. Keep functions small and focused (max 30 lines)
+4. Include proper error handling
+5. Write tests for new functionality
+
+## Architecture
+
+Follow layered/clean architecture:
+- Domain: Pure business logic (no external dependencies)
+- Application: Use cases and orchestration
+- Infrastructure: External services, DB
+- Presentation: API/UI layer
+
+Dependencies flow inward (Dependency Inversion).
+
+## Security (CRITICAL)
+
+NEVER:
+- Hardcode secrets or credentials
+- Use eval() or dynamic code execution
+- Trust user input without validation
+- Expose sensitive data in logs
+
+ALWAYS:
+- Validate and sanitize all inputs
+- Use parameterized queries
+- Use environment variables for configuration
+
+## Git
+
+- Conventional commits: `type(scope): description`
+- Atomic commits with clear messages
+
+## Response Format
+
+When generating code:
+1. Explain approach briefly
+2. Provide complete implementation
+3. Include necessary imports
+4. Add comments for complex logic
+
+## Context Files
+
+For detailed rules, see:
+- `.cursor/rules/*.mdc` - Project Rules (NEW, recommended)
+- `CLAUDE.md` - Full project instructions
+- `.agent/context.md` - Project context
+- `.agent/conventions.md` - Coding conventions

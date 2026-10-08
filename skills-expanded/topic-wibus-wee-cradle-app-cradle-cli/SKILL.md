@@ -1,0 +1,366 @@
+---
+name: cradle-cli
+description: Use whenever you need to read, inspect, wait on, or mutate Cradle-owned state or workflows, including issues, delegation, sessions, awaits, CI/review waits, timed waits, Work inspection, workspaces and git inspection, Chronicle, automations, usage, observability, skills, agents, profiles, providers, preferences, plugins, or server state. Prefer the generated `cradle` CLI and `cradle man`; NEVER bypass Cradle semantics with direct HTTP or database access, ad hoc scripts, raw registry edits, or polling loops. Use `gh` when Cradle does not own the GitHub surface. Primary Work closed-loop delivery is system-injected on Work threads (`manage_pull_request`), not this skill.
+---
+
+# Cradle CLI
+
+Use `cradle` to manage Cradle or query its state from the terminal. You can use it for quick queries, scripted interactions, or as a reference for how the HTTP API maps to user-friendly commands.
+
+## Core Rules
+
+- Prefer `cradle` for Cradle-owned product semantics. Use ordinary shell tools for local file/process work, but do not replace Cradle session awaits, issue state, delegation, Chronicle, automation, workspace, usage, or observability workflows with ad hoc scripts.
+- For waiting on external or future events, register a Cradle session await and end your turn. Do not use `sleep`, long polling loops, `gh run watch`, or repeated manual checks when Cradle has an await source for the condition.
+- Use `gh` only for GitHub actions that Cradle does not expose. If the goal is to pause this session until CI or PR review changes, use `cradle session await ...`.
+- `cradle man` prints the full generated command manual. Use `cradle man <module>` or `cradle man <command...>` to narrow it.
+- This skill is not the full route list. It gives operating patterns and an auto-generated module index; exact commands come from `cradle man`.
+- Default output is human-readable. Use `--json <fields>` for Agent workflows and `--format json` for compact pipeline output.
+- Most relationships use IDs, but issue statuses are Agent-facing names/slugs. Use status names like `triage`, `to_do`, or `in_progress` instead of status IDs when creating or moving issues.
+- Use `--server <url>` only when the default `CRADLE_SERVER_URL` / `http://localhost:21423` is not the intended server.
+
+## Use Cradle First For
+
+| Goal | Start Here | Avoid As Primary Path |
+| --- | --- | --- |
+| Wait for CI, review, approval, or later continuation | `cradle session await ...` | `sleep`, polling loops, `gh run watch` |
+| Manage tasks, status, comments, delegation, or issue sessions | `cradle issue ...`, `cradle issue-agent-session ...` | local TODO files, direct DB edits |
+| Inspect workspace identity, files, or git state | `cradle workspace ...` | guessing workspace IDs, raw HTTP |
+| Inspect Work / Draft PR state (delivery rules live in Work Mode system prompt) | `cradle work get|list ...`, `cradle session pull-request get` | inventing Work lifecycle outside primary Work Mode |
+| Search Cradle state or past threads | `cradle search ...` | grepping data directories |
+| Read or maintain Chronicle memory/activity/knowledge | `cradle chronicle ...` | direct SQLite edits |
+| Schedule or inspect recurring work | `cradle automation ...` | cron scripts outside Cradle |
+| Inspect cost, tokens, incidents, traces, or runtime diagnostics | `cradle usage ...`, `cradle observability ...`, `cradle chat ...` | manual log spelunking first |
+| Manage agents, profiles, skills, ACP, providers, preferences | `cradle agent ...`, `cradle profile ...`, `cradle skill ...`, `cradle acp ...` | editing registry files by hand |
+| Open or inspect a session-bound draft PR | `cradle session pull-request create|get|ready` | `gh pr create` / `gh pr ready` |
+
+## Environment Variables
+
+Cradle-managed shells inject these environment variables — no manual setup needed:
+
+| Variable | Description |
+| --- | --- |
+| `CRADLE_CHAT_SESSION_ID` | Your current chat session ID |
+| `CRADLE_WORKSPACE_ID` | The workspace ID for this session |
+
+Prefer omitting ids and letting commands resolve ambiently. Pass an explicit id only when targeting another session or workspace. Available in both GUI (Claude Agent) and TUI (terminal) modes.
+
+### Session resolution
+
+Session self-ops (pull-request, isolation, linked-issue, and await chat-session fields) omit the session id by default and use `CRADLE_CHAT_SESSION_ID` when set:
+
+```bash
+cradle session pull-request create --title "..." --body "..."
+cradle session pull-request get
+cradle session await-summary
+```
+
+Pass `<id>` / `--session-id` / `--chat-session-id` only when operating on another session. Destructive session commands (`session delete`, `archive`, `update`, `get`) always require an explicit id.
+
+### Workspace resolution
+
+Commands that need a workspace expose a `--workspace <name-or-id>` flag (or a `[workspace]`/`<workspace>` positional argument), resolved in this order — no raw UUID required:
+
+1. The value you pass explicitly (`--workspace my-app` or `cradle workspace get my-app`) — accepts a workspace **name** (case-insensitive, unambiguous prefix also works) or its id.
+2. `CRADLE_WORKSPACE_ID`, when set (this is how Cradle-managed agent shells scope commands automatically).
+3. The workspace whose registered path is an ancestor of your current directory — run `cradle` from inside an imported workspace and it just works, no flag or env var needed.
+
+Destructive/administrative commands (`workspace delete`, `workspace update`, `workspace migrate`, `workflow-rule delete`, ...) still accept a name or id but never fall back through env/cwd — you must always name the target explicitly, so a stale ambient workspace can't be silently affected.
+
+Optional workspace-scoped list/search commands (e.g. `issue list`) resolve ambiently by default; pass `--all-workspaces` when you intentionally want a global query instead.
+
+## Discovery
+
+```bash
+cradle --help
+cradle man
+cradle man session await
+cradle man issue
+cradle man issue create
+cradle man workspace git status
+cradle man chronicle memories search
+cradle man automation create
+cradle workspace list --json id,name,path
+cradle issue status list --json id,name
+cradle profile list --json id,name,providerKind,enabled
+cradle agent list --json id,name,agentProfileId,enabled
+```
+
+## Issue Workflow
+
+```bash
+cradle issue list --json id,title,statusId,priority,assigneeKind,assigneeId
+cradle issue create --title "Fix login redirect" --description "Describe the failure mode"
+cradle issue create --workspace my-app --title "Triage build failure" --status-name triage
+cradle issue move <issueId> in_progress
+cradle issue update <issueId> --priority high --labels bug,agent
+cradle issue get <issueId> --json id,title,description,statusId,priority
+```
+
+Omit `--status-name` to let the server attach the default workspace status. Use `cradle issue status list` only when you need to inspect available status names; status names are matched as lower-case slugs with spaces converted to underscores.
+
+## Comments And Delegation
+
+```bash
+cradle issue comment list <issueId> --json id,content,createdAt
+cradle issue comment add <issueId> --content "Analysis complete."
+cradle issue delegate <issueId> --agent-profile-id <agentProfileId>
+cradle issue delegation <issueId> --json issueId,delegated,agentProfileId,agentSessionId,chatSessionId
+cradle issue undelegate <issueId>
+```
+
+## Workspace Helpers
+
+```bash
+# Open a directory in Cradle Desktop (register if needed) — VS Code-style
+cradle .                         # cwd
+cradle open /path/to/project
+cradle open . --import-only      # register only, no UI
+cradle open . --json id,name,opened,created
+
+cradle workspace list --json id,name,path
+cradle workspace get                                   # ambient: resolved from $PWD or CRADLE_WORKSPACE_ID
+cradle workspace files --json type,name,path            # same — workspace argument is optional
+cradle workspace file read --path AGENTS.md
+cradle workspace git status --json branch,tracking,ahead,behind,isDetached
+cradle workspace git diff my-app --paths src/index.ts --format json  # explicit name, another workspace
+```
+
+## Output Patterns
+
+```bash
+cradle issue list
+cradle issue list --all-workspaces
+cradle issue list --workspace my-app --json id,title,statusId
+cradle issue list --format json
+cradle issue list --format ndjson
+```
+
+Use default output for human inspection, `--json <fields>` for structured Agent reads, and `--format ndjson` when streaming rows into shell pipelines.
+
+## Chat Stream Trace
+
+In development, chat runtime writes provider-to-SSE trace files under `CRADLE_DATA_DIR/chat-runtime/traces`. Use these commands to decide whether a streaming issue came from the provider, SDK mapper, projection, SSE emit, store, or UI layer.
+
+```bash
+cradle chat trace session "$CRADLE_CHAT_SESSION_ID" --format json
+cradle chat trace session "$CRADLE_CHAT_SESSION_ID" --json traces
+cradle chat trace run <runId> --format json
+cradle chat trace run <runId> --json records
+```
+
+Inspect phases in order: `provider_raw`, `mapper_output`, `runtime_chunk`, `projection_apply`, `sse_emit`.
+
+## Session Pull Request (Draft → Ready)
+
+When finishing isolated work, open a draft PR through Cradle — not `gh pr create`:
+
+```bash
+cradle session pull-request create \
+  --title "feat(login): add new login redirect handling" \
+  --body "Summary + test plan"
+
+cradle session pull-request get --json pullRequest
+cradle session pull-request ready
+```
+
+Do not auto-await CI after create. Only register `cradle session await github-ci ...` when the user asks.
+
+## Work (inspection only)
+
+Primary Work delivery (commit → \`manage_pull_request\` Draft PR loop) is injected only on
+primary Work threads via the Cradle Work Mode system prompt — not here. In any
+session, use CLI for inspection and \`cradle man work\` for flags:
+
+```bash
+cradle work list --json id,title,preparedAt,lastSubmittedAt
+cradle work get <workId>
+cradle session pull-request get
+cradle session await-summary
+```
+
+Use \`gh\` for CI checks, PR comments, and other GitHub surfaces Cradle does not
+own. Prefer \`cradle session await ...\` over polling when pausing for CI/review.
+
+## Session Await (Pause & Resume)
+
+Register an await to pause your session and let Cradle automatically resume it when an external condition is met:
+
+```bash
+# Register a CI wait on a PR — Cradle will resume this session when CI passes
+cradle session await github-ci owner/repo \
+  --pr 42 \
+  --reason "Waiting for CI on PR #42"
+
+# Register a CI wait on a specific commit (no PR needed)
+cradle session await github-ci owner/repo \
+  --sha abc123def \
+  --reason "Waiting for CI on commit abc123def"
+
+# Register a CI wait on one GitHub check run
+cradle session await github-ci owner/repo \
+  --run-id 1234567890 \
+  --reason "Waiting for GitHub check run 1234567890"
+
+# Register a PR review wait
+cradle session await github-review owner/repo \
+  --pr 42 \
+  --mode approved \
+  --reason "Waiting for PR #42 approval"
+
+# Register a manual trigger-only wait
+cradle session await manual \
+  --reason "Waiting for deploy approval"
+
+# Register a timed wait with the raw generated command
+fire_at=$(($(date +%s) + 1800))
+cradle session await-create \
+  --source timer \
+  --filter-json '{}' \
+  --fire-at "$fire_at" \
+  --reason "Waiting 30 minutes before checking again"
+
+# Check await status
+cradle session await-summary
+
+# List all awaits for current session
+cradle session await-list
+
+# Cancel an await
+cradle session await-cancel <awaitId>
+
+# Manually trigger (for testing)
+cradle session await-trigger <awaitId> --resume-text "CI passed"
+
+# Retry delivery after a matched await failed to enqueue its resume message
+cradle session await retry <awaitId>
+```
+
+### JavaScript awaits (programmable conditions)
+
+When no typed source fits, express the wait condition as a bare async JavaScript function that returns `false` while pending or `{ resumeText, payload? }` once complete. The cell runs with the await workspace as its real cwd and can execute commands through `tools.exec` (argv arrays only, no shell):
+
+```js
+// await-ci.js — wait for the "CI" workflow run on a commit
+async ({ tools }) => {
+  const repo = 'owner/repo'
+  const sha = 'abc123def'
+  const workflowName = 'CI'
+
+  const result = await tools.exec({
+    argv: ['gh', 'run', 'list', '--repo', repo, '--commit', sha, '--json', 'databaseId,workflowName,status,conclusion'],
+  })
+  if (result.exitCode !== 0) {
+    throw new Error(`gh run list failed: ${result.stderr.trim()}`)
+  }
+
+  const run = JSON.parse(result.stdout).find(candidate => candidate.workflowName === workflowName)
+  if (!run || run.status !== 'completed') {
+    return false // still pending
+  }
+  return {
+    resumeText: `Workflow "${workflowName}" completed on ${sha} with conclusion "${run.conclusion}". Decide how to proceed.`,
+    payload: { databaseId: run.databaseId, conclusion: run.conclusion },
+  }
+}
+```
+
+Dry-run the cell once before registering it (prints `{ ok, result }` or the error):
+
+```bash
+cradle javascript evaluate --program-file ./await-ci.js
+```
+
+Then register it as an await. Cradle re-evaluates the cell as a **short check** on each due poll (do not sleep or loop inside the cell — return `false` and let Cradle wait). The session resumes when the cell returns `{ resumeText }`; a thrown cell is retried, and five consecutive evaluation errors fail the await (the session is resumed with the failure context either way):
+
+```bash
+cradle session await javascript \
+  --program-file ./await-ci.js \
+  --reason "Waiting for the CI workflow on abc123def"
+```
+
+Prefer inline programs for short conditions: `--program 'async ({ tools, cwd }) => false'`. Complete ES modules with `export default` are accepted for advanced file-based cells. Registration checks syntax without running top-level code. Keep cell logic deterministic and self-contained: cells cannot import npm packages, only `node:` builtins.
+
+**Key rules for await usage**:
+- Omit session ids for current-session awaits; Cradle-managed shells inject `CRADLE_CHAT_SESSION_ID` / `CRADLE_WORKSPACE_ID` as ambient defaults. Pass an explicit id only when targeting another session.
+- After registering an await, end your turn. Cradle will resume the session with the trigger payload as a new user message.
+- Prefer the task-shaped `cradle session await ...` commands. The raw generated `cradle session await-create` command is still available when you need to pass a custom source/filter payload directly.
+- Supported task-shaped sources: `github-ci` (`--pr`, `--sha`, or `--run-id`), `github-review` (`--mode approved|changes-requested|reviewed`), `javascript` (`--program` or `--program-file`), and `manual`.
+- Supported raw await sources include `github-ci`, `github-review`, `manual`, and `timer`. Use raw `await-create --source timer --fire-at <unixSeconds> --filter-json '{}'` for durable timed pauses.
+- Your session history is preserved — when resumed, you have full context of what you were doing.
+
+## Chronicle And Memory
+
+Chronicle is the Cradle-owned namespace for activity capture, memory, knowledge cards, privacy export, local model resources, transcripts, and activity pipeline operations. Use `cradle man chronicle` before assuming a direct data-store path.
+
+```bash
+cradle chronicle status --format json
+cradle chronicle timeline --limit 20 --format json
+cradle chronicle memories search --q "release decision" --limit 10 --format json
+cradle chronicle knowledge-cards list --limit 20 --format json
+cradle chronicle activity-segments list --limit 10 --format json
+cradle chronicle activity-pipeline tick --format json
+cradle chronicle privacy redact --text "Sensitive text to preview"
+```
+
+## Recall Evidence Retrieval
+
+Use the session-bound `recall_query` MCP tool when this workspace's past chat or execution context may matter—even if the user never says "before". Prefer a quick recall check over guessing a prior decision, agreement, or attempt. Use `recall_attune` only after the user explicitly asks to save, update, or forget a durable, evidence-backed memory; its proposal still requires user approval.
+
+Read [the Recall reference](references/recall.md) before writing Recall CodeAct or explaining its scope and approval behavior. Do not inject Recall automatically as pre-turn context.
+
+## Automation, Usage, And Diagnostics
+
+```bash
+cradle automation list --format json
+cradle automation run <automationId> --format json
+cradle automation runs <automationId> --format json
+cradle usage summary --format json
+cradle usage cost summary --from 2026-01-01 --to 2026-01-31 --format json
+cradle observability incidents --status open --limit 20 --json id,code,status,lastSeenAt
+cradle observability events --chat-session-id "$CRADLE_CHAT_SESSION_ID" --limit 50 --format json
+```
+
+<!-- CRADLE_CLI_MODULES_START -->
+## Command Modules
+
+It intentionally lists modules, not routes or leaf actions. Use `cradle man <module>` for full command manuals.
+
+| Module | Commands | Scope | Manual |
+| --- | ---: | --- | --- |
+| `acp` | 16 | Manage ACP agent installation and registry state. | `cradle man acp` |
+| `agent` | 5 | Manage Cradle agent identities. | `cradle man agent` |
+| `automation` | 16 | Manage scheduled automations, runs, and artifacts. | `cradle man automation` |
+| `background-activity` | 2 | Generated Cradle CLI module. | `cradle man background-activity` |
+| `background-job` | 3 | Generated Cradle CLI module. | `cradle man background-job` |
+| `board` | 4 | Manage Kanban boards. | `cradle man board` |
+| `chat` | 23 | Control chat runtime commands. | `cradle man chat` |
+| `chronicle` | 56 | Generated Cradle CLI module. | `cradle man chronicle` |
+| `codex` | 2 | Generated Cradle CLI module. | `cradle man codex` |
+| `download-center` | 3 | Generated Cradle CLI module. | `cradle man download-center` |
+| `external-issue-source` | 9 | Generated Cradle CLI module. | `cradle man external-issue-source` |
+| `external-session-import` | 5 | Generated Cradle CLI module. | `cradle man external-session-import` |
+| `health` | 1 | Check server health. | `cradle man health` |
+| `issue` | 31 | Manage Kanban issues, comments, relations, delegation, and context refs. | `cradle man issue` |
+| `issue-agent-session` | 3 | Inspect and control issue agent sessions. | `cradle man issue-agent-session` |
+| `kimi` | 1 | Generated Cradle CLI module. | `cradle man kimi` |
+| `link-preview` | 1 | Generated Cradle CLI module. | `cradle man link-preview` |
+| `managed-resources` | 5 | Generated Cradle CLI module. | `cradle man managed-resources` |
+| `mcp-server` | 3 | Generated Cradle CLI module. | `cradle man mcp-server` |
+| `observability` | 5 | Inspect local observability events, incidents, and exports. | `cradle man observability` |
+| `opencode` | 1 | Generated Cradle CLI module. | `cradle man opencode` |
+| `plugin` | 11 | Generated Cradle CLI module. | `cradle man plugin` |
+| `preferences` | 11 | Read and update server preferences. | `cradle man preferences` |
+| `profile` | 5 | Manage agent profiles. | `cradle man profile` |
+| `provider` | 9 | Inspect provider model availability. | `cradle man provider` |
+| `pull-request` | 16 | Generated Cradle CLI module. | `cradle man pull-request` |
+| `search` | 2 | Search Cradle data. | `cradle man search` |
+| `secret` | 2 | Manage secret metadata. | `cradle man secret` |
+| `session` | 27 | Manage chat sessions and session links. | `cradle man session` |
+| `session-group` | 7 | Generated Cradle CLI module. | `cradle man session-group` |
+| `skill` | 10 | Manage skills and skill sources. | `cradle man skill` |
+| `usage` | 14 | Inspect usage and cost data. | `cradle man usage` |
+| `work` | 8 | Manage user-controlled local Work containers and Draft PR delivery. | `cradle man work` |
+| `workflow-rule` | 4 | Manage workflow rules. | `cradle man workflow-rule` |
+| `workspace` | 51 | Manage workspaces, files, and git helpers. | `cradle man workspace` |
+
+<!-- CRADLE_CLI_MODULES_END -->

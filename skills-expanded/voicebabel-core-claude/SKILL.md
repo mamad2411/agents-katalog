@@ -1,0 +1,12 @@
+# Core/
+
+Core application logic — recording state machine, hotkey detection, auto-send, transcription manager, and translation manager.
+
+| File | Description |
+|------|-------------|
+| **AppController.swift** | Core state machine and flow orchestrator (idle/recording/processing/waitingToSend/error). `beginRecording(mode:)` is the single entry point — enforces availability preconditions by checking `!priority.isEmpty` on the (pre-filtered) Manager priority lists before starting. Dispatches to TranscriptionManager / TranslationManager via async/await. No mode/fallback-state properties — the effective engine is reported post-hoc via `onTranscriptionResult` / `onTranslationResult` callbacks |
+| **HotkeyManager.swift** | Option key gesture detection via NSEvent monitors. Push-to-talk (hold >400ms), single tap (toggle transcribe), double tap (toggle translate), ESC (cancel). State machine: idle -> optionDown -> pushToTalkActive/waitingSecondTap |
+| **AutoSendManager.swift** | Auto-send logic after transcription output. Three modes: off (do nothing), always (Enter after short delay), delayed (countdown timer with cancel support). Communicates state changes back to AppController via onStateChange callback |
+| **TranscriptionManager.swift** | Audio-to-text orchestration. `transcribe(samples:audioDuration:) async throws -> TranscriptionResult`. Iterates `priority` as received — AppDelegate pre-filters the list to enabled ∩ available engines, so the Manager does NOT re-check availability per engine. Early-throws `TranscriptionError.noEngineAvailable` when `priority.isEmpty`. Resolves transcription language from `SettingsStore`, runs `TextPostProcessor.process` on the winning text, returns structured `attempts: [EngineAttempt]`. Stateless |
+| **TranslationManager.swift** | Text translation. `translate(text:) async throws -> TranslationResult`. Owns both target-language and source-language resolution. Iterates `translationEnginePriority` (AppDelegate pre-filtered); early-throws `TranslationError.noEngineAvailable` when empty. Keeps a defensive `TranslationError.internalInconsistency` throw for the `apple` branch (localTranslator is separately injected and can legitimately be nil on macOS 14, so the switch still guards). Stateless |
+| **AudioRecorder.swift** | Audio capture via AVAudioEngine. `startRecording()` / `stopRecording() -> [Float]?`. Silence detection via `static averageRMS(of:)`. No encoding — raw PCM samples only |

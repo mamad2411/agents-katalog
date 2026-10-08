@@ -1,0 +1,416 @@
+---
+name: "blue-ocean-strategy"
+description: "Blue Ocean Strategy analysis using ERRC framework and Strategy Canvas. Use when: blue ocean, market differentiation, competitive strategy, value innovation, ERRC framework, strategy canvas, new market space, competitive analysis."
+---
+
+<objective>
+Apply Blue Ocean Strategy (Chan Kim & Renée Mauborgne) to identify opportunities for value innovation - creating uncontested market space by simultaneously pursuing differentiation and low cost.
+</objective>
+
+<quick_start>
+**Analyze market position:**
+```
+/blue-ocean analyze [industry/company]
+```
+
+Claude will generate:
+1. Strategy Canvas (value curves vs competitors)
+2. ERRC Grid (Eliminate, Reduce, Raise, Create)
+3. Six Paths Framework exploration
+4. Blue Ocean opportunity scoring
+</quick_start>
+
+<core_concepts>
+
+## Red Ocean vs Blue Ocean
+
+| Aspect | Red Ocean | Blue Ocean |
+|--------|-----------|------------|
+| Market Space | Compete in existing market | Create uncontested market |
+| Competition | Beat the competition | Make competition irrelevant |
+| Demand | Exploit existing demand | Create and capture new demand |
+| Value/Cost | Make value-cost trade-off | Break the value-cost trade-off |
+| Strategy | Align with differentiation OR low cost | Pursue differentiation AND low cost |
+
+## Value Innovation
+The cornerstone of Blue Ocean Strategy:
+
+```
+Traditional thinking:  Higher value = Higher cost
+                       Lower cost = Lower value
+
+Value Innovation:      Higher value + Lower cost = New market space
+```
+
+**How it works:**
+- Eliminate and reduce factors the industry competes on
+- Raise and create factors the industry has never offered
+- Result: Leap in value for buyers AND the company
+
+## The Strategy Canvas
+
+A diagnostic and action framework showing:
+- **Horizontal axis:** Factors the industry competes on
+- **Vertical axis:** Offering level (low to high)
+- **Value curve:** Your company's profile across factors
+
+```
+High │    *          *              ← Your Blue Ocean Curve
+     │   /│\        /│\
+     │  / │ \      / │ \
+     │ /  │  \    /  │  \    *
+     │/   │   \  /   │   \  /│\
+     │    │    \/    │    \/  │
+     │    │    /\    │    /\  │
+     │    │   /  \   │   /  \ │
+     │    │  /    \  │  /    \│
+Low  │    │ /      \ │ /      *    ← Industry Average
+     └────┴─────────┴─────────────
+         Factor   Factor   Factor
+           1        2        3
+```
+
+</core_concepts>
+
+<errc_framework>
+## The Four Actions Framework (ERRC)
+
+| Action | Question | Purpose |
+|--------|----------|---------|
+| **Eliminate** | Which factors that the industry takes for granted should be eliminated? | Remove elements that no longer add value or have become hygiene factors |
+| **Reduce** | Which factors should be reduced well below the industry's standard? | Strip away over-designed features that increase cost without adding value |
+| **Raise** | Which factors should be raised well above the industry's standard? | Address compromises the industry forces on customers |
+| **Create** | Which factors should be created that the industry has never offered? | Discover entirely new sources of value for buyers |
+
+## ERRC Grid Template
+
+```
+┌─────────────────────────────────┬─────────────────────────────────┐
+│           ELIMINATE             │             REDUCE              │
+│                                 │                                 │
+│ • Factor 1                      │ • Factor 1                      │
+│ • Factor 2                      │ • Factor 2                      │
+│ • Factor 3                      │ • Factor 3                      │
+│                                 │                                 │
+├─────────────────────────────────┼─────────────────────────────────┤
+│            RAISE                │             CREATE              │
+│                                 │                                 │
+│ • Factor 1                      │ • Factor 1                      │
+│ • Factor 2                      │ • Factor 2                      │
+│ • Factor 3                      │ • Factor 3                      │
+│                                 │                                 │
+└─────────────────────────────────┴─────────────────────────────────┘
+```
+
+## Classic ERRC Examples
+
+### Cirque du Soleil
+| Action | Factors |
+|--------|---------|
+| **Eliminate** | Star performers, animal shows, aisle concessions, multiple show arenas |
+| **Reduce** | Fun and humor, thrill and danger |
+| **Raise** | Unique venue, artistic music and dance |
+| **Create** | Theme, refined watching environment, multiple productions |
+
+### Southwest Airlines
+| Action | Factors |
+|--------|---------|
+| **Eliminate** | Meals, lounges, seating choices, hub connections |
+| **Reduce** | Price, airport wait time |
+| **Raise** | Friendly service, speed, frequent departures |
+| **Create** | Point-to-point travel between secondary airports |
+
+### Yellow Tail Wine
+| Action | Factors |
+|--------|---------|
+| **Eliminate** | Wine complexity, aging quality, vineyard prestige |
+| **Reduce** | Wine range, price |
+| **Raise** | Retail store involvement, easy drinking |
+| **Create** | Fun and adventure, easy selection |
+
+</errc_framework>
+
+<six_paths_framework>
+## Six Paths to Blue Oceans
+
+### Path 1: Look Across Alternative Industries
+**Question:** What are the alternative industries to your industry?
+
+```
+Example: NetJets
+- Alternative to commercial airlines AND private jet ownership
+- Combined reliability of commercial with flexibility of private
+- Created fractional jet ownership industry
+```
+
+**Analysis Steps:**
+1. List alternatives (not just substitutes)
+2. Ask: Why do customers trade across alternatives?
+3. Find factors that make customers choose each
+4. Combine the best of both
+
+### Path 2: Look Across Strategic Groups
+**Question:** What strategic groups exist in your industry?
+
+```
+Example: Curves Fitness
+- Strategic groups: Upscale gyms vs. home exercise
+- Combined: Simple gym experience + affordable + female-only
+- Result: New strategic group
+```
+
+**Analysis Steps:**
+1. Map strategic groups by price and features
+2. Identify why customers trade up or down
+3. Find factors that trigger movement
+4. Combine appeals across groups
+
+### Path 3: Look Across the Chain of Buyers
+**Question:** Who are the purchasers, users, and influencers?
+
+| Role | Definition | Example |
+|------|------------|---------|
+| Purchasers | Pay for product | Corporate IT dept |
+| Users | Actually use product | Employees |
+| Influencers | Shape buying decision | Analysts, reviewers |
+
+```
+Example: Novo Nordisk Insulin
+- Industry focused on: Doctors (influencers)
+- Novo Nordisk focused on: Patients (users)
+- Created: NovoPen (easy self-injection)
+```
+
+**Analysis Steps:**
+1. Map the buyer chain
+2. Identify which group your industry focuses on
+3. Shift focus to overlooked group
+4. Discover new value factors
+
+### Path 4: Look Across Complementary Products/Services
+**Question:** What happens before, during, and after your product is used?
+
+```
+Example: Borders Bookstore (original concept)
+- Before: Getting to store
+- During: Finding books, reading
+- After: Getting coffee, discussing
+- Created: Coffee shops in bookstores, reading chairs
+```
+
+**Analysis Steps:**
+1. Map the total solution customers seek
+2. Identify pain points in the journey
+3. Look at complementary products/services
+4. Bundle or integrate solutions
+
+### Path 5: Look Across Functional-Emotional Appeal
+**Question:** Is your industry competing on function or emotion?
+
+| Current Appeal | Opportunity |
+|----------------|-------------|
+| Functional | Add emotional elements |
+| Emotional | Strip to functional core |
+
+```
+Example: Swatch
+- Watch industry: Functional (timekeeping)
+- Swatch: Emotional (fashion accessory)
+- Transformed watches into statement pieces
+```
+
+**Analysis Steps:**
+1. Determine industry's current appeal orientation
+2. Identify elements reinforcing that appeal
+3. Challenge the orientation
+4. Add/remove elements to shift appeal
+
+### Path 6: Look Across Time
+**Question:** What trends have high probability of impacting your industry?
+
+**Trend Criteria:**
+- Decisive to business (will change industry)
+- Irreversible (not a fad)
+- Clear trajectory (predictable direction)
+
+```
+Example: Apple iTunes
+- Trend: Digital music distribution
+- Industry response: Fighting piracy
+- Apple response: Created legal, convenient digital music store
+```
+
+**Analysis Steps:**
+1. Identify decisive, irreversible trends
+2. Assess their impact trajectory
+3. Ask: What will the industry look like when trend plays out?
+4. Work backward to current opportunity
+
+</six_paths_framework>
+
+<strategy_canvas_analysis>
+## Building a Strategy Canvas
+
+### Step 1: Identify Competitive Factors
+List factors your industry competes on:
+```
+Factors typically include:
+- Price
+- Quality/Performance
+- Features/Options
+- Service level
+- Brand/Status
+- Convenience
+- Technology
+- Network effects
+- Industry-specific factors
+```
+
+### Step 2: Plot the Industry Average
+For each factor, score the industry average (1-5 scale):
+```
+1 = Very low offering
+2 = Below average
+3 = Industry average
+4 = Above average
+5 = Very high offering
+```
+
+### Step 3: Plot Key Competitors
+Score each major competitor on the same factors.
+
+### Step 4: Plot Your Current Position
+Score your company's current offering.
+
+### Step 5: Design Your Blue Ocean Curve
+Apply ERRC to create a divergent value curve:
+- Eliminate: Factors scored 0
+- Reduce: Factors scored 1-2
+- Raise: Factors scored 4-5
+- Create: New factors not on current canvas
+
+### Strategy Canvas Output Format
+
+```
+| Factor        | Industry | Competitor A | Competitor B | Your Blue Ocean |
+|---------------|----------|--------------|--------------|-----------------|
+| Price         | 3        | 4            | 2            | 2 (Reduce)      |
+| Quality       | 3        | 4            | 3            | 5 (Raise)       |
+| Complexity    | 4        | 5            | 4            | 0 (Eliminate)   |
+| Convenience   | 2        | 2            | 3            | 5 (Raise)       |
+| Fun Factor    | 1        | 1            | 1            | 4 (Create)      |
+| Service       | 3        | 4            | 2            | 3 (Maintain)    |
+```
+
+### Three Characteristics of a Good Strategy
+
+1. **Focus** - Don't try to excel at everything
+2. **Divergence** - Your curve looks different from competitors
+3. **Compelling Tagline** - Can be explained in one clear phrase
+
+</strategy_canvas_analysis>
+
+<scoring_algorithm>
+## Blue Ocean Index
+
+### Opportunity Score (0-100)
+```python
+def calculate_blue_ocean_index(analysis):
+    # Market attractiveness (30 points)
+    market_size = score(1-10) * 1.5  # Max 15
+    growth_potential = score(1-10) * 1.5  # Max 15
+
+    # Differentiation potential (30 points)
+    eliminate_impact = count_eliminates * 5  # Max 15
+    create_impact = count_creates * 5  # Max 15
+
+    # Feasibility (20 points)
+    resource_availability = score(1-10) * 1.0  # Max 10
+    execution_complexity = (10 - score(1-10)) * 1.0  # Max 10
+
+    # Risk assessment (20 points)
+    imitation_barrier = score(1-10) * 1.0  # Max 10
+    adoption_likelihood = score(1-10) * 1.0  # Max 10
+
+    return sum([
+        market_size, growth_potential,
+        eliminate_impact, create_impact,
+        resource_availability, execution_complexity,
+        imitation_barrier, adoption_likelihood
+    ])
+```
+
+### Blue Ocean Viability Matrix
+
+| Score Range | Assessment | Recommendation |
+|-------------|------------|----------------|
+| 80-100 | Strong Blue Ocean | Prioritize execution |
+| 60-79 | Promising | Refine ERRC, validate assumptions |
+| 40-59 | Moderate | Re-examine paths, find better angle |
+| 0-39 | Weak | Fundamental rethink needed |
+
+### Key Validation Questions
+
+**Before committing:**
+1. Does the strategy create a leap in value for buyers?
+2. Is the price accessible to the mass of target buyers?
+3. Can you attain your cost target while maintaining a profit margin?
+4. What are the adoption hurdles? Have you addressed them upfront?
+
+### Three Tiers of Noncustomers
+
+| Tier | Description | Example |
+|------|-------------|---------|
+| First Tier | "Soon-to-be" noncustomers on edge of market | Waiting for better alternative |
+| Second Tier | "Refusing" noncustomers who consciously chose against | Don't see value in current offerings |
+| Third Tier | "Unexplored" noncustomers in distant markets | Never considered the industry |
+
+</scoring_algorithm>
+
+<example_session>
+See `reference/example-session.md` for a full worked example (AI-Powered Legal Tech for Small Business).
+</example_session>
+
+## Emit Outcome Sidecar
+Write to `~/.claude/skill-analytics/last-outcome-blue-ocean-strategy.json`:
+`{"ts":"[UTC ISO8601]","skill":"blue-ocean-strategy","version":"1.0.0","variant":"default","status":"[success|partial|error]","runtime_ms":[ms],"metrics":{"canvases_generated":[n],"errc_actions":[n],"market_spaces_identified":[n],"blue_ocean_index":[score]},"error":null,"session_id":"[YYYY-MM-DD]"}`
+
+<success_criteria>Analysis is successful when:
+- Strategy Canvas clearly shows divergent value curve from competitors
+- ERRC Grid identifies at least 2 factors per quadrant
+- Six Paths Framework exploration reveals 2+ actionable opportunities
+- Blue Ocean Index score calculated with supporting rationale
+- Compelling tagline captures the strategy in one phrase
+- Three tiers of noncustomers identified with targeting approach
+</success_criteria>
+
+<activation_triggers>
+**This skill activates for:**
+- "blue ocean strategy"
+- "blue ocean analysis"
+- "ERRC framework"
+- "strategy canvas"
+- "value innovation"
+- "market differentiation"
+- "competitive strategy"
+- "new market space"
+- "uncontested market"
+- "eliminate reduce raise create"
+- "six paths framework"
+- "noncustomers analysis"
+</activation_triggers>
+
+<integration_points>
+## Strategy Skill Cluster
+
+Blue Ocean integrates with 4 other strategy skills for first-principles thinking:
+
+| Skill | Connection |
+|-------|-----------|
+| **JTBD** | Underserved outcomes (ODI score >15) are candidates for "Create" and "Raise" in your ERRC grid |
+| **BMC** | Blue Ocean value curves map directly to the Value Proposition and Customer Segments blocks |
+| **Challenger Sale** | ERRC "Create" factors become commercial insights for the Challenger teaching pitch |
+| **NSTTD** | When presenting a Blue Ocean strategy to skeptical stakeholders, use accusation audits and tactical empathy |
+
+**Pipeline:** JTBD (what job?) → **Blue Ocean (where's the space?)** → BMC (how to deliver?) → Challenger (what insight?) → NSTTD (how to communicate?)
+</integration_points>

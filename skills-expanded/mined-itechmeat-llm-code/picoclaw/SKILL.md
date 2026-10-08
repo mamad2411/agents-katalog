@@ -1,0 +1,139 @@
+---
+name: picoclaw
+description: "PicoClaw Go AI assistant. Covers CLI ops, config.json, channels, auth, skills, gateway. Use when running the PicoClaw CLI, configuring models/tools/gateway in config.json, or operating channels and authentication. Keywords: picoclaw, onboard, gateway, model_list."
+metadata:
+  version: "v0.2.9"
+  release_date: "2026-05-29"
+---
+
+# PicoClaw
+
+PicoClaw is an ultra-lightweight AI assistant written in Go. This skill is a practical operator playbook for running the CLI, configuring `~/.picoclaw/config.json`, and operating `gateway` + channels.
+
+## Links
+
+- [Documentation](https://github.com/sipeed/picoclaw/tree/main/docs)
+- [Releases](https://github.com/sipeed/picoclaw/releases)
+- [GitHub](https://github.com/sipeed/picoclaw)
+
+## Quick navigation
+
+- Getting started + common commands: `references/quickstart.md`
+- Config (`model_list`, tools, gateway, channels, bindings): `references/config.md`
+- Tools (web search, exec guardrails, registries): `references/tools.md`
+- Auth flows (OpenAI OAuth, Google Antigravity OAuth, token): `references/auth.md`
+- Gateway operations (health/ready, cron, heartbeat, voice): `references/gateway.md`
+- Channels (Telegram/Discord/WeCom/Feishu/OneBot/etc): `references/channels.md`
+- Skills management (install/list/remove, channel commands): `references/skills.md`
+- Hook system (observers, interceptors, approvers): `references/hooks.md`
+- Cron scheduling via CLI: `references/cron.md`
+- Migration notes: `references/migration.md`
+- Troubleshooting: `references/troubleshooting.md`
+
+## When to use
+
+Use when you need to:
+
+- Bootstrap PicoClaw on a host (onboard → config → run)
+- Switch providers/models via `model_list`
+- Run the agent in CLI mode or operate `gateway`
+- Enable chat channels (Telegram/Discord/Slack/WeCom/...)
+- Send outbound notifications to Microsoft Teams via webhook targets
+- Configure tools (web search, exec deny patterns, skills registries)
+- Install/remove skills into the workspace
+- Use skill channel commands (`/list skills`, `/use <skill>`)
+- Configure hook system (observers, interceptors, approvers)
+- Configure agent bindings (route messages to different agents)
+- Schedule recurring jobs (cron)
+
+## Recipes
+
+### 1) Initialize + verify
+
+- Create initial config and workspace templates:
+  - `picoclaw onboard`
+- Verify what’s configured:
+  - `picoclaw status`
+
+### 2) Chat from CLI
+
+- One-shot:
+  - `picoclaw agent -m "Hello"`
+- Interactive:
+  - `picoclaw agent`
+
+### 3) Run gateway (channels + cron + health)
+
+- Start gateway:
+  - `picoclaw gateway`
+- Debug logs:
+  - `picoclaw gateway --debug`
+
+### 4) Manage auth
+
+- OpenAI OAuth (optionally device-code for headless):
+  - `picoclaw auth login --provider openai`
+  - `picoclaw auth login --provider openai --device-code`
+- Google Antigravity OAuth:
+  - `picoclaw auth login --provider google-antigravity`
+- Check status / list models:
+  - `picoclaw auth status`
+  - `picoclaw auth models`
+
+### 5) Install skills
+
+- List installed skills:
+  - `picoclaw skills list`
+- Install from GitHub repo slug:
+  - `picoclaw skills install sipeed/picoclaw-skills/weather`
+- Install from registry:
+  - `picoclaw skills install --registry clawhub github`
+
+### 6) Add a scheduled job
+
+- Create a cron job:
+  - `picoclaw cron add --name "Daily report" --cron "0 9 * * *" --message "Summarize my inbox"`
+- List jobs:
+  - `picoclaw cron list`
+
+## Critical safety notes
+
+- Do not commit real API keys or OAuth tokens into a repo; keep them in `~/.picoclaw/` only.
+- Be cautious enabling the exec tool; keep deny patterns enabled unless you fully trust the environment.
+- Exposing gateway to `0.0.0.0` makes health endpoints reachable from the network; do that only intentionally.
+
+## Release Highlights (v0.2.8)
+
+- **MCP operations**: PicoClaw now exposes first-class MCP management commands (`show`, `add`, `list`, `remove`, `test`, `edit`) and surfaces init/lifecycle failures more clearly.
+- **Custom endpoints + tools**: CLI/config flows add better support for custom OpenAI-compatible endpoints and a cross-platform serial hardware tool.
+- **Chat/web feedback**: tool-call visibility, animated tool feedback, restart prompts, and reasoning visibility are more consistent across Pico web/chat surfaces and channels.
+
+## Release Highlights (v0.2.9)
+
+- **MCP and config UI**: the config web UI adds an MCP section, MCP streamable HTTP support is fixed, Gemini MCP schema sanitization is hardened, and v3 config format sync docs/flows were refreshed.
+- **Tool feedback and edit UX**: `tool_feedback` defaults add `pretty_print` and `disable_escape_html`, parent-session tool feedback cleanup is fixed, and edit-file diff previews improve review before applying generated edits.
+- **Channels and voice**: Slack webhook channel support lands, Telegram media groups/SVG media handling improves, queued voice follow-ups and voice media store reload behavior are fixed, and `stop` command / MQTT channel handling are tightened.
+- **Provider/runtime fixes**: Bedrock streaming, DeepSeek vision unsupported errors, DeepSeek/Mimo reasoning replay, network-error retry, and factory reset flows were improved.
+
+## Release Highlights (v0.2.6)
+
+- **Hooks `respond` action**: `before_tool` hooks can now return a final tool result directly, which is useful for plugin-style tools, caching, or policy-controlled mocks without registering a native tool implementation.
+- **Teams outbound channel**: `teams_webhook` adds an output-only Microsoft Teams path with named webhook targets and Adaptive Card rendering for richer notifications.
+- **Provider request shaping**: `model_list[].custom_headers` lets you inject extra HTTP headers per model entry, and fallback resolution now uses each fallback candidate's own provider settings.
+- **Gateway/web reliability**: PID ownership/stale-pid handling was hardened, and the web UI now derives its WebSocket endpoint from the browser-visible location instead of backend assumptions.
+- **Channel polish**: Feishu reply context was improved for card/file replies, reducing broken follow-up threading in that connector.
+
+## Release Highlights (v0.2.4)
+
+- **Hook system**: in-process and out-of-process hooks (JSON-RPC over stdio) with observer, LLM interceptor, tool interceptor, and tool approver stages. Configurable via `hooks` in config.
+- **Agent bindings**: route incoming messages to different agents by channel/account/context via `bindings` config section.
+- **Skill channel commands**: `/list skills`, `/use <skill> <message>`, `/use <skill>` (arm for next message), `/use clear`.
+- **Configurable log level**: `gateway.log_level` (debug/info/warn/error/fatal) in config or `PICOCLAW_LOG_LEVEL` env var.
+- **Voice transcription model**: `voice.model_name` lets you use any multimodal model for audio transcription; Groq Whisper remains as fallback.
+- **Security config separation**: `.security.yml` file for storing API keys/tokens separate from `config.json`.
+- **Workspace file hot-reload**: `AGENT.md`, `SOUL.md`, `USER.md`, `MEMORY.md` are auto-detected via mtime tracking — no restart needed.
+- SubTurn error handling and logging improved. Security config precedence fixed during migration.
+
+## Links
+
+- Upstream repo (for releases/issues): https://github.com/sipeed/picoclaw

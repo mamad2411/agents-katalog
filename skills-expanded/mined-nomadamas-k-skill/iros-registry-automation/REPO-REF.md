@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/nomadamas/k-skill (path: iros-registry-automation/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 인터넷등기소(IROS)에서 법인/부동산 등기부등본(등기사항증명서) 발급을 준비하고, 사용자가 직접 로그인·결제한 브라우저 흐름 안에서 장바구니·열람·저장을 안전하게 보조한다. 돌쇠에서는 가능한 가장 가까운 합법적 공식 단계까지 준비한다.

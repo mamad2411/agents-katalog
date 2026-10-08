@@ -1,0 +1,464 @@
+---
+created: 2025-12-17
+modified: 2026-05-09
+reviewed: 2026-05-09
+description: Upgrade blueprint structure to the latest format version. Use when migrating between format versions, enabling monorepo workspaces, or batch upgrading repos.
+args: "[--non-interactive|-y]"
+argument-hint: "[--non-interactive|-y]"
+allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
+name: blueprint-upgrade
+---
+
+Upgrade the blueprint structure to the latest format version.
+
+## When to Use This Skill
+
+| Use this skill when... | Use blueprint-init instead when... |
+|---|---|
+| The project has a manifest at v1.x, v2.x, v3.0, v3.1, or v3.2 | The project has no `docs/blueprint/manifest.json` at all |
+| You want the user-facing upgrade entry point with prompts | Use blueprint-migration instead when implementing version-specific logic |
+| You're adding the v3.2 task registry or v3.3 monorepo workspaces | Use blueprint-execute instead when you want auto-detection of next step |
+| You're running batch upgrades across repos with `--non-interactive`/`-y` | Use blueprint-status instead to first audit current version |
+
+**Current Format Version**: 3.4.0
+
+This command delegates version-specific migration logic to the `blueprint-migration` skill.
+
+## Parameters
+
+Parse `$ARGUMENTS` for flags before running any step:
+
+- `--non-interactive`, `--yes`, `-y`: Skip every `AskUserQuestion` prompt and apply the defaults in the table below. Intended for batch runs across many repos (e.g. looping `/blueprint:upgrade -y` over FVH repos that are already on `main`).
+
+Set an internal `$NONINTERACTIVE` flag to `true` when any of those tokens appear in `$ARGUMENTS`; otherwise `false`. Reference this flag at every `AskUserQuestion` call site in the steps below.
+
+### Non-interactive defaults
+
+When `$NONINTERACTIVE` is `true`, use these answers without prompting and record them in `upgrade_history[].changes` as "auto-selected in non-interactive mode":
+
+| Decision point | Step | Default | Rationale |
+|---|---|---|---|
+| Remove deprecated generated commands | 3 | "Yes, remove" | Matches "Recommended" option; the files are known-obsolete |
+| Task-registry scheduling mode | 3a | "Prompt before running" | Safest; preserves pre-existing behaviour for all tasks |
+| Upgrade confirmation | 5 | "Yes, upgrade now" | The flag is explicit consent; skip the confirmation gate |
+| Enable document detection (v1.x→v2.0) | 7f | "No, keep manual commands only" | Additive feature; do not silently change behaviour in batch mode |
+| Migrate root documentation (v1.x→v2.0) | 7g | "No, leave in root" | Least destructive; moving root docs is reversible but surprising |
+| Post-upgrade next action | 11 | Skip — report and exit | The caller is responsible for follow-up in a batch context |
+
+For the `v2.x → v3.0` modification-preservation prompt (delegated to `migrations/v2.x-to-v3.0.md`), default to **"Keep modifications"** — never discard user-edited content in batch mode, and never "Cancel migration" silently.
+
+If a migration step would require any prompt not listed above, **abort the upgrade** with a clear message rather than guessing. The caller can re-run interactively for those repos.
+
+**Steps**:
+
+1. **Check current state**:
+   - Resolve manifest path — check all known locations (in order):
+     1. `docs/blueprint/.manifest.json` (v3.0+ dot-prefixed)
+     2. `docs/blueprint/manifest.json` (v3.1+ without dot prefix)
+     3. `.claude/blueprints/.manifest.json` (v1.x/v2.x location)
+   - Store the resolved path as `$MANIFEST`; if not found in any location, suggest running `/blueprint:init` instead
+   - Extract current `format_version` (default to "1.0.0" if field missing)
+
+2. **Determine upgrade path**:
+   ```bash
+   # Resolve manifest path once — use $MANIFEST in all subsequent jq commands
+   if [[ -f docs/blueprint/.manifest.json ]]; then
+     MANIFEST=docs/blueprint/.manifest.json
+   elif [[ -f docs/blueprint/manifest.json ]]; then
+     MANIFEST=docs/blueprint/manifest.json
+   elif [[ -f .claude/blueprints/.manifest.json ]]; then
+     MANIFEST=.claude/blueprints/.manifest.json
+   else
+     echo "ERROR: no blueprint manifest found. Run /blueprint:init first."
+     exit 1
+   fi
+   current=$(jq -r '.format_version // "1.0.0"' "$MANIFEST")
+   target="3.4.0"
+   ```
+
+   **Important**: Store the resolved `$MANIFEST` path. Use it in every `jq` invocation throughout this skill and in all delegated migration steps. This avoids silent failures when the filename differs from what a command hard-codes.
+
+   **Version compatibility matrix**:
+   | From Version | To Version | Migration Document |
+   |--------------|------------|-------------------|
+   | 1.0.x        | 1.1.x      | `migrations/v1.0-to-v1.1.md` |
+   | 1.x.x        | 2.0.0      | `migrations/v1.x-to-v2.0.md` |
+   | 2.x.x        | 3.0.0      | `migrations/v2.x-to-v3.0.md` |
+   | 3.0.x        | 3.1.0      | `migrations/v3.0-to-v3.1.md` |
+   | 3.1.x        | 3.2.0      | inline (step 3a) |
+   | 3.2.x        | 3.3.0      | `migrations/v3.2-to-v3.3.md` |
+   | 3.3.x        | 3.4.0      | `migrations/v3.3-to-v3.4.md` |
+   | 3.4.0        | 3.4.0      | Already up to date |
+
+3. **Check for deprecated generated commands**:
+
+   Check for skills generated by the now-deprecated `/blueprint:generate-commands`:
+
+   ```bash
+   # Check for generated project skills (both naming conventions)
+   ls .claude/skills/project-continue/SKILL.md 2>/dev/null
+   ls .claude/skills/project-test-loop/SKILL.md 2>/dev/null
+   # Also check legacy command paths
+   ls .claude/commands/project-continue.md 2>/dev/null
+   ls .claude/commands/project/continue.md 2>/dev/null
+
+   # Check manifest for generated entries
+   jq -r '.generated.commands // {} | keys[]' "$MANIFEST" 2>/dev/null
+   ```
+
+   **If deprecated entries found**:
+   - Report: "Found deprecated generated commands/skills from /blueprint:generate-commands"
+   - List the files found
+   - If `$NONINTERACTIVE` is `true`, skip the prompt and proceed as if "Yes, remove deprecated commands" was chosen.
+   - Otherwise, use AskUserQuestion:
+     ```
+     question: "Found deprecated generated commands. These are no longer needed - /blueprint:execute handles workflow orchestration. Remove them?"
+     options:
+       - label: "Yes, remove deprecated commands (Recommended)"
+         description: "Delete generated command files and clean up manifest"
+       - label: "Keep for now"
+         description: "Skip removal, continue with upgrade"
+     ```
+   - **If "Yes"**:
+     - Delete the command files found
+     - Remove entries from `manifest.generated.commands`
+     - Add to upgrade_history: "Removed deprecated generated commands"
+   - **If "Keep"**: Continue to step 4
+
+   **If no deprecated commands**: Continue to step 4
+
+---
+
+3a. **v3.1 → v3.2 migration: Add task registry**:
+
+   a. **Check if task_registry already exists**:
+      ```bash
+      jq -e '.task_registry' "$MANIFEST" 2>/dev/null
+      ```
+
+      If exists, skip to next step.
+
+   b. **Ask about maintenance task scheduling**:
+
+      If `$NONINTERACTIVE` is `true`, skip the prompt and use "Prompt before running" (no tasks become auto-run).
+
+      Otherwise, use AskUserQuestion:
+      ```
+      question: "New feature: Task Registry tracks when maintenance tasks last ran. How should tasks be scheduled?"
+      options:
+        - label: "Prompt before running (Recommended)"
+          description: "Always ask before running maintenance tasks"
+        - label: "Auto-run safe tasks"
+          description: "Read-only tasks run automatically when due"
+        - label: "Manual only"
+          description: "Tasks only run when explicitly invoked"
+      ```
+
+   c. **Add task_registry to manifest**:
+      Use `jq` to add the `task_registry` section to `"$MANIFEST"` with all tasks defaulting to:
+      - `enabled: true` (except `curate-docs` which defaults to `false`)
+      - `auto_run`: based on user choice (safe read-only tasks: `adr-validate`, `feature-tracker-sync`, `sync-ids`)
+      - `last_completed_at: null`
+      - `last_result: null`
+      - Default schedules: `derive-plans` → `weekly`, `derive-rules` → `weekly`, `generate-rules` → `on-change`, `adr-validate` → `weekly`, `feature-tracker-sync` → `daily`, `sync-ids` → `on-change`, `claude-md` → `on-change`, `curate-docs` → `on-demand`
+      - `stats: {}`
+      - `context: {}`
+
+   d. **Bump format_version to 3.2.0**
+
+---
+
+3b. **v3.2 → v3.3 migration: Monorepo support**:
+
+   Delegate to `skills/blueprint-migration/migrations/v3.2-to-v3.3.md`. Summary of what it does:
+
+   a. Classify the blueprint as `root`, `child`, or `standalone` by walking ancestors and descendants for other blueprint manifest files.
+   b. Add a `workspaces` block to `$MANIFEST` (omitted for standalone).
+   c. Bump `format_version` to `3.3.0` and append an entry to `upgrade_history`.
+   d. For root blueprints, run `/blueprint:workspace-scan` to populate `workspaces.children`.
+   e. (Optional) Initialise the root `feature-tracker.json` `workspaces` summary for portfolio FR tracking.
+
+   All changes are purely additive — standalone projects get no new top-level keys beyond `format_version` and `upgrade_history`.
+
+---
+
+3c. **v3.3 → v3.4 migration: Automation block (autonomy levels)**:
+
+   Delegate to `skills/blueprint-migration/migrations/v3.3-to-v3.4.md`. Summary of what it does:
+
+   a. Suggest an initial `autonomy_level` from existing `task_registry` state (any `auto_run: true` → suggest level 1; otherwise level 0). Confirm with the user; in `$NONINTERACTIVE` mode take the suggestion, never higher.
+   b. Add the `automation` block (`autonomy_level`, `interaction_mode: "normal"`, `work_orders: {auto_draft: false, auto_execute: false}`) to `$MANIFEST`.
+   c. Bump `format_version` to `3.4.0` and append an entry to `upgrade_history`.
+
+   Purely additive — a missing `automation` block already behaves as level 0, so the migration changes no behavior until the user raises the level. See ADR-0020 (claude-plugins) for the level model.
+
+4. **Display upgrade plan**:
+   ```
+   Blueprint Upgrade
+
+   Current version: v{current}
+   Target version: v3.4.0
+
+   Major changes in v3.0:
+   - Blueprint state moves from .claude/blueprints/ to docs/blueprint/
+   - Generated skills become rules in .claude/rules/
+   - No more generated/ subdirectory - cleaner structure
+   - All blueprint-related files consolidated under docs/blueprint/
+
+   Major changes in v3.2:
+   - Task registry tracks operational metadata for maintenance tasks
+   - Smart scheduling: tasks know when they were last run
+   - Enable/disable individual tasks
+   - Incremental operations with context persistence
+
+   Major changes in v3.3:
+   - First-class monorepo support: root/child/standalone roles
+   - `workspaces` block in manifest.json (additive; standalone projects omit it)
+   - New /blueprint:workspace-scan skill for discovering child blueprints
+   - Cross-workspace references (`<path>/ADR-NNN`, `/ADR-NNN`)
+   - Optional portfolio feature tracking via implemented_by links
+
+   Major changes in v3.4:
+   - `automation` block: autonomy_level (0 manual / 1 ambient bookkeeping /
+     2 quiet autopilot / 3 scheduled pipeline), interaction_mode, work_orders
+   - task_registry auto_run/schedule contract becomes executable
+     (scripts/blueprint-autorun.sh + SessionStart probe)
+
+   (For v2.0 changes when upgrading from v1.x:)
+   - PRDs, ADRs, PRPs move to docs/ (project documentation)
+   - Custom overrides in .claude/skills/
+   - Content hashing for modification detection
+   ```
+
+5. **Confirm with user**:
+
+   If `$NONINTERACTIVE` is `true`, skip this confirmation and proceed directly to step 6.
+
+   Otherwise, use AskUserQuestion:
+   ```
+   question: "Ready to upgrade blueprint from v{current} to v3.4.0?"
+   options:
+     - "Yes, upgrade now" → proceed
+     - "Show detailed migration steps" → display migration document
+     - "Create backup first" → run git stash or backup then proceed
+     - "Cancel" → exit
+   ```
+
+6. **Load and execute migration document**:
+   - Read the appropriate migration document from `blueprint-migration` skill
+   - For v1.x → v2.0: Load `migrations/v1.x-to-v2.0.md`
+   - For v2.x → v3.0: Load `migrations/v2.x-to-v3.0.md`
+   - For v3.0 → v3.1: Load `migrations/v3.0-to-v3.1.md`
+   - For v3.1 → v3.2: Execute inline step 3a above
+   - For v3.2 → v3.3: Load `migrations/v3.2-to-v3.3.md` (see step 3b summary)
+   - For v3.3 → v3.4: Load `migrations/v3.3-to-v3.4.md` (see step 3c summary)
+   - Execute each step with user confirmation for destructive operations
+
+7. **v1.x → v2.0 migration overview** (from migration document):
+
+   a. **Create docs/ structure**:
+      ```bash
+      mkdir -p docs/prds docs/adrs docs/prps
+      ```
+
+   b. **Move documentation to docs/**:
+      - `.claude/blueprints/prds/*` → `docs/prds/`
+      - `.claude/blueprints/adrs/*` → `docs/adrs/`
+      - `.claude/blueprints/prps/*` → `docs/prps/`
+
+   c. **Create generated/ structure**:
+      ```bash
+      mkdir -p .claude/blueprints/generated/skills
+      mkdir -p .claude/blueprints/generated/commands
+      ```
+
+   d. **Relocate generated content**:
+      - For each skill in `manifest.generated_artifacts.skills`:
+        - Hash current content
+        - If modified: offer to promote to `.claude/skills/` (custom layer)
+        - Otherwise: move to `.claude/blueprints/generated/skills/`
+
+   e. **Update manifest to v2.0.0 schema**:
+      - Add `generated` section with content tracking
+      - Add `custom_overrides` section
+      - Add `project.detected_stack` field
+      - Bump `format_version` to "2.0.0"
+
+   f. **Enable document detection option** (new in v2.1):
+
+      If `$NONINTERACTIVE` is `true`, skip the prompt and keep document detection disabled (treat as "No - Keep manual commands only").
+
+      Otherwise:
+      ```
+      Use AskUserQuestion:
+      question: "Would you like to enable automatic document detection? (New feature)"
+      options:
+        - label: "Yes - Detect PRD/ADR/PRP opportunities"
+          description: "Claude will prompt when conversations should become documents"
+        - label: "No - Keep manual commands only"
+          description: "Continue using explicit /blueprint: commands"
+      ```
+
+      If enabled:
+      - Set `has_document_detection: true` in manifest
+      - If modular rules enabled, copy `document-management-rule.md` template to `.claude/rules/document-management.md`
+
+   g. **Migrate root documentation** (if any found):
+      ```bash
+      # Find documentation files in root (excluding standard files)
+      fd -d 1 -e md . | grep -viE '^\./(README|CHANGELOG|CONTRIBUTING|LICENSE|CODE_OF_CONDUCT|SECURITY)'
+      ```
+
+      If documentation files found (e.g., REQUIREMENTS.md, ARCHITECTURE.md, DESIGN.md):
+
+      If `$NONINTERACTIVE` is `true`, skip the prompt and leave root documentation in place (treat as "No, leave in root").
+
+      Otherwise:
+      ```
+      Use AskUserQuestion:
+      question: "Found documentation files in root: {file_list}. Would you like to migrate them to docs/?"
+      options:
+        - label: "Yes, migrate to docs/"
+          description: "Move to appropriate docs/ subdirectory"
+        - label: "No, leave in root"
+          description: "Keep files in current location"
+      ```
+
+      If "Yes" selected:
+      - Analyze each file to determine document type
+      - Move to appropriate `docs/` subdirectory
+      - Record migration in upgrade_history
+
+8. **v2.x → v3.0 migration overview** (from migration document):
+
+   a. **Create docs/blueprint/ structure**:
+      ```bash
+      mkdir -p docs/blueprint/work-orders
+      mkdir -p docs/blueprint/ai_docs
+      ```
+
+   b. **Move state files from .claude/blueprints/ to docs/blueprint/**:
+      ```bash
+      # Move manifest
+      mv .claude/blueprints/.manifest.json docs/blueprint/.manifest.json
+
+      # Move work overview if exists
+      [[ -f .claude/blueprints/work-overview.md ]] && \
+        mv .claude/blueprints/work-overview.md docs/blueprint/work-overview.md
+
+      # Move feature tracker if exists
+      [[ -f .claude/blueprints/feature-tracker.md ]] && \
+        mv .claude/blueprints/feature-tracker.md docs/blueprint/feature-tracker.md
+
+      # Move work orders if exist
+      [[ -d .claude/blueprints/work-orders ]] && \
+        mv .claude/blueprints/work-orders/* docs/blueprint/work-orders/ 2>/dev/null
+
+      # Move ai_docs if exist
+      [[ -d .claude/blueprints/ai_docs ]] && \
+        mv .claude/blueprints/ai_docs/* docs/blueprint/ai_docs/ 2>/dev/null
+      ```
+
+   c. **Move generated skills to .claude/rules/**:
+      ```bash
+      # Create rules directory if needed
+      mkdir -p .claude/rules
+
+      # Move each generated skill to rules
+      for skill in .claude/blueprints/generated/skills/*.md; do
+        [[ -f "$skill" ]] || continue
+        name=$(basename "$skill" .md)
+        mv "$skill" ".claude/rules/${name}.md"
+      done
+      ```
+
+   d. **Copy README template to docs/blueprint/**:
+      ```bash
+      # Create docs/blueprint/README.md with overview of blueprint structure
+      cat > docs/blueprint/README.md << 'EOF'
+      # Blueprint Documentation
+
+      This directory contains the blueprint state and documentation for this project.
+
+      ## Contents
+
+      - `.manifest.json` - Blueprint configuration and generated content tracking
+      - `feature-tracker.json` - Feature tracking with tasks and progress
+      - `work-orders/` - Detailed work order documents
+      - `ai_docs/` - AI-generated documentation
+
+      ## Related Directories
+
+      - `docs/prds/` - Product Requirements Documents
+      - `docs/adrs/` - Architecture Decision Records
+      - `docs/prps/` - Problem Resolution Plans
+      - `.claude/rules/` - Generated rules (from blueprint)
+      EOF
+      ```
+
+   e. **Update manifest to v3.0.0 schema**:
+      - Change `generated.skills` to `generated.rules`
+      - Update all path references from `.claude/blueprints/` to `docs/blueprint/`
+      - Bump `format_version` to "3.0.0"
+
+   f. **Remove old .claude/blueprints/ directory**:
+      ```bash
+      # Verify all content has been moved
+      if [[ -d .claude/blueprints ]]; then
+        # Remove empty directories
+        rm -rf .claude/blueprints/generated
+        rm -rf .claude/blueprints/work-orders
+        rm -rf .claude/blueprints/ai_docs
+        # Remove the blueprints directory if empty
+        rmdir .claude/blueprints 2>/dev/null || \
+          echo "Warning: .claude/blueprints/ not empty, manual cleanup may be needed"
+      fi
+      ```
+
+9. **Update manifest** (v3.0.0 schema): write the manifest using the v3.0.0 schema template in [REFERENCE.md](REFERENCE.md). Preserve `created_at`, `project.name`, `project.type`, `structure.has_modular_rules`, and `structure.claude_md_mode` from the previous manifest. Set `updated_at` to now, `created_by.blueprint_plugin` to "3.0.0", and `generated.rules` from the migrated skills→rules conversion.
+
+10. **Report**: print the upgrade report using the standard template in [REFERENCE.md](REFERENCE.md), substituting `{previous}` with the prior `format_version` and `{n}` placeholders with the actual counts.
+
+11. **Prompt for next action**:
+
+   If `$NONINTERACTIVE` is `true`, skip this prompt entirely — print the report from step 10 and return. The batch caller owns follow-up (status checks, commits, etc.).
+
+   Otherwise, use AskUserQuestion:
+   ```
+   question: "Upgrade complete. What would you like to do next?"
+   options:
+     - label: "Check status (Recommended)"
+       description: "Run /blueprint:status to see updated configuration"
+     - label: "Regenerate rules from PRDs"
+       description: "Update generated rules with new tracking"
+     - label: "Update CLAUDE.md"
+       description: "Reflect new architecture in project docs"
+     - label: "Commit changes"
+       description: "Stage and commit the migration"
+   ```
+
+   **Based on selection:**
+   - "Check status" → Run `/blueprint:status`
+   - "Regenerate rules" → Run `/blueprint:generate-rules`
+   - "Update CLAUDE.md" → Run `/blueprint:claude-md`
+   - "Commit changes" → Run `/git:commit` with migration message
+
+**Post-migration assertion**:
+After any version bump, verify `format_version` actually changed to the target. This catches silent failures where `jq` operated on the wrong path and exited 0 with empty output:
+
+```bash
+actual=$(jq -r '.format_version' "$MANIFEST")
+if [[ "$actual" != "$target" ]]; then
+  echo "ERROR: Migration failed — format_version is '$actual', expected '$target'"
+  echo "Check that $MANIFEST was written correctly and rerun the migration step."
+  exit 1
+fi
+echo "Migration verified: format_version = $actual in $MANIFEST"
+```
+
+**Rollback**:
+If upgrade fails:
+- Check git status for changes made
+- Use `git checkout -- .claude/` and `git checkout -- docs/blueprint/` to restore original structure
+- Manually move content back if needed
+- Report specific failure point for debugging

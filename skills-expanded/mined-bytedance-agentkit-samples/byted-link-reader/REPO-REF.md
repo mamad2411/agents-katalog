@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bytedance/agentkit-samples (path: skills/byted-link-reader/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 使用内置 link_reader 函数读取网页、PDF或抖音视频内容。准备 URL 列表。运行脚本 `python scripts/link_reader.py "url1" "url2" ...`。

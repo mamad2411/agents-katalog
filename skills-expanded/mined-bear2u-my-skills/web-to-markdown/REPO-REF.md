@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bear2u/my-skills (path: .claude/skills/web-to-markdown/SKILL.md, branch: master)
+- mined: 2026-09-20
+- desc: 웹페이지 URL을 입력받아 마크다운 형태로 변환하여 저장합니다. 웹 문서를 로컬 마크다운 파일로 아카이빙하거나 정리할 때 유용합니다.

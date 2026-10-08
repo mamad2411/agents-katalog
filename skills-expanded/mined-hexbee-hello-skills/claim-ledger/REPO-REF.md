@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/hexbee/hello-skills (path: skills/claim-ledger/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 将研究与写作中的主张转成“Claim-Evidence-Boundary”可核验账本。用于在产出前强制补齐证据、反证、边界与可发布性判断，防止无依据断言并提升复用性。

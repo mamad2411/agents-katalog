@@ -1,0 +1,140 @@
+---
+name: powerpoint-automation
+description: Create and edit professional PowerPoint presentations from web articles, blog posts, existing PPTX files, or templates. Use when creating PPTX, converting articles to slides, translating presentations, editing open PowerPoint files, or doing COM Automation / RefURL / overflow review work. Triggers on PowerPoint, PPTX, パワポ, スライド作成, 記事をスライド化, COM自動化, RefURL.
+argument-hint: "変換したい URL・PPTX・テンプレート、または編集内容"
+user-invocable: true
+license: CC BY-NC-SA 4.0
+metadata:
+  author: yamapan (https://github.com/aktsmm)
+---
+
+# PowerPoint Automation
+
+AI-powered PPTX generation using Orchestrator-Workers pattern.
+
+## When to Use
+
+- Web 記事やブログをスライド化したいとき
+- 既存 PPTX を翻訳・再構成したいとき
+- 開いている PPTX を COM Automation で直接編集したいとき
+- テンプレートベースで PPTX を生成したいとき
+- content.json を SSOT にして、抽出・翻訳・生成・レビューを分離したいとき
+
+## Quick Start
+
+**From Web Article**
+
+```text
+Create a 15-slide presentation from: https://zenn.dev/example/article
+```
+
+**From Existing PPTX**
+
+```text
+Translate this presentation to Japanese: input/presentation.pptx
+```
+
+**Edit Open PPTX with COM**
+
+```text
+Edit the currently open PowerPoint deck with COM Automation and verify RefURL, notes, overflow, and hyperlinks.
+```
+
+## Workflow
+
+```text
+TRIAGE → PLAN → PREPARE_TEMPLATE → EXTRACT → TRANSLATE → BUILD → REVIEW → DONE
+```
+
+| Phase   | Main Actor                | Purpose                          |
+| ------- | ------------------------- | -------------------------------- |
+| EXTRACT | `extract_images.py`       | Source -> content.json           |
+| BUILD   | `create_from_template.py` | content.json -> PPTX             |
+| REVIEW  | PPTX Reviewer             | Overflow / consistency / quality |
+
+## Core Assets
+
+### Scripts
+
+Script selection, arguments, and validation entry points are defined in [references/SCRIPTS.md](references/SCRIPTS.md).
+
+### content.json
+
+`content.json` はこの skill の SSOT。抽出、翻訳、生成、レビューの間は常にこれを基準にする。
+
+```json
+{
+  "slides": [
+    { "type": "title", "title": "Title", "subtitle": "Sub" },
+    { "type": "content", "title": "Topic", "items": ["Point 1"] }
+  ]
+}
+```
+
+スキーマ詳細は [references/schemas/content.schema.json](references/schemas/content.schema.json) を参照。
+
+### Template
+
+標準テンプレートは `assets/template.pptx`。レイアウトや用途の詳細は template 側で管理し、main SKILL には最小限だけ残す。
+
+```bash
+python scripts/create_from_template.py assets/template.pptx content.json output.pptx --config assets/template_layouts.json
+```
+
+### Agents
+
+Role definitions and handoffs are in [references/AGENTS.md](references/AGENTS.md) and [references/agents/](references/agents/).
+
+## Operating Rules
+
+- **SSOT**: Derive content.json from the approved manuscript and retain stable topic/question-to-slide mappings. Reuse approval for unchanged content; changed claims or explicit scope constraints need confirmation. Compress related Q&A for the presentation format, not by dropping qualifying conditions.
+- **One phase, one purpose**: 抽出・翻訳・生成・レビューを混ぜない
+- **Fail fast**: 問題が出たら次フェーズへ無理に進めない
+- **Human in loop**: PLAN でユーザー確認を入れる
+- **Technical content is verified content**: Azure / Microsoft の内容は MCP で一次情報確認してから入れる
+- **PowerPoint lock first**: 開いている PPTX に対して python-pptx で上書きしない。読み取りも `PermissionError` になるので、`Copy-Item` で `%TEMP%` へ複製してから読む。`markitdown` の出力を PowerShell でパイプすると文字化けするため `-o` でファイルへ書かせる
+- **COM for open decks**: 開いている PPTX や既存 deck の直接編集は [references/instructions/com-automation.instructions.md](references/instructions/com-automation.instructions.md) を参照する
+- **Leave it open or close it fully**: COM 作業の最後は「ユーザーに見せるので開いたまま」か「完全に終了」かを必ず決める。中身のない PowerPoint ウィンドウを残さない。内部処理だけなら `Presentation.Close()` の後に `Presentations.Count` が 0 であることを確認して `Application.Quit()` し、それでも残る `POWERPNT` は **MainWindowTitle が空またはファイル名なしのプロセスだけ** 停止する（ファイル名入りはユーザー作業中）
+- **Know how the deck was opened**: `Invoke-Item` / エクスプローラー経由で開いた OneDrive・SharePoint 上の PPTX は `Presentation.FullName` が `https://` になり、**`SaveCopyAs` が %TEMP% へも書かずに例外なしで失敗する**。PDF 書き出し前に `FullName` を確認し、URL なら一度 Close してローカル絶対パスで `Presentations.Open()` し直してから `SaveAs($tmp, 32)` する
+- **Notes are distributable content**: Put presenter guidance in notes, but exclude material the recipient may not receive from the entire deliverable, including hidden slides, notes and embedded sources. Use a separate restricted file; NDA labels and hidden flags do not grant sharing permission.
+- **Audience context first**: Introduce each topic's purpose or trigger, current situation and unresolved concern before answers and next actions. Keep this context on main slides, not only in notes; reserve notes for permitted presenter guidance and implementation detail.
+- **Template means template**: ユーザー指定テンプレートがある場合、特に表紙はテンプレートの既存プレースホルダー/レイアウトを使い、上から別図形を重ねて隠さない
+- **Reusable template means slide master**: 「テンプレートを作る」と言われたら、表紙・本文・Ending の再利用デザインはスライド直置きではなく `SlideMaster.CustomLayouts` に置き、編集する文字は placeholder / text shape として残す
+- **PPTX asset metadata gate**: テンプレートや配布用 PPTX を skill asset / public artifact に含める前に `scripts/clean_template.py` で `docProps/custom.xml`（MIP ラベル、tenant、SharePoint フィールド、同僚メール）と `docProps/core.xml`（`cp:lastModifiedBy` / `cp:revision`）を sanitize する。PowerPoint は OneDrive / SharePoint から開くたびに MIP を再付与するので、check-in 直前に毎回実行する。詳細は [references/instructions/template.instructions.md](references/instructions/template.instructions.md#template-metadata-hygiene)。スライド本文検索だけで安全判定しない
+- **JP template font default**: 日本語の再利用テンプレートでは master/layout の既定和文フォントを `BIZ UDPゴシック` に揃え、生成スライド側の後処理で毎回フォントを直す設計にしない
+- **Rendered QA before handoff**: COM で開いている deck を直接 touch-up した後も、対象 deck から実レンダー画像を書き出し、重なり・フォントばらつき・表の可読性を個別 slide で確認する
+- **Review like a critic, not a generator**: ユーザーに見せる前に、レンダー画像で「スカスカ・文字が小さい・アイコンが雑・テンプレ踏襲不足・旧文言残り」を自分で探して直す。詳しくは [references/instructions/deck-iteration-review.instructions.md](references/instructions/deck-iteration-review.instructions.md)
+- **Media restore gate**: slide insertion/deletion/recovery after a user review must re-check expected slide count and embedded video/media positions before continuing
+- **Template base-slide gate**: テンプレートを複製して生成する場合は、保持する sample slide を先に明示し、不要な contact / next-event 等を構造編集で削除する。完了前に content manifest から導いた期待枚数、残存 placeholder、slide order を検証する
+- **Architecture diagrams use shapes**: ASCII art ではなく図形で組む
+- **Appendix URLs use Title - URL**: 参考 URL の表示形式は統一する
+- **Review content and visuals separately**: 生成後は見た目レビューだけでなく、公式情報との正確性レビュー、URL hyperlink 数、notes 数、placeholder/internal wording を確認する
+
+## Reference Map
+
+### Frequently Needed
+
+- [references/SCRIPTS.md](references/SCRIPTS.md)
+- [references/USE_CASES.md](references/USE_CASES.md)
+- [references/content-guidelines.md](references/content-guidelines.md)
+- [references/IMPLEMENTATION_PATTERNS.md](references/IMPLEMENTATION_PATTERNS.md)
+- [references/instructions/com-automation.instructions.md](references/instructions/com-automation.instructions.md)
+- [references/instructions/template.instructions.md](references/instructions/template.instructions.md)
+- [references/instructions/customer-facing-deck.instructions.md](references/instructions/customer-facing-deck.instructions.md)
+- [references/instructions/deck-iteration-review.instructions.md](references/instructions/deck-iteration-review.instructions.md)
+
+Use [Implementation Patterns](references/IMPLEMENTATION_PATTERNS.md) for shape diagrams, template XML, SlideMaster edits, visual QA, hyperlinks, RefURL, locks, centering, corruption recovery, and media embedding.
+
+## Done Criteria
+
+- source と goal が固定されている
+- content.json を正として各フェーズが分離されている
+- template / layout の前提が確認できている
+- technical content は一次情報確認が済んでいる
+- operational text がスライド面に出ていない
+- template 利用時は単調な同一レイアウト反復と余剰 placeholder を確認している
+- テンプレートの保持/削除対象を含む期待スライド数と実際の slide set が一致している
+- visual QA はレンダー画像で行い、修正後に該当スライドを再確認している
+- 表は本文 16pt 以上を原則とし、header は中央揃え・中段揃えで視認性を確認している
+- build 後に overflow / consistency / hyperlink をレビューできている
+

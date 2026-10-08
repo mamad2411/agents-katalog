@@ -1,0 +1,50 @@
+---
+name: first-time-setup
+description: >
+  Install and configure @northguild/gmt-oxlint with the simplest consumer DX,
+  prefer oxlint.config.ts + recommendedConfig import, and verify gmt-oxlint
+  diagnostics while preserving current repository lint behavior.
+metadata:
+  library_version: 1.2.0
+---
+
+# First-Time Setup
+
+Use this skill when a user wants to adopt `@northguild/gmt-oxlint`.
+
+## Setup flow
+
+1. Install dependencies
+- Install `@northguild/gmt-oxlint` and `oxlint` as dev dependencies.
+
+2. Configure Oxlint (prefer TypeScript config for best DX)
+- Prefer `oxlint.config.ts` with:
+  - `import { defineConfig } from "oxlint"`
+  - `import { recommendedConfig } from "@northguild/gmt-oxlint"`
+  - `export default defineConfig(recommendedConfig)`
+- If using `.oxlintrc.json`, add `@northguild/gmt-oxlint` to `jsPlugins` and use path-based extends:
+  - `extends: ["./node_modules/@northguild/gmt-oxlint/config/recommended.json"]`
+- Do not use named shared config specifiers in JSON `extends` (for example `@northguild/gmt-oxlint/recommended`); Oxlint currently resolves `extends` as file paths.
+- Keep unrelated existing rules unless the user requests consolidation.
+
+3. Verify enforcement
+- Run Oxlint and confirm Date API bans are reported.
+- Confirm rule IDs are emitted as `@northguild/gmt-oxlint/*`.
+- The recommended config also enables `no-date-library-imports`, which errors on `moment`,
+  `moment-timezone`, `dayjs`, `luxon`, `date-fns`, `date-fns-tz` and `spacetime` imports.
+  In a codebase that still uses them, warn the user before enabling it, or stage it (see
+  the CI enforcement skill) instead of disabling it.
+
+4. Optional aliasing
+- If the user wants shorter rule IDs, use object-form `jsPlugins` with `name` alias and configure rules under that alias.
+- Keep the default package-name namespace unless a shorter alias is explicitly requested.
+
+5. Suggest companion packages
+- If `@northguild/gmt` is missing, suggest installing it for safe Date-to-Temporal refactors.
+- If ESLint or Biome are already used, optionally suggest matching gmt lint packages for policy consistency.
+
+## Guardrails
+
+- Keep setup additive and low-risk.
+- Avoid broad config rewrites.
+- Respect that developers may use one linter package or combine multiple.

@@ -1,0 +1,50 @@
+---
+name: terradart-agent-verify
+description: Run TerraDart's shared agent gate (docs consistency, analyze, tests, wrap --check, example synth gates). Use before claiming maintainer or agent work is complete.
+---
+# TerraDart agent verification
+
+Policy and pitfalls live in [`AGENTS.md`](../../../AGENTS.md) at the repo root. This skill is the repeatable **done** workflow.
+
+## Contents
+
+- [When to use](#when-to-use)
+- [Workflow](#workflow)
+- [Optional flags](#optional-flags)
+- [Ad-hoc verification pitfalls](#ad-hoc-verification-pitfalls)
+- [What this does not cover](#what-this-does-not-cover)
+
+## When to use
+
+- Before opening or updating a PR.
+- After editing wrapper overrides, generated wrappers, examples, or agent docs.
+- After a cloud-agent session claims work is finished.
+
+## Workflow
+
+**Task progress:**
+
+- [ ] 1. From the **repository root**, run `dart pub get` if dependencies changed.
+- [ ] 2. Run `tool/agent_verify.sh` and confirm it exits 0 (`agent_verify: OK`). This includes `check_example_topology` (strict quickstarts only) and `render_coverage_page --check` (the website coverage pages must match a fresh render; on a stale page run `dart tool/render_coverage_page.dart` and commit it).
+- [ ] 3. `example_synth_gates` (inside step 2) already synths all quickstarts and runs `validate` per example with the managed OpenTofu `terradart engine --engine tofu` resolves (`terraform` on `PATH` for a provider the OpenTofu registry lacks — `tool/validate_engine.dart` — or when OpenTofu cannot be resolved); `check_docs_consistency` is the text-only docs check. The full gate then runs the three migrator gates on the same `tf-out` (`migrate_roundtrip_gates` over every quickstart, `migrate_fixture_gates`, `migrate_moved_gates`); `--quick` skips them, so a change to a curated factory or a quickstart needs the full gate before pushing.
+- [ ] 4. Report which commands ran in the PR or task summary.
+
+## Optional flags
+
+```bash
+tool/agent_verify.sh --maintainer   # add wrap-init / wrap-promote e2e tests
+```
+
+Use `--maintainer` when changing `wrap-init`, `wrap-promote`, or their tests.
+
+## Ad-hoc verification pitfalls
+
+- **Never trust `cmd | tail -1 && next`.** A pipeline's exit status is the last command's, so `tail`/`grep`/`head` swallow a failing `dart test` and the `&&` chain continues. Run the command bare and check `$?` directly, or use `agent_verify.sh` (it sets `pipefail`).
+- **Golden refresh is a copy, not an edit.** When `wrap` output legitimately changes: Level A factory goldens (`test/golden/*.factory.expected.dart.golden`) take the regenerated wrapper with the 3-line banner stripped (`tail -n +4`); wrap fixture goldens (`test/fixtures/wrap/expected_output/**`) take the file verbatim, banner included. Never hand-edit golden contents to make a diff pass.
+- **Migration manifests are generator output.** `packages/terradart_migrate/lib/src/manifest/*.g.dart` are written by the five `wrap --migrate-manifest` lanes (`agent_verify.sh` and CI `wrap_check` fail on a stale one) — regenerate with the lane, never edit. A shape the generator cannot derive is a `lint-override` finding (`migrate-shape-underivable`) to resolve in the override YAML or the debt ledger, not a manifest edit.
+
+## What this does not cover
+
+- Parallel CI `terraform_validate` matrix fan-out (local gate validates sequentially via `example_synth_gates.dart`).
+- Live GCP `terraform apply`.
+- Publishing to pub.dev or cutting release tags (maintainer manual steps after merge).

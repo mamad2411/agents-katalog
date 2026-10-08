@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/lc2panda/wps-skills (path: skills/wps-office/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: WPS Office 跨应用智能助手，统一管理 Excel、Word、PPT 三大应用，处理跨应用操作和通用功能

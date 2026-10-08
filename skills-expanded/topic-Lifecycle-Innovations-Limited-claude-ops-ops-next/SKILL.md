@@ -1,0 +1,217 @@
+---
+name: ops-next
+description: "OPS on-demand: This skill should be used when the user asks to \"what should I do next\", \"priority…"
+argument-hint: '[context]'
+allowed-tools:
+  - Bash
+  - Read
+  - Grep
+  - Glob
+  - Skill
+  - Agent
+  - TeamCreate
+  - SendMessage
+  - AskUserQuestion
+  - TaskCreate
+  - TaskUpdate
+  - WebFetch
+  - mcp__linear__list_issues
+  - mcp__claude_ai_Slack__slack_search_public_and_private
+effort: low
+maxTurns: 15
+---
+
+## Runtime Context
+
+Before advising, load:
+
+1. **Preferences**: `cat ${CLAUDE_PLUGIN_DATA_DIR:-$HOME/.claude/plugins/data/ops-ops-marketplace}/preferences.json` — read `owner`, `primary_project`, `default_channels`
+2. **Daemon health**: `cat ${CLAUDE_PLUGIN_DATA_DIR}/daemon-health.json` — flag any action_needed as priority
+3. **Ops memories**: Check `${CLAUDE_PLUGIN_DATA_DIR}/memories/topics_active.md` for ongoing work context
+4. **Home automation**: If `home_automation` is configured in `$PREFS_PATH`, probe Homey via `/ops:ops-home status` for active alarms before composing the priority stack.
+
+# OPS ► NEXT ACTION
+
+Load `ops-rules` before acting. Public repo (no personal data). Outbound: one draft → one approval → one send. If `AskUserQuestion` / `Workflow` are missing, follow Rule 10 in `ops-rules` (Hermes: numbered options / two-turn Telegram card; `delegate_task`).
+
+## CLI/API Reference
+
+### gh CLI (GitHub)
+
+| Command                                                                        | Usage                          | Output     |
+| ------------------------------------------------------------------------------ | ------------------------------ | ---------- |
+| `gh pr list --state open --json number,title,statusCheckRollup,reviewDecision` | Open PRs with CI/review status | JSON array |
+
+---
+
+## Agent Teams support
+
+If `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is set, use **Agent Teams** when gathering priority data in parallel. This enables:
+
+- Agents share context and can coordinate mid-flight
+- You can steer priorities in real-time
+- Agents report progress as they complete
+
+**Team setup** (only when flag is enabled):
+
+```
+TeamCreate("next-team")
+Agent(team_name="next-team", name="fires-checker", prompt="Check infra health and CI for production fires")
+Agent(team_name="next-team", name="comms-checker", prompt="Check unread messages across all channels")
+Agent(team_name="next-team", name="prs-checker", prompt="Find PRs ready to merge — CI green, reviews approved")
+Agent(team_name="next-team", name="sprint-checker", prompt="Check Linear sprint for highest-priority in-progress issues")
+```
+
+If the flag is NOT set, use standard fire-and-forget subagents.
+
+## Pre-gathered data
+
+### Infrastructure & fires
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-infra 2>/dev/null || echo '{"clusters":[]}'
+```
+
+### Git & PRs
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-prs 2>/dev/null || echo '[]'
+```
+
+### CI status
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-ci 2>/dev/null || echo '[]'
+```
+
+### Competitor alerts (last 24h)
+
+```!
+source "${CLAUDE_PLUGIN_ROOT}/scripts/lib/competitor/context.sh" 2>/dev/null \
+  && competitor_priority_items --top 3 --window-days 1 2>/dev/null \
+  || true
+```
+
+### Unread messages
+
+```!
+${CLAUDE_PLUGIN_ROOT}/bin/ops-unread 2>/dev/null || echo '{}'
+```
+
+### GSD active phases
+
+```!
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT}" . "${CLAUDE_PLUGIN_ROOT}/lib/registry-path.sh"
+for d in $(jq -r '.projects[] | select(.has_roadmap == true) | .path' "$REGISTRY" 2>/dev/null); do
+  expanded="${d/#\~/$HOME}"
+  if [ -f "$expanded/.planning/STATE.md" ]; then
+    alias=$(basename "$expanded")
+    cat "$expanded/.planning/STATE.md" 2>/dev/null | head -30
+    echo "---NEXT---"
+  fi
+done
+```
+
+---
+
+## Your task
+
+Apply the priority stack to all pre-gathered data:
+
+### Priority 1 — FIRES
+
+Check infra data for: unhealthy ECS tasks, stopped services, failed deployments.
+Check CI for: broken `main` or `dev` branches.
+If any fires exist → **recommend `/ops-fires` immediately**.
+
+### Priority 1.5 — HOME ALARMS (only if `home_automation` is configured in `$PREFS_PATH`)
+
+Probe `/ops:ops-home status` for active alarms.
+
+- Critical home alarms (smoke, water leak, security breach) → **top priority — recommend `/ops:ops-home alarm` immediately, above all other fires**.
+- Energy anomalies (current draw > 3× 7-day baseline) → near-top, surface before competitor alerts.
+- Routine home tasks (presence changes, flow failures) → low priority — fold into Priority 6 tail.
+
+If `home_automation` is NOT configured, skip this priority silently.
+
+### Priority 2 — COMPETITOR ALERTS
+
+Check the competitor alerts pre-gathered data (last 24h window).
+If `competitor_priority_items` returned lines (non-empty output):
+
+- Surface each as: `REACT: <competitor> <source> changed — see latest-<brand>.md`
+- Recommend the user open the latest report file (path from `competitor_context` → `by_brand.<brand>.latest_report`)
+- If high-severity alerts exist → **recommend addressing before comms**
+
+If the output is empty or the source block returned nothing, skip this priority silently.
+
+### Priority 3 — URGENT COMMS
+
+Check unread counts. If WhatsApp or email has unread messages from humans (not automated):
+
+- Estimate urgency from sender/preview if available
+- If urgent comms → **recommend `/ops-inbox [channel]`**
+
+### Priority 4 — READY-TO-MERGE PRs
+
+Check PRs for: CI green + no unresolved review comments + not draft.
+If any ready → **recommend reviewing that PR now**.
+Check: `gh pr list --state open --json number,title,statusCheckRollup,reviewDecision 2>/dev/null`
+
+### Priority 5 — LINEAR SPRINT
+
+Fetch current sprint issues: use `mcp__linear__list_issues` filtered to current cycle (use Linear GraphQL fallback for cycle queries if needed).
+Find highest-priority issue that is in progress or unstarted.
+
+### Priority 6 — GSD WORK
+
+From GSD state, find the highest revenue-impact active phase across all projects.
+Revenue weighting: the synced registry (`${OPS_DATA_DIR}/registry.json`, schema `name/path/remote_url/status/phase/branch`) carries no `revenue` or `priority` field. Rank by `status` (`active` > `paused` > `none`), then `last_commit_ts` (newest first), then `remaining_tasks` (fewest first). Any `priority`/`revenue` values live in `preferences.json` under `projects.<name>`, if set.
+
+---
+
+## Output format
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ OPS ► NEXT ACTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ TOP PRIORITY: [fires|comms|PR|sprint|gsd]
+ ▶ [specific action in one sentence]
+
+ WHY: [1-2 sentence rationale]
+
+──────────────────────────────────────────────────────
+ Full priority stack:
+ 1. [action] — [why] → [/skill or command]
+ 2. [action] — [why] → [/skill or command]
+ 3. [action] — [why] → [/skill or command]
+ 4. [action] — [why] → [/skill or command]
+ 5. [action] — [why] → [/skill or command]
+
+──────────────────────────────────────────────────────
+ a) Do #1 now
+ b) Do #2 now
+ c) Show me everything (/ops-go)
+ d) I'll decide — just show the briefing
+
+ → Pick or describe what you want
+──────────────────────────────────────────────────────
+```
+
+Use AskUserQuestion. When user selects an option, invoke the corresponding skill directly — don't describe it, do it.
+
+If `$ARGUMENTS` contains context (e.g., "focus on <project-alias>"), constrain the analysis to that context.
+
+---
+
+## Native tool usage
+
+### Tasks — action tracking
+
+After the user selects an action, use `TaskCreate` to track it. When routing to the corresponding skill, the task persists as a reminder of what the user chose to focus on.
+
+### WebFetch — enrichment fallback
+
+When pre-gathered data is stale or incomplete, use `WebFetch` to pull fresh data from APIs (Linear GraphQL, Sentry, GitHub) directly.

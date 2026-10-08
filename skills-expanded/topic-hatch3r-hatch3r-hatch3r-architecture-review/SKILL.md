@@ -1,0 +1,120 @@
+---
+id: hatch3r-architecture-review
+name: hatch3r-architecture-review
+type: skill
+description: Evaluates architectural decisions and produce ADRs following the project template. Use when making architectural decisions, evaluating trade-offs, or creating ADRs.
+tags: [review]
+quality_charter: agents/shared/quality-charter.md
+efficiency_patterns: agents/shared/efficiency-patterns.md
+cache_friendly: true
+---
+# Architecture Review Workflow
+
+## Quick Start
+
+```
+Task Progress:
+- [ ] Step 0: Detect ambiguity (P8 B1)
+- [ ] Step 1: Read existing ADRs and the template
+- [ ] Step 2: Define the decision context — problem, constraints, options
+- [ ] Step 3: Evaluate options — pros/cons, prototype if needed, check ADR constraints
+- [ ] Step 4: For external library docs and current best practices, follow the project's tooling hierarchy
+- [ ] Step 5: Write ADR following the template
+- [ ] Step 6: Update affected specs or docs to reference the new ADR
+```
+
+## Step 0 — Detect Ambiguity (P8 B1)
+
+Before any work, scan the invocation for unresolved questions in scope, intent, acceptance criteria, target environment, or irreversibility. If any are found, ask the user via the platform-native question tool per `agents/shared/user-question-protocol.md`. Do not proceed under silent assumption. Default path, not an exception. Triggers for THIS skill: problem framing (what decision needs to be made), constraint set (mandatory vs preferred), evaluation horizon (short-term vs long-term cost), supersedes which prior ADR, and ADR status target (PROPOSED for discussion vs ACCEPTED for binding decision).
+
+## Fan-out Discipline (P8 B2)
+
+Fan-out scales with task size; token cost never justifies serializing independent work (`rules/hatch3r-fan-out-discipline.md` P8 B2; `agents/shared/efficiency-patterns.md`). Emit `sub_agents_spawned: { count, rationale, task_structure }` in your output.
+
+## Step 1: Read Existing ADRs and Template
+
+- Read all ADRs in project docs to understand current architecture and constraints.
+- Read the ADR template (e.g., `docs/adr/0001_template.md` or equivalent).
+- Template sections: Status, Date, Decision Makers, Context, Decision, Alternatives Considered, Consequences, Compliance, Related.
+- Check if any existing ADR is superseded or conflicts with the proposed decision.
+- Read foundational ADRs for invariants.
+
+## Step 2: Define the Decision Context
+
+- **Problem:** What issue or opportunity motivates this decision?
+- **Constraints:** Technical (stack, performance budgets), organizational (timeline, team), regulatory (privacy, security).
+- **Options:** List 2–4 viable alternatives. Include "do nothing" or "status quo" if relevant.
+- **Stakeholders:** Who is affected? Who decides?
+
+Reference:
+
+- Performance budgets: project rules
+- Privacy/security invariants: project rules and specs
+- Data model: project documentation
+- Event model: project documentation
+
+## Step 3: Evaluate Options
+
+- For each option, list **pros** and **cons**.
+- Consider: complexity, maintainability, performance, security, cost, migration effort.
+- Prototype or spike if uncertainty is high — document findings.
+- Check against existing ADR constraints: does this align with core architecture?
+- Use a comparison table (as in the template):
+
+| Option | Pros | Cons |
+| ------ | ---- | ---- |
+| A      | ...  | ...  |
+| B      | ...  | ...  |
+
+## Step 4: External Research
+
+- For external library docs and current best practices, follow the project's tooling hierarchy.
+- **Issue/PR search** (check `platform` in `.hatch3r/hatch.json`): Search for related issues, prior discussions, or similar decisions in the repo:
+  - **GitHub:** Use **GitHub MCP** or `gh issue list --search "..."` / `gh pr list --search "..."`
+  - **Azure DevOps:** `az boards query --wiql "SELECT [System.Id] FROM WorkItems WHERE [System.Title] CONTAINS '...'"` or `az repos pr list`
+  - **GitLab:** `glab issue list --search "..."` / `glab mr list --search "..."`
+- **Context7 MCP:** Look up current API patterns for relevant libraries.
+- **Web search:** For novel problems, security advisories, or best practices.
+
+## Step 5: Write ADR
+
+Follow the project ADR template:
+
+- **Title:** `ADR-XXXX: Short descriptive title`
+- **Status:** `PROPOSED` (draft) or `ACCEPTED` (approved)
+- **Date:** YYYY-MM-DD
+- **Decision Makers:** Names/roles
+- **Context:** Problem, constraints, motivation
+- **Decision:** What we are doing
+- **Alternatives Considered:** Table with pros/cons
+- **Consequences:** Positive, negative, risks
+- **Compliance checklist:**
+  - [ ] Aligns with privacy/security specs
+  - [ ] Aligns with performance budgets
+  - [ ] Does not introduce new dependencies without justification
+- **Related:** Specs, issues, previous ADRs
+
+Save as `docs/adr/XXXX_short-title.md` (or project convention). Use next available number.
+
+## Step 6: Update Affected Docs
+
+- Add references to the new ADR in relevant specs (e.g., data model, event model, quality engineering).
+- Update ADR index if the project maintains one.
+- Link from related issues/work items or PRs/MRs on the platform.
+- If superseding an ADR, update the old ADR's Status to `SUPERSEDED by ADR-XXXX`.
+
+## Error Handling
+
+- **Conflicting ADRs discovered**: If an existing ADR contradicts the proposed decision, reference both ADRs and recommend superseding the older one with explicit justification.
+- **Insufficient context for trade-off evaluation**: If the codebase lacks enough information to evaluate an option, state the knowledge gap and recommend a time-boxed spike before finalizing the decision.
+- **Stakeholder disagreement on recommended option**: Document all positions with their rationale and escalate to the project lead with a clear recommendation and dissent summary.
+
+## Definition of Done
+
+- [ ] ADR written following project template
+- [ ] Options evaluated with pros/cons table
+- [ ] Tooling-hierarchy followed for external research where relevant
+- [ ] Compliance checklist completed
+- [ ] Affected specs or docs updated to reference the ADR
+- [ ] No privacy/security invariant violations
+- [ ] Performance budgets considered

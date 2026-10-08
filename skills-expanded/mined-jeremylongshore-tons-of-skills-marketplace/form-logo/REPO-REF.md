@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jeremylongshore/tons-of-skills-marketplace (path: plugins/ai-agency/tonone/skills/form-logo/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Form Logo

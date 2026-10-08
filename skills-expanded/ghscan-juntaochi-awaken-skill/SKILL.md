@@ -1,0 +1,27 @@
+# Thinking through the architecture choice before you pick
+
+The most useful move before you compare vector vs. graph vs. hybrid is to notice that the choice is not really between three database technologies — it is between three bets about where citation ground-truth lives, who bears the cost when it fails, and what your team can operate safely on day 90. Framed that way, a lot of the generic tradeoff tables stop mattering and two or three specific questions become load-bearing.
+
+## The surface framing is misleading
+
+"Vector vs. graph vs. hybrid" makes it feel like a pure retrieval-quality question. It isn't. Your query mix is genuinely bimodal — a drug-interaction lookup wants pointer-precise, claim-level attribution ("this paper, this sentence, this p-value"), while a conceptual spanning-question wants semantic recall across a neighborhood. Vector indices are shaped for the second and structurally weak on the first, because cosine-near is not semantically-same in medical text. The statements "Drug A interacts with Drug B" and "Drug A does not interact with Drug B" sit in the same embedding neighborhood; that is exactly the class of error your constraint rules out. Graphs are shaped for the first and weaker on the second, because multi-hop traversal assumes you have already extracted the entities and relations correctly — a non-trivial NLP problem on full-text papers. So the real question is not "which is better" but "which failure mode can you tolerate, detect, and correct."
+
+Worth sitting with: a library patron can ask "get me that exact book on warfarin dosing" *and* "what else is like this paper," and the Library of Congress answers both not by picking one index but by layering call numbers over subject keywords. Clinicians themselves reason both ways — differential diagnosis is graph traversal, literature search is similarity. When the cognitive task is bimodal, the right architecture usually is too. But that is an argument for hybrid *in principle*, which is different from hybrid *as your first system*.
+
+## The tension the "hybrid" answer tries to hide
+
+Hybrid is the seductive answer because it looks like it dissolves the tradeoff. It doesn't — it relocates it. The fusion layer (how you merge vector hits with graph traversals into a single ranked context window) becomes the new source of misattribution, and it is the layer your team has no production experience with. In a medical setting the scariest failure mode is not "we missed a relevant paper" but "we cited a real paper for a claim it does not actually make," and hybrid systems fail that way more often than single-index ones because the join logic silently assumes graph edges and vector neighborhoods describe the same claims. They often don't.
+
+Relatedly: your team has solid retrieval experience and zero graph-DB production experience. That is a hard constraint, not a soft one. An architecture your team cannot operate correctly at 2 a.m. is worse than a slightly-less-powerful architecture they can. Treating the team's capability curve as a design input (rather than a problem to overcome with grit) is the single thing that separates teams that ship safe medical RAG from teams that ship impressive demos.
+
+## Two questions worth answering before architecture
+
+Before picking, I would force the following to be explicit:
+
+*What does "accurate citation" actually mean to your consumers?* Pointer-accurate (right paper identified) is a very different engineering problem from claim-accurate (the cited paper genuinely supports the claim the generator made). Most medical-RAG incidents are claim-accuracy failures, not pointer failures, and claim accuracy is usually solved at a *verification layer downstream of retrieval*, not by the retrieval index itself. If that's your real requirement, the architecture question partially collapses: a strong vector-first system with a claim-grounding reranker may give you the accuracy profile you need without the graph-DB operational cost.
+
+*What is the cost asymmetry between the two query types?* If conceptual spanning-questions are nice-to-have and drug-interaction lookups are the hot path, the answer skews toward structure-first — but you can get structure without going full graph-DB (structured metadata, entity-linked chunks, claim-level indexing over a vector store). If the conceptual queries are the product's actual value, you need genuine multi-hop capability eventually, which probably does mean a graph layer *someday* — but "someday" and "day one" are different architectures.
+
+## What to hold in mind
+
+Keep these as live tensions rather than trying to resolve them: citation precision against conceptual recall; team competence now against architectural fit later; hybrid's coverage against hybrid's doubled failure surface. The pattern underneath is **bimodal-query-plus-asymmetric-cost with a team-capability gap disguised as an architecture choice** — and the elegant move, if there is one, is usually to start vector-first with a serious claim-verification layer, instrument heavily for the misattribution failure mode specifically, and treat graph capability as a capability you build deliberately over two quarters rather than a database you buy in week one. That isn't the "correct" answer — it's the answer that survives the inversion test (*if I were trying to fail at medical RAG, I would let a team learn a new database in production under clinical load*) and keeps the real tradeoff visible instead of hiding it in a fusion layer.

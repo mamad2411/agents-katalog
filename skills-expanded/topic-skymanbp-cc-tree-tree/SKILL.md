@@ -1,0 +1,273 @@
+---
+name: tree
+description: Universal radial-tree exploration engine — loads a preset, grounds a root, expands every node through 12 framing passes, derives each child in 12 evidence-bearing fields, scores it, and recurses on `advances` leaves until substantive convergence (or a user cap). Caps default to ∞; `defer / TODO / NEEDS-MORE-INFO` leaves are hard-banned. Use when the user wants the engine itself — a custom preset via `--preset <path>`, explicit control of a run, or "tree of thoughts" / 穷尽的树状探索 in general; for the four shipped use-cases prefer `/cc-tree:brainstorm`, `/cc-tree:attack`, `/cc-tree:design`, `/cc-tree:code-audit`, whose descriptions carry the per-use-case triggers.
+disable-model-invocation: false
+argument-hint: "<root> --preset <name|path> [--lang <tag|auto>] [--width N|∞] [--depth N|∞] [--rounds N|conv] [--max-branches N|∞] [--out <dir>] [--glossary <path>] [--field <name|path>] [--seed-from <primary.md>] [--no-grill] [--no-online] [--min-frameworks N] [--min-novelty-ratio R]"
+---
+
+# tree — universal radial-tree exploration engine
+
+> **What this skill is.** A single engine implementing recursive
+> radial-tree exploration (root → 12-framing expansion → per-node
+> 12-field derivation → score → recurse on high-verdict leaves →
+> terminate on **substantive convergence**). What varies between
+> use-cases (brainstorm vs critique vs design vs code-audit) is the
+> baseline recipe, node schema, scoring dimensions, and verdict
+> vocabulary — all parameterized via a **preset** file.
+
+> **What this skill is NOT.** Not a one-shot LLM call that returns a
+> bulleted list. Not a chat interface — once the §2.0 glossary grill
+> has settled terminology and the root is written, the engine runs to
+> convergence without further prompts (§F6).
+> Not bundled with a model — pure prompt-engineering on top of Claude
+> Code's existing model setting.
+
+The full engine specification lives in [`docs/ENGINE.md`](../../docs/ENGINE.md).
+This SKILL.md is a 7-step navigation guide; **Read `docs/ENGINE.md`
+before producing the first node** (the engine spec is what defines
+"valid" for everything you'll write).
+
+---
+
+## 1. Invocation
+
+```
+/cc-tree:tree <root> --preset <name|path> [flags]
+```
+
+**`<root>`** is preset-typed:
+- `brainstorm` preset → topic string, e.g. `"ways to detect dark-matter substructure"`
+- `attack` preset → file path (`.md` / `.tex` / etc.) or quoted argument-text
+- `design` preset → design-prompt string or `.md` file path
+- `code-audit` preset → file path or directory path
+
+**`--preset`** is required:
+- Built-in: `brainstorm`, `attack`, `design`, `code-audit` (resolve to
+  `presets/<name>.md` in this plugin)
+- Path: `./my-custom.md` (any .md file with the right frontmatter)
+
+### Common flags (apply across presets)
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--lang <tag\|auto>` | **en** | Output language for all localized prose (node statements, derivations, report narrative, warnings). Machine tokens — flag/command names, frontmatter & JSON keys, `root_kind` values, verdict labels, status tokens, filenames — always stay English. `<tag>` is a BCP-47-like code (`en`, `zh`, `zh-Hans`, `zh-Hant`, `fr-CA`); `zh` = Simplified Chinese, `zh-Hant` = Traditional. `auto` detects the dominant language of `<root>` and falls back to `en` for mixed / path-only / code-only input. Resolved **once before preset load**, recorded in run metadata (`language_request` / `output_language` / `language_source`), and never prompted mid-run. Full precedence, resume, and chain semantics: [`docs/ENGINE.md §1.0`](../../docs/ENGINE.md#10-output-language-resolution-and-schema-boundary). |
+| `--width N` | **∞** | Cap on final leaf count (the outer arc of the tree). `∞` / `inf` / unspecified all mean unlimited. |
+| `--depth N` | **∞** | Cap on tree depth from root. |
+| `--rounds N` | `conv` | Cap on expansion rounds. `conv` = no cap; terminate by §6 substantive convergence. |
+| `--max-branches N` | **∞** | Cap on new branches per node per round. **Floor is 12** because §3 requires all 12 framings to fire; this flag only raises the ceiling. |
+| `--out <dir>` | `tree-out/<UTCdate>__<slug>/` | Output directory. Per-preset commands override (e.g. `brainstorm-out/`). |
+| `--glossary <path>` | (preset-determined) | Path to a glossary / FACTS.md / glossary section in a dossier; used by §2.0 grill prelude. |
+| `--field <name\|path>` | (none) | Field profile for domain-aware reviewer weighting. `<name>` → `field-profiles/<name>.md` in this plugin; `<path>` → a literal file. Feeds §3.C / §3.D / §3.I / §3.J + the §3.X / §4 evidence bar. Missing profile → warn + continue (non-blocking). See [`docs/ENGINE.md` §2.2](../../docs/ENGINE.md#22-field-profile-optional---field-namepath). |
+| `--seed-from <primary.md>` | (none) | Seed the tree from a prior run's primary deliverable (`shortlist.md` / `options.md` / `confirmed.md`): each listed item enters as a depth-1 seed node and is re-expanded. The substrate for cross-preset chaining ([`docs/chaining.md`](../../docs/chaining.md)). Alias: `--from-prior`. |
+| `--no-grill` | off | Skip §2.0 glossary grill prelude. Marks root-node terms as `unverified`; §6 convergence adds a warning. |
+| `--no-online` | off | Disable `WebSearch` / `WebFetch`. Local + already-Read references only. |
+| `--min-frameworks N` | 12 | Minimum framing passes per node. **Floor is 12** (full §3.A–§3.L); flag exists for documentation, not relaxation. |
+| `--min-novelty-ratio R` | 0.15 | §6.1 condition 2 requires "last 2 rounds' high-verdict / total < R". |
+
+> Presets and their command wrappers may document additional
+> preset-specific flags (e.g. `attack`'s
+> `--focus <section|claim|equation>`); a flag documented by the active
+> preset or its wrapper is not "unknown" (`docs/ENGINE.md` §1.3).
+
+> Caps default to ∞ on purpose. The intended termination is §6
+> substantive convergence — see [`docs/ENGINE.md §6`](../../docs/ENGINE.md#6-6-convergence).
+> Caps are escape valves for quick exploration; when one trips, the
+> engine still drives every in-flight node to a complete state before
+> reporting `WIDTH_CAP_REACHED` / `DEPTH_CAP_REACHED` /
+> `ROUNDS_EXHAUSTED`.
+
+---
+
+## 2. Execution flow
+
+> **Required Reads at session start** (before producing the first node):
+> 1. The preset file (`presets/<name>.md` or `--preset <path>`) — full file.
+> 2. [`docs/ENGINE.md`](../../docs/ENGINE.md) — full file. This is the contract.
+> 3. [`docs/framings.md`](../../docs/framings.md) — the 12 framings with per-preset
+>    examples.
+> 4. If `--glossary <path>`: Read that glossary file in full.
+
+### Step 1 — Preset load
+
+Open the preset file. Extract from its YAML frontmatter:
+- `name`, `description`, `use-when` (informational)
+- `root_kind` — `topic | artifact | code | design-prompt`
+- `subject_label` — what each tree node is called (`idea`, `critique`,
+  `option`, `finding`, …)
+- `verdict_enum` — 4-tuple: `advances / kept / pruned / blocked`
+- `convergence_metric` — which verdict *role* counts toward the §6.1
+  condition-2 ratio.
+  It must be one of the four `verdict_enum` role keys verbatim
+  (`advances` / `kept` / `pruned` / `blocked`); alias spellings like
+  `novelty_ratio` are rejected by the validator. All four shipped
+  presets use `advances` ([`docs/presets.md`](../../docs/presets.md))
+- `score_dims` — list of 5 scoring dimensions (key + name + desc)
+- `node_schema` — list of 12 node-field names
+- `output_artifacts` — file names for the per-verdict final reports
+
+The preset body (below frontmatter) supplies:
+- §2 baseline recipe (what to Read / Grep / WebFetch to build the root)
+- Optional per-framing examples (§3.A–§3.L flavored for this preset)
+- Optional anti-pattern list specific to this preset
+
+### Step 2 — §2 baseline
+
+Follow the preset's baseline recipe. For all presets this includes:
+- §2.0 (unless `--no-grill`): glossary-grill prelude. Lock root-node
+  noun-phrases to the glossary if one was supplied; surface MISSING /
+  AMBIGUOUS / CONFLICT one question at a time per
+  [`docs/ENGINE.md §2.0`](../../docs/ENGINE.md#20-glossary-grill-prelude-mandatory-unless---no-grill).
+- §2.A or §2.B (preset-determined): build the root node from real
+  evidence (Read files, Grep symbols, WebFetch references). The root
+  must have the 5-8 fields the preset specifies, each with `file:line`
+  or URL evidence.
+
+Save the root to `<out>/tree.md` + `<out>/tree.json` before producing
+any framing branches.
+
+### Step 3 — §3 framing pass (12 passes per node)
+
+For each node (starting with root, then any high-verdict leaf in the
+next round):
+
+Run §3.A through §3.L, each producing **at least 1** new child branch.
+See [`docs/framings.md`](../../docs/framings.md) for the full prompt per
+framing, including domain-specific examples per preset.
+
+**Parallelize when fan-out ≥ 5** (always true for the root and hot
+leaves): dispatch the 12 framings across `Agent(Explore)` sub-agents per
+the mandatory protocol in
+[`docs/ENGINE.md` §8.1](../../docs/ENGINE.md#81-sub-agent-dispatch-mandatory-when-a-nodes-expected-fan-out--5).
+Running them sequentially at that fan-out is a defect. Deep marginal
+leaves (< 5 expected children) may run sequentially.
+
+§3.X (if `--no-online` is off): per node, do 1 round of `WebSearch` +
+`WebFetch`. **The query set is preset-determined** (brainstorm/design →
+prior art + tooling; attack → critiques / errata; code-audit → CVEs /
+advisories) — see [`docs/framings.md`](../../docs/framings.md) §3.X.
+
+### Step 4 — §4 per-branch 12-field derivation
+
+For each branch produced in §3, fill the preset's 12 node-field schema.
+Field requirements live in
+[`docs/ENGINE.md §4`](../../docs/ENGINE.md#4-4-per-node-derivation-12-field-schema).
+Hard rules:
+- No field may contain `应该 / 大概 / probably / maybe / 也许` — the
+  field is invalid and must be rewritten.
+- No field may contain `defer / future work / TODO / FIXME / 略 /
+  details omitted / 待定 / NEEDS-MORE-INFO`-style placeholders — the
+  node is forced to `INCOMPLETE_FORBIDDEN` and **must** be driven to
+  completion before counting.
+- Numerical claims require a one-shot `python (sympy/numpy)` sanity
+  check via `Bash` — output pasted into the field.
+- External references require `WebFetch` of the actual arXiv abs / DOI
+  / spec page; `WebSearch` snippets are not sufficient.
+
+Append the filled node to `tree.md` + `tree.json` immediately
+(incremental write — see §7 for crash-safety contract).
+
+### Step 5 — §5 scoring and verdict
+
+Score the node along the preset's 5 dimensions (each 0–3, integer).
+Sum = `score` (max 15). Map score → verdict via the preset's
+`verdict_enum` and the preset-specific rule (e.g. brainstorm:
+`score ≥ 11 ∧ no [NEEDS_VERIFICATION] → PROMISING`; attack:
+`score ≥ 11 ∧ artifact_defense empty → CONFIRMED`).
+
+Sibling merging (§5.4): any two siblings with cosine similarity ≥ 0.85
+on their idea / critique / option / finding statement → merge, keep
+the higher-scored one, tag the other `MERGED_INTO=<id>`.
+
+### Step 6 — §6 convergence check
+
+After every round, evaluate the 6 conditions in
+[`docs/ENGINE.md §6`](../../docs/ENGINE.md#6-6-convergence).
+All 6 must hold simultaneously to declare `CONVERGED`. If any
+user-specified `--width / --depth / --rounds` cap trips first, report
+the appropriate `*_CAP_REACHED` / `ROUNDS_EXHAUSTED` status, but **all
+leaves must be complete** before stopping.
+
+If neither convergence nor a cap-trip, pick the highest-verdict leaf
+that hasn't been re-expanded yet, run §3–§5 on it, and loop.
+
+### Step 7 — §7 final report
+
+When termination is declared, write the preset's `output_artifacts` to
+`<out>/`. For all presets this includes:
+- `tree.md` — full tree, human-readable
+- `tree.json` — full tree, machine-readable
+- The preset-specific primary deliverable (`shortlist.md`,
+  `confirmed.md`, `options.md`, `findings.md`)
+- The preset-specific secondary deliverables (`pending.md`,
+  `marginal.md`, `refuted.md`, …)
+
+Then emit a terminal-report block per
+[`docs/ENGINE.md#74-final-report`](../../docs/ENGINE.md#74-final-report).
+
+---
+
+## 3. Anti-patterns (see [`docs/ENGINE.md §9`](../../docs/ENGINE.md#9-anti-patterns-full-list) for the full list)
+
+The five that most reliably degrade output quality:
+
+1. ❌ **Pseudo-divergence.** Two branches that differ only in word
+   choice. Each branch must offer at least one of (a) a different
+   testable prediction, (b) a different failure mode, (c) a different
+   resource profile. Otherwise: merge.
+
+2. ❌ **Defer-as-output.** "This direction is promising but requires
+   detailed analysis beyond scope." Forbidden by §F8. The engine must
+   actually do the analysis (Read / WebFetch / Bash) or route to a
+   sibling via §3.E constraint-variation.
+
+3. ❌ **Cap-as-convergence.** Declaring `--width 20` reached → done.
+   §6 convergence is the *intended* termination; caps are escape
+   valves and trip ≠ converge.
+
+4. ❌ **Skipping §3.K.** "High-risk branches feel speculative, I'll
+   focus on safe ones." §F4 + §3.K force ≥ 1 fully-explored
+   high-risk branch per pass; absent it the pass is invalid.
+
+5. ❌ **WebSearch snippet → conclusion.** Snippets are search results,
+   not source-of-truth. Every external citation requires `WebFetch`
+   of the actual page; otherwise the field is invalid (rule 04 +
+   rule 01 from cc-enforcer, if installed).
+
+---
+
+## 4. Output contract
+
+```
+<out>/
+├── tree.md             # human-readable outline of every node
+├── tree.json           # machine-readable, full 12 fields per node
+├── glossary-anchors.md # §2.0 prelude output (unless --no-grill was set)
+├── <primary>.md        # preset's "advances" / top-recommendation file
+├── <secondary>.md*     # preset's "marginal / pending / refuted" files
+├── <per-item>.md*      # preset-specific per-item detail files, when the
+│                       #   preset's body declares them (design writes
+│                       #   option_<id>.md, the design→attack chain handoff)
+├── REPORT.md           # §7.4 final-report block (also echoed to stdout)
+└── nodes/
+    └── <id>.md         # spilled when a node's evidence > 100 lines
+```
+
+This is the same layout as [`docs/ENGINE.md` §7.2](../../docs/ENGINE.md#72-output-directory-layout);
+that section is authoritative if the two ever disagree.
+
+Each node lands the moment its 12 fields are filled (§7.1 incremental
+write contract). Restart from interruption: just re-invoke the same
+`/cc-tree:tree <root> --preset <name> --out <same-dir>` — the engine
+detects the existing tree and resumes from the highest-id leaf.
+
+---
+
+## 5. References
+
+- [`docs/ENGINE.md`](../../docs/ENGINE.md) — full engine spec (§0–§11;
+  §0–§9 bind a run, §10–§11 bind a preset author)
+- [`docs/framings.md`](../../docs/framings.md) — the 12 framings, per-preset examples
+- [`docs/presets.md`](../../docs/presets.md) — how to author your own preset
+- [`presets/`](../../presets/) — shipped presets
+- [`commands/`](../../commands/) — ergonomic slash-command wrappers
+- [`docs/EVALUATION.md`](../../docs/EVALUATION.md) — design rationale

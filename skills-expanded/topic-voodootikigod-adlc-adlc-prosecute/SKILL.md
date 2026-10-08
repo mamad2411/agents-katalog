@@ -1,0 +1,108 @@
+---
+name: adlc-prosecute
+description: Run the multi-lens P5 adversarial prosecution fan-out and record ADLC P5 review evidence and P6 acceptance packet workflows in Codex. Fans out five independent read-only lenses, dedupes findings, verifies each independently, and loops until dry before recording evidence.
+---
+
+ADLC_CODEX_SENTINEL_PROSECUTE_V1
+
+# ADLC Prosecute
+
+## The multi-lens prosecution fan-out (P5)
+
+Codex has no primitive identical to Claude Code's Task-tool subagent fan-out, so this
+skill instructs the *sequence* explicitly rather than claiming automatic parallel
+execution. Run it as a loop:
+
+1. **Fan out five independent lenses.** Invoke each of the following read-only agent
+   profiles against the change diff, one at a time, collecting each lens's JSON findings
+   array before moving to the next: `adlc-prosecutor-correctness`,
+   `adlc-prosecutor-security`, `adlc-prosecutor-contract`, `adlc-prosecutor-diff`,
+   `adlc-prosecutor-tests` (`plugins/adlc-codex/agents/adlc-prosecutor-*.toml`). Each
+   lens hunts one specific failure class only — do not let one lens's prompt bleed into
+   another's judgment.
+2. **Dedupe.** Combine all five lenses' findings and dedupe with `dedupeFindings` from
+   `lib/prosecutor.mjs` (re-exported, by reference, from `@adlc/core`), keeping the
+   highest-severity instance of each `findingKey`-identical finding.
+3. **Verify independently.** For each deduped finding, invoke
+   `adlc-prosecutor-verifier` once, with a fresh context and no memory of other
+   findings' verdicts. Its job is to try to refute the finding, not confirm it — default
+   to refuted on weak evidence. Collect `{ real, reason, repro }` per finding.
+4. **Decide survival.** A finding survives only if `survivesVerification` (strict
+   majority of valid `real: true` votes) says so. A finding with no valid vote survives
+   as an unverified blocker (fail closed) rather than being silently dropped.
+5. **Loop until dry.** If any finding survived this round, fix it, then repeat steps 1-4
+   against the updated diff. Use `shouldContinue` (`maxDry: 2`, the default) to decide
+   when to stop: two consecutive rounds with zero surviving findings ends the loop.
+
+This is the same fan-out → dedupe → independent-verify → loop-until-dry shape Claude
+Code's `prosecutor-{correctness,security,contract,diff,tests,verifier}` subagents
+implement — Codex reuses the identical pure orchestration logic
+(`findingKey`/`dedupeFindings`/`survivesVerification`/`shouldContinue`) from
+`@adlc/core` via `plugins/adlc-codex/lib/prosecutor.mjs`, driven by a skill-instructed
+sequential loop instead of a host-level fan-out primitive.
+
+## Record every surviving finding (the P5 → P7 bridge)
+
+As soon as a finding **survives** verification (step 4) — and before you fix it in
+step 5 — record it. Once you fix it the finding stops existing, and a finding that
+was never recorded cannot be clustered by `lesson-foundry` (P7), so the lifecycle
+stops compounding. Run this exactly once per surviving finding, at verification
+time (not deferred to the end):
+
+```
+adlc prosecute --record-finding \
+  --file <repo-relative path> \
+  --desc "<plain prose: the pattern, not this instance>" \
+  --category <correctness|security|contract|diff|tests> \
+  --severity <high|medium|low>
+```
+
+`--file` and `--desc` are required — the recorder fails closed rather than
+appending a junk entry. Write `--desc` as **plain prose describing the pattern**,
+with no quoted or backticked literals and no identifiers from this diff: `--desc`
+is the clustering key, so a description tied to one instance clusters with nothing.
+This is distinct from the `adlc prosecute --input` / `adlc run p5` evidence in
+"Recording evidence" below, which records **that** a prosecution ran; this records
+**what it found** — only the second one compounds.
+
+## Automatic Stop-time reminder
+
+A native Stop hook checks the session's changed files against the risk-tier
+categories (auth/trust-boundary, security-control deny-path, secrets,
+data-loss/destructive, schema-migration, CI/CD supply-chain) and, if any are
+touched with no recorded `adversarial-review` gate-manifest entry for the
+active ticket, surfaces an advisory nudge to run the loop above and record
+its evidence. This does not replace running the loop yourself — it is a
+safety net for the case where it was skipped.
+
+## Recording evidence
+
+Once the loop above is dry, capture the transcript and record the reviewer-produced
+evidence with `adlc prosecute`.
+The transcript must name the ticket and reviewed `git-worktree:<hash>` revision that P5
+records. Do not pass `--revision` in normal git worktrees; auto-resolved revisions keep
+P6 staleness protection active.
+The P5 input must also include `review_packet` with prompt path/hash, reviewed-input
+path/hash, and `clean_worktree` equal to the reviewed revision.
+
+For scoped P5 evidence:
+
+```sh
+adlc prosecute --input .adlc/p5-passes.json --ticket <ticket-id> --dir .adlc --json
+adlc run p5 --ticket <ticket-id> --dir .adlc --json
+```
+
+P6 strict mode requires P5 evidence:
+
+```sh
+adlc behavior-diff capture --config behavior.json --out .adlc/before.json
+adlc behavior-diff compare .adlc/before.json .adlc/after.json --json
+adlc accept --ticket <ticket-id> --packet .adlc/packet.json --before .adlc/before.json --after .adlc/after.json --dir .adlc --json
+adlc run p6 --ticket <ticket-id> --dir .adlc --json
+```
+
+The bundled docs fixture is static. Use it only with its fixture revision:
+
+```sh
+adlc prosecute --input docs/examples/p5-passes.json --ticket T1 --revision docs-example-revision --dir .adlc --json
+```

@@ -1,0 +1,265 @@
+---
+name: atdd-mutate
+description: >-
+  Use to add a third validation layer to the ATDD workflow — after acceptance
+  tests verify WHAT and unit tests verify HOW, mutation testing verifies the
+  tests actually catch bugs. Triggers — "/mutate", "/kill-mutants", "run
+  mutation testing", "mutate my code", "kill mutants", "check test quality",
+  "find surviving mutants", "run stryker", "run mutmut", "run pitest",
+  "are my tests catching bugs".
+---
+
+# Mutation Testing
+
+Add a third validation layer to the ATDD two-stream testing approach.
+Acceptance tests verify WHAT, unit tests verify HOW, mutation testing
+verifies that the tests **actually catch bugs**.
+
+## Core Concept
+
+Mutation testing introduces deliberate bugs (mutants) into source code,
+then runs the test suite. If tests fail, the mutant is **killed** (good).
+If tests pass despite the bug, the mutant **survives** (test gap found).
+
+```
+Source code → introduce mutation → run tests
+                                     ├── tests FAIL → mutant killed ✓
+                                     └── tests PASS → mutant survived ✗
+```
+
+A project with 100% code coverage can still have a 60% mutation score —
+meaning 40% of introduced bugs go undetected by the test suite.
+
+## When to Use
+
+Run mutation testing **after both test streams are green**:
+
+1. Acceptance tests pass (WHAT is correct)
+2. Unit tests pass (HOW is correct)
+3. **Mutation testing** — verify tests actually detect regressions
+
+This is Phase 6 in the team-based ATDD workflow, or a standalone
+quality check at any point during development.
+
+## Approach: Custom Mutation Tool (Preferred)
+
+The preferred approach is to **build a custom mutation tool** for the
+project. This follows the methodology Uncle Bob developed for
+[empire-2025](https://github.com/unclebob/empire-2025/blob/master/docs/plans/2026-02-21-mutation-testing.md)
+— a project-specific tool that walks the AST/source tree, applies one
+mutation at a time, runs targeted tests, and reports survivors.
+
+### Why Custom is Preferred
+
+- **Tight integration** with the project's test runner and source structure
+- **Targeted execution** — run only the tests affected by each mutation
+- **Language-agnostic** — works for any language, including those without
+  established mutation frameworks
+- **No external dependencies** — the tool lives in the project
+- **AST-level precision** — understands the language's constructs natively
+
+### Architecture (4 modules)
+
+1. **Mutations** — rules table (e.g., `+` → `-`, `true` → `false`,
+   `>=` → `>`) plus matching logic that walks the AST/form tree
+2. **Runner** — source-to-test mapping, test execution, pass/fail capture
+3. **Core** — orchestration: read source → discover sites → apply one
+   at a time → run tests → restore original → report
+4. **Hashing/Selection** — hash each function (AST-level) and its covering
+   tests; call `dae_mutmap.py` to mutate only changed functions and to update
+   the manifest after the run. See the Differential Mutation Testing section.
+
+### Core Mutation Categories
+
+| Category | Examples |
+|----------|----------|
+| Arithmetic | `+` ↔ `-`, `*` ↔ `/`, `++` ↔ `--` |
+| Comparison | `>` ↔ `>=`, `<` ↔ `<=` |
+| Equality | `==` ↔ `!=` |
+| Boolean | `true` ↔ `false`, `&&` ↔ `||` |
+| Conditional | negate conditions, swap if/if-not |
+| Constant | `0` ↔ `1`, `""` ↔ `"mutant"` |
+| Return value | return `true` → return `false` |
+| Void method | remove method call entirely |
+
+For the full architecture and detailed reference, see
+`references/frameworks.md`.
+
+## Alternative: Existing Frameworks
+
+When speed of setup is more important than tight integration, use an
+established mutation framework as a secondary option:
+
+| Language | Framework |
+|----------|-----------|
+| JavaScript/TypeScript | [Stryker](https://stryker-mutator.io/) |
+| Python | [mutmut](https://github.com/boxed/mutmut) |
+| Java/JVM | [PIT (pitest)](https://pitest.org/) |
+| C# | [Stryker.NET](https://stryker-mutator.io/) |
+| Rust | [cargo-mutants](https://github.com/sourcefrog/cargo-mutants) |
+| Go | [go-mutesting](https://github.com/zimmski/go-mutesting) |
+| Ruby | [mutant](https://github.com/mbj/mutant) |
+| Scala | [Stryker4s](https://stryker-mutator.io/) |
+
+For install commands, configuration, and CLI reference, see
+`references/frameworks.md`.
+
+## Differential Mutation Testing
+
+Mutation testing is slow — re-running it after a small change re-mutates every
+function. **Differential mutation testing** re-mutates only the functions whose
+code or covering tests changed, reusing cached results for the rest.
+
+- **Custom-tool path** — the Hashing/Selection module hashes each function and
+  its covering tests and calls `dae_mutmap.py` (`select` before the run,
+  `update` after). Results live in a **committed** `mutation-manifest.json`
+  beside the tool, so the saving reaches CI and every clone. A function is
+  re-mutated when its code, its covering tests, or the mutation operator set
+  changed. See `${CLAUDE_PLUGIN_ROOT}/references/differential-mutation.md`.
+- **Framework path** — Stryker (`--incremental`), PIT (`withHistory`), and
+  mutmut have native incremental modes; enable the framework's incremental flag
+  and commit its history file. Do not build a separate manifest for the
+  framework path.
+
+## Workflow
+
+Before Step 1, create one TodoWrite todo per step of this workflow (Steps 1–6),
+all at once — the full list up front, as a roadmap. Flip each todo to
+`in_progress` / `completed` as you go. See
+`${CLAUDE_PLUGIN_ROOT}/references/progress-indicator.md`.
+
+### Step 1: Verify Prerequisites
+
+Before running mutation testing, confirm:
+
+- Both test streams are green (acceptance + unit)
+- The project has meaningful unit tests (mutation testing runs against unit tests)
+- No uncommitted changes (mutations modify source files temporarily)
+
+**Introversion pre-pass (recommended).** If the `engineer` plugin is installed,
+run its `dae_introvert.py <root>` first — a cheap static scan that flags tests
+which can pass without asserting on SUT output (no assertion, or every assertion
+nested in a conditional/loop/try). These are guaranteed-weak tests; fixing them
+before mutation makes the run cheaper and the suite stronger, and the
+`conditional-assertion` class is caught even when no mutant happens to exercise
+the bypassed path. A configured `manifest.introversion.backend` (e.g. a
+`deintroverter` that backward-slices each assertion to the SUT) does the deeper
+data-flow classification; absent one, a built-in Python-AST fallback covers the
+cheap cases. A test flagged introverted **and** carrying a surviving mutant is a
+high-confidence vacuous test — prioritise it in Step 4.
+
+### Step 2: Set Up Mutation Tool
+
+If no mutation tool is configured:
+
+1. Detect the project language from source files and build config
+2. **Preferred:** Build a custom mutation tool following the 4-module
+   architecture (mutations, runner, core, hashing/selection). Use TDD to build
+   the tool itself.
+3. **Alternative:** Install an existing framework if rapid setup is needed
+4. Configure to target source directories and exclude test/spec/generated files
+5. Exclude `.build/` (generated tests and IR) and the `acceptance/` pipeline code from mutation
+6. Enable differential mutation testing — the custom tool's hashing/selection
+   module, or the framework's native incremental flag (see the Differential
+   Mutation Testing section)
+
+**Important:** Configure mutation testing to target **source code only**.
+Never mutate test files, spec files, or generated pipeline code.
+
+### Step 3: Run Mutations
+
+On the custom-tool path, run `dae_mutmap.py select` first and mutate only the
+functions it returns — or all of them when it returns `ALL`. On the framework
+path, the incremental flag handles this. Then execute and collect results:
+
+- Total mutants generated
+- Mutants killed (tests caught the bug)
+- Mutants survived (test gap)
+- Mutation score (killed / total × 100)
+
+### Step 4: Analyze Survivors
+
+For each surviving mutant:
+
+1. Read the mutation — what was changed? (e.g., `>=` → `>`, removed function call)
+2. Identify which behavior is unguarded
+3. Determine whether this represents a real test gap or an equivalent mutant
+
+**Equivalent mutants** are mutations that don't change observable behavior
+(e.g., changing `x = x + 0`). These can be ignored.
+
+### Step 5: Kill Surviving Mutants
+
+For each real survivor:
+
+1. Write a new unit test that specifically targets the unguarded behavior
+2. Run the test to confirm it fails against the mutant
+3. Run the full test suite to confirm it passes against the original code
+4. Re-run mutation testing to confirm the kill
+
+### Step 6: Report
+
+On the custom-tool path, run `dae_mutmap.py update` to refresh
+`mutation-manifest.json`. The report combines this run's fresh results with the
+manifest's cached entries for unchanged functions — mark the cached ones
+("unchanged since `last_mutated`"). Present a summary:
+
+```
+Mutation Testing Report
+═══════════════════════
+Score:     87% → 95% (after killing survivors)
+Killed:    190 / 200
+Survived:  10 → 5 (5 equivalent mutants ignored)
+New tests: 5 unit tests added
+
+Remaining survivors (equivalent mutants):
+- src/utils.js:42 — changed `x + 0` to `x + 1` (no-op mutation)
+- ...
+```
+
+## Mutation Score Targets
+
+| Score | Assessment |
+|-------|-----------|
+| 90%+  | Strong test suite — minor gaps only |
+| 70-89% | Moderate — meaningful gaps to address |
+| < 70% | Weak — significant untested behavior |
+
+A 100% mutation score is not always practical or necessary. Focus on
+killing mutants that represent real behavioral gaps, not chasing
+equivalent mutants.
+
+## Integration with ATDD Workflow
+
+Mutation testing extends the existing two-stream approach:
+
+```
+1. Write specs (WHAT)           ← acceptance tests
+2. Implement with TDD (HOW)     ← unit tests
+3. Verify test quality (REAL?)  ← mutation testing
+```
+
+When using the `atdd-team` skill, mutation testing is part of Phase 6
+(Verify & Harden), run by the **architect** — an agent whose `agent_id`
+is independent of the implementer and the refiner.
+
+## Anti-Patterns
+
+### "Let me mutate before tests are green"
+No. Fix failing tests first. Mutation testing assumes a green baseline.
+
+### "100% mutation score or nothing"
+Not practical. Equivalent mutants inflate the denominator. Aim for 90%+
+and document the equivalent mutants that remain.
+
+### "Mutate everything including generated code"
+Never mutate generated test files or the acceptance pipeline.
+Only mutate source code under development.
+
+## Additional Resources
+
+### Reference Files
+
+For detailed framework setup and configuration:
+- **`references/frameworks.md`** — Installation, configuration, and CLI
+  reference for each supported mutation testing framework

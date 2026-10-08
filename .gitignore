@@ -1,17 +1,7 @@
-# === Arsip besar (jangan masuk git) ===
-skills-expanded/
-repo-refs/
-_symlink-farm-archive/
-
-# === DB & generated besar (bisa dibangun ulang dengan build_skills_index.py) ===
-skills-index.db
-SKILLS-AVAILABLE.md
-SKILLS-ALL-PATHS.md
-SKILLS-SKILLSH-DIRECTORY.md
-SKILLS-AIHEro-DIRECTORY.md
-skills-index.json
-.skill-lock.json
-.symlink-manifest.json
+# === Katalog skill: JANGAN di-ignore lagi (2026-10-08, permintaan user) ===
+# skills-expanded/, repo-refs/, skills-index.db, SKILLS-*.md SEMUA ikut git
+# supaya ekstrak/clone katalog 100k lengkap. (Sebelumnya di-ignore → cuma 3.500
+# skill yang kebawa.) Repo ini lokal tanpa remote — aman.
 
 # === Lock & state runtime ===
 *.lock
@@ -35,7 +25,6 @@ __pycache__/
 
 # === Payload scraping besar (STYLE-*.md ratusan KB tiap file) ===
 STYLE-*.md
-SKILLS-AVAILABLE.md
 
 # === Zip besar di folder ini (kalau ada) ===
 *.zip

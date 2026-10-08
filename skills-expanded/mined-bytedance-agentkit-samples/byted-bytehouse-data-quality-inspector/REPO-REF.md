@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/bytedance/agentkit-samples (path: skills/byted-bytehouse-data-quality-inspector/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: ByteHouse 数据质量检查工具。当用户提供集群连接信息、数据库名和表名，需要检查排序键、主键和分区键所使用的列的空值、零值情况，是否存在异常分布，以及排序键、主键的重复情况时，使用此技能。适用于 "数据质量检查"、"排序键 / 主键 / 分区键分析"、"空值分析"、"零值分析"、"重复键检查"、"Top 分布" 等诉求。

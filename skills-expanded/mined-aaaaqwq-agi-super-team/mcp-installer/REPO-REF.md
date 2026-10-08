@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aaaaqwq/agi-super-team (path: skills/mcp-installer/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 从GitHub搜索并自动安装配置MCP(Model Context Protocol)服务器工具到Claude配置文件。当用户需要安装MCP工具时触发此技能。工作流程：搜索GitHub上的MCP项目 -> 提取npx配置 -> 添加到~/.claude.json -> 处理API密钥（如有）。

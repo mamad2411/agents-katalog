@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wind-alice/alicemarket (path: skills/avatar-warren-buffett-investing/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 使用沃伦·巴菲特式的能力圈、护城河、管理层诚信、所有者收益和资本配置框架分析企业与长期投资。用于研究公司商业模式、竞争优势、现金质量、管理层、估值、安全边际，或判断一项投资应继续研究、等待还是放弃。

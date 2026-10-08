@@ -1,0 +1,149 @@
+---
+name: flux-improve
+description: Analyze environment and recommend workflow optimizations (MCPs, plugins, skills, CLI tools, patterns). Use when user wants to discover and install development workflow improvements. Triggers on literal `/flux:improve` and requests like "find me tools for X", "what MCP should I use", or "optimize my workflow".
+user-invocable: true
+---
+
+# Flux Improve
+
+Analyze user's environment and recommend workflow optimizations from a curated database.
+
+## Overview
+
+This skill:
+1. Shows privacy notice and gets consent
+2. **Asks for optional pain point description** (dramatically improves accuracy)
+3. Analyzes local environment (repo structure, MCPs, plugins, configs)
+4. Optionally analyzes session history for pain points (with consent)
+5. Fetches recommendations from `nairon-ai/flux-recommendations`
+6. Uses AI to match relevant recommendations to user's context
+7. Presents a behavioral breakdown (frequent patterns + upgrade opportunities)
+8. Presents recommendations with impact ranking
+9. Handles installation and verification
+
+Behavioral breakdown includes:
+- What you do most frequently
+- What should become skills (reusable workflows)
+- What should become plugins (standalone tools)
+- What should become agents (autonomous subagents)
+- What belongs in `AGENTS.md` (project-level instructions)
+
+## Session Phase Tracking
+
+On entry, set the session phase:
+```bash
+PLUGIN_ROOT="${DROID_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ ! -d "$PLUGIN_ROOT/scripts" ] && PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/nairon-flux/flux/*/ 2>/dev/null | head -1)
+FLUXCTL="${PLUGIN_ROOT}/scripts/fluxctl"
+$FLUXCTL session-phase set improve
+```
+On completion, reset:
+```bash
+$FLUXCTL session-phase set idle
+```
+
+## User Context (Optional but Powerful)
+
+After consent, ask users to describe frustrations in a few words. Even brief context like "fighting CSS" or "keeps forgetting things" **dramatically improves** recommendation accuracy.
+
+The matching engine maps common phrases to friction signals:
+- "CSS battles" → css_issues, ui_issues
+- "keeps forgetting" → context_forgotten
+- "wrong API docs" → api_hallucination, outdated_docs
+- "slow builds" → slow_builds
+- "missed edge cases" → shallow_answers
+
+This is optional - automated session analysis works alone, but user context makes it much better.
+
+## Input
+
+Full request: $ARGUMENTS
+
+### Natural Language Routing
+
+Users don't need to remember flags. These natural language inputs route to `/flux:improve` automatically:
+
+| User says | Maps to |
+|-----------|---------|
+| "improve my CSS workflow" | `--category=mcp` + `USER_CONTEXT="CSS workflow"` |
+| "find tools for testing" | `USER_CONTEXT="testing"` |
+| "help me with slow builds" | `USER_CONTEXT="slow builds"` |
+| "optimize my workflow" | Default analysis |
+| "what tools should I install" | Default analysis |
+| "find a better linter" | `--category=cli` + `USER_CONTEXT="linter"` |
+| "improve X" (any topic) | `USER_CONTEXT="X"` — skips Step 2b pain point question |
+
+When natural language is detected (no `--` flags and input contains a topic), extract the topic as `USER_CONTEXT` and skip the Step 2b pain point question — the user already told you what they care about.
+
+### Flags
+
+- `--skip-sessions` - Skip session history analysis
+- `--category=<cat>` - Filter to specific category (mcp, cli, plugin, skill, vscode, pattern)
+- `--list` - Just list all available recommendations without analysis
+- `--score` - Just show workflow score without recommendations
+- `--discover` - Optional live discovery from X/Twitter (Exa-first, BYOK fallback)
+- `--explain` - Include detailed explainability (signals, gaps, and matching rationale)
+
+## Workflow
+
+Follow [workflow.md](workflow.md) exactly.
+
+## Key Principles
+
+1. **Privacy first** - Local by default. `--discover` is optional and sends search queries to Exa/Twitter APIs.
+2. **Consent required** - Use `mcp_question` to get explicit consent before analyzing session history.
+3. **Non-blocking** - User can skip any step or recommendation.
+4. **Verification** - Every installation is verified before marking complete.
+5. **Rollback ready** - Snapshot configs before any changes.
+
+## Session Analysis Consent
+
+Before reading any legacy session files from `~/.claude/projects/`, you MUST:
+
+1. Display the privacy notice (what data is analyzed)
+2. Use `mcp_question` tool to ask for consent
+3. Only proceed with session analysis if user explicitly consents
+
+If user passes `--skip-sessions`, skip the consent question entirely.
+
+## Recommendations Database
+
+Fetched from: `https://github.com/Nairon-AI/flux-recommendations`
+
+Categories:
+- `mcps/` - Model Context Protocol servers
+- `plugins/` - legacy plugin installs and compatibility layers
+- `skills/` - Standalone skills
+- `cli-tools/` - Development CLI tools
+- `vscode-extensions/` - VS Code extensions
+- `workflow-patterns/` - Best practices (not tools)
+
+## Gotchas
+
+- Session analysis is opt-in unless the user already enabled persistent consent. Do not silently mine history when consent is required.
+- Recommendations are optional improvements, not mandatory setup. Never auto-install tools just because they match a friction signal.
+- Match friction before suggesting tools. A shiny recommendation with no evidenced pain point is noise.
+
+---
+
+## Update Check (End of Command)
+
+**ALWAYS run at the very end of /flux:improve execution:**
+
+```bash
+PLUGIN_ROOT="${DROID_PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+[ ! -d "$PLUGIN_ROOT/scripts" ] && PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/nairon-flux/flux/*/ 2>/dev/null | head -1)
+UPDATE_JSON=$("$PLUGIN_ROOT/scripts/version-check.sh" 2>/dev/null || echo '{"update_available":false}')
+UPDATE_AVAILABLE=$(echo "$UPDATE_JSON" | jq -r '.update_available')
+LOCAL_VER=$(echo "$UPDATE_JSON" | jq -r '.local_version')
+REMOTE_VER=$(echo "$UPDATE_JSON" | jq -r '.remote_version')
+```
+
+**If update available**, append to output:
+
+```
+---
+Flux update available: v${LOCAL_VER} → v${REMOTE_VER}
+Update Flux from the same source you installed it from, then restart your agent session.
+---
+```

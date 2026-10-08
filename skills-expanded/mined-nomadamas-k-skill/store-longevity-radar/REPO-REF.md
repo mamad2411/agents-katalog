@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/nomadamas/k-skill (path: store-longevity-radar/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 소상공인시장진흥공단 상가(상권)정보 공개파일(무인증)로 업종·상호 키워드에 맞는 전국 점포 전수를 뽑고, 과거 스냅샷과 상호+좌표 매칭해 'N년 전에도 존재했고 지금도 영업 중'인 장수 점포 리스트를 추출한다. 사업자등록번호 없이 상호 기준이며 개업일이 아닌 최초 관측 시점 하한을 제공한다.

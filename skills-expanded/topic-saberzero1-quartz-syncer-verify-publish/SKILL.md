@@ -1,0 +1,139 @@
+---
+name: verify-publish
+description: End-to-end publish verification — refresh status, publish files, verify the result, and confirm status changes via the operability facade.
+triggers:
+    - verify publish
+    - test publish
+    - publish flow
+    - does publish work
+    - end to end
+argument-hint: '[file-path]'
+---
+
+# Verify Publish Skill
+
+## Purpose
+
+Verify the full publish pipeline works end-to-end: status computation, file compilation, Git push, and status update. Uses the operability facade for structured verification rather than manual Obsidian interaction.
+
+## When to Activate
+
+Activate when:
+- Changes were made to Publisher, PublishStatusManager, BundledGitBackend, or SyncerPageCompiler
+- Changes were made to the publication center UI that affect the publish flow
+- An agent needs to confirm a publish operation completed successfully
+- Testing after Git/auth configuration changes
+
+## Prerequisites
+
+- Obsidian must be running with the test vault open.
+- Plugin must be built with `npm run build:dev` (copies to test vault, enables facade via `__DEV__` flag).
+- Facade must be available (`obsidian eval code="typeof window.__QS__" 2>/dev/null` returns `=> object`).
+- Console capture requires `obsidian dev:debug on 2>/dev/null` (once per session).
+- Plugin must be loaded and healthy (`assert('health.core')` passes).
+- Repository must be configured (`assert('health.configured')` passes).
+- At least one file must be marked with `publish: true` in frontmatter.
+
+## Workflow
+
+### Step 1: Verify prerequisites
+
+```bash
+obsidian eval code="JSON.stringify(window.__QS__.assert('health.core'))" 2>/dev/null
+obsidian eval code="JSON.stringify(window.__QS__.assert('health.configured'))" 2>/dev/null
+```
+
+Both must return `{"pass":true,...}`. If `health.configured` fails, the repo is not set up — use `obsidian quartz-syncer:config` to configure.
+
+### Step 2: Refresh publish status
+
+```bash
+obsidian eval code="(async()=>{const r=await window.__QS__.act({name:'status.refresh'});console.log(JSON.stringify({success:r.success,counts:{unpublished:r.data.unpublished.length,changed:r.data.changed.length,published:r.data.published.length,deleted:r.data.deleted.length}}))})()" 2>/dev/null
+```
+
+Expected: `{"success":true}`. Then check the snapshot:
+
+```bash
+obsidian eval code="JSON.stringify(window.__QS__.snapshot().publishStatus)" 2>/dev/null
+```
+
+This shows counts of unpublished, changed, published, deleted files. If `unpublished` and `changed` are both 0, there's nothing to publish.
+
+### Step 3: Test connection
+
+```bash
+obsidian eval code="(async()=>{const r=await window.__QS__.act({name:'connection.test'});console.log(JSON.stringify(r))})()" 2>/dev/null
+```
+
+Expected: `{"success":true,"data":{"readAccess":true,"writeAccess":true}}`. If write access is false, credentials may be wrong.
+
+### Step 4: Publish
+
+Publishing pushes over the network, so it will normally outlast the ~5–15 ms eval capture window and print **nothing**. Stash the result and read it back, rather than relying on the inline log:
+
+```bash
+obsidian eval code="window.__pub='pending';(async()=>{try{const r=await window.__QS__.act({name:'pub.publish',params:{message:'Test publish',confirm:true}});window.__pub=JSON.stringify({success:r.success,data:r.data,error:r.error})}catch(e){window.__pub=JSON.stringify({thrown:String(e)})}})()" 2>/dev/null
+sleep 15
+obsidian eval code="window.__pub" 2>/dev/null
+```
+
+Expected: `{"success":true,"data":{"filesPublished":N,"filesDeleted":0,...}}`. If success is false, check the error message. If it still reads `pending`, the publish has not finished — wait longer rather than re-running it.
+
+The same applies to `connection.test` in Step 3: on a slow network it prints nothing. That is not a failure — stash and re-read it the same way.
+
+### Step 5: Verify result
+
+Refresh status again and confirm file counts changed:
+
+```bash
+obsidian eval code="(async()=>{const r=await window.__QS__.act({name:'status.refresh'});console.log(JSON.stringify({success:r.success,counts:{unpublished:r.data.unpublished.length,changed:r.data.changed.length,published:r.data.published.length,deleted:r.data.deleted.length}}))})()" 2>/dev/null
+obsidian eval code="JSON.stringify(window.__QS__.snapshot().publishStatus)" 2>/dev/null
+```
+
+The `unpublished` and `changed` counts should have decreased (or be 0). The `published` count should have increased.
+
+### Step 6: Check events
+
+```bash
+obsidian eval code="JSON.stringify(window.__QS__.events.tail(5))" 2>/dev/null
+```
+
+Look for `publish.completed` event with `commitSha` in the payload. This confirms the Git push succeeded.
+
+### Step 7: Check for errors
+
+```bash
+obsidian dev:errors 2>/dev/null
+obsidian dev:console level=error 2>/dev/null
+```
+
+No errors should be present.
+
+## Dry-run Alternative
+
+To test the pipeline without actually pushing to the remote:
+
+```bash
+obsidian quartz-syncer:publish dry-run 2>/dev/null
+```
+
+This uses the CLI dry-run flag which shows what would be published without making changes.
+
+## MUST DO
+
+- Always append `2>/dev/null` to all `obsidian` CLI commands.
+- Always use the IIFE + `console.log` pattern for async facade calls.
+- Always refresh status before and after publish — status is cached and must be explicitly refreshed.
+- Always check the `success` field in action results — don't assume success.
+- Always stash-and-re-read results for network operations (`pub.publish`, `connection.test`); their output does not survive the eval capture window.
+- Always test connection before publish — avoids wasting time on auth failures.
+- Check events after publish for the `commitSha` — this confirms the push actually reached the remote.
+
+## MUST NOT DO
+
+- Do NOT publish without checking `health.configured` first — it will fail with an unclear error.
+- Do NOT skip the post-publish status refresh — without it, the snapshot still shows stale data.
+- Do NOT run publish in rapid succession — wait for each operation to complete before starting another.
+- Do NOT omit `2>/dev/null` — GTK warnings will pollute output.
+- Do NOT use top-level `await` in eval — use the IIFE pattern.
+- Do NOT re-run a publish because it printed nothing — confirm via `window.__pub`, `snapshot()`, or the event buffer first. Re-running risks a second commit.

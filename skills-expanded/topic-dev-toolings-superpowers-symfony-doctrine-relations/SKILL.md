@@ -1,0 +1,48 @@
+---
+name: doctrine-relations
+description: Define Doctrine entity relationships (OneToMany, ManyToMany, ManyToOne); configure cascade, orphan removal, multiple entity managers; prevent N+1 queries
+capabilities: [read, search, edit, shell]
+tags: [doctrine]
+# projected by `bun run build` — do not edit by hand
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Write
+  - Edit
+  - Bash
+---
+
+# Doctrine Relations (Symfony)
+
+## Use when
+- Mapping a `ManyToOne`, `OneToMany`, `ManyToMany` or `OneToOne` and choosing the owning side.
+- Deciding between `cascade` and `orphanRemoval` for child entities.
+- A relation does not persist (only the inverse side was set), or `contains()` is slow on a large inverse collection.
+- Splitting entities across several entity managers.
+
+## Default workflow
+1. Pick the owning side (holds the foreign key, `ManyToOne` with `inversedBy`) and the inverse side (`OneToMany` with `mappedBy`).
+2. Initialize collections with `ArrayCollection` in the constructor, and write `addX()` and `removeX()` helpers that keep both sides in sync.
+3. Use `cascade: ['persist']` for aggregates saved together, and `orphanRemoval: true` only for true composition.
+4. Mark large inverse collections `fetch: 'EXTRA_LAZY'`, or test membership from the owning side.
+5. Add fetch joins where a use case reads the relation, to avoid N+1 queries.
+6. With several entity managers, keep each entity set in one manager and fetch repositories through `ManagerRegistry`.
+
+## Guardrails
+- Doctrine persists what the owning side holds: always set the `ManyToOne` reference.
+- Avoid `cascade: ['remove']` on large collections (one DELETE per row), and never use `orphanRemoval` on shared entities.
+- A relation cannot span two entity managers.
+- For a non-default entity manager, fetch repositories with `ManagerRegistry::getRepository(Entity::class, 'name')`.
+
+## Progressive disclosure
+- Use this file for execution posture and risk controls.
+- Open references when deep implementation details are needed.
+
+## Output contract
+- Entity mappings with the owning and inverse sides, cascade and orphan decisions.
+- Fetch strategy for large collections and hot paths.
+- Result of `doctrine:schema:validate`.
+
+## References
+- `reference.md`

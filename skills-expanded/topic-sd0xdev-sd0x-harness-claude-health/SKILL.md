@@ -1,0 +1,416 @@
+---
+name: claude-health
+description: "Claude Code config health check + plugin sync. Use when: auditing .claude/ structure, checking naming, verifying hook setup, detecting plugin version drift, syncing installed assets. Not for: skill quality (use skill-health-check), code review (use codex-code-review). Output: health report + fix recommendations."
+allowed-tools: Read, Grep, Glob, Bash(ls:*), Bash(find:*), Bash(wc:*), Bash(du:*), Bash(rm:*), Bash(git:*), Bash(/bin/bash:*), Bash(node:*)
+context: fork
+---
+
+# Claude Health Check
+
+## Trigger
+
+- Keywords: health check, .claude check, config audit, lint .claude, claude health, plugin sync, version drift, upgrade check, doctor
+
+## When NOT to Use
+
+- Code review (use `/codex-review-fast`)
+- Doc review (use `/codex-review-doc`)
+- Security review (use `/codex-security`)
+
+## Scope
+
+| Argument | Description |
+|----------|-------------|
+| `--scope hygiene` | Only run C1-C7 hygiene checks |
+| `--scope sync` | Only run S1-S3 sync checks and the S4 plugin-copies inventory |
+| `--scope budget` | Only run the Instruction Budget Module (B1-B3) |
+| `--scope all` | Run every module — hygiene, sync and budget (**default**) |
+
+## Workflow
+
+```
+[--scope] → Select modules → Scan → Classify → Report → Fix suggestions
+               │                                  │
+       ┌───────┴───────┐                     P0/P1/P2
+       ▼               ▼                    + fix commands
+  Hygiene (C1-C7)  Sync (S1-S3)
+```
+
+### Hygiene Module — Checks (7 items)
+
+| # | Check | Method | Criteria |
+|---|-------|--------|----------|
+| 1 | Junk files | `find .claude/ -name ".DS_Store" -o -name "*.zip" -o -name ".tmp*"` | Any exists → P1 |
+| 2 | .gitignore exists | `ls .claude/.gitignore` | Missing → P1 |
+| 3 | .gitignore completeness | Read `.claude/.gitignore`, compare required items | Missing required → P2 |
+| 4 | Naming consistency | Scan all `skills/*/` for `reference` vs `references` | Inconsistent → P2 |
+| 5 | README count sync | Count actual vs README description | Mismatch → P2 |
+| 6 | Command-Skill pairing | Each core skill should have corresponding command | Missing → P1 |
+| 7 | Cache size | `du -sh .claude/cache/` | > 50M → P2 |
+
+### Check 1: Junk Files
+
+```bash
+find .claude/ -name ".DS_Store" -o -name "*.zip" -o -name ".tmp*" 2>/dev/null
+```
+
+- Has results → **P1**: List files, suggest deletion
+- No results → ✅
+
+### Check 2-3: .gitignore
+
+```bash
+ls .claude/.gitignore 2>/dev/null || echo "MISSING"
+```
+
+Missing → **P1**. If exists, read content and compare required items:
+
+| Required Item | Reason |
+|---------------|--------|
+| `.DS_Store` | macOS generates continuously |
+| `settings.local.json` | Personal config |
+| `cache/` | Runtime cache |
+| `.tmp*` | Temp files |
+| `*.tmp` | Temp files (suffix variant) |
+| `*.zip` | Backup archives |
+
+Missing any → **P2**
+
+### Check 4: Naming Consistency
+
+```bash
+# Scan all skill subdirectories
+for dir in .claude/skills/*/; do
+  if [ -d "${dir}reference" ]; then echo "INCONSISTENT: ${dir}reference"; fi
+done
+```
+
+Has `reference/` (singular) → **P2**, suggest renaming to `references/`
+
+### Check 5: README Count Sync
+
+```bash
+# Count actual items
+ls .claude/commands/ 2>/dev/null | wc -l
+ls .claude/skills/ 2>/dev/null | wc -l
+ls .claude/agents/ 2>/dev/null | wc -l
+ls .claude/rules/ 2>/dev/null | wc -l
+ls .claude/hooks/*.sh 2>/dev/null | wc -l
+```
+
+Extract counts from README.md, compare. Mismatch → **P2**
+
+### Check 6: Command-Skill Pairing
+
+Scan all `skills/*/SKILL.md`, exclude these types, then check for corresponding command:
+
+| Exclude Type | Examples | Reason |
+|--------------|----------|--------|
+| Domain KB | `portfolio`, `aum` | Referenced by other skills, no standalone entry |
+| External | `agent-browser` | Not maintained by this project |
+
+Remaining skills without command → **P1**
+
+### Check 7: Cache Size
+
+```bash
+du -sh .claude/cache/ 2>/dev/null
+```
+
+- \> 50M → **P2**, suggest cleanup
+- ≤ 50M → ✅
+
+### Sync Module — Checks (S1-S3)
+
+> Only runs when `--scope sync` or `--scope all` (default).
+
+#### S1: Version Check
+
+| # | Check | Method | Criteria |
+|---|-------|--------|----------|
+| S1.1 | Manifest exists | Read `.sd0x/install-state.json` | Missing → P1 |
+| S1.2 | Manifest parseable | JSON.parse | Parse error → P1 |
+| S1.3 | `schema_version` current | `== 1` | Mismatch → P2 |
+| S1.4 | `plugin_version` matches | manifest vs `.claude-plugin/plugin.json` or `package.json` | Mismatch → P1 |
+| S1.5 | Manifest completeness | Has `rules` + `hook_scripts` + `scripts` keys | Missing key → P2 (`MANIFEST_GAP`) |
+
+**Plugin version resolution** (priority order):
+
+```
+.claude-plugin/plugin.json → package.json → "unknown"
+```
+
+**Plugin source location** (same as `/install-rules` Phase 1):
+
+```
+Glob: ~/.claude/plugins/**/sd0x-dev-flow/rules/auto-loop.md
+Glob: ${REPO_ROOT}/node_modules/sd0x-dev-flow/rules/auto-loop.md
+Fallback: @rules/auto-loop.md (plugin-relative)
+```
+
+#### S2: Component Classification
+
+For each managed component (rules, hooks, scripts), compute 3 hashes and classify:
+
+```bash
+manifest_hash  = manifest[category][filename].hash    # null if missing
+local_hash     = git hash-object --no-filters <local-path>  # null if file missing
+plugin_hash    = git hash-object --no-filters <plugin-path>  # source of truth
+```
+
+**Classification table** (read-only diagnostic; maps to install-rules states for delegation):
+
+| Doctor State | Condition | Severity | install-rules Equivalent |
+|-------|-----------|----------|--------------------------|
+| `OK` | local == manifest == plugin | ✅ | `SKIP` |
+| `MISSING` | local_hash is null, plugin exists | P1 | `FRESH_INSTALL` |
+| `OUTDATED` | local == manifest, plugin != manifest | P1 | `AUTO_UPDATE` |
+| `LOCAL_MODIFIED` | local != manifest, plugin == manifest | ✅ | `KEEP_LOCAL` |
+| `CONFLICT` | local != manifest, plugin != manifest | P2 | `CONFLICT` |
+| `LEGACY` | manifest_hash is null, local exists | P2 | `LEGACY` |
+| `MANIFEST_GAP` | manifest category key missing | P2 | N/A |
+| `TOMBSTONED` | manifest `deleted: true`, local missing | ✅ | `SKIP_DELETED` |
+| `RETIRED` | name on `/install-rules`' retired list, plugin file absent, local exists | P2 | Retired (remove when unmodified, keep when modified) |
+
+**Managed inventory** (hardcoded):
+
+| Category | Local Path | Plugin Source | Files |
+|----------|-----------|--------------|-------|
+| Rules | `.claude/rules/*.md` | `rules/*.md` | `auto-loop.md`, `codex-invocation.md`, `testing.md`, `security.md`, `git-workflow.md`, `logging.md`, `docs-writing.md`, `docs-numbering.md`, `self-improvement.md`, `context-management.md`, `discretion.md`, `scope-discipline.md`, `override-contract.md` |
+| Hooks | `.claude/hooks/*.sh` | `hooks/*.sh` | `pre-edit-guard.sh`, `pre-bash-codex-launch-guard.sh`, `post-edit-format.sh`, `post-skill-auto-loop.sh`, `post-compact-auto-loop.sh`, `stop-guard.sh`, `user-prompt-review-guard.sh` |
+| Retired rules | `.claude/rules/*.md` | — (no longer shipped) | Every name on `/install-rules`' Retired table — today `fix-all-issues.md`, `framework.md`. Classified `RETIRED` when the local file exists, `TOMBSTONED` when the manifest marks it deleted, and nothing when neither |
+| Scripts | `.claude/scripts/` | `scripts/` | `precommit-runner.js`, `verify-runner.js`, `review-state.js`, `dep-audit.sh`, `commit-msg-guard.sh`, `pre-push-gate.sh`, `protected-branches.sh`, `lib/utils.js`, `lib/tree-digest.js` |
+
+#### S2.5: Override Safeguard Checks
+
+7 checks for project override files (e.g., `auto-loop-project.md`):
+
+| # | Check | Severity | Detection | Recommendation |
+|---|-------|----------|-----------|----------------|
+| 1 | Override drift | P2 | `based_on` hash comment in project file vs the hash of **the base file that comment names** (derived, never hard-coded — `auto-loop-project.md`, `testing-project.md` and `git-workflow-project.md` all ship) — **only when the override file has active content**; a scaffold with every section still commented out has no overrides to review, so drift is not reported | "Base `<rule>` updated since override authored; review your overrides" |
+| 2 | Policy contradiction | P1 | An overridden section omits a required check command that the **same section** of the base rule contains | "Override drops a required check command its base section carries" |
+| 3 | Missing reference or base | P1 | For **each** shipped override file (`auto-loop-project.md`, `testing-project.md`, `git-workflow-project.md`): `.claude/CLAUDE.md` has `@rules/<file>` but the file is missing, OR the file exists but is not referenced (by `@rules/<file>`, or — for a template carrying `paths:` frontmatter — by a plain `rules/<file>` mention; an `@` import of a path-scoped template is reported **P2** instead, because it loads the file at launch and defeats the scoping), OR the file exists but the base rule its `Based on:` comment names is missing from `.claude/rules/` | `/install-rules` to recreate the missing file or base, or add the reference |
+| 4 | Wrong-layer edit | P2 | Base `auto-loop.md` has `LOCAL_MODIFIED`, `CONFLICT`, or `LEGACY` state while project override exists | "Move customization to auto-loop-project.md" |
+| 5 | Duplicate heading | P2 | Override file has multiple active `## <heading>` with same text | "Keep one, remove duplicates. Last occurrence takes effect." |
+| 6 | Legacy precedence header | P2 | Precedence declaration exists only inside an HTML comment (`<!-- Precedence:` present, no live `Precedence:` line before the first `##`) — HTML comments are stripped from model context (R8), so the declaration never reaches its only reader | "Header predates the live-precedence contract; migrate the precedence line to live text by hand or regenerate via `/install-rules --customize <rule> --reset`. This check is **read-only** — it never edits the user-owned file" |
+| 7 | Git override conflict | P1 / P2 | `git-workflow-project.md` only. **P1** whenever the file exists, active content or not — two empty duplicate `## Protected Branches` headings are already a parse error: when `/bin/bash -p -- <resolver> --root <repo> --list` exits 2, where `<resolver>` is the **plugin install's** copy — `${CLAUDE_PLUGIN_ROOT}/scripts/protected-branches.sh` when that variable is set and its real path lies outside the audited repository, else `~/.claude/plugins/**/sd0x-dev-flow/scripts/protected-branches.sh` (one match) — **never** a copy inside the audited repository (`.claude/scripts/`, `scripts/`, `node_modules/`), because this check is read-only and the repository controls those files; no plugin install found → execute nothing and report check #7 as not run (P2), while S2 still classifies the local copy by hash — a removal attempt (`- !main`), a malformed bullet or a duplicate heading in `## Protected Branches`, which makes every branch read as protected; an **omitted** default is never reported, since the set only widens. **P2**, active content only, when a `## Deploy Workflow` line matches neither `merge <source> -> <target> [--no-ff\|--ff-only]` nor `run <path> [args…]` with every token in `^[A-Za-z0-9._/@:=+,-]+$`, or when `## Offer Mode` / `## Run Steps` carries a value outside `on\|commit-only\|off` / `print\|execute` | "Fix the named line; until then the protected set reads every branch as protected / the deploy block is ignored / the setting keeps its default" |
+
+**Policy contradiction detection**: For each `## <heading>` section the override restates, extract the backticked check commands (`/codex-review-fast`, `/codex-review-doc`, `/precommit`) from the **same-heading section of the base `auto-loop.md`** and require the restated section to keep every one of them. A verbatim copy therefore never flags; only a restatement that *drops* a command its base section carries is P1. (The base's Auto-Trigger table was retired by R3 — code/doc routing now lives in the unheaded terminal-invariant paragraph, which the exact-`##`-heading override mechanism cannot restate, so routing itself is not overridable and is out of this check's scope.) No restated section → check passes vacuously.
+
+**Override drift detection**: First check whether the project file has **active content**. Two forms count, and the distinction matters because the scaffold ships its `##` headings live: a non-empty, non-comment **body line** under any heading, or a **heading that carries its own value** (`## Plan Review: enabled`, `## Git Memory: enabled` — for these settings the heading *is* the value, so there is no body to look for). A bare scaffold heading with nothing but comments beneath it is an empty slot, not an override. The live `Precedence:` header is preamble material and never activation. A scaffold whose sections are all still commented out is skipped: drift means "the base changed since you wrote your overrides", and there are none, so reporting it on a fresh install is a false positive rather than a finding. Otherwise read the `<!-- Based on: <base>.md @ <hash> -->` comment and **derive the base file from the comment's own filename** — `git hash-object --no-filters .claude/rules/<base>.md | cut -c1-7`. The base must not be hard-coded: R8 distributes `testing-project.md` alongside `auto-loop-project.md`, so a fixed `auto-loop.md` comparand would check a testing override's hash against the wrong rule and report drift that does not exist. If the derived base file is missing, drift is undefined rather than zero — report it through check #3's **missing base** branch (P1) and do not emit a drift finding. Both checks must cover every shipped override file, not just `auto-loop-project.md`: an active `testing-project.md` whose `testing.md` has been deleted would otherwise fall through both. If the hashes differ, the base has been updated since the override was authored. Uses blob hash for content-level comparison; accepts legacy commit-style hashes (any 7+ hex chars) during backward-compat transition.
+
+#### S3: Settings Compatibility
+
+Check **both** `settings.json` and `settings.local.json` (precedence: `settings.local.json` > `settings.json`). A hook entry in either file satisfies the integrity check.
+
+| # | Check | Method | Criteria |
+|---|-------|--------|----------|
+| S3.1 | Legacy hook paths | Grep both settings files for bare `.claude/hooks/` without `$CLAUDE_PROJECT_DIR` | Found → P2 |
+| S3.2 | Retired guard-mode setting | Read `env.STOP_GUARD_MODE` (and legacy `hooks_config.stop_guard_mode`) from either settings file | Found in either → P2 (retired: the Stop hook is reminder-only since hook-lightweighting — the setting is dead config, recommend removing it). Absent → ✅ |
+| S3.3 | Hook entry integrity | Each installed hook script has matching entry in either settings file | Missing from both → P1 |
+| S3.4 | Orphan hook entries | Either settings file references script that doesn't exist on disk | Orphan → P2 |
+
+**Settings file precedence**: `settings.local.json` overrides `settings.json` at runtime. When delegating S3 fixes, use `/install-hooks --local` if the issue is in `settings.local.json`.
+
+**Legacy path detection**:
+
+```
+Grep for: "\.claude/hooks/[^"]+\.sh"  (without leading "$CLAUDE_PROJECT_DIR")
+Applied to both: settings.json and settings.local.json
+```
+
+### Fix Tiers
+
+> Only applies when `--fix-safe` or `--fix` is specified alongside sync scope.
+
+| Tier | Flag | Description |
+|------|------|-------------|
+| Report | (default) | Diagnosis only — output actionable recommendations |
+| Safe | `--fix-safe` | Auto-fix P1 hygiene + safe sync fixes |
+| Guided | `--fix` | Auto-fix P1 hygiene + guided sync remediation (interactive) |
+
+**Category-specific safe fix delegation**:
+
+| Category | `MISSING` | `OUTDATED` | `CONFLICT`/`LEGACY` |
+|----------|----------|-----------|---------------------|
+| Rules | `/install-rules <names>` | `/install-rules <names>` (smart merge AUTO_UPDATE) | Skip (report only) |
+| Hooks | `/install-hooks <names>` | Report only + suggest `/install-hooks <names> --force` | Skip (report only) |
+| Scripts | `/install-scripts <names>` | Report only + suggest `/install-scripts <names> --force` | Skip (report only) |
+
+> **Why hooks/scripts OUTDATED is report-only in safe tier**: `/install-hooks` and `/install-scripts` use skip/force semantics (no manifest-aware smart merge). Only `/install-rules` has 7-state classification for safe auto-update.
+
+**S3 settings fix delegation**: All settings mutations delegate to `/install-hooks` (sync module never writes JSON directly).
+
+**`--fix` tier**: Delegates all actionable states (including CONFLICT, LEGACY) to `/install-*` commands which handle interactive resolution.
+
+**Argument conflict**: `--fix` and `--fix-safe` are mutually exclusive. If both specified, error.
+
+### Instruction Budget Module
+
+Claude Code adds up every always-loaded instruction file at launch and warns when the sum passes a
+total limit. The check reproduces that accounting (2.1.281) so the user learns it here first, with
+the plugin's share separated out. Runs under `--scope budget` and `--scope all` (the default), never
+under `--scope hygiene` or `--scope sync`. The script is the **plugin install's** copy — `$CLAUDE_PLUGIN_ROOT`
+when its real path lies outside the audited repository — **never** a copy inside the audited
+repository (`.claude/scripts/`, `scripts/`), because this check is read-only and the repository
+controls those files. No plugin install found → skip the module with a note:
+
+```bash
+REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "instruction budget: skipped — not in a git repository"; exit 0; }
+PR="${CLAUDE_PLUGIN_ROOT:-}"
+case "$(cd "$PR" 2>/dev/null && pwd -P)/" in "$(cd "$REPO_ROOT" && pwd -P)/"*|/) PR="" ;; esac
+[ -n "$PR" ] && [ -r "$PR/scripts/instruction-budget.js" ] \
+  && node "$PR/scripts/instruction-budget.js" --root "$REPO_ROOT" --plugin-root "$PR" \
+  || echo "instruction budget: skipped — no plugin install outside this repository"
+```
+
+| # | Check | Severity | Recommendation |
+|---|-------|----------|----------------|
+| B1 | Always-loaded total over the limit (total = `max(120000, per-file)`; pass `--per-file` for the model in use — the default is the 150,000 observed on 2.1.281) | P2 | Move a rule on demand (`paths:` frontmatter) or trim it; the three largest files are listed |
+| B2 | A file over the per-file limit | P2 | Claude Code warns on it alone and leaves it out of the total; split or trim it |
+| B3 | A lessons, archive, log or history file in `.claude/rules/` | P2 | Move it out of `rules/` — the lessons log lives at `.claude/sd0x-dev-flow-lessons.md` — or give it `paths:` frontmatter |
+
+The script is read-only; it never edits or moves a file. A missing script skips the module with a
+note rather than guessing a total.
+
+### Plugin Copies (S4)
+
+Runs with the Sync module (`--scope sync` and `--scope all`). Report-only: it lists where copies of
+this plugin's content come from, so a stale or second copy is seen before it is mistaken for the
+plugin's current text. It never deletes, moves or edits a copy.
+
+| Origin | Where | Version read from |
+|--------|-------|-------------------|
+| Local install | `.claude/rules/`, `.claude/hooks/`, `.claude/scripts/` | `.sd0x/install-state.json` `plugin_version` (S1) |
+| Marketplace plugin | Every `~/.claude/plugins/**/sd0x-dev-flow/**/.claude-plugin/plugin.json` whose `name` is `sd0x-dev-flow` — the versioned cache (`cache/<marketplace>/sd0x-dev-flow/<version>/`) and the marketplace checkout both match | Each match's `version`; several matches are listed as found, never collapsed to one |
+| claude.ai synced skills | `~/.claude/skills/synced/` (Claude Code 2.1.273 and later) | None — a synced skill carries no plugin version; list each directory named like a skill this plugin ships |
+
+| # | Check | Severity |
+|---|-------|----------|
+| S4.1 | Marketplace copies carry different versions | P2 — the stale copies are the host's cache, cleared through `/plugin`; local-install drift is S1.4's finding, reported there once and never re-graded here |
+| S4.2 | A synced skill has the same name as a plugin skill | P2 — two skills of one name are offered; the plugin's runs as `/sd0x-dev-flow:<name>`. Rename or turn off the copy on claude.ai: sync overwrites a local edit |
+| S4.3 | An origin cannot be read | Reported as not checked, never as absent |
+
+### Prompt Audit (manual step)
+
+Claude Code 2.1.283 and later audit instruction files for outdated or conflicting content with
+`/doctor prompt-audit [path]` (alias `/checkup prompt-audit`). It covers `CLAUDE.md`,
+`CLAUDE.local.md` and `AGENTS.md` plus the rules and skills under `.claude/` and `~/.claude/`,
+reports findings with proposed edits, and changes nothing until asked. This skill does not run it:
+it is the host's command, and the report names it as the manual next step. Its findings on this
+plugin's content are handled by owner:
+
+| Finding on | Handling |
+|------------|----------|
+| `.claude/rules/*.md`, `.claude/hooks/` or `.claude/scripts/` installed by this plugin | Report only. Fix it upstream, or customize through a `*-project.md` override; S2 detects a local edit on every later run and classifies it by its hash table (`LOCAL_MODIFIED`, `CONFLICT` or `LEGACY`) |
+| Anchor text — the Anchor Register in `rules/discretion.md`, or the Anchors section of the generated `AGENTS.md` | Rejected. The plugin pins that text byte-for-byte and `/codex-setup sync` regenerates the `AGENTS.md` Anchors from `rules/`, so an edit there is a spec change for the maintainer, never an audit fix |
+| `*-project.md` overrides and the project's own `CLAUDE.md` | The user's call — these files are user-owned |
+
+## Output
+
+```markdown
+# .claude/ Health Check Report
+
+## Hygiene Summary (C1-C7)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Junk files | ✅/⛔ | ... |
+| .gitignore | ✅/⛔ | ... |
+| Naming consistency | ✅/⛔ | ... |
+| README count | ✅/⛔ | ... |
+| Command-Skill | ✅/⛔ | ... |
+| Cache size | ✅/⛔ | ... |
+
+## Sync Summary (S1-S3)
+
+### S1: Version
+| Check | Status | Detail |
+|-------|--------|--------|
+| Manifest | ✅/⛔ | Found / Missing |
+| Plugin version | ✅/⛔ | 2.0.3 == 2.0.3 / 1.8.12 → 2.0.3 |
+| Manifest keys | ✅/⛔ | Complete / Missing: hook_scripts, scripts |
+
+### S2: Component Status
+| File | Category | Status | Action |
+|------|----------|--------|--------|
+| auto-loop.md | Rules | OUTDATED | `/install-rules auto-loop` |
+| security.md | Rules | OK | — |
+| stop-guard.sh | Hooks | MISSING | `/install-hooks stop-guard` |
+| ... | ... | ... | ... |
+
+### S3: Settings Compatibility
+| Check | Status | Detail |
+|-------|--------|--------|
+| Hook paths | ✅/⛔ | Modern / Legacy found |
+| Retired guard mode | ✅/⚠️ | absent / STOP_GUARD_MODE found (dead config) |
+| Entry integrity | ✅/⛔ | All matched / N missing |
+| Orphan entries | ✅/⛔ | None / N orphans |
+
+## Budget Summary (B1-B3)
+| Check | Status | Detail |
+|-------|--------|--------|
+| B1 Total | ✅/⚠️ | 89,472 / 150,000 chars; plugin share 89,472 |
+| B2 Per-file | ✅/⚠️ | None over / .claude/rules/big.md (152,000) |
+| B3 Lessons in rules/ | ✅/⚠️ | None / .claude/rules/lessons.md → move to .claude/sd0x-dev-flow-lessons.md |
+
+## Plugin Copies (S4)
+
+| Origin | Version | Note |
+|--------|---------|------|
+| Local install | 5.0.0 | from `.sd0x/install-state.json` |
+| Marketplace plugin | 5.0.0 / not checked | |
+| claude.ai synced skills | — | names shared with plugin skills, or none |
+
+Next step (manual): `/doctor prompt-audit` — findings on plugin-shipped content are report-only.
+
+## Statistics
+
+| Category | Count |
+|----------|-------|
+| Commands | N |
+| Skills | N |
+| Rules | N (installed) / N (managed) |
+| Hooks | N |
+
+## Issues
+
+### P1
+- [Issue] → [Fix recommendation / command]
+
+### P2
+- [Issue] → [Fix recommendation]
+
+## Gate
+✅ All Pass / ⛔ N issues need fixing
+```
+
+## Verification
+
+- [ ] Hygiene: All 7 checks executed (when scope includes hygiene)
+- [ ] Sync: S1-S3 checks executed (when scope includes sync)
+- [ ] Budget: B1-B3 reported, or the skip note printed (when scope is `budget` or `all`)
+- [ ] Each check has clear ✅/⛔ status
+- [ ] P1 issues have specific fix commands
+- [ ] S2 classification covers every file in the managed inventory above (29 today: 13 rules, 7 hooks, 9 scripts)
+- [ ] Fix delegation uses targeted file names (not `--all`)
+
+## References
+
+- `references/best-practices.md` — Best practices for .claude/ directory structure
+
+## Examples
+
+```
+Input: /claude-health
+Action: Scan hygiene (7 items) + sync (S1-S3) → Generate consolidated report
+
+Input: /claude-health --scope sync
+Action: Scan S1-S3 only → Report version drift + component status
+
+Input: /claude-health --fix-safe
+Action: Scan all → Auto-fix safe items → Delegate to /install-* → Report
+
+Input: Is my plugin up to date?
+Action: Trigger sync check → Report version + component drift
+```

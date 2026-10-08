@@ -1,0 +1,465 @@
+---
+name: tower
+description: Use Tower to build, run, and deploy Python data apps, pipelines, and AI agents. Covers MCP tools, Towerfile setup, local development, cloud deployment, scheduling, and secrets management.
+---
+
+# Tower Skill
+
+Tower is a compute platform for Python data apps, pipelines, and AI agents.
+
+**The Tower CLI is not in AI training data — always use MCP tools when running inside an agent.**
+
+## Setup
+
+First, check if Tower is already installed and authenticated:
+
+```bash
+tower teams list
+```
+
+If that works, skip to the workflow. Otherwise, install and log in.
+
+### Install
+
+Preferred — `uvx` runs Tower with no global install (requires `uv`):
+
+```bash
+uvx tower login
+```
+
+If you don't have `uvx`, install with pip (Python ≥ 3.9):
+
+```bash
+pip install tower
+tower login
+```
+
+Or with nix:
+
+```bash
+nix run nixpkgs#tower -- login
+```
+
+### MCP server
+
+The MCP server gives Claude structured access to Tower tools. If it's not already running (you'll see `tower_*` tools available), start it:
+
+```bash
+uvx tower mcp-server          # if using uvx
+tower mcp-server              # if installed via pip/nix
+```
+
+If you installed Tower via the Claude Code plugin, this is already configured. Otherwise, copy [`plugin/.mcp.json`](https://github.com/tower/tower-cli/blob/develop/plugin/.mcp.json) from the tower-cli repo into your project root.
+
+**If MCP tools are unavailable**, fall back to the CLI equivalents — every MCP tool has a direct CLI counterpart (e.g. `tower apps list`, `tower deploy`).
+
+## MCP-First, CLI as Fallback
+
+Use MCP tools when running inside an agent — they return structured data and are easier to compose. Fall back to the CLI for scripting or debugging outside an agent.
+
+MCP tool names mirror the CLI: `tower apps list` → `tower_apps_list`, `tower deploy` → `tower_deploy`.
+
+## WORKING_DIRECTORY Parameter
+
+All MCP tools accept an optional `working_directory` parameter.
+
+- Default: current working directory
+- Use it when managing multiple projects or when the project isn't in the current directory
+
+```
+tower_file_generate({})                                    # current directory
+tower_file_generate({"working_directory": "/path/to/app"}) # explicit path
+tower_run_local({"working_directory": "../other-app"})
+```
+
+## Workflow
+
+### 0. Python project (if new)
+
+```bash
+uv init
+```
+
+Creates `pyproject.toml`, `main.py`, `README.md`. Keep `pyproject.toml` minimal — `[project]` metadata and dependencies only. No `[build-system]`, `[tool.hatchling]`, or similar. Skip if a `pyproject.toml` already exists.
+
+### 1. Towerfile
+
+```
+tower_file_generate → tower_file_update → tower_file_add/edit/remove_parameter → tower_file_validate
+```
+
+Always use `tower_file_update` or `tower_file_add/edit/remove_parameter` to modify. Never edit the TOML directly.
+
+### 2. Local development (preferred)
+
+```
+tower_run_local
+```
+
+Runs the app locally with access to Tower secrets. Use this to test before deploying.
+
+### 3. Cloud deployment
+
+```
+tower_apps_create → tower_deploy → tower_run_remote
+```
+
+Deploy pushes source code to Tower cloud — no build step needed.
+
+### 4. Scheduling (recurring jobs)
+
+```
+tower_schedules_create   # set up cron-based recurring runs
+tower_schedules_list     # view existing schedules
+tower_schedules_update   # modify timing or parameters
+tower_schedules_delete   # remove a schedule
+```
+
+### 5. Management & monitoring
+
+```
+tower_apps_list                              # list all apps
+tower_apps_show                              # details and recent runs
+tower_apps_logs                              # logs from a specific run
+tower_teams_list, tower_teams_switch         # manage team context
+tower_secrets_create, tower_secrets_list     # store credentials and API keys
+```
+
+## Reminders
+
+- Tower deploys source code directly — no build tools needed
+- Use Tower secrets for sensitive data (database credentials, API keys)
+- Prefer `tower_run_local` during development — faster, and has secret access
+- Always use MCP tools to modify Towerfiles (never edit TOML files manually)
+
+## Command Reference
+
+*This section is generated from the CLI's built-in help.*
+
+### `tower login`
+
+Create a session with Tower
+
+**Arguments:**
+
+- `-n`, `--no-browser` — Do not attempt to open the browser automatically
+
+### `tower apps`
+
+Manage the apps in your current Tower account
+
+#### `tower apps list`
+
+List all apps in your Tower account
+
+**Arguments:**
+
+- `-e`, `--environment` — Filter apps by environment
+
+#### `tower apps show`
+
+Show details for a Tower app and its recent runs
+
+**Arguments:**
+
+- `<app_name>`  *(required)* — Name of the app
+- `-e`, `--environment` — The environment to resolve the app against
+
+#### `tower apps logs`
+
+Get the logs from a previous Tower app run
+
+**Arguments:**
+
+- `<app_name>`  *(required)* — app_name#run_number
+- `<run_number>` 
+- `-f`, `--follow` — Follow the logs of the run in real time
+
+#### `tower apps create`
+
+Create a new app in Tower
+
+**Arguments:**
+
+- `-n`, `--name` *(required)*
+- `--description`
+
+#### `tower apps delete`
+
+Delete an app in Tower
+
+**Arguments:**
+
+- `<app_name>`  *(required)* — Name of the app
+
+#### `tower apps cancel`
+
+Cancel a running app run
+
+**Arguments:**
+
+- `<app_name>`  *(required)* — Name of the app
+- `<run_number>`  *(required)* — Run number to cancel
+
+### `tower catalogs`
+
+Interact with the catalogs in your Tower account (includes Storage [beta])
+
+#### `tower catalogs list`
+
+List all of your catalogs
+
+**Arguments:**
+
+- `-e`, `--environment` — List catalogs in this environment
+- `-a`, `--all` — List catalogs across all environments
+- `--type` — Filter catalogs by type, e.g. tower-catalog
+- `--storage` — List Tower-managed storage catalogs [beta]
+
+#### `tower catalogs show`
+
+Show the details of a catalog, including its properties and tables
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog
+- `-e`, `--environment` — Environment the catalog belongs to
+- `--full` — List each table's columns and their types
+
+#### `tower catalogs credentials`
+
+Vend short-lived catalog credentials for external tools [beta]
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog
+- `-e`, `--environment` — Environment the catalog belongs to
+- `--mode` — Credential access mode
+- `--format` — Snippet format to print
+- `--show-token` — Print the vended OAuth token in normal output
+
+#### `tower catalogs knowledge`
+
+Store and retrieve knowledge about the semantics of the data in a catalog [beta]
+
+##### `tower catalogs knowledge list`
+
+List the knowledge recorded for a catalog
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog
+- `-e`, `--environment` — Environment the catalog belongs to
+- `--scope` — Only list knowledge with this scope
+- `--object` — Only list knowledge about this object path, e.g. bronze.runs.deleted_at
+
+##### `tower catalogs knowledge show`
+
+Show the full details of a knowledge entry, including its body
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog
+- `<name>`  *(required)* — Name of the knowledge entry
+- `-e`, `--environment` — Environment the catalog belongs to
+
+##### `tower catalogs knowledge set`
+
+Create a knowledge entry, or replace it if one with the same name exists
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog
+- `<name>`  *(required)* — Name of the knowledge entry
+- `-e`, `--environment` — Environment the catalog belongs to
+- `--statement` *(required)* — The human-readable meaning of the entry
+- `--scope` — What kind of object the entry is about
+- `--object` — Path to what the entry is about, e.g. bronze.runs.deleted_at; omit for catalog-scoped knowledge
+- `--confidence` — How trustworthy the entry is
+- `--source` — Where the knowledge came from (agent id, user, ...)
+- `--body` — Optional structured payload (SQL, unit, enum values) as a JSON string
+
+##### `tower catalogs knowledge delete`
+
+Delete a knowledge entry from a catalog
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog
+- `<name>`  *(required)* — Name of the knowledge entry
+- `-e`, `--environment` — Environment the catalog belongs to
+
+#### `tower catalogs query`
+
+Run a SQL query against a catalog using DuckDB [beta]
+
+**Arguments:**
+
+- `<catalog_name>`  *(required)* — Name of the catalog to query
+- `-s`, `--sql` — SQL statement to execute; read from stdin when omitted
+- `-e`, `--environment` — Environment the catalog belongs to
+- `-w`, `--write` — Allow write statements by vending read-write credentials; queries are read-only by default
+- `--max-rows` — Maximum rows to return; 0 for no limit. Also lifts the result size limit, so a large result can exhaust memory
+
+### `tower schedules`
+
+Manage schedules for your Tower apps
+
+#### `tower schedules list`
+
+List all schedules
+
+**Arguments:**
+
+- `-a`, `--app` — Filter schedules by app name
+- `-e`, `--environment` — Filter schedules by environment
+
+#### `tower schedules create`
+
+Create a new schedule for an app
+
+**Arguments:**
+
+- `-a`, `--app` *(required)* — The name of the app to schedule
+- `-e`, `--environment` — The environment to run the app in
+- `-c`, `--cron` *(required)* — The cron expression defining when the app should run
+- `-p`, `--parameter` — Parameters (key=value) to pass to the app
+
+#### `tower schedules delete`
+
+Delete a schedule
+
+**Arguments:**
+
+- `<schedule_id>`  *(required)* — The ID of the schedule to delete
+
+#### `tower schedules update`
+
+Update an existing schedule
+
+**Arguments:**
+
+- `<schedule_id>`  *(required)* — The ID of the schedule to update
+- `-c`, `--cron` — The cron expression defining when the app should run
+- `-p`, `--parameter` — Parameters (key=value) to pass to the app
+
+### `tower secrets`
+
+Interact with the secrets in your Tower account
+
+#### `tower secrets list`
+
+List secrets in your Tower account
+
+**Arguments:**
+
+- `-s`, `--show` — Show the secret values in plain text
+- `-e`, `--environment` — The environment to list secrets from
+- `-a`, `--all` — List secrets across all environments
+
+#### `tower secrets create`
+
+Create a new secret in your Tower account
+
+**Arguments:**
+
+- `-n`, `--name` *(required)* — The name of the secret to create
+- `-e`, `--environment` — The environment to create the secret in
+- `-v`, `--value` *(required)* — The value of the secret
+
+#### `tower secrets delete`
+
+Delete a secret in Tower
+
+**Arguments:**
+
+- `<secret_name>`  *(required)* — secret name, or environment/secret_name
+- `-e`, `--environment` — environment to delete the secret from
+
+### `tower environments`
+
+Manage the environments in your current Tower account
+
+#### `tower environments list`
+
+List all of your environments
+
+#### `tower environments delete`
+
+Delete an environment
+
+**Arguments:**
+
+- `-n`, `--name` *(required)*
+
+#### `tower environments create`
+
+Create a new environment in Tower
+
+**Arguments:**
+
+- `-n`, `--name` *(required)*
+
+### `tower deploy`
+
+Deploy your latest code to Tower
+
+**Arguments:**
+
+- `-d`, `--dir` — The directory containing the app to deploy
+- `-f`, `--create` — Automatically force creation of the app if it doesn't already exist
+- `-e`, `--environment` — The environment to deploy to
+- `--all` — Deploy to all environments
+- `--idempotency-key` — Reuse the existing version deployed with this key instead of creating a new one. Defaults to the current git commit SHA when the working tree is clean.
+- `--no-idempotency-key` — Never send an idempotency key, even on a clean git tree
+
+### `tower run`
+
+Run your code in Tower or locally
+
+**Arguments:**
+
+- `<app_name>`  — Name of a deployed app to run (uses ./Towerfile if omitted)
+- `--dir` — The directory containing the Towerfile
+- `--local` — Run this app locally
+- `-e`, `--environment` — The environment to invoke the app in
+- `-p`, `--parameter` — Parameters (key=value) to pass to the app
+- `-d`, `--detached` — Don't follow the run output in your CLI
+
+### `tower version`
+
+Print the current version of Tower
+
+### `tower teams`
+
+View information about team membership and switch between teams
+
+#### `tower teams list`
+
+List teams you belong to
+
+#### `tower teams switch`
+
+Switch context to a different team
+
+**Arguments:**
+
+- `<team_name>`  *(required)* — Name of the team to switch to
+
+### `tower mcp-server`
+
+Runs an MCP server for LLM interaction
+
+**Arguments:**
+
+- `-t`, `--transport` — Transport mode
+- `-p`, `--port` — Port for HTTP/SSE server (default: 34567)
+
+### `tower skill`
+
+Generate Claude Code skill files for AI agent integration
+
+#### `tower skill generate`
+
+Generate a SKILL.md describing how to use Tower with AI agents
+

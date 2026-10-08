@@ -1,0 +1,349 @@
+---
+name: autograph
+description: >-
+  Schema-as-code enforcement for any Obsidian vault. Zero hardcoded domains.
+  Use when creating vault cards, checking vault health, running schema compliance,
+  deduplicating entities, generating MOC indexes, running decay cycles, bootstrapping
+  a vault, fixing wikilinks, finding orphans or backlinks, extracting entities from
+  daily files, or touching/promoting cards.
+  Do NOT use for content generation or non-vault file operations.
+---
+
+# autograph — typed vault engine
+
+One schema. One graph. Works on any vault.
+
+## Overview
+
+No hardcoded domains, types, or paths. The agent discovers structure from data, builds a schema, then enforces it. All scripts share `common.py`. Metadata uses PyYAML 6.0.3 (safe scalar loader); uv installs the declared dependency. API calls use urllib.
+
+## Quick Reference: 6 Workflows
+
+| Workflow | When to use | Entry point |
+|----------|-------------|-------------|
+| **BOOTSTRAP** | New vault / after import / first setup | `discover.py` → `enforce.py` → `graph.py health` |
+| **HEALTH** | Daily maintenance / on request | graph + strict YAML checks → scoped repair manifest |
+| **CREATE / UPDATE** | New knowledge card, or new info about an existing one | `search.py` dedup → ADD/UPDATE/SUPERSEDE → link → touch |
+| **SEARCH & LINK** | Find info + strengthen connections | Hub → links → target; `graph.py orphans` → connect |
+| **ORCHESTRATE** | Automated multi-agent workflows (no API keys) | `orchestrate.py health\|bootstrap` |
+| **DAILY → CARDS** | Turn a day's raw notes into linked cards | `daily.py extract` → dedup-first process → link |
+
+---
+
+## Workflow 1: BOOTSTRAP (raw vault → structured graph)
+
+**When to use:** New vault, bulk import, first setup. Run once, then switch to HEALTH.
+
+**Full guide:** `references/bootstrap-workflow.md`
+
+### Summary (10 phases)
+
+1. **Discover:** `uv run scripts/discover.py <vault-dir> --verbose > /tmp/discovery.json`
+2. **Generate schema:** Script baseline (`generate_schema.py`) + **agent swarm** (`swarm_prepare.py` → Wave 1 haiku → `swarm_reduce.py` → Wave 2 sonnet). **NEVER skip the swarm.**
+3. **Review:** Human approves schema. Never auto-apply.
+4. **Bootstrap + Enforce:** `engine.py init` + `enforce.py --apply`
+5. **Link cleanup:** `link_cleanup.py --apply` (before enrichment)
+6. **Tag enrich:** `enrich.py tags --apply` (via OpenRouter API)
+7. **Deduplicate:** `dedup.py --apply` (before link enrichment)
+8. **Link enrich:** `enrich.py swarm-links --apply` (**always swarm-links, never links**)
+9. **MOC generation:** `moc.py generate`
+10. **Verify:** `enforce.py --check` on the scoped manifest + `graph.py health` on the staged vault; resolve concrete validation/link findings. A health score is not an acceptance gate.
+
+### Critical Rules
+
+- **Always run Phase 2B (agent swarm).** Script alone cannot classify unstructured content.
+- **Always use `swarm-links`**, not `links` (0.3% vs 81.6% match rate).
+- **Always dry-run first** — run without `--apply` before applying.
+- **Dedup before link enrich** — prevents links to merged/trashed files.
+
+---
+
+## Workflow 2: HEALTH (diagnosis before scoped repair)
+
+Read [integrity.md](references/integrity.md) before maintenance or creating cards.
+
+1. Build a staged view or run read-only checks. Use graph health for links and enforce --check for strict YAML/schema validation.
+2. Separate missing targets, ambiguous links, no-incoming cards, isolated cards and reachability from hubs. Counts overlap; the health score is not an acceptance gate.
+3. Inspect current sources and prepare an explicit file manifest. Preserve original bytes and body content for mechanical changes. Never infer a business state from an unknown status.
+4. Apply only the reviewed repair scope. Do not mutate readonly archival paths. MOC generation preserves legacy/manual files unless an explicit managed block exists.
+5. Recheck changed metadata and links, then publish the completed batch through the vault transport. Verify remote delivery separately.
+
+The health orchestration command reports only; it does not automatically fix links, regenerate MOCs or change decay. Use uv run for all Python entry points so the declared YAML dependency is available.
+
+## Workflow 3: CREATE / UPDATE (dedup-first, then link)
+
+**When to use:** Recording any card, or new information about something the vault may already track. Always look up first, always link immediately — a near-duplicate is the most common mistake; an orphan card is wasted knowledge.
+
+### Step 0: LOOKUP (mandatory — never skip)
+
+```bash
+uv run scripts/search.py "<entity / key phrase>" --vault <vault-dir> --json
+# fallback: grep -ril "<name>" <vault-dir>
+```
+
+Pick the operation (full rules: `references/update-in-place.md`):
+
+- **ADD** — no existing card → create it (steps 1–5 below).
+- **NOOP** — already captured, unchanged → stop.
+- **UPDATE** — same subject, new enrichment → open the card, sharpen `description`, append a dated line under `## Log`, re-`touch`.
+- **SUPERSEDE** — new fact *contradicts* a current value → rewrite the current value (frontmatter field + top of description = "Compiled Truth"), move the OLD value to append-only `## History` (`- 2026-03→2026-06 · company: TDI Group`), set `updated:`. Whole card obsolete → `status: superseded` + `superseded_by: "[[new-card]]"`.
+
+Only when the operation is **ADD**, continue:
+
+### Steps (ADD path)
+
+1. **Type:** Pick from schema `node_types`
+2. **Path:** Reverse-lookup `domain_inference` to find target folder:
+   ```python
+   # domain_inference maps path→domain. To find folder for domain "crm":
+   for path_prefix, domain in schema['domain_inference'].items():
+       if domain == 'crm':
+           target_folder = path_prefix  # e.g. "work/crm/"
+           break
+   ```
+3. **Frontmatter:** Write description (search snippet, not title repeat), tags (2-5, lowercase, kebab-case), status from type's enum
+4. **LINKING PROTOCOL (mandatory):**
+   a. Add `## Related` section with `[[hub]]` file of the domain
+      - Hub = `_index.md` or `MEMORY.md` of that domain
+   b. Find 2-3 sibling cards of same type+domain → add `[[links]]`
+      - `uv run scripts/graph.py backlinks <vault> <hub>` → find siblings
+      - Or: read vault-graph.json → filter nodes by type+domain
+   c. Run `uv run scripts/engine.py touch <new-file>`
+5. **Verify checklist:**
+   - [ ] Hub linked?
+   - [ ] 2+ related cards found?
+   - [ ] description ≠ title repeat?
+   - [ ] tags: 2-5, lowercase, kebab-case?
+   - [ ] status ∈ schema enum?
+
+Templates: `references/card-templates.md`
+
+---
+
+## Workflow 4: SEARCH & LINK (find + strengthen connections)
+
+**When to use:** Looking up information in the vault, or strengthening weak areas of the graph.
+
+### Navigation (Hub → Links → Target)
+
+1. **Determine domain** from the topic (work, personal, research, etc. — whatever your schema defines)
+2. **Start at hub:** `_index.md` or `MEMORY.md` of that domain
+3. **Follow links** — max 2 hops from hub to target
+4. **Fallback:** `uv run scripts/graph.py backlinks <vault> <target>` for reverse links
+
+### Orphan Rescue
+
+```bash
+uv run scripts/graph.py orphans <vault-dir>        # find orphans
+# For each orphan: connect to nearest hub or sibling card
+```
+
+### Link Strengthening
+
+```bash
+# Files with <2 links → enrich
+OPENROUTER_API_KEY=sk-... uv run scripts/enrich.py swarm-links <vault-dir> --apply
+uv run scripts/graph.py health <vault-dir>          # verify improvement
+```
+
+---
+
+## Workflow 5: ORCHESTRATE (automated multi-agent workflows)
+
+**When to use:** Instead of running scripts manually. No API keys — the Claude Code agent does all judgment directly.
+
+### Phase 0: Script sequencing
+
+```bash
+uv run scripts/orchestrate.py health <vault-dir>      # automated health workflow
+uv run scripts/orchestrate.py bootstrap <vault-dir>    # full bootstrap (one command)
+```
+
+`health` runs graph and strict metadata checks only. It leaves cards and indexes unchanged; graph diagnostic reports may be written.
+`bootstrap` runs: enforce > cleanup > tags > dedup > swarm-links > MOC > verify.
+
+### Phases 1-3: Agent judgment (no API keys)
+
+The agent (you) does the judgment directly — read prepared data, decide, write results.
+
+```bash
+# Phase 1: prep dedup clusters for YOUR review
+uv run scripts/orchestrate.py dedup-prepare <vault-dir>
+# -> writes .graph/dedup-review-input.json
+# -> YOU read clusters, mark approved=true, then: dedup.py --apply-manifest
+
+# Phase 2: prep domain catalogs for YOUR link suggestions
+uv run scripts/orchestrate.py link-prepare <vault-dir>
+# -> writes .graph/link-review-input.json
+# -> YOU read catalogs, suggest links per domain, write batch results
+
+# Phase 3: prep graph data for YOUR semantic analysis
+uv run scripts/orchestrate.py graph-prepare <vault-dir>
+# -> writes .graph/graph-analysis-input.json
+# -> YOU analyze contradictions, missing links, stale hubs, write findings
+```
+
+For Phases 1-3: run the prep command, read the output JSON, do the analysis yourself (you ARE the LLM), write results back. Use Agent tool for parallel domain work in Phase 2.
+
+---
+
+## Workflow 6: DAILY → CARDS (day's notes → linked cards)
+
+**When to use:** Turning a `daily/YYYY-MM-DD.md` note file into durable cards. Judgment-first — the scripts extract candidates; you classify, dedup, and link.
+
+**Full guide:** `references/daily-processor.md`
+
+### Summary (4 phases + idempotency)
+
+1. **CAPTURE:** `daily.py extract <daily-dir> <vault-dir> [date]` (candidates → `.graph/`) + `supersede.py <vault>` (conflict scan). Read schema `node_types`, list noteworthy items + the day's topics.
+2. **PROCESS:** per item, run the Workflow 3 Step 0 decision (ADD / UPDATE / SUPERSEDE / NOOP — `references/update-in-place.md`); resolve every `.graph/supersede-candidates.json` entry.
+3. **LINK:** apply the Workflow 3 linking protocol (hub + 2 siblings + touch) to each card.
+4. **SUMMARIZE (schema-gated):** only if the schema defines a summary type, write a daily-summary card with topics + a MOC down to today's cards and the raw file. No hardcoded DAG.
+
+**Idempotency:** append `<!-- autograph-processed: YYYY-MM-DDTHH:MM cards=N -->` to the end of the daily file; on re-run, skip content above the last marker. Never edit existing lines.
+
+---
+
+## Decay Engine (Ebbinghaus)
+
+The decay system models memory with three key mechanisms:
+
+### 1. Access count (spacing effect)
+
+Each `touch` increments `access_count` in frontmatter. More retrievals = slower forgetting:
+
+```
+strength = 1 + ln(access_count)
+effective_rate = base_rate / strength
+relevance = max(floor, 1.0 - effective_rate * days_since_access)
+```
+
+Example: a card touched 5 times has `strength = 1 + ln(5) ≈ 2.6`, decaying ~2.6x slower than a card touched once.
+
+### 2. Domain-specific rates
+
+Different content types decay at different rates. Configure in schema `decay.domain_rates`:
+
+| Type | Rate | Half-life (~) | Rationale |
+|------|------|---------------|-----------|
+| contact | 0.005 | 100 days | People don't become irrelevant quickly |
+| crm | 0.008 | 62 days | Deals have medium lifecycle |
+| learning | 0.010 | 50 days | Knowledge fades moderately |
+| project | 0.012 | 42 days | Projects have defined timelines |
+| daily | 0.020 | 25 days | Daily notes lose relevance fast |
+| (default) | 0.015 | 33 days | Fallback for unlisted types |
+
+### 3. Graduated recall
+
+Touch promotes one tier at a time, not a direct jump to active:
+
+```
+archive → cold → warm → active
+```
+
+Each promotion sets `last_accessed` to a midpoint date, so without re-touch the card naturally drifts back.
+
+### Backward compatibility
+
+- Files without `access_count` → default=1 → `1+ln(1)=1.0` → rate unchanged
+- Files without `type` → default rate applies
+- Existing calls `calc_relevance(days, schema)` → work unchanged (new params optional)
+
+---
+
+## Maintenance Commands
+
+```bash
+uv run scripts/moc.py generate <vault-dir>                                       # MOC generation
+uv run scripts/engine.py decay <vault-dir>                                       # decay cycle
+uv run scripts/engine.py touch <vault-dir>/path/card.md                          # touch (graduated)
+uv run scripts/engine.py creative 5 <vault-dir>                                  # creative recall
+uv run scripts/engine.py stats <vault-dir>                                       # stats
+uv run scripts/graph.py backlinks <vault-dir> path/to/card                       # backlinks
+uv run scripts/graph.py orphans <vault-dir>                                      # orphans
+uv run scripts/graph.py fix <vault-dir> --apply                                  # fix links
+uv run scripts/search.py "<query>" --vault <vault-dir> --json                    # ranked memory search (dedup-first)
+uv run scripts/supersede.py <vault-dir>                                          # conflict scan (dry-run)
+uv run scripts/supersede.py <vault-dir> --apply                                  # stamp superseded (2-card, newer-by-date)
+uv run scripts/daily.py extract <memory-dir> <vault-dir>                         # entity extraction
+uv run scripts/engine.py init <vault-dir> --dry-run                              # bootstrap bare files
+OPENROUTER_API_KEY=sk-... uv run scripts/enrich.py swarm-links <vault-dir> --apply  # link enrichment
+OPENROUTER_API_KEY=sk-... uv run scripts/enrich.py tags <vault-dir> --apply         # tag enrichment
+uv run scripts/link_cleanup.py <vault-dir> --apply                               # link cleanup
+uv run scripts/cleanup.py <vault-dir> [schema.json]                              # preview bounded description repair
+uv run scripts/cleanup.py <vault-dir> [schema.json] --apply                      # atomic repair before enforce/graph
+```
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| common.py | Shared: parse FM, walk, domain, decay (Ebbinghaus), wikilinks |
+| discover.py | Workflow 1: scan vault, output enum candidates |
+| generate_schema.py | Workflow 1: turn discovery JSON into draft schema |
+| swarm_prepare.py | Workflow 1: bin-pack vault into agent batches |
+| swarm_reduce.py | Workflow 1: consolidate + validate schema |
+| enforce.py | Workflow 1: validate + autofix against schema |
+| cleanup.py | Preflight: bounded-memory repair for bug-bloated descriptions |
+| link_cleanup.py | Workflow 1/4: remove phantom wikilinks from ## Related |
+| enrich.py | Workflow 1/4: tags + swarm-links (catalog-oriented link enrichment) |
+| dedup.py | Workflow 1: safe merge + .trash/ |
+| graph.py | Workflow 2/4: health score, link repair, backlinks, orphans |
+| moc.py | Workflow 2: MOC generation per domain |
+| orchestrate.py | Workflow 5: multi-agent orchestration (health, bootstrap, dedup-review, link-enrich, graph-analyze) |
+| engine.py | Workflow 2/3: decay (Ebbinghaus), touch (graduated), creative, stats, init |
+| search.py | Workflow 3/4: ranked memory search (BM25 FTS5 + link-graph rerank) — dedup-first lookup |
+| supersede.py | Workflow 3: deterministic same-entity conflict scan → `.graph/supersede-candidates.json` |
+| daily.py | Entity extraction from memory files |
+| tests/test_autograph.py | Self-contained tests (temp fixtures) |
+
+## Files
+
+| File | In package? | Purpose |
+|------|------------|---------|
+| schema.example.json | Yes | Template — copy and customize (includes domain_rates) |
+| schema.json | No | Your vault's schema (generated) |
+| schema.local.json | No | Local override (gitignored) |
+| references/ | Yes | Bootstrap workflow, schema docs, card templates, linking protocol |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| **Skipping agent swarm in Phase 2** | **CRITICAL: always run Step 2B. Script alone cannot classify unstructured content. No exceptions.** |
+| **Using deprecated `links` subcommand** | **`links` was removed (0.3% match rate). Only `swarm-links` is available — 81.6% match rate.** |
+| **Creating cards without linking** | **Always follow Workflow 3 — link to hub + 2 siblings immediately. Orphan cards are wasted knowledge.** |
+| **Creating a near-duplicate instead of updating** | **Workflow 3 Step 0 — `search.py`/grep first. Same subject → UPDATE or SUPERSEDE the existing card, never a second one.** |
+| **Two contradictory current values on one subject** | **SUPERSEDE: rewrite the current value (Compiled Truth), move the old one to append-only `## History`. Never leave both standing.** |
+| **Touching archive cards to active directly** | **Use graduated recall — touch promotes one tier at a time (archive→cold→warm→active).** |
+| Running whole-file tools on a giant card | Run `cleanup.py` first; `enforce.py` skips files over 10 MiB and reports them. |
+| Sending full vault to one agent | Use `swarm_prepare.py` — bin-packs into ~50K token batches. |
+| Running Wave 2 without Wave 1 | `swarm_reduce.py prepare` needs JSONL in `.graph/swarm/classifications/`. |
+| Using schema.example.json directly | Run discover → generate your own schema.json |
+| Description = title repeat | Write specific search snippet |
+| Status not in enum | Check schema's node_types |
+| Skip dry run | Always run without --apply first |
+| Running link enrich before dedup | Creates links to files that get merged/trashed. Dedup first. |
+| Missing OPENROUTER_API_KEY | `enrich.py` reads from `OPENROUTER_API_KEY` env var. |
+| Only running swarm-links once | Run again with `--force` to enrich ALL files. |
+
+## Default Models
+
+| Command | Default model | Override |
+|---------|--------------|----------|
+| tags | google/gemini-3-flash-preview | `--model` flag |
+| swarm-links | google/gemini-2.0-flash-001 | `--model` flag |
+
+Both are production-tested. Do not change defaults without benchmarking.
+
+## Troubleshooting
+
+**Error: Schema not found** → Create schema.json from discover output, or pass path: `enforce.py vault/ my-schema.json`
+
+**Score drops after enforce** → New files without frontmatter. Run `engine.py init vault/`
+
+**Dedup picks wrong canonical** → Content richness wins. Enrich the right file first, re-run.
+
+**Low match rate on swarm-links (<60%)** → Check if LLM returns paths instead of stems. Try `--force` for second pass.
+
+**swarm-links shows 0 matched for some batches** → Usually network errors. Results are cached — rerun and only failed batches retry.

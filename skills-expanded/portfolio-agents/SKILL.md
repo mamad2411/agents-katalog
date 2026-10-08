@@ -1,0 +1,473 @@
+# Agent guide
+
+This file is the entry point for any agent (opencode, future coding agents, or human contributors) working on the PP Namias portfolio. It captures the repo's working agreements, the available skills, and the most common workflows.
+
+## Skills
+
+### Content Management
+
+- `add-an-experience`, `add-a-project`, `add-a-certification`, `add-a-blog-post` — content workflows
+- `update-the-hero` — hero block editing
+- `blog-create`, `blog-edit`, `blog-review`, `blog-sync`, `blog-publish` — local-first blog content lifecycle
+- `sanity-data-operations` — Sanity schema changes, data migrations, debugging queries, revalidation
+- `sanity-schema-validator` — validates Sanity schemas against best practices, catches common issues
+- `sanity-content-audit` — audits Sanity content for completeness, consistency, and quality
+- `sanity-migration-helper` — helps write, validate, and run Sanity data migrations safely
+- `sanity-groq-optimizer` — analyzes and optimizes GROQ queries for better performance
+- `sanity-backup-restore` — backup and restore Sanity content and schemas
+
+### Frontend Development
+
+- `frontend-design` — build beautiful, responsive, accessible UIs with React, Tailwind, and Framer Motion
+- `ui-ux-pro-max` — design system intelligence
+- `component-api-scaffolding` — create React components, API routes, SWR hooks, context providers
+- `pwa-service-worker` — service worker management, offline support, PWA manifest, cache strategies
+- `react-patterns` — advanced React patterns, hooks, and best practices
+- `nextjs-app-router` — Next.js App Router patterns, data fetching, and optimization
+
+### Quality & Testing
+
+- `run-react-doctor` — how to read the react-doctor report, the 12-rule catalog, the score model
+- `fix-react-doctor-finding` — step-by-step fix workflow for one finding
+- `code-review` — systematic review of TypeScript, React, accessibility, performance, and security
+- `testing-workflow` — write and maintain tests with Vitest and React Testing Library
+- `accessibility-audit` — audit and fix WCAG 2.1 AA accessibility issues
+- `performance-optimization` — improve Core Web Vitals, load times, and runtime performance
+- `performance-auditing` — Lighthouse audits, bundle analysis, image/font optimization, Core Web Vitals
+
+### Security & DevOps
+
+- `run-pentestagent` — how to set up, configure, and run PentestAgent AI security scans against the portfolio
+- `deployment-infrastructure` — deploy to Vercel/Cloudflare, manage env vars, troubleshoot builds, rollbacks
+- `debugging-error-tracking` — systematic debugging for console errors, hydration, network, performance
+- `seo-optimization` — meta tags, JSON-LD structured data, sitemaps, social previews
+
+### AI Chatbot
+
+- `ai-chatbot` — LangGraph chatbot: graph engine, tools, SSE streaming, thread management, persistence. Core files in `src/lib/chat/`, `src/hooks/use-chat-stream.ts`, thread API routes, `ChatPanel`/`ThreadSidebar`/`FloatingHub` UI. Gate behind feature flags in `src/lib/features.ts`. Docs at `portfolio-v1/docs/chatbot/ARCHITECTURE.md`.
+
+### API & Backend
+
+- `api-design` — REST API patterns, validation, error handling, rate limiting
+- `webhook-design` — webhook implementation, signature verification, event-driven architecture
+
+### Infrastructure & DevOps
+
+- `cloudflare-workers` — Cloudflare Workers with OpenNext adapter, R2, KV, D1, edge computing
+- `code-migration` — framework and library migration strategies (Next.js 16, Sanity, OpenNext)
+- `dependency-audit` — security vulnerability scanning, licensing, maintenance
+- `opennext-cloudflare` — deploy Next.js to Cloudflare Workers using OpenNext adapter
+- `nextjs-16-migration` — migrate from Next.js 15 to 16 and handle breaking changes
+
+### Security
+
+- `csp-security-headers` — configure Content Security Policy and security headers
+- `canary-token-system` — manage canary token honeypot system for detecting scanners
+
+### Analytics & Features
+
+- `analytics-integration` — Umami analytics setup, tracking, and insights
+- `feature-flags` — feature flags for gradual rollouts and A/B testing
+
+### Documentation & Quality
+
+- `technical-writing` — documentation, READMEs, developer guides
+- `orchestrator` — coordinate multi-step tasks across multiple skills
+- `impeccable` — quick repo-hygiene and consistency checks
+- `git` — git workflow, branch strategy, commit hygiene
+- `content-review` — review copy and documentation for clarity
+- `ci-cd-security` — CI/CD pipeline security and automation
+
+### OpenCode & MiMo v2.5 Optimization
+
+- `mimo-workflow` — optimized workflows for OpenCode IDE with MiMo v2.5 free model
+- `opencode-optimization` — optimize OpenCode IDE configuration and workflows
+- `fullstack-workflow` — end-to-end full-stack development workflow for Next.js
+- `typescript-advanced` — advanced TypeScript patterns and type safety
+
+### Knowledge Graph
+
+- `graphify` — queryable codebase knowledge graph. Maps code, docs, SQL schemas, and configs into a traversable graph (graphify-out/). Local deterministic tree-sitter AST parsing, no vector store, every edge tagged `EXTRACTED` or `INFERRED`. Use `graphify query`/`path`/`explain` before raw grep; run `graphify update .` after code changes. Files: `.agents/skills/graphify/`, `.opencode/skills/graphify/`.
+
+### AI Documentation Retrieval
+
+- `context7` — fresh, version-specific library documentation via the Context7 MCP server (registered in `.opencode/opencode.json`, server key `context7`). Use the `resolve-library-id` and `get-library-docs` MCP tools to ground all framework API usage in current docs — Next.js 16 (`/vercel/next.js`), Sanity (`/sanity-io/sanity`), LangGraph (`/langchain-ai/langgraph`), Tailwind, Vitest, Framer Motion. Mandatory when the repo warns about training-data drift (e.g. the `nextjs-agent-rules` block in `portfolio-v1/AGENTS.md`): prefer fetched APIs over training-data memory to prevent hallucinated or deprecated API usage. Complements graphify (repo-local structure) with library truth (external docs). File: `.agents/skills/context7/SKILL.md`.
+
+## Subagents
+
+Specialized agents for different domains. Use the right agent for the task.
+
+| Agent        | File                            | Purpose                                   |
+| ------------ | ------------------------------- | ----------------------------------------- |
+| **Frontend** | `.agents/subagents/frontend.md` | React, Next.js, Tailwind, Framer Motion   |
+| **Backend**  | `.agents/subagents/backend.md`  | API routes, server logic, data operations |
+| **Content**  | `.agents/subagents/content.md`  | Sanity CMS, schemas, GROQ queries         |
+| **Security** | `.agents/subagents/security.md` | Security audits, vulnerability scanning   |
+| **DevOps**   | `.agents/subagents/devops.md`   | Deployment, CI/CD, monitoring             |
+| **AI**       | `.agents/skills/ai-chatbot/SKILL.md` | LangGraph chatbot, tools, streaming, threads |
+
+## Workflows
+
+Standardized workflows for common tasks. Follow these for consistency.
+
+| Workflow          | File                                         | When to Use                      |
+| ----------------- | -------------------------------------------- | -------------------------------- |
+| **Bug Fix**       | `.agents/workflows/bug-fix.md`               | Finding and fixing bugs          |
+| **Feature Dev**   | `.agents/workflows/feature-development.md`   | Implementing new features        |
+| **Code Review**   | `.agents/workflows/code-review.md`           | Reviewing code changes           |
+| **Portfolio Dev** | `.agents/workflows/portfolio-development.md` | Portfolio-specific development   |
+| **MiMo Prompts**  | `.agents/workflows/mimo-prompt-guide.md`     | Optimizing prompts for MiMo v2.5 |
+
+## Home page sections
+
+- `BlogSection` (`src/components/sections/BlogSection.tsx`) — compact list of the latest 3 blog posts shown side-by-side with `CertificationsSection` on the home page. Gated by `IS_BLOG_VISIBLE` in `src/lib/features.ts`. Plan: `docs/prd/prd.blog.json`.
+- `ProjectsSectionRevamped` (`src/components/sections/ProjectsSectionRevamped.tsx`) — dual-tab project index (Live Projects / Showcase) with flat cards, sliding tab indicator, expand/collapse, and keyboard navigation. Gated by `IS_PROJECTS_REVAMP_ENABLED` in `src/lib/features.ts`. When disabled, the original `ProjectsSection` renders. Plan: `docs/prd/prd.projects-revamp.json`.
+- `ProjectDetailPage` (`src/components/sections/ProjectDetailPage.tsx`) — full detail page for showcase projects at `/projects/[slug]`. Includes hero image, challenge/solution/result, highlights, tech stack, gallery, and JSON-LD structured data. ISR-cached with 1-hour revalidation.
+
+## React quality gate
+
+- Tool: `react-doctor@0.5.8` (pinned to exact version in `package.json`)
+- Config: `doctor.config.json` at the repo root
+- Scripts: `npm run doctor`, `npm run doctor:json`, `npm run doctor:check`, `npm run doctor:baseline`, `npm run doctor:diff`
+- CI gate: `.github/workflows/react-doctor.yml` (threshold = 0 findings = 100/100)
+- Scoreboard: `docs/react-doctor/scoreboard.md`
+- Find the canonical fix pattern for each rule in the `run-react-doctor` skill
+
+If you change code in `src/**` and the score drops, follow `fix-react-doctor-finding` and commit the fix in the same PR.
+
+## Security testing (PentestAgent)
+
+- Tool: [PentestAgent](https://github.com/GH05TCREW/pentestagent) — AI agent framework for black-box security testing
+- Config: `docs/security/pentestagent/config/`
+- Playbooks: `docs/security/pentestagent/playbooks/` (recon, XSS, CSRF, SSRF, injection, API fuzz, rate limiting, and more)
+- Setup: `scripts/setup-pentestagent.ps1` (Windows) or `scripts/setup-pentestagent.sh` (Unix)
+- CI gate: `.github/workflows/pentestagent-ci.yml`, `.github/workflows/pentestagent-scheduled.yml`, `.github/workflows/pentestagent-pr-check.yml`
+- Dashboard: `docs/security/dashboard.md`
+- Skill: `run-pentestagent`
+
+Local Python 3.8 is insufficient (3.10+ required). The CI pipeline is the primary execution environment. See the `run-pentestagent` skill for setup and playbook execution instructions.
+
+## Commit hygiene
+
+- One commit per story slice; commit every update
+- Message subject: `type(scope): <imperative summary>`
+- Body: bullet list of what changed, why, and what was verified (vitest run, doctor run, type check, lint)
+- Branch protection on `main` forbids merge commits — rebase and ff
+- ASCII-safe PR descriptions; use `--body-file` to avoid PowerShell escape corruption
+
+## PR.md workflow
+
+`PR.md` (repo root) is the single accumulating PR description for branch `dev`. Every update on the branch is appended there so the PR always tells the full story.
+
+- After each commit on `dev`, run `scripts/append-pr-update.ps1` (appends the latest commit as a dated entry), then commit `PR.md` with `docs(pr): update PR.md with latest change`.
+- Keep the deployment checklist section current when env vars or the deploy path change.
+- When opening the `dev` → `main` PR, use PR.md as the description (ASCII-safe; `gh pr create --body-file PR.md`).
+
+## Code conventions
+
+- TypeScript strict; `npx tsc --noEmit` must pass
+- ESLint 9 flat config (`eslint.config.mjs`); `npm run lint` must pass
+- No comments in code unless asked
+- Follow the patterns established for: SWR for component-scoped data, `<JsonLd>` for JSON-LD, sandbox attribute on every iframe, stable React keys from data, `useMemo` on Context.Provider values
+
+## Blog Content Pipeline
+
+Local-first blog content system. All posts live as `.md` files in `content/blog/`.
+
+### Content directory
+
+- `content/blog/{slug}.md` — one file per post with YAML frontmatter
+- Frontmatter schema: `scripts/lib/frontmatter-schema.ts` (zod)
+- Types: `src/types/blog.ts` (Frontmatter interface)
+
+### Sync scripts
+
+- `npm run blog:diff` — compare local vs Sanity
+- `npm run blog:pull` — pull from Sanity to local
+- `npm run blog:push` — push local to Sanity (dry-run by default)
+- `npm run blog:import` — one-time import from Sanity
+
+### Workflow
+
+1. Write/edit posts as local MD files (use `blog-create` / `blog-edit` skills)
+2. Review with `blog-review` skill
+3. Sync with `blog-sync` skill
+4. Publish with `blog-publish` skill
+
+## Vercel Web Interface Guidelines
+
+All UI code must follow the [Vercel Web Interface Guidelines](docs/design/vercel-web-interface-guidelines.md).
+Key rules:
+
+- Must: Full keyboard support, visible focus rings, `:focus-visible`
+- Must: Hit target ≥ 24px (mobile ≥ 44px)
+- Must: Loading buttons with spinner & original label
+- Must: URL reflects state (deep-link filters/tabs/pagination)
+- Must: `touch-action: manipulation` on controls
+- Must: Links use `<a>`/`<Link>` (never `<div onClick>`)
+- Must: `prefers-reduced-motion` respected
+- Must: Animate only `transform`/`opacity`; never `transition: all`
+- Must: Images have explicit width/height (prevent CLS)
+- Must: Honor `color-scheme` on `<html>` for dark themes
+- Never: Disable zoom, block paste, `outline: none` without focus replacement
+- Never: `<div>`/`<span>` with click handlers for navigation
+
+Run the review command:
+
+```
+curl -fsSL https://vercel.com/design/guidelines/install | bash
+```
+
+Full reference: `docs/design/vercel-web-interface-guidelines.md`
+
+## MCP (Model Context Protocol)
+
+MCP servers give your AI agent access to browser DevTools, component libraries, and more. Configuration is at `opencode.json` at the repo root.
+
+### Core MCP Servers
+
+| Server                  | Config key            | Purpose                                                                |
+| ----------------------- | --------------------- | ---------------------------------------------------------------------- |
+| **Chrome DevTools MCP** | `chrome-devtools`     | Browser debugging, performance traces, screenshots, console inspection |
+| **21st.dev Magic MCP**  | `@21st-dev/magic`     | Generate UI components from natural language (API key required)        |
+| **Magic UI MCP**        | `@magicuidesign/mcp`  | Animated components (marquee, bento, dock, globe, etc.)                |
+| **GitHub MCP**          | `github`              | Issues, PRs, repos, code search, file management                       |
+| **Filesystem MCP**      | `filesystem`          | File read/write access with path restrictions                          |
+| **Sequential Thinking** | `sequential-thinking` | Structured reasoning for complex problems                              |
+| **Memory**              | `memory`              | Knowledge graph memory for persistent context                          |
+| **Brave Search**        | `brave-search`        | Web search for documentation and API references                        |
+| **Fetch**               | `fetch`               | Fetch and analyze web content                                          |
+| **Puppeteer**           | `puppeteer`           | Advanced browser automation and screenshots                            |
+| **SQLite**              | `sqlite`              | Local database for caching and analytics                               |
+| **Sanity CMS**          | `sanity-cms`          | Direct Sanity CMS operations                                           |
+| **Sentry**              | `sentry`              | Error tracking and performance monitoring                              |
+| **Context7**            | `context7`            | Fresh, version-specific library docs (Next.js 16, Sanity, LangGraph)  |
+| **Vercel**              | `vercel`              | Deployment, edge functions, and analytics                              |
+| **Docker**              | `docker`              | Container management                                                   |
+
+### LSP Servers
+
+| Server           | Extensions                               | Purpose                                         |
+| ---------------- | ---------------------------------------- | ----------------------------------------------- |
+| **TypeScript**   | `.ts, .tsx, .js, .jsx`                   | Intelligent code completion and error detection |
+| **ESLint**       | `.ts, .tsx, .js, .jsx`                   | Real-time linting and code quality              |
+| **Prettier**     | `.ts, .tsx, .js, .jsx, .css, .json, .md` | Code formatting                                 |
+| **Tailwind CSS** | `.ts, .tsx, .js, .jsx, .css`             | Class completion and validation                 |
+| **HTML**         | `.html, .htm`                            | Markup validation and completion                |
+| **CSS**          | `.css, .scss, .less`                     | Style validation and completion                 |
+| **JSON**         | `.json, .jsonc`                          | Schema validation and completion                |
+| **Markdown**     | `.md, .mdx`                              | Documentation editing                           |
+| **GraphQL**      | `.graphql, .gql`                         | Schema validation and completion                |
+| **YAML**         | `.yaml, .yml`                            | Configuration file validation                   |
+| **Dockerfile**   | `Dockerfile`                             | Container configuration                         |
+| **Prisma**       | `.prisma`                                | Schema validation                               |
+
+## Agent Routing
+
+### By Task Type
+
+| Task              | Primary Skill               | Secondary Skills                                              |
+| ----------------- | --------------------------- | ------------------------------------------------------------- |
+| **New Component** | `component-api-scaffolding` | `frontend-design`, `ui-ux-pro-max`                            |
+| **API Endpoint**  | `api-design`                | `webhook-design`                                              |
+| **Bug Fix**       | `debugging-error-tracking`  | `code-review`, `testing-workflow`                             |
+| **Performance**   | `performance-optimization`  | `performance-auditing`                                        |
+| **Security**      | `run-pentestagent`          | `dependency-audit`, `ci-cd-security`, `csp-security-headers`  |
+| **Deployment**    | `deployment-infrastructure` | `cloudflare-workers`, `opennext-cloudflare`, `ci-cd-security` |
+| **Content**       | `sanity-data-operations`    | `add-a-project`, `add-a-blog-post`, `sanity-groq-query`       |
+| **Testing**       | `testing-workflow`          | `code-review`, `react-doctor`                                 |
+| **Documentation** | `technical-writing`         | `content-review`                                              |
+| **Analytics**     | `analytics-integration`     | `feature-flags`                                               |
+| **Knowledge Graph** | `graphify`               | `code-review`, `debugging-error-tracking`                     |
+
+### By Component Area
+
+| Area               | Skills                                                                   |
+| ------------------ | ------------------------------------------------------------------------ |
+| **Hero Section**   | `update-the-hero`, `frontend-design`, `ui-ux-pro-max`                    |
+| **Projects**       | `add-a-project`, `component-api-scaffolding`                             |
+| **Blog**           | `add-a-blog-post`, `seo-optimization`                                    |
+| **Certifications** | `add-a-certification`                                                    |
+| **Experience**     | `add-an-experience`                                                      |
+| **Gallery**        | `frontend-design`, `component-api-scaffolding`                           |
+| **Contact**        | `api-design`, `webhook-design`                                           |
+| **Chatbot**        | `ai-chatbot`, `api-design`, `frontend-design`, `testing-workflow`        |
+| **API Routes**     | `api-design`                                                             |
+| **Sanity Studio**  | `sanity-schema-validator`, `sanity-data-operations`, `sanity-groq-query` |
+
+## Testing
+
+- 109 test files, 1004 tests, all green
+- Run: `npm run test -- --run`
+- Chat tests: `npm run test -- --run src/__tests__/chat/` (graph, tools, persistence), `src/__tests__/api/chat*.test.ts` (routes), `src/__tests__/hooks/use-chat-stream.test.tsx` (streaming hook)
+- Test isolation: use `SWRConfig` with `provider: () => new Map()` for any test that exercises a SWR consumer
+- When testing chat features, mock feature flags (`IS_LANGGRAPH_ENABLED: false` etc.) to test legacy linear flow
+- Studios, scripts, and generated code are excluded from both `tsc` and `eslint` config; they have their own lanes
+
+## Loop Engineering
+
+This repo uses loop engineering patterns (inspired by [cobusgreyling/loop-engineering](https://github.com/cobusgreyling/loop-engineering)). Loops automate maintenance tasks on a cadence.
+
+### Core files
+
+All loop state lives in `.agents/state/`.
+
+| File                             | Purpose                                                    |
+| -------------------------------- | ---------------------------------------------------------- |
+| `.agents/state/STATE.md`         | Live loop state — what is active, blocked, or watch-listed |
+| `.agents/state/LOOP.md`          | Documents all active loops, cadence, and gates             |
+| `.agents/state/loop-budget.md`   | Daily token caps per loop                                  |
+| `.agents/state/loop-run-log.md`  | Append-only run history                                    |
+
+### Active loops
+
+| Loop                   | Cadence      | Workflow                                   | Phase |
+| ---------------------- | ------------ | ------------------------------------------ | ----- |
+| **Daily Triage**       | 1d weekdays  | `.github/workflows/daily-triage.yml`       | L1    |
+| **PR Babysitter**      | on PR events | `.github/workflows/pr-babysitter.yml`      | L2    |
+| **Dependency Sweeper** | 6h           | `.github/workflows/dependency-sweeper.yml` | L2    |
+| **AI Triage**          | on issue/PR events | `.github/workflows/ai-triage.yml`    | L2    |
+| **Renovate**           | schedule     | `renovate.json` (repo root)                | L2    |
+
+### Renovate — automated dependency management
+
+Renovate (`renovatebot/renovate`) is the dependency-update engine, replacing the hand-rolled Dependency Sweeper (currently in a 30-day parallel soak; the sweeper workflow carries a deprecation notice and is deleted once Renovate is validated).
+
+- **Config**: `renovate.json` at the repo root — extends `config:recommended`; timezone `Asia/Manila`; off-peak schedule (weekday 22:00-05:00 + weekends) to avoid CI congestion; PR rate limits (`prHourlyLimit: 2`, `prConcurrentLimit: 3`).
+- **Grouping**: minor + patch updates are grouped into a single PR (`all-minor-patch`), reducing PR noise; vulnerabilities are excluded from grouping and open immediately.
+- **Vulnerabilities**: `osvVulnerabilityAlerts: true` + `vulnerabilityAlerts` with an empty schedule open CVE PRs immediately, overriding the off-peak window, labeled `security`.
+- **Action pinning**: the `github-actions` manager is enabled with `pinDigests: true`, so all SHA-pinned workflow actions are tracked and kept current.
+- **Semantic commits**: forced to `chore(deps): ...` (`semanticCommits: enabled`, type `chore`, scope `deps`) — commitlint-compliant with this repo's conventional-commit rules.
+- **Safety**: majors require human approval via the Renovate Dependency Dashboard; the core stack (`next`, `react`, `react-dom`, `sanity`, `@sanity/*`, `next-sanity`) has automerge disabled and carries the `core-stack` label.
+- **Activation**: the Renovate GitHub App must be installed from the GitHub Marketplace onto this repository (Settings → Integrations → GitHub Apps). Renovate then opens an onboarding PR that must be merged to activate the config.
+
+### AI Triage — LLM-informed issue and PR triage loop
+
+Automated first-pass triage of incoming issues and pull requests. Built as the "Issue Triage" roadmap loop.
+
+- **Triggers**: `issues` (opened, edited) and `pull_request` (opened, ready_for_review).
+- **Capabilities**: classifies each item (bug/feature/documentation/question), assigns a priority tier (p0-critical/p1-high/p2-medium/p3-low), detects potential duplicates against open items via title/body bigram similarity plus LLM judgement, applies allowlisted labels automatically, and posts a concise triage comment (skipped on edits to prevent spam).
+- **Engine**: `scripts/ai-triage.mjs` — Node 20, no dependencies, uses OpenAI-compatible API (`OPENAI_API_KEY`, endpoint overridable via `LLM_API_BASE`), Anthropic (`ANTHROPIC_API_KEY`), or Google Gemini (`GEMINI_API_KEY`, `GEMINI_MODEL`, default `gemini-2.0-flash`; free tier supported). Falls back to a deterministic keyword classifier if the LLM call fails. Bot actors (dependabot, renovate, github-actions) are skipped; already-triaged items are not re-processed on edits.
+- **Secrets required**: any one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`. **`GEMINI_API_KEY` is recommended** — free tier from Google AI Studio (`https://aistudio.google.com/app/apikey`). Optional: `LLM_API_BASE`, `LLM_MODEL`, `GEMINI_MODEL`. Without any key the workflow prints a notice and skips gracefully (same pattern as `pentestagent-ci.yml`); it never fails the run.
+- **Safety**: labels are clamped to the allowlist (`bug`, `feature`, `documentation`, `question`, `p0-critical`, `p1-high`, `p2-medium`, `p3-low`, `duplicate`); no auto-close, no auto-merge; human review still required.
+
+### Kill switch
+
+- Label: `loop-pause-all` — when present on the repo, all loop workflows skip execution.
+- Resume: remove the label and clear the pause in `.agents/state/STATE.md`.
+
+### Agent behavior
+
+- Read `.agents/state/STATE.md` before starting work to understand what loops are active.
+- Append to `.agents/state/loop-run-log.md` after completing automated tasks.
+- Respect `.agents/state/loop-budget.md` token caps.
+- Use `loop-engineering` skill for detailed instructions.
+
+## Auto-Commit Workflow
+
+Every change made to the codebase MUST be followed by a git commit. This ensures:
+
+1. **Traceability** — every change is linked to a commit message
+2. **Safety** — work is not lost if the session ends
+3. **Review readiness** — PRs are built from small, reviewable slices
+
+### Rules
+
+1. **Commit after every logical change** — after each bug fix, feature addition, or configuration change, stage and commit
+2. **Commit message format**: `type(scope): short description`
+   - Types: `fix`, `feat`, `chore`, `docs`, `test`, `refactor`, `style`, `ci`
+   - Scope: the area of change (e.g., `layout`, `chat`, `cms`, `config`)
+3. **Verify before commit**: run relevant quality gates first
+   - `npm run test -- --run` — if source code changed
+   - `npx tsc --noEmit` — if TypeScript changed
+   - `npm run lint` — if code changed
+   - `npm run doctor:check` — if React components changed
+4. **One commit per story slice** — do not mix unrelated changes
+5. **Body**: bullet list of what changed, why, and what was verified
+
+### Example
+
+```bash
+git add -A
+git commit -m "fix(layout): include hero data in streaming SSR root context
+
+- Fetch fetchHeroData() alongside fetchSeoData() in streaming SSR layout
+- Merge profile, hero, and socialLinks into streamingCmsContent
+- Fixes FloatingHub showing empty profile image/name/title
+- Verified: npm test, tsc --noEmit, npm run lint all pass"
+```
+
+## CodeRabbit AI Code Review
+
+CodeRabbit is configured to automatically review every PR for bugs, security issues, accessibility problems, and code quality.
+
+### Configuration
+
+- Config file: `.coderabbit.yaml` at repo root
+- Workflow: `.github/workflows/coderabbit.yml`
+
+### Setup Steps
+
+1. **Add the CodeRabbit GitHub App** to this repository
+   - Go to: https://github.com/apps/coderabbit-ai/installations/new
+   - Select the `PP-Namias/Portfolio` repository
+   - Grant permissions for: pull requests, issues, checks, statuses
+
+2. **Add an OpenAI API key** as a repository secret
+   - Name: `CODERABBIT_OPENAI_KEY`
+   - Value: Your OpenAI API key with GPT-4 access
+   - Location: Settings → Secrets and variables → Actions → New repository secret
+
+3. **Verify** — Open a PR and check that CodeRabbit comments on it within 2 minutes
+
+### What CodeRabbit Reviews
+
+| Category | What It Checks |
+|----------|---------------|
+| **Bugs** | Logic errors, null pointer risks, race conditions |
+| **Security** | Injection, XSS, hardcoded secrets, unsafe iframes |
+| **Accessibility** | Missing ARIA attributes, keyboard support, focus management |
+| **TypeScript** | Type safety, strict mode compliance, proper generics |
+| **React** | Hook rules, key props, re-render optimization |
+| **Performance** | Expensive computations, missing memo, bundle size |
+
+### Custom Instructions by Path
+
+See `.coderabbit.yaml` `path_instructions` for per-directory review rules.
+
+## Code Quality Gate
+
+Before pushing or creating a PR, run the full quality gate:
+
+```bash
+cd portfolio-v1
+npm run test -- --run          # 1015+ tests
+npx tsc --noEmit                # strict TypeScript
+npm run lint                    # ESLint
+npm run doctor:check            # react-doctor 100/100
+```
+
+All four must pass before creating a PR.
+
+## Git hooks (husky + lint-staged)
+
+Repo-root git hooks enforce zero-defect commits. Tooling lives in the root `package.json` (private, dev-only); run `npm install` at the repo root to (re)install hooks via `prepare`.
+
+- **pre-commit** — `lint-staged` runs ESLint `--fix` + Prettier `--write` on staged files in `portfolio-v1/` only (globs in `portfolio-v1/.lintstagedrc.json`). Full-project checks are deliberately NOT here to keep commits fast. Optional gitleaks scan runs if installed.
+- **commit-msg** — commitlint enforces conventional commits (`commitlint.config.mjs` at root).
+- **pre-push** — typecheck `tsc --noEmit` for `portfolio-v1`, `ai-service`, and `studio` + full `vitest run` (~1098 tests) run before code leaves the machine. (Root cause of the original pre-push failure: a zombie `next dev` process wrote truncated `.next/dev/types` files that `tsc` picked up via `include`; kill stale node/next processes and rebuild `.next` if you see TS1435/truncated-declaration errors.)
+- **Emergency bypass** — `git commit --no-verify` / `git push --no-verify` skips hooks; use only when a hook has a false positive or a broken dependency.
+- Hooks auto-skip deleted files and empty staged sets (no-op success).
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

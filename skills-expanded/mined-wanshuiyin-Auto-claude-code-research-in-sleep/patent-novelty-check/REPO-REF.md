@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep (path: skills/skills-codex/patent-novelty-check/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Assess patent novelty and non-obviousness against prior art. Use when user says \"专利查新\", \"patent novelty\", \"可专利性评估\", \"patentability check\", or wants to evaluate if an invention is patentable."

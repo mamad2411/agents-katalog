@@ -1,0 +1,55 @@
+---
+name: feature-init
+description: Use when a new feature folder must be created for the DAE pipeline, or when discuss promotes/parks an idea. Triggers — "/engineer.feature-init", "create a feature", "start a new feature", "init a feature".
+---
+
+# feature-init
+
+Create a feature folder for the DAE pipeline — `feature.md` (the Ready contract), the folder, a branch, and a tracker entry. Checkpoint 1.5.
+
+## When to use
+
+Five paths:
+- **From `discuss`** — receives a `feature_intake` payload in context (park or promote outcome). No interview.
+- **Standalone** — no payload; run the intake interview.
+- **From a tracker capture** — promoting an untriaged row a human added directly to the tracker (no `Slug`; see *Tracker-as-intake* in `references/tracker.md`). Pre-fill intake from the row (its title → `title`/`outcome`, `Type`, any notes); confirm the rest. Reuse the row — don't create a new one (Step 9).
+- **From a roadmap item** — promoting a strategic roadmap item (status `planned`) into a feature (typically from `next`'s ON THE ROADMAP bucket, or `discuss`). Pre-fill intake from the item (`title`, `area`, `notes`). Signalled by a `roadmap_ref` (the item `id`) passed in — carry it onto `feature.md` and mark the item in-progress (Step 9). See *the roadmap ↔ feature funnel* in `references/roadmap.md`.
+- **Onboarding intake** — invoked by `onboard` (or directly) to formalize work that *already exists* in the codebase. The feature folder is reverse-engineered from an existing spec / branch / implementation. Enters at `status: in-progress` or `done`, not `ready`.
+
+Detect from-discuss vs standalone by whether a `feature_intake` payload is present; a tracker capture is signalled by a slug-less `tracker_ref` passed in (typically from `next`); a roadmap promotion is signalled by a `roadmap_ref` (item id) passed in; onboarding intake is signalled by `onboard` (or an explicit "formalize existing feature" request).
+
+**Not for:** brand-new ideas worth exploring first (`discuss`), or editing an existing feature (`feature-edit`).
+
+## Workflow
+
+Before the steps below, create one TodoWrite todo per workflow step (the full
+list up front, as a roadmap). After Step 6 creates the feature folder, show the
+**pipeline breadcrumb**: run
+`${CLAUDE_PLUGIN_ROOT}/scripts/dae_progress.py <feature-dir>` and present its
+output — for a just-initialized feature (no `progress.md` yet) it renders the
+pipeline ahead. The breadcrumb is advisory and never blocks. See
+`${CLAUDE_PLUGIN_ROOT}/references/progress-indicator.md`.
+
+1. **Resolve** — resolve the methodology root + manifest via `${CLAUDE_PLUGIN_ROOT}/scripts/dae_resolve.py` (see `references/resolving.md`). Exit 2 (no manifest) → point to `/engineer.onboard`.
+2. **Gather intake** — from-discuss: read the payload. From an `intent.md` (async originator, `${CLAUDE_PLUGIN_ROOT}/references/intent.md`): read it as the seed, synthesize the required fields from it, and confirm with the human before creating. Standalone: **first, project the path** (`${CLAUDE_PLUGIN_ROOT}/references/choice-points.md`) — read the idea, project size + clarity, and present the two funnel decisions as a **choice point** (recommend one, marked "(Recommended)", alternatives listed, `autonomy_level`-dialed default), not open questions: **(A) front half** — unclear/fuzzy/UX-heavy → recommend the **prototype-first path** (`${CLAUDE_PLUGIN_ROOT}/references/two-paths.md`): hand to `/engineer.prototype "<idea>"`, which iterates fast and converts to spec on convergence; shape known → spec-first. **(B) weight** — projected ~1-PR/low-risk → recommend **express (XS)** (`${CLAUDE_PLUGIN_ROOT}/references/express-lane.md`), else **full DAE**; charter-flagged path is never recommended express (safety wins). A `feature_intake`/handoff may already carry a projected `size` from `discuss` — use it, don't re-project. Only when the human takes the spec-first route, interview — required fields one per turn (`title`, `slug`, `outcome`, `source_links`, `status`, `autonomy_level` if `status` is `ready`/`in-progress`/`done`, `scope`), optional fields (`target`, `owner`, `area`, `relevant_adrs`, `tags`, `size`, `validation_method`, `assignee`) bundled at the end. **`validation_method`** is a one-line description of how this feature will be validated beyond the default (passing acceptance + unit + mutation); examples: "manual smoke in staging", "canary 5% prod for 24h, watch dashboard X", "feature flag `new_checkout`, internal users for 1 week". A high `autonomy_level` should be matched by an explicit non-default `validation_method`. **`assignee`** names who executes the next checkpoint — `human` | `local` | `cloud` (default `local`); it is orthogonal to `owner` (who is accountable). `cloud` requests cloud delegation, which the dispatch router still gates per-checkpoint via `dae_delegable.py` (see `references/handoff-dispatch.md`). Onboarding intake: reverse-engineer the fields from the existing spec / branch / commits; set `status` to `in-progress` or `done` per how complete the work is.
+3. **Validate** — slug format (kebab-case, lowercase, ASCII, ≤50, leading letter); `autonomy_level` ∈ `manifest.autonomy.allowed_levels` and within path overrides; any `status` other than `parked` requires `autonomy_level`; `relevant_adrs` exist; `assignee` ∈ {`human`, `local`, `cloud`} if present. Slug collision: if existing feature is `parked` → offer promote-from-parked (flip status, keep handoffs); if `ready`/`in-progress` → redirect to `feature-edit`; if `done` → reject.
+4. **Decomposition check** — if scope spans multiple competencies or sounds like several PRs, surface it; user proceeds as one feature or re-invokes per sub-feature with `parent_feature` set.
+5. **Allocate number** — run `${CLAUDE_PLUGIN_ROOT}/scripts/dae_feature_number.py <methodology_root>` and use the number it prints. Don't scan `features/` by hand — the script takes the max `NNN` across every git worktree (uncommitted folders included) and every local/remote branch, so numbers claimed on unmerged work don't collide. (Two inits running at the same moment can still race.) **Onboarding intake exception:** inherit the existing number — a feature migrated from a Speckit `specs/NNN-slug/` keeps its `NNN`; do not renumber.
+6. **Create** — `features/NNN-<slug>/` with `feature.md` (per the Foundation Design feature.md schema), empty `handoffs/`, empty `.build/`. Add `.build/` to `.gitignore`. Include `branch: <name>` in `feature.md` frontmatter — the slug for greenfield; the adopted branch for onboarding intake. This is read by `${CLAUDE_PLUGIN_ROOT}/scripts/dae_branch.py` at every later checkpoint's Step 0 to enforce branch hygiene. If a `validation_method` was provided in the intake, include it in the frontmatter too — downstream skills (`plan`, `consistency-check`) consume it. **If a `size` was provided, derive `gate_profile: {front, verify}` from the size→profile table in `${CLAUDE_PLUGIN_ROOT}/references/gate-profile.md` and include it in the frontmatter** (this is what dials the front/verify human gates); a caller may pass an explicit `gate_profile` to override the size default. **`size: XS` also sets `gate_profile.lane: express`** — the one-pass express lane (`${CLAUDE_PLUGIN_ROOT}/references/express-lane.md`); its downstream is `/engineer.express`, not the CP2→CP8 chain. Do not derive `lane: express` for a charter-flagged path or `autonomy_level: low` — those fall back to the full pipeline even at `size: XS` (safety wins). If no `size` was given, omit `gate_profile` — its absence keeps today's per-checkpoint gating (not `auto`). If a `roadmap_ref` was passed in (roadmap promotion), include `roadmap_ref: <item-id>` in the frontmatter — the back-link from the feature to its strategic roadmap item. Do NOT create `progress.md`/`acs.md`/`spec.md`/`plan.md`/`session-log.md` — downstream skills produce those.
+7. **Branch** — auto-create `git checkout -b <slug>` unless `CHARTER.md` declares a manual git policy. **If the branch already exists** (common in onboarding intake — the feature's work is already on a branch) → use it, don't recreate.
+8. **LSP language note** — if the feature touches a language not present in `manifest.validation.lsp.servers`, surface a one-line note ("this feature is mostly Rust — no LSP server recorded for Rust; LSP-backed lookup will fall back to grep+AST"). Inform-only; never blocks. Skip if `manifest.validation.lsp.servers` is absent (the project hasn't done the LSP probe yet — `onboard`'s gap-check will catch it).
+9. **Tracker (+ roadmap)** — upsert a `TrackedFeature` via the driver per `references/tracker.md` (`local` = the `dae_tracker_local.py` no-op; `notion` = the connected Notion MCP); write the returned ref to `feature.md` `tracker_ref`. **Promoting a tracker capture:** upsert *into the existing row* (the slug-less `tracker_ref` passed in) — write the assigned `Slug`/`Status` back to it rather than creating a duplicate. **Promoting a roadmap item:** if a `roadmap_ref` was passed in, mark that item in-progress with the new slug via the roadmap driver (`local` = `${CLAUDE_PLUGIN_ROOT}/scripts/dae_roadmap.py mark <ref> in-progress <slug>`; MCP-backed = the connected channel) — the strategic layer now reflects that the feature is underway. See `references/roadmap.md`.
+10. **Handoff** — emit a summary.
+
+## Handoff
+
+Emit per `${CLAUDE_PLUGIN_ROOT}/references/handoff-summary.md`. `checkpoint: 1.5`; `recommended_next`: ready → "/engineer.prime-context then /engineer.discover-acs", **except `gate_profile.lane: express` → "/engineer.express" (the one-pass lane)**; parked → "resume via /engineer.discuss <slug>"; onboarding intake → "/engineer.discover-acs (reverse-engineer mode)".
+
+If folder + `feature.md` succeed but branch or tracker fails, emit `status: interrupted` noting what's incomplete.
+
+## References
+
+- [Foundation Design](https://www.notion.so/3585ecdee0e2811bbc67ff4913c03207) — feature.md schema, storage layout, naming
+- [Discuss & Upstream Funnel](https://www.notion.so/35a5ecdee0e281eaa35fced0c4e23384) — the `feature_intake` contract from discuss
+- `references/tracker.md` — the tracker drivers (local + Notion)
+- `references/roadmap.md` — the roadmap ↔ feature funnel (`roadmap_ref` back-link, promote)

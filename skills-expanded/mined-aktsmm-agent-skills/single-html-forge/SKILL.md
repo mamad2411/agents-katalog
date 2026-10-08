@@ -1,0 +1,126 @@
+---
+name: single-html-forge
+description: "Generate a single self-contained HTML file — a horizontal slide deck, a vertical-scroll explainer document, or a fixed-canvas summary image — with zero external runtime dependencies, then verify it mechanically. Use when the user asks for HTMLスライド, 単一HTMLスライド, single-file HTML presentation, ブラウザーで開く説明資料, HTML 説明資料, HTMLサマリ画像, or self-contained HTML, or wants to hand someone a deck or explainer that opens anywhere without PowerPoint. Also use to embed images into such a file or to re-check an existing one. Does not output PPTX."
+argument-hint: "作りたい内容と、deck / doc / poster のどれか"
+user-invocable: true
+license: CC BY-NC-SA 4.0
+metadata:
+  author: yamapan (https://github.com/aktsmm)
+---
+
+# Single HTML Forge
+
+One HTML file. No CDN, no build step, no external fetch at runtime. Opens the same on any machine and survives being emailed.
+
+## When to Use
+
+- "HTMLスライドを作って" / "単一HTMLで資料にして" / "ブラウザーで開ける説明資料にして" / "サマリ画像を1枚"
+- Handing a deck or explainer to someone who should not need PowerPoint
+- Embedding images into a self-contained HTML artifact
+- Re-verifying or editing an artifact this skill produced
+
+Not for: PPTX output (this skill does not produce it), editable diagram source files, or anything needing a live server.
+
+## Archetype Routing
+
+Ask which one unless the request already says. Load only that archetype's reference.
+
+| Archetype | Shape                                            | Use for                           | Reference                                             |
+| --------- | ------------------------------------------------ | --------------------------------- | ----------------------------------------------------- |
+| `deck`    | 16:9 slides, keyboard nav, presenter overlay     | talks, walkthroughs               | [archetype-deck.md](references/archetype-deck.md)     |
+| `doc`     | vertical scroll, sidebar nav, numbered citations | explainers, comparisons, handouts | [archetype-doc.md](references/archetype-doc.md)       |
+| `poster`  | one fixed canvas, exported as PNG                | summary images, social cards      | [archetype-poster.md](references/archetype-poster.md) |
+
+`deck` includes a collapsible sidebar, settings menu, fullscreen, optional sound and reduced-motion-aware effects. Start from `deck-outline-skeleton.html` for reading/review, `deck-skeleton.html` for single-slide presentation, or `deck-motion-skeleton.html` for a worked step example. Both views can switch without losing position. Preserve chapter groups; finalize with thumbnails for a visual sidebar (see the deck reference).
+
+## Intake
+
+1. Archetype (above).
+2. Topic, audience, what they should be able to do or decide afterwards, and roughly how much content.
+3. Colour direction — propose two or three, or derive one from the topic. See [design-tokens.md](references/design-tokens.md).
+4. Images? If any is a screenshot or of unknown provenance, ask the sanitization question in Hard Constraints **before** embedding.
+5. Which export, if any: PDF, PNG, or per-slide PNG. Produce only what was asked for.
+6. For editable notes or forms, resolve the capability gap before promising implementation: the bundled player has no free-text input or persistence. Offer a static worksheet only with agreement; otherwise route to an application workflow. Do not patch the pinned runtime to disguise an unsupported requirement.
+
+## Hard Constraints
+
+These gate the output. They are here, not in a reference, because a reference may never be read.
+
+- **No artifact-specific JavaScript or CSS.** Script is the bundled runtime only; styling is the fixed template plus typed custom properties. Any other `<script>` or `<style>` fails verification.
+- **Images ride in a `data:` URI on an `<img>`, or in allowlisted inline SVG.** Nothing else may carry a resource — not CSS `url()`, not `srcset`, not `<object>`, `<embed>`, `<iframe>`, `<video>`, `<link>`, and never `srcdoc`.
+- **No web fonts.** System font stack only. Glyphs will differ across machines; say so rather than claiming pixel fidelity.
+- **Do not generate brand logos or trademarks.**
+- **Never write a customer name, tenant name, subscription id, or internal hostname into the output.**
+- **Before embedding a screenshot or an image of unknown provenance, ask: "is this sanitized for publication?"** On "no" or "not sure", stop and mask it first ([mask_image.py](scripts/mask_image.py)). A text scan cannot see a name rendered inside an image, so this judgement stays with the user. Re-ask if the image changes.
+- **Prefer the active workspace's instructions** for colour and formatting when they exist; otherwise use this skill's defaults.
+- **Never call an artifact finished on Tier 1 alone.** Without the browser pass, report it as `UNVERIFIED`.
+
+## Build Flow
+
+1. **Storyboard first and stop there.** Open with one sentence for the whole artifact — where it starts, what it passes through, where it lands — then one row per slide or section: the id it will keep, its visible title, the assertion it makes, and the block that carries it. For a deck with six or more slides or multiple topics, assign every slide to one of 3–5 chapters before drafting. Wait for the user's answer before opening a skeleton.
+
+    | id  | visible title | assertion              | block           |
+    | --- | ------------- | ---------------------- | --------------- |
+    | s2  | 鍵の管理      | 鍵は保管するのをやめる | `shf-cards` × 2 |
+
+    Assertions drive the content; they do not have to become the displayed heading. In business and review decks, prefer concise noun-phrase titles and carry the full claim in the lead or body. Use sentence titles only when their rhetorical force is intentional ([anti-slop.md](references/anti-slop.md)). One wrong line is free to fix here and costs a rebuild plus a re-verify once twelve slides exist. Skip only for a poster, or when the user arrives with the structure already settled. If the user hands the rest back, fill it provisionally and mark which rows they never saw.
+
+2. Copy the skeleton for the chosen archetype from `assets/skeletons/`.
+3. Replace the content, using the storyboard ids as `data-slide-id` and section `id`. Keep them stable — they are the handles for later edits.
+  For a draft corresponding to another format, preserve claims, examples, caveats, citations, and diagram relationships; compare visible slide content, not merely hidden notes or JSON. Record any approved reduction rather than treating "draft" as permission to summarize.
+4. Adjust colours by editing `<style id="shf-theme">` only; that block is the whole design system, so carrying it into the next artifact is how a series stays consistent. Never touch `<style id="shf-css">` or `<script id="shf-runtime">`; both are hash-pinned.
+5. For each image: `embed_assets.py`, then paste the `dataUri` into an `<img>` with `alt` and `data-asset-ref`, and add the asset entry to `<script id="shf-model">`.
+6. For deck steps or thumbnails, run `export_html.py draft.html --finalize final.html --thumbnails` (omit `--thumbnails` for a title-only sidebar). This verifies the draft, builds embedded previews and complete static print pages, then verifies the final HTML before saving. After editing slide content, finalize again; do not hand-edit derived images or print pages.
+7. Verify, then export only the requested format. Choose effects only where they explain order, change or focus; do not animate every slide merely because the player supports it. Sound starts off and is a recipient choice.
+
+Changing anything under `assets/runtime/` or `assets/css/` means re-running `build_skeletons.py`, which regenerates the skeletons and re-pins the registry.
+
+## Verification Gate
+
+```
+python scripts/verify_html.py <artifact.html> --tier2
+```
+
+- **Tier 1** is standard library only and always runs: canonical grammar, element and attribute allowlist, pinned-region hashes, theme tokens, model and asset closure, data URI decode, image metadata, link schemes, size budget.
+- **Tier 2** needs Playwright: blocks all network egress, walks every slide, waits for images to finish decoding, then checks for zero-size images, missing viewBox, overflow, and console errors.
+
+Exit codes: `0` PASS, `1` FAIL, `2` UNVERIFIED. Anything but `0` means do not ship it.
+
+Fast path uses the target viewport and requested export. If mobile or responsive use is promised, also walk the final artifact at the narrow target width; a desktop PASS does not cover it. Never skip single-file-ness, image decode, overflow, navigation, or the sanitization question. Report untested capabilities separately.
+
+## Scripts
+
+| Script                                           | Needs                       | Purpose                             |
+| ------------------------------------------------ | --------------------------- | ----------------------------------- |
+| [verify_html.py](scripts/verify_html.py)         | stdlib (Tier 2: Playwright) | the gate                            |
+| [build_skeletons.py](scripts/build_skeletons.py) | stdlib                      | rebuild skeletons and re-pin hashes |
+| [embed_assets.py](scripts/embed_assets.py)       | stdlib (resize: Pillow)     | fetch, strip metadata, encode       |
+| [mask_image.py](scripts/mask_image.py)           | Pillow                      | mask rectangles before embedding    |
+| [export_html.py](scripts/export_html.py)         | Playwright                  | PDF / PNG                           |
+| [test_verify.py](scripts/test_verify.py)         | stdlib                      | proves the gate actually fails      |
+
+Missing Pillow or Playwright stops the affected step with installation guidance. It never silently degrades.
+
+## References
+
+- [artifact-grammar.md](references/artifact-grammar.md) — the normative rules the verifier enforces
+- [design-tokens.md](references/design-tokens.md) — colour recipe and the token grammar
+- [japanese-typography.md](references/japanese-typography.md) — CJK line breaking and spacing
+- [asset-embedding.md](references/asset-embedding.md) — image routes, budget, provenance
+- [component-patterns.md](references/component-patterns.md) — the markup blocks available
+- [anti-slop.md](references/anti-slop.md) — what makes output look generated
+- [verification.md](references/verification.md) — what to check by eye
+
+## Requirements
+
+A harness with file read/write and Python 3.x. Everything in this folder is self-contained; copy it anywhere and it still works.
+
+## Done Criteria
+
+- [ ] Archetype confirmed with the user
+- [ ] Storyboard agreed, or the skip recorded (poster / structure already settled)
+- [ ] Claims that could not be backed are named for the user, or the artifact makes none
+- [ ] `verify_html.py --tier2` exits `0`; a Tier 1-only run is reported as `UNVERIFIED`
+- [ ] Every image has `alt`, a model entry, and a sanitization answer if it is a screenshot
+- [ ] Only the requested exports exist
+- [ ] Output carries no customer, tenant, or subscription identifiers

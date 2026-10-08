@@ -1,0 +1,24 @@
+---
+name: aliyun-qwen-omni-test
+description: Minimal multimodal omni smoke test for Model Studio Qwen Omni.
+version: 1.0.0
+---
+
+Category: test
+
+# Minimal Viable Test
+
+## Goals
+
+- Validate that the omni skill includes the correct latest model family and sample payload.
+
+## Prerequisites
+
+- Target skill: `skills/ai/multimodal/aliyun-qwen-omni`
+
+## Recommended check
+
+```bash
+python skills/ai/multimodal/aliyun-qwen-omni/scripts/prepare_omni_request.py \
+  --output output/aliyun-qwen-omni/request.json
+```

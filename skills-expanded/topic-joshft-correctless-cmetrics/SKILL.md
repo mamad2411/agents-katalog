@@ -1,0 +1,551 @@
+---
+name: cmetrics
+description: Project health and ROI dashboard. Use monthly or when evaluating workflow effectiveness. Shows bugs caught, token cost, and trends.
+allowed-tools: Read, Grep, Glob, Bash(git*), Bash(wc*), Bash(find*), Bash(cat*), Bash(jq*), Write(.correctless/artifacts/metrics-*)
+disallowed-tools: Edit, MultiEdit, NotebookEdit, CreateFile
+interaction_mode: autonomous
+---
+
+# /cmetrics — Workflow Metrics Dashboard
+
+> **Shared constraints apply.** Before executing, read `_shared/constraints.md` from the parent of this skill's base directory. All constraints there apply to this skill.
+
+Aggregate all accumulated workflow data into a project health dashboard. Shows the value the workflow has delivered over time.
+
+## When to Run
+
+- Monthly — to track trends
+- Before presenting to stakeholders — to justify the workflow investment
+- When deciding whether to upgrade from standard to high intensity
+- When something feels off — metrics reveal which phases are pulling weight and which aren't
+
+## Data Sources
+
+Read everything in the accumulation layer. Skip files that don't exist.
+
+### Primary sources:
+1. **QA findings** — `glob .correctless/artifacts/qa-findings-*.json` — every QA round from every feature
+2. **Verification reports** — `glob .correctless/verification/*-verification.md` — every verification
+3. **Workflow effectiveness** — `.correctless/meta/workflow-effectiveness.json` — post-merge bug history
+4. **Antipatterns** — `.correctless/antipatterns.md` — accumulated bug classes
+5. **Drift debt** — `.correctless/meta/drift-debt.json` — architectural erosion
+6. **Olympics findings** — `glob .correctless/artifacts/findings/audit-*-history.md` — all audit runs
+7. **Specs** — `glob .correctless/specs/*.md` — count of features that went through the workflow
+8. **Feature summaries** — `glob .correctless/artifacts/summary-*.md` — per-feature summaries (from /csummary)
+9. **Decision records** — `glob .correctless/decisions/*.md` — for staleness checks (revisit-when/revisit-by markers)
+10. **Workflow state files** — `glob .correctless/artifacts/workflow-state-*.json` — for spec_updates counts per feature
+11. **Token logs** — `glob .correctless/artifacts/token-log-*.jsonl` — per-feature token usage from subagent spawns
+12. **Audit trails** — `glob .correctless/artifacts/audit-trail-*.jsonl` — per-branch tool invocation logs from the PostToolUse hook. Contains: timestamp, phase, tool name, file path, branch.
+13. **Git log** — commit history to measure feature velocity and branch durations
+14. **Session meta** — `glob ~/.claude/usage-data/session-meta/*.json` — filter by `project_path` matching the current project root. Contains exact token counts, tool usage, duration, error rates per session.
+15. **Session facets** — `glob ~/.claude/usage-data/facets/*.json` — match by `session_id` to session-meta entries for this project. Contains AI-analyzed session quality: outcome, friction, satisfaction.
+16. **Override history** — `glob .correctless/meta/overrides/*.json` — preserved override logs from completed `/cauto` runs, for Override Health section
+17. **Deferred findings backlog** — `.correctless/meta/deferred-findings.json` — centralized backlog of deferred review findings (severity breakdown, oldest open, 30-day trend)
+
+### Derived metrics:
+
+**Features completed** — count of spec files in `.correctless/specs/`
+
+**Total issues caught pre-merge** — sum of per-feature gate catches only:
+- Rules added during review (count rules in final spec minus rules in initial draft — approximate by counting total rules per spec)
+- QA findings across all `qa-findings-*.json` files
+- Verification findings from all verification reports
+
+Audit findings are NOT included — any issue found outside the per-feature TDD workflow (review → test audit → QA → verify) is an escape by definition. Audit findings belong in the escape column (see "Escape Rate" below).
+
+**Issues by phase** — categorize each issue by which per-feature phase caught it:
+- Spec: rules that reference antipatterns or templates
+- Review: rules added after initial draft (higher-numbered rules in the spec)
+- Test audit: findings from QA rounds labeled as test-quality issues
+- QA: all findings in qa-findings files
+- Verify: findings in verification reports
+
+**Escape rate (three-gate breakdown)** — replaces the single "Bug escape rate" line with a three-gate model:
+- **Per-feature escapes**: issues caught by a later per-feature gate. Derived from `qa-findings-*.json` — count of BLOCKING findings across all files. NON-BLOCKING and UNCERTAIN findings are excluded (advisory observations, not escaped defects). Note: QA findings use BLOCKING/NON-BLOCKING/UNCERTAIN severity vocabulary, distinct from audit findings' critical/high/medium/low/info vocabulary.
+- **Audit escapes**: issues caught by `/caudit` post-feature audits. From round-JSON files in `.correctless/artifacts/findings/`. Count of findings with a non-null `severity` field not equal to `"info"` (info findings are not counted as escapes, case-insensitive). Findings without a `severity` field are excluded from escape counts.
+- **Production escapes**: from `workflow-effectiveness.json` `post_merge_bugs` (unchanged source)
+
+**Severity-weighted escape score** — per audit cycle (a set of round-JSON files sharing the same `preset` and `date`). Weights: critical=5, high=3, medium=2, low=1, info=0. Severity matching is case-insensitive — normalize to lowercase before applying the weight mapping. Score = sum of `weight(severity)` across all findings with a valid severity field that is not `"info"`.
+
+**Escape breakdown by root cause** — uses the `escape_type` field from round-JSON findings:
+- **Implementation escapes**: code violates spec (`escape_type: "implementation"`)
+- **Spec escapes**: spec was too permissive (`escape_type: "spec"`)
+- **Unclassified**: no `escape_type` field or null value
+Missing or null `escape_type` is counted as "unclassified."
+
+**Escape trends** — for each preset, compare the current cycle's weighted escape score to the previous cycle's score:
+- **Improving**: score decreased
+- **Stable**: score change <= 20%
+- **Regressing**: score change > 20%
+When fewer than 2 cycles exist for a preset, report "insufficient data for trend."
+
+**Severity distribution** — per audit cycle, report count of CRITICAL, HIGH, MEDIUM, LOW findings as a table. Note the distribution shift from previous cycle when available.
+
+**Dormant escape metrics** — when no round-JSON files exist in `.correctless/artifacts/findings/`, the entire escape metrics section is dormant — no error, no warning, just omitted from output. Follows PAT-019.
+
+**Phase effectiveness** — from `workflow-effectiveness.json`:
+- For each phase: bugs that should have been caught vs bugs actually caught
+- Identify weak phases (low catch rate relative to responsibility)
+
+**Antipattern trends** — from `.correctless/antipatterns.md`:
+- Total entries
+- Group by category — which categories keep growing?
+- Most frequent (highest `Frequency` field)
+
+**Drift debt health** — from `.correctless/meta/drift-debt.json`:
+- Open items count
+- Oldest open item age
+- Items resolved vs items accumulating
+
+**Olympics history** — from audit history files:
+- Number of runs by preset (QA, Hacker, Perf)
+- Average rounds to convergence
+- Total findings across all runs
+- Recurring patterns flagged
+
+**Olympics staleness** — for "days since last Olympics" per preset, take the
+maximum of two independent signals (ABS-029 / PRH-005 — single-signal
+staleness was the original PMB-005 bug):
+- (a) mtime of `.correctless/artifacts/findings/audit-{preset}-history.md` if the file exists
+- (b) mtime of the most recent file matching `.correctless/artifacts/findings/audit-{preset}-*-round-*.json` if any match
+
+Use the `max` of (a) and (b) — the later of the two timestamps wins. If
+neither signal exists, report the staleness as `no data` literally (never
+silently zero or "infinite"). The comparison is strictly mtime-based — do
+NOT cross-check the round-JSON's `started_at` content; that's the gate's
+job (cmd_audit_done in workflow-advance.sh), not the consumer's. Layer
+separation is intentional.
+
+Acknowledged residual risk: ENV-003 says filesystem mtime is unreliable
+after `git checkout`/`git clone`. The consumer side accepts this — /cmetrics
+is advisory and fail-open; a stale mtime produces a slightly-wrong staleness
+number but does not corrupt workflow state. The gate (cmd_audit_done) is
+content-based and immune to the same drift.
+
+**Audit-done overrides** — count `audit-done` overrides separately from
+total overrides in the Override Health section. A routine `audit-done`
+override is the AP-023 recurrence pattern for the ABS-029 gate specifically.
+Surface as a dedicated counter line: `audit-done overrides: {N} across {M} runs`.
+
+**Feature velocity** — from git log:
+- Average branch duration (first commit to merge)
+- Features per month
+
+## Output Format
+
+Print to conversation AND write to `.correctless/artifacts/metrics-{date}.md`:
+
+```markdown
+# Correctless Metrics — {Project Name}
+# Generated: {date}
+
+## Overview
+- **Features completed:** {N} (from spec count)
+- **Issues caught pre-merge:** {N} (per-feature gates only — review, test audit, QA, verify)
+- **Issues escaped to audit:** {N} (found by /caudit after landing on main)
+- **Issues escaped to production:** {N} (PMBs)
+- **Workflow active since:** {date of first spec file}
+
+## Issues by Phase (Pre-Merge Gates)
+| Phase | Issues Caught | % of Total | Notes |
+|-------|--------------|------------|-------|
+| Review | {N} | {%} | {e.g., "Security checklist added 40% of these"} |
+| Test Audit | {N} | {%} | |
+| QA | {N} | {%} | {e.g., "3 class fixes added structural tests"} |
+| Verify | {N} | {%} | |
+
+## Escape Rate (Three-Gate Breakdown)
+
+| Gate | Count | Source |
+|------|-------|--------|
+| Per-feature escapes | {N} BLOCKING findings | qa-findings-*.json |
+| Audit escapes | {N} findings (excl. info) | round-JSON in artifacts/findings/ |
+| Production escapes | {N} post-merge bugs | workflow-effectiveness.json |
+
+### Severity-Weighted Escape Score
+
+Per audit cycle (grouped by `preset` + `date` from round-JSON files):
+
+| Cycle | Preset | Date | Weighted Score | Trend |
+|-------|--------|------|----------------|-------|
+| {N} | {preset} | {date} | {score} | {improving/stable/regressing} |
+
+Weights: critical=5, high=3, medium=2, low=1, info=0. Case-insensitive.
+Trend: improving (score decreased), stable (change <= 20%), regressing (change > 20%).
+When fewer than 2 cycles exist for a preset: "insufficient data for trend."
+
+### Root Cause Breakdown
+
+| Category | Count | % |
+|----------|-------|---|
+| Implementation escapes | {N} | {%} |
+| Spec escapes | {N} | {%} |
+| Unclassified | {N} | {%} |
+
+Uses `escape_type` field from round-JSON findings. Missing/null = unclassified.
+
+### Severity Distribution
+
+Per audit cycle:
+
+| Severity | Count | Shift from Previous |
+|----------|-------|--------------------|
+| CRITICAL | {N} | {+/-N or "—"} |
+| HIGH | {N} | {+/-N or "—"} |
+| MEDIUM | {N} | {+/-N or "—"} |
+| LOW | {N} | {+/-N or "—"} |
+
+### Production Bug Escapes
+{From workflow-effectiveness.json — unchanged}
+| ID | Severity | What | Phase That Missed | Why |
+|----|----------|------|-------------------|-----|
+| PMB-001 | {sev} | {desc} | {phase} | {reason} |
+
+**Weakest phase:** {phase with most misses relative to responsibility}
+**Recommendation:** {what to improve — more templates? higher intensity? more QA rounds?}
+
+## Antipattern Trends
+- **Total entries:** {N}
+- **Top categories:**
+  | Category | Count | Trend |
+  |----------|-------|-------|
+  | {category} | {N} | {growing/stable/resolved} |
+
+- **Most frequent:** {AP-xxx} — {description} — seen {N} times
+
+{If any category has 3+ entries: "Consider whether this is an architectural issue, not just a code pattern."}
+
+## Drift Debt
+- **Open items:** {N}
+- **Oldest:** {DRIFT-xxx} — {age} days — {description}
+- **Resolved this period:** {N}
+- **Accumulating faster than resolving:** {yes/no}
+
+{If oldest > 60 days: "Flag for /cdevadv analysis — this is rotting."}
+
+## Olympics History
+| Run | Preset | Date | Rounds | Findings | Fixed |
+|-----|--------|------|--------|----------|-------|
+| 1 | QA | {date} | {N} | {N} | {N} |
+| 2 | Hacker | {date} | {N} | {N} | {N} |
+
+**Average convergence:** {N} rounds
+**Recurring patterns:** {patterns that keep appearing across runs}
+
+## Mini-Audit Lens Coverage
+
+Read lens data from two sources: (1) qa-findings JSON files (`.correctless/artifacts/qa-findings-*.json`) for LENS fields on MA- findings, and (2) lens recommendation artifacts (`.correctless/artifacts/lens-recommendations-*.json`) for recommended vs. actually-ran data. The LENS field is an open enum — handle unknown lens values gracefully (do not error on unrecognized lens names from recommended lenses).
+
+**Dormant (PAT-019)**: When no lens recommendation artifacts exist under `.correctless/artifacts/`, the Mini-Audit Lens Coverage section is dormant — omitted from output entirely, no error, no warning. Only display this section when at least one `lens-recommendations-*.json` file exists.
+
+When data exists, report:
+
+**(a) Lenses ran across recent features** — from qa-findings JSON LENS fields. Count how many times each lens value appeared across features.
+
+**(b) Recommended lenses vs actually ran** — from lens recommendation artifacts. For each feature with a recommendation artifact, show which recommended lenses were suggested and which actually ran (from the `outcomes` field).
+
+**(c) Finding yield per lens** — findings count divided by times the lens ran. Lenses with zero yield across 3+ features may be stale.
+
+**(d) Promotion candidates** — lenses recommended 3+ times across features are flagged as candidates for promotion to the core lens set or for a new PAT-xxx entry in `.correctless/ARCHITECTURE.md`.
+
+## Velocity
+- **Average feature duration:** {N} days (branch creation to merge)
+- **Features per month:** {N}
+- **Workflow overhead per feature:** ~{N} min estimated
+
+## Override Health
+
+Read all files in `.correctless/meta/overrides/*.json`. Compute:
+
+**(a) Total overrides** across all preserved runs — sum `override_count` from each file.
+
+**(b) Mean overrides per run** — total overrides / count of preserved files.
+
+**(c) Override reason frequency** — group overrides by reason using Jaccard similarity (threshold 0.3, invoked via `Bash(source scripts/override-scrutiny.sh && jaccard_similarity "reason_a" "reason_b")`) to cluster similar reasons. Show up to 3 clusters sorted by count descending; ties broken alphabetically by shortest reason in the cluster.
+
+The clustering threshold (0.3) is intentionally lower than the retry-prevention threshold (0.4 in PRH-006) — clustering for reporting should be loose to surface patterns, while retry prevention should be conservative to avoid blocking legitimate overrides.
+
+If mean overrides per run > 0.5, emit a warning: "Override rate is elevated ({mean}/run). Check the top reasons — this may indicate a gate misclassification (AP-023)."
+
+If `.correctless/meta/overrides/` doesn't exist or is empty, the section says: "No override data yet. Override tracking starts automatically on the next `/cauto` run."
+
+## Deferred Findings Backlog Trend
+
+Read `.correctless/meta/deferred-findings.json`. If the file does not exist, show: "No deferred findings data."
+
+When the file exists, display:
+
+- **Total open count**: findings where `status` is `open`
+- **Severity breakdown**: count of MEDIUM, LOW, ADVISORY among open findings
+- **Oldest open finding**: date and feature of the earliest `deferred_at` among open findings
+- **Resolved in last 30 days**: count of findings where `resolved_at` is within the last 30 days (UTC comparison)
+- **Added in last 30 days**: count of findings where `deferred_at` is within the last 30 days
+
+All date comparisons use ISO-8601 UTC timestamps. The 30-day trend computation is prompt-level (performed by the LLM agent reading the JSON), not a script.
+
+## Fix-Round Loop Activation
+
+Read `fix_rounds_triggered` from each entry in `.correctless/meta/intensity-calibration.json` (ABS-005 consumer — read-only). Filter to entries where `actual_intensity` is `high` or `critical`.
+
+If `fix_rounds_triggered` is 0 across 3 or more consecutive high+ intensity features, emit a warning: "Fix-round loop has not fired in {N} consecutive high+ features — severity calibration may be insufficient (AP-028). Consider reviewing QA findings from recent features to check if NON-BLOCKING ratings were appropriate."
+
+If fewer than 3 high+ features exist, omit the warning: "Insufficient data — fewer than 3 high+ features completed."
+
+If `fix_rounds_triggered` > 0 in recent features, report the activation count: "Fix-round loop activated in {N}/{M} recent high+ features ({total} fix rounds total)."
+
+## ROI Estimate
+- **Issues caught pre-merge:** {N} (per-feature gates only)
+- **Issues escaped to audit:** {N} (caught post-merge by /caudit)
+- **Estimated fix time if found in production:** {pre-merge caught} × 2 hours avg = {N} hours
+- **Workflow time invested:** {features} × {overhead per feature} = {N} hours
+- **Net time saved:** {production fix time} - {workflow time} = {N} hours
+
+{This is a rough estimate. Production bugs take 2-10x longer to fix than pre-merge bugs due to debugging, hotfixes, rollbacks, and incident response. The 2-hour average is conservative. Audit escapes are excluded from ROI — they were caught post-merge, so the per-feature workflow didn't prevent them.}
+
+## Health Analysis
+- **QA Round Trend:** {e.g., "Averaging 2.3 rounds — trending down from 3.1 last quarter."}
+- **Antipattern Growth:** {e.g., "Error handling category growing fastest (+4 in 3 months). Consider architectural pattern."}
+- **Drift Staleness:** {e.g., "3 drift items older than 90 days. Schedule /cdevadv layers analysis."}
+- **Olympics Convergence (at high+ intensity):** {e.g., "Last 5 runs converged in ≤2 rounds — consider rotating presets." Omit this bullet at standard intensity.}
+- **Decision Record Staleness:** {e.g., "2 decisions have expired revisit-by dates."}
+- **Spec Revision Rate:** {e.g., "Specs revised mid-TDD in 60% of features — spec phase may need more brainstorm time."}
+- **Cross-Metric Correlations:** {e.g., "Spec revision rate is high AND antipattern growth is accelerating in error handling — spec phase isn't learning from antipatterns."}
+```
+
+## Health Analysis
+
+After computing the raw metrics above, analyze them for actionable insights. This is the interpretive layer — raw numbers without analysis are useless.
+
+**QA Round Trends:**
+- Calculate average QA rounds across all features. If trending up across recent features: "QA is finding more issues — check whether specs are getting less thorough or code quality is degrading."
+- If trending down: "QA rounds are decreasing — the workflow is getting more effective."
+- If suspiciously low (every feature passes in 1 round): "Every feature passes QA in 1 round. Either code quality is exceptional or QA intensity is too low. Consider increasing min_qa_rounds or adding more hostile QA lenses."
+
+**Antipattern Growth:**
+- Group antipatterns by category. Flag the fastest-growing: "Error handling antipatterns are growing fastest (4 new in last 3 months). This may indicate an architectural gap, not just individual bugs."
+- If any category has 5+ entries: "Consider whether '{category}' is a systemic issue that needs an .correctless/ARCHITECTURE.md pattern, not just more antipattern entries."
+
+**Drift Debt Staleness:**
+- Flag items older than 90 days: "{N} drift items are older than 90 days. Stale drift becomes invisible — schedule a `/cdevadv layers` analysis."
+- Compare accumulation vs resolution rate: "Drift is accumulating {N}x faster than it's being resolved."
+
+**Olympics Convergence Speed (high+ intensity):**
+- If last 5 runs all converged in ≤2 rounds: "Olympics are converging suspiciously fast. Possible causes: (1) lenses are stale, (2) codebase is genuinely clean, (3) agent presets need rotation. Try a custom preset."
+- If convergence is getting slower: "Olympics are taking more rounds — new code may be introducing complexity the current lenses don't cover well."
+
+**Decision Record Staleness:**
+- Scan `.correctless/decisions/` for files with `revisit-when` or `revisit-by` markers. Flag expired conditions.
+
+**Spec Revision Rate:**
+- If specs are frequently revised during TDD (high spec_updates counts across features): "Specs are being revised mid-TDD frequently. The spec phase may not be thorough enough — consider more Socratic brainstorm time or research steps."
+
+**Cross-Metric Correlations (the most valuable insights):**
+- "Spec revision rate is high AND antipattern growth is accelerating in the same category" → spec phase isn't learning from antipatterns
+- "QA rounds are low BUT post-merge bugs are increasing" → QA is too lenient
+- "Drift debt is growing AND Olympics convergence is fast" → drift may be in areas Olympics don't cover
+- "Review phase catches fewer issues over time BUT antipattern count is growing" → review isn't reading antipatterns effectively
+
+## Token ROI Analysis
+
+Read all `.correctless/artifacts/token-log-*.jsonl` files. Correlate token spend with findings data from QA, verification, and audit artifacts.
+
+### Metrics to Compute
+
+**1. Cost per bug caught**: When cost artifacts exist (`.correctless/artifacts/cost-*.json`), compute actual USD cost: "Across {N} features, you spent ${X} and caught {B} bugs — ${X/B} per bug caught pre-merge." Falls back to token-count-based estimates when cost artifacts are missing: "Across {N} features, you spent {T} tokens and caught {B} bugs — {T/B} tokens per bug caught pre-merge."
+
+**2. Tokens per feature by phase**: Group all token log entries by the `feature` field and sum `total_tokens` per feature. Show as a table:
+
+| Phase | Tokens | % of Total | Findings | Tokens/Finding |
+|-------|--------|-----------|----------|----------------|
+| TDD (ctdd) | {N} | {%} | {N} | {N} |
+| Review (creview/creview-spec) | {N} | {%} | {N} | {N} |
+| Verification (cverify) | {N} | {%} | {N} | {N} |
+| Audit (caudit) | {N} | {%} | {N} | {N} |
+| Other (all remaining: cspec, cdebug, crefactor, cmodel, credteam, cdevadv, cpostmortem) | {N} | {%} | {N} | {N} |
+
+This shows where the budget goes. If 65% goes to TDD and TDD catches 60% of bugs, the allocation is efficient. If 40% goes to audit and it catches 5% of bugs, consider reducing audit intensity.
+
+**3. Bug escape rate**: From `workflow-effectiveness.json`: `post_merge_bugs` count / (total caught + escaped). "Escape rate: {N}%. {M} caught pre-merge, {K} escaped."
+
+**4. Estimated production fix cost avoided**: Each caught bug saves an estimated 2-10 hours of production debugging, hotfixes, rollbacks, and incident response. "{N} bugs caught × 2-10 hours = {range} hours saved. At $150/hr developer cost, that's ${range} saved." This is a rough estimate — say so. But even the conservative end usually exceeds the token cost.
+
+**5. Tokens per LOC**: Total tokens / total lines added (from git diff --stat across features). Track over time — should be stable if overhead scales linearly.
+
+**6. Olympics efficiency** (high+ intensity): Tokens per finding per round. "Round 1: {N} findings at {T} tokens. Round {M}: {N} findings at {T} tokens." Shows diminishing returns.
+
+**7. Token trend**: Split completed features chronologically into two halves (first N/2 vs second N/2; for odd counts, the middle feature goes to the first half). Compute the average tokens per feature for each half. If the second half average exceeds the first half average by more than 20%, the trend is "growing". If the second half average is more than 20% lower than the first half average, the trend is "shrinking". Otherwise the trend is "stable" (within 20% threshold). If fewer than 4 features have token data, the trend is "insufficient data". Report: "Token cost per feature: {growing/shrinking/stable/insufficient data}. First half average: {N}. Second half average: {N}. Cost per bug: {improving/degrading}."
+
+**8. Tool call distribution per phase**: From audit trail JSONL files, count tool invocations grouped by phase. Shows where tool activity concentrates — if 80% of Edit calls happen in tdd-impl (GREEN), the implementation phase is the most write-heavy.
+
+### Output
+
+Add to the dashboard after the existing ROI Estimate section:
+
+```markdown
+## Token ROI Analysis
+
+### Cost Summary
+- **Total tokens tracked:** {N} across {M} features
+- **Average tokens per feature:** {N}
+- **Cost per bug caught:** {N} tokens ({M} bugs caught)
+
+### Phase Distribution
+| Phase | Tokens | % of Total | Findings | Tokens/Finding |
+|-------|--------|-----------|----------|----------------|
+| TDD (ctdd) | {N} | {%} | {N} | {N} |
+| Review (creview, creview-spec) | {N} | {%} | {N} | {N} |
+| Verification (cverify) | {N} | {%} | {N} | {N} |
+| Audit (caudit) | {N} | {%} | {N} | {N} |
+| Other (cspec, cdebug, crefactor, cmodel, credteam, cdevadv, cpostmortem) | {N} | {%} | {N} | {N} |
+
+### Per-Feature Token Cost
+
+Read all `token-log-*.jsonl` files from `.correctless/artifacts/`. Produce a per-feature token cost table alongside the Phase Distribution table. Each row represents one feature. Extract the feature slug from the JSONL filename (the portion between `token-log-` and `.jsonl`).
+
+Columns: feature slug, total tokens, tokens by skill category (TDD, Review, Verification, Audit, Other), and QA rounds.
+
+Use the JSONL `skill` field for category mapping:
+- ctdd maps to TDD
+- creview/creview-spec maps to Review
+- cverify maps to Verification
+- caudit maps to Audit
+- all others map to Other
+
+Read QA rounds from the workflow state file (`.correctless/artifacts/workflow-state-{slug}.json`, field `qa_rounds`) for each feature. If no workflow state file exists for a feature, show "–" in the QA Rounds column. If a JSONL entry lacks a `skill` field, infer the category from the `phase` field using the same mapping.
+
+The table is sorted by total tokens descending. If no token log files exist, skip this section with a note: "No token log data available."
+
+| Feature Slug | Total Tokens | TDD | Review | Verification | Audit | Other | QA Rounds |
+|-------------|-------------|-----|--------|-------------|-------|-------|-----------|
+| {slug} | {N} | {N} | {N} | {N} | {N} | {N} | {N} |
+
+### Bug Escape Rate
+- **Pre-merge bugs caught:** {N}
+- **Post-merge bugs escaped:** {M}
+- **Escape rate:** {%}
+- **Estimated production fix cost avoided:** {N bugs} × 2-10 hours = {range} hours (~${range} at $150/hr)
+
+### Efficiency
+- **Tokens per LOC:** {N} (total tokens / lines added across features)
+- **Olympics efficiency (high+ intensity):** Round 1: {N} findings at {T}k tokens → Round {M}: {N} findings at {T}k tokens
+
+### Token Trend
+- Token cost per feature: {growing/shrinking/stable/insufficient data} (first half average vs second half average, 20% threshold)
+- Cost per bug caught: {improving/degrading}
+```
+
+If no token logs exist, skip this section with: "No token usage data yet. Token tracking starts automatically when skills run — data will appear after the next feature."
+
+## Session Analytics (from Claude Code data)
+
+Determine the current project root: `git rev-parse --show-toplevel`. Then use `find ~/.claude/usage-data/session-meta/ -name '*.json'` to list all session-meta files (do NOT use Glob with `~` — use find or Bash for tilde expansion). Filter to sessions where `project_path` matches the project root (exact string match on the absolute path). For each matching session, look up the corresponding facets file at `~/.claude/usage-data/facets/{session_id}.json` (the facets filename IS the session_id).
+
+Note: Not all sessions have facets files (~26% coverage is typical). When computing facets-based metrics, note the sample size: "Outcome data available for {N} of {M} sessions ({%})."
+
+### Metrics to Compute
+
+**From session-meta:**
+
+- **Exact token cost**: Sum `input_tokens + output_tokens` across all project sessions. This is ground truth — cross-check against manual token logs. If they diverge significantly, note: "Session-meta shows {N} tokens total. Token logs show {M}. The difference ({D}) is orchestrator overhead not captured by subagent tracking."
+- **Average session duration**: `mean(duration_minutes)` across sessions.
+- **Tool distribution**: Aggregate `tool_counts` across sessions. Show top 6 tools by call count.
+- **Friction rate**: `sum(tool_errors) / sum(all tool calls)`. Break down by `tool_error_categories`.
+- **User engagement**: Average `user_response_times`. Long times (>60s) suggest confusion. Short times (<15s) suggest flow.
+
+**From facets:**
+
+- **Outcome rate**: % of sessions with `outcome: "fully_achieved"`.
+- **Satisfaction**: Distribution of `claude_helpfulness` values.
+- **Top friction categories**: Aggregate `friction_counts` across sessions. Flag growing categories.
+
+**Correctless vs Freeform comparison:**
+
+Identify Correctless sessions by checking whether Correctless artifacts were modified during the session's time window. A session is "Correctless" if:
+- Workflow state files (`.correctless/artifacts/workflow-state-*.json`) have `phase_entered_at` timestamps within the session's `start_time` to `start_time + duration_minutes` range, OR
+- The session's `tool_counts` includes calls to tools that only Correctless uses (the `Task` tool with high counts suggests orchestrated workflow), OR
+- QA findings, verification reports, or spec files were modified during the session window (check git log timestamps)
+
+If none of these signals are present, the session is "freeform." Note: this heuristic is approximate — some Correctless sessions (e.g., `/cstatus` or `/chelp`) may look freeform. Err on the side of undercounting Correctless sessions rather than overcounting.
+
+**Important:** Slash commands like `/cspec` are intercepted by Claude Code before reaching the conversation — they do NOT appear in `first_prompt`. Do not use `first_prompt` to identify Correctless sessions.
+
+### Output
+
+```markdown
+## Session Analytics
+
+### Overview
+- **Sessions tracked:** {N} (from {date} to {date})
+- **Average session duration:** {N} minutes
+- **Total tokens (ground truth):** {N} input + {N} output
+
+### Tool Distribution
+| Tool | Calls | % of Total |
+|------|-------|-----------|
+| {tool} | {N} | {%} |
+
+### Quality Signals
+- **Outcome rate:** {N}% fully achieved
+- **Helpfulness:** {distribution}
+- **Friction rate:** {N}% tool errors
+- **Top friction:** {category from facets friction_counts} ({N} occurrences)
+- **User engagement:** avg response time {N}s ({<15s: flowing | 15-60s: normal | >60s: confused})
+
+### Correctless vs Freeform
+| Metric | Correctless Sessions | Freeform Sessions |
+|--------|---------------------|-------------------|
+| Outcome rate | {%} | {%} |
+| Friction rate | {%} | {%} |
+| Avg duration | {N} min | {N} min |
+| Avg tokens | {N} | {N} |
+```
+
+If no session-meta data exists for this project, skip with: "No Claude Code session data found for this project. Session analytics will appear after running a few sessions."
+
+## Trend Tracking
+
+If previous metrics files exist (`.correctless/artifacts/metrics-*.md`), compare:
+- Is the bug escape rate improving? (should decrease over time)
+- Are more issues being caught earlier? (review should catch more as templates improve)
+- Is drift debt accumulating or resolving?
+- Are Olympics converging faster? (should, as antipatterns grow)
+
+Note trends: "Bug escape rate: 5% → 3% → 1.5% over 3 months. The workflow is getting more effective."
+
+## Claude Code Feature Integration
+
+### Task Lists
+Use TaskCreate/TaskUpdate:
+- Reading QA findings (N files)
+- Reading verification reports (N files)
+- Reading workflow effectiveness data
+- Reading antipatterns
+- Reading drift debt
+- Reading Olympics history
+- Reading git log
+- Calculating metrics
+- Reading decision records
+- Reading session analytics data
+- Analyzing health indicators
+- Reading token logs and computing ROI
+- Generating dashboard
+
+## Autonomous Defaults
+
+- **AD-001**: Report scope — generate full metrics dashboard (default). No human input required; this skill runs to completion autonomously.
+
+## If Something Goes Wrong
+
+- `/cmetrics` writes a dashboard artifact but does not modify workflow state or source code. Re-run anytime safely.
+- If metrics are sparse, that's normal for new projects — data accumulates with each feature. Key sources: QA findings from `/ctdd`, verification reports from `/cverify`, antipatterns from `/cpostmortem`.
+
+## Constraints
+
+- **Read-only.** This skill aggregates data. It does not modify anything.
+- **Be honest about estimates.** The ROI calculation is rough. Say so. Don't oversell.
+- **Missing data is normal.** A new project will have sparse metrics. Report what exists and note what will accumulate with more features.
+- **Don't compare to other projects.** Each project's metrics only compare to its own history.
+- **The "issues caught" number includes deduplication.** If review and QA both caught the same issue, count it once at the earliest phase.
+- **Redact if sharing.** If this output will be shared externally, apply redaction rules from `templates/redaction-rules.md` first.
+
+For a full project dashboard, run `/cdashboard` and open `.correctless/dashboard/index.html` in a browser.

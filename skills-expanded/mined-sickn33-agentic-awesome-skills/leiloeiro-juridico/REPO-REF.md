@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/sickn33/agentic-awesome-skills (path: plugins/agentic-awesome-skills-claude/skills/leiloeiro-juridico/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Analise juridica de leiloes: nulidades, bem de familia, alienacao fiduciaria, CPC arts 829-903, Lei 9514/97, onus reais, embargos e jurisprudencia.'

@@ -1,0 +1,86 @@
+---
+name: execute-round
+description: Use when a planned round handoff exists and needs to be implemented end-to-end via the 4-commit chain (entry-admin → BA design → dev body with inline CR + SE → state refresh + self-audit). Dispatches ba-designer / developer / cr-reviewer / se-contract sequentially.
+---
+
+# execute-round
+
+Orchestrates the 4-commit chain for an arcgentic round per spec § 4.2.3. Reads the planned
+handoff (from `plan-round` skill or hand-authored), then executes Phase 1-4 via the
+`arcgentic` Python CLI.
+
+## When to invoke
+
+- User says "let's execute round R{N}" or "run the 4-commit chain for the handoff at ..."
+- User runs `/execute-round <round_name>` slash command
+- A handoff doc exists at `docs/superpowers/plans/...` and dev work is ready to start
+
+## Prerequisites
+
+Requires the `arcgentic` CLI:
+- Stable: `pipx install arcgentic`
+- Dev: `cd toolkit && pip install -e ".[dev]"`
+
+Requires a planned handoff doc — run `/plan-round` first if missing.
+
+V1 projects must resolve the session-mode gate before implementation. If
+`project.session_mode.mode` is already present in `.agentic-rounds/state.yaml`,
+use it and do not ask again:
+
+```bash
+arcgentic session-mode recommend --round=$ROUND --handoff=$HANDOFF_PATH
+arcgentic session-mode prompt --round=$ROUND --handoff=$HANDOFF_PATH --mode=multi-session --role=developer
+```
+
+## Inputs
+
+Parse from `$ARGUMENTS`:
+- `round_name` (e.g. "R10-L3-aletheia")
+- `handoff_path` (defaults to most recent `docs/superpowers/plans/{date}-{round}-handoff.md`)
+- `--dry-run` flag (optional; skip all commits and pushes)
+
+## Workflow
+
+When invoked:
+
+1. Verify the handoff doc exists at `handoff_path`.
+2. Shell out:
+   ```
+   arcgentic execute-round-impl --round=$ROUND --handoff=$HANDOFF_PATH [--dry-run]
+   ```
+3. The CLI orchestrates 4 phases:
+   - **Phase 1 — Entry-admin commit**: commit handoff + state-row updates
+   - **Phase 2 — BA design pass**: dispatch ba-designer → write design doc → commit
+   - **Phase 3 — Dev body**: dispatch developer → run pre-audit quality gates (mypy / pytest / ruff) → inline CR step → inline SE step (MANDATE #20: NO BA design in SE brief) → commit
+   - **Phase 4 — State refresh + self-audit handoff**: compose self-audit handoff doc with stable artifact/fixed-anchor facts → run `arcgentic audit-check --strict-extended` → write → commit
+
+4. Read CLI output for result summary (per ExecuteRoundResult.summary()):
+   - 4 phase results with commit SHAs
+   - CR + SE findings counts
+   - Quality gate statuses
+   - Self-audit handoff path
+
+5. Report to user: 4 commit SHAs + findings counts + handoff path.
+
+## Known limitations (forward-debts)
+
+- **ER-RETRY**: no retry-with-context loops; if any sub-agent dispatch fails, the run aborts. Re-invoke after fixing the failure manually.
+- **ER-AUDIT-FACTS-RICH**: self-audit facts avoid mutable current-state / moving-HEAD assertions, but rich commit-chain / changed-file fact generation is future work.
+- **ER-STATE-ROW**: Phase 1's CLAUDE.md state-row update is a NO-OP (project-agnostic).
+
+See `docs/tech-debt.md` for the full forward-debt registry.
+
+## Failure modes
+
+- **Missing handoff doc**: re-run `/plan-round` first.
+- **CLI not installed**: instruct user to `pipx install arcgentic`.
+- **Sub-agent dispatch failure**: re-invoke after fixing (no automatic retry in v0.2.0 P0).
+- **Quality gate FAIL**: developer output had errors; review BA design + fix dev output manually; re-invoke.
+
+## See also
+
+- `agents/ba-designer.md` / `developer.md` / `cr-reviewer.md` / `se-contract.md` — agents dispatched
+- `templates/ba_design.md` / `self_audit_handoff.md` — output structure templates
+- `toolkit/src/arcgentic/skills_impl/execute_round.py` — Python algorithm
+- `skills/session-mode/SKILL.md` — V1 pre-dev identity gate
+- spec § 4.2 — full skill specification

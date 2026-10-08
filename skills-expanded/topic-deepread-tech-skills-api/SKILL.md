@@ -1,0 +1,842 @@
+---
+name: deepread-api
+description: Full DeepRead API reference. All endpoints, auth, request/response formats, blueprints, webhooks, error handling, and code examples for OCR, structured extraction, form filling, and PII redaction.
+allowed-tools: Bash, Read, Write
+user-invocable: true
+---
+
+# DeepRead API Reference
+
+You are helping a developer integrate DeepRead into their application. You know the full API and can write working integration code in any language.
+
+**Base URL:** `https://api.deepread.tech`
+**Auth:** `X-API-Key` header with key from `https://www.deepread.tech/dashboard` or via the device authorization flow (see Agent Authentication below)
+
+---
+
+## Agent Authentication (Device Authorization Flow)
+
+These endpoints let an AI agent obtain an API key without the user ever copy/pasting secrets. Based on OAuth 2.0 Device Authorization Grant (RFC 8628).
+
+### POST /v1/agent/device/code — Request a Device Code
+
+**Auth:** None (public endpoint)
+**Content-Type:** `application/json`
+
+```json
+{"agent_name": "my-agent"}
+```
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `agent_name` | string | No | Display name shown to the user during approval (e.g. "Claude Code", "My CI Bot"). Optional but strongly recommended — without it, the user sees "Unknown Agent". |
+
+**Response (200 OK):**
+```json
+{
+  "device_code": "a7f3c9d2e1b8...",
+  "user_code": "HXKP-3MNV",
+  "verification_uri": "https://www.deepread.tech/activate",
+  "verification_uri_complete": "https://www.deepread.tech/activate?code=HXKP-3MNV",
+  "expires_in": 900,
+  "interval": 5
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `device_code` | Secret code for polling — never show this to the user |
+| `user_code` | Short code the user enters in their browser (format: `XXXX-XXXX`) |
+| `verification_uri` | Base URL for manual code entry |
+| `verification_uri_complete` | URL with code pre-filled — open this to skip manual entry (preferred) |
+| `expires_in` | Seconds until the code expires (default: 900 = 15 minutes) |
+| `interval` | Minimum seconds between poll requests |
+
+---
+
+### POST /v1/agent/device/token — Poll for API Key
+
+**Auth:** None (public endpoint)
+**Content-Type:** `application/json`
+
+```json
+{"device_code": "a7f3c9d2e1b8..."}
+```
+
+Poll this endpoint every `interval` seconds after the user has been shown the code.
+
+**Responses:**
+
+| Scenario | `error` field | `api_key` field | Action |
+|----------|---------------|-----------------|--------|
+| User hasn't acted yet | `"authorization_pending"` | `null` | Wait `interval` seconds, poll again |
+| User approved | `null` | `"sk_live_..."` | Save the key, stop polling |
+| User denied | `"access_denied"` | `null` | Stop polling, inform user |
+| Code expired | `"expired_token"` | `null` | Start over with a new device code |
+
+The response always includes all three fields (`error`, `api_key`, `key_prefix`). Check `api_key != null` to detect success — don't rely on key presence alone.
+
+**Important:**
+- The `api_key` is returned **exactly once**. After you retrieve it, the server clears it. Store it immediately.
+- The `key_prefix` is a non-secret identifier for the key (useful for display/logging).
+- Never show `device_code` or `api_key` to the user.
+
+---
+
+**What happens on the user's side (you don't need to call these):**
+- User opens `verification_uri_complete` — the code is pre-filled, no typing needed
+- User logs in (or signs up + confirms email for new users)
+- User sees your agent name and clicks Approve → redirected to dashboard
+- Once approved, the next poll to `/v1/agent/device/token` returns the `api_key`
+
+---
+
+## Processing
+
+### POST /v1/process — Submit a Document
+
+Uploads a document for async processing. Returns immediately with a job ID.
+
+**Auth:** `X-API-Key: YOUR_KEY`
+**Content-Type:** `multipart/form-data`
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `file` | File | Yes | — | PDF, PNG or JPEG on every plan. Standard adds TIFF, WebP, BMP, GIF, DOCX, TXT; Enterprise adds more (see Rate Limits & Plans). A type your plan lacks is refused with `415` naming the plan that has it. |
+| `pipeline` | string | No | plan default | Engine: `"extract"` (one OCR pass) or `"deep-extract"` (two OCR passes reconciled by an LLM judge, plus a second read that checks each extracted field value). Default: Free and Standard run `extract`, Enterprise runs `deep-extract`. The older names `fast`, `standard` and `searchable` still work as aliases (`fast` = `extract`, `standard` = `deep-extract`, `searchable` = `deep-extract` + `searchable_pdf=true`); a job's responses show the name you sent. |
+| `schema` | string | No | — | JSON Schema for structured extraction |
+| `blueprint_id` | string | No | — | Blueprint UUID (mutually exclusive with schema) |
+| `preview` | string | No | `"false"` | Page images and a public preview link. Off unless you send `"true"`: anyone with the link can open the document, so it exists only on request. Replaces `include_images` (deprecated but honoured). Standard and Enterprise plans; on the Free plan the preview link and stored page images are off. For click-to-highlight in the preview, send `include_markers` as well. |
+| `include_markers` | string | No | `"false"` | Set `"true"` to return bounding boxes: layout blocks under top-level `grounding[]`, and `location.bounding_box` on each extracted field. Works on both engines and on every plan, Free included. Do not rely on `preview` alone to return boxes. |
+| `per_page` | string | No | `"false"` | Per-page breakdown in `pages[]`. Replaces `include_pages` (deprecated but honoured). |
+| `webhook_url` | string | No | — | HTTPS URL to notify on completion. Standard plan and up (`402` on Free). Deliveries are signed — see Webhooks. |
+| `idempotency_key` | string | No | — | Up to 255 characters, unique per account. A retry with the same key returns the job the first request created (`200`, with its current status) instead of creating and charging a second job. The same key with a different file or different options is refused with `409`. |
+| `searchable_pdf` | string | No | `"false"` | Set `"true"` to also produce a searchable PDF (`artifacts.searchable_pdf_url`). A Deep Extract add-on: `deep-extract` only, Enterprise plans. |
+| `incognito` | string | No | `"false"` | Enterprise plans. Set `"true"` to never store the document in the clear: encrypted with a single-use key before it reaches storage and crypto-shredded when the job finishes. No preview link and no field locations; not combinable with `searchable_pdf`. Results are unaffected. |
+| `retention_days` | string | No | — | Enterprise plans. Delete everything about the job — document, preview artifacts, extracted results — this many days after submission (integer 1–365). From the deadline on `GET /v1/jobs/{id}` has no content and the preview link answers 410; `data_deleted_at` confirms deletion. Combines with `incognito`. |
+| `version` | string | No | — | Pipeline version for reproducibility |
+
+**Note:** Provide `schema` OR `blueprint_id`, not both. Without either, only OCR text is returned.
+
+Every job reports its `product` — what it was sold as: `parse` (`extract` without a schema), `extract` (`extract` with a schema or blueprint) or `deep-extract` (the `deep-extract` engine, with or without a schema). Bounding boxes are returned only when you send `include_markers=true`.
+
+**Response (200 OK):**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "queued"
+}
+```
+
+**Errors:**
+| Status | Meaning |
+|--------|---------|
+| 400 | Invalid schema, both schema and blueprint_id provided, a file that cannot be converted, or a Free-plan document over 50 pages |
+| 401 | Invalid or missing API key |
+| 402 | The plan does not include the feature (`webhook_url` on Free; `searchable_pdf`, `incognito`, `retention_days` outside Enterprise), or the credits do not cover the job — the body names what is needed |
+| 409 | `idempotency_key` was used before with a different file or different options |
+| 413 | Over the plan's file size (15 MB Free, 50 MB Standard, 500 MB Enterprise) or the hard maximum for everyone: 2,000 pages or 500 MB |
+| 415 | The plan does not accept this file type (the body names the plan that does) |
+| 429 | Requests per minute, pages in flight, or the Free monthly quota exceeded — `Retry-After` says when to try again |
+
+---
+
+### GET /v1/jobs/{job_id} — Get Results
+
+Poll until `status` is `completed` or `failed`. Recommended: wait 5s, then poll every 5-10s with exponential backoff, max 5 minutes.
+
+**Auth:** `X-API-Key: YOUR_KEY`
+
+**Response (completed):**
+
+Every response carries `"schema_version": "dp02"`.
+
+```json
+{
+  "id": "550e8400-...",
+  "status": "completed",
+  "schema_version": "dp02",
+  "pipeline": "deep-extract",
+  "product": "deep-extract",
+  "created_at": "2025-01-18T10:30:00Z",
+  "completed_at": "2025-01-18T10:32:15Z",
+  "document": {
+    "page_count": 3,
+    "content": {
+      "format": "markdown",
+      "text": "Full extracted text in markdown",
+      "text_preview": "First 500 characters...",
+      "text_url": "https://..."
+    },
+    "layout": {
+      "version": "dp.lite.v1",
+      "page": {"index": 1},
+      "layout": {"blocks": [{"id": "b1", "type": "heading", "content": "INVOICE"}]}
+    }
+  },
+  "extraction": {
+    "fields": [
+      {"key": "vendor", "value": "Acme Inc", "needs_review": false, "location": {"page": 1, "bounding_box": {"x": 0.06, "y": 0.30, "width": 0.31, "height": 0.05}}},
+      {"key": "total", "value": 1250.00, "needs_review": true, "review_reason": "Outside typical range", "location": {"page": 1, "bounding_box": {"x": 0.62, "y": 0.81, "width": 0.18, "height": 0.04}}}
+    ]
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "content": {"format": "markdown", "text": "Page 1 text..."},
+      "fields": [],
+      "needs_review": false
+    }
+  ],
+  "review": {
+    "needs_review": true,
+    "quality_score": 0.96,
+    "fields_total": 20,
+    "fields_needing_review": 1,
+    "review_rate": 0.05,
+    "flags": [
+      {"scope": "document", "severity": "high", "reason": "total outside typical range"}
+    ]
+  },
+  "artifacts": {
+    "preview_url": "https://preview.deepread.tech/token123..."
+  },
+  "webhook": {
+    "url": "https://yourapp.com/webhook",
+    "delivered": true
+  },
+  "meta": {
+    "engine_version": "1.1.0",
+    "cost_breakdown": {}
+  }
+}
+```
+
+**Notes:**
+- `document.content.text_url` is provided when full text exceeds 1MB — fetch from this URL instead
+- `document.content.text_preview` is always the first 500 characters
+- `extraction.fields` is only present if `schema` or `blueprint_id` was provided — a **list** of `{key, value, needs_review, review_reason?, location: {page, bounding_box}}`
+- `pages` is present when `per_page=true` (or the deprecated `include_pages=true`); per-page auto-detected fields are in `pages[].fields[]`
+- `document.layout` is a typed object (was the old `result.json_string` blob)
+- `artifacts.preview_url` is a shareable link (no auth needed) to the HIL review interface; not produced on the Free plan or for `incognito` jobs
+- Each extracted field carries `location.page`. It also carries `location.bounding_box` (0–1 fractions of page width/height, origin top-left) when you send `include_markers=true`, on either engine and on every plan. Do not rely on `preview=true` alone to return boxes: send both for click-to-highlight in the preview. On the Free plan the preview link and stored page images are off, but locations are still returned. Located layout blocks are also listed under top-level `grounding[]`. The deprecated `include_markers` is still honoured as an explicit on/off override.
+- `product` says what the job was sold as: `parse`, `extract` or `deep-extract`
+
+**Response (failed):**
+```json
+{
+  "id": "550e8400-...",
+  "status": "failed",
+  "error": "PDF parsing failed: file may be corrupted"
+}
+```
+
+**Statuses:** `queued` → `processing` → `completed` or `failed`
+
+---
+
+### GET /v1/preview/{token} — Public Preview (No Auth)
+
+Returns document preview data. Anyone with the token can view — no API key needed. Use for sharing results with stakeholders.
+
+```json
+{
+  "file_name": "invoice.pdf",
+  "status": "completed",
+  "created_at": "2025-01-18T10:30:00Z",
+  "pages": [
+    {
+      "page_number": 1,
+      "image_url": "https://...",
+      "text": "Page text...",
+      "hil_flag": false,
+      "data": {}
+    }
+  ],
+  "data": {},
+  "metadata": {"page_count": 1, "pipeline": "deep-extract", "review_percentage": 0}
+}
+```
+
+---
+
+### GET /v1/pipelines — List Engines and Products (No Auth)
+
+Lists the engines (with their aliases) and the products with list prices.
+
+| You send | Engine that runs | Product | Price / 1,000 pages |
+|----------|------------------|---------|---------------------|
+| `pipeline=extract`, no schema | one OCR pass | **Parse** — the document as Markdown with tables, layout blocks and bounding boxes | $10 |
+| `pipeline=extract` + `schema` or `blueprint_id` | one OCR pass | **Extract** — Parse plus your fields, each with a review flag and its location | $20 |
+| `pipeline=deep-extract`, with or without a schema | two OCR passes reconciled by an LLM judge, rotation correction, and a second read that checks each extracted field value (~45-60s) | **Deep Extract** | $40 |
+
+Default when `pipeline` is omitted: Free and Standard run `extract`; Enterprise runs `deep-extract`. The older names still work as aliases — `fast` = `extract`, `standard` = `deep-extract`, `searchable` = `deep-extract` + `searchable_pdf=true` — and a job's responses show the name you sent. Every job reports its `product`.
+
+Searchable PDF is a **Deep Extract add-on, not a tier**: send `pipeline=deep-extract` + `searchable_pdf=true` (Enterprise plans) to also get a searchable PDF (`artifacts.searchable_pdf_url`). `extract` doesn't support it.
+
+Two more add-ons govern **data handling** (Enterprise plans, either engine): `incognito=true` (the document is never stored in the clear and is crypto-shredded when the job finishes — no preview link, no field locations, not with `searchable_pdf`; results unaffected) and `retention_days=N` (1–365: document, preview artifacts and results are deleted N days after submission; the response then carries `retention_expires_at` until deletion is confirmed by `data_deleted_at`, content is absent from the deadline on, and the preview link answers 410). Use both for a document that is never stored in the clear and results that expire.
+
+---
+
+### Schema: Arrays of Objects
+
+Array-valued fields (`"type": "array"`) can carry any `items.properties` you define — not just `{description, amount}`. Each property in `items.properties` is extracted as its own typed field per row, with your `datapoint_prompt` / `description` passed to the model.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "documents": {
+      "type": "array",
+      "description": "Every invoice entry on the summary bill.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "vendor_name":     {"type": "string"},
+          "account_number":  {"type": ["string", "null"]},
+          "invoice_date":    {"type": "string", "format": "date"},
+          "invoice_total":   {"type": "number"},
+          "line_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": {"type": "string"},
+                "amount":      {"type": "number"}
+              }
+            }
+          }
+        },
+        "required": ["vendor_name", "invoice_total"]
+      }
+    }
+  }
+}
+```
+
+Notes:
+
+- Nullable types use `"type": ["string", "null"]` (standard JSON Schema).
+- Required properties inside `items` are enforced; optional ones default to `null`.
+- Deep nesting (array → object → array → object) is supported up to 6 levels.
+- The legacy two-field `{description, amount}` shape still works unchanged — existing integrations are unaffected.
+
+---
+
+## Blueprints & Optimizer
+
+Blueprints are optimized, versioned schemas. The optimizer takes your sample documents + expected values and enhances field descriptions for 20-30% accuracy improvement.
+
+### GET /v1/blueprints/ — List Blueprints
+
+**Auth:** `X-API-Key: YOUR_KEY`
+
+Returns all blueprints with active version and accuracy metrics.
+
+### GET /v1/blueprints/{blueprint_id} — Get Blueprint Details
+
+**Auth:** `X-API-Key: YOUR_KEY`
+
+Returns blueprint with all versions, active version schema, and accuracy metrics.
+
+### POST /v1/optimize — Start Optimization
+
+**Auth:** `X-API-Key: YOUR_KEY`
+
+```json
+{
+  "name": "utility_invoice",
+  "description": "Utility bill extraction",
+  "document_type": "invoice",
+  "initial_schema": {"type": "object", "properties": {...}},
+  "training_documents": ["path1.pdf", "path2.pdf"],
+  "ground_truth_data": [{"vendor": "Electric Co", "total": 150.00}, ...],
+  "target_accuracy": 95.0,
+  "max_iterations": 5,
+  "max_cost_usd": 10.0
+}
+```
+
+- `initial_schema` is optional — auto-generated from ground truth if omitted
+- Minimum 2 training documents
+- `validation_split` (default 0.3) — fraction held out for validation
+
+**Response:**
+```json
+{
+  "job_id": "...",
+  "blueprint_id": "...",
+  "status": "pending"
+}
+```
+
+### POST /v1/optimize/resume — Resume Optimization
+
+Resume a failed job or start a new optimization run for an existing blueprint.
+
+### GET /v1/blueprints/jobs/{job_id} — Optimization Job Status
+
+**Auth:** `X-API-Key: YOUR_KEY`
+
+```json
+{
+  "status": "running",
+  "iteration": 2,
+  "baseline_accuracy": 68.0,
+  "current_accuracy": 88.0,
+  "target_accuracy": 95.0,
+  "total_cost": 1.82,
+  "max_cost_usd": 10.0
+}
+```
+
+**Statuses:** `pending` → `initializing` → `running` → `completed`, `failed`, or `cancelled`
+
+### GET /v1/blueprints/jobs/{job_id}/schema — Get Optimized Schema
+
+Returns the optimized JSON schema after optimization completes.
+
+### Using a Blueprint
+
+```bash
+curl -X POST https://api.deepread.tech/v1/process \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@invoice.pdf" \
+  -F "blueprint_id=660e8400-..."
+```
+
+---
+
+## Webhooks
+
+Pass `webhook_url` when submitting a document to get notified on completion. Available from the Standard plan — a Free-plan request that sends it is refused with `402` and a body naming the plan that has it.
+
+**Payload sent to your URL:** identical to the `GET /v1/jobs/{job_id}` response above (same dp02 shape). The job identifier is `id` (not `job_id`), and it carries `"schema_version": "dp02"`.
+
+```json
+{
+  "id": "550e8400-...",
+  "status": "completed",
+  "schema_version": "dp02",
+  "pipeline": "deep-extract",
+  "product": "deep-extract",
+  "document": {"page_count": 3, "content": {"format": "markdown", "text": "..."}},
+  "extraction": {"fields": [{"key": "vendor", "value": "Acme Inc", "needs_review": false, "location": {"page": 1, "bounding_box": {"x": 0.06, "y": 0.30, "width": 0.31, "height": 0.05}}}]},
+  "review": {"needs_review": false, "fields_total": 20, "fields_needing_review": 0, "review_rate": 0.0, "flags": []},
+  "artifacts": {"preview_url": "https://preview.deepread.tech/..."},
+  "webhook": {"url": "https://yourapp.com/webhook", "delivered": true}
+}
+```
+
+**Signature — verify every delivery.** Each POST carries `X-DeepRead-Signature: t=<unix seconds>,v1=<hex>`, where `v1` is HMAC-SHA256 over `"<t>.<raw request body>"` keyed by your account's signing secret. Read the secret at `GET /dashboard/v1/webhooks/secret` (created on first read) and rotate it at `POST /dashboard/v1/webhooks/secret/rotate` — deliveries sign with the new secret from the next one on. Verify over the exact bytes you received, compare in constant time, and reject a `t` older than five minutes:
+
+```python
+import hmac, hashlib, time
+
+def verify(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    t = int(parts["t"])
+    if abs(time.time() - t) > tolerance:
+        return False
+    expected = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, parts["v1"])
+```
+
+**Important:**
+- Verify the signature before trusting a payload; a verified body is the same dp02 document `GET /v1/jobs/{job_id}` returns, so no re-fetch is needed
+- Must be HTTPS
+- Return 2xx within 30 seconds to confirm delivery; non-2xx responses are retried with exponential backoff
+- `failed` is a final verdict — transient errors on DeepRead's side are retried for up to 48 hours while the job keeps reporting `queued`/`processing`
+- Delivery status is also on `GET /v1/jobs/{job_id}` (`webhook.delivered`, `webhook.delivered_at`, `webhook.error`) — poll as a fallback if a webhook is not received
+- Make your endpoint idempotent (may receive duplicates)
+
+---
+
+## Rate Limits & Plans
+
+Every response includes these headers:
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Monthly pages in your plan |
+| `X-RateLimit-Remaining` | Pages remaining this cycle |
+| `X-RateLimit-Used` | Pages used this cycle |
+| `X-RateLimit-Reset` | Unix timestamp of your account's own next reset (on Free, the signup day of the month) |
+
+**Plans:**
+| Plan | Pages | Per document | Max file | File types | Submits/min | Pages in flight |
+|------|-------|--------------|----------|------------|-------------|-----------------|
+| Free | 2,000 a month; the counter resets on the day you signed up, unused pages do not carry over | 50 pages | 15 MB | PDF, PNG, JPEG | 10 | 16 |
+| Standard | Prepaid credits from $10 per 1,000 pages — Parse $10, Extract $20, Deep Extract $40; no page limits | — | 50 MB | + TIFF, WebP, BMP, GIF, DOCX, TXT | 100 | 200 |
+| Enterprise | Custom (purchase order, invoiced monthly) | — | 500 MB | + APNG, PSD, PCX, PPM, CUR, DCX, FTEX, PIXAR, DOC, DOTX, ODT, RTF, WPD, PPT, PPTX, ODP, HTML, CSV, XLSX, XLSM, XLS, XLTX, XLTM, ODS | 500 | 500 |
+
+Enterprise also has the searchable PDF, retention and incognito add-ons, PII redaction, form fill and BYOK (your own provider keys). Webhooks, blueprints and the optimizer are on Standard and up. A feature the plan lacks is refused with `402`. Pro, Scale and BYOK are legacy account names, not plans you can buy: legacy Pro has the Standard limits, legacy Scale and BYOK the Enterprise ones.
+
+- **Submits per minute** — counted per endpoint (`POST /v1/process`, `/v1/form-fill`, `/v1/pii/redact`, `/v1/optimize`) across every API server. Over the limit: `429` with a `Retry-After` header (seconds until the minute turns) and a body naming the limit. A refused request counts too.
+- **Pages in flight** — the pages of your queued and processing jobs, added up. A submission is admitted when you have nothing in flight (one large document is never refused for being large) or when its pages fit under the cap; otherwise `429`, `Retry-After: 30`, and a body giving `pages_in_flight`, `max_pages_in_flight` and `pages_requested`. Nothing is queued — resubmit when a job finishes. OCR, PII redaction and form-fill jobs share the one budget (a form-fill job counts as one page). This is an admission limit, not reserved capacity.
+- **Hard maximum for everyone** — no document over 2,000 pages or 500 MB is accepted on any plan (`413` with the limit in the body).
+- **File types** — a type the plan does not accept is `415` with a body naming the plan that has it. Everything that is not a PDF, PNG or JPEG is converted to PDF before the page count; spreadsheets paginate sheet by sheet, and the page count is what is charged.
+- **Free monthly quota** — a document that would take the account past 2,000 pages is refused whole with `429` (no job is created) until the cycle resets.
+- **Polling** (`GET /v1/jobs/{job_id}`) — Free 20 a minute, Standard 60, Enterprise 150.
+- **Retrying safely** — send `idempotency_key` on `POST /v1/process` whenever you retry after a timeout, a `429` or a dropped connection: the same key returns the job the first request created (`200`) instead of charging a second job; the same key with a different file or options is `409`.
+
+---
+
+## Error Handling
+
+All errors return:
+```json
+{"detail": "Human-readable error message"}
+```
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Bad request — invalid schema, both schema + blueprint_id, a file that cannot be converted, a Free-plan document over 50 pages |
+| 401 | Invalid or missing API key |
+| 402 | The plan does not include the feature, or the credits do not cover the job (the body names what is needed) |
+| 404 | Job not found |
+| 409 | The idempotency key was used before with a different request |
+| 413 | The document is over the plan's file size or the hard maximum (2,000 pages, 500 MB) |
+| 415 | The plan does not accept this file type (the body names the plan that does) |
+| 429 | Requests per minute, pages in flight, or the Free monthly quota exceeded (`Retry-After` says when to try again) |
+| 500 | Server error |
+
+**Feature not on plan (402):**
+```json
+{
+  "detail": {
+    "feature": "webhooks",
+    "current_plan": "free",
+    "required_plans": ["standard", "enterprise", "pro", "scale", "byok"],
+    "message": "Webhooks is available from the Standard plan. Visit /dashboard/billing to upgrade."
+  }
+}
+```
+
+**Pages in flight (429, `Retry-After: 30`):**
+```json
+{
+  "detail": {
+    "pages_in_flight": 14,
+    "max_pages_in_flight": 16,
+    "pages_requested": 5,
+    "message": "..."
+  }
+}
+```
+
+**Common failure reasons in jobs:**
+- Document issues: corrupted, unreadable, poor scan quality, processing timeout
+- Schema issues: invalid JSON Schema, required fields not found
+- Plan limits: file too large, too many pages, quota exceeded
+
+---
+
+## Code Examples
+
+### Python
+
+```python
+import requests
+import time
+import json
+
+API_KEY = "sk_live_YOUR_KEY"
+BASE = "https://api.deepread.tech"
+
+# Submit document with structured extraction
+schema = {
+    "type": "object",
+    "properties": {
+        "vendor": {"type": "string", "description": "Vendor or company name"},
+        "total": {"type": "number", "description": "Total amount due"},
+        "due_date": {"type": "string", "description": "Payment due date"}
+    }
+}
+
+with open("invoice.pdf", "rb") as f:
+    resp = requests.post(
+        f"{BASE}/v1/process",
+        headers={"X-API-Key": API_KEY},
+        files={"file": f},
+        data={"schema": json.dumps(schema)}
+    )
+job_id = resp.json()["id"]
+
+# Poll with exponential backoff
+delay = 5
+while True:
+    time.sleep(delay)
+    result = requests.get(
+        f"{BASE}/v1/jobs/{job_id}",
+        headers={"X-API-Key": API_KEY}
+    ).json()
+
+    if result["status"] in ("completed", "failed"):
+        break
+    delay = min(delay * 1.5, 30)  # cap at 30s
+
+# Use results
+if result["status"] == "completed":
+    text = result["document"]["content"]["text"]
+    fields = result.get("extraction", {}).get("fields", [])
+    for f in fields:
+        if f["needs_review"]:
+            print(f"REVIEW: {f['key']} = {f['value']} ({f.get('review_reason')})")
+        else:
+            print(f"OK: {f['key']} = {f['value']}")
+```
+
+### JavaScript / Node.js
+
+```javascript
+import fs from "fs";
+
+const API_KEY = "sk_live_YOUR_KEY";
+const BASE = "https://api.deepread.tech";
+
+// Submit document
+const form = new FormData();
+form.append("file", fs.createReadStream("invoice.pdf"));
+form.append("schema", JSON.stringify({
+  type: "object",
+  properties: {
+    vendor: { type: "string", description: "Vendor or company name" },
+    total: { type: "number", description: "Total amount due" }
+  }
+}));
+
+const { id: jobId } = await fetch(`${BASE}/v1/process`, {
+  method: "POST",
+  headers: { "X-API-Key": API_KEY },
+  body: form
+}).then(r => r.json());
+
+// Poll with backoff
+let delay = 5000;
+let result;
+do {
+  await new Promise(r => setTimeout(r, delay));
+  result = await fetch(`${BASE}/v1/jobs/${jobId}`, {
+    headers: { "X-API-Key": API_KEY }
+  }).then(r => r.json());
+  delay = Math.min(delay * 1.5, 30000);
+} while (!["completed", "failed"].includes(result.status));
+
+console.log(result);
+```
+
+### cURL
+
+```bash
+# Submit with schema
+curl -X POST https://api.deepread.tech/v1/process \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@invoice.pdf" \
+  -F 'schema={"type":"object","properties":{"vendor":{"type":"string","description":"Vendor name"},"total":{"type":"number","description":"Total amount"}}}'
+
+# Submit with blueprint
+curl -X POST https://api.deepread.tech/v1/process \
+  -H "X-API-Key: YOUR_KEY" \
+  -F "file=@invoice.pdf" \
+  -F "blueprint_id=660e8400-..."
+
+# Get results
+curl https://api.deepread.tech/v1/jobs/JOB_ID \
+  -H "X-API-Key: YOUR_KEY"
+
+# List blueprints
+curl https://api.deepread.tech/v1/blueprints/ \
+  -H "X-API-Key: YOUR_KEY"
+```
+
+### Agent Device Flow (Python)
+
+```python
+import requests
+import time
+import webbrowser
+
+BASE = "https://api.deepread.tech"
+
+# Step 1: Request a device code
+resp = requests.post(f"{BASE}/v1/agent/device/code", json={"agent_name": "my-agent"})
+data = resp.json()
+device_code = data["device_code"]
+uri_complete = data["verification_uri_complete"]
+interval = data["interval"]
+
+# Step 2: Open browser with code pre-filled
+success = webbrowser.open(uri_complete)
+if success:
+    print(f"Opened browser: {uri_complete}")
+else:
+    print(f"Unable to open browser programmatically; please open this URL manually: {uri_complete}")
+print("Log in and click Approve. I'll wait here.")
+
+# Step 3: Poll until approved
+api_key = None
+while True:
+    time.sleep(interval)
+    resp = requests.post(f"{BASE}/v1/agent/device/token", json={"device_code": device_code})
+    result = resp.json()
+
+    if result.get("api_key"):
+        api_key = result["api_key"]
+        print(f"Got API key: {result['key_prefix']}...")
+        break
+    elif result.get("error") == "authorization_pending":
+        continue
+    elif result.get("error") == "access_denied":
+        print("User denied the request.")
+        break
+    elif result.get("error") == "expired_token":
+        print("Code expired. Please start over.")
+        break
+
+if api_key is None:
+    raise SystemExit("Device flow did not complete successfully — no API key obtained.")
+
+# Step 4: Use the key to process documents
+with open("invoice.pdf", "rb") as f:
+    resp = requests.post(
+        f"{BASE}/v1/process",
+        headers={"X-API-Key": api_key},
+        files={"file": f},
+    )
+print(resp.json())  # {"id": "...", "status": "queued"}
+```
+
+### Agent Device Flow (JavaScript)
+
+```javascript
+const fs = require("fs");
+const BASE = "https://api.deepread.tech";
+
+// Step 1: Request a device code
+const { device_code, verification_uri_complete, interval } = await fetch(
+  `${BASE}/v1/agent/device/code`,
+  { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent_name: "my-agent" }) }
+).then(r => r.json());
+
+// Step 2: Open browser with code pre-filled
+console.log(`Please open: ${verification_uri_complete}`);
+console.log("Log in and click Approve. I'll wait here.");
+
+// Step 3: Poll until approved
+let apiKey;
+while (true) {
+  await new Promise(r => setTimeout(r, interval * 1000));
+  const result = await fetch(`${BASE}/v1/agent/device/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_code }),
+  }).then(r => r.json());
+
+  if (result.api_key) {
+    apiKey = result.api_key;
+    console.log(`Got API key: ${result.key_prefix}...`);
+    break;
+  } else if (result.error === "authorization_pending") {
+    continue;
+  } else {
+    console.log(`Flow ended: ${result.error}`);
+    break;
+  }
+}
+
+if (!apiKey) {
+  throw new Error("Device flow did not complete successfully — no API key obtained.");
+}
+
+// Step 4: Use the key
+const form = new FormData();
+form.append("file", fs.createReadStream("invoice.pdf"));
+const job = await fetch(`${BASE}/v1/process`, {
+  method: "POST",
+  headers: { "X-API-Key": apiKey },
+  body: form,
+}).then(r => r.json());
+console.log(job); // {id: "...", status: "queued"}
+```
+
+### Agent Device Flow (cURL)
+
+```bash
+# Step 1: Request a device code — save the full response
+response=$(curl -s -X POST https://api.deepread.tech/v1/agent/device/code \
+  -H "Content-Type: application/json" \
+  -d '{"agent_name": "my-agent"}')
+device_code=$(echo "$response" | jq -r '.device_code')
+verification_uri_complete=$(echo "$response" | jq -r '.verification_uri_complete')
+interval=$(echo "$response" | jq -r '.interval')
+
+# Step 2: Open the browser (use the saved URL — code is pre-filled, user clicks Approve)
+open "$verification_uri_complete"  # macOS / xdg-open on Linux
+
+# Step 3: Poll for the key (repeat every $interval seconds until api_key is returned)
+curl -s -X POST https://api.deepread.tech/v1/agent/device/token \
+  -H "Content-Type: application/json" \
+  -d "{\"device_code\": \"$device_code\"}"
+# → {"error": "authorization_pending"}  (keep polling)
+# → {"api_key": "sk_live_...", "key_prefix": "sk_live_abc..."}  (done!)
+
+# Step 4: Use the key
+curl -X POST https://api.deepread.tech/v1/process \
+  -H "X-API-Key: sk_live_..." \
+  -F "file=@invoice.pdf"
+```
+
+### Webhook Receiver (Python / Flask)
+
+```python
+import hashlib
+import hmac
+import time
+
+from flask import Flask, abort, request
+
+app = Flask(__name__)
+WEBHOOK_SECRET = "..."  # from GET /dashboard/v1/webhooks/secret
+
+
+def verify(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    t = int(parts["t"])
+    if abs(time.time() - t) > tolerance:
+        return False
+    expected = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, parts["v1"])
+
+
+@app.route("/webhook", methods=["POST"])
+def handle_webhook():
+    # Verify over the raw bytes before parsing anything
+    if not verify(WEBHOOK_SECRET, request.headers.get("X-DeepRead-Signature", ""), request.get_data()):
+        abort(401)
+
+    payload = request.get_json()
+    job_id = payload["id"]  # dp02: webhook uses `id` (was `job_id`)
+
+    # A verified payload is the same dp02 document GET /v1/jobs/{id} returns
+    if payload["status"] == "completed":
+        fields = payload.get("extraction", {}).get("fields", [])
+        # Process result...
+
+    return "", 200  # Return 2xx within 30s to confirm delivery
+```
+
+---
+
+## Help the Developer
+
+- **No API key yet** → use the device authorization flow (Agent Authentication section) — no copy/paste needed
+- **Send a document** → POST /v1/process, show code in their language
+- **Structured data** → help write a JSON Schema with descriptive field descriptions
+- **Better accuracy** → explain blueprints, help set up optimizer
+- **Pick an engine** → `extract` (one pass: Parse, or Extract with a schema) for speed and cost, `deep-extract` (judged second pass) for accuracy; `searchable_pdf=true` needs `deep-extract` on Enterprise
+- **Real-time updates** → set up webhook_url (Standard and up), verify `X-DeepRead-Signature` in the receiver
+- **Hitting errors** → check API key, plan limits (402 feature or credits, 413 size, 415 file type, 429 rate, in-flight or quota), file format, schema validity
+- **Share results** → use `artifacts.preview_url` from response (no auth needed)
+- **Large documents** → use `document.content.text_url` instead of `document.content.text` for docs > 1MB
+- **Review workflow** → filter `extraction.fields[]` by `needs_review`, route flagged ones to human review

@@ -1,0 +1,302 @@
+---
+name: bench-report
+description: Use when a decision needs the developer, when work is finished and they need to understand what it means, when a spec needs approving before you build, or when you are stuck - writes the report page and decision they read to make the call.
+---
+
+# Writing a Bench report
+
+Your developer does not read your transcript. They read one page and press
+one key. That page is the entire interface between your work and their
+decision, so it is written for deciding, not for narrating.
+
+## Write it for thirty seconds
+
+Assume the developer has four projects open and is reading this between two
+other things. They should be able to decide from the first screen, without
+scrolling and without a second reading. Their time is the expensive part of
+this system, not yours.
+
+- **One sentence for the ask.** If it needs a second, the second is context
+  and belongs further down.
+- **Plain words.** "Logins break for anyone who signed up before March"
+  beats "this introduces a regression in the authentication path affecting a
+  subset of legacy accounts".
+- **No preamble.** Never open with what you were asked, how you approached
+  it, or what you read first. Start at the finding.
+- **Numbers, not adjectives.** "3 of 40 tests" not "a few tests". "12s" not
+  "noticeably slower".
+- **Cut anything that would not change the decision.** Most of what is
+  interesting to write is not needed to decide.
+- **Short sentences.** If one needs a comma to hold it together, it is
+  probably two sentences.
+
+Before:
+
+> After reviewing the authentication module and its associated test
+> coverage, I identified a potential issue with how tokens are validated,
+> which may have implications for sessions created prior to the migration.
+
+After:
+
+> Logins break for anyone who signed up before March. One-line fix, but you
+> need to decide whether to force everyone to log in again.
+
+## When to write one
+
+Nobody tells you a turn is "work". You decide. Write a report when one of
+these is true, and not otherwise:
+
+- **A decision needs them.** You have hit a fork you should not settle
+  alone, and the choice has consequences they own.
+- **The work is done and they need to understand it.** The closing summary
+  on a piece of work, the way an issue gets closed - what changed, what it
+  means, what you did not verify.
+- **A spec needs approving.** You have worked out how you intend to do
+  something and want a yes before you build it.
+- **You are stuck.** You cannot make progress and need help. Say so
+  plainly; a report that admits this is worth more than one that pretends.
+- **You have just been told what to build and it is ambiguous.** Read the
+  code first, then write an *intake* — see below. This is the common case:
+  most tasks arrive underspecified, and the cheapest moment to find out is
+  before the first edit.
+
+Everything else - answering a question, reporting a small step, thinking out
+loud - is just your reply. Do not manufacture a decision to have something
+to put in `decision.json`. A turn that needed no report and produced none is
+a normal turn.
+
+## Where it goes
+
+Bench names your report directory at the start of every turn, in the line
+that begins `[bench] Turn N`. Write both files there:
+
+- `report.html` - what you did and what it means
+- `decision.json` - the question you need answered
+
+## report.html
+
+A complete HTML fragment. No `<html>`, `<head>` or `<body>` tags, no
+network requests, no external stylesheets or fonts. Inline any CSS you
+need. It is rendered inside a sandboxed frame.
+
+Required sections, in this order:
+
+**1. The ask.** The first thing on the page is what you need decided and
+why it matters. Not what you were assigned, not how you approached it.
+
+**2. What changed.** In the application's terms, not the filesystem's.
+"Password reset now expires tokens after one use" - not "modified
+`auth.ts`, `tokens.ts`, `mailer.ts`".
+
+**3. Evidence, only where the decision hinges on it.** A diff hunk of the
+five lines that matter, never a whole file. If the developer does not need
+to read code to decide, include none.
+
+**4. Verified / Not verified.** Two explicit lists. Under *Verified*: what
+you actually ran, with the command and its result. Under *Not verified*:
+what you assumed, could not test, or ran out of scope to check. This is the
+most valuable section on the page. An empty *Not verified* list is almost
+always a lie - if you genuinely verified everything, say what would break
+the verification.
+
+**5. What you would do next** if the answer is simply "go".
+
+Keep it to one screen. Headings, short paragraphs, tight lists. Anything a
+normal reading will not need goes inside a `<details>` element - including
+most of the evidence.
+
+If the page is longer than the work was hard, you are narrating.
+
+## Style
+
+The frame supplies the page: the measure, the dark ground, the type, and
+the treatment for headings, code, tables, quotes and `<details>`. Write
+plain semantic HTML and it comes out designed. A report with no styling of
+its own is the normal case, not a lazy one - style only where it earns its
+place.
+
+Five things have a treatment waiting for them. Mark them and they get it,
+and reach for them before you reach for a paragraph - a number in a stat is
+read, the same number in a sentence is skimmed.
+
+```html
+<p data-bench="verdict"><strong>Ready to merge.</strong> One question left, and
+   it is not blocking.</p>
+<p data-bench="verdict" data-tone="bad"><strong>Do not merge.</strong> It drops
+   messages under load.</p>
+
+<ul data-bench="figures">
+  <li><b>528</b><span>tests</span></li>
+  <li><b>7</b><span>files</span></li>
+  <li><b>+184 −61</b><span>lines</span></li>
+</ul>
+
+<figure>
+  <img alt="The queue with three decisions waiting" src="data:image/png;base64,...">
+  <figcaption>Three waiting, the first one open.</figcaption>
+</figure>
+
+<figure data-bench="pair">
+  <img alt="Before" src="..."><img alt="After" src="...">
+  <figcaption>The roster row before and after.</figcaption>
+</figure>
+
+<section data-bench="verified">   <h2>Verified</h2>     ... </section>
+<section data-bench="unverified"> <h2>Not verified</h2>  ... </section>
+```
+
+**A verdict** is the first thing on the page when there is one - one bold
+clause and one sentence. **Figures** are for numbers you would otherwise bury:
+what ran, what changed, what it cost. **A figure** is how a screenshot goes
+in, always with a caption; a picture with no caption is decoration.
+
+The weight goes to *Not verified*, not to Verified. An empty not-verified
+list is almost always a lie, so the frame gives that section the emphasis
+and sets what you actually checked quietly beneath it.
+
+## Show it, do not describe it
+
+If you changed something a person looks at, put a screenshot in. If you
+changed it twice, put both in a `data-bench="pair"` figure. A paragraph
+describing a layout is a paragraph asking to be trusted, and the developer
+cannot check it without leaving the report.
+
+Screenshots go in as base64 `data:` URIs - the frame allows those and
+nothing else, so an `<img src="shot.png">` beside your report will not
+load. If you ran an end-to-end test that draws anything, capture it and show
+it: a test that passed is a claim, and the frame it drew is evidence.
+
+If you do set colours, inherit the cockpit rather than fighting it. Light-mode
+values render as near-black on a dark ground, which looks like a report that
+lost its stylesheet.
+
+```
+background #16211c   text #e8efe9   muted #8ba396
+border rgba(255,255,255,0.08)        accent #4fd18b
+```
+
+Do not set a fixed width or height - the frame supplies both. Never end a
+sans-serif font stack with `monospace`: the whole page falls back to
+monospace wherever the earlier faces are missing.
+
+## decision.json
+
+```json
+{
+  "kind": "spec_approval",
+  "title": "Token expiry strategy for password reset",
+  "summary": "Single-use tokens work, but the expiry window is your call.",
+  "options": [
+    { "id": "15m", "label": "15 minute expiry", "hint": "Matches the login OTP." },
+    { "id": "1h", "label": "1 hour expiry", "hint": "Kinder on slow email delivery." }
+  ],
+  "allowFreeText": true
+}
+```
+
+- `kind` - `spec_approval` when you need a plan approved before building,
+  `question` when you are blocked mid-work, `completion` when work is done
+  and needs review, `intake` when you have several questions at once and are
+  about to start. An `intake` uses `questions` instead of `options`; the
+  shape below is for the other three.
+- `title` - a short noun phrase naming the decision.
+- `summary` - one sentence. It is what the developer sees in the roster
+  before opening the page.
+- `options` - the concrete choices. Two to four. Each `hint` states the
+  consequence of choosing it, not a restatement of the label. Omit or leave
+  empty when there is nothing to choose between and you only need a reply.
+- `allowFreeText` - keep `true` unless a free-text answer would be
+  meaningless.
+
+## The intake — asking before you build
+
+When a task arrives underspecified, do not ask one question, wait, and then
+ask the next. Read the code, work out *every* question the task actually
+raises, answer as many of them as you honestly can, and put the whole set on
+one page. `kind` is `"intake"` and the questions go in `questions`.
+
+The rule that makes this work: **answer your own questions first.** Mark your
+pick with `"default": true`. Anything the developer does not touch comes back
+as your answer, labelled as unreviewed — so a question you can guess costs
+them nothing, and the only ones that block are the ones you left with no
+default. Leave a default off when you genuinely cannot guess, and only then.
+An intake where nothing is defaulted is an interrogation, and you have simply
+moved your job onto the person who asked.
+
+```json
+{
+  "kind": "intake",
+  "title": "Password reset — before I build",
+  "summary": "Six questions, four I've answered. Two want you.",
+  "brief": "Reset links expire after {expiry}, are single-use, and cover {flows}. Requests are {ratelimit}.",
+  "questions": [
+    {
+      "id": "expiry",
+      "ask": "How long should a reset token live?",
+      "why": "Sets the email copy and whether the cleanup job needs a schedule.",
+      "stakes": "high",
+      "select": "one",
+      "options": [
+        { "id": "15m", "label": "15 minutes", "hint": "Matches the login OTP." },
+        { "id": "1h", "label": "1 hour", "hint": "Kinder on slow mail; wider window to steal a link." }
+      ],
+      "allowFreeText": true
+    },
+    {
+      "id": "flows",
+      "ask": "Which entry points get it?",
+      "stakes": "high",
+      "select": "many",
+      "options": [
+        { "id": "web", "label": "Web sign-in", "default": true },
+        { "id": "mobile", "label": "Mobile app", "hint": "Needs a deep link I'd have to add." }
+      ]
+    },
+    {
+      "id": "ratelimit",
+      "ask": "Rate limit the request endpoint?",
+      "stakes": "low",
+      "options": [
+        { "id": "reuse", "label": "reuse the existing limiter", "default": true },
+        { "id": "none", "label": "not rate limited" }
+      ]
+    }
+  ]
+}
+```
+
+- `ask` — the question in one line, in the application's terms.
+- `why` — what swings on the answer. Not a restatement of the question.
+- `stakes` — `high` shows the question open; `low` folds it into a single
+  summary line the developer can expand. Anything you left undefaulted stays
+  open whatever you put here. Be honest: an intake where everything is `high`
+  is as unreadable as one long list, which is the thing this replaces.
+- `select` — `one` or `many`. Use `many` where "both" is a real answer;
+  forcing it through one-of-N is how a wrong answer gets recorded.
+- `brief` — one sentence saying what you will build, with `{questionId}`
+  holes. Bench fills them live as the developer flips answers, so they read
+  the consequence instead of the label. Reference the questions that change
+  the shape of the work; you do not need all of them. **Every option label
+  you reference has to read as a fragment of that sentence**, because it is
+  dropped in verbatim: `"resets {audit} to the audit trail"` with a label of
+  *"Yes, log every reset"* produces *"resets Yes, log every reset to the
+  audit trail"*. Name the option *"go to"* — or leave that question out of
+  the brief. Read the sentence back with each label in it before you write
+  the file.
+- `report.html` still comes first and still matters: it is where you show
+  what you read, what you found, and why these are the questions.
+
+The developer's reply tells you which of your answers they actually looked
+at. Treat an unreviewed default as your own assumption, not as their
+instruction — if one of them turns out to be load-bearing later, that is
+worth a second report, not a silent decision.
+
+## Rules
+
+- Never put approve or reject buttons in `report.html`. The decision
+  controls are Bench's, and they are the same on every report so the
+  developer builds muscle memory.
+- Write `decision.json` last. Bench treats `report.html` as the signal that
+  a report is ready.
+- One report per turn. Write it and end your turn - Bench delivers the
+  answer as your next message.

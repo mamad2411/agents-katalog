@@ -1,0 +1,172 @@
+---
+name: research-context-compressor
+description: Inspect a research repository and write a compact `.research/` workspace manifest (project_manifest.yml, experiment_matrix.yml, data_dictionary.yml) so future AI sessions can orient themselves without rescanning the whole repo. Use when the user asks to "compress this project context", "create a research manifest", or "save the project context for future agents".
+---
+
+# research-context-compressor
+
+Build a compact, machine-readable workspace memory at the **project root**
+under `.research/`. Other research-hub skills (project-orienter,
+literature-triage-matrix, paper-memory-builder) read these files instead of
+rescanning the repo every session, which is where the token savings come from.
+
+This is the **foundation** skill. Run it once per project and refresh when
+the project's research question, datasets, or experiment set changes.
+
+## When to use
+
+Trigger phrases:
+
+- "Compress this project context for future agents."
+- "Create a research manifest so future sessions don't reread everything."
+- "Save the key project context before we continue."
+- "Build a `.research/` folder for this repo."
+
+Not for:
+
+- Compressing source code or generating doc strings — that's a code task.
+- Running experiments or analyzing results — those write to `outputs/`,
+  not `.research/`.
+- Writing the manuscript itself.
+
+## Inputs you should read (whichever exist — priority order)
+
+The compressor reads whatever your project has. **None of these are
+required.** If a file is missing, that field of the manifest stays
+empty (see "What NOT to do"). Skim, do not deep-read.
+
+**For any project**:
+
+1. `README.md` at the repo root — project overview. Single most useful
+   input.
+2. `.research/design_brief.md` if it exists — Stage 3a handoff from
+   `research-design-helper` (plugin v0.3.12+). Read the frontmatter
+   (`project`, `source`, `gap_verdict`) plus section 1
+   (Research question) only — informs the `project_manifest.yml`
+   `research_question` field. The brief is the authority on the
+   sharpened RQ; the manifest mirrors it. Don't deep-read; skim. If
+   frontmatter `source: topic_dossier.gaps.yml#<id>` is set, copy
+   that gap-id into the manifest's `provenance.from_gap` field
+   (forward-compat with the Stage 2 → 3a wire).
+
+**For code-based research projects** (Python / JS / R / Julia / etc.):
+
+3. `pyproject.toml` / `package.json` / `requirements.txt` /
+   `renv.lock` / `Project.toml` — primary tools.
+4. `scripts/` and `notebooks/` — main entrypoints.
+5. `data/` and `outputs/` — datasets and artifacts.
+
+**For qualitative / archival / interpretive projects**:
+
+3. `notes/`, `drafts/`, `sources/` — manuscript-track work.
+4. `.obsidian/` — Obsidian vault settings, if present.
+5. Any plain-text bibliography file (`bibliography.md`, `sources.bib`,
+   `references.json`).
+
+**For both**:
+
+6. `docs/` — long-form descriptions.
+7. `.git/HEAD` and `git log --oneline -20` — current branch + recent
+   activity, if a git repo.
+8. `.research/` (if it already exists) — for refresh, not first-time
+   create.
+
+**An empty manifest field is better than an invented one.**
+
+For a worked humanities-project example with minimal scaffold (README + notes/ only, no code, no data/), see `references/example-humanities-project.md`. It illustrates the "empty fields are honest" rule.
+
+## Outputs you must produce
+
+Write these to `<project-root>/.research/`:
+
+- `project_manifest.yml` — top-level orientation. **Required.**
+- `experiment_matrix.yml` — per-experiment status. **Required if `scripts/` or `notebooks/` exist.**
+- `data_dictionary.yml` — datasets and schemas. **Required if `data/` exists.**
+- `run_log.md` — append a single entry recording this run.
+- `decisions.md` — leave empty if no ADRs yet; do not invent decisions.
+- `open_questions.md` — list any obvious unknowns you spotted (e.g.
+  undocumented dataset, missing license, ambiguous entrypoint).
+
+**Stage 2 → 3a provenance (v0.3.13+).** If `.research/design_brief.md`
+exists AND its frontmatter sets `source: topic_dossier.gaps.yml#<gap-id>`,
+copy that pointer into the `project_manifest.yml` `provenance.from_gap`
+field as part of every write:
+
+```yaml
+# project_manifest.yml — minimal example showing the v0.3.13 provenance wire
+project_name: "..."
+research_question: |
+  ...  # mirrored from design_brief.md §1 (sharpened RQ)
+current_stage: "design"
+last_updated: "YYYY-MM-DD"
+provenance:
+  from_gap: "topic_dossier.gaps.yml#G2"   # exact copy of design_brief frontmatter `source`
+```
+
+If no `design_brief.md` exists or its frontmatter `source` field is
+empty, omit the `provenance:` block entirely — do NOT write
+`provenance: {}` or `provenance: null`. The schema doc
+(`docs/research-workspace-manifest.md`) records the field as optional;
+absent is the honest state when the upstream chain isn't connected.
+
+If a file already exists, **update don't replace**: keep human-edited
+fields, fill in only the empty ones unless the user said "regenerate from
+scratch". This rule also applies to `provenance.from_gap` — if a
+manifest already has `provenance.from_gap` and the current
+`design_brief.md` source differs, ask the user before overwriting
+(matches the v0.3.12 provenance-protection logic in
+`research-design-helper`).
+
+## Schema reference
+
+Full schema lives in
+[docs/research-workspace-manifest.md](../../docs/research-workspace-manifest.md).
+Quick reminder of `project_manifest.yml` required fields:
+
+- `project_name`
+- `research_area`
+- `research_question`
+- `current_stage` (one of `discovery / exploration / experiments / writing / rebuttal / submission`)
+- `last_updated` (today's date in ISO format)
+
+If you don't know a field, leave it empty (`""` or `[]`). Do **not** guess
+research questions, hypotheses, or claims.
+
+## Token-saving behavior
+
+- Read manifest files first if they exist; only inspect code/data when the
+  manifest doesn't already cover what you need.
+- For large directories, list contents and pick representative entrypoints
+  rather than reading every file.
+- After running, tell the user: "Wrote `.research/project_manifest.yml`
+  (and N other files). Future agents loading the `research-project-orienter`
+  skill can now orient themselves without re-reading the whole repo."
+
+## Output format for the user
+
+After writing the files, print a 5-line summary:
+
+```
+[research-context-compressor]
+  Wrote: .research/project_manifest.yml (3 datasets, 2 entrypoints)
+  Wrote: .research/experiment_matrix.yml (2 experiments)
+  Wrote: .research/data_dictionary.yml (3 datasets)
+  Open questions surfaced: 2 — see .research/open_questions.md
+  Refresh later: ask "compress this project context" again.
+```
+
+## What NOT to do
+
+- Don't write to `.paper/` — that's `paper-memory-builder`'s job.
+- Don't write `.research/literature_matrix.md` — that's
+  `literature-triage-matrix`'s job.
+- Don't write to `.research_hub/` — that's research-hub's internal cache,
+  managed by the CLI.
+- Don't invent fields not in the schema. Add a line to
+  `.research/open_questions.md` instead.
+- Don't overclaim: if the project has no clear research question yet, leave
+  `research_question` empty and add a question to `open_questions.md`.
+
+## See also
+
+- `references/example-humanities-project.md` — worked example for a non-code research project (minimal scaffold)

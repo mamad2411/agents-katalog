@@ -1,0 +1,145 @@
+---
+name: create-genre-skill-skeletons
+description: 'Use when creating a full or partial set of genre wrapper skills under a genre directory. Builds `.github/skills/` subfolders and `SKILL.md` skeletons for a specified genre, keeps the `题材名-能力名` naming rule, and writes hard requirements that each genre skill must load and use its corresponding common skill when that common skill already exists.'
+argument-hint: '题材目录名，以及要创建全量标准清单还是其中一部分。'
+
+user-invocable: true
+---
+
+
+<!-- ===== Layer 1: 永久缓存 ===== -->
+
+# 题材 Skill 骨架批量生成器
+
+根据指定题材，在该题材目录下批量建立标准题材 Skill 的目录与 `SKILL.md` 骨架。
+
+这个 Skill 的目标不是直接写厚内容，而是先把题材目录下的 **Skill 入口层 / 包装层 / 路由层** 批量立起来，并把“必须加载并使用对应通用 Skill”的硬要求写进每个骨架里。
+
+
+<!-- ===== Layer 3: 场景缓存 ===== -->
+
+## 继续读取的 references（强制读取门禁）
+
+**以下所列 references 文件必须通过 `read_file` 工具逐文件读取，不得因"已有相关知识"、"之前执行时已读过"、"该文件只是参考"为理由跳过任何一条。** 每条 references 按其标注的必读等级强制执行：
+
+- 标注 **必读** 的文件：必须读取，少一条即视为流程违规，不得开始执行流程。
+- 未标注必读的文件：必须读取，但读取后可仅提取与当前任务直接相关的段落，不要求逐字通读。
+- 若文件路径指向的文件不存在（如引用的外部路径未就位），必须在日志中显式记录 `reference_missing_{refName}`，不得静默跳过。
+
+### 必读（每次执行都需读取）
+
+- `references/standard-genre-skill-list.md` — 标准题材 Skill 清单，决定本次是建全量还是子集
+- `references/genre-skill-skeleton-template.md` — Skill 骨架模板，每个入口骨架的正文结构依据
+
+### 输出平台迁移相关（按需读）
+
+以下文件用于输出平台 Prompt → Skill 的无损迁移场景。仅当本次任务涉及补建或修复输出类 Skill 骨架时才需读取：
+
+- `references/all-13-platform-section-recovery-mapping.md` — 13 个输出平台的分节级补救映射总图
+- `references/dual-genre-output-platform-migration-ledger.md` — 双题材（异能志怪 / 都市悬疑）输出平台迁移总台账
+- `references/output-platform-lossless-mapping-ledger-template.md` — 输出平台 Skill 无损迁移台账模板（迁移新平台时参考）
+- `references/output-platform-migration-audit-checklist.md` — 输出平台迁移审计检查清单（完工后审计用）
+- `references/pilot-shared-platform-lossless-mapping-ledger.md` — 首批共享平台（番茄 / 知乎 / WebNovel）迁移状态台账，供参考
+- `references/pilot-shared-platform-section-mapping.md` — 首批共享平台分节级无损映射施工图，供参考
+
+### 各平台台账（按需读）
+
+- `references/section-ledgers/` — 目录内含各平台的分节级台账文件（`番茄.md`、`知乎.md`、`起点中文网.md` 等 13 个平台），可按目标平台名读取对应文件
+
+## Use this skill when
+
+- 你已经确定一个题材目录，想一次性补齐它的 `.github/skills/` 骨架
+- 你要把通用 Skill 体系映射到某个题材目录下
+- 你要建立一套标准化的题材 Skill 入口名，而不是逐个手工新建目录
+- 你要确保题材 Skill 明确写出“必须加载并使用对应通用 Skill”的要求
+- 你新增了一个通用 Skill，想把它同步接回标准题材 Skill 清单，并让后续批量补骨架时不会漏掉它
+
+## Do not use this skill when
+
+- 你只想修改某一个现有 Skill 的局部正文
+- 你要新建的是通用 Skill 本体，而不是题材包装层
+- 你只想做一次性 Prompt，而不是可复用的题材 Skill 体系骨架
+
+## 默认执行顺序
+
+1. 确认目标题材目录是否存在；若不存在，先创建题材目录与 `.github/skills/` 目录。
+2. 读取 `references/standard-genre-skill-list.md`，确定本次是创建全量清单，还是只创建一个子集。
+3. 对每个目标能力判断对应的通用 Skill 状态：
+   - 已存在通用 Skill
+   - 暂无通用 Skill，仅能先建题材入口骨架
+   - 需要组合调用多个通用 Skill
+4. 依照“`题材名-` + 能力名”的命名规则创建目录。
+5. 为每个目录写入 `SKILL.md` 骨架，至少包含：
+   - frontmatter
+   - 题材包装层定位
+   - 对应通用 Skill
+   - 题材补充职责
+   - 强制要求与禁止事项
+6. 同时为每个题材 Skill 目录创建 `references/` 占位目录，供后续补入题材专属规则、检查清单、模板与增补说明。
+7. 若对应通用 Skill 已存在，则在骨架中明确写入：命中本技能时，**必须同时加载并使用**当前题材 Skill 与对应通用 Skill。
+8. 若对应通用 Skill 尚未建立，则在骨架中明确写入：当前只保留题材入口骨架；后续应优先补建通用 Skill，并接入双层结构；在此之前不得在题材层扩写平行共性规则。
+9. 若在补骨架、补说明、补题材边界时识别出新增内容里含有题材无关的通用规则、流程、模板或检查项，则应无论本次任务是否点名通用 Skill，都同步沉淀到对应通用 Skill；不要把这些内容直接堆在题材骨架里。
+10. 若本次任务同时要求补题材 Prompt 入口，且目标题材目录已经采用“薄 Prompt 入口 + 题材 Skill 路由”模式，则在 Skill 骨架完成后，同步补建对应 `.github/prompts/*.prompt.md`；Prompt 必须只路由到题材 Skill，不得直接引用通用 Skill。
+11. 复核命名、frontmatter、`references/` 占位目录、一致性与通用 Skill 路由要求；若本次也补了 Prompt 入口，还要复核 Prompt → 题材 Skill → 通用 Skill 的链路是否成立。
+
+## 决策规则
+
+### 命名规则
+
+- 题材 Skill 目录名默认通过把通用 Skill 名中的 `通用-` 替换为 `题材名-` 得到。
+- 若某个题材已有历史入口名，允许保留该入口名，但正文中必须显式声明其对应的通用 Skill。
+- 目录名、frontmatter `name` 与一级标题应保持一致。
+
+### 通用 Skill 已存在时
+
+- 题材 Skill 必须写成包装层 / 路由层 / 兼容入口。
+- 必须显式写出对应通用 Skill 名称。
+- 必须使用 `必须加载`、`必须调用`、`组合调用` 等强约束表述。
+- 不要在题材骨架中复制通用 Skill 的完整共性规则。
+
+### 通用 Skill 暂不存在时
+
+- 允许先建立题材入口骨架，以保持题材 Skill 菜单结构完整。
+- 骨架中必须写清“对应通用 Skill 待补建”。
+- 骨架中必须写清：后续应优先补建通用 Skill，而不是直接在题材层长出一整套共性规则。
+- 这类骨架默认只保留用途、题材补充方向、待接入说明与禁止事项。
+- 若在起草题材骨架时已经沉淀出稳定的跨题材共性内容，不应继续滞留在题材骨架里，应尽快转入对应通用 Skill。
+
+### 组合调用场景
+
+- 若某项题材能力需要组合多个通用 Skill，应在骨架中明确写出组合关系。
+- 例如：连续性控制类题材 Skill 可以组合 `通用-生成章节控制卡` 与 `通用-管理连续性冷热线`。
+- 例如：章节正文创作类题材 Skill 应以 `通用-创建小说正文` 为正文创作母入口，再按需组合 `通用-生成章节控制卡`、`通用-管理连续性冷热线`、`通用-执行场景单元`、`通用-强化章节开头`、`通用-强化章末钩子`、`通用-正文润色` 与 `通用-去AI味重写`。
+
+## 输出要求
+
+执行本 Skill 时，默认应产出：
+
+- 新建的题材 Skill 目录列表
+- 每个目录下的 `SKILL.md` 骨架
+- 每个目录下的 `references/` 占位目录
+- 每个骨架对应的通用 Skill 状态：已接入 / 待接入 / 组合接入
+- 若本次任务点名了对应入口 Prompt，则附带新增的 `.github/prompts/*.prompt.md` 薄入口列表
+- 如有需要，附带“已创建 / 已存在 / 跳过”的结果汇总
+
+## 强制要求
+
+- 题材 Skill 必须以 `题材名-` 为前缀。
+- 题材 Skill 目录默认同时创建 `references/` 占位目录。
+- 已存在通用 Skill 的能力，题材骨架必须明确要求加载并使用对应通用 Skill。
+- 暂无通用 Skill 的能力，题材骨架必须明确写出待接入说明，不得伪装成已完整落地。
+- 引用通用 Skill 时只按名称引用，不写路径。
+- 不得在题材骨架中恢复一整套平行共性规则。
+- 在生成、补写或修改题材骨架时，只要识别出题材无关的通用内容，就必须同步推进通用沉淀，而不是等后续单独任务再处理。
+
+## 完成检查
+
+- 目录是否创建在正确的 `题材名/.github/skills/`
+- 是否按目标清单建立了对应目录
+- `SKILL.md` 是否具备最小结构
+- `references/` 占位目录是否已一并创建
+- 是否都写明了题材包装层定位
+- 是否都写明了通用 Skill 的加载要求或待接入说明
+- 若本次顺手补入了规则、流程、模板或检查项，是否已检查其中哪些应上收到通用 Skill
+- 若本次一并补了 Prompt 入口，Prompt 是否只路由到题材 Skill，而不是直接引用通用 Skill
+- 是否存在命名不一致、前缀错误、路径式引用或弱约束表述

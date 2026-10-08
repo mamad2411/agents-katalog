@@ -1,0 +1,361 @@
+---
+name: cv-structure
+description: Write the CV markdown that will be PDF'd and reviewed by the Critico. First read the user's ORIGINAL CV in `$JHT_HOME/profile/sources/` to mirror their voice and match the register to the industry (the tech defaults — "Technical Skills: Python", metric+tech-in-parens — are wrong for hospitality/sales/care/creative). Six fixed sections, max 2 pages, every claim traceable to `candidate_profile.yml`/sources (zero invenzioni — T10). Languages appear ONCE (Header only). Cover Letter only if the JD explicitly asks, with its own "Cover Letter" title (never "CV"). Owned by the Scrittore. Pair with `application-flow` (claim + path) and `critic-loop` (review iterations).
+allowed-tools: Bash(pandoc *)
+---
+
+# cv-structure — the canonical CV layout
+
+Output goes to `$JHT_USER_DIR/cv/CV_<Candidato>_<Company>.md` (then PDF via pandoc/typst). Path rule: `application-flow` skill — never write the final CV under `$JHT_AGENT_DIR` (that's scratch only, T11).
+
+`<Candidato>` = `Nome_Cognome` from the profile. `<Company>` = company name normalised PascalCase, no spaces or slashes (e.g. `Acme_Corp` → `AcmeCorp`).
+
+## Before you write: read the source, match the register (W-05, 2026-07-01)
+
+`candidate_profile.yml` is flattened **data, not voice**. Before drafting, **read the user's original CV** in `$JHT_HOME/profile/sources/` (the PDF/doc they uploaded) plus `$JHT_HOME/profile/summaries/`. Two reasons:
+
+- **Voice & distinctive detail.** The original carries what makes the candidate *them* — the story, the named context, the human register. A CV rebuilt from the `.yml` alone comes out cold and interchangeable. Mirror their phrasing and keep the concrete details that give weight (not a bare "VIP guest handling" but the Nobu / De Niro–founded context behind it).
+- **Register by industry.** Read `industry` + `seniority_target` from the profile. This skill's defaults (metric-in-bold + **tech**-in-parens, a "Technical Skills" table with `Python, Go, Bash`) are tuned for **tech / engineering** roles. For **client-facing / non-tech** profiles they are WRONG — they sterilise the exact warmth that sells the candidate. Adapt:
+
+| Profile family | Section 4 name | Bullet style | About Me |
+|---|---|---|---|
+| Tech / engineering | **Technical Skills** (Languages, Backend, Data, Infra) | metric in bold + **tech** in parens | factual, numbers |
+| Client-facing / hospitality / retail / care | **Skills & Strengths** (NO programming languages) | concrete result + **context** in parens (place, scale, clientele); warmth allowed | credible + a human touch, mirroring the original |
+| Sales / business | **Core Skills** | metric in bold (revenue, targets) + tools in parens | outcome-driven |
+| Creative / design | **Skills & Tools** + portfolio link | outcome + medium in parens | voice-forward |
+
+Never put a "Technical Skills / Languages: Python…" table on a hospitality, sales or care CV. Tone is set by **both** the JD (company type, below) **and** the candidate's industry register.
+
+## The 6 sections (fixed order, max 2 pages)
+
+| # | Section            | Length        | Content                                                                                          |
+|---|--------------------|---------------|--------------------------------------------------------------------------------------------------|
+| 1 | **Header**         | 4-6 lines     | Name, role title aligned to the JD, contacts (email/phone/LinkedIn/GitHub), languages (CEFR)    |
+| 2 | **About Me**       | 2-3 lines     | Concrete credibility. **NEVER** generic phrases ("passionate about", "results-driven")           |
+| 3 | **Experience**     | 4-5 sub       | Each sub = one experience, mapped to **one specific JD requirement**. Bullets: metric + tech    |
+| 4 | **Technical Skills** | 1 table     | Matches JD keywords. Only tech actually documented in the profile.                              |
+| 5 | **Education**      | 2-4 lines     | Exact titles from the profile. Don't apologise for missing degrees.                              |
+| 6 | **Side Projects**  | 0-3 sub       | Only if they reinforce the JD fit. Skip the section entirely if nothing fits.                   |
+
+## Section 1 — Header
+
+```markdown
+# <Nome Cognome>
+**<Role title aligned to the JD>** · <City, Country>
+✉️ <email> · 📱 <phone> · 🔗 linkedin.com/in/<handle> · 💻 github.com/<handle>
+🗣 <Lingua1 (level)>, <Lingua2 (level)>
+```
+
+Adapt the role title: if the JD says "Backend Engineer (Python)" use that, not the generic profile target. Stay truthful — never claim a seniority you don't have.
+
+**Languages appear ONCE.** Put spoken languages on the Header `🗣` line and **nowhere else** — do NOT restate them at the end of About Me and do NOT add a "Languages" row in the Skills table. (The beta-3 betaD CVs listed the 4 languages **3× on one page**: Header + About + Skills. One place only.) Exception: if the JD makes a *specific* language a core selected requirement, keep it in Skills and drop the generic list from the Header — still one place.
+
+## Section 2 — About Me
+
+2-3 lines. The user is a real person who has done real things; show that in 30-50 words. Banned phrases:
+
+| ❌ Banned                              | ✅ Replace with                                              |
+|----------------------------------------|--------------------------------------------------------------|
+| "Passionate about <X>"                 | a fact: "5 years building <X> in production"                 |
+| "Results-driven professional"          | a number: "Reduced p95 latency 320ms → 110ms across 3 services" |
+| "Looking for an opportunity to grow"   | drop entirely; the application itself signals that          |
+| "Detail-oriented team player"          | give an example or omit                                     |
+
+## Section 3 — Experience
+
+The hardest section. Each sub-block is **one experience** mapped to **one JD requirement**.
+
+```markdown
+### <Role> @ <Company> — <Mar 2022 – present>
+- **Reduced cold-start time 4.2s → 0.8s** rewriting the bootstrap layer (Python, asyncio, uvloop)
+- **Shipped 3 customer-facing data products** owning the full stack (FastAPI, Postgres, dbt, Airflow)
+- **Mentored 2 junior backend engineers** through their first production incidents
+```
+
+Bullet rules:
+- **Metric in bold** at the start (number, %, time, scale)
+- **Tech in parens** at the end of the bullet
+- **Action verb** as the first word (see banned/allowed list below)
+- One line per bullet. If it wraps, you're cramming too much.
+- 3-5 bullets per experience. Fewer = the experience looks thin; more = noise.
+
+### Action verbs
+
+| ✅ Use                                                | ❌ Banned                       |
+|-------------------------------------------------------|---------------------------------|
+| Built, Architected, Shipped, Engineered, Reduced,     | learned, studied, assisted,     |
+| Migrated, Designed, Owned, Mentored, Scaled, Cut       | helped, was involved in,        |
+|                                                       | participated in, was responsible for |
+
+Banned verbs signal a junior/uncertain voice. Use the active list even when the role was junior — focus on what you *delivered*, not what you *did*.
+
+## Section 4 — Skills (name + content by register)
+
+**The section title and contents depend on the profile family — see "read the source, match the register" above.** Tech role → **Technical Skills** (table example below). Client-facing / non-tech → rename it (Skills & Strengths / Core Skills) and **never list programming languages**.
+
+A 2-column markdown table that mirrors the JD's keyword list. **Only skills/tech the profile actually documents.** Inventing a tool you don't know is an instant fail in the Critic's review (and a real-world recruiter kill). The `Python, Go, Bash` example below is **tech-only** — do not paste it onto a non-tech CV.
+
+```markdown
+| Area              | Stack                                                  |
+|-------------------|--------------------------------------------------------|
+| Languages         | Python, Go, Bash                                       |
+| Backend           | FastAPI, Django, gRPC                                  |
+| Data              | PostgreSQL, Redis, dbt, Airflow                        |
+| Infra             | Docker, GitHub Actions, AWS (EC2, S3, RDS)             |
+```
+
+Categories should match what the JD emphasises. If the JD never mentions infra, drop or compress that row.
+
+## Section 5 — Education
+
+```markdown
+### <Degree>, <Institution> — <Year>
+<one-line note: GPA only if > 28/30 ≈ 3.5/4, thesis title only if relevant to the JD>
+```
+
+If the candidate has no degree:
+- **Don't apologise** ("currently pursuing", "self-taught instead of"). Apologising signals weakness.
+- List relevant certifications, bootcamps, online programs as their own entries.
+- Lean on the Experience section to carry weight.
+
+## Section 6 — Side Projects (optional)
+
+Include ONLY if a project clearly reinforces the JD fit. Same bullet pattern as Experience.
+
+```markdown
+### <Project name> — <github link>
+- **<metric / outcome>** (<tech stack>)
+- One-line description of what it does and why it's relevant
+```
+
+If nothing fits, **skip the section entirely**. Empty padding signals lack of substance.
+
+## Tone by company type (from JD signals)
+
+| Company type | Tone                                          | Signals in JD                                                |
+|--------------|-----------------------------------------------|--------------------------------------------------------------|
+| Startup      | Confident, ownership-heavy, direct, action verbs first | "fast-paced", "wear many hats", "early-stage", small team size |
+| Corporate    | Professional, structured, process-aware       | "stakeholders", "cross-functional", larger team, well-defined process |
+| Fintech / regulated | Compliance-aware, precise, cite frameworks (PCI-DSS, SOC 2, ISO 27001) | mentions of audits, regulators, compliance teams       |
+| Agency       | Versatile, client-facing, breadth over depth  | "varied projects", "client-facing", "delivery"              |
+
+Don't overdo it — tone is a colour, not a costume. The bullets stay factual either way.
+
+## Cover Letter (only if the JD asks)
+
+Default: **don't write one**. Token + time saved. Write it ONLY if the JD explicitly mentions it ("please include a cover letter", "tell us why you want this role").
+
+Length: 250-400 words. Path: `$JHT_USER_DIR/allegati/CoverLetter_<Candidato>_<Company>.{md,pdf}`.
+
+**PDF title: "Cover Letter", NEVER "CV".** The cover letter is its own document — generate it with its own title metadata. Do NOT reuse the CV pandoc command (which hardcodes `--metadata pagetitle="CV …"`): that is exactly the bug that shipped 31 beta-3 cover letters whose document title read **"CV betaD"**.
+
+```bash
+pandoc "$COVER_MD" -o "$COVER_PDF" \
+       --pdf-engine=wkhtmltopdf \
+       -c /app/shared/skills/pdf_layout_base.css --self-contained \
+       -V papersize=A4 -V margin-top=11mm -V margin-bottom=11mm \
+       -V margin-left=15mm -V margin-right=15mm \
+       --metadata pagetitle="Cover Letter $CANDIDATO"
+```
+
+The `# <Nome Cognome>` heading at the top of the cover-letter markdown is the candidate's name (not "CV") — keep it, and let the pagetitle above say "Cover Letter". Same base CSS and margins as the CV: without them the letter is squeezed into the same 36em column.
+
+```markdown
+Opening (direct, NOT "I am writing to express my interest"):
+"I'm applying for <role> because <3-4 concrete proofs that match the JD>."
+
+Middle (1-2 paragraphs):
+- One specific past achievement that maps to the JD's main pain point
+- One thing you noticed about the company that goes beyond their landing page
+
+Close:
+- One forward-looking line: what you'd want to do in the first 90 days
+- "Happy to discuss this in more detail."
+```
+
+Banned in cover letters:
+- "I am writing to express my interest…" → starts with effort and ends with nothing
+- "Please find attached my CV…" → it's an application, of course it's attached
+- "I would be honoured…" → corporate cliché
+
+## PDF generation — engine + atomic write + DB UPDATE (W-03, bug #26)
+
+### Engine: `wkhtmltopdf` (NON typst, NON fpdf2)
+
+Decisione tecnica 2026-05-18 dopo indagine "CV estetica semplificata":
+
+- **`wkhtmltopdf 0.12.6` (Qt 5.15.8)** → engine ufficiale, già installato
+  nel container. Produce CV professionali HTML+CSS, 2 pagine, ~30 KB
+  (output identico ai CV "belli" del 16 maggio).
+- ❌ **NON usare `--pdf-engine=typst`**: typst non è disponibile in
+  pandoc 2.17 del container (richiederebbe pandoc 3.x). Errore
+  storico nella skill, segnalato 2026-05-18.
+- ❌ **NON usare `pdf_gen.py` (fpdf2)** per CV: è solo fallback
+  minimalista 80% casi semplici. Per CV user-facing produce layout
+  spartano 1 pagina, niente CSS, niente spacing fine.
+- ⚠️ **Layout: base CSS + real margins + visual gate** (2026-09-14, a CV
+  attached with its text squeezed into the middle of the sheet). pandoc's HTML
+  template caps the body at `max-width: 36em`, centred with 50px padding, and
+  wkhtmltopdf ignores `@page` margins: a 9.3pt `<style>` came out as a ~41%
+  column and still passed the size + Producer gate. So the render command
+  ALWAYS loads `/app/shared/skills/pdf_layout_base.css` (`-c … --self-contained`)
+  and passes the margins to wkhtmltopdf (`-V margin-*`). In the `.md` `<style>`
+  never set `max-width`, `margin: auto` or body padding, and do not rely on
+  `@page`. `pdf_layout_check.py` then measures the result: text ≥ 75% of the
+  usable width on every page, 1–2 pages, no nearly empty page, fonts embedded, body font printed ≥ 9.5pt.
+
+The historical anti-pattern: generate the PDF straight into
+`$JHT_USER_DIR/cv/`, then run `db_update.py application --cv-pdf-path
+...` separately. If the Sentinel killed the Writer between the two
+steps (EMERGENZA freeze 2026-05-17 04:43), the PDF stayed on disk but
+the DB had `cv_pdf_path=NULL`. Sisal 7.5/10 PASS became *"CV da
+scrivere"* on the dashboard for the user — invisible top opportunity.
+
+Fix: tempfile + size gate + atomic mv + single-shot UPDATE. If the
+UPDATE fails, remove the final file so we don't leave an orphan.
+
+```bash
+# Final filename includes position_id so 2 openings @ same company don't collide (bug #25)
+SRC_MD="$JHT_USER_DIR/cv/CV_${CANDIDATO}_${POSITION_ID}_${COMPANY_SLUG}_${TITLE_SLUG}.md"
+FINAL_PDF="$JHT_USER_DIR/cv/CV_${CANDIDATO}_${POSITION_ID}_${COMPANY_SLUG}_${TITLE_SLUG}.pdf"
+TMP_PDF="$(mktemp -t cv_${POSITION_ID}.XXXXXX.pdf)"
+
+# ── PREFLIGHT ─────────────────────────────────────────────────────────
+# Verifica esplicita che l'engine sia disponibile PRIMA di pandoc.
+# Senza, in caso di skill obsoleta (typst che non c'è, pandoc 3.x che
+# manca, …) lo Scrittore eseguiva il comando, fallba, improvvisava
+# fallback random → CV brutti del 2026-05-18 mattina.
+if ! command -v pandoc >/dev/null 2>&1 || ! command -v wkhtmltopdf >/dev/null 2>&1; then
+  echo "[cv-structure] ABORT preflight: wkhtmltopdf non disponibile."
+  echo "  NEVER fallback a pdf_gen.py / fpdf2 per CV (output brutto)."
+  echo "  Riportare il problema al Capitano via [REPORT] e ABORT."
+  exit 2
+fi
+
+# 1. Render via pandoc → html → wkhtmltopdf (engine vincente, 32 KB / 2 pag).
+#    Base CSS resets pandoc's 36em column; -V margin-*: wkhtmltopdf ignores @page.
+#    pagetitle (not title) sets <title> without printing a "CV …" header.
+pandoc "$SRC_MD" -o "$TMP_PDF" \
+       --pdf-engine=wkhtmltopdf \
+       -c /app/shared/skills/pdf_layout_base.css --self-contained \
+       -V papersize=A4 -V margin-top=11mm -V margin-bottom=11mm \
+       -V margin-left=15mm -V margin-right=15mm \
+       --metadata pagetitle="CV $CANDIDATO"
+
+# ── GATE POST-RENDER: size + Producer ─────────────────────────────────
+# DUE check obbligatori. NESSUNO dei due è opzionale.
+#
+# Check A) size: < 20 KB indica engine sbagliato (fpdf2 ~22 KB ma 1 pag
+# spartana, wkhtmltopdf ≥30 KB con HTML+CSS pieno). Soglia 20 KB OK per
+# distinguere.
+size=$(stat -c%s "$TMP_PDF" 2>/dev/null || stat -f%z "$TMP_PDF")
+if [ ! -s "$TMP_PDF" ] || [ "$size" -lt 20000 ]; then
+  echo "[cv-structure] ABORT post-render: PDF $size B sospetto (atteso ≥20 KB)."
+  echo "  Probabile engine sbagliato (fpdf2 minimalista invece di wkhtmltopdf)."
+  rm -f "$TMP_PDF"
+  exit 3
+fi
+
+# Check B) Producer: deve essere wkhtmltopdf (= 'Qt 5.15.8' o simile).
+# Se è 'fpdf2' / vuoto / '?', l'engine NON era wkhtmltopdf — il PDF
+# uscirà comunque ma sarà brutto. ABORT loud così il Capitano vede.
+producer=$(python3 -c "
+from pypdf import PdfReader
+import sys
+try:
+    r = PdfReader('$TMP_PDF')
+    m = r.metadata or {}
+    print(m.get('/Producer', ''))
+except Exception as e:
+    print('?'); sys.exit(1)
+" 2>/dev/null)
+case "$producer" in
+  *Qt*)
+    : # OK, wkhtmltopdf ha lavorato
+    ;;
+  *)
+    echo "[cv-structure] ABORT post-render: Producer='$producer' (atteso 'Qt 5.x.x')."
+    echo "  L'engine reale NON era wkhtmltopdf — output non professionale."
+    rm -f "$TMP_PDF"
+    exit 4
+    ;;
+esac
+
+# Check C) layout: size and Producer prove the engine, not where the text sits.
+# pdf_layout_check.py measures it (≥75% of the usable width on every page, 1-2
+# pages, no nearly empty page, fonts embedded, body ≥ 9.5pt). Exit 1 or 2: ABORT.
+if ! python3 /app/shared/skills/pdf_layout_check.py "$TMP_PDF"; then
+  echo "[cv-structure] ABORT post-render: layout bad (pdf_layout_check.py) — fix the .md and re-render."
+  rm -f "$TMP_PDF"
+  exit 5
+fi
+
+# 3. Atomic move + UPDATE in sequence; rollback se UPDATE fallisce
+mv "$TMP_PDF" "$FINAL_PDF"
+if ! python3 /app/shared/skills/db_update.py application "$POSITION_ID" \
+        --cv-pdf-path "$FINAL_PDF" --written-at now; then
+  echo "[cv-structure] UPDATE DB fallita, rimuovo PDF per non lasciare orfani"
+  rm -f "$FINAL_PDF"
+  exit 1
+fi
+```
+
+Exit codes:
+- `0` → CV OK, DB aggiornato, pronto per critic-loop
+- `2` → preflight FAIL (engine non disponibile) — segnala al Capitano
+- `3` → post-render FAIL (size < 20 KB, output minimalista) — engine sbagliato
+- `4` → post-render FAIL (Producer != Qt) — engine sbagliato
+- `5` → post-render FAIL (layout, `reasons` from `pdf_layout_check.py`) — fix the `.md` and re-render: `narrow_text` → remove any width/margin/padding rule on body from the `<style>`; `near_empty_page` → tighten or cut so the last page fills or disappears; `too_many_pages` → cut; `small_body_font` → raise the body `font-size` in the `<style>` to ≥ 9.5pt (the base CSS already undoes Qt's shrink: a CSS point prints as about one point). After 2 failed renders report to the Capitano. A CV that fails the gate never reaches critic-loop.
+- `1` → DB UPDATE FAIL (rollback file)
+
+Il Dottore via `cv-disk-audit` healthcheck (bug #18) ricollega eventuali
+orfani disk↔DB; in più ora segnala anche i CV con Producer non-Qt come
+"engine sbagliato — rigenerare".
+
+## Pre-generation status gate (W-04, bug #26)
+
+Before running pandoc, verify the position is still scoring-grade.
+Sometimes the Analyst marks `excluded` *after* the Writer has claimed
+the position (race condition) and the Writer keeps writing — 3 CV
+sprecati su Canonical ContainerImages / K8s / Deloitte nei dump del
+2026-05-17.
+
+```bash
+status=$(python3 /app/shared/skills/db_query.py position "$POSITION_ID" --field status)
+case "$status" in
+  excluded|rejected)
+    echo "[cv-structure] position #$POSITION_ID is $status, skipping CV generation"
+    exit 0
+    ;;
+esac
+```
+
+## Hard rules
+
+- **Zero invenzioni.** Every metric, every tech, every project must trace back to `candidate_profile.yml` or the user-provided sources. Inventing fails the Critic and is a fireable offense in real life. T10.
+- **Read the original first.** Before writing, read the user's uploaded CV in `$JHT_HOME/profile/sources/` and mirror voice + register + distinctive detail. The `.yml` is data, not voice — a CV built from it alone comes out cold.
+- **Register fits the industry.** A hospitality / sales / care / creative CV must NOT read like a dev CV — no "Technical Skills: Python", no sterile metric-only bullets where warmth is the selling point. See the register table.
+- **Languages once.** Header only, never also in About + Skills.
+- **Tailor per JD.** The same candidate gets a different CV per role: different About, different Experience emphasis, different Skills order. Generic CVs fail the score gate.
+- **One requirement → one experience block.** If the JD has 5 requirements and your Experience section maps to 2, you're not telling the right story.
+- **Max 2 pages.** Recruiters skim. If page 3 exists, cut.
+
+## Anti-patterns
+
+- ❌ Generic About Me ("passionate developer with strong skills") — instant kill in the Critic's review.
+- ❌ Skills table with tech not documented in the profile — invention, T10 violation.
+- ❌ Apologising for missing degree / years — signals weakness.
+- ❌ Same CV across multiple JDs — score gate punishes generic CVs.
+- ❌ Cover letter when not asked — wasted tokens, longer review cycle, no value.
+- ❌ Cover letter whose PDF title reads "CV …" — reused the CV pandoc command; use `--metadata pagetitle="Cover Letter $CANDIDATO"`.
+- ❌ Same fact repeated across sections (languages in Header **and** About **and** Skills) — pick one place.
+- ❌ Dev-style CV on a non-tech profile ("Technical Skills: Python, Go"; cold metric-only bullets) — wrong register, kills the warmth that sells hospitality/sales/care candidates.
+- ❌ Rebuilding only from `candidate_profile.yml` without reading the original CV — produces cold, interchangeable output.
+- ❌ More than 5 bullets per experience — recruiters skim, you lose the lead bullet's impact.
+
+## See also
+
+- `application-flow` — claim + path + UPSERT BEFORE you write a single line of CV.
+- `critic-loop` — the 3-round blind review that follows. Apply its `Concrete Actions` between rounds.
+- `agents/_team/team-rules.md` T10 (read-only profile) + T11 (deliverables in `$JHT_USER_DIR`).
+- `agents/scrittore/scrittore.md` — the orchestrator prompt that calls this skill in the main loop.

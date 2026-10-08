@@ -1,0 +1,268 @@
+---
+name: add-vulhub-env
+description: "Guide for adding new vulnerability reproduction environments to the Vulhub project. Use this skill whenever the user wants to add a new CVE environment, create a vulnerability Docker lab, contribute a new vulnerability to vulhub, write vulnerability documentation for vulhub, or create docker-compose.yml / Dockerfile / README for a vulnerability environment. Also trigger when the user mentions a specific CVE they want to add, asks about vulhub contribution workflow, or wants to set up a reproducible exploit environment."
+---
+
+# Adding a New Vulhub Environment
+
+Vulhub is an open-source collection of pre-built vulnerable Docker environments for security education. Each environment lets users reproduce a real-world vulnerability by running `docker compose up -d`.
+
+This skill guides you through creating a complete environment from scratch.
+
+## Prerequisites
+
+Before starting, verify the vulnerability meets these criteria:
+
+- **High impact** — high CVSS score or widely exploited in the wild
+- **Open source** — the affected software is freely available
+- **Docker-friendly** — runs in a Linux Docker container (no Windows-only or proprietary firmware)
+- **Reproducible** — the exploit is reliable and deterministic
+- **Not already covered** — check existing directories and `environments.toml`
+
+## Required Deliverables
+
+Every new environment requires these files:
+
+```
+base/<software>/<version>/Dockerfile          # Only if this version doesn't exist
+<software>/<CVE-ID>/docker-compose.yml        # Required
+<software>/<CVE-ID>/README.md                 # Required (English)
+<software>/<CVE-ID>/README.zh-cn.md           # Required (Chinese)
+<software>/<CVE-ID>/1.png, 2.png, ...         # Screenshots (referenced in README, captured by humans later)
+environments.toml                              # Add entry
+```
+
+If the vulnerability is not a CVE, the directory name should be lowercase vulnerability name and the CVE-ID should be replaced with the directory name.
+
+## Naming Conventions
+
+| Item | Rule | Example |
+|------|------|---------|
+| Software directory | lowercase | `grafana`, `apache-cxf` |
+| CVE directory | UPPERCASE | `CVE-2024-9264` |
+| Non-CVE directory | lowercase | `admin-ssrf`, `weak_password` |
+| File extensions | lowercase | `.yml`, `.md`, `.png` |
+| Compose file | must be `.yml` | `docker-compose.yml` (NOT `.yaml`) |
+| Branch name | lowercase | `add-grafana-cve-2024-9264` |
+| Main vuln service in compose | `web` if it serves HTTP | `services.web:` (not `services.grafana:`) |
+
+## Step 1: Research the Vulnerability
+
+Gather this information before writing any files:
+
+- Official advisory or CVE description
+- Affected software version ranges (both start and end)
+- Root cause (e.g., deserialization, injection, path traversal)
+- Exploit method and proof-of-concept
+- Default credentials (if relevant)
+- Network ports the service uses
+
+## Step 2: Create Base Dockerfile (if needed)
+
+Check if `base/<software>/<version>/` already exists. If it does, skip this step.
+
+If creating a new base image:
+
+```dockerfile
+FROM <official-upstream-image>:<version>
+
+LABEL maintainer="phithon <root@leavesongs.com>"
+
+RUN set -ex \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends <packages> \
+    && <install vulnerability dependencies> \
+    && apt-get purge -y <build-only-packages> \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+Guidelines:
+
+- Use official upstream images as the base when available
+- Clean up package manager caches (`rm -rf /var/lib/apt/lists/*`)
+- Prefer Debian-based images, do not choose `-alpine` variants when available
+- Must pass `hadolint` linting (the CI runs this automatically)
+
+### Java environments: enable JDWP remote debugging
+
+For any Java-based vulnerability environment, configure the base image so a JDWP agent listens on port `5005`, and publish `5005:5005` in the `docker-compose.yml`. Figure out the right mechanism yourself based on the server and JDK version. This is an infrastructure convenience — do **not** mention it in the README (see Step 5).
+
+## Step 3: Write docker-compose.yml
+
+Keep it minimal. Reference pre-built images from the `vulhub/` Docker Hub namespace:
+
+```yaml
+services:
+  web:
+    image: vulhub/<software>:<version>
+    ports:
+      - "<host-port>:<container-port>"
+```
+
+Rules:
+
+- Do NOT include `version: '2'` or any version header — newer environments omit it
+- Name the main vulnerable container **`web`** whenever it serves HTTP (most do). This way users can always run `docker compose exec web ...` no matter which environment they are in, instead of having to look up the service name each time. For non-HTTP main services (e.g., a raw RPC daemon, a database vulnerability), pick a short descriptive name like `app`, `server`, or the protocol name (`redis`, `ftp`, etc.).
+- Only expose ports users need to interact with
+- Use default port if possible, do not change the port number
+- Add environment variables only if required for the vulnerability
+- **Java environments**: also publish `"5005:5005"` for the JDWP debug agent (see Step 2)
+- For multi-service setups (e.g., app + database), use `depends_on`. Prefer the simple list form (`depends_on: - db`) over `condition: service_healthy` unless the vuln container's entrypoint genuinely cannot tolerate the dependency being unready — most images have their own retry loops, in which case adding a `healthcheck` block to the dependency just for `service_healthy` is dead weight.
+
+Multi-service example:
+
+```yaml
+services:
+  web:
+    image: vulhub/craftcms:5.6.16
+    depends_on:
+      - db
+    ports:
+      - "8088:80"
+  db:
+    image: mysql:8.4
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=craftcms
+```
+
+## Step 4: Register in environments.toml
+
+Add an `[[environment]]` block in **alphabetical order** among the same software's entries:
+
+```toml
+[[environment]]
+name = "Human-readable Vulnerability Title"
+cve = ["CVE-XXXX-XXXXX"]
+app = "Software Name"
+path = "<software>/<CVE-ID>"
+dockerfile = {"vulhub/<software>:<version>" = "base/<software>/<version>"}
+tags = ["RCE"]
+```
+
+Field requirements:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Human-readable vulnerability title |
+| `cve` | list | CVE IDs; use `[]` if no CVE assigned |
+| `app` | string | Software name with proper casing (e.g., "Grafana") |
+| `path` | string | Relative path with exactly 2 path components |
+| `dockerfile` | inline table | Maps each `vulhub/*` image name to its Dockerfile directory under `base/`; use `{}` if no vulhub image |
+| `tags` | list | At least one tag from the available tags |
+
+Available tags (defined at the top of `environments.toml`):
+
+```
+# Vulnerability type
+"Auth Bypass", "Backdoor", "Deserialization", "DoS", "Environment Injection",
+"Expression Injection", "File Upload", "File Deletion", "Hard Coding",
+"Info Disclosure", "Path Traversal", "Privilege Escalation", "RCE",
+"SQL Injection", "SSRF", "SSTI", "XXE", "XSS"
+
+# Application type
+"CMS", "Database", "Framework", "Message Queue", "Webserver", "LLM"
+
+# Other
+"Other"
+```
+
+## Step 5: Write Documentation
+
+Create both `README.md` (English) and `README.zh-cn.md` (Chinese).
+
+**Read `references/readme-writing-guide.md` in this skill directory for the complete writing guide with templates.**
+
+Also read `AGENTS.md` in the project root for additional style guidance and reference examples of well-written READMEs.
+
+Critical rules summary:
+
+- ALWAYS specify affected version ranges
+- `References:` section uses plain text (NOT a `##` heading), URLs in `<>` brackets, max 5 links
+- Reproduction steps must be **narrative paragraphs** (NEVER use numbered lists or bullet points for reproduction steps)
+- Use `docker compose up -d` (NOT `docker-compose up -d`)
+- English README: add `[中文版本(Chinese version)](README.zh-cn.md)` below the title
+- Chinese README: do NOT link to English version; follow the [中文文案排版指北](https://github.com/sparanoid/chinese-copywriting-guidelines) — most importantly, add a space between Chinese characters and adjacent Latin letters / Arabic numerals (e.g., `Grafana 11.0.0 至 11.2.1`), and use full-width Chinese punctuation (`，。：（）`)
+- Reference at least one screenshot in the README — but see "Screenshots" below: you leave the `![](N.png)` placeholders, a human captures the images later
+- Prefer safe demonstration payloads (e.g., `id` command output over reverse shells)
+- **Never mention the JDWP / 5005 debug port in the README.** Java environments expose it for research convenience only — it is not part of the vulnerability reproduction and should not appear in user-facing documentation.
+
+## Screenshots
+
+**Do NOT capture screenshots yourself.** LLM-captured screenshots rarely add real value and waste significant time — a human will shoot the images after reviewing the PR. Your task is only to place correctly-positioned `![](N.png)` placeholders so the human knows what each number should depict.
+
+Think about where a visual artifact would genuinely help a reader follow the exploit (typical spots: the HTTP response showing `id`/`whoami` output rendered by the server, the admin panel reached after auth bypass, `/etc/passwd` contents returned by a path-traversal/LFI, a SQL injection response with leaked database rows, a successful file-upload page triggering RCE). Put the placeholder at that exact paragraph. 1–3 images usually suffices.
+
+Do NOT create the `.png` files and do NOT fabricate them (no rendered HTML, no synthetic terminal shots) — leaving the reference dangling is intentional.
+
+For naming, alt-text, and language-specific placement rules, see the **Screenshots** section of `references/readme-writing-guide.md`.
+
+## Step 6: Test Locally
+
+```bash
+# Build base image (if you created one)
+cd base/<software>/<version>
+docker build -t vulhub/<software>:<version> .
+
+# Start the environment
+cd <software>/CVE-XXXX-XXXXX
+docker compose up -d
+
+# Wait for service readiness, then test the exploit
+# Verify output matches what README describes
+
+# Clean up
+docker compose down -v
+```
+
+Confirm:
+
+- Container starts without errors
+- Vulnerability reproduces exactly as documented
+- Exploit output matches README descriptions
+- **For Java environments**: verify JDWP is actually listening with `printf 'JDWP-Handshake' | nc -w 3 127.0.0.1 5005` — the server must echo the same string back.
+
+## Step 7: Submit Pull Request
+
+```bash
+git checkout -b add-<software>-cve-xxxx-xxxxx    # lowercase branch name
+git add base/<software>/<version>/Dockerfile \
+         <software>/CVE-XXXX-XXXXX/ \
+         environments.toml
+git commit -m "Add <Software> CVE-XXXX-XXXXX <vulnerability type> environment"
+git push -u origin add-<software>-cve-xxxx-xxxxx
+gh pr create --title "Add <Software> CVE-XXXX-XXXXX environment" --base master
+```
+
+## CI Checks
+
+Every PR runs these checks automatically:
+
+| Check | What It Validates |
+|-------|-------------------|
+| `format-check` | LF line endings, hadolint, `environments.toml` completeness, naming conventions |
+| `markdown-check` | Markdown formatting |
+
+Common failures:
+
+- Missing `environments.toml` entry for new `docker-compose.yml`
+- Missing or incorrect `dockerfile` field in `environments.toml` entry
+- CRLF line endings (all text files must use LF)
+- Archive files > 4096 bytes
+- Wrong directory casing (software dirs lowercase, CVE dirs UPPERCASE)
+- Using `docker-compose.yaml` instead of `docker-compose.yml`
+
+## Pre-submission Checklist
+
+- [ ] Base Dockerfile created (if the software version is new)
+- [ ] Base Dockerfile passes `hadolint`
+- [ ] `docker-compose.yml` references the correct `vulhub/<software>:<version>` image
+- [ ] `README.md` follows the style guide
+- [ ] `README.zh-cn.md` follows the style guide
+- [ ] Screenshot placeholders (`![](1.png)`, ...) referenced in README at the right positions — actual `.png` files left for humans to capture later
+- [ ] Entry added to `environments.toml` with valid tags and correct `dockerfile` mapping
+- [ ] Environment tested: `docker compose up -d` works, exploit reproduces
+- [ ] (Java only) JDWP on 5005 configured, published in `docker-compose.yml`, handshake verified, and not mentioned in the README
+- [ ] All text files use LF line endings
+- [ ] Branch name is lowercase

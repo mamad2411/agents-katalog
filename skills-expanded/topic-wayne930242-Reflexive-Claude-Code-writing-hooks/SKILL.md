@@ -1,0 +1,269 @@
+---
+name: writing-hooks
+description: Creates Claude Code hooks that enforce code quality, static analysis, or workflow automation deterministically. Use when user says "add hook", "enforce linting", "add pre-commit check", "block bad code".
+---
+
+# Writing Hooks
+
+## Overview
+
+**Writing hooks IS creating automated quality gates.**
+
+Hooks run on Claude Code events (PreToolUse, PostToolUse, etc.) and can block actions with exit code 2.
+
+**Core principle:** Hooks enforce what humans forget. Fast checks only—slow hooks kill productivity.
+
+## Task Initialization (MANDATORY)
+
+Follow [task initialization protocol](../../references/task-initialization.md).
+
+**Tasks:**
+0. Fetch latest official hook spec
+1. Analyze requirements
+2. RED - Test without hook
+3. GREEN - Write hook script
+4. Configure settings.json
+5. Validate behavior
+6. Test blocking
+7. REFACTOR - Quality review
+
+Announce: "Created 8 tasks (0–7). Starting execution..."
+
+## TDD Mapping for Hooks
+
+| TDD Phase | Hook Creation | What You Do |
+|-----------|---------------|-------------|
+| **RED** | Test without hook | Write code, observe quality issues slip through |
+| **Verify RED** | Document violations | Note specific issues that should be caught |
+| **GREEN** | Write hook | Create script that catches those issues |
+| **Verify GREEN** | Test blocking | Verify exit code 2 blocks violating code |
+| **REFACTOR** | Optimize speed | Reduce hook runtime, filter file types |
+
+## Task 0: Fetch Latest Official Spec
+
+**Goal:** Pull the current Anthropic hook spec before designing — never trust cached memory.
+
+**Action:**
+```
+Skill tool: fetching-claude-docs
+  component: hook
+  question: "hook events (PreToolUse, PostToolUse, etc.), matcher syntax,
+             exit code contract, settings.json schema, additionalContext field,
+             security considerations"
+```
+
+**Verification:** Received YAML with `source: https://code.claude.com/docs/en/hooks.md` and non-empty `spec_excerpt`. Use as authoritative reference; if any rule in this SKILL conflicts with the fetched spec, the fetched spec wins.
+
+## Task 1: Analyze Requirements
+
+**Goal:** Understand what quality gate to create.
+
+**Questions to answer:**
+- What violation should be blocked?
+- Which files should be checked?
+- What tool/command performs the check?
+- What event triggers the hook?
+- What is the project's primary language? (check `package.json`, `go.mod`, `Cargo.toml`, `pyproject.toml`, `*.csproj`, etc.)
+
+**Event Selection:**
+
+| Event | When | Use For |
+|-------|------|---------|
+| `PreToolUse` | Before tool runs | Block bad writes before they happen |
+| `PostToolUse` | After tool runs | Validate written code |
+| `UserPromptSubmit` | Before prompt processed | Add context to prompts |
+| `Stop` | When agent tries to end its turn | Self-verify loop — block stop until checks pass (Ralph Wiggum pattern, enables L-Thread) |
+
+**Verification:** Can describe the violation and the command to detect it.
+
+## Task 2: RED - Test Without Hook
+
+**Goal:** Write code WITHOUT the hook. Observe violations that slip through.
+
+**Process:**
+1. Ask agent to write code in the target file type
+2. Intentionally introduce the violation (bad format, type error, etc.)
+3. Observe that Claude Code doesn't catch it
+4. Document the specific violation
+
+**Verification:** Documented at least 1 violation that should have been caught.
+
+## Task 3: GREEN - Write Hook Script
+
+**Goal:** Create Python script that catches the violations you documented.
+
+### Hook Structure
+
+```
+.claude/hooks/
+├── eslint_check.py
+├── prettier_check.py
+└── typecheck.py
+```
+
+### Exit Code Contract
+
+| Code | Meaning | Effect |
+|------|---------|--------|
+| 0 | Pass | Continue, stdout shown in verbose |
+| 2 | Block | Action blocked, stderr fed to Claude |
+| Other | Warning | Continue, stderr shown in verbose |
+
+### Hook Template
+
+See [references/static-checks.md](references/static-checks.md) for complete hook templates. For performance-optimized security hooks, see [references/performance-optimization.md](references/performance-optimization.md). Key pattern: read JSON from stdin, filter by extension, run check, exit 2 to block.
+
+### Stop Event Self-Verify (Ralph Wiggum / L-Thread)
+
+When the agent tries to end its turn, block until deterministic checks pass — turning a one-shot agent into a loop that won't quit until the work is actually done. Use for long-running tasks, refactors, migrations, anything where "I think I'm done" is unreliable.
+
+See [references/stop-event-self-verify.md](references/stop-event-self-verify.md) for the hook script and settings.json registration. Critical rule: always check `stop_hook_active` to bail after one retry — otherwise the agent loops forever on unfixable failures.
+
+### Critical Requirements
+
+- **Fast** - Under 5 seconds, hooks run synchronously
+- **Performance constraints** - Total execution < 30s, parallel processing support
+- **Graceful degradation** - Handle timeouts without blocking development
+- **Filter files** - Only check relevant extensions  
+- **Limit output** - First 5-10 errors, not all
+- **Use Python** - Cross-platform, wrapped shell commands. In settings.json command, prefer `uv` → fallback `python3` → fallback `python` (see [cross-platform-scripts.md](../../references/cross-platform-scripts.md))
+- **Progressive checks** - Fast/standard/thorough modes based on context
+- **Cross-platform** - Must work on macOS, Linux, AND Windows
+
+### Windows Compatibility (MANDATORY)
+
+**Important:** Read [cross-platform-scripts.md](../../references/cross-platform-scripts.md) for full cross-platform rules covering paths, shell commands, line endings, and common pitfalls.
+
+**Verification:**
+- [ ] Script is executable (`chmod +x`) — skip on Windows
+- [ ] Returns exit code 0 for valid files
+- [ ] Returns exit code 2 for violations
+- [ ] Runs under 5 seconds
+- [ ] Uses `pathlib.Path` for all path operations
+- [ ] No `shell=True` with string commands (use list args)
+- [ ] No hardcoded `/tmp/` or path separators
+- [ ] settings.json command uses three-runner fallback template (`uv` → `python3 --version` → `python`); `python3` probed by `--version` to avoid Windows Microsoft Store stub
+
+## Task 4: Configure settings.json
+
+**Goal:** Register hook in `.claude/settings.json`.
+
+**Important:** Use `.claude/settings.json`, NOT `settings.local.json`. Settings are team-shared.
+
+### Configuration Format
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [{
+          "type": "command",
+          "command": "\"${CLAUDE_PROJECT_DIR}\"/.claude/hooks/eslint_check.py",
+          "timeout": 30
+        }]
+      }
+    ]
+  }
+}
+```
+
+### Matcher Patterns
+
+| Matcher | Matches |
+|---------|---------|
+| `Write\|Edit` | Write or Edit tools |
+| `Bash` | Bash tool only |
+| `.*` | All tools |
+
+**Verification:**
+- [ ] Hook registered in correct event
+- [ ] Matcher targets correct tools
+- [ ] Command path uses `${CLAUDE_PROJECT_DIR}` (braced — see [cross-platform-scripts.md](../../references/cross-platform-scripts.md))
+- [ ] Timeout is reasonable (5-30 seconds)
+
+## Task 5: Validate Behavior
+
+**Goal:** Verify hook script works correctly.
+
+**Test command:**
+```bash
+echo '{"tool_input":{"file_path":"test.ts"}}' | .claude/hooks/your_hook.py
+echo $?  # Should be 0 (pass) or 2 (block)
+```
+
+**Checklist:**
+- [ ] Valid file returns exit code 0
+- [ ] Invalid file returns exit code 2
+- [ ] Errors go to stderr, info to stdout
+- [ ] Completes under 5 seconds
+
+**Verification:** Manual test passes for both valid and invalid inputs.
+
+## Task 6: Test Blocking
+
+**Goal:** Verify hook actually blocks bad code in Claude Code.
+
+**Process:**
+1. Ask Claude to write code with the violation
+2. Observe hook blocks the action
+3. Verify error message is fed back to Claude
+4. Claude should fix and retry
+
+**Verification:**
+- Hook blocks violating code
+- Claude receives feedback and fixes the issue
+
+## Task 7: REFACTOR - Quality Review
+
+**Goal:** Have hook reviewed by hook-reviewer subagent.
+
+```
+Agent tool:
+- subagent_type: "rcc:hook-reviewer"
+- prompt: "Review hook at [path/to/hook] with settings at [path/to/.claude/settings.json]"
+```
+
+**Interpret YAML output:**
+- `pass: true` → Hook complete
+- `pass: false` → Fix all issues listed, re-run reviewer, repeat until `pass: true`
+
+**This is the REFACTOR phase:** Close loopholes identified by reviewer.
+
+**Verification:** hook-reviewer returns YAML with `pass: true`.
+
+## Common Hook Patterns
+
+See [references/static-checks.md](references/static-checks.md) for linting, type checking, and auto-fix examples.
+
+## Red Flags - STOP
+
+These thoughts mean you're rationalizing. STOP and reconsider:
+
+- "Hooks are overkill for this project"
+- "I'll just remember to run linting"
+- "5 seconds is too strict"
+- "Check all files, not just changed ones"
+- "Skip testing, the logic is simple"
+- "Use settings.local.json for team hooks"
+
+**All of these mean: You're about to create a weak hook. Follow the process.**
+
+## Common Rationalizations
+
+| Excuse | Reality |
+|--------|---------|
+| "I'll remember to lint" | You won't. Hooks enforce what humans forget. |
+| "Slow hooks are thorough" | Slow hooks = disabled hooks. Keep it fast. |
+| "Check everything" | Full project check = 30+ seconds. Check changed file only. |
+| "settings.local.json" | Local = not shared. Team hooks go in settings.json. |
+| "Simple logic doesn't need tests" | Hook failures are silent. Always test. |
+
+## References
+
+- [references/static-checks.md](references/static-checks.md) - Complete hook examples
+- [references/events.md](references/events.md) - Hook events reference
+- [references/performance-optimization.md](references/performance-optimization.md) - Performance-optimized security hooks with parallel execution
+- [references/ai-security-checks.md](references/ai-security-checks.md) - AI-powered security validation patterns
+- Scaffold script: `${CLAUDE_SKILL_DIR}/scripts/add_hook.py` — scaffolds a new hook file and registers it in settings.json

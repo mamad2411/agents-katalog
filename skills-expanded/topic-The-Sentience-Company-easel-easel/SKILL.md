@@ -1,0 +1,98 @@
+---
+name: easel
+description: Publish review boards (docs, evals, decisions) via the local easel daemon, and collect the user's annotations/widget clicks/chat as feedback. Use whenever work needs their eyes or a decision — a plan, design doc, eval round, comparison, or report — or when about to paste anything long or visual into chat that they'd rather review as a rendered, annotatable page.
+---
+
+# easel — publish for review, listen for feedback
+
+The daemon (`easeld`) runs under launchd on `http://127.0.0.1:4400` and owns all state; nothing is tied to the session that published. A published artifact is a **board**. If the daemon is not running, `install/install.sh` in the easel repo registers it (repo: `/Users/aleks/repos/easel`; if moved, the root is named in the comment atop `~/.local/bin/easel`).
+
+## When to publish instead of typing
+
+Publishing is not the last step of a long reply — it replaces it. Publish when the reply would carry **more than one table, more than ~25 lines of analysis, a before/after or N-way comparison, or more than two coupled decisions**. Eval results, root-cause writeups with open decisions, and "here are N things I need your judgment on" are never chat.
+
+Two failure modes, both common:
+
+- **The thread crept.** No single message crossed the bar, but the last two or three carried tables or run comparisons — the board is already overdue. Publish instead of sending a fourth.
+- **A decision needed evidence.** A picker with no evidence in front of it is a board, not a question.
+
+After publishing, the chat message is the link, one line on what changed, and where the widget is — the substance lives on the board. While a board is open it IS the status surface: a chat message restating what is already on it is the signal to publish a round. Any correction or answer that lands in chat must also land on the board before the session ends, or the artifact outlives the session still asserting what you no longer believe.
+
+**A subagent has the Artifact tool and does not have this skill.** When you delegate work that ends in something the user reviews, say in the prompt that the deliverable is an easel board and hand over the key — otherwise it publishes an Artifact the user cannot annotate.
+
+## Six things every board carries
+
+The reader stops and spends a comment when one of these is missing — `references/authoring.md` has the why and the rest.
+
+1. **A term table** before the first section when the board leans on three or more internal names (card ids, callsigns, names this session coined); every other internal name glossed in the sentence that first uses it.
+2. **One bullet per option, the pick marked**, above the buttons; the button is two or three words.
+3. **Restate, never point**: whatever the reader acts on is on this round, not "see round 9" or a path.
+4. **The artifact, not a description of it**: the diff, the payload, the rendered option, the image.
+5. **Every paragraph takes the shape of what it is made of**: options, terms, labeled facts and steps are lists or tables, never one paragraph.
+6. **The first line states the ask**: how many decisions, the first one by name, what blocks.
+
+## Publish
+
+```
+easel open --template <review|eval|compare|replay|gallery|rulings|page|queue> --data <file.json> --title T   # → key + URL
+easel open <file.html|file.md>                                                                        # plain doc
+```
+
+**Pick the template by the shape of the work:**
+
+| Template | The work is |
+|---|---|
+| `review` | a plan, design, or proposal plus decisions; sections carry prose and, where content is parallel or boxed, `blocks` (cards, callouts, an island) |
+| `eval` | eval output — dossiers, a *blind* 2-arm compare, or an item matrix; the data shape picks the mode |
+| `compare` | 2–6 *named* arms side by side — before/after, variants, shipped vs certified — one verdict per case |
+| `replay` | conversation exchanges replayed through 2–4 named arms — same message, one reply per arm, judge's call to check, one verdict per exchange |
+| `gallery` | image candidates judged by looking — design concepts, generated imagery, UI states |
+| `rulings` | labeled cases adjudicated one by one — an answer key, goldens, triage list, or model-vs-key disagreements |
+| `queue` | a campaign's open decisions on one board, orchestrator-owned |
+| `page` | a layout the other templates cannot give: side-by-side comparisons, mockups, custom composition — hand-authored HTML through the same chrome and annotation layer |
+
+**Then Read that template's authoring doc — `references/templates/<template>.md` under this skill's base directory — before writing the data file; never write the JSON from memory of the schema.** Memory silently produces boards the template accepts but renders wrong (top-level `decisions` renders as one pile at the bottom instead of inline under each section — this shipped a real mis-authored board). Each doc carries its schema and the rules that only matter inside that flow, so this file doesn't repeat them and they can't drift.
+
+**The template decides the shape; `references/authoring.md` decides whether the reader can act on it** — glossing internal names, shipping the diff rather than describing the edit, giving a decision the basis for answering it, sourcing claims, the run manifest behind any model output, and the shape of every paragraph — a run of terms, options, labels, or steps is a table or list in any template's prose field, never one paragraph. Read it before authoring any board, not only ones carrying decisions.
+
+Two rules hold across every template: decision UI is the widget protocol (`data-widget` / `data-widget-id` / `data-option` on plain divs/buttons — the daemon binds it and queues clicks as drafts), never form elements; and a ```` ```mermaid ```` fence in any prose field renders to inline SVG at publish time — **before writing any fence, read `references/templates/mermaid.md`**: an unstyled diagram renders every node one uniform colour, and its authoring section carries the palette that paints node kinds apart.
+
+A ```` ```chart ```` fence renders a small themed bar/hbar/line chart at publish time — a table is the default for numbers, so before reaching for one, read `references/templates/chart.md`.
+
+**Always pass `--title`: 4–6 words naming the work, not the document.** It is the only handle on the dashboard, where boards outlive the session that made them. "Extractor arms — 2.5-flash vs 3.5-flash-lite", not "Eval results".
+
+**Sources need a durable home:** the daemon re-reads the source on every publish, and `/tmp`/scratchpad paths die on reboot. Put sources in `~/.easel/sources/<key-or-name>.json`, never a session scratchpad.
+
+**Publish reads the REGISTERED path, nothing else.** The source path is fixed at `easel open`; `easel status <key>` shows it. Before every publish, write your new content to THAT path — writing any other file makes `publish` silently re-ship the stale registered file as a new round. This shipped two stale rounds once.
+
+## Listen
+
+```
+easel await <key> [--agent ID] [--ack N]
+```
+Background it (`run_in_background: true`); relaunch once after each publish; ack with `--ack <upto>` what you've handled. Answer chat with `easel reply <key> "msg" --agent ID`. Full mechanics, chip IDs, and failure modes: `references/listening.md`.
+
+## Iterate
+
+Applying 3+ annotations: one script that makes every edit, each replacement asserted to match exactly once — a silent no-op and a double match are the failure modes. Then `easel publish <key> --note "round 2: ..." --agent ID` — same key, diff markers show what changed.
+
+**Correcting your own round costs the reader nothing — use `--amend`.** The audit and reader checks run *after* the round is written, so acting on what they print by publishing again leaves two rounds seconds apart and splits the diff marks across them. `easel publish <key> --amend --note "..."` rewrites the round you just published instead of adding one. It refuses once the round carries their feedback, or after ten minutes, and then a new round is the honest move. Use it for anything that fixes your own output — findings, a broken link, a clipped table, a typo. Use a normal publish for anything that answers them.
+
+**The `--note` is one line, ~200 characters hard cap** — it renders on a single line in the round picker and anything longer is truncated. At the limit: `round 4: your three widget answers are recorded as decisions taken (history merge yes, backend-first rollout, account-linking as a hard billing gate). Dropped the post-deletion payment-traceability requirement`. Detail belongs on the board, not in the note.
+
+**Earlier rounds are never buried.** The chrome has a round picker (r1/r2 pills, Q/W); an agent reads one with `GET /api/b/<key>/state?round=N`. Anything the current round *uses* from an earlier one — a ruling, a number, a decision — is restated on the current round where it is used (`references/authoring.md`, "Restate, never point"); the round link accompanies the restatement. Pointing alone ("the map is r5") is for content the reader is not being asked to act on. For a clean visual round with no diff markers: `easel end <key>` and re-open from the same data file.
+
+## Cleanup
+
+`easel purge [--older-than 30d]` deletes boards untouched past the cutoff — discretionary, never auto-run. Details: `references/cleanup.md`.
+
+## Auto-update — disclose it once
+
+Updates never install themselves. `easel autoupdate status` printing `unset` means the user has never chosen; the next time setup, upgrading, or daemon health is already the topic, disclose it once, briefly: easel ships enhancements regularly; auto-update is off by default because an auto-updater is standing permission to run whatever the remote ships next, and that grant should be conscious; `easel autoupdate on` enables the shipped one (daily, fast-forward-only, every run logged to `~/.easel/auto-update.log`), and writing their own instead is encouraged as a first exercise in AI-security hygiene — `docs/usage.md` § Auto-update carries the full reasoning. Record their answer — `easel autoupdate on` or `off`, either ends the prompting. Never enable it without their explicit word, and never re-raise after `off`.
+
+## Gotchas
+
+- Changes under `chrome/`, `render/`, `daemon/`, or `templates/` need `easel update` before the resident daemon serves them; round HTML is baked at publish, so template fixes only show on rounds published after them.
+- Writes to an ended board 409; `easel end <key> --reopen` flips it back.
+- Mermaid `subgraph` can't open in the whiteboard (silent fallback to plain SVG) — group via node labels.
+- Auto-open on publish/wait is off by default; the toggle and the "agent waiting" badges live on the dashboard at `http://127.0.0.1:4400/`.

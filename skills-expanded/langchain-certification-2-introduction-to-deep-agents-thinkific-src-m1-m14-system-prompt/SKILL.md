@@ -1,0 +1,964 @@
+[For translation, open lesson in new tab and use Chrome translate](https://langchain-ai.github.io/lca-lessons/deepagents/m1/m1.4-system-prompt.html)
+
+<style>@import url('../shared/sd-components.css');</style>
+<script src="../shared/sd-components.js"></script>
+
+<div class="page-lang-switch" data-page-lang-switch>
+  <button class="page-lang-btn" data-page-lang="python" aria-selected="false">Python</button>
+  <button class="page-lang-btn" data-page-lang="typescript" aria-selected="false">TypeScript</button>
+</div>
+
+# The System Prompt
+
+<style>
+.lt-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin: 28px 0 0;
+  border-bottom: 2px solid #CCE9FF;
+}
+.lt-group { display: flex; gap: 3px; }
+.lt-sys    { --c: #7A5AF8; }
+.lt-wrap   { --c: #B45309; }
+.lt-quiz   { --c: #7C3AED; }
+.lt-homework { --c: #0E9F6E; }
+.lt-tab {
+  font: 500 14px 'IBM Plex Mono', monospace;
+  padding: 9px 14px;
+  border: none;
+  background: transparent;
+  color: #40668D;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  border-radius: 6px 6px 0 0;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.lt-tab:hover { background: #F2FAFF; color: #030710; }
+.lt-tab.active {
+  color: var(--c);
+  border-bottom-color: var(--c);
+  background: #fff;
+}
+.lt-panel { display: none; padding-top: 24px; }
+.lt-panel.active { display: block; }
+@media (max-width: 600px) {
+  .lt-bar { flex-wrap: nowrap; overflow-x: auto; gap: 12px; }
+  .lt-tab { padding: 8px 10px; font-size: 13px; }
+}
+</style>
+
+<div class="lt-bar" role="tablist" aria-label="Lesson sections">
+  <div class="lt-group lt-sys">
+    <button class="lt-tab active" data-p="sys" role="tab" aria-selected="true">System Prompt</button>
+  </div>
+  <div class="lt-group lt-wrap">
+    <button class="lt-tab" data-p="lab1" role="tab" aria-selected="false">Lab 1</button>
+  </div>
+  <div class="lt-group lt-wrap">
+    <button class="lt-tab" data-p="lab2" role="tab" aria-selected="false">Lab 2</button>
+  </div>
+  <div class="lt-group lt-quiz">
+    <button class="lt-tab" data-p="quiz" role="tab" aria-selected="false">Quiz</button>
+  </div>
+  <div class="lt-group lt-homework">
+    <button class="lt-tab" data-p="homework" role="tab" aria-selected="false">Homework</button>
+  </div>
+</div>
+
+<div class="lt-panel active" id="p-sys" markdown="1" role="tabpanel">
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lesson Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/hqUQZ6oPEwx" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+<div data-lang="python" markdown="1">
+
+## The System Prompt
+
+- The system prompt **guides the model and is part of every model call**.
+  - It is re-sent on every turn, ahead of the conversation.
+
+In Deep Agents, you pass your own instructions (e.g. a persona, or a constraint that scopes it to one topic domain) with the `system_prompt` argument.
+
+If you don't pass `system_prompt` at all, the agent gets no system prompt: the model falls back to its own generic default behavior, with none of the persona, domain scope, or constraints you'd normally set.
+
+You'll try this yourself in Lab 1: swap in a pirate, cowboy, or Shakespeare persona and watch the system message change to match in LangSmith.
+
+In the homework, you'll write a constraint that scopes the agent to a single topic domain of your choosing and instructs it to refuse or redirect anything outside that domain.
+
+> **This is how real company chatbots stay on-topic.** [Chat LangChain](https://chat.langchain.com), LangChain's own support chatbot, uses the same technique: its system prompt names the LangChain ecosystem as its scope and instructs the model to decline anything unrelated, keeping the conversation scoped to what the product actually supports (and ensuring the agent responds in the company's voice and branding guidelines).
+
+<details>
+<summary>What happens if you don't [click to expand]</summary>
+
+<figure style="margin:1rem 0 0;">
+<img src="images/m1.4-chipotle-offtopic.png" alt="Screenshot of a tweet showing Chipotle's support chatbot, Pepper, answering an off-topic request to write a Python script that reverses a linked list instead of declining and redirecting to food ordering" style="width:100%;max-width:420px;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Without a scoping constraint, a support bot will happily answer anything, including a request to write a Python function unrelated to the business. (<a href="https://x.com/om_patel5/status/2032248004443287962">Source</a>)</figcaption>
+</figure>
+
+</details>
+
+---
+
+## Prompt Caching (Optional)
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lesson Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/JMJNrFWTAdd" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+Prompt caching lets a model provider reuse the work it already did on a prompt instead of reprocessing the same tokens on every request. Agent loops are the ideal case for this: the system prompt and tool definitions rarely change between turns, so a large chunk of every request is identical to the request before it.
+
+Caching turns that repetition into a steep discount instead of a full-price repeat. As Manus AI put it, "the KV-cache hit rate is the single most important metric for a production-stage AI agent."
+
+</div>
+
+<div data-lang="typescript" markdown="1">
+
+## The System Prompt
+
+- The system prompt **guides the model and is part of every model call**.
+  - It is re-sent on every turn, ahead of the conversation.
+
+In Deep Agents, you pass your own instructions (e.g. a persona, or a constraint that scopes it to one topic domain) with the `systemPrompt` argument.
+
+If you don't pass `systemPrompt` at all, the agent gets no system prompt: the model falls back to its own generic default behavior, with none of the persona, domain scope, or constraints you'd normally set.
+
+You'll try this yourself in Lab 1: swap in a pirate, cowboy, or Shakespeare persona and watch the system message change to match in LangSmith.
+
+In the homework, you'll write a constraint that scopes the agent to a single topic domain of your choosing and instructs it to refuse or redirect anything outside that domain.
+
+> **This is how real company chatbots stay on-topic.** [Chat LangChain](https://chat.langchain.com), LangChain's own support chatbot, uses the same technique: its system prompt names the LangChain ecosystem as its scope and instructs the model to decline anything unrelated, keeping the conversation scoped to what the product actually supports (and ensuring the agent responds in the company's voice and branding guidelines).
+
+<details>
+<summary>What happens if you don't [click to expand]</summary>
+
+<figure style="margin:1rem 0 0;">
+<img src="images/m1.4-chipotle-offtopic.png" alt="Screenshot of a tweet showing Chipotle's support chatbot, Pepper, answering an off-topic request to write a Python script that reverses a linked list instead of declining and redirecting to food ordering" style="width:100%;max-width:420px;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Without a scoping constraint, a support bot will happily answer anything, including a request to write a Python function unrelated to the business. (<a href="https://x.com/om_patel5/status/2032248004443287962">Source</a>)</figcaption>
+</figure>
+
+</details>
+
+---
+
+## Prompt Caching (Optional)
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lesson Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/JMJNrFWTAdd" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+Prompt caching lets a model provider reuse the work it already did on a prompt instead of reprocessing the same tokens on every request. Agent loops are the ideal case for this: the system prompt and tool definitions rarely change between turns, so a large chunk of every request is identical to the request before it.
+
+Caching turns that repetition into a steep discount instead of a full-price repeat. As Manus AI put it, "the KV-cache hit rate is the single most important metric for a production-stage AI agent."
+
+</div>
+
+<div class="sd-wrap" id="dg-cache-tokens">
+<div class="sd-stage" id="dg-cache-tokens-stage" tabindex="0" style="background:#030710">
+<svg viewBox="0 0 860 400" role="img" aria-label="Step one shows turn one's prompt, a System Prompt, Tools, and Skills stack totaling 5,200 tokens, plus a new 3-token message, Good morning, neither yet billed. Step two annotates that everything in turn one, the 5,200-token stack and the 3-token message, is billed at 100% cost, the only time those tokens are ever full price. Step three shows a snapshot arrow into a second box where that same stack, plus Good morning, is now tagged CACHED. Step four adds a new message, What's the weather, 3 tokens, below the cached box. Step five annotates that the cached 5,203 tokens are billed at 10% cost, read from cache, while the new 3-token message is again billed at 100% cost, just as Good morning was in turn one." xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <rect width="860" height="400" fill="#030710" rx="8"/>
+  <text x="430" y="26" text-anchor="middle" font-size="16" font-weight="300" fill="#F2FAFF">The token cost of a conversation with prompt caching</text>
+
+  <g transform="translate(10,14)">
+  <g id="dg-cache-tokens-base">
+    <rect x="20" y="44" width="120" height="22" rx="4" fill="#161F34" stroke="#7FC8FF" stroke-width="1"/>
+    <text x="80" y="59" text-anchor="middle" font-size="12" fill="#CCE9FF" font-family="'IBM Plex Mono', ui-monospace, monospace">5,200 tokens</text>
+
+    <rect x="20" y="78" width="210" height="192" rx="8" fill="#161F34" stroke="#40668D" stroke-width="1.5"/>
+    <rect x="34" y="90" width="182" height="36" rx="5" fill="#0D1322" stroke="#2F4B68" stroke-width="1"/>
+    <text x="125" y="112" text-anchor="middle" font-size="12.5" fill="#F2FAFF">System Prompt</text>
+    <rect x="34" y="132" width="182" height="36" rx="5" fill="#0D1322" stroke="#2F4B68" stroke-width="1"/>
+    <text x="125" y="154" text-anchor="middle" font-size="12.5" fill="#F2FAFF">Tools</text>
+    <rect x="34" y="174" width="182" height="36" rx="5" fill="#0D1322" stroke="#2F4B68" stroke-width="1"/>
+    <text x="125" y="196" text-anchor="middle" font-size="12.5" fill="#F2FAFF">Skills</text>
+    <text x="125" y="228" text-anchor="middle" font-size="15" fill="#5BADDF">&#8230;</text>
+
+    <text x="125" y="290" text-anchor="middle" font-size="10.5" fill="#99D3FF" font-family="'IBM Plex Mono', ui-monospace, monospace">+3 tokens</text>
+    <rect x="20" y="300" width="180" height="34" rx="17" fill="#0D1322" stroke="#7FC8FF" stroke-width="1.3"/>
+    <text x="110" y="322" text-anchor="middle" font-size="12" fill="#CCE9FF">Good morning!</text>
+  </g>
+
+  <g id="dg-cache-tokens-s1" class="step step-hidden">
+    <line x1="230" y1="178" x2="545" y2="74" stroke="#7FC8FF" stroke-width="1" stroke-dasharray="3 3"/>
+    <rect x="545" y="50" width="275" height="48" rx="6" fill="#161F34" stroke="#7FC8FF" stroke-width="1.2"/>
+    <text x="560" y="69" font-size="13" font-weight="600" fill="#F2FAFF">5,200 tokens</text>
+    <text x="560" y="86" font-size="10.5" fill="#99D3FF" font-family="'IBM Plex Mono', ui-monospace, monospace">Billed at 100% cost &#183; first time only</text>
+
+    <line x1="200" y1="317" x2="545" y2="132" stroke="#7FC8FF" stroke-width="1" stroke-dasharray="3 3"/>
+    <rect x="545" y="108" width="275" height="48" rx="6" fill="#161F34" stroke="#7FC8FF" stroke-width="1.2"/>
+    <text x="560" y="127" font-size="13" font-weight="600" fill="#F2FAFF">+3 tokens</text>
+    <text x="560" y="144" font-size="10.5" fill="#99D3FF" font-family="'IBM Plex Mono', ui-monospace, monospace">Billed at 100% cost &#183; new message</text>
+  </g>
+
+  <g id="dg-cache-tokens-s2" class="step step-hidden">
+    <line x1="244" y1="140" x2="276" y2="140" stroke="#7FC8FF" stroke-width="1.5" marker-end="url(#cache-arrow)"/>
+    <text x="260" y="128" text-anchor="middle" font-size="10.5" fill="#7FC8FF" font-family="'IBM Plex Mono', ui-monospace, monospace">Snapshot</text>
+
+    <rect x="290" y="44" width="190" height="22" rx="4" fill="#0F2A1E" stroke="#34D399" stroke-width="1"/>
+    <text x="385" y="59" text-anchor="middle" font-size="12" fill="#34D399" font-family="'IBM Plex Mono', ui-monospace, monospace">5,203 tokens cached</text>
+
+    <rect x="290" y="78" width="230" height="222" rx="8" fill="#0D1322" stroke="#34D399" stroke-width="1.5"/>
+    <rect x="304" y="90" width="202" height="40" rx="5" fill="#0F2A1E" stroke="#34D399" stroke-width="1"/>
+    <text x="405" y="108" text-anchor="middle" font-size="12" fill="#E8FFF3">System Prompt</text>
+    <text x="405" y="122" text-anchor="middle" font-size="8.5" letter-spacing="1" fill="#34D399" font-family="'IBM Plex Mono', ui-monospace, monospace">CACHED</text>
+    <rect x="304" y="138" width="202" height="40" rx="5" fill="#0F2A1E" stroke="#34D399" stroke-width="1"/>
+    <text x="405" y="156" text-anchor="middle" font-size="12" fill="#E8FFF3">Tools</text>
+    <text x="405" y="170" text-anchor="middle" font-size="8.5" letter-spacing="1" fill="#34D399" font-family="'IBM Plex Mono', ui-monospace, monospace">CACHED</text>
+    <rect x="304" y="186" width="202" height="40" rx="5" fill="#0F2A1E" stroke="#34D399" stroke-width="1"/>
+    <text x="405" y="204" text-anchor="middle" font-size="12" fill="#E8FFF3">Skills</text>
+    <text x="405" y="218" text-anchor="middle" font-size="8.5" letter-spacing="1" fill="#34D399" font-family="'IBM Plex Mono', ui-monospace, monospace">CACHED</text>
+    <text x="405" y="244" text-anchor="middle" font-size="15" fill="#5BADDF">&#8230;</text>
+    <rect x="304" y="254" width="202" height="40" rx="5" fill="#0F2A1E" stroke="#34D399" stroke-width="1"/>
+    <text x="405" y="272" text-anchor="middle" font-size="12" fill="#CCE9FF">Good morning!</text>
+    <text x="405" y="286" text-anchor="middle" font-size="8.5" letter-spacing="1" fill="#34D399" font-family="'IBM Plex Mono', ui-monospace, monospace">CACHED</text>
+  </g>
+
+  <g id="dg-cache-tokens-s3" class="step step-hidden">
+    <text x="405" y="318" text-anchor="middle" font-size="10.5" fill="#99D3FF" font-family="'IBM Plex Mono', ui-monospace, monospace">+3 tokens</text>
+    <rect x="290" y="328" width="210" height="34" rx="17" fill="#0D1322" stroke="#7FC8FF" stroke-width="1.3"/>
+    <text x="395" y="350" text-anchor="middle" font-size="12" fill="#CCE9FF">What&#8217;s the weather?</text>
+  </g>
+
+  <g id="dg-cache-tokens-s4" class="step step-hidden">
+    <line x1="520" y1="206" x2="545" y2="190" stroke="#34D399" stroke-width="1" stroke-dasharray="3 3"/>
+    <rect x="545" y="166" width="275" height="48" rx="6" fill="#0F2A1E" stroke="#34D399" stroke-width="1.2"/>
+    <text x="560" y="185" font-size="13" font-weight="600" fill="#E8FFF3">5,203 tokens</text>
+    <text x="560" y="202" font-size="10.5" fill="#34D399" font-family="'IBM Plex Mono', ui-monospace, monospace">Billed at 10% cost &#183; read from cache</text>
+
+    <line x1="500" y1="345" x2="545" y2="248" stroke="#7FC8FF" stroke-width="1" stroke-dasharray="3 3"/>
+    <rect x="545" y="224" width="275" height="48" rx="6" fill="#161F34" stroke="#7FC8FF" stroke-width="1.2"/>
+    <text x="560" y="243" font-size="13" font-weight="600" fill="#F2FAFF">+3 tokens</text>
+    <text x="560" y="260" font-size="10.5" fill="#99D3FF" font-family="'IBM Plex Mono', ui-monospace, monospace">Billed at 100% cost &#183; new message</text>
+  </g>
+  </g>
+
+  <defs>
+    <marker id="cache-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7FC8FF"/>
+    </marker>
+  </defs>
+</svg>
+</div>
+<div class="sd-bar">
+  <div class="sd-caption">
+    <strong id="dg-cache-tokens-tag">Turn 1: everything is fresh</strong>
+    <span id="dg-cache-tokens-cap">A brand-new request processes the whole prompt: the system prompt, tools, and skills, plus whatever's new this turn, here "Good morning!". Nothing is cached yet.</span>
+  </div>
+  <div class="sd-controls">
+    <button class="sd-btn" id="dg-cache-tokens-prev" disabled title="Previous">&#8592;</button>
+    <button class="sd-btn" id="dg-cache-tokens-next" title="Next">&#8594;</button>
+  </div>
+</div>
+<div class="sd-dots" id="dg-cache-tokens-dots">
+  <div class="sd-dot active" data-i="0"></div>
+  <div class="sd-dot" data-i="1"></div>
+  <div class="sd-dot" data-i="2"></div>
+  <div class="sd-dot" data-i="3"></div>
+  <div class="sd-dot" data-i="4"></div>
+</div>
+<div class="mobile-note">Best viewed on a wider screen</div>
+</div>
+
+<script>
+(function () {
+  var steps = [
+    { tag: 'Turn 1: everything is fresh', caption: 'A brand-new request processes the whole prompt: the system prompt, tools, and skills, plus whatever\'s new this turn, here "Good morning!". Nothing is cached yet.' },
+    { tag: 'Turn 1 is billed at full price', caption: 'With no cache to read from, every token here, the 5,200-token stack and the 3-token message, is billed at the regular rate: 100% cost.' },
+    { tag: 'Snapshot the prefix', caption: 'After the response comes back, the provider snapshots that entire prefix into the cache, now including "Good morning!". It\'s ready to be reused.' },
+    { tag: 'Turn 2: only the new message is fresh', caption: 'Turn 2 sends a new message, "What\'s the weather?". Everything above it, all 5,203 tokens, already lives in the cache from the snapshot.' },
+    { tag: 'Turn 2 is billed at a steep discount', caption: 'The cached prefix is read at a fraction of the price, about 10% here. Only the newest message, 3 tokens, is billed at full price, just like "Good morning!" was back in turn 1.' }
+  ];
+  var id = 'dg-cache-tokens';
+  var s1 = document.getElementById(id + '-s1');
+  var s2 = document.getElementById(id + '-s2');
+  var s3 = document.getElementById(id + '-s3');
+  var s4 = document.getElementById(id + '-s4');
+  var tagEl = document.getElementById(id + '-tag');
+  var capEl = document.getElementById(id + '-cap');
+  var prevBtn = document.getElementById(id + '-prev');
+  var nextBtn = document.getElementById(id + '-next');
+  var dots = document.querySelectorAll('#' + id + '-dots .sd-dot');
+  var stage = document.getElementById(id + '-stage');
+  if (!s1 || !s2 || !s3 || !s4 || !stage) return;
+  var current = 0;
+
+  function render() {
+    s1.classList.toggle('step-hidden', current < 1);
+    s2.classList.toggle('step-hidden', current < 2);
+    s3.classList.toggle('step-hidden', current < 3);
+    s4.classList.toggle('step-hidden', current < 4);
+    tagEl.textContent = steps[current].tag;
+    capEl.textContent = steps[current].caption;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === steps.length - 1;
+    dots.forEach(function (d, i) { d.classList.toggle('active', i === current); });
+  }
+
+  function advance() { if (current < steps.length - 1) { current++; render(); } }
+  function retreat() { if (current > 0) { current--; render(); } }
+
+  render();
+  prevBtn.addEventListener('click', retreat);
+  nextBtn.addEventListener('click', advance);
+  dots.forEach(function (d, i) { d.addEventListener('click', function () { current = i; render(); }); });
+  stage.addEventListener('click', advance);
+  stage.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); advance(); }
+    if (e.key === 'ArrowLeft')                    { e.preventDefault(); retreat(); }
+  });
+})();
+</script>
+
+<div data-lang="python" markdown="1">
+
+The Deep Agents harness makes a best-effort attempt at utilizing prompt caching features by automatically:
+
+- **Setting explicit cache breakpoints when supported**
+
+<details markdown="1" class="nested-note">
+<summary>What is a cache breakpoint?</summary>
+
+A cache breakpoint is a marker placed at a specific point in a request that tells the provider "cache everything up to here."
+
+Content before the breakpoint can be reused on a later call and content after it is processed fresh. Without one, a provider can only cache automatically, typically by matching the longest prefix two requests have in common, which gives you less control over what survives once part of the prompt changes.
+
+Not every provider lets you set one explicitly:
+
+<table>
+<thead>
+<tr><th></th><th>Anthropic</th><th>OpenAI</th><th>Gemini</th><th>AWS Bedrock</th><th>Fireworks</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Explicit Breakpoints</strong></td><td>&#9989;</td><td>&#10060;</td><td>&#9989;</td><td>Per-provider</td><td>&#10060;</td></tr>
+</tbody>
+</table>
+
+</details>
+
+- **Opting in to provider-side implicit caching when explicit breakpoints aren't supported**
+- **Structuring your prompt to maximize cache reads**
+
+Providers don't all cache the same way. Some require you to mark explicit cache breakpoints in the request; others cache automatically and implicitly, with no extra configuration. TTLs, cache prewarming, and routing keys also vary by provider, so caching code written for one API doesn't carry over to another.
+
+### The real savings of prompt caching
+
+Feature tables tell us what's possible. To see what prompt caching actually saves, we ran the Deep Agents [eval suite](https://www.langchain.com/blog/how-we-build-evals-for-deep-agents) across a mid-tier model from each of three providers: `claude-haiku-4-5`, `gpt-5.4-mini`, and `gemini-3.5-flash`. The result is the chart below. On real agent trajectories, prompt caching cut token cost by 49-80%.
+
+</div>
+
+<div data-lang="typescript" markdown="1">
+
+The Deep Agents harness makes a best-effort attempt at utilizing prompt caching features by automatically:
+
+- **Setting explicit cache breakpoints when supported**
+
+<details markdown="1" class="nested-note">
+<summary>What is a cache breakpoint?</summary>
+
+A cache breakpoint is a marker placed at a specific point in a request that tells the provider "cache everything up to here."
+
+Content before the breakpoint can be reused on a later call and content after it is processed fresh. Without one, a provider can only cache automatically, typically by matching the longest prefix two requests have in common, which gives you less control over what survives once part of the prompt changes.
+
+Not every provider lets you set one explicitly:
+
+<table>
+<thead>
+<tr><th></th><th>Anthropic</th><th>OpenAI</th><th>Gemini</th><th>AWS Bedrock</th><th>Fireworks</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Explicit Breakpoints</strong></td><td>&#9989;</td><td>&#10060;</td><td>&#9989;</td><td>Per-provider</td><td>&#10060;</td></tr>
+</tbody>
+</table>
+
+</details>
+
+- **Opting in to provider-side implicit caching when explicit breakpoints aren't supported**
+- **Structuring your prompt to maximize cache reads**
+
+Providers don't all cache the same way. Some require you to mark explicit cache breakpoints in the request; others cache automatically and implicitly, with no extra configuration. TTLs, cache prewarming, and routing keys also vary by provider, so caching code written for one API doesn't carry over to another.
+
+### The real savings of prompt caching
+
+Feature tables tell us what's possible. To see what prompt caching actually saves, we ran the Deep Agents [eval suite](https://www.langchain.com/blog/how-we-build-evals-for-deep-agents) across a mid-tier model from each of three providers: `claude-haiku-4-5`, `gpt-5.4-mini`, and `gemini-3.5-flash`. The result is the chart below. On real agent trajectories, prompt caching cut token cost by 49-80%.
+
+</div>
+
+<div style="text-align: center;">
+<svg viewBox="0 0 760 460" width="100%" role="img" aria-label="Bar chart titled prompt-caching cost vs no-cache. Three provider pairs of bars, each showing no-caching cost at 100% next to with-caching cost: haiku-4-5 drops to 23% (-77%), gpt-5.4-mini drops to 20% (-80%), gemini-3.5-flash drops to 51% (-49%)." xmlns="http://www.w3.org/2000/svg" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <rect width="760" height="460" fill="#030710" rx="8"/>
+  <text x="24" y="28" font-size="12" fill="#99D3FF" font-family="'IBM Plex Mono', ui-monospace, monospace">prompt-caching cost vs no-cache</text>
+
+  <rect x="520" y="20" width="180" height="54" rx="6" fill="#0D1322" stroke="#40668D" stroke-width="1"/>
+  <rect x="534" y="32" width="16" height="10" rx="2" fill="#2F4B68"/>
+  <text x="556" y="41" font-size="10.5" fill="#CCE9FF" font-family="'IBM Plex Mono', ui-monospace, monospace">no caching</text>
+  <rect x="534" y="52" width="16" height="10" rx="2" fill="#7FC8FF"/>
+  <text x="556" y="61" font-size="10.5" fill="#CCE9FF" font-family="'IBM Plex Mono', ui-monospace, monospace">with caching</text>
+
+  <line x1="70" y1="110" x2="690" y2="110" stroke="#2F4B68" stroke-width="0.75"/>
+  <text x="60" y="114" text-anchor="end" font-size="10" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">100</text>
+  <line x1="70" y1="170" x2="690" y2="170" stroke="#2F4B68" stroke-width="0.75"/>
+  <text x="60" y="174" text-anchor="end" font-size="10" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">80</text>
+  <line x1="70" y1="230" x2="690" y2="230" stroke="#2F4B68" stroke-width="0.75"/>
+  <text x="60" y="234" text-anchor="end" font-size="10" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">60</text>
+  <line x1="70" y1="290" x2="690" y2="290" stroke="#2F4B68" stroke-width="0.75"/>
+  <text x="60" y="294" text-anchor="end" font-size="10" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">40</text>
+  <line x1="70" y1="350" x2="690" y2="350" stroke="#2F4B68" stroke-width="0.75"/>
+  <text x="60" y="354" text-anchor="end" font-size="10" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">20</text>
+  <line x1="70" y1="410" x2="690" y2="410" stroke="#40668D" stroke-width="1.2"/>
+  <text x="60" y="414" text-anchor="end" font-size="10" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">0</text>
+
+  <text transform="rotate(-90 30 260)" x="30" y="260" text-anchor="middle" font-size="10.5" fill="#5BADDF" font-family="'IBM Plex Mono', ui-monospace, monospace">token cost (% of no-cache)</text>
+
+  <rect x="125" y="110" width="40" height="300" fill="#2F4B68"/>
+  <rect x="175" y="341" width="40" height="69" fill="#7FC8FF"/>
+  <text x="195" y="331" text-anchor="middle" font-size="12" font-weight="700" fill="#F2FAFF">-77%</text>
+  <text x="170" y="432" text-anchor="middle" font-size="11" fill="#CCE9FF" font-family="'IBM Plex Mono', ui-monospace, monospace">haiku-4-5</text>
+
+  <rect x="335" y="110" width="40" height="300" fill="#2F4B68"/>
+  <rect x="385" y="350" width="40" height="60" fill="#7FC8FF"/>
+  <text x="405" y="340" text-anchor="middle" font-size="12" font-weight="700" fill="#F2FAFF">-80%</text>
+  <text x="380" y="432" text-anchor="middle" font-size="11" fill="#CCE9FF" font-family="'IBM Plex Mono', ui-monospace, monospace">gpt-5.4-mini</text>
+
+  <rect x="545" y="110" width="40" height="300" fill="#2F4B68"/>
+  <rect x="595" y="257" width="40" height="153" fill="#7FC8FF"/>
+  <text x="615" y="247" text-anchor="middle" font-size="12" font-weight="700" fill="#F2FAFF">-49%</text>
+  <text x="590" y="432" text-anchor="middle" font-size="11" fill="#CCE9FF" font-family="'IBM Plex Mono', ui-monospace, monospace">gemini-3.5-flash</text>
+</svg>
+</div>
+
+<div data-lang="python" markdown="1">
+
+- `claude-haiku-4-5`: **-77%**. Using Anthropic's explicit breakpoints, we can keep a large portion of the prompt cached. This significantly reduced the token cost of each request.
+- `gpt-5.4-mini`: **-80%**. OpenAI's automatic longest-prefix caching gives us a sizable 80% cost reduction.
+- `gemini-3.5-flash`: **-49%**. Gemini's implicit caching makes [no explicit savings guarantee](https://www.langchain.com/blog/deep-agents-prompt-caching), but we still see considerable savings.
+
+It's also worth noting that caching pays off more the longer a conversation runs: the cached prefix is reused across every turn, so the long-horizon tasks are the ones that benefit most.
+
+Head over to **Lab 2** to see prompt caching show up in a real trace.
+
+---
+
+## Recap
+
+- `system_prompt` lets you provide your own instructions to the agent
+- As of deepagents 0.7, `create_deep_agent`'s built-in base prompt is empty by default, so your `system_prompt` **is** the full system prompt sent to the model
+- Defining the `SYSTEM_PROMPT` string is not enough; it must be passed as `system_prompt=SYSTEM_PROMPT` to `create_deep_agent`; without it, the agent gets no system prompt at all
+- One string controls the agent's persona, domain, and constraints without touching tools, the model, or anything else
+
+---
+
+## Next
+
+Complete **Lab 1**, **Lab 2**, and the **Quiz** above, then continue to the next lesson on **tools**: how to extend the agent with custom Python functions and how the Tool Node executes them.
+
+---
+
+## References
+
+**Documentation:**
+
+- [Deep Agents overview](https://docs.langchain.com/oss/python/deepagents/overview)
+- [Models (Deep Agents)](https://docs.langchain.com/oss/python/deepagents/models)
+- [Customization & prompt assembly (Deep Agents)](https://docs.langchain.com/oss/python/deepagents/customization#prompt-assembly)
+- [Context engineering (Deep Agents)](https://docs.langchain.com/oss/python/deepagents/context-engineering)
+- [deepagents README (GitHub)](https://github.com/langchain-ai/deepagents)
+- [Chat LangChain system prompt (GitHub)](https://github.com/langchain-ai/chat-langchain/blob/master/instructions.md)
+
+</div>
+
+<div data-lang="typescript" markdown="1">
+
+- `claude-haiku-4-5`: **-77%**. Using Anthropic's explicit breakpoints, we can keep a large portion of the prompt cached. This significantly reduced the token cost of each request.
+- `gpt-5.4-mini`: **-80%**. OpenAI's automatic longest-prefix caching gives us a sizable 80% cost reduction.
+- `gemini-3.5-flash`: **-49%**. Gemini's implicit caching makes [no explicit savings guarantee](https://www.langchain.com/blog/deep-agents-prompt-caching), but we still see considerable savings.
+
+It's also worth noting that caching pays off more the longer a conversation runs: the cached prefix is reused across every turn, so the long-horizon tasks are the ones that benefit most.
+
+Head over to **Lab 2** to see prompt caching show up in a real trace.
+
+---
+
+## Recap
+
+- `systemPrompt` lets you provide your own instructions to the agent
+- As of deepagents 0.7, `createDeepAgent`'s built-in base prompt is empty by default, so your `systemPrompt` **is** the full system prompt sent to the model
+- Defining the `SYSTEM_PROMPT` string is not enough; it must be passed as `systemPrompt: SYSTEM_PROMPT` to `createDeepAgent`; without it, the agent gets no system prompt at all
+- One string controls the agent's persona, domain, and constraints without touching tools, the model, or anything else
+
+---
+
+## Next
+
+Complete **Lab 1**, **Lab 2**, and the **Quiz** above, then continue to the next lesson on **tools**: how to extend the agent with custom TypeScript functions and how the Tool Node executes them.
+
+---
+
+## References
+
+**Documentation:**
+
+- [Deep Agents overview](https://docs.langchain.com/oss/javascript/deepagents/overview)
+- [Models (Deep Agents)](https://docs.langchain.com/oss/javascript/deepagents/models)
+- [Customization & prompt assembly (Deep Agents)](https://docs.langchain.com/oss/javascript/deepagents/customization#prompt-assembly)
+- [Context engineering (Deep Agents)](https://docs.langchain.com/oss/javascript/deepagents/context-engineering)
+- [deepagents README (GitHub)](https://github.com/langchain-ai/deepagents)
+- [Chat LangChain system prompt (GitHub)](https://github.com/langchain-ai/chat-langchain/blob/master/instructions.md)
+
+</div>
+
+</div>
+
+<div class="lt-panel" id="p-lab1" markdown="1" role="tabpanel">
+
+<div data-lang="python" markdown="1">
+
+## Lab 1: Swapping Personas
+
+<Tip>
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lab Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/uxYmtnEdD2u" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+**[View this run in LangSmith.](https://smith.langchain.com/public/c0982daf-5146-416f-b2a3-bdccb611a7ff/r/019fc8fd-3abf-74a1-b8cb-bef3504b5ee3)** Notice the first `system` message holds the Posh Butler persona verbatim.
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#E5F4FF;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">LangSmith Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/K1qGdKEl2kZ" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+</Tip>
+
+**The discovery:** `system_prompt` is how you orient your agent to the task at hand and pass it essential instructions. It is free-form text: use it to define the agent's role, scope its domain, or enforce constraints.
+
+Open `python/m1/m1.4_scratch_agent_butler.py`; the `SYSTEM_PROMPT` is already defined and passed to `create_deep_agent`. Run it to see the butler in action, then try swapping the `SYSTEM_PROMPT` for one of the personas below and run it again:
+
+```python {2,3,6}
+# python/m1/m1.4_scratch_agent_butler.py
+SYSTEM_PROMPT = "You are a salty pirate captain..."  # ← swap this
+
+from models import model
+from deepagents import create_deep_agent
+agent = create_deep_agent(
+    model=model,
+    system_prompt=SYSTEM_PROMPT,
+    name="butler_agent",
+)
+```
+
+<details>
+<summary>Persona ideas [click to expand]</summary>
+
+Pick one of these or write your own:
+
+```python
+# python/m1/m1.4_scratch_agent_butler.py
+# Pirate
+SYSTEM_PROMPT = (
+    "You are a salty pirate captain with decades at sea. Talk in 'arr' and nautical slang. "
+    "Call the user 'matey' and frame your answers as if charting a course."
+)
+
+# Cowboy
+SYSTEM_PROMPT = (
+    "You are a drawling cowboy from the Old West. Speak only in cowboy slang, partner. "
+    "Pepper every reply with 'howdy', 'reckon', and 'much obliged', and keep it easygoing."
+)
+
+# Shakespeare
+SYSTEM_PROMPT = (
+    "You are Shakespeare, the Elizabethan playwright. Reply only in Early Modern English. "
+    "Use 'thee' and 'thou', and close with a short rhyming couplet when you can."
+)
+```
+
+Each one changes the agent's voice without touching anything else. That single
+string is your custom instruction.
+
+</details>
+
+```bash
+cd python
+uv run ./m1/m1.4_scratch_agent_butler.py
+```
+
+If you used the pirate persona, the reply should come back with 'arr' and nautical slang. That's your custom instruction taking effect.
+
+### See the personas in LangSmith
+
+See the LangSmith Video Walkthrough at the top of this page for a full trace tour.
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-pirate-input.png" alt="LangSmith trace showing the Pirate Captain system prompt in the ChatAnthropic Input tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Pirate Captain, system prompt (Input)</figcaption>
+</figure>
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-pirate-output.png" alt="LangSmith trace showing the Pirate Captain's reply in the ChatAnthropic Output tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Pirate Captain, reply (Output)</figcaption>
+</figure>
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-cowboy-input.png" alt="LangSmith trace showing the Cowboy system prompt in the ChatAnthropic Input tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Cowboy, system prompt (Input)</figcaption>
+</figure>
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-cowboy-output.png" alt="LangSmith trace showing the Cowboy's reply in the ChatAnthropic Output tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Cowboy, reply (Output)</figcaption>
+</figure>
+
+</div>
+
+<div data-lang="typescript" markdown="1">
+
+## Lab 1: Swapping Personas
+
+<Tip>
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lab Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/uxYmtnEdD2u" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+**[View this run in LangSmith.](https://smith.langchain.com/public/c0982daf-5146-416f-b2a3-bdccb611a7ff/r/019fc8fd-3abf-74a1-b8cb-bef3504b5ee3)** Notice the first `system` message holds the Posh Butler persona verbatim.
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#E5F4FF;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">LangSmith Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/K1qGdKEl2kZ" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+</Tip>
+
+**The discovery:** `systemPrompt` is how you orient your agent to the task at hand and pass it essential instructions. It is free-form text: use it to define the agent's role, scope its domain, or enforce constraints.
+
+Open `typescript/m1/m1.4_scratch_agent_butler.ts`; the `SYSTEM_PROMPT` is already defined and passed to `createDeepAgent`. Run it to see the butler in action, then try swapping the `SYSTEM_PROMPT` for one of the personas below and run it again:
+
+```typescript {2,3,6}
+// typescript/m1/m1.4_scratch_agent_butler.ts
+const SYSTEM_PROMPT = "You are a salty pirate captain..."  // ← swap this
+
+import { createDeepAgent } from "deepagents";
+import { model } from "../models.js";
+const agent = createDeepAgent({
+  model,
+  systemPrompt: SYSTEM_PROMPT,
+  name: "butler_agent",
+});
+```
+
+<details>
+<summary>Persona ideas [click to expand]</summary>
+
+Pick one of these or write your own:
+
+```typescript
+// typescript/m1/m1.4_scratch_agent_butler.ts
+// Pirate
+SYSTEM_PROMPT =
+  "You are a salty pirate captain with decades at sea. Talk in 'arr' and nautical slang. " +
+  "Call the user 'matey' and frame your answers as if charting a course.";
+
+// Cowboy
+SYSTEM_PROMPT =
+  "You are a drawling cowboy from the Old West. Speak only in cowboy slang, partner. " +
+  "Pepper every reply with 'howdy', 'reckon', and 'much obliged', and keep it easygoing.";
+
+// Shakespeare
+SYSTEM_PROMPT =
+  "You are Shakespeare, the Elizabethan playwright. Reply only in Early Modern English. " +
+  "Use 'thee' and 'thou', and close with a short rhyming couplet when you can.";
+```
+
+Each one changes the agent's voice without touching anything else. That single
+string is your custom instruction.
+
+</details>
+
+```bash
+cd typescript
+pnpm tsx ./m1/m1.4_scratch_agent_butler.ts
+```
+
+If you used the pirate persona, the reply should come back with 'arr' and nautical slang. That's your custom instruction taking effect.
+
+### See the personas in LangSmith
+
+See the LangSmith Video Walkthrough at the top of this page for a full trace tour.
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-pirate-input.png" alt="LangSmith trace showing the Pirate Captain system prompt in the ChatAnthropic Input tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Pirate Captain, system prompt (Input)</figcaption>
+</figure>
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-pirate-output.png" alt="LangSmith trace showing the Pirate Captain's reply in the ChatAnthropic Output tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Pirate Captain, reply (Output)</figcaption>
+</figure>
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-cowboy-input.png" alt="LangSmith trace showing the Cowboy system prompt in the ChatAnthropic Input tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Cowboy, system prompt (Input)</figcaption>
+</figure>
+
+<figure style="margin:1.5rem 0 0;">
+<img src="images/m1.4-langsmith-cowboy-output.png" alt="LangSmith trace showing the Cowboy's reply in the ChatAnthropic Output tab" style="width:100%;border-radius:8px;border:1px solid #CCE9FF;" />
+<figcaption style="font-size:13px;color:#40668D;margin-top:6px;">Persona: Cowboy, reply (Output)</figcaption>
+</figure>
+
+</div>
+
+</div>
+
+<div class="lt-panel" id="p-lab2" markdown="1" role="tabpanel">
+
+<div data-lang="python" markdown="1">
+
+## Lab 2: Prompt Caching in Action
+
+<Tip>
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lab Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/PQRxz7wjbrJ" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+**First run: [view this run in LangSmith.](https://smith.langchain.com/public/1e3fc86e-a943-4b57-a42d-6d366df075ac/r/019fc9d1-7a30-7be2-a475-c9eafe740a84)** Notice the system prompt and tool definitions billed at full price; there's nothing cached yet to read from.
+
+**Second run: [view this run in LangSmith.](https://smith.langchain.com/public/da7a8f87-9a5c-4ba7-8944-3123752fab85/r/019fc9d1-939d-7c10-b07f-4f16b832f8bb)** Notice the same system prompt and tools reading from cache instead of processing fresh, at a fraction of the cost.
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#E5F4FF;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">LangSmith Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/WzWmCkZHosD" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+</Tip>
+
+**The discovery:** prompt caching is provider-side and keyed by content, not by conversation. Send the same request twice, back to back, and the second call should read a large chunk of it from cache instead of paying full price again.
+
+For the purposes of this lab, and to demonstrate prompt caching effectively, we amped up the butler: an even more dramatic variant with a longer system prompt and a custom tool, `python/m1/m1.4_scratch_agent_butler_extra_posh.py`.
+
+Open it and skim the `SYSTEM_PROMPT` (it's several times longer than the Lab 1 butler's) and the `summon_tea` tool, then run it twice in a row, unchanged:
+
+```bash
+cd python
+uv run ./m1/m1.4_scratch_agent_butler_extra_posh.py
+uv run ./m1/m1.4_scratch_agent_butler_extra_posh.py
+```
+
+<details markdown="1">
+<summary>Behind the scenes: how does "running it twice" actually trigger a cache hit?</summary>
+
+Two separate `uv run` calls are two separate processes, with no shared conversation or session ID, so it's fair to wonder how the second one could possibly reuse anything from the first. The answer is in how `create_deep_agent` sets up caching for you, automatically, on every run:
+
+- `create_deep_agent` always adds Anthropic's prompt-caching middleware to the model call.
+- On every request, that middleware tags the **last block of the system message** and the **last tool definition** with a cache marker (`cache_control: {type: "ephemeral", ttl: "5m"}`). A marker tells the provider "cache everything up to and including this point."
+- Only the *last* tool gets a marker. A marker caches everything before it, so one marker on the last tool covers the whole tool list, and Anthropic only allows 4 markers per request anyway.
+- Anthropic's cache is keyed by exact content, not by conversation or session. As long as a later request's system prompt and tools match a previous request byte-for-byte, and it arrives within the 5-minute TTL, it's a cache hit, regardless of whether it came from the same script run, a different script, or a different process entirely.
+
+That's the whole trick: running the script twice in a row sends the identical system prompt and tool list twice, seconds apart, so the second call lands well inside the first call's 5-minute cache window.
+
+</details>
+
+### Check the trace in LangSmith
+
+Open both runs in **LangSmith**, click into the LLM call on each, and check the `usage` field. Most providers report the input tokens read from cache separately from the tokens processed fresh.
+
+- The **first** run has nothing to reuse yet: the system prompt and tool definitions are billed at full price.
+- The **second** run sends the same system prompt and tools. Its `usage` field should show a chunk of those tokens read from cache instead of processed fresh, at a fraction of the cost.
+
+A longer, multi-turn conversation that keeps the same system prompt and tool list shows this same effect compounding: the cached-token count climbs turn over turn, with the cost per call dropping to match.
+
+</div>
+
+<div data-lang="typescript" markdown="1">
+
+## Lab 2: Prompt Caching in Action
+
+<Tip>
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#fff;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">Lab Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/PQRxz7wjbrJ" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+**First run: [view this run in LangSmith.](https://smith.langchain.com/public/1e3fc86e-a943-4b57-a42d-6d366df075ac/r/019fc9d1-7a30-7be2-a475-c9eafe740a84)** Notice the system prompt and tool definitions billed at full price; there's nothing cached yet to read from.
+
+**Second run: [view this run in LangSmith.](https://smith.langchain.com/public/da7a8f87-9a5c-4ba7-8944-3123752fab85/r/019fc9d1-939d-7c10-b07f-4f16b832f8bb)** Notice the same system prompt and tools reading from cache instead of processing fresh, at a fraction of the cost.
+
+<details style="border:2.5px solid #000;border-radius:6px;background:#E5F4FF;margin:1rem 0;"><summary style="padding:10px 16px;cursor:pointer;font-weight:500;font-family:'IBM Plex Mono',monospace;font-size:14px;">LangSmith Video Walkthrough</summary><div style="padding:12px 16px 16px;"><div class="video-container" style="max-width:750px;"><div class="video-wrapper"><iframe src="https://share.descript.com/embed/WzWmCkZHosD" frameborder="0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div></div></details>
+
+</Tip>
+
+**The discovery:** prompt caching is provider-side and keyed by content, not by conversation. Send the same request twice, back to back, and the second call should read a large chunk of it from cache instead of paying full price again.
+
+For the purposes of this lab, and to demonstrate prompt caching effectively, we amped up the butler: an even more dramatic variant with a longer system prompt and a custom tool, `typescript/m1/m1.4_scratch_agent_butler_extra_posh.ts`.
+
+Open it and skim the `SYSTEM_PROMPT` (it's several times longer than the Lab 1 butler's) and the `summonTea` tool, then run it twice in a row, unchanged:
+
+```bash
+cd typescript
+pnpm tsx ./m1/m1.4_scratch_agent_butler_extra_posh.ts
+pnpm tsx ./m1/m1.4_scratch_agent_butler_extra_posh.ts
+```
+
+<details markdown="1">
+<summary>Behind the scenes: how does "running it twice" actually trigger a cache hit?</summary>
+
+Two separate `pnpm tsx` calls are two separate processes, with no shared conversation or session ID, so it's fair to wonder how the second one could possibly reuse anything from the first. The answer is in how `createDeepAgent` sets up caching for you, automatically, on every run:
+
+- `createDeepAgent` always adds Anthropic's prompt-caching middleware to the model call.
+- On every request, that middleware tags the **last block of the system message** and the **last tool definition** with a cache marker (`cache_control: {type: "ephemeral", ttl: "5m"}`). A marker tells the provider "cache everything up to and including this point."
+- Only the *last* tool gets a marker. A marker caches everything before it, so one marker on the last tool covers the whole tool list, and Anthropic only allows 4 markers per request anyway.
+- Anthropic's cache is keyed by exact content, not by conversation or session. As long as a later request's system prompt and tools match a previous request byte-for-byte, and it arrives within the 5-minute TTL, it's a cache hit, regardless of whether it came from the same script run, a different script, or a different process entirely.
+
+That's the whole trick: running the script twice in a row sends the identical system prompt and tool list twice, seconds apart, so the second call lands well inside the first call's 5-minute cache window.
+
+</details>
+
+### Check the trace in LangSmith
+
+Open both runs in **LangSmith**, click into the LLM call on each, and check the `usage` field. Most providers report the input tokens read from cache separately from the tokens processed fresh.
+
+- The **first** run has nothing to reuse yet: the system prompt and tool definitions are billed at full price.
+- The **second** run sends the same system prompt and tools. Its `usage` field should show a chunk of those tokens read from cache instead of processed fresh, at a fraction of the cost.
+
+A longer, multi-turn conversation that keeps the same system prompt and tool list shows this same effect compounding: the cached-token count climbs turn over turn, with the cost per call dropping to match.
+
+</div>
+
+</div>
+
+<div class="lt-panel" id="p-quiz" role="tabpanel">
+
+<div data-lang="python">
+
+<h2>Check your understanding</h2>
+
+<MCQ
+    question="What does the system_prompt argument let you provide?"
+    choices='["Custom instructions for the agent", "A replacement for the model", "A new tool schema", "A LangSmith project name"]'
+    correctIndex={0}
+    explanation="system_prompt is where you provide custom instructions such as persona, domain, or constraints."
+/>
+
+<MCQ
+    question="As of deepagents 0.7, what does create_deep_agent do with your system_prompt by default?"
+    choices='["It uses it as the entire system prompt sent to the model", "It sends it as a user message", "It turns it into a tool", "It stores it only in LangSmith"]'
+    correctIndex={0}
+    explanation="As of deepagents 0.7, the built-in base prompt is empty by default, so your system_prompt is used as the full system prompt sent to the model, with nothing else mixed in."
+/>
+
+<MCQ
+    question="You write SYSTEM_PROMPT = 'You are a pirate.' but the agent replies with no pirate tone. What is most likely wrong?"
+    choices='["The built-in instructions override all personas", "The model requires a special flag to enable custom personas", "SYSTEM_PROMPT was defined but not passed to create_deep_agent", "Persona instructions only work with tools"]'
+    correctIndex={2}
+    explanation="Defining the string is not enough. It must be passed explicitly: create_deep_agent(model=model, system_prompt=SYSTEM_PROMPT)."
+/>
+
+<MCQ
+    question="As of deepagents 0.7, what happens if you don't pass a system_prompt to create_deep_agent at all?"
+    choices='["The agent falls back to a detailed built-in default prompt", "The agent gets no system prompt at all by default", "create_deep_agent raises an error", "The agent reuses the system_prompt from its last run"]'
+    correctIndex={1}
+    explanation="As of deepagents 0.7, the built-in base prompt is empty by default, so skipping system_prompt means the agent gets no system prompt at all."
+/>
+
+<MCQ
+    question="You switch from a pirate persona to a cowboy persona by changing SYSTEM_PROMPT. What else changes?"
+    choices='["The built-in base instructions adapt to match the new persona", "Only your custom instruction changes", "The model changes automatically", "The tool schemas update to reflect the new persona&#39;s capabilities"]'
+    correctIndex={1}
+    explanation="As of deepagents 0.7, there's no built-in base prompt mixed in by default, so your system_prompt is the entire system message: swapping personas changes that whole message, since nothing else is there to stay fixed."
+/>
+
+</div>
+
+<div data-lang="typescript">
+
+<h2>Check your understanding</h2>
+
+<MCQ
+    question="What does the systemPrompt argument let you provide?"
+    choices='["Custom instructions for the agent", "A replacement for the model", "A new tool schema", "A LangSmith project name"]'
+    correctIndex={0}
+    explanation="systemPrompt is where you provide custom instructions such as persona, domain, or constraints."
+/>
+
+<MCQ
+    question="As of deepagents 0.7, what does createDeepAgent do with your systemPrompt by default?"
+    choices='["It uses it as the entire system prompt sent to the model", "It sends it as a user message", "It turns it into a tool", "It stores it only in LangSmith"]'
+    correctIndex={0}
+    explanation="As of deepagents 0.7, the built-in base prompt is empty by default, so your systemPrompt is used as the full system prompt sent to the model, with nothing else mixed in."
+/>
+
+<MCQ
+    question="You write SYSTEM_PROMPT = 'You are a pirate.' but the agent replies with no pirate tone. What is most likely wrong?"
+    choices='["The built-in instructions override all personas", "The model requires a special flag to enable custom personas", "SYSTEM_PROMPT was defined but not passed to createDeepAgent", "Persona instructions only work with tools"]'
+    correctIndex={2}
+    explanation="Defining the string is not enough. It must be passed explicitly: createDeepAgent({model: model, systemPrompt: SYSTEM_PROMPT});"
+/>
+
+<MCQ
+    question="As of deepagents 0.7, what happens if you don't pass a systemPrompt to createDeepAgent at all?"
+    choices='["The agent falls back to a detailed built-in default prompt", "The agent gets no system prompt at all by default", "createDeepAgent raises an error", "The agent reuses the systemPrompt from its last run"]'
+    correctIndex={1}
+    explanation="As of deepagents 0.7, the built-in base prompt is empty by default, so skipping systemPrompt means the agent gets no system prompt at all."
+/>
+
+<MCQ
+    question="You switch from a pirate persona to a cowboy persona by changing SYSTEM_PROMPT. What else changes?"
+    choices='["The built-in base instructions adapt to match the new persona", "Only your custom instruction changes", "The model changes automatically", "The tool schemas update to reflect the new persona&#39;s capabilities"]'
+    correctIndex={1}
+    explanation="As of deepagents 0.7, there's no built-in base prompt mixed in by default, so your systemPrompt is the entire system message: swapping personas changes that whole message, since nothing else is there to stay fixed."
+/>
+
+</div>
+
+</div>
+
+<div class="lt-panel" id="p-homework" markdown="1" role="tabpanel">
+
+<div data-lang="python" markdown="1">
+
+## Scope the Agent to One Domain
+
+Lab 1 had you swap personas (pirate, cowboy, Shakespeare) on top of the butler system prompt, which only changes the agent's voice. This homework uses `system_prompt` differently: instead of persona, write a constraint that scopes the agent to a single domain of your own choosing (cooking, houseplants, retro video games, personal finance, etc.) and instructs it to refuse or redirect anything outside that domain.
+
+Open `python/m1/m1.4_homework.py`.
+
+1. **TODO 1**: write your own `SYSTEM_PROMPT` string that scopes the agent to a single domain and tells it to refuse or redirect anything outside that domain (no persona/voice required here, just the scope + refusal instruction).
+2. **TODO 2**: invoke the agent with two test prompts, one inside your domain and one clearly outside it, and print both responses so you can see whether the refusal actually held.
+
+### Run it
+
+```bash
+cd python
+uv run ./m1/m1.4_homework.py
+```
+
+Stuck, or want to see the finished shape before you start? `m1.4_homework_filled.py` is a reference copy with every TODO filled in (scoped to houseplant care, with an out-of-domain test prompt to confirm the refusal works); run it the same way to see what "done" looks like end to end.
+
+Try to avoid peeking unless you're really stuck, you'll get more out of this by working through the TODOs yourself first.
+
+</div>
+
+<div data-lang="typescript" markdown="1">
+
+## Scope the Agent to One Domain
+
+Lab 1 had you swap personas (pirate, cowboy, Shakespeare) on top of the butler system prompt, which only changes the agent's voice. This homework uses `systemPrompt` differently: instead of persona, write a constraint that scopes the agent to a single domain of your own choosing (cooking, houseplants, retro video games, personal finance, etc.) and instructs it to refuse or redirect anything outside that domain.
+
+Open `typescript/m1/m1.4_homework.ts`.
+
+1. **TODO 1**: write your own `SYSTEM_PROMPT` string that scopes the agent to a single domain and tells it to refuse or redirect anything outside that domain (no persona/voice required here, just the scope + refusal instruction).
+2. **TODO 2**: invoke the agent with two test prompts, one inside your domain and one clearly outside it, and print both responses so you can see whether the refusal actually held.
+
+### Run it
+
+```bash
+cd typescript
+pnpm tsx ./m1/m1.4_homework.ts
+```
+
+Stuck, or want to see the finished shape before you start? `m1.4_homework_filled.ts` is a reference copy with every TODO filled in (scoped to houseplant care, with an out-of-domain test prompt to confirm the refusal works); run it the same way to see what "done" looks like end to end.
+
+Try to avoid peeking unless you're really stuck, you'll get more out of this by working through the TODOs yourself first.
+
+</div>
+
+</div>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.lt-tab');
+  function show(p) {
+    tabs.forEach(function (t) {
+      var on = t.getAttribute('data-p') === p;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('.lt-panel').forEach(function (panel) {
+      panel.classList.toggle('active', panel.id === 'p-' + p);
+    });
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { show(t.getAttribute('data-p')); });
+  });
+})();
+</script>

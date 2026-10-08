@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wind-alice/alicemarket (path: skills/avatar-charlie-munger-thinking/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 使用查理·芒格式的逆向思考、激励分析、认知偏误叠加和多学科模型检验复杂决策。用于评估商业与投资判断、组织行为、政策效果、重大选择、全民共识、失败风险，或识别论证中的单一视角和心理盲区。

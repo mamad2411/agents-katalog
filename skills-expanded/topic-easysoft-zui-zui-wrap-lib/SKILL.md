@@ -1,0 +1,91 @@
+---
+name: zui-wrap-lib
+description: "将已经可用的 UMD/IIFE 资源封装为 ZUI 主仓库的 lib/* 库，通过 LibLoader 按需加载。不转换资源格式，需求明确时形成集成计划后直接实施。"
+---
+
+# ZUI UMD 库封装
+
+## 目标与边界
+
+把第三方 UMD/IIFE 库做成一层薄而完整的 ZUI 适配层：第三方实现保持外置，由 `LibLoader<T>` 首次使用时加载；ZUI 库负责类型、公开 API、组件生命周期、样式接线、调试和文档。
+
+- 假定用户提供或指定的产物已经能被浏览器脚本直接加载，并暴露稳定的全局变量。
+- 不调用或建议 `npm-umd-wrapper`，不把 ESM 转成 UMD，不使用打包器重建、改写或内联第三方实现。
+- 先从用户指定版本的产物和文档核实格式、路径与全局名。仍缺少可用资源时，只暂停依赖该资源的封装工作，报告缺口并请求必要信息；继续不受影响的已授权事项。不自行转换、重打包或换用未经批准的资源。
+- 不默认生成全部消费方式；只实现用户需要且仓库契约支持的 helper、vanilla、Preact、声明式创建或公开加载 API。
+- 不自动提交、推送或发布。
+
+## 准备与发现
+
+1. 按 [共享工作流](../zui-standards/references/workflow.md) 完成所需发现并复用已有上下文。
+2. 按本次封装决策读取相关规范：
+   - `../zui-standards/references/workflow.md`
+   - `../zui-standards/references/library.md`
+   - `../zui-standards/references/external-library.md`
+   - UI 组件再读 `../zui-standards/references/component.md`；无状态函数或服务 facade 再读 `../zui-standards/references/helper.md`。
+   - 纳入 `README.md` / `dev.ts` 或正式文档时，再读对应的 `dev-page.md` / `documentation.md`。
+3. 按需读取 [references/wrapper-shapes.md](references/wrapper-shapes.md) 的形态判断及所选形态约束，再按范围读取 `../zui-lib/SKILL.md`、`../zui-component/SKILL.md`、`../zui-helper/SKILL.md`、`../zui-dev/SKILL.md` 或 `../zui-doc/SKILL.md`；由本技能统一它们的任务范围与计划。
+4. 检查工作区状态并保留已有修改。确认目标是新建 `lib/<name>` 还是扩展已有库，不覆盖无关文件。
+5. 检查 UMD 产物或其文档，只提取封装所需事实：资源位置、全局名、构造器/函数、初始化参数、返回值、事件、更新与销毁 API、配套 CSS/资源、版本和许可证。不要把“确认可直接使用”变成转制或重打包工作。
+6. 核实本次涉及的 `LibLoader`/`getLib` 契约；需要参考时，可从 `lib/sortable/src/helper/sortable-loader.ts` 和 `lib/sortable/src/vanilla/sortable.ts` 检查加载及生命周期模式，再按证据需要补充相近实现。
+
+先从仓库、产物和现有文档发现信息。只有缺口会改变目标库、公开 API、生命周期或文件范围时才提问，通常限于：无法确定的目标库名、UMD 资源位置/全局名，以及用户真正需要的消费方式。
+
+## 设计封装
+
+分别确定包角色与实现架构，不从“第三方库”或目录名机械推断 `zui.type`。按外部 API 和公开消费方式选择：
+
+- 无状态函数/模块：提供异步 typed facade，通常不创建 `Component`。
+- 增强已有 DOM 的有状态实例：使用原生 `Component`，持有第三方实例并负责更新和销毁。
+- ZUI 需要根据 props 生成结构且同时提供 Preact/vanilla：按组件规范选择 Preact 与 `ComponentFromReact`，不要在没有消费需求时增加 TSX 层。
+- 全局服务或单例：按 helper 规范明确所有权、重入、错误与清理，不伪装成 UI 组件。
+
+无论选择哪种形态，都要定义：
+
+- 唯一 loader 注册名、生产资源路径、`check` 全局名、前置 JS/CSS 和 dev 覆盖路径；
+- loader 是否保持私有，是否确有必要公开 `loadModule()` / `Module`；
+- loading、失败传播/降级、缓存错误与显式重试语义；
+- 类型来源及发布后的可解析性，严禁第三方库的运行时 `import` 混入 ZUI bundle；
+- 异步初始化期间销毁、重复初始化、多实例、更新和第三方实例清理；
+- package 入口、依赖、`zui.type`、`contributes`、public 资源、样式、调试页与正式文档边界。
+
+## 一次集成计划
+
+按共享工作流形成可直接实施的集成计划；以下仅展开本次相关决策：
+
+- 新建/已有库、包角色、实现架构及必要参考依据；
+- UMD 来源与版本、目标 `public/` 路径或绝对 URL、全局名、loader 注册与资源依赖；
+- package 名称、入口、依赖、`zui` 元数据和 publicPath 决策；
+- 类型策略、公开 API、消费方式、状态/数据流、错误重试、更新与 destroy；
+- 精确文件集，以及 README/dev、正式文档、样式和 i18n 的纳入/排除；
+- 运行时验收场景、静态验证、仍存在的假设和本次任务范围。
+
+需求明确后直接实施；任务范围、必要澄清及协作模式遵循共享工作流。
+
+## 实施
+
+1. 重新检查工作区状态，仅修改任务范围。
+2. 新库按 `@zui/<kebab-name>`、`0.0.1`、真实入口、准确依赖和 `zui.contributes` 创建最小骨架；`publicPath` 只在构建后的资源目录不同于库名时声明。已有库沿用合理结构，不顺带规范化。
+3. 将用户提供的 UMD/CSS/许可证文件原样放入计划中的 `public/` 位置，或为选定的绝对 URL 配置 loader。同时按[第三方依赖的版权与文档](../zui-standards/references/workflow.md#第三方依赖的版权与文档)补齐根目录 `licenses/` 和公共依赖说明，外置或远程加载也须覆盖。不要编辑、压缩、转译或生成第三方产物。
+4. 在库内私有 helper 中创建唯一的 `LibLoader<T>`，显式配置 `src` 和 `check`；多个组件共享同一个 loader，不在组件类维护第二份模块缓存。
+5. 优先使用第三方声明的 `import type`；没有可靠声明时只手写封装实际使用的窄接口。公共类型引用第三方包时，确保消费者能解析相应依赖。
+6. 按选定形态实现 facade。每次异步加载后检查模块结果和实例存活状态；定义加载前方法行为；在 `destroy()` 中清理第三方实例、监听、DOM 和其他副作用。
+7. 仅创建真实需要的局部入口、`src/main.ts`、Preact 子入口、注册副作用和样式。不要公开私有 loader，也不要为理论消费方式创建空目录或导出。
+8. 任务范围包含调试页时，按 `zui-dev` 完成 `README.md` 与 `dev.ts`：先导入生产入口，再用相同注册名和 `check` 覆盖本地 `/lib/<name>/public/...` 路径，并在 HMR 重建前销毁旧实例。组件 API 文档按任务范围由 `zui-doc` 实施；新增第三方依赖的公共说明按共享工作流随本次交付完成。
+9. 若修改依赖，使用 pnpm 更新安装状态和锁文件；不要使用 npm、yarn 或 npx。
+
+## 验证与交付
+
+按共享工作流选择覆盖本次变更的验证，常用命令为：
+
+```sh
+git diff --check
+pnpm exec eslint lib/<name>
+pnpm build --lib <name> --no-minify
+```
+
+根据本次涉及的类型、文档或交互补充必要检查，并按共享工作流完成范围内修复和复验。开发服务管理遵循共享工作流及 `AGENTS.md`，按归属和临时验证/持续预览用途处理。
+
+新增封装或改变相应运行时行为时，按变更选择以下验收项目：首次使用才加载、预载全局不重复加载、多实例、加载失败与选定的重试/降级策略、加载返回前销毁、更新、重复初始化和最终清理；同时核对构建后的 public 资源路径及第三方类型解析。
+
+交付时报告新增/修改文件、公开 API、UMD 资源与全局名、已运行验证和未验证风险，并保留用户原有未提交改动。

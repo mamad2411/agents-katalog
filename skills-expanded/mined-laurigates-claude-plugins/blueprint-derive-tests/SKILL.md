@@ -1,0 +1,210 @@
+---
+created: 2026-02-22
+modified: 2026-06-18
+reviewed: 2026-06-10
+description: Derive test regression plans from git history by finding commits lacking tests. Use when finding untested bug fixes, coverage gaps, or generating a test backlog.
+args: "[--since DATE] [--quick] [--scope AREA]"
+argument-hint: "--since 2024-06-01 for date range, --quick for last 50, --scope auth for specific area"
+allowed-tools: Read, Write, Glob, Grep, Bash, AskUserQuestion, Task
+model: opus
+name: blueprint-derive-tests
+---
+
+# /blueprint:derive-tests
+
+Analyze git history to identify fix and feature commits lacking corresponding test changes, then generate a structured Test Regression Plan (TRP) document as a prioritized test backlog.
+
+**Use case**: Systematically close test coverage gaps by mining commit history for bug fixes and features that shipped without regression tests.
+
+## When to Use This Skill
+
+| Use this skill when... | Use alternative when... |
+|------------------------|-------------------------|
+| Bug fixes ship without regression tests | You need to run existing tests (`/test:run`) |
+| Want a prioritized test backlog from history | Writing tests for a specific feature (manual TDD) |
+| Onboarding a project and assessing test health | Checking current test coverage metrics |
+| Need to find which fixes lack test coverage | Designing a test strategy from scratch (`/test:architecture`) |
+
+## Context
+
+- Git repository: !`git rev-parse --git-dir`
+- Blueprint initialized: !`find . -path '*/docs/blueprint/*' -maxdepth 3 -name 'manifest.json' -type f`
+- Total commits: !`git rev-list --count HEAD`
+- Test framework: !`find . -maxdepth 3 \( -name 'vitest.config.*' -o -name 'jest.config.*' -o -name 'pytest.ini' -o -name 'pyproject.toml' -o -name 'Cargo.toml' -o -name 'go.mod' \) -type f -print -quit`
+- Test files: !`find . -maxdepth 4 -type f \( -name '*.test.*' -o -name '*.spec.*' -o -name 'test_*' -o -name '*_test.*' \) -print`
+- Conventional commits sample: !`git log --format="%s" --max-count=10`
+
+## Parameters
+
+Parse these from `$ARGUMENTS`:
+
+- `--quick`: Fast scan (last 50 commits only)
+- `--since DATE`: Analyze commits from specific date (e.g., `--since 2024-06-01`)
+- `--scope AREA`: Filter to commits touching a specific area/scope (e.g., `--scope auth`)
+
+Default behavior without flags: Analyze last 200 commits.
+
+For detailed templates, severity matrix, and test mapping rules, see [REFERENCE.md](REFERENCE.md).
+
+## Execution
+
+Execute this test regression plan derivation workflow:
+
+### Step 1: Verify prerequisites
+
+Check context values above:
+
+1. If git repository is empty → Error: "This directory is not a git repository. Run from project root."
+2. If total commits = "0" → Error: "Repository has no commit history."
+3. If Blueprint initialized is empty → Ask user: "Blueprint not initialized. Initialize now (Recommended) or continue without manifest tracking?"
+   - If "Initialize now" → Use Task tool to invoke `/blueprint:init`, then continue
+   - If "Continue without" → Skip manifest updates in Step 7
+
+### Step 2: Determine analysis scope
+
+Parse `$ARGUMENTS` for `--quick`, `--since`, and `--scope`:
+
+1. If `--quick` → scope = last 50 commits
+2. If `--since DATE` → scope = commits from DATE to now
+3. If `--scope AREA` → filter commits to those with scope matching AREA or touching files in AREA directory
+4. Otherwise → scope = last 200 commits
+
+Store scope parameters for git log commands in subsequent steps.
+
+### Step 3: Detect test infrastructure
+
+Scan for test framework and conventions:
+
+1. Identify test framework from context (vitest, jest, pytest, cargo test, go test)
+2. Detect test file naming convention:
+   - `*.test.ts`, `*.spec.ts` (JS/TS)
+   - `test_*.py`, `*_test.py` (Python)
+   - `*_test.rs`, `tests/` directory (Rust)
+   - `*_test.go` (Go)
+3. Map source directories to test directories (e.g., `src/` → `tests/`, `src/` → `src/__tests__/`)
+4. Record framework, naming pattern, and directory mapping for Step 5
+
+If no test framework detected → Warn user, continue with file-based detection only.
+
+### Step 4: Classify commits and detect coverage gaps
+
+Run the helper. It owns the deterministic core: classifying `fix:`/`feat:`
+commits from `git log`, detecting whether each commit carried an inline
+test-file change (`git show --name-only`), and assigning a severity via the
+fixed matrix (`fix:` + no inline test → CRITICAL; `feat:` + no inline test →
+MEDIUM; any commit shipping a test → COVERED). Pass `--limit` to cap the scan
+(default 200; pass `--limit 50` for `--quick`):
+
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/blueprint-derive-tests.sh" --home-dir "$HOME" --project-dir "$(pwd)"
+```
+
+Parse `STATUS=` and `ISSUES:` from the output. `FIX_COMMITS`/`FEAT_COMMITS` are
+the classification counts; `GAPS_CRITICAL`/`GAPS_MEDIUM`/`GAPS_TOTAL` are the
+coverage gaps; each `coverage_gap` issue carries `SHA=`, `TYPE=`, `SEVERITY=`,
+and `SUBJECT=` for the TRP table. `STATUS=ERROR` means at least one CRITICAL
+(untested fix) gap.
+
+The script's inline-test detection and base severity (CRITICAL/MEDIUM) are the
+deterministic floor. When you need the finer High/Low tiers, nearby-test-commit
+softening, or the per-language source-to-test mapping, apply the modifiers from
+[REFERENCE.md](REFERENCE.md#severity-classification) and the mapping rules in
+[REFERENCE.md](REFERENCE.md#test-to-source-mapping). For `--since`/`--scope`
+filtering, narrow the git scope with the commands in
+[REFERENCE.md](REFERENCE.md#scope-filtered-analysis) before reading the gap set.
+
+### Step 6: Generate TRP document
+
+TRPs live at the **top level** under `docs/trps/` — not `docs/blueprint/trps/`. This matches the sibling derive-* skills' top-level layout. Never write TRPs under `docs/blueprint/`; that path is reserved for blueprint machinery.
+
+1. Create output directory: `mkdir -p docs/trps`
+2. Determine TRP ID:
+   - If manifest exists, read `id_registry.last_trp`, increment by 1
+   - Otherwise start at `TRP-001`
+3. Generate slug from scope or date range (e.g., `regression-gaps-2024-q3`)
+4. Write TRP document to `docs/trps/{slug}.md` using template from [REFERENCE.md](REFERENCE.md#trp-document-template)
+
+Include in the document:
+- YAML frontmatter with `id`, `status: Active`, `scope`, `date_range`, `commits_analyzed`
+- Executive summary with gap counts by severity
+- Detailed gap table: commit SHA, subject, severity, affected files, suggested test type
+- Recommended test creation order (Critical first, then High, etc.)
+- Suggested test type per gap (see [REFERENCE.md](REFERENCE.md#suggested-test-types))
+
+### Step 7: Update manifest
+
+If Blueprint is initialized:
+
+1. Update `id_registry.last_trp` with the new TRP number
+2. Register the document in `id_registry.documents`:
+   ```json
+   {
+     "TRP-NNN": {
+       "path": "docs/trps/{slug}.md",
+       "title": "{TRP title}",
+       "status": "Active",
+       "created": "{date}"
+     }
+   }
+   ```
+3. Update task registry:
+   ```bash
+   jq --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+     --arg sha "$(git rev-parse HEAD 2>/dev/null)" \
+     --argjson analyzed "{commits_analyzed}" \
+     --argjson gaps "{gaps_found}" \
+     '.task_registry["derive-tests"].last_completed_at = $now |
+      .task_registry["derive-tests"].last_result = "success" |
+      .task_registry["derive-tests"].stats.runs_total = ((.task_registry["derive-tests"].stats.runs_total // 0) + 1) |
+      .task_registry["derive-tests"].stats.items_processed = $analyzed |
+      .task_registry["derive-tests"].stats.items_created = $gaps |
+      .task_registry["derive-tests"].context.commits_analyzed_up_to = $sha' \
+     docs/blueprint/manifest.json > tmp.json && mv tmp.json docs/blueprint/manifest.json
+   ```
+
+### Step 8: Report results and suggest next actions
+
+Print summary:
+
+```
+Test Regression Plan Generated!
+
+**Analysis Summary**
+- Commits analyzed: {N} ({date_range})
+- Fix commits found: {N}
+- Feature commits found: {N}
+
+**Coverage Gaps Found**
+- Critical: {N} (fix commits with no tests at all)
+- High: {N} (fix commits with stale test files)
+- Medium: {N} (feature commits missing tests)
+- Low: {N} (feature commits with nearby tests)
+
+**Document**: docs/trps/{slug}.md (TRP-{NNN})
+
+**Top Priority Gaps**
+1. {commit subject} — {severity} — {affected file}
+2. {commit subject} — {severity} — {affected file}
+3. {commit subject} — {severity} — {affected file}
+```
+
+Prompt user for next action:
+
+- "Create PRPs for top-priority gaps (Recommended)" — Generate PRP documents for Critical/High gaps
+- "Review the TRP document" — Open the generated TRP for manual review
+- "Run again with different scope" — Re-run with `--since` or `--scope`
+- "Done for now" — Exit with document saved
+
+## Agentic Optimizations
+
+| Context | Command |
+|---------|---------|
+| Fix commits only | `git log --format="%H %s" \| grep -E "^[a-f0-9]+ fix"` |
+| Check test in commit | `git diff-tree --no-commit-id --name-only -r {SHA} \| grep -E "test\|spec"` |
+| Files changed | `git diff-tree --no-commit-id --name-only -r {SHA}` |
+| Fast scan | Use `--quick` for last 50 commits |
+| Scope filter | Use `--scope auth` to limit to specific area |
+
+---
+
+For detailed templates, severity classification matrix, test mapping rules, and error handling, see [REFERENCE.md](REFERENCE.md).

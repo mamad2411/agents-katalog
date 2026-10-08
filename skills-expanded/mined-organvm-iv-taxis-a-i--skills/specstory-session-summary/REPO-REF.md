@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/organvm-iv-taxis/a-i--skills (path: distributions/claude/skills/specstory-session-summary/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Summarize recent SpecStory AI coding sessions in standup format. Use when the user wants to review sessions from .specstory/history, prepare for standups, track work progress, or understand what was a

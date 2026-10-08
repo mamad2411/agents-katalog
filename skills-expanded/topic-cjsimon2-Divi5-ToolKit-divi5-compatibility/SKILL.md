@@ -1,0 +1,536 @@
+---
+name: Divi 5 Compatibility
+description: Use this skill when validating CSS for Divi 5 / Divi 5.13 compatibility, checking unsupported features or units, troubleshooting Divi CSS that isn't applying, debugging plugin conflicts (WP Rocket, LiteSpeed, Wordfence, WooCommerce, Perfmatters), migrating from Divi 4 to Divi 5, understanding breakpoints, applying the 5.5 Aspect Ratio + Framing settings to prevent CLS, using the 5.3 pseudo-class editing modes (:checked / :focus / :active) instead of custom CSS, the 5.4 Sizing Variable Generator and Relative Colorscheme Generator, the 5.7 Gradient Variables and text effects, the 5.9 Variable Fonts and CSS Grid Editor, the 5.12 backdrop-blur / invert / sepia Filters and AI Agents, the 5.13 LayoutStyle unit coverage, preset-class and migrated Free-Form CSS fixes, the newer modules (Timeline, Breadcrumbs, SVG, Table of Contents, Instagram Feed, Tooltip, Post Filter, Charts, Gravity Forms, Payment Button, Imagely Gallery), Nested Option Presets, Critical CSS / Dynamic CSS / Inline Stylesheets, recovering missing or deleted Divi 5 page content (WordPress Revisions vs the builder History panel), or fixing "styles not working" / "button override not working" / "static CSS cache" issues. Provides compatibility rules, validation patterns, specificity fixes, composable settings alternatives, version-specific bug fix history, and a full error-message reference.
+user-invocable: false
+---
+
+# Divi 5 Compatibility Reference
+
+**Divi 5 Version:** 5.13.1 (September 18, 2026 — Divi 5.0 released February 26, 2026; weekly release cadence)
+**Architecture:** React 18, no Shadow DOM, standard DOM with `et_pb_*` classes
+**Key recent additions:**
+- 5.2 — Composable Settings (toggle any design option on any sub-element)
+- 5.3 — Pseudo-class editing (`:checked`, `:focus`, `:active`), Contact Form 7 Styler, Nested Option Presets
+- 5.4 — Sizing Variable Generator, Relative Colorscheme Generator
+- 5.5 — Aspect Ratio + Framing on all images, Image Presets, SVG sanitization
+- 5.6 — Five new modules (Timeline, Breadcrumbs, SVG, Table of Contents, Instagram Feed), Color Scale + Color Harmony Generators
+- 5.7 — Gradient picker overhaul, Gradient Variables (7th Design Variable type), gradient/image text fills, text-stroke
+- 5.8 — Customizable Workspaces, Tooltip module
+- 5.9 — Variable Fonts + new typography controls (drop caps, text columns, hyphenation), visual CSS Grid Editor
+- 5.10 — Post Filter + Post Filter Item modules (front-end Loop Builder filtering), corrected fluid breakpoint sizing, row-granular lazy loading
+- 5.11 — Charts, Gravity Forms, Imagely Gallery, Payment Button modules; flexbox `alignItems` CSS classes on Column/Section/Row/Group
+- 5.12 — AI Agents (natural-language builder automation), backdrop blur / invert / sepia Filters, module presets now emit CSS classes + attributes on the frontend wrapper, WordPress 7.1 block-editor compatibility
+- 5.13 — Maintenance release: expanded LayoutStyle unit coverage (display, gaps, flex), migrated Divi 4 Free-Form CSS now applies on the frontend, Contact Form **Show Labels** option, Slider swipe-controls bar, four security fixes. 5.13.1 refreshed Divi AI models
+- **Announced next:** Components + Slots (a rework of Global Elements with per-instance detachable settings and free-form slots), more modules, AI improvements
+
+## CSS Feature Support
+
+### Unit Picker Dropdown (Builder Fields)
+
+| Unit | Status | Notes |
+|------|--------|-------|
+| `px` | Supported | Standard absolute unit |
+| `%` | Supported | Percentage |
+| `em` | Supported | Relative to parent font |
+| `rem` | Supported | Relative to root font |
+| `vw` | Supported | Viewport width |
+| `vh` | Supported | Viewport height |
+| `in`, `mm`, `cm`, `pt`, `pc` | Supported | Print/absolute units |
+
+### Advanced Units (Freeform/Advanced Input Mode)
+
+All valid CSS units work in advanced input mode and in custom CSS fields:
+
+| Unit | Status | Notes |
+|------|--------|-------|
+| `ch` | Works in custom CSS | Not in dropdown; works in freeform/advanced/child theme |
+| `ex` | Works in custom CSS | Not in dropdown; works in freeform/advanced/child theme |
+| `dvh`, `svh`, `lvh` | Works in custom CSS | Dynamic/small/large viewport units |
+| `vmin`, `vmax` | Works in custom CSS | Viewport min/max |
+
+**Key insight:** Since Divi 5 renders standard HTML without Shadow DOM, any CSS feature the browser supports will work in custom CSS, Code Modules, Free-Form CSS, or child theme stylesheets. The unit picker dropdown is limited, but custom CSS is not.
+
+### CSS Functions
+
+| Function | Status | Notes |
+|----------|--------|-------|
+| `calc()` | Fully supported | Works in builder fields and custom CSS |
+| `clamp()` | Fully supported | Great for fluid responsive values |
+| `min()` | Fully supported | Works in builder fields |
+| `max()` | Fully supported | Works in builder fields |
+| `var()` | Fully supported | CSS custom properties |
+
+### Modern CSS Features (via Custom CSS)
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| CSS Variables | Supported | Must be in `:root` for global scope |
+| Flexbox | Native | First-class builder support |
+| CSS Grid | Native | Convertible from flexbox in builder |
+| Container queries (`@container`) | Works | Via custom CSS/child theme (not in builder UI) |
+| `:has()` selector | Works | Via custom CSS/child theme |
+| CSS nesting | Works | Browser-native feature, via custom CSS |
+| Cascade layers (`@layer`) | Works | Via custom CSS/child theme |
+| `@media` queries | Works | Standard responsive tool |
+
+### CSS Keywords
+
+`auto`, `none`, `unset`, `inherit`, `fit-content` — all supported in advanced unit fields.
+
+## Validation Rules
+
+### Rule 1: Button Specificity (Critical)
+```css
+/* WILL NOT WORK — Divi overrides this */
+.et_pb_button {
+  background-color: #000000;
+}
+
+/* WILL WORK — proper override */
+body .et_pb_button {
+  background-color: #000000 !important;
+}
+```
+
+**Required for buttons:**
+- `body` prefix for specificity
+- `!important` on all properties
+
+### Rule 2: CSS Variable Scope
+```css
+/* May not work globally — wrong scope */
+.my-section {
+  --my-color: #2ea3f2;
+}
+
+/* WILL WORK — :root scope */
+:root {
+  --my-color: #2ea3f2;
+}
+```
+
+### Rule 3: Code Module Wrapping
+```html
+<!-- INVALID — raw CSS in Code Module -->
+.my-class { color: red; }
+
+<!-- VALID — wrapped in style tags -->
+<style>
+.my-class { color: red; }
+</style>
+```
+
+### Rule 4: Theme Options Format
+Theme Options Custom CSS must NOT have `<style>` tags.
+
+### Rule 5: Module Advanced Tab CSS Fields
+The Module Element CSS fields (Title, Body, Button, Main Element, Before, After) accept **property declarations only** — no selectors or braces. Use Free-Form CSS for full rulesets.
+
+```css
+/* Module Element field (properties only): */
+color: red;
+font-size: 1.2rem;
+
+/* Free-Form CSS (full rulesets with selector keyword): */
+selector h4 { color: red; line-height: 1.5; }
+selector:hover { transform: scale(1.02); }
+```
+
+### Rule 6: Numbered Classes Are Fragile
+```css
+/* FRAGILE — changes when modules are reordered */
+.et_pb_text_0 { color: red; }
+
+/* STABLE — use custom classes instead */
+.my-intro-text { color: red; }
+```
+
+## Responsive Breakpoints
+
+Divi 5 ships with 7 breakpoints, but **only 3 are active by default**:
+
+| Breakpoint | Default Width | Active by Default | Query Type |
+|------------|---------------|-------------------|------------|
+| Phone | 767px | Yes | max-width |
+| Phone Wide | 860px | No (enable in builder) | max-width |
+| Tablet | 980px | Yes | max-width |
+| Tablet Wide | 1024px | No (enable in builder) | max-width |
+| Desktop | (base) | Yes (cannot be disabled) | N/A |
+| Widescreen | 1280px | No (enable in builder) | min-width |
+| Ultra Wide | 2560px | No (enable in builder) | min-width |
+
+All breakpoint widths are customizable. Custom breakpoints configured via Sitewide Responsive Breakpoints modal in the Visual Builder.
+
+### Standard Media Queries
+```css
+/* Phone (default active) */
+@media (max-width: 767px) { }
+
+/* Tablet (default active) */
+@media (max-width: 980px) { }
+
+/* Widescreen (must enable) */
+@media (min-width: 1280px) { }
+
+/* Ultra Wide (must enable) */
+@media (min-width: 2560px) { }
+```
+
+**Note:** The visibility toggle only supports the original 3 breakpoints (desktop, tablet, phone). Use CSS for visibility on custom breakpoints.
+
+## Common Issues & Fixes
+
+### Issue: Button styles not applying
+**Symptom:** Custom button colors/styles ignored
+**Cause:** Low specificity, missing !important
+**Fix:**
+```css
+body .et_pb_button {
+  background-color: #000000 !important;
+  border-radius: 0 !important;
+  /* ALL properties need !important */
+}
+```
+
+### Issue: Custom CSS overridden by Divi
+**Symptom:** Styles appear struck-through in DevTools
+**Cause:** Divi's `cached-inline-styles` CSS loads after child theme stylesheets
+**Fix:** Move CSS to Theme Options Custom CSS panel (loads later in cascade), increase selector specificity, or use `!important`.
+
+### Issue: CSS Variables not working
+**Symptom:** Variables undefined or not applying
+**Cause:** Wrong scope or Divi 5.1 unit picker bug (fixed)
+**Fix:**
+```css
+:root {
+  --my-color: #2ea3f2;
+}
+.element {
+  color: var(--my-color);
+}
+```
+
+### Issue: Visual Builder vs Frontend differences
+**Symptom:** Styles look different in builder vs live site
+**Cause:** Builder renders in an iframe with different CSS context
+**Fix:** Always test on the frontend. Use Safe Mode (Divi > Support Center) to isolate.
+
+### Issue: Styles lost after Divi update
+**Symptom:** Custom CSS disappears or breaks after updating
+**Cause:** Static CSS cache is stale
+**Fix:** Clear at Divi > Theme Options > Builder > Advanced > Static CSS File Generation > Clear. Disable Static CSS during active development.
+
+### Issue: Font not loading
+**Symptom:** Fallback font displays instead
+**Cause:** Websafe fonts incorrectly generating Google Fonts API requests (fixed in 5.1)
+**Fix:** Ensure font is loaded via Google Fonts or @font-face. Use exact name with fallbacks:
+```css
+font-family: 'Fira Sans', system-ui, sans-serif !important;
+```
+
+### Issue: Layout breaking on mobile
+**Symptom:** Elements stack or overflow incorrectly
+**Cause:** Divi 5 uses Flexbox by default; custom CSS may conflict
+**Fix:** Work with Divi's Flexbox controls in the builder, or override completely:
+```css
+.et_pb_row {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 2rem !important;
+}
+```
+
+### Issue: Hover states not working
+**Symptom:** Hover effects ignored
+**Cause:** Divi's inline styles override
+**Fix:**
+```css
+body .et_pb_button:hover {
+  background-color: #222222 !important;
+}
+```
+
+### Issue: The class I set on a module is missing on the frontend (pre-5.12)
+**Symptom:** You add `my-card` under Advanced > Attributes > class, but the frontend wrapper only carries the class from the module's Element/Attributes **preset**, so `.et_pb_blurb.my-card` matches nothing.
+**Cause:** Before Divi 5.12 a CSS class defined in a preset overrode the local module class instead of merging with it. Separately, presets that defined interactions, main-wrapper attributes, or CSS classes did not emit them at all.
+**Fix:** Update to Divi 5.12+ (both fixed). On older versions, move the class from the preset to the module (or vice versa) so only one source sets it, then clear Static CSS.
+
+### Issue: Free-Form CSS migrated from Divi 4 works in the builder but not on the frontend (pre-5.13)
+**Symptom:** After a Divi 4 → 5 migration, a module's Free-Form CSS (using `selector`) renders correctly inside the Visual Builder but is absent from the frontend stylesheet.
+**Cause:** Migrated free-form custom CSS was not emitted on the frontend. Fixed in Divi 5.13 so the frontend matches the builder.
+**Fix:** Update to Divi 5.13+ and clear Static CSS. If you can't update, copy the rule into Theme Options Custom CSS with an explicit class selector as a temporary bridge, then remove it after updating.
+
+### Issue: Theme Builder header/footer background bleeds into page content (pre-5.13)
+**Symptom:** A background set on the Theme Builder header or footer *content area* also paints behind native page content.
+**Cause:** Content-area backgrounds in TB header/footer layouts leaked into the page body. Fixed in 5.13.
+**Fix:** Update to 5.13+. Workaround on older versions: move the background from the layout's content area to the section inside the header/footer template.
+
+### Issue: Header/menu layout breaks after clearing Static CSS (5.6, field-verified 2026-06-12)
+**Symptom:** A previously centered header menu (e.g., `inline_centered_logo` style) packs to the left on every page immediately after clearing the Static CSS cache. No custom CSS touches the menu.
+**Cause:** Regeneration re-emits the template's flex layout CSS using current defaults (`justify-content: start`). Modules configured before Divi exposed explicit Flex options (or left at "default") inherited centering implicitly; the regenerated CSS doesn't reproduce it. Diagnostic signature: `.et_pb_menu_inner_container` computes `justify-content: start` and `.et_pb_menu__wrap` computes `flex: 0 1 auto` while the stylesheet still contains `flex: 1 1 auto` for it.
+**Fix:** In the Theme Builder, set the menu module's **Justify Content** and **Align Items** explicitly — per breakpoint (e.g., Desktop: Center; Tablet/Phone: Space Between so the logo stays left and the hamburger stays right). Any setting change + Save forces a clean regeneration. Do NOT patch with custom CSS first — the builder-native fix survives future regenerations.
+
+### Issue: Custom CSS targeting `et_pb_section_N_tb_header` / `_tb_footer` silently stops matching (field-verified 2026-06-12)
+**Symptom:** A rule scoped to a numbered Theme Builder template class (e.g., `.et_pb_section_1_tb_footer`) stops applying after editing/resaving any template — no error, the selector just matches nothing.
+**Cause:** Resaving a Theme Builder template can renumber its `et_pb_section_N_tb_*` classes (e.g., `_1_` → `_3_`). Numbered **template** classes are exactly as fragile as page-level numbered selectors (`.et_pb_text_0`), but they look stable because they survive page edits — they only break on template saves, which makes the failure hard to trace.
+**Fix:** Scope to the stable Theme Builder layout wrappers instead: `.et-l--header`, `.et-l--body`, `.et-l--footer` (e.g., `.et-l--footer a[href^="tel:"]`). Treat `et_pb_*_N_tb_*` in custom CSS as a P0 finding, same as any numbered selector.
+
+### Issue: Page content or layout disappeared — how to recover it (verified 2026-09-28)
+**Symptom:** Sections vanish after Publish/Update, a section/row was deleted by mistake, or a page comes back blank after migration. The builder's History panel is empty or the tab was already closed.
+**Where the data actually lives:** Divi 5 stores the page layout in `post_content` as block markup (`<!-- wp:divi/section {...} -->` … `<!-- /wp:divi/section -->`). The Divi 5 Migrator rewrites Divi 4 shortcodes into this format in place ("the conversion occurs at the database level"). Postmeta holds only flags such as `_et_pb_use_builder`, not the layout. WordPress Revisions snapshot `post_content`, so any revision saved before the mistake contains the full layout — Elegant Themes' own Divi 5 recovery guide lists Revisions as the first method. **Do not** tell users Revisions can't recover Divi 5 content.
+**Exception:** Theme Builder header/body/footer layouts are separate posts (`et_header_layout`, `et_body_layout`, `et_footer_layout`, grouped under an `et_template`). A page's revisions never contain template edits, and a template's revisions never contain page edits.
+**Fix (in order):**
+1. **WordPress Revisions** — Pages → All Pages → Edit → *Revisions* (right sidebar) → step back through the timeline → *Restore This Revision*. Verify before restoring: `wp post list --post_type=revision --post_parent=<ID> --fields=ID,post_modified`, then `wp post get <REV_ID> --field=post_content | grep -c 'wp:divi/'` (a count above 0 means the layout is in that revision). Via REST with edit-capable auth: `/wp/v2/pages/<ID>/revisions?context=edit` and compare `content.raw`. If no useful revision exists, check `WP_POST_REVISIONS` in `wp-config.php` — `false` or a low cap silently discards history.
+2. **Divi History panel** (gear icon → History) — works only while the original browser tab is still open; it resets on reload or close. Not an after-the-fact recovery path.
+3. **Theme Builder templates** — use the Theme Builder's own History (same session-only limit) or re-import the last portability JSON export. Page revisions won't help here.
+4. **Hosting backup** — last resort; everything after the backup date is lost.
+**Prevention:** Export the page or template (portability JSON) before destructive edits, keep `WP_POST_REVISIONS` enabled, and set the builder's History State Interval to "after every action".
+
+## Plugin Conflict Reference
+
+### Cache Plugins
+- **WP Rocket + RUCSS**: Divi auto-disables Dynamic CSS when RUCSS is active. Use CSS Safelist to preserve Divi selectors.
+- **Host page caches (Cloudways, Kinsta, etc.)**: Pre-5.12 Divi purged the *entire* third-party page cache on every page save or Visual Builder open. Fixed in 5.12 — update if editors complain about site-wide slowdowns after each save.
+- **LiteSpeed Cache**: May show unstyled HTML initially. Whitelist `admin-ajax.php` in ModSecurity. (Pre-5.8 Divi caused LiteSpeed to purge entire entry sets on every edit — fixed in Divi 5.8.)
+- **Autoptimize**: jQuery deferral can cause fatal errors with Divi.
+- **General rule:** Disable Divi performance options (Static CSS, Dynamic CSS, JS deferral) during development. Enable after finalization.
+
+### Security Plugins
+- **Wordfence**: Firewall can block page saves. Use Learning Mode during Divi updates.
+- **Multiple security plugins**: Use only one — they conflict with each other.
+
+### WooCommerce
+- Cart/checkout pages may lose formatting after updates.
+- Product **bulk edit** timing out (pre-5.12): Divi cleared its CSS cache on every product save. Fixed in 5.12.
+- Variation image switching in Theme Builder responsive layouts (fixed 5.12); Woo Products modules blank when editing shop/archive templates in the frontend Theme Builder (fixed 5.13).
+- **Fix:** Disable Dynamic CSS in Divi Theme Options > Performance. Divi 5 offers native Woo Cart and Checkout modules.
+
+## Divi 4 to Divi 5 Migration
+
+### What Changes
+- Shortcodes (`[et_pb_section]`) → JSON block format
+- HTML structure changes — CSS selectors may break
+- CSS ID & Classes field → Attributes panel (Advanced tab)
+- Custom JS targeting Divi 4 DOM may fail
+- Third-party D4 modules load in backward-compatibility mode (full D4 framework)
+
+### Migration Checklist
+1. Back up the full site (database + files)
+2. Test on staging environment first
+3. Inspect new HTML structure in browser DevTools
+4. Adapt custom CSS selectors for new class structure
+5. Move CSS IDs/classes to new Attributes panel
+6. Test all custom JavaScript hooks
+7. Clear Static CSS cache after migration
+8. Check third-party plugin compatibility tags
+
+### Backward Compatibility
+- D4 modules auto-detected and loaded with D4 framework
+- If a page has even one D4 module, the **entire page** loads D4 framework (performance hit)
+- Legacy modules trigger AJAX reload when editing in Visual Builder
+
+## Debugging Techniques
+
+### Browser DevTools
+1. **Computed tab:** Shows final applied values — identifies which style "won"
+2. **Styles tab:** Shows cascaded styles with source locations. Struck-through = overridden.
+3. **In Visual Builder:** Right-click is disabled. Hover over the admin bar to right-click and inspect.
+
+### Divi Safe Mode
+- **Location:** Divi > Support Center > Safe Mode
+- Disables third-party plugins, child themes, and custom code for your session only
+- If the problem disappears, it's caused by a plugin/child theme/custom code
+
+### Static CSS Troubleshooting
+- Clear: Divi > Theme Options > Builder > Advanced > Static CSS > Clear
+- Keep disabled during development
+- Per-page setting defaults to TRUE even if globally disabled
+
+### D5 Dev Tool
+- [github.com/elegantthemes/d5-dev-tool](https://github.com/elegantthemes/d5-dev-tool) — debugging modal for the Visual Builder
+
+## Composable Settings Compatibility (Divi 5.2+ through 5.13)
+
+Composable Settings let you enable any design option for any module sub-element directly in the builder. Before reaching for custom CSS, check if the styling can be achieved natively:
+
+| CSS Pattern | Composable Alternative | Since |
+|-------------|----------------------|-------|
+| Width/height on buttons | Enable Sizing options on button sub-element | 5.2 |
+| Border on titles | Enable Border options on title sub-element | 5.2 |
+| Animation on images | Enable Animation options on image sub-element | 5.2 |
+| Transform on any sub-element | Enable Transform options via Compose Settings | 5.2 |
+| Spacing on any sub-element | Enable Spacing options via Compose Settings | 5.2 |
+| `input:focus` / `input:checked` / `input:active` styling | Use the pseudo-class tabs in field design | 5.3 |
+| `aspect-ratio: 16/9` on images | Sizing > Aspect Ratio | 5.5 |
+| `object-fit` / `object-position` on cropped images | Framing settings | 5.5 |
+| Image-specific options on non-image modules | Composable settings for image option groups | 5.5 |
+| Nested presets (e.g., button border inside CTA preset) | Nested Option Presets | 5.3 |
+| Repeated `linear-gradient()` values across elements | Gradient Variables | 5.7 |
+| `background-clip: text` gradient/image text fills | Gradient + image text fill controls | 5.7 |
+| `-webkit-text-stroke` on headings | Text-stroke controls | 5.7 (expanded 5.9) |
+| `::after`-based tooltip CSS | Tooltip module | 5.8 |
+| `font-variation-settings` / variable font axes | Variable Fonts controls | 5.9 |
+| Drop caps (`::first-letter`), `column-count`, `hyphens` | New typography options | 5.9 |
+| `grid-template-*` / `grid-column: span` layouts | CSS Grid Editor (start/end/span offsets) | 5.9 |
+| Custom JS loop filtering | Post Filter + Post Filter Item modules | 5.10 |
+| `align-items` overrides on rows/columns | Flexbox `alignItems` classes + builder setting | 5.11 |
+| `backdrop-filter: blur()` glass panels, `filter: invert()` / `sepia()` | Design > Filters (backdrop blur, invert, sepia controls) | 5.12 |
+| Hiding/showing Contact Form `<label>` elements with CSS | Contact Form > Show Labels toggle (+ Label Text styles now apply) | 5.13 |
+| Custom slide counter / progress bar CSS on Sliders | Slider swipe-controls bar (formatted counts, segmented progress, swipe label) | 5.13 |
+| `display` / `gap` / flex unit tweaks via custom CSS | LayoutStyle emits the full unit set for display, gaps, and flex | 5.13 |
+
+**When CSS is still needed:**
+- Complex selectors (`:has()`, sibling combinators, attribute selectors)
+- Pseudo-elements (`::before`, `::after`) beyond what Free-Form CSS offers
+- `@media` queries for preference queries (`prefers-reduced-motion`, `prefers-color-scheme`)
+- Custom `@keyframes` animations
+- Cross-element relationships
+- Canvas/popup styling
+- Custom-styled checkboxes/radios with visual UI distinct from the native input
+
+## Known Divi 5.x CSS Bug Fixes (Version History)
+
+If a user reports one of these symptoms, check whether their Divi version predates the fix.
+
+### Fixed in 5.2
+- Box shadow inherited hover states breaking due to empty string values overwriting presets
+- Transform Scale handle drag corrupting `calc()` function values and CSS variable values
+- Broken CSS on pages with loops if a paginated page was visited before the main loop page
+
+### Fixed in 5.3 (April 24, 2026 — 69 fixes total)
+- Sticky/locked module rendering performance regressions
+- Visual Builder loading speed (deferred assets + lazy-loading of editor chunks)
+- Form field option inconsistencies across modules
+
+### Fixed in 5.5 (May 12, 2026 — 58 fixes total)
+- Grid class parity for `first_in_row`, `last_in_row`, `on_last_row` selectors
+- Flex/Grid layout row height application
+- Border inheritance corrections
+- CSS variable application for background images
+
+### Fixed in 5.6 (May 25, 2026 — 109 changes total)
+- Decimal values in Section Divider Horizontal Repeat field (0.6x now accepted)
+- Grid Auto Columns/Rows accept full CSS track values beyond single numeric sizes
+- Global number and font variables render correctly on frontend
+- Responsive padding calculations corrected for columns with child modules
+- Background videos no longer load on devices where the module is removed
+
+### Fixed in 5.7 (June 10, 2026 — 72 fixes total)
+- Border-radius clipping broken for complex values (e.g., `clamp()`)
+- Icon module background color stretching across the full column width in flex layouts
+- Unit synchronization in Transform Scale fields
+- Image module aspect ratio targeting for portrait videos
+- Visual Builder save failures after extended idle periods (stale nonces)
+
+### Fixed in 5.8 (June 20, 2026 — 66 fixes total)
+- False CSS linter errors for nested selectors without `&` in Free-Form CSS and CodeMirror CSS fields
+- Incorrect heading font sizes on frontend + Visual Builder when Text modules use option group presets
+- Migrated background gradients rendering with wrong length units (units now preserved)
+- Contact Form 7 Styler button icon and rounded corners on hover
+- Slider module control layering — arrows/navigation now stay above high-z-index content
+- Cache bugs causing styles to intermittently disappear
+- LiteSpeed Cache purging entire entry sets instead of just the edited page
+
+### Fixed in 5.9 (July 13, 2026 — 65 fixes total)
+- Grid layout consolidation when switching a container from flex to grid
+- Button line color/style unavailable in hover and sticky states
+- Section visibility issues with animations
+- Blurb image alignment with percentage-based widths
+- CSS numeric field values lost in settings modals
+
+### Fixed in 5.10 (August 11, 2026 — 85 fixes total)
+- Custom attributes declaring duplicate `class`/`style` names now merge instead of dropping entries
+- Theme Builder layout custom CSS not outputting on search results pages
+- Column sizing broken when row horizontal gap uses global variables
+- Post Slider Dark/Light text color specificity across the breakpoint ladder
+- Fluid breakpoint sizing in the Visual Builder corrected (desktop 1025px, tablet-wide 981px, tablet 861px, phone-wide 768px preview widths)
+
+### Fixed in 5.11 (August 15, 2026 — 18 fixes total)
+- List items in Text module rich-text fields now inherit body text styles
+- Circle Counter margin spacing in flex containers without stretch alignment
+- Image module "Grow to Fill" shrinking instead of filling columns when lightbox is enabled
+- Global Color circular references crashing the Visual Builder
+- Desktop breakpoint zoom defaulting incorrectly when the widescreen breakpoint is enabled
+- Theme Builder Shop page rendering with WooCommerce 11.0
+
+### Fixed in 5.12 (September 4, 2026 — 71 fixes total; introduced AI Agents)
+- A CSS class from an Element/Attributes preset overrode the local module class on the frontend (now merged)
+- Module presets defining interactions, custom main-wrapper attributes, or CSS classes now emit them on the frontend wrapper
+- Module-level background gradients could output invalid CSS and fail to override element-preset gradients
+- Timeline Item responsive content always rendered the desktop version on the frontend
+- Post Filter Item search/control fields not rendering when field settings were changed on responsive views
+- Contact Form field Border, Box Shadow, and Filters now apply to the field wrapper; radio/checkbox Spacing padding persists after reload
+- Blog grid featured images rendered at 400×284 instead of 400×250; Portfolio image height applied to the wrapper instead of the image
+- Global number variables entered without a unit missing from most number-field pickers
+- Saving a page / opening the Visual Builder purged the entire third-party page cache on Cloudways-style hosts
+- WooCommerce bulk edit timeouts (repeated Divi CSS cache clearing on every product save); checkout timeout / payment-method error on the confirmation page
+- Charts module frontend JS bundle reduced; shared Sass color functions modernized (no visual change)
+- WordPress 7.1: block-editor styles/assets in the iframed editor, missing "Use The Divi Builder" buttons
+
+### Fixed in 5.13 (September 14, 2026 — 65 fixes total; 5.13.1 on September 18 refreshed Divi AI models)
+- Expanded LayoutStyle unit coverage for `display`, gap, and flex CSS emission
+- Free-Form custom CSS migrated from Divi 4 now applies on the frontend and matches the Visual Builder
+- Theme Builder header/footer content-area backgrounds no longer affect native page content
+- Preset custom ID attributes now appear on the frontend for modules using a module preset; preset options no longer inherit parent values as defaults; default preset design changes live-preview correctly
+- Group Carousel item alignment for custom-width Groups (left/center/right); Testimonial grid column count applies to the description area only
+- Contact Form gained a **Show Labels** option, and Label Text styles now apply to field labels
+- Slider gained a swipe-controls bar (formatted slide counts, segmented progress, customizable swipe label)
+- Hidden modules discarded by Conditional Display no longer load runtime assets or extracted webfonts
+- Sticky posts no longer repeat on every Blog pagination page
+- Visual Builder on WordPress VIP (CodeMirror styles from blocked `node_modules` URLs)
+- Security: SSRF in Divi Cloud token refresh and layout export, unsanitized text-effects image-fill values reaching generated CSS, non-admins changing site-wide AI defaults
+
+### Pattern
+If a user is on a Divi version older than the fix for their issue, the answer is "update Divi." For users who can't update (compatibility constraints, third-party module dependencies), provide a workaround appropriate to their version.
+
+## Error Messages Reference
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Property ignored" | Low specificity | Add `!important` or increase specificity |
+| "Unknown property" | Typo or unsupported | Check property name |
+| "Expected RBRACE" | Missing `}` or selectors in Module Element field | Use Free-Form CSS for full rulesets |
+| "Unexpected token" | Syntax error | Check semicolons, braces, quotes |
+| Styles not applying | Wrong CSS location or cache | Check format (Code Module needs `<style>`, Theme Options does not). Clear cache. |
+| Transform values corrupted | Dragging Scale handles corrupts calc()/var() values | Re-enter values manually (fixed in 5.2) |
+| Box shadow hover broken | Empty string values overwrite presets | Update to 5.2, or set explicit hover shadow |
+| Loop page CSS missing | Pagination cache conflict | Clear Static CSS; fixed in 5.2 |
+| Linter errors on valid nested CSS | False positives on nested selectors without `&` in Free-Form CSS | Update to 5.8 — the CSS is valid, the linter was wrong |
+| Styles intermittently disappearing | Cache bugs in Dynamic CSS pipeline | Update to 5.8/5.9 (multiple cache fixes); clear Static CSS |
+| Custom class from Attributes panel missing on frontend | Preset class overrode local class (pre-5.12) | Update to 5.12; or set the class in only one place |
+| Migrated Free-Form CSS works in builder, not frontend | Migrated free-form CSS not emitted (pre-5.13) | Update to 5.13; bridge via Theme Options CSS meanwhile |
+| Preset custom ID missing on frontend | Preset ID attributes not emitted (pre-5.13) | Update to 5.13; or set the ID on the module directly |
+
+## Compatibility Modes
+
+### Advisory Mode (Default)
+- Reports issues as warnings
+- Suggests fixes
+- Allows proceeding with warnings
+
+### Strict Mode
+- Reports issues as errors
+- Requires fixes before proceeding
+- Blocks incompatible CSS
+
+Configure in `.claude/divi5-toolkit.local.md`:
+```yaml
+validation_mode: advisory  # or "strict"
+```
+
+## Reference Files
+
+For complete details, see:
+- `${CLAUDE_PLUGIN_ROOT}/skills/divi5-compatibility/references/unit-conversions.md` — CSS unit support, conversion tables, fluid responsive patterns
+- `${CLAUDE_PLUGIN_ROOT}/skills/divi5-performance/SKILL.md` — Critical CSS, Dynamic CSS, Inline Stylesheets, cache plugin compatibility
+- `${CLAUDE_PLUGIN_ROOT}/skills/divi5-performance/references/core-web-vitals.md` — LCP/INP/CLS diagnostics with Divi-specific causes and fixes
+
+## Resources
+
+- [Elegant Themes Help Center](https://help.elegantthemes.com)
+- [Divi 5 Changelog](https://victorduse.com/divi-5-changelog/)
+- [Divi Changelog (per-version dates)](https://www.divichangelog.com/divi-update/divi-5)
+- [D5 Extension Examples](https://github.com/elegantthemes/d5-extension-example-modules)
+- [D5 Dev Tool](https://github.com/elegantthemes/d5-dev-tool)
+- [WP Zone Divi CSS Guide](https://wpzone.co/the-divi-css-and-child-theme-guide/)
+- [Quiroz.co Divi Snippets](https://quiroz.co/divi-tutorials-much/divi-snippets-css-php/)

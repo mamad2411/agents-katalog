@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/simonwong/skills (path: skills/writing/rewrite-en2zh/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 将英文内容重写为简体中文。用于英文文章、文档、博客的中文重写。使用 deverbalization 技巧，理解原意后脱离英文外壳，用中文自然表达，而非逐字对照。保留 Markdown 格式、AI 专有名词。

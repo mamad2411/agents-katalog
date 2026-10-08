@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ai-native-camp/camp-1 (path: .agents/skills/day4-wrap-and-analyze/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: AI Native Camp Day 4 Wrap & Analyze. session-wrap 스킬을 직접 만들고, history-insight와 session-analyzer로 세션을 분석한다. "4일차", "Day 4", "wrap", "세션 분석", "session wrap", "세션 래핑" 요청에 사용.

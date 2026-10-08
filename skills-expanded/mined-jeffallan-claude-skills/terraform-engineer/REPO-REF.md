@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/jeffallan/claude-skills (path: skills/terraform-engineer/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Use when implementing infrastructure as code with Terraform across AWS, Azure, or GCP. Invoke for module development (create reusable modules, manage module versioning), state management (migrate back

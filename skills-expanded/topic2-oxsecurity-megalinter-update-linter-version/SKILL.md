@@ -1,0 +1,28 @@
+---
+name: update-linter-version
+description: Update a linter's pinned version in its descriptor YAML. Use when upgrading a linter tool to a new release.
+allowed-tools: Read Grep Glob Edit Bash
+argument-hint: "[linter-name] [new-version]"
+arguments: [linter, version]
+model: haiku
+metadata:
+  internal: true
+---
+
+Update the version of linter `$linter` to `$version`.
+
+> **Delegation hint** — this is a mechanical edit. If you need a sub-agent for the pin change, use `version-bumper` (haiku). The build step at the end can be delegated to `build-runner` (haiku).
+
+Steps:
+
+1. Search `megalinter/descriptors/*.megalinter-descriptor.yml` **and** `megalinter/descriptors/shared/*.megalinter-linter.yml` for the linter by name (multi-descriptor linters like eslint, prettier or biome keep their `install` block in the shared file)
+2. Find the version ARG in the `install.dockerfile` section (e.g., `ARG PIP_TOOL_VERSION=X.Y.Z`) or version pin in pip/npm arrays
+3. Update the version, preserving the renovate comment format:
+   ```yaml
+   # renovate: datasource=pypi depName=tool-name
+   ARG PIP_TOOL_VERSION=<new_version>
+   ```
+4. If no version was specified, check the tool's package registry for the latest
+5. Run `make megalinter-build` to regenerate Dockerfiles with the new version
+6. Do **not** update `CHANGELOG.md` — linter version upgrades are logged automatically by the auto-upgrade workflow under **Linter versions upgrades**
+7. To test the updated version in CI, write `TEST_KEYWORDS=<linter>_test` in the commit message body

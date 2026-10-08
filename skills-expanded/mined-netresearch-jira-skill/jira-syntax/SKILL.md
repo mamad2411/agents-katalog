@@ -1,0 +1,95 @@
+---
+name: jira-syntax
+description: "Use when writing or formatting Jira descriptions, comments, or any text destined for Jira. Converts Markdown to Jira wiki markup, provides templates (bug reports, feature requests), and validates syntax before submission. Trigger on any Jira content authoring task."
+license: "(MIT AND CC-BY-SA-4.0). See LICENSE-MIT and LICENSE-CC-BY-SA-4.0"
+metadata:
+  author: Netresearch DTT GmbH
+  version: "3.32.0"
+  repository: https://github.com/netresearch/jira-skill
+---
+
+# Jira Syntax
+
+Jira wiki markup syntax, templates, and validation. For API operations, use the **jira-communication** skill.
+
+## Quick Syntax Reference
+
+| Jira Syntax | Purpose | NOT this (Markdown) |
+|-------------|---------|---------------------|
+| `h2. Title` | Heading | `## Title` |
+| `*bold*` | Bold | `**bold**` |
+| `_italic_` | Italic | `*italic*` |
+| `{{code}}` | Inline code | `` `code` `` |
+| `{code:java}...{code}` | Code block | ``` ```java ``` |
+| `[text\|url]` | Link | `[text](url)` |
+| `[PROJ-123]` | Issue link | - |
+| `[~username]` | User mention | `@username` |
+| `* item` | Bullet list | `- item` |
+| `# item` | Numbered list | `1. item` |
+| `\|\|Header\|\|` | Table header | `\|Header\|` |
+
+See `references/jira-syntax-quick-reference.md` for complete syntax documentation.
+
+## Available Templates
+
+### Bug Report
+**Path**: `templates/bug-report-template.md`
+
+Sections: Environment, Steps to Reproduce, Expected/Actual Behavior, Error Messages, Technical Notes
+
+### Feature Request
+**Path**: `templates/feature-request-template.md`
+
+Sections: Overview, User Stories, Acceptance Criteria, Technical Approach, Success Metrics
+
+## Syntax Validation
+
+Run before submitting to Jira:
+```bash
+${CLAUDE_SKILL_DIR}/scripts/validate-jira-syntax.sh path/to/content.txt
+```
+
+**It gates the post** — run it as its own step, never chained with the
+posting command.
+
+### Validation Checklist
+- [ ] Headings: `h2. Title` (space after period)
+- [ ] Bold: `*text*` (single asterisk)
+- [ ] Code blocks: `{code:language}...{code}`
+- [ ] Lists: `*` for bullets, `#` for numbers
+- [ ] Links: `[label|url]` or `[PROJ-123]`
+- [ ] Tables: `||Header||` and `|Cell|`
+- [ ] Colors: `{color:red}text{color}`
+- [ ] Panels: `{panel:title=X}...{panel}`
+
+### Common Mistakes
+
+| ❌ Wrong | ✅ Correct |
+|---------|-----------|
+| `## Heading` | `h2. Heading` |
+| `**bold**` | `*bold*` |
+| `` `code` `` | `{{code}}` |
+| `[text](url)` | `[text\|url]` |
+| `- bullet` | `* bullet` |
+| `h2.Title` | `h2. Title` |
+| `MR !42` (bare GitLab ref) | `[MR 42\|url]` or full `group/project!42` — a bare `!…!` is image markup |
+| `(/)` on an open/proposed item | `(x)` — `(/)` renders as a green check (done); use `(x)` for open items |
+| `( )` as a checkbox | `(x)` — `( )` is not a macro and renders literally |
+
+## Integration with jira-communication Skill
+
+**Workflow:**
+1. Get template from jira-syntax
+2. Fill content using Jira wiki markup
+3. Validate with `${CLAUDE_SKILL_DIR}/scripts/validate-jira-syntax.sh`
+4. Submit via jira-communication skill
+
+## References
+
+- `references/jira-syntax-quick-reference.md` - Complete syntax documentation
+  Includes **Ask the renderer instead of reasoning about it**: `POST /rest/api/1.0/render` returns the HTML Jira will produce for any markup, before anything is posted. Use it to settle a markup question rather than deriving the answer.
+- `references/cross-project-refs.md` - GitLab cross-project ref convention (`group/project!N`, `group/project#N`, `group/project@tag`) when linking to GitLab from Jira
+- `templates/bug-report-template.md` - Bug report template
+- `templates/feature-request-template.md` - Feature request template
+- `${CLAUDE_SKILL_DIR}/scripts/validate-jira-syntax.sh` - Automated syntax checker
+- [Official Jira Wiki Markup](https://jira.atlassian.com/secure/WikiRendererHelpAction.jspa?section=all)

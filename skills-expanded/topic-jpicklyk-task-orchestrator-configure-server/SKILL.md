@@ -1,0 +1,236 @@
+---
+name: configure-server
+description: "Configures how the MCP Task Orchestrator SERVER runs and is reached — transport (HTTP vs STDIO), the REST API, port publishing, config mounts, and config-sync. Use when a user says: run the server, register the image, set up the Docker container, enable the REST API, set up config-sync, reconfigure the server, change transport, expose the API, reconnect to a different endpoint, or allow a hostname. NOT for first-time onboarding (that's quick-start), NOT for project/personal setup (that's init), and NOT for note schemas / gates / traits / actor_authentication policy (that's manage-schemas) — this skill only decides how the container is launched and reached."
+argument-hint: "[optional: 'recommended', 'http', 'stdio', 'bearer', or a change request e.g. 'enable REST']"
+---
+
+# Configure Server — Runtime & Transport Setup
+
+Decides **how the MCP Task Orchestrator container is launched and reached**: transport, REST API mode,
+port publishing, config mount, and config-sync. This is a runtime/deployment concern, distinct from
+`quick-start` (first-time onboarding narrative) and `manage-schemas` (workflow gates/traits/
+`resources:`/`actor_authentication` content inside `.taskorchestrator/config.yaml`). If the user wants
+schema or gate changes — including resource-lease declarations — redirect to `/manage-schemas` instead
+of proceeding here.
+
+One operator escape hatch worth knowing when launching the container: `RESOURCE_LEASES_ENFORCED=false`
+(env, default true) disables resource-lease gate enforcement server-wide — a kill switch for lease
+contention incidents, same gate-policy category as `DEGRADED_MODE_POLICY`. Configuring which resources
+exist and which traits declare them stays in `/manage-schemas`; this skill only knows the switch.
+
+The full fragment catalog (exact env tuples, loopback caveat, Windows/MSYS caveat, `.mcp.json` shapes)
+lives in `references/runtime-config.md` — this skill's job is the **decision flow** and **rendering**,
+not re-deriving that catalog. Read it before rendering any command.
+
+---
+
+## Step 1 — Offer the recommended default first
+
+Before walking the full decision tree, offer the one-tap recommended path via `AskUserQuestion`:
+
+```
+AskUserQuestion(questions: [{
+  question: "How do you want to run the server?",
+  header: "Server setup",
+  multiSelect: false,
+  options: [
+    { label: "Recommended default", description: "HTTP + REST API enabled, unauthenticated, loopback-bound (127.0.0.1). Enables config-sync out of the box. Best for a single developer working across multiple projects." },
+    { label: "Customize", description: "Walk through transport, REST mode, config mount, and debug logging one at a time." }
+  ]
+}])
+```
+
+**Recommended default** → skip straight to Step 5 (Render — HTTP) with: REST = unauthenticated,
+config mount = none, debug = off. **Customize** → Step 2.
+
+Why this is the default: it is the majority deployment shape for a single developer who wants
+`config-sync` (per-project config that hot-reloads without a restart) to just work across every
+project they open, without hand-managing tokens. The image itself still ships conservative (STDIO,
+REST off, `0.0.0.0` bind) — this posture is entirely rendered by this skill, never an image change.
+
+---
+
+## Step 2 — Transport
+
+```
+AskUserQuestion(questions: [{
+  question: "Which transport?", header: "Transport", multiSelect: false,
+  options: [
+    { label: "HTTP (Recommended)", description: "Detached daemon, serves /mcp on a published port. Required for REST API and config-sync." },
+    { label: "STDIO", description: "Per-session process, no port, no REST API, no config-sync. Simpler, no persistent daemon." }
+  ]
+}])
+```
+
+**STDIO ⊥ REST — hard constraint:** if the user picks STDIO, skip Steps 3-4 entirely (REST mode and
+port are incoherent for a `--rm -i` per-session process) and go straight to Step 5 (Render — STDIO).
+Tell the user plainly: *"STDIO has no REST API and no config-sync — those require a persistent HTTP
+daemon. If you want config-sync later, re-run this skill and choose HTTP."*
+
+HTTP → Step 3.
+
+---
+
+## Step 3 — REST API mode (HTTP only)
+
+```
+AskUserQuestion(questions: [{
+  question: "REST API mode?", header: "REST API", multiSelect: false,
+  options: [
+    { label: "Unauthenticated (Recommended)", description: "No token needed. Loopback-bound only. Enables config-sync with zero extra setup." },
+    { label: "Bearer token", description: "Token-authenticated. For shared/multi-user setups." },
+    { label: "Off", description: "MCP only, no REST, no config-sync." }
+  ]
+}])
+```
+
+- **Unauthenticated** → always render the loopback SECURITY caveat from `references/runtime-config.md`
+  ("Loopback footgun") before the command, and force `-p 127.0.0.1:3001:3001` in the render — never a
+  wider publish.
+- **Bearer** → ask for the host path to the token YAML (free-text/"Other" answer), e.g.
+  `~/.taskorchestrator-secrets/api-tokens.yaml`. If the file doesn't exist yet, point at
+  `current/docs/api-rest.md` §1 for the token-generation snippet — this skill does not generate tokens.
+- **Off** → REST fragment is just `-e API_ENABLED=false`; config-sync will no-op (tell the user).
+
+---
+
+## Step 4 — Config mount and debug (HTTP only)
+
+```
+AskUserQuestion(questions: [{
+  question: "Mount this project's config as the server's global/fallback config?", header: "Config mount", multiSelect: false,
+  options: [
+    { label: "This project (fallback)", description: "Mount ./.taskorchestrator read-only as AGENT_CONFIG_DIR — good for a single-project server." },
+    { label: "None (multi-project)", description: "No mount. Per-project config flows in via config-sync into the DB per root — good for one server shared across projects." }
+  ]
+}])
+```
+
+Then ask Yes/No for debug logging (`LOG_LEVEL=DEBUG` + `DATABASE_SHOW_SQL=true`).
+
+---
+
+## Step 5 — Render
+
+Look up the exact fragments in `references/runtime-config.md` — do not improvise env values.
+
+### STDIO
+
+Render the `.mcp.json` **args array** shape (see reference doc, "`.mcp.json` shapes"):
+
+```json
+{
+  "mcpServers": {
+    "mcp-task-orchestrator": {
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-v", "mcp-task-data:/app/data", "ghcr.io/jpicklyk/task-orchestrator:latest"]
+    }
+  }
+}
+```
+
+Add the config-mount fragment (as `args` entries, not env flags) if the user wants a project mount.
+No REST, no port, no config-sync — say so.
+
+### HTTP — three coordinated pieces (all required, this is the default path now)
+
+1. **The detached docker run command** — compose the recommended-default tuple (or the customized
+   equivalent) from `references/runtime-config.md`:
+
+   ```
+   docker run -d --name mcp-task-orchestrator-http --restart unless-stopped \
+     -v mcp-task-data:/app/data \
+     -e MCP_TRANSPORT=http -e API_ENABLED=true -e API_AUTH_MODE=none -e API_ALLOW_UNAUTHENTICATED=true \
+     -p 127.0.0.1:3001:3001 \
+     ghcr.io/jpicklyk/task-orchestrator:latest
+   ```
+
+   (Substitute the REST-off or bearer fragment, and add the config-mount / debug fragments, per the
+   user's Step 3-4 answers.) On Windows, run this via **PowerShell** with `${PWD}` for volume paths —
+   see "Windows / MSYS path caveat" in the reference doc.
+
+2. **The `.mcp.json` HTTP entry** (NOT an args array):
+
+   ```json
+   {
+     "mcpServers": {
+       "mcp-task-orchestrator": {
+         "type": "http",
+         "url": "http://localhost:3001/mcp"
+       }
+     }
+   }
+   ```
+
+3. **Client-side config-sync env** — export in the user's own shell/profile, not the container:
+
+   ```
+   TASK_ORCHESTRATOR_API_URL=http://localhost:3001
+   ```
+
+   A persistent alternative to this env var is a `client.json` (`apiUrl` only, never a token), written after checking `/api/v1/health`. The API URL resolves in this order: the env var, then a project-level `client.json` beside the located config (or in the main checkout for a linked worktree), then the user-level `client.json`. Project-mode `/task-orchestrator:init` writes the project-level file, but only for a loopback server reached at a bare origin (the hooks ignore a project-level URL on any other host, or with a path, query or fragment); `/task-orchestrator:init --user` writes the user-level file, which is unrestricted, so a non-loopback server needs that or the env var. The token still comes from the environment only.
+
+   Add `TASK_ORCHESTRATOR_API_TOKEN=<token>` only when the REST API requires authentication (bearer or jwks mode). **Omitting this env var, with no
+   `client.json` supplying a URL either, is the single most common way config-sync silently no-ops** (`config-sync.mjs` returns early when `apiBaseUrl()` in
+   `hooks/api-client.mjs` finds no URL) —
+   always render it, never treat it as optional polish.
+
+If REST mode is **unauthenticated**, always print the SECURITY caveat (verbatim from
+`references/runtime-config.md` → "Loopback footgun") immediately before or after the docker run block.
+
+**Non-loopback Host:** if the user will reach the server by any name other than
+`localhost`/`127.0.0.1`/`[::1]` — this includes a `TASK_ORCHESTRATOR_API_URL` or a `.mcp.json` `url`
+using a compose service name, `host.docker.internal`, a LAN name, or a reverse-proxy hostname — add
+the `MCP_ALLOWED_HOSTS` fragment from `references/runtime-config.md` → "Host allowlist
+(MCP_ALLOWED_HOSTS)" to the docker run command, and point the user at that section for the format and
+examples. Do not add a new `AskUserQuestion` step for this — infer it from the URL/hostname already in
+play.
+
+---
+
+## Step 6 — HTTP lifecycle (verify it's actually working)
+
+For any HTTP render, walk through:
+
+1. **Run** the docker command from Step 5.
+2. **Verify the container is up:**
+   ```bash
+   docker ps --filter name=mcp-task-orchestrator-http --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+   docker logs --since 20s mcp-task-orchestrator-http
+   ```
+3. **Reconnect the client:** update `.mcp.json` (Step 5, piece 2) if not already in place, then run
+   `/mcp` in Claude Code — confirm `mcp-task-orchestrator` shows connected with all tools listed.
+4. If REST is enabled, sanity-check it: `curl http://localhost:3001/api/v1/health` should return `200`.
+5. A 403, `host_not_allowed`, or a JSON-RPC error (code -32000) on `/mcp` means the request's `Host`
+   header is not allowlisted — see `references/runtime-config.md` → "Host allowlist
+   (MCP_ALLOWED_HOSTS)".
+
+Next: run `/task-orchestrator:init` in each project (or `/task-orchestrator:init --user` once for a personal root).
+
+---
+
+## HTTP-first policy for new infrastructure features
+
+New infrastructure features — `config-sync`, SSE events, the `plan-capture` hook, the SubagentStop
+completion guard (`phase-guard.mjs` + `phase-guard-record.mjs`) — are **HTTP-only**, with a graceful
+no-op on STDIO. Each checks for its own REST env var (`TASK_ORCHESTRATOR_API_URL`, etc.) and silently
+skips when absent, rather than failing. STDIO remains fully supported for MCP tool calls themselves —
+it is positioned as the **local/evaluation mode**: no persistent daemon, no REST surface, and
+consequently none of these convenience features. When recommending a setup for ongoing project work
+(not a one-off trial), prefer the HTTP render in Step 5 for this reason, in addition to config-sync's
+per-project hot-reload benefit already covered in Step 1.
+
+The completion guard reads `GET /api/v1/items/{id}/gate`, a READ-capability endpoint — under bearer
+auth, the token rendered for `TASK_ORCHESTRATOR_API_TOKEN` needs `read` in addition to whatever
+capability its other consumers need (config-sync's documented token is `write-config` only, which
+does not imply `read`). A token scoped to `write-config` alone leaves the guard silently inert (every
+gate GET returns 403, which the guard treats as fail-open, not an error) — call this out whenever
+rendering a bearer-mode token for a workspace that also uses the guard.
+
+## Reconfiguring later
+
+Re-running this skill is safe — it always renders a fresh command from the current answers; it does
+not read or depend on any previously-rendered state. To change an existing container's settings,
+stop/remove it first (`docker stop mcp-task-orchestrator-http && docker rm mcp-task-orchestrator-http`),
+then re-render and run the new command. (Maintainers building the image from source have a dedicated
+detect-and-reuse flow in `/deploy_to_docker` — not needed for the published-image path this skill covers.)

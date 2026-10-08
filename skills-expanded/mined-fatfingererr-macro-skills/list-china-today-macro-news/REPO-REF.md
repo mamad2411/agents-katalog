@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/fatfingererr/macro-skills (path: skills/list-china-today-macro-news/SKILL.md, branch: master)
+- mined: 2026-09-20
+- desc: 彙整今日中國宏觀經濟新聞消息，從華爾街日報、36氪等來源抓取並篩選宏觀相關新聞，輸出雜誌風格的新聞摘要。適用於交易/研究開盤前快速掌握中國宏觀動態。

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/aiskillstore/marketplace (path: skills/yunshu0909/priority-judge/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 优先级判断助手 - 帮用户从混沌的待办事项中判断优先级，确定现在该做什么。当用户说"我有很多事要做"、"帮我理一下"、"排个优先级"、"今天该做什么"时触发。

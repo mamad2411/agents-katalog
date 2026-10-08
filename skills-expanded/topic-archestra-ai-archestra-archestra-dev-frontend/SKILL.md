@@ -1,0 +1,131 @@
+---
+name: archestra-dev-frontend
+description: Use when modifying Archestra frontend Next.js/React code, UI components, forms, TanStack Query hooks, generated API client usage, frontend copy, or documentation links.
+---
+
+# Archestra Frontend Development
+
+Use this skill before changing files under `platform/frontend/` or frontend-facing shared code.
+
+This is the skill for day-to-day platform UI work. For visual design direction on a greenfield, user-facing surface — a marketing or landing page, a generated app, a standalone page — see `design-taste-frontend` instead.
+
+## Commands
+
+Run commands from `platform/` unless specifically instructed otherwise.
+
+```bash
+pnpm codegen   # regenerates the OpenAPI spec and the API client
+pnpm type-check
+pnpm lint
+pnpm test
+pnpm knip   # flags unused exports; part of frontend check:ci
+```
+
+## Data fetching
+
+- Use TanStack Query for data fetching.
+- Prefer `useQuery` over `useSuspenseQuery` with explicit loading states.
+- Prefer TanStack Query over prop drilling when a component can fetch data by identifier itself.
+- Only pass minimal identifiers, such as `catalogId`, needed for child components to fetch or filter their own data.
+- TanStack Query caching prevents duplicate requests when multiple components use the same query.
+
+## API clients
+
+- Frontend `.query.ts` files should never call the Archestra backend with `fetch()` directly — use the generated SDK. Raw `fetch()` is only for third-party APIs the SDK does not cover (e.g. GitHub, see `lib/github/*.query.ts`).
+- Run `pnpm codegen` first to ensure the generated SDK is up to date (`codegen:api-client` alone only exists inside `@archestra/shared` and needs the env var: `CODEGEN=true pnpm --filter @archestra/shared codegen:api-client` — without `CODEGEN=true` it reads a live `localhost:9000` instead of the committed spec).
+- Use generated SDK methods instead of manual API calls for type safety and consistency.
+- Reuse API types from `@archestra/shared`, especially `archestraApiTypes` types such as `archestraApiTypes.CreateXxxData["body"]` and `archestraApiTypes.GetXxxResponses["200"]`.
+- Do not define duplicate frontend API types when generated/shared types already exist.
+
+## Query error handling
+
+- Handle toasts in `.query.ts` files, not in components.
+- Define mutation success/error toasts in `onSuccess` and `onError` callbacks.
+- Queries must fail loud: call `throwOnApiError(error)` after the SDK call so the query enters its error state, then keep the existing success return (`return data ?? []`). Swallowing an error into a default makes an outage indistinguishable from a genuinely empty result, which is how an offline app showed "Add an LLM Provider Key".
+- `throwOnApiError(error)` toasts via `handleApiError` by default. Screens that render their own error state (e.g. a `QueryLoadError` retry panel gated on `isLoadingError`) pass `{ toastOnError: false }` to avoid a redundant toast and a fresh toast on every retry. Detail endpoints where a 404 means "does not exist" rather than an outage pass `{ allowNotFound: true }` and keep returning their `null` default for that case.
+- Mutations keep `handleApiError(error)` + `throw toApiError(error)` in the `mutationFn`.
+- Components should not use `try`/`catch` for API calls; API error handling belongs in `.query.ts` files.
+
+## UI components
+
+- Use shadcn/ui components only.
+- Add shadcn/ui components with `npx shadcn@latest add <component>`.
+- Prefer components from `frontend/src/components/ui` over plain HTML elements when a component exists.
+- Use `Button` over raw `<button>`, `Input` over raw `<input>`, and the matching UI component for selects and other controls.
+- Keep components small and focused, with extracted business logic where it improves clarity.
+- Keep frontend files flat where practical and avoid barrel files.
+- Import helpers from focused `@/lib/utils/*` modules (`tailwind` for `cn`, `api` for API errors, `date-time` for dates). The `@/lib/utils` barrel eagerly loads unrelated modules, including `date-fns`, in every test or server module that imports it. Biome rejects that barrel path.
+- Only export what is needed externally.
+
+## Notices, warnings, and announcements
+
+Render every notice, warning, error, or announcement through one of two shared
+components. Do not hand-roll a notice. Do not restyle one with your own
+colour, border, radius, or padding classes.
+
+- `InlineNotice` (`components/ui/inline-notice.tsx`) is the default choice.
+  Use it for a notice about the surface it sits on. Examples: a form that
+  cannot reach a repository, a read-only panel, a validation failure. The
+  variants are `warning` (the default), `error`, `info`, and `neutral`.
+  Compose it in this order: the icon, a `<span className="font-medium">`
+  title, an `<InlineNoticeText>` explanation, then an optional action with
+  `className="ml-auto"`. Add the `floating` prop when the notice sits over
+  content that scrolls under it.
+- `Alert` (`components/ui/alert.tsx`) is a page-level banner. It is the
+  content of its own row. Its body can hold several sentences, lists, or
+  links. Its padding is too large inside a form or a dialog. Use
+  `InlineNotice` there.
+
+Extend `InlineNotice` when a new case does not fit. Add a variant, or let the
+variant own the new colour. Do not add utility classes at the call site. Do
+not write another bespoke notice div.
+
+The app once carried about forty hand-rolled copies of these two components.
+Those copies used four amber palettes and three paddings. This rule prevents
+that.
+
+The variant owns every colour, including the colour of the explanation. Never
+give a child its own amber, red, or blue class. The two values drift apart
+when a palette moves.
+
+## Text nodes and machine translation
+
+Chrome page-translate re-parents bare text nodes into `<font>` wrappers. React still holds the original nodes, so deleting one — or inserting an element before it — throws `NotFoundError` and crashes the page (facebook/react#11538, no upstream fix). Never let React add, remove, or replace a **bare** text node: wrap conditional text in an element so only elements move.
+
+`biome-plugins/no-conditional-bare-jsx-text.grit` fails the build on the shapes below, and its diagnostics cannot be suppressed with `biome-ignore` — write them wrapped in the first place:
+
+- `{cond ? <Icon /> : "More"}` → `{cond ? <Icon /> : <span>More</span>}`.
+- `{cond ? (<><Loader2 />Loading…</>) : ("Load more")}` → wrap both branches; the fragment's own bare text is deleted when the branch flips, so `<span>Loading…</span>` inside it and `<span>Load more</span>` for the string.
+- `{saved && "Saved!"}` → `{saved && <span>Saved!</span>}`.
+- `{n > 0 ? " and more" : ""}` → `{n > 0 ? <span> and more</span> : null}` — return `null`, never `""`, and keep the padding spaces inside the span.
+- `<Button>{pending ? <Loader2 /> : <Icon />} Save</Button>` → wrap the label: `<span>Save</span>`. Same for a label expression: `<span>{agent ? "Update" : "Create"}</span>`.
+
+The rule cannot see these; apply the convention by hand:
+
+- A `ReactNode` prop or variable rendered next to a conditional sibling (`{icon}{label}`) — wrap it: `{icon}<span>{label}</span>` (`app/messaging-channels/layout.tsx`).
+- Loading/empty/data branches whose roots are the **same tag** — React reconciles the element and deletes the bare status text in place. Wrap each branch's text (`<span>Loading tools…</span>`) or give the branches distinct `key`s.
+- A shared component rendering a `ReactNode` slot inside an element that persists across content changes — key the wrapper by the content, as `components/form-dialog.tsx` and `components/ui/searchable-select.tsx` do.
+
+Safe, do not churn: text→text updates (`{saving ? "Saving…" : "Save"}`), whole-element unmounts, and strings in attributes.
+
+Wrapping splits a string across sibling elements, so Testing Library's default `getByText` stops matching. Scope to a container with `toHaveTextContent`, or use a function matcher constrained by tag — do not unwrap the span to satisfy a test.
+
+## Forms
+
+- Prefer `useForm` from `react-hook-form` over multiple `useState` hooks for form state.
+- Pass form objects to child components as `form: UseFormReturn<FormValues>` rather than passing individual setters.
+- Parent components should handle mutations and submission.
+- Form components should focus on rendering and validation UI.
+
+## Copy and documentation links
+
+- Do not hardcode `Archestra` in frontend UI copy.
+- Use `const appName = useAppName();` and interpolate the app name so white-labeled deployments render correctly.
+- Always use `getDocsUrl(DocsPage.PageName, "optional-anchor")` from `@archestra/shared` for documentation links.
+- Never hardcode documentation URLs.
+
+## Test mocking
+
+- Frequently-mocked modules have Jest-style `__mocks__` canonical mocks — activate with a bare `vi.mock("<specifier>");` and configure per test via `vi.mocked(...)`. Covered: `@/lib/auth/auth.query`, `@/lib/organization.query`, `@/lib/config/config.query`, `@/lib/teams/team.query`, `@/lib/hooks/use-app-name`, `@/lib/clients/auth/auth-client` (a memoized proxy — every path like `authClient.signIn.email` is a stable `vi.fn()`), plus root-level `__mocks__/` for `next/navigation` and `sonner`.
+- Do not write a bespoke partial factory for those specifiers. Exception: a file that partially mocks `@/lib/config/config` may keep factories for the query mocks — the canonical mocks' `importActual` chain eagerly loads `auth-client` → `config/config` and breaks under a partial config mock.
+- The `@` alias must stay declared in `vitest.config.ts` `resolve.alias` with an absolute path — tsconfig-paths-only aliasing silently breaks `__mocks__` resolution (vitest-dev/vitest#8343).

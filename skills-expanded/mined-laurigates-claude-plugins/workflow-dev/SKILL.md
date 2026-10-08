@@ -1,0 +1,178 @@
+---
+created: 2025-12-16
+modified: 2026-09-02
+reviewed: 2026-09-02
+allowed-tools: Read, Write, Edit, Bash(git *), Bash(pytest *), Bash(npm test *), Bash(cargo test *), Bash(go test *), mcp__github__list_issues, mcp__github__create_issue, mcp__github__create_pull_request, mcp__github__get_issue, TodoWrite
+args: "[--max-cycles <n>] [--focus <bug|feature|test>]"
+argument-hint: "[--max-cycles <n>] [--focus <bug|feature|test>]"
+disable-model-invocation: true
+description: "Automated dev loop — run tests, file issues for failures, TDD fix on branch, open PR, watch CI. Use when running a continuous dev loop, autonomous TDD, or fix-and-PR cycles."
+name: workflow-dev
+---
+
+# /workflow:dev
+
+Automated development loop with issue creation, TDD, and CI monitoring.
+
+## When to Use This Skill
+
+| Use this skill when... | Use X instead when... |
+|------------------------|----------------------|
+| Running a continuous loop that turns test failures into issues, then resolves them | Inspecting an existing workflow run or debugging CI failures (`/workflow:github-actions-inspection`) |
+| Automating the full issue → branch → PR → green-CI cycle through the backlog | Generating a reusable auto-fix workflow file for multiple repos (`/workflow:github-workflow-auto-fix --reusable`) |
+| Wanting Claude to pick the next issue and drive it through TDD without user input | Searching upstream OSS issues for known errors or workarounds (`/workflow:github-issue-search`) |
+
+## Context
+
+- Current branch: !`git branch --show-current`
+- Working tree: !`git status --porcelain`
+- Project type: !`find . -maxdepth 1 \( -name "package.json" -o -name "Cargo.toml" -o -name "pyproject.toml" -o -name "go.mod" -o -name "manage.py" \) -type f`
+
+Open issues are fetched during execution (requires a configured git remote).
+
+## Parameters
+
+Parse from `$ARGUMENTS`:
+
+- `--max-cycles <n>`: Limit to N issue resolution cycles (default: unlimited)
+- `--focus <bug|feature|test>`: Only work on issues with matching label
+- `--quick-wins`: Only pick issues estimated < 30 minutes
+- `--test-only`: Only create issues for test failures; skip implementation
+- `--dry-run`: Explain what would be done without making changes
+
+## Execution
+
+Execute this automated development loop:
+
+### Step 1: Set up environment and assess state
+
+**1. Ensure on main branch and sync**
+
+```bash
+git switch main
+git pull
+```
+
+**2. Run the project's test suite**
+
+- Detect project type (check for `manage.py`, `package.json`, `Cargo.toml`, etc.)
+- Run appropriate test command:
+  - Django: `python manage.py test`
+  - Node.js: `npm test`
+  - Rust: `cargo test`
+  - Python: `pytest` or `python -m pytest`
+  - Go: `go test ./...`
+
+**3. Create GitHub issues for any test failures**
+
+- For each failing test, use `github:create_issue` with:
+  - Title: `"Test failure: {test_name}"`
+  - Body: Include error output, stack trace, and failure context
+  - Labels: `["bug", "test-failure"]`
+
+**4. List current repository issues**
+
+- Use `github:list_issues` with `state=open`
+- Filter out issues that are blocked or need external input
+
+### Step 2: Select issue to work on
+
+**Select issues using this priority order:**
+
+1. **Critical bugs**: Issues labeled `priority: critical` or `bug` + `high priority`
+2. **Test failures**: Issues just created from failing tests (highest priority)
+3. **Quick wins**: Issues labeled `good first issue` or estimated < 1 hour
+4. **High-impact features**: Issues with most reactions/comments
+5. **Technical debt**: Oldest issues labeled `technical-debt` or `refactor`
+
+**Selection criteria (must meet ALL):**
+
+- Has clear acceptance criteria in description
+- Not labeled `blocked` or `waiting-for-input`
+- Not already assigned to someone else
+- Can reasonably be completed in a single PR
+
+**If no suitable issues found:**
+
+- Run dependency audit (`npm audit`, `pip-audit`, `cargo audit`)
+- Create issues for security vulnerabilities
+- Run linting tools and create issues for violations
+
+### Step 3: Implement solution
+
+**For the selected issue, repeat until CI passes:**
+
+**5. Create feature branch**
+
+```bash
+git switch -c fix/issue-{number}-{brief-description}
+```
+
+**6. Gather implementation context**
+
+- **Fetch current documentation for relevant libraries/frameworks before implementation** — remembered API shapes and flags drift across versions. Use Context7 MCP when it is available; otherwise `WebFetch` the library's own docs or fall back to the project's pinned documentation.
+- Use `context7:resolve-library-id` followed by `context7:get-library-docs` for any tools mentioned
+- Read issue description and any linked documentation
+- Review related issues and PRs for context
+- **Package managers (uv, npm, bun, etc.)**: fetch the current best-practice docs before suggesting commands (Context7 when available, otherwise the project's pinned docs or `WebFetch`) — remembered flag syntax drifts across major versions.
+
+**7. Implement solution using TDD**
+
+- **RED**: Write a failing test (if test doesn't already exist)
+- **GREEN**: Write minimal code to make the test pass
+- **REFACTOR**: Improve code quality while keeping tests green
+- Follow language-specific best practices from Claude Code Guidelines
+
+**8. Commit changes**
+
+```bash
+git add <files>
+git commit -m "fix: resolve issue #{number} - {brief description}"
+```
+
+- Use conventional commit format
+- Reference issue number in commit message
+
+**9. Push branch**
+
+```bash
+git push origin fix/issue-{number}-{brief-description}
+```
+
+**10. Create pull request**
+
+- Use `github:create_pull_request` with:
+  - Title: `"fix: resolve issue #{number} - {brief description}"`
+  - Body: `"Fixes #{number}"` plus description of changes
+  - Include testing notes and any breaking changes
+
+**11. Monitor CI status**
+
+- Use GitHub MCP to check workflow status
+- Wait for all checks to start and complete
+
+**12. Fix CI failures (if any)**
+
+- Use `github:get_pull_request_status` to check specific failures
+- Analyze workflow logs to understand failures
+- Implement fixes and push additional commits
+- Repeat until all checks pass
+
+### Step 4: Complete and loop
+
+**13. Verify CI success**
+
+- Confirm all required checks are green
+- Ensure no failing workflows remain
+
+**14. Close the issue**
+
+- Use `github:update_issue` to close with state `closed`
+- Add comment referencing the closing PR
+
+**15. Return to Step 1**
+
+- Go back to environment setup
+- Continue the loop for the next issue
+
+For command variations, error-handling policies, report templates, loop-termination criteria, and integration requirements, see [REFERENCE.md](REFERENCE.md).

@@ -1,6 +1,6 @@
 ---
 name: security-review
-description: Review Langfuse changes for SSRF, tenant isolation, secret handling, unsafe redirects or uploads, RBAC drift, and client telemetry privacy. Use when a design or change accepts URLs or host fields, handles secrets or cross-tenant data, makes outbound requests, adds an integration, follows redirects, widens permissions, or can send customer-controlled UI data through analytics, monitoring, or session replay.
+description: Review Langfuse changes for SSRF, tenant isolation, secret handling, unsafe redirects or uploads, RBAC drift, and client telemetry privacy. Use when a design or change accepts URLs or host fields, handles secrets or cross-tenant data, makes outbound requests, adds an integration,
 ---
 
 # Security Review

@@ -1,0 +1,115 @@
+---
+name: compose-agents
+description: Compose multi-agent systems with SequentialAgent, ParallelAgent, and LoopAgent. Use when building agent pipelines, parallel workflows, or iterative loops.
+---
+
+# Composing Multi-Agent Systems
+
+Three orchestration primitives for combining agents.
+
+## SequentialAgent — Run agents in order
+
+Each agent's final answer becomes the next agent's input.
+
+```python
+from orxhestra import SequentialAgent, LlmAgent
+
+researcher = LlmAgent(name="researcher", model=model, instructions="Research the topic.")
+writer = LlmAgent(name="writer", model=model, instructions="Write an article from the research.")
+
+pipeline = SequentialAgent(
+    name="pipeline",
+    agents=[researcher, writer],
+)
+
+async for event in pipeline.astream("AI trends 2025"):
+    if event.is_final_response():
+        print(event.text)
+```
+
+## ParallelAgent — Run agents concurrently
+
+All agents run simultaneously. Each gets a derived context with branch isolation.
+
+```python
+from orxhestra import ParallelAgent, LlmAgent
+
+analyst_a = LlmAgent(name="market", model=model, instructions="Analyze market trends.")
+analyst_b = LlmAgent(name="tech", model=model, instructions="Analyze tech trends.")
+
+parallel = ParallelAgent(
+    name="analysis",
+    agents=[analyst_a, analyst_b],
+)
+```
+
+## LoopAgent — Repeat until done
+
+Repeats sub-agents until `escalate=True` (via `exit_loop_tool`) or `max_iterations` reached.
+
+```python
+from orxhestra import LoopAgent, LlmAgent
+from orxhestra.tools import exit_loop_tool
+
+writer = LlmAgent(name="writer", model=model, instructions="Write a draft.")
+reviewer = LlmAgent(
+    name="reviewer",
+    model=model,
+    instructions="Review the draft. Call exit_loop if approved.",
+    tools=[exit_loop_tool],
+)
+
+loop = LoopAgent(
+    name="review_loop",
+    agents=[writer, reviewer],
+    max_iterations=5,
+)
+```
+
+### Custom stop condition
+
+```python
+def quality_check(ctx, last_event):
+    score = ctx.state.get("quality_score", 0)
+    return score >= 8  # stop if quality is high
+
+loop = LoopAgent(
+    name="quality_loop",
+    agents=[writer, reviewer],
+    should_continue=quality_check,  # return True to continue
+    max_iterations=10,
+)
+```
+
+## Combining patterns
+
+```python
+# Research in parallel, then write sequentially, then review in a loop
+research = ParallelAgent(name="research", agents=[market_analyst, tech_analyst])
+write = LlmAgent(name="writer", model=model, instructions="Synthesize research into article.")
+review_loop = LoopAgent(name="review", agents=[editor, fact_checker], max_iterations=3)
+
+full_pipeline = SequentialAgent(
+    name="content_pipeline",
+    agents=[research, write, review_loop],
+)
+```
+
+## Transfer routing — Agent handoff
+
+```python
+from orxhestra import LlmAgent
+from orxhestra.tools import make_transfer_tool
+
+sales = LlmAgent(name="sales", model=model, description="Handles orders.", instructions="...")
+support = LlmAgent(name="support", model=model, description="Technical help.", instructions="...")
+
+triage = LlmAgent(
+    name="triage",
+    model=model,
+    instructions="Route the user to the right specialist.",
+    tools=[make_transfer_tool([sales, support])],
+)
+triage.register_sub_agent(sales)
+triage.register_sub_agent(support)
+```

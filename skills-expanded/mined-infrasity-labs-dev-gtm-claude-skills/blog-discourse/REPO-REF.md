@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/infrasity-labs/dev-gtm-claude-skills (path: .claude/skills/blog-discourse/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Blog Discourse: Real Discourse Research, API-Free

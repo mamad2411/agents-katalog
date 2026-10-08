@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/alchaincyf/huashu-skills (path: huashu-material-search/SKILL.md, branch: master)
+- mined: 2026-09-20
+- desc: 搜索个人素材库1800+条真实经历和观点，为内容增加人味。当用户提到"个人经历"、"真实案例"、"素材"、"人味"时使用。

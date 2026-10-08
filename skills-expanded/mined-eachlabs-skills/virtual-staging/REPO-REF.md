@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/eachlabs/skills (path: skills/virtual-staging/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Transform empty rooms into beautifully furnished spaces using each::sense AI. Create photorealistic virtual staging for real estate listings, commercial properties, and interior design visualization.

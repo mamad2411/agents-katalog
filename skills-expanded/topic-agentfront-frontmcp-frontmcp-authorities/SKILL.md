@@ -1,0 +1,443 @@
+---
+name: frontmcp-authorities
+description: 'Use when implementing authorization and access control for FrontMCP tools, resources, prompts, or skills, deciding who may invoke what. Covers the RBAC, ABAC, and ReBAC models and when to choose each; JWT claims mapping per identity provider (Auth0, Keycloak, Okta, Cognito, Frontegg); reusable named authority profiles; and custom authority evaluators for domain-specific policy. This is about who-can-do-what (permissions, roles, scopes), distinct from configuring auth modes and login (see frontmcp-config) and custom login UI (see frontmcp-auth-ui). Triggers: authorization, access control, RBAC, ABAC, ReBAC, permissions, roles, scopes, policy enforcement, JWT claims, restrict who can call a tool.'
+tags: [authorization, rbac, abac, rebac, security, permissions, roles, access-control, authorities, jwt]
+category: development
+targets: [all]
+bundle: [full]
+priority: 9
+visibility: both
+license: Apache-2.0
+metadata:
+  docs: https://docs.agentfront.dev/frontmcp/authentication/authorities
+---
+
+# FrontMCP Authorities
+
+Built-in RBAC/ABAC/ReBAC authorization system for FrontMCP entry types. Each flow has native `checkEntryAuthorities` and `filterByAuthorities` stages that enforce access control policies declared via the `authorities` field on entry decorators. Configured via `@FrontMcp({ authorities: { claimsMapping, profiles, scopeMapping } })` — no plugin needed. Flow stages handle enforcement, and developers can hook into them with `Will`, `Did`, and `Around` decorators. Supports named profiles for reuse, JWT claims mapping for any identity provider, inline policies with roles/permissions/attributes/relationships, and composable combinators (`allOf`, `anyOf`, `not`).
+
+## When to Use This Skill
+
+### Must Use
+
+- Adding role-based or permission-based access control to tools, resources, prompts, or skills
+- Restricting MCP entry visibility based on the caller's JWT claims
+- Enforcing tenant isolation (ABAC) or relationship checks (ReBAC) on entries
+- Gating which skills a caller can discover and load (`@Skill({ authorities })`)
+
+### Recommended
+
+- Setting up a multi-tenant server where different tenants see different tools
+- Building an admin vs. user distinction across your MCP surface
+- Combining multiple authorization models (e.g., RBAC + ABAC) on the same entry
+
+### Skip When
+
+- You only need authentication (login/token validation) without authorization (see `frontmcp-config` / `configure-auth`)
+- You are building a public server with no access restrictions (use `mode: 'public'`)
+- You need OAuth scopes at the transport level, not entry-level policies (see `configure-auth-modes`)
+
+> **Decision:** Use this skill whenever you need to control **who can access which entries** based on roles, permissions, attributes, or relationships.
+
+## CRITICAL: Ask About JWT Shape First
+
+Before writing any authorities configuration, the coding agent **MUST** ask the developer:
+
+> "What identity provider (IdP) are you using, and what does your JWT payload look like? I need to know where roles, permissions, and tenant ID are located in the claims."
+
+**Why this matters:** Every IdP places roles and permissions in different JWT claim paths. Auth0 uses namespaced URIs (`https://myapp.com/roles`), Keycloak nests them under `realm_access.roles`, Okta uses `groups`, Cognito uses `cognito:groups`, and Frontegg uses flat `roles`/`permissions`. Writing `claimsMapping` without knowing the actual token shape will produce silent authorization failures where every user is denied.
+
+**What to collect before proceeding:**
+
+1. Identity provider name (Auth0, Keycloak, Okta, Cognito, Frontegg, custom)
+2. A sample decoded JWT payload (redacted sensitive values)
+3. The claim path for roles (e.g., `realm_access.roles`)
+4. The claim path for permissions (e.g., `permissions` or `scope`)
+5. The claim path for tenant/org ID if multi-tenant (e.g., `org_id`, `tenantId`)
+
+See `references/claims-mapping.md` for IdP-specific claim paths.
+
+## Prerequisites
+
+- FrontMCP SDK installed (`@frontmcp/sdk`)
+- `@frontmcp/auth` available (peer dependency of SDK, provides all authorities types)
+- An authentication mode configured (see `frontmcp-config` / `configure-auth-modes`) so that `authInfo` is populated on incoming requests
+- Knowledge of the developer's JWT token structure (see critical section above)
+
+## Steps
+
+### Step 1: Add the Authorities Config
+
+Add the `authorities` field to your `@FrontMcp` decorator. No plugin import needed — authorities is a built-in framework feature.
+
+```typescript
+import { FrontMcp } from '@frontmcp/sdk';
+
+@FrontMcp({
+  info: { name: 'my-server', version: '1.0.0' },
+  authorities: {
+    // configured in next steps
+  },
+})
+export class MyServer {}
+```
+
+### Step 2: Configure JWT Claims Mapping
+
+Set `claimsMapping` to tell the engine where roles, permissions, and user/tenant identifiers live in your IdP's JWT. Each value is a dot-path into the decoded JWT claims object.
+
+```typescript
+// Keycloak example — in @FrontMcp({ authorities: { ... } })
+authorities: {
+  claimsMapping: {
+    roles: 'realm_access.roles',
+    permissions: 'resource_access.my-client.roles',
+    tenantId: 'org_id',
+    userId: 'sub',
+  },
+}
+
+// Auth0 example
+authorities: {
+  claimsMapping: {
+    roles: 'https://myapp.com/roles',
+    permissions: 'permissions',
+    tenantId: 'org_id',
+  },
+}
+```
+
+If no `claimsMapping` is provided, the engine falls back to (in order):
+
+- **roles**: `authInfo.user.roles` → `authInfo.extra.authorization.scopes` → `[]`
+- **permissions**: `authInfo.user.permissions` → `[]`
+
+The OAuth-scopes-as-roles fallback means a token with no `roles` claim but with `scope: "admin read"` will be treated as having `roles: ['admin', 'read']`. Configure explicit `claimsMapping.roles` to opt out. For non-standard token shapes, use `claimsResolver` instead (see Common Patterns below).
+
+### Step 3: Register Named Profiles
+
+Profiles let you define reusable authorization policies and reference them by name in decorators. Register them in the `profiles` field.
+
+```typescript
+// In @FrontMcp({ authorities: { ... } })
+authorities: {
+  claimsMapping: { roles: 'realm_access.roles', permissions: 'scope' },
+  profiles: {
+    admin: {
+      roles: { any: ['admin', 'superadmin'] },
+    },
+    authenticated: {
+      attributes: {
+        conditions: [{ path: 'user.sub', op: 'exists', value: true }],
+      },
+    },
+    matchTenant: {
+      attributes: {
+        conditions: [
+          { path: 'claims.org_id', op: 'eq', value: { fromInput: 'tenantId' } },
+        ],
+      },
+    },
+    editor: {
+      permissions: { any: ['content:write', 'content:publish'] },
+    },
+  },
+}
+```
+
+For type-safe profile names, augment the global interface:
+
+```typescript
+declare global {
+  interface FrontMcpAuthorityProfiles {
+    admin: true;
+    authenticated: true;
+    matchTenant: true;
+    editor: true;
+  }
+}
+```
+
+### Step 4: Add Authorities to Entries
+
+Use the `authorities` field on any entry decorator (`@Tool`, `@Resource`, `@Prompt`, `@Skill`). Three forms are supported:
+
+**String (profile reference):**
+
+```typescript
+@Tool({ name: 'delete_user', authorities: 'admin' })
+export default class DeleteUserTool extends ToolContext { ... }
+```
+
+**String array (multiple profiles, AND semantics):**
+
+```typescript
+@Tool({ name: 'update_tenant_settings', authorities: ['authenticated', 'matchTenant'] })
+export default class UpdateTenantSettingsTool extends ToolContext { ... }
+```
+
+**Inline policy object:**
+
+```typescript
+@Tool({
+  name: 'publish_content',
+  authorities: {
+    roles: { any: ['editor', 'admin'] },
+    permissions: { all: ['content:publish'] },
+  },
+})
+export default class PublishContentTool extends ToolContext { ... }
+```
+
+**Combinators for complex policies:**
+
+```typescript
+@Tool({
+  name: 'sensitive_action',
+  authorities: {
+    allOf: [
+      { roles: { any: ['admin'] } },
+      { attributes: { conditions: [{ path: 'env.NODE_ENV', op: 'eq', value: 'production' }] } },
+    ],
+  },
+})
+export default class SensitiveActionTool extends ToolContext { ... }
+```
+
+**Async guards (one-shot DB/Redis/API checks):**
+
+For dynamic, async authorization that does not warrant a reusable custom evaluator, use the
+`guards` field. Each guard receives the same `AuthoritiesEvaluationContext` and returns
+`true` on grant, or `false`/a denial string on deny. Only `true` grants: anything else
+(`undefined` from a guard that forgot to `return`, `null`, `0`, an object) denies. Guards run
+in sequence and combine with other policy fields via `operator` (default AND).
+
+```typescript
+import type { AuthorityGuardFn } from '@frontmcp/auth';
+
+const requireActiveSubscription: AuthorityGuardFn = async (ctx) => {
+  if (ctx.user.sub === undefined) return 'sign-in required';
+  const active = await db.isSubscriptionActive(ctx.user.sub);
+  return active ? true : 'subscription is not active';
+};
+
+@Tool({
+  name: 'premium_feature',
+  authorities: {
+    roles: { any: ['user'] },
+    guards: [requireActiveSubscription],
+  },
+})
+export default class PremiumFeatureTool extends ToolContext { ... }
+```
+
+Use `guards` for one-off async checks; promote to a registered custom evaluator when the
+same logic is reused across many entries (see `references/custom-evaluators.md`).
+
+### Optional: Map Denials to OAuth Scope Challenges (`scopeMapping`)
+
+If your transport layer issues OAuth scope challenges (RFC 6750 `insufficient_scope`),
+declare a `scopeMapping` so authority denials are converted into the right `WWW-Authenticate`
+challenge with the required scopes. Mapping is explicit only — no automatic
+permission-to-scope inference.
+
+```typescript
+authorities: {
+  scopeMapping: {
+    roles: { admin: ['admin:all'] },
+    permissions: { 'repo:write': ['repo'] },
+    profiles: { admin: ['admin:all'] },
+  },
+}
+```
+
+When a request is denied because the user lacks role `admin`, the response surfaces
+the `admin:all` scope as the required challenge.
+
+### Optional: Extract Custom Auth Context Fields (`pipes`)
+
+`pipes` are functions that run during auth context construction and merge their output into
+`FrontMcpAuthContext`. Use them to extract custom typed fields from JWT claims so they are
+available to your tools as strongly typed accessors. Declare the resulting fields by
+augmenting `ExtendFrontMcpAuthContext`:
+
+A pipe receives the **raw JWT claims** (a `Readonly<Record<string, unknown>>`) and
+returns a `Partial<ExtendFrontMcpAuthContext>` (sync or async). It does **not**
+receive the `AuthInfo` envelope — there is no `.user` accessor on the input.
+
+```typescript
+// Pipe signature (defined inline; do not import — AuthContextPipe is not
+// re-exported from `@frontmcp/auth`):
+//   (claims: Readonly<Record<string, unknown>>) =>
+//     Partial<ExtendFrontMcpAuthContext> | Promise<Partial<ExtendFrontMcpAuthContext>>
+
+const tenantPipe = (claims: Readonly<Record<string, unknown>>) => ({
+  tenantId: claims['tenantId'] as string | undefined,
+});
+
+declare global {
+  interface ExtendFrontMcpAuthContext {
+    tenantId?: string;
+  }
+}
+
+// In @FrontMcp({ authorities: { ... } })
+authorities: {
+  pipes: [tenantPipe],
+}
+```
+
+Tools, resources, agents and jobs (workflow steps included) run the pipes when their context is built, before any hook
+or `execute()` reads `this.auth`, so `this.auth.tenantId` is set there. Pipes can be async; one that throws is logged
+and leaves its fields `undefined`. Pipes extend `this.auth` only -- authority policies still evaluate the claims from
+`claimsMapping` / `claimsResolver`. Up to 1.8.7 `pipes` never ran (their fields were always `undefined`).
+
+### Skill Authorities (`@Skill({ authorities })`)
+
+`authorities` on `@Skill` is enforced exactly like the other entry types, across
+**every** surface a skill is served from:
+
+- **Deny on load/read** — loading a gated skill the caller can't access throws
+  `AuthorityDeniedError` (MCP code `-32003`), the same as a denied `tools/call`.
+  Covers `skills/load` (MCP) and `skill://<path>/SKILL.md` and `skill://<path>/<file>`
+  reads (SEP-2640). Over HTTP, `GET /skills/{id}` answers 404 for such a skill, as
+  for an unknown one.
+- **Filter on discovery** — gated skills the caller can't access are removed from
+  `skills/search` / `skills/list` (MCP), the `skill://index.json` discovery index and
+  skill-path autocomplete (SEP-2640), and `GET /skills` (HTTP).
+
+```typescript
+@Skill({ name: 'review-pr', description: '…', instructions: '…' })            // open to all
+@Skill({ name: 'internal-runbook', description: '…', instructions: '…',
+         authorities: 'admin' })                                              // admins only
+```
+
+Two limitations to design around:
+
+- **List-time filtering is role/permission/claims-only.** Discovery runs without
+  request input, so `{ fromInput: '…' }` ABAC/ReBAC policies can't be evaluated when
+  filtering and will hide the skill from discovery. Use role/permission/claims
+  authorities for discoverable skills; input-dependent policies still enforce at
+  load time. (Same limitation applies to tools/resources/prompts.)
+- **HTTP skills discovery follows `skillsConfig.auth`.** With `'inherit'` (the default),
+  `GET /skills`, `/llm.txt` and `/llm_full.txt` run the server's own auth, and gated
+  skills are evaluated against the caller it verified. `'api-key'`, `'bearer'` and
+  `'public'` surface no claims, so there gated skills are left out of every listing and
+  `GET /skills/{id}` answers 404 for them. Ungated skills are unaffected.
+
+Boot-time fail-fast covers skills too: a `@Skill` with `authorities` but no configured
+authorities engine fails server startup with `AuthConfigurationError`, exactly like a
+tool, resource, resource template, prompt, agent, or a tool declared inside an agent
+(hidden entries included).
+
+### Rules that check nothing are refused
+
+Startup fails with `AuthConfigurationError: Invalid authorities rule: …` when an entry's or a
+profile's rule checks nothing or isn't what it looks like, and `AuthoritiesEngine.evaluate()`
+denies such a rule if it runs anyway (even under `not`):
+
+- `{}`, `{ roles: {} }`, `{ roles: { all: [] } }`, `allOf: []`, `guards: []`
+- a misspelled field (`role:`), a profile name no profile has (`authorities: 'admn'`), a profile name inside
+  `allOf`/`anyOf`, an `operator` other than `'AND'`/`'OR'`
+- an ABAC condition with no `value`, or one the operator can't use: `exists` needs `true`/`false`;
+  `in`/`notIn` a non-empty list; `gt`/`gte`/`lt`/`lte` a number; `startsWith`/`endsWith`/`matches`
+  a string (a `{ fromInput }` / `{ fromClaims }` reference works for all but `exists`)
+
+To leave an entry open, remove its `authorities`. There is no opt-out.
+
+`@Agent({ authorities })` gates the agent's `invoke_<id>` tool like any tool (hidden from
+`tools/list`, refused on `tools/call`), and tools declared inside an agent are checked against
+the caller the agent runs for, also with `execution.useToolFlow: false`.
+
+## Scenario Routing Table
+
+| Scenario                              | Approach                                                          | Reference                          |
+| ------------------------------------- | ----------------------------------------------------------------- | ---------------------------------- |
+| Simple role gate (admin-only tool)    | `authorities: 'admin'` profile                                    | `references/authority-profiles.md` |
+| Gate skill discovery + load           | `@Skill({ authorities: 'admin' })` (role/permission/claims-based) | `references/authority-profiles.md` |
+| Permission-based access               | `authorities: { permissions: { all: ['x'] } }`                    | `references/rbac-abac-rebac.md`    |
+| Tenant isolation                      | ABAC with `{ fromInput: 'tenantId' }`                             | `references/rbac-abac-rebac.md`    |
+| Resource ownership check              | ReBAC with relationship resolver                                  | `references/rbac-abac-rebac.md`    |
+| IP allowlist or custom logic          | Custom evaluator via `custom.*`                                   | `references/custom-evaluators.md`  |
+| Different IdP (Auth0/Keycloak/Okta)   | Configure `claimsMapping`                                         | `references/claims-mapping.md`     |
+| Admin OR (editor AND same-tenant)     | `anyOf` / `allOf` combinators                                     | `references/authority-profiles.md` |
+| Custom pre/post authority logic       | Hook with `Will`/`Did`/`Around` on `checkEntryAuthorities` stage  | `references/custom-evaluators.md`  |
+| Replace built-in check with OPA/Cedar | `Around('checkEntryAuthorities')` hook                            | `references/custom-evaluators.md`  |
+| Audit authority decisions             | `Did('checkEntryAuthorities')` hook for logging/metrics           | `references/custom-evaluators.md`  |
+| Tenant allowlist in Redis/DB          | Async custom evaluator with `custom.*` field                      | `references/custom-evaluators.md`  |
+| Subscription check before tool runs   | Async custom evaluator or `Will('checkEntryAuthorities')` hook    | `references/custom-evaluators.md`  |
+| Feature flag gate on a tool           | Async custom evaluator checking flag service                      | `references/custom-evaluators.md`  |
+
+## Common Patterns
+
+| Pattern           | Correct                                           | Incorrect                                          | Why                                                                                             |
+| ----------------- | ------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Claims mapping    | `claimsMapping: { roles: 'realm_access.roles' }`  | `claimsMapping: { roles: 'roles' }` (for Keycloak) | Keycloak nests roles under `realm_access.roles`; using the wrong path silently resolves to `[]` |
+| Profile reference | `authorities: 'admin'`                            | `authorities: { profile: 'admin' }`                | Profiles are referenced as plain strings, not nested objects                                    |
+| Multiple profiles | `authorities: ['authenticated', 'matchTenant']`   | `authorities: 'authenticated, matchTenant'`        | Use an array, not a comma-separated string                                                      |
+| Inline RBAC       | `{ roles: { any: ['admin'] } }`                   | `{ roles: ['admin'] }`                             | `roles` expects an object with `all` and/or `any` arrays                                        |
+| Dynamic value ref | `{ fromInput: 'tenantId' }`                       | `'{{ tenantId }}'`                                 | Use `DynamicValueRef` objects, not template strings                                             |
+| OR combinator     | `{ anyOf: [policy1, policy2] }`                   | `{ operator: 'OR', ...policy1, ...policy2 }`       | Use `anyOf` for clarity; `operator` applies to top-level fields within a single policy          |
+| ReBAC resolver    | Register `relationshipResolver` in plugin options | Inline the DB query in the policy                  | The resolver is a separate interface; policies only declare the relationship to check           |
+
+## Verification Checklist
+
+### Configuration
+
+- [ ] `authorities: { ... }` is set on the `@FrontMcp` decorator
+- [ ] `claimsMapping` paths match the actual JWT token structure from your IdP
+- [ ] All profile names referenced in `authorities: 'name'` are registered in `profiles`
+- [ ] Authentication mode is configured (not `public`) so `authInfo` is populated
+- [ ] If using ReBAC, `relationshipResolver` is provided in plugin options
+
+### Runtime
+
+- [ ] Unauthenticated requests to protected entries receive a denial error
+- [ ] Users with the correct roles/permissions can access their entries
+- [ ] `tools/list` response omits entries the caller is not authorized to see
+- [ ] ABAC conditions with `{ fromInput: ... }` resolve correctly from tool arguments
+- [ ] Custom evaluators return proper `AuthoritiesResult` objects
+
+### Type Safety
+
+- [ ] `FrontMcpAuthorityProfiles` is augmented for type-safe profile references
+- [ ] `@frontmcp/auth` is imported so the `authorities` field is available on decorators
+
+## Troubleshooting
+
+| Problem                                                                                   | Cause                                                                                                                                                                                     | Solution                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Startup: `Invalid authorities rule: … names an unknown profile "admin"`                   | Profile used in decorator but not in `authorities.profiles` config                                                                                                                        | Fix the name, or add the profile to the `profiles` field in `@FrontMcp({ authorities })`                                                                                                     |
+| All users denied despite correct roles                                                    | `claimsMapping.roles` path does not match the actual JWT claim path                                                                                                                       | Decode a real JWT and verify the dot-path resolves to the roles array                                                                                                                        |
+| `authorities` field not recognized on decorator                                           | `@frontmcp/auth` not imported (metadata augmentation not active)                                                                                                                          | Add `import '@frontmcp/auth'` (or `import type ... from '@frontmcp/auth'`) anywhere in your project to activate the metadata augmentation. There is no `@frontmcp/auth/authorities` subpath. |
+| ABAC condition always fails                                                               | `{ fromInput: 'tenantId' }` but tool input field is named `tenant_id`                                                                                                                     | The `fromInput` key must exactly match the tool's input schema field name                                                                                                                    |
+| ReBAC always denies                                                                       | No `relationshipResolver` provided                                                                                                                                                        | Implement `RelationshipResolver` and pass it to plugin options                                                                                                                               |
+| Custom evaluator not found                                                                | Key in `custom.*` policy does not match registered evaluator name                                                                                                                         | Ensure the evaluator is registered with the same key used in the policy                                                                                                                      |
+| List endpoints show all entries                                                           | No `authorities` config in `@FrontMcp()` or hook priority conflict                                                                                                                        | Verify `authorities: { ... }` is set on `@FrontMcp()` decorator                                                                                                                              |
+| `AuthorityDeniedError` has no detail                                                      | `deniedBy` field shows generic message                                                                                                                                                    | Check the `evaluatedPolicies` array on the error for which policy type failed                                                                                                                |
+| TS error: `evaluators`/`relationshipResolver`/`claimsResolver` not on `AuthoritiesConfig` | The runtime Zod schema accepts these keys but the exported `AuthoritiesConfig` interface in `authorities.profiles.ts` only declares `claimsMapping`, `profiles`, `scopeMapping`, `pipes`. | Pass the config inline (TS infers from the decorator's broader type) or cast the typed config as the interface catches up.                                                                   |
+
+## Examples
+
+This skill currently exposes only references; see [`references/`](./references/) for guidance.
+
+## Accessing This Skill
+
+Skills are distributed as plain SKILL.md files plus a sibling `references/`
+and `examples/` tree, so consumers can pick whichever access mode fits:
+
+| Mode               | How it works                                                                                                                                                                                                                                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Filesystem**     | Read `libs/skills/catalog/frontmcp-authorities/` directly from a clone of the catalog repo, or from a published `@frontmcp/skills` install. SKILL.md is the entry point.                                                                                                                                                                                  |
+| **`frontmcp` CLI** | `frontmcp skills list`, `frontmcp skills read frontmcp-authorities`, `frontmcp skills read frontmcp-authorities:references/<file>.md`, `frontmcp skills install frontmcp-authorities` — no server required.                                                                                                                                               |
+| **MCP `skill://`** | When a developer mounts this skill into their own FrontMCP server (`@FrontMcp({ skills: [...] })`), the SDK exposes it via SEP-2640 resources: `skill://frontmcp-authorities/SKILL.md`, `skill://frontmcp-authorities/references/{file}.md`, etc. The server’s `skill://index.json` returns the SEP-2640 discovery document for everything mounted on it. |
+
+The catalog itself is **not** an MCP server. The `skill://` URIs only resolve
+when a server has been configured to host this skill.
+
+## Reference
+
+- [Auth Architecture](https://docs.agentfront.dev/frontmcp/authentication/architecture) — Full three-layer model: server auth, auth providers, authorities, vault, scope challenges
+- [Authorities Documentation](https://docs.agentfront.dev/frontmcp/authentication/authorities) — RBAC/ABAC/ReBAC details, profiles, combinators, hooking
+- Source: `libs/auth/src/authorities/` (engine, types, evaluators), flow stages in `libs/sdk/src/tool/flows/`, `libs/sdk/src/resource/flows/`, `libs/sdk/src/prompt/flows/`, `libs/sdk/src/agent/flows/`
+- Related skills: `frontmcp-config`, `frontmcp-development`, `frontmcp-extensibility`

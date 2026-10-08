@@ -1,0 +1,354 @@
+---
+name: margin-management
+description: Monitor the margin-living strategy from the live DB snapshot. Refreshes the local database first, then reads margin balance, interest costs, dividend coverage ratio, and portfolio-to-margin thresholds. Triggers safety alerts for large draws and gives time-based scaling recommendations. Use when updating margin, balances, coverage ratio, or margin strategy analysis.
+---
+
+# Margin Management
+
+## Purpose
+
+Monitor and manage margin-living strategy by tracking margin balances, interest costs, dividend coverage ratios, and portfolio-to-margin safety thresholds. Provides data-driven scaling recommendations based on strategy milestones.
+
+## Step 0: Refresh (sync-first, mandatory)
+
+This skill reads margin facts from the local DB, and the DB is refreshed FIRST so it can never be stale. Follow the shared **[Sync-First + DB-Read](../_shared/SyncFirstDbRead.md)** pattern. Minimum for this skill (positions + balances into the `balances` table):
+
+```bash
+uv run python -m src.integrations.snaptrade.sync_db   # or: refresh_all
+```
+
+Completion criterion: _the `balances` table carries this run's `synced_at` before any margin number is read._
+
+## When to Use
+
+Use this skill when:
+- Syncing live margin balances from SnapTrade
+- Updating margin balance or interest rate
+- Calculating coverage ratio (dividends ÷ interest)
+- User mentions: "margin dashboard", "margin balance", "coverage ratio", "margin strategy"
+- Assessing margin scaling decisions
+- Checking safety thresholds
+
+## Personal Strategy Inputs
+
+Static private assumptions come from `.env` (see `.env.example`). Current portfolio facts come from the **local DB `balances` snapshot** (refreshed sync-first in Step 0), then `src/analysis/margin_metrics.py` derives ratios/costs at runtime. Do not hardcode personal numbers in this skill. Fallbacks: `--source snaptrade` reads the API live, `--source csv` reads the legacy Fidelity balances CSV.
+
+### Required `.env` values
+
+- `FG_STRATEGY_START_DATE`
+- `FG_MARGIN_INTEREST_RATE`, `FG_MARGIN_INTEREST_RATE_DECIMAL`
+- `FG_MARGIN_JUMP_ALERT_THRESHOLD`
+- `FG_CURRENT_MONTHLY_DRAW`, `FG_MONTH6_DRAW_TARGET`, `FG_MONTH12_DRAW_TARGET`, `FG_MONTH18_DRAW_TARGET`
+- `FG_BUSINESS_INCOME_MONTHLY`, `FG_BUSINESS_INJECTION_RED`, `FG_BUSINESS_INJECTION_CRITICAL`
+- Live facts are not `.env` values: portfolio value, margin balance, interest cost, dividend income, coverage ratio, and portfolio-to-margin ratio must be read/calculated at runtime.
+
+## Core Workflow
+
+### 1. Read Margin Balances (local DB snapshot)
+
+After Step 0's refresh, run `uv run python -m src.analysis.margin_metrics --pretty`. It loads `.env`, reads the latest `balances` row from `family_office.db` (the `db` source is the default), and emits current JSON metrics. Fallbacks if needed: `--source snaptrade` (live API) or `--source csv` (latest `Balances_for_Account_*.csv`).
+
+**Source**: the `balances` table, written by the Step 0 sync from the enabled+routed SnapTrade account in `config/snaptrade-accounts.yaml` (`enabled: true`, `role` set). Requires `SNAPTRADE_*` keys in `.env` for the refresh.
+
+**Key JSON fields the tool emits**:
+- `portfolio_value` → net account equity (`account_equity`) → Portfolio Value
+- `margin_balance` → derived margin debt (gross market value minus net equity) → Margin Balance
+- `monthly_interest_cost` → Balance × Rate ÷ 12 (the primary interest figure)
+- `margin_interest_accrued_this_month` → **null on the DB and SnapTrade paths** (the broker does not expose accrued interest; it is only present via `--source csv`)
+
+**Calculations**:
+- **Margin Balance**: Derived margin debt = {live.margin_balance} (tracks Fidelity "Net debit" within ~0.1%)
+- **Interest Rate**: Default ${FG_MARGIN_INTEREST_RATE} (Fidelity $1k-$24.9k tier) unless specified
+- **Monthly Interest Cost**: Balance × Rate ÷ 12 = {live.margin_balance} × ${FG_MARGIN_INTEREST_RATE_DECIMAL} ÷ 12 = {derived.monthly_interest_cost}
+
+### 2. Safety Check: Margin Jump Alert
+
+**Rule**: If new margin balance > previous balance + ${FG_MARGIN_JUMP_ALERT_THRESHOLD}, **STOP**
+
+**Reason**: Large draws should be intentional per margin-living strategy
+
+**Example**:
+```
+Previous: {live.margin_balance}
+Current: {example.margin_current} (+{derived.margin_increase}) → 🚨 ALERT - Confirm intentional draw
+```
+
+**Action**:
+- Alert user immediately
+- Show diff: "Margin increased by {derived.margin_increase} - Confirm this was intentional"
+- Wait for user confirmation before proceeding
+
+### 3. Report the current snapshot
+
+There is nowhere to write an entry: `balances` is a current-state table keyed on
+`account_id`, so each sync overwrites the prior row and no ledger accumulates.
+Report the snapshot in the response instead.
+
+- _Date_: current date (use `date +"%Y-%m-%d"`)
+- _Margin Balance_: `margin_debt` from the `balances` row
+- _Interest Rate_: ${FG_MARGIN_INTEREST_RATE}
+- _Monthly Interest Cost_: Balance × Rate ÷ 12
+- _Elapsed_: months since ${FG_STRATEGY_START_DATE}, which selects the scaling tier below
+
+### 4. Derived metrics
+
+#### Monthly Interest Cost
+
+```
+margin_debt × ${FG_MARGIN_INTEREST_RATE} ÷ 12
+```
+
+#### Annual Interest Cost
+
+```
+monthly_interest_cost × 12
+```
+
+#### Dividend Income
+
+Sum `type = 'DIVIDEND'` rows in `transactions` for the trailing month. See the
+`dividend-tracking` skill; do not recompute its aggregation differently here.
+
+#### Coverage Ratio
+
+```
+monthly_dividend_income ÷ monthly_interest_cost
+```
+
+Guard the zero case: when `margin_debt` is 0 there is no interest to cover, so
+report coverage as not-applicable rather than dividing.
+
+### 5. Calculate Strategy Metrics
+
+#### Portfolio-to-Margin Ratio
+```
+= Total account value ÷ Margin Balance
+Example: {live.portfolio_value} ÷ {live.margin_balance} = {derived.portfolio_margin_ratio} 🟢🟢🟢
+```
+
+**Safety Thresholds**:
+- 🟢 **Green**: Ratio > 4.0:1 (target - healthy margin usage)
+- 🟡 **Yellow**: Ratio 3.5-4.0:1 (warning - pause scaling)
+- 🔴 **Red**: Ratio < 3.0:1 (alert - stop draws, inject business income)
+- ⚫ **Critical**: Ratio < 2.5:1 (emergency - inject ${FG_BUSINESS_INJECTION_CRITICAL}, consider selling)
+
+#### Current Draw vs Fixed Expenses
+```
+Current monthly draw: ${FG_CURRENT_MONTHLY_DRAW} (fixed expenses only)
+Target: Start with ${FG_CURRENT_MONTHLY_DRAW}, scale to ${FG_MONTH6_DRAW_TARGET}, ${FG_MONTH12_DRAW_TARGET}, ${FG_MONTH18_DRAW_TARGET} based on data
+```
+
+### 6. Scaling Alerts (Time-Based)
+
+**Strategy Start Date**: ${FG_STRATEGY_START_DATE}
+
+**Calculate months elapsed**:
+```python
+import os
+from datetime import datetime
+
+start = datetime.fromisoformat(os.getenv("FG_STRATEGY_START_DATE"))
+current = datetime.now()
+months_elapsed = (current - start).days // 30
+```
+
+#### Month 6 Alert
+```
+📊 MONTH 6 MILESTONE CHECK:
+✅ Dividends: {live.monthly_dividend_income}/month (need ${FG_MONTH6_DIVIDEND_MINIMUM})
+✅ Portfolio-to-Margin Ratio: {derived.portfolio_margin_ratio} (need 4:1+)
+✅ Dividend Growth: On track
+
+🎯 RECOMMENDATION: Scale margin draw to ${FG_MONTH6_DRAW_TARGET}/month (add mortgage)
+- Current: ${FG_CURRENT_MONTHLY_DRAW} (fixed expenses only)
+- New: ${FG_MONTH6_DRAW_TARGET} (fixed + mortgage)
+- Safety margin: Excellent
+```
+
+#### Month 12 Alert
+```
+📊 MONTH 12 BREAK-EVEN CHECK:
+Expected Dividends: ${FG_MONTH12_DIVIDEND_TARGET}/month (goal: break-even with margin interest)
+✅ IF achieved: Consider scaling to ${FG_MONTH12_DRAW_TARGET}/month (add some variable expenses)
+⚠️ IF not: Hold at ${FG_MONTH6_DRAW_TARGET}, assess strategy
+```
+
+#### Month 18 Alert
+```
+📊 MONTH 18 MATURE STRATEGY CHECK:
+Expected Dividends: ${FG_MONTH18_DIVIDEND_TARGET}/month
+Expected Margin: Declining (dividends paying down debt)
+✅ IF achieved: Consider scaling to ${FG_MONTH18_DRAW_TARGET}/month (most variable expenses)
+⚠️ IF not: Hold current level, reassess timeline
+```
+
+### 7. Alert Thresholds
+
+**Generate alerts based on conditions**:
+
+#### Green (Healthy)
+```
+✅ Ratio > 4:1 AND dividends covering interest
+Status: On track, continue per strategy
+```
+
+#### Yellow (Caution)
+```
+⚠️ Ratio 3.5-4:1 OR dividend coverage declining
+Action: Pause scaling, monitor weekly
+```
+
+#### Red (Alert)
+```
+🚨 Ratio < 3:1 OR dividend cuts detected
+Action: STOP draws, inject ${FG_BUSINESS_INJECTION_RED} business income
+```
+
+#### Critical (Emergency)
+```
+⛔ Ratio < 2.5:1 OR margin call risk
+Action: STOP draws, inject ${FG_BUSINESS_INJECTION_CRITICAL} business income, consider selling hedge (SQQQ)
+```
+
+## Critical Rules
+
+### This skill is read-only
+
+`family_office.db` is written by the sync CLIs alone. Never hand-edit rows to
+make a metric look right; fix the sync that wrote the bad row instead.
+
+### Margin Strategy Philosophy
+
+**Core Principle**: Confidence-based scaling, not time-based mandates
+
+**Decision Framework**:
+1. **Data-driven**: Decisions backed by actual dividend income, not projections
+2. **Safety-first**: Never scale if ratio drops below 3.5:1
+3. **Business income as insurance**: Available ${FG_BUSINESS_INCOME_MONTHLY}/month, not primary strategy
+4. **Monte Carlo backstop**: ${FG_BUSINESS_BACKSTOP_PROBABILITY} of scenarios used business income at some point
+
+## Business Income Backstop
+
+**Available**: ${FG_BUSINESS_INCOME_MONTHLY}/month from business operations
+
+**Usage Scenarios**:
+1. ⛔ **Margin call (ratio < 3:1)**: MUST USE business income immediately
+2. ⚠️ **Market correction (20-30% drop)**: OPTIONAL - assess need
+3. 🎯 **Acceleration (reach FI faster)**: OPTIONAL - strategic choice
+
+**Current Philosophy**: Insurance policy only, not active strategy component
+
+## Example Calculations
+
+### Scenario 1: Month 1 (Current State)
+```
+Portfolio Value: {live.portfolio_value}
+Margin Balance: {live.margin_balance}
+Ratio: {derived.portfolio_margin_ratio} 🟢🟢🟢
+
+Monthly Interest: {derived.monthly_interest_cost}
+Dividend Income: {live.monthly_dividend_income}
+Coverage: {derived.coverage_ratio} 🟢
+
+Status: Excellent - building foundation
+```
+
+### Scenario 2: Month 6 (Projected)
+```
+Portfolio Value: {projection.month6_portfolio_value} (projected with W2 contributions)
+Margin Balance: {projection.month6_margin_balance} (scaled to ${FG_MONTH6_DRAW_TARGET}/month draw)
+Ratio: {projection.month6_portfolio_margin_ratio} 🟢
+
+Monthly Interest: {projection.month6_monthly_interest_cost}
+Dividend Income: ${FG_CURRENT_MONTHLY_DRAW} (projected)
+Coverage: {projection.month6_coverage_ratio} 🟢
+
+Status: Healthy - on track for break-even
+```
+
+### Scenario 3: Month 15 (Break-Even)
+```
+Portfolio Value: {projection.month15_portfolio_value}
+Margin Balance: {projection.month15_margin_balance} (scaled to ${FG_MONTH12_DRAW_TARGET}/month draw)
+Ratio: {projection.month15_portfolio_margin_ratio} 🟢
+
+Monthly Interest: {projection.month15_monthly_interest_cost}
+Dividend Income: {projection.month15_monthly_dividend_income}
+Coverage: {projection.month15_coverage_ratio} 🟢
+
+Status: Break-even achieved, dividends > interest
+```
+
+## Data Source
+
+Margin balance, buying power, and maintenance requirement come from the `balances` table in `family_office.db`, refreshed sync-first (Step 0). The Margin Dashboard sheet was retired 2026-07-31.
+
+The `balances` columns are `account_id`, `currency`, `settled_cash`,
+`buying_power`, `account_equity`, `gross_market_value`, `margin_debt`, and
+`synced_at`. There is no `maintenance_excess` column; maintenance headroom is
+derived, not stored.
+
+```bash
+sqlite3 family_office.db \
+  "SELECT synced_at, account_id, settled_cash, buying_power, account_equity, margin_debt
+   FROM balances ORDER BY synced_at DESC;"
+```
+
+`balances` is keyed on `account_id`, so it holds one current row per account and
+no history. Read `synced_at` to confirm the row belongs to this run's refresh
+before deriving anything from it.
+
+Cash-management accounts sync through SimpleFIN into `bank_transactions`, deliberately outside the brokerage `balances` table, so they never distort the portfolio-to-margin ratio.
+
+## Reference Files
+
+For complete strategy details, see:
+- _Margin Strategy_: `strategies/active/margin-living-master-strategy.md`
+- _Portfolio Strategy_: `strategies/active/portfolio-master-strategy.md`
+- _User Profile_: `user-profile.yaml`
+- _Account routing_: `config/snaptrade-accounts.yaml`
+
+## Pre-Flight Checklist
+
+Before reporting margin metrics:
+- [ ] SnapTrade account is enabled+routed in `config/snaptrade-accounts.yaml` and `SNAPTRADE_*` keys are in `.env`
+- [ ] `DATABASE_URL` is set in `.env`
+- [ ] The `balances` row carries this run's `synced_at`
+- [ ] Current date retrieved via `date` command
+
+---
+
+_Educational purposes only. Not investment advice. Margin borrowing carries risk of loss exceeding your deposit, and a margin call can force liquidation at unfavourable prices. Consult licensed financial and tax professionals before acting._
+
+## Example Scenario
+
+**Trigger**: User asks to sync/refresh margin from SnapTrade
+
+**Agent workflow**:
+1. ✅ Pull live SnapTrade balances - Portfolio: {live.portfolio_value}, Margin: {live.margin_balance}
+2. ✅ Safety check - Previous: $0, Current: {live.margin_balance} (+{live.margin_balance} < ${FG_MARGIN_JUMP_ALERT_THRESHOLD} threshold) - PASS
+3. ✅ Calculate metrics:
+   - Monthly interest: {derived.monthly_interest_cost}
+   - Portfolio-to-margin ratio: {derived.portfolio_margin_ratio}
+   - Coverage ratio: {derived.coverage_ratio} (dividends ÷ interest)
+4. ✅ Add entry to Margin Dashboard:
+   - Date: {today}
+   - Balance: {live.margin_balance}
+   - Rate: ${FG_MARGIN_INTEREST_RATE}
+   - Cost: {derived.monthly_interest_cost}
+   - Notes: "Month 1 - Building foundation, on track"
+5. ✅ Update summary section:
+   - Current balance: {live.margin_balance}
+   - Monthly cost: {derived.monthly_interest_cost}
+   - Annual cost: {derived.annual_interest_cost}
+   - Dividend income: {live.monthly_dividend_income}
+   - Coverage: {derived.coverage_ratio}
+6. ✅ Generate status: "🟢 Excellent health - Ratio {derived.portfolio_margin_ratio}, Coverage {derived.coverage_ratio}"
+7. ✅ LOG: "Updated Margin Dashboard - Month 1, {live.margin_balance} balance, {derived.portfolio_margin_ratio} ratio"
+
+---
+
+**Skill Type**: Domain (workflow guidance)
+**Enforcement**: BLOCK (financial risk critical)
+**Priority**: Critical
+**Line Count**: < 400 (following 500-line rule) ✅

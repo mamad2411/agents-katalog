@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/MatrixReligio/ProductVideoCreator (path: .claude/skills/asset-collection/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: 从公开网站收集视频素材（图片、Logo、图标）。当需要为图文视频准备素材时使用。包含免版权图片来源、下载规范和素材组织方式。

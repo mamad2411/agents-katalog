@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/practicalswan/agent-skills (path: agent-skillguard/SKILL.md, branch: main)
+- mined: 2026-09-20
+- desc: Use before installing an agent skill or plugin. Scan local files for risky instructions, broad permissions, suspicious downloads, prompt-injection patterns, and possible secret exposure; return file-a

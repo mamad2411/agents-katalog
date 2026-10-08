@@ -1,0 +1,273 @@
+---
+description: MASTER RULES - Single source of truth for all development rules with STRICT enforcement. MUST be reviewed before ANY code changes.
+globs: **/*
+alwaysApply: true
+priority: 1
+---
+
+# 🚨 MASTER RULES - MANDATORY PRE-ACTION CHECKLIST
+
+**⚠️ CRITICAL: Review this file BEFORE making ANY code changes, commits, or modifications.**
+
+This is the single source of truth combining all cursor rules with STRICT enforcement. All rules are MANDATORY unless explicitly overridden by the user.
+
+---
+
+## 📋 MANDATORY PRE-ACTION CHECKLIST
+
+**Before ANY code modification, you MUST:**
+
+- [ ] **Security Check:** Verify no secrets will be hardcoded (use `process.env` only)
+- [ ] **Test Plan:** Identify all affected test files (unit, integration, E2E, snapshot)
+- [ ] **Quality Gate:** Ensure code meets quality standards (linting, type safety)
+- [ ] **Documentation:** Check if markdown files are needed (only if explicitly requested)
+- [ ] **Import Verification:** Verify all imports use correct paths (@elzatona/components, @elzatona/hooks, etc.)
+
+**If ANY checklist item fails, STOP and fix before proceeding.**
+
+---
+
+## 🔒 SECURITY RULES (STRICT - NON-NEGOTIABLE)
+
+### **Secret Management - MANDATORY**
+
+- ❌ **NEVER:** Hardcode API keys, tokens, passwords, or any secrets in code
+- ✅ **ALWAYS:** Use environment variables (`process.env.VARIABLE_NAME`)
+- ✅ **ALWAYS:** Add secrets to `.env.local` (never commit this file)
+- ✅ **ALWAYS:** Use `.env.example` for documentation (with placeholders only)
+
+**Violation = BLOCKED ACTION. Fix immediately before proceeding.**
+
+### **Secret Detection**
+
+- ✅ Pre-push hook automatically scans for secrets
+- ✅ GitHub automatically scans all commits
+- ✅ **NEVER skip secret scanning** unless known false positive
+- ✅ **If secrets found:** Fix immediately, don't push
+
+### **Git Hooks - MANDATORY**
+
+- ❌ **NEVER:** Use `--no-verify` to skip hooks
+- ❌ **NEVER:** Use `SKIP_SECRET_SCAN=true` unless emergency
+- ✅ **ALWAYS:** Let hooks run - they protect the repository
+- ✅ **ALWAYS:** Fix issues before pushing
+
+**Reference:** [security.mdc](mdc:.cursor/rules/security.mdc) for complete security pipeline details.
+
+---
+
+## ✅ QUALITY RULES (STRICT - MANDATORY)
+
+### **Test Updates - MANDATORY CHECKLIST**
+
+**EVERY code change (feature, bug fix, refactor) REQUIRES:**
+
+1. **Identify affected test files**
+   - Unit tests (`*.test.tsx`, `*.test.ts`)
+   - Integration tests (`*.integration.test.tsx`)
+   - E2E tests (`*.spec.ts`, `*.spec.tsx`)
+   - Snapshot tests (`__snapshots__/*.snap`)
+
+2. **Update Unit Tests**
+   - Update existing tests if component/function changed
+   - Add new tests for new functionality
+   - Remove/update obsolete tests
+   - Verify: `npm run test:unit`
+
+3. **Update Integration Tests**
+   - Update if API/flow changed
+   - Add new tests for new flows
+   - Verify: `npm run test:integration`
+
+4. **Update E2E Tests**
+   - Update if user flow changed
+   - Add new tests for new user flows
+   - Verify: `npm run test:e2e`
+
+5. **Update Snapshot Tests** ⚠️ **REQUIRED FOR UI CHANGES**
+   - Update if UI/structure changed: `npm run test:unit -- --updateSnapshot`
+   - Review snapshot changes carefully
+   - Add new snapshots for new components/pages
+   - Verify: `npm run test:unit`
+
+6. **Final Verification**
+   - Run ALL tests: `npm run test:unit && npm run test:integration && npm run test:e2e`
+   - All tests pass ✅
+   - All snapshots up to date ✅
+
+**Violation = INCOMPLETE WORK. Complete test updates before marking done.**
+
+**Reference:** [testing-automatic-updates.mdc](mdc:.cursor/rules/testing-automatic-updates.mdc) for complete testing guidelines.
+
+---
+
+## 📝 CODE STANDARDS (STRICT ENFORCEMENT)
+
+### **Development Principles**
+
+- ✅ **Provide incremental improvements** rather than massive rewrites
+- ✅ **Use modular, single-responsibility functions**
+- ✅ **Add helpful comments & logs** (with emojis where useful)
+- ✅ **Ensure clear variable names** and readable code
+- ✅ **Always provide loading/progress states** for UX
+- ✅ **Implement graceful error handling**
+- ✅ **Ensure responsive and accessible design**
+
+### **React Development**
+
+- ✅ **Use functional components** with hooks
+- ✅ **Implement proper error boundaries**
+- ✅ **Follow React best practices** and patterns
+- ✅ **Ensure proper cleanup** in useEffect hooks
+
+### **TypeScript Standards**
+
+- ✅ **No `any` types** without explicit `eslint-disable` and justification
+- ✅ **Proper type definitions** for all interfaces and types
+- ✅ **Exhaustive dependencies** in useEffect hooks (or explicit disable with reason)
+- ✅ **No unused variables** (or explicit disable with reason)
+
+**Reference:** [cursor_rules.mdc](mdc:.cursor/rules/cursor_rules.mdc) and [enhanced_cursor_rules.mdc](mdc:.cursor/rules/enhanced_cursor_rules.mdc) for complete code standards.
+
+---
+
+## 📚 DOCUMENTATION RULES
+
+### **Markdown File Creation - STRICT**
+
+- ❌ **NEVER:** Create markdown files automatically
+- ❌ **NEVER:** Create documentation files during code changes
+- ❌ **NEVER:** Generate README files, guides, or docs without explicit instruction
+- ✅ **ONLY:** Create markdown files when user explicitly requests
+- ✅ **USE:** `docs/` directory for any necessary documentation
+- ✅ **REFERENCE:** Existing documentation in `docs/` instead of creating new
+
+**Exception:** Cursor rule files (`.cursor/rules/*.mdc`) can be created when explicitly requested.
+
+**Reference:** [no-markdown-creation.mdc](mdc:.cursor/rules/no-markdown-creation.mdc) for complete guidelines.
+
+---
+
+## 🔄 DEVELOPMENT WORKFLOW
+
+### **Version Control**
+
+- ✅ **Use clear version numbering** in code comments (`// v1.1`)
+- ✅ **Document changes between versions**
+- ✅ **Maintain backward compatibility** when possible
+- ✅ **Track feature additions** and modifications
+- ✅ **Document breaking changes** clearly
+
+### **Context Management**
+
+- ✅ **If reaching 70–80% of context limit:** Auto-generate summary artifact
+- ✅ **Maintain clear project status** throughout development
+- ✅ **Document architectural decisions** and their rationale
+- ✅ **Create handoff notes** for future developers
+
+### **Task Management**
+
+- ✅ **Use Taskmaster** for project management when appropriate
+- ✅ **Follow task workflow** from [dev_workflow.mdc](mdc:.cursor/rules/taskmaster/dev_workflow.mdc)
+- ✅ **Update task status** as work progresses
+- ✅ **Break down complex tasks** into manageable subtasks
+
+**Reference:** [taskmaster/dev_workflow.mdc](mdc:.cursor/rules/taskmaster/dev_workflow.mdc) for complete workflow.
+
+---
+
+## 🏗️ PROJECT STRUCTURE RULES
+
+### **Import Paths - MANDATORY**
+
+**Use correct import paths (after refactoring):**
+
+- ✅ `@elzatona/components` (not `@elzatona/shared-components`)
+- ✅ `@elzatona/hooks` (not `@elzatona/shared-hooks`)
+- ✅ `@elzatona/types` (not `@elzatona/shared-types`)
+- ✅ `@elzatona/contexts` (not `@elzatona/shared-contexts`)
+- ✅ `@elzatona/utilities` (not `@elzatona/utils`)
+
+### **File Organization**
+
+- ✅ **Apps:** `apps/website/`, `apps/admin/`
+  - `pages/` - Page components
+  - `components/` - App-specific components
+  - `network/routes/` - API routes
+  - `network/data/` - Mock/seed data
+  - `utilities/` - App-specific utilities
+
+- ✅ **Libs:** `libs/components/`, `libs/hooks/`, `libs/types/`, `libs/contexts/`, `libs/utilities/`
+  - Shared code across apps
+  - Scripts in `libs/utilities/scripts/`
+
+- ✅ **Tests:** Next to components/files they test
+  - `Component.tsx` → `Component.test.tsx` (same directory)
+
+- ✅ **Documentation:** `docs/` directory (root level)
+
+---
+
+## 🚫 PROHIBITED ACTIONS
+
+### **NEVER Do These (Unless Explicitly Overridden):**
+
+1. ❌ Hardcode secrets in code
+2. ❌ Skip test updates for code changes
+3. ❌ Create markdown files automatically
+4. ❌ Use `any` types without justification
+5. ❌ Skip git hooks (`--no-verify`)
+6. ❌ Push code with failing tests
+7. ❌ Push code with linting errors
+8. ❌ Push code with type errors
+9. ❌ Create files in wrong directories
+10. ❌ Use old import paths (shared-components, shared-hooks, etc.)
+
+---
+
+## ✅ REQUIRED ACTIONS
+
+### **ALWAYS Do These:**
+
+1. ✅ Review this MASTER_RULES file before code changes
+2. ✅ Complete security checklist (no secrets)
+3. ✅ Complete test update checklist
+4. ✅ Verify all tests pass before committing
+5. ✅ Verify linting passes before committing
+6. ✅ Verify type checking passes before committing
+7. ✅ Use correct import paths
+8. ✅ Follow code standards
+9. ✅ Update tests when code changes
+10. ✅ Ask user before creating markdown files
+
+---
+
+## 📖 REFERENCE RULES
+
+For detailed information, refer to specific rule files:
+
+- **Security:** [security.mdc](mdc:.cursor/rules/security.mdc)
+- **Testing:** [testing-automatic-updates.mdc](mdc:.cursor/rules/testing-automatic-updates.mdc)
+- **Code Standards:** [cursor_rules.mdc](mdc:.cursor/rules/cursor_rules.mdc), [enhanced_cursor_rules.mdc](mdc:.cursor/rules/enhanced_cursor_rules.mdc)
+- **Documentation:** [no-markdown-creation.mdc](mdc:.cursor/rules/no-markdown-creation.mdc) - Use `docs/` directory for documentation
+- **Workflow:** [taskmaster/dev_workflow.mdc](mdc:.cursor/rules/taskmaster/dev_workflow.mdc)
+- **Slash Commands:**
+  - `/generate`: [generate.mdc](mdc:.cursor/rules/generate.mdc) - Planning & Spec transformation
+  - `/implement`: [implement.mdc](mdc:.cursor/rules/implement.mdc) - Code execution & Task completion
+- **Self-Improvement:** [self_improve.mdc](mdc:.cursor/rules/self_improve.mdc)
+
+---
+
+## 🎯 ENFORCEMENT LEVEL
+
+- **Security Rules:** MANDATORY - violations block actions
+- **Quality Rules:** MANDATORY - test updates required
+- **Code Standards:** STRICT - no exceptions without explicit approval
+- **Documentation Rules:** STRICT - no automatic creation
+- **Workflow Rules:** Best practices - follow when applicable
+
+**Agent MUST review this file before any code modification.**
+
+---
+
+**Remember:** When in doubt, refer to this MASTER_RULES file. It is the single source of truth for all development rules.

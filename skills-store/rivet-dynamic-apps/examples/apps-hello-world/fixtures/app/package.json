@@ -1,0 +1,9 @@
+{
+	"name": "hello-world-app",
+	"version": "0.0.0",
+	"private": true,
+	"main": "src/index.ts",
+	"dependencies": {
+		"hono": "4.13.5"
+	}
+}

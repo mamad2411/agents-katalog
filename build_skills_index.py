@@ -383,7 +383,8 @@ def role_fallback_text(text):
     yang sangat spesifik (mencegah 'chat'/'send' nyasar ke role generik)."""
     global _FALLBACK_ROLES
     if _FALLBACK_ROLES is None:
-        _FALLBACK_ROLES = [(r, tuple(k.lower() for k in (s.get("keywords") or []) if k))
+        _FALLBACK_ROLES = [(r, tuple(k.lower() for k in (s.get("keywords") or []) if k),
+                            (s.get("maps_to") or r))
                            for r, s in _load_role_keywords()]
     low = (text or "").lower()
     if not low:
@@ -393,14 +394,17 @@ def role_fallback_text(text):
     # Nama skill sangat prediktif: equality dulu (nama persis) sebelum substring.
     # Mencegah 'lark-attendance' kalah oleh keyword generik ('audit'/'scan' di
     # deskripsi Cina) — nama yang mengandung token spesifik role menang.
-    for role, kws in prio:
+    for role, kws, maps in prio:
         if role == "productivity-automator":
             if re.search(r"\bgws[\w-]*|google[-_ ]?(workspace|drive|sheets|docs|slides|forms|calendar|meet|keep|tasks|mail)|gmail\b|lark|feishu", low):
                 return role
             continue
         for k in kws:
             if k in low:
-                return role
+                # OVERRIDE: _override-* pindah ke kamar asli (maps_to)
+                if isinstance(maps, dict):
+                    return maps.get(k, role)
+                return maps
     return ""
 
 
@@ -471,9 +475,17 @@ def main():
             add(d, "reference")
         else:
             # nested (mis. skills-expanded/mined-<repo>/<nama>/SKILL.md)
+            # + nested-2 (mis. skills-expanded/mined-<repo>/<grup>/<nama>/SKILL.md,
+            # hasil tarball awesome-list seperti mined-ComposioHQ-awesome-claude-skills)
             for sub in sorted(d.iterdir()):
-                if sub.is_dir() and (sub / "SKILL.md").exists():
+                if not sub.is_dir():
+                    continue
+                if (sub / "SKILL.md").exists():
                     add(sub, "reference", parent=d.name)
+                else:
+                    for sub2 in sorted(sub.iterdir()):
+                        if sub2.is_dir() and (sub2 / "SKILL.md").exists():
+                            add(sub2, "reference", parent=d.name)
 
     if DB_PATH.exists():
         DB_PATH.unlink()

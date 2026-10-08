@@ -1,0 +1,238 @@
+---
+name: mxSetup
+description: This skill should be used when a developer sets up mxLore on a new PC, runs a fresh Claude Code install, updates the global mx-rules block in ~/.claude/CLAUDE.md, refreshes skills/hooks from GitHub, or reinstalls the mxMCPProxy. Triggers "neuer PC", "fresh install", "onboard me", "/mxSetup", "update mx-rules", "mx-rules block veraltet", "reinstall proxy", "skills aktualisieren".
+user-invocable: true
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+argument-hint: "<api-key> | --update | --update-rules | --update-proxy | --with-superpowers"
+---
+
+# /mxSetup — Developer Onboarding (~30 seconds)
+
+> AI-Steno: !=forbidden →=use ⚡=critical ?=ask
+> ⚡ **!Python !jq !sed for file operations.** Only Write/Read/Edit tools + Bash for `claude mcp` and `curl`.
+> ⚡ **Bash: Single-line.** !Multi-line !Heredocs !Newlines in commands.
+
+## When to trigger this skill
+- `claude mcp list` returns empty or lacks `mxai-knowledge`
+- `mxMCPProxy` binary (`.exe` on Windows) missing or version mismatch vs server
+- mx-rules marker block in `~/.claude/CLAUDE.md` outdated or missing
+- New PC / fresh Claude Code install
+- User says "/mxSetup", "onboard me", or "neuer PC"
+- Skills folder out of date (upstream updates in `MicrotronX/mxLore-skills`)
+
+## Prerequisites
+- **Required CLI tools:** `curl`, `unzip`, `claude` (Claude Code CLI). Git-Bash on Windows includes curl+unzip.
+- **Node.js** — Recommended. Required for 11 of 12 hook registrations (Orchestrate, Recall-Gate, Knowledge-Gate, Recall-Outcome, env-guard). Without Node.js the session runs with limited functionality (no state tracking, no Recall-Gate). Installation: https://nodejs.org/
+
+## First Installation (with API key)
+
+### Phase 1: MCP Connection
+
+1. Check `claude mcp list` → already has `mxai-knowledge`? → "Use `--update`"
+2. ?user: "Server URL? (e.g. http://localhost:8080/mcp)"
+   - URL must end with `/mcp`
+3. Register MCP:
+```bash
+claude mcp add -s user --transport http mxai-knowledge "<SERVER-URL>" --header "Authorization: Bearer <API-KEY>"
+```
+4. ⚡ Tools deferred? → load first per `~/.claude/skills/_shared/mcp-tools-load.md` (tool-missing ≠ server-down). `mx_ping()` → Success? Note admin_port. Error? → Abort.
+
+### Phase 2: Install Skills from GitHub (~5 seconds)
+
+⚡ **EXACT URL — DO NOT invent!** Source: `MicrotronX/mxLore-skills` (GitHub). !mxai-org !mxai-tech !other repos.
+
+Downloads the zip, extracts skills into `~/.claude/skills/`, hooks into `~/.claude/hooks/`, reference into `~/.claude/reference/`, stamps the bundle's `setup-version.json` into `~/.claude/setup-version.json` (client-side version tracking — `mx_session_start` reports it for the admin session view), and stages `CLAUDE.md` as `/tmp/mxLore-skills-CLAUDE.md` for Phase 5c:
+```bash
+bash ~/.claude/skills/mxSetup/scripts/install-skills.sh
+```
+
+Phase 2+3 may run in parallel (independent downloads); Phase 4+5 remain sequential.
+
+⚡ **Scope limit:** `install-skills.sh` copies hook FILES into `~/.claude/hooks/` but does **NOT** modify `~/.claude/settings.json`. Hook **registration** (`PreToolUse` / `PostToolUse` / `Stop` / etc. entries) happens in Phase 5b below — running `install-skills.sh` standalone leaves hook files on disk but inactive until settings.json is updated.
+
+Optional: `REPO_REF=v2.4.0 bash ~/.claude/skills/mxSetup/scripts/install-skills.sh` pins a release tag instead of `main` HEAD (default remains `main` until `mxLore-skills` cuts tagged releases).
+
+⚡ !PowerShell !Invoke-WebRequest — always use curl+unzip in Bash (works everywhere).
+
+### Phase 3: Install Proxy (cross-platform: Windows / macOS arm64 / macOS Intel)
+
+1. **Collect download URLs** from the mx_ping response (the install script picks the right one by `uname` — you just forward all candidates):
+   - `proxy_download_url` (+ `proxy_sha256`) — Windows, server-hosted Delphi proxy. Set when `admin_port > 0`.
+   - `proxy_download_url_darwin_arm64` — macOS Apple Silicon (GitHub release asset, size-checked).
+   - `proxy_download_url_darwin_amd64` — macOS Intel.
+   - If none of these are present in mx_ping: warning, skip proxy install.
+2. Run the installer once with the candidates as env vars. It detects the platform via `uname`, installs to `~/.claude/mxMCPProxy.exe` (Windows) or `~/.claude/mxMCPProxy` (macOS, executable bit set), and verifies integrity (Windows: SHA256 if available; macOS: size >100KB — release assets carry no server-side sha256):
+```bash
+PROXY_URL="<proxy_download_url>" \
+EXPECTED_SHA256="<proxy_sha256 or omit>" \
+PROXY_URL_DARWIN_ARM64="<proxy_download_url_darwin_arm64 or omit>" \
+PROXY_URL_DARWIN_AMD64="<proxy_download_url_darwin_amd64 or omit>" \
+bash ~/.claude/skills/mxSetup/scripts/install-proxy.sh
+```
+3. Create proxy INI (Write tool → `~/.claude/mxMCPProxy.ini`):
+```ini
+[Server]
+Url=<SERVER-URL>
+ApiKey=<API-KEY>
+ConnectionTimeout=10000
+ReadTimeout=120000
+
+[Agent]
+Polling=1
+PollInterval=15
+```
+
+### Phase 4: Switch MCP to Proxy
+
+The installed binary is `~/.claude/mxMCPProxy.exe` (Windows) or `~/.claude/mxMCPProxy` (macOS) — use the matching path:
+```bash
+claude mcp remove mxai-knowledge -s user
+# Windows:
+claude mcp add -s user mxai-knowledge -- "<HOME>/.claude/mxMCPProxy.exe"
+# macOS:
+claude mcp add -s user mxai-knowledge -- "$HOME/.claude/mxMCPProxy"
+```
+`mx_ping()` → Success? Continue. Error? Offer HTTP fallback.
+
+### Phase 5: Config
+
+⚡ Read `~/.claude/settings.json` with Read tool, then extend via Edit tool. !Delete/overwrite existing entries. Only add missing ones.
+
+**5a. Permissions** — Add the following to `permissions.allow` (if not present):
+```json
+"mcp__mxai-knowledge__*",
+"Skill(mxSave)",
+"Skill(mxDecision)",
+"Skill(mxPlan)",
+"Skill(mxSpec)",
+"Skill(mxDesignChecker)",
+"Skill(mxBugChecker)"
+```
+
+**5a-Deny. Path guards** — Add to `permissions.deny` (create the array if it does not exist yet):
+```json
+"Read(**/__history/**)",
+"Read(**/__recovery/**)",
+"Read(**/*.~*~)",
+"Read(//**/.env)",
+"Read(//**/*.env)",
+"Read(//**/.env.*)"
+```
+⚡ **.env guard (last three, `//**/` = absolute, whole filesystem — not cwd-relative like the IDE patterns; verified live 2026-08-20: `**/.env` left a `.env` outside the project readable).** `.env` files carry secrets; the deny keeps every value out of the context window (Read, Grep, `@file`, and the shell file commands Claude Code recognises — `cat`/`head`/`tail`/`sed`/`awk` were all blocked in the live test). Interpreters (`python -c`, `node -e`, `php -r`), `source`, `while read`, redirects are NOT intercepted by the deny — that is what the `env-guard.js` PreToolUse hook in 5b is for. Key-name / value-length diagnostics stay possible ONLY through `bash ~/.claude/hooks/env-keys.sh <file> [--cmp KEY_A KEY_B]` (allow-listed by the hook): names yes, values never. `.env.example` is caught as well — accepted: it holds no values, and its key names remain readable via the helper. ⚡ Side effect (verified live): Claude Code couples `Write`/`Edit` to a Read deny, so `.env` files can no longer be created or edited with those tools either — creating/appending goes through `echo 'KEY=' >> x.env` / `printf … > x.env`, which the hook allows as long as nothing before the `>` reads an .env.
+
+The first three keep the Delphi IDE's revision backups (`Unit1.pas.~235~`, `__recovery\`) out of context: a stale revision still compiles, so quoting it as current silently reverts already-fixed logic. Covers the `Read` tool plus — best-effort, per the permissions docs — Grep, Glob, `@file` mentions and the Bash file commands Claude Code recognises (`cat`, `head`, `tail`, `sed`); **not** arbitrary subprocesses. ⚡ For the IDE patterns use the cwd-relative `**/…` form shown above, not a single leading slash — in user settings `Read(/__history/**)` resolves against `~/.claude/`, not against the project. Inert on non-Delphi machines (the patterns simply never match). Rationale → `reference/delphi.md` → "IDE artefacts are not source".
+
+**5b-Retired. Retired hooks** — hooks this bundle shipped once and has since withdrawn. Derived from this list ONLY, never from a glob (a glob would also catch a private hook of the same shape):
+
+| Hook file | Retired | Reason |
+|---|---|---|
+| `agent_inbox_check.sh` | 2026-09-07 | Replaced by mxMCPProxy >= 1.0.9 session-inbox delivery (`CLAUDE_CODE_MESSAGING_SOCKET`) — the client-side file-buffer watcher is dead. |
+
+On every `--update` run (and on a fresh install, where it is a no-op): for each entry in this list, remove any `settings.json` hook entry (in ANY event block — `SessionStart`, `UserPromptSubmit`, etc.) whose `command` references that file, then delete `~/.claude/hooks/<file>` if present.
+
+**5b. Hooks** — Check each hook block. If entry missing, add it. If present, do not duplicate.
+
+⚡ **Node.js check BEFORE hook installation:**
+```bash
+node --version 2>/dev/null
+```
+If `node` not found: show warning:
+> "Node.js not found. 11 of 12 hook registrations (Orchestrate, Recall-Gate, Knowledge-Gate, Recall-Outcome, env-guard) will not work without Node.js. Session runs with limited functionality (no state tracking, no Recall-Gate). Installation: https://nodejs.org/"
+→ Only install Bash hooks, skip JS hooks (including PreCompact, see below).
+
+Hooks table (Event → hooks → Requires) — see `references/hooks-table.md` for details.
+⚡ Load-bearing: without Node.js, 11 of 12 hook registrations degrade (see references file).
+
+**5b-StatusLine** — Add `statusLine` block at top level of settings.json (NOT inside `hooks`):
+```json
+"statusLine": {
+  "type": "command",
+  "command": "bash ~/.claude/hooks/statusline-command.sh"
+}
+```
+Shows: `<slug> | <model> | <context%> | <$cost> | <tasks>`. Reads slug from `CLAUDE.md` (`**Slug:**` line, accepts both backticked and plain format). ⚡ Legacy path `~/.claude/statusline-command.sh` (pre-2026-04): delete it and ensure command points to `~/.claude/hooks/statusline-command.sh` — all hooks live under `~/.claude/hooks/` for consistency.
+
+**PreCompact (command hook)** — Install under `hooks.PreCompact` (merge, do not replace; skip an entry whose `command` already exists; idempotent):
+```json
+"PreCompact": [
+  {"matcher":"manual","hooks":[{"type":"command","command":"node ~/.claude/hooks/orchestrate-precompact.js --manual"}]}
+]
+```
+Manual `/compact` with unsaved work is blocked once ("run /mxSave first"); auto compact is not hooked (PreCompact output cannot reach the model: `systemMessage` is user-only, no `hookSpecificOutput`). **PostCompact: do NOT install** (cannot inject context; SessionStart `source=compact` re-briefs). See `references/dormant-precompact.md`.
+
+**5c. CLAUDE.md** — Use `/tmp/mxLore-skills-CLAUDE.md` (saved in Phase 2). Three-branch merge logic (no file / marker present / marker absent) — see `references/claude-md-merge.md` for details. Afterwards: `rm /tmp/mxLore-skills-CLAUDE.md`.
+
+**5d. Legacy agent-inbox buffer — remove, do not create.** Proxies before 1.0.9 mirrored pending agent messages into `~/.claude/agent_inbox/agent_inbox_<slug>.json` for the (now retired) hook. With proxy >= 1.0.9 the directory is dead weight: every message still pending on the server is delivered again by the new proxy through the session inbox, and every acked one is gone already — there is nothing to drain. After Phase 3 confirmed the proxy is >= 1.0.9: `rm -rf ~/.claude/agent_inbox`. Never run this while a proxy older than 1.0.9 is still registered (ordering rule below).
+
+**5e. Duplicate claude.ai connector.** If `claude mcp list` shows BOTH the `mxai-knowledge` proxy entry AND an account-managed claude.ai connector for the same server (typically named `mxai knowledge web`), every tool exists twice and the connector bypasses the proxy (no session-inbox delivery, no agent polling). The CLI cannot remove an account-managed connector (`claude mcp remove` answers "No MCP server named … in user scope"), so print a warning with the manual step: disable or remove the connector in claude.ai → Settings → Connectors, then restart Claude Code.
+
+### Phase 6: Done
+
+```
+=== mxLore Setup Complete ===
+
+| Component | Status |
+|-----------|--------|
+| MCP | Connected (<URL>) |
+| Skills | X installed |
+| Hooks | Y installed |
+| Proxy | OK / MISSING |
+| Proxy >= 1.0.9 (session-inbox delivery) | OK / OUTDATED |
+| Retired hooks absent | OK / FOUND |
+| Legacy agent_inbox dir absent | OK / REMOVED / SKIPPED (proxy < 1.0.9) |
+| claude.ai connector duplicate | NONE / WARN (remove in claude.ai) |
+| CLAUDE.md | OK |
+
+Next steps:
+1. Restart Claude Code
+2. Switch to project directory
+3. Run /mxInitProject
+
+Optional: /mxSetup --with-superpowers installs the superpowers bridge plugin
+(enhanced brainstorming / plan-execution rigour) — not required, mx*-skills run standalone.
+```
+
+### Final verification checklist
+- `grep agent_inbox_check ~/.claude/settings.json` → must be empty.
+- `~/.claude/hooks/agent_inbox_check.sh` → must not exist.
+- `~/.claude/agent_inbox/` → must not exist once the proxy is >= 1.0.9.
+- `claude mcp list` → exactly one entry for the mxLore server (the proxy); a claude.ai connector next to it is a WARN, not a pass.
+
+## Update Modes
+
+### `--update` (full refresh)
+Runs Phase 2 (skills + hooks + reference from GitHub), Phase 5 (config + `~/.claude/CLAUDE.md` mx-rules marker block), and proxy version-check (same flow as Phase 3, download only if version differs). Use after upstream `mxLore-skills` changes or when several things are out of date.
+
+⚡ **Ordering: proxy before retired-hook removal.** `mx_ping` exposes proxy *download URLs* (`proxy_download_url`, `proxy_download_url_darwin_arm64`, `proxy_download_url_darwin_amd64` — see Phase 3), NOT a version number to diff against the locally installed proxy, so an installed-vs-server version compare is not currently possible from `mx_ping` alone. Given that gap, treat the installed proxy as potentially older than 1.0.9 by default: run Phase 3 (proxy update) BEFORE Phase 5b-Retired (hook removal) in every `--update`. Reason: a proxy older than 1.0.9 still writes `agent_inbox_<slug>.json` files (the old buffer protocol); if the retired hook is removed first, nothing reads that buffer any more and messages sit pending until the next manual `mx_agent_inbox` call. Skills-without-proxy update is degraded (delayed delivery), never lost (the buffer still accumulates) — but the order still matters to avoid the degraded window.
+
+Optional: `CLEAN=1 ~/.claude/skills/mxSetup/scripts/install-skills.sh` clears the `mx*/` skill dirs **that this bundle ships** before re-copying them, so files removed upstream do not linger. Two guarantees: it never touches an `mx*/` dir the bundle does not ship (private, unpublished skills of your own are left alone), and it **moves** rather than deletes — everything lands in `~/.claude/.skills-removed/<timestamp>/`, outside `skills/`, so nothing is loaded as a skill again and nothing is lost if the run was wrong. Delete that dir yourself once the install looks right. Use only if you have NO local unsynced edits in the bundled `mx*`-skills.
+
+Every run also lists files in `hooks/` and `reference/` that the bundle does not ship, without deleting them — those dirs are shared, and a leftover hook stays registered in `settings.json` until Phase 5b removes the entry. Review the list; deletion is your call.
+
+### `--update-rules` (mx-rules marker only — fast path)
+- `--update-rules` — Re-runs Phase 2 (which downloads the full skills bundle) and Phase 5c (CLAUDE.md mx-rules marker merge). Skills + hooks get refreshed as collateral; if you want only the marker block updated without skill refresh, edit `~/.claude/CLAUDE.md` manually between the markers.
+
+### `--update-proxy` (proxy binary swap only)
+Only re-runs Phase 3: `mx_ping()` → forward per-platform URLs → `install-proxy.sh` → replace `~/.claude/mxMCPProxy[.exe]` (the script picks Windows/macOS by `uname`). INI left untouched. Use when the server build moved ahead of the local proxy.
+
+⚡ Stop the running proxy first (`taskkill /IM mxMCPProxy.exe /F` on Windows) — staging+mv mitigates file lock but a clean swap is more reliable.
+
+### `--with-superpowers` (optional bridge plugin)
+
+Installs the optional `superpowers` plugin (Claude Code official marketplace). It provides `brainstorming`, `executing-plans`, `subagent-driven-development`, `systematic-debugging` etc. The mx*-skills work **fully without it**; when present they use it for extra rigour.
+
+```bash
+claude plugin install superpowers@claude-plugins-official
+```
+
+⚡ **Opt-in only** — never installed by the default `/mxSetup`, `--update`, `--update-rules` or `--update-proxy` flows (no forced third-party dependency — gh#2). Marketplace `claude-plugins-official` is built into Claude Code; if absent, run `claude plugin marketplace add` first. Verify after install: `claude plugin list` shows `superpowers`.
+
+## Rules
+
+- **!mx_onboard_developer** — Skills come from GitHub, not from the server
+- **!Python !jq** — Write/Edit tools for files, Bash only for curl/claude-mcp
+- **API key never displayed** — only last 4 characters (`mxk_****15c`)
+- **Skills always overwritten** — GitHub = source of truth
+- **Encoding:** UTF-8 without BOM
+- **MCP scope:** ALWAYS `-s user`
+- **Interactive questions** (`?user`) → AskUserQuestion tool (structured options) !freetext

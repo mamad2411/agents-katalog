@@ -1,0 +1,188 @@
+---
+name: pr-create
+description: "GitHub Pull Request を作成する時に使う。トリガー: 「PR 作って」「PR 作成」「プルリクエスト作って」「create PR」「open PR」「raise PR」等のユーザー指示、または `pr-create` スキル指定。コミット済みブランチから push 確認 → タイトル / 本文案の提示 → `gh pr create` 実行 → Copilot レビュー依頼 → 到着をバックグラウンド監視し、指摘があれば pr-review-fix へ自動接続するまでを一気通貫。コミット作成自体は担当せず、事前に commit スキル等で済ませておく前提。"
+---
+
+# pr-create
+
+現在のブランチに積まれたコミットから GitHub Pull Request を作成するスキル。
+コミット作成は担当せず、push 確認 → タイトル / 本文生成 → PR 作成までを行う。
+問題がない限り、ユーザー確認は挟まず全自動で進める。
+
+## 前提
+
+- 現ブランチに **PR に載せるコミットが 1 件以上** 積まれていること。無い場合は「PR に含めるコミットがありません」と伝えて終了
+- 現ブランチに **既に PR が存在** する場合 (`gh pr view` で検出) は新規作成せず、**既存 PR の タイトル・説明に現状コードベースを反映する**
+- 作業ツリーが汚れている (未コミットの変更がある) 場合はユーザーに扱いを確認 (コミットするか stash するか)
+- 依存: `gh` CLI (authenticated)、`git`
+
+## ワークフロー (6 Phase)
+
+### Phase 1 — 事前チェック
+
+```bash
+git status --short                                           # 未コミット変更の有無
+git rev-parse --abbrev-ref HEAD                              # 現ブランチ名
+gh pr view --json number,url 2>/dev/null                     # 既存 PR の検出
+git log --oneline "$(git merge-base HEAD @{u} 2>/dev/null || git merge-base HEAD origin/HEAD)"..HEAD
+                                                             # PR に載るコミット一覧
+```
+
+- 既存 PR あり → タイトル・説明の更新作業に
+- コミットが 0 件 → 終了
+- 作業ツリーが汚れている → ユーザーに確認
+
+### Phase 2 — push
+
+`git push` は `CLAUDE_GIT_SKILL=pr-create` を前置して実行する (PreToolUse hook `~/.claude/hooks/enforce-git-skill.sh` が本スキル経由かどうかをこのマーカーで判定し、無いと直接実行はブロックされる)。
+
+```bash
+# upstream 未設定の初回 push
+CLAUDE_GIT_SKILL=pr-create git push -u origin HEAD
+
+# upstream 設定済みでローカルが先行
+CLAUDE_GIT_SKILL=pr-create git push
+```
+
+push 失敗時は `gh auth status` と `git remote -v` を確認してユーザーに報告。
+
+### Phase 3 — タイトル・本文の生成
+
+コミットログを読み取ってタイトルと本文を生成する。
+
+**タイトル** (日本語、50 文字程度):
+- コミットメッセージの規約 (`feat:` / `fix:` / `docs:` / `refac:` / `chore:` / `style:` / `test:`) を踏襲
+  - タイトルのprefixは必ず上記7種類のどれかを用いる。 refactor(frontend): 等のprefix改変、スコープ記述は認められない
+- 句点なし、曖昧語 (`いろいろ修正` 等) は避ける
+- **単一コミット**: その件名をそのまま流用(英語or曖昧な場合は別途日本語のタイトルを考える)
+- **複数コミット**: ブランチ全体の目的を集約して 1 件に要約
+
+#### 本文の構成 (必ずこの順で判定する)
+
+**Step 3-A — リポジトリの PR テンプレートを必ず先に検出する**。default テンプレートにフォールバックする前に **必ず** 以下を実行する。スキップ禁止。
+
+```bash
+# GitHub が認識する標準パスを全て確認 (大小文字・場所違いを網羅)
+for p in \
+    .github/pull_request_template.md \
+    .github/PULL_REQUEST_TEMPLATE.md \
+    docs/pull_request_template.md \
+    docs/PULL_REQUEST_TEMPLATE.md \
+    pull_request_template.md \
+    PULL_REQUEST_TEMPLATE.md; do
+  [ -f "$p" ] && echo "FOUND: $p" && break
+done
+# 複数テンプレート (`.github/PULL_REQUEST_TEMPLATE/*.md`) もありうる
+ls .github/PULL_REQUEST_TEMPLATE/ 2>/dev/null
+```
+
+**Step 3-B** — Step 3-A でテンプレートが見つかった場合:
+
+1. テンプレートファイルを `Read` ツール等で **必ず内容を読む**
+2. 各セクション (`##` 見出し / `<!-- コメント指示 -->` / チェックボックス) を **そのまま維持**
+3. テンプレートが要求する情報をコミットログから抽出して埋める
+4. テンプレート由来のセクションを削除・改名しない。コメント指示 (`<!-- ... -->`) はそのまま残してよい
+5. 不明 / 該当無しのセクションは `- 該当なし` 等で空欄を埋める (削除しない)
+
+**Step 3-C** — Step 3-A で **何も見つからなかった場合のみ**、default テンプレートを使う。詳細は [`references/default_template.md`](references/default_template.md) を参照 (本 SKILL.md にはあえて inline で載せない。フォールバックである旨を明示するため)。
+
+#### 本文の書き方
+
+リポジトリテンプレートの有無にかかわらず、常に以下にしたがって本文を推敲する
+- **概要**: Why を 1行で書く。コードから読める What の冗長説明は書かない
+- **変更点**: 
+  - コミット、ファイル単位ではなく、わかりやすい機能単位で分割する。
+  - コードを読めばわかる具体名は極力書かない。 
+  - 悪い例: 旧 `experiments/sim2real/utils/action_dr.py` を削除し、engine (`LowFreqNoiseInjector` / `dagger_offset_approach_iter` / `sample_duration_scale` / `sample_ee_perturbation` / `taper_weight`) を `polaris/dr/motion_noise.py` に移設
+  - 良い例: DR関連のutil関数を正しい場所へ移設
+- **動作確認**: 簡潔に 2〜3 項目程度まで。実行者が実際に確認する最低限に絞り、網羅リストにしない
+
+
+### Phase 4 — PR 作成
+
+`gh pr create` を HEREDOC で呼び出す (改行・Markdown を安全に渡すため)。`CLAUDE_GIT_SKILL=pr-create` を前置しないと PreToolUse hook にブロックされる。
+
+```bash
+CLAUDE_GIT_SKILL=pr-create gh pr create --title "<承認済みタイトル>" --body "$(cat <<'EOF'
+## 概要
+...
+
+## 変更点
+- ...
+
+## 動作確認
+- [ ] ...
+EOF
+)"
+```
+
+オプション (ユーザー指示があった時のみ追加):
+
+- `--draft` — draft PR として作成
+- `--reviewer <user>[,<user>...]` — レビュアー指定
+- `--base <branch>` — base ブランチを明示 (省略時はリポジトリのデフォルトブランチ)
+- `--assignee <user>` — アサイン指定
+
+### Phase 5 — Copilot レビュー依頼 + 監視起動 (必須・毎回)
+
+PR 作成直後、まず CI チェック完了の監視を **background で** 起動する (`run_in_background: true` の Bash で実行し、セッションをブロックしない)。Copilot 依頼の成否に関わらず起動する:
+
+```bash
+bash ~/.claude/skills/pr-create/scripts/poll-ci-checks.sh <PR番号>
+```
+
+- pending が消えるまで待機し、`ci=pass|fail|none` を出力して終了する
+- push 直後のチェック未登録は grace 期間 (デフォルト 120s) 内なら登録待ちとして扱い、grace を過ぎても現れなければ `ci=none` (CI なしリポジトリ) と判定する
+- CI 修正後の再 push 時も、このスクリプト単体を background で再起動して再監視する
+
+続けて、付属スクリプトで GitHub Copilot を PR レビュアーに登録する。**省略禁止**。
+
+```bash
+bash "${CLAUDE_PROJECT_DIR:-$HOME}/.claude/skills/pr-create/scripts/request-copilot-review.sh" <PR番号>
+```
+
+スクリプト本体: `~/.claude/skills/pr-create/scripts/request-copilot-review.sh`
+
+- 内部で `gh api graphql` の `requestReviews` mutation を `botIds` 付きで呼び、Copilot PR Reviewer (固定 bot ノード `BOT_kgDOCnlnWA`) を依頼する
+- Copilot レビュー機能未有効・既に依頼済み・権限不足などで失敗する場合があるが、**PR 作成自体は成功している**ので終了コード 1 でも警告扱いとし、ユーザーには「Copilot 依頼に失敗 (理由)」と PR URL の両方を伝える
+
+依頼に成功したら、続けてレビュー到着のポーリングも **background で** 起動する。依頼に失敗した場合はこちらは起動しない (CI 監視は起動済みのまま維持する):
+
+```bash
+bash ~/.claude/skills/pr-create/scripts/poll-copilot-review.sh <PR番号>
+```
+
+### Phase 6 — 完了報告
+
+作成された PR URL・Copilot 依頼結果・監視起動 (レビュー / CI の 2 本) を報告していったん終了。
+
+```
+✅ PR #<N> を作成しました: <URL>
+✅ Copilot にレビューを依頼しました (レビュー到着 / CI 完了をバックグラウンドで監視中)
+```
+
+(Copilot 依頼が失敗した場合は ⚠️ で警告のみ表示し、PR 作成成功と CI 監視は維持する)
+
+### Phase 7 — 監視完了時の自動対応
+
+監視は 2 本 (レビュー / CI) が独立して動くため、完了通知 (task-notification) も個別に届く。それぞれの出力に応じて自動で動く:
+
+**poll-ci-checks.sh の通知:**
+
+- `ci=fail` → **CI の失敗原因を確認・修正して push** し、`poll-ci-checks.sh` を background で再起動する (レビュー指摘対応と重なる場合はまとめて対応してよい)。ship フローの最中は CI が fail のままだと `ship.sh done review` が通らない
+- `ci=pass|none` → 報告のみ (レビュー対応の進行はレビュー側の通知に従う)
+- exit 1 (タイムアウト) → その旨を報告し、`gh pr checks` で現状を確認して再起動か手動確認を提案
+
+**poll-copilot-review.sh の通知:**
+
+- `copilot_review=arrived` かつ `unresolved_threads` > 0 → **pr-review-fix スキルを起動**して対応を開始する (修正計画の承認は pr-review-fix 内のフローが担うため、起動自体に確認は不要)。ship フローの最中なら先に `ship.sh done review` を打つ (CI が未完 / fail だと通らない点に注意)
+- `unresolved_threads` = 0 → 「Copilot レビュー到着、未解決の指摘なし」と報告して終了
+- `unresolved_threads` = `?` → スレッド数の取得に失敗している。`fetch_unresolved_threads.sh` を手動実行して確認してから判断する (0 件と誤認しない)
+- exit 1 (タイムアウト) → その旨を報告し、必要なら `poll-copilot-review.sh` を再起動するか手動確認を提案 (再起動時のレビュー待機は開始時点からの増分基準なので、到着済みレビューがある場合は `gh pr view --json reviews` で直接確認する)
+
+## トラブルシューティング
+
+- **既に PR が存在**: 新規作成せず既存 PR URL を返す。タイトル / 本文の更新が必要なら `gh pr edit <N> --title/--body-file` で対応
+- **push 失敗 (403 等)**: `gh auth status` / `git remote -v` で認証と remote を確認
+- **作成後にタイトル / 本文を直したい**: `gh pr edit <N> --title "..."` または `gh pr edit <N> --body-file /tmp/body.md`
+- **draft ↔ ready の切り替え**: `gh pr ready <N>` / `gh pr ready --undo <N>`
