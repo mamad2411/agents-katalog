@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/wuchubuzai2018/expert-skills-hub (path: skills/toutiao-news-trends/SKILL.md, branch: main)
-- mined: 2026-09-20
-- desc: 获取今日头条(www.toutiao.com)新闻热榜/热搜榜数据，包含时政要闻、财经、社会事件、国际新闻、科技发展及娱乐八卦等多领域的热门中文资讯，并输出热点标题、热度值与跳转链接。

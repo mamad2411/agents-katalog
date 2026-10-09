@@ -1,1 +1,0 @@
-../../../.codex/skills/docker-sandbox/SKILL.md

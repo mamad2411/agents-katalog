@@ -1,1 +1,0 @@
-../../../.tekton/ai/REVIEW.md

@@ -27,6 +27,7 @@
 812-regulations-eu-product-liability-directive
 813-regulations-iso-42001
 90-day-seo-sprint
+<skill-name>
 [replace: skill_name]
 _references
 a-b
@@ -36,7 +37,6 @@ a11y-auditor
 a11y-core
 a11y-debugging
 a11y-tool-builder
-a2a json-rpc call
 a2go-text-to-speech
 a2ui_dashboard
 a_b
@@ -65,7 +65,6 @@ acceptance-agent
 acceptance-criteria-writer
 accessibility-diff
 accessibility-dynamic-type-specialist
-accessibility-fix
 accessibility-inspect
 accessibility-lead
 accessibility-regression-detector
@@ -115,6 +114,7 @@ acm-sigplan-symposium-on-principles-of-programming-languages
 acm-sigsoft-international-symposium-on-software-testing-and-analysis
 acm-symposium-on-user-interface-software-and-technology
 acm-symposium-on-virtual-reality-software-and-technology
+acme-tools
 acquisition-channel-advisor
 act-on-feedback
 action-converter
@@ -125,7 +125,6 @@ actionbook
 actions-manager
 active-directory-attack
 activity-sweep
-activitywatch cross-platform automated time tracker and productivity analyzer
 actualizar-plantilla
 ad-attacks
 ad-ground
@@ -134,7 +133,6 @@ adapt
 adapt-workflow
 adaptive
 adaptive-learning-skill
-add a browser review checkpoint before risky agent actions with agentclick
 add-a-linter
 add-app-platform-resource
 add-app-tool
@@ -147,7 +145,6 @@ add-company
 add-competitor
 add-contact
 add-cross-sf-consistency
-add-data-source
 add-deal
 add-demo
 add-domain
@@ -185,7 +182,6 @@ add-sub
 add-target
 add-temp-entries-to-sections
 add-test
-add-tool
 add-torch-shapes-example
 add-ui
 add-yourself-to-team-langfuse
@@ -245,7 +241,6 @@ aeri-replication-package
 aeri-theory-model
 aeri-writing-style
 aerj-transparency-and-data-policy
-after-effects
 afx-context
 ag-dev
 ag-update
@@ -320,6 +315,7 @@ agent-user-tools
 agent-wallet-policy
 agent-without-context-skill
 agent-worker-specialist
+agent-workflow
 agentbox
 agentbox-info
 agentfield-use
@@ -493,8 +489,7 @@ aliyun-sas-manage-test
 aliyun-sls-log-query-test
 aliyun-videoretalk-test
 aliyun-wan-edit-test
-allium
-alpha skill
+alpha
 alpha-notes
 alphafold-pocket-evaluator
 alphafold-skill
@@ -641,6 +636,7 @@ apk-reverse
 apocalypse-worlds
 app-279-error-log-querying
 app-control
+app-intents
 app-it
 app-it-static
 app-type-classifier
@@ -716,6 +712,7 @@ architectural-proposals
 architectural-review
 architectural-support-for-programming-languages-and-operating-systems
 architecture-deletion-audit
+architecture-design
 architecture-governance
 architecture-review-full
 architecture-scalability-review
@@ -745,7 +742,6 @@ arguments-test
 argv-flag
 aria-specialist
 ariadocs
-aris
 aris-paper-illustration
 arithmetic-evaluator
 arkana-analyse
@@ -870,6 +866,7 @@ aso-appstore-screenshots
 asp-net-core-identity-patterns
 aspire-session-packaging
 asq-methods
+asr
 assessment-builder
 asset-review
 assignation-refere-communication-associe-selim-brihi
@@ -895,6 +892,7 @@ at-usage
 atdd-developer
 atelier
 atelier-orchestrator
+atlas
 atlas-complete
 atlas-execute
 atlas-init
@@ -1021,8 +1019,6 @@ backlog-capture
 backlog-japan-alliance-4h
 backlog-stats
 backsolve-miner-vs-metal-ratio-with-fundamentals
-backtest
-bad
 bad-bool-skill
 bad-cross-ref
 bad-frontmatter-fixture
@@ -1041,9 +1037,6 @@ bank-reconciliation
 banking-global-router
 bar
 bare
-base account
-base deploy
-base network
 base node
 base44-remote-dev
 base64-network
@@ -1064,6 +1057,7 @@ bd-skill-content
 bd-to-br-migration
 be
 be-social-contributions
+beacon
 bedrock-guardrails
 behavioral-nudge
 belgium-vat-return
@@ -1071,18 +1065,13 @@ bench
 bench-rule-enable
 bench-virtual-rule
 benchmark-models
-benign
-benign auth call
 benign cmd sub
-benign defensive
-benign template var
 bento
 besimple-broccoli-blind
 best-choice
 best-minds
 best-practices-researcher
 beta
-beta skill
 better-auth-components
 better-auth-emails
 better-auth-profile
@@ -1109,6 +1098,7 @@ biome-worlds
 biorxiv-skill
 biostatistics
 biostudies-arrayexpress-skill
+bitbucket
 bitbucket-cloud
 bitbucket-data-center
 bitrix-datetime
@@ -1150,12 +1140,9 @@ bmad-cis-innovation-strategy
 bmad-cis-problem-solving
 bmad-code-review
 bmad-compass-testarch-automate
-bmad-create-architecture
-bmad-create-prd
 bmad-create-product-brief
 bmad-create-ux-design
 bmad-editorial-review
-bmad-generate-project-context
 bmad-qa
 bmad-retrospective
 bmad-tea-testarch-test-design
@@ -1165,15 +1152,16 @@ bmad-wds-analysis
 body-composition
 bold
 bolder
+bolt
 boltz-protein-design
 boltz-small-molecule-adme
 bond
 book-analyzer
 book-prose-writer
 book-review
+book-to-skill
 bookkeeping
 bootstrap-monorepo
-bootstrap-skill-self-hosting-v3-6-0
 boss职位数据集
 bot gestures
 botcircuits-faq
@@ -1240,7 +1228,6 @@ broken-yaml-skill
 brookings-papers-on-economic-activity
 brooks
 brownfield-drift
-browse
 browse-connectors
 browse-qa
 browse-skills
@@ -1322,11 +1309,11 @@ build-sharepoint-business-solution
 build-tui-view
 build-vault-universe
 builder-api-reference
-building blocks
 building-apis
 building-b2b
 building-chatgpt-apps
 building-flows
+building-mcp-servers
 building-tools
 builtin
 bulletin-of-the-american-meteorological-society
@@ -1336,7 +1323,6 @@ bundle-analysis
 bundled-keep
 buried_skill
 buscador-uruguay
-business intelligence
 business-analyst
 business-engineer-thinkos
 business-evaluation
@@ -1362,6 +1348,7 @@ ca-fed-instalments
 ca-fed-t1-return
 ca-fed-t1135
 cac-modeler
+caching-strategies
 cad-adopt
 cad-assumptions-analyzer-contract
 cad-audit
@@ -1483,6 +1470,7 @@ catalyst-smartbrowz
 catalyst-stratus
 catalyst-zia
 catalyst-zoho-mcp
+catchup
 cavecrew
 caveman-commit
 caveman-discover
@@ -1537,9 +1525,9 @@ chain-qc
 chain-security
 chain-team
 chain-test
+challenger-sale
 change-brief
 change-reaudit
-changelog
 changelog-scan
 changes-review-loop
 channel-line
@@ -1547,7 +1535,6 @@ channel-updates
 chapter-spec
 character-art-direction
 character-create
-chart-visualization
 chart_guide
 charting-vega-lite
 chase-action
@@ -1588,7 +1575,6 @@ ci-cd-integration
 ci-cd-pipeline-security-attacks
 ci-linux-test-failures
 ci-maintenance
-ci-monitor
 ci-release-fixture
 ci-validation-gates
 cinematic-visual-development
@@ -1614,6 +1600,7 @@ claude-handoff
 claude-integration
 claude-md-init
 claude-only-skill
+claude-review
 claude_code_delegation
 claudebase-daemon-callback-info
 clause
@@ -1629,7 +1616,6 @@ clean-architecture-dotnet
 clean-code-ts-react
 clean-csv-basic
 clean-gone
-clean-skill
 clean-worktrees
 cleanse
 clear
@@ -1742,6 +1728,7 @@ codebase-simplification-audit
 codebase-visualizer
 codeclaw
 codely-git-conventional_commit
+codemap
 codemod-patterns
 codeql-audit
 coder
@@ -1758,7 +1745,6 @@ codex-retour-quota
 codex-use
 codex-verify
 codify-workflow
-coding
 coding-agent-user-rules
 coding-level
 coding-standard
@@ -1887,7 +1873,6 @@ community-publish
 community-pulse
 community-registry-starter
 company-hiring-intelligence
-company-intel
 company-list
 company-policy
 company-product-context
@@ -1903,6 +1888,7 @@ competitive-intelligence-analyst
 competitor-mapper
 competitor-matrix
 competitor-monitor
+competitor-pages
 competitor-x-ray
 compile-basic
 compiler-and-fourslash-tests
@@ -1912,6 +1898,7 @@ compliance-testing
 compliance_check
 component-engineering
 component-vuln-intel
+compose
 composer-hello
 composites-part-b-engineering
 compound-capture
@@ -1984,11 +1971,13 @@ contemporary-accounting-research
 content-analyzer
 content-calendar-sms
 content-curator
+content-marketing
 content-parser
 content-planner
 content-scope
 content-strategy-sms
 content-summarizer
+content-writer
 content-writing
 content_gen
 context-architecture
@@ -2003,6 +1992,7 @@ context-maintenance
 context-mgmt
 context-mode-ops
 context-restore
+context-save
 context7-mcp
 contextual-pattern-learning
 contextualizer-self-review
@@ -2011,7 +2001,6 @@ continue-fix-volatile-msg
 continuous-auction-volume
 continuous-improvement-loop
 continuum-claude-code
-contract addresses
 contract review
 contract-amendment
 contract-compare
@@ -2019,6 +2008,7 @@ contract-delivery-kickoff
 contract-drafting-and-review-guidance-china-law
 contract-redline
 contract-review-pack
+contract-testing
 contract-testing-dotnet
 contrarian
 contrast-master
@@ -2069,6 +2059,7 @@ convex-migrate
 convex-migrate-rehearse
 convex-monitor
 convex-optimize
+convex-quickstart
 convex-reviewer
 convex-runtime
 convex-seed
@@ -2089,6 +2080,7 @@ coordination-chemistry-reviews
 coordinator-init-mode
 coordinator-response-mode
 coordinator-source-of-truth
+copilotkit
 copyright-notice
 copywriting-assistant
 copywriting-psychologist
@@ -2098,7 +2090,6 @@ cors-cross-origin-misconfiguration
 cortx-reliability
 cosense-agent-skill-not-bundled
 cosmic
-cost
 cost-counterfactual
 cost-density-net-rr-calculator
 cost-discovery-coach
@@ -2127,7 +2118,6 @@ crawl4ai-test
 cream-paper-doodle
 create
 create-agent-skill
-create-agent-skills
 create-asb-skill
 create-block
 create-config-field
@@ -2178,6 +2168,7 @@ creative
 creator
 creator-tools
 creds-skill
+crest
 crew-builder
 crew-gates
 crew-handoff
@@ -2199,6 +2190,7 @@ cron-list
 cron-schedule
 cross-border-vat-gst
 cross-border-workflow-base
+cross-browser-testing
 cross-document-analyzer
 cross-ecosystem-synergy-detection
 cross-examine
@@ -2227,6 +2219,7 @@ cto-reviewer
 ctrader-cli
 ctrader-mcp-servers
 cue
+cull
 cultivating-personas
 cultivating-skills
 cultural-intelligence
@@ -2258,6 +2251,7 @@ cvpr-iccv-eccv
 cypilot
 cypilot-analyze
 cypilot-generate
+cypilot-generated-skills
 cypilot-plan
 cypilot-workspace
 cypress-automation
@@ -2330,6 +2324,7 @@ db-migration-safety
 dba-rds-slow-query
 dc-income-tax
 dcc-design
+dcg
 ddd-aggregate
 ddd-analysis
 ddd-context
@@ -2344,6 +2339,7 @@ de-trade-tax
 dead-deal-recovery
 deadline-audit
 deal-flow-analytics
+deal-momentum-analyzer
 debloat
 debriefing-code-changes
 debug-capture-pipeline
@@ -2370,6 +2366,7 @@ decompose-task
 dedash
 deduplicate
 deep-reference
+deep-reverse
 deep_research
 deepgram-js-audio-intelligence
 deepgram-js-conversational-stt
@@ -2437,6 +2434,7 @@ deployment-verification-agent
 deprecate-integration
 deprecated-shim
 deprecated-skill-location
+deps-audit
 deps-install
 deps-skill
 depth
@@ -2452,7 +2450,6 @@ design-dialogue
 design-direction
 design-directions
 design-doc-mermaid
-design-exploration
 design-feature
 design-fidelity-verify
 design-frontend-dev
@@ -2464,7 +2461,6 @@ design-kubernetes-api
 design-mcp-server
 design-monitoring
 design-shotgun
-design-spec
 design-sync
 design-system-audit
 design-system-auditor
@@ -2484,8 +2480,18 @@ detection-breadth
 detool
 detour-onboarding
 dev-as-ml-loop-dev-loop-ml
+dev-create-component
+dev-create-composable
+dev-create-hook
+dev-create-injectable
+dev-create-island
+dev-create-module
+dev-create-service
+dev-create-test
 dev-cycle
+dev-generate-types
 dev-workflow-improvements
+develop
 develop-adr
 develop-ai-functions-example
 develop-design-rationale
@@ -2512,6 +2518,7 @@ dhh-rails-style
 diagnose-clickhouse-errors
 diagnose-config
 diagnose-underperformer
+diagram
 diaocha-yanjiu
 diaoding-zhuangxiu-zhinan
 diary-timeline
@@ -2530,6 +2537,7 @@ dir-hello
 direct-chain
 direct-skill
 directive-decoy
+director
 director-blocking
 director-readiness-advisor
 director-review
@@ -2551,7 +2559,6 @@ discovering-subagent-capabilities
 discovery-interview-prep
 discovery-process
 display-glasses-with-jetpack-compose-glimmer
-distill
 distill-session
 distilling-lessons-into-assets
 distribb
@@ -2585,6 +2592,7 @@ docs-generate
 docs-init
 docs-maintenance
 docs-master
+docs-onboard
 docs-page-generator
 docs-parity-reviewer
 docs-release-notes
@@ -2594,7 +2602,6 @@ docs-standards
 docs-sync-external
 docs-sync-internal
 docs-toolchain
-docs-update
 docs-writing
 docsync-setup
 document-accessibility-wizard
@@ -2603,7 +2610,6 @@ document-editor
 document-existing
 document-formatter
 document-generate
-document-generator
 document-integration-docs
 documentation-audit
 documentation-coverage
@@ -2623,6 +2629,7 @@ donor-proposal-scoring
 dont-lie-to-me
 doodle
 dor-gate
+dos
 dos-enforce-tune
 dos-goal-fleet
 dos-goal-gate
@@ -2688,6 +2695,7 @@ dynamic-resources
 e2b-sandbox-test
 e2e-audit
 e2e-deployment-skill
+e2e-skill
 e2e-summary-skill
 e2e-test
 e2e-test-skill
@@ -2702,6 +2710,7 @@ eastmoney-futures-position
 eastmoney-rank
 easyeda-api
 ec
+echo
 echo-arg
 echo-skill
 echo_demo
@@ -2724,6 +2733,7 @@ edit-article
 edit-meta-creative
 edit-scene
 edit-spec
+editor
 editorial-flatfolk
 edmund-external-positioning
 education-cloud-multi-campus-configure
@@ -2739,6 +2749,7 @@ eg-formation
 eg-return-assembly
 eg-sme-tax
 ekstraktor-cytatow-pl
+electron
 electron-forge
 element14
 elevenlabs-core-workflow-b
@@ -2751,6 +2762,7 @@ email-application-flow
 email-testing
 email_guide
 email_operation_guard
+embedded-captions
 embedded-debug
 embedded-skill
 embedded-video-pip-smooth-playback
@@ -2862,14 +2874,11 @@ evidence-code-review
 evidence-review
 exa-cli
 exa-monitor
-example
 example-helper
 example-task
 example-unsafe-skill
-excel / xlsx
 excel-accessibility
 exception-handling
-exec-plan
 execute-phase-gated-task
 execution-debugging
 executive-brief
@@ -2916,7 +2925,6 @@ exploration
 exploratory-testing
 explore
 explore-vault
-explorer
 exploring-data-catalog
 expo-api-docs
 expo-api-routes
@@ -2938,7 +2946,6 @@ external-control-api
 external-diagram-mermaid-generate
 externalize-operator
 extra skill
-extract
 extract-and-relocate-angular-component-feature
 extract-features
 extract-findings
@@ -2954,6 +2961,7 @@ fable-review
 fable-setup
 fabric-mod-development
 fabric-pattern
+faceless-explainer
 factchk
 factor-research
 factory-build-workflow-change
@@ -3026,7 +3034,6 @@ feed-catchup
 feeds
 feel-pass
 feifei-companion
-feishu-bitable-skill
 feishu-channel-rules
 feishu-cli-mail
 feishu-interactive-card
@@ -3049,7 +3056,7 @@ figure-composer
 figure-out
 figure-out-team
 file-handling
-file-reader
+file-organization
 file-tools
 file-transfer
 file-type-test
@@ -3059,7 +3066,6 @@ file_inspector
 filesystem_guide
 filter
 filter-expressions
-filtering
 fin7-carbanak
 finalize
 finalize-and-commit
@@ -3087,13 +3093,13 @@ finding-triage
 findings-presentation
 findings-spine
 finesse-ui
+finicity
 finish-branch
 finish-feature
 finish-hotfix
 finish-release
 finngen-phewas-skill
 fintech-agreement-drafting-stephane-boghossian
-fintech-engineer
 fintech_inversiones
 firebase-sdk
 firefox-devtools-diagnose
@@ -3162,12 +3168,14 @@ folded-description
 folder-proof
 foldseek-structural-search
 followups
+folyamatos-ellenorzes
 foo
 forecast-sector-relative-return-from-yield-spread
 foreman-grill-docs
 forensics
 forest-ecology-and-management
 forex-controls
+forge
 forge-authoring-policy
 forge-status
 forge-validate
@@ -3177,9 +3185,7 @@ fork-with-instructions
 formalize-objectives
 format-note
 format-plain-text
-formatting
 formio-auth
-forms
 forms-specialist
 forward-deployed-selling
 foundation-build-risk-review
@@ -3224,8 +3230,6 @@ freelancer-contract
 freetoken
 friday-brief
 friendly
-frontend playbook
-frontend ux
 frontend-aesthetics
 frontend-decision-sync
 frontend-design-ui-ux
@@ -3271,6 +3275,7 @@ fundraise-prep
 funfact-writer
 fuse-browser-usage
 fushi-yuelou-loft-zhuangxiu-zhinan
+fusion
 future_skill
 futuristic
 g2-design-system-ui-kit
@@ -3356,6 +3361,7 @@ genshijin-commit
 genshijin-crew
 genshijin-review
 genshijin-stats
+geo-optimizer
 geometric
 gerador-de-skill
 germany-vat-return
@@ -3448,7 +3454,6 @@ ghscan-gaubee-jixo
 ghscan-gear-foundation-vara-wiki
 ghscan-gerald-ica-claude-code-config
 ghscan-gleanwork-glean-developer-site
-ghscan-glittercowboy-taches-cc-resources
 ghscan-gmoconnect-proposal-slide-sample
 ghscan-gp15237125756-blogs
 ghscan-gyuha-gyuha.github.io
@@ -3483,13 +3488,10 @@ ghscan-kolonie-ai-kolonie-platform
 ghscan-kreeative-friends-app
 ghscan-l33z22l11-blog-v3
 ghscan-lanche86-usage-tracker
-ghscan-langchain-ai-open-swe
 ghscan-langware-labs-skillit
-ghscan-liaorenhua-blog_postgraduate
 ghscan-liaungyip-pcgen-docs-old
 ghscan-longbridge-longbridgeai-docs
 ghscan-lostlightll-nzm-wiki
-ghscan-makcoder-2004-herdr-maks-version
 ghscan-marius-bughiu-ooligo
 ghscan-matpadley-matpadley.github.io
 ghscan-mauricioperera-fastwebmcp
@@ -3503,9 +3505,6 @@ ghscan-mintlify-atlas-docs-atlas-0c0f42c0
 ghscan-mintlify-atlas-docs-atlas-2157c853
 ghscan-mintlify-atlas-docs-atlas-3df00da3
 ghscan-mintlify-atlas-docs-atlas-9f434246
-ghscan-mister-duan-mister-duan.github.io
-ghscan-mister-hope-mister-hope.github.io
-ghscan-mnsosa-herdr-kiro-session-restore
 ghscan-moon90-agrierp
 ghscan-mr-smilin-lom-wiki
 ghscan-mrrobertkent-helixlab-plugin
@@ -3519,8 +3518,6 @@ ghscan-nikhilesh-s-claude-toolkit
 ghscan-nivhazan-myclinicb
 ghscan-okomissarov-full-stack-fastapi-template
 ghscan-orban-ryanorban.com
-ghscan-overandor-hf-rentmasseur-optimizer
-ghscan-overandor-rentmasseur-extension
 ghscan-overandor-rentmasseur-unified
 ghscan-p-poss-dj-claude
 ghscan-pagerduty-claude-code-plugins
@@ -3554,13 +3551,11 @@ ghscan-shekspir55-rbn
 ghscan-shufei021-rookie-fly-blog
 ghscan-singhharsh1708-kitbash
 ghscan-sk8erboi17-dstudio
-ghscan-sperac-sperac.github.io
 ghscan-spokestack-spokestack.io
 ghscan-ssrjkk-raven
 ghscan-su-korawit-feedback-rc1
 ghscan-svar-widgets-gantt
 ghscan-svar-widgets-toolbar
-ghscan-swarn007-byte-mystory
 ghscan-systempromptindex-systempromptindex
 ghscan-techvanshji-vansh-claude
 ghscan-tellebma-the-claude-codex
@@ -3620,10 +3615,12 @@ github-agile
 github-cli-health-check
 github-copilot
 github-copilot-upgrader
+github-dashboard
 github-elements-tracking
 github-hub
 github-monitor
 github-trending
+github-workflow
 gitignore-safety
 gitlab-ci-review
 gitreset
@@ -3758,7 +3755,6 @@ golden-pdf
 golden-pdf-ch
 golden-pdf-kw
 golden-word
-good
 good-first-issue-author
 good-first-issue-sweep
 good-plugin
@@ -3813,6 +3809,7 @@ graph-blast-radius
 graph-build
 graph-connect-api
 graph-export
+graph-query
 graphql-and-hidden-parameters
 graphql-architect
 green
@@ -3843,6 +3840,7 @@ groups-compose
 grove
 grow-pipeline
 grow-sustainably
+growth
 growth-plan
 gsd-add-backlog
 gsd-add-phase
@@ -3898,7 +3896,6 @@ gtm-brain-skill
 gtm-engineering
 gtm-pricing
 guard
-guardian
 gui-design-principles
 guide-macos-spm-packaging
 guide-swift-concurrency
@@ -3914,7 +3911,6 @@ guofandirector_skills
 gustav-harness-gardener
 gwas-catalog
 gwas-catalog-skill
-gws
 h-commission
 h-decide
 h-onboard
@@ -3926,7 +3922,6 @@ ha-sync
 hackathon
 hackernews
 hackthebox
-haiku
 haipipe-paper-ideation
 hairy-react-lib
 hairy-utils
@@ -3971,6 +3966,7 @@ harness-security-bench
 harness-setup
 harness-subagent-delegation
 harness-threat-model
+harvest
 harvest-skill
 haskell-pro
 hatch3r-board-groom
@@ -3985,14 +3981,13 @@ hate
 hd-mavp-router
 headline-psychologist
 heal-skill
-health
 health-scorecard
-heartbeat
 hearth
 hello
 hello-skill
 hello-wework
 hello_world
+helm
 helpful-formatter
 helpful-helper
 herdr-gpui-browser
@@ -4219,8 +4214,8 @@ ijoc-methods
 il-tax-withholding
 illogical-structure
 illustrator
-image-compose
 image-enhancement
+image-gen
 image-resizer
 image-seo
 imagery
@@ -4256,6 +4251,7 @@ independent-review-loop
 indesign
 index-fresh-project
 indexed-arguments-no-hint
+indexing
 indicator-chart
 indicator-dashboard
 infinite-loop
@@ -4292,6 +4288,7 @@ innovate-phase
 innovate-redteam
 innovate-status
 input-handling
+insecure-defaults
 insiders-a11y-tracker
 insight-architect
 inspect
@@ -4347,6 +4344,7 @@ international-symposium-on-research-in-attacks-intrusions-and-defenses
 interpreting-culture-index
 interroge
 interview-cheatsheet
+interview-script
 intomd
 invalid
 invalid-agent-skill
@@ -4414,9 +4412,7 @@ issue-plan
 issue-reply
 issue-summary
 issue-tree
-issue-triage
 issue-work
-issues
 it-estimated-tax
 it-inps-contributions
 it-irap
@@ -4646,11 +4642,12 @@ land-bundle
 landing-report
 langchain rag pipeline
 langchain-oracledb-helper
-langgraph execution control
+langgraph-agents
 language-coach
 language-review
 language-standards
 laorenfang-zhuangxiu-zhinan
+laravel
 laravel-dependencies-trim-packages
 laravel-filament
 laravel-interfaces-and-di
@@ -4704,6 +4701,7 @@ learnings-researcher
 leave-files-unchanged
 lecture
 ledger
+ledger-live-drain
 ledger-tasks-yylo
 legacy-modernizer
 legal-advisor
@@ -4714,7 +4712,9 @@ legal-request-router-pl
 legal-risk-scoring
 legal_contract_expert
 length-converter
+lens
 lerd
+lesson
 lesson-generator
 lettre-de-motivation
 levels
@@ -4723,7 +4723,6 @@ lfe-visual-check
 lfg
 lgbt-prompt
 lhb_analyzer
-library destination advisor
 libretto
 licensing-review
 light-idea-critique
@@ -4758,6 +4757,7 @@ linked-skill
 linkedin-analytics
 linkedin-hand-skill
 linkedin-post-generator
+lint
 lint-all
 lint-check
 lint-fix
@@ -4785,6 +4785,7 @@ listenhub-voice
 lite-render-perf
 lite-screenshots
 literature
+literature-search
 lithium-supply-demand-gap-radar
 littlejs-api
 live-docs
@@ -4849,7 +4850,6 @@ local-skill
 localhost-doc
 localhost-ok
 localization-globalization
-localize
 location-enrichment
 lock
 lock-e2e
@@ -4859,6 +4859,7 @@ lofi-print-anime
 log-to-daily
 log_search
 logging-and-observability
+logging-observability
 logical-feed-probe
 lokei
 longitudinal
@@ -4944,19 +4945,7 @@ make-prompt
 makefile-best-practices
 making-commits
 malformed
-malicious curl perl
-malicious curl sh
 malicious exfil
-malicious exfil query
-malicious injection
-malicious injection keyword
-malicious injection quoted
-malicious rce procsub
-malicious rce source
-malicious rm rf
-malicious rmrf flags
-malicious rmrf glob
-malicious rmrf quoted
 malicious-skill-mcp-perms
 malicious-skill-secrets
 malicious-skill-signatures
@@ -5122,10 +5111,10 @@ memem-status
 memem-welcome
 memento-dev
 memgraph-storage-reviewer
+memoria-heartbeat
 memory-audit-dead-data-purge
 memory-discipline
 memory-flush
-memory-search
 memory-sync-setup
 memory-to-skill
 memory-update
@@ -5155,11 +5144,13 @@ memtrace-search
 memtrace-session-continuity
 memtrace-style-fingerprint
 menchuang-fengchuang-bikeng-zhinan
+mend
 mention-radar
 mentor-check
 mentor-init
 mentor-mode-skill
 menu
+merge
 merge-divergent-tox
 merit-business-trips
 merit-palk-payroll
@@ -5189,7 +5180,6 @@ method-evolution
 method-shorthand-jsdoc
 methodology-advisor
 methodology-explainer
-methods
 methods-section-guide
 meticulous-use-session-data
 metric-creation
@@ -5221,6 +5211,8 @@ migrate-xml-ui-to-compose
 migrate-xml-views-to-jetpack-compose
 migration-guidance
 migration-mapping
+migration-migrate-component
+migration-migrate-module
 migration-scoring
 migration-zero-downtime
 milens-ui
@@ -5283,6 +5275,7 @@ mobile-developer
 mobile-emulator-test
 mobile-miniapp-patterns
 mobile-security-coder
+mobile-testing
 mobius-sandbox
 mochi-review
 mock-cluster
@@ -5332,6 +5325,7 @@ morning
 morocco-ecommerce-compliance-audit-omar-laftouh
 morph
 mosaic-still-life
+motion-graphics
 motion-verify
 motor-de-b-squeda-de-noticias-de-ti-para-investigaci-n
 movement driver
@@ -5356,6 +5350,7 @@ multi-tenant-safety
 multi-turn-session-fixture-skill
 multiline-description
 munger-mental-models-worldly-wisdom
+muse
 music-to-video
 mvp
 mvp-agent
@@ -5386,6 +5381,7 @@ n1-check
 n8n-cli-node-usage
 n8n-cli-test-fixtures
 n8n-extending-mcp-official
+n8n-workflow-automation
 naf
 naming-format
 nansen-sm-cross-chain-flows
@@ -5477,6 +5473,7 @@ network-debug
 network-declared
 network-engineer
 network-policy
+networked-research
 neumorphism
 neural-information-processing-systems
 neurips
@@ -5537,6 +5534,7 @@ no-version-skill
 node
 node-check
 node-version-compatibility-tester-yashu
+nodejs
 nodejs-core
 nomination
 non-eu-export-services
@@ -5571,6 +5569,7 @@ nutrient-document-authoring
 nutrient-ios-sdk
 nutrient-maui-sdk
 nutrient-react-native-sdk
+nuxt
 nuxt-data-audit
 nuxt-swiftsearch
 nv-park-and-review
@@ -5578,7 +5577,6 @@ nx-import
 nx-plugins
 nx-run-tasks
 oath
-oauth
 oauth-oidc-misconfiguration
 objection-preemptor
 observability-driven-testing
@@ -5630,10 +5628,7 @@ ok-income-tax
 oke-cluster-generator
 oke-troubleshooter
 okx-activity
-okx-ai
-okx-defi
 okx-dex
-okx-dex-market
 ollama-review
 oly
 oly-apps
@@ -5705,8 +5700,6 @@ open-pr-fix
 open-pr-review
 open-pr-upgrade
 open-testing-management
-openai-agents
-openai-apps-sdk
 openai-evals-tuning
 openai-images-video
 openai-platform-ops
@@ -5755,6 +5748,7 @@ operational-osint
 operator-gotchas
 operator-scorecard
 opik
+opportunity-solution-tree
 ops-credentials
 ops-inspector
 ops-publish-to-ametyst
@@ -5764,7 +5758,6 @@ ops-troubleshooting
 opsx-verify-change
 optim-agent
 optimization-mastery
-optimize
 optimize-audio
 optimize-from-examples
 optimize-web
@@ -5775,6 +5768,7 @@ oracle-mcp-server-helper
 oracle-review
 oracledb
 orama-system
+orbit
 orchard-release
 orchard-review
 orchestrating-adversarial-reviews
@@ -5783,7 +5777,6 @@ orchestrating-to-completion
 orchestration-ladder
 orchestration-methodology
 orchestrations
-orchestrator
 orchestrator-code-quality
 order-prompt
 order-summary
@@ -5825,9 +5818,7 @@ packagejson
 pacman
 paginated-single-entity-filter-action
 painterly-botanical
-pair
 pairwise_de
-palette
 pandas-patterns
 panews
 panews-creator
@@ -5839,6 +5830,7 @@ paper-flat-vignette
 paper-illustration
 paper-read
 paper-research-form
+paper-summary
 paper-version-compat
 papernook
 parable
@@ -6030,7 +6022,6 @@ plan-priority
 plan-review
 plan-reviwe
 plan-risk
-plan-schema
 plan-tdd
 plan-to-task-list-with-dag
 plan-tune
@@ -6046,6 +6037,7 @@ planning-patterns
 planning-prompts
 planning-with-files-zh
 planning-with-files-zht
+plasmate
 platform-agentexchange-partner-offers-configure
 platform-apex-logs-debug
 platform-apex-test-run
@@ -6069,6 +6061,7 @@ playtest
 playwright-interactive-sandbox
 playwright-test
 playwright-test-diagnosis
+playwriter
 plea
 plot-workflow
 plugin-agentmail
@@ -6100,6 +6093,7 @@ plugin-testing
 pm-all
 pm-arch
 pm-arithmetic
+pm-brainstorm
 pm-charter
 pm-check
 pm-checkup
@@ -6188,6 +6182,7 @@ post-impl-codex
 post-issue-comment
 post-merge-cleanup
 post-review-comments
+post-rollback-diagnose
 post-to-xhs
 postcard-illustration
 postgresql-indexing
@@ -6260,11 +6255,13 @@ pr-summary
 pr-threads-address
 pr-threads-resolve
 pr-to-lint-rule
+pr-to-video
 pr-watch-fix
 pr-watch-fix-renovate
 practice
 pragma-code-review
 prd-schema
+prd-writing
 prd_writing
 pre-first-pr-check
 predicate
@@ -6275,6 +6272,7 @@ prepare
 prepare-for-meeting
 prepare-providers-documentation
 preprint-search
+press-release-writer
 preview-tour
 previous-conversations
 price
@@ -6292,6 +6290,8 @@ prioritize
 prioritize-assumptions
 prioritize-features
 prisma-next-feedback
+prismic
+privacy-compliance
 privacy-standards
 private-skill
 proactive_agent
@@ -6300,14 +6300,14 @@ probe
 problem-framing-canvas
 problem-statement
 process
-process compliance first-pass
 process-lifecycle
 processing-s3-uploads-with-step-functions
 processize
 procurement-offer-review
-procurement-optimizer
 product-architecture
 product-experts
+product-launch-video
+product-management
 product-manager-prd
 product-metrics
 product-naming
@@ -6348,6 +6348,7 @@ prompt-generator
 prompt-injection
 prompt-injection-audit
 prompt-lookup
+prompt-master
 prompt-mini
 promptkit
 prompts
@@ -6423,12 +6424,12 @@ python-providers
 python-release
 python-run
 python-sast
+python-sdk
 python-style
 pythonic
 pytorch-fsdp2
 q2
 q3-13f-intake-checkpoint
-qa checklist
 qa-dashboard
 qa-detect-a11y
 qa-do
@@ -6450,9 +6451,7 @@ qp-regress
 qt-cmake-project
 qualitative-filtering
 qualitative-research
-quality-control
 quality-convergence-engine
-quality-gate
 quality-gate-size-analysis
 quality-postmortem
 quality-repair
@@ -6472,6 +6471,7 @@ quickfix
 quickgo-skill
 quickscan
 quieter
+quill
 quoted-description
 quotient
 qv-merge-guard-wire
@@ -6503,6 +6503,7 @@ r-verify
 r3
 r8-analyzer
 race-audit-all
+radar
 radical-simplification
 rag-and-memory
 rag-code-review
@@ -6545,6 +6546,7 @@ rashomon-forget
 rashomon-report
 rashomon-status
 rashomon-stop
+rate-limiting
 rayden-code
 razor pages patterns
 rc-cut
@@ -6655,9 +6657,11 @@ refined
 reflect-outcome
 reflect-slice
 reflection-method-find
+refresh
 refresh-link-cache-pr-fix
 refresh-status
 refunds
+reggeli-napindito
 register-entrypoints
 register-snowflake-dataset
 regression-check
@@ -6678,7 +6682,6 @@ release-dry-run
 release-local
 release-note
 release-pr-review
-release-prep
 release-proprietary
 release-publish
 release-radar
@@ -6699,6 +6702,7 @@ remotion-best-practices-2
 remotion-captions
 remotion-create
 remotion-docs
+remotion-interactivity
 remotion-markup
 remotion-multimedia
 remotion-saas
@@ -6722,6 +6726,7 @@ repo-forensics
 repo-guidance
 repo-helper
 repo-polish
+repo-research-analyst
 repo-structure-linter
 repo-summary
 repo-website-api-create
@@ -6744,12 +6749,14 @@ research-analyst
 research-and-summarize
 research-coordinator
 research-manager
+research-methodology
 research-month
 research-note
 research-publish
 research-refine
 research-review
 research-router-skill
+research-synthesis
 research-task
 research-tool-routing
 reset-context-contamination
@@ -6833,17 +6840,20 @@ review-and-comments
 review-api-simulation
 review-chad
 review-change
+review-check-architecture
 review-code-dev
 review-code-style
 review-context
 review-contract
 review-crate
 review-descriptor
+review-fix-violations
 review-gha-migration
 review-notes
 review-of-economics-and-statistics
 review-pr-lite
 review-provider
+review-review
 review-rfc
 review-skill
 review-status-command
@@ -6882,6 +6892,7 @@ rigorous-coding
 riper5-protocol
 ripple
 risk
+risk-based-testing
 risk-manager
 risk-scoring
 risk_profile
@@ -6893,7 +6904,6 @@ rn-debugging
 rn-feature-dev
 rnacentral-skill
 ro-income-tax
-roadmap-planning
 roadmap-review
 robinhood-mcp
 rodo-dpia-pl
@@ -6969,6 +6979,7 @@ runtime-proof
 runtime-smoke
 rust-conventions
 rust-dev
+rust-engineer
 rust-polyglot-conventions
 rust-pro
 rust-standards
@@ -6996,6 +7007,10 @@ saas-economics-efficiency-metrics
 saas-revenue-growth-metrics
 saga
 sage
+saguaro-createrule
+saguaro-generaterules
+saguaro-model
+saguaro-review
 salary-renewal
 saleor-core
 sales-automator
@@ -7014,7 +7029,6 @@ sample-tampered
 sample-unsigned
 sample_skill
 sampleskill
-sandbox
 sandbox-builtin
 sandbox-clean
 sandbox-mcp
@@ -7135,28 +7149,31 @@ security-analyst
 security-assessment
 security-auth
 security-bun
+security-checklists
 security-comms
 security-convex
 security-django
 security-docker
 security-express
 security-fastapi
+security-headers
 security-nextjs
 security-pass
 security-pipeline
 security-review-checklists
 security-scanning-security-hardening
 security-secrets
+security-sentinel
 security-shield
 security-snapshot
+security-testing
 security-ux
 security-vite
+seedance
 seek
 sega
 selector-drift-recovery
 self-improve
-self-improving + proactive agent
-self-improving agent (with self-reflection)
 self-media-tools
 self_reflection
 semaphore-checkout
@@ -7168,7 +7185,6 @@ senhasegura
 senior-system-design
 senpi-strategy-author
 senpi-trade
-sensei
 sentiment
 sentinel
 sentry-health
@@ -7278,6 +7294,7 @@ shiki-code-blocks
 shiliuzijue
 ship-cli
 ship-playbook
+ship-pr
 ship-pr-dev
 shipping-artifacts
 shipping-changes
@@ -7367,11 +7384,11 @@ skill-with-references
 skill_installation_guard
 skillify-meta-loop
 skillopt-sleep
+skills
 skills-backup-keeper
 skills-creator
 skills-linter
 skills-list-available-yashu
-skills-security-check
 skillshare-changelog
 skillshare-cli-e2e-test
 skillshare-devcontainer
@@ -7390,9 +7407,9 @@ slice
 slicing-goals-into-dags-board-dag
 slide-making-skill
 slideops
+slideshow
 slipstream-workflows
 slushpile
-smart contract audit
 smart-contract-vulnerabilities
 smart-git-automation
 smart-router-skill
@@ -7469,6 +7486,7 @@ spawn-instance
 spec-best-practices
 spec-clarify
 spec-coder
+spec-discovery
 spec-doc
 spec-flow-analyzer
 spec-index
@@ -7547,6 +7565,7 @@ stage-implement
 stagehand-facade
 stakeholder-map
 stale-sweep
+standards
 standards-check
 standards-review
 standup-formatter
@@ -7562,6 +7581,7 @@ starwave:tasks
 stash
 stata
 state-a-fact
+static-analysis
 statistical-reporting
 stats-methods
 status-updates
@@ -7594,7 +7614,6 @@ stripe-apps
 stripe-best-practices
 stripe-credit-audit-trail
 stripe-directory
-stripe-docs
 stripe-list-pagination-previous-attributes
 stripe-refund-dispute-lifecycle
 stripe-stack
@@ -7605,7 +7624,6 @@ stub
 stub-skill-76f6713e
 style-helper
 style-orwell-6
-styles
 sub-agent-builder
 sub-skills
 subagent-teams
@@ -7628,6 +7646,7 @@ sumeru-worldbuilder
 summarize-changes
 summarize-doc
 summarize-file
+summarize-interview
 summarize-text
 summarizer
 sunlit-gouache
@@ -7643,25 +7662,21 @@ supreme-content-craft
 supreme-council
 surface
 surgical-changes
-suspense
 svelte-core-bestpractices
 svelte-design
-svg-animations
 svg-icon-safe
 svg-script
+swagger
 swarm-init
 sweep
 sweeper-fix
 sweeper-implement
 sweet
-swift 6 paradigm shift guide
-swift concurrency expert guide
 swift-concurrency-pro
 swift-executor
 swift-focusengine-pro
 swift-format-style
 swiftdata-pro
-swiftui multiplatform design guide
 swiftui-design-principles
 swiftui-pro
 swiftui-review
@@ -7689,8 +7704,8 @@ syncfusion-react-context-menu
 syncfusion-react-treeview
 synonyms
 synta-n8n-assistant
-syntax hunter
 synthesis-explore
+synthetic-monitoring
 system-and-data-design
 system-audit
 system-check
@@ -7698,6 +7713,7 @@ system-performance-guardrail
 system-steward
 system-storage-cleanup
 system_monitor
+systematic debugging
 systematic-review
 systemmonitor
 table-runner
@@ -7709,6 +7725,7 @@ taiyi-skill-skill-v30
 tajemnica-preflight-pl
 takumi-usage
 talente
+talking-head-recut
 tam-sam-som-builder
 tam-sam-som-calculator
 tangzhan-code-simplifier
@@ -7716,9 +7733,7 @@ tanstack-ranger
 tao-finetune-huggingface-model
 taosmd-a2a
 tar-data-analysis
-task
 task-board-setup
-task-decomposition
 task-delegation
 task-tracker
 task_automation
@@ -7770,7 +7785,6 @@ tech-stack-research
 technical-changelog
 technical-decision-record
 technical-doc-creator
-techniques
 telegram_guide
 telnyx-10dlc-curl
 telnyx-10dlc-go
@@ -7857,6 +7871,7 @@ test-report
 test-roadmap
 test-run
 test-scaffold
+test-setup
 test-simple
 test-skill-a
 test-skill-b
@@ -7896,7 +7911,6 @@ the-pirate-bay
 the-ultimate-guide-to-writing-effective-ai-prompts-65c2a3a3
 the-william-and-mary-quarterly
 theatrejs
-themes
 think-before-coding
 think-in-code
 think-reflect
@@ -7994,7 +8008,6 @@ toolkit-triage
 tooluniverse-functional-genomics-screens
 tooluniverse-mendelian-randomization
 tooluniverse-toxicology
-topic-0xnyk-council-of-high-intelligence-council
 topic-ageerle-ruoyi-ai-chinese-3d-aesthetics
 topic-agents4academia-ai-ureka-alphaxiv
 topic-alchemy-run-distilled-distilled-sdk-patch
@@ -8045,7 +8058,6 @@ topic-maxvaega-skillkit-invalid-missing-name
 topic-michaelpgifford-claude-read-aloud-speak-auto
 topic-microsoft-aspire-skills-aspire-deployment
 topic-microwind-ai-skills-data-pipeline
-topic-mulhamna-jira-commands-api
 topic-oleksiidotsenko-test-builder-analyze-results
 topic-omixam-pensamiento-critico-pensamiento-critico
 topic-onyx-dot-app-onyx-onyx-cli
@@ -8055,13 +8067,11 @@ topic-p-poss-dj-claude-analyze
 topic-qdhenry-claude-command-suite-gsap-animation
 topic-regent-vcs-re_gent-blame
 topic-rivet-dev-rivet-graphite-is-being-a-piece-of-s
-topic-rtgs2017-nagaagent-live2d-controller
 topic-rubenmarcus-ralph-starter-ralph-figma
 topic-schub-tech-llm-ideation-wiki-find-gaps
 topic-scisharp-numsharp-np-function
 topic-serbanghita-plan-critique-skills-archive
 topic-snowbanksdk-foundationdb-dotnet-client-snowbank-betterhttp
-topic-svar-widgets-gantt
 topic-tektoncd-pipelines-as-code-code-review
 topic-travisleeeeee-awesome-openclaw-personas-anthropologist
 topic-try-agora-qvr-invalid-skill-bad-format
@@ -8071,19 +8081,8 @@ topic-windmill-labs-windmill-adding-a-trigger
 topic-wq19901103wq-wechat-mac-rpa-3d-print-automation
 topic-zenhg-opencode-moa-architecture-moa
 topic-zilliztech-memsearch-memory-config
-topic2-arcsin1-oh-my-ppt-academic-navy
-topic2-atmosphere-atmosphere-spec-test-without-frontmatter
-topic2-cacheplane-b4run-greetings
-topic2-dinhanhthi-coding-friend-cf-commit-custom
-topic2-erergb-subagent-harness-wander
 topic2-fdueblab-micro-agent-algorithm-code-standards
-topic2-infection-infection-docker-sandbox
 topic2-mozilla-services-syncstorage-rs-syncserver-explain-code
-topic2-oleksiidotsenko-test-builder-analyze-results
-topic2-opsrobot-ai-opsrobot-datamodel-gen
-topic2-rtgs2017-nagaagent-live2d-controller
-topic2-tektoncd-pipelines-as-code-code-review
-topic2-try-agora-qvr-invalid-skill-bad-format
 tournament-manager
 tpmi-phewas-skill
 trace-harness-launch-failure
@@ -8117,7 +8116,6 @@ trailhead-work
 training-hub-guide
 transcript-to-actions
 transfer money
-translate
 transportation-research-part-b-methodological
 trap_detector
 trawl
@@ -8133,6 +8131,7 @@ triage-pregraph-data
 triage-review-findings
 trial-readout-analysis
 trigger-short-desc
+troubleshoot
 troubleshooting-flows
 trtllm-case-executor
 trust-calibrator
@@ -8160,6 +8159,7 @@ twilio-customer-support-architect
 twilio-debugging-observability
 twilio-email-deliverability-advisor
 twilio-email-send
+twilio-enterprise-knowledge
 twilio-iam-auth-setup
 twilio-identity-verification-advisor
 twilio-isv-sms-best-practices
@@ -8219,11 +8219,9 @@ ua-single-tax
 ua-social-contributions
 ua-tax-optimization
 uat-plan
-ui-designer
 ui-ext
 ui-imgui
 ui-theme-qa
-ui-toolkit/web
 ui-ugui
 ui-uitk
 ui-ux-designer
@@ -8239,7 +8237,6 @@ uk-news
 ukb-topmed-phewas-skill
 ultragoal
 ultraresearch
-ultrawork
 ulw-execute
 ulw-research
 unclosed-frontmatter-skill
@@ -8253,12 +8250,7 @@ unicli-browser
 unicli-explorer
 unicli-smart-search
 uniprot-skill
-uniswap
 uniswap cca
-uniswap driver
-uniswap hooks
-uniswap trading
-uniswap viem
 unit-testing
 unity-developer
 unity-yaml-editing-guide
@@ -8281,6 +8273,7 @@ update-api
 update-api-docs
 update-claude-learnings
 update-container-images
+update-deps
 update-gaia
 update-go
 update-instructions
@@ -8315,7 +8308,6 @@ upgrading-stylelint
 upload-dmg
 upload-insecure-files
 uploader
-upstash
 upstash-box-cli
 upstash-box-remote-work
 upstash-cli
@@ -8392,7 +8384,6 @@ utility-slideshow-creator
 utility-update-pm-skills
 ux-css-layout
 ux-persuasion-engineer
-ux-review
 ux-theming
 uzi
 va-income-tax
@@ -8422,6 +8413,7 @@ vault-init
 vbs-scan-security
 vc-frontend-design
 vector
+veil
 veille-quotidienne-japon
 vendored-assets
 vera-quality-gate
@@ -8446,7 +8438,6 @@ verify-version-alignment
 version
 version-node
 vertex-ai-gemini-model-tuning
-vertex-ai-genai-inference-skill
 vertex-ai-model-garden-deploy-skill
 vertex-ai-model-tuning-router
 vertex-ai-open-model-tuning
@@ -8465,21 +8456,21 @@ video-assemble
 video-compose
 video-continuity
 video-cut
+video-gen
 video-lens
+video-producer
 video-provider-capabilities
 video-recap
 video-reference
 video-report
-video-sdk/linux
-video-sdk/windows
 video-shots
 video-spec-builder
 video-storytelling-core-principles
 video-sync
 video-understanding
 video-upscaler
+video-vision
 video_guide
-videocut
 videocut-clip
 videocut-clip-oral
 videocut-install
@@ -8488,6 +8479,7 @@ videocut-subtitle
 videocut:字幕
 vietnam-pit
 view
+vigil
 vision-exploration
 vision_guide
 visomp
@@ -8551,6 +8543,7 @@ wait
 wait-what
 waku-memory
 walk-pr
+wallets
 wandb-autoresearch
 wandb-eval-tables
 wandb-primary
@@ -8581,8 +8574,6 @@ weather-skill
 weather-tokyo
 weather_guide
 weave
-web
-web browsing
 web-ai-prompt-api
 web-attack-methods
 web-auth-bypass-idor
@@ -8625,7 +8616,6 @@ wf-abort
 wf-worktree
 wg
 what-the
-why ethereum
 why-monad
 why-review
 why-review-loop
@@ -8670,9 +8660,10 @@ with-trigger
 withings-health
 wolfbook
 word
-word / docx
 word-counter
+words
 workdir-smoke
+workers-best-practices
 workers-code-review
 workflow-architecture-audit
 workflow-big-feature
@@ -8697,7 +8688,6 @@ workflow-seed-test-data
 workflow-sequences
 workflow-spec-sync
 workflow-spec-to-pbi
-workflow-status
 workflow-stop-design
 workflow-visualize
 workflow-write-integration-test
@@ -8706,7 +8696,6 @@ working-memory
 workplace-context
 workplace-search
 workshop-facilitation
-workspace data analyst
 worktree-guide
 worktree-merge
 worktree-stale-base-merge
@@ -8722,12 +8711,12 @@ woz-settings
 woz-share
 woz-status
 wp-plugin-directory-guidelines
+wrap
 write-a-prd
 write-a-spec
 write-agent-health-e2e
 write-agentmemory-skill
 write-changelog
-write-docs
 write-e2e
 write-file
 write-migration
@@ -8776,6 +8765,7 @@ writing-shape
 writing-skill
 writing-spec
 writing-sql
+writing-style
 writing-styles-juejin
 wrong-log-verbosity
 wrong-name
@@ -8795,8 +8785,6 @@ xbsl-form-info
 xbsl-image-add
 xbsl-rename
 xhs-content-plan
-xhs-explore
-xhs-interact
 xhs-profile
 xhs-search
 xiaohongshu-copywriter
@@ -8850,7 +8838,6 @@ zhanlue-zhanshu-bianzheng
 zhudongxing-linghuoxing-jihuaxing
 zine
 zod-4
-zoom-cobrowse-sdk
 zoom-out
 zoom-video-sdk-linux
 zoom-video-sdk-windows

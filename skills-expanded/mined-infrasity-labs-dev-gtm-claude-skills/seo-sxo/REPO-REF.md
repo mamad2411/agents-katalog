@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/infrasity-labs/dev-gtm-claude-skills (path: .claude/skills/seo-sxo/SKILL.md, branch: main)
-- mined: 2026-09-20
-- desc: Search Experience Optimization (SXO)

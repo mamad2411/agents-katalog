@@ -1,9 +1,9 @@
 {
- "generated": "2026-10-09T10:46:26",
+ "generated": "2026-10-09T11:21:44",
  "tier1_count": 761,
  "total_curated": 3176,
- "total_index": 102555,
- "total_reference": 90501,
+ "total_index": 102029,
+ "total_reference": 89988,
  "per_category_cap": 55,
  "categories": {
   "(tanpa kategori)": [
@@ -823,95 +823,95 @@
   },
   "agent-memory": {
    "curated": 1,
-   "reference": 145
+   "reference": 146
   },
   "agent-orchestrator": {
    "curated": 6,
-   "reference": 171
+   "reference": 168
   },
   "agent-ux": {
    "curated": 5,
-   "reference": 201
+   "reference": 187
   },
   "ai-engineer": {
    "curated": 49,
-   "reference": 2320
+   "reference": 2296
   },
   "analyst": {
    "curated": 1,
-   "reference": 473
+   "reference": 466
   },
   "architect": {
    "curated": 4,
-   "reference": 292
+   "reference": 293
   },
   "backend-developer": {
    "curated": 55,
-   "reference": 23052
+   "reference": 22854
   },
   "blockchain-developer": {
    "curated": 1,
-   "reference": 386
+   "reference": 384
   },
   "creative-producer": {
    "curated": 55,
-   "reference": 7534
+   "reference": 7490
   },
   "data-engineer": {
    "curated": 22,
-   "reference": 1324
+   "reference": 1306
   },
   "data-scientist": {
    "curated": 55,
-   "reference": 3207
+   "reference": 3187
   },
   "designer": {
    "curated": 55,
-   "reference": 11344
+   "reference": 11324
   },
   "devops-engineer": {
    "curated": 55,
-   "reference": 6687
+   "reference": 6659
   },
   "devtools-engineer": {
    "curated": 18,
-   "reference": 1571
+   "reference": 1554
   },
   "frontend-developer": {
    "curated": 55,
-   "reference": 7332
+   "reference": 7278
   },
   "fullstack-generalist": {
    "curated": 8,
-   "reference": 629
+   "reference": 626
   },
   "game-developer": {
    "curated": 55,
-   "reference": 7024
+   "reference": 7039
   },
   "mobile-developer": {
    "curated": 55,
-   "reference": 2711
+   "reference": 2717
   },
   "product-manager": {
    "curated": 16,
-   "reference": 1102
+   "reference": 1101
   },
   "productivity-automator": {
    "curated": 55,
-   "reference": 606
+   "reference": 595
   },
   "qa-engineer": {
    "curated": 55,
-   "reference": 6892
+   "reference": 6881
   },
   "security-specialist": {
    "curated": 55,
-   "reference": 2811
+   "reference": 2773
   },
   "tech-writer": {
    "curated": 24,
-   "reference": 1389
+   "reference": 1370
   }
  }
 }

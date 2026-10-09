@@ -1,0 +1,364 @@
+---
+name: inplan
+description: Use for ANY planning, design, PRD, or spec document — always plan in inplan; the user need not say "with me" or "collaboratively". Trigger on "plan X", "let's plan …", "create/write a plan|PRD|spec|design for …", "design Y", or any request pairing planning with a topic (e.g. "plan a tic-tac-toe game"). inplan itself creates the document (*.plan.md) and opens its editor; you then fill it in — drafting the body and posing open questions as inline comments — the human reviews, answers, and edits, you revise, looping until the human ends the session. Distinct from writing-plans, which breaks an already-agreed spec into implementation tasks; inplan is for co-developing the spec/design itself.
+# The human reviews every change in the inplan editor, so the agent's edits to the plan
+# file + sidecars and the inplan CLI are auto-approved while this skill is active (no
+# per-edit prompts). Scoped to plan files, the ~/.inplan sidecars, and the inplan CLI only.
+allowed-tools:
+  - Bash(inplan *)
+  - Edit(**/*.plan.md)
+  - Read(~/.inplan/**)
+  - Edit(~/.inplan/**)
+---
+
+# inplan
+
+Collaborate with the human on a planning document through inline comments, like
+two people on a shared doc. You draft the plan and pose open questions as
+comments; the human reviews, edits, and answers; you revise. Repeat until the
+human completes the session.
+
+## Install (once)
+
+Check for the CLI and install it if missing:
+
+    inplan --version || npm install -g inplan
+
+**If `open` runs headless** (it prints "the bundled editor's Electron runtime is
+unavailable"): the npm package installed but Electron's **binary** didn't download or extract
+correctly — a proxy/firewall/AV interfered, or `ignore-scripts` is set. `open` now
+**auto-recovers** first: when the binary is missing it re-runs Electron's own installer to retry
+the download, then (Windows only) re-extracts the already-downloaded zip a different way if the
+binary still isn't there, and launches the GUI if that succeeds. It does **not** substitute a
+third-party mirror on its own — only an explicit `ELECTRON_MIRROR` you set yourself is honored.
+You only see the headless message when recovery still fails, or when
+`INPLAN_NO_ELECTRON_DOWNLOAD=1` is set (see below). Then:
+
+- If a proxy/firewall blocks the default host outright, point it at a mirror you trust and
+  retry: `ELECTRON_MIRROR=<url> inplan open …` (`set ELECTRON_MIRROR=<url>` on Windows cmd).
+- Or re-download inplan's own copy (do **not** `npm install -g electron` separately — inplan
+  won't use it), using the path the message prints:
+
+      npm rebuild electron --prefix "$(npm root -g)/inplan"               # macOS/Linux
+      npm rebuild electron --prefix "%APPDATA%\npm\node_modules\inplan"   # Windows (cmd)
+
+Set `INPLAN_NO_ELECTRON_DOWNLOAD=1` to skip the auto-download (air-gapped/CI) — this also
+produces the headless message above, immediately, without attempting recovery. The loop still
+works headless until a binary is present, but the human can't review in the GUI — surface the
+fix to them and proceed.
+
+## Signing in (cloud documents)
+
+Any cloud command (`wait --remote`, `login`, …) may exit with code 7 and a JSON line:
+`{"status":"login_required","url":…,"resume":…,"expiresInSec":…}`. Sign-in happens in the
+human's browser — never try to open the URL yourself, fetch it, or ask the human for
+credentials. Do exactly two things:
+
+1. Show the `url` to the human and ask them to open it in a browser and sign in.
+2. Immediately re-run the `resume` command (it is the command you just ran). It waits for the
+   sign-in to finish, then continues normally — you don't need to poll or sleep first.
+
+The wait in step 2 is bounded (~3 minutes). If the human hasn't finished by then, the command
+exits with a timeout message while the session is still valid — that is not a hard error: just
+re-run the same command and it resumes the same sign-in. If the link itself expires
+(`expiresInSec`, ~10 minutes), the re-run prints a fresh URL — repeat from 1.
+
+## Cloud documents (wait --remote)
+
+For a cloud document, `inplan wait --remote <docId>` materializes a **working copy** at
+`~/.inplan/sidecars/remote/<docId>.plan.md` and tells you so on stderr. That working copy is
+**your editing surface** — the one file under the sidecars you may edit (the CLI puts it there
+*for* you). Edit it, then re-run the same `wait` command: the run pushes your edit and waits
+for the human. The `.proposed.*` records described below are **read-only audit state** — read
+them to answer "did my edit land?", but never rewrite or delete them (they are the durable
+history the CLI maintains).
+
+**Review mode parks your edit — that is success, not failure.** Most cloud docs are in review
+mode: your body edit is NOT applied to the canonical; it is pushed to the cloud as a
+**proposal** for the human to accept or reject in their editor. Every proposal is a
+first-class object with its own **id** — the same id names it in the wait output, in the local
+record, and in the cloud. When a park happens the wait output carries
+`proposal: { state: "pending_review", id, bytes, hash }`, an `agent_revision_proposed` entry
+(payload `proposal_id`) appears in `entries`, and stderr says the edit was parked.
+
+How to audit "did my edit land?" — the answer is a **lookup by that id**, never an inference:
+1. **This turn:** the `proposal` field in the wait JSON (`pending_review` = safely parked, and
+   `id` is the proposal's identity), or a `document_edited` entry (= applied directly to
+   canonical). The `proposal` field rides **every** turn-ending output when a park happened
+   this turn — `your_turn`/`activity`, `closed`, `navigated`, `wait_failed`, `superseded`, and
+   `moved_local` — losing or handing off the wait afterwards does not un-park your edit, so
+   check the field (and the record below) before classifying it.
+2. **Any later turn:** read `<workingCopy>.proposed.json` — the durable record, keyed by the
+   same id. Its `state` mirrors the cloud proposal's own state verbatim once the next
+   `wait --remote` run reconciles: `accepted`, `partially_accepted`, or `rejected` when the
+   human decides, `superseded` when a newer proposal of yours replaced it, `withdrawn` when
+   the agent retracted it — the newest record is the authoritative one. (`decided` appears
+   only when the proposal itself is gone from the cloud — a legacy park with no row — and
+   means the human acted but which way is unknowable.) The exact text you pushed is embedded
+   in the record itself (its `text` field — audit from there); `<workingCopy>.proposed.md` is
+   only a derived, read-convenience copy that can be missing or stale until the next run
+   reconciles it. Every finalized record is appended to `<workingCopy>.proposals.jsonl`.
+3. A later wait's `entries` may also carry the decision event, whose payload names the decided
+   proposal: `revision_accepted_all`, `revision_hunk_accepted`, or `revision_rejected_all`.
+
+If the park itself fails, the wait JSON carries `proposal: { state: "park_failed", bytes,
+hash }` (and stderr says the push FAILED) — `park_failed` means exactly that the **cloud push
+was not confirmed**. It does NOT prove the push didn't land: a lost response can leave the
+proposal live in the cloud while the local event and record are missing. (When an EARLIER
+proposal of yours is still pending — the failed push was a re-push — the field carries that
+proposal's `id`.) Either way the retry is safe and automatic — the next `wait` run first
+reconciles from your own pending proposal in the cloud (a landed push is adopted as the
+pending record under its cloud id, not re-sent), and re-pushing identical content is
+idempotent (same proposal identity, no duplicate). Your edit stays in the working copy; do
+not re-create it — just re-run.
+
+The converse also holds: a CONFIRMED push stays parked even when a piece of local bookkeeping
+failed around it. The event append or the local record write can fail after the push landed —
+stderr says so when it happens — and the next `wait --remote` run rebuilds the missing record
+from the cloud proposal itself. A temporarily missing event or record therefore never means
+the park failed; only `park_failed` (or the absence of any park signal plus a still-diverged
+working copy) means that.
+
+Two things are **normal and must never be read as data loss**: after a healthy turn the
+working copy is re-synced to the current canonical (so your parked edit is no longer in it —
+it lives in `.proposed.md` and in the cloud), and `.synced` tracks only canonical syncs (it
+says nothing about proposals). **Never delete or rewrite your local work because the working
+copy or `.synced` looks stale** — check the proposal record first.
+
+## File convention
+
+Save plans as `<name>.plan.md`. The `inplan` CLI keeps its own working files under
+`~/.inplan/sidecars/<key>/` — it owns these; never read or edit them by hand. (Exceptions,
+described above: the `wait --remote` working copy is yours to **edit**, and its `.proposed.*`
+records are yours to **read** for audit — never to modify.)
+
+## Auto-approval (review happens in the app)
+
+The human reviews every change you make inside the inplan editor, so you don't need
+the coding agent's per-edit confirmation for this workflow. This skill's `allowed-tools`
+auto-approve — **while the skill is active** — exactly: the `inplan` CLI, editing/writing
+`*.plan.md`, and reading/writing the `~/.inplan/` sidecars. Nothing else is granted, and
+your other tools still prompt as usual.
+
+For persistent auto-approval across sessions, run `inplan install-skill` — it merges the
+same scoped rules into `~/.claude/settings.json` (`permissions.allow` +
+`additionalDirectories: ["~/.inplan/"]`). Set `INPLAN_NO_SKILL_INSTALL=1` to skip.
+
+## Document format
+
+Comments live in a single trailing HTML-comment block holding a JSON array. An
+anchored comment is an inline Markdown link whose href is the comment id:
+
+    The plan should [use Postgres](#cmt-abfdb1) for storage.
+
+    <!--inplan
+    [
+      { "id": "cmt-abfdb1", "author": "Opus 4.8 <claude@inplan.ai>",
+        "date": "2026-05-29T00:00:00Z", "resolved": false,
+        "text": "Confirm the datastore?",
+        "question": { "multiSelect": false, "choices": [
+          { "label": "Postgres", "description": "JSONB + scale" },
+          { "label": "SQLite", "description": "simplest" } ] } }
+    ]
+    -->
+
+- **Span comment**: exactly one in-body `[text](#cmt-id)` link; no `parentId`/`anchor`.
+- **Reply / answer**: `parentId` set, no link. An answer carries `selected: [labels]`.
+- **Document-level**: `anchor: "doc"`, no link.
+- **Incorporating an answer**: when you fold a question's answer into the body, keep the
+  anchor link — rewrite the linked text from the open question to the resulting statement,
+  don't delete the link. Anchoring is id-based, not text-based, so the link survives the
+  rewrite (`[Team size is fixed at 3.](#cmt-m4n5o6)` is fine). Signal that the thread is done
+  with `may_resolve` (below), not by removing its anchor. Only actually orphan a span
+  comment (drop its link) when its topic is genuinely gone, not merely answered — and then
+  follow the `confirm_required` protocol (see § Turn-taking).
+- **Question**: `question.multiSelect` false = pick one (radio), true = pick many
+  (checkbox); the human may also answer with free text.
+- Generate ids as `cmt-` + 6 base36 characters.
+- **`date`**: you have no reliable clock, so never invent this by hand. Use `inplan comment
+  <file> (--parent-id <id>|--doc|--span "exact body text") --text "..." [--model NAME]
+  [--may-resolve] [--question <json>]` instead of hand-editing the JSON block — it stamps
+  `date` from the real system clock and fills `author` from `--model` for you (same as
+  `open`/`wait`), and prints the new comment's `id`/`date`/`author` back. `--span` covers the
+  span-comment case too: give it the exact, currently-unlinked body text to anchor to (it must
+  occur exactly once — add surrounding context if it's ambiguous) and it wraps that text in
+  the link itself, so you never hand-edit the body for this either.
+- **`author`**: sign **every** comment you write with **your own model identity**, so
+  the human sees which model is talking. Always pass `--model "<your model>"` (e.g.
+  `--model "Opus 4.8"`) on `open`/`wait`; the wait result echoes the exact string to
+  use back as **`agentAuthor`** (e.g. `"Opus 4.8 <claude@inplan.ai>"`). Copy that
+  value verbatim into the `author` field — never hardcode the generic
+  `"Agent <agent@inplan>"`.
+- **The document body must stand alone — never mention comments or their ids in prose.**
+  Comments are ephemeral; the document is permanent, and a reader has no way to resolve a
+  comment id. So do not write things like "see cmt-ab12cd", "as discussed in the comment
+  above", or "per the resolved thread". (The anchored `[text](#cmt-id)` *link* is the comment
+  mechanism itself and is fine — this is about the surrounding prose.) The body should read as
+  a complete document with every comment stripped out.
+
+### Images
+
+A plan can carry images, but **the bytes have to reach the document's own storage first** —
+a filename, a local path, or a `scratchpad/` reference renders as a broken image for the
+human, who has no access to your filesystem. Upload, then reference what the upload prints:
+
+    $ inplan asset-upload --remote <docId> --bytes-file ./shot.png --ext png
+    {"status":"uploaded","relPath":"https://…/doc-images/<org>/<doc>/image-….png"}
+
+then put that `relPath` in a normal Markdown image: `![what it shows](<relPath>)`. Use
+`inplan asset-upload <file> …` for a local plan promoted to the cloud (its doc id comes from
+the status sidecar), and the `--remote <docId>` form for a doc you attached to by id. Both
+upload as **you** — the signed-in session is the authorization, so there is no key to find
+and nothing to configure beyond `inplan login`.
+
+For a purely local plan, images live next to the file in `<docname>.assets/` and a relative
+link resolves; nothing needs uploading.
+
+Write the image reference in the same edit that adds the surrounding prose. Do not leave a
+placeholder for the human to fill in later — attaching images is not a human-only step, and a
+body full of bare filenames is the failure this section exists to prevent.
+
+## Turn-taking & control — read this first
+
+This is **turn-based**. The turn belongs to exactly one party at a time:
+
+- After you (the agent) `open` or revise and call `wait`, the turn is the
+  **human's** — the editor is theirs to use.
+- When the human clicks **Finish turn**, the turn becomes **yours**. In Turn mode
+  the human's editor **locks** ("Agent is thinking…"); they **cannot edit** until
+  you take your turn and hand control back.
+
+Therefore, when `wait` returns `actions`, **it is your turn and the human is
+blocked, waiting for you.** Do not idle and never tell the human to act. Promptly
+take your turn, then call `wait` again. **Calling `wait` is how you hand control
+back** — it logs an `agent_revised` event that unlocks the human's editor. You
+must call `wait` after *every* turn, **even if you changed nothing**; otherwise
+the human stays locked out.
+
+`wait` owns the cursor, diffs, and control-log writes. **Your only jobs are: edit
+the plan, then call `wait`.** Do not pass `--cursor` and do not hand-manage it.
+
+## The loop
+
+1. **Open the editor first** — pick a path and launch it **in the background, with
+   no timeout** (do not foreground it, do not poll):
+
+       inplan open <name>.plan.md
+
+   On a path that doesn't exist yet, inplan **creates an empty document** and opens
+   it, so the human sees the editor immediately — no separate "create the file"
+   step. It then blocks until the human acts, prints one JSON line, and exits;
+   re-invoke yourself when it returns.
+2. **Fill the document in**: write `<name>.plan.md` — the plan body plus your open
+   questions as comments (use `question` + `choices` where the answer is a choice).
+   The open editor reflects your writes live (a brand-new doc auto-applies; once the
+   plan is established, body revisions follow the acceptance mode — see § The loop
+   step 4). Then wait for the human (step 3).
+
+   **Pass `--model <your-model-name>`** on `open`/`wait` (e.g. `--model "Opus 4.8"`)
+   so the editor shows which model is attached and stamps your comments with a
+   model-qualified author. Use the same value every turn.
+3. Read the printed JSON `status` (it also carries `mode`, `humanLocked`, and
+   `settings` — the current materialized user settings, e.g. `agentMode`).
+   **`settings.agentMode`** is your operating mode: `planning` (the
+   default — draft and refine the document, the normal loop below) or `implementation`
+   (the human switched you to build mode — stop refining the plan and **build what the
+   document specifies**). It can change mid-session; re-check it each turn.
+   - `your_turn` — **Turn mode**: the human finished their turn and their editor
+     is **locked**; the turn is yours. Re-read the `.md`, act, then **call `wait`
+     to hand control back** (this unlocks them). `humanLocked: true`.
+   - `activity` — **Instant mode**: the human acted but is **editing live and is
+     not blocked**. React by **appending to comment threads only** (reply/resolve/
+     answer) — do **not** rewrite the body — then call `wait` again to keep
+     listening. `humanLocked: false`.
+   - `confirm_required` — your edit removed an anchored comment (`lost`). If
+     intentional, re-run with `--confirmed-comment-deletion=<ids>`; otherwise
+     restore the anchor link and try again. Deleting a comment that has replies
+     orphans those replies too — `lost` only lists the comment itself, never its
+     descendants, so include every reply/reply-of-reply id in
+     `--confirmed-comment-deletion` as well, or you'll hit `missing_parent` on
+     the next `wait`. **These two options are the only remedies.** Never change a
+     comment's `anchor` or `parentId` field to dodge this gate — e.g. relabeling
+     an orphaned span comment as `anchor: "doc"` to make the missing-link check
+     stop applying to it. That's not a documented recovery path; it silently
+     miscategorizes the comment and routes around the confirm gate entirely.
+   - `integrity_error` — the document violates the comment grammar (`errors`).
+     Fix it and wait again.
+   - `closed` — the planning session is over; stop the loop. `reason` says what to do next:
+     - `completed` — the human chose **"Switch agent to build mode"** on quit: planning
+       is done and they want you to **implement the plan**. Stop the wait loop and start
+       building what the document specifies (it's no longer a planning doc — act on it).
+     - `window_closed` — they just closed the editor; **stop** and take no further action.
+     - `crashed_or_killed` — the editor vanished with no close log; surface this to the human.
+       Only reported once the absence has persisted (a heartbeat that merely stalled — a
+       backgrounded tab, a network blip — is not a departure), and never in place of work you
+       were waiting for: if the human handed the turn back and *then* left, you get that
+       handoff (`your_turn` / `activity`) with **`editorGone: true`** alongside it. Treat that
+       flag as the closure: do the work the handoff describes, then **stop**. Do not call `wait`
+       again — the editor is already gone, so the next wait has nothing to see it leave and will
+       block rather than report it.
+   - `superseded` — a newer `wait` took over this document (only one waiter runs at
+     a time). This one stepped down; **do nothing** — the live waiter is in charge.
+   - `navigated` — the human followed an in-window link to a **different document**;
+     `path` is the new file. This `wait` stepped down. **Follow them:** call
+     `wait <path>` (pass your `--model`) to re-attach there and resume the loop —
+     you move with the human to the linked doc.
+   **Run only one `wait` per document.** Launch `open` / `wait` as their **own
+   long-lived background process** — do **not** background them with a shell `&`
+   inside a short-lived wrapper command, or the wrapper exits and its process tree
+   (including your waiter) is reaped. If your `wait` ever exits **without** a
+   `closed` status while the editor is still open — e.g. it was `superseded`, or the
+   process was terminated by the environment — simply **call `wait` again** to resume
+   monitoring; don't treat it as the session ending.
+4. Act on what changed (`your_turn` → the human is locked and waiting; `activity`
+   → they're still editing live), **respecting the mode**:
+   - **Turn mode**: you may revise the document body and reply/resolve comments.
+   - **Instant mode**: only add to comment threads (reply/resolve/answer); do
+     **not** rewrite the body.
+   Reply by appending a comment with `parentId`. Read `selected` on the human's
+   answers. If nothing needs changing, that's fine — you still take your (empty)
+   turn and proceed to step 5.
+   **Resolving:** never set `"resolved"` yourself — that's the human's (and the
+   app's) call. When you've incorporated a comment, set `"may_resolve": true` on it
+   (your reply on the thread); the app resolves it or offers the human a one-click
+   Resolve, per their preference. If a thread is **already resolved**, leave it untouched.
+5. **Relay a one-line summary, then hand control back by calling `wait` again**
+   (no `--cursor` — it self-manages), then loop to step 3. The `message` keeps the
+   human's status-bar history populated; the `wait` unlocks their editor and blocks
+   until their next turn. Do both after *every* turn, even an empty one:
+
+       inplan message <name>.plan.md "Summarized what you did this turn."
+       inplan wait <name>.plan.md
+
+   `your_turn` and `activity` are **not** stop conditions — you always loop back
+   and keep waiting. Two things end the loop: `status: closed`, or a handoff that
+   also carries `editorGone: true` (the human handed the turn back and then left —
+   finish that turn's work, then stop; see `crashed_or_killed` above for why a
+   further `wait` would block instead of reporting the closure).
+
+6. When you believe the plan is ready, signal it (the human still decides):
+
+       inplan signal <name>.plan.md --done
+
+   Then wait again, and stop on the same two conditions as step 5: `status: closed`,
+   or a handoff carrying `editorGone: true`.
+
+## Keeping the human informed
+
+The human can't see your terminal — anything you'd "say" about your work is
+invisible to them unless you relay it. Mirror it into the editor with `inplan
+message`; it appears as a note in the status bar (the human clicks it for the
+full session history). Use it for human-facing context, not your raw reasoning:
+
+    inplan message <name>.plan.md "Reworked the datastore section based on your Redis pick."
+
+**Relay a one-line summary on every turn**, right before you `wait` — what you
+changed and why, or that you only replied. This is what populates the status-bar
+history, so the human can always see how you responded to each of their actions.
+Also relay when you start a long step. Keep each to a sentence or two. It's
+informational only — it never ends the loop or hands over the turn.
+
+## Authorship
+
+Never add AI attribution to the document, commit messages, code, or anything
+committed — always use the human's identity. (See AGENT.md.)
