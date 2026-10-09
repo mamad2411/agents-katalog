@@ -1,0 +1,476 @@
+---
+name: release-prepare
+description: Prepare a new VivaDicta release — version bump, What's New screen, App Store metadata, code sweep, and pre-submission checklist
+---
+
+# Release Prepare
+
+Use this skill when preparing a new VivaDicta release for App Store submission.
+
+## Version Format Convention
+
+Use the full `X.Y.Z` form in **every user-facing surface** — never the short `X.Y` form like "3.3":
+
+- In-app What's New screen `headline` field (e.g. `"What's New in VivaDicta 3.3.0"`)
+- App Store release notes body text (e.g. `"VivaDicta 3.3.0 adds..."`)
+- App Store description if it mentions the version
+- Website changelog intro paragraph (the `<h2>` already shows `3.3.0`, but the prose must too)
+- LinkedIn / social post copy
+- Filenames: `whats-new-X.Y.Z.md`, `description-X.Y.Z.md`, `linkedin-X.Y.Z-<slug>.md`
+
+The **only** place short `X.Y` form survives is the internal `WhatsNewCatalog.releases` dictionary key, because the version-match logic is intentionally major.minor (so 3.3.0 / 3.3.1 / 3.3.2 all hit the same entry). That key is not user-visible.
+
+## Related Skills
+
+- `asc-release-flow` — drive the App Store Connect submission flow (Step 11 covers the normal archive-upload-and-submit path; reach for this skill when a submission needs unpicking)
+- `asc-whats-new-writer` — generate App Store release notes
+- `asc-metadata-sync` — sync and validate App Store metadata
+- `asc-localize-metadata` — sync metadata across localizations (used for ASO, not actual translation)
+- `asc-aso-audit` — run ASO audit on App Store metadata and surface keyword gaps
+
+## Skill Flow
+
+- Example queries:
+  - "prepare release 2.2.0"
+  - "let's ship a new version"
+  - "release prep"
+
+### Step 1 — Create release branch
+
+```
+git checkout -b release/X.Y.Z
+```
+
+### Step 2 — Bump version numbers
+
+Update `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.pbxproj` across ALL 9 targets × 3 configs (**Debug, QA, Release**) = 27 entries each:
+- VivaDicta (main app)
+- VivaDictaKeyboard
+- VivaDictaWidgetExtension
+- ShareExtension
+- ActionExtension
+- VivaDictaTests
+- VivaDictaWatch Watch App
+- VivaDictaWatch Watch AppTests
+- VivaDictaWatchWidgetExtension
+
+> Don't hardcode the expected count - targets come and go (a `VivaDictaWatch Watch AppUITests` target existed when this was written, which is why the doc long said 30/10). Derive it instead:
+> ```bash
+> grep -c "MARKETING_VERSION = " VivaDicta.xcodeproj/project.pbxproj   # current entry count
+> ```
+> Then confirm the same number carries the new value after the sed.
+
+Fastest approach - a global sed replace catches every entry in one shot:
+```bash
+N=$(grep -c "MARKETING_VERSION = " VivaDicta.xcodeproj/project.pbxproj)   # baseline, currently 27
+grep -cE "MARKETING_VERSION = {OLD}" VivaDicta.xcodeproj/project.pbxproj  # should equal $N
+sed -i '' 's/MARKETING_VERSION = {OLD};/MARKETING_VERSION = {NEW};/g' VivaDicta.xcodeproj/project.pbxproj
+sed -i '' 's/CURRENT_PROJECT_VERSION = {OLD_BUILD};/CURRENT_PROJECT_VERSION = {NEW_BUILD};/g' VivaDicta.xcodeproj/project.pbxproj
+# verify
+grep -E "MARKETING_VERSION|CURRENT_PROJECT_VERSION" VivaDicta.xcodeproj/project.pbxproj | sort -u  # should show only 2 unique lines
+grep -c "MARKETING_VERSION = {NEW}" VivaDicta.xcodeproj/project.pbxproj   # should equal $N
+```
+
+Convention: `CURRENT_PROJECT_VERSION` is a **monotonic counter**, independent of `MARKETING_VERSION`. Bump it by `+1` for every new build uploaded to TestFlight/App Store Connect, regardless of whether the marketing version changed. Apple only requires the build number to be strictly greater than any previously uploaded build for the same marketing version, so a plain incrementing integer is the simplest correct approach.
+
+Before editing, check the current value:
+```
+grep -E "CURRENT_PROJECT_VERSION" VivaDicta.xcodeproj/project.pbxproj | head -1
+```
+Then use `current + 1` as the new value across all targets.
+
+The same number must be passed to `asc publish appstore --build-number` in Step 11 - local-build mode does **not** read it from the pbxproj.
+
+> **Legacy note**: earlier releases up through `3.0.0` used a packed `XYZN` scheme (e.g. `1.1.0 → 1101`, `3.0.0 → 3001`), which is why the counter currently sits at a value like `3001`-ish. That scheme is abandoned because it caps each segment at 9. Going forward, just `+1` from the last build number - do NOT try to re-pack based on the marketing version.
+
+### Step 3 — Code sweep
+
+Run a pre-release code sweep checking for:
+- TODO/FIXME/HACK comments that need attention before release
+- Hardcoded debug/test values (test API keys, localhost URLs, debug flags)
+- `print()` statements that should use `Logger`
+- Dangerous force unwraps
+- Any leftover debug triggers (e.g., forced What's New screen)
+- Build the project and check for warnings
+
+### Step 4 — What's New in-app screen
+
+Use `references/whats-new-screen.md` for the full guide on adding What's New content to the in-app screen.
+
+Two things that are easy to miss, both covered in that guide:
+- Prefix the new `release_X_Y` property with an ISO date comment (`// YYYY-MM-DD`) - `WhatsNewRelease` has no date field, so this comment is the file's only record of when the entry was written. Don't backfill older entries.
+- The `headline` uses the full `X.Y.Z` form; only the `releases` dictionary key is `X.Y`.
+
+### Step 5 — App Store What's New (release notes)
+
+Write App Store release notes and save to Obsidian vault at:
+`Projects/VivaDicta/what's new/whats-new-X.Y.Z.md`
+
+**Read the guide first**: `Projects/VivaDicta/description/description-guide.md` - covers structure, writing rules, and common pitfalls for both What's New and description text.
+
+**Format**: No frontmatter, no markdown header — plain text only, ready to copy-paste into App Store Connect.
+
+**IMPORTANT**: App Store What's New (release notes) limit is **4,000 characters**. Always verify the character count.
+
+**ASO strategy** (important, easy to misread):
+- `description` + `whatsNew` → **identical English text in all 10 locales** (no translation)
+- `keywords` → **unique per locale** (this is the ASO hack - different keyword sets target different search markets)
+- `marketingUrl` + `supportUrl` → same across locales
+
+**Primary source - the running draft**: `Projects/VivaDicta/what's new/whats-new-running.md` is a *running* accumulator of user-facing What's New items for the **upcoming** release. Add to it as features land between releases, then use it as the main source for both the in-app What's New (Step 4) and these App Store release notes.
+
+Source features from:
+- **Running draft (primary)**: `Projects/VivaDicta/what's new/whats-new-running.md`
+- Obsidian vault: `Projects/VivaDicta/feature-changelog.md`
+- Website changelog: `https://vivadicta.com/ios/changelog`
+- Git log since last release tag
+
+**After the release ships, empty `whats-new-running.md`** - clear all items, leaving only the `Running What's New (next release)` header line. It tracks only the *next* upcoming release, so its items must be cleared once they have shipped in `whats-new-X.Y.Z.md`. (Also in the Step 10 checklist.)
+
+**Framing note (Apple Foundation Model)**: when a release adds on-device / local AI, only *recommend* Apple Foundation Model on **Apple-owned surfaces** - the App Store description and these release notes - so App Review sees we are not positioning against Apple's own model. On **our own channels** (in-app What's New, website changelog, LinkedIn), present the on-device feature directly, without recommending Apple FM. The "works even on devices without Apple Intelligence, including iOS 18" value angle is fine everywhere - it is a capability statement, not a recommendation.
+
+### Step 6 — App Store description
+
+Check if the current App Store description needs updating for new features.
+
+**Read the guide first**: `Projects/VivaDicta/description/description-guide.md` - covers section ordering, core identity rules, jargon avoidance, and Apple Foundation Model placement.
+
+Previous descriptions are stored at: `Projects/VivaDicta/description/`
+
+**Format**: No frontmatter, no markdown header — plain text only, ready to copy-paste into App Store Connect.
+
+**IMPORTANT**: App Store description limit is **4,000 characters**. Always verify the character count before finalizing.
+
+If updating, save the new version as `description-X.Y.Z.md` in the same directory.
+
+### Step 7 — Generate ASC metadata directory for the new version
+
+Create `metadata/version/X.Y.Z/*.json` for all 10 locales, ready to push to App Store Connect via `asc`. The directory is gitignored - ASC is source of truth, this is just the staging payload.
+
+Seed from the previous version, overwrite `description` and `whatsNew` with the new English text, keep per-locale `keywords`/`marketingUrl`/`supportUrl` untouched:
+
+```bash
+mkdir -p metadata/version/{NEW}
+python3 << 'PYEOF'
+import json
+locales = ['ar-SA','en-US','es-MX','fr-FR','ko','pt-BR','ru','vi','zh-Hans','zh-Hant']
+with open("/Users/antonnovoselov/Documents/Vault/Projects/VivaDicta/description/description-{NEW}.md") as f:
+    new_desc = f.read().rstrip('\n') + '\n'
+with open("/Users/antonnovoselov/Documents/Vault/Projects/VivaDicta/what's new/whats-new-{NEW}.md") as f:
+    new_wn = f.read().rstrip('\n') + '\n'
+for loc in locales:
+    with open(f'metadata/version/{PREV}/{loc}.json') as f:
+        d = json.load(f)
+    d['description'] = new_desc
+    d['whatsNew'] = new_wn
+    with open(f'metadata/version/{NEW}/{loc}.json', 'w') as f:
+        json.dump(d, f, indent=2, ensure_ascii=False)
+PYEOF
+```
+
+Push happens during submission (see Step 10):
+```bash
+# NOTE: the subcommand is `apply`, not `push` - there is no `asc metadata push`.
+asc metadata apply --app 6758147238 --version X.Y.Z --platform IOS --dir ./metadata --dry-run   # always dry-run first
+asc metadata apply --app 6758147238 --version X.Y.Z --platform IOS --dir ./metadata
+asc validate --app 6758147238 --version X.Y.Z --platform IOS   # expect 0 errors / 0 blocking; the info-level App Privacy advisory is permanent, ignore it
+```
+
+### Step 8 — Update feature changelog
+
+Move shipped features from "Unreleased" to "Released" section in:
+`Projects/VivaDicta/feature-changelog.md` (Obsidian vault)
+
+Also add a new `### vX.Y.Z (YYYY-MM-DD)` section with feature groupings and PR numbers (see earlier entries for format).
+
+### Step 8.5 — Update iOS website changelog
+
+The changelog is **data-driven** - do not hand-write JSX. Add a new entry to the `releases` array in:
+`/Users/antonnovoselov/Desktop/_Projects/iOS/VivaDictaMeta/vivadicta_website/components/ios-changelog/releases-data.tsx`
+
+`app/ios/changelog/page.tsx` renders the index from that array, and `app/ios/changelog/[version]/` generates one static page per entry - so a new entry automatically creates `https://vivadicta.com/ios/changelog/X.Y.Z`, which is the URL the LinkedIn post links to (Step 8.6).
+
+Insert the new object at the **top** of the array (newest first). Required fields:
+
+```tsx
+{
+  version: "X.Y.Z",              // also the URL slug
+  date: "YYYY-MM-DD",            // ISO, used for sorting + sitemap lastModified
+  dateLabel: "Month D, YYYY",    // shown in the UI
+  summary: "...",                // lead paragraph; ReactNode, so it can carry inline <Link>s
+  summaryText: "...",            // plain-text lead for <meta description> / Open Graph
+  groups: [
+    { heading: "Feature Group", items: ["bullet 1", "bullet 2"] },
+  ],
+}
+```
+
+Gotchas:
+- The file is `.tsx`, **not** `.ts` - `grep`/`find` for `releases-data.ts` will miss it.
+- `items` entries containing an apostrophe or quotes need the string quoting swapped (`'...'` vs `"..."`) or escaping, since they are plain JS strings.
+- Verify with `npm run build` and confirm the log lists `/ios/changelog/X.Y.Z` among the generated routes.
+
+Keep copy aligned with the in-app What's New and App Store release notes so messaging stays consistent across surfaces. Commit and push in the website repo (separate from the iOS app repo - the website repo is auto-commit, no need to ask).
+
+### Step 8.6 — Draft LinkedIn announcement post
+
+Prepare a launch post for the **VivaDicta company page** on LinkedIn (not Anton's personal feed - the voice is announcement-style, not first-person story).
+
+Save **two files** to `/Users/antonnovoselov/Documents/Vault/Projects/VivaDicta/linkedin-posts/`:
+
+- `linkedin-X.Y.Z-<slug>.md` - the working draft (all variants + posting notes below). Normal blank lines so it reads cleanly in Obsidian.
+- `linkedin-X.Y.Z-<slug>-copy.md` - the paste-ready primary draft **only**, formatted for LinkedIn's composer (see "LinkedIn composer formatting" below). No headings, no frontmatter, no variants - just the exact text that goes into the composer.
+
+The working draft (`.md`) should include:
+
+1. **Primary draft** - ready to paste. Lead with a one-line release announcement, one paragraph framing the headline feature, then a tight bullet list (4-6 items) of other release highlights, then a link.
+2. **Spartan alternate** - bullets only, no narrative paragraph. Mirrors the Summit AI Notes template (line 1 = announcement, then bullets, "and more.", link).
+3. **2-3 alternate hook lines** - so the user can swap if the marquee feels wrong.
+4. **Posting notes** - media suggestion, recommended post window (Tue/Wed/Thu, 9-11am), instruction to pin the App Store link as the first comment.
+
+Style rules (also in `~/.claude/skills/linkedin-post-style/SKILL.md`):
+- Company-page voice: no "I", no personal-story narrative, no "thrilled to announce" filler.
+- Short paragraphs (1-2 sentences), line breaks over dense blocks.
+- Normal dashes, never em-dashes.
+- For unordered lists use `➡️ ` as the bullet marker (one per item, followed by a space), never `-`, `*`, or `•`. Numbered lists still use `1.`, `2.`, etc.
+- The link in the body should be the **version-specific website changelog page** (`https://vivadicta.com/ios/changelog/X.Y.Z`, e.g. `https://vivadicta.com/ios/changelog/3.5.0`) - the per-release deep page, not the generic `/ios/changelog` list and not the App Store URL. Pin the App Store URL as the first comment instead - this gives commenters two routes (deep-context page in body, one-click install in comment).
+- For the marquee feature, use a tagline that reads as **what the experience feels like**, not what it historically was. Avoid hyperbolic "only [elite group] had this" framing - LinkedIn's tech-literate audience will dunk on overstatement, especially for capabilities competitors have shipped (real-time translation, on-device AI, etc.).
+
+**LinkedIn composer formatting (the `-copy.md` whitespace hack):** LinkedIn's web composer collapses true blank lines when you paste plain text, destroying the paragraph spacing. So in the paste-ready `-copy.md`, every otherwise-blank line between paragraphs must contain a single Braille pattern blank character `⠀` (U+2800), not be empty. LinkedIn treats a line containing `⠀` as having content and preserves it as visible spacing, and the character renders invisibly to readers. Apply this **only** to `-copy.md` - leave the working `.md` draft with normal blank lines so it stays readable in Obsidian. (Same convention as the user-level `linkedin-post-style` skill, which is the source of truth for Anton's LinkedIn formatting.)
+
+Publishing happens **after** the App Store build is approved and live, so users hitting the post can install immediately. The draft is prepared during release prep so it's ready to go when approval lands.
+
+### Step 8.7 — Refresh website llms.txt / llms-full.txt
+
+Update the AI-discoverability files in the website repo so they track the current feature set:
+- `/Users/antonnovoselov/Desktop/_Projects/iOS/VivaDictaMeta/vivadicta_website/public/llms.txt` (short summary)
+- `/Users/antonnovoselov/Desktop/_Projects/iOS/VivaDictaMeta/vivadicta_website/public/llms-full.txt` (full doc)
+
+These are easy to forget - nothing auto-generates them, and the major chatbots do **not** auto-fetch `/llms.txt` (it's a voluntary convention; mainly agents/dev tools that deliberately fetch it benefit). Still, on each release re-sync them against this release's changes so anything that does read them sees current data:
+
+- **Transcription providers** - the cloud list + default models (source of truth: iOS `AIProvider.swift` `defaultModel` / `availableModels` and `TranscriptionKit`).
+- **AI enhancement providers** - the `## AI Enhancement Providers` table, the provider count ("N+ AI providers"), and the one-line provider list in `llms.txt` (source: `AIProvider.generalProviders`). Add any provider shipped this release.
+- **Preset count / categories**, **translation languages**, **supported file formats**, **pricing**, **system requirements** - update only if they changed this release.
+- Keep wording aligned with the in-app What's New, App Store notes, and website changelog (Steps 4, 5, 8.5).
+
+Commit and push in the website repo (can be folded into the same commit as Step 8.5, since both touch that repo).
+
+### Step 9 — CloudKit schema deployment
+
+First, detect whether any SwiftData `@Model` classes changed since the last release tag:
+
+```bash
+git diff v{PREV}..HEAD -- 'VivaDicta/Models/*.swift' | grep -E "^\+.*(@Model|^\+\s+(var|let) )" | head -20
+```
+
+If new fields / relationships / models appear, deploy the CloudKit schema to Production **before** submitting the build:
+
+1. Run the app from Xcode to auto-create the schema in Development
+2. Go to https://icloud.developer.apple.com → container `iCloud.com.antonnovoselov.VivaDicta`
+3. Stay in the **Development** environment
+4. Check if Indexes/Record Types/Security Roles show "Modified"
+5. If yes → click **Deploy Schema Changes...** at the bottom of the sidebar → confirm → Deploy
+
+If no SwiftData models changed, skip this step.
+
+See `Projects/VivaDicta/CloudKit Schema Deployment.md` in the Obsidian vault for full details.
+
+### Step 10 — Final checklist
+
+Known-answer ASC questions (don't re-ask these):
+- **App Privacy**: already published and unchanged since 3.8.0. The privacy label is per-app, not per-version, so it carries forward on its own and nothing needs confirming each release. `asc validate` always reports `privacy.publish_state.unverified` at info level because publish state is not exposed by the public API - that line is expected and is not a blocker. Only revisit if a release starts collecting data it did not before, which means a new SDK or a new analytics event, not a new feature.
+- **Export compliance / encryption**: always "No - app does not use non-exempt encryption". The app doesn't ship its own encryption; any HTTPS usage is covered by the standard exemption. **This is now declared permanently** by `ITSAppUsesNonExemptEncryption = false` in `VivaDicta/Info.plist`, so uploaded builds arrive already `exempt` and nobody should be asked. If a build ever shows `n/a` in `asc builds list`, that key went missing - fix the plist rather than patching the build.
+
+Before shipping (Step 11):
+- [ ] Version and build number bumped across all 9 targets (27 pbxproj entries - verify with `grep -c`)
+- [ ] What's New in-app screen content added, with the `// YYYY-MM-DD` comment above the new `release_X_Y` property
+- [ ] No debug triggers left in code (forced What's New, test flags, etc.)
+- [ ] Project builds with no errors
+- [ ] App Store release notes prepared (vault + `whats-new-X.Y.Z.md`)
+- [ ] App Store description updated if needed (under 4,000 chars)
+- [ ] `metadata/version/X.Y.Z/*.json` generated for all 10 locales
+- [ ] Feature changelog updated (Obsidian vault)
+- [ ] iOS website changelog updated (`vivadicta_website/components/ios-changelog/releases-data.tsx` + `npm run build` + push)
+- [ ] Website `llms.txt` + `llms-full.txt` refreshed if providers/presets/pricing changed (`vivadicta_website/public/` + push)
+- [ ] LinkedIn announcement drafted - working `.md` + paste-ready `-copy.md` (with `⠀` U+2800 blank lines and `➡️` bullets) in `Projects/VivaDicta/linkedin-posts/` - publish after App Store approval lands
+- [ ] CloudKit schema deployed if SwiftData models changed
+- [ ] Review Notes: testing instructions only (remove any rejection-specific notes from previous submissions)
+- [ ] Changes committed and pushed on release branch
+- [ ] `asc publish appstore` run with an explicit `--build-number` (dry-run first; a `Build Number` of `1` means the flag is missing)
+- [ ] After upload: build is `VALID` with `Encryption: exempt`, and `asc validate` returns 0 errors / 0 blocking (the permanent info-level App Privacy advisory is expected)
+- [ ] After submitting: merge to `main`, annotated tag `vX.Y.Z`, and `gh release create` (Step 12)
+- [ ] After the release ships: empty `whats-new-running.md` (clear items, keep the `Running What's New (next release)` header) so it only tracks the next upcoming release
+
+### Step 11 — Ship it (create version → archive → upload → attach → validate → submit)
+
+**The agent drives the whole thing with `asc`, including the archive and upload.** Anton does not touch Xcode. The one thing that still needs an explicit yes is the final submit.
+
+Export compliance is **not** a step - `ITSAppUsesNonExemptEncryption = false` in `VivaDicta/Info.plist` means builds arrive already `exempt` (see Step 10).
+
+#### 1. Check ExportOptions.plist
+
+`ExportOptions.plist` lives in the repo root and is committed. Local-build mode runs
+`xcodebuild -exportArchive` under the hood, which cannot run without it:
+
+```xml
+<key>method</key>          <string>app-store-connect</string>
+<key>teamID</key>          <string>358V8FBM3U</string>
+<key>signingStyle</key>    <string>automatic</string>
+<key>uploadSymbols</key>   <true/>
+<key>destination</key>     <string>export</string>
+```
+
+Nothing in it is sensitive - the team ID is already in `project.pbxproj`. It should not
+need editing; if it goes missing, recreate it with exactly these keys and `plutil -lint` it.
+
+If a run ever shows Xcode overriding the build number during export, add
+`manageAppVersionAndBuildNumber = false` and record that here.
+
+#### 2. Dry-run the publish plan
+
+```bash
+asc publish appstore --app 6758147238 \
+  --workspace ./VivaDicta.xcodeproj/project.xcworkspace \
+  --scheme VivaDicta --configuration Release \
+  --version X.Y.Z --build-number NNNN \
+  --export-options ./ExportOptions.plist \
+  --archive-path "$SCRATCH/VivaDicta.xcarchive" --ipa-path "$SCRATCH/VivaDicta.ipa" \
+  --metadata-dir ./metadata \
+  --wait --timeout 45m --dry-run --output table
+```
+
+**`--build-number` is mandatory, not optional.** Without it local-build mode does *not* read `CURRENT_PROJECT_VERSION` from the pbxproj - it auto-resolves and falls back to `--initial-build-number`, whose default is **1**. The dry-run's `Build Number` column is how you catch this: if it reads `1` instead of the value bumped in Step 2, the flag is missing. Caught on the 3.10.0 release before it reached Apple.
+
+Confirm the plan lists these seven steps, and that `Will Submit` is `false`:
+
+```
+archive_local_build → export_local_build → upload_build → wait_for_build_processing
+→ ensure_version → apply_metadata → attach_build
+```
+
+`ensure_version` creates the App Store version if it does not exist, so a separate `asc versions create` is unnecessary. `apply_metadata` runs `metadata apply` against `metadata/version/X.Y.Z/` from Step 7.
+
+#### 3. Run it for real
+
+Drop `--dry-run`. **Run it in the background** - a full Release archive of the app plus 7 embedded targets, the upload, and ASC processing take a long time. Poll the output file rather than blocking. Wrap it in `caffeinate -dims` so the Mac does not sleep mid-run: the 3.11.1 export died with `exportArchive The network connection was lost` when the Mac went offline.
+
+If the archive succeeded but a later step failed, do not re-archive. Export from the existing archive, then upload the IPA:
+
+```bash
+caffeinate -dims xcodebuild -exportArchive -archivePath "$SCRATCH/VivaDicta.xcarchive" \
+  -exportOptionsPlist ./ExportOptions.plist -exportPath "$SCRATCH/export" -allowProvisioningUpdates
+asc publish appstore --app 6758147238 --ipa "$SCRATCH/export/VivaDicta.ipa" \
+  --version X.Y.Z --build-number NNNN --metadata-dir ./metadata --wait --timeout 45m --dry-run --output table
+```
+
+```bash
+# same command, minus --dry-run, with --output json --pretty
+```
+
+The weak point is signing: automatic signing has to fetch distribution profiles for all 7 bundle IDs headlessly. If the login keychain prompts, the run **stalls rather than failing cleanly**. If it hangs with no output progress, that is the first thing to check.
+
+Verify before running that signing is actually automatic and on one team - three stray `DEVELOPMENT_TEAM = TDX2FNZ56U` entries exist in the pbxproj but are overridden. `grep` alone will mislead you; `xcodebuild -showBuildSettings -project VivaDicta.xcodeproj -target ActionExtension -configuration Release` is authoritative and resolves to `358V8FBM3U`.
+
+#### 4. Verify the result
+
+```bash
+asc builds list --app 6758147238 --limit 5 --output table       # new build VALID, Encryption exempt
+asc validate --app 6758147238 --version X.Y.Z --platform IOS --output table
+asc review doctor --app 6758147238 --output table
+```
+
+Check the build's `Encryption` column reads `exempt`. If it reads `n/a`, the Info.plist key went missing - fix the plist, do not patch the build.
+
+Target state: `asc validate` = 0 errors / 0 blocking, `asc review doctor` = `blockingCount 0` with `nextAction: No submission blockers detected`.
+
+Also read the review notes once per release and confirm they are testing instructions only, with nothing left over from a previous rejection:
+
+```bash
+asc review details-for-version --version-id VERSION_ID     # or details-get --id DETAIL_ID
+```
+
+#### 5. Submit
+
+```bash
+asc review submit --app 6758147238 --version-id VERSION_ID --build-id BUILD_ID --dry-run
+asc review submit --app 6758147238 --version-id VERSION_ID --build-id BUILD_ID --confirm
+```
+
+Or click **Add for Review** in App Store Connect.
+
+The dry-run reports `wouldSubmit` and whether the build is `alreadyAttached`, so it is worth running even though step 3 already attached it.
+
+**Always ask before submitting**, every time. Everything up to attaching the build is reversible; submission is not (only cancellable).
+
+#### Fallback: Anton archives in Xcode
+
+If headless signing fails and is not worth debugging mid-release, fall back to Product > Archive, then Organizer > Distribute App > **App Store Connect > Upload** (Upload, not Export). Then pick up from step 4 above, adding the attach that `asc publish` would have done:
+
+```bash
+asc metadata apply --app 6758147238 --version X.Y.Z --platform IOS --dir ./metadata --dry-run
+asc metadata apply --app 6758147238 --version X.Y.Z --platform IOS --dir ./metadata
+asc versions attach-build --version-id VERSION_ID --build-id BUILD_ID
+```
+
+To upload an already-exported IPA without local-build mode: `asc publish appstore --ipa path/to.ipa` - no `ExportOptions.plist` required.
+
+#### Gotchas found in practice
+
+- **`asc publish appstore` silently drops `whatsNew` on a brand-new version.** `apply_metadata`
+  runs *before* `attach_build`, and ASC rejects the field until a build is attached, logging
+  `'whatsNew' cannot be set for this version (initial releases have no What's New section).
+  Retrying without it.` once per locale. The run still exits 0 and reports `attached: true`, so
+  it looks clean. **Always re-run `asc metadata apply` after the publish finishes**, then confirm
+  with `asc metadata pull` into a scratch dir and check `whatsNew` is non-empty in all 10 locales.
+  Hit on 3.10.1; the release notes would have shipped blank.
+- **Apple rejects `<|...|>` in `whatsNew` as markup**: `An attribute value has invalid characters.:
+  What's New In This Version in <locale> must not contain markup language (for example, HTML tags).`
+  Anything angle-bracketed reads as an HTML tag to the validator. This bit when the 3.10.1 notes
+  quoted Whisper's `<|startoftranscript|>` token literally - describe such text in words instead.
+  The failure names only the first locale (ar-SA), so it looks locale-specific and is not.
+
+- **`--build-number` must be passed explicitly** to `asc publish appstore` in local-build mode, or the build uploads as `1`. See step 2.
+- `asc metadata push` **does not exist** - the subcommand is `asc metadata apply`.
+- `asc versions view` shows **empty Build ID / Build Version columns even when a build is correctly attached** - ASC omits relationship linkage unless `?include=` is passed, and the command does not. Do **not** read that as a missing build. `asc validate` is authoritative: its `build.required.missing` error clears the moment the build is attached.
+- `asc metadata apply` reports `add` for `whatsNew` on a fresh version (the field does not exist yet) and `update` for `description`. Seeing zero `keywords` rows is the signal the per-locale ASO keyword sets were preserved - if keywords ever appear in the plan, stop and investigate.
+- Run `asc metadata apply` **without** `--allow-deletes`. With it, any locale missing locally is planned as a delete.
+- `asc builds update --uses-non-exempt-encryption=false` is only a patch for builds uploaded before the Info.plist key existed.
+- **Do not `git add -A` on a release commit.** The repo carries untracked files that are not part of the release (e.g. `.claude/skills/prcdx`); stage the changed files by name instead.
+
+### Step 12 — Merge, tag, and cut the GitHub release
+
+Runs immediately after submitting, **not** after Apple approves. `v3.9.0` was tagged the same
+day it was submitted, and the tag records what was sent to Apple - approval does not change the
+commit.
+
+```bash
+git checkout main && git pull --ff-only
+git merge --no-ff release/X.Y.Z -m "Merge branch 'release/X.Y.Z'"
+git tag -a vX.Y.Z -m "VivaDicta X.Y.Z (build NNNN)"
+git push origin main && git push origin vX.Y.Z
+```
+
+Conventions, all matching every previous release:
+- Tags are **annotated** (`-a`), never lightweight, and the message is exactly `VivaDicta X.Y.Z (build NNNN)`.
+- Tags live on `main`, so the merge comes first.
+- Merge with `--no-ff` so the release branch stays visible in history.
+
+Then the GitHub release:
+
+```bash
+gh release create vX.Y.Z --title "vX.Y.Z" --notes-file <(...) --latest
+```
+
+Body format, matching earlier releases:
+- An `## What's Changed` heading, then one `-` bullet per user-facing change. Write these from
+  the same source as the App Store notes (Step 5) so the two agree, but they can be blunter -
+  the audience is technical.
+- An optional `### Internal` section for tooling, skills and docs that shipped in the same range.
+- A closing `**Full Changelog**: https://github.com/n0an/VivaDicta/compare/vPREV...vX.Y.Z` line.
+- **Regular dashes, never em-dashes**, even though older release bodies contain them.
+- When the cycle went through PRs, `gh` appends the usual `* … by @n0an in …` list. When work was
+  committed straight to `main` there is nothing to append, so say so explicitly in one line
+  rather than leaving readers wondering where the PR list went.
+
+Only mark `--latest` when this really is the newest release.
+

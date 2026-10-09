@@ -26,8 +26,10 @@ __pycache__/
 # === Payload scraping besar (STYLE-*.md ratusan KB tiap file) ===
 STYLE-*.md
 
-# === Zip besar di folder ini (kalau ada) ===
+# === Zip/bundle besar di folder ini (jangan masuk git) ===
 *.zip
+*.tar.gz
+*.tgz
 
 # === Backup migration (jangan masuk git) ===
 backup-skills-migrate-*.tar.gz

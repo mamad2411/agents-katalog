@@ -1,0 +1,363 @@
+# tmux-ide — Claude Code Skill
+
+<!-- tmux-ide-skill-version: 2.6.0 -->
+
+tmux-ide is **the open-source workspace for coding agents**, built on tmux. The
+app (`tmux-ide app`) shows every agent across local and SSH machines with
+ground-truth working/blocked/done status, and drives the live tmux session.
+`tmux-ide adopt` adds the same status to plain tmux clients as tmux chrome: a
+status bar, keys and menus, all additive tmux options with no wrapper process.
+Around both: notifications when an agent needs a human, and crash-proof restore.
+tmux owns every process and pane, so sessions survive tmux-ide. `.tmux-ide/workspace.yml`
+is optional.
+
+## When to use
+
+- User mentions tmux, a dock/status bar over sessions, an agent fleet, or session status
+- User wants live working/blocked/done status across multiple agents or panes
+- **You are an agent and want to report your own status** so the dock/fleet reflects it (the agent contract, below)
+- Post-crash recovery — a tmux server died and the user wants their fleet + Claude conversations back
+- User wants a git worktree (plus an adopted session) per branch
+- User wants to set up a multi-pane dev workspace with `.tmux-ide/workspace.yml`
+
+## The agent contract
+
+**This is the core of tmux-ide.** Detection is two-layer, and an agent that
+reports its own state is the authoritative layer — the dock trusts it over any
+screen-scraping. If you are an agent running in a tmux pane, self-report by
+setting a pane-local tmux option:
+
+```bash
+tmux set-option -p @agent_state "<state>:$(date +%s)"   # state = working | blocked | done | idle
+```
+
+The value is `<state>:<unix-epoch>`. A `working`/`blocked` report older than ~10
+minutes is treated as stale (the detector falls back to Layer 2), so long-running
+agents should re-stamp periodically. Two optional companions:
+
+```bash
+tmux set-option -p @agent_session_id "<id>"   # your own session id — powers restore --resume-agents
+tmux set-option -p @agent_hint claude          # force which agent manifest Layer 2 uses for this pane
+```
+
+**Display metadata** — say WHAT you're doing and WHO you are, right in the
+fleet UI. Two more optional pane-local options:
+
+```bash
+tmux set-option -p @agent_status_text "refactoring auth"  # one-liner, ≤32 chars — shows in the pane chip ("● claude · refactoring auth")
+tmux set-option -p @agent_display_name "reviewer"          # your name — replaces the detected kind in sidebar rows & chips
+```
+
+Plain text only (control characters are stripped, tabs break the line for your
+pane — don't stamp them; anything past 32 chars is ellipsized). Both surface in
+`tmux-ide team --json` (per-pane `statusText` / `displayName`), the unified
+app's pane chips, and the sidebar agent rows. They follow the SAME staleness
+rules as `@agent_state`: they only show while your state stamp is fresh, so
+re-stamp `@agent_state` alongside — update the text whenever your focus
+changes, and it disappears with a stale/cleared state instead of lying.
+
+**Claude Code users get this for free** — `tmux-ide integration install claude`
+writes a POSIX hook into `~/.claude/settings.json` that stamps `@agent_state` on
+every lifecycle event (UserPromptSubmit/PreToolUse → working, Notification →
+blocked, Stop → done, SessionEnd → idle) and records `@agent_session_id`. It
+takes effect for **new** Claude Code sessions; the merge is reversible
+(`integration uninstall claude`).
+
+**Session-id capture for other kinds** (what `restore --resume-agents` resumes
+from): codex and cursor-agent panes are stamped **automatically** — the chrome
+updater reads each CLI's own on-disk session state; opencode gets a plugin via
+`tmux-ide integration install opencode`. `tmux-ide integration status` shows
+what's active. Kinds without a verified resume story (gemini, aider, copilot, …)
+can self-report the id as above.
+
+**How detection layers work:** Layer 1 is the authority above — a fresh
+`@agent_state` option is ground truth. When none is present, Layer 2 resolves the
+agent from the pane's process tree and reads the visible screen against
+evidence-tuned per-agent manifests to infer working/blocked/done. Run
+`tmux-ide agent explain <pane>` to see exactly which layer fired for a pane and why.
+
+### Coordinating with other agents
+
+The status bus is shared, so you can work as part of a team — and the teammates
+don't have to be Claude Code. As an agent, you can:
+
+```bash
+tmux-ide team --json                     # fleet rollup: each session's + window's agent status
+tmux-ide agent explain %2 --json         # one specific pane's status + why (per-pane read)
+tmux-ide send %2 "do X, then run tests"  # task another pane's agent (by %id, title, role, or @ide_name)
+tmux-ide wait output %2 --match "done"   # block until that pane prints something (exit 0 match / 1 timeout)
+tmux-ide wait agent-status api --status done   # block until a whole session finishes
+tmux-ide events --follow                 # subscribe to the live session-status transition stream
+```
+
+`send` types straight into the target agent's prompt (use `--no-enter` to stage
+text; pipe stdin for long input — messages over ~150 chars auto-route through a
+`.tasks/dispatch/` file). Report your own status with the `@agent_state` contract
+above so teammates coordinating on you see the truth. This works across
+Claude Code, codex, cursor-agent, aider, or any CLI agent in a pane.
+
+## Fleet control from the CLI
+
+Every command takes `--json` for structured output.
+
+```bash
+tmux-ide team --json                      # whole-fleet state: sessions, panes, agent statuses
+tmux-ide events --follow                   # stream agent-status transitions (needs an adopted session)
+tmux-ide events --json                     # recent transitions as JSON
+
+tmux-ide wait agent-status <session> --status blocked --timeout 60000   # block until a session hits a status
+tmux-ide wait output <pane|session> --match "<regex>" --timeout 60000   # block until a pane's output matches
+
+tmux-ide send <target> "<message>"        # send text to a pane (by name/title/role/ID); --to <name>, --no-enter
+tmux-ide agent explain <pane> --json       # debug how a pane's agent state was detected
+
+tmux-ide adopt <session>                   # add the dock to an existing session (additive tmux config)
+tmux-ide adopt --all                       # adopt every live session
+tmux-ide unadopt <session>                 # remove the dock — sessions keep running as plain tmux
+
+tmux-ide restore --dry-run --json          # preview rebuilding the fleet from the last snapshot
+tmux-ide restore --resume-agents           # rebuild after a tmux crash; revive agent convos (claude/codex/cursor/opencode)
+
+tmux-ide worktree create <branch> --from <ref>   # git worktree on a new branch + a session in it
+tmux-ide worktree open <branch>            # open/switch to an existing worktree's session
+tmux-ide worktree list --json              # worktrees joined with their session status
+tmux-ide worktree remove <branch> --force  # kill the session + remove the worktree
+
+tmux-ide update --dry-run                  # detect install method (dev checkout vs npm/pnpm/bun) and show/run the update
+tmux-ide doctor                            # system + integration health (tmux version, TUI surfaces, skill freshness)
+```
+
+## Drive tmux-ide over the socket (agent loops)
+
+The CLI above spawns a process per call. If you are driving the fleet in a
+loop — polling status, waiting on agents, reacting to transitions — start the
+control server once and keep ONE connection open instead:
+
+```bash
+tmux-ide serve &   # local Unix socket at ~/.tmux-ide/control.sock (0600, this user only)
+```
+
+**Frame format:** newline-delimited JSON, one object per line. Send
+`{"v":1,"id":<any>,"verb":"<verb>","params":{…}}`; you get back
+`{"v":1,"id":<same>,"ok":true,"data":…}` or
+`{"v":1,"id":<same>,"ok":false,"error":{"code","message"}}`. Responses
+correlate by `id` (they may arrive out of order — a long `wait` doesn't block
+other verbs on the same connection). After the `subscribe` verb the server
+also PUSHES unsolicited `{"v":1,"event":"agent-status","data":{ts,session,from,to}}`
+frames the moment its detection tick sees a session change state — no polling.
+
+**Verbs:** `fleet` (the `team --json` payload) · `agents` (per-pane entries,
+optional `{session}`) · `send` (`{session,target,message,noEnter?,dir?}`) ·
+`wait` (`{kind:"agent-status",session,status,timeoutMs?}` or
+`{kind:"output",target,match,timeoutMs?}`; a timeout is an error response with
+code `timeout`) · `spawn` (`{kind|command, session?|sessionName, dir?,
+placement?, paneId?}` → the new `paneId`) · `restart-agent` / `stop-agent`
+(`{paneId, kind|command}`) · `explain` (`{target}`) · `subscribe`.
+
+One-shot from a shell (nc keeps the pipe open for the response):
+
+```bash
+printf '{"v":1,"id":1,"verb":"fleet"}\n' | nc -U ~/.tmux-ide/control.sock | head -1
+```
+
+A subscribe loop from node:
+
+```js
+const net = require("node:net");
+const os = require("node:os");
+const sock = net.connect(`${os.homedir()}/.tmux-ide/control.sock`);
+let buf = "";
+sock.on("data", (chunk) => {
+  buf += chunk;
+  const lines = buf.split("\n");
+  buf = lines.pop();
+  for (const line of lines.filter(Boolean)) {
+    const frame = JSON.parse(line);
+    if (frame.event === "agent-status") console.log(frame.data); // react here
+  }
+});
+sock.write('{"v":1,"id":1,"verb":"subscribe"}\n');
+```
+
+Right after `subscribe`, the first tick reports every session once with
+`from:null` (a snapshot of where the fleet stands); real transitions follow.
+
+**Socket vs CLI:** prefer the socket for anything event-driven or repeated
+(subscribe replaces an `events --follow` poll; a server-held `wait` costs no
+spawn-per-poll). Prefer the CLI for one-shot reads and anything a human might
+re-run — it needs no server. With a server running, `tmux-ide events --follow
+--socket` and `tmux-ide wait … --socket` use it automatically and fall back to
+polling silently when it's gone. The server is local-only by design: no
+network listener, no tokens — filesystem permissions are the auth.
+
+## Keys & surfaces to tell USERS about
+
+Once a session is adopted, the whole UI is a keystroke away. **Lead with the
+prefix** — an agent pane can temporarily change key encoding and swallow a
+root-table `Alt` bind, but the tmux prefix always reaches tmux. Every surface has
+a prefix twin and an `⌥` fast-path (single keystroke when the terminal allows it).
+Right-click any pane or the bar opens the actions menu at the pointer.
+
+| Surface                                    | Prefix (always works) | ⌥ fast-path    |
+| ------------------------------------------ | --------------------- | -------------- |
+| Home cockpit — fleet tree, detail, preview | `prefix h`            | `⌥h`           |
+| Switch session                             | `prefix j`            | `⌥p`           |
+| Cheat sheet — every key on one page        | `prefix k`            | `⌥k`           |
+| Actions menu (or right-click)              | `prefix u`            | `⌥m`           |
+| Sidebar — fleet nav column                 | `prefix b`            | `⌥b`           |
+| Panels — explorer / changes / config       | `prefix e` `g` `v`    | `⌥e` `⌥g` `⌥,` |
+
+One interaction grammar everywhere: `j`/`k` move, `enter` opens, `/` filters,
+`esc` backs out, `?` asks. Bare `tmux-ide` with no project config opens the
+**app** (below). `tmux-ide cheatsheet` prints the full sheet.
+
+## The app — `tmux-ide app`
+
+The full-screen app: tmux stays the engine (PTYs, agents, persistence); the app
+renders it. Launch `tmux-ide app` (Home) or `tmux-ide app <session>`. Installed
+releases include the runtime; `tmux-ide update --tui-binary` re-downloads it.
+
+- **Two surfaces**: `F1` Home (agents across local + SSH machines; `/` search,
+  `f` machine filter, `0`/`w`/`a` All/Working/Needs attention, `Enter` opens the
+  agent's pane) and `F2` Terminals (the session mirrored live, window tabs, pane
+  headers with agent state). There are no Files/Diff/Missions views in 2.9, and
+  `app.views` in workspace.yml is validated but not read.
+- **Overlays**: `F5` Commands (new window, New agent…, splits, zoom, Appearance…,
+  help) · `F6` Sessions · `F7` Attention · `F8`/`F9` session history/tabs ·
+  `F10` sidebar · `Ctrl+G` focus sidebar. `Ctrl+K` in Commands lists every key.
+- **Terminals**: `Ctrl+O`/`Ctrl+T` next pane/window, `Alt+Arrow` resize, drag
+  borders; right-click a pane for select text / rename / split / zoom / close
+  (confirmed). Shift+click opens links; Shift+drag selects inside mouse apps.
+- `Ctrl+Q` quits — sessions keep running. `tmux-ide app --detachable` hosts the
+  app in tmux so `Ctrl+Q` detaches instead.
+
+## .tmux-ide/workspace.yml (optional)
+
+Adopt works on any session. If you'd rather have tmux-ide build the layout, describe
+it in `.tmux-ide/workspace.yml` (sessions launched from a config are adopted automatically).
+
+**Setup workflow for a user's project:**
+
+1. Check state: `tmux-ide status --json`
+2. Detect the stack: `tmux-ide detect --json`
+3. **Present 2-3 layout options as ASCII diagrams** before writing config:
+
+   **Option A — Claude + Dev (recommended)**
+
+   ```
+   ┌─────────────────────────────────────┐
+   │             Claude                  │  70%
+   ├──────────┬──────────┬──────────────┤
+   │ Dev Srv  │  Tests   │    Shell     │  30%
+   └──────────┴──────────┴──────────────┘
+   ```
+
+   **Option B — Dual Claude**
+
+   ```
+   ┌─────────────────┬─────────────────┐
+   │    Claude 1     │    Claude 2     │  70%
+   ├────────┬────────┴───────┬─────────┤
+   │Dev Srv │     Tests      │  Shell  │  30%
+   └────────┴────────────────┴─────────┘
+   ```
+
+   **Option C — Explorer + Claude + Changes (widget panes)**
+
+   ```
+   ┌──────────┬───────────────┬─────────┐
+   │ Explorer │    Claude     │ Changes │  100%
+   │ (widget) │               │ (widget)│
+   └──────────┴───────────────┴─────────┘
+   ```
+
+   Adapt pane names/commands to the detected stack (`pnpm dev`, `cargo watch`, …).
+
+4. Write it — quick path `tmux-ide detect --write`, or build with the config CLI:
+   ```bash
+   tmux-ide config add-row --size 70%
+   tmux-ide config add-pane --row 0 --title Claude --command claude
+   tmux-ide config add-row --size 30%
+   tmux-ide config add-pane --row 1 --title "Dev Server" --command "pnpm dev"
+   tmux-ide config add-pane --row 1 --title Shell
+   tmux-ide validate --json      # always validate after mutations
+   ```
+
+**Schema:**
+
+```yaml
+version: 1
+name: my-app # tmux session name
+before: pnpm install # optional pre-launch shell hook
+terminal:
+  theme: # optional per-session pane colors
+    accent: colour75
+    border: colour238
+  rows:
+    - size: 70% # row height percent (rows split evenly if omitted)
+      panes:
+        - title: Claude # pane border label
+          command: claude # command to run (optional)
+          size: 50% # pane width percent (optional)
+          dir: apps/web # per-pane working directory (optional)
+          focus: true # initial focus (optional)
+          env: # environment variables (optional)
+            PORT: "3000"
+    - panes:
+        - title: Explorer
+          type: explorer # widget pane: explorer | changes | preview | config
+          target: src/ # optional widget target path
+        - title: Shell
+```
+
+Read config with `tmux-ide config --json`; mutate with `config set <dot.path> <value>`,
+`add-pane`, `remove-pane`, `add-row`; apply changes to a running session with
+`tmux-ide restart`.
+
+Mission runtime wiring is future work for the workspace config model. Do not add
+mission or orchestrator runtime fields to `.tmux-ide/workspace.yml` yet.
+
+## Config — ~/.tmux-ide/config.json
+
+The one product-wide config (override path with `TMUX_IDE_CONFIG`). A deep
+partial merge over defaults — any block or field you omit falls back:
+
+```jsonc
+{
+  "keys": {
+    "home": "M-h",
+    "popup": "M-p",
+    "cheatsheet": "M-k",
+    "menu": "M-m",
+    "sidebar": "M-b",
+    "panels": { "explorer": "M-e", "changes": "M-g", "config": "M-," },
+  },
+  "theme": {
+    "accent": "colour75",
+    "muted": "colour240",
+    "fg": "colour250",
+    "status": {
+      "blocked": "colour203",
+      "working": "colour221",
+      "done": "colour111",
+      "idle": "colour114",
+      "unknown": "colour244",
+    },
+    "glyphs": { "active": "●", "inactive": "○" },
+  },
+  "notifications": { "toast": true, "macos": false },
+  "restore": { "resumeAgents": false },
+  "updates": { "check": true },
+  "integrations": { "offer": true },
+}
+```
+
+One palette + one keymap drive every surface (status bar, chips, menu, cheat
+sheet, and the OpenTUI widgets), so re-theming the whole product is a one-file
+edit plus a re-adopt.
+
+## Keeping this skill current
+
+This file is managed — installs and `tmux-ide update` (dev checkouts) refresh the
+copy under `~/.claude/skills/tmux-ide`. To refresh it manually at any time, run
+`tmux-ide skill-sync`. `tmux-ide doctor` reports when the installed copy is stale.

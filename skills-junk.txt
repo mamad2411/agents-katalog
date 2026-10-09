@@ -31,6 +31,7 @@
 _references
 a-b
 a-personal-skill-whose-name-runs-all-the-way-to-the-sixty-four-c
+a-stock-data-quant
 a11y-auditor
 a11y-core
 a11y-debugging
@@ -135,6 +136,7 @@ adaptive
 adaptive-learning-skill
 add a browser review checkpoint before risky agent actions with agentclick
 add-a-linter
+add-app-platform-resource
 add-app-tool
 add-bot
 add-branding
@@ -192,6 +194,7 @@ address github pr review comments from the current branch with gh-address-commen
 address-pr-comments
 address-pr-review
 address-review
+address-reviews
 adhd-output-style
 adhoc
 adlc
@@ -374,6 +377,7 @@ ai-bug-triage
 ai-code-mode
 ai-cost-guard
 ai-discover
+ai-docs
 ai-engineer
 ai-engineering
 ai-illustrations
@@ -918,13 +922,16 @@ audit-feedback-loop
 audit-gate-logic
 audit-harness-deps
 audit-hooks
+audit-less
 audit-rbac
 audit-readiness
 audit-realworld
 audit-router
+audit-subprocess
 audit-tests-dev
 audit-workpaper
 audition
+aura-hidden-value
 austria-vat-return
 auth-guide
 auth-guides
@@ -941,6 +948,8 @@ auto-reply
 auto-review-loop-llm
 auto-review-loop-minimax
 auto-skill
+auto-smtp-email
+auto-trade-customer-development
 auto-workflow
 autobahn
 autodesk
@@ -975,7 +984,29 @@ azure-infra-validation
 azure-openai-to-responses
 azure-provision
 azure-rbac
+b2b-customer-finder
+b2b-customer-intel
+b2b-customer-mgmt
+b2b-data-directory
+b2b-document
+b2b-email-intel
+b2b-exhibition
+b2b-inquiry-meeting
+b2b-kol-imitation
+b2b-lead-generation
+b2b-linkedin-marketing
+b2b-osint
+b2b-product-description
+b2b-reddit-engagement
 b2b-saas-marketing
+b2b-sales-pipeline
+b2b-sales-playbook
+b2b-short-video
+b2b-six-thinking-hats
+b2b-skill-generator
+b2b-social-media
+b2b-trade-compliance
+b2b-trade-ops
 back-your-claims
 backend-api-design
 backend-api-patterns
@@ -1095,6 +1126,7 @@ blockchain-developer
 blocked
 blocked-example
 blockfill-agent-execution
+blog-draft
 blogger
 bluebook-graduation-review
 blueprint-adr-list
@@ -1136,6 +1168,7 @@ bolder
 boltz-protein-design
 boltz-small-molecule-adme
 bond
+book-analyzer
 book-prose-writer
 book-review
 bookkeeping
@@ -1143,6 +1176,7 @@ bootstrap-monorepo
 bootstrap-skill-self-hosting-v3-6-0
 boss职位数据集
 bot gestures
+botcircuits-faq
 bound-skill
 bounded-work-item
 boyko-goal-expansion-100
@@ -1210,6 +1244,41 @@ browse
 browse-connectors
 browse-qa
 browse-skills
+browser-02898b15
+browser-03b04f98
+browser-0754386d
+browser-093c03ab
+browser-09e60b35
+browser-0ab4f2db
+browser-0c7f88d6
+browser-0f598430
+browser-17906c62
+browser-18f823e2
+browser-1bafe81c
+browser-1f9ab1f0
+browser-1fdb5852
+browser-21b0359c
+browser-22e8de36
+browser-24163519
+browser-2471a991
+browser-25afee4d
+browser-283a91bd
+browser-2895ff52
+browser-2cc1da58
+browser-3189fe6f
+browser-31f2b08f
+browser-37b8339e
+browser-396ec3a6
+browser-3df2f904
+browser-43154cec
+browser-434b74b8
+browser-440d4398
+browser-44d7f183
+browser-4d6c0788
+browser-50fecd89
+browser-555c0626
+browser-57312d24
+browser-59a0ada4
 browser-adblock-agent
 browser-extension
 browser-inspect
@@ -1263,6 +1332,7 @@ builtin
 bulletin-of-the-american-meteorological-society
 bullion-price
 bump-version-dev
+bundle-analysis
 bundled-keep
 buried_skill
 buscador-uruguay
@@ -1337,8 +1407,12 @@ calendar-scheduling
 calendar_guide
 calibrate
 calibrate-quota-governor
+calibre-distill
+calibre-distill-topic
+calibre-mcp-setup
 call-list
 call-recording-analyzer
+camera-provider-tapo
 camerax
 camofox-cli
 campaign-audit
@@ -1468,6 +1542,7 @@ change-reaudit
 changelog
 changelog-scan
 changes-review-loop
+channel-line
 channel-updates
 chapter-spec
 character-art-direction
@@ -1490,11 +1565,13 @@ check-requirements-against-code
 check-runtime-parity
 check-tests
 check-vercel-rules
+check_date
 checkout
 chembl-skill
 chemistry-rdkit
 chen-yun-demo
 chibi-style
+chief-plan
 chijiuzhan-san-jieduan
 child-skill
 chinabond-yield-daily
@@ -1509,6 +1586,8 @@ churn-risk-playbook
 ci-accessibility
 ci-cd-integration
 ci-cd-pipeline-security-attacks
+ci-linux-test-failures
+ci-maintenance
 ci-monitor
 ci-release-fixture
 ci-validation-gates
@@ -1637,11 +1716,13 @@ code-overview
 code-prose
 code-quality-instruments
 code-quality-principles
+code-review-asm-xtensa
 code-review-change-size
 code-review-context
 code-review-patterns
 code-review-preferences
 code-review-response
+code-review-riscv
 code-review-run
 code-review-testing
 code-runner
@@ -1687,6 +1768,7 @@ coding-tutor
 cog-review
 cognitive-accessibility
 cogpsych-open-science-and-transparency
+coherence-reviewer
 cohort-status
 collab
 collision tripwire
@@ -2025,6 +2107,7 @@ cost-explain
 cost-metering
 cost-projection
 costume
+course
 covered-one
 covered-two
 cowork
@@ -2123,6 +2206,7 @@ cross-market-strategy
 cross-page-analyzer
 cross-sdk-parity
 cross-source-verify
+cross-squad-communication
 crowdsec-service-api
 crowdstrike-mcp:setup
 crypt
@@ -2171,6 +2255,11 @@ customer_care_cli
 cv-classification
 cv-detection
 cvpr-iccv-eccv
+cypilot
+cypilot-analyze
+cypilot-generate
+cypilot-plan
+cypilot-workspace
 cypress-automation
 cyxj-obsidian-build
 cz-social-health
@@ -2235,6 +2324,7 @@ dataverse-security
 day-summary
 db-comparison
 db-design
+db-inspect
 db-migrate
 db-migration-safety
 dba-rds-slow-query
@@ -2256,6 +2346,7 @@ deadline-audit
 deal-flow-analytics
 debloat
 debriefing-code-changes
+debug-capture-pipeline
 debug-ima
 debug-investigate
 debug-issue
@@ -2327,6 +2418,7 @@ dep-refs
 dependabot-batch
 dependency-awareness
 dependency-check
+dependency-maintenance
 dependency-manager
 deploy-cf-workers
 deploy-global
@@ -2577,6 +2669,7 @@ dual-lens
 duckdb-docs
 dummy-filesystem
 dummy-local
+dump-commit
 dupcheck
 dupe
 durable-objects
@@ -2635,6 +2728,7 @@ editorial-flatfolk
 edmund-external-positioning
 education-cloud-multi-campus-configure
 ee
+effect-development
 effect-services
 efficiency-compare
 efo-ontology-skill
@@ -2657,6 +2751,7 @@ email-application-flow
 email-testing
 email_guide
 email_operation_guard
+embedded-debug
 embedded-skill
 embedded-video-pip-smooth-playback
 emotional-arc-designer
@@ -2740,6 +2835,8 @@ escalation-brief
 escalation-playbook
 escaping-skill
 eslint-plugin-configuring
+esp32-arch-review
+esp32-log-triage
 est-reporting-and-reproducibility
 estimate
 estimate-actual
@@ -2804,6 +2901,7 @@ experiment-loop
 expert
 expert-code-reviewer
 expert-kahneman
+expert-rmt5
 explain-changes
 explain-code
 explain-codebase
@@ -2820,12 +2918,15 @@ explore
 explore-vault
 explorer
 exploring-data-catalog
+expo-api-docs
 expo-api-routes
+expo-chat-ui
 expo-dom
 expo-ui-jetpack-compose
 expo-ui-swift-ui
 expo-upgrade
 export-review-pack
+export-template
 exposure-and-supply-chain-triage
 express-prisma-coolify-image
 expressive
@@ -2836,6 +2937,7 @@ external-comms
 external-control-api
 external-diagram-mermaid-generate
 externalize-operator
+extra skill
 extract
 extract-and-relocate-angular-component-feature
 extract-features
@@ -2863,6 +2965,9 @@ false-completion-gate
 fantasy
 faq-mine
 farm-ready-gate
+fast-bug-report
+fast-feature-request
+fast-pull-request
 fastapi-address-review
 fastapi-commit
 fastapi-debug
@@ -2900,7 +3005,9 @@ fda-catalyst-devices
 fda-catalyst-medicines
 fda-catalyst-vaccines
 fe-responsive
+feasibility-reviewer
 feature-boundary-planner
+feature-contract
 feature-delivery
 feature-development
 feature-expert
@@ -2994,8 +3101,10 @@ firestore-data
 first-customers
 first-run-burst
 fitness-and-nutrition
+fix-angular-fixmes
 fix-architecture
 fix-auto
+fix-board
 fix-chrome-connection
 fix-dependabot
 fix-explain
@@ -3003,6 +3112,7 @@ fix-failing-ci
 fix-flaky-test
 fix-from-logs
 fix-guide
+fix-int
 fix-linter-test
 fix-observe
 fix-reason
@@ -3087,6 +3197,7 @@ foundational-review
 foundationdb-aspire
 foundations-of-computational-mathematics
 founder-agreement-drafting-stephane-boghossian
+founder-profile
 founder-report
 foundry-config-setup
 foundry-knowledge
@@ -3095,6 +3206,8 @@ four-core-documents
 four-meme-ai
 fp-react
 fp-ts-react
+fprime-ground-input-tracing
+fprime-hardware-input-tracing
 fr-capital-gains
 fr-cfe
 fr-income-tax
@@ -3155,6 +3268,7 @@ functional-test
 functional-tests
 functionality-audit
 fundraise-prep
+funfact-writer
 fuse-browser-usage
 fushi-yuelou-loft-zhuangxiu-zhinan
 future_skill
@@ -3195,6 +3309,7 @@ geb-spock
 gec-policy-relevance-and-implications
 genebass-gene-burden-skill
 general_tool_risk_guard
+general_writer
 generate-codeful-mcp-tool
 generate-commit-message
 generate-editor-search-query
@@ -3249,6 +3364,8 @@ get-current-time
 get-unpublished-changes
 gh-aw-reliability
 gh-ci-watch
+gh-debug
+gh-healthcheck
 gh-issue-release
 gh-issue-triage
 gha
@@ -3483,6 +3600,7 @@ git-commit-push-pr
 git-developer-performance
 git-fix-pr
 git-flow
+git-historian
 git-history-analyzer
 git-issue
 git-issue-hierarchy
@@ -3726,27 +3844,42 @@ grove
 grow-pipeline
 grow-sustainably
 growth-plan
+gsd-add-backlog
 gsd-add-phase
 gsd-add-tests
 gsd-add-todo
 gsd-audit-milestone
+gsd-audit-uat
+gsd-autonomous
 gsd-check-todos
 gsd-cleanup
 gsd-complete-milestone
 gsd-debug
 gsd-discuss-phase
+gsd-do
 gsd-execute-phase
+gsd-fast
+gsd-forensics
 gsd-health
 gsd-help
 gsd-insert-phase
 gsd-join-discord
 gsd-list-phase-assumptions
+gsd-list-workspaces
+gsd-manager
 gsd-map-codebase
+gsd-milestone-summary
 gsd-new-milestone
 gsd-new-project
+gsd-new-workspace
+gsd-next
+gsd-note
 gsd-pause-work
 gsd-plan-milestone-gaps
 gsd-plan-phase
+gsd-plant-seed
+gsd-pr-branch
+gsd-profile-user
 gsd-progress
 gsd-quick
 gsd-reapply-patches
@@ -4241,12 +4374,14 @@ invalid_name
 inventory-recurring
 investig-limites-gemini-antigravity
 investigate-ci-failure
+investigating-incidents-with-runbooks
 investigation-mode
 investigation-report
 investigue
 investing-from-darwin
 invoice-chase
 io-bound-data-processing
+io-gui-core
 ionic-framework-mcp
 ios-clean
 ios-dev
@@ -4272,6 +4407,7 @@ isr-tables-figures
 issue-action
 issue-driven-dev
 issue-grouping
+issue-intelligence-analyst
 issue-lanes
 issue-pipeline
 issue-plan
@@ -4421,6 +4557,7 @@ js-fetch
 js-fetch-mock
 js-fs-example
 js-function
+jsdocs
 json-to-markdown-files
 json-toolbox-skill
 jsonapi
@@ -4565,6 +4702,7 @@ learn-preference
 learned-corrections-primary
 learnings-researcher
 leave-files-unchanged
+lecture
 ledger
 ledger-tasks-yylo
 legacy-modernizer
@@ -4574,6 +4712,7 @@ legal-briefing
 legal-contract-review
 legal-request-router-pl
 legal-risk-scoring
+legal_contract_expert
 length-converter
 lerd
 lesson-generator
@@ -4597,6 +4736,7 @@ light-science-and-applications
 lightning-architecture-review
 lightning-channel-factories
 lightning-factory-explainer
+lilly-community-research
 limerick
 line-design
 linear-issues-read
@@ -4608,6 +4748,7 @@ linear-projects-read
 linear-projects-write
 linear-sla-breach
 linear-style-illustration
+linglu-discipline
 lingo
 link to obsidian
 link-and-video-summary
@@ -4624,6 +4765,7 @@ lint-js
 lint-markdown-files
 lint-new
 lint-skill
+lint-slice
 linter-docs
 linter-setup
 linting-neostandard-eslint9
@@ -4635,6 +4777,7 @@ list-components
 list-learned-actions
 list-phase-assumptions
 list-rule-test
+list-workflows
 listenhub
 listenhub-cli
 listenhub-hypit
@@ -4713,6 +4856,7 @@ lock-e2e
 lock-release-docs
 locus-to-gene-mapper-skill
 lofi-print-anime
+log-to-daily
 log_search
 logging-and-observability
 logical-feed-probe
@@ -4873,6 +5017,7 @@ marketplace-pre-member-personalisation
 marketplace-recsys-feature-engineering
 marketplace-search-recsys-planning
 markifact-agent
+marm-init
 marmot
 mascotskill
 masterplan
@@ -4965,6 +5110,7 @@ medusa
 meeting-analysis
 meeting-intelligence
 meeting-notes-to-tasks
+meeting-task-extractor
 meeting_notes
 mega-pipeline
 meihua-yishu
@@ -5073,6 +5219,7 @@ migrate-to-sqlite
 migrate-v8-to-v9
 migrate-xml-ui-to-compose
 migrate-xml-views-to-jetpack-compose
+migration-guidance
 migration-mapping
 migration-scoring
 migration-zero-downtime
@@ -5341,9 +5488,11 @@ new-aws-service
 new-changelog
 new-command
 new-component
+new-idea
 new-migration
 new-post
 new-terraform-provider
+new-workflow
 newcomer-issue-explainer
 newms-transparency-and-data
 news-monitor-digest
@@ -5424,6 +5573,7 @@ nutrient-maui-sdk
 nutrient-react-native-sdk
 nuxt-data-audit
 nuxt-swiftsearch
+nv-park-and-review
 nx-import
 nx-plugins
 nx-run-tasks
@@ -5491,6 +5641,7 @@ om-backend-ui-design
 om-synthetic-users
 oma-refactor
 omc-plan
+omd-lab-02-design-harness
 omen
 omni-agents-a2a
 omni-api-keys
@@ -5666,6 +5817,7 @@ pa-income-tax
 pacing-and-estimation-ccm-advisory
 pack-submit
 package audit
+package-development
 package-npm-nix
 package-usage
 packaged_review
@@ -5682,6 +5834,7 @@ panews-creator
 panews-web-viewer
 papan
 paper
+paper-discover
 paper-flat-vignette
 paper-illustration
 paper-read
@@ -5788,6 +5941,7 @@ pic-business
 pic-cartoon
 picking-a-format
 picus-best-practices
+pikapython
 pin-bump
 pinact
 pinchbench-skill-https-github-com-pinchbench-skill
@@ -5902,6 +6056,7 @@ platform-flexipage-generate
 platform-metadata-deploy
 platform-operations
 platform-permission-set-generate
+platform-port
 platform-report-generate
 platform-strategy-sms
 platform-trial-org-create
@@ -5939,6 +6094,7 @@ plugin-google_cloud
 plugin-google_drive
 plugin-granola
 plugin-higgsfield
+plugin-module
 plugin-probe
 plugin-testing
 pm-all
@@ -5977,6 +6133,7 @@ poet
 pohuy
 pointless-intermediate-variables
 poisoned-skill
+pokebox-fragment-shader
 pol-probe
 pol-probe-advisor
 poland-einvoice
@@ -6088,6 +6245,7 @@ pr-logging-reviewer
 pr-memory-reviewer
 pr-metrics-reviewer
 pr-migration-reviewer
+pr-mr
 pr-name
 pr-naming-reviewer
 pr-observability-reviewer
@@ -6141,6 +6299,7 @@ proactively-suggest-the-right-convex-component
 probe
 problem-framing-canvas
 problem-statement
+process
 process compliance first-pass
 process-lifecycle
 processing-s3-uploads-with-step-functions
@@ -6393,6 +6552,7 @@ rc-security
 rca
 rce-curl-pipe
 rcsb-pdb-skill
+re-review-state
 re0
 re0-git
 re0-loop
@@ -6493,6 +6653,7 @@ reference-skill
 refine-tests
 refined
 reflect-outcome
+reflect-slice
 reflection-method-find
 refresh-link-cache-pr-fix
 refresh-status
@@ -6504,6 +6665,7 @@ regulatory-audit-generator
 rehydrate
 reinvented-helpers
 reject
+relate
 related
 relation-creation
 relational-database-mcp-cloudbase
@@ -6672,6 +6834,7 @@ review-api-simulation
 review-chad
 review-change
 review-code-dev
+review-code-style
 review-context
 review-contract
 review-crate
@@ -6692,6 +6855,7 @@ reviewer-handoff
 reviewer-protocol
 reviewer-routing
 reviewer-self-review
+reviewing-salary-adjustment
 reviews-pragmatic
 revisor-delphi
 rewardkit
@@ -6747,6 +6911,7 @@ room-proposals
 root-cause
 root-level-skill-fixture
 root-skill
+rosetta
 rotate-creative
 roundtable
 routing-policy-task-routing-matrix
@@ -6792,6 +6957,7 @@ run-statusbeam-cli
 run-statusbeam-web
 run-statusbeam-worker
 run-task
+run-tests-safely
 run-work
 rundown
 runpod-deployment
@@ -6887,6 +7053,7 @@ schedule-with-google-calendar
 schedule-with-outlook
 schema-markup-generator
 schema-spec
+schematize
 school-rules-rag
 science-translational-medicine
 scion
@@ -7281,6 +7448,9 @@ source-command-audit
 source-command-capture-har
 source-command-docs-update
 source-command-git-cleanup
+source-command-git-cm
+source-command-git-cp
+source-command-journal
 source-command-release-check
 source-command-review
 source-command-security-check
@@ -7331,6 +7501,11 @@ specs-creator
 specstory-session-summary
 speech_rough_cut_skill
 spend-watch
+sphr-3dgs
+sphr-iiif
+sphr-project
+sphr-tour
+sphr-vfx
 spine-animation
 split-jvm-nonjvm
 split-skill
@@ -7348,8 +7523,10 @@ sql-style
 sqlalchemy-postgres
 sqlite-schema-design
 sqlite-vec-skilld
+squad
 squad-blocked
 squad-conventions
+squad-version-check
 square
 squid-grilling
 squid-implement-night
@@ -7371,6 +7548,7 @@ stagehand-facade
 stakeholder-map
 stale-sweep
 standards-check
+standards-review
 standup-formatter
 start-feature
 start-hotfix
@@ -7388,12 +7566,14 @@ statistical-reporting
 stats-methods
 status-updates
 stem-verify
+steno
 step-by-step
 sticker-sheet
 stillpane
 stillpane-install
 stitch
 stock-data
+stock_research_report_expert
 stop
 store-data-structures
 stories
@@ -7805,6 +7985,7 @@ tool-foundation-sprint-founding-hypothesis
 tool-foundation-sprint-magic-lenses
 tool-foundation-sprint-readiness
 tool-migration-cutover
+tool-module
 tool-note-and-vote
 tool-pages
 tool-stripe
@@ -7815,6 +7996,8 @@ tooluniverse-mendelian-randomization
 tooluniverse-toxicology
 topic-0xnyk-council-of-high-intelligence-council
 topic-ageerle-ruoyi-ai-chinese-3d-aesthetics
+topic-agents4academia-ai-ureka-alphaxiv
+topic-alchemy-run-distilled-distilled-sdk-patch
 topic-arcsin1-oh-my-ppt-academic-navy
 topic-atmosphere-atmosphere-spec-test-without-frontmatter
 topic-autopus-ai-autopus-adk-auto
@@ -7839,6 +8022,8 @@ topic-freepeak-leankg-usage
 topic-gauthierdmn-nominal-code-check-docstrings
 topic-getsentry-toolkit-sentry-cli
 topic-giskard-ai-giskard-oss-setup-env
+topic-grafana-plugin-tools-build-plugin
+topic-himovo-movo-stock-analysis
 topic-humiris-wwa-transform-agentizer
 topic-infection-infection-docker-sandbox
 topic-jonathanmr22-pact-pact-bug
@@ -7846,12 +8031,14 @@ topic-joonghyun-lee-frieren-oh-my-antigravity-blueprint
 topic-juspay-xyne-spaces-agents
 topic-kangarooking-mao-selected-works-skill-bianzheng-pingheng
 topic-keirsalterego-jailbreak-fable-skill-creator
+topic-kenyony-dtflow-dtflow
 topic-keonho-chu-menhera-loop-are-you-done
 topic-laplaceyoung-dsh-directorx-novel-art
 topic-laplaceyoung-dsh-directorx-novel-characters
 topic-laplaceyoung-dsh-directorx-novel-outline
 topic-laplaceyoung-dsh-directorx-novel-script
 topic-laplaceyoung-dsh-directorx-novel-storyboard
+topic-leoswing-comparequeries-datasource-rc-build-plugin
 topic-lofcz-llmtornado-skill-generator
 topic-macro-inc-macro-debug-service
 topic-maxvaega-skillkit-invalid-missing-name
@@ -7862,6 +8049,7 @@ topic-mulhamna-jira-commands-api
 topic-oleksiidotsenko-test-builder-analyze-results
 topic-omixam-pensamiento-critico-pensamiento-critico
 topic-onyx-dot-app-onyx-onyx-cli
+topic-openanalystinc-10x-n8n-skill-n8n-diagnose
 topic-opsrobot-ai-opsrobot-datamodel-gen
 topic-p-poss-dj-claude-analyze
 topic-qdhenry-claude-command-suite-gsap-animation
@@ -7869,6 +8057,7 @@ topic-regent-vcs-re_gent-blame
 topic-rivet-dev-rivet-graphite-is-being-a-piece-of-s
 topic-rtgs2017-nagaagent-live2d-controller
 topic-rubenmarcus-ralph-starter-ralph-figma
+topic-schub-tech-llm-ideation-wiki-find-gaps
 topic-scisharp-numsharp-np-function
 topic-serbanghita-plan-critique-skills-archive
 topic-snowbanksdk-foundationdb-dotnet-client-snowbank-betterhttp
@@ -7878,6 +8067,7 @@ topic-travisleeeeee-awesome-openclaw-personas-anthropologist
 topic-try-agora-qvr-invalid-skill-bad-format
 topic-tykisgod-quick-question-add-tests
 topic-win4r-museai-skills-facebook
+topic-windmill-labs-windmill-adding-a-trigger
 topic-wq19901103wq-wechat-mac-rpa-3d-print-automation
 topic-zenhg-opencode-moa-architecture-moa
 topic-zilliztech-memsearch-memory-config
@@ -7886,6 +8076,7 @@ topic2-atmosphere-atmosphere-spec-test-without-frontmatter
 topic2-cacheplane-b4run-greetings
 topic2-dinhanhthi-coding-friend-cf-commit-custom
 topic2-erergb-subagent-harness-wander
+topic2-fdueblab-micro-agent-algorithm-code-standards
 topic2-infection-infection-docker-sandbox
 topic2-mozilla-services-syncstorage-rs-syncserver-explain-code
 topic2-oleksiidotsenko-test-builder-analyze-results
@@ -7898,6 +8089,7 @@ tpmi-phewas-skill
 trace-harness-launch-failure
 trace-lens
 traceability-matrix
+tracecraft
 tracer-bullet-issue-creation-from-plan
 traceway
 track-agri-hedge-fund-positioning
@@ -7938,6 +8130,7 @@ trends-in-food-science-and-technology
 tres
 tres-export-3rd-party-contacts
 triage-pregraph-data
+triage-review-findings
 trial-readout-analysis
 trigger-short-desc
 troubleshooting-flows
@@ -8050,6 +8243,7 @@ ultrawork
 ulw-execute
 ulw-research
 unclosed-frontmatter-skill
+underline_toolkit
 underscore-skill
 undocs
 unfreeze
@@ -8105,6 +8299,7 @@ update-skills
 update-skills-from-changelog
 update-stars
 update-store
+update-translations
 update-version
 update-versions
 update-vulndb
@@ -8222,11 +8417,13 @@ valuation
 valuation-methods
 value
 vat-place-of-supply-master
+vault-graph
 vault-init
 vbs-scan-security
 vc-frontend-design
 vector
 veille-quotidienne-japon
+vendored-assets
 vera-quality-gate
 verb-domain-task
 verifica-fonti
@@ -8238,10 +8435,14 @@ verify-bidirectional
 verify-cascade
 verify-change
 verify-done
+verify-live-change
+verify-npm-alignment
 verify-prd
 verify-python
 verify-rc
+verify-server-endpoint-context
 verify-slice
+verify-version-alignment
 version
 version-node
 vertex-ai-gemini-model-tuning
@@ -8360,6 +8561,7 @@ watch-video
 watzup
 wayfinder
 wayfinder-maps
+wb_finance_skill
 wc-clean-sheet-model
 wc-decision-logger
 wc-fixture-progression
@@ -8399,6 +8601,7 @@ webapp-preview-testing
 webapp-probe
 webdesign
 webgpu-specs
+webhook-trigger
 webpage-reader
 wechat-article-editor
 wechat-article-review
@@ -8470,10 +8673,12 @@ word
 word / docx
 word-counter
 workdir-smoke
+workers-code-review
 workflow-architecture-audit
 workflow-big-feature
 workflow-bugfix
 workflow-code-to-spec
+workflow-conventions
 workflow-e2e
 workflow-end
 workflow-enforcer-skill
@@ -8525,6 +8730,7 @@ write-changelog
 write-docs
 write-e2e
 write-file
+write-migration
 write-nql
 write-ok
 write-openapi
@@ -8553,10 +8759,12 @@ write-script-python3
 write-script-rlang
 write-script-rust
 write-script-snowflake
+write-system-functional-doc
 write-workflow-as-code
 writing
 writing-beats
 writing-bots
+writing-client-code
 writing-database-queries
 writing-fragments
 writing-great-skills
@@ -8653,6 +8861,7 @@ zvec-grep
 代码审查
 办公文件工具
 加密货币价格
+可比公司分析
 天气查询
 日志诊断
 本地授权文件

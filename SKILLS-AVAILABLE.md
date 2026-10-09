@@ -4,39 +4,39 @@
 > Kalau ada skill yang cocok, pakai skill itu dulu — jangan mengarang dari nol.
 > Cari cepat: `~/.agents/skill-search.sh "<kata kunci>"` atau tool MCP `skill_search`.
 
-> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (89092 entri scraping)
+> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (90501 entri scraping)
 > **tidak** ditampilkan karena tidak terawat — cari lewat `skill-search.sh` bila perlu.
 > Ini memperbaiki bug lama yang mencampur curated+reference sebagai "curated".
 
-Sumber: `3176` skill curated (dari `100937` entri total di index). Katalog penuh: `skills-index.db`.
+Sumber: `3176` skill curated (dari `102555` entri total di index). Katalog penuh: `skills-index.db`.
 Kategori: **24** · maks 55 skill/kategori ditampilkan di sini. Peta hemat: `SKILLS-CATEGORIES.md` (4 KB).
 
 ## Peta cepat kategori
 
 | Kategori | Curated | Reference (cari manual) |
 |---|---|---|
-| backend-developer | 55 | 22754 |
-| designer | 55 | 11196 |
-| frontend-developer | 55 | 7190 |
-| game-developer | 55 | 6875 |
-| devops-engineer | 55 | 6553 |
-| creative-producer | 55 | 7379 |
-| productivity-automator | 55 | 600 |
-| qa-engineer | 55 | 6803 |
-| mobile-developer | 55 | 2641 |
-| data-scientist | 55 | 3175 |
-| security-specialist | 55 | 2779 |
-| ai-engineer | 49 | 2302 |
-| tech-writer | 24 | 1359 |
-| data-engineer | 22 | 1307 |
-| devtools-engineer | 18 | 1548 |
-| product-manager | 16 | 1095 |
-| fullstack-generalist | 8 | 627 |
-| agent-orchestrator | 6 | 170 |
+| backend-developer | 55 | 23052 |
+| designer | 55 | 11344 |
+| frontend-developer | 55 | 7332 |
+| game-developer | 55 | 7024 |
+| devops-engineer | 55 | 6687 |
+| creative-producer | 55 | 7534 |
+| productivity-automator | 55 | 606 |
+| qa-engineer | 55 | 6892 |
+| mobile-developer | 55 | 2711 |
+| data-scientist | 55 | 3207 |
+| security-specialist | 55 | 2811 |
+| ai-engineer | 49 | 2320 |
+| tech-writer | 24 | 1389 |
+| data-engineer | 22 | 1324 |
+| devtools-engineer | 18 | 1571 |
+| product-manager | 16 | 1102 |
+| fullstack-generalist | 8 | 629 |
+| agent-orchestrator | 6 | 171 |
 | agent-ux | 5 | 201 |
-| architect | 4 | 290 |
-| agent-memory | 1 | 138 |
-| analyst | 1 | 469 |
+| architect | 4 | 292 |
+| agent-memory | 1 | 145 |
+| analyst | 1 | 473 |
 | blockchain-developer | 1 | 386 |
 | (tanpa kategori) | 1 | 0 |
 
