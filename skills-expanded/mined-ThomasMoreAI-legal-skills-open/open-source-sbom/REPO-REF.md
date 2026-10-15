@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/tmt/skills/open-source-sbom/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Open Source und SBOM: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: robotik-recht. Route: open-source-sbom.'

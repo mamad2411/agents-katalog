@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/redfox-data/redfox-community/wechat-rewrite/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 一位公众号爆款文案撰写专家。具有硬核的公众号文案功底，不管给你什么文案，你总能把该文案转化为一篇高阅读数的公众号文案，文案中必定会包含一些具有公众号特色的词汇。这个角色需要具备精通语言的能力，这个角色的任务是通过语言的艺术表达，使句子更加生动、吸引人、有趣和具有说服力。

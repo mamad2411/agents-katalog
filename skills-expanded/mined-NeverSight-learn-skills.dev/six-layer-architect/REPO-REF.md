@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/morning-start/coze-skills/six-layer-architect/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 基于六层架构（前端UI/前端服务/前端API/后端API/后端服务/数据层）生成全栈实现方案，适用于功能需求开发、代码生成、架构校验、安全审查

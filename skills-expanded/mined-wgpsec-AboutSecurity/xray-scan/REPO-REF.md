@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wgpsec/AboutSecurity (path: skills/tool/xray-scan/SKILL.md, branch: master)
+- mined: 2026-10-14
+- desc: 使用 xray 进行 Web 漏洞自动化扫描。当需要对 Web 应用进行全面漏洞扫描（XSS/SQLi/命令注入/SSRF/XXE/路径穿越/文件上传/弱口令等）时使用。xray 是长亭科技出品的综合性 Web 安全评估工具，支持主动扫描、被动代理扫描、基础爬虫扫描三种模式，内置丰富的检测插件和社区 POC。任何涉及 xray 漏洞扫描、Web 安全评估、被动代理扫描的场景都应使用此技能"

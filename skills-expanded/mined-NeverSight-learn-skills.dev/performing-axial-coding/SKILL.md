@@ -1,0 +1,351 @@
+---
+name: performing-axial-coding
+description: 当用户需要执行扎根理论的轴心编码，包括范畴识别、属性维度分析、关系建立和Paradigm模型构建时使用此技能
+version: 1.1.0
+author: socienceAI.com
+tags: [grounded-theory, axial-coding, category-analysis, paradigm-model, qualitative-research, planning-with-files]
+compatibility: Claude 3.5 Sonnet and above
+metadata:
+  domain: qualitative-research
+  methodology: grounded-theory
+  complexity: intermediate
+  integration_type: analysis_tool
+  last_updated: "2026-01-23"
+dependencies:
+  - planning-with-files
+allowed-tools: [python, bash, read_file, write_file]
+---
+
+# 轴心编码技能 (Performing Axial Coding)
+
+## Overview
+专门用于扎根理论研究的轴心编码阶段，将开放编码产生的概念整合为系统性的范畴体系，并建立范畴间的逻辑关系。
+
+## When to Use This Skill
+Use this skill when the user requests:
+- Integration of open coding concepts into categories
+- Identification of category properties and dimensions
+- Establishment of relationships between categories
+- Construction of paradigm models (conditions-context-actions-outcomes)
+- Development of theoretical frameworks from coded data
+- Systematic approach to mid-stage qualitative analysis
+- Chinese qualitative data analysis following grounded theory principles
+- Need for systematic planning and progress tracking in axial coding
+- Integration with planning-with-files for project management
+
+## Quick Start
+When a user requests axial coding:
+1. **Group** related concepts from open coding into categories
+2. **Analyze** properties and dimensions of each category
+3. **Establish** relationships between categories
+4. **Construct** paradigm models linking categories
+5. **Validate** the coherence of the category system
+
+## 使用时机
+
+当用户提到以下需求时，使用此技能：
+- "轴心编码" 或 "执行轴心编码"
+- "范畴构建" 或 "概念归类"
+- "属性维度分析" 或 "维度分析"
+- "范畴关系" 或 "概念关系"
+- "Paradigm构建" 或 "范式构建"
+- 需要将开放编码结果整合为理论框架
+
+## 脚本调用时机
+当需要执行轴心编码的不同阶段时，调用对应的脚本：
+- 范畴识别阶段：调用 `identify_categories.py`
+- 属性分析阶段：调用 `analyze_properties.py`（可选）
+- 关系建立阶段：调用 `build_relationships.py`
+- Paradigm构建阶段：调用 `construct_paradigm.py`
+
+## 统一输入格式
+```json
+{
+  "coding_context": {
+    "research_topic": "研究主题",
+    "previous_coding_stage": "前期编码阶段(开放编码/轴心编码)",
+    "theoretical_perspective": "理论视角",
+    "coding_purpose": "编码目的"
+  },
+  "input_data": {
+    "concepts": [
+      {
+        "id": "概念ID",
+        "name": "概念名称",
+        "definition": "概念定义",
+        "examples": ["示例1", "示例2"]
+      }
+    ],
+    "codes": [
+      {
+        "id": "编码ID",
+        "concept_id": "关联概念ID",
+        "text": "编码文本",
+        "source_segment": "来源段落"
+      }
+    ],
+    "previous_categories": [
+      {
+        "id": "前期范畴ID",
+        "name": "前期范畴名称",
+        "concepts": ["概念ID列表"]
+      }
+    ]
+  },
+  "coding_parameters": {
+    "abstraction_level": "抽象层次要求",
+    "number_of_categories": "目标范畴数量",
+    "category_type": "范畴类型(核心/次要)",
+    "relationship_types": ["因果", "条件", "策略", "互动"]
+  }
+}
+```
+
+## 统一输出格式
+```json
+{
+  "summary": {
+    "total_categories": "范畴总数",
+    "core_categories": "核心范畴数",
+    "total_relationships": "关系总数",
+    "paradigm_completeness": "Paradigm完整度",
+    "processing_time": "处理时间(秒)"
+  },
+  "details": {
+    "categories": [
+      {
+        "id": "范畴ID",
+        "name": "范畴名称",
+        "definition": "范畴定义",
+        "concepts": ["概念ID列表"],
+        "properties": {
+          "dimension": "维度特征",
+          "values": ["维度值"],
+          "conditions": "条件特征"
+        },
+        "type": "范畴类型(核心/次要)",
+        "frequency": "出现频次",
+        "source_segments": ["来源段落ID列表"]
+      }
+    ],
+    "relationships": [
+      {
+        "id": "关系ID",
+        "from_category": "源范畴ID",
+        "to_category": "目标范畴ID",
+        "type": "关系类型(因果/条件/策略/互动)",
+        "strength": "关系强度(0-1)",
+        "evidence": "关系证据",
+        "description": "关系描述"
+      }
+    ],
+    "paradigm_model": {
+      "phenomenon": "核心现象",
+      "conditions": ["条件范畴列表"],
+      "context": "情境",
+      "action_strategies": ["行动策略列表"],
+      "consequences": ["后果列表"],
+      "intervening_conditions": ["中介条件"],
+      "outcomes": "结果"
+    },
+    "statistics": {
+      "category_cohesion": "范畴内聚度",
+      "relationship_density": "关系密度",
+      "paradigm_coherence": "Paradigm一致性"
+    }
+  },
+  "metadata": {
+    "timestamp": "时间戳",
+    "version": "版本号",
+    "skill": "performing-axial-coding",
+    "processing_stage": "处理阶段"
+  }
+}
+```
+
+## 核心流程
+
+### 第一步：范畴识别
+
+**使用工具自动聚类**：
+```bash
+python scripts/identify_categories.py --input codes.json --output categories.json
+```
+
+**定性精炼**：
+- 检查范畴内部一致性
+- 调整范畴命名（行动导向）
+- 完善范畴定义
+- 建立层级结构（核心/次要）
+
+详见：`references/category-examples.md`
+
+### 第二步：属性维度分析（可选）
+
+**使用工具分析属性**：
+```bash
+python scripts/analyze_properties.py --input categories.json --output properties.json
+```
+
+**定性分析**：
+- 识别范畴的核心属性
+- 定义属性的变化维度
+- 在维度上定位案例
+
+详见：`references/paradigm-theory.md` - 属性维度理论
+
+### 第三步：关系建立
+
+**使用工具识别关系**：
+```bash
+python scripts/build_relationships.py --input categories.json --output relationships.json
+```
+
+**关系类型**：
+- 因果关系：A导致B
+- 条件关系：当A时B发生
+- 策略关系：通过A达成B
+- 互动关系：A与B相互影响
+
+**定性判断**：
+- 验证关系的证据充分性
+- 确定关系的方向和强度
+- 分析关系的理论意义
+
+详见：`references/relationship-types.md` - 关系类型详解
+
+### 第四步：Paradigm构建
+
+**使用工具构建模型**：
+```bash
+python scripts/construct_paradigm.py --input relationships.json --output paradigm.json
+```
+
+**Paradigm组件**：
+- 现象：核心研究现象
+- 条件：导致现象的因素
+- 行动：应对现象的策略
+- 结果：行动的后果
+
+**定性整合**：
+- 验证逻辑链条完整性
+- 确认模型理论意义
+- 撰写理论备忘录
+
+详见：`references/paradigm-theory.md` - Paradigm模型详解
+
+## 输出格式
+
+统一的三层JSON格式：
+```json
+{
+  "summary": {
+    "total_categories": 8,
+    "core_categories": 3,
+    "total_relations": 12,
+    "paradigm_completeness": 0.85
+  },
+  "details": {
+    "categories": [...],
+    "relationships": [...],
+    "paradigm": {...}
+  }
+}
+```
+
+## 质量检查标准
+
+在完成轴心编码后，请检查以下项目：
+
+### 范畴构建质量
+- [ ] 范畴命名准确且有意义
+- [ ] 范畴定义清晰完整
+- [ ] 概念归类合理有据
+- [ ] 范畴层级结构清晰
+- [ ] 范畴间区分度明确
+
+### 属性维度质量
+- [ ] 属性识别全面准确
+- [ ] 维度定义合理
+- [ ] 维度范围适当
+- [ ] 案例定位准确
+- [ ] 分布分析科学
+
+### 关系建立质量
+- [ ] 关系类型判断准确
+- [ ] 关系强度评估合理
+- [ ] 关系证据充分
+- [ ] 关系方向正确
+- [ ] 关系网络完整
+
+### Paradigm构建质量
+- [ ] 条件识别完整
+- [ ] 行动描述准确
+- [ ] 结果分析全面
+- [ ] 逻辑链条清晰
+- [ ] 理论意义明确
+
+## 常见问题
+
+**快速诊断**：
+- 范畴过于宽泛 → 使用 `identify_categories.py` 增加聚类数
+- 概念归属不明确 → 见 `references/troubleshooting.md`
+- 关系论证不充分 → 使用 `build_relationships.py` 查看证据计数
+- Paradigm不完整 → 使用 `construct_paradigm.py` 检查完整度
+
+## 深入学习
+
+- **Paradigm理论**：`references/paradigm-theory.md` - Strauss模型详解
+- **范畴案例**：`references/category-examples.md` - 完整构建过程
+- **关系类型**：`references/relationship-types.md` - 四种关系详解
+- **故障排除**：`references/troubleshooting.md` - 问题诊断
+
+## 完成标志
+
+完成轴心编码后应该产出：
+1. 系统性的范畴体系
+2. 详细的属性维度分析
+3. 完整的范畴关系网络
+4. 清晰的Paradigm理论模型
+
+## 轴心编码多阶段编码流程集成planning-with-files
+
+### 阶段1：项目规划与准备
+- 使用planning-with-files初始化项目
+- 创建轴心编码任务计划文档
+- 定义编码目标、范围和时间线
+- 确定数据源和编码深度
+
+### 阶段2：范畴识别
+- 跟踪范畴识别进度
+- 记录范畴构建和命名结果
+- 更新任务完成状态
+- 记录范畴识别过程中发现的问题
+
+### 阶段3：属性维度分析
+- 执行属性维度分析
+- 监控属性分析进度
+- 记录关键维度发现
+- 与任务计划进行对照
+
+### 阶段4：关系建立
+- 跟踪关系建立过程
+- 记录范畴间关系发现
+- 更新编码阶段状态
+- 整理关系分析结果
+
+### 阶段5：Paradigm模型构建
+- 跟踪Paradigm模型构建过程
+- 记录模型组件和关系
+- 监控模型完整性指标
+- 整合模型构建结果
+
+### 阶段6：整合与总结
+- 整合所有编码结果
+- 生成轴心编码分析报告
+- 记录关键洞察和反思
+- 完成项目总结和复盘
+
+---
+
+*此技能为中文扎根理论研究的轴心编码阶段提供完整指导，确保从概念到范畴的科学转化和理论建构。*

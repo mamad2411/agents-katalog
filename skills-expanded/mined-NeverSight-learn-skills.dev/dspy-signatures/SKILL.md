@@ -1,0 +1,130 @@
+---
+name: dspy-signatures
+description: "Use when you need to define the input/output contract for an LM call — choosing between inline and class-based signatures, adding type constraints, or using Pydantic models for structured outputs."
+---
+
+# DSPy Signatures
+
+Guide the user through defining DSPy Signatures — typed declarations of what goes into and comes out of an LM call.
+
+## What is a Signature
+
+A Signature declares the input/output contract for an LM call -- field names, types, and descriptions. DSPy compiles it into an optimized prompt automatically. You define the I/O spec; DSPy handles the prompting.
+
+## When to use each style
+
+| Style | When to use | Example |
+|-------|-------------|---------|
+| **Inline** | Quick one-liner, 1-2 inputs, 1 output, string types | `"question -> answer"` |
+| **Class-based** | Multiple fields, type constraints, descriptions, Pydantic outputs | `class Classify(dspy.Signature)` |
+
+**Rule of thumb:** Start inline for prototyping. Switch to class-based when you need type constraints, field descriptions, or more than one output.
+
+## Inline signatures
+
+Inline signatures are strings with `->` separating inputs from outputs: `"question -> answer"`, `"text -> label: bool"`. Supported type suffixes: `str` (default), `int`, `float`, `bool`, `list[str]`.
+
+## Class-based signatures
+
+Class-based signatures give you type constraints, field descriptions, and a docstring that acts as the task instruction. Use them when you need more than a one-liner.
+
+## Field options
+
+Both `InputField` and `OutputField` accept these parameters:
+
+```python
+class Example(dspy.Signature):
+    """Demonstrate field options."""
+    # desc: describes the field to the LM (shows up in the prompt)
+    text: str = dspy.InputField(desc="The document to analyze")
+
+    # prefix: overrides the field label in the prompt (default is the field name)
+    summary: str = dspy.OutputField(prefix="Summary:")
+
+    # desc + type constraint combined
+    category: str = dspy.OutputField(
+        desc="The document category",
+        type_=Literal["news", "blog", "research"]
+    )
+```
+
+- **`desc`** — a natural language description. Helps the LM understand what the field means. Use this when the field name alone is ambiguous.
+- **`prefix`** — overrides the label shown in the prompt. Defaults to the field name followed by a colon.
+- **`type_`** — alternative way to set type constraint directly on OutputField (instead of using Python type annotation).
+
+## Pydantic models as output types
+
+For complex or nested structured output, use a Pydantic `BaseModel` as the output type. DSPy handles serialization and validation automatically.
+
+```python
+import dspy
+from pydantic import BaseModel, Field
+from typing import Optional
+
+lm = dspy.LM("openai/gpt-4o-mini")  # or any LiteLLM-supported provider
+dspy.configure(lm=lm)
+
+class LineItem(BaseModel):
+    description: str
+    quantity: int
+    unit_price: float
+
+class Invoice(BaseModel):
+    vendor: str
+    date: str = Field(description="Invoice date in YYYY-MM-DD format")
+    total: float
+    items: list[LineItem]
+    notes: Optional[str] = None
+
+class ParseInvoice(dspy.Signature):
+    """Extract structured invoice data from the raw text."""
+    text: str = dspy.InputField(desc="Raw invoice text")
+    invoice: Invoice = dspy.OutputField(desc="Parsed invoice data")
+
+parser = dspy.ChainOfThought(ParseInvoice)
+result = parser(text="Invoice from Acme Corp, Jan 15 2025. 2x Widget ($10 each), 1x Gadget ($25). Total: $45.")
+print(result.invoice.vendor)       # Acme Corp
+print(result.invoice.items[0])     # LineItem(description='Widget', quantity=2, unit_price=10.0)
+print(result.invoice.total)        # 45.0
+```
+
+**When to use Pydantic outputs:**
+- You need nested objects (addresses, line items, etc.)
+- You want automatic validation (Pydantic enforces types)
+- The output maps to a database model or API response
+- You need `Optional` fields for data that may not be present
+
+## Common patterns
+
+### Docstrings as task instructions
+
+The docstring is the most important part of a class-based signature. DSPy uses it as the primary instruction to the LM.
+
+```python
+# Vague — the LM doesn't know what "classify" means in your context
+class Bad(dspy.Signature):
+    """Classify the text."""
+    text: str = dspy.InputField()
+    label: str = dspy.OutputField()
+
+# Clear — tells the LM exactly what to do
+class Good(dspy.Signature):
+    """Classify the customer support message into a department for routing.
+    Consider the primary intent, not just keywords."""
+    message: str = dspy.InputField(desc="Customer support message")
+    department: Literal["billing", "technical", "account", "general"] = dspy.OutputField()
+```
+
+## Gotchas
+
+1. **Field names ARE the prompt** -- `text -> summary` works better than `input -> output` because DSPy uses field names directly in the generated prompt. Choose descriptive names.
+2. **Literal types need `tuple()` wrapping for dynamic values** -- use `Literal[tuple(["a", "b"])]` not `Literal[["a", "b"]]` when constructing from a list at runtime.
+3. **Keep signatures small** -- more than 4-5 output fields degrades quality. Split into multiple calls instead.
+4. **The docstring on a Signature class becomes the task instruction** -- write it carefully, as a clear directive. A vague docstring like "Classify the text" performs much worse than "Classify the customer support message into a department for routing."
+
+## Cross-references
+
+- **Using signatures with modules** — see `/dspy-predict` (Predict), `/dspy-chain-of-thought` (ChainOfThought), `/dspy-modules` (custom modules)
+- **Parsing structured data from text** — see `/ai-parsing-data`
+- **Classification and sorting** — see `/ai-sorting`
+- **Full working examples** — see [examples.md](examples.md)

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Nevaberry/nevaberry-plugins (path: plugins/knowledge-patch/patches-codex/ros2-navigation-nav2-knowledge-patch/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Nav2

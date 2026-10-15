@@ -1,0 +1,545 @@
+---
+name: running-resumable-sync-jobs
+description: Design and review long-running batch or sync jobs that process many items against a remote API and persist checkpoint state — exit codes that report partial failure, checkpoints that are safe to resume and written atomically, per-item tolerance vs. fatal abort, telling "zero" apart from "couldn't fetch", bounded retries, honest dry-runs, timezone-safe incremental cursors, and compensating reserved resources. Use when writing or reviewing a mirror/sync command, a nightly cron job, an importer, a paginated fetcher, or a background worker that consumes quota.
+---
+
+# Running Resumable Sync Jobs
+
+A sync job is a loop over N items against a service that will fail partway
+through. Everything hard about these jobs is what happens on item K of N: what
+the process reports, what it wrote down, and what the *next* run does with that.
+Get the happy path right and you still ship a job that silently under-collects,
+double-applies, or bills for work it never did.
+
+## The exit code is the only thing automation reads
+
+The most common failure: per-item errors are printed as warnings, the loop
+`continue`s, and the run finishes by saving state, committing, printing
+"Sync complete!" and returning success. A cron wrapper, a CI step, or a
+supervisor sees exit 0 and reports a healthy job forever.
+
+```python
+# Bad — the warning goes to a log nobody reads; the process says "fine".
+for user in users:
+    try:
+        mirror(user)
+    except MirrorError as e:
+        print(f"Warning: failed to mirror {user}: {e}")
+        continue
+save_state(); commit(); print("Sync complete!")
+return 0
+
+# Good — failures are counted and surfaced in the status the caller can act on.
+failed = []
+for user in users:
+    try:
+        mirror(user)
+    except MirrorError as e:
+        log.error("failed to mirror %s: %s", user, e)
+        failed.append(user)
+save_state()           # keep the work that succeeded
+if failed:
+    log.error("%d of %d targets failed: %s", len(failed), len(users), failed)
+    return 1           # or 2, if you want "partial" distinguishable from "total"
+return 0
+```
+
+Continuing past a failure is usually right — you want the other 99 items. What
+is never right is continuing *and* claiming success. If partial success must be
+acceptable to the caller, make it an explicit opt-in (`--allow-partial`), not the
+default silence.
+
+## Checkpoint what actually happened, not what you attempted
+
+Resumable jobs record "item X is done" so the next run skips it. Two ways that
+record goes wrong, and both are worse than no checkpoint at all:
+
+**Attempted-but-unfinished recorded as done.** State is saved for everything
+processed before the failure, so the next run skips those and the post-failure
+items stay pending forever — and because the run exited 0, nothing ever says so.
+This is the exit-code bug above compounding into permanent data loss.
+
+**Finished-but-not-recorded.** A batch applies its units one at a time
+(N commits, N rows, N API calls) and the helper returns only an error when unit
+K fails — no count of the K−1 that landed. The caller leaves that item's state
+untouched, so the next run recomputes the *whole* delta and re-applies the units
+that already succeeded. Every retry over-applies.
+
+```python
+# Bad — the caller learns nothing about how far the batch got.
+def apply_batch(units) -> None:
+    for u in units:
+        apply(u)            # raises on failure; K-1 side effects already landed
+
+# Good — report progress alongside the failure so state can advance.
+def apply_batch(units) -> int:
+    """Returns the number of units successfully applied."""
+    applied = 0
+    for u in units:
+        try:
+            apply(u)
+        except Exception:
+            raise PartialBatch(applied) from None
+        applied += 1
+    return applied
+```
+
+Either report the partial count and check it in, or make the unit of work atomic
+(one transaction, one commit) so "some of it happened" is not a reachable state.
+Pick one deliberately; the default — raise and discard the count — is the bug.
+
+## Write the checkpoint file atomically, and pin its mode
+
+A checkpoint that is written in place (`os.WriteFile`, `open(path, "w")`) is
+truncated before it is rewritten. A crash, a kill, or a full disk in that window
+leaves an empty or half-written file, and the next run either fails to parse it or
+— worse — treats it as "no state" and redoes (or re-posts) everything.
+
+Write a sibling temp file in the **same directory**, flush it to disk, then rename
+over the destination. Rename within one filesystem is atomic; across filesystems it
+is a copy, so never put the temp file in `/tmp`.
+
+```go
+func saveAtomic(path string, data []byte) error {
+    tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+    if err != nil {
+        return err
+    }
+    defer os.Remove(tmp.Name())               // no-op after a successful rename
+    if _, err := tmp.Write(data); err != nil {
+        tmp.Close()
+        return err
+    }
+    if err := tmp.Sync(); err != nil {        // data on disk before the rename
+        tmp.Close()
+        return err
+    }
+    if err := tmp.Close(); err != nil {
+        return err
+    }
+    if err := os.Chmod(tmp.Name(), 0o644); err != nil { // see below
+        return err
+    }
+    return os.Rename(tmp.Name(), path)
+}
+```
+
+```python
+def save_atomic(path: Path, data: bytes) -> None:
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)                 # atomic, overwrites on all platforms
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+```
+
+Things this changes that are easy to miss:
+
+- **The file mode changes.** Temp-file helpers create `0600`; an in-place write
+  preserves an existing file's mode and otherwise applies the umask. Decide the mode
+  deliberately and `chmod` explicitly, or the first atomic save quietly makes a
+  shared state file unreadable to the other user or container that reads it. A test
+  that seeds a `0600` file and checks the mode after saving exposes the difference.
+- **Name temp files so directory scans ignore them.** Code that lists state files by
+  suffix (`*.json`) must not pick up an abandoned temp from a crashed run. End temps
+  in `.tmp` and keep the suffix check exact.
+- **Failure must clean up.** Remove the temp on every error path, and test that a
+  failed write leaves the previous file intact and no stray temp behind.
+- **Write the whole file or none of it.** Atomic replace protects against torn
+  writes, not against two concurrent writers; those still need a lock or a single
+  writer.
+
+## Per-item tolerance must be decided *before* the shared error handler
+
+Jobs accumulate a shared `handle_api_error(response)` helper. These are almost
+always **fatal by default**: unknown status → log and exit. That is the right
+default for a single-target command and the wrong one for a loop over 900 items,
+where one deleted account should skip one item.
+
+The trap is that the skip branch looks present but is dead:
+
+```python
+# Bad — handle_api_error raises SystemExit on any non-200, so the skip below
+# is unreachable. One 404 aborts the run after 800 successful calls and
+# writes no output at all.
+r = get(f"/users/{login}")
+if r.status_code != 200:
+    signal = handle_api_error(r)
+    if signal == "retry":
+        continue
+    log.warning("Skipping user %s due to error", login)   # never runs
+    skipped += 1
+    continue
+```
+
+Branch on the cases you tolerate *before* delegating:
+
+```python
+if r.status_code != 200:
+    if is_rate_limited(r):
+        handle_api_error(r)      # shared wait/retry policy
+        continue
+    log.warning("Skipping %s: HTTP %s", login, r.status_code)
+    skipped += 1
+    continue
+```
+
+Then report `skipped` in the summary. Two more rules that fall out of this:
+
+- **Grep for other callers** when you change a shared handler's contract. A
+  helper that is fatal-by-default with one tolerant caller is a helper whose
+  other callers are all one bad row away from discarding a full run.
+- **Write output incrementally, or before enrichment.** A job that fetches a
+  list, enriches every element, then writes one file at the end loses everything
+  to a failure in the last element. Persist the cheap list first.
+
+## Distinguish "zero" from "couldn't fetch"
+
+Aggregators fold a failed fetch into the output as a plausible number. This is
+the quietest bug in the whole category, because the artifact looks complete.
+
+```python
+# Bad — a rate-limited or transient clones fetch is written out as a confident 0
+# and flows into the printed total.
+row = {"views": views["count"], "clones": clones.get("count", 0) if clones else 0}
+
+# Good — unknown stays unknown, and the run says how much it lost.
+if clones is None:
+    incomplete.append((repo, "clones"))
+    row["clones"] = None          # or omit the row entirely
+```
+
+Related: a run that treats only *some* failures as decisive is inconsistent by
+construction. If a `None` from fetcher A increments `skipped` and `continue`s,
+but a `None` from fetchers B and C is silently coerced to 0 and dropped from the
+aggregate, the trailing "skipped: M" line under-reports and the totals are wrong
+in a direction no reader can detect.
+
+**Compare against the sentinel, never truthiness.** Every healthy value in this
+position is falsy: a referrer list is `[]` for a target that genuinely has none,
+a counter is `{"count": 0}` for a quiet period. So `if not clones:` fires the
+incomplete-data warning on complete data — and it quietly repurposes every
+empty-result fixture already in your suite, which keeps passing while now
+exercising the failure branch. The distinction you are drawing is *unmeasured*
+vs. *measured zero*, and only `is None` draws it.
+
+```python
+if not referrers:            # Bad — a target with no referrers is not a failure
+if referrers is None:        # Good
+```
+
+**Put the signal in the artifact, not only on the console.** The common half-fix
+names the failed targets in a warning printed after the totals and leaves the
+coerced `0` in the exported file. That serves the operator watching the run and
+nobody else: a downstream dashboard, a spreadsheet, or a diff against yesterday's
+export sees a confident zero with no way to tell it from a quiet period, and the
+row still counts as *analyzed* in the run's own summary. If you must keep the
+coerced value for schema compatibility, ship the companion signal alongside it —
+a `clones_available` column, an `incomplete` block in a manifest, a non-zero exit
+— and be explicit in the PR that the file alone remains ambiguous. A warning on
+stderr is not a channel; it is a courtesy.
+
+**Cross-check totals against detail when the source gives you both.** If a page
+publishes "1,759 contributions in 2024" and your parser extracts zero rows, that
+is a parse failure, not an empty year. A positive summary with an empty detail
+set must raise; zero-or-absent summary with an empty detail set is a valid empty
+result.
+
+**Make sure the guard can fire on real markup.** A cross-check regex written
+against a hand-typed fixture is routinely inert in production: real HTML wraps
+and indents, so `1,759\n      contributions\n        in 2024` never matches a
+single-line `([\d,]+) contributions? in 2024`. A guard that never matches
+degrades to "no summary found", which the rule above treats as a *valid* empty
+result — the failure it exists to catch passes silently.
+
+- Match with `\s+` between words (or normalize whitespace first), never literal
+  spaces.
+- Measure it once: capture the real page, run the guard on it, and keep that
+  capture as a fixture.
+- Don't replace the synthetic fixtures that exercise the guard with real
+  captures until the guard is whitespace-tolerant — the synthetic ones may be
+  its only coverage.
+- Better still, key the parse on an authoritative attribute (a `data-date`,
+  an ID) rather than display text, so locale and wrapping can't matter.
+
+## Harden the request itself when you fetch HTML
+
+Fetching a public web page (no API) with a library's convenience call fails in
+three quiet ways, all fixed in the request rather than the parser:
+
+- **No timeout.** Many stdlib/convenience clients (`http.Get`, `urllib` without
+  `timeout=`) wait forever on a stalled connection, so one dead page hangs a
+  nightly job. Use an explicit client with a deadline, held in one package-level
+  variable so tests can swap it.
+- **Default client User-Agent.** Some sites answer the stock agent string of a
+  language runtime with a 403 or a bot page that parses to "zero rows". Send a
+  descriptive UA.
+- **Locale-dependent text.** A parser keyed on English display text returns
+  zero on a localized page — and zero is indistinguishable from "quiet period".
+  Pin `Accept-Language` on the request. This narrows the failure; it does not
+  replace keying on a machine-readable attribute (see above).
+
+```go
+var scrapeClient = &http.Client{Timeout: 30 * time.Second}
+
+req, _ := http.NewRequest("GET", url, nil)
+req.Header.Set("User-Agent", "my-sync-job page fetcher")
+req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+resp, err := scrapeClient.Do(req)
+```
+
+Probe the live endpoint once with the stock client to confirm it really is
+rejected before adding headers you cannot justify.
+
+## Bound every retry, and count per unit of work
+
+A `continue` on a "retry" signal, inside a pagination loop, with no counter,
+re-requests the same page forever against a persistent 403 or 429. The job does
+not crash — it hangs, which no timeout-free supervisor will ever notice.
+
+```python
+MAX_RETRIES = 5
+
+retries = 0                       # per page, not per run
+while True:
+    r = get(url, params={"page": page})
+    if is_rate_limited(r):
+        if retries >= MAX_RETRIES:
+            return items, False   # partial + incomplete flag; warn loudly
+        wait_for_reset(r)
+        retries += 1
+        continue
+    retries = 0                   # reset after any success
+    ...
+```
+
+Counting **per unit of work** and resetting after a success is what lets a long
+multi-page fetch ride out repeated rate limits while still bounding retries of a
+single stuck page. A per-run counter kills legitimate long jobs; no counter hangs
+forever.
+
+**Write down whose job the waiting is.** If the shared handler already slept
+until the reset timestamp before returning `"retry"`, a caller that adds its own
+`sleep(60)` double-waits — a bug that is invisible in output and only shows up as
+a job that takes twice as long as it should. Document the contract once ("the
+wait already happened; re-request now") and hold every new caller to it.
+
+## Incremental cursors: re-include the boundary
+
+A job that stores `last_sync` as a timestamp but compares at day granularity
+loses the boundary day permanently:
+
+```python
+# Bad — skips days <= since. Anything that happened later on the same calendar
+# day as the last sync is never re-fetched, and that day's count freezes.
+if day_date <= since:
+    continue
+
+# Good — truncate the cursor to the comparison's granularity and re-include the
+# boundary. Merging is keyed by date, so re-processing that day is idempotent.
+if day_date < since.date():
+    continue
+```
+
+The general rule: an incremental cursor must be exclusive only at the exact
+granularity it is stored at. If your merge step is keyed and idempotent — and it
+should be — re-processing the boundary unit costs nothing and closes the hole.
+
+Granularity is only half of it. The other half is **which zone each side of the
+comparison is expressed in** — and getting that wrong produces a bug whose
+direction depends on where the job runs.
+
+The setup is ordinary: the cursor is stamped with a wall-clock `now()` in the
+machine's local zone, while the remote keys its data by `YYYY-MM-DD` in UTC. The
+obvious fix — truncate the cursor "to a day" — is a silent no-op, because it
+truncates in whatever zone the cursor happens to carry:
+
+```python
+# Bad — midnight *local*. West of UTC that lands after the UTC-parsed boundary
+# day, so the boundary day is still skipped — the exact hole you set out to close.
+since_day = since.replace(hour=0, minute=0, second=0, microsecond=0)
+day = datetime.strptime(row["date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+if day < since_day:
+    continue
+
+# Good — convert the cursor into the zone the remote's days are defined in,
+# *then* truncate. Both sides now denote the same instant.
+since_day = since.astimezone(timezone.utc).replace(
+    hour=0, minute=0, second=0, microsecond=0
+)
+```
+
+For a cursor of `2024-01-15T14:00`, the bad version skips the boundary day at
+UTC-5 but not at UTC or UTC+1. Comparing calendar *dates* instead
+(`day.date() < since.date()`) has the same defect mirrored: east of UTC the local
+date runs ahead of the UTC date, so a cursor of `2024-01-16T00:30+01:00` skips
+UTC day `01-15` — which was the incomplete one.
+
+So the sign of the offset decides which failure you get: west of UTC you
+over-fetch (free, if the merge is idempotent), east of UTC you silently
+under-collect. Both look identical from a UTC runner.
+
+Two rules:
+
+- **Normalize both sides to one explicitly named zone before comparing** — not to
+  "whichever zone each value already carries." `astimezone()` on a *naive* cursor
+  assumes local, which is right only if local `now()` is what stamped it.
+- **Better, remove the zone from the comparison entirely**: store the cursor in
+  the units you compare at — the remote's own `YYYY-MM-DD` string, or an
+  explicitly-UTC instant — so no later reader has to guess what it meant.
+
+## Dry-run must perform every in-memory mutation the real run does
+
+Gate persistence and external side effects. Never gate the in-memory state
+changes the preview loop reads, or the preview describes a different job than the
+one that will run.
+
+```python
+# Bad — under --dry-run the counters are never cleared, so the preview computes
+# incremental deltas and reports "nothing to do", while a real --rebuild would
+# re-apply the entire history.
+if rebuild and not dry_run:
+    state.clear_all_progress()
+
+# Good — clear in memory always; only the write is gated.
+if rebuild:
+    state.clear_all_progress()
+...
+if not dry_run:
+    save_state(state)
+    rewrite_history()
+```
+
+Also make destructive scope explicit in the preview. A `--rebuild` that recreates
+history by removing every tracked file is correct only in a dedicated
+single-purpose repo; run it where other content lives and it deletes that too.
+Say what will be removed, not just what will be added.
+
+## Sort anything you rebuild from a map before committing it
+
+If the job's output is a **committed** file (a mirror, a stats snapshot, a
+lockfile-like index), rebuilding a slice from a hash map is a bug in any language
+with randomized iteration (Go maps, Python sets, many JSON libraries). The content
+is right but the order changes every run, so each sync produces a large,
+unreviewable diff and "did anything actually change?" becomes unanswerable.
+
+```go
+// Bad — map iteration order is random; the file is rewritten shuffled each sync.
+for date, n := range byDate { out = append(out, Entry{date, n}) }
+
+// Good — sort on a stable key. ISO `YYYY-MM-DD` strings sort chronologically
+// as plain strings, so no time parsing is needed.
+sort.Slice(out, func(i, j int) bool { return out[i].Date < out[j].Date })
+```
+
+Apply it at every code path that rebuilds the slice (merge, rebuild, import),
+not just the one you noticed. Test it by running the merge on input whose natural
+order differs from the expected one and asserting the exact output order — and
+ideally that a second no-op sync produces a byte-identical file.
+
+## Compensate reserved resources when the work never happens
+
+Jobs that consume quota, credits, or seats reserve *before* doing the work — the
+right order, since the alternative is unbounded free work. The reservation itself
+should be a single conditional update, which is race-free and needs no lock:
+
+```sql
+UPDATE subscriptions SET usage = usage + 1
+ WHERE id = :id AND usage < :limit      -- rowcount == 0 → over quota → 429
+```
+
+What is usually missing is the compensating path. Every one of these charges the
+customer for nothing: the enqueue after the reservation raises; the job
+dead-letters after its retries; the job record expires and the worker returns
+without even dead-lettering. On a small plan, one blip is a double-digit
+percentage of the month.
+
+```sql
+UPDATE subscriptions SET usage = usage - 1
+ WHERE id = :id AND usage > 0           -- never goes negative
+```
+
+Three details that make refunds safe:
+
+- **Record which period you reserved against** and skip the refund if the
+  subscription has since rolled over — otherwise a late refund decrements a
+  freshly-zeroed counter and grants free work.
+- **Take bare identities, not a request-scoped auth object**, so the background
+  worker can call the same function the request path does.
+- **Refund on every terminal non-completion**, including the paths that look like
+  nothing happened: the worker's missing-record branch should dead-letter rather
+  than bare-return, so it is a failure you can see and act on.
+
+## Testing these paths
+
+- **Assert the exit code**, not just stdout. A test that only checks for a
+  warning string passes on the version that exits 0.
+- **Record sleep durations, don't stub them away.** `monkeypatch.setattr(mod,
+  "sleep", sleeps.append)` lets you assert the exact sequence
+  (`assert sleeps == [reset_wait, 0.1]`), which is what catches a redundant extra
+  wait. A no-op `lambda _s: None` cannot.
+- **Make the error persistent** when testing a retry cap: serve a reusable
+  error response and assert the request count for the stuck page. Also match on
+  the response *body* if that is what your handler branches on — status alone may
+  not select the branch you think.
+- **A missing cap makes the suite hang, not fail.** Run the mutated suite under
+  an external timeout; no output within N seconds *is* the reproduction.
+- **Fail one sub-fetch while the primary one succeeds.** Undercounting only
+  appears when part of an item's data lands and part doesn't. Serving a plain
+  non-rate-limit `403`/`404` for just the secondary URL takes the fetcher's skip
+  branch with no retry and no clock to patch — much lighter than driving the
+  persistent-rate-limit path. Pair it with a control test asserting a fully
+  successful run emits *no* incomplete-data warning: the two plausible wrong
+  implementations are dropping the tracking and warning unconditionally, and
+  neither test catches both.
+- **Pin the timezone, and test both sides of UTC.** A cursor comparison that
+  mixes zones fails in opposite directions east and west of UTC, and not at all
+  on the UTC runner that CI uses. Set `TZ` (or construct the cursor with an
+  explicit `tzinfo`) and assert the boundary unit is re-included at a negative
+  offset, a positive one, and UTC. One zone proves nothing.
+- **When the job writes through git, fail one source with a scoped hook, not a
+  blanket one.** A catch-all `pre-commit` hook that always exits 1 also rejects
+  the job's own bookkeeping commit (the metadata/state commit made after the
+  per-item work), so the run dies at "failed to commit" and never reaches the
+  per-item failure path you meant to reproduce. Use a `commit-msg` hook that
+  greps the message for the one source's marker (`grep -q 'mirror from alice'
+  "$1" && exit 1`) so only that item's commits fail and the bookkeeping commit
+  goes through. Then assert: the other items completed, state and push still
+  happened, and the exit code is non-zero.
+- **Test the resume, not just the run.** Fail item K, then run again against the
+  same state and assert the remaining items are attempted and the completed ones
+  are not re-applied. A single-run test cannot see either checkpoint bug.
+
+## Checklist
+
+- [ ] Non-zero exit (or an explicit `--allow-partial`) when any item failed
+- [ ] Failure count and the failing identifiers appear in the final summary
+- [ ] Checkpoints record only completed work; partial batches report their count
+- [ ] Checkpoint written via same-dir temp + fsync + rename, mode pinned, temp cleaned on failure
+- [ ] Per-item tolerance branches *before* the shared, fatal-by-default handler
+- [ ] Skip/dead branches verified reachable (grep the handler's other callers)
+- [ ] Output written incrementally, or the cheap pass persisted before enrichment
+- [ ] Failed fetches are `None`/absent in the artifact, never a coerced `0`
+- [ ] Availability checked with `is None`; `[]` and `0` stay healthy values
+- [ ] A reader of the exported file alone can tell "unavailable" from "zero"
+- [ ] Summary-vs-detail contradiction raises instead of returning empty
+- [ ] That cross-check is whitespace-tolerant and verified against real captured markup
+- [ ] Every retry loop is bounded, counted per unit, and reset after a success
+- [ ] The "who waits" contract is documented and no caller double-sleeps
+- [ ] Cursor comparisons normalize both sides to one named zone, and are tested
+      east and west of UTC — not just on the UTC runner
+- [ ] Incremental cursor re-includes the boundary unit; merge is idempotent
+- [ ] Dry-run mutates in-memory state identically; only writes are gated
+- [ ] Committed output rebuilt from a map is sorted on a stable key; a no-op sync is byte-identical
+- [ ] Reservations have a compensating, period-guarded, non-negative refund
+- [ ] Tests assert exit codes, sleep sequences, request counts, and a resumed run
+
+Related: **improving-python-code-quality** for making in-process errors visible
+at the call site, and **testing-python-libraries** for proving a regression test
+can actually fail.

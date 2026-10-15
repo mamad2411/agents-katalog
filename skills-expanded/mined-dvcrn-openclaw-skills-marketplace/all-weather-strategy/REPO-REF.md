@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/wzwangyc--all-weather-strategy/skills/all-weather-strategy/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Calculate asset allocation weights for a portfolio of ETFs based on Risk Parity (All Weather) principles. Includes annualized return and risk metrics. Fully interactive with proactive AI guidance."

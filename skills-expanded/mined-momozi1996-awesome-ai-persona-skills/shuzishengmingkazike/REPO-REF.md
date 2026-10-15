@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/momozi1996/awesome-ai-persona-skills (path: zimeiti/shuzishengmingkazike-skill/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 数字生命卡兹克 · AI科技自媒体创作思维

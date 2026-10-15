@@ -1,0 +1,260 @@
+---
+name: phpunit-unit-test-generation
+version: 5.2.1
+description: Internal sub-skill. Do not auto-activate. Use only when explicitly invoked by name by another skill or agent.
+user-invocable: false
+context: fork
+agent: test-writing:test-generator
+allowed-tools: Read, Grep, Glob, Write, Edit, mcp__plugin_dev-tooling_php-tooling
+---
+
+# PHPUnit Test Generation
+
+Generate Shopware-compliant PHPUnit unit tests that pass PHPStan and PHPUnit validation.
+
+## File Write Restrictions
+
+Write ONLY to:
+- `tests/unit/**` - Unit test files
+
+NEVER write to:
+- `src/**` - Source code (read-only)
+- `tests/integration/**` - Out of scope
+- Any other directory
+
+## Quick Start
+
+1. Read the target source class
+2. **Check if test is required** (see Phase 1)
+3. Determine test category (A-E)
+4. Apply the matching template
+5. Validate with PHPStan and PHPUnit
+6. Fix any errors and repeat
+7. Generate completion report
+
+---
+
+## Phase 1: Analyze Source Class
+
+### Step 1: Check Coverage Exclusions
+
+Before analyzing the source class, check if the project's `phpunit.xml.dist` (or `phpunit.xml`) excludes it from coverage. Files excluded from coverage do not need unit tests.
+
+1. **Read** `phpunit.xml.dist` from the project root
+2. **Find** `<exclude>` rules inside the `<coverage>` or `<source>` section
+3. **Match** the source file path against each rule:
+   - `<directory suffix="X">path</directory>` — excluded if file is under `path` AND filename ends with `X`
+   - `<file>path/to/File.php</file>` — excluded if relative path matches exactly
+4. **If excluded** → Return SKIPPED with `skip_type: coverage_excluded` and reason: "Source file excluded from coverage by phpunit.xml.dist (`<matched-rule>`)"
+
+If `phpunit.xml.dist` is not found, skip this step.
+
+### Step 2: Determine If Test Is Required
+
+Before generating any test, evaluate if the class/method requires one.
+
+**Quick check**: Does the method body contain ONLY `return <literal|constant|property|passthrough-new|delegation>`?
+- **Yes** -> NO TEST NEEDED — Return SKIPPED with `skip_type: no_logic` and reason describing the pattern (e.g., "Pure accessor - no logic to test")
+- **No** (has conditionals/loops/transformations) -> Continue to Step 3
+
+For detailed rules on what to test vs skip, see references/test-requirement-rules.md.
+
+### Step 3: Analyze Source Structure
+
+Read the target class to determine:
+1. **Public methods** - What behaviors to test
+2. **Constructor dependencies** - What to mock/stub
+3. **Return types** - Expected outcomes
+4. **Exception scenarios** - Error paths (see references/exception-patterns.md)
+5. **Deprecation markers** - `@deprecated` tags, `Feature::triggerDeprecationOrThrow()`, `Feature::silent()`, `Feature::callSilentIfInactive()` (see references/deprecation-guards.md)
+6. **Package attribute** - the `#[Package('...')]` value the covered class carries. The test class carries the same value. When the covered class carries none, take the value from the nearest `src/` directory the test path mirrors, walking up until one exists and using the value its `.php` files carry. When that yields no value, emit no `#[Package]` and report that in the Phase 5 report's `Package` field (`none`, per references/output-format.md) rather than guessing a value.
+
+### Step 4: Detect Category
+
+Use the decision tree to select the appropriate category:
+
+```
+Has constructor dependencies?
+├── No → Is it an Exception class?
+│   ├── Yes → Category E
+│   └── No → Category A (DTO)
+└── Yes → Uses EntityRepository?
+    ├── Yes → Category D (DAL)
+    └── No → Implements EventSubscriberInterface or FlowAction?
+        ├── Yes → Category C (Flow/Event)
+        └── No → Category B (Service)
+```
+
+For detailed category criteria, see references/category-detection.md.
+
+---
+
+## Phase 2: Essential Rules
+
+Apply these mandatory conventions when generating tests.
+
+### Quick Reference
+
+| Rule | Requirement |
+|------|-------------|
+| File location | `tests/unit/` mirroring `src/` path |
+| Class attributes | `#[Package('...')]` then `#[CoversClass(TargetClass::class)]`, both required |
+| Assertions | Use `static::` not `$this->` |
+| Base class | Extend `PHPUnit\Framework\TestCase` |
+| Method naming | `test` + `Action` + `Condition` + `ExpectedResult` |
+| Attribute order | PHPDoc -> DataProvider -> TestDox -> method |
+| One behavior | NO conditionals in tests |
+
+### TestDox Phrasing
+
+TestDox MUST be a **predicate phrase** starting with an action verb:
+- **Good**: "creates product", "returns null", "throws exception"
+- **Bad**: "It creates...", "Should return...", "Tests that..."
+
+### Mocking Priority
+
+1. **Real implementation** - Use actual objects when simple
+2. **Shopware stubs** - `StaticEntityRepository`, `StaticSystemConfigService`, `Generator`
+3. **PHPUnit mocks** - Only for external/IO dependencies
+
+For createStub vs createMock selection, see references/mocking-patterns.md.
+
+For complete rules, see references/essential-rules.md.
+
+---
+
+## Phase 3: Generate Test
+
+### Step 1: Select Template
+
+Based on category from Phase 1:
+
+| Category | Template |
+|----------|----------|
+| A (DTO) | templates/category-a-dto.md |
+| B (Service) | templates/category-b-service.md |
+| C (Flow/Event) | templates/category-c-flow.md |
+| D (DAL) | templates/category-d-dal.md |
+| E (Exception) | templates/category-e-exception.md |
+
+For data provider and decoration contract patterns, see references/common-patterns.md.
+
+### Step 2: Replace Placeholders
+
+- `{package}` - `#[Package]` value from Phase 1 Step 3 (e.g., `framework`, `discovery`)
+- `{Module}` - Core module (e.g., `Content`, `Checkout`, `System`)
+- `{Submodule}` - Submodule path (e.g., `Product`, `Cart\LineItem`)
+- `{TargetClass}` - Class name being tested
+- `{Entity}` - Entity name for DAL tests
+- `{Method}` - Method name being tested
+- `{Expected}` - Expected outcome description
+- `{Condition}` - Condition description
+- `{Exception}` - Exception class name
+
+### Step 3: Write Test File
+
+Write to correct location: `tests/unit/{path matching src}/{ClassName}Test.php`
+
+---
+
+## Phase 4: Validate and Fix
+
+### Validation Loop
+
+```
+- [ ] PHPStan passes (0 errors)
+- [ ] PHPUnit passes (all tests green)
+- [ ] ECS passes (code style)
+```
+
+### Step 1: Run PHPStan
+
+```json
+{
+  "paths": ["tests/unit/Path/To/GeneratedTest.php"],
+  "error_format": "json"
+}
+```
+
+Zero errors = pass.
+
+### Step 2: Fix PHPStan Errors
+
+Apply fixes for common errors. See references/validation-error-mapping.md.
+
+### Step 3: Run PHPUnit
+
+```json
+{
+  "paths": ["tests/unit/Path/To/GeneratedTest.php"],
+  "output_format": "result-only"
+}
+```
+
+All tests passing = success. If tests fail, re-run without `output_format` to get failure details for Step 4.
+
+### Step 4: Fix Test Failures
+
+Apply fixes for common failures. See references/validation-error-mapping.md.
+
+### Step 5: Run ECS Check and Fix
+
+Check for violations, then apply fixes if needed.
+
+### Repeat Until Pass
+
+Loop through Steps 1-5 until all validations pass.
+
+**Maximum iterations**: Stop after 3 failed attempts and proceed to Phase 5.
+
+---
+
+## Phase 5: Generate Report
+
+For output format and examples, see references/output-format.md.
+
+### Status Determination
+
+| Condition | Status | skip_type |
+|-----------|--------|-----------|
+| All validations pass | SUCCESS | — |
+| Test generated, validation issues remain after 3 iterations | PARTIAL | — |
+| File excluded from coverage in phpunit.xml.dist | SKIPPED | `coverage_excluded` |
+| No testable logic (per Test Requirement Rules) | SKIPPED | `no_logic` |
+| Invalid input (not a PHP class, file not found) | FAILED | — |
+
+### Report Contents
+
+1. **Summary**: Source path, test path, status, category, package (or `none` when derivation yielded no value)
+2. **Generation Details**: Test method count, template used
+3. **Validation Results**: PHPStan/PHPUnit/ECS pass/fail counts
+4. **Remaining Issues** (if PARTIAL): Location, error, status table
+
+---
+
+## Additional Resources
+
+### Reference Files
+
+For detailed patterns and techniques, consult:
+
+- **references/test-requirement-rules.md** - Decision tree for what to test
+- **references/category-detection.md** - How to categorize source classes
+- **references/essential-rules.md** - Naming, attribute, structure rules
+- **references/validation-error-mapping.md** - Error codes and fixes
+- **references/shopware-stubs.md** - StaticEntityRepository, Generator patterns
+- **references/exception-patterns.md** - expectExceptionObject, expectException + message, exception codes
+- **references/mocking-patterns.md** - createStub vs createMock, intersection types, configuration, side-effect verification
+- **references/deprecation-guards.md** - DisabledFeatures, skipTestIfActive/InActive, Feature::silent, class-level guards
+- **references/common-patterns.md** - Data providers, AAA structure, event subscribers, decoration pattern
+- **references/output-format.md** - Report output contract
+
+### Templates
+
+Category-specific test generation templates in `templates/`:
+
+- **category-a-dto.md** - Simple DTO/Entity tests
+- **category-b-service.md** - Service tests with dependencies
+- **category-c-flow.md** - Flow/Event subscriber tests
+- **category-d-dal.md** - DAL/Repository tests
+- **category-e-exception.md** - Exception handling tests

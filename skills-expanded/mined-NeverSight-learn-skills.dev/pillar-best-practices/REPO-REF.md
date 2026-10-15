@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/pillarhq/pillar-skills/pillar-best-practices/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Best practices for integrating the Pillar SDK into React and Next.js applications. Use when adding an AI assistant panel, help center widget, or embedded product assistant.

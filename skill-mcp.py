@@ -180,7 +180,7 @@ def search_like(q, limit=10):
         args += ["%" + t + "%", "%" + t + "%"]
     args.append(int(limit))
     sql = ("SELECT name, tier, COALESCE(category,''), COALESCE(description,'') FROM skills "
-           "WHERE (%s) AND tier != 'docs' ORDER BY (tier='curated') DESC, name LIMIT ?" % where)
+           "WHERE (%s) AND tier NOT IN ('docs','junk') ORDER BY (tier='curated') DESC, name LIMIT ?" % where)
     conn = _conn()
     try:
         return conn.execute(sql, args).fetchall()
@@ -194,7 +194,7 @@ def search(q, tier=None, limit=10, mode="or"):
         return []
     # bm25() = skor relevansi FTS5 (makin kecil makin cocok). Tier curated dapat bonus.
     score = "bm25(skills) + (CASE WHEN tier = 'curated' THEN 0.0 ELSE 1.5 END)"
-    where, args = "AND tier != 'docs'", [m]      # docs = bukan skill, jangan direkomendasikan
+    where, args = "AND tier NOT IN ('docs','junk')", [m]  # docs/junk = bukan skill layak, jangan direkomendasikan
     if tier in TIERS:
         where, args = "AND tier = ?", [m, tier]
     args.append(int(limit))
@@ -251,18 +251,18 @@ def tool_skills_available(args):
     if not d:
         return "Katalog belum dibangun. Jalankan: python3 ~/.agents/skills-router.py"
     cats = d.get("summary", {})
-    top = sorted(cats.items(), key=lambda kv: -kv[1]["tier1"])[:15]
+    top = sorted(cats.items(), key=lambda kv: -kv[1].get("curated", 0))[:15]
     lines = [
-        "**%d skill siap pakai** (curated %d dari %d entri index)."
-        % (d.get("tier1_count", 0), d.get("total_curated", 0), d.get("total_index", 0)),
+        "**%d skill tersedia** (%d curated + %d reference; junk/docs disembunyikan)."
+        % (d.get("total_curated", 0) + d.get("total_reference", 0), d.get("total_curated", 0), d.get("total_reference", 0)),
         "",
-        "Katalog: ~/.agents/SKILLS-AVAILABLE.md · kategori: ~/.agents/SKILLS-CATEGORIES.md",
+        "JANGAN baca SKILLS-AVAILABLE.md utuh — pakai `skill_for_task` (intent) atau `skill_search` (kata kunci), hasil ≤8.",
         "",
-        "| Kategori | Tersedia | Total curated |", "|---|---|---|",
+        "| Kategori | Curated | Reference |", "|---|---|---|",
     ]
     for c, v in top:
-        lines.append("| %s | %d | %d |" % (c, v["tier1"], v["curated"]))
-    lines += ["", "Pakai `skill_for_task` (intent) atau `skill_search` (kata kunci) untuk memilih."]
+        lines.append("| %s | %d | %d |" % (c, v.get("curated", 0), v.get("reference", 0)))
+    lines += ["", "Cari: `skill_for_task(\"<tugas>\")` (intent) atau `skill_search(\"<kata kunci>\")` — hasil ≤8, muat ≤2 via `skill_load`."]
     return "\n".join(lines)
 
 
@@ -359,8 +359,8 @@ def tool_agent_context(args):
     return "\n".join([
         "# Konteks agen — lihat dulu sebelum bertindak",
         "",
-        "1. **Skill** — %d siap pakai (`skills_available` / `skill_search` / `skill_for_task`)."
-        % d.get("tier1_count", 0),
+        "1. **Skill** — %d tersedia (%d curated + %d reference; cari: `skill_search`/`skill_for_task`, muat ≤2: `skill_load`)."
+        % (d.get("total_curated", 0) + d.get("total_reference", 0), d.get("total_curated", 0), d.get("total_reference", 0)),
         "2. **MCP** — %d server terdaftar (codex config); audit: `python3 ~/.agents/mcp-hygiene.py`." % mcp,
         "3. **Repo referensi** — %d repo di ~/.agents/repo-refs (dump README/AGENTS untuk pola)."
         % dir_count(AG / "repo-refs"),

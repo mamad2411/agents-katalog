@@ -1,0 +1,345 @@
+---
+name: setup-config
+description: Analyze a repository and generate an intelligent omen.toml with project-specific defaults. Use when starting Omen in a new project.
+---
+
+# Setup Config
+
+Analyze the current repository and generate an `omen.toml` configuration tailored to the project's tech stack, test patterns, and feature flag usage.
+
+## Workflow
+
+### Step 1: Detect Primary Languages
+
+Use Glob to count files by extension:
+
+```
+Glob: **/*.go
+Glob: **/*.rb
+Glob: **/*.py
+Glob: **/*.ts
+Glob: **/*.js
+Glob: **/*.java
+Glob: **/*.rs
+```
+
+Identify the primary language(s) based on file counts. This determines:
+- Which exclude patterns to include (language-specific directories)
+- Whether to enable cohesion scoring (OO-heavy languages)
+
+### Step 2: Detect Feature Flag Providers
+
+Use Grep to search for SDK imports and usage patterns. Add detected providers to `feature_flags.providers` in the config.
+
+| Provider | Config Value | Search Patterns |
+|----------|-------------|-----------------|
+| LaunchDarkly | `launchdarkly` | `launchdarkly`, `ld-client`, `LDClient`, `boolVariation`, `stringVariation` |
+| Split | `split` | `@splitsoftware`, `splitio`, `SplitClient`, `getTreatment` |
+| Flipper | `flipper` | `Flipper.enabled?`, `Flipper[`, `flipper` (in Gemfile) |
+| Unleash | `unleash` | `unleash-client`, `unleashclient`, `isEnabled` with unleash import |
+| Generic | `generic` | `feature_flag`, `featureFlag`, `is_feature_enabled`, `isFeatureEnabled` |
+| ENV-based | `env` | `ENV["FEATURE_`, `process.env.FEATURE_`, `os.environ["FEATURE_` |
+
+Also check package manifests:
+- `package.json`: `launchdarkly-*`, `@splitsoftware/*`, `unleash-*`
+- `Gemfile`: `launchdarkly-*`, `flipper`, `split-*`, `unleash`
+- `Cargo.toml`: `launchdarkly`, `unleash`
+- `go.mod`: `launchdarkly`, `unleash`
+- `requirements.txt`/`pyproject.toml`: `launchdarkly-*`, `split-*`, `unleashclient`
+
+Only include providers that are actually detected. If no providers are found, leave `providers = []` with a comment explaining how to add them manually.
+
+### Step 2b: Detect Custom Feature Flag Systems
+
+If you find feature flag patterns that don't match the built-in providers, the user likely has an in-house system. Ask them about it and help them create a custom provider.
+
+Custom providers use tree-sitter queries to match code patterns. They are defined separately from the `providers` list and run automatically.
+
+Example: If you see patterns like `MyFlags.enabled?("feature_name")` in Ruby:
+
+```toml
+[[feature_flags.custom_providers]]
+name = "my_flags"
+languages = ["ruby"]
+query = '''
+(call
+  receiver: (constant) @receiver
+  method: (identifier) @method
+  arguments: (argument_list
+    (string (string_content) @flag_key)))
+(#eq? @receiver "MyFlags")
+(#eq? @method "enabled?")
+'''
+```
+
+Key points for custom providers:
+- `name`: The provider name shown in output (choose something descriptive)
+- `languages`: List of languages to apply this query to (e.g., `["ruby", "python"]`)
+- `query`: A tree-sitter query that captures the flag key as `@flag_key` or `@key`
+- Custom providers run automatically and don't need to be listed in `providers`
+
+To write tree-sitter queries:
+1. Use `omen outline --file <file>` to inspect the file structure
+2. Match the pattern that wraps your feature flag calls
+3. Capture the flag key string with `@flag_key` or `@key`
+
+### Step 3: Detect Generated Code Patterns
+
+Use Glob to find generated files:
+
+```
+Glob: **/*.pb.go
+Glob: **/*.gen.go
+Glob: **/*.generated.*
+Glob: **/generated/**
+Glob: **/gen/**
+Glob: **/mocks/**
+```
+
+Add detected patterns to exclude list.
+
+### Step 4: Detect Test Patterns
+
+Use Glob to identify test file conventions:
+
+```
+Glob: **/*_test.go
+Glob: **/*_spec.rb
+Glob: **/*.test.ts
+Glob: **/*.spec.js
+Glob: **/test_*.py
+Glob: **/tests/**
+Glob: **/spec/**
+Glob: **/__tests__/**
+```
+
+Add detected patterns to exclude list.
+
+### Step 4b: Detect Fixture, Test Data, and Eval Directories
+
+Use Glob to find directories containing test fixtures, evaluation data, sample files, and other non-production code that would skew analysis results (especially complexity and SATD):
+
+```
+Glob: **/fixtures/**/*.{rs,go,py,ts,js,java,rb}
+Glob: **/test_data/**/*.{rs,go,py,ts,js,java,rb}
+Glob: **/testdata/**/*.{rs,go,py,ts,js,java,rb}
+Glob: **/evals/fixtures/**
+Glob: **/test_fixtures/**
+Glob: **/sample_data/**
+Glob: **/samples/**/*.{rs,go,py,ts,js,java,rb}
+Glob: **/snapshots/**
+Glob: **/golden/**
+Glob: **/__fixtures__/**
+Glob: **/cassettes/**
+Glob: **/vcr_cassettes/**
+```
+
+If any of these directories contain source files, add the parent pattern to the exclude list. These directories often contain:
+- Copied production code used as eval fixtures (inflates complexity and SATD counts)
+- Generated test snapshots
+- VCR/HTTP cassettes
+- Golden files for snapshot testing
+
+Common patterns to add when detected:
+- `**/fixtures/` - test fixtures
+- `**/test_data/` or `**/testdata/` - test data directories
+- `**/evals/fixtures/` - ML/AI evaluation fixtures
+- `**/snapshots/` - snapshot test output
+- `**/cassettes/` - HTTP replay cassettes
+
+### Step 5: Check for OO-Heavy Codebase
+
+For Ruby, Java, C#, or TypeScript projects, recommend enabling cohesion:
+
+```toml
+[score]
+enable_cohesion = true
+```
+
+### Step 6: Generate omen.toml
+
+Write the config file to `omen.toml` with:
+
+1. Header explaining auto-generation
+2. Standard analysis settings
+3. Detected feature flag providers (if any)
+4. Language-specific exclude patterns
+5. Cohesion setting if applicable
+
+## Config Template
+
+```toml
+# Omen Configuration
+# Generated by setup-config skill - customize as needed
+# Documentation: https://github.com/panbanda/omen
+
+[analysis]
+complexity = true
+satd = true
+dead_code = true
+churn = true
+duplicates = true
+defect = true
+tdg = true
+graph = true
+churn_days = 30
+
+[thresholds]
+cyclomatic_complexity = 10
+cognitive_complexity = 15
+duplicate_min_lines = 6
+duplicate_similarity = 0.8
+dead_code_confidence = 0.8
+
+[exclude]
+gitignore = true
+patterns = [
+    # Test files - detected patterns
+    # (add detected test patterns here)
+
+    # Generated code - detected patterns
+    # (add detected generated code patterns here)
+
+    # Language-specific excludes
+    # (add language-specific patterns here)
+
+    # Standard excludes
+    "vendor/",
+    "node_modules/",
+    ".git/",
+    ".omen/",
+    "dist/",
+    "build/",
+]
+
+[cache]
+enabled = true
+dir = ".omen/cache"
+ttl = 24
+
+[output]
+format = "text"
+color = true
+
+[feature_flags]
+# Feature flag providers to detect. Empty = no built-in detection.
+# Available: launchdarkly, flipper, split, unleash, generic, env
+# Populate with providers detected in Step 2, e.g.:
+# providers = ["launchdarkly", "split"]
+providers = []
+
+# Custom providers for in-house feature flag systems (uses tree-sitter queries)
+# [[feature_flags.custom_providers]]
+# name = "my_flags"
+# languages = ["ruby", "python"]
+# query = '''
+# (call
+#   receiver: (constant) @receiver
+#   method: (identifier) @method
+#   arguments: (argument_list (string (string_content) @flag_key)))
+# (#eq? @receiver "MyFlags")
+# (#eq? @method "enabled?")
+# '''
+
+[score]
+# Set to true for OO-heavy codebases (Ruby, Java, C#)
+enable_cohesion = false
+```
+
+## Language-Specific Patterns
+
+### Go
+```toml
+patterns = [
+    "*_test.go",
+    "vendor/",
+    "**/*.pb.go",
+    "**/*.gen.go",
+    "**/mocks/",
+]
+```
+
+### Ruby
+```toml
+patterns = [
+    "*_spec.rb",
+    "spec/",
+    ".bundle/",
+    "sorbet/",
+    "*_generated.rb",
+]
+```
+
+### Python
+```toml
+patterns = [
+    "test_*.py",
+    "*_test.py",
+    "tests/",
+    "__pycache__/",
+    ".venv/",
+    "venv/",
+    "site-packages/",
+]
+```
+
+### TypeScript/JavaScript
+```toml
+patterns = [
+    "*.test.ts",
+    "*.spec.ts",
+    "*.test.js",
+    "*.spec.js",
+    "__tests__/",
+    "node_modules/",
+    "dist/",
+    "*.min.js",
+]
+```
+
+### Java
+```toml
+patterns = [
+    "*Test.java",
+    "*Tests.java",
+    "test/",
+    "target/",
+    "build/",
+]
+```
+
+### Rust
+```toml
+patterns = [
+    "target/",
+    "Cargo.lock",
+    # Add if detected:
+    # "**/fixtures/",
+    # "**/test_data/",
+    # "**/evals/fixtures/",
+]
+```
+
+## Output
+
+After generating the config, display a summary:
+
+```
+Generated omen.toml with:
+- Primary language: Ruby
+- Feature flag providers: ["flipper"] (or "none detected" if empty)
+- Cohesion scoring: enabled
+- Exclude patterns: 12 patterns
+
+Run `omen flags` to detect feature flags (requires providers to be configured).
+Run `omen all` to verify the configuration works for your project.
+```
+
+If no feature flag providers were detected, remind the user:
+
+```
+No feature flag providers detected. If you use feature flags, add providers manually:
+
+[feature_flags]
+providers = ["launchdarkly"]  # or: flipper, split, unleash, generic, env
+```

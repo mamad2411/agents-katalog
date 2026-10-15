@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/supercent-io/skills-template/agentic-development-principles/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: AI 에이전트와 협업하는 에이전틱 개발의 범용 원칙. 분해정복, 컨텍스트 관리, 추상화 수준 선택, 자동화 철학을 정의. 모든 AI 코딩 도구에 적용 가능.

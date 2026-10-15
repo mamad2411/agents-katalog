@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/benzema216/dreamina-claude-skills/vimax-video-prompts/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: ViMax 多Agent视频生成系统的 Prompt 参考库。包含从创意构思到视频生成全流程的 13 组专业 prompt（编剧、分镜、角色、画面生成等）。当需要参考专业视频生成 prompt 的写法、构建短片创作工作流、或设计多 Agent 协作的视频制作 pipeline 时使用。

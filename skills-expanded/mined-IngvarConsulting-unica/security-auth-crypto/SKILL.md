@@ -1,0 +1,47 @@
+---
+name: security-auth-crypto
+description: "Безопасная аутентификация и криптография 1С. Используй когда нужно спроектировать или диагностировать OpenID, сертификаты, CryptoPro, TLS, роли, секреты и auth для интеграций."
+---
+
+# Security Auth Crypto
+
+## MCP routing
+
+- Preferred path: use MCP `unica` tools `unica.view {}`, `unica.search`, `unica.view` on the object node, `unica.view` on the role node, `unica.check`, `unica.docs`, and `unica.run`.
+- Runtime идёт через `unica.run`: вызов без `op` отдаёт словарь операций и
+контракт каждой — `argsSchema`, `execution`, `previewRequired`,
+`dryRunRequired`. Контракт вызова бери оттуда, а не из этого текста;
+при `implemented: true` используй опубликованную `argsSchema`; при
+`support.state: limited` разрешено только подмножество `support.supportedArgs`.
+При `support.state: unavailable` остановись; не выдумывай аргументов при
+`argsSchema: null`. Для плановой операции сначала проверь результат `dryRun: true`,
+затем исполняй запрос с `dryRun: false`. Preview не фиксирует входы между
+вызовами. Не обходи контракт прямым runner-ом.
+- Use integration and autonomous-server skills when auth behavior must be verified through HTTP service or web-client runtime.
+- Do not call internal analyzer, standards, runtime, or package adapters directly. They are hidden behind MCP `unica`.
+
+## References
+
+- Read `../../references/platform/integration-contracts.md` for auth contract, secret handling, retry behavior, and error semantics.
+- Read `../../references/platform/platform-mechanics.md` for client/server crypto boundary, rights, OpenID, certificates, and temporary secret handling.
+- Read `../../references/platform/runtime-diagnostics.md` for startup/auth/runtime evidence.
+
+## Workflow
+
+1. Identify the trust boundary: user login, service account, external API, OpenID provider, certificate store, CryptoPro provider, TLS endpoint, or file/key storage.
+2. Inspect existing auth and role paths with `unica.search`, `unica.view` on the object node, and `unica.view` on the role node.
+3. Define secret lifecycle: source, storage, rotation, masking, runtime process user, test fixture policy, and log redaction.
+4. Define auth error semantics: missing credentials, expired token, invalid certificate, provider unavailable, denied rights, tenant mismatch, and remote auth failure.
+5. Verify statically with `unica.check` on the module node (test runs are outside the v0.13 surface) and report runtime behavior as unverified.
+
+## Review checklist
+
+- Secrets and private keys are not committed, logged, or echoed in final output.
+- Certificate/OpenID/CryptoPro behavior states platform version, OS/process user, store location, and client/server boundary.
+- Rights checks are explicit and audited with `unica.view` on the role node when metadata rights matter.
+- Integration auth failures are distinguishable from validation and business failures.
+- Temporary files with sensitive data have clear cleanup and access boundaries.
+
+## Contract gaps
+
+If public MCP `unica` cannot inspect the needed role, runtime, certificate, or auth artifact, report a Unica MCP contract gap instead of bypassing the public boundary.

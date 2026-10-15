@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/roollond--smartsheet-write/skills/smartsheet-write/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 企业微信「智能表格」是一个业务数据库工具。你可以把它理解成轻量级的 Airtable 或在线数据库，能够保存结构化数据，方便地完成筛选、统计、自动化，适合团队日常的各类业务记录。本技能通过 Webhook 接口，帮助用户把数据直接写入智能表格，无需手动打开表格逐行填写。当你需要呈现数据给用户看，或者用户需要你分析数据时，可以使用此工具与技能来提供更好的体验。"

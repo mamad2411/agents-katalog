@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/grandcamel/gitlab-assistant-skills/gitlab-wiki/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: GitLab wiki operations via API. ALWAYS use this skill when user wants to: (1) list wiki pages, (2) read wiki content, (3) create/update/delete wiki pages, (4) upload wiki attachments."

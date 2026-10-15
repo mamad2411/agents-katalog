@@ -1,0 +1,105 @@
+---
+name: modifying-http-endpoints
+description: "Adding or modifying HTTP REST API endpoints in Golem services. Use when creating new endpoints, changing existing API routes, or updating request/response types for the Golem REST API."
+---
+
+# Modifying HTTP Endpoints
+
+## Framework
+
+Golem uses **Poem** with **poem-openapi** for REST API endpoints. Endpoints are defined as methods on API structs annotated with `#[OpenApi]` and `#[oai]`.
+
+## Where Endpoints Live
+
+- **Worker service**: `golem-worker-service/src/api/` — worker lifecycle, invocation, oplog
+- **Registry service**: `golem-registry-service/src/api/` — components, environments, deployments, plugins, accounts
+
+Each service has an `api/mod.rs` that defines an `Apis` type tuple and a `make_open_api_service` function combining all API structs.
+
+## Adding a New Endpoint
+
+### 1. Define the endpoint method
+
+Add a method to the appropriate API struct (e.g., `WorkerApi`, `ComponentsApi`):
+
+```rust
+#[oai(
+    path = "/:component_id/workers/:worker_name/my-action",
+    method = "post",
+    operation_id = "my_action"
+)]
+async fn my_action(
+    &self,
+    component_id: Path<ComponentId>,
+    worker_name: Path<String>,
+    request: Json<MyRequest>,
+    token: GolemSecurityScheme,
+) -> Result<Json<MyResponse>> {
+    // ...
+}
+```
+
+### 2. If adding a new API struct
+
+1. Create a new file in the service's `api/` directory
+2. Define a struct and impl block with `#[OpenApi(prefix_path = "/v1/...", tag = ApiTags::...)]`
+3. Add it to the `Apis` type tuple in `api/mod.rs`
+4. Instantiate it in `make_open_api_service`
+
+### 3. Request/response types
+
+- Follow the neighboring API's ownership boundary: shared domain/API types live in
+  `golem-common`, while endpoint-specific request/response types can live beside the API module.
+  Derive the required `poem_openapi` traits there.
+- Endpoint-local OpenAPI types are generated into the client normally. Add a mapping in
+  `golem-client/build.rs` only when client generation should reuse an existing shared Rust type.
+
+## After Modifying Endpoints
+
+After any endpoint change, you **must** regenerate and rebuild:
+
+### Step 1: Regenerate OpenAPI specs
+
+```shell
+cargo make generate-openapi
+```
+
+This builds the services, dumps their OpenAPI YAML, merges them, stores the result in `openapi/`, **and** regenerates the public REST API reference under `docs/src/content/next/rest-api/*.mdx` (used by the [learn.golem.cloud](https://learn.golem.cloud) site). Commit both the updated `openapi/*.yaml` and the updated docs MDX — CI's `check-openapi` task will fail otherwise.
+
+If the in-tree YAML is already up to date and you just need to refresh the docs (e.g., after editing `docs/openapi/gen-openapi.ts` itself), use `cargo make generate-docs-openapi` to skip the service rebuild.
+
+### Step 2: Rebuild golem-client
+
+The `golem-client` crate auto-generates its code from the OpenAPI spec at build time via `build.rs`. After regenerating the specs:
+
+```shell
+cargo build -p golem-client
+```
+
+The build script declares `rerun-if-changed` for both the root and crate-local YAML paths, so a normal build regenerates the client when the spec changes. Clean the package only when diagnosing evidence of stale generated output, not as a routine step.
+
+### Step 3: If new types are used in the client
+
+Add type mappings in `golem-client/build.rs` to the `gen()` call's type replacement list. This maps OpenAPI schema names to existing shared Rust types, usually from `golem-common`.
+
+### Step 4: Verify affected behavior
+
+```shell
+cargo check -p <affected-service> --all-targets
+cargo check -p golem-client --all-targets
+```
+
+Run the service or integration tests that exercise the changed route, schema, authentication, or client behavior. Broaden to the affected service's test targets or tagged integration groups when the endpoint change is cross-cutting.
+
+Do not require `cargo make build` after these targeted checks unless shared request/response types or service interfaces have broad consumers that cannot be isolated.
+
+## Checklist
+
+1. Endpoint method added with `#[oai]` annotation
+2. New API struct registered in `api/mod.rs` `Apis` tuple and `make_open_api_service` (if applicable)
+3. Request/response types placed beside the endpoint or in `golem-common` according to neighboring ownership, with the required `poem_openapi` derives
+4. Type mappings added in `golem-client/build.rs` (if applicable)
+5. `cargo make generate-openapi` run — staged changes include both `openapi/*.yaml` **and** `docs/src/content/next/rest-api/*.mdx`
+6. `cargo build -p golem-client` run
+7. Affected service/client checks and endpoint tests pass
+8. Formatting and linting follow the scope-based `pre-pr-checklist`

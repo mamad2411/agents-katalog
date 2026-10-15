@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zephyrwang6/draw-skill/markdown-to-image/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 将 Markdown 内容转换为精美的图片海报。特别适合将播客摘要、文章内容转为社交媒体分享图片。固定 3:4 比例，支持 YouTube 视频封面作为头图。触发词：「转图片」「Markdown 转图片」「生成海报」「生成分享图」「把这个转成图片」。

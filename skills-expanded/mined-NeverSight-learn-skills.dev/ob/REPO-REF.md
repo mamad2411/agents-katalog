@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/aibangjuxin/knowledge/ob/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: GCP API Platform Onboarding Architect - 专注于 GCP 平台 API 管理系统的 Onboarding 流程设计与自动化，通过 GitOps + Pipeline 实现标准、可审计、可回滚的接入体系。

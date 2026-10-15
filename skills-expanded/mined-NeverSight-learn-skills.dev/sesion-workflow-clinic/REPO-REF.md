@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/aradotso/devtools-skills/sesion-workflow-clinic/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Mental health practice management platform with AI-powered scheduling, WhatsApp automation, AFIP billing, and video consultations for Argentine clinics

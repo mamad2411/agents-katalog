@@ -1,0 +1,277 @@
+---
+name: _convert-to-turborepo
+description: Internal helper to convert a single Next.js project into a Turborepo monorepo. Idempotent - if the project is already a monorepo (apps/web/ exists), returns immediately. Moves the existing project into apps/web/, creates root package.json with workspaces, pnpm-workspace.yaml, turbo.json, and adds turbo as a dev dependency. Optionally extracts a shared packages/db package if a Drizzle DB is detected. Updates imports in apps/web accordingly. Triggered by /add-automation. Not meant to be invoked directly by users.
+user-invocable: false
+allowed-tools: Bash
+compatibility: "Agent Skills standard (Claude Code or Codex). Requires Node.js; most workflows also use pnpm, git, and project CLIs (vercel, gh)."
+---
+
+# Convert to Turborepo - Internal helper
+
+## Communication
+- Detect the user's language from the conversation (the user's own messages, anywhere in the session - not just this invocation: a bare slash command like `/bootstrap` carries no language signal by itself). If nothing in the conversation gives a signal, fall back to the OS locale (`node -e "console.log(Intl.DateTimeFormat().resolvedOptions().locale)"`) before defaulting to English. ALWAYS reply in that language for every user-facing message: questions, progress, confirmations, summaries, errors - including any example text quoted in this skill, which is illustrative and must be translated, never sent verbatim.
+- Use plain, non-technical business language. Never expose internal script names (*.mjs) or jargon; describe actions in human terms.
+- When generating user-facing content for the scaffolded project (UI labels, emails, copy), write it in the user's language too.
+- Show progress as a short natural-language checklist (in-progress and done states).
+
+Convert a single Next.js project into a Turborepo monorepo. Idempotent - if already a monorepo, return immediately.
+
+---
+
+## Step 1 - Idempotency check
+
+```bash
+test -d apps/web && echo "already-monorepo" || echo "single-app"
+```
+
+If `already-monorepo`, tell the user:
+> The project is already a Turborepo monorepo. There is nothing for me to do.
+
+Return control to the caller immediately. **Skip all remaining steps.**
+
+If `single-app`, continue to Step 2.
+
+## Step 2 - Capture state and warn the user
+
+Read the current project name from `package.json`:
+```bash
+node -e "process.stdout.write(require('./package.json').name)"
+```
+
+Detect if a Drizzle DB is configured:
+```bash
+test -f drizzle.config.ts -o -f drizzle.config.js && echo "has-db" || echo "no-db"
+```
+
+Tell the user:
+> I am going to convert your project into a Turborepo monorepo: the current code moves to `apps/web/`, with a new root `package.json` + `pnpm-workspace.yaml` + `turbo.json`, and turbo added as a devDep<if has-db>, plus the Drizzle DB extracted into `packages/db/`</if>. What belongs to the repository itself (its automations, the project's resource list, your project rules) stays where it is.
+>
+> ⚠️ **Commit your work in progress first** - this operation moves a lot of files and is hard to revert. And one setting will have to change on Vercel before the next push: I will tell you which, at the end.
+>
+> Ready to go? (reply `yes` to continue)
+
+Wait for confirmation. Don't start without it.
+
+## Step 3 - Verify clean working tree
+
+```bash
+git status --porcelain
+```
+
+If there are uncommitted changes, refuse:
+> ❌ You have uncommitted changes. Commit or stash them first, then re-run `/add-automation`.
+
+Return to caller without doing anything.
+
+## Step 4 - Move the project into apps/web/
+
+```bash
+mkdir -p apps/web
+```
+
+Only the APPLICATION moves. What belongs to the REPOSITORY stays at its root, because what reads it looks there and nowhere else:
+
+- `.github/`: the forge reads a repository's automations at its root only (deployment, scheduled tasks, checks). Moved, they would silently stop.
+- `.hypervibe/`: the project's resource manifest, one per repository, at its root. Moved, a second one would be born at the root, and each half would miss the other's resources.
+- `CLAUDE.md` and `.claude/`: the project's rules and settings, read from where the sessions open, the repository's root.
+- `.git`, `.gitattributes`, the lockfile (pnpm keeps a workspace's single lockfile at its root), and the files that tools read from the root of a workspace or look for upward from any folder (`.npmrc`, `.nvmrc`, `.node-version`, `.tool-versions`, `.editorconfig`, `.vscode/`).
+- `.gitignore` is **copied**, not moved: the root one keeps covering what stays at the root, and the copy keeps the application's own patterns (`/.next/`, `/node_modules`) meaning the same thing in `apps/web/`.
+
+What git tracks moves with `git mv` (its history follows). The application's own untracked files (`.env`, `.env.*`, `.vercel/`) move with a plain `mv`: they belong to the application, and they never go through git. Anything else that git does not track stays where it is, and is named.
+
+```bash
+shopt -s dotglob nullglob
+for item in *; do
+  case "$item" in
+    apps|packages|.git|.github|.hypervibe|.claude|CLAUDE.md|.gitattributes|.gitignore|.npmrc|.nvmrc|.node-version|.tool-versions|.editorconfig|.vscode|node_modules|pnpm-lock.yaml|package-lock.json|yarn.lock) continue ;;
+  esac
+  if git ls-files --error-unmatch -- "$item" >/dev/null 2>&1; then
+    git mv -- "$item" "apps/web/$item"
+  else
+    case "$item" in
+      .env|.env.*|.vercel) mv -- "$item" "apps/web/$item" ;;
+      *) echo "LEFT AT THE ROOT (not tracked by git): $item" ;;
+    esac
+  fi
+done
+shopt -u dotglob nullglob
+test -f .gitignore && cp .gitignore apps/web/.gitignore
+rm -rf node_modules   # we'll reinstall at the end
+```
+
+If a `LEFT AT THE ROOT` line names something the application needs (a local file it reads at run time), say so to the user and move it into `apps/web/` with a plain `mv`.
+
+## Step 5 - Create root package.json
+
+```bash
+cat > package.json <<'EOF'
+{
+  "name": "<project-name>-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
+EOF
+```
+
+Replace `<project-name>` with the actual name from the original `package.json`.
+
+## Step 6 - Create pnpm-workspace.yaml
+
+```yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+```
+
+Step 4 moved the app's own `pnpm-workspace.yaml` into `apps/web/`. pnpm only honours the file at the workspace root, and a nested one makes pnpm treat `apps/web` as a separate workspace whenever a command runs from there. So if `apps/web/pnpm-workspace.yaml` exists: copy its other top-level blocks (`allowBuilds:`, `overrides:`) below `packages:` in the root file, then `git rm apps/web/pnpm-workspace.yaml`. Keep `overrides:` exactly as it is: it holds the security floors written by `/bootstrap`, and the lockfile must keep recording them. Never move them into a `package.json` (`pnpm.overrides`): pnpm 11+ ignores that field while Vercel's pnpm 10 reads it, and the deploy fails with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`.
+
+## Step 7 - Create turbo.json
+
+```json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {}
+  }
+}
+```
+
+## Step 8 - Extract DB to packages/db/ (if has-db)
+
+**Skip this step if `no-db`.**
+
+If `has-db`:
+
+```bash
+mkdir -p packages/db
+```
+
+Move the Drizzle config and schema (the `git mv` renames `db/` to `packages/db/src/`, so `packages/db/src` must not pre-exist):
+```bash
+git mv apps/web/drizzle.config.ts packages/db/drizzle.config.ts
+git mv apps/web/src/server/db packages/db/src
+```
+
+Create `packages/db/package.json`:
+
+```json
+{
+  "name": "@<project-name>/db",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  }
+}
+```
+
+Create `packages/db/tsconfig.json`:
+```json
+{
+  "extends": "../../apps/web/tsconfig.json",
+  "include": ["src/**/*", "drizzle.config.ts"]
+}
+```
+
+Make sure `packages/db/src/index.ts` exists and re-exports the Drizzle client:
+```typescript
+export * from "./schema";
+// Adjust depending on what was in src/server/db originally
+```
+
+### 8a - Update imports in apps/web
+
+Find all files in `apps/web` that import from `~/server/db` or `@/server/db` and rewrite them to `@<project-name>/db`:
+
+```bash
+cd apps/web
+grep -rln "from \"~/server/db" src/ | xargs sed -i 's|from "~/server/db|from "@<project-name>/db|g'
+grep -rln "from \"@/server/db" src/ | xargs sed -i 's|from "@/server/db|from "@<project-name>/db|g'
+```
+
+Be careful: only rewrite the exact `~/server/db` and `@/server/db` prefixes, not other things.
+
+### 8b - Add the dependency in apps/web/package.json
+
+Add to `apps/web/package.json`:
+```json
+{
+  "dependencies": {
+    "@<project-name>/db": "workspace:*"
+  }
+}
+```
+
+## Step 9 - Reinstall dependencies
+
+```bash
+pnpm install
+```
+
+This rewrites the root `pnpm-lock.yaml` for the workspace and installs everything across it.
+
+## Step 10 - Verify the conversion
+
+```bash
+pnpm dev --filter=web
+```
+
+Wait a few seconds. If Next.js starts on port 3000 without errors, kill it (Ctrl+C). The conversion is successful.
+
+If it errors:
+- **Module not found** errors → an import wasn't rewritten in Step 8a. Find and fix.
+- **Lockfile errors** → `rm -rf node_modules apps/*/node_modules packages/*/node_modules pnpm-lock.yaml && pnpm install`
+
+## Step 11 - Commit
+
+This conversion moves the whole tree: naming every moved file would be absurd, so it is the one documented case where a sweeping stage is legitimate, **for the files git already tracks**, and for them only. `git add -u` stages moves and rewrites, never a new file: an `.env` or a `.vercel/` folder cannot enter the commit. What the conversion created is then staged by name. **First** make sure nothing foreign is pending:
+
+```bash
+git status --short   # must show ONLY what this conversion moved, created or rewrote; stop and ask if anything else is pending
+HYPERVIBE_GUARD_ALLOW_SWEEP=1 git add -u
+git add -- package.json pnpm-workspace.yaml turbo.json apps/web/.gitignore
+test -d packages/db && git add -- packages/db
+git status --short   # what is staged: no .env, no .vercel/, nothing this conversion did not touch
+git commit -m "refactor: convert to Turborepo monorepo"
+```
+
+⚠️ **Don't push automatically** - let the caller (`/add-automation`) decide when to push.
+
+## Step 12 - Point the site's hosting at apps/web/, then return to caller
+
+The site now lives in `apps/web/`, and its hosting still builds the repository's root: from the next push on, every deployment of the site would fail (the live site keeps its last version, and nothing new goes online). Before anything is pushed, the person changes one setting. Tell the user:
+> ✅ Conversion to a Turborepo monorepo complete. Your app now lives in `apps/web/`<if has-db>, and your shared DB in `packages/db/`</if>.
+>
+> **One setting to change on Vercel before the next push**, or every deployment of your site will fail from then on (your live site stays as it is, but nothing new goes online):
+> 1. Open your project on https://vercel.com, then **Settings** → **Build and Deployment**
+> 2. **Root Directory**: `apps/web`, then **Save**
+>
+> Tell me once it is done.
+>
+> New commands: `pnpm dev` (all apps), `pnpm dev --filter=web` (just the frontend), `pnpm build`.
+>
+> Commit made locally, not pushed - the caller will decide when to push.
+
+Wait for the confirmation, and pass it on to the caller: it pushes only once the setting is changed, then checks that the site still deploys.
+
+Return control to the calling skill (`/add-automation`).

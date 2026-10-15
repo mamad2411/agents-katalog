@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/unix2dos/skills/daily-knowledge/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 每日知识官 - 每日为用户提供一条精心筛选、跨领域的随机知识。触发方式：@daily-knowledge。通过历史文件查重确保不重复。输出包含知识简介、今日启示、趣闻和扩展维度四个模块。

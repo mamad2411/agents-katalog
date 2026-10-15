@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/hackycy/skills/mobile-interface-design/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 在没有 UI 稿的情况下，从产品需求出发设计并实现有辨识度、可上线的移动端优先界面，适用于 H5、移动 Web 和 App WebView。

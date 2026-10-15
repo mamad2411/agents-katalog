@@ -1,0 +1,485 @@
+---
+name: project-execution
+description: Executes implementation plans with progress tracking, checkpoint validation, and quality gates. Use after planning is complete and tasks are ready to implement.
+alwaysApply: false
+# Custom metadata (not used by Claude for matching):
+model: sonnet
+tools_allowed: all
+category: workflow
+tags: [execution, implementation, progress-tracking, quality-gates, tdd]
+complexity: intermediate
+model_hint: standard
+estimated_tokens: 2100
+progressive_loading: true
+references:
+- references/mission-report.md
+role: library
+---
+## When To Use
+
+- After planning phase completes
+- Ready to implement tasks
+- Need systematic execution with tracking
+- Want checkpoint-based validation
+- Executing task lists with dependencies
+- Monitoring progress and velocity
+
+## When NOT To Use
+
+- No implementation plan exists (use `Skill(attune:project-planning)` first)
+- Still planning or designing (complete planning phase before execution)
+- Single isolated task (execute directly without framework overhead)
+- Exploratory coding or prototyping (use focused development instead)
+
+## Integration
+
+**With superpowers**:
+- Uses `Skill(superpowers:executing-plans)` for systematic execution
+- Uses `Skill(superpowers:systematic-debugging)` for issue resolution
+- Uses `Skill(superpowers:verification-before-completion)` for validation
+- Uses `Skill(superpowers:test-driven-development)` for TDD workflow
+
+**With imbue**:
+- Uses `Skill(imbue:graduated-implementation)` at the ramp gate so
+  each increment's ambition is earned by demonstrated understanding
+  of the prior one, not ramped on completion alone
+
+**Without superpowers**:
+- Standalone execution framework
+- Built-in checkpoint validation
+- Progress tracking patterns
+
+## Execution Framework
+
+### Pre-Execution Phase
+
+**Actions**:
+1. Load implementation plan
+2. Validate project initialized
+3. Check dependencies installed
+4. Review task dependency graph
+5. Identify starting tasks (no dependencies)
+
+**Validation**:
+- ✅ Plan file exists and is valid
+- ✅ Project structure initialized
+- ✅ Git repository configured
+- ✅ Development environment ready
+
+### Task Execution Loop
+
+**For each task in dependency order**:
+
+```markdown
+1. PRE-TASK
+   - Verify dependencies complete
+   - Review acceptance criteria
+   - Create feature branch (optional)
+   - Set up task context
+
+2. IMPLEMENT (TDD Cycle)
+   - Write failing test (RED)
+   - Implement minimal code (GREEN)
+   - Refactor for quality (REFACTOR)
+   - Repeat until all criteria met
+
+3. VALIDATE
+   - All tests passing?
+   - All acceptance criteria met?
+   - Code quality checks pass?
+   - Documentation updated?
+
+4. RAMP GATE (before the next, more ambitious task)
+   - Invoke Skill(imbue:graduated-implementation)
+   - Demonstrate understanding of THIS increment, sized to stakes:
+     low-stakes on the evidence gate (green tests plus a recorded
+     tradeoff), high-stakes on the human explaining the diff unaided
+   - On a clean demonstration, record it in the ramp ledger and
+     mark the rung widened; below the band, hold and split the next
+     task smaller instead of ramping
+
+5. CHECKPOINT
+   - Mark task complete IMMEDIATELY (do NOT batch)
+   - Update execution state
+   - Report progress
+   - Identify blockers
+```
+
+**Task Completion Discipline**: Always call `TaskUpdate(taskId: "X", status: "completed")` right after finishing each task. Never defer completions to end of session.
+
+**Verification:** Run `pytest -v` to verify tests pass.
+
+### Post-Execution Phase
+
+**Actions**:
+1. Verify all tasks complete
+2. Run full test suite
+3. Check code quality metrics
+4. Generate completion report
+5. Prepare for deployment/release
+6. Record lessons learned (see below)
+
+### Record Lessons Learned (decision journal)
+
+Implementation is where the honest lessons appear: the approach that had to be
+reworked, the blocker that cost a day, the assumption from planning that did
+not hold. Capture these in `docs/lessons-learned.md` now, blamelessly, instead
+of letting them vanish into "done." Draft and confirm one entry per
+substantive lesson:
+
+- If leyline is installed, invoke `Skill(leyline:decision-journal)` and follow
+  it to append a lesson entry: `what_happened`, `what_didnt_work`,
+  `root_cause`, and a concrete `action`. Set `phase` to `execute`. Show the
+  draft; append on confirmation (status starts `open`).
+- Fallback (leyline absent): append to `docs/lessons-learned.md` by hand using
+  the in-file ENTRY TEMPLATE; assign the next `LL-NNN` id.
+
+Trigger this whenever execution involved rework, a failed approach, or a
+blocker that exhausted the two-challenge / 3-attempt limit. A clean run with no
+surprises needs no entry.
+
+### Terminal Phase Notice
+
+This is the **final phase** of the attune workflow. No auto-continuation occurs after execution completes. The workflow terminates here. Unlike brainstorming, specification, and planning phases, execution does NOT auto-invoke any subsequent phase.
+
+## Task Execution Pattern
+
+### Delegation Check (First, Per Task)
+
+Before implementing a task, delegate it.
+`Skill(conjure:delegation-core)` is on by default, so the decision to
+make is whether a Keep Local clause holds, not whether to bother.
+
+Keep the task local when it is design or trade-off work, when its
+context carries a secret, when it needs turn-by-turn iteration, or when
+its output cannot be validated afterward.
+Otherwise hand it to the delegator and validate what comes back through
+the same TDD workflow below.
+The tests are the validation: a delegated implementation that fails the
+RED test is rejected exactly like a local one.
+
+If the result carries a `fallback_reason`, no external model ran.
+Report which providers were tried, then implement the task here.
+An exhausted chain is not a blocked task and does not belong in
+`docs/lessons-learned.md`.
+
+### TDD Workflow
+
+**RED Phase**:
+```python
+# Write test that fails
+def test_user_authentication():
+    user = authenticate("user@example.com", "password")
+    assert user.is_authenticated
+# Run test → FAILS (feature not implemented)
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+
+**GREEN Phase**:
+```python
+# Implement minimal code to pass
+def authenticate(email, password):
+    # Simplest implementation
+    user = User.find_by_email(email)
+    if user and user.check_password(password):
+        user.is_authenticated = True
+        return user
+    return None
+# Run test → PASSES
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+
+**REFACTOR Phase**:
+```python
+# Improve code quality
+def authenticate(email: str, password: str) -> Optional[User]:
+    """Authenticate user with email and password."""
+    user = User.find_by_email(email)
+    if user is None:
+        return None
+
+    if not user.check_password(password):
+        return None
+
+    user.mark_authenticated()
+    return user
+# Run test → STILL PASSES
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+
+### Checkpoint Validation
+
+**Quality Gates**:
+```markdown
+- [ ] All acceptance criteria met
+- [ ] All tests passing (unit + integration)
+- [ ] Code linted (no warnings)
+- [ ] Type checking passes (if applicable)
+- [ ] Documentation updated
+- [ ] No regression in other components
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+
+**Automated Checks**:
+```bash
+# Run quality gates
+make lint          # Linting passes
+make typecheck     # Type checking passes
+make test          # All tests pass
+uv run pytest --cov  # Coverage threshold met
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+
+## Progress Tracking
+
+### Execution State
+
+Save to `.attune/execution-state.json`:
+
+```json
+{
+  "plan_file": "docs/implementation-plan.md",
+  "started_at": "2026-01-02T10:00:00Z",
+  "last_checkpoint": "2026-01-02T14:30:22Z",
+  "current_sprint": "Sprint 1",
+  "current_phase": "Phase 1",
+  "tasks": {
+    "TASK-001": {
+      "status": "complete",
+      "started_at": "2026-01-02T10:05:00Z",
+      "completed_at": "2026-01-02T10:50:00Z",
+      "duration_minutes": 45,
+      "acceptance_criteria_met": true,
+      "tests_passing": true
+    },
+    "TASK-002": {
+      "status": "in_progress",
+      "started_at": "2026-01-02T14:00:00Z",
+      "progress_percent": 60,
+      "blocker": null
+    }
+  },
+  "metrics": {
+    "tasks_complete": 15,
+    "tasks_total": 40,
+    "completion_percent": 37.5,
+    "velocity_tasks_per_day": 3.2,
+    "estimated_completion_date": "2026-02-15"
+  },
+  "blockers": []
+}
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+
+### Progress Reports
+
+**Daily Standup**:
+```markdown
+# Daily Standup - [Date]
+
+## Yesterday
+- ✅ [Task] ([duration])
+- ✅ [Task] ([duration])
+
+## Today
+- 🔄 [Task] ([progress]%)
+- 📋 [Task] (planned)
+
+## Blockers
+- [Blocker] or None
+
+## Metrics
+- Sprint progress: [X/Y] tasks ([%]%)
+- [Status message]
+```
+**Verification:** Run the command with `--help` flag to verify availability.
+
+**Sprint Report**:
+```markdown
+# Sprint [N] Progress Report
+
+**Dates**: [Start] - [End]
+**Goal**: [Sprint objective]
+
+## Completed ([X] tasks)
+- [Task list]
+
+## In Progress ([Y] tasks)
+- [Task] ([progress]%)
+
+## Blocked ([Z] tasks)
+- [Task]: [Blocker description]
+
+## Burndown
+- Day 1: [N] tasks remaining
+- Day 5: [M] tasks remaining ([status])
+- Estimated completion: [Date] ([delta])
+
+## Risks
+- [Risk] or None identified
+```
+**Verification:** Run the command with `--help` flag to verify availability.
+
+## Blocker Management
+
+### Blocker Detection
+
+**Common Blockers**:
+- Failing tests that can't be fixed quickly
+- Missing dependencies or APIs
+- Technical unknowns requiring research
+- Resource unavailability
+- Scope ambiguity
+
+### Systematic Debugging
+
+When blocked, apply debugging framework:
+
+1. **Reproduce**: Create minimal reproduction case
+2. **Hypothesize**: Generate possible causes
+3. **Test**: Validate hypotheses one by one
+4. **Resolve**: Implement fix or workaround
+5. **Document**: Record solution for future
+
+### Escalation
+
+**When to escalate**:
+- Blocker persists > 2 hours
+- Requires architecture change
+- Impacts critical path
+- Needs stakeholder decision
+
+**Escalation format**:
+```markdown
+## Blocker: [TASK-XXX] - [Issue]
+
+**Symptom**: [What's happening]
+
+**Impact**: [Which tasks/timeline affected]
+
+**Attempted Solutions**:
+1. [Solution 1] - [Result]
+2. [Solution 2] - [Result]
+
+**Recommendation**: [Proposed path forward]
+
+**Decision Needed**: [What needs to be decided]
+```
+**Verification:** Run the command with `--help` flag to verify availability.
+
+## Quality Assurance
+
+### Definition of Done
+
+**Task is complete when**:
+- ✅ All acceptance criteria met
+- ✅ All tests written and passing
+- ✅ Code reviewed (self or peer)
+- ✅ Linting passes with no warnings
+- ✅ Type checking passes (if applicable)
+- ✅ Documentation updated
+- ✅ No known regressions
+- ✅ Deployed to staging (if applicable)
+
+### Testing Strategy
+
+**Test Pyramid**:
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+     /\
+    /E2E\      Few, slow, expensive
+   /------\
+  /  INT  \    Some, moderate speed
+ /----------\
+/   UNIT    \  Many, fast, cheap
+```
+**Verification:** Run the command with `--help` flag to verify availability.
+
+**Per Task**:
+- Unit tests: Test individual functions/classes
+- Integration tests: Test component interactions
+- E2E tests: Test complete user flows (for user-facing features)
+
+## Velocity Tracking
+
+### Burndown Metrics
+
+**Track daily**:
+- Tasks remaining
+- Story points remaining
+- Days left in sprint
+- Velocity (tasks or points per day)
+
+**Formulas**:
+```
+**Verification:** Run `pytest -v` to verify tests pass.
+Velocity = Tasks completed / Days elapsed
+Estimated completion = Tasks remaining / Velocity
+On track? = Estimated completion <= Sprint end date
+```
+**Verification:** Run the command with `--help` flag to verify availability.
+
+### Velocity Adjustments
+
+**If ahead of schedule**:
+- Pull in stretch tasks
+- Add technical debt reduction
+- Improve test coverage
+- Enhance documentation
+
+**If behind schedule**:
+- Identify causes (blockers, underestimation)
+- Reduce scope (drop low-priority tasks)
+- Increase focus (reduce distractions)
+- Request help or extend timeline
+
+## Exit Criteria
+
+- [ ] All planned tasks are marked complete and the full test suite passes.
+- [ ] A completion report is generated.
+- [ ] Any rework, failed approach, or exhausted-retry blocker is recorded to
+  `docs/lessons-learned.md` as an `open` entry (a clean run needs none).
+- [ ] Every task was either delegated or held back by a named Keep Local
+  clause.
+- [ ] Delegated output passed the same tests a local implementation
+  would have.
+- [ ] No subsequent phase is auto-invoked (this is the terminal phase).
+
+## Related Skills
+
+- `Skill(superpowers:executing-plans)` - Execution framework (if available)
+- `Skill(superpowers:systematic-debugging)` - Debugging (if available)
+- `Skill(superpowers:test-driven-development)` - TDD (if available)
+- `Skill(superpowers:verification-before-completion)` - Validation (if available)
+- `Skill(conjure:delegation-core)` - Default-on delegation of task execution
+- `Skill(attune:mission-orchestrator)` - Full lifecycle orchestration
+
+## Related Agents
+
+- `Agent(attune:project-implementer)` - Task execution agent
+
+## Related Commands
+
+- `/attune:execute` - Invoke this skill
+- `/attune:execute --task [ID]` - Execute specific task
+- `/attune:execute --resume` - Resume from checkpoint
+
+## Mission Report
+
+At mission completion, produce a Mission Report using the
+template from `references/mission-report.md`. The report documents:
+
+- **Mission identification**: Links to brief, spec, plan
+- **Duration**: Start, end, total time
+- **Outcome**: success | partial | failed
+- **Delivered artifacts**: Files created/modified/deleted
+- **Decisions**: Key choices with rationale
+- **Validation evidence**: Tests, reviews, demos
+- **Follow-ups**: Recommended next steps
+
+See `references/mission-report.md` for the full template and
+example reports for successful, partial, and failed missions.
+
+## Examples
+
+See `/attune:execute` command documentation for complete examples.

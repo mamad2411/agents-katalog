@@ -1,0 +1,260 @@
+---
+name: task-store
+description: >
+  Query and update the Shipwright task store — pick the next ready task, mark status
+  transitions, and append new tasks. Use whenever you need to read from or write to
+  the task queue. Calls the task store HTTP API directly via curl.
+---
+
+# Task Store — Skill
+
+Use this skill to interact with the Shipwright task store via its HTTP API.
+The task store is a REST service — call it with curl, no script discovery needed.
+
+> **The HTTP API is the only interface.** Never edit the underlying database directly.
+> The unit you work with is the **task** (see [task-schema.md](references/task-schema.md)).
+
+---
+
+## Setup
+
+Before using this skill, verify the required environment variables are set:
+
+```bash
+echo "URL:   ${SHIPWRIGHT_TASK_STORE_URL:-(missing)}"
+echo "Token: ${SHIPWRIGHT_TASK_STORE_TOKEN:+(set)}"
+```
+
+**`SHIPWRIGHT_TASK_STORE_URL` missing?** Contact your administrator — this URL is provisioned at deployment time and is not something you generate yourself.
+
+**`SHIPWRIGHT_TASK_STORE_TOKEN` missing?** Mint a scoped token directly against the task store, using the admin token (`SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`):
+
+```bash
+# Local / HITL use — omit agentId so the token is unscoped.
+curl -sf -X POST "$SHIPWRIGHT_TASK_STORE_URL/tokens" \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "my-local-agent"}' | jq .
+
+# Managed Shipwright agent — scope the token to that agent's ID.
+curl -sf -X POST "$SHIPWRIGHT_TASK_STORE_URL/tokens" \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "my-agent-name", "agentId": "<agent-id>"}' | jq .
+```
+
+- **`agentId`** — leave it out of the body for local or HITL use (the token stays unscoped); set it to your agent's ID to scope the token to a managed Shipwright agent.
+- The response's `rawToken` field is shown once — copy it immediately and wire it up:
+  - **Local plugin / shell:** `export SHIPWRIGHT_TASK_STORE_TOKEN=<rawToken>`
+  - **Managed Shipwright agent:** add `SHIPWRIGHT_TASK_STORE_TOKEN=<rawToken>` as an agent env var via the Shipwright admin UI — it takes effect within 60 seconds, no restart needed
+
+**HITL note:** For local HITL execution (`/shipwright:hitl`), mint an admin token with **`agentId` omitted** — this keeps the token unscoped so it can read any agent's tasks. Pass the task ID explicitly when invoking the skill.
+
+---
+
+## Authentication
+
+All requests require a Bearer token:
+
+```bash
+Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
+```
+
+Both env vars are provisioned automatically by the agent harness:
+
+| Env var | Description |
+|---|---|
+| `SHIPWRIGHT_TASK_STORE_URL` | Base URL of the task store service |
+| `SHIPWRIGHT_TASK_STORE_TOKEN` | Bearer token for this agent |
+
+Visibility, not filtering, is what the bearer token controls: an agent token with repo access can see every task in that repo's pool — assigned to you, unassigned, or assigned to a different agent sharing the repo (useful for spotting unclaimed pool work). It does **not** narrow results to just your own tasks. Pass `?assignee=$SHIPWRIGHT_AGENT_ID` explicitly whenever you only want your own tasks — e.g. before resuming an `in_progress` task, so you don't pick up (and start committing to) another agent's active work.
+
+Verify the service is reachable before doing anything:
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.total'
+```
+
+---
+
+## Standard lifecycle
+
+### Pick next task
+
+Repo-pool visibility means an unfiltered query can return another agent's tasks — always pass `?assignee=$SHIPWRIGHT_AGENT_ID` to scope to your own. Check for an interrupted task first, then fall back to the next ready one:
+
+```bash
+# 1. Resume interrupted task (in_progress assigned to you)
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID" | jq .
+
+# 2. If empty, pick next ready task
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
+```
+
+All list calls return an envelope with a `.tasks` array. Paginated calls (`?status=`, `?session=`, `?pr=`, `?branch=`, etc.) also include `total`, `limit`, and `offset`. Ready/blocked calls (`?ready=true`, `?state=ready`, `?state=blocked`) return `{ tasks, total }` without pagination. Always unwrap `.tasks` before accessing elements.
+
+### Start a task
+
+Claim atomically instead of a plain PATCH — a read-modify-write PATCH races any other
+concurrent runner that read the same `ready=true` list. The claim is a single conditional
+`UPDATE ... WHERE status='pending'`; it also sets `claimedAt`, `heartbeatAt`, and
+`startedAt`, so no separate PATCH is needed:
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/claim" | jq .
+```
+
+No request body is sent — with an agent token, the task-store pins `claimedBy` to the
+calling agent's own ID server-side and ignores the body. A `409` means another agent
+already claimed the task since it was read as `ready` — skip it and pick the next one.
+
+This isn't just a race-avoidance convention — a generic `PATCH /tasks/:id` actively rejects
+(`400`) an agent token trying to set `claimedBy`, `claimedAt`, `heartbeatAt`, or
+`status: "pending"` directly. `/claim` and `/release` are the only supported ways to move
+those fields.
+
+### Open a PR
+
+Must set `pr` and `prCreatedAt` together with the status:
+
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+```
+
+### Mark blocked
+
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"status\": \"blocked\", \"blockedReason\": \"{reason}\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+```
+
+### Mark merged / done
+
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+  -d "{\"status\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+```
+
+### Append new tasks
+
+Post each task individually. The service returns 409 if the `id` already exists — skip silently:
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks" \
+  -d '{"id": "TSS-X.1", "title": "...", "status": "pending", "repo": "...", "branch": "feat/tss-x-1-..."}' | jq .
+# 201 → inserted, 409 → already exists (skip)
+```
+
+**Required fields for every new task:**
+
+| Field | Why required |
+|---|---|
+| `id` | Stable key; used by dependency resolution and all updates |
+| `title` | Required by schema |
+| `status` | Must be `"pending"` on creation |
+| `repo` | Routes `dev-task` to the correct worktree |
+| `branch` | `dev-task` creates the worktree from this; absent → task is skipped |
+
+`assignee` is optional — omit it to leave the task unassigned in the repo pool (claimable
+by any agent with repo access), or set it explicitly to pre-assign the task to a specific
+agent ID.
+
+Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
+
+---
+
+## `?ready=true` semantics
+
+When `?ready=true` is set, `?status` and `?id` filters are ignored. Only
+`?session` applies as a post-filter.
+
+- Unlike the general repo-pool visibility described above, `?ready=true` is already scoped: it returns your own tasks plus *unassigned* pool tasks in your repo scope — never another agent's already-assigned pending task. No `?assignee=` needed here.
+- `?session` — filter by planning session slug. Omit to return ready tasks across all sessions.
+
+A task is ready when **all** of the following are true:
+- `status === "pending"`, AND
+- `hitl` is not `true` (HITL tasks are excluded until manually cleared), AND
+- every dependency is satisfied per the dependency rules below (terminal status, same-branch PR, or merged cross-branch PR)
+
+**Dependency-satisfied rules** (first match wins):
+1. `dep.status ∈ { merged, done, deploying, deployed, cancelled }` → satisfied
+2. Same-branch dep with `status ∈ { pr_open, approved }` → satisfied (bundled PR)
+3. `pr_open` dep with a PR number, GitHub reports the PR as merged → satisfied
+4. Anything else → **not satisfied** (task is excluded from `?ready=true`)
+
+---
+
+## Empty results
+
+When `?ready=true` returns `{ tasks: [], total: 0 }`:
+
+| Likely cause | How to check |
+|---|---|
+| No tasks assigned to this agent | Use an admin token to see all ready tasks |
+| HITL flag set | Query `?status=pending` — check if tasks have `"hitl": true`. Clear the flag once the human action is complete. |
+| Deps not satisfied | Query `?status=pending` — tasks present but blocked on a dependency. Check each dependency against the satisfaction rules above: terminal status, same-branch `pr_open`/`approved`, or a `pr_open` dep whose GitHub PR is merged all satisfy. Any dep failing all three rules blocks the task. |
+| Queue empty | No pending tasks exist at all |
+
+---
+
+## Task status values
+
+`pending` → `in_progress` → `pr_open` → `approved` → `merged`
+
+Branch statuses: `blocked`, `cancelled`, `deploying`, `deployed`
+
+---
+
+## Full API reference
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/tasks` | List tasks (`?status`, `?session`, `?assignee`, `?ready=true`) |
+| `POST` | `/tasks` | Create a task (409 if `id` exists) |
+| `GET` | `/tasks/:id` | Fetch one task (404 if missing) |
+| `PATCH` | `/tasks/:id` | Update fields (partial update, returns updated task) |
+| `DELETE` | `/tasks/:id` | Delete a task |
+| `POST` | `/tasks/:id/claim` | Atomic claim → `in_progress` (409 if already claimed) |
+| `POST` | `/tasks/:id/release` | Unclaim (`in_progress` → `pending`) |
+| `POST` | `/tasks/:id/unblock` | Unblock: `blocked` → `pending` (409 if not blocked) |
+| `POST` | `/tasks/:id/complete` | Mark `done` |
+| `POST` | `/tasks/:id/fail` | Mark `blocked` |
+
+**PR tracking (`/prs`)**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/prs` | List PR records (`?repo`, `?prNumber`, `?state`, `?reviewState`, `?staged`, `?limit`, `?offset`) |
+| `POST` | `/prs/claim` | Upsert + claim a PR record → `in_progress` (body: `repo`, `prNumber`, `commitSha`; optional: `claimedBy`) |
+| `GET` | `/prs/:id` | Fetch one PR record (404 if missing) |
+| `PATCH` | `/prs/:id` | Update PR fields (partial update) |
+| `POST` | `/prs/:id/heartbeat` | Extend review TTL (prevents StaleClaimReaper from auto-releasing) |
+| `POST` | `/prs/:id/complete` | Mark review complete |
+| `POST` | `/prs/:id/patch` | Record a patch cycle on this PR |
+| `POST` | `/prs/:id/release` | Release claim → `pending` |
+
+> **Scoping:** Tasks are scoped by repo access — all agents with access to a repo can see its tasks. Always filter with `?assignee=$SHIPWRIGHT_AGENT_ID` when you only want your own tasks.
+
+---
+
+## Reference
+
+- **Task schema** (all fields + per-status required fields): [task-schema.md](references/task-schema.md)

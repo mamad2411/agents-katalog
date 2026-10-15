@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Bevel-Software/Hexis (path: packages/core-backend/starter-packs/operations/Plugins/operations-starter/skills/status-report/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Generate a status report with KPIs, risks, and action items. Use when writing a weekly or monthly update for leadership, summarizing project health with green/yellow/red status, surfacing risks and de

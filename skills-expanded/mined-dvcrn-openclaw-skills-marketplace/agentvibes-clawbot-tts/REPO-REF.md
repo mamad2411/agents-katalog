@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/paulpreibisch--agentvibes-clawbot-tts/skills/agentvibes-clawbot-tts/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: AgentVibes Clawdbot TTS"

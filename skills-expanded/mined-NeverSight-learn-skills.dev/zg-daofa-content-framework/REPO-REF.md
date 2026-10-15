@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zenggeai/zgskill/zg-daofa-content-framework/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 通过逐步访谈帮助创业者与专业人士建立道法术器内容框架，并把一个新闻、功能、观点或业务选题自动升级为道、法、术、器四个维度的内容方向。适用于内容定位、选题升级、长期内容板块梳理与已有框架修改。"

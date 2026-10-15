@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zephyrwang6/myskill/mem-record/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: AI个人记忆系统的记忆记录功能。自动从对话中提炼关键信息并记录到相应层级。使用场景：(1) 用户说"记录到记忆系统"、"记住这个"、"把这次对话记下来"时；(2) 检测到重要事件、决策、偏好表达时；(3) 用户完成重要任务或做出决策时。该skill会自动判断应该记录到L1情境层、L2行为层、L3认知层，还是建议更新L4核心层。

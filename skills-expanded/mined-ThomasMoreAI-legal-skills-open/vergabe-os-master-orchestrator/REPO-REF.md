@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/government-contracts/skills/vergabe-os-master-orchestrator/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Vergabe Os Master Orchestrator: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

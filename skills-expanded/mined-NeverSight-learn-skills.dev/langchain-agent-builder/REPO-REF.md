@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/cnn-cnn-creatoe/ai-health-assistant/langchain-agent-builder/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 基于 LangChain 框架构建 AI Agent 机器人的技能。当用户需要创建 LangChain agent、选择 agent 框架、实现工具调用、管理对话记忆或构建复杂工作流时使用此技能。涵盖 LangGraph、CrewAI、AutoGen 等热门框架，提供最佳实践、代码模板和架构设计指导。

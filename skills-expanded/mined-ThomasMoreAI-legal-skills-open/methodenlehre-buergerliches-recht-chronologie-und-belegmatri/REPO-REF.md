@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/general/skills/methodenlehre-buergerliches-recht-chronologie-und-belegmatrix/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Chronologie und Belegmatrix: für strukturierte Sachverhaltserfassung: ordnet Akte, Belege und Lücken; Ergebnis: Chronologie mit Beleg- und Widerspruchsmatrix.'

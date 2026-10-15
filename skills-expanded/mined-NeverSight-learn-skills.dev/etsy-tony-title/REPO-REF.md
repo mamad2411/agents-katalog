@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tony11081/etsy-tony-skills/etsy-tony-title/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 根据已确认的商品事实撰写、优化或翻译 Etsy 英文商品标题，交付可复制标题与字符数。适合只改标题的任务，不自动扩写描述、标签或社交媒体标题。"

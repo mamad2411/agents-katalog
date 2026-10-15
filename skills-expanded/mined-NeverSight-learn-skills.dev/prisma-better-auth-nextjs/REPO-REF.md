@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/clownnvd/claude-code-skills/prisma-better-auth-nextjs/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Prisma 7 + Better Auth + Next.js App Router. Email/password, OAuth, 2FA, rate limiting, audit logging. Triggers: add auth, better auth, prisma auth, nextjs login, sign-up/sign-in, auth scaffold."

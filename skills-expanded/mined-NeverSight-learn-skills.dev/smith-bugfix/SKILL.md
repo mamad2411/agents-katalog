@@ -1,0 +1,429 @@
+---
+name: smith-bugfix
+description: Lightweight fix workflow for bugs and small changes. Autonomous from invocation through merged PR — no questions gate, no spec generation, no planning phase.
+---
+
+# SpecKit Bugfix Workflow
+
+A streamlined alternative to `/smith-new` for bugs, small changes, and trivial fixes that don't require requirements gathering, planning, or a questions gate. Runs fully autonomously from invocation to merged PR.
+
+**Arguments:** $ARGUMENTS
+
+## Vault Logging
+
+Throughout this action, log significant events to the vault session log. Read the session log path from `.smith/vault/.current-session`. If the file is missing or the vault is not initialized, skip all logging silently.
+
+Append entries using this format:
+
+```
+### [HH:MM:SS] /smith-bugfix <event>
+
+**User Request:**
+> <verbatim user message that triggered this action — capture the exact words the user typed describing the bug or fix needed. For natural language triggers like "fix this", include the preceding context that describes what's broken.>
+
+**Synthesized Input:** <brief summary of the fix being applied>
+**Outcome:** <what happened>
+**Artifacts:** <files created/modified>
+**Systems affected:** <system IDs>
+```
+
+Log at these points:
+1. **On invocation** — capture the verbatim user request AND the synthesized bug description
+2. **After branch created** — branch name
+3. **After fix applied** — files modified, brief description of the fix
+4. **After tests** — pass/fail summary
+5. **After specs updated** — which specs were updated
+6. **On completion** — PR number, merge status, success/failure
+
+## Subagent Invocation Logging
+
+Immediately before every Agent tool call in this workflow, append a block to the session log. The Agent tool's return value does not expose `subagent_type` or `model` to the parent, so this is the only place that information can be captured.
+
+```
+### [HH:MM:SS] Subagent invoked: <description>
+
+**Type:** <subagent_type or "general">
+**Model:** <model override passed to Agent, or "inherited" if none>
+```
+
+After the Agent tool returns, the `subagent-vault-writeback.sh` hook automatically appends a matching "Subagent completed" block with metrics read from the sidechain transcript — do not duplicate that logging in the skill.
+
+## When to Use This (vs `/smith-new`)
+
+Use `/smith-bugfix` when:
+- Fixing a bug or broken behavior
+- Making a small, well-defined change (rename, restyle, config tweak)
+- The change is scoped to 1-3 files with no design ambiguity
+
+Upgrade to `/smith-new` if during implementation you discover:
+- Multiple systems need coordinated changes
+- Design decisions require user input
+- The scope is larger than initially thought
+
+**If upgrading**: STOP, tell the user, and offer to switch to `/smith-new` with the context gathered so far.
+
+## Natural Language Triggers
+
+If the user says any of the following (or similar phrases), treat it as invoking this command:
+- "fix this"
+- "bugfix this"
+- "quick fix for..."
+- "patch this"
+- "just fix..."
+
+When triggered by natural language, synthesize the conversation history into a concise bug/fix description and proceed as if that description was passed as `$ARGUMENTS`.
+
+## Phase 1: Worktree Setup
+
+Every bugfix always runs in an isolated git worktree branched from the configured base branch (`origin/$BASE_BRANCH`, defaulting to `origin/main`). The user's current working directory and branch are NEVER touched, and concurrent Smith sessions cannot collide on the shared working tree. There is no "switch to base / stash / cancel" branching logic — the worktree is mandatory.
+
+0. **Generate fix slug** (2-4 words) from the fix description. Store as `$SLUG`. Derive:
+   - `BRANCH=fix/$SLUG`
+   - `WORKTREE_PATH=/tmp/smith-bugfix-$SLUG`
+   - `PRIMARY_REPO=<current working directory — capture before entering the worktree>`
+
+1. **Resolve the configured base branch, then fetch it** (does NOT change the user's current branch). Smith reads the project's integration branch from the constitution; it falls back to `main` when unconfigured:
+   ```bash
+   BASE_BRANCH=$(.specify/scripts/bash/get-base-branch.sh)
+   git fetch origin "$BASE_BRANCH"
+   ```
+
+2. **Activate workflow tracking** — invoke the shipped helper to create the per-branch marker. The workflow-gate hook (PR #20) exempts this exact helper by basename so the bootstrap runs even when no marker exists yet (per spec/31-workflow-gate-bootstrap). The helper also stamps the current session log with a `workflow-start` line so `workflow-summary.sh --totals-only` can attribute tokens to this workflow:
+   ```bash
+   ~/.smith/scripts/create-active-workflow.sh \
+     --branch "$BRANCH" \
+     --workflow smith-bugfix \
+     --slug "$SLUG" \
+     --worktree "$WORKTREE_PATH"
+   ```
+   (Falls back to `scripts/create-active-workflow.sh` in repo-dev layouts.) The helper exits 3 if a marker already exists for this branch under a different workflow type — pick a new slug (e.g., append `-2`) and retry. The marker is cleared by the Workflow Cleanup step at the end via `clear-active-workflow.sh`.
+
+3. **Create the worktree with the fix branch from the configured base branch (`origin/$BASE_BRANCH`)**:
+   ```bash
+   git worktree add "$WORKTREE_PATH" -b "$BRANCH" "origin/$BASE_BRANCH"
+   ```
+   The user's current branch is completely unaffected. They can be on `main`, a feature branch, or a detached HEAD — this workflow will not interfere.
+
+4. **Copy `.env` to the worktree** (only if one exists in the primary repo and the fix might touch services that read it):
+   ```bash
+   [ -f .env ] && cp .env "$WORKTREE_PATH/.env"
+   ```
+
+5. **All subsequent phases (2-7) run inside `$WORKTREE_PATH`.** Use `cd "$WORKTREE_PATH"` for the first command, then keep every subsequent command scoped to that directory via absolute paths or explicit `cd`. Do NOT `cd` back to the primary repo until Phase 7.3 (merge) — `gh pr merge` must run from the primary repo to avoid "main already checked out" errors.
+
+   **On failure before merge:** preserve the worktree for debugging and log its path in the session log. Do NOT auto-remove it. Leave the active-workflow yaml in place so the user knows the session is still holding that branch.
+
+## Ledger Context (Optional)
+
+If `.smith/vault/ledger/` exists and contains non-empty files, load relevant Ledger sections to inform this bugfix. If the directory is missing, empty, or unreadable, skip silently — the Ledger is purely additive and never required.
+
+1. Check: `ls .smith/vault/ledger/*.md 2>/dev/null`
+2. If files exist, read the following sections (higher-confidence entries first, truncate at ~2000 tokens per file):
+   - `.smith/vault/ledger/antipatterns.md`
+   - `.smith/vault/ledger/edge-cases.md`
+3. Use loaded antipatterns and edge cases as additional context to avoid known failure modes. The Ledger informs judgment, it does not override spec/plan/constitution.
+4. **Budget violation tracking**: If any Ledger file was truncated (entries were dropped to fit within the ~2000 token budget per file), increment `context_budget_violations` in `.smith/vault/ledger/.meta.json` by 1. If `.meta.json` does not exist, create it from the default template first. This signal tells the reconciliation system that the Ledger is too large for the configured budget.
+
+## Phase 2: Spec Cross-Reference
+
+Before writing any code, check existing specs for context and conflicts.
+
+1. **Identify affected systems** from the fix description and map to spec directories:
+   - `services/command-center/` → `specs/system-15-command-center/spec.md`
+   - `services/email-pipeline/` → `specs/system-03-email-archive-contact-graph/spec.md`
+   - `services/sentiment-engine/` → `specs/sentiment-engine/spec.md`
+   - `services/communication-triage/` → `specs/system-05-communication-triage/spec.md`
+   - `services/voice-training/` → `specs/system-04-personal-voice/spec.md`
+   - `docker-compose.yml` → `specs/system-01-core-infrastructure/spec.md`
+   - Other mappings as discovered from `specs/*/spec.md` content
+
+2. **Read relevant spec.md files** and check:
+   - Is the "broken" behavior actually intentional per the spec?
+   - Are there related requirements that could be affected by this fix?
+   - Are there any conflicting specs?
+
+3. **If a conflict is found**: STOP the workflow and alert the user. Explain the conflict and ask how to proceed. This is the ONLY point where the workflow may pause.
+
+4. **If no conflicts**: Continue silently.
+
+## Ledger-Informed Auto-Retry
+
+If the bugfix execution fails, check config for auto-retry:
+
+1. Read `.smith/config.json` — check `ledger.auto_retry` and `ledger.max_retries`
+2. If `auto_retry` is `false` (default) or config is missing, do NOT retry — fail normally
+3. If `auto_retry` is `true`:
+   a. Re-read `.smith/vault/ledger/antipatterns.md` to get the latest failure patterns
+   b. Analyze the failure against known antipatterns to adjust the approach
+   c. Retry the fix with the adjusted approach
+   d. Repeat up to `max_retries` times (default: 2), re-reading antipatterns before each attempt
+   e. If all retries exhausted, fail with a summary of all attempts
+4. Each retry attempt is logged to the session log with attempt number and adjusted approach
+
+## Phase 3: Implement the Fix
+
+1. **Read the affected files** to understand current behavior
+2. **Implement the fix** — keep changes minimal and focused
+3. **Do NOT**:
+   - Refactor surrounding code
+   - Add features beyond the fix
+   - Modify unrelated files
+   - Add unnecessary abstractions
+
+## Phase 3.5: Update `.meta` Descriptions for Touched Methods
+
+After every Write or Edit to a source file in this fix, refresh the
+file's `.meta` description layer to reflect the new or changed methods.
+This step is cheap because Claude already has the source open and parsed
+in working memory — it does NOT regenerate descriptions for untouched
+methods, and it does NOT call any LLM from the save hook (the save hook
+remains LLM-free per data-model.md §3.2). Per data-model.md §4 and
+research.md §6.
+
+Run once per modified source file (extensions: `.py`, `.js`, `.jsx`,
+`.ts`, `.tsx`):
+
+1. **Identify touched method ids.** Parse the file via the project
+   parser (`python3 ~/.smith/scripts/parse-python.py <file>` or
+   `node ~/.smith/scripts/parse-js.js <file>`) and diff the resulting
+   method-id set against `.smith/index/files/<file>.meta`'s `Id:`
+   entries. The 16-char hex ids ADDED or with a CHANGED signature are
+   the "touched" set. (Body-only edits do not change the id, per the
+   stable-method-id recipe in data-model.md §1.1.)
+2. **Determine `purpose_shifted`.** Set `true` when any of:
+   - a new top-level `export` or `__all__` entry was added,
+   - a new class was added,
+   - more than 50% of the file's methods are in the touched set,
+   - the file's primary responsibility shifted (judgment call).
+
+   Otherwise `false`.
+3. **Inline-spawn ONE Task** for this file. Subscription billing,
+   not API tokens (v3 / PR #23). The spawn replaces the v2 shell-out
+   to `meta_describe.py update-touched`.
+
+   a. Gather inputs via the discovery helper:
+      ```bash
+      DISCOVERY=$(python3 ~/.smith/scripts/describe_discover.py \
+        --rel-path <project-relative-path> \
+        --touched-only \
+        --touched-ids <comma-separated-16hex-ids>)
+      ```
+      (Falls back to `scripts/parsers/describe_discover.py` in repo-dev
+      layouts.)
+
+   b. Build the prompt body via the prompt-assembly helper:
+      ```bash
+      PROMPT=$(python3 ~/.smith/scripts/describe_write.py build-prompt \
+        --rel-path <project-relative-path> \
+        --method-ids <comma-separated-16hex-ids> \
+        --purpose-shifted <true|false> \
+        $( [ "<purpose_shifted>" = "true" ] && echo --module ))
+      ```
+
+   c. Spawn the Task (subscription billing — inherits session auth):
+      ```yaml
+      subagent_type: general
+      model: claude-haiku-4-5
+      prompt: |
+        <PROMPT body from step b>
+
+        Return ONLY a JSON object with `method_descriptions` for the
+        touched ids, and a `module_description` iff
+        purpose-shifted=true. Match task-llm-output.schema.json.
+      ```
+
+   d. When the Task returns, pipe its JSON output into the writer:
+      ```bash
+      echo "$TASK_OUTPUT" | \
+        python3 ~/.smith/scripts/describe_write.py apply --update-touched \
+          --rel-path <project-relative-path> \
+          --purpose-shifted <true|false>
+      ```
+
+   e. **Test stub.** If `SMITH_TASK_STUB=1` is set, skip the Task
+      spawn and use `apply --from-stub <fixture>` instead.
+
+4. **Failure handling.** If any step fails (helper not installed,
+   Task tool error, write error), log a single line to the session
+   log and CONTINUE — the missing descriptions are flagged as a
+   non-blocking PR-body warning by `/smith-build` (see Phase 8 /
+   data-model.md §9). This step never blocks the fix.
+
+This step is skipped entirely for files where the diff only touches
+non-source extensions (`.css`, `.html`, `.sh`, `.md`, `.json`, ...).
+
+## Phase 4: Docker Rebuild (if applicable)
+
+If any files changed belong to a Docker service:
+
+1. **Identify affected services** from modified file paths
+2. **Rebuild**:
+   ```bash
+   docker compose up -d --build <service-name>
+   ```
+3. **Verify health**:
+   ```bash
+   bash scripts/health-check.sh
+   ```
+4. If unhealthy: attempt one restart, log the issue
+
+**Skip this phase** if changes are limited to specs, docs, or config files that don't affect running services.
+
+## Phase 5: Run Tests
+
+### 5.1 Unit Tests
+- **If frontend code changed**: `cd services/command-center && pnpm test`
+- **If Python service changed**: `cd services/<service> && poetry run pytest`
+
+### 5.2 Playwright E2E Tests (if frontend files were modified)
+- Check if any files matching `services/command-center/src/**` were modified
+- **If YES**: `cd services/command-center && pnpm exec playwright test`
+- **If NO**: Skip Playwright
+
+### 5.3 Lint
+- **If frontend**: `cd services/command-center && pnpm lint`
+- **If Python**: `cd services/<service> && poetry run ruff check .`
+
+### 5.4 Test Failure Handling
+- If tests fail due to the fix: fix the code and re-run (up to 3 attempts)
+- If tests fail for unrelated reasons: note in the commit message body, continue
+- If the fix itself causes tests to fail after 3 attempts: STOP and alert the user
+
+## Phase 6: Update Specs & Changelog
+
+### 6.1 Update System Spec
+
+For each affected system spec.md:
+1. Read the current spec
+2. Add or append to an "Implementation History" section
+3. Add a dated entry describing the fix
+4. Keep it concise and factual
+
+### 6.2 Update STATUS.md
+If the fix is relevant to project status tracking, update `STATUS.md`.
+
+## Phase 7: Commit, Push & Merge
+
+### 7.1 Commit
+```bash
+git add <all modified files — list explicitly, never git add -A>
+git commit -m "fix: <description>
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+```
+
+- Use `fix:` conventional commit prefix
+- Stage files explicitly (never `git add -A` or `git add .`)
+- Do NOT stage `.env` files or credentials
+
+### 7.2 Push
+```bash
+git push -u origin fix/<slug>
+```
+
+### 7.3 Create PR & Merge
+```bash
+BASE_BRANCH=$(.specify/scripts/bash/get-base-branch.sh)
+gh pr create --base "$BASE_BRANCH" --title "fix: <short title>" --body "$(cat <<'EOF'
+## Summary
+<1-3 bullet points describing the fix>
+
+## What was broken
+<Brief description of the bug/issue>
+
+## What changed
+<List of files and what changed in each>
+
+## Test plan
+- [ ] Unit tests pass
+- [ ] E2E tests pass (if applicable)
+- [ ] Docker health check passes (if applicable)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+```
+
+Then merge **from the primary repo directory** (never from the worktree — `gh pr merge` fails with "main already checked out" otherwise):
+```bash
+cd "$PRIMARY_REPO" && gh pr merge <pr-number> --squash --delete-branch
+cd "$PRIMARY_REPO" && git pull origin "$(.specify/scripts/bash/get-base-branch.sh)"
+```
+
+### 7.4 Update primary repo's base branch
+Already covered by `git pull` above. The user's working branch in the primary repo is untouched — only the base branch ref moves forward. If the user was on the base branch, they now see the merged changes; if they were on another branch, the base branch is updated but their checkout is not.
+
+## Phase 8: Post-Merge Rebuild & Summary
+
+### 8.1 Rebuild affected services (on the base branch, from the primary repo)
+```bash
+cd "$PRIMARY_REPO" && docker compose up -d --build <service-name>
+cd "$PRIMARY_REPO" && bash scripts/health-check.sh
+```
+Skip if no Docker services were touched.
+
+### 8.2 Summary
+
+Emit a final chat message to the user that starts with "Bugfix complete. Here's the summary:" (or equivalent for the fix). Include any bugfix-specific notes (test results, services rebuilt, worktree path if preserved on failure). At the bottom, run the totals command and paste the lines it prints verbatim — do this BEFORE the Workflow Cleanup step below. Pass the workflow's own session log via `--session` so totals are computed against the correct file even if the session log rolled over mid-workflow:
+```bash
+# $SESSION was captured at workflow start (Phase 1 step 2). Fall back to the
+# marker's session_log field, then to .current-session, if not in scope here.
+SESSION="${SESSION:-$(cat .smith/vault/.current-session 2>/dev/null)}"
+bash hooks/workflow-summary.sh --totals-only --session "$SESSION"
+```
+If it prints `n/a (no workflow invocation found)` and exits non-zero, do NOT present those as real numbers — note that totals were unavailable and which session file was checked.
+
+The full `=== Workflow Summary ===` block is written to the session log file automatically by the `workflow-summary.sh` Stop hook once the active-workflow file is removed — that's for audit only, not chat. Do not emit the full block to the user.
+
+## Workflow Cleanup
+
+Run from the primary repo directory. On success, remove the worktree; on failure (before merge), preserve it and skip worktree removal.
+
+```bash
+cd "$PRIMARY_REPO"
+# Success path: remove the worktree (the branch was already deleted by --delete-branch on merge)
+git worktree remove "$WORKTREE_PATH"
+# Always: clear the active-workflow marker so future sessions know this branch is free.
+# Use the shipped helper so this works even on projects that set Bash(rm:*) in the
+# deny list of .claude/settings.json.
+.specify/scripts/bash/clear-active-workflow.sh "$BRANCH"
+```
+
+If `git worktree remove` fails because of uncommitted local edits (shouldn't happen on the success path, but can on forced cleanup), fall back to `git worktree remove --force "$WORKTREE_PATH"` and warn the user that any uncommitted changes in the worktree are being discarded.
+
+## Post-Workflow Reflection
+
+After workflow completion (success or failure), trigger a Ledger reflection if enabled:
+
+1. Read `.smith/config.json` — if `ledger.auto_reflect` is `true` (default), proceed
+2. Launch a **non-blocking** background sub-agent using the configured reflection model (default: Haiku):
+   - Pass: current session log path, `.smith/vault/ledger/` path
+   - The sub-agent runs the `smith-reflect` workflow
+   - Do NOT wait for the sub-agent to complete
+3. If `.smith/config.json` is missing or `ledger.auto_reflect` is `false`, skip silently
+
+### Post-Reflection Reconciliation Check
+
+After reflection completes (or is skipped):
+
+1. Read `.smith/config.json` — if `ledger.reconcile.auto_reconcile` is `false`, skip
+2. Read `.smith/vault/ledger/.meta.json` — check signals against thresholds:
+   - `estimated_tokens > thresholds.total_tokens_max` (default 30000)
+   - `context_budget_violations > thresholds.context_violations_threshold` (default 3)
+   - `reinforcements_since_reconcile > thresholds.reinforcements_threshold` (default 50)
+3. Check minimum interval: if `last_reconcile` is less than `minimum_hours_between_reconciles` (default 6) hours ago, skip
+4. If any threshold exceeded AND minimum interval has passed:
+   - Launch a **non-blocking** background sub-agent using the configured `reconcile_model` (default: Haiku)
+   - Pass: "Run /smith-ledger reconcile on this project"
+   - Do NOT wait for the sub-agent to complete
+5. If no threshold exceeded, `.meta.json` is missing, or config is missing, skip silently
+
+## Key Rules
+
+- ALL phases run without user interaction (except spec conflict in Phase 2)
+- Never use `git add -A` or `git add .` — always stage specific files
+- Never commit `.env` files or credentials
+- Keep changes minimal — this is a fix, not a feature
+- Always rebuild Docker after code changes
+- If scope creep is detected, STOP and suggest upgrading to `/smith-new`
+- No questions.md, no plan.md, no tasks.md, no release.md — these are for features

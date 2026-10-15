@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/cafe3310/public-agent-skills/long-audio-to-obsidian/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 用于将语音转写项目的复杂文件结构整理、合并为适合 Obsidian 归档的 Markdown 文档。此技能依赖 Agent 的认知能力来识别文件逻辑，并使用通用脚本执行合并。

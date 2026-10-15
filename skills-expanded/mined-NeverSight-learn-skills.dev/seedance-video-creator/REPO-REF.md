@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/wwwzhouhui/skills_collection/seedance-video-creator/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Seedance 2.0 专业分镜提示词生成 + 视频生成一体化工具。当用户想要创作分镜视频、使用 Seedance/即梦生成视频、需要专业分镜提示词并直接生成视频时调用。支持多图参考、分镜引导、API 调用生成视频、自动下载。

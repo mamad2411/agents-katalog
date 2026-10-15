@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/dobbey--feishu-card-sender/skills/feishu-card-sender/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 通过飞书 OpenAPI 发送卡片消息（interactive card），支持模板化 JSON 卡片与变量替换。用于用户要求“发送飞书卡片/模板消息/互动卡片”时，或需要把结构化通知发到指定 open_id/chat_id 时。该技能只走 OpenAPI（appid/appsecret + tenant_access_token），不使用 message 通道。"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/hefuwei-95--yzturbo-web-android/skills/yzturbo-web-android/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: YZTurboWebAndroid 高性能 Android WebView 容器 SDK 接入。用于在 Android 项目中集成 WebView 容器，实现：\n (1) WebView 预加载与复用，提升 H5 页面加载速度\n (2) 离线包管理，拦截请求优先命中本地资源\n (3) JS Bridge 双向通信，Native 与 H5 互调\n 适用场景：Android App 接入 H5

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/cedaric/minimalist-visual-design-skill/minimalistvisualdesign/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 极简主义视觉内容设计。将任何输入内容转化为具有强烈视觉冲击力的极简主义现代网页设计。五阶段工作流，从内容解析到最终合并交付，产出独立的阶段性文件。USE WHEN 极简设计, 视觉设计, 内容可视化, 排版设计, 杂志排版, minimalist design, visual design, content visualization, editorial design。

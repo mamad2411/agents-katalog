@@ -19,10 +19,11 @@ OUT_MD = AGENTS / "SKILLS-AVAILABLE.md"
 OUT_CAT = AGENTS / "SKILLS-CATEGORIES.md"
 OUT_JSON = AGENTS / "skills-index.json"
 
-PER_CATEGORY = 55          # cap per kategori (sesuai desain docstring); 0 = tanpa cap
-                           # → 55 mencegah SKILLS-AVAILABLE.md membengkak & jadi
-                           #   jebakan baca-utuh (379 KB ≈ 114k token). Sisa entri
-                           #   tetap lewat MCP skill_search / skill-search.sh.
+PER_CATEGORY = 0           # 0 = tanpa cap → SEMUA curated (3.176) tampil di etalase.
+                           # Dulu 55 → cuma 761 yang kelihatan ("kok dikit?").
+                           # Biaya: SKILLS-AVAILABLE.md jadi ±379 KB — TAPI AI dilarang
+                           # baca utuh; pakai skill_search/skill_for_task (hasil ≤8).
+                           # skills-index.json & MCP tetap hemat (angka + kategori saja).
 DESC_CHARS = 88
 
 

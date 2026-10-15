@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zixun-github/aisdlc/project-discover-modules-contracts/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Use when 你需要把选中的模块（优先 P0）做成 `.aisdlc/project/components/{module}.md` 的单页模块 SSOT，并在同一页内建立 API/Data 契约的权威入口、不变量摘要、证据入口与结构化缺口（Evidence Gaps），以满足 Discover 的 DoD 门禁。

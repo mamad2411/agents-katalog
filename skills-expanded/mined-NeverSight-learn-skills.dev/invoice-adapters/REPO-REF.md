@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/rytass/utils/invoice-adapters/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Taiwan e-invoice integration (台灣電子發票整合). Use when working with ECPay (綠界), EZPay (藍新), BankPro (金財通), or Amego (光貿) invoice services. Covers issuing invoices (開立發票), voiding (作廢), allowances (折讓), and

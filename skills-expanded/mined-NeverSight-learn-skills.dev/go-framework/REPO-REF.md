@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/lookatitude/beluga-ai/go-framework/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Go framework design patterns for Beluga AI v2. Use when designing package structure, registries, lifecycle, or creating new packages.

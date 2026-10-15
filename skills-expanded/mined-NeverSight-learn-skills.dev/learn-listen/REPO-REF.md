@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/thewaytolearn/pacer-learn/learn-listen/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: [步驟 11/11·podcast 頁] 把 workspace 裡所有語音解析（lesson.mp3）列成一集一集，新產出的在上面，置底播放器、字幕（講稿 karaoke）、原聲／翻譯切換、記住聽到哪裡，每集連到 plan.html。使用者說「podcast 頁」「聽的清單」「重產 listen.html」時使用。"

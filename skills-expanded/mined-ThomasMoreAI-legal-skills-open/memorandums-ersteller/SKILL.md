@@ -1,0 +1,248 @@
+---
+name: memorandums-ersteller
+title: Memorandums-Ersteller
+description: 'Für Memorandums-Ersteller: erstellt Entwurf mit Antrag, Beweis und Anlagen; Ergebnis: Schriftsatz mit Begründungs- und Anlagenlogik.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/memorandums-ersteller/skills/memorandums-ersteller
+license: Apache-2.0
+version: 0.1.1
+execution_mode: open
+jurisdiction: de
+practice: general
+language: de
+---
+
+# Memorandums-Ersteller
+
+## Arbeitsweg
+
+- Rolle, Ziel und gewünschtes Arbeitsprodukt klären: Wer handelt, welche Entscheidung steht an, welche Frist läuft und welcher Output wird gebraucht?
+- Fristen und Eilrisiken zuerst markieren: Verjährung Anwaltshaftung § 195 BGB 3 Jahre, ggf. § 199 (Kenntnis), Mandatsannahme/Ablehnung unverzüglich, BRAO § 44 Annahme/Ablehnung.
+- Tragende Normen verifizieren: BRAO §§ 43a, 43b, 49b (Verschwiegenheit/Haftung), BORA §§ 2, 5, 11, BGB §§ 280, 675 (Anwaltshaftung), HOAI-/RVG-Aspekte, ZPO § 138 (Wahrheitspflicht) — Fundstellen über gesetze-im-internet.de, dejure.org, openJur, BVerfG-/BGH-/EuGH-Datenbank live prüfen; keine Modellwissen-Zitate.
+- Zuständige Stelle bestimmen und Adressaten richtig wählen: Mandant, Rechtsanwalt, Auftraggeber (intern: Rechtsabteilung), Gegner, ggf. Gericht (bei Vorlage), externer Spezialist.
+- Dokumente und Beweismittel sammeln und auf Lücken prüfen: Memo (Sachverhalt, Frage, Kurzergebnis, Begründung, Risiko, Empfehlung), Akteneinsichtsantrag, Vollmacht, Honorarvereinbarung, Tatsachenpaket — fehlende Belege durch Akteneinsicht oder Rückfrage beim Mandanten beschaffen, Live-Check für tagesaktuelle Normänderungen und Verwaltungspraxis.
+
+## Triage — kläre vor der Erstellung
+
+1. **Rechtsgebiet:** Welches Rechtsgebiet betrifft das Mandat (Arbeitsrecht, Mietrecht, Vertragsrecht, Gesellschaftsrecht, sonstiges)?
+2. **Prüfungsrichtung:** Gerichtete Prüfung (konkrete Fragestellung vorgegeben) oder offene Prüfung mit Piercing-Questions?
+3. **Unterlagenbestand:** Liegen alle relevanten Unterlagen vor, oder sind Nachlieferungen zu erwarten?
+4. **Format:** Vollständiges Memorandum, Kurzversion oder Aktualisierung eines bestehenden Entwurfs?
+5. **Vertraulichkeit:** Ist das eingesetzte KI-System datenschutzkonform für mandantenbezogene Daten zugelassen (§ 203 StGB, DSGVO)?
+
+## Zentrale Normen
+- § 203 StGB (Mandatsgeheimnis — Verletzung durch unbefugte Offenbarung)
+- § 43a BRAO (Grundpflichten des Rechtsanwalts — Verschwiegenheit)
+- § 43e BRAO (Nutzung von Berufsgeheimnissen in der Zusammenarbeit)
+- § 138 BGB (Sittenwidrigkeit — als typischer Prüfungsgegenstand im Memorandum)
+- § 626 BGB (Außerordentliche Kündigung — als häufige Fragestellung)
+- §§ 280, 311, 241 BGB (Schadensersatz, culpa in contrahendo, Nebenpflichten)
+
+## Rechtsprechung
+1. Rechtsprechung: keine Entscheidung aus Modellwissen zitieren; vor Ausgabe über offizielle oder frei zugängliche Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage verifizieren.
+2. Rechtsprechung: keine Entscheidung aus Modellwissen zitieren; vor Ausgabe über offizielle oder frei zugängliche Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage verifizieren.
+3. Rechtsprechung: keine Entscheidung aus Modellwissen zitieren; vor Ausgabe über offizielle oder frei zugängliche Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage verifizieren.
+
+## Leitidee
+
+Strukturierte Sachverhaltsaufbereitung ist das Fundament jeder
+qualifizierten Rechtsberatung. Bevor eine rechtliche Würdigung
+möglich ist, muss der Sachverhalt vollständig erfasst, chronologisch
+geordnet und auf Widersprüche geprüft werden. Der Skill leistet
+genau diese Vorarbeit und erzwingt durch das Format zugleich
+juristische Disziplin.
+
+Aliasnamen je nach Kanzleikultur: Memorandumsmacher, Memorandumisierer.
+
+## Inputs
+
+- Mandantenunterlagen in beliebiger Mischform: E-Mails Verträge
+ Fotos handschriftliche Notizen Chats Kontoauszüge Gutachten
+ Aktenvermerke Gesprächsnotizen
+- Optional: vorgegebene Prüfungsrichtung (gerichtete Prüfung)
+- Keine Kommentar-, Handbuch- oder Aufsatzfundstellen aus Modellwissen zitieren. Literatur nur nutzen, wenn der Nutzer die Quelle bereitstellt oder ein lizenzierter Live-Zugriff sie verifiziert.
+- Optional: vorhandenes Memorandum zur Aktualisierung
+
+OCR ist Pflicht. Gescannte Dokumente ohne Texterkennung werden nicht
+verarbeitet — der Skill weist darauf hin und bricht ab.
+
+## Output-Format
+
+```
+MEMORANDUM
+Betreff: <Mandatsbezeichnung>
+Datum: <ISO-Datum>
+Bearbeiter: <Sachbearbeiter>
+
+I. Sachverhalt
+<chronologische Darstellung mit Quellenreferenz in eckigen Klammern>
+
+Noch zu klaeren / Offene Punkte
+- <Widerspruch oder Lücke mit Quellenangabe>
+
+II. Fragestellung
+1. <Frage in genau einem Satz>
+2. <...>
+
+III. Antworten
+1. <Antwort in genau einem Satz>
+2. <...>
+
+IV. Rechtliche Ausfuehrungen
+IV.1. Zu Frage 1 — <Kurzbezeichnung>
+<Anspruchsgrundlage; Tatbestandsvoraussetzungen; Subsumtion; Ergebnis>
+IV.2. Zu Frage 2 — <Kurzbezeichnung>
+<...>
+
+Hinweis: Dieses Memorandum wurde KI-gestützt erstellt und bedarf
+der Prüfung durch den bearbeitenden Rechtsanwalt. Insbesondere
+alle Zitate sind anhand der Originalquellen zu verifizieren.
+```
+
+<!-- BEGIN ausformulierungspflicht (autogen) -->
+> **Ausformulierungspflicht und Formatstandard.** Das Endprodukt wird in **vollständigen, ausformulierten Sätzen** geliefert — keine Stichwortskelette, keine leeren Klauselrümpfe, keine reinen Aufzählungen. Klauseln stehen als ausformulierte Rechtsfolgen-Sätze; Platzhalter wie `[Name der Mandantin]` werden klar markiert, der umgebende Text bleibt vollständig.
+>
+> **Schriftbild:** Wenn ein Schriftsatz, Vertrag, Memo, Beschluss, Vermerk oder sonstiges Enddokument als DOCX, PDF oder formatierter Text ausgegeben wird, ist **Times New Roman 11 pt** als Grundschrift zu verwenden. Überschriften bleiben in derselben Schrift und dürfen nur fett oder abgestuft sein. Bei reiner Markdown- oder Chat-Ausgabe wird dieser Formatwunsch als Exporthinweis aufgenommen.
+>
+> **Nummerierung:** Gliederung ausschließlich dezimal (`1`, `1.1`, `1.1.1` und so weiter). Keine römischen Ziffern, keine Buchstaben- oder Mischgliederung.
+<!-- END ausformulierungspflicht (autogen) -->
+
+## Methodik
+
+1. Dokumenten-Inventur — pro Eingangsdokument Typ Datum Quelle
+ notieren
+2. Tatsachen-Extraktion — jede Tatsache erhält Quellenreferenz im
+ Format `[Anlage K1 S. 2]` `[E-Mail v. 15.03.2024]`
+ `[Telefonat lt. Vermerk v. 20.03.2024]`
+3. Chronologische Sortierung
+4. Widerspruchsprüfung — abweichende Datums- oder Sachangaben
+ werden BEIDE dokumentiert und als klärungsbedürftig markiert
+5. Abschnitt "Noch zu klären" am Ende des Sachverhalts
+6. Identifikation der Rechtsfragen — entweder nach Vorgabe oder
+ offen mit Piercing-Questions
+7. Ein-Satz-Fragen formulieren und durchnummerieren
+8. Ein-Satz-Antworten formulieren und entsprechend nummerieren
+9. Rechtliche Ausführungen — pro Frage ein eigener Block mit
+ sauberer Prüfungsstruktur
+10. Zitate verifizieren oder mit `[Quelle zu verifizieren]` markieren
+
+## Ein-Satz-Regel
+
+Fragen und Antworten bestehen aus genau einem Satz. Kein Komma vor
+"und" als Vorwand für Mehrfachfragen. Das Format zwingt zur
+Fokussierung auf das Wesentliche und verhindert "Prosa-Gutachten".
+
+Schlechte Frage: "Wie ist die Rechtslage?"
+Gute Frage: "Ist die Kündigung vom fünfzehnten März wirksam?"
+
+## Quellenreferenzierung
+
+Jede Tatsachenangabe im Sachverhalt MUSS eine Quelle haben. Format:
+
+- `[Anlage K1 S. 2]` für Anlagen
+- `[E-Mail v. <Datum>]` für Korrespondenz
+- `[Vertrag § 4]` für Vertragsklauseln
+- `[Telefonat lt. Vermerk v. <Datum>]` für Telefonnotizen
+- `[Foto-Anlage <Bezeichnung>]` für Bildunterlagen
+- `[WhatsApp v. <Datum> <Uhrzeit>]` für Messenger
+
+Wo Quelle fehlt, gehört der Punkt in "Noch zu klären".
+
+## Pinpoint-Zitierung Rechtsprechung
+
+Format: Gericht Urteil oder Beschluss vom Datum — Aktenzeichen
+Fundstelle Randnummer.
+
+Beispiel: BGH Urteil vom neunzehnten März zweitausendundzwanzig
+Rechtsprechung live prüfen: Keine Entscheidung aus Modellwissen zitieren; vor Ausgabe über amtliche oder frei zugängliche Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage verifizieren.
+
+Juengere Entscheidungen stehen zuerst.
+
+## Pinpoint-Zitierung Aufsätze
+
+Format: Autor Titel Zeitschrift Jahr Anfangsseite konkrete Seite.
+
+Rechtsprechung live prüfen: Keine Entscheidung aus Modellwissen zitieren; vor Ausgabe über amtliche oder frei zugängliche Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage verifizieren.
+konkret S. 1237.
+
+## Halluzinations-Schutz
+
+- Nur Quellen zitieren die existieren und verifizierbar sind
+- Bei Unsicherheit `[Quelle zu verifizieren]` einfügen ODER auf
+ Zitat verzichten
+- Niemals plausibel klingende aber erfundene Aktenzeichen oder
+ Fundstellen ausgeben
+- Eigene Wertungen NICHT als Tatsache darstellen
+- Bei Tatsachen die nicht aus den Unterlagen folgen wird im
+ Sachverhalt eine Lücke markiert nicht ergänzt
+
+## Prüfungsmodi
+
+### Gerichtete Prüfung
+
+User gibt vor: "Prüfe Wirksamkeit der Kündigung." Der Skill
+fokussiert auf diese Frage und nimmt nur sehr offensichtlich
+verwandte Aspekte mit.
+
+### Offene Prüfung mit Piercing-Questions
+
+Der Skill identifiziert selbst die rechtlich relevanten
+Fragestellungen. Piercing-Questions sind durchdringende Fragen die
+den Kern freilegen. Sie sind besonders bei der ersten Sichtung
+hilfreich um nichts zu übersehen.
+
+Empfehlung des Skills: Erste Sichtung offen, Vertiefung gerichtet.
+
+## Anti-Risiko-Hinweis
+
+Der Skill verfasst KEINE eigenständige Rechtsberatung. Der Output
+ist ein Arbeitsentwurf zur kanzleiinternen Verwendung. Jede
+Sachverhaltsangabe jede Quellenreferenz und jede rechtliche
+Schlussfolgerung bedarf der eigenständigen Prüfung am Original.
+
+Der pauschale Hinweis im Output ist Pflicht und nicht zu löschen.
+
+## Output-Datei
+
+- `Memorandum_<Mandat>_<ISO-Datum>.docx` auf Kanzlei- oder
+ Abteilungsbriefkopf falls Vorlage beigefügt
+- Optional `Memorandum_<Mandat>_<ISO-Datum>.md` als reine
+ Textversion
+
+## Fortlaufende Aktualisierung
+
+Bei Nachlieferungen ergänzt der Skill ein vorhandenes Memorandum.
+Neuzugänge werden im Sachverhalt mit `[NEU]` markiert. Bisherige
+Tatsachen werden nicht stillschweigend überschrieben — Änderungen
+werden in "Noch zu klären" sichtbar gemacht.
+
+## Beispielformulierungen
+
+- "Hier sind alle Mandantenunterlagen zum Fall Mueller gegen ABC
+ GmbH. Erstelle ein Memorandum mit offener Prüfung und
+ Piercing-Questions."
+- "Prüfe gerichtet die Wirksamkeit der Kündigung vom fünfzehnten
+ Juni. Memorandum auf Kanzlei-Briefkopf."
+- "Hier ist das bisherige Memorandum und neue Korrespondenz vom
+ letzten Monat. Aktualisiere bitte und markiere Neuzugänge."
+- "Memorandum-Kurzversion für einfache Rechtsfrage zum
+ Gewährleistungsausschluss."
+
+## Variationen
+
+- Kurzversion für einfache Einzelfragen
+- Ausführliche Version mit Zeitleiste und Beteiligtenliste als
+ Anhang
+- Gutachten-Version mit Alternativprüfungen und Risikoanalyse
+- Prozess-Version mit Beweiswürdigung und Prozessrisikoanalyse
+- Due-Diligence-Version mit Risikoklassifizierung
+- Mehrsprachige Unterlagen mit Übersetzungshinweisen
+
+## Berufsrecht und Datenschutz
+
+Mandatsgeheimnis nach § 203 StGB und §§ 43a 43e BRAO sowie DSGVO
+sind zwingend zu beachten. Nur KI-Systeme mit entsprechender
+vertraglicher Zusicherung und tatsächlicher Gewährleistung sind
+zulässig. Der Skill weist im Output-Hinweis darauf hin.
+
+---

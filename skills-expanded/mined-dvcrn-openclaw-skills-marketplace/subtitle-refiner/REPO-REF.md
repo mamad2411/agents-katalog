@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/truetechlabs--subtitle-refiner/skills/subtitle-refiner/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 优化 SRT 字幕文件。去除填充词（嗯、啊等），修正 ASR 识别错误（如 XGBT→ChatGPT、RG→RAG），保持时间戳完全不变，通过 Feishu 发送优化结果和 token 消耗报告。"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/helixdb/skills/helix-query-mcp/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Execute authorized Helix Cloud v3 database reads and confirmation-gated writes through the hosted Query MCP broker. Use when the user explicitly asks an agent to run a read or write query against a te

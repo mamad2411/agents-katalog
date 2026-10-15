@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/atemndobs/nebula-rfp/rfp-evaluate/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Evaluate RFP opportunities using the 6-dimension scoring framework. Use when modifying evaluation criteria, adjusting keyword weights, or implementing AI-based evaluation.

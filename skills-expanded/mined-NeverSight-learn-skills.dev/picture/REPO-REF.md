@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/spm1001/claude-suite/picture/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Generate images using Google Imagen. Use when user needs 'hero image', 'presentation visual', 'conceptual illustration', or 'generate an image'. Composes with itv-styling for brand-constrained outputs

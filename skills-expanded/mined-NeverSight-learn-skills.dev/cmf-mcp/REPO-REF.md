@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/hewlettpackard/cmf/cmf-mcp/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Optional second/third/fourth server:

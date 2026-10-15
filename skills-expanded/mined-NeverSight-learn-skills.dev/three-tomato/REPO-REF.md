@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/trsoliu/three-tomato/three-tomato/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 将需求文档转换为多端原生开发代码，支持 Android、iOS、鸿蒙、小程序、快应用、H5、Web、macOS、Windows 等 17 个平台。原生优先，AI 友好技术栈。

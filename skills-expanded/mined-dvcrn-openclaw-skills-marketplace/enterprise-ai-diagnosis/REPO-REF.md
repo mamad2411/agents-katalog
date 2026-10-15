@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/nickyhu1699--enterprise-ai-diagnosis/skills/enterprise-ai-diagnosis/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 企业AI应用诊断工具，帮助企业评估AI应用价值、计算ROI、规划实施路径。当用户询问\"企业如何用AI\"、\"AI能帮我的企业做什么\"、\"AI投入回报\"等企业AI应用相关问题时使用。支持企业现状评估、AI价值分析、ROI计算、实施路径规划、工具推荐。"

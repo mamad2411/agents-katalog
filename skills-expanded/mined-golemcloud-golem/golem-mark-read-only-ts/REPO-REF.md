@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/golemcloud/golem (path: golem-skills/skills/ts/golem-mark-read-only-ts/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Marking TypeScript agent methods as read-only for a side-effect-free guarantee and result caching. Use when the user wants a cacheable query method, a method that must not write to the oplog, or HTTP 

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/mtgvim/tiger-kit/tk-domain/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: [user/auto] 저장소 고유 용어를 정립하거나 되돌리기 어렵고 맥락 없이 의외이며 실제 절충이 있는 결정을 sparse ADR로 남깁니다. 일반 구현 설명에는 사용하지 않습니다."

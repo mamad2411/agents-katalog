@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/modu-ai/cc-plugins (path: plugins/astory-blog-writers/skills/crew-roles/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 다중 페르소나 콘텐츠 생성을 위한 7개의 크루 협업 역할. 크리에이티브 디렉터, 리서치 분석가, 리드 작가, 기술 리뷰어, 독자 대변인, 데블스 애드보킷, 편집장을 포함한다. Crew 모드에서 다중 페르소나 협업을 조율할 때 사용한다.

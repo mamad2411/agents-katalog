@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/rich00lee/liveklass-ai-native-camp/session3-automation/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: LiveKlass AI Native Camp 3회차. 나만의 업무 자동화 Skill 기획 → 제작 → 테스트. "3회차", "Session 3", "자동화 만들기", "스킬 만들기" 요청에 사용.

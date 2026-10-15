@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/fleek-fitness/vox-skills/vox-best-practice/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: vox.ai 한국어 음성 에이전트 system prompt를 설계/작성/리팩터링한다. 템플릿, 런타임 변수 주입({{...}}), 필러 옵션, Character normalization(Spoken/Written), 도구/무음 액션, 테스트/운영 베스트 프랙티스가 필요할 때 사용한다.

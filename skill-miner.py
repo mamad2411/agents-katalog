@@ -26,6 +26,7 @@ LIMIT_PER_REPO = int(os.environ.get("MINER_LIMIT", "400"))
 REG_MIN_STARS = int(os.environ.get("REG_MIN_STARS", "100"))
 REG_MAX_REPOS = int(os.environ.get("REG_MAX_REPOS", "40"))
 REG_LIMIT_PER_REPO = int(os.environ.get("REG_LIMIT_PER_REPO", "60"))
+REG_SKIP_MINED = os.environ.get("REG_SKIP_MINED") == "1"
 
 
 def registry_sources():
@@ -43,6 +44,8 @@ def registry_sources():
                 continue
             if any(full.lower().endswith(s[0].lower()) for s in SOURCES):
                 continue  # sudah di SOURCES default
+            if REG_SKIP_MINED and os.path.isdir(os.path.join(DEST, "mined-" + full.replace("/", "-"))):
+                continue  # sudah pernah ditambang
             out.append((full, "main"))
         print("registry mode: %d kandidat (stars>=%d)" % (len(out), REG_MIN_STARS))
     except Exception as e:
@@ -166,7 +169,7 @@ def mine_tarball(sources, conn, seen, stats):
         finally:
             try: os.unlink(tarfile_path)
             except OSError: pass
-        time.sleep(0.5)  # sopan santun antar repo
+        time.sleep(float(os.environ.get("MINE_SLEEP", "0.5")))  # throttle CPU (naikkan utk lebih adem)
     print("tarball selesai: ok=%d fail=%d" % (ok, fail), flush=True)
 
 

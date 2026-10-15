@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ComeOnOliver/skillshub (path: skills/tippyentertainment/skills/meshy-godot-3d-suite/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Provided by TippyEntertainment

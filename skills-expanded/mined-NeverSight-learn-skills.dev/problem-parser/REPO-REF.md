@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/jj66-git/mathmodeling-skills_jj/problem-parser/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Parse a mathematical modeling problem into goals, objects, constraints, data, outputs, and subquestions.

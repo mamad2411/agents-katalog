@@ -1,0 +1,1105 @@
+---
+name: inkbox-cli
+description: Use when running or writing shell commands with the Inkbox CLI (`inkbox` / `@inkbox/cli`) for identities, email, mailbox imports, phone, text/SMS, iMessage, A2A task/message history, contacts, notes, contact rules, vault, mailbox storage, mail clients (IMAP/SMTP), phone number, webhook, or signup workflows.
+user-invocable: false
+---
+
+# Inkbox CLI
+
+Command-line interface for the Inkbox API — identities, email, phone, text/SMS, encrypted vault, mailboxes, phone numbers, signing keys, and webhook utilities.
+
+## Auth & Runtime
+
+Set credentials via env vars or global flags:
+
+```bash
+export INKBOX_API_KEY="ApiKey_..."
+export INKBOX_VAULT_KEY="my-vault-key"   # only needed for vault decrypt/create flows
+```
+
+Global options:
+
+```text
+--api-key <key>      Inkbox API key (or set INKBOX_API_KEY)
+--vault-key <key>    Vault key for decrypt operations (or set INKBOX_VAULT_KEY)
+--base-url <url>     Override API base URL
+--json               Output as JSON instead of formatted tables
+```
+
+If `INKBOX_API_KEY` is missing and `--api-key` is not passed, the CLI exits with an error.
+
+Prefer `--json` when the result will be parsed or fed into another tool. Use the default table/record output when the user wants a quick human-readable summary.
+With `--json`, success stays on stdout and API failures write one structured error
+object to stderr, retaining `error.detail` and `error.retryAfterSeconds`.
+
+## Install & Local Repo Usage
+
+Published package:
+
+```bash
+npm install -g @inkbox/cli
+```
+
+Or run without a global install:
+
+```bash
+npx @inkbox/cli <command>
+```
+
+Requires Node.js >= 22.
+
+Inside this repository, prefer running the local source instead of assuming a global install:
+
+```bash
+npm --prefix cli run dev -- <command>
+```
+
+Examples:
+
+```bash
+npm --prefix cli run dev -- --json identity list
+npm --prefix cli run dev -- email list -i support-bot --limit 10
+```
+
+## High-Risk Operations
+
+These commands can send real traffic or mutate real resources. Confirm with the user before running them:
+
+- `signup create`
+- `a2a invites create`, `a2a invites revoke`, and `a2a invites accept`
+- `email send`
+- `email drafts send`
+- `text send`
+- `phone call`
+- `identity delete`
+- `email delete`
+- `email delete-thread`
+- `email drafts delete`
+- `vault delete`
+- `identity update --mail-filter-mode ... / --phone-filter-mode ...` (admin-only; flips allow/block semantics for that identity's channel)
+- `mailbox update --filter-mode ...` (DEPRECATED channel path; admin-only)
+- `number release`
+- `number update --filter-mode ...` (DEPRECATED channel path; admin-only)
+- `phone incoming-action <action>` / `number update --incoming-call-action ...` (changes what answers that identity's inbound calls — `hosted_agent` makes the platform voice agent pick up)
+- `identity signing-key rotate <handle>` (rotates that identity's webhook signing key)
+- `signing-key create` (DEPRECATED org-level path)
+
+`contacts delete`, `contacts bulk-delete`, `contacts facts delete`, `notes delete`, `identity mail-rules delete`, `identity phone-rules delete`, `mailbox rules delete` (deprecated), and `number rules delete` (deprecated) remove data or affect downstream filtering — confirm intent before running.
+
+Also confirm before creating or rotating secrets if the values were not explicitly provided by the user.
+
+## Agent Signup
+
+For the full self-signup flow and API semantics, read the shared reference:
+
+> **See:** `skills/inkbox-agent-self-signup/SKILL.md`
+
+CLI commands:
+
+```bash
+inkbox signup create
+inkbox signup verify --code <code>
+inkbox signup resend-verification
+inkbox signup status
+```
+
+`signup create` is the main command that does not require an API key. The later signup commands require the signup-issued API key to be passed back via `--api-key` or exported as `INKBOX_API_KEY`; the CLI does not persist it automatically.
+
+## Identities
+
+Handles are fixed at creation. Use `identity update <handle> --display-name <name>` to change an agent's presentation.
+
+```bash
+inkbox identity list
+inkbox identity get <handle>
+inkbox identity create <handle> [--display-name <name>] [--description <text>]
+                                 [--imessage-enabled]
+                                 [--contact-sharing-enabled true|false]
+                                 [--email-local-part <part>]
+                                 [--sending-domain <name> | --platform-domain]
+                                 [--tls-mode edge|passthrough]
+inkbox identity delete <handle>
+inkbox identity update <handle> [--display-name <name>]
+                                 [--description <text> | --clear-description]
+                                 [--imessage-enabled true|false]
+                                 [--contact-sharing-enabled true|false]
+                                 [--mail-filter-mode whitelist|blacklist]
+                                 [--phone-filter-mode whitelist|blacklist]
+inkbox identity refresh <handle>
+```
+
+`--mail-filter-mode` / `--phone-filter-mode` set the identity's contact-rule mode (admin-only). Unlike the deprecated `mailbox update --filter-mode` / `number update --filter-mode`, the identity path does **not** print a change notice. Phone mode also governs iMessage and can be configured without a dedicated phone number.
+
+`identity create` atomically provisions the mailbox AND the tunnel. The JSON output includes both (`mailbox`, `tunnel.publicHost`, `tunnel.tlsMode`).
+
+New identities default contact sharing to enabled. If a dedicated iMessage
+line is attached, it automatically offers the identity's display name (or
+handle as fallback) and optional avatar. Use
+`--contact-sharing-enabled false` during identity creation to opt out, or
+`inkbox identity update <handle> --contact-sharing-enabled false` to disable it
+later. Pass `true` to enable it again.
+
+`--sending-domain <name>` binds the agent's mailbox to a verified custom domain (bare name, e.g. `mail.acme.com`); `--platform-domain` forces the platform sending domain; the two are mutually exclusive. `--tls-mode` defaults to `edge` and is fixed at create time (changing it later requires deleting the identity + recreating).
+
+For `identity update`, `--description ""` and `--clear-description` both send explicit null to clear; omitting both leaves the field untouched.
+
+Notes:
+
+- `identity delete` cascades to the linked mailbox + tunnel and revokes any identity-scoped API keys.
+- `identity get` and `identity refresh` return mailbox, phone-number, and tunnel assignments when present.
+- Most email, phone, and text commands require `-i, --identity <handle>`.
+
+### Identity-Scoped Secrets
+
+These require a vault key:
+
+```bash
+inkbox identity create-secret <handle> --name <name> --type <type> ...
+inkbox identity get-secret <handle> <secret-id>
+inkbox identity delete-secret <handle> <secret-id>
+inkbox identity revoke-access <handle> <secret-id>
+inkbox identity set-totp <handle> <secret-id> --uri <otpauth-uri>
+inkbox identity remove-totp <handle> <secret-id>
+inkbox identity totp-code <handle> <secret-id>
+```
+
+Secret types:
+
+```text
+login, api_key, ssh_key, key_pair, other
+```
+
+### Identity Contact Rules
+
+Allow/block lists are scoped to the **agent identity** (keyed by handle), combined with the identity's mail/phone filter mode (`inkbox identity update --mail-filter-mode / --phone-filter-mode`). Mail matches by exact email or domain; phone matches by exact E.164 number.
+
+```bash
+# Mail rules
+inkbox identity mail-rules list <handle> [--action allow|block] [--match-type exact_email|domain] [--limit <n>] [--offset <n>]
+inkbox identity mail-rules list-all [--agent-identity-id <id>] [--action …] [--match-type …]   # admin-only, org-wide
+inkbox identity mail-rules get <handle> <rule-id>
+inkbox identity mail-rules create <handle> --action allow|block --match-type exact_email|domain --match-target <value>
+inkbox identity mail-rules update <handle> <rule-id> --action allow|block   # admin-only
+inkbox identity mail-rules delete <handle> <rule-id>                                                    # admin-only
+
+# Phone rules — require the identity to have a phone number; only exact_number is supported.
+inkbox identity phone-rules list <handle> [--action allow|block] [--match-type exact_number] [--limit <n>] [--offset <n>]
+inkbox identity phone-rules list-all [--agent-identity-id <id>] [--action …]   # admin-only, org-wide
+inkbox identity phone-rules get <handle> <rule-id>
+inkbox identity phone-rules create <handle> --action allow|block --match-target <e164> [--match-type exact_number]
+inkbox identity phone-rules update <handle> <rule-id> --action allow|block   # admin-only
+inkbox identity phone-rules delete <handle> <rule-id>                                                    # admin-only
+```
+
+New rules always start active. These replace the deprecated `inkbox mailbox rules` / `inkbox number rules` groups below.
+
+### Identity Signing Key
+
+Each identity has its own webhook signing key:
+
+```bash
+inkbox identity signing-key status <handle>
+inkbox identity signing-key rotate <handle>   # mints or rotates; prints the plaintext secret ONCE
+```
+
+## Email
+
+All email commands are identity-scoped and require `-i <handle>`.
+
+```bash
+inkbox email send -i <handle> \
+  --to user@example.com \
+  --subject "Hello" \
+  --body-html '<p>Hi</p><img src="cid:chart">' \
+  --attach ./report.pdf \        # optional; repeatable file attachment
+  --inline-image chart=./chart.png \  # optional, repeatable; embeds <img src="cid:chart"> (needs --body-html, image/*)
+  --track-opens                 # optional; embed a tracking pixel (needs --body-html)
+
+inkbox email reply-all <message-id> -i <handle> --body-html "<p>Thanks</p>" --attach ./notes.txt
+inkbox email forward <message-id> -i <handle> --to user@example.com --attach ./extra.pdf --track-opens
+
+inkbox email list -i <handle> --limit 10
+inkbox email get <message-id> -i <handle>   # fetching an inbound message marks it read
+inkbox email search -i <handle> -q "invoice"
+inkbox email unread -i <handle> --limit 10
+inkbox email mark-read <ids...> -i <handle>
+inkbox email mark-unread <ids...> -i <handle>
+inkbox email download-attachment <message-id> <filename> -i <handle>   # time-limited download URL
+inkbox email delete <message-id> -i <handle>
+inkbox email delete-thread <thread-id> -i <handle>
+inkbox email star <message-id> -i <handle>
+inkbox email unstar <message-id> -i <handle>
+inkbox email thread <thread-id> -i <handle>
+```
+(`--inline-image` is send/reply-all only — forwards reject inline images.)
+
+### Drafts
+
+```bash
+inkbox email drafts create -i <handle> --subject "Work in progress" \
+  --idempotency-key draft-create-2026-08-19-1
+inkbox email drafts list -i <handle>
+inkbox email drafts get <draft-id> -i <handle>
+inkbox email drafts update <draft-id> -i <handle> --generation <n> \
+  --to user@example.com --clear-subject
+inkbox email drafts duplicate <draft-id> -i <handle> --generation <n>
+inkbox email drafts delete <draft-id> -i <handle> --generation <n>
+inkbox email drafts send <draft-id> -i <handle> --generation <n>
+
+inkbox email drafts attachment add <draft-id> -i <handle> \
+  --generation <n> --attach ./notes.txt
+inkbox email drafts attachment remove <draft-id> <part-index> -i <handle> \
+  --generation <n>
+inkbox email drafts attachment download <draft-id> <part-index> -i <handle> \
+  --generation <n> --output ./notes.txt
+```
+
+Create accepts incomplete content. Update supports explicit-null `--clear-*`
+flags; omission leaves a field unchanged. Use the generation printed by the
+latest read or mutation for every following mutation. Attachment part indexes
+belong to that generation, so run `get` again after an edit. Drafts share the
+mailbox's standard Drafts folder with connected mail clients.
+Reuse one `--idempotency-key` and the exact same arguments when retrying a
+logical create after an ambiguous result. Use a new key after the original draft
+is sent or deleted. Forward-only flags require `--forward-message-id`.
+
+Successful send prints the sent message and removes the draft; an
+exact-generation retry may return the same sent message. On HTTP 409, refresh
+for `draft_generation_conflict` and retry the same ID and generation for
+`draft_send_in_progress`. Never resend `draft_delivery_uncertain`; after checking
+sent mail, duplicate or delete it instead.
+
+Use `email search` only when the identity already has a mailbox assigned.
+
+Before sending, confirm recipients, subject, and body with the user.
+
+`email send`, `email reply-all`, and `email forward` all fail with **`HTTP 402`** when the mailbox is at its plan storage cap. The CLI prints the server's message plus a hint: free space with `inkbox email delete <message-id> -i <handle>` / `inkbox email delete-thread <thread-id> -i <handle>` (reclaim is immediate), or upgrade the plan at the printed billing URL. Check headroom first with `inkbox mailbox list` (the `storage` column).
+
+## Phone
+
+Phone commands require `-i <handle>`, except `phone hosted-agent voices`,
+which discovers the organization-scoped voice catalog without an identity.
+
+```bash
+inkbox phone call -i <handle> --to +15551234567 --ws-url wss://example.com/ws
+inkbox phone call -i <handle> --to +15551234567 --hosted --reason "Confirm tomorrow's 3pm appointment"
+inkbox phone call -i <handle> --to +15551234567 --hosted --reason "..." --on-voicemail leave_message --voicemail-message "Please call us back."
+inkbox phone call -i <handle> --to +15551234567 --origination shared_imessage_number
+inkbox phone calls -i <handle> --limit 10 --offset 0
+inkbox phone hangup <call-id> -i <handle>
+inkbox phone transcripts <call-id> -i <handle>
+inkbox phone search-transcripts -i <handle> -q "refund" --party remote
+inkbox phone incoming-action -i <handle>                       # print the incoming-call config
+inkbox phone incoming-action hosted_agent -i <handle>          # or auto_accept | auto_reject | webhook
+inkbox phone incoming-action forward -i <handle> --forward-to-phone +15551234567
+inkbox phone incoming-action forward -i <handle> --forward-to-sip sip:agent@voice.example.com
+inkbox phone hosted-agent voices
+inkbox phone hosted-agent voices --json                     # { voices, defaultVoice }
+inkbox phone hosted-agent get -i <handle>
+inkbox phone hosted-agent set -i <handle> --voice <voice> --instructions <text>
+```
+
+Before placing a call, confirm the destination number, origination, and the
+websocket URL (or the `--reason` task brief for Voice AI calls) with the user.
+
+`--origination` selects `dedicated_number` (the default) or
+`shared_imessage_number`. Shared-line calls use the identity's iMessage-line
+assignment and do not require a dedicated phone number. The recipient must
+already have a shared iMessage connection to the identity; otherwise the call
+fails with `409 no_shared_connection`.
+
+`--on-voicemail <leave_message|hang_up|ignore>` controls what happens when
+voicemail answers; omit it for the default (`leave_message` with `--hosted`,
+`hang_up` otherwise). `--voicemail-message <text>` sets what Voice AI says
+and requires `--on-voicemail leave_message`. `--no-voicemail-detection` is
+deprecated (same as `--on-voicemail ignore`).
+
+`--hosted` places a call Inkbox Voice AI drives end to end
+— no WebSocket, no code. It requires `--reason` (the agent's task brief)
+and conflicts with `--ws-url`; everything else is server policy surfaced
+as an API error (e.g. 503 `hosted_agent_unavailable` /
+`hosted_agent_at_capacity` where Voice AI isn't available). The
+call's `mode` / `reason` and Voice AI's recorded
+`post_call_action_items` (open items only, `seq`-ascending) ride the call
+object — read them with `--json` on `phone calls`; the default table
+does not show them.
+
+`inkbox phone incoming-action` gets or sets the identity's incoming-call
+action (`auto_accept` | `auto_reject` | `webhook` | `hosted_agent` | `forward`,
+with `--ws-url` / `--webhook-url` where applicable). `forward` requires exactly
+one of `--forward-to-phone` or `--forward-to-sip`. `hosted_agent` needs no URL.
+
+`phone hosted-agent voices` returns voice IDs, names, descriptions,
+availability, optional `previewUrl` values, and the catalog's `defaultVoice`.
+Unavailable entries are retained; choose an entry with `available: true` and
+pass its string `id` to `--voice`. Do not maintain a fixed voice allowlist.
+
+`inkbox phone hosted-agent set` is a **full replace**: an omitted flag
+resets that field to the server default. Read the current config and include
+its existing `--instructions` when changing only the voice.
+
+`inkbox phone hangup` ends a live call from outside it. The carrier
+confirms the teardown asynchronously, so the printed call can still show
+its live status for a moment; a call that has already ended (or has no
+active carrier leg yet) surfaces the server's 409.
+
+For keypad input on a live client-driven call, the agent sends
+`{"event": "dtmf", "digits": "1"}` through the call's media WebSocket. Each event
+accepts one to 30 keys from `0-9`, `*`, and `#`, in order. At most 20 bursts per
+call can be outstanding, including the one being sent; further bursts are ignored.
+No acknowledgment is sent; wait for the menu's response before another burst.
+Do not retry blindly.
+
+## Text Messages
+
+All text commands are identity-scoped and require `-i <handle>`.
+
+**Outbound SMS limits and gates (current):**
+
+- Allowed only from **local** numbers, not toll-free.
+- **100 recipient sends per phone number per rolling 24h.** A 3-recipient group message counts as 3 recipient sends. A single accepted send may push usage past the cap; the next capped send returns `429 sender_rate_limited`.
+- A freshly provisioned local number needs **~10-15 min** for 10DLC carrier propagation. Inspect with `inkbox number get <id>`; sending is gated until `smsStatus` reads `ready` (otherwise `409 sender_sms_pending`).
+- Recipient must have texted **`START`** to any number in the org. Unknown → `403 recipient_not_opted_in`. `STOP` → `403 recipient_opted_out`. Inspect / override consent state via `inkbox sms-opt-in` (see below).
+- **Beta:** Group MMS and conversation sends are beta. Some carriers may reject group chats or MMS from 10DLC numbers even when the sender is ready and recipients have opted in.
+
+Customer-managed 10DLC brands/campaigns lift the default per-number cap to the carrier-assigned tier. Toll-free SMS sending is still coming soon.
+
+```bash
+inkbox text send -i <handle> --to +15551234567 --text "Hello from Inkbox"
+inkbox text send -i <handle> --to +15551234567,+15557654321 --text "Hello group" --media-url https://example.com/photo.jpg
+inkbox text send -i <handle> --conversation-id <conversation-uuid> --text "Reply all"
+inkbox text list -i <handle> --limit 20
+inkbox text get <text-id> -i <handle>
+inkbox text conversations -i <handle> --limit 20 --include-groups
+inkbox text conversation <conversation-key> -i <handle> --limit 50
+inkbox text search -i <handle> -q "invoice"
+inkbox text mark-read <text-id> -i <handle>
+inkbox text mark-conversation-read <conversation-key> -i <handle>
+```
+
+## iMessage
+
+All iMessage commands are identity-scoped and require `-i <handle>`. Shared service requires the recipient to message first; dedicated identities may initiate one-to-one and group conversations. The identity must be opted in (`inkbox identity update <handle> --imessage-enabled true`).
+
+Dedicated lines can also receive one-to-one messages from non-phone sender
+addresses, such as `sender@example.com`. Read responses and `imessage.received`
+webhooks preserve the address as a string; do not normalize it into a phone number
+or assume every received message can be answered. These conversations are
+**receive-only**: sending messages, reactions, typing indicators, or read receipts
+returns HTTP `422` with `recipient_not_e164`. Outbound `to` recipients must still
+be E.164 phone numbers. Reading message history does not send a read receipt.
+
+```bash
+inkbox imessage triage-number   # the router number + the connect command humans text to it
+inkbox imessage send -i <handle> --to +15551234567 --text "Hello over iMessage"
+inkbox imessage send -i <handle> --to +15551234567,+15557654321 --text "Hello group" --media-url https://example.com/group-photo.jpg --send-style confetti # dedicated line only
+inkbox imessage send -i <handle> --conversation-id <group-conversation-id> --text "Reply" --media-url https://example.com/follow-up.jpg --send-style lasers
+inkbox imessage list -i <handle> --limit 20 --unread-only --include-groups
+inkbox imessage assignments -i <handle> --limit 20   # active connections, newest first
+inkbox imessage disconnect <assignment-id>   # admin key only; recipient can reconnect via triage
+inkbox imessage conversations -i <handle> --limit 20 --include-groups
+inkbox imessage conversation <conversation-id> -i <handle> --limit 50
+inkbox imessage react <message-id> -i <handle> --reaction like
+inkbox imessage unreact <reaction-id> -i <handle>   # take your own tapback back
+inkbox imessage mark-conversation-read <conversation-id> -i <handle>
+inkbox imessage typing <conversation-id> -i <handle>
+inkbox imessage upload-media ./photo.jpg -i <handle> --content-type image/jpeg
+
+# Contact rules are scoped to the identity (not a phone number):
+inkbox imessage contact-rule list -i <handle>
+inkbox imessage contact-rule create -i <handle> --action block --match-target +15559999999
+inkbox imessage contact-rule update <rule-id> -i <handle> --action allow|block   # admin-only
+inkbox imessage contact-rule delete <rule-id> -i <handle>                   # admin-only
+inkbox imessage contact-rule list-all                                       # admin-only, org-wide
+```
+
+Group conversation output includes `groupCreationStatus` (`creating`,
+`not_created`, or `ready`). A rejected initial creation remains on the same
+conversation; send again by conversation id to retry. `react` supports inbound
+one-to-one and group messages. Its named choices are `love`, `like`, `dislike`,
+`laugh`, `emphasize`, `question`, and `eyes`; arbitrary custom emoji are
+inbound-only. `unreact` takes back a tapback this identity sent, addressed by
+the reaction id from `react` or from a message's live `reactions`; only the
+sender can. A failed removal leaves the tapback in place rather than clearing it
+locally, so the call can be retried. Read receipts and typing remain
+one-to-one only.
+Group creation and conversation-id replies accept the same 13 expressive styles
+as one-to-one sends, with or without `--media-url`.
+
+## SMS Opt-Ins
+
+Per-recipient SMS consent state, keyed by `(your org, recipient number)`. The registry is updated automatically when recipients text `START` / `STOP` to any of your numbers (`source=sms`). Reads work for any admin caller; writes require your org to be on its own active, customer-managed 10DLC campaign — default-campaign orgs share consent state and get `409 customer_campaign_required` on writes (audit event recorded with `source=api`).
+
+```bash
+# List your org's consent rows, newest-updated first
+inkbox sms-opt-in list
+inkbox sms-opt-in list --status opted_out --limit 100
+inkbox --json sms-opt-in list
+
+# Look up one recipient — 404 if no row exists
+inkbox sms-opt-in get +15551234567
+
+# Programmatic writes (customer-managed 10DLC campaign only)
+inkbox sms-opt-in opt-in  +15551234567
+inkbox sms-opt-in opt-out +15551234567
+```
+
+## Agent-to-Agent (A2A)
+
+Invitation management is `inkbox a2a invites create|list|show|revoke` and uses
+an admin-scoped API key. Acceptance is agent-only:
+`inkbox a2a invites accept` first verifies a claimed agent-scoped API key and
+never falls back to admin auth. It reads an exact-origin share URL or raw token
+from a hidden prompt, `INKBOX_A2A_INVITATION`, or deliberate
+`--invitation-stdin`. Token-named sources remain aliases; there is no
+capability argument, decline, resend, or automatic retry command.
+For invitation-assisted `signup create`, use the explicit
+`--invitation-prompt`, `--invitation-stdin`, or `INKBOX_A2A_INVITATION`;
+ordinary signup never prompts for an invitation.
+
+```bash
+# Organization directory by default; add --public for public discovery.
+inkbox a2a directory --query support
+inkbox a2a directory --public --query research --limit 25
+
+# Inspect and change discovery settings.
+inkbox a2a settings -i researcher
+inkbox a2a publicly-discoverable true -i researcher
+inkbox a2a public-egress true -i researcher
+
+# Bilateral admission: the requester allows outbound work to the worker, and
+# the worker independently allows inbound work from the requester.
+inkbox a2a rules add -i coordinator --handle researcher \
+  --action allow --direction outbound
+inkbox a2a rules add -i researcher --handle coordinator \
+  --action allow --direction inbound
+
+# Unified task history. Omit --direction for the receiver inbox.
+inkbox a2a tasks -i coordinator --direction both \
+  --requester coordinator --worker researcher \
+  --state working --query "quarterly report" --limit 25
+
+# Individual matching messages with task/context and participant provenance.
+inkbox a2a messages -i coordinator --direction outbound \
+  --worker researcher --role agent --query revenue --limit 25 --json
+
+# Continue with the same filters and the opaque cursor from the previous page.
+inkbox a2a messages -i coordinator --direction outbound \
+  --worker researcher --role agent --query revenue \
+  --cursor '<nextCursor>' --limit 25 --json
+
+# Outbound-only alias and task detail.
+inkbox a2a sent -i coordinator --worker researcher
+inkbox a2a sent-task <task-id> -i coordinator
+
+# Shared context history and naming.
+inkbox a2a contexts -i coordinator --direction both
+inkbox a2a context <context-id> -i researcher
+inkbox a2a sent-contexts -i coordinator
+inkbox a2a sent-context <context-id> -i coordinator
+inkbox a2a rename-context <context-id> -i coordinator \
+  --name "Quarterly Research Review"
+
+# Reusing a context without --task starts a sibling task.
+inkbox a2a call https://example.test/a2a/researcher/card \
+  -i coordinator --context <context-id> --text "Review the findings"
+
+# Multi-turn worker flow.
+inkbox a2a reply <task-id> -i researcher --ask --text "Which quarter?"
+inkbox a2a reply <task-id> -i researcher --complete --text "Done."
+```
+
+Task filters are optional and ANDed: direction, requester, worker, state,
+context, query, since, cursor, and limit. Message history additionally supports
+task and role; role is the message author (`caller` or `agent`), independent of
+task direction. Message direction defaults to both. JSON list output contains
+`items` and `nextCursor`; human output prints a next-cursor hint. Search covers
+string and numeric content values from `text` and `data` parts, excludes
+metadata, and is newest-first rather than relevance-ranked. Task detail exposes
+messages and current state. Contact-rule directions are `inbound`, `outbound`,
+and `both`; every request must pass both the requester outbound policy and the
+worker inbound policy.
+New contexts start with the persisted name `New A2A Session`. That exact
+default may be replaced with a name based on the first task message. Either
+participant can rename a context at any time; automatic naming does not replace
+a non-default name. Context-level requester and worker stay in
+original-open orientation; each task carries its own direction, and tasks may
+run concurrently in both directions. Cross-endpoint context reuse is supported
+between Inkbox identities; external A2A services may define different behavior.
+
+## Vault
+
+Vault decryption and secret creation require a vault key via `INKBOX_VAULT_KEY` or `--vault-key`.
+
+```bash
+inkbox vault init --vault-key <key>
+inkbox vault info
+inkbox vault secrets
+inkbox vault get <secret-id>
+inkbox vault create --name <name> --type <type> ...
+inkbox vault delete <secret-id>
+inkbox vault keys
+inkbox vault grant-access <secret-id> -i <handle>
+inkbox vault revoke-access <secret-id> -i <handle>
+inkbox vault access-list <secret-id>
+inkbox vault logins -i <handle>
+inkbox vault api-keys -i <handle>
+inkbox vault ssh-keys -i <handle>
+inkbox vault key-pairs -i <handle>
+```
+
+Secret type flags:
+
+```bash
+# login
+--password <pass> [--username <user>] [--email <email>] [--url <url>] [--totp-uri <uri>] [--notes <text>]
+
+# api_key
+--key <key> [--endpoint <url>] [--notes <text>]
+
+# key_pair
+--access-key <key> --secret-key <key> [--endpoint <url>] [--notes <text>]
+
+# ssh_key
+--private-key <key> [--public-key <key>] [--fingerprint <fp>] [--passphrase <pass>] [--notes <text>]
+
+# other
+--data <json> [--notes <text>]
+```
+
+## Mailboxes
+
+### Import historical mail
+
+```bash
+inkbox mailbox imports run <email> <archive.mbox> \
+  --original-address old@example.com
+inkbox mailbox imports get <email> <job-id>
+inkbox mailbox imports list <email>
+inkbox mailbox imports wait <email> <job-id> --poll-interval 5
+inkbox mailbox imports cancel <email> <job-id>
+```
+
+`run` supports `--source-format auto|mbox|eml|zip`, repeatable
+`--original-address`, `--mark-unread`, `--no-wait`, `--timeout`, and
+`--poll-interval`. A ZIP may hold `.eml` and/or `.mbox` files (a Gmail Takeout
+ZIP imports as-is); other entries, including nested archives, are ignored.
+Progress is stderr-only; `--json` stdout contains one job object. Failed or
+cancelled `run`/`wait` jobs exit nonzero. A local timeout or Ctrl-C does not
+cancel the job. Counters are cumulative and never go backwards, so a stalled
+counter is a signal, not normal churn; counters may still remain unchanged while
+a slow message is processed, and they are not a percentage. Jobs run one
+at a time per organization and share overall import capacity, so a long `queued`
+stretch is normal; do not cancel and recreate. Unsafe imported content may be
+rejected.
+
+`run` re-issues the 5-minute upload target and retries once after a transport
+failure or rejected upload target, then cancels the job it created. After an
+interrupted `run`, use
+`imports list` + `imports cancel` to release the mailbox; otherwise the
+abandoned job blocks new imports for 24 hours. Limits: 1 GiB per upload, 50 MiB
+per message, 100,000 messages and 20 `--original-address` values per job, 65,000
+entries per ZIP, and 20 import jobs per organization per 24 hours.
+
+Mailboxes are provisioned atomically by `inkbox identity create` and removed by `inkbox identity delete` (cascade); there is no standalone create / delete here. The human-readable name lives on the identity now — `inkbox identity update --display-name`; the mailbox PATCH endpoint hard-rejects `display_name` with a 422.
+
+```bash
+inkbox mailbox list                              # includes a humanized `storage` column
+inkbox mailbox get <email-address>               # includes storageUsedBytes / storageLimitBytes
+inkbox mailbox update <email-address> [--filter-mode whitelist|blacklist]
+inkbox mailbox client-settings <email-address>   # IMAP/SMTP settings for a mail client
+# To attach a webhook receiver, use `inkbox webhook subscription create
+# --agent-identity-id <id> --url <url> --event-type message.received ...`.
+```
+
+`mailbox list` / `get` / `update` rows include `filterMode` and `agentIdentityId`. `mailbox update --filter-mode` is the **deprecated** channel path (admin-only; prints a stderr change note when the value actually changes). Prefer `inkbox identity update <handle> --mail-filter-mode whitelist|blacklist`, which sets the mode on the identity and prints no change note.
+
+### Storage
+
+`mailbox list` shows a `storage` column (`1.2 GiB / 2 GiB`) and `mailbox get` shows `storageUsedBytes` / `storageLimitBytes`. `--json` keeps the raw byte counts; only the table humanizes them. The caps are **binary** (2 GiB is `2 * 1024³` = 2,147,483,648 bytes), so readouts are labeled GiB/MiB — never GB. A `-` limit means the server resolved no cap. Sending from a mailbox at its cap fails with `HTTP 402`; free space with `email delete <message-id> -i <handle>` / `email delete-thread <thread-id> -i <handle>`, or upgrade.
+
+## Mail Clients (IMAP/SMTP)
+
+An inbox can be attached to a regular mail client (Thunderbird, Apple Mail, mutt, …) with the API key you already have — there is no separate credential to create. `inkbox mailbox client-settings <email-address>` prints these:
+
+| Setting | Value |
+|---|---|
+| IMAP host | `imap.inkboxmail.com` |
+| IMAP port | `993` (IMAPS / implicit TLS) |
+| SMTP host | `smtp.inkboxmail.com` |
+| SMTP port | `465` (SMTPS / implicit TLS) or `587` (STARTTLS) |
+| Username | the inbox address (e.g. `sales-agent@inkboxmail.com`) |
+| Password | an **identity-scoped** API key (`ApiKey_...`) |
+
+Mint the password with `inkbox api-keys create --label <name> --identity-id <uuid>`. Admin-scoped keys are rejected — one key maps to exactly one mailbox. Revoking the key revokes mail-client access. `client-settings` never prints a password.
+
+Constraints that bite:
+
+- **`From` must be the authenticated inbox address**, and exactly one address — aliases / "send as" are rejected.
+- **On the Free plan, signed/encrypted mail (S/MIME, PGP) cannot be sent over SMTP** — the required footer can't be injected without breaking the signature, so the send is refused. Send unsigned, or upgrade.
+- Leave "save a copy of sent messages" **on** — Inkbox recognizes the client's copy as the message it already stored, so you get one Sent entry, charged against the storage cap once.
+
+`client-settings` derives the hosts from the configured API base URL; when that URL isn't a recognized Inkbox API host it errors instead of printing hosts it would have to guess. Full walkthrough: https://inkbox.ai/docs/capabilities/email/mail-clients
+
+## Tunnels
+
+Tunnels are provisioned atomically by `inkbox identity create` and removed by `inkbox identity delete` (cascade). The `inkbox tunnel` subcommand is read + update + sign-csr only.
+
+```bash
+inkbox tunnel list
+inkbox tunnel get <id-or-handle>
+inkbox tunnel update <id> [--metadata <json>]
+inkbox tunnel sign-csr <id> --csr <path-or-pem> [--out <path>]
+```
+
+`tunnel get` accepts either a UUID or the owning identity's agent handle. `tunnel update` is metadata-only; pass `--metadata "{}"` to clear. `tunnel sign-csr` is passthrough-only and uses an elevated 180-second timeout (the server runs DNS validation + cert issuance synchronously).
+
+Data-plane auth uses the same API key the CLI was invoked with — admin-scoped or identity-scoped (matching the tunnel's identity). There is no per-tunnel connect secret; mint an identity-scoped key via `inkbox api-keys create --identity-id <uuid>` for an agent.
+
+## Custom Sending Domains
+
+```bash
+inkbox domain list [--status verified]
+inkbox domain set-default <domain-name>
+```
+
+`domain list` shows registered custom domains for your org, optionally filtered by status (e.g. `verified`). `domain set-default` requires an admin-scoped API key; pass the bare custom domain name to set it, or pass the platform sending domain (e.g. `inkboxmail.com` in production) to revert. Domain registration, DNS records, verification, DKIM rotation, and deletion stay in the console.
+
+### Mailbox Contact Rules (`inkbox mailbox rules …`) — DEPRECATED
+
+**Deprecated** (Sunset 2026-08-31) — use `inkbox identity mail-rules …` (keyed by agent handle) instead. Per-mailbox allow/block rules (combined with the mailbox's `filterMode`).
+
+```bash
+inkbox mailbox rules list --mailbox <email> [--action allow|block] [--match-type exact_email|domain] [--limit <n>] [--offset <n>]
+inkbox mailbox rules list --all-mailboxes [--mailbox-id <id>] [--action …] [--match-type …]    # admin-only
+inkbox mailbox rules get <rule-id> --mailbox <email>
+inkbox mailbox rules create --mailbox <email> --action allow|block --match-type exact_email|domain --match-target <value>
+inkbox mailbox rules update <rule-id> --mailbox <email> --action allow|block   # admin-only
+inkbox mailbox rules delete <rule-id> --mailbox <email>                                                    # admin-only
+```
+
+## Admin-Only Phone Numbers
+
+```bash
+inkbox number list
+inkbox number get <id>
+inkbox number provision --handle <handle> [--type local] [--state NY]   # local only; toll_free is rejected (422)
+inkbox number update <id> [--incoming-call-action auto_accept|auto_reject|webhook|hosted_agent|forward] [--forward-to-phone <number> | --forward-to-sip <uri>] [--filter-mode whitelist|blacklist] ...
+inkbox number release <number-id>
+```
+
+Use `--state` only when provisioning a local number. Phone-number rows also carry `filterMode` / `agentIdentityId`; `number update --filter-mode` is the **deprecated** channel path (admin-only; prints a stderr note when the value changes). Prefer `inkbox identity update <handle> --phone-filter-mode whitelist|blacklist`.
+
+### Number Contact Rules (`inkbox number rules …`) — DEPRECATED
+
+**Deprecated** (Sunset 2026-08-31) — use `inkbox identity phone-rules …` (keyed by agent handle) instead. Per-number allow/block rules (combined with the number's `filterMode`).
+
+```bash
+inkbox number rules list --number <id> [--action allow|block] [--match-type exact_number] [--limit <n>] [--offset <n>]
+inkbox number rules list --all-numbers [--phone-number-id <id>] [--action …] [--match-type …]   # admin-only
+inkbox number rules get <rule-id> --number <id>
+inkbox number rules create --number <id> --action allow|block --match-target <e164> [--match-type exact_number]
+inkbox number rules update <rule-id> --number <id> --action allow|block   # admin-only
+inkbox number rules delete <rule-id> --number <id>                                                    # admin-only
+```
+
+## Contacts
+
+Shared address book with whole-group email/phone visibility and separate communication choices for each address. Phone covers SMS, calls, and iMessage. Profile and Memories do not grant communication access. Existing-contact identifier changes and suggestion absorption require admin credentials.
+
+`contacts access get <handle> <contact-id>` reads `email`/`phone` objects with `visible` and `contactable`, plus `profile` and `memories`, using admin credentials. `contacts access set <handle> <contact-id> --file access.json` applies partial choices. `{"email":{"visible":true,"contactable":[]}}` is View-only email access; a nonempty list allows those current addresses and blocks the rest. Omitted fields are preserved; `profile: false` hides omitted or empty groups and omitted Memories, while explicit choices win. The management roster's optional `access` has the same shape. `contacts access list <contact-id>` remains compatibility metadata.
+
+`contacts create --json` also accepts nested access in `permissions`, for example `{"identityId":"11111111-1111-4111-8111-111111111111","email":{"visible":true,"contactable":[]}}`. Use group objects or the older boolean maps, not both.
+
+Use `contacts permissions get <handle> <contact-id>` with admin credentials to read effective `emails` and `phones` boolean maps plus `profile` and `memories` booleans. Save a JSON file such as `{"emails":{"ada@example.com":true},"profile":true,"memories":false}` with `contacts permissions set <handle> <contact-id> --file permissions.json`. Omitted fields and addresses stay unchanged; no revision is required.
+
+For atomic creation, `contacts create --json='{"givenName":"Ada","emails":[{"value":"ada@example.com"}],"permissions":{"identityId":"11111111-1111-4111-8111-111111111111","emails":{"ada@example.com":true},"profile":true,"memories":false}}'` saves initial choices with the contact using admin credentials.
+
+Advanced commands remain under `contacts communication-policy`. `get <contact-id> --identity-id <uuid>` reads selected-agent choices. `set <contact-id> --file policy.json` accepts `expectedRevision`, `identityId`, `addresses: [{kind, value, action, expectedAction}]`, and optional `visibility`. Address decisions are `inherit`, `allow`, or `block`. Omitted visibility is preserved. `preview <contact-id> <identity-id>` shows a saved view. `list <handle>` and `identity contact-policies <handle>` list the identity's permitted view.
+
+`contacts communication-policy list-management <handle> --q Jane --order name --limit 20 --json` requires admin credentials and includes hidden contacts. It reports partial identifier access separately from absent identifiers. Identity-owned mail/phone/iMessage rule tables show matching contact names; JSON preserves nullable caller-authorized cards without memories.
+
+Communication-rule mutations require admin credentials. Exact-address allow/block choices override the channel mode. Without an exact choice, matching email domain entries apply in their corresponding mode, then the mode's default applies. Phone permission setup does not require a dedicated number.
+
+Merging requires an admin-scoped API key. Active memories have per-kind and
+contact-wide limits. Delete a fact from each kind named by a merge error, or any
+active fact when it names `total`, then retry. Untyped memories count toward the
+total.
+
+```bash
+inkbox contacts list [--q <query>] [--order name|recent] [--review-status <status>] [--limit <n>] [--offset <n>]  # offset max 10000
+inkbox contacts get <contact-id>
+inkbox contacts create --json <payload>
+inkbox contacts update <contact-id> --json <patch>
+inkbox contacts delete <contact-id>
+inkbox contacts bulk-delete <contact-id...>
+inkbox contacts lookup (--email <email> | --email-contains <s> | --email-domain <d> | --phone <e164> | --phone-contains <s>)
+inkbox contacts import <file.vcf>
+inkbox contacts export <contact-id> [--out <file>] # vCard 4.0 to stdout or file
+inkbox contacts export-many <contact-id...> [--out <file>]
+inkbox contacts facts list <contact-id> [--include-expired]
+inkbox contacts facts get <contact-id> <fact-id>
+inkbox contacts facts citation <contact-id> <fact-id> <citation-id>
+inkbox contacts facts citation-url <source-url>
+inkbox contacts facts create <contact-id> --content <text> --kind <profile|preference|context>  # admin only
+inkbox contacts facts update <contact-id> <fact-id> [--content <text>] [--kind <kind>]  # admin only
+inkbox contacts facts delete <contact-id> <fact-id>  # admin only
+inkbox contacts correspondence <contact-id> [--identity <uuid>] [--channels <channel>]
+inkbox contacts merge <survivor-id> --losing <contact-id...> [--field-sources <json>]  # admin-scoped API key required
+inkbox contacts access list <contact-id>             # compatibility read only
+```
+
+Correspondence includes all five channels by default. Use `--channels slack` for
+retained messages authored by the contact's saved Slack accounts; it does not
+include every message in their channels.
+
+`inkbox contacts create` saves a matching suggested contact instead of failing:
+when an email or phone in the payload already belongs to an unreviewed contact,
+that contact is confirmed and printed with its memories and existing identifiers.
+Name fields are replaced; omitted non-name profile fields are preserved, and
+supplied non-name fields are applied. This also works with agent-scoped API keys.
+When the address belongs to a saved contact, to more than one contact, or is in
+conflict, the command still fails with HTTP 409
+`duplicate_contact_identifier`.
+
+Unlocked generated context facts leave the default facts list at `expiresAt`;
+locked facts remain active. `--include-expired` returns expired facts. Any facts
+update makes the fact manually maintained, clears its expiry, and revives it;
+changing content also removes confidence and source links.
+
+`contacts lookup` requires exactly one filter flag. For `create` / `update`, construct the payload carefully — fields include `preferredName`, `givenName`, `familyName`, `companyName`, `jobTitle`, `birthday`, `notes`, and lists `emails` / `phones` / `websites` / `dates` / `addresses` / `customFields` (each list item has `label` / `value`).
+
+## Notes
+
+Admin-only free-form notes with per-identity grants (no wildcard).
+
+```bash
+inkbox notes list [--q <query>] [--identity <uuid>] [--order recent|created] [--limit <n>] [--offset <n>]
+inkbox notes get <note-id>
+inkbox notes create --body <text> [--title <text>]
+inkbox notes update <note-id> [--title <text>] [--body <text>]   # pass --title "" to clear
+inkbox notes delete <note-id>
+
+# Per-note access grants
+inkbox notes access list <note-id>
+inkbox notes access grant <note-id> <identity-id>    # admin + JWT only
+inkbox notes access revoke <note-id> <identity-id>
+```
+
+## Whoami, Signing Keys, Webhooks
+
+**Availability:** Mixed-event identity subscriptions and explicit identity scope
+require SDK/CLI **0.7.8 or later** and `GET /webhooks/catalog` returning
+`supports_identity_subscriptions: true`. Until then, use separate mail, text, and
+identity-event subscriptions with their existing mailbox, phone, and identity selectors;
+omit the scope option. The examples in this section that combine families or create
+mail/text subscriptions by identity assume that capability is available. Explicit
+identity-wide listing fails clearly when the capability is missing; it does not fall
+back to a partial list. Updating or deleting a mixed subscription requires CLI 0.7.8
+or later and `--scope identity`; never omit scope to work around an older CLI.
+
+
+Each agent identity has its own webhook signing key. Manage it with the
+per-identity commands; the org-level `inkbox signing-key create` is deprecated
+(with an agent-scoped key it still rotates that identity's key; with an admin key
+the server returns 409).
+
+```bash
+inkbox whoami
+inkbox identity signing-key status <handle>
+inkbox identity signing-key rotate <handle>   # mints/rotates; prints the secret ONCE
+inkbox signing-key create                     # DEPRECATED — use the per-identity commands above
+inkbox webhook verify --payload <payload> --secret <secret> -H "X-Header: value"
+
+# Webhook subscriptions (fan-out per (owner, url, event_types)):
+inkbox webhook subscription list [--mailbox-id <id>] [--phone-number-id <id>] [--agent-identity-id <id>] [--scope identity]
+inkbox webhook subscription create --agent-identity-id <id> --url <url> --event-type message.received
+inkbox webhook subscription create --agent-identity-id <id> --url <url> \
+  --event-type text.received --event-type text.delivered
+inkbox webhook subscription create --agent-identity-id <id> --url <url> \
+  --event-type imessage.received --event-type imessage.reaction_received
+inkbox webhook subscription create --agent-identity-id <id> --url <url> \
+  --event-type call.ended
+# Opt into per-class conversation context on received events (count:N | window:H):
+inkbox webhook subscription create --agent-identity-id <id> --url <url> \
+  --event-type message.received --context-email count:10 --context-texts window:24
+# Bearer token sent as Authorization on every delivery (returned by reads):
+inkbox webhook subscription create --agent-identity-id <id> --url <url> \
+  --event-type message.received --auth-token-stdin   # token read from stdin
+inkbox webhook subscription update <sub-id> --scope identity [--url <url>] [--event-type <type>...] \
+  [--context-email <spec>] [--context-texts <spec>] [--context-calls <spec>] [--clear-context] \
+  [--auth-token-stdin] [--clear-auth-token]
+inkbox webhook subscription delete <sub-id> --scope identity
+```
+
+Owner-filtered lists retain single-family views unless `--scope identity` is supplied. Use `--agent-identity-id <id> --scope identity` to include mixed subscriptions and every notification family.
+
+Every subscription row carries `ownerIdentityId` (the resolved owning agent identity). The **first** subscription created for an identity that has no signing key yet returns that identity's `signingKey` **once** in the create output (otherwise null) — capture it then, it cannot be retrieved again (use `--json` to read it reliably).
+
+The `--context-email` / `--context-texts` / `--context-calls` flags each take `count:N` (1..50) or `window:H` (1..168) and opt a mail, text, or iMessage subscription into per-class conversation history delivered under `data.context` on received events. Only received mail, text and iMessage events include context; other selected events ignore it. On `update`, a `--context-*` flag replaces the stored config and `--clear-context` removes it (the two are mutually exclusive).
+
+`--auth-token-stdin` sets an optional bearer token for endpoints that require their own `Authorization` header; every delivery (and replay) then carries `Authorization: Bearer <token>` alongside the signature headers. Reads return the token: `get` and `--json` output include `authToken`, while list tables show only the `hasAuthToken` flag. The token is only ever read from stdin via `--auth-token-stdin`, so it never lands in argv or shell history. On `update` it replaces the stored token and `--clear-auth-token` removes it (mutually exclusive).
+
+Use `whoami --json` when you need the authenticated caller shape exactly.
+
+`inkbox webhook verify` is event-type-agnostic — it operates on raw
+bytes and only checks the `X-Inkbox-Signature` HMAC. The body can be
+any of:
+
+- **Mail** (envelope): `message.received`, `message.sent`,
+  `message.forwarded`, `message.delivered`, `message.bounced`,
+  `message.failed`. Subscribe via `inkbox webhook subscription create
+  --agent-identity-id ...`. On `message.received`, `data.message` carries the
+  plain-text `body` (whole under a size cap, else a prefix with
+  `body_truncated: true`); when truncated, fetch the full message by its
+  `id` (via the API/SDK) — not `message_id` (the RFC 5322 header).
+- **Text** (envelope): `text.received`, `text.sent`, `text.delivered`,
+  `text.delivery_failed`, `text.delivery_unconfirmed`. Subscribe via
+  `inkbox webhook subscription create --agent-identity-id ...`.
+- **iMessage** (envelope): `imessage.received`,
+  `imessage.reaction_received`, `imessage.sent`, `imessage.delivered`,
+  `imessage.delivery_failed`. Subscribe via `inkbox webhook
+  subscription create --agent-identity-id ...` — owned by the agent
+  identity, since shared iMessage pool numbers are not org resources.
+- **Call lifecycle** (envelope, fire-and-forget + replayable):
+  `call.ended`. Subscribe via `inkbox webhook subscription create
+  --agent-identity-id ...` — owned by the agent identity, like iMessage.
+  The payload carries the call (with `mode` / `reason`), resolved
+  contacts/identities, an always-present `data.transcript_url`
+  (authoritative verbatim), an inline abridged `data.transcript` when
+  the platform captured a transcript for the call (otherwise `null`),
+  plus `data.outcome` (`completed` | `no_answer` | `declined` |
+  `failed`; `null` iff the call was client-driven) and
+  `data.post_call_action_items` (open items only, `seq`-ascending).
+  Voice AI calls fire `call.ended` on every terminal state, not just
+  connected calls. Notification families can share one identity subscription.
+- **Inbound call** (flat, no envelope; response controls call routing).
+  Not subscribable; configure the identity incoming-call action (contrast the replayable `call.ended` above).
+
+Mail and text payloads carry `data.contacts` and
+`data.agent_identities` (both always-present lists; mail entries also
+carry `bucket` + `address`). Outbound mail payloads also include
+`data.message.bcc_addresses` (`null` on inbound). Group text events
+carry per-recipient delivery rows in `data.text_message.recipients`;
+**outbound group lifecycle** events name the event target in
+`data.recipient_phone_number` (one webhook per recipient leg). Inbound
+and outbound 1:1 events leave `data.recipient_phone_number` as `null`
+— the singular peer is already in `data.text_message.remote_phone_number`
+(inbound) or `data.text_message.recipients[0]` (outbound 1:1).
+Inbound-call payloads carry `contacts` and `agent_identities` at the
+top level (no envelope). For the typed receiver-side shapes, see the
+SDK skills (`inkbox-ts`, `inkbox-python`).
+
+## Practical Guidance
+
+- Prefer the local repo command `npm --prefix cli run dev -- ...` when working in this codebase.
+- Prefer `--json` for anything that needs stable parsing.
+- Use the identity handle, not mailbox address or phone number, for identity-scoped commands.
+- If a command fails because the identity lacks a mailbox or phone number, inspect it first with `inkbox identity get <handle>`.
+
+
+Subscriptions are identity-owned and may combine all notification event families
+without configured channels. Update replaces the entire
+event selection, and delete removes the whole subscription. Legacy mailbox/phone
+selectors remain accepted for compatibility; prefer `--agent-identity-id`.
+
+## Custom email signatures
+
+Custom signatures are saved per mailbox and require an eligible paid plan to set or enable.
+Each HTML/text field supports up to 16,384 characters. HTML is sanitized; logos
+must use absolute HTTPS URLs. Updating HTML without text generates a plain-text
+fallback. Omitted fields stay unchanged; null clears saved content. If saved text
+is null, sending derives it from HTML when possible. Disable without deleting to
+pause automatic insertion. Disabling and clearing remain available on every plan.
+Signatures are inserted when mail is sent, including replies, forwards, and sent
+drafts; do not append them manually. The Inkbox watermark is controlled separately.
+Signed/encrypted SMTP mail cannot have a custom signature inserted; disable
+automatic insertion before sending those messages.
+A `.sig` file is not a standardized attachment format: read its UTF-8 text or HTML
+content into the corresponding field; images and proprietary formats are not imported.
+
+```bash
+inkbox mailbox update alex@example.com --signature-html-file signature.html --signature-enabled
+inkbox mailbox update alex@example.com --signature-text-file signature.sig
+inkbox mailbox update alex@example.com --no-signature-enabled
+inkbox mailbox update alex@example.com --clear-signature-html --clear-signature-text
+inkbox mailbox get alex@example.com --json
+```
+
+Inline content uses `--signature-html <html>` or `--signature-text <text>`.
+For each format, choose inline content, a file, or its clear flag, not more than one.
+
+## Verified domains
+
+An organization admin can prove DNS control and attach a domain to an agent.
+The domain follows the agent's visibility: public agents show it publicly;
+private agents show it to their organization and authorized A2A peers. Proof expires at the
+returned `valid_until`; assertions do not establish legal identity or endorse an
+agent. Keep the TXT record in place. Domain certification is separate from custom
+email sending domains.
+
+See [verified domains](https://inkbox.ai/docs/capabilities/verified-domains) for
+expiry, ownership, and recovery rules. These methods require version 0.7.12 or later.
+
+```bash
+inkbox organization-domain create example.com
+# Add the returned TXT record, then use its claim ID.
+inkbox organization-domain verify OrganizationDomainClaim_YOUR_ID
+inkbox identity domain-affiliation set helper OrganizationDomainClaim_YOUR_ID
+inkbox identity domain-affiliation get helper
+inkbox a2a directory --public --query example.com
+```
+
+`organization-domain` provides `create`, `list`, `get`, `verify`, and `delete`.
+`identity domain-affiliation set` attaches a claim to an agent.
+Use `remove <handle>` to stop all affiliation assertions.
+Use `--json` to inspect the complete response. Public search also accepts `--query`,
+`--cursor`, and `--limit`; preserve the same filters on every page.
+
+`--query` searches handles, descriptions, skills, and published verified domains,
+including domain fragments. Text matches can include agents without a verified
+domain. Add `--verified-domain example.com` to require an exact, current domain
+affiliation in public results.
+
+## Message retries
+
+Send commands generate a key and preserve it during bounded request retries.
+Use `--idempotency-key` on email, text, or iMessage sends for a workflow that repeats
+the same intended message across command invocations. Preserve the exact input.
+`inkbox send-lookup --help` describes read-only ID recovery. Check current delivery
+through the existing get commands, including `imessage get`. Request retries do
+not guarantee delivery retries. Errors print the original request key. Do not
+submit a new message solely because confirmation is missing.
+
+## Slack
+
+In 0.7.14+, use `slack contact-rule` for directional person/workspace rules
+and `slack contacts-import` for one import page. Follow returned cursors. `identity update` accepts
+`--slack-filter-mode` or separate `--slack-inbound-filter-mode` /
+`--slack-outbound-filter-mode`. Writes, default changes and import
+require an organization admin key; claimed agent keys can read their own rules.
+Import never grants messaging or Companion access.
+
+Identity-scoped Slack commands accept `-i/--identity <handle>` or
+`--identity-id <uuid>` (exactly one when supplied). Search can omit both with
+agent credentials; other identity-scoped commands require one. Live workspace
+operations require `--connection-id`; search accepts it only as an optional filter.
+
+See the [Slack API and onboarding guide](https://github.com/inkbox-ai/inkbox/blob/main/cli/README.md#slack) for implemented SDK/CLI methods.
+Use an existing identity. Select a workspace explicitly for live reads and mutations.
+Organization-member sessions, organization admin API keys, and claimed agent keys can
+save and list setup workspaces in their organization. Claimed agent keys can prepare
+and install only their own identity’s app; organization credentials can select an
+identity in their organization. Installation availability does not imply preparation
+is ready. Save both app-configuration tokens for the target workspace, then prepare
+the identity’s app using that saved provisioning-workspace UUID.
+Use `save_provisioning_workspace` / `saveProvisioningWorkspace` or CLI
+`slack provisioning-workspace save --credentials-file <path>` (use `-` for stdin).
+Reuse safe metadata from `list_provisioning_workspaces` / `listProvisioningWorkspaces`.
+Tokens are write-only; never put them in command arguments or output.
+Pass the saved ID to `start_setup` (Python/Rust), `startSetup` (TypeScript), or
+`slack setup start --provisioning-workspace-id <uuid>`.
+Poll connection reads until `setup.status` is `ready`, with a bounded wait and a few
+seconds between reads. For `needs_credentials`, update workspace credentials first.
+Do not blindly retry an unknown setup outcome. Start installation only when ready.
+Open the returned URL in a browser; treat the full URL as a secret. After approval,
+list connections again to confirm the expected workspace is connected. The app is
+bound to its chosen workspace; no client-invitation workflow is supported.
+Join accessible
+public channels or invite the agent to selected private channels. Slack Connect is
+supported when the selected connection has access.
+
+Use explicit connection IDs and stable caller-provided idempotency keys for sends and
+utility mutations (reactions, pins, own-message edits/deletions, join/leave, uploads,
+and native processing status). Poll sends only while sending and operations only while
+in_progress. Unknown is terminal uncertainty and must not be blindly repeated.
+Recover lost send responses with `get_action_by_key` / `getActionByKey` or CLI
+`slack action get-by-key --connection-id <uuid> --idempotency-key <key>`.
+A 404 does not prove no send occurred; never use missing lookup data to justify a
+new key. Fresh failed rate-limited sends may include `retry_after` / `retryAfter`
+seconds; honor that delay before a deliberate new attempt. Stored action reads and
+same-key replays do not retain this hint. A recorded terminal action is never resent
+by replaying its key. Send
+and utility keys use independent per-connection namespaces; utilities emit no outcome
+webhook, so read their status through operation lookup. Inspect
+capabilities for missing scopes; native processing support remains workspace-dependent.
+General file uploads accept standard base64 for 1 byte..10 MiB (CLI: a local --file).
+
+Retained history is separate from bounded live reads and webhook diagnostics. Capture
+is automatic for observed messages in accessible conversations, with no time-based
+retention limit. Organization-member sessions and organization admin API keys can
+disconnect connections, set retention, or purge retained history; claimed agent keys
+cannot. Purging history does not stop capture. Omitted retention resets to no time limit.
+For search, start with `inkbox slack search --q "release notes"` across the identity's workspace connections.
+Do not loop over connections or require a connection ID for a general search.
+Agent credentials infer the identity; other credentials require an explicit identity.
+Use a connection filter only to narrow the search. Results include connection IDs.
+Use plain English keywords, ranked by relevance then recency; not Slack query
+operators or semantic search. Attachment bodies are not indexed. Follow the returned
+cursor with the same filters even for short or empty pages, until no cursor remains.
+Search errors are not evidence of no matches.
+Use archive listing, bounded backfill/restart, and coverage; do not infer complete workspace/thread history
+from one page or a completed channel import. Purge deletes retained history without stopping new capture. Archive reads require current connection/conversation access.
+In 0.7.15+, use `slack archive messages --connection-id ID --roots-only --include conversation,sender,reactions,files` for a main timeline with cached display context.
+Use `slack emoji list`, `slack cached-media-download`, and `slack file preview` for cached media. Follow emoji cursors explicitly and inspect directory status;
+missing permissions or pending synchronization can leave an empty incomplete page.
+Unknown reaction/thread counts are not zero, and known reaction counts do not imply complete actor lists.
+Omit the roots-only option when reading a selected thread. Expansions do not apply to ranked search.
+Keep caches separate by connection and invalidate them when its generation changes. Never forward
+Inkbox credentials to fallback image URLs. Current message and file access checks still apply.
+
+Slack webhooks select incoming messages with `slack.dm_received`,
+`slack.group_dm_received`, `slack.channel_message_received`, `slack.mention_received`,
+and `slack.thread_reply_received`. Overlapping selections produce one logical delivery per subscription,
+choosing the first selected match in mention, thread, DM, group DM, channel priority.
+Subscriptions cover all accessible conversations across connected workspaces.
+There are no Slack-specific filters. Context applies only to received mail, text,
+and iMessage events; Slack historical delivery replay is unsupported. The runtime owns attention rules,
+watched threads, and its own memory. Webhook delivery order is not guaranteed.
+
+## Threaded iMessage replies
+
+Requires SDK/CLI **0.7.13 or later**. These reply examples require a
+phone-number conversation or a supported group; non-phone one-to-one
+conversations remain receive-only, including threaded replies. `--no-plain-reply-fallback` requires
+`--reply-to-message-id`; `--thread-id` on `imessage list` requires `--conversation-id`.
+
+```bash
+inkbox imessage send -i support-bot --conversation-id <conversation-id> --reply-to-message-id <message-id> --text "Agreed"
+inkbox --json imessage thread <message-id> -i support-bot --limit 50
+inkbox --json imessage thread <message-id> -i support-bot --cursor <next-cursor>
+inkbox --json imessage conversation-thread <conversation-id> <thread-id> -i support-bot
+inkbox imessage conversation <conversation-id> -i support-bot --thread-id <thread-id>
+inkbox imessage list -i support-bot --conversation-id <conversation-id> --thread-id <thread-id>
+```
+
+`--reply-to-message-id` requires `--conversation-id` and cannot be combined
+with `--to`. Thread commands return `threadId`, `conversationId`,
+`threadRootMessageId`, `messages`, and `nextCursor`; use `--json` to preserve
+the complete page. Messages include `replyToMessageId`, `threadId`, and
+`threadRootMessageId` when available.
+
+Thread IDs are opaque and distinct from message IDs. Thread pages include the
+root and its replies in chronological order; follow `next_cursor` (Python/Rust)
+or `nextCursor` (TypeScript/CLI) until null. A standalone message can have its own
+thread ID and use its own message ID as the root, even before anyone replies.
+A non-null `reply_to_message_id` / `replyToMessageId` identifies a visible reply
+parent; a thread ID alone does not mean the message has replies. Thread metadata
+may be null for pending or older messages, and the root or direct parent can be
+unavailable. Conversation message lists remain flat and newest-first. A thread filter requires its conversation ID; it uses the existing
+limit/offset pagination, unlike the chronological thread endpoints.
+
+Native replies work in supported one-to-one and group iMessage conversations.
+Use a message from the same conversation. With plain fallback enabled (the
+default), the API sends an ordinary message in that conversation when native
+threading is unsupported: the target is known to use SMS/RCS or was downgraded.
+This does not force a particular transport. An ordinary fallback has no reply
+parent and does not join the target's native thread. Invalid or inaccessible
+targets, unsettled messages, and missing reply metadata still fail. Delivery
+errors are not retried as new ordinary messages. If a previously supported target
+can no longer receive a native reply, that send may fail even with fallback enabled.
+Read the message status and error fields after queueing; delivery webhooks do not
+cover every failure before dispatch. Omitting the target preserves ordinary sending.
+
+Add `--no-plain-reply-fallback` to `imessage send` to require a native reply
+instead.

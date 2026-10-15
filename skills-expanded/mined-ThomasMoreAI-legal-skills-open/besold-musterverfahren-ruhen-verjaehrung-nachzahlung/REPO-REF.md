@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/administrative/skills/besold-musterverfahren-ruhen-verjaehrung-nachzahlung/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Besold Musterverfahren Ruhen Verjährung Nachzahlung: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

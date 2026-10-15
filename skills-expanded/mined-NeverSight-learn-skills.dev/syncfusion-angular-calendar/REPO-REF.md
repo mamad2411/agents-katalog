@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/syncfusion/angular-ui-components-skills/syncfusion-angular-calendar/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Comprehensive guide for implementing the Syncfusion Angular Calendar component. Use this when working with date selection, multi-date selection, month/year/decade views, or calendar navigation in Angu

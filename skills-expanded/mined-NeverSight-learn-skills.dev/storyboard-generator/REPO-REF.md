@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zephyrwang6/myskill/storyboard-generator/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 根据用户描述的故事内容，润色故事线并拆分为分镜脚本，批量生成风格一致的故事板插图。提供8种视觉风格选择，基于故事类型推荐最佳风格。调用Gemini API生成图片，保存到Obsidian图片目录。触发词："分镜故事"、"故事板"、"做个分镜"、"创建故事板"、"storyboard"、"画个故事"。

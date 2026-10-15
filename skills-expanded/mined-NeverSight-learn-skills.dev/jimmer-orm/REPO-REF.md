@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/coooolfan/unirhy/jimmer-orm/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Jimmer ORM 开发助手，帮助编写实体映射代码和 DSL 查询语句。适用于：(1) 定义或修改 Jimmer 实体（使用 @Entity 注解的 interface）；(2) 编写 Jimmer DSL 查询代码；(3) 配置实体关联关系（@ManyToOne, @OneToMany, @ManyToMany）；(4) 使用动态谓词、动态表连接或隐式子查询；(5) 编辑包含 Jimmer 相

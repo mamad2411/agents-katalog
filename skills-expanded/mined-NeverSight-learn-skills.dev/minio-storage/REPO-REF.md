@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/nmime/infra-skills/minio-storage/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: MinIO S3-compatible object storage on Kubernetes. Use when deploying MinIO, configuring buckets, setting up integrations with GitLab/Loki/backups, or managing S3-compatible storage infrastructure.

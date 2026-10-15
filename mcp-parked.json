@@ -1,111 +1,267 @@
 {
- "context7": {
-  "command": "context7-mcp",
-  "from": "~/.tabnine/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "fetch": {
-  "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-fetch",
-  "from": "~/.tabnine/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "filesystem": {
-  "args": [
-   "/Users/chaali0324"
-  ],
-  "command": "mcp-server-filesystem",
-  "from": "~/.tabnine/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "git": {
-  "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-git",
-  "from": "~/.tabnine/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "memory": {
-  "from": "~/.windsurf/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "playwright": {
-  "from": "~/.windsurf/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "sequential-thinking": {
-  "from": "~/.windsurf/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- },
- "server-fetch": {
-  "args": [
-   "mcp-server-fetch"
-  ],
-  "command": "uvx"
- },
- "server-filesystem": {
-  "args": [
-   "-y",
-   "@modelcontextprotocol/server-filesystem",
-   "/Users/chaali0324"
-  ],
-  "command": "npx",
-  "env": {}
- },
- "server-git": {
-  "args": [
-   "mcp-server-git",
-   "--repository",
-   "/Users/chaali0324"
-  ],
-  "command": "uvx"
- },
- "server-google-maps": {
-  "args": [
-   "-y",
-   "@modelcontextprotocol/server-google-maps"
-  ],
-  "command": "npx",
-  "env": {
-   "GOOGLE_MAPS_API_KEY": "ISI_API_KEY"
+  "context7": {
+    "command": "context7-mcp",
+    "from": "~/.tabnine/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "fetch": {
+    "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-fetch",
+    "from": "~/.tabnine/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "filesystem": {
+    "args": [
+      "/Users/chaali0324"
+    ],
+    "command": "mcp-server-filesystem",
+    "from": "~/.tabnine/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "git": {
+    "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-git",
+    "from": "~/.tabnine/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "memory": {
+    "from": "~/.windsurf/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "sequential-thinking": {
+    "from": "~/.windsurf/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "server-fetch": {
+    "args": [
+      "mcp-server-fetch"
+    ],
+    "command": "uvx"
+  },
+  "server-filesystem": {
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "/Users/chaali0324"
+    ],
+    "command": "npx",
+    "env": {}
+  },
+  "server-git": {
+    "args": [
+      "mcp-server-git",
+      "--repository",
+      "/Users/chaali0324"
+    ],
+    "command": "uvx"
+  },
+  "server-google-maps": {
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-google-maps"
+    ],
+    "command": "npx",
+    "env": {
+      "GOOGLE_MAPS_API_KEY": "ISI_API_KEY"
+    }
+  },
+  "server-memory": {
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-memory"
+    ],
+    "command": "npx"
+  },
+  "server-postgres": {
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-postgres",
+      "postgresql://localhost/db"
+    ],
+    "command": "npx"
+  },
+  "server-puppeteer": {
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-puppeteer"
+    ],
+    "command": "npx"
+  },
+  "server-sqlite": {
+    "args": [
+      "mcp-server-sqlite",
+      "--db-path",
+      "/Users/chaali0324/mcp.db"
+    ],
+    "command": "uvx"
+  },
+  "skill-graph": {
+    "args": [],
+    "command": "/opt/homebrew/bin/skill-graph",
+    "env": {
+      "SKILL_GRAPH_PATH": "/Users/chaali0324/mamatXobsidian"
+    }
+  },
+  "time": {
+    "from": "~/.windsurf/mcp.json",
+    "parked_at": "2026-09-26T13:53:47Z"
+  },
+  "puppeteer": {
+    "command": "mcp-server-puppeteer",
+    "args": []
+  },
+  "github": {
+    "command": "mcp-server-github",
+    "args": []
+  },
+  "brave-search": {
+    "command": "mcp-server-brave-search",
+    "args": []
+  },
+  "postgres": {
+    "command": "mcp-server-postgres",
+    "args": []
+  },
+  "slack": {
+    "command": "mcp-server-slack",
+    "args": []
+  },
+  "everything": {
+    "command": "mcp-server-everything",
+    "args": []
+  },
+  "sqlite": {
+    "command": "/Users/chaali0324/Library/Python/3.14/bin/mcp-server-sqlite",
+    "args": []
+  },
+  "firecrawl": {
+    "command": "firecrawl-mcp",
+    "args": []
+  },
+  "playwright-official": {
+    "command": "playwright-mcp",
+    "args": []
+  },
+  "tavily": {
+    "command": "tavily-mcp",
+    "args": []
+  },
+  "notion": {
+    "command": "notion-mcp-server",
+    "args": []
+  },
+  "kubernetes": {
+    "command": "kubernetes-mcp-server",
+    "args": []
+  },
+  "ollama": {
+    "command": "ollama-mcp",
+    "args": []
+  },
+  "azure-devops": {
+    "command": "mcp-server-azuredevops",
+    "args": []
+  },
+  "browser-use": {
+    "command": "mcp-server-browser-use",
+    "args": []
+  },
+  "spec-driven-dev": {
+    "command": "mcp-server-spec-driven-development",
+    "args": []
+  },
+  "mcp-inspector": {
+    "command": "mcp-inspector",
+    "args": []
+  },
+  "mcp-proxy": {
+    "command": "mcp-proxy",
+    "args": []
+  },
+  "mcp-scan": {
+    "command": "mcp-scan",
+    "args": []
+  },
+  "mcp-security-audit": {
+    "command": "mcp-security-audit",
+    "args": []
+  },
+  "compress": {
+    "command": "mcp-compress-router",
+    "args": []
+  },
+  "design-extractor": {
+    "command": "mcp-design-system-extractor",
+    "args": []
+  },
+  "jinaai-reader": {
+    "command": "mcp-jinaai-reader",
+    "args": []
+  },
+  "token-optimizer": {
+    "command": "token-optimizer-mcp",
+    "args": []
+  },
+  "ui-ux-pro": {
+    "command": "ui-ux-pro-mcp",
+    "args": []
+  },
+  "prd-creator": {
+    "command": "prd-creator-mcp",
+    "args": []
+  },
+  "figma-developer": {
+    "command": "figma-developer-mcp",
+    "args": []
+  },
+  "firebase": {
+    "command": "firebase-mcp",
+    "args": []
+  },
+  "mare-browser": {
+    "command": "mare-browser-mcp",
+    "args": []
+  },
+  "agent-browser": {
+    "command": "agent-browser-mcp",
+    "args": []
+  },
+  "website-design": {
+    "command": "website-design-systems-mcp",
+    "args": []
+  },
+  "tokens-mcp": {
+    "command": "tokens-mcp",
+    "args": []
+  },
+  "tokenometer": {
+    "command": "tokenometer-mcp",
+    "args": []
+  },
+  "enquire": {
+    "command": "enquire-mcp",
+    "args": []
+  },
+  "stitch": {
+    "command": "stitch-mcp-server",
+    "args": []
+  },
+  "gws-server": {
+    "command": "gws-mcp-server",
+    "args": []
+  },
+  "mcpkit": {
+    "command": "mcpkit",
+    "args": []
+  },
+  "mcp-fetch-server": {
+    "command": "mcp-fetch-server",
+    "args": []
+  },
+  "mcpscan": {
+    "command": "mcpscan",
+    "args": []
+  },
+  "compressmcp": {
+    "command": "compressmcp",
+    "args": []
   }
- },
- "server-memory": {
-  "args": [
-   "-y",
-   "@modelcontextprotocol/server-memory"
-  ],
-  "command": "npx"
- },
- "server-postgres": {
-  "args": [
-   "-y",
-   "@modelcontextprotocol/server-postgres",
-   "postgresql://localhost/db"
-  ],
-  "command": "npx"
- },
- "server-puppeteer": {
-  "args": [
-   "-y",
-   "@modelcontextprotocol/server-puppeteer"
-  ],
-  "command": "npx"
- },
- "server-sqlite": {
-  "args": [
-   "mcp-server-sqlite",
-   "--db-path",
-   "/Users/chaali0324/mcp.db"
-  ],
-  "command": "uvx"
- },
- "skill-graph": {
-  "args": [],
-  "command": "/opt/homebrew/bin/skill-graph",
-  "env": {
-   "SKILL_GRAPH_PATH": "/Users/chaali0324/mamatXobsidian"
-  }
- },
- "time": {
-  "from": "~/.windsurf/mcp.json",
-  "parked_at": "2026-09-26T13:53:47Z"
- }
 }

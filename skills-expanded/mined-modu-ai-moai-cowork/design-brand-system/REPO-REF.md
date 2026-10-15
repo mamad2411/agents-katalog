@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/modu-ai/moai-cowork (path: plugins/moai-designer/skills/design-brand-system/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 브랜드 디자인 시스템

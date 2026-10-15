@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ygcedu/opencode-skills/csv-data-summarizer/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: CSV数据分析技能。使用Python和pandas分析CSV文件，生成统计摘要和快速可视化图表。当用户上传或提到CSV文件、需要分析表格数据时自动使用。

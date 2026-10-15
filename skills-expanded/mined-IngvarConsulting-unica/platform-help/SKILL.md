@@ -1,0 +1,154 @@
+---
+name: platform-help
+description: "Справка платформы 1С и объектной модели BSL. Используй когда нужно уточнить метод, свойство, конструктор, поведение API, версию платформы, совместимость или стандартное решение задачи."
+---
+
+# Platform Help
+
+## MCP routing
+
+- Документацию спрашивает MCP `unica` инструментом `unica.docs`. `source` —
+  один вид источника, а не имя поставщика. Список закрыт: `platform-help`,
+  `development-standard`, `configuration-documentation`. Неизвестное имя
+  отклоняется кодом `unsupported_source`, который перечисляет допустимые.
+- `source: "platform-help"` — интерфейс программирования и механика платформы
+  (Синтакс-помощник, справка конфигуратора, руководства площадки вендора).
+  `source: "development-standard"` — сервер стандартов разработки.
+- Без `source` спрашиваются оба сразу: справка платформы и стандарты. Это
+  единственный смысл умолчания — встроенная справка конфигурации в него не
+  входит.
+- `source: "configuration-documentation"` пока отвечает `unsupported_source` с
+  названной причиной: её читатель ещё не переведён на границу отмены рабочего
+  пространства. Называйте это границей поверхности, а не отсутствием ответа.
+- `unica.docs` может ответить задачей (`status: "working"`). Тогда возьмите
+  `taskId` из ответа и дождитесь результата через `unica.task.result`. Ответ
+  «задача принята» не является ответом на вопрос.
+- Чтобы открыть страницу, передайте полученный `documentId` целиком в `query`
+  того же `unica.docs`. Ответ `data.document` содержит текст и происхождение
+  документа. Если ответ содержит `cursor`, продолжайте тот же запрос с этим
+  курсором и соедините `data.document.text` всех страниц в их порядке.
+  `page.startByte` и `page.endByte` позволяют проверить, что фрагменты не
+  пропущены. Фрагмент поиска не выдавайте за прочитанную страницу.
+- Не обходите отказ справки конфигурации её локатором: этот путь ещё может
+  попасть к старому незащищённому читателю. Исправление и включение источника —
+  [#939](https://github.com/IngvarConsulting/unica/issues/939).
+- For project context, use `unica.search`, `unica.view {}`, and
+  `unica.check`.
+- Runtime идёт через `unica.run`: вызов без `op` отдаёт словарь операций и
+контракт каждой — `argsSchema`, `execution`, `previewRequired`,
+`dryRunRequired`. Контракт вызова бери оттуда, а не из этого текста;
+при `implemented: true` используй опубликованную `argsSchema`; при
+`support.state: limited` разрешено только подмножество `support.supportedArgs`.
+При `support.state: unavailable` остановись; не выдумывай аргументов при
+`argsSchema: null`. Для плановой операции сначала проверь результат `dryRun: true`,
+затем исполняй запрос с `dryRun: false`. Preview не фиксирует входы между
+вызовами. Не обходи контракт прямым runner-ом.
+- Когда вопрос об API зависит от структуры метаданных, читай её `unica.view` по
+  логическому адресу объекта.
+- Do not call internal standards, runtime, or package adapters directly.
+
+## Чтение ответа
+
+Ответ приходит секциями, по секции на поставщика, в порядке реестра.
+
+- Каждая секция несёт `sourceKind` и `authority`, каждое попадание в ней —
+  `applicableVersion` и `documentId`. Ответ обязан называть источник, версию и
+  `documentId` страницы: без него читатель не может вернуться к той же странице.
+- `language` секции — локаль, которой источник ответил на самом деле, а не
+  запрошенная. Если они расходятся, назовите подстановку локали в ответе:
+  справка поставляется не во всех локалях, и запрос на одной локали молча
+  отвечал бы страницами другой.
+- Секция со смыслом источника `development-standard` не закрывает вопрос о
+  сигнатуре или механике платформы, каким бы уместным ни выглядел её текст. Это
+  правило чтения, а не правило вызова. Симметрично: секция
+  `configuration-documentation` описывает прикладную конфигурацию и не
+  доказывает поведение самой платформы.
+- Установка платформы старше в интерфейсе программирования, руководства
+  площадки — в описательном слое: механизмы целиком, форматы адресов,
+  администрирование. Расхождение их версий называйте в ответе.
+- Руководства kb.1ci.com: текущая версия на площадке не доказывает, что
+  старых нет. Поиск держит семейство закреплённой версии проекта, а чтение
+  по локатору называет версию самого документа. Предупреждение о неполном
+  списке версий передайте пользователю.
+- Отказ `provider_unavailable` означает, что ни один поставщик не дал
+  результата: справка не установлена либо сетевой выход закрыт политикой.
+  Назовите условие среды, а не отвечайте по памяти.
+
+## Workflow
+
+1. State the exact platform/API question: object, method/property, platform
+   version, infobase mode, client/server context.
+2. Вызовите `unica.docs` с именем объекта или члена — или с естественной
+   формулировкой вопроса. Поиск пословный, морфологический и нечёткий:
+   точная подстрока и порядок слов не требуются, опечатка в имени
+   не прячет страницу.
+3. Если ответ пришёл задачей, дождитесь его через `unica.task.result`.
+4. Read `applicableVersion` in the hit. Если она расходится с версией проекта,
+   назовите расхождение в ответе.
+5. Если фрагмента недостаточно, откройте страницу через `unica.docs`, передав
+   её `documentId` в `query`. Назовите локатор и версию источника в ответе.
+   При отказе не достраивайте страницу по памяти.
+6. Validate against local project context with `unica.view {}` and targeted
+   `unica.search` if the answer depends on project conventions.
+7. For code examples, check syntax with `unica.check`; report runtime
+   behavior as unverified.
+
+## Platform context
+
+- Read `../../references/platform/compatibility-modes.md` for every question about a
+  compatibility mode or version-sensitive behavior. Resolve the runtime
+  platform, literal mode, effective compatibility version, and
+  feature-specific boundary separately.
+- Read `../../references/platform/platform-mechanics.md` when the answer depends on runtime context, auth, temporary storage, data separation, background jobs, or client/server boundaries.
+- Read `../../references/platform/runtime-diagnostics.md` when a platform question is really about a startup/runtime failure and needs evidence before an answer.
+- Do not give a platform answer from memory when version, mode, or context can change the behavior. Resolve that first, then answer.
+
+## Stop rules
+
+- Do not present a `development-standard` section as proof of platform API behavior or exact method signatures.
+- Справка отвечает, что и с какими типами вызывать. Целостное описание механизма — за пределами источника: сообщите границу источника вместо ответа по памяти.
+- Если секция вернула `unavailable` с причиной `version-missing`, назовите, какой установки или версии документа не хватает (отказ перечисляет доступные). Не подставляйте справку соседней версии.
+- Если секция вернула `unavailable` с причиной `policy-denied` — сетевой выход запрещён политикой `unica.toml` самим пользователем. Назовите это решением проекта, а не сбоем, и отвечайте из оставшихся секций.
+- Если ни один поставщик не дал подтверждения, сообщите `platform-help contract gap` и назовите требуемую версию и контекст.
+
+## MCP examples
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "unica.docs",
+    "arguments": {
+      "cwd": "<workspace>",
+      "query": "СтрНайти",
+      "source": "platform-help"
+    }
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "unica.docs",
+    "arguments": {
+      "cwd": "<workspace>",
+      "query": "как удалить элемент массива"
+    }
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "unica.task.result",
+    "arguments": { "taskId": "<taskId из ответа unica.docs>", "waitMs": 7000 }
+  }
+}
+```

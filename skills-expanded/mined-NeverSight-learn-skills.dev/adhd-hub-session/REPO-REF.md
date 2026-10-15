@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/uniskela/adhd-hub/adhd-hub-session/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: ADHD Hub — session protocol

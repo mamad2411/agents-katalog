@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/fyersdev/fyers-skills/fyers-supercharge/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Supercharge Mode — Multi-Agent Optimization Loop

@@ -1,0 +1,153 @@
+---
+name: subsystem-edit
+description: Точечное редактирование подсистемы 1С. Используй когда нужно добавить или удалить объекты из подсистемы, управлять дочерними подсистемами или изменить свойства
+argument-hint: <at> <ops>
+allowed-tools:
+  - Read
+  - Glob
+---
+
+# /subsystem-edit — редактирование подсистемы 1С
+
+## MCP routing
+
+- Preferred path: use MCP `unica` tool `unica.apply` с операциями
+  `content.add`, `content.remove`, `childSubsystem.add`,
+  `childSubsystem.remove` и `props.set`.
+- Do not call internal MCP/CLI adapters directly. They are hidden behind
+  `unica` and synchronized by the orchestrator.
+- Подсистему называет адрес: `args.at` вида `<набор>:Subsystem.<Имя>`.
+  Дочерняя — продолжением того же адреса. Путь к XML наружу не выходит; из
+  диффа или лога его переводит аварийный `unica.resolve`.
+- Сначала вызови `unica.apply` с `at` и `ops`: это план без записи.
+  Когда пользователь поручил внести эту правку, вызови `unica.apply` только
+  с `executionToken` из `data.executionToken` успешного плана.
+- Проверка поддержки поставщика работает внутри `unica`. Если она блокирует
+  заблокированный объект на поддержке, предпочитай расширение или явный план
+  смены состояния поддержки, а не правку метаданных поддержки напрямую.
+
+## Операции
+
+| Операция | `args` | Что делает |
+|---|---|---|
+| `content.add` | `items: [{object}]` | Добавляет объекты в состав |
+| `content.remove` | `items: [{object}]` | Удаляет объекты из состава |
+| `childSubsystem.add` | `items: [{name}]` | Заводит дочернюю подсистему |
+| `childSubsystem.remove` | только `at` дочерней | Исключает дочернюю подсистему из состава родителя |
+| `props.set` | `values: {…}` | Меняет свойства: `Synonym`, `IncludeInCommandInterface`, `UseOneCommand` и прочие |
+
+`childSubsystem.remove` вызывается на адресе самой дочерней подсистемы:
+`<набор>:Subsystem.<Родитель>.Subsystem.<Имя>`. Имя дочерней в `items` или
+`values` получает отказ `bad_value`, а `next` ведёт к её адресу.
+
+Элемент списка можно писать строкой вместо объекта. Операции применяются по
+порядку и публикуются одной транзакцией: либо все, либо ни одной. Повтор
+эквивалентной операции даёт `changed: false` без записи.
+
+Заведение дочерней подсистемы создаёт и её собственный файл, и ссылку на неё у
+родителя — это одна правка, а не две.
+
+Изменение состава или дочерних подсистем сохраняет ссылку картинки и
+`Picture.LoadTransparent`, включая отсутствие этого свойства и картинку без
+ссылки. Новая дочерняя подсистема получает пустую картинку. Генератор не
+добавляет служебные `&#13;` в XML.
+
+`props.set` не поддерживает `LoadTransparent` и `Picture.LoadTransparent`:
+предпросмотр и применение отклоняют эти свойства до записи.
+
+## Порядок
+
+1. Найди подсистему: `unica.search {corpus: "names", kind: "Subsystem"}`.
+2. Прочти её: `unica.view {at}`. Состав лежит в ветви `Relation`
+   (`relation: "content"`), дочерние — в ветви `Subsystem`; вложенная
+   подсистема читается по адресу `<набор>:Subsystem.<Родитель>.Subsystem.<Имя>`.
+3. Предпросмотр: `unica.apply` с `at` и `ops`; ответ несёт план и `data.executionToken`.
+4. Применение: вызов только с `executionToken` из `data.executionToken` успешного плана.
+5. Проверка: `unica.check {at}`.
+
+## Примеры
+
+### Состав: добавить и убрать за один раз
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "unica.apply",
+    "arguments": {
+      "at": "main:Subsystem.Продажи",
+      "ops": [
+        {
+          "op": "content.add",
+          "args": {
+            "at": "main:Subsystem.Продажи",
+            "items": [{"object": "Catalog.Товары"}, {"object": "Report.Продажи"}]
+          }
+        },
+        {
+          "op": "content.remove",
+          "args": {
+            "at": "main:Subsystem.Продажи",
+            "items": [{"object": "Report.Старый"}]
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+### Дочерняя подсистема и свойство
+
+Сначала получи план этого изменения:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "unica.apply",
+    "arguments": {
+      "at": "main:Subsystem.Продажи",
+      "ops": [
+        {
+          "op": "childSubsystem.add",
+          "args": {
+            "at": "main:Subsystem.Продажи",
+            "items": [
+              {
+                "name": "Заказы"
+              }
+            ]
+          }
+        },
+        {
+          "op": "props.set",
+          "args": {
+            "at": "main:Subsystem.Продажи",
+            "values": {
+              "IncludeInCommandInterface": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Для исполнения передай `data.executionToken` из этого успешного плана:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "unica.apply",
+    "arguments": {
+      "executionToken": "<data.executionToken из успешного плана>"
+    }
+  }
+}
+```

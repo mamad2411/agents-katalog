@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/liao666brant/skills/index-project/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 为代码仓库创建并增量维护 AGENTS.md 项目与模块索引。用于初始化或更新 AI 上下文、梳理项目结构供 Agent 使用，以及 Agent 修改模块内容使现有索引需要更新时主动调用。不用于 README、API 文档或其他检索索引。

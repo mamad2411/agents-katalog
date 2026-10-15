@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/LeoYeAI/openclaw-master-skills (path: skills/category-selection/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 亚马逊品类自动化选品分析技能。通过五维评分模型对亚马逊品类进行深度市场调研，生成Markdown分析报告。当用户使用 /category-selection 命令或提出'分析XX品类'、'XX品类市场调研'、'XX品类选品'等需求时触发此技能。支持配置分析数量，默认Top20。"

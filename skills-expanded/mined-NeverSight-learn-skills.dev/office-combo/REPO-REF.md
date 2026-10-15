@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/dwsy/agent/office-combo/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Microsoft Office 全功能支持。当 Claude 需要：（1）处理 Excel 表格（.xlsx）- 公式、格式、数据分析，（2）创建/编辑 PPT 演示文稿（.pptx），（3）处理 PDF 文档（.pdf）- 提取、合并、表单填写，（4）处理 Word 文档（.docx）- 编辑、修订跟踪、注释时使用。"

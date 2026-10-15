@@ -1,0 +1,372 @@
+{
+ "generated": "2026-10-11T22:40:25",
+ "counts": {
+  "fetched": 50,
+  "PASS": 49,
+  "WARN": 0,
+  "FAIL": 1,
+  "OTHER": 0
+ },
+ "skills": [
+  {
+   "name": "shopify-admin-skills",
+   "repo": "40RTY-ai/shopify-admin-skills",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "happy-platform-skills",
+   "repo": "Happy-Technologies-LLC/happy-platform-skills",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "pavedpath-code",
+   "repo": "Jia-Ethan/pavedpath-code",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "ikuai-cli",
+   "repo": "ikuaidev/ikuai-cli",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "openclawfice",
+   "repo": "openclawfice/openclawfice",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "joinquant-skill",
+   "repo": "gaaiyun/joinquant-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "swafra",
+   "repo": "kunal12203/swafra",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "cap-table",
+   "repo": "1984vc/cap-table",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "claw3d",
+   "repo": "makermate/claw3d-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "vibe-paper-writing",
+   "repo": "Zhangyanbo/vibe-paper-writing",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "clawkeep",
+   "repo": "taco-devs/clawkeep",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "uncodixify",
+   "repo": "dazeb/uncodixify-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "make-slide",
+   "repo": "Kuneosu/make-slide",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "portfolio-v2",
+   "repo": "itsyaba/portfolio-v2",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "trent-openclaw-security",
+   "repo": "trnt-ai/trent-openclaw-security-assessment",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "xhs-downloader-skill",
+   "repo": "Guing/xhs-downloader-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "textfocus",
+   "repo": "CodingWithLewis/TextFocus",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "trendingcontent",
+   "repo": "gabogabucho/trendingcontent-agent",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "memory-tool",
+   "repo": "pbrns/Lethe",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "hoa",
+   "repo": "hoa-js/hoa",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "tdb",
+   "repo": "AlDanial/tdb",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "antigravity",
+   "repo": "sakibsadmanshajib/antigravity-plugin",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "operate-ui-by-screenshot",
+   "repo": "BanmaXM/operate-ui-by-screenshot",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "pdf-proof",
+   "repo": "metedata/pdf-proof",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "paperclaw",
+   "repo": "0xMerl99/PaperClaw",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "swiftbutler",
+   "repo": "Cocoanetics/SwiftButler",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "tteg",
+   "repo": "kiluazen/tteg",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "email-channel",
+   "repo": "timothy-node/openclaw-email-channel",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "slopcheck",
+   "repo": "mattschaller/slopcheck",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "gpt-image-2-prompting",
+   "repo": "zhouwei713/gpt-image-2-prompting-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "real-code-practice-coach",
+   "repo": "pawel-cell/real-code-practice-coach",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "refactoring-react",
+   "repo": "silveiracamilo/refactoring-react",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "homework-solver",
+   "repo": "Li-Baichuan-James/homework-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "stateproof",
+   "repo": "HexaField/stateproof",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "x-monitor",
+   "repo": "ythx-101/x-monitor",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "devcontainer-mcp",
+   "repo": "aniongithub/devcontainer-mcp",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "px-asset-extract",
+   "repo": "JadeLiu-tech/px-asset-extract",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "bilibili-video-summarizer",
+   "repo": "catchpeak/bilibili-video-summarizer",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "premium-ui-builder-skill",
+   "repo": "ziguishian/premium-ui-builder-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "a-philosophy-of-software-design-skills",
+   "repo": "markduan/a-philosophy-of-software-design-skills",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "pretext-motion-bubble",
+   "repo": "Asunfly/pretext-motion-bubble-demo",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "youtube-podcast-ingestion",
+   "repo": "uzairansaruzi/youtube-ingest",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "ai-video-storyboard",
+   "repo": "aicontentskills/ai-video-storyboard-skill",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "technology-mapping",
+   "repo": "AlphaMao1/AlphaMao-technology-mapping",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "polygnosis",
+   "repo": "mosesman831/PolyGnosis",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "conversation-logger",
+   "repo": "sirkitree/conversation-logger",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "deep-novel-system",
+   "repo": "ALBEDO-TABAI/deep-novel-system",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "bagman-skill",
+   "repo": "zscole/bagman-skill",
+   "path": "SKILL.md",
+   "verdict": "FAIL",
+   "findings": [
+    {
+     "severity": "CRITICAL",
+     "category": "PROMPT-OVERRIDE",
+     "file": "/Users/chaali0324/.agents/skills-expanded/bagman-skill/SKILL.md",
+     "line": 197,
+     "pattern": "| Override | \"ignore previous instructions\" | Block |",
+     "risk": "Attempts to override system prompt and prior instructions",
+     "fix": "Remove instruction override attempts"
+    }
+   ]
+  },
+  {
+   "name": "codex-sessions-manager",
+   "repo": "1939869736luosi/codex-sessions-manager",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  },
+  {
+   "name": "hwp-pipeline",
+   "repo": "Yoojin-nam/hwp-pipeline",
+   "path": "SKILL.md",
+   "verdict": "PASS",
+   "findings": []
+  }
+ ]
+}

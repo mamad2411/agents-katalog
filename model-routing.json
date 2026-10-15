@@ -1,0 +1,40 @@
+{
+  "_doc": "Aturan pemilihan model: tugas remeh -> model murah/cepat; tugas sulit -> flagship. Tujuan: hemat biaya tanpa korbankan kualitas. Dipakai oleh semua AI tool.",
+  "cheap": {
+    "use_for": [
+      "lookup file/fungsi (grep/glob/read)",
+      "format, rename, rapikan teks",
+      "regex sederhana, aritmatika",
+      "jalankan skrip yang sudah ada",
+      "ringkas tool-output",
+      "ubah boilerplate / template"
+    ],
+    "hint": "kalau tugas bisa diselesaikan skrip deterministik, JANGAN panggil LLM mahal"
+  },
+  "standard": {
+    "use_for": [
+      "edit multi-file rutin",
+      "tulis test biasa",
+      "refactor kecil",
+      "jelaskan kode"
+    ]
+  },
+  "flagship": {
+    "use_for": [
+      "debugging rumit / akar masalah",
+      "desain arsitektur",
+      "reasoning panjang / multi-langkah",
+      "keamanan & review kritis",
+      "menyusun rencana besar"
+    ],
+    "hint": "gunakan reasoning effort lebih tinggi hanya untuk kategori ini"
+  },
+  "always": {
+    "retrieve_first": true,
+    "self_check_before_final": true,
+    "compact_when_context_over": 0.4,
+    "summarize_tool_output_max_chars": 800,
+    "no_reread_same_file": true,
+    "batch_independent_calls": true
+  }
+}

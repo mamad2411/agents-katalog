@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/contracts/skills/buergschaft-form-und-verbraucherbuerge/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Bürgschaft: Form und Verbraucherbürge: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: BGB BT Prüfer. Route: buergschaft-form-und-verb

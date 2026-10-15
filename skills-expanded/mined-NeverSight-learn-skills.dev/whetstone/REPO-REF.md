@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/qiao-925/qiao-skills/whetstone/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 把「原文 + 读者批注」整理成「编号批注 + 对应原文」的结构化笔记，并产出 AI 总结。人写批注，技能负责编号、对应、格式与总结。触发：批注式整理 / 磨刀石模式 / 二创式整理 / 批注式阅读与整理，或 /whetstone。

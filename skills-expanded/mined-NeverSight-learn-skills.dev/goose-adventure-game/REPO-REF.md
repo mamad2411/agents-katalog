@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/insight68/skills/goose-adventure-game/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 《尼尔斯骑鹅旅行记》文字冒险游戏引擎。创建一个基于Python的互动文字游戏，包含完整的剧情系统、状态管理、存档功能和成就系统。当用户需要：创建文字冒险游戏、开发互动故事系统、构建游戏引擎、实现存档管理、设计分支剧情时使用此skill。

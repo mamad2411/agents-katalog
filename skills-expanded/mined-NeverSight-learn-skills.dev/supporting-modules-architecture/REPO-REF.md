@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tencentblueking/bk-ci/supporting-modules-architecture/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: BK-CI 支撑模块架构指南，涵盖凭证管理(Ticket)、构建机环境(Environment)、通知服务(Notify)、构建日志(Log)、质量红线(Quality)、开放接口(OpenAPI)等支撑性服务模块。当用户开发这些模块功能或需要理解支撑服务架构时使用。

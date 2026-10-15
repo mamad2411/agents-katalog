@@ -1,0 +1,238 @@
+---
+name: aktenaufbereiter-strafrecht
+title: Aktenaufbereiter Strafrecht
+description: 'Für Aktenaufbereiter Strafrecht: ordnet Akte, Belege und Lücken; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/aktenaufbereiter-strafrecht/skills/aktenaufbereiter-strafrecht
+license: Apache-2.0
+version: 0.1.2
+execution_mode: open
+jurisdiction: de
+practice: criminal
+language: de
+---
+
+# Aktenaufbereiter Strafrecht
+
+## Leitidee
+
+Erfasse und strukturiere den Inhalt umfangreicher Strafakten in
+Tabellen, die in Excel weiterverwendbar sind. Ordne Informationen
+so, dass sich die zugehörigen Aktenstellen wiederfinden lassen.
+
+Der Skill ersetzt NICHT die eigene Aktenlektüre. Er ist kein
+agentisches System das selbständig verteidigt. Er ist ein Werkzeug
+das die mechanische Vorarbeit beschleunigt und dabei Widersprüche
+und Lücken sichtbar macht die beim Durchblaettern leicht übersehen
+werden.
+
+## Inputs
+
+- Digitalisierte Aktenbestandteile (PDF mit OCR Word maschinenlesbar)
+- Optional: vorhandene Excel-Tabelle zur Fortschreibung
+- Optional: Anklageschrift gesondert (für Abgleich)
+- Optional: Vorlage-Excel mit Wunsch-Spalten
+
+## OCR-Pflicht
+
+Gescannte Dokumente OHNE Texterkennung werden nicht verlaesslich
+verarbeitet. Der Skill weist darauf hin. Manche Systeme lesen
+auch ohne OCR aus Bildern — Ergebnisse sind aber deutlich
+fehleranfälliger und nicht empfehlenswert.
+
+## Sechs Übersichten
+
+### 1. Aktenvorblatt und Inhaltsverzeichnis
+
+Spalten: Nr — Blatt — Datum — Vorgang — Essentialia — Anmerkung
+Kanzlei — Anmerkung Mandant.
+
+Blattangaben müssen mit der tatsächlichen Paginierung
+übereinstimmen. Bei fehlender Paginierung wird so gut wie möglich
+gearbeitet und die Lücke markiert. Unvollständige Paginierung ist
+besser als gar keine.
+
+### 2. Personenverzeichnis
+
+Spalten: Nr — Name (Nachname Vorname) — Adresse — Prozessrolle —
+Blatt der Erstnennung — Anmerkung Kanzlei — Anmerkung Mandant.
+
+Prozessrollen: Beschuldigter Zeuge Geschaedigter Sachverständiger
+Polizeibeamter Richter Staatsanwalt Verteidiger Nebenkläger
+sonstiger Beteiligter.
+
+Das Personenverzeichnis dient dazu, frühere Erwähnungen einer
+Person auch in umfangreichen Akten gezielt wiederzufinden.
+
+### 3. Tatkomplex- und Vorwurfsverzeichnis
+
+Spalten: Tatkomplex (I II III ...) — Tatvorwurf und Norm —
+Tatzeitraum von bis — Betroffene Personen (Beschuldigte
+Geschaedigte) — Beweismittel (Urkunden Zeugen
+Sachverständigengutachten).
+
+Zusatz: Thematischer Index — auf welchem Blatt welches Thema
+behandelt wird. Beispiel: Komplex Kontofaelschung Bl. 125-189
+Band I und Bl. 45-72 Band III. Zeugenaussagen zum Untreue-Vorwurf
+Bl. 312 Bl. 455 Bl. 678-690.
+
+### 4. Beziehungsverzeichnis
+
+Spalten: Person 1 — Beziehung — Person 2 — Fundstelle (Band
+Blatt) — Bemerkungen.
+
+Beziehungstypen: Verwandtschaft Geschäftspartner Kontakt per Chat
+Telefonat E-Mail Mitarbeiter Vorgesetzter. Auf Wunsch
+Netzwerkdiagramm als Graph — sonst bleibt es bei der Tabelle.
+
+### 5. Chronologie
+
+Spalten: Nr — Datum — Blatt — Beteiligte — Vorgang — Anmerkung
+Kanzlei — Anmerkung Mandant.
+
+Lückenlos chronologisch geordnet. Zentrales Arbeitsinstrument
+für Hauptverhandlung Mandantengespräch und Verständigung mit
+der Staatsanwaltschaft.
+
+### 6. Fristen- und Terminverzeichnis
+
+Spalten: Art (HV-Termin Frist Adresse) — Datum oder Frist —
+Beschreibung — Fundstelle (Band Blatt).
+
+Erfasst auch Adressen aller Verfahrensbeteiligten — Gericht
+Staatsanwaltschaft Mitverteidiger Nebenklagevertretung.
+
+## Methodik
+
+1. Aktenbestandteile inventarisieren — pro Datei Typ Umfang
+ OCR-Status
+2. Blatt-für-Blatt-Extraktion mit Quellenverweis
+3. Querverweis zwischen den sechs Tabellen — Personen aus
+ Personenverzeichnis müssen in Beziehung und Chronologie
+ konsistent erscheinen
+4. Widerspruchsprüfung — abweichende Datums- oder Sachangaben
+ in verschiedenen Vernehmungen werden BEIDE dokumentiert mit
+ Fundstelle
+5. Lückenprüfung — in der Anklageschrift genannte Zeugen die in
+ den Vernehmungsprotokollen fehlen werden markiert
+6. Ausgabe als Excel-fähige Tabellen
+
+## Anti-Halluzinations-Regel
+
+- Nur Informationen die in der Akte stehen
+- Keine eigenen Vermutungen oder Wertungen
+- Jede Information mit Band und Blattangabe wenn identifizierbar
+- Widersprüche BEIDE dokumentieren mit Fundstelle
+- Unsicherheiten kennzeichnen — Beispiel `[Datum unklar]`
+ `[Name nur teilweise lesbar]`
+- KEINE rechtliche Bewertung der Vorwuerfe
+- KEINE Einschätzung der Erfolgsaussichten der Verteidigung
+
+## Output-Dateien
+
+- `Aktenvorblatt_<Aktenzeichen>.xlsx`
+- `Personenverzeichnis_<Aktenzeichen>.xlsx`
+- `Tatkomplexe_<Aktenzeichen>.xlsx`
+- `Beziehungen_<Aktenzeichen>.xlsx`
+- `Chronologie_<Aktenzeichen>.xlsx`
+- `Fristen_<Aktenzeichen>.xlsx`
+
+Alternativ ein Sammel-Workbook `Akte_<Aktenzeichen>.xlsx` mit
+sechs Tabellenblättern.
+
+Auf Wunsch zusätzlich Markdown-Version der Tabellen für offline
+Nutzung bei Gerichtsterminen ohne stabilen Internet-Zugang.
+
+## Fortlaufende Aktualisierung
+
+Bei Nachlieferungen ergänzt der Skill die bestehende Tabelle.
+Neuzugänge werden in einer Spalte `Status` mit `NEU` markiert
+oder in einer separaten Spalte `Eingang` mit Datum versehen.
+Bisherige Einträge werden nicht überschrieben.
+
+Beispielworkflow: "Hier ist meine bisherige Chronologie hier sind
+weitere 300 Blaetter Akten — bitte aufnehmen." Der Skill ergänzt
+und markiert.
+
+## Spezialisierungen
+
+### Wirtschaftsstrafverfahren
+
+Zusatztabellen: Finanzstroeme Kontoverbindungen
+Transaktionschronologien Gesellschaftsverflechtungen.
+
+### BtM-Verfahren
+
+Zusatztabellen: TKUe-Protokolle Observationsberichte Chatverläufe
+mit Datum Teilnehmern Inhalt-Zusammenfassung.
+
+### Beweismittelverzeichnis
+
+Separate Tabelle: Beweismittel — Art — Fundstelle in Akte —
+Erhebungsgrundlage — Bewertung der Verwertbarkeit. Bewertung
+strikt sachlich keine prozesstaktische Empfehlung.
+
+### Anklageschrift-Abgleich
+
+Gegenüberstellung: in der Anklageschrift behauptete Tatsache —
+Aktenbefund — Diskrepanz. Markiert wo die Anklage nicht durch die
+Akte gedeckt ist.
+
+### Vernehmungsübersicht
+
+Tabelle aller Vernehmungen: Datum — vernehmender Beamter —
+vernommene Person — wesentliche Aussageinhalte — Widersprüche
+zu früheren Aussagen — Fundstelle.
+
+## Beispielformulierungen
+
+- "Erstelle alle sechs Übersichten zu dieser Strafakte. OCR
+ ist gemacht."
+- "Hier ist meine bisherige Chronologie und 400 neue Blaetter.
+ Bitte aufnehmen mit Markierung der Neuzugänge."
+- "Erzeuge zusätzlich das Wirtschaftsstraf-Set mit
+ Finanzstroemen und Kontoverbindungen."
+- "Gleiche die Anklageschrift mit dem Aktenbefund ab und zeige
+ Diskrepanzen."
+- "Vernehmungsübersicht mit Widersprüchen zwischen den
+ einzelnen Aussagen des Zeugen Mueller."
+
+## Berufsrecht und Datenschutz
+
+Strafakten enthalten hochsensible personenbezogene Daten. Nutzung
+nur mit KI-Systemen die DSGVO § 203 StGB und §§ 43a 43e BRAO
+vertraglich zusichern und tatsächlich gewährleisten. Verlage
+und Gerichtsentscheidungen — § 5 UrhG — genießen keinen
+urheberrechtlichen Schutz; rechtswissenschaftliche Literatur der
+Verlage hingegen schon — Lizenzsituation prüfen.
+
+## Pragmatismus
+
+Führe vorhandene Excel-Chronologien fort und ergänze sie um die
+neuen Akteninhalte. Die Fundstellen sollen im Mandantengespräch
+und bei der weiteren Bearbeitung gezielt auffindbar sein.
+
+## Werkzeug: `werkzeuge/aktenuebersicht_template.xlsx`
+
+Vorlage für eine strukturierte Aktenübersicht mit drei Sheets:
+
+1. **Beweismittel** — Lfd-Nr., Datum, Aktenfundstelle (Band/Blatt), Vorgang, Beweismittel, Beweisthema, Antrag/Verzicht, Status, Bemerkung. Als Excel-Tabelle formatiert (AutoFilter, Banded Rows).
+2. **Fristen** — Akteneinsicht, Hauptverhandlung, Erinnerungen, Status.
+3. **Lesehinweise** — Konvention zur Pflege der Aktenübersicht.
+
+Die Vorlage ersetzt nicht die Aktenführung im Kanzleisystem, sondern strukturiert die Verteidigerarbeit beim Lesen der Ermittlungsakte.
+
+## Rechtsprechung zur Aktenaufbereitung und Verwertungsverboten (Stand Mai 2026)
+
+- BVerfG, Beschluss vom 23. September 2025, 2 BvR 625/25: Die Verfassungsbeschwerde gegen eine auf ANOM-Daten gestützte Verurteilung wurde nicht zur Entscheidung angenommen; nach dem dortigen Vortrag bestanden keine verfassungsrechtlichen Bedenken gegen die Verwertung. Die Entscheidung begründet keine allgemeine Pflicht zu einer bestimmten Auswertungs- oder Authentifizierungsdokumentation. Der Aktenaufbereiter kennzeichnet Herkunft, Übermittlung, Zuordnung und Authentizität deshalb als tatsächliche Prüfspur und trennt vorhandene Belege von offenen Nachforderungen. Amtliche Quelle: https://www.bundesverfassungsgericht.de/SharedDocs/Entscheidungen/DE/2025/09/rk20250923_2bvr062525.html
+- BGH (GSSt) 03.02.2025 — GSSt 1/24 (KCanG): Beim Cannabis-Komplex Mengenangaben und Auswertungs-Protokolle in der Akte gezielt auf sanktionsfreie Eigenkonsummengen prüfen; daraus folgen Beweisverwertungs- und Tatverdachtsfragen. Offene Fundstelle: https://dejure.org/dienste/vernetzung/rechtsprechung?Text=GSSt+1/24
+- Beweisverwertungsverbote nach §§ 136a, 100a–100e, 105 StPO: ständige Maßstabsentscheidungen vor Verwendung in dejure.org / openjur.de live verifizieren.
+
+## Normen Aktenaufbereitung
+
+- § 147 Abs. 1 StPO — Akteneinsichtsrecht des Verteidigers (vollstaendig, alle Bestandteile)
+- § 32f StPO — elektronische Akten: digitale Bereitstellung; Verteidiger kann vollstaendige Kopie verlangen
+- § 136a StPO — verbotene Vernehmungsmethoden; absolutes Verwertungsverbot bei Verstoss
+- § 105 StPO — richterlicher Vorbehalt bei Durchsuchung; fehlende Anordnung fuehrt zum Verwertungsverbot
+- § 100a-100e StPO — TKU: Anordnungsvoraussetzungen, Katalogstraftaten, Verwendungsbeschrankung
+- § 108 StPO — Zufallsfunde; eingeschraenkte Verwertung

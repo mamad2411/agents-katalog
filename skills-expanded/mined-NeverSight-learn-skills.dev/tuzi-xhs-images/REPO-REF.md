@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tuziapi/tuzi-skills/tuzi-xhs-images/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 生成小红书信息图系列，包含 10 种视觉风格和 8 种布局。将内容拆分为 1-10 张卡通风格图片，针对小红书互动优化。当用户提到"小红书图片"、"XHS图片"、"小红书种草"、或需要中文社交媒体信息图时使用。

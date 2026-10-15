@@ -17,19 +17,17 @@ python3 - "$J" <<'PY'
 import json, os, sys, re, glob
 j = sys.argv[1]
 d = json.load(open(j))
-print("Katalog %d skill curated: skill_for_task/skill_search; muat ringkas: bash ~/.agents/skill-load-lite.sh <nama>."
-      % d.get("total_curated", 0))
+print("Katalog %d skill (%d curated + %d reference): cari via skill_for_task/skill_search, muat ≤2 via skill_load/skill-load-lite.sh."
+      % (d.get("total_curated", 0) + d.get("total_reference", 0), d.get("total_curated", 0), d.get("total_reference", 0)))
 print("")
 print("## Anti-ngarang (ringkas)")
 print("Klaim wajib sebut sumber (skill/MCP/file+baris); DILARANG menulis angka dari ingatan; file .md baru wajib ada '## Sumber'.")
 print("Sumber primer tak terjangkau → BERHENTI + tanya user (jangan nebak). Skill belum ada → MINER_LIMIT=120 python3 ~/.agents/skill-miner.py")
-print("MCP aktif: skill-catalog + mcp-router (2); lainnya diparkir di mcp-parked.json → python3 ~/.agents/mcp-lifecycle.py --on <nama>")
+print("MCP: skill-catalog + mcp-router (survivor); butuh lain -> mcp_use via mcp-router (on-demand, mati 300s idle).")
 try:
     import subprocess
     subprocess.run(["python3", os.path.expanduser("~/.agents/mcp-lifecycle.py"), "--gc-if-due", "14"],
-                   capture_output=True, timeout=30)  # ringan: cek murah, GC beneran maks 1x/minggu
-    subprocess.run(["python3", os.path.expanduser("~/.agents/archive-sessions.py")],
-                   capture_output=True, timeout=60)  # arsip sesi >7 hari, maks 1x/minggu, sunyi
+                   capture_output=True, timeout=10)  # murah: skip kalau baru jalan <14 hari
 except Exception:
     pass
 PY

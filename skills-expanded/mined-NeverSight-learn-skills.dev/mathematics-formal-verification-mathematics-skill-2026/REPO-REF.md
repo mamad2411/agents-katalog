@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/jonatangs777/ai-skill-agent-control-deck-2026/mathematics-formal-verification-mathematics-skill-2026/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Desarrolla soluciones matematicas avanzadas para formal verification mathematics con rigor formal, validacion reproducible y decisiones auditables."

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/mtgvim/tiger-kit/tk-review/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: [user] 정확한 커밋 범위, GitHub PR 또는 현재 worktree 하나를 읽기 전용으로 검토해 Spec/AC와 Quality/Standards 판정 및 중요한 근거 기반 finding만 제공합니다. 수정·발행 요청에는 사용하지 않습니다."

@@ -1,120 +1,156 @@
 {
- "entities": [
-  {
-   "name": "user-setup",
-   "entityType": "config",
-   "observations": [
-    "vault: ~/Documents/AgentsMemory (Obsidian, 21 plugins, 19 ON)",
-    "custom skills: prompt-booster, skill-router, linkedin-obsidian-memory-graph, device-cool, browser-use-local, baca-gambar, obsidian-llm-bridge, skill-combinator",
-    "rules: tanpa slash, hemat token, gratis tanpa API key, xweb_search dilarang",
-    "device: M1 8GB, jaga adem, plugin berat OFF"
-   ]
-  },
-  {
-   "name": "user",
-   "entityType": "person",
-   "observations": [
-    "Berbahasa Indonesia, gaya santai",
-    "Mau resource hemat: MCP idle dimatikan, bukan nyala 24 jam",
-    "Mau katalog skill besar (target 20k), tidak duplikat, semua aktif",
-    "Suka verifikasi nyata (handshake/test), bukan klaim"
-   ]
-  },
-  {
-   "name": "~/.agents",
-   "entityType": "system",
-   "observations": [
-    "Katalog skill: 14.326 aktif (curated 3173 + reference 11.153); junk 7.306 dipisah",
-    "Cari skill: skill-search.sh (FTS5) atau MCP skill_for_task/skill_search/skill_load",
-    "Tambah skill: skill-miner.py (tambang komunitas, dedup md5) / skill-factory.py (bikin meniru struktur referensi curated)",
-    "Regen katalog: build_skills_index.py lalu skills-router.py",
-    "Nama kanonik dari frontmatter name:, bukan nama folder"
-   ]
-  },
-  {
-   "name": "skill-first-protocol",
-   "entityType": "rule",
-   "observations": [
-    "Sebelum kerja: cari skill dulu -> cek MCP relevan -> cek repo-ref; jangan mengarang kalau skill ada",
-    "Disuntik tiap sesi via session-brief.sh (hook SessionStart Claude)"
-   ]
-  },
-  {
-   "name": "mcp-core-12",
-   "entityType": "config",
-   "observations": [
-    "Claude Code: 12 server ALIVE terverifikasi mcp-doctor: playwright, filesystem, git, memory, memory-bank, desktop-commander, context7, sequential-thinking, fetch, time, skill-catalog, skill-graph",
-    "DEAD (jangan pakai): sqlite, duckdb, puppeteer, tokz-compress",
-    "Total semua provider 191 server (sudah dipangkas dari 73.652)",
-    "Sumber kebenaran: ~/.agents/mcp-allowlist.txt"
-   ]
-  },
-  {
-   "name": "mcp-lifecycle",
-   "entityType": "tool",
-   "observations": [
-    "Parkir MCP idle >14 hari (maks 200/pass, mingguan); core 12 dikecualikan",
-    "Perintah: python3 ~/.agents/mcp-lifecycle.py [--on|--off|--gc <n>]"
-   ]
-  },
-  {
-   "name": "voralens-v2",
-   "entityType": "project",
-   "observations": [
-    "Repo: /Users/chaali0324/receptor/voralens-v2 (Go Gin + Vue)",
-    "12 skill project-scope di .claude/skills (termasuk voralens-api-conventions hasil skill-factory)"
-   ]
-  },
-  {
-   "name": "conventions",
-   "entityType": "rule",
-   "observations": [
-    "Backup file lama: .bak-YYYYMMDD sebelum edit",
-    "Selalu UTC & idempotent (script jalan 2x tanpa efek samping)",
-    "Jangan hapus apa pun tanpa izin user",
-    "Nama skill kebab-case, description wajib 1 kalimat",
-    "MCP: 1 file per tool, kurasi terbatas, tanpa daemon/port kalau bisa"
-   ]
-  },
-  {
-   "name": "repo-registry",
-   "entityType": "asset",
-   "observations": [
-    "322 repo komunitas (awesome lists, bintang >=100) di repo-registry.json",
-    "Batch-3 mining (--registry) belum jalan; target 20k skill"
-   ]
-  }
- ],
- "relations": [
-  {
-   "from": "user",
-   "to": "~/.agents",
-   "relationType": "memiliki"
-  },
-  {
-   "from": "skill-first-protocol",
-   "to": "~/.agents",
-   "relationType": "mengatur"
-  },
-  {
-   "from": "mcp-lifecycle",
-   "to": "mcp-core-12",
-   "relationType": "mengelola"
-  },
-  {
-   "from": "voralens-v2",
-   "to": "~/.agents",
-   "relationType": "memakai-skill-dari"
-  },
-  {
-   "from": "conventions",
-   "to": "~/.agents",
-   "relationType": "mengikat"
-  },
-  {
-   "from": "repo-registry",
-   "to": "~/.agents",
-   "relationType": "menyuplai-skill-ke"
-  }
- ]
+  "entities": [
+    {
+      "name": "user-setup",
+      "entityType": "config",
+      "observations": [
+        "vault: ~/Documents/AgentsMemory (Obsidian, 21 plugins, 19 ON)",
+        "custom skills: prompt-booster, skill-router, linkedin-obsidian-memory-graph, device-cool, browser-use-local, baca-gambar, obsidian-llm-bridge, skill-combinator",
+        "rules: tanpa slash, hemat token, gratis tanpa API key, xweb_search dilarang",
+        "device: M1 8GB, jaga adem, plugin berat OFF"
+      ]
+    },
+    {
+      "name": "user",
+      "entityType": "person",
+      "observations": [
+        "Berbahasa Indonesia, gaya santai",
+        "Mau resource hemat: MCP idle dimatikan, bukan nyala 24 jam",
+        "Mau katalog skill besar (target 20k), tidak duplikat, semua aktif",
+        "Suka verifikasi nyata (handshake/test), bukan klaim",
+        "Target 2026-10-09: 10K+++ available, hemat (M1 8GB), hook per-prompt mati"
+      ]
+    },
+    {
+      "name": "~/.agents",
+      "entityType": "system",
+      "observations": [
+        "Katalog: 93.780 tersedia (curated 3.176 + reference 90.604); junk 8.942 + docs disembunyikan dari search",
+        "Cari skill: skill-search.sh (FTS5) atau MCP skill_for_task/skill_search/skill_load",
+        "Tambah skill: skill-miner.py (tambang komunitas, dedup md5) / skill-factory.py (bikin meniru struktur referensi curated)",
+        "Regen katalog: build_skills_index.py lalu skills-router.py",
+        "Nama kanonik dari frontmatter name:, bukan nama folder"
+      ]
+    },
+    {
+      "name": "skill-first-protocol",
+      "entityType": "rule",
+      "observations": [
+        "Sebelum kerja: cari skill dulu -> cek MCP relevan -> cek repo-ref; jangan mengarang kalau skill ada",
+        "Disuntik 1x/sesi (533 B via SessionStart); suntikan per-prompt (skill-inject) DIMATIKAN 2026-10-09",
+        "Hemat: cari via skill_for_task/skill_search (hasil ≤8, ~1KB); muat ≤2 via skill_load lite (≤2KB); JANGAN baca SKILLS-AVAILABLE.md utuh (90KB)"
+      ]
+    },
+    {
+      "name": "mcp-core-12",
+      "entityType": "config",
+      "observations": [
+        "Claude Code: 12 server ALIVE terverifikasi mcp-doctor: playwright, filesystem, git, memory, memory-bank, desktop-commander, context7, sequential-thinking, fetch, time, skill-catalog, skill-graph",
+        "DEAD (jangan pakai): sqlite, duckdb, puppeteer, tokz-compress",
+        "Total semua provider 191 server (sudah dipangkas dari 73.652)",
+        "Sumber kebenaran: ~/.agents/mcp-allowlist.txt"
+      ]
+    },
+    {
+      "name": "mcp-lifecycle",
+      "entityType": "tool",
+      "observations": [
+        "Parkir MCP idle >14 hari (maks 200/pass, mingguan); core 12 dikecualikan",
+        "Perintah: python3 ~/.agents/mcp-lifecycle.py [--on|--off|--gc <n>]"
+      ]
+    },
+    {
+      "name": "voralens-v2",
+      "entityType": "project",
+      "observations": [
+        "Repo: /Users/chaali0324/receptor/voralens-v2 (Go Gin + Vue)",
+        "12 skill project-scope di .claude/skills (termasuk voralens-api-conventions hasil skill-factory)"
+      ]
+    },
+    {
+      "name": "conventions",
+      "entityType": "rule",
+      "observations": [
+        "Backup file lama: .bak-YYYYMMDD sebelum edit",
+        "Selalu UTC & idempotent (script jalan 2x tanpa efek samping)",
+        "Jangan hapus apa pun tanpa izin user",
+        "Nama skill kebab-case, description wajib 1 kalimat",
+        "MCP: 1 file per tool, kurasi terbatas, tanpa daemon/port kalau bisa"
+      ]
+    },
+    {
+      "name": "repo-registry",
+      "entityType": "asset",
+      "observations": [
+        "322 repo komunitas (awesome lists, bintang >=100) di repo-registry.json",
+        "Batch-3 mining (--registry) belum jalan; target 20k skill"
+      ]
+    },
+    {
+      "name": "genzysfleetops",
+      "entityType": "project",
+      "observations": [
+        "Repo: /Users/chaali0324/Downloads/GenZysFleetOps (BE .NET 10 modular monolith + FE React 19/Vite + mobile Flutter fleet-app)",
+        "Skema OTORITATIF = 22 modul (M01-M22) per MODULE-MAP-v2.md; 168 pages; 146 kode FRD; sinkron 1:1 dgn folder BE GenZysFleetOps.Modules/",
+        "BE: 22/22 modul tereksekusi (Domain+Features+EF config+migrasi+controller); 27 EF config, 6 migrasi, 26 controller",
+        "Dokumentasi lengkap: prd/PRD-M01..M22 + prd/frd (22) + prd/srd (22) + prd/workflow (22) + DOCUMENTATION-INDEX.md + QUICK-REFERENCE.md",
+        "Mobile docs: fleet-app/docs/ (BRD-Mobile + PRD induk + 10 PRD layar + 10 FRD layar + QUICK-REFERENCE) — repo terpisah FathurM4Zmi/fleet-app",
+        "FE stack: React 19 + Vite + Tailwind v4 + shadcn/ui (dikunci, BUKAN Vue); mobile = Flutter",
+        "Skema lama 25-modul diarsipkan di prd/_legacy-schema-lama/ (bahan saja)",
+        "Cross-cutting: CRC-01..05 (immutability, audit-first, policy authz, ITelemetrySource, envelope); Open decisions OD-03/06/09/12/13"
+      ]
+    },
+    {
+      "name": "genzys-fleetops-docs",
+      "entityType": "skill",
+      "observations": [
+        "Skill di ~/.agents/skills-store/genzys-fleetops-docs (curated), symlink ke ~/.claude/skills/",
+        "Fungsi: generate/verify/konsistenkan dokumentasi FMS (PRD/FRD/SRD/Workflow per modul + mobile + quick-ref)",
+        "Memaksa skema otoritatif 22 modul + mapping folder BE; larang mengarang modul & edit file generated",
+        "Trigger: lengkapi dokumentasi, buat PRD/FRD/SRD/workflow modul, catatan ringkas, sync docs ke 22 modul"
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "from": "user",
+      "to": "~/.agents",
+      "relationType": "memiliki"
+    },
+    {
+      "from": "skill-first-protocol",
+      "to": "~/.agents",
+      "relationType": "mengatur"
+    },
+    {
+      "from": "mcp-lifecycle",
+      "to": "mcp-core-12",
+      "relationType": "mengelola"
+    },
+    {
+      "from": "voralens-v2",
+      "to": "~/.agents",
+      "relationType": "memakai-skill-dari"
+    },
+    {
+      "from": "conventions",
+      "to": "~/.agents",
+      "relationType": "mengikat"
+    },
+    {
+      "from": "repo-registry",
+      "to": "~/.agents",
+      "relationType": "menyuplai-skill-ke"
+    },
+    {
+      "from": "genzysfleetops",
+      "to": "genzys-fleetops-docs",
+      "relationType": "didokumentasikan-oleh"
+    },
+    {
+      "from": "genzys-fleetops-docs",
+      "to": "~/.agents",
+      "relationType": "terdaftar-di"
+    }
+  ]
 }

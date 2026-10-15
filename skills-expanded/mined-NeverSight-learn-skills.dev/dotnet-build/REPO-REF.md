@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/icartsh/icartsh_plugin/dotnet-build/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: dotnet CLI를 사용하여 .NET 솔루션/프로젝트를 빌드합니다. 컴파일, 종속성 복원 또는 아티팩트 빌드 작업 시 사용합니다.

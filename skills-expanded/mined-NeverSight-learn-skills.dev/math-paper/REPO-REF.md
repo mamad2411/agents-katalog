@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/jiaobin-1/cumcm-skills/math-paper/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 通用数学建模论文撰写专家 (Universal Math Paper Writer)

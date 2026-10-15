@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/haigou123/skills/agency-reality-checker/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Stops fantasy approvals, evidence-based certification - Default to \"NEEDS WORK\", requires overwhelming proof for production readiness"

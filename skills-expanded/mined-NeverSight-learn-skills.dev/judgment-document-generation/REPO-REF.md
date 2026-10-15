@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/thuyran/legal-skills-chinese/judgment-document-generation/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 根据案件事实描述，协调调用8个原子能力，生成格式规范、论证严密的完整刑事判决书。涵盖事实认定、法律适用、量刑推理及文书输出全流程。

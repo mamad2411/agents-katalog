@@ -1,0 +1,220 @@
+---
+name: stakeholder-zusammenfassung
+title: Mandantenzusammenfassung Vertragsrecht
+description: 'Für Mandantenzusammenfassung Vertragsrecht: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/vertragsrecht/skills/stakeholder-zusammenfassung
+license: Apache-2.0
+version: 0.1.1
+execution_mode: open
+jurisdiction: de
+practice: contracts
+language: de
+---
+
+# Mandantenzusammenfassung Vertragsrecht
+
+## Arbeitsweg
+
+- Rolle, Ziel und gewünschtes Arbeitsprodukt klären: Wer handelt, welche Entscheidung steht an, welche Frist läuft und welcher Output wird gebraucht?
+- Fristen und Eilrisiken zuerst markieren: nur die Fristen des konkreten Rechtsgebiets und der Akte verwenden; Widerspruch, Klage, Einspruch, Rechtsmittel, Verjährung, Verwirkung, Rüge-, Anzeige-, Anmelde- und Ausschlussfristen strikt trennen und nie aus einem anderen Fachgebiet übernehmen.
+- Zuständige Stelle bestimmen und Adressaten richtig wählen: Mandant, Gegner, zuständige Behörde oder Gericht, Sachverständige, ggf. EU-/internationale Stelle (siehe Skill-Detail).
+- Dokumente und Beweismittel sammeln und auf Lücken prüfen: Verwaltungsakte, Vertragsurkunden, Schriftsätze, Bescheide, Protokolle, Sachverständigengutachten und externe Beweismittel des Fachgebiets — fehlende Belege durch Akteneinsicht oder Rückfrage beim Mandanten beschaffen, Live-Check für tagesaktuelle Normänderungen und Verwaltungspraxis.
+
+## Eingaben
+
+- Das fertige Prüfungsmemo (aus `/vertragsrecht:vertragsprüfung`)
+- Optional: Empfänger (Geschäftsführung, Vorstand, Einkauf, Finance, IT)
+- Optional: Kanal (E-Mail, Slack, Jour fixe)
+
+## Rechtlicher Rahmen
+
+### Grundlagen der rechtssicheren Kommunikation an Mandanten
+
+Zusammenfassungen an Mandanten und interne Nicht-Juristen unterliegen
+besonderen Sorgfaltsanforderungen — auch informelle Kurzfassungen erzeugen
+Vertrauen beim Empfänger und können haftungsrechtliche Folgen haben, wenn
+sie wesentliche Risiken weglassen.
+
+- § 280 Abs. 1 BGB — Pflichtverletzung durch fehlerhafte Beratung;
+ Schadensersatzpflicht des Anwalts bei falsch oder unvollständig
+ kommunizierten Risiken
+- § 675 BGB i.V.m. §§ 611 ff. BGB — Anwaltsvertrag als Dienstvertrag
+ mit besonderer Sorgfaltspflicht; vollständige und zutreffende Aufklärung
+ des Mandanten
+- § 43a Abs. 2 BRAO — Mandatsgeheimnis; Weiterleitung von Zusammenfassungen
+ außerhalb des Vertrauenskreises bedarf der Prüfung (Privilegkreis)
+- §§ 164 ff. BGB — Vollmacht; eine Zusammenfassung, die impliziert, der
+ Vertrag sei unterschriftsreif, kann als Beratungsleistung wirken, auf
+ die sich der Mandant verlässt
+
+### Sorgfaltspflicht bei Risikoangaben
+
+ (Aufklärungspflicht bei Vertragsgestaltung; Hinweis auf AGB-Unwirksamkeit
+ als Bestandteil ordnungsgemäßer Beratung)
+
+### Quellenregel
+
+Quellenregel: Keine Kommentar-, Handbuch- oder Aufsatzfundstellen aus Modellwissen; Literatur nur mit Nutzerquelle oder lizenziertem Live-Zugriff.
+
+## Ablauf
+
+### Schritt 1 — Mandatskontext
+
+Prüfe `## Mandatsarbeitsbereiche` im Kanzleiprofil. Wenn aktiviert und
+kein aktives Mandat gesetzt: "Für welches Mandat ist diese Zusammenfassung?
+(`/vertragsrecht:vertragsrecht-mandat-arbeitsbereich wechseln <kürzel>` oder `kanzleiebene`)."
+Aktive `mandat.md` für mandatsspezifischen Kontext laden.
+
+### Schritt 2 — Privilegkreis-Check
+
+Vor der Ausgabe prüfen, wohin sie geht. Wenn der Nutzer einen Empfänger
+oder Kanal genannt hat:
+
+- Interne Rechtsabteilung / unter anwaltlicher Aufsicht → privilegiertes
+ Arbeitsergebnis behalten
+- Geschäftsführung, Vorstand, Einkauf (intern) → Arbeitergebnis-Kennzeichnung
+ entfernen oder anpassen; kein Mandatsgeheimnis verletzt, aber Kennzeichnung
+ täuscht über Privilegstatus
+- Gegenseite, externe Berater, Lieferant → ROT; privilegierte Kennzeichnung
+ entfernen; Mandant darauf hinweisen, dass die Weiterleitung den Privilegstatus
+ dieser Kommunikation beeinflussen kann
+
+Angebot: (a) privilegierte Version für interne Rechtsabteilung, (b) bereinigte
+Version für Weitergabe, (c) beides.
+
+### Schritt 3 — Empfänger bestimmen
+
+Wenn nicht angegeben, fragen:
+
+> Für wen ist diese Zusammenfassung? Das bestimmt, was wichtig ist und
+> was wegfällt.
+
+| Empfänger | Interessiert an | Interessiert nicht an |
+|---|---|---|
+| **Geschäftsführung / Vorstand** | Unterschriftsempfehlung, Hauptrisiken, Eskalationsbedarf | Paragraphen, Klauselstruktur |
+| **Einkauf / Beschaffung** | Preis, Verlängerungsmechanik, Genehmigungsweg | Haftungsstruktur |
+| **Budget-/Kostenstellenverantwortlicher** | Gesamtkosten, Verlängerungspreisrisiko, außerbilanzielle Verpflichtungen | Gerichtsstand |
+| **IT / Datenschutz** | Datenspeicherung, Unterauftragnehmer, AVV, ISO/SOC-Zertifizierung | Alles andere |
+| **Geschäftsführer als Sponsor** | Reputationsrisiko, Rechtssicherheit, Zeitplanung | Einzelheiten |
+
+### Schritt 4 — Zusammenfassung erstellen
+
+**Längen-Maximum: 200 Wörter (ohne Risikomatrix und Eskalationsstatus).**
+Wer mehr schreibt, packt Details hinein, die der Empfänger nicht braucht —
+dafür ist das Memo da.
+
+**Struktur (in dieser Reihenfolge):**
+
+1. **Ein Absatz** — Urteil und Vertragsinhalt in Geschäftssprache.
+ Nicht "Dienstleistungsrahmenvertrag für die Bereitstellung
+ cloudbasierter Analysedienste" — sondern "das ist der Vertrag für
+ das Dashboard-Tool, das das Marketing-Team angefragt hat."
+
+2. **Ein Absatz** — Der Haken, wenn es einen gibt. Was überrascht den
+ Empfänger später, wenn es ihm jetzt keiner sagt? Beispiel: "Achtung:
+ der Vertrag verlängert sich automatisch jährlich; Kündigung muss
+ 6 Wochen vorher erfolgen. Ich habe es im Fristen-Tracker eingetragen,
+ aber Sie sollten das wissen." Bei sauberem Vertrag: "Kein besonderer
+ Hinweis — alles entspricht Standard."
+
+3. **2–3 Punkte Checkliste** — Was der Empfänger konkret tun muss
+ (höchstens drei Punkte; wenn ein vierter nötig ist, sind die ersten
+ drei nicht präzise genug).
+
+4. **Eine Zeile Abschluss** — Wer genehmigt, bis wann.
+
+### Schritt 5 — Risikomatrix (optional, für Eskalationsfälle)
+
+Wenn das Prüfungsmemo ROTE Befunde enthält oder mehrere GELBE Positionen
+gleichzeitig betroffen sind, optionale Risikomatrix erstellen:
+
+| Klausel | Risiko | Wahrscheinlichkeit | Handlung |
+|---|---|---|---|
+| [Klausel] | [Risiko in Geschäftssprache] | Gering / Mittel / Hoch | [konkrete Handlung] |
+
+Die Matrix ist vom 200-Wörter-Limit ausgenommen.
+
+### Schritt 6 — Eskalationsstatus
+
+Das Prüfungsmemo kann mehrere Genehmigungsadressaten benennen
+(GC, CISO, CFO, Geschäftsführung). Vor der Zusammenfassung zählen:
+
+1. Wie viele Eskalationsziele hat das Prüfungsmemo genannt?
+2. Wie viele Eskalationsentwürfe liegen bereits vor?
+3. Delta = noch nicht eingeleitet.
+
+Kurzer Eskalationsblock in der Zusammenfassung (oberhalb der Checkliste):
+
+```
+Eskalationsstatus: [M] von [N] Eskalationspfaden eingeleitet.
+Noch ausstehend:
+- [Adressat] — [ein Satz zum Befund]
+```
+
+Wenn alle eingeleitet: `[N] von [N] Eskalationspfaden eingeleitet.`
+Wenn das Prüfungsmemo keine Eskalationen vorsieht: Block weglassen.
+
+## Beispiel
+
+**Szenario:** SaaS-Vertrag für ein Marketing-Tool, Kunden-Seite,
+zwei GELBE Befunde (automatische Verlängerung, Preisanpassungsklausel),
+kein ROTER Befund. Empfänger: Geschäftsführerin.
+
+```
+VERTRAULICH — ANWALTLICHES ARBEITSERGEBNIS
+
+**TechSoft GmbH SaaS-Lizenzvertrag** — UNTERSCHRIFTSREIF (mit Hinweis)
+
+Das ist der Vertrag für die neue Marketing-Automatisierungsplattform,
+die das Team seit Q3 testen möchte. Laufzeit 12 Monate, Jahresgebühr
+24.000 €, Datenspeicherung ausschließlich in der EU.
+
+Zwei Punkte, die Sie kennen sollten: Der Vertrag verlängert sich automatisch
+um ein Jahr, wenn wir nicht 6 Wochen vorher kündigen — ich habe das im
+Fristen-Tracker eingetragen. Außerdem darf TechSoft den Preis bei Verlängerung
+um bis zu 5 % erhöhen; das muss in die Budgetplanung für nächstes Jahr.
+
+Eskalationsstatus: kein Eskalationsbedarf nach Playbook-Prüfung.
+
+**Was jetzt zu tun ist:**
+- [ ] Verlängerungstermin im Kalender sichern (6 Wochen vor Ende = XX.XX.XXXX)
+- [ ] Preisanpassung in Budgetplanung aufnehmen (+max. 5 % ab 2. Jahr)
+
+**Genehmigung:** Unterschrift durch Prokuristin; keine GC-Freigabe erforderlich.
+```
+
+## Risiken und typische Fehler
+
+- **Fristen-Tracker-Eintragung behaupten ohne Prüfung.** Nur dann schreiben
+ "im Fristen-Tracker eingetragen", wenn `/vertragsrecht:vertragsverlängerungs-monitor`
+ tatsächlich für diesen Vertrag ausgeführt wurde. Andernfalls:
+ "noch nicht eingetragen — bitte als Handlungspunkt aufnehmen."
+- **Klauseln trunkieren.** Bedingte Klauseln vollständig paraphrasieren —
+ nie verkürzte Version, die die Bedingung weglässt.
+- **Privilegkreis ignorieren.** Bei Weiterleitung außerhalb der
+ Rechtsabteilung Kennzeichnung anpassen; darauf hinweisen, dass die
+ Weiterleitung vertraulicher Rechtsberatung an Dritte den Schutz
+ dieser Kommunikation beeinflusst.
+- **Eskalationsadressen weglassen.** Auch wenn der Empfänger die Namen
+ nicht kennt, muss der Eskalationsstatus intern vollständig sein.
+ Die Zusammenfassung signalisiert dem Anwalt, ob alle Eskalationspfade
+ beschritten wurden.
+- **"Kein Risiko" bei sauberem Vertrag nicht sagen.** Stattdessen:
+ "Kein besonderer Hinweis — der Vertrag entspricht unserem Standard
+ und ist unterzeichnungsreif."
+
+## Quellenpflicht
+
+Wenn die Zusammenfassung auf ein spezifisches Risiko hinweist (z. B.
+DSGVO-Pflicht, Haftungsobergrenze), muss das zugrundeliegende Prüfungsmemo
+die folgenden Quellen enthalten (nicht die Zusammenfassung selbst — die
+ist für Nicht-Juristen):
+- Gesetzesnorm (z. B. Art. 28 DSGVO, § 309 Nr. 7 BGB)
+- BGH-Entscheidung in korrekter Zitierweise
+- Keine Kommentar-, Handbuch- oder Aufsatzfundstellen aus Modellwissen zitieren. Literatur nur nutzen, wenn der Nutzer die Quelle bereitstellt oder ein lizenzierter Live-Zugriff sie verifiziert.
+ Literaturfundstellen nicht beispielhaft erfinden; bei Bedarf Platzhalter "vom Nutzer bereitgestellte/lizenziert live geprüfte Quelle" verwenden.
+
+Hinweis: Dieser Skill ersetzt keine anwaltliche Beratung im konkreten Einzelfall.
+
+> Quellenregel: Entscheidungen nur nach Prüfung einer amtlichen oder frei zugänglichen Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage ausgeben.

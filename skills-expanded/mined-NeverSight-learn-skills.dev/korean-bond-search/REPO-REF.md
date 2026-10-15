@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/nomadamas/k-skill/korean-bond-search/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: GS Quant의 Instrument/Data 구조화 방식에서 영감을 받아 한국 채권을 표준 Bond Instrument 필드로 정리하고, 종목명·발행사·ISIN으로 발행조건·잔액·CALL/PUT·CB/EB/BW를 출처와 함께 검색·비교한다. Use for Korean bond lookup or comparison. Not for live quotes, Y

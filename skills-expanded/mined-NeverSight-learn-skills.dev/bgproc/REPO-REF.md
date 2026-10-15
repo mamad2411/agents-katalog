@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ascorbic/bgproc/bgproc/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Manage background processes like dev servers. Use when you need to start, stop, or check status of long-running processes.

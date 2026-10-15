@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/nomadamas/k-skill/market-event-impact/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: GS Quant의 event_study·event_impact_analysis·CalendarAlignment 구조에서 영감을 받아, 정례 발표와 비정형 사건의 핵심 변화 및 시장 해석을 공식자료·당시 보도·검증 가격으로 정리한다. 교차자산 전달경로를 살피고 이벤트 스터디는 보조 증거로 제시하며, 유사사례와 다음 촉매를 한국어로 설명한다. Use for n

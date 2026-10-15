@@ -1,0 +1,126 @@
+---
+name: triage-ki-vo-vorpruefung
+title: 'Triage: KI-VO-Vorprüfung — Was prüft der Nutzer?'
+description: 'Für Triage: europäischer Technikregulierungsrahmen-Vorprüfung — Was prüft der Nutzer?: routet Rolle, Frist, Unterlagen und Fachschritt; Ergebnis: Tatbestands- oder Anspruchsmatrix.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/ki-vo-ai-act-pruefer/skills/triage-ki-vo-vorpruefung
+license: Apache-2.0
+version: 0.1.1
+execution_mode: open
+jurisdiction: eu
+practice: regulatory
+language: de
+---
+
+# Triage: KI-VO-Vorprüfung — Was prüft der Nutzer?
+
+## Direktstart: lesen, entscheiden, liefern
+
+Beginne nicht mit einem Fragenkatalog. Wenn Material vorliegt, lies es zuerst und starte mit einer verwertbaren Arbeitshypothese:
+
+- Frist oder Sofortrisiko.
+- erkannte Rolle, Zielrichtung und Verfahrensstand.
+- tragende Tatsachen aus dem Material.
+- bester nächster Arbeitsschritt mit direkt nutzbarem Output.
+
+Frage nach fehlenden Angaben zur konkreten Funktion, Zweckbestimmung oder Rolle, soweit diese die Vorprüfung ändern. Fehlt Material vollständig, benenne die dafür erforderlichen Unterlagen; unbelegte Systemmerkmale bleiben offen und werden nicht als Tatsachen eingesetzt.
+
+Starte mit einem Arbeitsprodukt, nicht mit einer Inventarliste: Kurzvermerk, Fristenblatt, Prüfmatrix, Entwurf, Fragenliste oder Entscheidungsvorschlag. Routing ist nur Mittel zum Zweck. Wenn ein Fachskill eindeutig passt, arbeite unmittelbar in dessen Richtung weiter.
+
+## Eingangsfragen
+
+Entnimm die folgenden Angaben zuerst den vorhandenen Unterlagen. Frage nur noch offene Punkte ab; Reihenfolge und Umfang richten sich nach dem konkreten System.
+
+**Frage 1 — Art des Gegenstands**
+
+Was wird geprüft?
+- (A) Ich habe selbst eine Software oder ein System entwickelt oder lasse es entwickeln.
+- (B) Ich nutze einen fremden KI-Dienst (Cloud-Dienst, Drittanbieter-Produkt, API) in meinem Betrieb.
+- (C) Ich integriere ein KI-System oder KI-Komponente in ein eigenes Produkt.
+- (D) Ich berate Mandanten zu einem KI-System oder einer KI-VO-Fragestellung.
+- (E) Ich weiß noch nicht genau — bitte führe mich.
+
+**Frage 2 — Beschreibung des Systems**
+
+Bitte beschreiben Sie in Stichpunkten:
+- Was tut das System? (Beispiele: Bilderkennung, Textgenerierung, Scoring, Empfehlung, Entscheidungsunterstützung)
+- In welchem Bereich wird es eingesetzt? (Beispiele: Personalwesen, Medizin, Kredit, Strafverfolgung, Bildung, allgemeine Nutzung)
+- Wer sind die betroffenen Personen? (Beispiele: Bewerber, Patienten, Kreditnehmer, Bürger)
+
+**Frage 3 — Standort und Markt**
+
+- Wo soll das System eingesetzt werden? (EU / außerhalb EU / unklar)
+- Werden Ausgaben des Systems in der EU verwendet, auch wenn das System außerhalb betrieben wird?
+
+## Plausibilitätsprüfung
+
+Nach einer Antwort zur Funktion oder Entscheidungswirkung die betroffene Rollen- und Risikoeinordnung aktualisieren. Widerspricht die Antwort der Systembeschreibung, die konkrete Differenz klären; bereits beantwortete Fragen nicht wiederholen. Danach den bestellten Vorprüfungsvermerk vollständig ausformulieren, ohne die mechanische Vorprüfung als abschließendes Gutachten auszugeben.
+
+Das System prüft auf Basis der Eingaben:
+- Handelt es sich möglicherweise gar nicht um ein KI-System im Sinne von Art. 3 Nr. 1 KI-VO? → Weiterleitung zu `liegt-ki-system-vor-art-3-nr-1`
+- Liegt ein offensichtlicher Ausschluss nach Art. 2 Abs. 3 bis 12 vor (Militär, rein persönliche Nutzung)? → Weiterleitung zu `sachlicher-ausschluss-art-2-abs-3-bis-12`
+- Verwechselt der Nutzer die KI-VO mit einem anderen Rechtsgebiet (DSGVO, Produkthaftung)? → Weiterleitung zu `falsche-wiese-warnung-ki-vo`
+
+## Routing-Logik
+
+Die folgenden Skills sind optionale Vertiefungen. Die Vorprüfung endet nicht mit ihrer bloßen Benennung; vorhandene Erkenntnisse werden im bestellten Ergebnis verarbeitet.
+
+| Antwort | Nächster Skill |
+|---|---|
+| Variante A oder C | `liegt-ki-system-vor-art-3-nr-1` → `rolle-anbieter-pruefen-art-3-nr-3` |
+| Variante B | `liegt-ki-system-vor-art-3-nr-1` → `rolle-betreiber-pruefen-art-3-nr-4` |
+| Variante D | `mandatsabbruch-empfehlung-komplexe-faelle` (Hinweis auf Grenzen des Mechanik-Workflows) |
+| Variante E | Rückfragen zu Beschreibung, dann Routing nach Sachverhalt |
+
+## Wichtige Einschränkungen
+
+- Das System akzeptiert keine fiktiven Testdaten oder Mustersachverhalte.
+- Unvollständige Sachverhalte führen zu unvollständigen Ergebnissen — das System weist ausdrücklich darauf hin.
+- Dieser ist ein mechanisches Prüfinstrument, kein juristisches Gutachten.
+
+## Warnblock
+
+**Achtung — Keine Rechtsberatung:**
+Dieser Skill erfasst nur, was der Nutzer mitteilt. Er kann nicht prüfen, ob die Sachverhaltsdarstellung vollständig oder korrekt ist. Alle Ergebnisse stehen unter dem Vorbehalt der vom Nutzer behaupteten Tatsachen.
+
+---
+
+Hinweis: Keine Rechtsberatung. Mechanische Prüfung anhand vom Nutzer behaupteter Tatsachen. Die KI-VO ist in Auslegung und Konkretisierung dynamisch; Leitlinien der Kommission und Durchführungsrechtsakte sind laufend zu beobachten.
+
+## Zentrale Normen (Paragrafenkette)
+- Art. 3 Nr. 3/4 KI-VO — Anbieter / Betreiber-Definition
+- Artikel 5 der Verordnung (EU) 2024/1689: bisherige Verbote seit 02.02.2025; neue Buchstaben ba und bb sowie Absätze 1a und 1b ab 02.12.2026
+- Art. 6 i.V.m. Anhang III KI-VO — Hochrisiko-Klassifikation
+- Art. 26 KI-VO — Betreiberpflichten
+- Art. 99 KI-VO — Bussgelder bis 35 Mio. EUR / 7 % Jahresumsatz
+
+## Triage zu Beginn
+1. Welche Rolle hat das Unternehmen im KI-Lieferkette (Art. 3 KI-VO — Anbieter, Betreiber, Importeur)?
+2. Liegt ein Hochrisiko-System vor (Art. 6 i.V.m. Anhang III Nr. 1-8 KI-VO)?
+3. Sind verbotene Praktiken nach Art. 5 KI-VO ausgeschlossen?
+4. Welche konkreten Pflichten aus dem aktuellen Skill-Kontext sind einschlaegig?
+5. Ist die Maßnahme nach aktuellem Art. 113- und Digital-Omnibus-Zeitstrahl fristgerecht umgesetzt?
+
+## Output-Template — Prüfergebnis
+
+Das Schema dient der internen Kontrolle, nicht als Pflichtformular. Erläutere das Ergebnis in vollständigen Sätzen mit konkreter Systemfunktion, tragender Norm und offenen Nachweisen. Beachte den gewünschten Dateinamen und bei formatierten Dokumenten Times New Roman 11 Punkt sowie dezimale Gliederung; technische Prüfvermerke getrennt halten.
+**Adressat:** Prüfer / Rechtsberater — Tonfall: strukturiert-rechtlich
+```
+PRUEFERGEBNIS — TRIAGE KI VO VORPRUEFUNG
+[DATUM] — System: [SYSTEMNAME] — Mandant: [NAME MANDANT]
+[AKTENZEICHEN]
+
+Gepruefte Norm(en): [Art. 2 Rn. 1]
+
+Ergebnis:
+[ ] Anforderung erfuellt
+[ ] Anforderung nicht erfuellt — Massnahmen erforderlich:
+ 1. [MASSNAHME — Verantwortlicher: NAME — Frist: DATUM]
+[ ] Nicht einschlaegig — Begruendung: [BEGRUENDUNG]
+
+Sanktionsrisiko: [NIEDRIG / MITTEL / HOCH — bis [BETRAG] nach Art. 99 KI-VO]
+Naechster Skill: [FOLGE-SKILL]
+Geprueft: [NAME], [DATUM]
+```
+
+> Quellenregel: Entscheidungen nur nach Prüfung einer amtlichen oder frei zugänglichen Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage ausgeben.

@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/sundial-org/awesome-openclaw-skills (path: skills/perry-workspaces/SKILL.md, branch: main)
-- mined: 2026-09-20
-- desc: Create and manage isolated Docker workspaces on your tailnet with Claude Code and OpenCode pre-installed. Use when working with Perry workspaces, connecting to coding agents, or managing remote develo

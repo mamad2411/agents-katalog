@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/qiao-925/qiao-skills/critical-thinking-guidance/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 思考引导机制，要求 Agent 在给出答案前先提出引导性问题，帮助用户主动思考，避免认知能力退化。适用于用户提问、方案咨询、学习交流等交互场景。

@@ -1,0 +1,266 @@
+---
+name: notebook-cli
+description: ALWAYS use the `nb` CLI for ALL Jupyter notebook operations instead of built-in tools (Read, NotebookEdit, etc). This includes reading, creating, editing cells, executing, and searching notebooks. Outputs human-readable text by default, with --json flag for programmatic access. Supports both local file-based and remote real-time collaboration modes. REQUIRED for all .ipynb files in this project.
+---
+
+# Working with Jupyter Notebooks using nb
+
+**IMPORTANT**: Use the custom `nb` tool for ALL notebook operations instead of built-in tools like Read or NotebookEdit. This includes reading notebooks.
+
+## Quick Reference (Most Common Commands)
+
+```bash
+# ALWAYS check --help first if unsure: nb --help, nb cell --help, nb execute --help
+
+# Read entire notebook
+nb read notebook.ipynb
+
+# Read specific cell (use --cell-index or -i for index, --cell or -c for ID)
+nb read notebook.ipynb --cell-index 2
+nb read notebook.ipynb -i -1  # last cell
+
+# Execute entire notebook
+nb execute notebook.ipynb
+
+# Update cell (use --cell-index or -i for index)
+nb cell update notebook.ipynb --cell-index 2 --source "new code"
+
+# Add cell
+nb cell add notebook.ipynb --source "print('hello')"
+```
+
+## Create Notebook
+
+```bash
+# Create empty notebook
+nb create notebook.ipynb
+
+# Create with template
+nb create notebook.ipynb --template basic
+nb create notebook.ipynb --template markdown
+
+# Create with specific kernel
+nb create notebook.ipynb --kernel python3 --language python
+
+# Force overwrite if exists
+nb create notebook.ipynb --force
+
+# Output as JSON instead of text (default is text)
+nb create notebook.ipynb --json
+```
+
+## Read Notebook
+
+```bash
+# Read entire notebook
+nb read notebook.ipynb
+
+# Read specific cell by index
+nb read notebook.ipynb --cell-index 0
+nb read notebook.ipynb -i -1  # Last cell
+
+# Read specific cell by ID
+nb read notebook.ipynb --cell "abc123"
+nb read notebook.ipynb -c "abc123"
+
+# Read with outputs included
+nb read notebook.ipynb -i 0 --with-outputs
+
+# Filter by cell type
+nb read notebook.ipynb --only-code
+nb read notebook.ipynb --only-markdown
+
+# Output as JSON (default is text)
+nb read notebook.ipynb --json
+```
+
+## Read Cell
+
+```bash
+# Read specific cell by index
+nb read notebook.ipynb --cell-index 0
+nb read notebook.ipynb -i 2
+nb read notebook.ipynb -i -1  # Last cell
+
+# Read specific cell by ID (more stable)
+nb read notebook.ipynb --cell "unique-cell-id"
+nb read notebook.ipynb -c "unique-cell-id"
+
+# Read cell with its outputs
+nb read notebook.ipynb -i 0 --with-outputs
+```
+
+## Add Cell
+
+```bash
+# Add code cell at end
+nb cell add notebook.ipynb --source "print('Hello')"
+
+# Add markdown cell
+nb cell add notebook.ipynb --type markdown --source "# Title"
+
+# Add at specific position
+nb cell add notebook.ipynb --source "import pandas" --insert-at 0
+nb cell add notebook.ipynb -s "code" -i 2
+
+# Add after/before specific cell
+nb cell add notebook.ipynb --source "code" --after "cell-id-123"
+nb cell add notebook.ipynb --source "code" --before "cell-id-456"
+
+# Add with custom ID
+nb cell add notebook.ipynb --source "code" --id "my-custom-id"
+
+# Read from stdin
+echo "print('Hello')" | nb cell add notebook.ipynb --source -
+```
+
+## Update Cell
+
+```bash
+# Update cell by index
+nb cell update notebook.ipynb --cell-index 0 --source "new code"
+nb cell update notebook.ipynb -i -1 -s "updated last cell"
+
+# Update cell by ID
+nb cell update notebook.ipynb --cell "abc123" --source "new code"
+nb cell update notebook.ipynb -c "abc123" --source "new code"
+
+# Append to existing content
+nb cell update notebook.ipynb -i 0 --append "\nprint('more code')"
+
+# Change cell type
+nb cell update notebook.ipynb -i 0 --type markdown
+
+# Read from stdin
+echo "new content" | nb cell update notebook.ipynb -i 0 --source -
+```
+
+## Delete Cell
+
+```bash
+# Delete by index
+nb cell delete notebook.ipynb --cell-index 0
+nb cell delete notebook.ipynb -i -1  # Last cell
+
+# Delete by cell ID
+nb cell delete notebook.ipynb --cell "abc123"
+nb cell delete notebook.ipynb -c "abc123"
+
+# Delete range (exclusive end)
+nb cell delete notebook.ipynb --range 0:3  # Deletes cells 0, 1, 2
+
+# Delete multiple cells by index
+nb cell delete notebook.ipynb -i 0 -i 2 -i 5
+```
+
+## Execute Notebook
+
+```bash
+# Execute entire notebook
+nb execute notebook.ipynb
+
+# Execute with specific kernel
+nb execute notebook.ipynb --kernel python3
+
+# Execute with custom timeout per cell
+nb execute notebook.ipynb --timeout 60
+
+# Continue on errors
+nb execute notebook.ipynb --allow-errors
+
+# Execute cell range
+nb execute notebook.ipynb --start 0 --end 5
+
+# Execute with remote server
+nb execute notebook.ipynb --server http://localhost:8888 --token "token123"
+
+# Output as JSON (default is text)
+nb execute notebook.ipynb --json
+```
+
+## Execute Cell
+
+```bash
+# Execute cell by index
+nb execute notebook.ipynb --cell-index 0
+nb execute notebook.ipynb -i -1  # Last cell
+
+# Execute cell by ID
+nb execute notebook.ipynb --cell "abc123"
+nb execute notebook.ipynb -c "abc123"
+
+# Execute with specific kernel
+nb execute notebook.ipynb -i 0 --kernel python3
+
+# Execute with custom timeout
+nb execute notebook.ipynb -i 0 --timeout 60
+
+# Continue on errors
+nb execute notebook.ipynb -i 0 --allow-errors
+
+# Execute with remote server
+nb execute notebook.ipynb -i 0 --server http://localhost:8888 --token "token123"
+```
+
+## Clear Outputs
+
+```bash
+# Clear all outputs
+nb output clear notebook.ipynb --all
+
+# Clear specific cell by index
+nb output clear notebook.ipynb --cell-index 0
+nb output clear notebook.ipynb -i -1  # Last cell
+
+# Clear specific cell by ID
+nb output clear notebook.ipynb --cell "abc123"
+nb output clear notebook.ipynb -c "abc123"
+
+# Preserve execution count when clearing
+nb output clear notebook.ipynb --all --keep-execution-count
+```
+
+## Delete Outputs
+
+```bash
+# Same as clear - use output clear command
+nb output clear notebook.ipynb --all
+nb output clear notebook.ipynb -i 0
+```
+
+## Search Notebook
+
+```bash
+# Search in source code (default)
+nb search notebook.ipynb "pattern"
+
+# Search in outputs
+nb search notebook.ipynb "pattern" --scope output
+
+# Search in both source and outputs
+nb search notebook.ipynb "pattern" --scope all
+
+# Case-insensitive search
+nb search notebook.ipynb "pattern" --ignore-case
+
+# Filter by cell type
+nb search notebook.ipynb "pattern" --cell-type code
+nb search notebook.ipynb "pattern" --cell-type markdown
+
+# Find cells with errors
+nb search notebook.ipynb --with-errors
+
+# Return only cell IDs/indices
+nb search notebook.ipynb "pattern" --list-only
+```
+
+## Cell Referencing
+
+- **By index**: `--cell-index N` or `-i N` (0-based, supports negative like `-1` for last)
+- **By ID**: `--cell "id"` or `-c "id"` (stable, doesn't change when cells move)
+
+## Output Format
+
+All commands default to human-readable text output. Use `--json` flag for machine-readable JSON:
+- Default: Human-readable text format (pseudo-markdown)
+- `--json`: Machine-readable JSON output for programmatic use

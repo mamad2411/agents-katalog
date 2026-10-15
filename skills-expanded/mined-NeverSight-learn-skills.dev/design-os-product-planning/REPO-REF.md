@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/aradotso/design-skills/design-os-product-planning/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Use Design OS to guide product planning, data modeling, design systems, and UI design before implementation

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/devxoul/agent-messenger/agent-discord/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Interact with Discord servers - send messages, read channels, manage reactions

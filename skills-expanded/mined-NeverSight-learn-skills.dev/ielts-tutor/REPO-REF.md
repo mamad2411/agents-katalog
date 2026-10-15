@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/cooolink/ai-en-teacher/ielts-tutor/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 专业雅思私教技能，为成人学习者提供务实、高效的雅思备考指导，特别适合有通勤时间、需要碎片化学习的学员。目标分数6.0-6.5，注重实用沟通能力。

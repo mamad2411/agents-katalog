@@ -1,0 +1,136 @@
+---
+name: salla-app-functions-validate
+description: >
+  REQUIRED before saving a Salla App Function: keep the template's wrapper exactly — its
+  first AND last line — with all code inside the wrapper (no hoisted const/helper), and
+  type-check the handler with the TypeScript compiler against the trigger's `types` (.d.ts
+  URLs) at the editor's bar — non-strict, ignoring unused (TS6133) — plus validate any
+  documented Admin API call against its OpenAPI schema (salla-api-core loop). `salla_functions
+  action=save` validates ONLY those wrapper lines. Routed from salla-app-functions; release
+  with salla-app-functions-release.
+---
+
+# App Functions — Validate Before Save
+
+**A successful `save` is the START of validation, not the end.** `salla_functions
+action=save` returns 200 once the wrapper's first and last line match — it does not
+type-check or run your body, so a 200 ≠ a correct function. Treat **every `salla_functions
+action=save`** as the trigger for one closed loop: validate → fix → re-`save` → re-validate
+until clean. A handler that type-fails or breaks at runtime surfaces _after_ save, once it
+deploys to the demo stores.
+
+The loop (each step below): **(1)** wrapper first/last line matches the template → **(2)**
+the TypeScript compiler against the trigger's `.d.ts` at the editor's bar (non-strict,
+ignore unused TS6133) → **(3)** each outbound Admin API call's
+request/response validates against its documented OpenAPI → **(4)** `salla_functions
+action=preview` runs clean on a demo store (→ **salla-app-functions-test**) → fix any
+failure, re-`save`, and run the loop again. Steps 1–2 are the only pre-save safety net; run
+them before each save.
+
+Keep credentials in App Settings (read via `context.settings`), not in the saved source —
+App Functions commonly call external services, but secrets, tokens, and API keys belong in
+settings. Token/OAuth handling → **salla-app-auth**; webhook signature + idempotency →
+**salla-webhooks**.
+
+## 1. Match the template wrapper exactly (STRICT)
+
+The wrapper — its **first line** (the function signature) and **last line** (the closing of
+the function definition) — is fixed by the trigger. Copy the wrapper from `salla_functions
+action=get` (its `template`) and edit **only** the body: keep the `context` parameter name,
+its type, the return type, and the closing line exactly as given. Put ALL code INSIDE the
+body — every `const` / `let` / `function` / `import` / `class` stays between the first and
+last line (a hoisted constant or helper is the most common cause of breakage).
+
+`save` fetches the template and **rejects** `content` whose first or last wrapper line
+differs, returning the expected lines. `content` is the **whole function** (the full wrapper
+as a string), not just the body. The body itself is unchecked at save — that's what the
+local `tsc` check in step 2 covers.
+
+## 2. Type-check with the trigger's types (mirror the editor)
+
+The Portal editor validates with Monaco's **TypeScript worker** (the `typescript` compiler):
+it loads the trigger's `.d.ts` (the `config.types`) via `addExtraLib`, uses **non-strict**
+default compiler options, and **ignores TS6133** (declared-but-unused). Match that bar so
+you're not stricter than what actually blocks save — validate with the same compiler, same
+types, same leniency.
+
+`types` (from `action=get`) is a list of `.d.ts` **URLs** — the exact libs the editor loads.
+Download each one next to your handler — fetch only the URLs `action=get` returns for this
+trigger (not arbitrary or user-supplied URLs), and use the real `.d.ts` rather than
+hand-written mocks:
+
+```bash
+curl -sSL "https://…/shipments.d.ts" -o salla-globals.d.ts   # one per types URL
+```
+
+Put your full wrapper in `handler.ts`, then type-check both at the editor's bar —
+**non-strict** (Monaco defaults), no emit — and fix every error except TS6133 (unused),
+which the editor ignores:
+
+```bash
+# Editor's bar: non-strict, ignores unused (TS6133)
+npx -y -p typescript tsc --noEmit --skipLibCheck salla-globals.d.ts handler.ts
+```
+
+**Optional stricter superset:** `--strict` catches more, but the editor's bar is non-strict
+and ignores unused (TS6133). Clear `--strict` before save only if you choose to hold a higher
+standard than the editor; it is not what blocks save.
+
+```bash
+npx -y -p typescript tsc --noEmit --strict --skipLibCheck salla-globals.d.ts handler.ts  # optional, stricter than the editor
+```
+
+If a `types` URL is unreachable, retry or re-fetch it from `action=get`. A hand-written mock
+is a last resort, **shaped for one trigger only** — the example below is shipment-shaped, so
+rename the context type and adjust `payload` to match your trigger, and confirm the real
+shape against that trigger's `types` first:
+
+```typescript
+// ILLUSTRATIVE fallback — verify the exact shape from the trigger's `types` (action=get).
+declare class Resp {
+  static success(): Resp;
+  static error(): Resp;
+  setStatus(status: number): Resp;
+  setMessage(message: string): Resp;
+  setData(data: Record<string, unknown>): Resp;
+}
+declare type Shipments = {
+  merchant?: { id?: string | number };
+  payload?: {
+    event?: string;
+    created_at?: string;
+    data?: Record<string, unknown>;
+  };
+  settings?: Record<string, unknown>;
+};
+```
+
+**Gate:** "First and last wrapper lines match the template, all code inside the wrapper, and
+`tsc --noEmit` against the trigger's `types` compiles clean at the editor's bar (non-strict,
+TS6133 ignored)?" → step 3.
+
+## 3. Validate outbound Admin API calls against the documented schema
+
+Steps 1–2 cover the handler's shape; this closes the loop on the **Admin API calls the
+handler makes**. When the function calls a documented endpoint, validate the request
+body/params **and** the parsed response against that endpoint's OpenAPI schema — Salla's
+doc page (`docs.salla.dev/<id>.md`) embeds a full OpenAPI 3.x block (paths, `components`
+schemas, types, enums, `required`).
+
+Run the canonical **read the doc's OpenAPI → build to match → validate → fix → retry** loop
+from **salla-api-core** for each call: find the endpoint's doc id (→ **salla-docs**), check
+the request and parsed response against its schema's `required`/types/enums, fix any
+mismatch, and re-run until clean. Don't restate the loop here — salla-api-core owns it.
+
+**Gate:** "Each documented Admin API call's request and parsed response validate clean
+against its endpoint's OpenAPI schema?" → step 4.
+
+## 4. Run the saved function on a demo store
+
+A clean `tsc` and schema check still don't prove the function behaves correctly with real
+data — `save`, then run `salla_functions action=preview` on a demo store to exercise the
+handler end to end (→ **salla-app-functions-test**). If preview fails or returns the wrong
+result, fix the body, re-`save`, and re-run steps 1–4 until preview is clean.
+
+**Gate:** "Wrapper + `tsc` + every Admin API call's schema pass, and `action=preview` runs
+clean on a demo store?" → **salla-app-functions-release**.

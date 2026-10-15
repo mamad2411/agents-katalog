@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/redfox-data/redfox-community (path: skills/tiktok-subscribe/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: TikTok 监控订阅推送工具 — 订阅关键词、指定账号与话题，每日早上 9:00 自动拉取昨日时间窗内新内容（关键词新爆款视频 / 账号新作品 / 话题新作品），按订阅项分组生成 HTML 日报推送，无需手动操作。支持三类订阅项批量管理（总上限 100 项）、按日期过滤翻页、互动数据（播放/点赞/评论/分享）展示与 AI 总结。当用户需要订阅 TikTok 关键词、追踪指定账号新作品、监控话题热

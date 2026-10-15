@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tuihou123321/short-video-remix-interviewer/short-video-remix-interviewer/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 将用户提供的他人短视频文案改写为原创口播稿：保持选题、前5秒钩子和爆款论证结构，识别必须替换的案例与观点，通过一轮一问采访补齐用户真实素材后成稿。用于用户说扒稿、参考爆款、保留结构、换成自己的案例或观点时；不用于单纯拆解、润色用户自己的原稿或凭空生成选题。

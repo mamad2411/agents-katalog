@@ -1,0 +1,92 @@
+---
+name: satzungskompetenz-pruefen
+title: Satzungskompetenz prüfen
+description: 'Für Satzungskompetenz prüfen: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/legistik-werkstatt/skills/satzungskompetenz-pruefen
+license: Apache-2.0
+version: 0.1.1
+execution_mode: open
+jurisdiction: de
+practice: regulatory
+language: de
+---
+
+# Satzungskompetenz prüfen
+
+> Satzungen sind autonome Rechtssetzung. Sie brauchen aber immer eine staatliche Ermaechtigung.
+
+## Prüfstation 1 - Welche Koerperschaft erlaesst die Satzung?
+
+- Gemeinde / Landkreis (kommunale Satzung)
+- Rechtsanwaltskammer (berufsstaendische Satzung)
+- Ärztekammer
+- Industrie- und Handelskammer
+- Handwerkskammer
+- Universität (Grundordnung, Prüfungsordnung, Habilitationsordnung)
+- Sozialversicherungsträger (Krankenkassen-Satzung, BG-Satzung)
+- Öffentlich-rechtliche Rundfunkanstalt
+
+## Prüfstation 2 - Welche Ermaechtigung gibt es?
+
+| Koerperschaft | Ermaechtigung |
+|---|---|
+| Gemeinde | Art. 28 Abs. 2 GG iVm Gemeindeordnung des Landes (BayGO, NRW-GO etc.) plus ggf. Fachgesetz |
+| Landkreis | Landkreisordnung des Landes |
+| Rechtsanwaltskammer | BRAO Paragraf 89 |
+| Ärztekammer | Landes-Heilberufekammergesetz |
+| IHK | IHK-Gesetz Paragraf 4 |
+| Handwerkskammer | HwO Paragraf 106 |
+| Hochschule | Hochschulgesetz des Landes |
+| Krankenkasse | SGB IV Paragraf 33 plus SGB V |
+| BG | SGB VII Paragraf 33 ff. |
+| ARD-Anstalt | Landesrundfunkgesetz |
+
+## Prüfstation 3 - Vorbehalt des Gesetzes
+
+Rechtsprechung live prüfen: Keine Entscheidung aus Modellwissen zitieren; vor Ausgabe über amtliche oder frei zugängliche Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage verifizieren.
+
+Faustregel: je tiefer der Grundrechtseingriff, desto mehr muss das ermaechtigende Gesetz selbst regeln.
+
+## Prüfstation 4 - Bestimmtheit der Ermaechtigung
+
+Art. 80 GG gilt nicht direkt für Satzungen, aber sinngemäß: Inhalt Zweck Ausmass müssen aus dem ermaechtigenden Gesetz erkennbar sein.
+
+## Prüfstation 5 - Verfahren des Erlasses
+
+| Koerperschaft | Verfahren |
+|---|---|
+| Gemeinde | Beschluss Gemeinderat plus öffentliche Bekanntmachung im Amtsblatt der Gemeinde |
+| Kammer | Beschluss Vertreterversammlung plus Bekanntmachung im Kammer-Mitteilungsblatt |
+| Hochschule | Beschluss Senat plus Bekanntmachung in der amtlichen Bekanntmachung der Hochschule |
+| Krankenkasse | Beschluss Verwaltungsrat plus Genehmigung BVA / LSA |
+
+## Prüfstation 6 - Aufsichtsgenehmigung
+
+Manche Satzungen brauchen vor Bekanntmachung Genehmigung der Aufsichtsbehoerde (z.B. Friedhofssatzungen ggf. nach Landesrecht; Beitragssatzungen oft anzeigepflichtig).
+
+## Prüfstation 7 - Bekanntmachung
+
+Die Satzung muss im richtigen Publikationsorgan bekanntgemacht werden. Fehlerhafte Bekanntmachung kann zur Nichtigkeit führen.
+
+## Zentrale Normen (Paragrafenkette)
+
+Art. 28 Abs. 2 GG (Selbstverwaltungsgarantie) — §§ 1-5 GO (jeweilige Gemeindeordnung, Satzungs-Ermaechtigungen) — Art. 80 GG (analog Verordnungs-Ermaechtigungs-Grundsaetze für Satzungen) — § 47 VwGO (Normenkontrolle gegen Satzungen)
+
+## Ausgabe
+
+| Frage | Antwort |
+|---|---|
+| Erlassende Koerperschaft | |
+| Ermaechtigungsgrundlage | |
+| Vorbehalt des Gesetzes gewahrt | |
+| Bestimmtheit der Ermaechtigung | |
+| Erlass-Verfahren | |
+| Aufsichtsgenehmigung erforderlich | |
+| Bekanntmachung wo | |
+
+## Anschluss
+
+`normenkartierung` und entweder `referentenentwurf-bauen` (wenn Satzung Volltext kommt) oder direkt Ausgabe-Format Satzung.
+
+> Quellenregel: Entscheidungen nur nach Prüfung einer amtlichen oder frei zugänglichen Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage ausgeben.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/rdmptv/adbautoplayer/moai-lang-unified/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Unified enterprise programming language skill covering 25+ languages including Python 3.13, TypeScript 5.9, Go 1.23, Rust 1.91, Java 21, JavaScript ES2025, C++, C#, PHP, Swift, Kotlin, Scala, Elixir, 

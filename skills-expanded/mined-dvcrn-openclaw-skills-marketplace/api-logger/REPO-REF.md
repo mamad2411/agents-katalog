@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/xiaohuaishu--api-logger/skills/api-logger/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: LLM API 调用日志记录、分析与可视化。透明代理拦截所有 LLM API 调用，记录完整 prompt/generation/token 用量，\n 附带零依赖网页日志查看器（支持多维过滤、完整对话展示、token 成本统计）。\n 适用场景：分析 API 调用成本、调试 prompt、查看历史对话记录、排查慢请求/失败请求。\n 包含：proxy.py（代理服务）、log_viewer.py

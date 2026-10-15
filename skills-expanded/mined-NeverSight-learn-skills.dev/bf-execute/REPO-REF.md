@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/khaki4/my_skills/bf-execute/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: BF 워크플로우의 사람-시스템 경계 허브. orchestrate를 모드별로 스폰하고, 에픽 단위 루프를 돌며 사람과 소통하는 유일한 경계이다.

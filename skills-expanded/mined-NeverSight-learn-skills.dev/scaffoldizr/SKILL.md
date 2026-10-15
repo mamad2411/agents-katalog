@@ -1,0 +1,200 @@
+---
+name: scaffoldizr
+description: Creates Structurizr elements and workspace based on Scaffoldizr opinionated convention. Use when the user mentions Architecture Documentation Updates, Architectural Decision Records, C4 diagrams, or any Structurizr-related topic.
+license: MIT
+compatibility: Requires Structurizr and Scaffoldizr (scfz) CLI Tool. Check `FormulaMonks/scaffoldizr` GitHub repository for installation instructions.
+allowed-tools: Bash(scfz:*)
+metadata:
+  author: Andrés Zorro <andres.zorro@monks.com>
+  version: 0.16.0
+---
+
+# Structurizr Workspace - Created with Scaffoldizr
+
+This skill enables agents to generate and interact with a [Structurizr workspace](https://docs.structurizr.com/workspaces), generated with [Scaffoldizr CLI tool](https://formulamonks.github.io/scaffoldizr/)
+
+## When to use this skill
+
+- Whenever the user needs to create or update elements within a given Structurizr workspace.
+- Whenever the user needs to create an architecture diagram (leveraging the C4 model).
+- Whenever the user needs to validate an existing Structurizr workspace.
+
+## General instructions
+
+- In the root folder, search for an `./architecture` folder. If there is no such folder, offer to create one using Scaffoldizr, run:
+
+  ```bash
+  scfz --dest <root_folder> \
+    --workspaceName "<name>" \
+    --workspaceDescription "<description>" \
+    --workspaceScope "softwaresystem" \
+    --systemName "<system name>" \
+    --systemDescription "<system description>" \
+    --authorName "<author name>" \
+    --authorEmail "<author email>" \
+    --shouldIncludeTheme "false"
+  ```
+
+  Scaffoldizr will create the `./architecture` folder with all the relevant files.
+
+NOTE: if the `scfz` command is not available, Scaffoldizr CLI tool is not installed. Run the appropriate installation script for the current environment:
+
+- **macOS / Linux** — run in terminal:
+
+  ```bash
+  curl -s https://formulamonks.github.io/scaffoldizr/assets/install.sh | sh
+  ```
+
+- **Windows** — run in PowerShell:
+
+  ```powershell
+  irm https://formulamonks.github.io/scaffoldizr/assets/install.ps1 | iex
+  ```
+
+Refer to the [full installation instructions](https://formulamonks.github.io/scaffoldizr/getting-started) for more details.
+
+## Non-interactive CLI usage (AI Agent Mode)
+
+Scaffoldizr supports non-interactive execution by specifying a generator as a subcommand and passing all prompt answers as CLI flags. **This is the preferred approach for AI agents** — it avoids interactive prompts entirely.
+
+### Subcommand routing
+
+When a `workspace.dsl` already exists, bypass the main menu by specifying a generator subcommand:
+
+```bash
+scfz <generator> [--flag "value"]
+```
+
+Generator names are kebab-cased: `external-system`, `software-system`, etc.
+
+### Passing arguments
+
+All prompt questions can be answered via CLI flags using `--parameter "value"` or `--parameter=value` format.
+
+### Element generators reference
+
+| Generator | Common Flags |
+|---|---|
+| `system` | `--systemName`, `--systemDescription`, `--archetype` |
+| `container` | `--systemName` (parent), `--elementName`, `--containerDescription`, `--containerType`, `--containerTechnology` |
+| `component` | `--elementName`, `--componentDescription`, `--componentTechnology` |
+| `person` | `--elementName`, `--personDescription` |
+| `external-system` | `--elementName`, `--extSystemDescription` |
+| `view` | `--viewType`, `--viewName`, `--viewDescription`, `--dynamicScope`, `--systemName`, `--containerName`, `--step-N` |
+| `constant` | `--constantName`, `--constantValue` |
+| `archetype` | `--archetypeName`, `--archetypeBaseType`, `--archetypeDescription` (optional), `--archetypeTechnology` (optional), `--archetypeTags` (optional) |
+| `theme` | `--themeAction "Add themes" --additionalThemes "<url1>,<url2>"` |
+
+The `--viewType` flag accepts `landscape`, `deployment`, or `dynamic`. For other view types (`systemContext`, `container`, `component`), create the DSL file manually following the instructions in the view reference.
+
+- All the relevant documentation files are contained within the `./architecture` folder.
+- The main entrypoint is the `./architecture/workspace.dsl` file.
+- `./architecture/workspace.json` is a **compiled output** generated from `workspace.dsl`. **Never read or modify it directly** — it will be overwritten the next time Structurizr runs. To regenerate it, run `./architecture/scripts/export.sh` (or `export.ps1` on Windows).
+
+## Folder contents
+
+The architecture folder contains the following structure:
+
+- `./architecture/archetypes`: Elements that serve as baseline or foundations for other elements. Contains reusable relationship patterns (e.g., `1_https_relationship.dsl`).
+- `./architecture/containers/<system name>`: Container definitions for a software system. Each software system is contained within an independent folder.
+- `./architecture/components/<system name>/<container name>`: Component definitions for a software system. Each software system is contained within an independent folder, as well as each container.
+- `./architecture/decisions`: Architecture Decision Records (ADRs) documenting key architectural decisions.
+- `./architecture/docs`: Documentation files referenced in the workspace.
+- `./architecture/environments`: This folder contains elements for Deployment view. They are used to create and display deployment diagrams.
+- `./architecture/relationships`: Relationship definitions for the different elements within the system.
+- `./architecture/systems`: System definitions. This folder also contains `_people.dsl` to reference person elements and `_external.dsl` to reference external systems (systems that are not in scope of the actual diagram).
+- `./architecture/views`: View definitions that render diagrams, including system context views.
+
+## Relationships in diagrams
+
+- Structurizr DSL language has the `!include` directive which serves as a way to reference other files and folders. If the reference includes a file extension (e.g. `file.dsl`), that file at that path is included. If no extension is included, it assumes that all files within that folder are included.
+
+### Workspace Scope
+
+- Depending on the workspace scope you are allowed to create or not certain elements. The workspace can be scoped as `softwaresystem` or as `landscape`.
+  1. In both options you are allowed to create `archetype`, `constant`, `view`, `person`, `external system` and `relationship`.
+  2. If it's `softwaresystem` you are allowed ONLY to create `container`, `component` in addition to the ones listed in point 1.
+  3. If it's `landscape` you're allowed ONLY to create `system` in addition to the ones listed in point 1.
+
+- Find what is the current workspace scope by checking the `./architecture/workspace.dsl` file for the `workspace` block. E.g.:
+
+```dsl
+workspace {
+    ...
+    configuration {
+        scope softwaresystem  // <-- Here is where the scope is defined
+    }
+    ...
+}
+```
+
+- Always alert the user when the suggested action would be in conflict with this rule.
+
+## Create new elements within the workspace
+
+**⚠️ IMPORTANT NOTE** Element names have to be unique within the workspace. Before creating a new element, always check if an element with the same name already exists. If it does, propose an alternative name to the user.
+
+### Archetype
+
+Refer to [archetype](./references/archetype.md) documentation
+
+### Constant
+
+Refer to [constant](./references/constant.md) documentation
+
+### Software System
+
+Refer to [software system](./references/softwareSystem.md) documentation
+
+### External System
+
+Refer to [external system](./references/externalSystem.md) documentation
+
+### Container
+
+Refer to [container](./references/container.md) documentation
+
+### Component
+
+Refer to [component](./references/component.md) documentation
+
+### Relationship
+
+Refer to [relationship](./references/relationship.md) documentation
+
+### View
+
+Refer to [view](./references/view.md)
+
+### Theme
+
+Use the `theme` generator to add, remove, or list workspace themes. The `theme` generator is available in both Landscape and SoftwareSystem scopes.
+
+```bash
+scfz theme \
+  --themeAction "Add themes" \
+  --additionalThemes "https://formulamonks.github.io/scaffoldizr/assets/scaffoldizr-shapes.json"
+```
+
+- `--themeAction`: `"Add themes"` | `"Remove themes"` | `"List themes"`
+- `--additionalThemes`: comma-separated theme URLs to add
+- Color themes (Blue, Red, Green, Yellow) are mutually exclusive — selecting a new color replaces the existing one
+
+## Use Structurizr CLI commands to interact with the workspace
+
+Refer to [CLI commands](./extra/CLI.md) documentation
+
+---
+
+## Build process
+
+- The `./architecture/workspace.dsl` is the **only source of truth**. All architecture changes must be made to `.dsl` files — never to `workspace.json`.
+- `./architecture/workspace.json` is a compiled artefact. Structurizr overwrites it on every run. ⚠️ **DO NOT READ OR MODIFY `./architecture/workspace.json` DIRECTLY** ⚠️. Any manual edits will be silently lost.
+- To regenerate `workspace.json` from the DSL source, run the export script:
+  - **Linux/macOS**: `./architecture/scripts/export.sh`
+  - **Windows**: `./architecture/scripts/export.ps1`
+- Use `./architecture/scripts/run.sh` (or `run.ps1`) to start Structurizr Lite and visualize diagrams at `http://localhost:8080`
+
+## Error Troubleshooting
+
+Whenever the user reports an error when visualizing the Structurizr workspace, check first if you can validate reported errors with Structurizr CLI. [Check here for more information](./extra/CLI.md). Make sure to address all issues reported by the tool before continuing.

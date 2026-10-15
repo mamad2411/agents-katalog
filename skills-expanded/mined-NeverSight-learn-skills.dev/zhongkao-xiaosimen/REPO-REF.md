@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/xingyun-new/skills-xiaosimen/zhongkao-xiaosimen/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 初中小四门（地理、历史、生物、道德与法治）练习题生成与知识点学习系统。根据人教版教材按年级、章节、知识点生成选择题、判断题、填空题、材料分析题，每题配套知识点卡片。Use when user asks to generate middle school geography, history, biology, or ethics practice questions, or requests kn

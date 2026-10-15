@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/icartsh/icartsh_plugin/code-format/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: dotnet format, prettier 및 기타 포맷팅 도구를 사용하여 코드를 정리합니다. 코드 스타일 수정, 포맷 일관성 유지 또는 커밋 전 코드 준비가 필요한 작업에서 사용합니다.

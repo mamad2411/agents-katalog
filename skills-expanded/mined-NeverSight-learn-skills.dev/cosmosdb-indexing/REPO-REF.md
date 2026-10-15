@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/azurecosmosdb/cosmosdb-agent-kit/cosmosdb-indexing/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Azure Cosmos DB Indexing Strategies

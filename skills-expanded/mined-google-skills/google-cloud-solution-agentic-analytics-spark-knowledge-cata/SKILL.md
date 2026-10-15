@@ -1,6 +1,7 @@
 ---
 name: google-cloud-solution-agentic-analytics-spark-knowledge-catalog
 metadata:
+  version: "1.0.0"
   category: MultiProductSolutions
 description: >-
   Discovers requirements and designs an end-to-end governed agentic analytics
@@ -311,7 +312,7 @@ using the following resources:
     transformation and analysis.
 *   https://docs.cloud.google.com/dataplex/docs/use-cases.md.txt: Use cases for
     Knowledge Catalog.
-*   https://docs.cloud.google.com/managed-spark/docs/guides/lightning-engine.md.txt:
+*   https://docs.cloud.google.com/managed-spark/docs/guides/lightning-engine-serverless.md.txt:
     Guide to accelerating Apache Spark workloads by using Lightning Engine.
 *   https://docs.cloud.google.com/bigquery/docs/use-knowledge-catalog.md.txt:
     Guide to use Knowledge Catalog as a governance and agentic layer for

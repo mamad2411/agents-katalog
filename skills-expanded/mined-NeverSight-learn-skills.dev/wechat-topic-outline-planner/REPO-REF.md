@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/gainubi/wechat-skills/wechat-topic-outline-planner/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 公众号选题与大纲策划技能。用于把一个粗点子、资料包、语音底稿或采访纪要，转成 2-3 个高价值选题角度、1 个推荐方向、1 套主大纲和 1 套备选大纲。适用于写作前的方案阶段，必须先确认结构，再交给写稿技能。

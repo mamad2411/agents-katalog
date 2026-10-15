@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/prorise-cool/claude-code-multi-agent/architecture-specialist/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 提供系统架构设计、技术选型、架构审查和组件设计能力。当需要设计新系统、重构现有架构或进行架构审查时使用。

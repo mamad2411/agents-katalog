@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/kjaylee--blender-pipeline/skills/blender-pipeline/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Blender 헤드리스 게임 에셋 파이프라인. 3D 모델 제작/가공/변환/렌더링을 Blender Python API(bpy)로 자동화.\n 트리거: 3D 모델링, 에셋 변환, 스프라이트 시트, 리깅, Mixamo, FBX/glTF 변환, 프로시저럴 에셋 생성 관련 요청."

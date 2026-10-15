@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: eu/aviation/skills/kaltstart-abschlussprodukt-und-uebergabe/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Kaltstart: Abschlussprodukt und Übergabe: routet Rolle, Frist, Unterlagen und Fachschritt; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: Fluggastrechte.'

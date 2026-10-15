@@ -1,0 +1,161 @@
+---
+name: se-dev-plugin
+description: Plugin development for Space Engineers version 1. Search plugin code from PluginHub (client) and MagnetarHub (server) for examples and patterns.
+license: MIT
+allowed-tools: Read, Bash(*Prepare.bat*), Bash(*prepare.sh*), Bash(*Clean.bat*), Bash(*clean.sh*), Bash(*dotnet build*), Bash(*dotnet clean*), Bash(*uv run search_plugins.py *), Bash(*uv run index_plugins.py*), Bash(*uv run list_plugins.py*), Bash(*uv run download_plugin_source.py *), Bash(*uv run download_pluginhub.py*), Bash(*uv run download_magnetarhub.py*), Bash(command -v graphify*), Bash(graphify*), Bash(*busybox* grep *), Bash(*busybox* find *), Bash(*busybox* cat *), Bash(*busybox* head *), Bash(*busybox* tail *), Bash(*busybox* ls*), Bash(*busybox* wc *), Bash(*busybox* sort *), Bash(*busybox* uniq *), Bash(*busybox* tree*)
+---
+
+# SE Dev Plugin Skill
+
+Plugin development for Space Engineers version 1.
+
+**⚠️ CRITICAL: Commands run in UNIX shell. Use bash syntax. On Windows this is BusyBox; on Linux use native shell.**
+
+Examples:
+- ✅ `test -f file.txt && echo exists`
+- ✅ `ls -la | head -10`
+- ❌ `if exist file.txt (echo exists)` - Will NOT work
+
+**Actions:**
+
+- **prepare**: Run one-time preparation (`Prepare.bat` on Windows, `prepare.sh` on Linux)
+- **bash**: Run UNIX shell commands via busybox
+- **search**: Search plugin code using `search_plugins.py`
+
+## Routing Decision
+
+Check these patterns **in order** - first match wins:
+
+| Priority | Pattern | Example | Route |
+|----------|---------|---------|-------|
+| 1 | Empty or bare invocation | `se-dev-plugin` | Show help |
+| 2 | Prepare keywords | `se-dev-plugin prepare`, `se-dev-plugin setup`, `se-dev-plugin init` | prepare |
+| 3 | Bash/shell keywords | `se-dev-plugin bash`, `se-dev-plugin grep`, `se-dev-plugin cat` | bash |
+| 4 | Search keywords | `se-dev-plugin search`, `se-dev-plugin find class`, `se-dev-plugin lookup` | search |
+
+## Getting Started
+
+**⚠️ CRITICAL: Before running ANY commands, read [CommandExecution.md](CommandExecution.md) to avoid common mistakes that cause command failures.**
+
+If `Prepare.DONE` file missing in this folder, you MUST run one-time preparation steps first. See [prepare action](./actions/prepare.md).
+
+## Essential Documentation
+
+- **[CommandExecution.md](CommandExecution.md)** - ⚠️ **READ THIS FIRST** - Windows command execution details; on Linux keep bash syntax and use `prepare.sh`
+
+## Plugin Development Documentation
+
+Read appropriate documents for further details:
+- [Plugin.md](Plugin.md) Plugin development (shared skills for both client and server)
+- [ClientPlugin.md](ClientPlugin.md) Client plugin development (relevant on client side)
+- [ServerPlugin.md](ServerPlugin.md) Server plugin development (relevant on server side)
+- [Guide.md](Guide.md) Use this to answer questions about plugin development process in general.
+- [Review.md](Review.md) How to review a plugin for inclusion on PluginHub / MagnetarHub (manifest conformance, commit pin, security audit, from-source build).
+- [Publicizer.md](Publicizer.md) How to use Krafs publicizer to access internal, protected or private members in original game code (optional).
+- [OtherPluginsAsExamples.md](OtherPluginsAsExamples.md) How to look into source code of other plugins as examples.
+
+## Harmony Patching Documentation
+
+Progressive documentation for Harmony patching (start with basics, then read advanced topics as needed):
+
+1. **[Patching.md](Patching.md)** - Start here: patch types, prefix/postfix basics, common patterns
+2. **[PatchInjections.md](PatchInjections.md)** - Special parameters: `__instance`, `__result`, `___fields`, `__state`
+3. **[AccessTools.md](AccessTools.md)** - Reflection utilities to find methods, fields, and types
+4. **[TranspilerPatching.md](TranspilerPatching.md)** - IL-level patching for complex modifications
+5. **[PatchingSpecialCases.md](PatchingSpecialCases.md)** - Finalizers, reverse patches, auxiliary methods, priority
+6. **[PreloaderPatching.md](PreloaderPatching.md)** - Pre-JIT patching (Mono.Cecil, client only)
+
+## Targets: Client and Server
+
+Plugins target one or both of:
+- **Client** — runs inside game client, loaded by [Pulsar](https://github.com/SpaceGT/Pulsar), released on [PluginHub](https://github.com/StarCpt/PluginHub/).
+- **Server** — runs inside dedicated server, loaded by [Magnetar](https://magnetar.se), released on [MagnetarHub](https://github.com/CometWorks/magnetar-hub). Server plugins declare their configuration through Magnetar's PluginSdk; use **`se-dev-plugin-sdk`** skill for that. Admins configure server plugins remotely via [Quasar](https://github.com/CometWorks/quasar), the Magnetar control plane.
+
+A client-only plugin uses [client plugin template](https://github.com/CometWorks/client-plugin-template). A plugin that also needs server side companion (or is server-only) uses [server plugin template](https://github.com/CometWorks/server-plugin-template), which has `ClientPlugin` target, `ServerPlugin` target and `Shared` project. See [ServerPlugin.md](ServerPlugin.md).
+
+## Plugin Distribution
+
+Client plugins released exclusively on PluginHub. All client plugins must be open source, since they are compiled on
+player's machine from GitHub source revision identified by its PluginHub registration. Plugins are
+reviewed for safety and security on submission, but only on best effort basis, without any legal guarantees.
+Plugins run native code and can do anything. When reviewing a submission (or update) to PluginHub or
+MagnetarHub, follow [Review.md](Review.md).
+
+Use `se-dev-game-code` skill to search game's decompiled code. Need this to
+understand how game's internals work and how to interface with it and patch it properly.
+
+## Graphify Graph
+
+Preparation builds a separate Graphify graph for downloaded plugin sources under
+`Data/Sources` (or `SE_DEV_PLUGIN_PROJECT_ROOT`). With the fast Rust clustering backend
+(Python 3.12 via `uv`, provisioned automatically) prepare builds it **automatically**; this
+corpus is small so it is quick either way. Where the fast backend is unavailable it stays
+**opt-in** with `SE_DEV_GRAPHIFY=1`; `SE_DEV_GRAPHIFY=0` disables it. Read on demand — skip
+for normal search work: build via [GraphifyPrepare.md](../se-dev/GraphifyPrepare.md), query
+via [GraphifyUsage.md](../se-dev/GraphifyUsage.md).
+
+## References
+
+- [Pulsar](https://github.com/SpaceGT/Pulsar) Plugin loader for Space Engineers game client
+- [Pulsar Installer](https://github.com/StarCpt/Pulsar-Installer) Installer for Pulsar on Windows
+- [PluginHub](https://github.com/StarCpt/PluginHub/) Public plugin registry for Pulsar
+- [Magnetar](https://magnetar.se) Plugin loader for Space Engineers dedicated server
+- [MagnetarHub](https://github.com/CometWorks/magnetar-hub) Public plugin registry for Magnetar
+
+## Plugin Registries
+
+Two registries are searched together, both using the same GitHub-plugin XML schema:
+
+- **PluginHub** — client plugins (Pulsar). `<Id>` is `Owner/Repo`.
+- **MagnetarHub** — server plugins (Magnetar). `<Id>` is a GUID; the GitHub repo is in `<RepoId>`.
+
+Preparation clones both into `Data/PluginHub` and `Data/MagnetarHub`. Refresh them with
+`uv run download_pluginhub.py` and `uv run download_magnetarhub.py`. To point at a local
+registry checkout instead of (or in addition to) the cloned ones, set
+`SE_PLUGIN_REGISTRY_DIR` to a registry root (a folder containing `Plugins/*.xml`).
+`list_plugins.py`, `download_plugin_source.py` and the indexer all read every configured
+registry; `list_plugins.py` tags each entry with `[PluginHub]` or `[MagnetarHub]`.
+
+## Plugin Code Search
+
+Search source code of plugins from either registry for examples and patterns:
+
+```bash
+# List available plugins (tagged by registry), or search them
+uv run list_plugins.py
+uv run list_plugins.py --search "camera"
+
+# Download a plugin's source (use the EXACT name, GUID/Id, or Owner/Repo from the list)
+uv run download_plugin_source.py "Tool Switcher"
+uv run download_plugin_source.py CometWorks/essentials
+
+# Index downloaded plugins (automatic after download)
+uv run index_plugins.py
+
+# Search plugin code
+uv run search_plugins.py class declaration Plugin
+uv run search_plugins.py method signature Patch
+
+# Count results before viewing (useful for large result sets)
+uv run search_plugins.py class usage Plugin --count
+
+# Limit number of results
+uv run search_plugins.py class usage IPlugin --limit 20
+```
+
+The registries contain descriptions of all available plugins. Download sources for plugins
+that may help with your task, then index and search them.
+
+See [search action](./actions/search.md) for complete documentation.
+
+## Action References
+
+Follow detailed instructions in:
+
+- [prepare action](./actions/prepare.md) - One-time preparation
+- [bash action](./actions/bash.md) - Run UNIX shell commands via busybox
+- [search action](./actions/search.md) - Search plugin code for examples
+
+## Remarks
+
+Original source of this skill: https://github.com/CometWorks/skills

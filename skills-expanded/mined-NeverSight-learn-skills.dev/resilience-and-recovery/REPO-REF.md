@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/magnus919/agent-skills/resilience-and-recovery/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Resilience and Recovery

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tencentblueking/bk-ci/pipeline-variable-management/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 流水线变量管理完整指南，涵盖变量生命周期（创建、初始化、更新、存储、传递、查询）和变量字段扩展（字段定义、类型扩展、作用域、继承）。当用户开发变量功能、处理变量传递、扩展变量字段或调试变量问题时使用。

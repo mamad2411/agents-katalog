@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/inuyashayang--worktree-codex/skills/worktree-codex/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 使用 git worktree 隔离多个 Codex 实例，由 OpenClaw 主控器并行调度完成同一项目的不同编码模块。 适用场景：将一个编码项目拆分为独立子任务，让多个 Codex 实例并行实现，最后合并 PR。 触发条件：用户要求\"多个 Codex 协作\"、\"并行编码\"、\"worktree 编码\"、\"多 Codex 编排\"、\"并行完成项目\"时激活。"

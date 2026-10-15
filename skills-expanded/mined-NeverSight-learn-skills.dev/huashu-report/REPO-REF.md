@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/alchaincyf/huashu-report/huashu-report/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 做机构级研究报告与学术论文——行业报告、白皮书、年度调研、数据洞察、arXiv论文，也含16:9咨询deck型报告（一页一结论）。定结构、写发现、建图表视觉系统。规范提炼自2026年顶级机构报告实测。单篇文章、纯演示PPT不适用（走design/slides）。

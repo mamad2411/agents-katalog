@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ramong26/agents-skill/frontend-fundamental-review/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: This skill should be used when the user asks to "프론트엔드 코드 리뷰해줘", "코드 품질 봐줘", "토스식으로 리뷰해줘", "프론트 코드 검토해줘", "review this frontend code", or any request to review frontend code from readability, cohesion

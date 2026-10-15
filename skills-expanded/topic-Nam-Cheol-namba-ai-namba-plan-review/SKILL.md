@@ -1,0 +1,34 @@
+---
+name: namba-plan-review
+description: Command-style entry point for bundling SPEC creation, parallel plan reviews, and advisory readiness validation.
+---
+
+State effect: mutating workflow entry point. Use help/probe paths read-only, and otherwise expect repository state or GitHub state to change.
+
+Generated instruction contract for this command skill:
+- Purpose: keep the role or command scope explicit, bounded, and testable.
+- Boundary: honor read-only versus mutating state effects, configured sandbox mode, and assigned file or workflow ownership.
+- Required output: report concrete actions, changed paths or artifacts, validation evidence, and pass/fail status or blockers.
+- Pass/fail criteria: claim success only when acceptance criteria and configured validation are satisfied; otherwise name the exact blocker and impact.
+- Evidence expectations: cite source artifacts such as SPEC files, `.namba/` configs, diffs, test output, PR/check links, or generated manifests instead of relying on unsupported assertions.
+- Security responsibilities: never expose or commit secrets; treat auth, privacy, destructive commands, permission changes, and external network or credential use as security-sensitive.
+- Destructive command and escalation policy: do not run destructive commands unless explicitly requested; request approval for privileged, networked, or sandbox-blocked actions only when the active approval mode allows it, and otherwise report the blocker or use a safe non-escalating path.
+- Fallback implementer boundary: if a specialist path is unavailable and the main/default implementer takes over, stay within the assigned scope and preserve the same evidence and validation duties.
+- Portability: keep durable guidance non-project-specific unless the current repository config or SPEC explicitly provides the project detail.
+
+Use this skill when the user explicitly says `$namba-plan-review`, asks to create a SPEC and run the full pre-implementation review loop, or wants `namba plan` plus the review flow bundled into one skill.
+
+Behavior:
+- Resolve the target SPEC from an explicit `SPEC-XXX`; otherwise create the next SPEC with `namba plan` for feature work, `namba harness` for reusable agent/skill/workflow/orchestration work, or `namba fix --command plan` for bugfix planning.
+- When creating a new SPEC from a user request, inherit the same clarification gate as `$namba-plan`: ask first and do not run the CLI while the raw request is still vague, short, or missing Goal/Scope/Constraints/Acceptance.
+- Prefer the installed `namba` CLI for the SPEC-creation step when it is available; keep `.namba/` as the source of truth if you need to do the setup manually.
+- Inherit the same safe-by-default planning branch contract as `namba plan`: create or switch to the dedicated `spec/...` branch in the current workspace by default, treat `--current-workspace` as the explicit current-branch escape hatch, and do not create planning worktrees.
+- Read `.namba/specs/<SPEC>/spec.md`, `plan.md`, and `acceptance.md` before launching reviews or revising the planning artifacts.
+- Launch product, engineering, and design review passes in parallel when subagent routing is available, using `$namba-plan-pm-review`, `$namba-plan-eng-review`, and `$namba-plan-design-review` as the three authoritative review tracks.
+- Prefer `namba-product-manager`, `namba-planner`, and `namba-designer` for the three review tracks, and use `namba-plan-reviewer` as the aggregate validator when custom-agent routing is available.
+- After the three review tracks finish, run an aggregate validation pass over `spec.md`, `plan.md`, `acceptance.md`, and `.namba/specs/<SPEC>/reviews/*.md` to check coverage gaps, contradictions, and whether the advisory readiness state is credible.
+- If the aggregate validator finds issues, revise the SPEC or review artifacts directly, rerun only the affected review tracks, and repeat the validation loop instead of restarting every pass blindly.
+- Refresh `.namba/specs/<SPEC>/reviews/readiness.md` after each review and validation cycle so the advisory summary stays current.
+- Before ending, inspect `.namba/specs/<SPEC>/reviews/readiness.md`; if it does not say `Cleared reviews: 3/3`, do not report the review loop as complete. Continue the review loop when useful, or make the final next-work item explicitly name `$namba-plan-review SPEC-XXX` or the missing individual review skills to run next.
+- Keep the loop bounded and explicit: stop when the readiness state is clear enough to proceed or when the remaining blockers are concrete enough that another loop would be redundant.
+- Keep the whole flow advisory by default; missing depth or blockers should be visible, not silently converted into a hard gate.

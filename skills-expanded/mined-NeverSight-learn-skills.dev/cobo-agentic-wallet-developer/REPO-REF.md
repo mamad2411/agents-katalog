@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/coboglobal/cobo-agentic-wallet/cobo-agentic-wallet-developer/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 1. Install caw CLI

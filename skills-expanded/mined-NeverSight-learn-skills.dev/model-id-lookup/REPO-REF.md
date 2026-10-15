@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/sakumyz/skills/model-id-lookup/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 查询 AI 模型 ID 的 skill。当用户需要查找或验证 AI 模型 ID 时使用此 skill。支持从本地缓存优先查询，如果找不到则从在线 models.dev 更新本地数据后再查询。

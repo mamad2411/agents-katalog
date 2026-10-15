@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/krishagel/geoffrey/psd-instructional-vision/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Peninsula School District's instructional framework and pedagogical beliefs. Use when creating graphics about PSD instruction, designing AI assistants for educators, writing about good teaching practi

@@ -1,0 +1,488 @@
+---
+name: token-builder
+description: "Build a two-tier (primitive + semantic) design token system as Figma variables — color ramps, spacing, type scale, radius, shadows — with light/dark or brand modes, using one collection per category per tier. Use this when the user wants to create design tokens, design variables, a color system, a type scale, a spacing system, or 'build my tokens' in Figma. Also trigger when the user mentions primitives and semantic tokens, variable collections, design system foundations, or modes/themes in Figma."
+---
+
+# Token builder
+
+> **Critical collection rule:** this system uses **one collection per category per tier** — never one giant `Primitives` + one giant `Semantic`. Color, spacing, typography, radius, and border each get their own primitive collection and their own semantic collection. This is non-negotiable: modes (Light/Dark, Desktop/Mobile) belong to a collection, so mixing categories in one collection forces unrelated variables to share the same mode axis.
+
+> **Model tip (#3):** building a coherent token system (ramps, type scale, modes,
+> primitive→semantic aliasing) is reasoning-heavy. It runs on your session model —
+> Sonnet is a solid default; Opus helps for large or multi-mode systems. See the
+> model guide in the plugin README.
+
+Creates a two-tier design token system as Figma variables. Each tier is split
+into **one collection per category** (color, spacing, type, radius, border) so
+every category owns its own modes — see Step 1 for why. Within a collection,
+Figma variables are grouped with `/` and omit the category prefix (the
+collection already carries it); the sync layer later derives the dotted logical
+name (`color.gray.50`) by prefixing the collection's category.
+
+- **Primitives** — raw values with no meaning attached: `gray/50`, `space/4`
+  in their category's primitive collection. The full palette of possible values.
+- **Semantic** — meaning-bearing tokens that **alias onto primitives**:
+  `bg/default` → `{gray/50}`, `text/primary` → `{gray/900}`. This is the layer
+  the rest of the system consumes.
+
+The power of two tiers: change a primitive once and every semantic token
+referencing it updates automatically, which cascades through sheets, components,
+and synced code. Preserving these aliases (not flattening them) is what makes
+runtime theming work later, so **always create semantic tokens as references to
+primitives, never as copied literal values.**
+
+## Prerequisites
+
+This skill needs a live Figma connection. Read the manifest
+(`${CLAUDE_PLUGIN_ROOT}/references/manifest-schema.md` for the schema) and check `figma.connected`.
+Then do a cheap liveness read to confirm the connection is actually live right
+now. If it isn't, say so plainly and offer to run the `figma-environment-setup`
+skill first: "Figma isn't connected yet — want me to set that up? It's a
+one-time thing." Don't proceed until Figma is reachable.
+
+The plugin writes to Figma through Console MCP. If `figma.mechanism` holds anything other than `console-mcp`, say that value is no longer supported and offer `figma-environment-setup` to reset it.
+With Console MCP, prefer `figma_execute` to create variables in scripted loops
+rather than one tool call per variable — this is dramatically more
+token-efficient for the potentially hundreds of primitives across modes.
+
+**Scripting via `figma_execute`:** see
+`${CLAUDE_PLUGIN_ROOT}/references/figma-scripting.md` for the shared gotchas —
+the single-bridge-instance preflight (concurrent writes corrupt the file), the
+`dynamic-page` async APIs (synchronous document-wide getters like
+`getLocalVariableCollections` **and** setters like `figma.currentPage =` /
+`node.textStyleId =` throw — use `getLocalVariableCollectionsAsync`,
+`setCurrentPageAsync`, `setTextStyleIdAsync`, …), the `resize()` axis-lock trap,
+and why large `WRAP` grids time out. For a simple verification read, prefer the
+dedicated `figma_get_variables` tool (it handles dynamic-page correctly and
+resolves aliases with `resolveAliases: true`) over a hand-written script.
+
+**Execution model — sequential architect → figma-executor with model routing.**
+If your host supports subagent dispatch, plan the token architecture once with
+one **architect** dispatch (deep tier) — it reads existing Figma state and emits
+a transcription-grade spec in stable identifiers (collection/variable *names*,
+never nodeIds) — then build the variables with **figma-executor** dispatches
+(balanced tier), strictly sequentially: preflight `figma_get_status` and never
+run two Figma-touching subagents at once (the single bridge is concurrency-1).
+Each executor finalizes by build-verify-then-replace with a programmatic
+read-back (`figma_get_variables`, not a screenshot); gate the result with a
+**reviewer** pass. **Keep the human checkpoint between tiers** (the PAUSE in
+Steps 2–4) — subagents run continuously within a tier, but you pause for the
+human between them. Route per
+`${CLAUDE_PLUGIN_ROOT}/references/agent-routing.md`; never parallelize Figma
+work. If your host has no subagent dispatch, build and verify each tier inline,
+sequentially, as the steps below describe.
+Inline, run the active-file preflight in
+`${CLAUDE_PLUGIN_ROOT}/references/figma-scripting.md` before the first write and
+again before replacing anything — the executor's file check does not come with
+you.
+
+## Step 1 — Brainstorm the structure (before building anything)
+
+Run the protocol in `${CLAUDE_PLUGIN_ROOT}/references/brainstorm-before-build.md`. **First establish
+the intake mode** (generative / descriptive / import) per that reference — it
+changes how much you generate versus preserve. **In import mode, do not stop at a
+1:1 transcription of what the user fed you** (a brand guide or marketing site is
+almost always a partial system): after preserving and organizing their values,
+run the **completeness pass** from that reference — diff against the full-system
+model and proactively propose the missing pieces (tonal ramps, neutral ramp,
+state colors, dark mode, semantic roles, elevation/radius scales) as a
+preserve-first, opt-in menu derived from their existing values. Then lock the
+structure with the user, in readable chunks:
+
+- **Seeds and direction** — capture what the user actually has: brand color(s),
+  font(s), aesthetic words (modern, rounded, dense, comfortable), reference
+  images/URLs, or an existing token set to import. In generative mode, this is
+  the seed you expand from; in import mode, this is the set you organize.
+- **Color ramps** — which hues (e.g. gray, brand primary, success, warning,
+  danger), and how many steps each (a 50–900 ramp of ~10 steps is a sensible
+  default). In generative mode, derive a full tonal ramp and harmonized
+  supporting families from the user's seed color(s).
+- **Modes** — does the system need light + dark? Brand variants? Density? This
+  is high-impact and shapes everything downstream (it determines how many values
+  each variable holds and how the sync layer emits themes), so brainstorm it
+  carefully. Default: light + dark.
+- **Spacing scale** — base unit and steps (e.g. 4px base: 0, 1, 2, 3, 4, 6, 8,
+  12, 16, 24...). Default to a 4px-based scale; "dense" pulls it tighter,
+  "comfortable" looser.
+- **Type scale** — font families, the size ramp, weights, line-heights. In
+  generative mode, propose complementary font pairings from the user's seed
+  font. Default to a modular scale.
+- **Radius / border / shadow** scales as needed. "Rounded" → larger radius
+  scale.
+- **Primitive naming convention** — the single most important decision, because
+  the semantic tier aliases onto these names and renaming later breaks every
+  alias. Lock it explicitly. In Figma, name variables **without the category
+  prefix** (the collection supplies it) and group with `/`: e.g. `gray/50`,
+  `space/4`, `radius/md` inside their category's primitive collection. The sync
+  layer derives the dotted logical identity (e.g. `color.gray.50`) by prefixing
+  the collection's category. Keep names **neutral and semantic — never
+  framework-specific** (don't name a token `--background` to match shadcn; the
+  adapter renames per framework later). Figma is framework-agnostic; the adapter
+  absorbs all framework-specific shaping.
+- **Tiers** — default to **two-tier** (primitive + semantic). Only raise the
+  option of a third **component** tier if the user signals multi-brand,
+  white-labeling, or a very large/robust component library — for a single-brand
+  project it adds complexity without payoff, so don't even surface it. If the
+  user opts in, component tokens alias onto semantic tokens (e.g.
+  `bg/primary` → `{bg/emphasis}`).
+- **Collection structure** — two *tiers*, but **one collection per category per
+  tier**, never one giant `Primitives` + one giant `Semantic`. In Figma a mode
+  axis (Light/Dark, Desktop/Mobile, Brand) belongs to the *collection*, so every
+  variable in a collection is forced to share its modes. Putting `space` in the
+  same collection as `color` drags spacing into Light/Dark, which is meaningless.
+  Default layout (single-brand): private primitive collections `_Color/Primitive`,
+  `_Typography/Primitive`, `_Radius/Primitive`, `_Border/Primitive`, and a
+  **public** `Spacing/Primitive`; published semantic collections `Color/Semantic`
+  (Light/Dark), `Spacing/Semantic`, `Typography/Semantic`, `Radius/Semantic`,
+  `Border/Semantic`. Privacy is the leading-`_` prefix. `size/icon/*` lives in
+  `Spacing/Primitive`; don't create a `Sizing` collection unless control
+  heights/avatars become real tokens.
+- **Multi-brand** — keep two axes in two collections so they don't multiply.
+  Brand lives on `_Color/Primitive` (modes = Brand A, Brand B = raw palettes);
+  Theme lives on `Color/Semantic` (modes = Light, Dark). A frame sets both
+  independently and Figma resolves `bg/default`(Light) → `{gray/50}` → Brand A's
+  gray. This keeps each collection ≤2 modes — under the Figma **Professional cap
+  of 4 modes/collection**. (Brand-on-primitive assumes brands differ in raw
+  palette, same role mapping; if a brand needs a *different* mapping, it also
+  becomes a mode on `Color/Semantic`.)
+
+Show the proposed full structure back to the user and get sign-off before
+creating anything.
+
+### The structural-consistency rule (prevents the "different every time" problem)
+
+Every token concern gets **both** a primitive and a semantic collection, even
+when the semantic tier is a 1:1 passthrough today. A dimensional semantic tier
+(`Spacing/Semantic`, `Radius/Semantic`, `Border/Semantic`) is justified by a
+**plausible future mode axis** — e.g. adding Desktop/Mobile to spacing later —
+which only works if the semantic collection already exists to carry that axis.
+Building every concern the same way is also what makes the output consistent
+run-to-run instead of an arbitrary guess about which categories to duplicate.
+
+The one guardrail: **consistency does not license invented roles.** Semantic
+names must be real usage roles (`inset/md`, `width/focus`, `text/primary`),
+never just renamed primitive steps (`space/12`, `width/1`). A passthrough role
+with a meaningful name is fine; a fake role nobody applies is not. If you can't
+name a genuine role for a category, give it semantic roles that map to actual
+usage rather than mirroring the primitive scale step-for-step.
+
+## Step 1.5 — Brownfield: refine existing variables in place (don't rebuild)
+
+If this is a **retrofit** (`tokens.intakeMode: "retrofit"`, or the file already has
+variables), do **not** create a fresh set on top of the old one. Refine what exists,
+in place. **Read `${CLAUDE_PLUGIN_ROOT}/references/brownfield-retrofit.md` first** —
+guardrail 3 is the whole point of this branch.
+
+**The hard rule (guardrail 3):** rename and realign variables **in place** to preserve
+their Figma IDs. **Never delete-and-recreate** — every binding (a populated file can
+have thousands) references the variable *id*, so recreating under the same name still
+unbinds everything. A rename keeps the id; a delete+create does not.
+
+**The refine loop:**
+
+1. **Read what exists** (read discipline). Use `figma_get_variables` after
+   `await figma.loadAllPagesAsync()`. List the existing collections, variables, and
+   values. Treat a `0`/empty first read as suspect — re-read before concluding the file
+   is empty.
+2. **Snapshot bindings before.** Run the binding-survival audit in
+   `${CLAUDE_PLUGIN_ROOT}/references/figma-scripting.md` to record the total consuming
+   binding count *before* any change. This is your guardrail-3 tripwire.
+3. **Rename / realign in place.** Use the rename operation that keeps the id (e.g.
+   `figma_rename_variable` / setting `variable.name`), and update values in place. Map
+   old names to the new two-tier scheme; record each old→new mapping (the crosswalk
+   consumes it later via `token-crosswalk-builder`).
+4. **Snapshot bindings after, and assert equality.** Re-run the binding-survival audit.
+   The total **must be unchanged**. A drop means a binding was severed — STOP, find the
+   delete-and-recreate that slipped in, and restore from the baseline.
+5. **Add genuinely-new variables** (the `added` rows) as normal creates — only the
+   *existing* ones must be renamed rather than recreated.
+
+After the refine loop, continue with the normal tiers below for any net-new structure,
+but **skip recreating anything that already exists**. The primitive/semantic checkpoint
+(Step 2's PAUSE) still applies: lock names before building dependent semantics.
+
+## Step 2 — Build the PRIMITIVE tier, then PAUSE
+
+Create the **per-category primitive collections** and their variables via a
+scripted loop on the active write mechanism. Default set:
+
+- `_Color/Primitive` — color ramps (`gray/50…900`, `brand/50…900`,
+  `success`/`warning`/`danger`, `white`, `black`).
+- `Spacing/Primitive` — the spacing scale (`space/0,2,4,8,12,16,24,32,48,64`)
+  **plus** `size/icon/{sm,md,lg}`.
+- `_Typography/Primitive` — `family/*`, `size/*`, `weight/*`, `lineHeight/*`,
+  `letterSpacing/*`.
+- `_Radius/Primitive` — `radius/{none,sm,md,lg,xl,full}`.
+- `_Border/Primitive` — `width/{0,1,2,4}`. **Do not skip border width** — borders
+  need a width primitive, not only a color.
+
+**Privacy:** the leading-`_` prefix hides a collection from the published
+library. Keep color/type/radius/border primitives private (they're always
+consumed through semantics or styles). Make **`Spacing/Primitive` public** (no
+underscore) — spacing semantics are intentionally minimal, so designers will grab
+raw `space/*` for one-off gaps. Note the trade-off in your checkpoint summary: a
+value applied directly from `Spacing/Primitive` is *frozen across device modes*;
+only `Spacing/Semantic` carries future Desktop/Mobile responsiveness.
+
+**Modes at the primitive tier:** primitives are usually mode-free (a single
+*Value* mode). The exception is multi-brand: give `_Color/Primitive` a Brand mode
+axis (Brand A, Brand B) holding each brand's raw palette. All other primitive
+collections stay single-mode.
+
+Then **stop and checkpoint.** This is the critical seam: semantic tokens are
+about to alias onto these primitives, so the primitive names and values must be
+right *before* you build on them. Show the user the created collections —
+summarize the ramps and scales, note which are public vs private, and if helpful
+mention the token-sheet-builder skill can render them visually later. Ask for
+explicit confirmation: "Here are your primitives. Once you're happy, I'll build
+the semantic layer on top — and after that, renaming primitives gets disruptive,
+so this is the moment to adjust names or values."
+
+Update the manifest: `tokens.primitivesBuilt` = `true`, add every created
+collection name to `tokens.collections`.
+
+Do not proceed to the semantic tier until the user confirms.
+
+## Step 3 — Build the SEMANTIC tier as aliases
+
+Create the **per-category semantic collections**, where every variable
+**references a primitive**, not a literal value. Bind each semantic variable to
+its primitive so the alias is live. Default set and modes:
+
+- `Color/Semantic` — modes **Light, Dark** (+ a Brand mode only if a brand needs
+  a different *mapping*, not just a different palette). Roles: `bg/{default,
+  subtle,muted,emphasis,inverse}`, `text/{primary,secondary,disabled,inverse,
+  link,onEmphasis}`, `border/{default,subtle,focus,emphasis}`,
+  `status/{success,warning,danger}/{bg,text,border}`,
+  `shadow/{ambient,key}`. The **`shadow/*`** roles are the colors the elevation
+  effect styles consume (Step 4) — they carry alpha and are **mode-aware**: a
+  low-alpha near-black in Light, and a darker/higher-alpha value in Dark, so
+  toggling modes recolors every elevation. They live here in `Color/Semantic`
+  (rather than as part of the effect style) precisely so the Light/Dark switch
+  reaches them; alias a near-black primitive where the alpha allows, otherwise
+  set the rgba per mode directly. **`text/onEmphasis`** is the
+  label/icon color that sits **on** `bg/emphasis` (a primary button's text, a
+  filled badge) — it must contrast with the emphasis fill in *every* mode, so it's
+  a distinct role, **not** `text/inverse` (which flips with the theme and won't
+  reliably contrast a brand-colored emphasis fill). Component-builder binds primary/
+  filled control labels to this role; without it, builds fall back to literals and
+  break the "everything bound" audit.
+- `Spacing/Semantic` — single *Default* mode now, structured so Desktop/Mobile
+  can be added later. Roles: `inset/{xs,sm,md,lg,xl}`, `stack/*`, `inline/*`.
+- `Typography/Semantic` — single *Default* mode (room for Desktop/Mobile). Roles:
+  `size/{body,bodyLg,heading/sm…xl,caption}` and role line-heights; these feed
+  the text styles built in Step 4.
+- `Radius/Semantic` — single mode. Roles: `control`, `card`, `pill`, `field`.
+- `Border/Semantic` — single mode. Roles: `width/{default,focus,emphasis}`
+  aliasing `_Border/Primitive` widths, plus **`offset/focus`** (the gap between a
+  control's edge and its focus ring, the `outline-offset` equivalent) aliasing the
+  `2` width primitive. It's used by the **outline-style** focus recipe (e.g.
+  `vanilla-css`) to keep the ring clear of the edge for accessibility; library idioms
+  that render focus as a spread-shadow ring don't need it — see "State handling" in the
+  component standards for the per-library recipes.
+- `Opacity/Semantic` (when the system needs disabled/overlay states) — single
+  mode. Roles: `disabled`, `muted`, `overlay/scrim`, `hover`, aliasing
+  `_Opacity/Primitive`. See the **opacity scale rule** below — this is the one
+  category where the Figma value scale is a trap.
+
+> **⚠️ Opacity is stored 0–100, NOT 0–1 (critical).** When a variable is bound to
+> a node's **`opacity`** field, Figma treats the value as a **0–100 percentage and
+> divides by 100**. So an opacity primitive must be created on the **0–100 scale**:
+> `_Opacity/Primitive` `40` has the value **`40`** (which renders as 0.4), never
+> `0.4` (which would render as 0.004 — effectively invisible). Name and value must
+> match (`40` = `40`), and a bound `disabled`/`overlay` element renders correctly.
+> The sync layer is responsible for the inverse: CSS `opacity` is 0–1, so it
+> **÷100 on emit** — token-builder and token-sync-layer are a **matched pair** here.
+
+These dimensional semantic tiers are often passthroughs today — that's expected
+under the structural-consistency rule; keep the role names real (`inset/md`, not
+`space/16`).
+
+The **color** semantic tier is where the Light/Dark switch lives:
+`bg/default` → `{gray/50}` in Light and `{gray/900}` in Dark. Primitives
+stay fixed; the semantic aliases differ per mode. This is exactly what lets the
+sync layer emit `:root`/`.dark` for web later.
+
+**Mode-application reality (state this to the user):** a frame can now carry up
+to three independent modes — Brand (`_Color/Primitive`), Theme (`Color/Semantic`),
+and later Device (`Spacing`/`Typography`). That's the cost of independent axes.
+
+Verify the aliases resolve — use `figma_get_variables` (filtered to the new
+semantic collection, `resolveAliases: true`) to confirm semantic tokens point at
+primitives, not literals; if you read via a `figma_execute` script instead, use
+the async APIs (see the dynamic-page note in Prerequisites).
+
+**Then assert contrast, before the checkpoint.** Using that same
+`figma_get_variables` read (filtered to `Color/Semantic`, `resolveAliases: true`),
+convert Figma's 0–1 RGBA channels to hex and **run the shipped module rather than
+doing the arithmetic in the transcript**: shape the per-mode values as
+`[{ mode, values: { "<dotted token path>": "#rrggbb" } }]` and pass them to a
+single `node` invocation that imports `CONTRAST_PAIRS`, `contrastRatio`,
+`composite` and `AA_NORMAL_TEXT` from
+`${CLAUDE_PLUGIN_ROOT}/scripts/lib/contrast.mjs` and prints one line per pair per
+mode:
+
+    node --input-type=module -e "<import the module, read the JSON from
+    process.argv[1], loop CONTRAST_PAIRS × modes, print mode/fg/bg/ratio>" '<the JSON>'
+
+The module ships precisely so the maths has one home: read the table and call the
+function, and restate neither. The pairs are the semantic roles the system
+already promises (`text/onEmphasis` on `bg/emphasis`, `text/primary` on
+`bg/default`, each status text on its own status background); a role this system
+does not have is not asserted.
+
+**The keys are dotted token paths, not Figma variable names.** Figma calls the
+role `text/onEmphasis` in the `Color/Semantic` collection; `CONTRAST_PAIRS`
+spells it `color.text.onEmphasis`, and no normalized fold bridges the two —
+`colorsemantictextonemphasis` is not `colortextonemphasis`. Apply the **Name
+mapping** rule the sync already defines
+(`${CLAUDE_PLUGIN_ROOT}/skills/token-sync-layer/SKILL.md`): the category drives
+the top-level group and the tier is dropped, so `Color/Semantic` +
+`text/onEmphasis` → `color.text.onEmphasis`. Both halves of this check have to
+agree on the spelling, or the Figma-time half asserts pairs the CLI half never
+sees, and the two never disagree because they never meet.
+
+**A failing pair stops the tier.** Do not proceed to the checkpoint or to Step 4
+with a pair below 4.5:1. Report it in guide voice
+(`${CLAUDE_PLUGIN_ROOT}/references/guide-voice.md`): name the two roles, the
+mode, the measured ratio and the required one, then give **one** recommended fix
+— re-point that mode's alias at a primitive with more separation, naming a
+specific step in the ramp that clears — rather than a menu of options. This is
+the "modes can't be built with poor colour contrast" promise, and it is the
+cheapest place in the whole system to catch it: the mode is being defined right
+now, and nothing is built on it yet.
+
+**If the user explicitly accepts a failing pair**, continue, and say plainly in
+the same breath what it costs downstream — describing the mechanism that actually
+exists, not a registration that cannot reach the sync:
+
+1. The acceptance is recorded in this stage's entry (`contrast-baseline` at
+   `result: "fail"`, `advancedBecause` naming it, and the pair itself listed in
+   `accepted`), and `token-sync-layer` subtracts exactly that pair from its own
+   gate run — so **the next token sync is not blocked** by it, while any *other*
+   failing pair, including one introduced later, still stops the sync.
+2. The repo's own registered `verify:check` — the one
+   `storybook-chromatic-builder` wires into CI later — derives the same ratio off
+   the DTCG source and would fail there. That skill runs the gate itself when it
+   wires the script, and if every failure it sees is a pair recorded here as
+   accepted, it registers the script with `--skip color-contrast` and says so at
+   the time; if the pair has since been fixed, it registers the script without the
+   flag. Nothing is owed to a script that does not exist yet, and nothing is
+   switched off on the strength of a record alone.
+
+Say both, in that order, and then say how each one ends, because they do not end
+the same way. Fixing the pair in Figma **retires the sync's side by itself**: the
+failure stops appearing, the recorded triple matches nothing, and the sync goes
+back to normal on its own — with one expected line on that first sync, where the
+previously recorded `fail` disagrees with a rerun that now passes. That line does
+not stop anything, and the same run re-records the pass. The registered
+`--skip color-contrast` does **not** heal: it is a line in the repo's
+`package.json` and stays until someone removes it, which is the one thing this
+override leaves behind. Say that plainly rather than letting them find it — a
+user who fixes the pair months later and still sees contrast skipped in CI has
+been told the gate is live when it is not. Say the scope too: `--skip` is
+rule-wide, so while that flag is registered CI checks **no** pair, including one
+introduced after the acceptance. The sync is what catches that one, since every
+token change goes through it — but the user should know CI is not the thing
+standing guard meanwhile.
+
+Then checkpoint: show the semantic layer and demonstrate the cascade if useful
+("change `gray/50` and `bg/default` follows").
+
+Update the manifest: `tokens.semanticBuilt` = `true`, add every semantic
+collection to `tokens.collections`.
+
+## Step 4 — Build Figma STYLES (the third phase)
+
+Figma variables can't express everything a design system needs. Composed
+**styles** must be created as a distinct phase *after* the variables exist, so
+they can **bind to the tokens you just built** rather than duplicating values:
+
+- **Text styles** — a full type scale needs one text style per role/size
+  (e.g. `Heading/XL`, `Body/Default`, `Caption`), each composing family + size +
+  weight + line-height + letter-spacing. Bind size and family to the
+  corresponding `font.*` variables where Figma supports it, so changing a font
+  primitive updates the text styles. A type scale is NOT just variables — these
+  composed text styles are what designers actually apply to text layers.
+- **Effect styles** — drop shadows and elevation levels (e.g. `Elevation/1`
+  through `Elevation/5`), driven by the shadow scale from the brainstorm. The
+  *composition* (offset, blur, spread) is what makes this a style rather than a
+  variable — but the shadow **color must be bound to the `shadow/*`
+  `Color/Semantic` variables**, never hardcoded. Figma supports binding the color
+  of a drop shadow inside an effect style to a color variable; do that for every
+  shadow in every elevation level. This is what makes elevations **mode-aware**:
+  because the bound `shadow/*` variable carries different values per mode, toggling
+  Light/Dark recolors all elevations automatically. A style with a literal shadow
+  color is the bug — it stays the same color in dark mode. (Heavier elevations may
+  layer two shadows, e.g. an ambient + a key shadow; bind each to `shadow/ambient`
+  and `shadow/key` respectively.)
+- **Grid styles** — layout grids if the user wants them (column/row grids for
+  their breakpoints). Optional; only if requested.
+
+Generate styles via the active write mechanism (scripted where possible). Bind
+to variables wherever Figma allows so styles consume tokens rather than
+duplicating them. Checkpoint with the user: show the created styles.
+
+Update the manifest: set `tokens.stylesBuilt` = `true` and record which style
+groups were created in `tokens.styleGroups`. Append `token-builder` to
+`completedSkills`.
+
+**Record the stage entry:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-check.mjs
+--record --stage token-builder --entry <tmp>.json` (subject defaults to
+`"system"`; this stage is not per-component). Build `<tmp>.json` with `at` (an ISO
+timestamp you supply), `changed` summarizing the collections and modes created, the attested check
+`contrast-baseline` carrying `result` and a one-line `evidence` naming the
+tightest ratio per mode (`"Light 5.2:1, Dark 4.9:1 — tightest is
+text/onEmphasis on bg/emphasis"`), and `advancedBecause`.
+
+When the user accepted a failing pair, the check's `result` is `"fail"`,
+`advancedBecause` names the acceptance, and the check carries
+`accepted: [{ fg, bg, mode }]` — one entry per accepted pair, `fg` and `bg` as the
+dotted token paths `CONTRAST_PAIRS` uses, and `mode` as **the Figma mode name this
+skill just read** (`Light`, `Dark` — the names in the collection it built), not a
+file name. At this point in the pipeline no DTCG file exists to name a mode
+after: the sync writes those later and chooses their names, so a filename here
+would be a guess that never matches. The sync translates this name into its own
+file label before matching, and recording what was actually observed is what
+makes that translation possible. **Write the pair structurally as well as in
+prose** — `advancedBecause` is for whoever reads the bundle later, and `accepted`
+is what `token-sync-layer` matches against, so an acceptance recorded only in
+prose would stop the next sync exactly as if it had never been given. Accept only
+the pairs the user actually accepted; that list is the scope of the override.
+
+The entry shape is `${CLAUDE_PLUGIN_ROOT}/references/proof-bundle.md` — do not
+restate it here. Write the entry only when the tier actually completed: a run that
+stopped on a failing pair and was not resumed records nothing, the same rule
+`component-builder` follows for a `BLOCKED` component.
+
+## Step 5 — Hand off
+
+Tell the user what's unlocked and offer natural next steps without forcing them:
+generate a visual stylesheet of all tokens (token-sheet-builder), build an icon
+system (icon-system-builder), or start on components (component-builder). If
+they're heading toward code, mention that the token-sync skill will later turn
+these exact variables into code files — but only when they have a repo, which
+comes later.
+
+## Notes that matter
+
+- **Never flatten semantic into literals.** Aliases are the whole point.
+- **One collection per category per tier.** Modes belong to the collection, so
+  splitting by category is what keeps color's Light/Dark from infecting spacing.
+- **Privacy is the `_` prefix.** Only `Spacing/Primitive` is public by default;
+  all other primitives are private.
+- **Primitives can be multi-mode.** Brand lives on `_Color/Primitive`; the sync
+  layer must emit brand themes from the primitive tier, not just light/dark from
+  semantics.
+- **Lock primitive names before building semantics.** The checkpoint between
+  tiers exists precisely to prevent rename cascades.
+- **Think in DTCG terms even though you're writing Figma variables.** Each token
+  has a value and a type (color, dimension, fontFamily, etc.). The sync layer
+  will later normalize these Figma variables into DTCG-format JSON, so keep
+  types clean and consistent — it makes the downstream sync trivial.
+- **Token-efficiency:** scripted loops via `figma_execute`, batched per tier —
+  not per-variable tool calls.
+- **Brownfield: never delete-and-recreate to rename (guardrail 3).** On a retrofit,
+  rename variables in place to preserve their Figma IDs and every binding. Snapshot the
+  binding count before and after each rename and assert it's unchanged — see Step 1.5
+  and `${CLAUDE_PLUGIN_ROOT}/references/figma-scripting.md`.

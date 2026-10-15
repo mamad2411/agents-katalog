@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/modu-ai/moai-cowork (path: plugins/moai-accountant/skills/finance-wealth-roadmap/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 재테크 로드맵 (Wealth Roadmap)

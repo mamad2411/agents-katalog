@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/kamiender/douyin-video-fetch/douyin-video-fetch/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 下载抖音视频到本地（无水印优先）。用于给后续视频分析/复刻提供原始素材，支持 URL 或 video_id 输入、批量列表输入与统一输出目录。

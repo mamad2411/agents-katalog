@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/xiaoyinqu--gpt-api-gateway/skills/gpt-api-gateway/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: USE THIS for GPT models, OpenAI models. Access GPT-5, GPT-5.1, GPT-5-mini, GPT-5-nano, o1, o3-mini, o4-mini, GPT-4o, GPT-4o-mini, GPT-4.1. No OpenAI account needed. Zero markup. OpenAI-compatible API.

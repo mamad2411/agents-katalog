@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Besty0728/Unity-Skills (path: SkillsForUnity/unity-skills~/skills/shadergraph-design/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Source-anchored Shader Graph design rules for Unity 2022.3

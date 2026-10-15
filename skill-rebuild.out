@@ -1,0 +1,82 @@
+===== 2026-10-12T01:43:34Z rebuild-all start =====
+[1/4] mining registry (quality gate stars>=50, max 60 repo)...
+registry mode: 60 kandidat (stars>=50)
+Shubhamsaboo/awesome-llm-apps -> 10 SKILL.md
+ruvnet/RuView: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+punkpeye/awesome-mcp-servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+hesreallyhim/awesome-claude-code: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+sickn33/agentic-awesome-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+travisvn/awesome-claude-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+BehiSecc/awesome-claude-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+yzfly/Awesome-MCP-ZH: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+heilcheng/awesome-agent-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+appcypher/awesome-mcp-servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+0xNyk/awesome-hermes-agent: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+libukai/awesome-agent-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+homeassistant-ai/ha-mcp: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+xixu-me/awesome-persona-distill-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+wong2/awesome-mcp-servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+taishi-i/awesome-ChatGPT-repositories: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+wesammustafa/Claude-Code-Everything-You-Need-to-Know: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+RKiding/Awesome-finance-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+bergside/awesome-design-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+rohitg00/awesome-claude-code-toolkit: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+yaklang/hack-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+AmoyLab/Unla: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+chatmcp/mcpso: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+composio-community/awesome-claude-plugins: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+Prat011/awesome-llm-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+SpaceZephyr/creator-buddy: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+gamedev-skills/awesome-gamedev-agent-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+brycewang-stanford/Awesome-Journal-Skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+jaw9c/awesome-remote-mcp-servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+rohitg00/awesome-claude-design: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+YuzeHao2023/Awesome-MCP-Servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+iannuttall/mcp-boilerplate: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+rohitg00/awesome-devops-mcp-servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+ccplugins/awesome-claude-code-plugins: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+MobinX/awesome-mcp-list: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+TensorBlock/awesome-mcp-servers: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+tachikomared/character-animation-creator-skill: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+jessepwj/CCteam-creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+ttfake92-lab/skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+Stars-OC/thesis-creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+RobThePCGuy/Claude-Patent-Creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+AgriciDaniel/skill-forge: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+TheCraigHewitt/skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+microsoft/SharePoint-Embedded-Samples: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+softwaremill/chimp: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+kangarooking/promo-creator-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+lyeslabs/mcpgen: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+ray-amjad/claude-code-workflow-creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+okjpg/skill-creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+G12789/mcp-quickstart: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+speedpy/speedpy: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+mcpdotdirect/template-mcp-server: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+aashari/boilerplate-mcp-server: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+Tibsfox/gsd-skill-creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+GuppyTheCat/obsidian-clipper-template-creator: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+the-momentum/python-ai-kit: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+NanmiCoder/creator-pipeline: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+tubeai-app/tubeai-skills: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+AIDevGTM/gtm-cofounder: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+AgriciDaniel/claude-seo: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+STATS: {'new': 0, 'exists': 4, 'dup': 0, 'err': 6}
+[2/4] build_skills_index.py (scan SKILL.md -> DB)...
+curated=3176 total=103427 dup_skipped=1219 rescued=91258
+  curated: 3176
+  reference: 91258
+  junk: 8993
+Siap dipakai (curated+reference): 94434
+junk list : /Users/chaali0324/.agents/skills-junk.txt (8993 entri)
+DB        : /Users/chaali0324/.agents/skills-index.db (82.76 MB)
+[3/4] skills-index-md.py (regenerate SKILLS-INDEX.md)...
+ditulis: /Users/chaali0324/.agents/skills-INDEX.md (5.0 KB) · total=103427 · kategori=26
+[4/4] skills-router.py (regenerate SKILLS-AVAILABLE.md + skills-index.json)...
+curated tersedia: 3176 skill (cap 0/kategori)
+reference (cari manual): 91258
+kategori        : 24
+ditulis         : /Users/chaali0324/.agents/SKILLS-AVAILABLE.md (371 KB)
+                  /Users/chaali0324/.agents/SKILLS-CATEGORIES.md
+                  /Users/chaali0324/.agents/skills-index.json
+===== 2026-10-12T03:50:41Z rebuild-all done =====

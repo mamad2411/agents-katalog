@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/jerry-guo-mys--docs-improver/skills/docs-improver/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 专业技术文档提升工具。评估文档质量（完整性、准确性、清晰度、结构化、可维护性），自动生成缺失文档（README、API 文档），检查文档与代码一致性，提供可执行的改进建议。使用场景：文档质量审计、缺失文档生成、文档一致性检查、文档改进规划、新项目文档搭建、发布前检查。支持所有编程语言。"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/easychen/serverchan-skill/serverchan/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 通过 Server 酱（方糖）向微信/App 推送消息通知。当你需要把执行结果、告警、任务完成情况等推送到自己的手机（Server酱Turbo SCT 或 Server酱³ SC3 均支持，自动按 SendKey 前缀识别）时使用本技能。支持标题、Markdown 正文，以及 tags/short/channel 等可选参数。

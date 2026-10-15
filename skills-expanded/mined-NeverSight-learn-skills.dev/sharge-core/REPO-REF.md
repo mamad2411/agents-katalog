@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/shargedev/sharge-cli/sharge-core/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 通过 sharge CLI 发现命令、检查登录与 scope、处理配置、诊断、JSON envelope、安全门禁和错误恢复。用于任何 Sharge 任务的公共前置步骤，以及登录、退出、auth、config、doctor 或 logs 请求；不负责 Notes、Calendar、Recordings、Diary 的业务选路和内容决策。

@@ -1,0 +1,20 @@
+  prompts      path:prompts                                  +100
+  prompts      path:.github/prompts                          +100
+  agents       path:.claude/agents                           +100
+  agents       path:agents                                   +100
+  commands     path:.claude/commands                         +100
+  commands     path:commands                                 +100
+  hooks        path:.claude/hooks                            +100
+  hooks        filename:hooks.json                           +100
+  rules        path:.cursor/rules                            +100
+  rules        extension:mdc                                 +100
+  plugins      filename:plugin.json                          +100
+  plugins      path:.claude-plugin                           +100
+  mcp-config   filename:mcp.json                             +100
+  mcp-config   filename:claude_desktop_config.json           +100
+  context      filename:AGENTS.md                            +100
+  context      filename:CLAUDE.md                            +100
+  context      filename:.cursorrules                         +100
+  skills       filename:SKILL.md                             +100
+TOTAL 1800 aset -> {'agents': 200, 'commands': 200, 'context': 300, 'hooks': 200, 'mcp-config': 200, 'plugins': 200, 'prompts': 200, 'rules': 200, 'skills': 100}
+DONE

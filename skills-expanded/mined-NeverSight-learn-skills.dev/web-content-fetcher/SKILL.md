@@ -1,0 +1,116 @@
+---
+name: web-content-fetcher
+description: >
+  Extract article content from any URL as clean Markdown.
+  Uses Scrapling script as primary method (with auto fast→stealth fallback),
+  Jina Reader as alternative for simple pages.
+  Preserves headings, links, images, lists, and code blocks.
+  Use this skill whenever the user wants to fetch, read, extract, scrape, or summarize
+  content from a URL — including blog posts, news articles, WeChat articles (微信公众号),
+  documentation pages, or any web page. Also trigger when the user says things like
+  "帮我读一下这篇文章", "抓取这个网页", "提取正文", or "read this page for me".
+---
+
+# Web Content Fetcher
+
+Given a URL, return its main content as clean Markdown — headings, links, images, lists, code blocks all preserved.
+
+**Default behavior:** Always save the fetched content to a local file using `--save`. The default save directory is `./download/` (relative to the user's working directory). The user can override the directory with `--save <dir>`.
+
+## Extraction Strategy
+
+Always try **one method per URL** — don't cascade blindly. Pick the right one upfront.
+
+```
+URL
+ │
+ ├─ 1. Scrapling script (preferred)
+ │     Run fetch.py — check the domain routing table to decide fast vs --stealth.
+ │     Works for most sites. Returns clean Markdown directly.
+ │
+ └─ 2. Jina Reader (fallback — only if Scrapling fails or dependencies not installed)
+       web_fetch("https://r.jina.ai/<url>")
+       Free tier: 200 req/day. Fast (~1-2s), good Markdown output.
+       Does NOT work for: WeChat (403), some Chinese platforms.
+```
+
+### Scrapling script
+
+```bash
+uv run <SKILL_DIR>/scripts/fetch.py "<url>" [max_chars] [--stealth] [--save [dir]]
+```
+
+**Always pass `--save`** so the content is persisted locally. The file is saved to `./download/` by default, with a filename derived from the URL (e.g., `sspai-post-73145.md`).
+
+`<SKILL_DIR>` is the directory where this SKILL.md lives. Resolve it before calling the script.
+
+The script has two modes built in:
+- **Default (fast):** HTTP fetch, ~1-3s, works for most sites
+- **`--stealth`:** Headless browser, ~5-15s, for JS-rendered or anti-scraping sites
+
+When run without `--stealth`, the script automatically falls back to stealth if the fast result has too little content. So you rarely need to specify `--stealth` manually — the only reason to force it is when you already know the site needs it (see routing table), which saves the initial fast attempt.
+
+## Domain Routing
+
+Use this table to pick the right mode on the first call:
+
+| Domain | Command | Why |
+|--------|---------|-----|
+| `mp.weixin.qq.com` | `fetch.py <url> --stealth` | JS-rendered content |
+| `zhuanlan.zhihu.com` | `fetch.py <url> --stealth` | Anti-scraping + JS |
+| `juejin.cn` | `fetch.py <url> --stealth` | JS-rendered SPA |
+| `sspai.com` | `fetch.py <url>` | Static HTML |
+| `blog.csdn.net` | `fetch.py <url>` | Static HTML |
+| `ruanyifeng.com` | `fetch.py <url>` | Static blog |
+| `openai.com` | `fetch.py <url>` | Static HTML |
+| `blog.google` | `fetch.py <url>` | Static HTML |
+| Everything else | `fetch.py <url>` | Auto-fallback handles it |
+
+## Script Options
+
+```bash
+# Basic — auto-selects fast or stealth, saves to ./download/
+uv run <SKILL_DIR>/scripts/fetch.py "https://sspai.com/post/73145" --save
+
+# Force stealth for known JS-heavy sites
+uv run <SKILL_DIR>/scripts/fetch.py "https://mp.weixin.qq.com/s/xxx" --stealth --save
+
+# Save to a custom directory
+uv run <SKILL_DIR>/scripts/fetch.py "https://sspai.com/post/73145" --save ./my-articles
+
+# Limit output to 15000 characters (default: 30000)
+uv run <SKILL_DIR>/scripts/fetch.py "https://example.com/article" 15000 --save
+
+# JSON output with metadata (url, mode, selector, content_length, saved_to)
+uv run <SKILL_DIR>/scripts/fetch.py "https://example.com" --json --save
+```
+
+## Install Dependencies
+
+The script uses [PEP 723](https://peps.python.org/pep-0723/) inline metadata — `uv` resolves dependencies automatically in an isolated environment. No global installs needed.
+
+**Install `uv` (one-time):**
+
+```bash
+# Option 1: standalone installer (recommended — doesn't touch Python at all)
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Option 2: via pip
+pip install uv
+```
+
+That's it — `scrapling` and `html2text` are declared in the script and resolved on first run.
+
+**If you don't have `uv`:** the script still works with plain `python3`, but you'll need to install dependencies globally:
+
+```bash
+pip install scrapling html2text
+```
+
+## Failure Rules
+
+- Same URL fails once → give up, tell the user "unable to extract content from this URL"
+- Do not retry — each failed call wastes context tokens

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/yangliu2060/smith--skills/competitor-price-monitor/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 监控竞品网站价格变动，检测到变化时发送通知。支持多个竞品URL批量监控，自动对比历史价格，发现差异立即提醒。

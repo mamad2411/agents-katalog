@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/luciuscao--skill-polisher/skills/skill-polisher/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 当用户需要持续打磨和进化技能、追踪技能质量、收集反馈改进、检查技能规范合规性时使用。每次技能执行后自动收集用户评分，沉淀使用数据，定期分析并输出改进建议。包含技能健康度检查、最佳实践沉淀、标准化评分卡等功能。🔒 只读分析，不修改任何技能文件。"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tarrragon/claude-skills/parallel-evaluation/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 多視角審核/code review 工具。派發三人組（含常駐委員 linux）並行掃描程式碼品質、架構設計、重構評估。Use for: 程式碼審查, 架構評估, 重構掃描, 結論審查, 系統設計變更審查, 功能規劃審查。Use when: Phase 3b 完成後 PR 前, Phase 4 重構評估前, 重大架構決策前, ANA Ticket 結論審查, 任何分析報告產出後, 規則/Skill/

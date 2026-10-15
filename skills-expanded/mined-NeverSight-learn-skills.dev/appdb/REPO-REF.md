@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/stahura/domo-ai-vibe-rules/appdb/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Toolkit-first AppDB document CRUD, query operators, and collection wiring.

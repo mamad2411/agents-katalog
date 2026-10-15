@@ -1,0 +1,32 @@
+  ...50000 (23s)
+  ...100000 (58s)
+  ...150000 (73s)
+  ...200000 (106s)
+  ...250000 (154s)
+  ...300000 (170s)
+  ...350000 (185s)
+  ...400000 (198s)
+  ...450000 (221s)
+scan 232s — 1058 file kode/md mencurigakan (high-signal)
+per alasan: {'hidden-unicode': 720, 'downloader-exec': 292, 'persistence': 30, 'data-destroy': 30, 'reverse-shell': 4, 'exfil-endpoint': 4, 'base64-exec': 3, 'crypto-miner': 1}
+      794KB  skills-expanded/llms-txt/SKILL.md  <- hidden-unicode
+      513KB  repo-refs/2014-y_NexoraAgent/main.js  <- downloader-exec
+      506KB  repo-refs/QodeXcli_QodeX/CHANGELOG.md  <- hidden-unicode
+      429KB  repo-refs/WingedGuardian_GENesis-AGI/CHANGELOG.md  <- hidden-unicode
+      399KB  repo-refs/vast-ai_vast-cli/vast.py  <- downloader-exec
+      301KB  repo-refs/awesome-mcp-servers/README-fa-ir.md  <- hidden-unicode
+      300KB  repo-refs/BlackRoad-OS-Inc_blackroad-operator/carpool.sh  <- persistence
+      294KB  repo-refs/PlamenTSV_plamen/plamen.py  <- downloader-exec
+      257KB  repo-refs/0x676e67_wreq/RELEASE.md  <- hidden-unicode
+      256KB  repo-refs/langgenius_dify/api/tests/unit_tests/services/agent/test_agent_services.py  <- downloader-exec
+      256KB  STYLE-BACKEND-DEVELOPER-AI-AGENT-MCP-BACKEND.md  <- hidden-unicode
+      239KB  repo-refs/best-of-ai_best-of-ai/README.md  <- hidden-unicode
+      235KB  repo-refs/buluma_Code-Agent-Monitor/README-VN.md  <- hidden-unicode
+      234KB  repo-refs/backstage_backstage/ADOPTERS.md  <- hidden-unicode
+      231KB  repo-refs/Fei2-Labs_kirocrew/conftest.py  <- persistence
+      197KB  repo-refs/9001_copyparty/README.md  <- hidden-unicode
+      196KB  repo-refs/cubxxw_blog/熊鑫伟-2019-2026-周时间线.md  <- hidden-unicode
+      184KB  repo-refs/awesome-mcp-servers/README-th.md  <- hidden-unicode
+      183KB  repo-refs/manaflow-ai_cmux/scripts/check-test-determinism.py  <- downloader-exec
+      160KB  skills-expanded/ghscan-linlei1120-codery.github.io/SKILL.md  <- hidden-unicode
+  ... +1038 lagi

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/inoue2002/okane-skills/okane-skills/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 家計簿の残高予測・シミュレーションスキル。「残高予測」「何ヶ月後にいくら」「この出費大丈夫？」「お金足りる？」「貯金シミュレーション」「ログ圧縮」「危険ポイント検出」などの依頼時に使用。okane-backup-*.json形式のファイルを読み込み、将来の残高推移予測、大きな出費の可否判定、残高不足警告を行う。

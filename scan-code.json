@@ -1,0 +1,8492 @@
+[
+ {
+  "path": "skills-expanded/llms-txt/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 813089
+ },
+ {
+  "path": "repo-refs/2014-y_NexoraAgent/main.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 526335
+ },
+ {
+  "path": "repo-refs/QodeXcli_QodeX/CHANGELOG.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 518722
+ },
+ {
+  "path": "repo-refs/WingedGuardian_GENesis-AGI/CHANGELOG.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 440185
+ },
+ {
+  "path": "repo-refs/vast-ai_vast-cli/vast.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 409384
+ },
+ {
+  "path": "repo-refs/awesome-mcp-servers/README-fa-ir.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 308594
+ },
+ {
+  "path": "repo-refs/BlackRoad-OS-Inc_blackroad-operator/carpool.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 308211
+ },
+ {
+  "path": "repo-refs/PlamenTSV_plamen/plamen.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 301457
+ },
+ {
+  "path": "repo-refs/0x676e67_wreq/RELEASE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 263233
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/services/agent/test_agent_services.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 262765
+ },
+ {
+  "path": "STYLE-BACKEND-DEVELOPER-AI-AGENT-MCP-BACKEND.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 262352
+ },
+ {
+  "path": "repo-refs/best-of-ai_best-of-ai/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 245593
+ },
+ {
+  "path": "repo-refs/buluma_Code-Agent-Monitor/README-VN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 241590
+ },
+ {
+  "path": "repo-refs/backstage_backstage/ADOPTERS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 239750
+ },
+ {
+  "path": "repo-refs/Fei2-Labs_kirocrew/conftest.py",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 237494
+ },
+ {
+  "path": "repo-refs/9001_copyparty/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 202150
+ },
+ {
+  "path": "repo-refs/cubxxw_blog/\u718a\u946b\u4f1f-2019-2026-\u5468\u65f6\u95f4\u7ebf.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 201116
+ },
+ {
+  "path": "repo-refs/awesome-mcp-servers/README-th.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 189180
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/scripts/check-test-determinism.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 188222
+ },
+ {
+  "path": "skills-expanded/ghscan-linlei1120-codery.github.io/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 164720
+ },
+ {
+  "path": "repo-refs/Dicklesworthstone_destructive_command_guard/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 160263
+ },
+ {
+  "path": "repo-refs/byerlikaya_claude-starter-kit/adopt.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 155480
+ },
+ {
+  "path": "STYLE-DESIGNER-GENERAL-DESIGNER-A-D.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 154791
+ },
+ {
+  "path": "repo-refs/microsoft_playwright/docs/src/release-notes-js.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 153263
+ },
+ {
+  "path": "repo-refs/langgptai_awesome-claude-prompts/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 153060
+ },
+ {
+  "path": "repo-refs/CLIUtils_CLI11/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 142759
+ },
+ {
+  "path": "repo-refs/2014-y_NexoraAgent/patch_gateway.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 142703
+ },
+ {
+  "path": "repo-refs/freddy-schuetz_n8n-claw/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 142077
+ },
+ {
+  "path": "repo-refs/NanoFlow-io_Clawdboss/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 139901
+ },
+ {
+  "path": "skills-expanded/thebigpromptlibrary-custominstructions-readme/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 139464
+ },
+ {
+  "path": "repo-refs/vue-core/CHANGELOG.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 137444
+ },
+ {
+  "path": "repo-refs/testdriverai_testdriverai/sdk.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 132046
+ },
+ {
+  "path": "skills-expanded/topic-SimonsTang-feifei-companion-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 121923
+ },
+ {
+  "path": "repo-refs/Dicklesworthstone_pi_agent_rust/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 121095
+ },
+ {
+  "path": "repo-refs/awesome-mcp-servers/README-ja.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 119570
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/unit/test_patterns_new.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 119044
+ },
+ {
+  "path": "repo-refs/2014-y_NexoraAgent/acceleration.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 116444
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/hooks/gateguard-fact-force.test.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 115714
+ },
+ {
+  "path": "skills-expanded/mined-mvanhorn-printing-press-library/pp-dataforseo/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 113061
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/nautilustrader/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 112078
+ },
+ {
+  "path": "repo-refs/TomasWard1_limbo/cli.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 107137
+ },
+ {
+  "path": "repo-refs/QwenLM_Qwen-MM-Plugins/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 99602
+ },
+ {
+  "path": "skills-expanded/topic-awarexone-Agentic-Bug-Hunter-web2-vuln-classes/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 98209
+ },
+ {
+  "path": "skills-expanded/klavlor-claude/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 97666
+ },
+ {
+  "path": "repo-refs/LukasStrickler_ai-dev-atelier/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 93297
+ },
+ {
+  "path": "repo-refs/1nv1s1b1e_open-scientist-workbench/third_party_licenses.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 90599
+ },
+ {
+  "path": "repo-refs/asckaya_open-scientist/third_party_licenses.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 90599
+ },
+ {
+  "path": "repo-refs/altrupets_monorepo/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 90006
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/CHANGELOG.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 89676
+ },
+ {
+  "path": "repo-refs/autopus-ai_autopus-adk/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 89542
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/beginner-guide/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 88777
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_security_reconstruction.py",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 88078
+ },
+ {
+  "path": "repo-refs/microsoft_playwright/docs/src/release-notes-java.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 87738
+ },
+ {
+  "path": "repo-refs/ai-integr8tor_QwenLM_Qwen-MM-Plugins/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 86125
+ },
+ {
+  "path": "repo-refs/awesome-mcp-servers/README-pt_BR.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 85554
+ },
+ {
+  "path": "repo-refs/microsoft_playwright/docs/src/release-notes-python.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 83979
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/VERSIONS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 83941
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_static_patterns.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "data-destroy"
+  ],
+  "size": 78379
+ },
+ {
+  "path": "skills-expanded/topic-vivialiudesign-agentic-sprint-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 76497
+ },
+ {
+  "path": "repo-refs/jelarchris_dink-hub/CHANGELOG.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 75067
+ },
+ {
+  "path": "repo-refs/somratpro_HuggingClaw/start.sh",
+  "tier": 2,
+  "reasons": [
+   "reverse-shell"
+  ],
+  "size": 74858
+ },
+ {
+  "path": "repo-refs/TevaServices_hermes/render.py",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 74093
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/src/skillspector/nodes/analyzers/mcp_tool_poisoning.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 73833
+ },
+ {
+  "path": "repo-refs/MuduiClaw_ClawKing/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "data-destroy",
+   "persistence"
+  ],
+  "size": 73613
+ },
+ {
+  "path": "repo-refs/kevinondanet_foundry-providers/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 72697
+ },
+ {
+  "path": "repo-refs/antonyanbu25_lionpath_V2/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 72340
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/scripts/lib/powershell-destructive-command.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 69966
+ },
+ {
+  "path": "repo-refs/Mr-Nobody-Anonymous_All-skills/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 68912
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/workflow/nodes/agent_v2/test_runtime_request_builder.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 68385
+ },
+ {
+  "path": "STYLE-FRONTEND-DEVELOPER-GENERAL-FRONTEND-Q-T.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 67140
+ },
+ {
+  "path": "skills-expanded/topic-waylooking-hub-polish-humanizer-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 66148
+ },
+ {
+  "path": "repo-refs/FabrizioCafolla_harness-ai/cli.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 65388
+ },
+ {
+  "path": "repo-refs/Ava-AgentOne_KOVO/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 64528
+ },
+ {
+  "path": "repo-refs/2014-y_NexoraAgent/voice-runtime.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 60920
+ },
+ {
+  "path": "skills-expanded/sun-skill-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 60202
+ },
+ {
+  "path": "repo-refs/amxcodes_flowbot/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 59952
+ },
+ {
+  "path": "repo-refs/avibe-bot_avibe/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 59854
+ },
+ {
+  "path": "repo-refs/Fei2-Labs_kirocrew/playwright-cli.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 59725
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/Resources/markdown-viewer/vega-embed.min.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 58532
+ },
+ {
+  "path": "repo-refs/Nickalus12_Loom/USAGE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 57531
+ },
+ {
+  "path": "repo-refs/Fei2-Labs_kirocrew/cli.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 57143
+ },
+ {
+  "path": "repo-refs/JCE-Joshhh77_JCE-Opencode-Tools/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 56919
+ },
+ {
+  "path": "repo-refs/google_agents-cli/src/google/agents/cli/scaffold/commands/enhance.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 56849
+ },
+ {
+  "path": "repo-refs/byerlikaya_claude-starter-kit/start.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 56717
+ },
+ {
+  "path": "repo-refs/Meteorkid_open-design-ecosystem/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 55658
+ },
+ {
+  "path": "repo-refs/agentforce314_clawcodex/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 54413
+ },
+ {
+  "path": "repo-refs/Dicklesworthstone_destructive_command_guard/uninstall.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 54250
+ },
+ {
+  "path": "repo-refs/langfuse_langfuse/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 52651
+ },
+ {
+  "path": "repo-refs/TurtleMcTurtle_claude-code-ultimate-guide/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 51544
+ },
+ {
+  "path": "repo-refs/Mark-liz_qwenpaw_hermes/README_ru.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 51449
+ },
+ {
+  "path": "repo-refs/alexica00_claude-code-ultimate-guide/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 51312
+ },
+ {
+  "path": "repo-refs/NVIDIA_OpenShell/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 50876
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/unit/test_patterns.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 50635
+ },
+ {
+  "path": "repo-refs/fynnfluegge_agtx/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 50451
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_static_yara.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "exfil-endpoint",
+   "data-destroy"
+  ],
+  "size": 50409
+ },
+ {
+  "path": "repo-refs/TencentCloudCommunity_mcp-server/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 50076
+ },
+ {
+  "path": "repo-refs/Alamator_code-ultimate/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 49430
+ },
+ {
+  "path": "repo-refs/ArogyaReddy_https-github.com-FlorianBruniaux-claude-code-ultimate-guide/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 49428
+ },
+ {
+  "path": "repo-refs/adobecom_mas-claude-config/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 49414
+ },
+ {
+  "path": "skills-expanded/mined-sundial-org-awesome-openclaw-skills/whatdo/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 48378
+ },
+ {
+  "path": "repo-refs/TencentCloudCommunity_mcp-server/README-ZH.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 47193
+ },
+ {
+  "path": "repo-refs/hcipengm_cogneva/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 46640
+ },
+ {
+  "path": "repo-refs/Nickalus12_Loom/ARCHITECTURE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 45748
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/README.km.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 45640
+ },
+ {
+  "path": "repo-refs/HenryZ838978_deepseek-harness/HISTORY.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 45572
+ },
+ {
+  "path": "repo-refs/Hack23_European-Parliament-MCP-Server/WORKFLOWS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 44749
+ },
+ {
+  "path": "repo-refs/allgemeinbildung_bbw-hko/docs/Begleitdokument_STRUKTUR-SPEC_v2.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 44555
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/Business_Rules.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 44298
+ },
+ {
+  "path": "repo-refs/arch3rPro_1Panel-Appstore/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 44132
+ },
+ {
+  "path": "skills-expanded/techniques_to_improve_reliability/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 42110
+ },
+ {
+  "path": "skills-expanded/topic-Pyroxin-opinionated-claude-skills-swift-programmer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 42063
+ },
+ {
+  "path": "skills-expanded/mined-mvanhorn-printing-press-library/pp-fec/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 42042
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/cz-perspective/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 41694
+ },
+ {
+  "path": "repo-refs/hcipengm_cogneva/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 41514
+ },
+ {
+  "path": "repo-refs/SkyWalker2506_claude-config/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 41237
+ },
+ {
+  "path": "repo-refs/VilelaAI_KairOS-Forge/AGENTS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 41228
+ },
+ {
+  "path": "STYLE-TECH-WRITER-GENERAL-TECH-WRITER-A-D.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 41066
+ },
+ {
+  "path": "skills-expanded/mined-gmgnai-gmgn-skills/gmgn-wallet-score/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 40232
+ },
+ {
+  "path": "skills-expanded/mined-vivy-yi-xiaohongshu-skills/live-promotion/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 40006
+ },
+ {
+  "path": "repo-refs/alexpopov_dots/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 39686
+ },
+ {
+  "path": "skills-expanded/mined-aiskillstore-marketplace/ai-partner-chat/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 38398
+ },
+ {
+  "path": "repo-refs/christianj6_.dotfiles/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 38021
+ },
+ {
+  "path": "repo-refs/akoken_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 37837
+ },
+ {
+  "path": "repo-refs/NomaDamas_k-skill/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 37783
+ },
+ {
+  "path": "STYLE-ANALYST.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 37174
+ },
+ {
+  "path": "repo-refs/Solizardking_solana-clawd/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 37074
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/lib/powershell-destructive-command.test.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 37070
+ },
+ {
+  "path": "repo-refs/Saman-Sunasara_wifi-densepose/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 37056
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/Business_Rules_EN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 36951
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/unit/test_agent_cli.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 36753
+ },
+ {
+  "path": "skills-expanded/mined-vivy-yi-xiaohongshu-skills/yizhuan/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 36646
+ },
+ {
+  "path": "repo-refs/microsoft_mcp-for-beginners/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 36576
+ },
+ {
+  "path": "repo-refs/aanari_dotfiles/macos.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 36234
+ },
+ {
+  "path": "repo-refs/Fei2-Labs_kirocrew/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 35760
+ },
+ {
+  "path": "skills-expanded/mined-joneqian-claude-skills-suite/sequelize-patterns/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 35305
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/UC_Specifications_Part1.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 34862
+ },
+ {
+  "path": "repo-refs/7ShIkI3_Decepticon-x-DarkTriad/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 34848
+ },
+ {
+  "path": "repo-refs/green-api_whatsapp-api-client-python/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 34633
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_behavioral_ast.py",
+  "tier": 2,
+  "reasons": [
+   "base64-exec"
+  ],
+  "size": 34297
+ },
+ {
+  "path": "repo-refs/MMEHDI0606_ai-agent-foundation-template/SKILL_ROUTING_TABLE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 34232
+ },
+ {
+  "path": "repo-refs/SomtoUgeh_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 34125
+ },
+ {
+  "path": "STYLE-DESIGNER-BRAND-IDENTITY-DESIGN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 33654
+ },
+ {
+  "path": "repo-refs/blackms_aistack/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 33048
+ },
+ {
+  "path": "repo-refs/Yash-Awasthi_adapfit/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 32849
+ },
+ {
+  "path": "repo-refs/FightTheStroke_MirrorBuddy/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 32212
+ },
+ {
+  "path": "repo-refs/hcipengm_cogneva/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 31920
+ },
+ {
+  "path": "skills-expanded/mined-alchaincyf-nuwa-skill/sun-yuchen-perspective/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 31741
+ },
+ {
+  "path": "skills-expanded/topic-Rifteo-skills-graphql-raider/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 31710
+ },
+ {
+  "path": "repo-refs/2014-y_NexoraAgent/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 31674
+ },
+ {
+  "path": "STYLE-SECURITY-SPECIALIST-GENERAL-SECURITY-E-H.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 31124
+ },
+ {
+  "path": "repo-refs/langfuse_langfuse/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 30919
+ },
+ {
+  "path": "skills-expanded/mined-terrylica-cc-skills/firecrawl-research-patterns/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 30279
+ },
+ {
+  "path": "repo-refs/deeeed_farmslot/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 30005
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/UC_Specifications_Part1_EN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 29865
+ },
+ {
+  "path": "skills-store/copilot-cli-quickstart/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 29776
+ },
+ {
+  "path": "repo-refs/Trae1ounG_Awesome-Parametric-Knowledge-in-LLMs/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 29092
+ },
+ {
+  "path": "repo-refs/alexhegit_sovereign-IQ/SIQ_SYSTEM_INTRODUCTION.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 28876
+ },
+ {
+  "path": "repo-refs/Libertai_liberclaw-agent/context.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 28645
+ },
+ {
+  "path": "skills-expanded/ghscan-Su-Korawit-Feedback-RC1/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 28567
+ },
+ {
+  "path": "repo-refs/Solizardking_clawdbot-go/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 28475
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/google-material-design/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 28329
+ },
+ {
+  "path": "repo-refs/langgenius_dify/dify-agent/src/dify_agent/layers/dify_plugin/tools_layer.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 28288
+ },
+ {
+  "path": "repo-refs/7df-lab_devo/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 28187
+ },
+ {
+  "path": "repo-refs/bpeers01_tkr-releases/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 28021
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/clawfriend/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 27947
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/workflow/nodes/agent_v2/test_validators.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 27925
+ },
+ {
+  "path": "repo-refs/OLmatter_glm-coding-helper/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 27855
+ },
+ {
+  "path": "repo-refs/BenaliHQ_workdesk-configuration/init.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 27791
+ },
+ {
+  "path": "skills-expanded/topic-SnowBankSDK-foundationdb-dotnet-client-snowbank-betterhttp/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 27362
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/sls-trace-analysis/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 27361
+ },
+ {
+  "path": "repo-refs/Dicklesworthstone_agent_flywheel_clawdbot_skills_and_integrations/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 27353
+ },
+ {
+  "path": "skills-expanded/mined-artokun-comfyui-mcp/ltxv2-video/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 27117
+ },
+ {
+  "path": "repo-refs/LLM-Lineage_lookback/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 26799
+ },
+ {
+  "path": "repo-refs/LeandroBenjaminL_lend-ai/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 26316
+ },
+ {
+  "path": "skills-expanded/mined-bmad-labs-skills/architecture-viz-studio/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 26304
+ },
+ {
+  "path": "skills-expanded/mined-arize-ai-phoenix/phoenix-github/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 26287
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/hooks/governance-capture.test.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 26208
+ },
+ {
+  "path": "skills-expanded/mined-miles990-claude-software-skills/analyze-repo/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 26208
+ },
+ {
+  "path": "repo-refs/Chain813_wechat-automatic-publisher/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 26198
+ },
+ {
+  "path": "skills-expanded/mined-activepieces-activepieces/ai-task/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 25827
+ },
+ {
+  "path": "repo-refs/EdbertChan_catstack/install.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 25810
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_cli_companion_documentation.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 25715
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/topview/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 25626
+ },
+ {
+  "path": "repo-refs/strangeadvancedmarketing_Adam/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 25578
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/avengers-assemble/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 25307
+ },
+ {
+  "path": "repo-refs/ShunmeiCho_claude-config/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 25091
+ },
+ {
+  "path": "repo-refs/EvanWangZ_vela/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24981
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/sesion-workflow-clinic/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24897
+ },
+ {
+  "path": "skills-expanded/mined-sickn33-agentic-awesome-skills/idea-to-blueprint/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24893
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/sesion-mental-health-platform/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24836
+ },
+ {
+  "path": "skills-expanded/topic-ayutaz-sanoTTS-jp-recording-measurements/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24618
+ },
+ {
+  "path": "repo-refs/agentuity_sdk/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 24512
+ },
+ {
+  "path": "repo-refs/EvanWangZ_vela/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24457
+ },
+ {
+  "path": "repo-refs/Noisemaker111_unofficialmarathon/style.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 24385
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/firebird-database/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 23919
+ },
+ {
+  "path": "skills-expanded/topic-delphicleancode-delphi-spec-kit-firebird-database/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 23919
+ },
+ {
+  "path": "repo-refs/abdellaziz-ali_AI-Skills/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 23909
+ },
+ {
+  "path": "skills-expanded/mined-github-gh-aw/e2e-template-testing/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 23697
+ },
+ {
+  "path": "repo-refs/tencent_weknora/scripts/start_all.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 23625
+ },
+ {
+  "path": "repo-refs/jwmarb_dotpi/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 23487
+ },
+ {
+  "path": "repo-refs/giuseppe-trisciuoglio_developer-kit/.skills-validator-check/validators/mcp_scan_checker.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 23210
+ },
+ {
+  "path": "repo-refs/archibate_dotfiles-opencode/dockman.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 23153
+ },
+ {
+  "path": "repo-refs/HarmAalbers_claude-requirements-framework/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 23056
+ },
+ {
+  "path": "repo-refs/akin-ozer_cc-devops-skills/devops-skills-plugin/skills/azure-pipelines-validator/scripts/check_security.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 22957
+ },
+ {
+  "path": "skills-store/azure-pipelines-validator/scripts/check_security.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 22957
+ },
+ {
+  "path": "repo-refs/MiniMax-AI_MiniMax-MCP-JS/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22911
+ },
+ {
+  "path": "STYLE-FRONTEND-DEVELOPER-GENERAL-FRONTEND-U-Z.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22896
+ },
+ {
+  "path": "skills-expanded/mined-joneqian-claude-skills-suite/deepagents/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22808
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_markdown_table_boundaries.py",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 22630
+ },
+ {
+  "path": "repo-refs/0xwi11iam_Suijin/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 22589
+ },
+ {
+  "path": "skills-expanded/mined-steelan9199-wechat-publisher/qiu-skin-draw-yashu/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22384
+ },
+ {
+  "path": "skills-expanded/docs_block-development_extensible-blocks_cart-and-checkout-blocks_filters-in-cart-and-checkout_order-summary-items/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22370
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/All_Use_Cases.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22272
+ },
+ {
+  "path": "repo-refs/autohandai_code-cli/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 22191
+ },
+ {
+  "path": "skills-expanded/mined-browser-act-skills/reddit-warmup/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 22161
+ },
+ {
+  "path": "skills-expanded/mined-steelan9199-wechat-publisher/feishu-docx-yashu/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 21777
+ },
+ {
+  "path": "skills-expanded/docs_block-development_extensible-blocks_cart-and-checkout-blocks_filters-in-cart-and-checkout_cart-line-items/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 21770
+ },
+ {
+  "path": "repo-refs/MiniMax-AI_MiniMax-MCP-JS/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 21741
+ },
+ {
+  "path": "skills-expanded/mined-redfox-data-redfox-community/xiaohongshu-creator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 21738
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/UC_Specifications_Part2.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 21251
+ },
+ {
+  "path": "skills-store/shopify-admin/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-polaris-admin-extensions/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-dev/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-custom-data/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-app-pricing/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-app-store-review/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-payments-apps/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-partner/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-functions/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/ucp/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-polaris-app-home/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-customer/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-use-shopify-cli/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-liquid/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-hydrogen/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-pos-ui/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-onboarding-merchant/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-polaris-checkout-extensions/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-polaris-customer-account-extensions/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-onboarding-dev/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-storefront-graphql/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/shopify-shopifyql/scripts/track-telemetry.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21140
+ },
+ {
+  "path": "skills-store/powerpoint/scripts/Invoke-PptxPipeline.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 21019
+ },
+ {
+  "path": "repo-refs/JYeswak_grok_bot_playground/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 20813
+ },
+ {
+  "path": "repo-refs/jwmarb_dotpi/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 20647
+ },
+ {
+  "path": "skills-expanded/xhs-cover-skill-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 20557
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/controllers/inner_api/plugin/plugin.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 20388
+ },
+ {
+  "path": "skills-expanded/mined-redfox-data-redfox-community/xiaohongshu-inspiration/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 20234
+ },
+ {
+  "path": "repo-refs/DoodzCode_koad-os/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 19575
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-3dgs-spatial-agent/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 19269
+ },
+ {
+  "path": "skills-expanded/pawhaven-fullstack-react-nodejs--codebuddy-skills-frontend-i18n-skillmd/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 19223
+ },
+ {
+  "path": "repo-refs/AbdullahMalik17_malikclaw/CONTRIBUTING.ur.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 19189
+ },
+ {
+  "path": "repo-refs/ThierryN_fire-flow/ARCHITECTURE-DIAGRAM.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 19160
+ },
+ {
+  "path": "skills-expanded/topic-LeoYeAI-openclaw-master-skills-360guard-skillvetter-upgrade-v/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 19142
+ },
+ {
+  "path": "repo-refs/Dicklesworthstone_pi_agent_rust/uninstall.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 18916
+ },
+ {
+  "path": "repo-refs/Chain813_wechat-automatic-publisher/README_EN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18884
+ },
+ {
+  "path": "repo-refs/langgenius_dify/docs/bn-BD/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18836
+ },
+ {
+  "path": "skills-expanded/mined-posthog-posthog/qa-team/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18658
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/CLAUDE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18645
+ },
+ {
+  "path": "repo-refs/VinhDat267_REQ/UC_Specifications_Part2_EN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18611
+ },
+ {
+  "path": "repo-refs/dash0hq_dash0-agent-plugin/install-cursor.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 18589
+ },
+ {
+  "path": "repo-refs/bravros_bravros/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 18512
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/find-skills-combo/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18471
+ },
+ {
+  "path": "repo-refs/Spark-To-Paper-Skills_paperjury-codex/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18440
+ },
+ {
+  "path": "repo-refs/Spark-To-Paper-Skills_paperjury-codex/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18440
+ },
+ {
+  "path": "skills-expanded/topic-dwgx-SmartCLI-tui-ui/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18382
+ },
+ {
+  "path": "repo-refs/swyxio_ai-notes/TEXT_PROMPTS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18248
+ },
+ {
+  "path": "repo-refs/RavitejaKarra24_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 18226
+ },
+ {
+  "path": "skills-expanded/topic-AlemTuzlak-skills-epic-workshop/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18093
+ },
+ {
+  "path": "skills-expanded/mined-weave-os-router/debug-codex-session/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 18004
+ },
+ {
+  "path": "repo-refs/MustafaKemal0146_fetih/setup-fetih.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 17809
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-patent-software-ip/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17732
+ },
+ {
+  "path": "skills-expanded/mined-huaweicloud-huaweicloud-skills/huawei-cloud-flexus-l-server-flexusagent-deployment/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17667
+ },
+ {
+  "path": "skills-expanded/mined-franklee16-academic-research-skills/academic-figure-prompt/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17664
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/persian-writing/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17648
+ },
+ {
+  "path": "repo-refs/SteveChandler_quiver/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17615
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-nerf-to-3dgs-migrator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17584
+ },
+ {
+  "path": "skills-expanded/topic-EricTechPro-linkedin-profile-perfector-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17551
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/proactive-amcp/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17477
+ },
+ {
+  "path": "repo-refs/Festus12lo_thermoshelter/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17349
+ },
+ {
+  "path": "repo-refs/Belphemur_SoundSwitch/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17235
+ },
+ {
+  "path": "repo-refs/JameZUK_Arkana/run.sh",
+  "tier": 2,
+  "reasons": [
+   "reverse-shell"
+  ],
+  "size": 17227
+ },
+ {
+  "path": "repo-refs/Achuan-2_SlideSCI/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17211
+ },
+ {
+  "path": "skills-expanded/topic-Mahanaicoach-competitor-x-ray-competitor-x-ray/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17189
+ },
+ {
+  "path": "skills-expanded/mined-valyuai-skills/valyu-best-practices/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17163
+ },
+ {
+  "path": "repo-refs/DeliciousHouse_aries-app/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 17093
+ },
+ {
+  "path": "repo-refs/antgroup_Agent3Sigma-Stage/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 17027
+ },
+ {
+  "path": "repo-refs/DauDau432_App/ulimit_max_tuner.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 17009
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-3dgs-visualizer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16998
+ },
+ {
+  "path": "repo-refs/Hack23_European-Parliament-MCP-Server/performance-testing.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16916
+ },
+ {
+  "path": "repo-refs/huanyuzhilv_skills-travel-planner/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 16798
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/datasource/datasource_manager.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 16672
+ },
+ {
+  "path": "skills-expanded/topic-OpenLAIR-dr-claw-aris-mermaid-diagram/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16465
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/defipoly/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16359
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/nansen-binance-publisher/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16351
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/raven-investigate/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16303
+ },
+ {
+  "path": "repo-refs/Fei2-Labs_kirocrew/ensure-node.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 16156
+ },
+ {
+  "path": "skills-expanded/topic-HITsz-TMG-VideoClaw-video-claw/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 16082
+ },
+ {
+  "path": "skills-expanded/mined-wolke-ziwei-doushu/ziwei-doushu/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15959
+ },
+ {
+  "path": "repo-refs/0xMassi_webclaw/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 15940
+ },
+ {
+  "path": "repo-refs/astronomer_agents/skills/analyzing-data/scripts/kernel.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 15731
+ },
+ {
+  "path": "skills-store/analyzing-data/scripts/kernel.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 15731
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/lynx-repair/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15725
+ },
+ {
+  "path": "repo-refs/antgroup_Agent3Sigma-Stage/README_CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15632
+ },
+ {
+  "path": "repo-refs/chpatton013_dotfiles2/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 15613
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/story-refiner/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15408
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/agent-hardening/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15354
+ },
+ {
+  "path": "repo-refs/PipiHi0926_llm-course-zh/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15190
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/docs/B.3.2-mcp-tool-poisoning.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15173
+ },
+ {
+  "path": "skills-expanded/approval-mode/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15134
+ },
+ {
+  "path": "skills-expanded/topic-leopu00-job-hunter-team-maintainer-sweep/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15089
+ },
+ {
+  "path": "repo-refs/alimoaviab_Edu_plexo/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 15068
+ },
+ {
+  "path": "repo-refs/Richard0901_SKILL-warehouse/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14949
+ },
+ {
+  "path": "repo-refs/zrg-team_NoLLMChat/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14902
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/plugin/impl/datasource.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 14722
+ },
+ {
+  "path": "skills-expanded/mined-larashero3-dotcom-writing-dna-skill/writing-dna/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14598
+ },
+ {
+  "path": "repo-refs/tastyeffectco_sandboxd/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 14490
+ },
+ {
+  "path": "repo-refs/QualityUnit_rendervid/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14478
+ },
+ {
+  "path": "repo-refs/astronomer_agents/skills/analyzing-data/scripts/cli.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 14449
+ },
+ {
+  "path": "skills-store/analyzing-data/scripts/cli.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 14449
+ },
+ {
+  "path": "skills-expanded/ispan_2026_llm-nlp-cookbooks-langchain_scratch-langchain_framework-/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14407
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/user-flow/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14307
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/melech-pr-gardener/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14281
+ },
+ {
+  "path": "repo-refs/dash0hq_dash0-agent-plugin/install-codex.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 14240
+ },
+ {
+  "path": "repo-refs/Zackriya-Solutions_syncfu/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 14191
+ },
+ {
+  "path": "repo-refs/Nickalus12_Loom/OVERVIEW.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14173
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-position-decision/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14058
+ },
+ {
+  "path": "skills-expanded/topic-Dannykkh-skill-olympus-domain-dictionary/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 14023
+ },
+ {
+  "path": "repo-refs/brave_bravebot/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13974
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/controllers/inner_api/plugin/test_plugin.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13923
+ },
+ {
+  "path": "repo-refs/canvascoding_canvas-notebook/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13850
+ },
+ {
+  "path": "repo-refs/NAME0x0_CLAUDE_SETUP/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13777
+ },
+ {
+  "path": "repo-refs/Pulkit7070_blink-ai/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13666
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/wechat-remote-control/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13641
+ },
+ {
+  "path": "repo-refs/banchose_skel/template_bash_example.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13553
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/vericontext-enforcer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13496
+ },
+ {
+  "path": "repo-refs/NVIDIA-AI-Blueprints_Retail-Agentic-Commerce/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13418
+ },
+ {
+  "path": "repo-refs/minorun365_bedrock-book/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13317
+ },
+ {
+  "path": "skills-expanded/topic-peterfei-ai-agent-team-drawnote/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13246
+ },
+ {
+  "path": "repo-refs/AI4NeuroLab_SeekBrain/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 13223
+ },
+ {
+  "path": "skills-store/powerpoint/scripts/invoke-pptx-pipeline.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13061
+ },
+ {
+  "path": "repo-refs/MiquelGomezCorral_my-opencode-config/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 13038
+ },
+ {
+  "path": "repo-refs/ArgoZhang_BootstrapAdmin/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12912
+ },
+ {
+  "path": "repo-refs/benavlabs_fastcrud/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12885
+ },
+ {
+  "path": "repo-refs/Admidio_admidio/README-Docker.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12774
+ },
+ {
+  "path": "skills-expanded/topic-pnp-copilot-prompts-create-system-prompt/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12657
+ },
+ {
+  "path": "skills-expanded/mined-sickn33-agentic-awesome-skills/oneroster-csv-validator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12655
+ },
+ {
+  "path": "repo-refs/fancyboi999_goofish-cli/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12647
+ },
+ {
+  "path": "repo-refs/GarrettMooney_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12626
+ },
+ {
+  "path": "repo-refs/andersonamaral2_Claude-Code-to-Deep-Agents-Skills-Converter/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12604
+ },
+ {
+  "path": "repo-refs/praxstack_ai-visual-code-review/TWITTER_LAUNCH_THREADS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12539
+ },
+ {
+  "path": "repo-refs/Belphemur_SoundSwitch/README.de.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12488
+ },
+ {
+  "path": "repo-refs/HamzaAlayed_laravel-claude-agents/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12454
+ },
+ {
+  "path": "skills-expanded/mined-cometchat-cometchat-skills/cometchat-react-v7-placement/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12436
+ },
+ {
+  "path": "skills-expanded/spotality--cursor-rules-rulesc/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12432
+ },
+ {
+  "path": "repo-refs/efugier_smartcat/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12410
+ },
+ {
+  "path": "skills-expanded/topic-pnp-copilot-prompts-create-skill-sample/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12410
+ },
+ {
+  "path": "repo-refs/DamonZS_Claude-Codex-Pro-Tool/AGENTS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12263
+ },
+ {
+  "path": "skill-sec-scan.py",
+  "tier": 2,
+  "reasons": [
+   "reverse-shell",
+   "downloader-exec",
+   "base64-exec",
+   "exfil-endpoint",
+   "data-destroy",
+   "persistence"
+  ],
+  "size": 12254
+ },
+ {
+  "path": "repo-refs/afjcjsbx_picoclaw/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12248
+ },
+ {
+  "path": "skills-expanded/topic-I7T5-Edmund-edmund-pr-review/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12182
+ },
+ {
+  "path": "repo-refs/devjotaduo_picoclaw/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12180
+ },
+ {
+  "path": "repo-refs/VMSTE_pico_V3/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 12180
+ },
+ {
+  "path": "repo-refs/7kim_PAOS/install-ubuntu.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12152
+ },
+ {
+  "path": "repo-refs/LITl-l_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12106
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/datasource/entities/datasource_entities.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12034
+ },
+ {
+  "path": "repo-refs/CesarMSFelipe_opencontext-runtime/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 12002
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/graphilizer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11946
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/proactive-solvr/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11817
+ },
+ {
+  "path": "repo-refs/TimofeySukh_picoclaw_build/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11778
+ },
+ {
+  "path": "repo-refs/Chaoticghost1_chaoticghost0932/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11752
+ },
+ {
+  "path": "repo-refs/QianjieTech_Open-ClaudeSkill/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11749
+ },
+ {
+  "path": "skills-expanded/topic-xalgorix-xalgorix-testing-llm-prompt-injection-a/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11712
+ },
+ {
+  "path": "repo-refs/ArgoZhang_BootstrapAdmin/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11642
+ },
+ {
+  "path": "repo-refs/brikkoAI_brikko-studio/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11593
+ },
+ {
+  "path": "repo-refs/brikkoAI_brikko-studio/studio.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11593
+ },
+ {
+  "path": "skill-scan.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "crypto-miner",
+   "exfil-endpoint"
+  ],
+  "size": 11476
+ },
+ {
+  "path": "repo-refs/1024XEngineer_ClawPet/CONTRIBUTING.zh.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11473
+ },
+ {
+  "path": "repo-refs/TimofeySukh_picoclaw_build/CONTRIBUTING.zh.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11473
+ },
+ {
+  "path": "repo-refs/Chaoticghost1_chaoticghost0932/CONTRIBUTING.zh.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11447
+ },
+ {
+  "path": "repo-refs/banjtheman_renpy_mcp_server/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11424
+ },
+ {
+  "path": "repo-refs/Arvincreator_project-golem/oracle-deploy.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11356
+ },
+ {
+  "path": "repo-refs/7xuanlu_wenlan/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11325
+ },
+ {
+  "path": "repo-refs/7kim_PAOS/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11254
+ },
+ {
+  "path": "repo-refs/arcanist-sh_hx/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11252
+ },
+ {
+  "path": "repo-refs/DJ02-a_dotfiles/uninstall.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "data-destroy"
+  ],
+  "size": 11248
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-3dgs-paper-reader/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11199
+ },
+ {
+  "path": "skills-expanded/transformer--cursor-skills-everything-claude-code-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11184
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/og-image-generator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11182
+ },
+ {
+  "path": "skills-expanded/mined-mukul975-Anthropic-Cybersecurity-Skills/detecting-indirect-prompt-injection/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11084
+ },
+ {
+  "path": "repo-refs/ai-integr8tor_NousResearch-hermes-agent/setup-hermes.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 11025
+ },
+ {
+  "path": "repo-refs/Azure_azure-functions-core-tools/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 11000
+ },
+ {
+  "path": "repo-refs/autopus-ai_autopus-adk/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10952
+ },
+ {
+  "path": "repo-refs/albinotonnina_echos/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10917
+ },
+ {
+  "path": "repo-refs/alexpopov_dots/bootstrap_windows.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10892
+ },
+ {
+  "path": "skills-expanded/mined-redfox-data-redfox-community/xiaohongshu-title/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10884
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/auto-todo/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10776
+ },
+ {
+  "path": "skills-expanded/mined-zxkane-aws-skills/aws-sst-development/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10768
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/wenqu-image/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10765
+ },
+ {
+  "path": "skills-expanded/ghscan-NeuroAIHub-BrainPilot/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10752
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/cr-logaf-review/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10673
+ },
+ {
+  "path": "repo-refs/Hack23_European-Parliament-MCP-Server/FinancialSecurityPlan.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10656
+ },
+ {
+  "path": "skills-expanded/topic-pnp-copilot-prompts-create-simple-prompt/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10616
+ },
+ {
+  "path": "skills-expanded/mined-redfox-data-redfox-community/xiaohongshu-crawler/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10502
+ },
+ {
+  "path": "repo-refs/brunogiel_agentic-second-brain/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10482
+ },
+ {
+  "path": "repo-refs/tencent_weknora/scripts/cloud-image/prepare.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10469
+ },
+ {
+  "path": "repo-refs/autohandai_code-cli/install-local.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10448
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/course-content-authoring/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10403
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/expo-ios-designing/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10337
+ },
+ {
+  "path": "skills-expanded/mined-qodex-ai-ai-agent-skills/mobile-app-interface/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10246
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/datasource/entities/test_datasource_entities.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10182
+ },
+ {
+  "path": "repo-refs/Arlandaren_proagents/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 10108
+ },
+ {
+  "path": "repo-refs/burin-labs_harn/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10074
+ },
+ {
+  "path": "repo-refs/agenticmail_agenticmail/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10073
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/workflow/nodes/datasource/datasource_node.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 10064
+ },
+ {
+  "path": "repo-refs/baneeishaque_ljt-520_openclaw-backup/install-k3s.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 10039
+ },
+ {
+  "path": "repo-refs/ShayneP_local-teleprompter/start.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9970
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/lib/shell-substitution.test.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9887
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9877
+ },
+ {
+  "path": "repo-refs/Hello-QM_catgo-LRG/docs/superpowers/specs/2026-05-17-catbot-slash-commands-design.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9868
+ },
+ {
+  "path": "repo-refs/apiiro_marketplace/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9851
+ },
+ {
+  "path": "repo-refs/Boulea7_ohmyclaude/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9823
+ },
+ {
+  "path": "repo-refs/langgenius_dify/cli/scripts/install-cli.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9733
+ },
+ {
+  "path": "skills-expanded/mined-redfox-data-redfox-community/xiaohongshu-title-score/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9722
+ },
+ {
+  "path": "repo-refs/Joaonic_agentkit/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9721
+ },
+ {
+  "path": "repo-refs/Allenxuxu_gev/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9704
+ },
+ {
+  "path": "repo-refs/afumu_openteam/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9693
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/plugin/impl/test_datasource_manager.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9630
+ },
+ {
+  "path": "repo-refs/GroepOnline_pi-tools/install-mcp.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 9624
+ },
+ {
+  "path": "repo-refs/Bilibili_discovery/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9557
+ },
+ {
+  "path": "skills-expanded/topic-Mahanaicoach-alex-hormozi-coach-alex-hormozi-coach/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9530
+ },
+ {
+  "path": "skills-expanded/topic-Mojtaba-Alehosseini-persian-skill-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9529
+ },
+ {
+  "path": "repo-refs/mangiapanejohn-dev_Resonix-AG/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9514
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9479
+ },
+ {
+  "path": "repo-refs/Reihantt6_sns-myagent/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9431
+ },
+ {
+  "path": "repo-refs/mangiapanejohn-dev_Resonix-AG/install-termux.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9424
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/SECURITY.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9420
+ },
+ {
+  "path": "skills-expanded/topic-leopu00-job-hunter-team-liveness-check/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9328
+ },
+ {
+  "path": "repo-refs/AppFlowy-IO_appflowy/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9236
+ },
+ {
+  "path": "skills-expanded/topic-microsoft-agent-framework-verify-samples-tool/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9226
+ },
+ {
+  "path": "repo-refs/aswin-dev-debug_Ai-Finance-analyzer/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9193
+ },
+ {
+  "path": "repo-refs/ZeroDot1_LLMWikiNG/start.sh",
+  "tier": 2,
+  "reasons": [
+   "reverse-shell"
+  ],
+  "size": 9170
+ },
+ {
+  "path": "repo-refs/microsoft_azure-skills/.github/plugins/azure-skills/skills/azure-app-onboard-prereq/references/dependency-compatibility.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9166
+ },
+ {
+  "path": "repo-refs/microsoft_azure-skills/skills/azure-app-onboard-prereq/references/dependency-compatibility.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9166
+ },
+ {
+  "path": "skills-store/azure-app-onboard-prereq/references/dependency-compatibility.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 9166
+ },
+ {
+  "path": "repo-refs/BlackRoad-OS-Inc_source/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9121
+ },
+ {
+  "path": "repo-refs/LeandroBenjaminL_lend-ai/update.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 9022
+ },
+ {
+  "path": "skills-expanded/topic-wei63w-pm-manager-pm-init/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8963
+ },
+ {
+  "path": "repo-refs/YeahBuddyNZ_beyond-autopilot/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8959
+ },
+ {
+  "path": "repo-refs/BeyondDimension_SteamTools/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8947
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/plugin/entities/request.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8900
+ },
+ {
+  "path": "skills-expanded/ghscan-liuchaowen-hugo-blog-papermod/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8845
+ },
+ {
+  "path": "repo-refs/bpross_Dot-Files/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8824
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/controllers/console/test_workflow_run_archive.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8814
+ },
+ {
+  "path": "repo-refs/afumu_openteam/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8761
+ },
+ {
+  "path": "repo-refs/Knaackee_linxmd/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8695
+ },
+ {
+  "path": "repo-refs/kaomei_hand-drawn-video-prompts/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8666
+ },
+ {
+  "path": "repo-refs/kaomei_hand-drawn-video-prompts/README.zh-CN.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8666
+ },
+ {
+  "path": "repo-refs/ddkitsune_bodega_belen_DJ/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8583
+ },
+ {
+  "path": "repo-refs/clearloop_walrus/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8549
+ },
+ {
+  "path": "repo-refs/artnc_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8547
+ },
+ {
+  "path": "skills-expanded/mined-FlameskyDexive-Legends-Of-Heroes/aibridge/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8530
+ },
+ {
+  "path": "repo-refs/bytedance_batchRun/install.py",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 8504
+ },
+ {
+  "path": "skills-expanded/mined-refoundai-lenny-skills/supply-demand-balance/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8460
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/crow-reason/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8374
+ },
+ {
+  "path": "repo-refs/QodeXcli_QodeX/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8348
+ },
+ {
+  "path": "repo-refs/Applelo_blottie/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8337
+ },
+ {
+  "path": "repo-refs/bdevz_og-system/deploy-agent-z.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 8330
+ },
+ {
+  "path": "repo-refs/AbdullahMalik17_malikclaw/demo.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8303
+ },
+ {
+  "path": "repo-refs/kaomei_hand-drawn-video-prompts/README.en.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8231
+ },
+ {
+  "path": "repo-refs/askusWT_superpowers/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 8187
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/create-component-docs/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 8010
+ },
+ {
+  "path": "repo-refs/DanielC000_loom/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7949
+ },
+ {
+  "path": "repo-refs/Achuan-2_SlideSCI/README.en.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7935
+ },
+ {
+  "path": "skills-expanded/mined-redfox-data-redfox-community/xiaohongshu-account-analyzer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7889
+ },
+ {
+  "path": "repo-refs/Arlandaren_proagents/README.ru.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7886
+ },
+ {
+  "path": "repo-refs/Ronnasayd_AI-pair-programming/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 7853
+ },
+ {
+  "path": "skills-expanded/mined-sundial-org-awesome-openclaw-skills/personas/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7769
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/mkt-attribution/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7693
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/peyton-jones-practical-haskell/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7660
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/story-to-content/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7627
+ },
+ {
+  "path": "skills-expanded/topic-mick-gsk-drift-drift-signal-development-full-/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7610
+ },
+ {
+  "path": "skills-expanded/mined-mateaix-mateclaw/xhs-note/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7606
+ },
+ {
+  "path": "repo-refs/kaomei_hand-drawn-video-prompts/README.ja.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7567
+ },
+ {
+  "path": "repo-refs/CliffVale_opencode-free-setup/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7513
+ },
+ {
+  "path": "repo-refs/Libertai_liberclaw-agent/security.py",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 7481
+ },
+ {
+  "path": "repo-refs/0xwi11iam_Suijin/kali-setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7405
+ },
+ {
+  "path": "repo-refs/EllanJiang_UnityGameFramework/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7404
+ },
+ {
+  "path": "repo-refs/EllanJiang_GameFramework/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7394
+ },
+ {
+  "path": "skills-expanded/claude-skill-registry-data-development-logging-system-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7360
+ },
+ {
+  "path": "skills-expanded/mined-brycewang-stanford-Awesome-Journal-Skills/ijoc-workflow/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7331
+ },
+ {
+  "path": "skills-expanded/mined-z0gsh1u-oh-my-writing-skill/xiaohongshu-converter/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7298
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/controllers/inner_api/agent/files.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7290
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/tarsier/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7276
+ },
+ {
+  "path": "skills-expanded/topic-sytungan-emoji-speak-emoji-speak/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7220
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/controllers/console/workflow_run_archive.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7176
+ },
+ {
+  "path": "repo-refs/agentic-in_elephant-agent/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7146
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/helper/test_csv_sanitizer.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7137
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/scripts/remote-tmux-shape-zoo.sh",
+  "tier": 2,
+  "reasons": [
+   "base64-exec"
+  ],
+  "size": 7124
+ },
+ {
+  "path": "skills-expanded/topic-pooooooriya-salsi-salsi/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7123
+ },
+ {
+  "path": "repo-refs/YurunChen_repo-docs-skills/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7063
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-3dgs-engineering-guide/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7061
+ },
+ {
+  "path": "repo-refs/dash0hq_dash0-agent-plugin/uninstall-cursor.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 7039
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/goose-adventure-game/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 7009
+ },
+ {
+  "path": "repo-refs/Sahil-958_dots/install.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 6967
+ },
+ {
+  "path": "repo-refs/kaomei_hand-drawn-video-prompts/README.ko.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6869
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/my-dev-team/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6844
+ },
+ {
+  "path": "repo-refs/JonusNattapong_Pinocchio-Scanner-Skill/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6819
+ },
+ {
+  "path": "skills-expanded/mined-brycewang-stanford-Awesome-Journal-Skills/ijoc-data-analysis/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6816
+ },
+ {
+  "path": "repo-refs/zhontai_Admin.Core/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6776
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/thompson-unix-philosophy/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6726
+ },
+ {
+  "path": "skills-expanded/mined-akillness-jeo-skills/semble/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6721
+ },
+ {
+  "path": "repo-refs/Arenukvern_mcp_flutter/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6702
+ },
+ {
+  "path": "repo-refs/SpidySamurai_dev-environment-bootstrap/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6691
+ },
+ {
+  "path": "repo-refs/yagcioglutoprak_AIQuotaBar/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 6662
+ },
+ {
+  "path": "repo-refs/kaomei_hand-drawn-video-prompts/README.es.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6608
+ },
+ {
+  "path": "repo-refs/altrace-dev-role_rashomon/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6603
+ },
+ {
+  "path": "skills-expanded/topic-heyparsadev-claude-venture-plugin-gtm/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6589
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/refactor-web-performance/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6571
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/rtl-design/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6560
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/text-adventure-engine/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6544
+ },
+ {
+  "path": "repo-refs/CameraKit_camerakit-ios/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6475
+ },
+ {
+  "path": "repo-refs/ldqk_Masuit.Tools/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6463
+ },
+ {
+  "path": "skills-expanded/topic-storybookjs-storybook-minor-release/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6460
+ },
+ {
+  "path": "repo-refs/burningportra_agent-flywheel-plugin/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6442
+ },
+ {
+  "path": "repo-refs/praxstack_ai-visual-code-review/install.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 6431
+ },
+ {
+  "path": "repo-refs/claude-office-skills_skills/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6421
+ },
+ {
+  "path": "repo-refs/YT4l0_Solana_agent/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6400
+ },
+ {
+  "path": "skills-expanded/CODE_OF_CONDUCT-te/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6387
+ },
+ {
+  "path": "repo-refs/SonnyRR_stacked-deck-templates/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6382
+ },
+ {
+  "path": "repo-refs/ldqk_Masuit.MyBlogs/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6356
+ },
+ {
+  "path": "repo-refs/ar4mirez_samuel/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6354
+ },
+ {
+  "path": "skills-expanded/topic-jaccen-Awesome-Gaussian-Skills-3dgs-method-compare/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6352
+ },
+ {
+  "path": "repo-refs/gwittebolle_claude-carbon/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6335
+ },
+ {
+  "path": "skills-expanded/mined-aiskillstore-marketplace/obsidian-plan-wiki/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6327
+ },
+ {
+  "path": "skills-expanded/topic-corezoid-corezoid-ai-plugin-corezoid-process-tech-writer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6298
+ },
+ {
+  "path": "repo-refs/anjoy8_Blog.Core/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6289
+ },
+ {
+  "path": "repo-refs/YasminTeles_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 6213
+ },
+ {
+  "path": "repo-refs/microsurging_surging/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6210
+ },
+ {
+  "path": "repo-refs/Arlandaren_proagents/README.zh.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6189
+ },
+ {
+  "path": "skills-expanded/codeplug-studio--cursor-skills-multi-phase-plan-references-agent-instructions/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6182
+ },
+ {
+  "path": "skills-expanded/CODE_OF_CONDUCT-kn/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6156
+ },
+ {
+  "path": "skills-expanded/topic-heyparsadev-claude-venture-plugin-new-venture/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6138
+ },
+ {
+  "path": "repo-refs/YSGStudyHards_DotNetGuide/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6114
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/mkt-diagnosis/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6105
+ },
+ {
+  "path": "repo-refs/AlexsJones_llmfit/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6055
+ },
+ {
+  "path": "repo-refs/AlexsJones_llmserve/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6035
+ },
+ {
+  "path": "skills-expanded/mined-actionbook-rust-skills/rust-refactor-helper/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6033
+ },
+ {
+  "path": "repo-refs/SonnyRR_stacked-deck-templates/PKG_README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 6030
+ },
+ {
+  "path": "repo-refs/ashiqrniloy_prism/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 6014
+ },
+ {
+  "path": "skills-expanded/mined-actionbook-rust-skills/rust-trait-explorer/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5977
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/integration/test_agent_cli_live.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5967
+ },
+ {
+  "path": "skills-store/clerk-backend-api/scripts/extract-tag-endpoints.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5952
+ },
+ {
+  "path": "skills-expanded/topic2-laborany-laborany-topic-collector/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5919
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/scripts/install-iphone-queue-agent.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 5911
+ },
+ {
+  "path": "repo-refs/aa-blinov_cast/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5900
+ },
+ {
+  "path": "skills-expanded/ghscan-moismin-undergrad-research-anti-distill-template/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5883
+ },
+ {
+  "path": "repo-refs/luoyunchong_lin-cms-dotnetcore/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5847
+ },
+ {
+  "path": "skills-expanded/CODE_OF_CONDUCT-si/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5836
+ },
+ {
+  "path": "repo-refs/UnknOownU_oh-my-zcode/test_hook_security.mjs",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5833
+ },
+ {
+  "path": "repo-refs/SteveGJones_ai-first-sdlc-practices/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5819
+ },
+ {
+  "path": "repo-refs/Grabacr07_KanColleViewer/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5794
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/controllers/inner_api/test_agent_files.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5787
+ },
+ {
+  "path": "repo-refs/rlaope_ultraprompt/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5785
+ },
+ {
+  "path": "skills-expanded/CODE_OF_CONDUCT-mr/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5761
+ },
+ {
+  "path": "skills-expanded/HOWTO-kn/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5627
+ },
+ {
+  "path": "repo-refs/Terry-Mao_AICodingFlow/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5611
+ },
+ {
+  "path": "skills-expanded/topic-heyparsadev-claude-venture-plugin-customers/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5609
+ },
+ {
+  "path": "repo-refs/Soul-Brews-Studio_arra-oracle-skills-cli/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5573
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/CODE_OF_CONDUCT.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5573
+ },
+ {
+  "path": "repo-refs/Kael-Yan_AgentForge/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5571
+ },
+ {
+  "path": "repo-refs/fynnfluegge_agtx/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5546
+ },
+ {
+  "path": "skills-expanded/topic-mogons-noraz-agent-noraz-swarm-trading/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5545
+ },
+ {
+  "path": "skills-expanded/topic-heyparsadev-claude-venture-plugin-pmf/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5542
+ },
+ {
+  "path": "skills-expanded/HOWTO-ml/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5458
+ },
+ {
+  "path": "repo-refs/2233admin_Vibecoding_Game/README_old.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5434
+ },
+ {
+  "path": "repo-refs/P0lar1ght_dock/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5416
+ },
+ {
+  "path": "repo-refs/0x-Shashi_WEB3-AUDIT-SKILLS/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5407
+ },
+ {
+  "path": "repo-refs/HermeticOrmus_LibreDevOps-Claude-Code/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5369
+ },
+ {
+  "path": "repo-refs/tencent_weknora/scripts/test-homebrew.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 5350
+ },
+ {
+  "path": "repo-refs/nvidia_skillspector/tests/nodes/analyzers/test_static_false_positive_controls.py",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 5313
+ },
+ {
+  "path": "repo-refs/yhuse_SunnyUI/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5304
+ },
+ {
+  "path": "repo-refs/OpenDemon_anyone-to-skill/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5299
+ },
+ {
+  "path": "repo-refs/clash-verge-rev_clash-verge-rev/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5294
+ },
+ {
+  "path": "repo-refs/AnasIsmai1_dotfiles/pkg-install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5248
+ },
+ {
+  "path": "skills-store/clerk-backend-api/scripts/extract-endpoint-detail.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5244
+ },
+ {
+  "path": "repo-refs/netanel-abergel_pa-skills/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5237
+ },
+ {
+  "path": "skills-store/od-contribute/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5222
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/datasource/online_drive/test_online_drive_plugin.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5218
+ },
+ {
+  "path": "skills-expanded/topic-bsquang-claude-comstyle-style-switcher/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5212
+ },
+ {
+  "path": "skills-expanded/topic-leopu00-job-hunter-team-cache-prune/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5191
+ },
+ {
+  "path": "repo-refs/DJ02-a_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5189
+ },
+ {
+  "path": "repo-refs/bGiaHuy_vietnamese-docs-style/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5188
+ },
+ {
+  "path": "skills-expanded/topic-bGiaHuy-vietnamese-docs-style-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5188
+ },
+ {
+  "path": "skills-expanded/topic-Mexregkan-claude-for-researchers-write-pipeline/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5182
+ },
+ {
+  "path": "repo-refs/Fei2-Labs_kirocrew/ensure-python.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5180
+ },
+ {
+  "path": "skills-expanded/mined-sundial-org-awesome-openclaw-skills/polymarket-traiding-bot/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5178
+ },
+ {
+  "path": "repo-refs/antstanley_skill-builder/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5174
+ },
+ {
+  "path": "repo-refs/MykytaStel_repopilot/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5171
+ },
+ {
+  "path": "skills-expanded/topic-mateaix-mateclaw-digital-employee/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5170
+ },
+ {
+  "path": "skills-expanded/mined-mateaix-mateclaw/digital-employee/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5170
+ },
+ {
+  "path": "skills-expanded/topic-demo112-yunqu-ai-skills-04-chinese-market-content-engi/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5167
+ },
+ {
+  "path": "skills-expanded/mined-brycewang-stanford-Awesome-Journal-Skills/ijoc-submission/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5166
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/emoji-tools/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5138
+ },
+ {
+  "path": "skills-expanded/topic-ethosagent-ethos-export-csv/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 5116
+ },
+ {
+  "path": "repo-refs/railwayapp_railway-skills/plugins/railway/hooks/auto-approve-api.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 5103
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/tests/unit_tests/core/plugin/entities/test_request.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5044
+ },
+ {
+  "path": "repo-refs/akin-ozer_cc-devops-skills/devops-skills-plugin/skills/helm-validator/scripts/setup_tools.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5040
+ },
+ {
+  "path": "skills-store/helm-validator/scripts/setup_tools.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 5040
+ },
+ {
+  "path": "skills-expanded/topic2-chefroger-smart-trade-ai-b2b-buyer-persona/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4984
+ },
+ {
+  "path": "repo-refs/LITl-l_dotfiles/test-install.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 4972
+ },
+ {
+  "path": "skills-expanded/HOWTO-te/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4945
+ },
+ {
+  "path": "repo-refs/MMEHDI0606_protom/WRITEUP.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4934
+ },
+ {
+  "path": "skills-expanded/HOWTO-hi/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4933
+ },
+ {
+  "path": "repo-refs/somdipto_dani-desktop/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4892
+ },
+ {
+  "path": "repo-refs/maddhruv_absolute/skills/absolute-docs/references/reference.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4849
+ },
+ {
+  "path": "skills-store/absolute-docs/references/reference.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4849
+ },
+ {
+  "path": "skills-expanded/agentic-net-examples-encryption-and-protection-agents/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4837
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/scripts/ecc-dashboard.test.js",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 4784
+ },
+ {
+  "path": "repo-refs/CircuitWall_jarela/CLAUDE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4722
+ },
+ {
+  "path": "repo-refs/s0ld13rr_pentestcode/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 4716
+ },
+ {
+  "path": "repo-refs/2389-research_ai-marketing/cron_research.py",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 4707
+ },
+ {
+  "path": "skills-expanded/accessibility-agents--gemini-extensions-a11y-agents-skills-web-severity-scoring-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4696
+ },
+ {
+  "path": "repo-refs/Azure_DotNetty/build.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4693
+ },
+ {
+  "path": "skills-store/gitmoji/references/gitmoji-reference.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4693
+ },
+ {
+  "path": "repo-refs/jcdavis131_dottie/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4682
+ },
+ {
+  "path": "skills-expanded/ghscan-roguedan-specchain-reserve-token/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4676
+ },
+ {
+  "path": "repo-refs/fudiwei_DotNetCore.SKIT.FlurlHttpClient.Wechat/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4602
+ },
+ {
+  "path": "repo-refs/ascariandrea_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "data-destroy"
+  ],
+  "size": 4564
+ },
+ {
+  "path": "repo-refs/Azure_azure-functions-core-tools/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4542
+ },
+ {
+  "path": "repo-refs/KeploreAI-Lab_MindAct/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4534
+ },
+ {
+  "path": "repo-refs/chen647208_hongyue-creation/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4520
+ },
+ {
+  "path": "repo-refs/neozhu_CleanArchitectureWithBlazorServer/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4488
+ },
+ {
+  "path": "repo-refs/Frontify_fondue/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4465
+ },
+ {
+  "path": "repo-refs/Data-Wise_craft/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4455
+ },
+ {
+  "path": "repo-refs/cyq1162_cyqdata/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4398
+ },
+ {
+  "path": "repo-refs/alivirgo_Major-AI-Skills/CHANGELOG.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4398
+ },
+ {
+  "path": "repo-refs/zy0n_silent.worm/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4390
+ },
+ {
+  "path": "repo-refs/punkpeye_awesome-mcp-servers/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4353
+ },
+ {
+  "path": "repo-refs/onmyway133_Smile/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4326
+ },
+ {
+  "path": "repo-refs/urjitbhatia_brainlog/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4281
+ },
+ {
+  "path": "repo-refs/akin-ozer_cc-devops-skills/devops-skills-plugin/skills/azure-pipelines-validator/scripts/test_regressions.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4278
+ },
+ {
+  "path": "skills-store/azure-pipelines-validator/scripts/test_regressions.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4278
+ },
+ {
+  "path": "repo-refs/samhocevar_wincompose/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4277
+ },
+ {
+  "path": "repo-refs/Safe3_openresty-manager/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4270
+ },
+ {
+  "path": "repo-refs/jondot_rust-how-do-i-start/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4252
+ },
+ {
+  "path": "repo-refs/maxel01_vue-leaflet/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4246
+ },
+ {
+  "path": "repo-refs/Juanpe_SkeletonView/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4236
+ },
+ {
+  "path": "repo-refs/Matthias84_awesome-flying-fpv/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4231
+ },
+ {
+  "path": "repo-refs/lissy93_dashy/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4231
+ },
+ {
+  "path": "repo-refs/dremin_RetroBar/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4227
+ },
+ {
+  "path": "repo-refs/anandgupta193_react-enterprise-starter-kit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4220
+ },
+ {
+  "path": "repo-refs/DoodzCode_koad-os/koad-setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4211
+ },
+ {
+  "path": "repo-refs/LedgerHQ_lumen/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4202
+ },
+ {
+  "path": "repo-refs/uezo_ChatdollKit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4196
+ },
+ {
+  "path": "repo-refs/dittofeed_dittofeed/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4195
+ },
+ {
+  "path": "repo-refs/slidevjs_slidev/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4194
+ },
+ {
+  "path": "repo-refs/neon-mmd_websurfx/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4194
+ },
+ {
+  "path": "repo-refs/guryanovev_CrystalQuartz/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4190
+ },
+ {
+  "path": "repo-refs/atlassian_react-beautiful-dnd/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4190
+ },
+ {
+  "path": "repo-refs/Paol-imi_muuri-react/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4189
+ },
+ {
+  "path": "repo-refs/teafuljs_teaful/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4186
+ },
+ {
+  "path": "repo-refs/mojocn_base64Captcha/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4186
+ },
+ {
+  "path": "repo-refs/ravendb_ravendb/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4186
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/skills.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4186
+ },
+ {
+  "path": "repo-refs/nextcloud_server/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4185
+ },
+ {
+  "path": "repo-refs/yaa110_go-persian-calendar/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4183
+ },
+ {
+  "path": "repo-refs/comet-ml_comet-llm/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4183
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-main-position/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4182
+ },
+ {
+  "path": "repo-refs/unilibs_uniwidth/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4180
+ },
+ {
+  "path": "repo-refs/comet-ml_opik/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4173
+ },
+ {
+  "path": "repo-refs/bibinprathap_VeritasGraph/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4170
+ },
+ {
+  "path": "repo-refs/sdcb_PaddleSharp/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4169
+ },
+ {
+  "path": "skills-store/editorconfig/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4169
+ },
+ {
+  "path": "repo-refs/anatoliygatt_heart-switch/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4167
+ },
+ {
+  "path": "repo-refs/joewdavies_awesome-frontend-gis/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4166
+ },
+ {
+  "path": "repo-refs/baptisteArno_typebot.io/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4166
+ },
+ {
+  "path": "repo-refs/jpudysz_react-native-unistyles/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4165
+ },
+ {
+  "path": "repo-refs/anatoliygatt_numeric-stepper/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4165
+ },
+ {
+  "path": "repo-refs/tagspaces_tagspaces/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4164
+ },
+ {
+  "path": "repo-refs/pulsejet_memories/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4162
+ },
+ {
+  "path": "repo-refs/motiondivision_motion/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4160
+ },
+ {
+  "path": "repo-refs/marcosgriselli_SwipeableTabBarController/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4158
+ },
+ {
+  "path": "repo-refs/JohannesKaufmann_html-to-markdown/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4158
+ },
+ {
+  "path": "repo-refs/gokayfem_awesome-vlm-architectures/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4157
+ },
+ {
+  "path": "repo-refs/bunkerity_bunkerweb/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4157
+ },
+ {
+  "path": "repo-refs/SakiRinn_LiveCaptions-Translator/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4157
+ },
+ {
+  "path": "repo-refs/Qvant-lab_qui-max/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4155
+ },
+ {
+  "path": "repo-refs/sttatusx_vue-share-modal/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4155
+ },
+ {
+  "path": "repo-refs/ChristosChristofidis_awesome-deep-learning/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4154
+ },
+ {
+  "path": "repo-refs/SvenTiigi_ValidatedPropertyKit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4152
+ },
+ {
+  "path": "repo-refs/operational-co_operational.co/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4151
+ },
+ {
+  "path": "repo-refs/louislam_dockge/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4150
+ },
+ {
+  "path": "repo-refs/root-gg_plik/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4148
+ },
+ {
+  "path": "repo-refs/blinkospace_blinko/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4148
+ },
+ {
+  "path": "repo-refs/ZiggyCreatures_FusionCache/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4148
+ },
+ {
+  "path": "repo-refs/alexruperez_SecurePropertyStorage/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4148
+ },
+ {
+  "path": "repo-refs/elegantframework_elegant-cli/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4147
+ },
+ {
+  "path": "repo-refs/proyecto26_RestClient/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4147
+ },
+ {
+  "path": "repo-refs/callstack_react-native-paper/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4147
+ },
+ {
+  "path": "repo-refs/XuanchenLin_NanUI/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4146
+ },
+ {
+  "path": "repo-refs/formbricks_formbricks/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4146
+ },
+ {
+  "path": "repo-refs/lucasferreira_react-native-flash-message/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4146
+ },
+ {
+  "path": "repo-refs/adoconnection_RazorEngineCore/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4146
+ },
+ {
+  "path": "repo-refs/azat-co_you-dont-know-node/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4146
+ },
+ {
+  "path": "repo-refs/framer_motion/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4144
+ },
+ {
+  "path": "repo-refs/web3swift-team_web3swift/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4144
+ },
+ {
+  "path": "repo-refs/samber_do/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4144
+ },
+ {
+  "path": "repo-refs/marmelab_react-admin/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4144
+ },
+ {
+  "path": "repo-refs/moishinetzer_pbandj/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4143
+ },
+ {
+  "path": "repo-refs/chaitin_SafeLine/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4143
+ },
+ {
+  "path": "repo-refs/bioscala_bioscala/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4142
+ },
+ {
+  "path": "repo-refs/storybookjs_storybook/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4141
+ },
+ {
+  "path": "repo-refs/GladysAssistant_Gladys/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4141
+ },
+ {
+  "path": "repo-refs/fullstackhero_blazor-starter-kit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4141
+ },
+ {
+  "path": "repo-refs/freshOS_Stevia/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4141
+ },
+ {
+  "path": "repo-refs/owncast_owncast/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4140
+ },
+ {
+  "path": "repo-refs/shopware_shopware/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4140
+ },
+ {
+  "path": "repo-refs/albertodebortoli_Promis/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4140
+ },
+ {
+  "path": "repo-refs/quickbirdstudios_XCoordinator/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4139
+ },
+ {
+  "path": "repo-refs/iGenius-Srl_IGColorPicker/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4138
+ },
+ {
+  "path": "repo-refs/fuse-compound_awesome-fuse/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4138
+ },
+ {
+  "path": "repo-refs/vkhorikov_CSharpFunctionalExtensions/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4138
+ },
+ {
+  "path": "repo-refs/deepmipt_DeepPavlov/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4137
+ },
+ {
+  "path": "repo-refs/logaretm_vee-validate/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4136
+ },
+ {
+  "path": "repo-refs/stevesong_awesome-connectivity-info/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4136
+ },
+ {
+  "path": "repo-refs/paritytech_polkadot-sdk/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4135
+ },
+ {
+  "path": "repo-refs/michelelacorte_ElasticProgressBar/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4135
+ },
+ {
+  "path": "repo-refs/SvenTiigi_WhatsNewKit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4135
+ },
+ {
+  "path": "repo-refs/octomation_go-module/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4135
+ },
+ {
+  "path": "repo-refs/0xwi11iam_Suijin/docker.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4133
+ },
+ {
+  "path": "repo-refs/vardius_worker-pool/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4133
+ },
+ {
+  "path": "repo-refs/microsoft_artifacts-credprovider/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4131
+ },
+ {
+  "path": "repo-refs/bentoml_bentoml/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4130
+ },
+ {
+  "path": "repo-refs/SvenTiigi_FlyoverKit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4129
+ },
+ {
+  "path": "repo-refs/mifi_react-lottie-player/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4129
+ },
+ {
+  "path": "repo-refs/kamilsk_semaphore/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4129
+ },
+ {
+  "path": "repo-refs/graves_awful_aj/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4129
+ },
+ {
+  "path": "repo-refs/unjs_consola/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/MahApps_MahApps.Metro.IconPacks/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/ElectronNET_Electron.NET/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/RIP21_react-simplemde-editor/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/makeplane_plane/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/Microsoft_Docker.DotNet/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/TurnerSoftware_CacheTower/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4128
+ },
+ {
+  "path": "repo-refs/Vibes-lj_goldfish/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4127
+ },
+ {
+  "path": "repo-refs/muukii_MondrianLayout/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4127
+ },
+ {
+  "path": "repo-refs/eleith_emailjs/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4127
+ },
+ {
+  "path": "repo-refs/handzlikchris_FastScriptReload/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4126
+ },
+ {
+  "path": "repo-refs/SciSharp_LLamaSharp/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4125
+ },
+ {
+  "path": "repo-refs/chaindead_zerocfg/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4125
+ },
+ {
+  "path": "repo-refs/yusufcanb_tlm/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4125
+ },
+ {
+  "path": "repo-refs/mpratt_Embera/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4124
+ },
+ {
+  "path": "repo-refs/bytebase_bytebase/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4124
+ },
+ {
+  "path": "repo-refs/wagtail_wagtail/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4123
+ },
+ {
+  "path": "repo-refs/janpfeifer_gonb/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4123
+ },
+ {
+  "path": "repo-refs/pterm_pterm/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/xwjdsh_awesome-go-extra/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/dotnet_Docker.DotNet/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/Smeldr_core/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/vinayakkulkarni_v-intl/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/bbepis_XUnity.AutoTranslator/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/speedb-io_speedb/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/matiassingers_awesome-readme/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4122
+ },
+ {
+  "path": "repo-refs/sopaco_cowork-forge/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4121
+ },
+ {
+  "path": "repo-refs/notthetup_awesome-webaudio/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4121
+ },
+ {
+  "path": "repo-refs/AyoubTadlaoui_GoLogX/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 4120
+ },
+ {
+  "path": "repo-refs/ProwlEngine_Prowl/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4119
+ },
+ {
+  "path": "repo-refs/tal-tech_go-zero/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4119
+ },
+ {
+  "path": "repo-refs/crossroadlabs_Regex/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4118
+ },
+ {
+  "path": "repo-refs/Shopify_mobile-buy-sdk-ios/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4118
+ },
+ {
+  "path": "repo-refs/kamilsk_tracer/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4117
+ },
+ {
+  "path": "repo-refs/c9s_bbgo/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4116
+ },
+ {
+  "path": "repo-refs/FedericoBruzzone_tgt/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4116
+ },
+ {
+  "path": "repo-refs/gabrielemariotti_cardslib/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4116
+ },
+ {
+  "path": "repo-refs/nopSolutions_nopCommerce/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4116
+ },
+ {
+  "path": "repo-refs/tbillington_kondo/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4116
+ },
+ {
+  "path": "repo-refs/facebook_jest/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4115
+ },
+ {
+  "path": "repo-refs/alexcfv_go-pcaplite/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4115
+ },
+ {
+  "path": "repo-refs/embeddedmz_ftpclient-cpp/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4114
+ },
+ {
+  "path": "repo-refs/100mango_SwiftCssParser/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4114
+ },
+ {
+  "path": "repo-refs/numetriclabz_awesome-db/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4114
+ },
+ {
+  "path": "repo-refs/SonarSource_sonar-dotnet/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4114
+ },
+ {
+  "path": "repo-refs/stevencohn_OneMore/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4113
+ },
+ {
+  "path": "repo-refs/iayti_CleanArchitecture/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4112
+ },
+ {
+  "path": "repo-refs/ckormanyos_wide-integer/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4112
+ },
+ {
+  "path": "repo-refs/saitjr_STLoadingGroup/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4112
+ },
+ {
+  "path": "repo-refs/wiz0u_WTelegramClient/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4112
+ },
+ {
+  "path": "repo-refs/kamilsk_breaker/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4112
+ },
+ {
+  "path": "repo-refs/mantil-io_mantil/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4111
+ },
+ {
+  "path": "repo-refs/milvus-io_milvus/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4111
+ },
+ {
+  "path": "repo-refs/naudio_NAudio/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4111
+ },
+ {
+  "path": "repo-refs/open-meteo_open-meteo/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4111
+ },
+ {
+  "path": "repo-refs/jestjs_jest/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4111
+ },
+ {
+  "path": "repo-refs/winwiz1_crisp-bigquery/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4110
+ },
+ {
+  "path": "repo-refs/ToaHartor_GI-cutscenes/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4110
+ },
+ {
+  "path": "repo-refs/icsharpcode_NRefactory/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4110
+ },
+ {
+  "path": "repo-refs/aws_amazon-cognito-js/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4108
+ },
+ {
+  "path": "repo-refs/myrtille-rdp_myrtille/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4108
+ },
+ {
+  "path": "repo-refs/serengil_chefboost/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4108
+ },
+ {
+  "path": "repo-refs/yoav-lavi_melody/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4108
+ },
+ {
+  "path": "repo-refs/ControlzEx_ControlzEx/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4108
+ },
+ {
+  "path": "repo-refs/GuilhermeCaruso_anko/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4108
+ },
+ {
+  "path": "repo-refs/unoplatform_uno/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4104
+ },
+ {
+  "path": "repo-refs/ThreeMammals_Ocelot/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4104
+ },
+ {
+  "path": "repo-refs/microsoft_Power-Fx/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4104
+ },
+ {
+  "path": "repo-refs/winwiz1_crisp-react/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4104
+ },
+ {
+  "path": "repo-refs/emoacht_Monitorian/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4102
+ },
+ {
+  "path": "repo-refs/oneapi-src_oneDAL/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4101
+ },
+ {
+  "path": "repo-refs/gabyx_githooks/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4101
+ },
+ {
+  "path": "repo-refs/kcl-lang_kcl/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4100
+ },
+ {
+  "path": "repo-refs/nullne_evaluator/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4100
+ },
+ {
+  "path": "repo-refs/dpilger26_NumCpp/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4100
+ },
+ {
+  "path": "repo-refs/dotnetcore_NPOI/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4100
+ },
+ {
+  "path": "repo-refs/TerryZ_v-dialogs/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4100
+ },
+ {
+  "path": "repo-refs/sharpemu_sharpemu/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4100
+ },
+ {
+  "path": "repo-refs/Kareadita_Kavita/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4098
+ },
+ {
+  "path": "repo-refs/fschutt_printpdf/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4098
+ },
+ {
+  "path": "repo-refs/dotnet_reactive/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4096
+ },
+ {
+  "path": "repo-refs/lucasepe_tbd/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4094
+ },
+ {
+  "path": "repo-refs/zueve_neurolab/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4094
+ },
+ {
+  "path": "repo-refs/oky2abbas_reactor/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4093
+ },
+ {
+  "path": "repo-refs/muyo_sno/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4092
+ },
+ {
+  "path": "repo-refs/mikke89_RmlUi/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4092
+ },
+ {
+  "path": "repo-refs/dotnet_wpf/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4086
+ },
+ {
+  "path": "repo-refs/OctoLinker_browser-extension/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4070
+ },
+ {
+  "path": "repo-refs/callstack_react-native-builder-bob/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4059
+ },
+ {
+  "path": "repo-refs/yourbasic_graph/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 4045
+ },
+ {
+  "path": "repo-refs/bagelhole_devops-security-agent-skills/security/operations/incident-response/scripts/collect-evidence.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 4027
+ },
+ {
+  "path": "skills-store/incident-response/scripts/collect-evidence.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 4027
+ },
+ {
+  "path": "repo-refs/Shanlovana_Sona/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3998
+ },
+ {
+  "path": "skills-expanded/topic-ShipWithAI-shipwithai-plugins-jpa-entity/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3991
+ },
+ {
+  "path": "repo-refs/sergree_whatbpm/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3990
+ },
+ {
+  "path": "repo-refs/SeldonIO_goven/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3985
+ },
+ {
+  "path": "repo-refs/Parad0x-Labs_openclaw-skills/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3974
+ },
+ {
+  "path": "skills-expanded/mined-sundial-org-awesome-openclaw-skills/twitter-openclaw-2/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3960
+ },
+ {
+  "path": "skills-expanded/mined-sundial-org-awesome-openclaw-skills/twitter-openclaw/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3958
+ },
+ {
+  "path": "repo-refs/alexj11324_orvilo1/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3950
+ },
+ {
+  "path": "repo-refs/Habrador_Unity-Programming-Patterns/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3935
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-financials/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3903
+ },
+ {
+  "path": "skills-store/powerpoint/scripts/Invoke-EmbedAudio.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3881
+ },
+ {
+  "path": "repo-refs/cebrusfs_dotfiles/cleanup_legacy.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 3851
+ },
+ {
+  "path": "repo-refs/langgenius_dify/docs/ar-SA/ADVANCED_SETUP.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3825
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-shareholder-research/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3813
+ },
+ {
+  "path": "repo-refs/nalexn_ViewInspector/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3796
+ },
+ {
+  "path": "skills-store/powerpoint/scripts/Invoke-GenerateThemes.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3784
+ },
+ {
+  "path": "skills-expanded/topic-wei63w-pm-manager-pm-arch/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3781
+ },
+ {
+  "path": "repo-refs/0xZee_CrewAi-Tools/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3766
+ },
+ {
+  "path": "repo-refs/dash0hq_dash0-agent-plugin/uninstall-codex.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3750
+ },
+ {
+  "path": "repo-refs/amalgamet_dotfiles/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3740
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/project-translator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3702
+ },
+ {
+  "path": "skills-store/powerpoint/scripts/Invoke-ExportSvg.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3657
+ },
+ {
+  "path": "repo-refs/0x7c13_Notepads/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3649
+ },
+ {
+  "path": "repo-refs/FridrichMethod_awesome-skills/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3642
+ },
+ {
+  "path": "repo-refs/marjoballabani_hypergrep/hypergrep-installer.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3633
+ },
+ {
+  "path": "repo-refs/morkro_happy-plants/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3613
+ },
+ {
+  "path": "skills-expanded/HOWTO-fa_IR/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3604
+ },
+ {
+  "path": "repo-refs/ElMassimo_iles/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3601
+ },
+ {
+  "path": "skills-expanded/topic-wei63w-pm-manager-pm-all/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3589
+ },
+ {
+  "path": "repo-refs/BepInEx_BepInEx/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3575
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/scripts/release-announce.test.js",
+  "tier": 2,
+  "reasons": [
+   "exfil-endpoint"
+  ],
+  "size": 3552
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-company-info/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3539
+ },
+ {
+  "path": "skills-expanded/topic-ShipWithAI-shipwithai-plugins-idempotent-endpoint/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3536
+ },
+ {
+  "path": "repo-refs/zcash_zcash/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3526
+ },
+ {
+  "path": "repo-refs/SubtitleEdit_subtitleedit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3524
+ },
+ {
+  "path": "repo-refs/kamilsk_retry/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3490
+ },
+ {
+  "path": "skills-expanded/topic-delphicleancode-delphi-spec-kit-acbr-components/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3475
+ },
+ {
+  "path": "repo-refs/softprops_dynomite/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3458
+ },
+ {
+  "path": "repo-refs/MrLoh__configs/link.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy",
+   "persistence"
+  ],
+  "size": 3435
+ },
+ {
+  "path": "repo-refs/JithendraNara_personal-assistant-adk/deploy.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3433
+ },
+ {
+  "path": "repo-refs/Reverse-Tutoring_reverse-tutoring/readme.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3431
+ },
+ {
+  "path": "skills-expanded/topic-ShipWithAI-shipwithai-plugins-rest-error-handler/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3395
+ },
+ {
+  "path": "repo-refs/vanilla-extract-css_vanilla-extract/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3390
+ },
+ {
+  "path": "repo-refs/heartwilltell_log/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3372
+ },
+ {
+  "path": "repo-refs/6over3_bebop/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3366
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-trading-info/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3332
+ },
+ {
+  "path": "skills-expanded/mined-actionbook-rust-skills/rust-code-navigator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3311
+ },
+ {
+  "path": "repo-refs/diwasatreya_Advanced-Music-Bot/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3283
+ },
+ {
+  "path": "skills-expanded/claude-config-commands-ohayo-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3266
+ },
+ {
+  "path": "repo-refs/DRincs-Productions_pixi-vn/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3238
+ },
+ {
+  "path": "repo-refs/YasminTeles_dotfiles/uninstall.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 3233
+ },
+ {
+  "path": "repo-refs/GameServerManagers_LinuxGSM/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3229
+ },
+ {
+  "path": "skills-expanded/topic-kk43994-kkclaw-root/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3218
+ },
+ {
+  "path": "skills-expanded/crm--cursor-rules-rulesc/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3214
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3208
+ },
+ {
+  "path": "skills-expanded/ghscan-OneChoiceKitchen-OneChoiceKitchen/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3193
+ },
+ {
+  "path": "repo-refs/akaunting_akaunting/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3190
+ },
+ {
+  "path": "repo-refs/akin-ozer_cc-devops-skills/devops-skills-plugin/skills/github-actions-validator/scripts/install_tools.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3186
+ },
+ {
+  "path": "skills-store/github-actions-validator/scripts/install_tools.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3186
+ },
+ {
+  "path": "repo-refs/ali5ter_carrybag-lite/test_rpi.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3173
+ },
+ {
+  "path": "repo-refs/eirvandelden_dotfiles/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3155
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/services/file_request_service.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 3135
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-stock-events/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3106
+ },
+ {
+  "path": "repo-refs/askeda_dotfiles/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 3085
+ },
+ {
+  "path": "repo-refs/wasm-bindgen_wasm-pack/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 3022
+ },
+ {
+  "path": "skills-store/demo-video/scripts/Invoke-AssembleVideo.ps1",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2996
+ },
+ {
+  "path": "repo-refs/Quantco_dataframely/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2971
+ },
+ {
+  "path": "repo-refs/OpenScribbler_syllago/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2965
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-board-cpbd/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2964
+ },
+ {
+  "path": "repo-refs/SmallAi-API_smaihub/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2927
+ },
+ {
+  "path": "repo-refs/ai-integr8tor_lobehub-lobehub/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2909
+ },
+ {
+  "path": "repo-refs/kasuken_spfx-copilot-dashboard/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2876
+ },
+ {
+  "path": "repo-refs/Pacificwide-Real-Estate-Mortgage-CRM_pacificwide-claude/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2864
+ },
+ {
+  "path": "repo-refs/GeneCodeSavvy_dotfiles/new_vm.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 2861
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-share-capital/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2826
+ },
+ {
+  "path": "repo-refs/OdysseusYuan_LKY_OfficeTools/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2810
+ },
+ {
+  "path": "repo-refs/efugier_smartcat/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2806
+ },
+ {
+  "path": "repo-refs/0x-Shashi_WEB3-AUDIT-SKILLS/CODE_OF_CONDUCT.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2796
+ },
+ {
+  "path": "skills-expanded/topic-yueheng-rgb-codex-factory-codex-factory/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2783
+ },
+ {
+  "path": "repo-refs/affaan-m_ecc/tests/lib/control-pane-actions.test.js",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 2756
+ },
+ {
+  "path": "repo-refs/andreibesleaga_GABBE/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2710
+ },
+ {
+  "path": "repo-refs/phpbb_phpbb/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2697
+ },
+ {
+  "path": "repo-refs/androidmalware_OpenClaw_Termux/install_openclaw_termux.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec",
+   "persistence"
+  ],
+  "size": 2685
+ },
+ {
+  "path": "repo-refs/eclipse-zenoh-flow_zenoh-flow/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2683
+ },
+ {
+  "path": "repo-refs/mongodb_mongo-csharp-driver/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2665
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-board-valuation/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2653
+ },
+ {
+  "path": "skills-expanded/topic-lukevella-rallly-devmoji/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2614
+ },
+ {
+  "path": "repo-refs/KtKID_x-dev-pipeline/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2586
+ },
+ {
+  "path": "skills-expanded/waamtech-erp-website---cursor-rules-08-monitoring-rulesc/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2556
+ },
+ {
+  "path": "repo-refs/Fergana-Labs_stash/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2548
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-industry-chain/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2546
+ },
+ {
+  "path": "skills-expanded/mined-NeverSight-learn-skills.dev/sight/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2539
+ },
+ {
+  "path": "skills-expanded/mined-jimmypaolini-codebase/cache-nx/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2538
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-dragon-tiger/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2529
+ },
+ {
+  "path": "repo-refs/CodeGenLabs_forge-harness/PRIVACY.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2522
+ },
+ {
+  "path": "repo-refs/anthony-chaudhary_dos-kernel/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2495
+ },
+ {
+  "path": "repo-refs/Charlieverse-ai_charlieverse/setup.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2494
+ },
+ {
+  "path": "repo-refs/alhayekbakr1-cell_Portfolio/MAINTENANCE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2483
+ },
+ {
+  "path": "skills-expanded/topic-wei63w-pm-manager-pm-status/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2443
+ },
+ {
+  "path": "repo-refs/Vinix24_vnx-orchestration/install-remote.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2439
+ },
+ {
+  "path": "skills-expanded/topic-SammyTourani-evestack-malicious-fixture/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2432
+ },
+ {
+  "path": "repo-refs/anydream_il2cpp/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2427
+ },
+ {
+  "path": "repo-refs/boycechang_BCColor/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2403
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/datasource/online_drive/online_drive_plugin.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2377
+ },
+ {
+  "path": "repo-refs/bellini666_dotfiles/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2370
+ },
+ {
+  "path": "skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-report-rating/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2348
+ },
+ {
+  "path": "repo-refs/BenEmdon_CenteredCollectionView/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2343
+ },
+ {
+  "path": "repo-refs/carterdea_dots/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2334
+ },
+ {
+  "path": "repo-refs/blackwell-systems_agent-lsp/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2291
+ },
+ {
+  "path": "repo-refs/Antaris_RazorEngine/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2247
+ },
+ {
+  "path": "repo-refs/ShirasawaSama_CefDetector/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2196
+ },
+ {
+  "path": "repo-refs/Shen-An_mybot/deploy.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2191
+ },
+ {
+  "path": "repo-refs/coil-kt_coil/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2186
+ },
+ {
+  "path": "skills-expanded/topic-laborany-laborany-social-operator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2156
+ },
+ {
+  "path": "skills-expanded/crypto-trading-multiagent-system--gemini-config-skills-langsmith-observability-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2141
+ },
+ {
+  "path": "repo-refs/icsharpcode_AvalonEdit/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2116
+ },
+ {
+  "path": "repo-refs/gonzalonunez_Skeleton/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2099
+ },
+ {
+  "path": "repo-refs/timolins_react-hot-toast/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2078
+ },
+ {
+  "path": "repo-refs/NotNull92_hera-agent-godot/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2074
+ },
+ {
+  "path": "repo-refs/luukdv_hamburger-react/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2069
+ },
+ {
+  "path": "repo-refs/CircuitWall_jarela/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 2048
+ },
+ {
+  "path": "repo-refs/Mitriyweb_agent-team/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 2012
+ },
+ {
+  "path": "repo-refs/MMEHDI0606_ai-agent-foundation-template/.bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1986
+ },
+ {
+  "path": "repo-refs/MMEHDI0606_protom/.bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1986
+ },
+ {
+  "path": "repo-refs/mikebgrep_fork.recipes/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1937
+ },
+ {
+  "path": "skills-expanded/topic-wei63w-pm-manager-pm-fix/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1902
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/workflow/nodes/datasource/entities.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1895
+ },
+ {
+  "path": "skills-expanded/yoga-ai--cursor-rules-specify-rulesc/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1894
+ },
+ {
+  "path": "repo-refs/marjoballabani_hypergrep/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1893
+ },
+ {
+  "path": "repo-refs/NuGet_NuGet.Client/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1876
+ },
+ {
+  "path": "repo-refs/GHamrouni_Recommender/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1869
+ },
+ {
+  "path": "repo-refs/vue-a11y_eslint-plugin-vuejs-accessibility/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1865
+ },
+ {
+  "path": "skills-expanded/ghscan-shogo-labs-shogo-ai/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1812
+ },
+ {
+  "path": "skills-expanded/topic-yueheng-rgb-codex-factory-agent-harness-run/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1791
+ },
+ {
+  "path": "repo-refs/GarrettMooney_dotfiles/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1776
+ },
+ {
+  "path": "repo-refs/kasuken_spfx-copilot-dashboard/Contributing.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1732
+ },
+ {
+  "path": "repo-refs/liuxingqitd_skills-hub/CONTRIBUTING.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1731
+ },
+ {
+  "path": "repo-refs/Shayanthn_skills/AGENTS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1724
+ },
+ {
+  "path": "skills-expanded/mined-ohad6k-emulo/emulo/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1704
+ },
+ {
+  "path": "skills-expanded/mined-bear2u-my-skills/workthrough/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1661
+ },
+ {
+  "path": "skills-expanded/bhawana-foundation-skills-bhawna-design-sync-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1653
+ },
+ {
+  "path": "repo-refs/josippapez_ai-setup/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1591
+ },
+ {
+  "path": "repo-refs/HotspotVPN_YSHK_Reg_FinTech_Node/GEMINI.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1502
+ },
+ {
+  "path": "repo-refs/ahmed8mansour_LMS/CLAUDE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1496
+ },
+ {
+  "path": "skills-expanded/mined-boomsystel-code-openclaw-workspace/mia-twitter-stealth/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1480
+ },
+ {
+  "path": "skills-store/device-cool/scripts/legakan.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 1429
+ },
+ {
+  "path": "repo-refs/0x-Shashi_WEB3-AUDIT-SKILLS/CONTRIBUTORS.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1405
+ },
+ {
+  "path": "skills-expanded/topic-wei63w-pm-manager-pm-discover/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1357
+ },
+ {
+  "path": "repo-refs/ammawla_encode-toolkit/index.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1330
+ },
+ {
+  "path": "repo-refs/6xmarius_automationExercise.Tests/readme.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1322
+ },
+ {
+  "path": "repo-refs/RLuf_fzagent/ideapad_keyfix.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 1302
+ },
+ {
+  "path": "skills-expanded/ghscan-XposeMarket-SmallClaw/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1277
+ },
+ {
+  "path": "repo-refs/codecast-sh_codecast/setup-hosts.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 1256
+ },
+ {
+  "path": "repo-refs/intent-garden_wui/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1216
+ },
+ {
+  "path": "repo-refs/langgenius_dify/.devcontainer/post_create_command.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 1212
+ },
+ {
+  "path": "repo-refs/PaulJPhilp_EffectPatterns/restart-windsurf-mcp.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 1181
+ },
+ {
+  "path": "repo-refs/xvirobotics_metaskill/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1179
+ },
+ {
+  "path": "repo-refs/davidfowl_AspNetCoreDiagnosticScenarios/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1157
+ },
+ {
+  "path": "skills-store/demo-video/scripts/assemble-video.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1154
+ },
+ {
+  "path": "repo-refs/langgenius_dify/api/core/workflow/nodes/datasource/protocols.py",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1144
+ },
+ {
+  "path": "skills-expanded/ghscan-2233admin-Vibecoding_Game/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1131
+ },
+ {
+  "path": "repo-refs/BeardyWalrus_autopilot-jobhunt/setup_cron.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 1075
+ },
+ {
+  "path": "repo-refs/Patdolitse_piia-engram/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1075
+ },
+ {
+  "path": "skills-expanded/mined-sundial-org-awesome-openclaw-skills/text-processor/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1040
+ },
+ {
+  "path": "skills-expanded/topic-lofcz-LLMTornado-skill-generator/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1018
+ },
+ {
+  "path": "repo-refs/akmaru_dotagents/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 1016
+ },
+ {
+  "path": "repo-refs/Azure_azure-functions-core-tools/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 1001
+ },
+ {
+  "path": "skills-expanded/ghscan-Nickalus12-Loom/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 948
+ },
+ {
+  "path": "repo-refs/br1anchen_nixpkgs-config/fix_macos_updated.sh",
+  "tier": 2,
+  "reasons": [
+   "persistence"
+  ],
+  "size": 943
+ },
+ {
+  "path": "cleanup-skill-junk.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 938
+ },
+ {
+  "path": "skills-store/device-cool/scripts/clean.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 901
+ },
+ {
+  "path": "repo-refs/NAME0x0_CLAUDE_SETUP/bootstrap.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 897
+ },
+ {
+  "path": "repo-refs/ArgoZhang_BootstrapAdmin/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 883
+ },
+ {
+  "path": "repo-refs/baneeishaque_ljt-520_openclaw-backup/MEMORY.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 816
+ },
+ {
+  "path": "repo-refs/Josie29_dotfiles/install.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 805
+ },
+ {
+  "path": "repo-refs/BepInEx_BepInEx/STUB.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 793
+ },
+ {
+  "path": "repo-refs/HotspotVPN_YSHK_Reg_FinTech_Node/AI_START_HERE.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 767
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-neon-pulse/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 728
+ },
+ {
+  "path": "repo-refs/manaflow-ai_cmux/tests/test_ci_unit_test_spm_retry.sh",
+  "tier": 2,
+  "reasons": [
+   "data-destroy"
+  ],
+  "size": 717
+ },
+ {
+  "path": "skills-expanded/keiba--codex-skills-research-scout-skill/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 701
+ },
+ {
+  "path": "repo-refs/microsoft_playwright/tests/installation/fixture-scripts/download-selenium.js",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 670
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-type-cascade/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 654
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-signal-wave/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 641
+ },
+ {
+  "path": "repo-refs/alexfayers_llm-prompts/install.sh",
+  "tier": 2,
+  "reasons": [
+   "downloader-exec"
+  ],
+  "size": 622
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-metro-tick/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 605
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-split-wipe/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 602
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-checklist-pop/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 600
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-counter-rise/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 596
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-lockup-sting/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 588
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-typewriter-log/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 566
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-map-route/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 557
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-dial-gauge/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 547
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-prism-fold/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 545
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-glass-panel/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 544
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-horizon-scan/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 541
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-ticker-tape/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 538
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-pixel-rain/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 536
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-ink-bloom/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 532
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-soft-mesh/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 532
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-spotlight-stage/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 531
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-stack-cards/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 526
+ },
+ {
+  "path": "skills-expanded/topic-try-agora-qvr-malicious-skill-unicode/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 512
+ },
+ {
+  "path": "skills-expanded/ghscan-TimLai666-agent/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 487
+ },
+ {
+  "path": "skills-expanded/ghscan-Scrulius-SuperEnchanter/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 400
+ },
+ {
+  "path": "repo-refs/HotspotVPN_YSHK_Reg_FinTech_Node/README.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 358
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/proactive-amcp/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 314
+ },
+ {
+  "path": "skills-expanded/mined-LeoYeAI-openclaw-master-skills/avengers-assemble/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 221
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-spotlight-stage/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 213
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-typewriter-log/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 211
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-checklist-pop/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 209
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-type-cascade/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 207
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-counter-rise/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 207
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-lockup-sting/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 207
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-horizon-scan/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 207
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-glass-panel/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 205
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-signal-wave/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 205
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-ticker-tape/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 205
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-stack-cards/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 205
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-pixel-rain/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 203
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-dial-gauge/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 203
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-neon-pulse/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 203
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-prism-fold/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 203
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-split-wipe/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 203
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-metro-tick/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 203
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-ink-bloom/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 201
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-map-route/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 201
+ },
+ {
+  "path": "skills-expanded/mined-Unclecheng-li-AI_Animation/hero-soft-mesh/REPO-REF.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 201
+ },
+ {
+  "path": "skills-expanded/ghscan-openJiuwen-ai-agent-core-java/SKILL.md",
+  "tier": 2,
+  "reasons": [
+   "hidden-unicode"
+  ],
+  "size": 114
+ }
+]

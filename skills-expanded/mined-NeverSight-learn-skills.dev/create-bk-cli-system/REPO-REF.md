@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tencentblueking/bk-cli/create-bk-cli-system/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 当需要为 bk-cli 扩展 system 能力时使用：无论是新增顶层 system、给已有 system 增加 action、还是为大 system 增加一层 subsystem，都应先使用此技能。技能会先检查目标 system/subsystem 是否已存在，遇到多模块 API 列表时先让用户在扁平 action 与一层 subsystem 两种命令形态中选择，再复用共享的 YAML/Go 选

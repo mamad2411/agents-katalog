@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/cookabc/awesome-skills/chunxiang-rocket/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 纯想独立开发火箭课程 - AI编程实战指南。包含GEB分形文档系统、Vite+React+TailwindCSS环境初始化、shadcn/ui设计系统、微拟物光影质感设计、Landing Page架构规范、动画提升、Supabase接入全流程提示词。

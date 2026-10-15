@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/khanh20/demotool/fb-automation-tool/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Quản lý và tự động hóa đa tài khoản Facebook bằng Playwright (Chrome hiển thị) kết hợp Gemini AI sinh bài viết tự nhiên theo ngữ cảnh ngày/giờ. Hỗ trợ đăng bài lên tường cá nhân, đăng bài vào hội nhóm

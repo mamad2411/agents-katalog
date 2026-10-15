@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/administrative/skills/publikationsstrategie-projekt/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Publikationsstrategie Projekt: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Verhandlungs- oder Eskalationslinie. Fachgebiet: DFG-Förderantrag. Route: publikationsstrategie-projekt.'

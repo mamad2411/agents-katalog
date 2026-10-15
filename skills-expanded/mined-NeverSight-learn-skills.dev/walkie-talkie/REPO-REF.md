@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ypyt1/all-skills/walkie-talkie/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: WhatsApp 语音/文字双模对话：收到语音消息先本地转写（whisper CLI），再正常推理，并同时返回文字+语音。

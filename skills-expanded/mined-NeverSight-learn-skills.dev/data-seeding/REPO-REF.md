@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/sgcarstrends/sgcarstrends/data-seeding/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Create or update database seed scripts for development and testing environments. Use when setting up test data or initializing development databases.

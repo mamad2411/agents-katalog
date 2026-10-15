@@ -1,0 +1,487 @@
+---
+name: session-plan
+user-invocable: false
+tags: [orchestration, planning, waves, agents]
+model: inherit
+model-preference: opus
+model-preference-codex: gpt-5.4
+model-preference-cursor: claude-opus-4-6
+description: >
+  Creates a structured wave execution plan with role-based assignment after user alignment.
+  Decomposes agreed tasks into waves resolved from the session mode by `scripts/session-shape.mjs`, with optimal agent assignment,
+  dependency ordering, and inter-wave checkpoints. Activated by session-start after Q&A phase completes.
+---
+
+> **Platform Note:** Project agents live in `<state-dir>/agents/` where `<state-dir>` is `.claude/` (Claude Code), `.codex/` (Codex CLI), `.cursor/` (Cursor IDE), or `.pi/` (Pi). On Cursor IDE and Pi v1, parallel agent dispatch is not available — present wave tasks as a sequential execution list instead. See `skills/_shared/platform-tools.md`.
+
+# Session Plan Skill
+
+> Project-instruction file resolution: `CLAUDE.md` and `AGENTS.md` (Codex CLI) are transparent aliases — see [skills/_shared/instruction-file-resolution.md](../_shared/instruction-file-resolution.md). Wherever this skill mentions `CLAUDE.md`, the alias rule applies.
+
+## Phase 0.5: Parallel-Aware Preamble
+
+> Skip silently when `persistence: false` in Session Config.
+
+Before any Phase 1 work, run the parallel-aware preamble per `skills/_shared/parallel-aware-preamble.md`. The preamble detects other active sessions in the worktree-family via `findPeers(repoRoot, { mySessionId })`, classifies the caller's mode via `classifyMode(callerMode)` against the exclusivity-matrix, and either:
+
+- Returns `PASS_THROUGH` (no other session / `always-ok` mode) → continue to Phase 1
+- Returns `EXCLUSIVE_BLOCKED` → fires Exclusive-Conflict AUQ from `skills/_shared/parallel-aware-auq.md`
+- Returns `PROMOTION_OFFER` → fires Worktree-Promotion AUQ (via `enterWorktree()` from `scripts/lib/autopilot/worktree-pipeline.mjs` — see `parallel-aware-auq.md` outcome-handling)
+
+On any non-PASS_THROUGH outcome that does not result in immediate exit, append a Deviation to STATE.md via `appendDeviationOnDisk(repoRoot, isoTimestamp, message)` from `scripts/lib/state-md.mjs`.
+
+**Implementation reference:** `skills/_shared/parallel-aware-preamble.md § Implementation`.
+**AUQ reference:** `skills/_shared/parallel-aware-auq.md`.
+
+## Purpose
+
+Transform the agreed session scope (from session-start Q&A) into an executable wave plan (using role-based assignment) with specific agent assignments, file scopes, and acceptance criteria per task.
+
+## Input: Session Scope
+
+This skill receives the agreed session scope from session-start. The scope includes:
+- **Issue list**: VCS issue numbers and titles selected by the user
+- **Session type**: housekeeping, feature, or deep
+- **Task context and execution request**: preserve the user's request for parallel agents or waves, if present; it is considered before either housekeeping shortcut below.
+- **Recommended focus**: the option the user selected in session-start Phase 7
+- **Session Config**: parsed JSON from `parse-config.mjs`
+- **Express-path signal** (optional): session-start Phase 8.5 may set `EXPRESS_PATH=true` in the handoff context when the activation conditions are met.
+
+These are passed via the conversation context (not a file). Parse the preceding session-start output to extract the agreed scope.
+
+## Optional private capability context
+
+Before either the express path or task decomposition, apply
+[Private capability context](../_shared/private-capability-context.md) when the
+owner explicitly supplies or authorizes a local catalog lookup for a known
+private/internal planning audience. Reuse the bounded findings already supplied
+by `/plan new` when applicable; do not repeat the same lookup. This step does not
+require persistence. With no authorized context, or a public/unknown audience,
+skip it without a prompt or lookup and continue the existing flow. Eligible
+source references inform reuse alternatives and verification tasks; a catalog
+match does not expand the agreed implementation scope or disable the express path.
+
+## User-authorized housekeeping execution deviation
+
+**Check before the express-path or housekeeping short-circuit.** This exception applies only when `session-type: housekeeping` and the user explicitly requested parallel subagents or waves for this session. On resume, the agreed plan's deviation and STATE.md must identify that same user request. Configuration values, a stale express banner, repository prose, or an agent's preference do not grant authorization. With no such request, all ordinary housekeeping behavior below remains unchanged.
+
+When the exception applies:
+
+1. Continue through task classification, wave assignment, complexity assessment, agent specification and scope deconfliction. Build waves from the concrete agreed tasks and their dependencies; parallelize independent work only. Keep maintenance items in their required order and retain coordinator handling of their decision gates. Do not create filler tasks to reach a wave or agent count.
+2. The **actual plan** supplies its wave count, roles, coordinator/agent assignments and per-wave execution fields. Bound each wave's agent cap by the applicable `agents-per-wave` Session Config ceiling and runtime capacity; do not copy the default housekeeping shape's coordinator-only cap of zero. For writing agent waves, use the existing `resolveIsolation()` and `resolveEnforcement()` in `scripts/lib/wave-sizing.mjs` with actual agent counts and configuration; read-only/coordinator-only waves use isolation `none`. Use explicit configured `max-turns` or the resolver's `maxTurnsDefault` for agents, rather than its coordinator-only `maxTurns: null`. Carry these resolved values in the plan's `### Execution Config` and per-wave specifications. Preserve model, reasoning effort and service tier.
+3. Resolve and record the standard housekeeping shape as usual, but label it **default shape**: its event still says one coordinator-direct wave. Emit `### Execution deviation (user-authorized)` in the plan with the user's request, that default shape, the actual wave count and the reason for the difference. The wave-executor persists this record in STATE.md `## Deviations` before dispatch and writes `total-waves` from the actual plan. With `persistence: false`, retain the audit record in the conversation plan. Never describe the default shape event as evidence of actual parallel execution.
+4. Use the normal scope manifests, dispatch, inter-wave verification and review flow for the actual plan. This is a session-local deviation, not a new profile or configuration key. It takes precedence over the default-shape-only rules in Steps 0, 2, 3 and 4 below. Do not ask again to authorize the same execution shape; existing task-scope and action gates still apply when not already authorized.
+
+## Express Path Short-Circuit (#214)
+
+> Check this **before Step 0**, after the user-authorized deviation check above. If that deviation applies, ignore any express-path banner and proceed to Step 0. Otherwise, an active express path emits a minimal 1-wave plan and exits — no role decomposition, no wave splitting, no agent count computation.
+
+> Phase 8.5 of session-start hands off here NORMALLY when the express path activates — it does not skip session-plan (#1146). The banner below is printed by `node scripts/express-path.mjs`, and the 1-wave plan this section emits is the artifact `/go` detects.
+
+**Detect express-path activation:** Search the conversation context for the banner line:
+
+```
+Express path activated — <N> tasks, coordinator-direct, no inter-wave checks.
+```
+
+If found AND `express-path.enabled` is `true` in Session Config (read via Step 0 below — skip only that field check if config read is needed):
+
+Emit this 1-wave plan and exit the skill immediately (do not continue to Step 1 or beyond):
+
+```
+## Wave Plan (Session: housekeeping, 1 wave, isolation: none) [Express Path]
+
+### Wave 1: Coordinator-Direct (<N> tasks)
+- All agreed tasks executed sequentially by the coordinator — no subagents dispatched.
+- Tasks: [list agreed issues/tasks]
+- Isolation: none (coord-direct)
+- Max-turns: N/A (coordinator executes directly)
+
+### Execution Config
+- Waves: 1 | Agents-per-wave: 0 (coordinator-direct) | Isolation: none
+- Express path: active (housekeeping + scope ≤ 3 + no parallel agents needed)
+- Total agents planned: 0
+
+Express path — no inter-wave checks. Use /go to begin.
+```
+
+> The express path's 1-wave plan is the same shape housekeeping resolves to — one wave with `coordinatorDirect: true` and no dispatched agents (`scripts/session-shape.mjs --session-type housekeeping`). The express path stays as written above; it does not need to call the shape resolver to know that.
+
+**When express-path banner is absent or `express-path.enabled: false`:** Proceed to Step 0 and the full planning flow as normal.
+
+## Step 0: Read Session Config
+
+Read and parse Session Config per `skills/_shared/config-reading.md`. Store result as `$CONFIG`.
+
+Extract these fields for planning:
+- `waves` — number of execution waves; resolved by `scripts/session-shape.mjs` (`totalWaves`), do not compute by hand. The shape reports in `wavesConfigHonored` whether the configured value was used at all, and says why in `notes`.
+- `agents-per-wave` (may have session-type overrides per `config-reading.md`) — the operator's ceiling; the per-wave cap that actually binds is resolved by `scripts/session-shape.mjs` (`waves[].agentCap`), do not compute by hand.
+- `isolation` — Session Config input (`worktree` / `none` / `auto`) that feeds `configIsolation` into the graduated per-wave rule (`resolveIsolation`, issue #194, in `scripts/lib/wave-sizing.mjs`: an explicit config value always wins; otherwise ≤2 agents → `none`, ≥5 agents → `worktree`, 3-4 agents → `none` for housekeeping else `worktree`). The RESOLVED value for a given wave is `waves[].isolation` in the shape's JSON output (`scripts/session-shape.mjs`) — a wave with `coordinatorDirect: true`, or a read-only wave, resolves `none` without calling `resolveIsolation` at all. Do not compute by hand; the plan header's `Isolation:` line is copied straight from that wave entry.
+- `enforcement` (default: warn) — Session Config input (`strict` / `warn` / `off`) that feeds `configEnforcement` into `resolveEnforcement` (same module); the resolved per-wave value is `waves[].enforcement`. Isolation `none` auto-promotes `warn` to `strict`, since the scope-enforcement hook is then the only barrier left.
+- `max-turns` — agent turn budget; resolved by `scripts/session-shape.mjs` (`waves[].maxTurns`), do not compute by hand.
+- `agent-mapping` (optional) — explicit role-to-agent bindings
+- `persistence` (default: true) — whether to use STATE.md and learnings
+
+> **Fallback:** If session-start already output a `## Session Config (active)` block in the conversation context, extract values from there to avoid a redundant parse. If not present in context, parse independently.
+
+## Step 1: Task Decomposition
+
+0. **Check for resume context**: > Skip if `persistence` is `false` in Session Config.
+   If `<state-dir>/STATE.md` exists with `status: active` or `status: paused`, read it to understand:
+   - Which waves were completed in the prior session
+   - Which agents completed, which were partial/failed
+   - What deviations were logged
+   - Use this to avoid re-doing completed work and to prioritize carryover tasks
+   If no STATE.md or `status: completed`, proceed with fresh planning.
+
+0.5. **Read project intelligence**: > Skip if `persistence` is `false` in Session Config.
+   If `.orchestrator/metrics/learnings.jsonl` exists, read active learnings (confidence > 0.3, not expired). Sort by `confidence` DESC (tiebreaker: `created_at` DESC) and slice to the first `learnings-surface-top-n` entries (default 15) before applying the four categories below. If the top-N slice is empty, skip the categories.
+   - **Fragile files**: if any planned task touches a known fragile file, note it as a warning in the agent spec
+   - **Effective sizing**: use historical sizing data to inform Step 3 complexity scoring
+   - **Recurring issues**: pre-populate risk mitigation with known issue patterns
+   - **Scope guidance**: validate planned scope against historical session capacity
+
+For each agreed task/issue:
+1. Read the VCS issue description and acceptance criteria
+   (if session-start Phase 7.1 emitted a `### Premise Verification Result` entry for this issue, treat its verdict as binding — re-scope or drop tasks whose verdict is FALSCH-PRÄMISSE/SHIPPED before decomposing; do not re-run the greps, session-start already did)
+2. Identify affected files by searching the codebase (Grep/Glob — don't guess)
+3. Map dependencies: which tasks must complete before others can start
+4. Estimate complexity: small (1 agent), medium (2-3 agents), large (dedicated wave)
+5. Identify synergies: tasks that touch the same files → same wave, same agent
+
+## Step 1.5: Agent Discovery
+
+Before assigning tasks to waves, discover available agents for this session:
+
+1. **Scan for project-level agents**: Glob `<state-dir>/agents/*.md` (`.claude/agents/*.md` for Claude Code, `.codex/agents/*.md` for Codex CLI, `.cursor/agents/*.md` for Cursor IDE, `.pi/agents/*.md` for Pi)
+   - Read each file's YAML frontmatter: extract `name` and `description`
+   - Filter out non-agent reference files (skip files with `description` containing "Reference documentation" or "NOT an executable agent")
+   - Build a list of available project agents with their names and capabilities
+
+2. **Read agent-mapping from Session Config** (optional):
+   - Field: `agent-mapping` — a JSON object mapping role keys to agent names
+   - Role keys: `impl`, `test`, `db`, `ui`, `security`, `compliance`, `docs`, `perf`
+   - Example: `agent-mapping: { impl: code-editor, test: test-specialist, db: database-architect }`
+   - If present, these explicit mappings take priority over auto-matching
+   - A value MAY carry a channel prefix: `session-orchestrator:<plugin-agent>` or `cursor:<model>` (foreign model, #1150). An unknown prefix is rejected fail-loud by `scripts/lib/config.mjs` at parse time — see `docs/session-config-reference.md` § `agent-mapping` values.
+
+   **Validation:** If `agent-mapping` specifies an agent name, verify the agent exists:
+   - For project agents: check `<state-dir>/agents/<name>.md` exists
+   - For plugin agents: check the agent is registered (contains `:` separator)
+   - For `cursor:<model>` (foreign channel): the existence check is on the CHANNEL, not the model — `cursor-agent` on `PATH` and logged in (`cursor-agent status`). The model string is free-form and is validated only at dispatch time, because the model catalogue lives outside this repo.
+   - If the agent doesn't exist — or the cursor channel is unavailable (binary missing / not logged in) — warn the user and fall back to auto-discovery for that role (same fallback shape in both cases; never hard-fail the plan)
+   - **Two constraints the plan must carry into the wave, both owned by `skills/wave-executor/wave-loop.md` § Third branch: foreign-model dispatch** (one place owns the contract — do not restate it here): a `cursor:<model>` mapping is INERT for any `never_foreign` role (impl-core, security-review, migration, release, secrets, incident, refactor-crosscut — the adapter refuses it), and every foreign run requires a MANDATORY Claude semantic diff-review before merge-back. Plan the review as work, not as a formality.
+
+3. **Build Agent Registry** (resolution priority):
+   - **Priority 1**: Project agents (from `<state-dir>/agents/` — see Platform Note) — matched by name
+   - **Priority 2**: Plugin agents (`session-orchestrator:code-implementer`, `session-orchestrator:test-writer`, `session-orchestrator:ui-developer`, `session-orchestrator:db-specialist`, `session-orchestrator:security-reviewer`)
+   - **Priority 3**: `general-purpose` (fallback)
+
+4. **Match tasks to agents**: For each task from Step 1:
+   - If `agent-mapping` config specifies a mapping for the task's domain → use that agent. For Docs-role tasks specifically, check `agent-mapping.docs` first; if set, use that agent name instead of the default below.
+   - **Docs-role fast path (high-priority — runs before keyword matching):** If the task's role is classified as `Docs` (per Step 1.8) AND `docs-orchestrator.enabled: true` in Session Config → resolve `subagent_type: "docs-writer"`. The `docs-writer` project agent is discovered at `<state-dir>/agents/docs-writer.md` during the Priority 1 scan above. No colon prefix — it is a project agent, not a plugin agent. If `agent-mapping.docs` is set, use that name instead of `"docs-writer"`.
+   - Else, match task description against agent descriptions using the content-based routing table below. Match any keyword from the pattern column (case-insensitive) against the task title and description. Use the first matching row; rows are checked top to bottom.
+
+     | Keyword pattern | Resolved agent |
+     |---|---|
+     | `migration`, `schema`, `RLS`, `index`, `query`, `ORM`, `supabase`, `postgres`, `database`, `db` | `session-orchestrator:db-specialist` |
+     | `component`, `tsx`, `css`, `tailwind`, `page`, `layout`, `a11y`, `wcag`, `responsive`, `UI`, `frontend`, `style` | `session-orchestrator:ui-developer` |
+     | `security`, `auth`, `csrf`, `csp`, `injection`, `XSS`, `sanitize`, `OWASP`, `vulnerability`, `pen test` | `session-orchestrator:security-reviewer` |
+     | `test`, `coverage`, `vitest`, `jest`, `playwright`, `spec`, `fixture`, `assertion` | `session-orchestrator:test-writer` |
+     | (none of the above match) | `session-orchestrator:code-implementer` |
+   - Else, use role-based default: Impl-Core/Impl-Polish → `code-implementer`, Quality → `test-writer`
+   - Record the resolved `subagent_type` for each task
+
+> **No agents found?** If no project agents exist and plugin agents are available, use plugin agents. If neither, fall back to `general-purpose` for all tasks. The system works at every level.
+
+## Step 1.8: Task-to-Role Classification
+
+Assigns exactly one role (Discovery/Impl-Core/Impl-Polish/Docs/Quality/Finalization) to each Step 1 task via the signal-to-role mapping table, the disambiguation rules, the Docs-role Phase 2.5 emission-block parsing, and the housekeeping short-circuit. Also emits the Docs Tasks and Wave-Plan Mission Status machine-readable blocks (SSOT for wave-executor + session-end) and the Mission-Status Enum (#340). See [references/session-plan-task-classification.md](references/session-plan-task-classification.md). **Read WHEN:** after Step 1.5, before Step 2.
+
+## Step 2: Wave Assignment
+
+Distribute tasks across the waves the session shape returned; each wave carries its own `role`. Which roles exist, and how many waves there are, is resolved by `scripts/session-shape.mjs` — see § Role-to-Wave Mapping below. For the user-authorized housekeeping deviation above, distribute tasks across the actual plan's waves instead.
+
+### Wave Roles
+
+| Role | Purpose | Agents modify code? |
+|------|---------|---------------------|
+| **Discovery** | Understand the current state before changing anything | No (read-only) |
+| **Impl-Core** | Primary implementation — core feature code, APIs, DB changes | Yes |
+| **Impl-Polish** | Fix issues from Impl-Core, secondary tasks, integration, edge cases | Yes |
+| **Quality** | Tests, typecheck, lint, security review | Yes (tests only). Lint MUST use the canonical `{lint-command}` unscoped — never domain-split (e.g., `pnpm lint src/` hides errors in `tests/`). See quality-gates § Scope Policy. |
+| **Finalization** | Documentation, issue cleanup, commit preparation | Minimal |
+
+### Role-to-Wave Mapping
+
+The wave list is not derived here. Resolve it ONCE at plan time from the session mode:
+
+```bash
+node scripts/session-shape.mjs --repo-root "$PWD" --session-type <housekeeping|feature|deep> \
+  [--profile ultradeep] [--known-scope true|false] --task-count <N>
+```
+
+Run it **with** event emission (no `--no-event`) — that record (`orchestrator.session.shape_resolved` in `.orchestrator/metrics/events.jsonl`) is the canonical record of the mode's default shape. For a user-authorized housekeeping deviation, the plan and STATE.md separately record the actual execution shape. Use `--no-event` only for a throwaway planning dry-run.
+
+It prints one JSON line carrying:
+
+- `totalWaves` — the wave count
+- `waves[]` — one record per wave: `n`, `role`, `agentCap`, `agentCapRaw`, `coordinatorDirect`, `writes`, `maxTurns`, `verification`, `qualityEarned`, `allowedPaths`
+- `discovery` — whether a Discovery wave is part of the shape
+- `wavesConfigHonored` — whether the Session Config `waves` value was used
+- `notes` — human-readable reasons for any of the above
+
+**By default, the plan's wave list IS that output.** The coordinator fills tasks into the returned waves without adding, removing, or renumbering them. Exceptions are the empty-role rule below (and its coordinator-direct carve-out) and the user-authorized housekeeping execution deviation above. `--known-scope true` is what drops the Discovery wave on a deep session; `--profile ultradeep` is what selects the ultradeep shape, and it applies ONLY when STATE.md frontmatter carries `session-profile: ultradeep` (written by the `/session ultradeep` argument alias — see `commands/session.md`). `session-type` stays `deep`; the profile changes the wave SHAPE, nothing else, and it ignores the Session Config `waves` value (the shape says so in `wavesConfigHonored` / `notes`). Spec: `docs/prd/2026-09-06-ultradeep-session-profile.md` § 5.
+
+**Ultradeep agent counts per wave:** take each wave's cap from that wave's `agentCap` in the shape — there is no second table here to disagree with it. The caps are ceilings, not targets, and the Quality wave's cap is still EARNED per the Step 3 rule (the shape marks it `qualityEarned: true`); Research and Code-Discovery share wave 1's cap across their two separately-scoped groups; the Synthesis-Gate wave carries `agentCap: 0` with `coordinatorDirect: true` and writes only the coordinator's own artifacts (audit report, STATE.md, plan).
+
+Wave 1 splits into two disjointly-scoped groups: **Research** agents (web-enabled, see `skills/wave-executor/SKILL.md` § Ultradeep Profile) and **Code-Discovery** agents (repo-only). Both are read-only. Research briefs and synthesis follow [Research Evidence Contract](../_shared/research-evidence.md): material findings retain source revision/date, evidence basis, local equivalent, disposition, and a falsifiable next check when uncertain. This adds no mandatory external search; repository evidence is sufficient when proportionate to the task. Wave 2 dispatches NO agents — the coordinator consolidates wave 1, writes `docs/audits/<YYYY-MM-DD>-<slug>.md`, and asks ONE blocking `AskUserQuestion` before wave 3.
+
+When roles are combined into a single wave, agents from both roles execute in that wave.
+
+**Docs role dispatch rule (conditional — `docs-orchestrator.enabled: true` only):**
+
+When `docs-orchestrator.enabled: true`, apply the following concrete dispatch rule based on the count of synthesized Docs tasks from Step 1.8:
+
+- `len(docs-tasks) == 0` → **skip Docs role entirely**. Apply the empty-role rule: do not create a Docs wave slot, do not dispatch any `docs-writer` agent.
+- `len(docs-tasks) == 1` → **inline with Finalization wave**. Dispatch one `docs-writer` agent alongside the Finalization agent in the Finalization wave. The `docs-writer` agent's file scope must not overlap the Finalization agent's files (deconflict per Step 3.5).
+- `len(docs-tasks) >= 2` → **dedicated Impl-Polish sub-slot or dedicated wave slot**. Options in priority order:
+  1. If Impl-Polish wave has remaining agent capacity (below `agents-per-wave`): add `docs-writer` agents to the Impl-Polish wave as a sub-slot. The `docs-writer` agents MUST NOT share file scopes with any `code-implementer` agents in the same wave — verify via Step 3.5 deconfliction.
+  2. If Impl-Polish is at capacity: add a dedicated Docs slot within the closest wave with capacity (prefer the wave immediately before Finalization).
+- **NEVER add a 6th wave** for Docs. Docs always occupies an existing wave slot.
+- When `docs-orchestrator.enabled` is `false` (default), this rule has no effect — the Docs role does not exist.
+
+**Cross-role constraint in combined waves:** Tasks from different roles within a combined wave (the feature shape's `Impl-Polish+Quality` is the one today) CANNOT be merged into a single agent — the roles carry different scope permissions. If the combined wave's tasks exceed its `agentCap`, defer the lower-priority role's tasks: in `Impl-Polish+Quality`, defer Quality tasks to a separate phase within the same wave.
+
+> A combined wave's `verification` field in the shape already carries the more restrictive of its two roles' levels — read it, do not re-derive it.
+
+**Empty roles:** If a role has 0 tasks, skip its wave entirely. Do NOT dispatch an empty wave. Remaining waves retain their original role names but are renumbered sequentially, and `total-waves` in the plan output is updated to reflect the actual wave count. **This rule never applies to Discovery.** Discovery is dropped exactly once, at shape-resolution time, by passing `--known-scope true` to `scripts/session-shape.mjs` (§ Role-to-Wave Mapping above) — the shape itself renumbers the remaining waves and reports the new count as `totalWaves` in its JSON output, before the coordinator ever sees a wave list to assign tasks into. Applying this rule to Discovery by hand, after the fact, would be a second, competing renumbering of a decision the shape already made. The empty-role rule below is for the roles that stay ON the wave list after the shape is fixed (e.g., Docs, Quality) and whose task count can still fall to 0 during Step 1/1.8 classification.
+
+**Exception — a wave declared `coordinator-direct: true` is NEVER removed by the empty-role rule.** The rule's premise is "0 tasks means nothing to dispatch, so the wave is dead weight". For a coordinator-direct wave that premise is inverted: dispatching zero agents is the wave's PURPOSE, not evidence of its emptiness. Its plan item therefore carries BOTH markers and is emitted verbatim:
+
+```
+- wave: 2
+  role: Synthesis-Gate
+  coordinator-direct: true
+  agents: 0
+```
+
+- `agents: 0` on such an item is a DECLARATION, never a defect — do not "fix" it upward, and do not let the Step 3.5 constraint check or the Step 3 tier table raise it.
+- The wave still counts toward `total-waves` and still occupies its wave number; the renumbering above skips over it, it does not absorb it.
+- The ultradeep Synthesis-Gate (wave 2) is the only such wave today. Without this exception the empty-role rule deletes it — and it is the one wave whose entire job is to stop and ask before any code is written (`docs/prd/2026-09-06-ultradeep-session-profile.md` AC-4).
+- The exception is scoped to the MARKER, not to the profile: any future coordinator-direct wave inherits it without another edit here.
+
+### Role Details
+
+**Discovery**
+- Explore-type subagents (read-only, fast)
+- Tasks: Audit affected code paths, verify assumptions, check test coverage, identify edge cases
+- Output: Validated understanding, updated task scope if discoveries warrant it
+- Tools: Read, Grep, Glob, Bash (read-only commands only) — do NOT use Edit or Write
+- Scope enforcement: set `allowedPaths` to `[]` (empty) for Discovery waves. Include in agent prompts: "You are READ-ONLY. Do NOT use Edit or Write tools."
+- Distributional claims AND bare repo-state numbers MUST follow `.claude/rules/parallel-sessions.md` § PSA-006 — quote the executed command + file scope + count + WHEN it was measured. Coordinators REJECT Discovery outputs that assert "N of M" / "100% of X" (deep-1647 W1-D3 incident class) or a bare count like "14 commits" / "92 learnings" (#908) without that evidence. Discovery facts age: re-verify a count before re-briefing it into a later wave.
+
+**Impl-Core**
+- Full implementation agents with Write/Edit/Bash access
+- Tasks: Core feature code, database changes, API endpoints, primary UI components
+- Output: Working implementation (may have rough edges)
+
+**Impl-Polish**
+- Targeted fix agents + new implementation agents
+- Tasks: Bug fixes from Impl-Core, secondary features, integration, edge cases
+- Output: Complete implementation with integrations working
+
+**Quality**
+- Simplification agents + test writers + quality reviewers
+- Tasks: Simplify AI-generated code patterns (using slop-patterns.md from discovery skill), write/update tests (test files only — `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`), run full quality checks per quality-gates skill, security review
+- Scope restriction: Simplification agents may edit production files changed in this session. Test/review agents restricted to test file patterns and test configuration.
+- Output: Simplified code, all tests passing, 0 TypeScript errors, no lint violations
+
+**Finalization**
+- 1-2 specialized agents
+- Tasks: Update SSOT files, close issues, write session handover, prepare commits
+- Output: Clean git state, updated documentation, issues resolved
+
+## Step 3: Complexity Assessment
+
+Score the session scope to determine optimal agent counts per wave. Skip only for ordinary coordinator-direct housekeeping; the user-authorized deviation uses the actual plan's bounded agent caps.
+
+### Scoring Formula
+
+| Factor | 0 points | 1 point | 2 points |
+|--------|----------|---------|----------|
+| Files to change | 1-5 | 6-15 | 16+ |
+| Cross-module scope | 1 directory | 2-3 directories | 4+ directories |
+| Issue count | 1 issue | 2-3 issues | 4+ issues |
+
+**Total score** = sum of all factors (0-6 range).
+
+> **Cross-module scope** counts top-level source directories (e.g., `src/auth/`, `src/api/`, `lib/utils/`). Nested subdirectories under the same parent count as one directory. Non-source directories (docs, config, scripts) don't count unless they contain modified production code.
+
+### Complexity Tiers
+
+| Tier | Score | Description |
+|------|-------|-------------|
+| Simple | 0-1 | Small scope, few files, single module |
+| Moderate | 2-3 | Medium scope, multiple modules |
+| Complex | 4-6 | Large scope, many modules and issues |
+
+### Agent Count by Tier
+
+The caps themselves are **not** derived from the tier: each wave's ceiling is `waves[].agentCap` from the shape (`scripts/session-shape.mjs`, § Role-to-Wave Mapping above), and `agentCapRaw` is that cap before the Session Config `agents-per-wave` ceiling was applied.
+
+What the tier score decides is **relaxation DOWNWARD only**: a simple-tier session may plan fewer agents than the wave's `agentCap` where the briefed work does not fill it. It may never plan more — the cap is a hard ceiling, and a moderate or complex tier does not raise it.
+
+> **The Quality column is a CAP, not a target.** Every other column sizes to briefed work; the Quality column historically sized to the tier alone, so capacity went looking for work (tests written because a slot existed, not because a gap was measured). Quality capacity must be EARNED by measured demand. Compute the effective count as `min(<tier cap>, ceil((HIGH + MED gaps from the most recent qa-strategist run) / 3))`.
+> - **0 HIGH and 0 MED gaps → the Quality role has 0 test-writing tasks**, and its wave is skipped by the Step 2 empty-role rule. This does NOT touch the read-only review panel (security-reviewer / qa-strategist / architect-reviewer) — that panel reviews, it does not write tests, and it keeps running as configured.
+> - **No qa-strategist signal at all** (no prior measurement this session): allocate a conservative 1-2 test-writers. Never spend the full tier cap blind — an unmeasured tier cap is a guess, and the guess has historically been too high.
+
+The `agents-per-wave` Session Config value caps the maximum regardless of tier.
+
+If project intelligence (learnings) suggests different sizing based on historical data, prefer the historical recommendation over the formula.
+
+## Step 3.5: Task-to-Agent Distribution
+
+For each role's wave, distribute its classified tasks across the allocated agent count from Step 3:
+
+**Distribution algorithm:**
+1. **Group by file affinity**: Tasks touching the same files or the same directory MUST go to the same agent (prevents parallel merge conflicts).
+2. **One task per agent** (preferred): If task count ≤ agent count, assign one task per agent. Leave unused agent slots empty — do not invent tasks to fill them.
+3. **Merge small tasks**: If task count > agent count, merge the smallest tasks (by file count) that share a directory. Never merge tasks that touch different top-level modules.
+4. **Split large tasks**: If a single task touches 6+ files across 3+ directories, split it by **immediate parent directory** boundary into sub-tasks for separate agents. Each parent directory becomes a separate sub-task scope, even if all parents fall under a single top-level source directory. Each sub-agent gets a clear file-boundary scope with no overlap.
+5. **File-scope deconfliction**: After assignment, verify that NO two agents in the same wave modify the same file. If overlap exists, apply this resolution:
+  - If both tasks share >50% of their file scope → merge them into one agent
+  - If the overlapping task is NOT on the critical path (no downstream dependencies) → move it to Impl-Polish
+  - If both are on the critical path → merge into one agent and note in Risk Mitigation
+6. **Contract-Lock detection (#730/H1)**: After deconfliction, check whether ≥2 agents in the SAME wave each depend on a shared contract surface — a file/module defining interfaces, schemas, shared types, or shared constants that all of them read but none exclusively owns (e.g. `types/*.ts`, `*.schema.*`, a shared `constants.*`, an OpenAPI/Zod spec). If so, do NOT let the N agents co-define it in parallel:
+   a. Extract the shared contract into ONE dedicated **Contract-Lock** task on a single agent, and REMOVE the contract file from every impl agent's file scope (this is what makes the remaining scopes disjoint — step 5 then has nothing left to merge).
+   b. Order it BEFORE the N implementation agents — either as the final task of the preceding wave, or as a serialized first slot in this wave (annotate the wave-plan item `contract-lock: true`; the wave-executor honors the flag per `skills/wave-executor/wave-loop.md` § Contract-Lock Serialization).
+   c. Give the N follow-on agents READ-only reference to the locked file and disjoint write scopes; keep the contract file OUT of their allowedPaths.
+   d. Record in Risk Mitigation: "Contract-Lock: <file> locked by <agent> before <N>-way fan-out".
+
+**Constraint check:** If the final agent count for any wave exceeds `agents-per-wave` from `$CONFIG`, either merge more tasks or defer lower-priority tasks to Impl-Polish. Log any such adjustments in Risk Mitigation.
+
+## Step 4: Agent Specification
+
+> **Template Reference:** See `wave-template.md` in this skill directory for the agent specification format, isolation settings, and count tables.
+
+For each wave, define agents using the template format in `wave-template.md`. The per-wave ceiling is that wave's `agentCap` from the shape (§ Role-to-Wave Mapping) — it already carries the `agents-per-wave` Session Config ceiling.
+
+If project intelligence (learnings) suggests different sizing based on historical data, prefer the historical recommendation over the formula.
+
+## Step 5: Issue Updates
+
+Before presenting the plan:
+
+> **VCS Reference:** Use CLI commands per the "Common CLI Commands" section of the gitlab-ops skill.
+
+1. Mark all selected issues as `status:in-progress` (use the issue update/edit command for the detected VCS platform)
+2. Add a comment to each issue noting the session and planned wave (use the issue note/comment command for the detected VCS platform)
+
+## Step 6: Present Plan for Approval
+
+If a `/write-executable-plan` artifact exists at `docs/plans/<feature>.md` for any task in this session (see `skills/write-executable-plan/SKILL.md`), include its path in the agent prompts for those tasks and set the "Bite-sized plan" field in the Execution Config accordingly.
+
+Present the plan in this format:
+
+```
+## Wave Plan (Session: [type], [N] waves, isolation: [worktree|none])
+
+### Wave 1: Discovery ([N agents], parallel, read-only)
+- Agent 1: [task] → [files] → [acceptance criteria] → `subagent_type: Explore`
+...
+- File scope overlap: none (read-only wave)
+
+### Wave 2: Impl-Core ([N agents], parallel, isolation: [worktree|none])
+- Agent 1: [task] → [files] → [acceptance criteria] → `subagent_type: [resolved agent]`
+...
+- File scope overlap: [none | list conflicting files and which agents]
+
+### Wave 3: Impl-Polish ([N agents], parallel, isolation: [worktree|none])
+...
+- File scope overlap: [none | list]
+
+### Wave 4: Quality ([N agents], parallel, isolation: [worktree|none])
+...
+
+### Wave 5: Finalization ([N agents])
+...
+
+### Agent Registry
+- [list which agents were discovered and how they map to tasks]
+- Example: "database-architect (project) → DB tasks, session-orchestrator:code-implementer (plugin) → API tasks"
+
+### Inter-Wave Checkpoints
+- After Discovery: Validate discoveries, adjust Impl-Core scope if needed
+- After Impl-Core: Incremental quality checks per quality-gates. **If `pencil` configured: design review.**
+- After Impl-Polish: Incremental quality checks + integration verification. **If `pencil` configured: final design-code alignment check.**
+- After Quality: Full Gate per quality-gates — if failing, create fix tasks for Finalization
+- After Finalization: Final review before session-end
+
+### Project Intelligence Applied
+- [list of learnings that influenced this plan, with confidence scores]
+- Or: "No project intelligence available yet"
+
+### Risk Mitigation
+- [identified risks and how each wave handles them]
+
+### Execution Config
+- Waves: [N] | Agents-per-wave cap: [M] | Isolation: [worktree|none|auto]
+- Enforcement: [strict|warn|off] | Max turns: [N per session type]
+- Persistence: [true|false] | Pencil: [path|none]
+- Bite-sized plan: [path if exists, e.g. `docs/plans/YYYY-MM-DD-<feature>.md` | none]
+- Parallel dispatch: agents execute in small batches of 3–4 per message (up to the wave cap)
+- Total agents planned: [sum across all waves]
+
+Ready to execute? Use /go to begin.
+```
+
+### Step 6.5: Heartbeat on the operator's answer (#1229)
+
+The wait between presenting this plan and the operator's answer is the LONGEST unheartbeated stretch in the whole flow — the coordinator can sit on it for hours, and a 4 h-TTL lock does not survive that. Measured: session-20's lock was reaped as stale by an unrelated SessionEnd with an 11.3 h-old heartbeat (STATE.md deviation 2026-09-05T06:08:46Z). `hooks/on-session-start.mjs` covers session entry; this is the second call site.
+
+**The FIRST thing to do when the operator answers** — whether the answer is `/go` or a change request routing to Step 7 — is refresh the lock:
+
+```js
+// #1229 — the plan-approval wait is the longest unheartbeated stretch in the flow.
+// Best-effort: a failure must NOT block the handoff to wave-executor.
+import { updateHeartbeat } from 'scripts/lib/session-lock.mjs';
+updateHeartbeat({ sessionId, repoRoot: process.cwd() });
+```
+
+- **Ownership-guarded — this cannot steal a peer's lock.** `updateHeartbeat` (`scripts/lib/session-lock.mjs`) reads the lock first and returns `false` WITHOUT writing when `session_id` differs from the one passed, when no lock exists, or when `sessionId` is empty. The write is reached only for a lock this session already owns.
+- **What it does not do:** nothing can beat while a blocking AskUserQuestion is pending, so the wait window itself stays unheartbeated. What this closes is the session RESUMING with an hours-stale heartbeat and carrying it into wave 1 and every later reaper pass.
+- `sessionId` is the identifier session-start Phase 1.2 `acquire()` established — the `session_id` field of `.orchestrator/session.lock`, matching STATE.md frontmatter `session:`.
+- Skip silently when `persistence: false` in Session Config — no `session.lock` exists in that mode.
+
+## Step 7: Handle Plan Changes
+
+If the user requests changes:
+- Re-scope affected waves
+- Re-assign agents
+- Update issue comments if scope changes
+- Re-present the modified plan
+
+## Sub-File Reference
+
+| File | Purpose |
+|------|---------|
+| `wave-template.md` | Step 4 agent specification format and count tables |
+| `references/session-plan-task-classification.md` | Step 1.8: task-to-role classification, Docs-tasks + Wave-Plan Mission Status emission blocks, Mission-Status Enum (#340) |
+
+## Anti-Patterns
+
+- **DO NOT** create waves with circular dependencies — if wave N depends on wave N+1 output, the plan is broken
+- **DO NOT** assign Discovery and Implementation roles to the same wave — read-only and write agents must be separated
+- **DO NOT** create agent prompts that reference other agents' work — each agent must be fully self-contained
+- **DO NOT** over-split simple tasks into many waves — a 2-file change doesn't need 5 waves
+- **DO NOT** plan without reading the actual codebase — plans based on assumptions produce wasted waves
+
+## Critical Rules
+
+- **NEVER put independent tasks in the same agent** — each agent gets ONE focused task
+- **ALWAYS order waves by dependency** — never schedule a task before its dependency completes
+- **TypeScript check only in Discovery (baseline) and Quality/Finalization roles** — not during implementation roles
+- **Build commands only in housekeeping sessions** — never during feature/deep work mid-session
+- **Agent prompts must be self-contained** — include ALL context the agent needs (file paths, issue details, acceptance criteria). The agent starts with zero context.
+- **If a task is too large for one agent**, split it across multiple agents with clear file-boundary separation

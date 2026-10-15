@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ourines/worktree-task-plugin (path: skills/worktree-task/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 使用 git worktree + 背景代理会话管理大型任务（默认启动 Claude Code；可用 --codex 快速切到 Codex CLI，或通过 --agent-cmd 指定任意命令）。适合用户希望在不阻塞当前会话的情况下执行大型或多步骤任务。

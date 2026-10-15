@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/vishalsachdev/claude-skills/type-safe-form-validation/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: A comprehensive pattern for building type-safe forms and API validation using Zod, with automatic error formatting, runtime type checking, and seamless TypeScript integration. Use when building forms 

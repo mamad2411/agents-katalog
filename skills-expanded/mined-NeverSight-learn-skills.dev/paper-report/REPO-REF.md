@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/subinium/re-sseol-ch/paper-report/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 논문(arXiv ID/URL, DOI, PDF, 제목)을 한국 커뮤니티 정보글 스타일(음슴체, 짧은 호흡, 비속어 없음)의 해설로 만든다. 이야기꾼처럼 비약 없이 풀고 논문 그림·표·원문 문단을 인용 짤로 붙이며, 전작→이번 논문→후속작 계보와 저자·기관 맥락을 담는다. 모든 사실은 팩트 원장으로 검증한다. 결과는 폰 캡처 같은 파트 이미지, 흰 배경 게시

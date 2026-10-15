@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/skillmds/skillmd (path: plugins/agents-mcp/skills/graphsignal-profiler/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Graphsignal Profiler

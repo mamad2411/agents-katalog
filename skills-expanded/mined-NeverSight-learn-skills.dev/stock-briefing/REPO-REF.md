@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/oldhouse-g/openclaw-stock-briefing/stock-briefing/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 股市简报 - 零依赖增强版。行情+成交量趋势+资金流向+北向资金+多源新闻+量价分析，不需要任何API Key。当蟹大爷说"来份股市简报"、"股市简报"时使用。

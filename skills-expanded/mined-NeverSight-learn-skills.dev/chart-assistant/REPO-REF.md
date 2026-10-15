@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/visactor/chart-assistant-skill/chart-assistant/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 使用图表助手 DSL 创建、编辑、解释、校验和交付图表；覆盖完整 ILayerData 编辑态、commonOption 接入、全部内置模板与风神能力、URL 数据源同步、MBB 制图规范，以及新建飞书 Docx、向已有文档插入图表助手卡片或替换已有卡片。用户提到图表助手、内置模板、风神链接、飞书 Sheet/Base 链接、可同步图表卡片、MBB/咨询风，或要求把数据制成图表助手 DSL、把参考

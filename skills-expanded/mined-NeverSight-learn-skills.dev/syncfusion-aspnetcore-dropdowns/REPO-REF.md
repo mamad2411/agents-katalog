@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/syncfusion/aspnetcore-ui-components-skills/syncfusion-aspnetcore-dropdowns/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Comprehensive guide for implementing Syncfusion aspnetcore dropdown components including DropDownList, MultiSelect, AutoComplete, Mention. Single and multiple selection control with data binding, filt

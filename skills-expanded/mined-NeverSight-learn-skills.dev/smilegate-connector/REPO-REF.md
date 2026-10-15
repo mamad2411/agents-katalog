@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/bombay/smilegate-connector/smilegate-connector/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 스마일게이트 업무 도구(Slack, Jira, Confluence)를 Claude Code에 연결하는 설정 가이드. 비개발자도 따라할 수 있도록 단계별로 안내한다. "커넥터", "connector", "MCP 설정", "jira 연결", "confluence 연결", "slack 연결" 요청에 사용.

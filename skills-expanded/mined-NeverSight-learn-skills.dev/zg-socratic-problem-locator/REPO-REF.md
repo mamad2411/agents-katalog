@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zenggeai/zgskill/zg-socratic-problem-locator/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 通过专家假设、苏格拉底式检验和关键证据，帮助用户从模糊困惑、结果异常、草率归因或自我标签中快速定位真正值得解决的问题。适用于“帮我找到真正的问题”“先别给方案，一步步问我”“为什么我做了却没结果”“我觉得可能是我不行”“请检查我的判断是否成立”等场景，也适用于用户提供聊天记录、数据、截图或文件，希望 AI 根据材料定位断点。默认进行自然短对话；不用于纯事实查询、简单执行任务，或用户已经给出清楚且可

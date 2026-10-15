@@ -1,0 +1,31 @@
+---
+name: lissom-research
+description: Dispatches lissom-specs-reviewer and then lissom-researcher agents optionally to refine the specification and produce the research document given an explicit task_dir, which contains the original specification.
+argument-hint: <task_dir> [user_attention] [spec_review_required]
+---
+
+## Inputs
+
+- `task_dir` = "$0"
+- `user_attention` = "$1" (optional): `default` (default), `auto`, or `focused`
+- `spec_review_required` = "$2" (optional): `no` (default) or `yes`
+- `research_required` = "$3" (optional): `yes` (default) or `no`
+
+## Process
+
+Execute sequentially:
+
+1. **Conditional**: Skip this step if `user_attention` is `auto` OR if `spec_review_required` is `no`. Otherwise:
+   Use Tool `Agent` to spawn `lissom-specs-reviewer`, passing it the `task_dir` and `user_attention`.
+   - If it returns `Specs INCOMPLETE` (auto mode only), relay the reasons to the
+     user as a warning, then proceed.
+   - Any other return value: treat as success and proceed.
+   - If `<task_dir>/Specs.md` does not exist or is empty after the agent returns, escalate immediately.
+
+2. **Conditional**: Skip this step if `research_required` is `no`. Otherwise: Use Tool `Agent` to spawn `lissom-researcher`, passing it the `task_dir` and `user_attention`.
+
+## Completion
+
+Return to the caller only after `<task_dir>/Research.md` exists and is
+non-empty. If it does not exist, re-invoke `lissom-researcher` once before
+escalating.

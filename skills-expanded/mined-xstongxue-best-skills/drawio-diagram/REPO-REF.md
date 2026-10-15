@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/xstongxue/best-skills (path: skills/drawio-diagram/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 为深度学习模型、网络架构、算法流程等生成标准 Draw.io (.drawio) 格式的可视化图表；支持从零生成与风格迁移两种模式。从零生成：模型架构图、流程图、感受野示意图等；风格迁移：参考图 + 内容描述/项目 → 按参考图风格生成新图。确保 XML 格式正确，可直接在 Draw.io 中打开编辑。

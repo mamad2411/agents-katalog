@@ -1,0 +1,115 @@
+---
+name: entscheidungsgruende-zivil-schreiben
+title: Entscheidungsgründe schreiben
+description: 'Für Entscheidungsgründe schreiben: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: Urteilsbauer und Relationsmacher. Route: entscheidungsgruende-zivil-schreiben.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/urteilsbauer-relationsmacher/skills/entscheidungsgruende-zivil-schreiben
+license: Apache-2.0
+version: 0.1.1
+execution_mode: open
+jurisdiction: de
+practice: litigation
+language: de
+---
+
+# Entscheidungsgründe schreiben
+
+Im Urteilsstil (nicht im Gutachtenstil). Reihenfolge: Ergebnis - Begründung.
+
+## Triage zu Beginn
+
+1. Im Urteilsstil oder Gutachtenstil? (Antwort: immer Urteilsstil — Ergebnis vor Begründung.)
+2. Welche Anspruchsgrundlagen sind durchgreifend — welche nicht?
+3. Muss Beweiswürdigung integriert oder separat abgehandelt werden?
+4. Welche Nebenentscheidungen (Zinsen, Kosten, Vollstreckbarkeit) fehlen noch?
+
+## Zentrale Normen
+
+- § 313 Abs. 3 ZPO — Entscheidungsgründe: kurze Zusammenfassung der Erwägungen
+- § 286 ZPO — Beweiswürdigung
+- § 286 BGB — Verzugszinsen (ab Mahnung oder Fälligkeit)
+- § 288 BGB — gesetzlicher Verzugszinssatz (5 Prozentpunkte über Basiszinssatz)
+- § 291 BGB — Rechtshängigkeitszinsen (ab Klageerhebung)
+- § 91, 92 ZPO — Kosten
+- § 708, 709 ZPO — vorläufige Vollstreckbarkeit
+
+## Schritt-für-Schritt-Workflow
+
+1. **Obersatz:** "Die Klage ist [zulässig und] begründet / [zulässig, aber] unbegründet / teilweise begründet."
+2. **Zulässigkeit** (kurz, nur problematische Punkte ausführen):
+ - Rechtsweg, Zuständigkeit, Partei- und Prozessfähigkeit, Rechtsschutzbedürfnis.
+3. **Begründetheit** — für jede Anspruchsgrundlage:
+ - AG benennen → Tatbestandsmerkmale subsumieren → Ergebnis.
+ - Einwendungen/Einreden des Beklagten prüfen.
+ - Verjährung prüfen.
+4. **Beweiswürdigung** einfügen (§ 286 ZPO), soweit Tatsachen streitig waren.
+5. **Nebenentscheidungen formulieren:**
+ - Zinsen (§ 286, 288, 291 BGB), Kosten (§ 91, 92 ZPO), Vollstreckbarkeit (§ 708, 709 ZPO).
+
+## Output-Template
+
+**Adressat:** Urteil → Entscheidungsgründe — Tonfall: sachlich-juristisch, Urteilsstil
+
+<!-- BEGIN ausformulierungspflicht (autogen) -->
+> **Ausformulierungspflicht und Formatstandard.** Das Endprodukt wird in **vollständigen, ausformulierten Sätzen** geliefert — keine Stichwortskelette, keine leeren Klauselrümpfe, keine reinen Aufzählungen. Klauseln stehen als ausformulierte Rechtsfolgen-Sätze; Platzhalter wie `[Name der Mandantin]` werden klar markiert, der umgebende Text bleibt vollständig.
+>
+> **Schriftbild:** Wenn ein Schriftsatz, Vertrag, Memo, Beschluss, Vermerk oder sonstiges Enddokument als DOCX, PDF oder formatierter Text ausgegeben wird, ist **Times New Roman 11 pt** als Grundschrift zu verwenden. Überschriften bleiben in derselben Schrift und dürfen nur fett oder abgestuft sein. Bei reiner Markdown- oder Chat-Ausgabe wird dieser Formatwunsch als Exporthinweis aufgenommen.
+>
+> **Nummerierung:** Gliederung ausschließlich dezimal (`1`, `1.1`, `1.1.1` und so weiter). Keine römischen Ziffern, keine Buchstaben- oder Mischgliederung.
+<!-- END ausformulierungspflicht (autogen) -->
+
+```
+## Entscheidungsgründe
+
+Die Klage ist zulässig und begründet.
+
+**I. Zulässigkeit**
+Das Amtsgericht [ORT] ist sachlich (§ 23 Nr. 1 GVG, Streitwert [BETRAG] EUR) und örtlich
+(§ 29 ZPO, Erfüllungsort [ORT]) zuständig. [Weitere Punkte nur wenn problematisch.]
+
+**II. Begründetheit**
+
+**1. Anspruch aus § [AG] BGB**
+Der Kläger hat einen Anspruch auf [RECHTSFOLGE] gegen den Beklagten aus § [AG] BGB.
+[TATBESTANDSMERKMALE subsumieren]
+
+**2. Zinsen**
+Der Zinsanspruch ergibt sich aus § 288 Abs. 1 BGB (5 Prozentpunkte über dem Basiszinssatz)
+ab [DATUM DER MAHNUNG / Rechtshängigkeit].
+
+**3. Kosten**
+Die Kostenentscheidung beruht auf § 91 ZPO.
+
+**4. Vorläufige Vollstreckbarkeit**
+Die Entscheidung über die vorläufige Vollstreckbarkeit beruht auf § 709 ZPO.
+```
+
+## Aufbau
+
+1. **Obersatz**: "Die Klage ist zulässig, aber nur teilweise begründet."
+2. **Zulässigkeit**: kurz; nur die problematischen Punkte ausführlich.
+3. **Begründetheit** - pro Anspruchsgrundlage:
+ - Anspruchsgrundlage benennen
+ - Tatbestandsmerkmale subsumieren
+ - Rechtsfolge
+ - Einwendungen / Einreden
+ - Verjährung
+ - Bei mehreren Anspruchsgrundlagen: nur die durchgreifende ausführen oder Anspruchskonkurrenzen knapp behandeln
+4. **Beweiswürdigung** (separater Abschnitt vor der konkreten Subsumtion oder integriert)
+5. **Nebenentscheidungen**:
+ - Zinsen Paragraf 286 BGB, Paragraf 288 BGB, Paragraf 291 BGB
+ - Kosten Paragraf 91 ff ZPO
+ - Vorläufige Vollstreckbarkeit Paragraf 708 ff ZPO
+ - Streitwertbeschluss separat oder im Tenor
+ - Berufungszulassung Paragraf 511 Abs. 4 ZPO
+
+## Urteilsstil vs Gutachtenstil
+
+- Gutachtenstil: "Es koennte ein Anspruch aus ... bestehen. Dies setzt voraus, dass ..."
+- **Urteilsstil**: "Der Kläger hat einen Anspruch aus ... in Höhe von ... Der Beklagte ist Verkaeufer im Sinne ..."
+
+## Stil
+
+Praesens, Indikativ, im Aktiv, kurze Sätze, eine Sache pro Satz.
+
+> Quellenregel: Entscheidungen nur nach Prüfung einer amtlichen oder frei zugänglichen Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage ausgeben.

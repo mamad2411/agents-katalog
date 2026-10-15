@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/huifer/claude-code-interview/question-generator/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 智能面试问题生成器。基于JD分析、用户简历和公司特点，生成定制化面试问题。支持技术面试、系统设计、行为面试（STAR）、HR面试。提供不同难度级别（简单/中等/困难）。自动维护问题库，追踪练习历史。与jd-analyzer和interview-coach集成。

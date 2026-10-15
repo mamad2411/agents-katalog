@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Pluviobyte/rnskill (path: skills/novel-distill/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 从用户提供的小说章节中提炼适合短视频的关键事件，核对情节依据，比较候选场面并转译成分镜与视频制作简报。适用于小说高光、角色宣传和小说预告片策划。

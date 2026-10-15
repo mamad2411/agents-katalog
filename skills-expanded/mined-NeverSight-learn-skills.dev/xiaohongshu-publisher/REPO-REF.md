@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/solar-luna/fully-automatic-article-generation-skill/xiaohongshu-publisher/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 自动发布内容到小红书平台。支持将文章转换为小红书格式（≤1000字，emoji风格）并通过API直接发布。当用户说"发布到小红书"、"推送到小红书"、"小红书发布"时使用此Skill。

@@ -1,0 +1,159 @@
+---
+name: loom-video-downloader
+description: Download loom videos from across the web to watch offline and curate a collection
+---
+
+# How to Download Loom Videos
+
+> Download supported Loom-hosted videos from watch pages and approved embedded contexts directly in your browser for offline viewing.
+
+Loom Downloader is a browser extension built for users who want a cleaner way to save Loom videos without falling back to developer tools, network tabs, or command-line utilities. It works on standard Loom share pages and supported embeds, detects supported playback sources, and exports the final result as a usable local file for offline playback.
+
+- Save supported Loom videos from share pages and embedded players
+- Download videos even when the normal Loom download button is unavailable
+- Keep local copies for training, research, support, and internal documentation
+- Avoid manual URL extraction and browser-inspector workarounds
+- Use a browser-native workflow instead of separate desktop tools
+
+## Links
+
+- :rocket: Get it here: [Loom Downloader](https://serp.ly/loom-video-downloader)
+- :new: Latest release: [GitHub Releases](https://github.com/serpapps/loom-video-downloader/releases/latest)
+- :question: Help center: [SERP Help](https://help.serp.co/en/)
+- :beetle: Report bugs: [GitHub Issues](https://github.com/serpapps/loom-video-downloader/issues)
+- :bulb: Request features: [Feature Requests](https://github.com/serpapps/loom-video-downloader/issues)
+
+## Table of Contents
+
+- [Why Loom Downloader](#why-loom-downloader)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Supported Formats](#supported-formats)
+- [Step-by-Step Tutorial: How to Download Videos from Loom](#step-by-step-tutorial-how-to-download-videos-from-loom)
+- [Videos](#videos)
+- [Who It's For](#who-its-for)
+- [Common Use Cases](#common-use-cases)
+- [Trial & Access](#trial--access)
+- [Installation Instructions](#installation-instructions)
+- [FAQ](#faq)
+- [License](#license)
+- [Related](#related)
+
+## Why Loom Downloader
+
+Loom makes sharing videos easy, but saving them locally is not always straightforward. Some videos do not expose a normal download button, many appear in embedded contexts, and the underlying playback source is not something most users want to hunt down manually.
+
+Loom Downloader is built to solve that browser workflow directly. Start the video, let the extension detect the supported active media source, then export the file without needing network traces, page-source inspection, or external download tools.
+
+## Features
+
+- Detects supported Loom videos from share pages and embeds
+- Works when the default Loom download button is unavailable
+- Preserves a browser-first workflow with no extra software
+- Handles supported embedded Loom videos in approved page contexts
+- Exports local files for offline viewing and archiving
+- Works on Chrome, Edge, Brave, Opera, Firefox, Whale, and Yandex
+
+## How It Works
+
+1. Install the extension from the product page or your browser's extension listing.
+2. Open a supported Loom share page or a page containing a supported embedded Loom video.
+3. Start playback so the extension can detect the active media source.
+4. Open the extension and select the video you want to save.
+5. Download the file and keep it locally for offline playback.
+
+## Supported Formats
+
+- Input: supported Loom share-page and embed playback sources
+- Output: local downloadable video files based on the active source workflow
+
+## Step-by-Step Tutorial: How to Download Videos from Loom
+
+1. Install Loom Downloader in your browser.
+2. Open the Loom share page or supported embedded player you want to save.
+3. Start playback so the media source is fully initialized.
+4. Open the extension and wait for the video to appear in the list.
+5. Choose the detected video and start the download.
+6. Save the file locally and open it from your Downloads folder.
+
+## Videos
+
+<a href="https://www.youtube.com/watch?v=bbkhxMpIH4w" target="_blank">
+  <img src="https://raw.githubusercontent.com/devinschumacher/uploads/refs/heads/main/images/loom-video-downloader-installation-and-use-instructions-how-to-download-loom-videos.jpg" width="700px" />
+</a>
+
+<br><br>
+
+<a href="https://www.youtube.com/watch?v=EY8549tG34c" target="_blank">
+<img src="https://raw.githubusercontent.com/devinschumacher/uploads/refs/heads/main/images/how-to-download-loom-videos-for-free-without-a-loom-subscription-mp4-video-embed-example.jpg" width="700px">
+</a>
+
+<br><br>
+
+<a href="https://www.youtube.com/watch?v=4MnyU0kPxlE" target="_blank">
+<img src="https://raw.githubusercontent.com/devinschumacher/uploads/refs/heads/main/images/how-to-download-loom-videos-for-free-dl-without-subscription-10-examples-mp4-hls-m3u8.jpg" width="700px">
+</a>
+
+## Who It's For
+
+- Teams saving Loom recordings for internal reference
+- Users archiving embedded Loom videos from docs or training pages
+- People who need offline access to support or onboarding videos
+- Users who want a browser extension instead of manual extraction workflows
+
+## Common Use Cases
+
+- Save a Loom share-page video for later viewing
+- Download a supported embedded Loom video from an approved page context
+- Keep a local archive of support or training recordings
+- Export reference videos before access changes or links disappear
+
+## Trial & Access
+
+- Includes 3 free downloads to test the workflow
+- Email sign-in uses secure one-time-code verification
+- No credit card required for the trial
+- Unlimited downloads are available with a paid license
+
+## Installation Instructions
+
+1. Install Loom Downloader from the product page or your browser's extension listing.
+2. Use the links above if you need release notes, issue tracking, or setup references.
+3. Open a supported Loom page or supported embedded Loom video and start playback.
+4. Use the extension to detect and download the video.
+
+## Security & Scope
+
+- Operates only on the page the user intentionally opens in the active browser tab
+- Detects supported Loom playback sources only for user-initiated downloads
+- Does not execute page instructions, shell commands, or arbitrary scripts from page content
+- Does not follow unrelated links or take actions outside the active download workflow
+- Limits support to supported Loom pages, approved embedded-player contexts, and user-authorized sessions
+
+## FAQ
+
+### Is it possible to download a private Loom video when the owner has disabled downloads?
+
+Yes, on supported Loom pages and embeds where the extension can detect the active media source through your browser session.
+
+### Do I need extra software?
+
+No. The workflow stays inside the browser extension.
+
+### Does it work on embedded Loom videos?
+
+Yes. Supported embedded Loom players can be detected from approved embedded contexts as well as direct Loom links.
+
+### What should I do if detection does not trigger?
+
+Start playback first, then reopen the extension. If that still does not work, refresh the page and try again. Make sure the page is one of the supported playback contexts.
+
+## License
+
+This repository is distributed under the proprietary SERP Apps license in the [LICENSE](LICENSE) file. Review that file before copying, modifying, or redistributing any part of this project.
+
+## Related
+
+- https://github.com/serpapps/loom-video-downloader
+- [Loom Video Downloader App (Browser Extension for Chrome & Firefox)](https://gist.github.com/devinschumacher/6eb8d933684f867e4db9739f6637cad7)
+- [How to Download Loom Videos: A Complete Step-by-Step Guide (With Real Examples & Command Cheatsheet)](https://gist.github.com/devinschumacher/b7be00df9d9809d0ea55663d88dc9d3c)

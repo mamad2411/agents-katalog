@@ -1,0 +1,196 @@
+---
+name: spin-up
+description: >
+  Start-of-session orientation routine that briefs Claude on the current
+  state of a project before work begins. Use this skill when the user
+  says "spin up", "spin it up", "let's go", "start up", "spin
+  up the project", "punch it chewy", or any variant signalling they want a session kickoff
+  briefing. Performs: git status check (unpushed commits, remote
+  divergence), CLAUDE.md and README read, most-recent session log read
+  (focusing on "Where we left off"), PINBOARD.md open items, GLOSSARY.md
+  load, the active output style, and a short synthesis of project state.
+  Ends by asking what to work on today.
+---
+
+# Spin-Up: Start-of-Session Orientation
+
+When the user signals the start of a session, perform ALL of the checks
+below in order, then present a tight briefing and ask what today's focus
+is.
+
+Unlike `wrap-up`, this skill is conversational — the purpose is to
+surface information, not to act. Keep the briefing scannable (roughly
+one screen), and do NOT start work or propose tasks until the user
+replies to the closing question.
+
+---
+
+## Step 1: Read project instructions
+
+Read `CLAUDE.md` at the project root (if it exists). Internalise project
+rules, conventions, and any project-specific session-startup instructions.
+
+Also read `README.md` if present, to ground yourself in the directory
+structure and project purpose.
+
+If neither file exists, note that in the briefing but continue.
+
+## Step 2: Check git state
+
+If the current working directory is inside a git repository:
+
+1. `git fetch --quiet` to refresh remote refs so divergence is visible.
+2. `git log @{u}..HEAD --oneline` to list unpushed commits on the
+   current branch. If there is no upstream set, fall back to
+   `git log origin/main..HEAD --oneline` (or `origin/master`); if that
+   also fails, skip.
+3. `git log HEAD..@{u} --oneline` to spot remote commits made elsewhere
+   (e.g. GitHub web, another machine) that would require a pull before
+   any future push.
+4. Note the current branch and whether the working tree is clean.
+
+If the project is not a git repo, skip this step silently.
+
+**Do not push or pull anything** — this step is read-only. Surface
+findings; let the user decide.
+
+## Step 3: Read the most recent session log
+
+Look for session logs in the project's log directory. Check these
+locations in order:
+
+- The path specified in `CLAUDE.md`, if any.
+- `Claude Logs/`
+- `Code/_Claude Session Logs/`
+
+Find the most recently-dated file and read it. Pay particular attention
+to:
+
+- **"Where we left off"** — the state work was in at end of last session.
+- **"Problems encountered"** — open issues or blockers.
+- **"Files created or modified"** — recent file touch points.
+
+If no log exists, note that and continue.
+
+## Step 4: Check the pinboard
+
+Read `PINBOARD.md` at the project root (if it exists). Count open items
+by category. Flag anything dated more than two weeks ago or marked
+urgent.
+
+If no pinboard exists, skip.
+
+## Step 5: Load the glossary
+
+If `GLOSSARY.md` exists at the project root, load it **adaptively** — the goal is to
+activate command-phrases without pulling the whole file into context every session:
+
+1. Count entries cheaply (`Grep -c "^- "`). **If under ~25, just read the file
+   whole** — the cost is trivial and the lazy split isn't worth it.
+2. **Otherwise, load lazily:**
+   - Read only the top of the file through the `## Definitions` header — that is the
+     **Command-Phrases** section (kept first for exactly this reason). These must be
+     active for the session (e.g. "push" → commit and push), since the bare phrase
+     won't trigger the `glossary` skill on its own.
+   - Grep the **headwords only** (the `**bold**` terms) to load the *term list* for
+     Definitions/Abbreviations — names without glosses. Read a full definition on
+     demand later, when that term actually comes up.
+3. Load silently; do NOT dump entries into the briefing. Report a one-line count.
+4. **Flag if large:** if the glossary exceeds ~50 entries or ~15 command-phrases,
+   note it and suggest a prune.
+
+If no glossary exists, skip silently. The `/glossary` skill owns this file — adding,
+editing, the behavioral rules for command-phrases, and pruning.
+
+## Step 6: Check the active output style
+
+Report which output style the session is running under, so the user knows
+why responses are shaped the way they are.
+
+Resolve it the way Claude Code does — the first file that sets
+`outputStyle` wins:
+
+1. `<project>/.claude/settings.local.json`
+2. `<project>/.claude/settings.json`
+3. `~/.claude/settings.json`
+
+If none of them sets it, the style is **Default**.
+
+If a custom style is named, confirm it actually exists: look in
+`<project>/.claude/output-styles/` then `~/.claude/output-styles/`, and
+match on the `name:` in the file's frontmatter (falling back to the
+filename when there is no `name:`). If nothing matches, flag it — the
+setting is silently doing nothing.
+
+Two things to watch for:
+
+- **Stale setting.** The output style is baked into the system prompt at
+  session start. If the settings file was edited after this session
+  began, the file says one thing and the session is running another. If
+  your own instructions tell you a different style is loaded, say so and
+  note that it needs `/clear` to take effect.
+- **Plugin override.** An enabled plugin shipping a style with
+  `force-for-plugin: true` overrides the `outputStyle` setting entirely.
+
+Note the mechanism has moved: the standalone `/output-style` command was
+removed in v2.1.91. Styles are now set via `/config` → **Output style**
+in the terminal, or by editing `outputStyle` in a settings file.
+
+## Step 7: Synthesise the briefing
+
+Present a briefing in approximately this format:
+
+```markdown
+## Session briefing — [project name]
+
+**Last session:** YYYY-MM-DD — [one-line summary of last session's work]
+**Where we left off:** [short quote or paraphrase]
+
+**Git:**
+- Branch: `branch-name` (clean / N unstaged changes)
+- Unpushed: N commits [list them, or "none"]
+- Remote ahead: N commits [or "in sync"]
+
+**Pinboard:** N open items
+- X to-dos (Y older than two weeks)
+- Z papers to read
+- W data issues
+
+**Glossary:** N terms loaded, M command-phrases active [or "none yet"]
+
+**Output style:** `Name` (custom / built-in, set in `path/to/settings.json`)
+[or "Default"]
+
+**Project state:** [1–2 sentences synthesising CLAUDE.md + last log]
+```
+
+Keep it tight. One scannable screen. Omit sections cleanly if there's
+nothing to report ("No pinboard items outstanding.") rather than
+leaving empty headings.
+
+## Step 8: Ask the question
+
+End the briefing with exactly:
+
+> **What are we working on today?**
+
+Then wait. Do not start work, propose tasks, or fix things surfaced
+above until the user answers.
+
+---
+
+## Important Rules
+
+- **Read-only.** Spin-up never writes files, never pushes, never pulls.
+  It surfaces state and waits. This includes the output style — report
+  which one is active, never change it.
+- **Do not create the session log.** That is `wrap-up`'s responsibility
+  at end of session. Spin-up only reads prior logs.
+- **Do not act on findings.** If there are unpushed commits, a dirty
+  working tree, a stale pinboard item, or an unresolved problem from
+  last session — list them, but wait for the user to direct action.
+- **Briefing is scannable, not exhaustive.** Aim for ~15–25 lines of
+  output. If any single step has a lot to say, summarise and offer
+  detail on request.
+- **Respect `CLAUDE.md`.** If the project's CLAUDE.md specifies a
+  different startup ritual or log location, follow it.

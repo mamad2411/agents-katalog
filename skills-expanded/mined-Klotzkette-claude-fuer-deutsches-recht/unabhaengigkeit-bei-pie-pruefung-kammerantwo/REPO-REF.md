@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/Klotzkette/claude-fuer-deutsches-recht (path: berufsrecht-wirtschaftspruefer/skills/unabhaengigkeit-bei-pie-pruefung-kammerantwo/SKILL.md, branch: main)
+- mined: 2026-10-13
+- desc: Für Unabhängigkeit bei Pie Prüfung Kammerantwo: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Tatbestands- oder Anspruchsmatrix."

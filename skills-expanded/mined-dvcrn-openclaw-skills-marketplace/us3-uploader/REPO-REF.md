@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/qianjunye--us3-uploader-encrypted/skills/us3-uploader/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Upload files to UCloud US3 (UFile) object storage and generate download URLs.\n 当用户需要：上传文件、发送文件、分享文件、生成文件链接、把文件发给用户、导出文件、\n 生成PDF/图片/文档后发送、任何文件产出需要给用户时，必须使用此 skill。\n 沙箱内的文件用户无法直接访问，必须上传到 US3 生成下载链接。"

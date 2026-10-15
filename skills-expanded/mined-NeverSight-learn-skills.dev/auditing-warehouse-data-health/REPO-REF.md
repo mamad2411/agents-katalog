@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/posthog/ai-plugin/auditing-warehouse-data-health/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Auditing data warehouse health

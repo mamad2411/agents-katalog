@@ -1,0 +1,420 @@
+---
+name: smith-debug
+description: Diagnostic workflow that systematically gathers evidence, identifies root causes, and produces a structured debug report. Read-only — does not modify code. Output feeds into /smith-bugfix if a fix is needed.
+---
+
+# SpecKit Debug Workflow
+
+A diagnostic-only workflow that systematically investigates errors, failures, and unexpected behavior across Armory's services. Produces a structured debug report stored in the relevant system's `.specify/` folder. Does NOT modify code — the report becomes input to `/smith-bugfix` if a fix is warranted.
+
+**Arguments:** $ARGUMENTS
+
+## Vault Logging
+
+Throughout this action, log significant events to the vault session log. Read the session log path from `.smith/vault/.current-session`. If the file is missing or the vault is not initialized, skip all logging silently.
+
+Append entries using this format:
+
+```
+### [HH:MM:SS] /smith-debug <event>
+
+**User Request:**
+> <verbatim user message that triggered this action — capture the exact error description, symptoms, or question the user asked. Include any error messages they pasted.>
+
+**Synthesized Input:** <brief summary of what's being investigated>
+**Outcome:** <what happened>
+**Artifacts:** <files created/modified>
+**Systems affected:** <system IDs>
+```
+
+Log at these points:
+1. **On invocation** — capture the verbatim user request AND the structured symptom description
+2. **After symptom capture** — structured fields extracted
+3. **After triage** — sub-agent findings summary
+4. **After diagnosis** — root cause identified or hypotheses ranked
+5. **On completion** — report path, user decision (bugfix/investigate/close)
+
+## Subagent Invocation Logging
+
+Immediately before every Agent tool call in this workflow (especially the 4 triage agents in Phase 3), append a block to the session log. The Agent tool's return value does not expose `subagent_type` or `model` to the parent, so this is the only place that information can be captured.
+
+```
+### [HH:MM:SS] Subagent invoked: <description>
+
+**Type:** <subagent_type or "general">
+**Model:** <model override passed to Agent, or "inherited" if none>
+```
+
+After the Agent tool returns, the `subagent-vault-writeback.sh` hook automatically appends a matching "Subagent completed" block with metrics read from the sidechain transcript — do not duplicate that logging in the skill.
+
+## When to Use This
+
+Use `/smith-debug` when:
+- An error message or unexpected behavior needs investigation
+- You're not sure what's broken or why
+- Multiple services could be involved
+- You want evidence before committing to a fix
+
+Do NOT use when:
+- The cause is already known and the fix is obvious — use `/smith-bugfix` directly
+- You're building a new feature — use `/smith-new`
+
+## Natural Language Triggers
+
+If the user says any of the following (or similar phrases), treat it as invoking this command:
+- "debug this"
+- "help me debug..."
+- "can you investigate..."
+- "I'm getting this error..."
+- "why is X failing"
+- "something is broken"
+- "help me figure out why..."
+
+When triggered by natural language, synthesize the conversation history into the symptom description and proceed as if that was passed as `$ARGUMENTS`.
+
+## Ledger Context (Optional)
+
+If `.smith/vault/ledger/` exists and contains non-empty files, load relevant Ledger sections to inform diagnosis. If the directory is missing, empty, or unreadable, skip silently — the Ledger is purely additive and never required.
+
+1. Check: `ls .smith/vault/ledger/*.md 2>/dev/null`
+2. If files exist, read the following sections (higher-confidence entries first, truncate at ~2000 tokens per file):
+   - `.smith/vault/ledger/antipatterns.md` (past failure modes — directly useful for narrowing hypotheses)
+   - `.smith/vault/ledger/edge-cases.md` (known weird states the system has hit before)
+   - `.smith/vault/ledger/project-quirks.md` (project-specific gotchas — e.g., "this service takes 30s to start, don't assume crash")
+   - `.smith/vault/ledger/tool-preferences.md` (which diagnostic tools/commands are known to work well in this project)
+3. Use loaded entries as additional context during symptom capture, triage, and diagnosis. Especially use `antipatterns.md` to avoid re-investigating already-known failure modes from scratch, and `project-quirks.md` to skip false-positive theories. The Ledger informs judgment, it does not override evidence collected during this run.
+4. **Budget violation tracking**: If any Ledger file was truncated (entries were dropped to fit within the ~2000 token budget per file), increment `context_budget_violations` in `.smith/vault/ledger/.meta.json` by 1. If `.meta.json` does not exist, create it from the default template first. This signal tells the reconciliation system that the Ledger is too large for the configured budget.
+
+## Phase 0: Activate Workflow Tracking
+
+Before any file is written (debug reports, vault logs, etc.), create an active-workflow marker so the workflow-gate hook (PreToolUse) allows subsequent writes. Without this, even the debug-report Write at the end of Phase 5 would be denied. The workflow-gate hook exempts the shipped helper by basename (per spec/31-workflow-gate-bootstrap) so the bootstrap runs even when no marker exists yet:
+
+```bash
+SLUG=$(echo "${1:-debug}" | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-40)
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+# Debug is read-only — no worktree, so use the current dir as the
+# "worktree" sentinel. The helper still stamps the session log so
+# workflow-summary attributes tokens correctly.
+~/.smith/scripts/create-active-workflow.sh \
+  --branch "debug-${SLUG}" \
+  --workflow smith-debug \
+  --slug "${SLUG}" \
+  --worktree "$(pwd)"
+```
+(Falls back to `scripts/create-active-workflow.sh` in repo-dev layouts.)
+
+The marker is cleared at the end of Phase 6 (Decision Gate) regardless of which option the user picks. Use the shipped helper so this works under a `Bash(rm:*)` deny rule:
+
+```bash
+.specify/scripts/bash/clear-active-workflow.sh "debug-${SLUG}"
+```
+
+## Phase 1: Symptom Capture (Interactive if needed)
+
+Extract or ask for these structured fields from the user's description:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Error message** | Exact text of error or unexpected output | `[Errno 111] Connection refused` |
+| **Trigger** | What the user was doing when it happened | Running background reports |
+| **Conditions** | What else was running, recent changes, environment state | Sentiment analysis running concurrently |
+| **Frequency** | Always, sometimes, new, intermittent | Every time background reports run |
+| **Affected service(s)** | Best guess from the symptom | content-engine, sentiment-engine |
+
+### Interactive prompting
+
+If the user's initial description is missing 2+ of these fields, ask a focused set of clarifying questions BEFORE proceeding. Present them as a numbered list the user can answer quickly:
+
+```
+To investigate this efficiently, I need a few more details:
+
+[1] What exactly were you doing when this happened? (e.g., which button, command, or workflow)
+[2] Does this happen every time, or only sometimes?
+[3] Were any other operations running at the same time?
+[4] When did this start? (always been this way, or recent change?)
+```
+
+Only ask for what's actually missing. If the description already covers 3+ fields, proceed directly — don't slow the user down with unnecessary questions.
+
+**If ALL fields are present** in the initial description or `$ARGUMENTS`: skip prompting entirely and proceed to Phase 2.
+
+## Phase 2: System Detection
+
+Determine which Armory system(s) this debug session relates to.
+
+1. **Map the symptom to systems** using service-to-system mapping:
+   - `command-center` / port 8080 → `system-15-command-center`
+   - `sentiment-engine` / port 8081 → `system-15-command-center` (scoring subsystem)
+   - `content-strategy` / port 8082 → `system-12-content-social-engine`
+   - `email-pipeline` → `system-03-email-archive-contact-graph`
+   - `communication-triage` → `system-05-communication-triage`
+   - `voice-training` → `system-04-personal-voice`
+   - `openclaw` / Jason / port 18789 → cross-system (agent layer)
+   - `social-listening` → `system-10-social-listening`
+   - `trend-intelligence` → `system-13-trend-intelligence`
+   - `n8n` / port 5678 → `system-01-infrastructure`
+   - `postgres` / `neo4j` / `qdrant` / `redis` → `system-01-infrastructure`
+   - Docker / Colima / networking → `system-01-infrastructure`
+   - Ollama / model loading → `system-02-ai-models-layer`
+
+2. **If ambiguous**: pick the most likely primary system and note secondary systems.
+
+3. **Set the report path**:
+   ```
+   .specify/systems/<primary-system>/debug/debug-YYYY-MM-DD-<slug>.md
+   ```
+   Create the `debug/` directory if it doesn't exist.
+
+## Phase 3: Automated Triage (Parallel Sub-agents)
+
+Launch up to 4 diagnostic sub-agents in parallel. Each is **read-only** — no code modifications.
+
+### 3.1 Infrastructure Health Agent
+**Model:** haiku
+**Task:** Check the health of all services and resource usage.
+```
+- Run: docker compose ps
+- Run: bash scripts/health-check.sh
+- Run: docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
+- Check if affected service(s) are running and healthy
+- Check port availability for affected services
+- Check Colima resource allocation: colima status
+- Report: which services are up/down, resource pressure, port conflicts
+```
+
+### 3.2 Log Analysis Agent
+**Model:** haiku
+**Task:** Search service logs for the error and surrounding context.
+```
+- Run: docker compose logs <affected-service> --tail 200 --timestamps
+- Run: docker compose logs <upstream-dependencies> --tail 100 --timestamps
+- Grep logs for the exact error message
+- Grep for related patterns (connection refused, timeout, OOM, restart)
+- Look for temporal correlation with other service errors
+- Report: relevant log excerpts, error frequency, first occurrence timestamp
+```
+
+### 3.3 Dependency Trace Agent
+**Model:** sonnet
+**Task:** Map the request path and check each hop.
+```
+- Identify the full request chain for the failing operation
+  (e.g., UI → Express → FastAPI → Ollama → Qdrant)
+- For each hop:
+  - Is the upstream service reachable? (curl health endpoints)
+  - Is the connection using the right host/port?
+  - Are there resource contention issues? (shared Ollama, shared PG connections)
+- Check docker-compose.yml for network configuration
+- Check environment variables for correct service URLs
+- Report: which hop fails, why, and what the expected vs actual behavior is
+```
+
+### 3.4 Spec & History Cross-Reference Agent
+**Model:** haiku
+**Task:** Check if this is a known issue or related to recent changes.
+```
+- Read the primary system spec.md for known limitations or caveats
+- Search specs/debug/ and .specify/systems/*/debug/ for prior debug reports with similar symptoms
+- Run: git log --oneline -20 -- <affected-service-paths>
+- Check if recent commits could have introduced the issue
+- Search GitHub issues: gh issue list --search "<error keywords>" --limit 5
+- Report: prior occurrences, related changes, known issues
+```
+
+### Sub-agent Selection
+
+Not all 4 agents are always needed. Select based on symptom:
+
+| Symptom type | Agents to launch |
+|-------------|-----------------|
+| Connection refused / timeout | All 4 |
+| Wrong data / unexpected output | 3.2 (logs) + 3.3 (trace) + 3.4 (history) |
+| Slow performance | 3.1 (health) + 3.2 (logs) + 3.3 (trace) |
+| Service won't start | 3.1 (health) + 3.2 (logs) |
+| Intermittent failure | All 4 |
+| UI rendering issue | 3.2 (logs) + 3.4 (history) |
+
+## Phase 4: Diagnosis Synthesis
+
+After sub-agents return, synthesize findings into a root cause analysis:
+
+1. **Correlate evidence** across agents — look for consistent signals
+2. **Rank hypotheses** by evidence strength:
+   - **Confirmed**: Direct evidence from logs + reproduction
+   - **Probable**: Strong circumstantial evidence (e.g., resource contention + timing)
+   - **Possible**: Consistent with symptoms but lacking direct proof
+3. **Apply cognitive guards** (from debugging principles):
+   - Actively seek evidence that contradicts the leading theory
+   - Match the fix to the cause, not to how scary the error looks
+   - If you haven't checked "is the service running?", don't recommend code changes
+
+## Phase 5: Write Debug Report
+
+Write the report to the path determined in Phase 2:
+
+```markdown
+---
+reported: YYYY-MM-DD
+status: diagnosed | needs-investigation | cannot-reproduce
+severity: blocking | degraded | cosmetic
+primary_system: <system-folder-name>
+also_affects:
+  - <other-system-folder-name>
+trigger: <what the user was doing>
+error: <exact error text>
+---
+
+# Debug: <short description>
+
+## Symptom
+<Structured description from Phase 1>
+
+## Evidence
+
+### Infrastructure Health
+<Agent 3.1 findings — service status, resource usage, port checks>
+
+### Log Analysis
+<Agent 3.2 findings — relevant log excerpts, error patterns>
+
+### Dependency Trace
+<Agent 3.3 findings — request path analysis, failing hop>
+
+### Spec & History
+<Agent 3.4 findings — prior occurrences, recent changes>
+
+## Root Cause
+<Identified cause OR ranked hypotheses with evidence for each>
+
+### Confidence: <confirmed | probable | possible>
+<Reasoning for the confidence level>
+
+## Recommended Action
+- [ ] **Fix via `/smith-bugfix`** — <one-liner description of the fix>
+- [ ] **Config change** — <what to change and where>
+- [ ] **Known limitation** — <document and accept>
+- [ ] **Needs deeper investigation** — <what to investigate next>
+
+## Related
+- <links to relevant specs, issues, prior debug reports>
+```
+
+## Phase 5.5: Update `.meta` Descriptions for Touched Methods (Conditional)
+
+`/smith-debug` is read-only by design — it produces a debug report but
+does NOT modify source code. **Skip this phase** when the workflow has
+not written or edited any source file.
+
+If the workflow DID write or edit any source file (e.g. a one-line
+probe insertion that was committed by accident, or a future evolution
+that allows targeted instrumentation), apply the v3 inline
+Task-spawning prose from `/smith-bugfix` Phase 3.5 step 3:
+
+1. `python3 ~/.smith/scripts/describe_discover.py --rel-path <p>
+   --touched-only --touched-ids <ids>`
+2. `python3 ~/.smith/scripts/describe_write.py build-prompt
+   --rel-path <p> --method-ids <ids> [--module --purpose-shifted true]`
+3. Spawn ONE Task: `subagent_type=general, model=claude-haiku-4-5`,
+   prompt = output of step 2.
+4. Pipe the Task's JSON output into `python3 ~/.smith/scripts/
+   describe_write.py apply --update-touched --rel-path <p>
+   --purpose-shifted <true|false>`.
+
+Subscription billing via session auth (v3 / PR #23 inverted the
+orchestration; the v2 `ANTHROPIC_API_KEY` shell-out path is removed).
+
+See `/smith-bugfix` Phase 3.5 for full identification, the
+`purpose_shifted` heuristic, and failure handling. The save hook
+preserves description bytes across re-saves, so any descriptions
+generated here survive subsequent edits (data-model.md §3.2). Missing
+descriptions are surfaced as non-blocking PR-body warnings by
+`/smith-build` (data-model.md §9).
+
+## Phase 6: Decision Gate
+
+Present the diagnosis summary to the user and ask:
+
+```
+## Diagnosis Complete
+
+**Root cause:** <one-sentence summary>
+**Confidence:** <confirmed/probable/possible>
+**Report saved:** .specify/systems/<system>/debug/debug-YYYY-MM-DD-<slug>.md
+
+Would you like me to:
+[1] Fix it — kick off /smith-bugfix with this diagnosis as context
+[2] Investigate deeper — drill into <specific hypothesis or area>
+[3] Close — the report is enough for now
+```
+
+### If user selects [1] (Fix it):
+- Invoke `/smith-bugfix` with the diagnosis context:
+  - Pass the root cause, affected files, and recommended fix from the debug report
+  - The bugfix workflow will reference the debug report in its spec cross-reference phase
+  - The debug report's status updates to `fix-in-progress`
+
+### If user selects [2] (Investigate deeper):
+- Ask what specific area to investigate
+- Re-run the relevant sub-agent(s) with a more targeted scope
+- Append findings to the existing debug report under a new `## Follow-up Investigation` section
+- Return to the decision gate
+
+### If user selects [3] (Close):
+- Update the debug report status to `closed` or `documented`
+- Log the diagnosis summary (root cause and confidence level) as a regular event entry in the session log
+- Run the totals command and include the lines it prints verbatim at the bottom of the closing chat message. Pass the workflow's own session log via `--session` so totals survive a mid-workflow session-log rollover:
+  ```bash
+  # $SESSION was captured at workflow start. Fall back to .current-session.
+  SESSION="${SESSION:-$(cat .smith/vault/.current-session 2>/dev/null)}"
+  bash hooks/workflow-summary.sh --totals-only --session "$SESSION"
+  ```
+  If it prints `n/a (no workflow invocation found)` and exits non-zero, do NOT present those as real numbers — note totals were unavailable and which session file was checked.
+- The full `=== Workflow Summary ===` block is appended to the session log file automatically by the `workflow-summary.sh` Stop hook once the active-workflow file is cleaned up — that's for audit only, do not duplicate it in chat
+- Log completion to vault
+
+### Clear Workflow Tracking (all three paths)
+
+After Phase 6 completes — regardless of which option the user picked — remove the Phase 0 active-workflow marker so the workflow-gate hook returns to denying ad-hoc edits:
+
+```bash
+.specify/scripts/bash/clear-active-workflow.sh "debug-${SLUG}"
+```
+
+If option [1] (Fix it) was chosen, the marker is cleared *before* `/smith-bugfix` is invoked — the bugfix workflow creates its own marker.
+
+## Post-Workflow Reflection
+
+After workflow completion (regardless of which Phase 6 option the user selected), trigger a Ledger reflection if enabled. Debug runs surface valuable signal — root causes, false hypotheses, diagnostic dead-ends — that should feed back into `antipatterns.md` and `edge-cases.md` for future runs.
+
+1. Read `.smith/config.json` — if `ledger.auto_reflect` is `true` (default), proceed
+2. Launch a **non-blocking** background sub-agent using the configured reflection model (default: Haiku):
+   - Pass: current session log path, `.smith/vault/ledger/` path, and the debug report path
+   - The sub-agent runs the `smith-reflect` workflow
+   - Do NOT wait for the sub-agent to complete
+3. If `.smith/config.json` is missing or `ledger.auto_reflect` is `false`, skip silently
+
+### Post-Reflection Reconciliation Check
+
+After reflection completes (or is skipped):
+
+1. Read `.smith/config.json` — if `ledger.reconcile.auto_reconcile` is `false`, skip
+2. Read `.smith/vault/ledger/.meta.json` — check signals against thresholds:
+   - `estimated_tokens > thresholds.total_tokens_max` (default 30000)
+   - `context_budget_violations > thresholds.context_violations_threshold` (default 3)
+   - `reinforcements_since_reconcile > thresholds.reinforcements_threshold` (default 50)
+3. Check minimum interval: if `last_reconcile` is less than `minimum_hours_between_reconciles` (default 6) hours ago, skip
+4. If any threshold exceeded AND minimum interval has passed:
+   - Launch a **non-blocking** background sub-agent using the configured `reconcile_model` (default: Haiku)
+   - Pass: "Run /smith-ledger reconcile on this project"
+   - Do NOT wait for the sub-agent to complete
+5. If no threshold exceeded, `.meta.json` is missing, or config is missing, skip silently
+
+## Key Rules
+
+- **Read-only**: This workflow NEVER modifies application code, configs, or Docker services
+- **No premature fixes**: Gather evidence first, diagnose second, fix third (via bugfix handoff)
+- **Cheapest test first**: Check if the service is running before analyzing code paths
+- **Parallel where possible**: Launch sub-agents concurrently to minimize wall-clock time
+- **Preserve evidence**: Log excerpts and findings go in the report, not just conclusions
+- **Cognitive guards**: Actively fight anchoring bias — the first theory isn't always right
+- **System-scoped storage**: Debug reports live alongside their system's specs, not in a global folder

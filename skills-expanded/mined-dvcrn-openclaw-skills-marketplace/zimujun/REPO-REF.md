@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/kyriswu--zimujun/skills/zimujun/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 字幕菌（zimujun）：通过 npm 包 zimujun 从主流视频平台链接提取视频文案/字幕文本。适用于 YouTube、TikTok/抖音、小红书、Bilibili 等平台。"

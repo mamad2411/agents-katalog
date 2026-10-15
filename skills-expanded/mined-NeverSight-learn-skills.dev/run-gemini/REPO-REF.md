@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/lostabaddon/headlessknight/run-gemini/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 向助手发出协助请求，适用于长文阅读理解、网络搜索、网页读取、文章翻译、网页与前端界面制作等任务场景。

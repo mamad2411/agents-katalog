@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/inoue2002/cosense-skill/cosense/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Cosense（旧Scrapbox）のページ読み取り・検索・新規作成・編集を行うスキル。環境変数COSENSE_SIDとCOSENSE_PROJECTを使用してAPIを操作する。「Cosenseのページを読みたい」「Cosenseで検索」「Cosenseにページを作成」「Cosenseのページを編集」「スクボ」「scrapbox」などの依頼時に使用。"

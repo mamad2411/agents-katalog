@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/stardusten--tencentcloud-asr/skills/asr-sentence-recognition/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 腾讯云语音识别 ASR Skill，适用于语音转文字、音频转写、字幕生成、会议转录、语音消息识别、 本地文件或 URL 音频识别。包含三种模式：一句话识别（<=60s 短音频）、录音识别极速版 （<=2h/100MB 中长音频快速同步返回）、录音识别（<=5h 长音频异步识别）。支持普通话、 英语、粤语、日语、韩语、德语等语种，以及中英粤混说和多种中文方言。"

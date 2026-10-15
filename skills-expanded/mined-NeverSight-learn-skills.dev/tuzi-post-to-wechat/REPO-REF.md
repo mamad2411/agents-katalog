@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tuziapi/tuzi-skills/tuzi-post-to-wechat/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 通过 API 或 Chrome CDP 发布内容到微信公众号。支持文章发布（HTML、Markdown 或纯文本输入）和图文消息发布（多图）。当用户提到"发布公众号"、"微信公众号"、"贴图"、"图文"、"文章"时使用。

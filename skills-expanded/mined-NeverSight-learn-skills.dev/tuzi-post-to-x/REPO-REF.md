@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tuziapi/tuzi-skills/tuzi-post-to-x/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 发布内容和文章到 X (Twitter)。支持带图片/视频的普通推文和 X Articles（长文 Markdown）。使用真实 Chrome 配合 CDP 绕过反自动化检测。当用户要求"发推"、"发布到X"、"发Twitter"时使用。

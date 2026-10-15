@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/icartsh/icartsh_plugin/code-analyze/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: .NET 코드에서 정적 분석(Static analysis), 보안 스캔(Security scan) 및 종속성 체크(Dependency check)를 수행합니다. 코드 품질, 보안 감사 또는 취약점 탐지가 포함된 작업에서 사용합니다.

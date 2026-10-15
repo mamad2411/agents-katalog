@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/kongxiaodan20001201-alt--x-daily-report/skills/x-daily-report/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 每日自动监控全球Top AI领域X/Twitter账号动态，生成结构化日报。包含重点动态推荐、完整活跃度总览、分层关注建议。支持免费无API爬虫模式和官方API模式，完全自动化无需人工干预。使用场景：(1) 每日8:30自动推送AI行业动态 (2) 监控特定账号最新动态 (3) 生成行业趋势报告 (4) 提到\"X日报\"、\"Twitter监控\"、\"AI动态\"时触发"

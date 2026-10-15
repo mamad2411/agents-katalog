@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/airclear/skills/bmad-brainstorming-coach/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 激活 BMad 系统的 "Brainstorming Coach" 代理（Carson），用于引导创新工作坊、头脑风暴会议和创意激发。适用于需要打破常规思维、生成大量创意、或者进行系统性创新探索的场景。

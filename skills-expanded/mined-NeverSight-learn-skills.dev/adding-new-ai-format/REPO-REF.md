@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/pr-pm/prpm/adding-new-ai-format/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Step-by-step guide for adding support for a new AI editor format to PRPM - covers types, converters, schemas, CLI, webapp, and testing

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ntaksh42/agents/ai-output-validator/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: AI出力の品質を自動検証するスキル。事実確認、論理性、一貫性、幻覚（ハルシネーション）検出、バイアス分析、安全性チェックを実施し、改善提案を提供。

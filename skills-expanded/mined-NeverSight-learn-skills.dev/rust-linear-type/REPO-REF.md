@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/huiali/rust-skills/rust-linear-type/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 线性类型与资源管理专家。处理 Destructible, 资源清理, RAII, unique object, linear semantics, 线性语义, 资源所有权, 独占语义"

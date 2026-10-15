@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/evan715823/cheatsheet-generator-skill/cheatsheet-generator/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Cheatsheet Generator

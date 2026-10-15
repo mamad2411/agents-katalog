@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/aliyun/data-agent-skill/alibabacloud-data-agent-skill/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 更新日志

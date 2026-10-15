@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/mengfei0053/skills/openharmony-ability-kit/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 用于使用 Ability Kit 开发 OpenHarmony 应用时 - UIAbility 生命周期、使用 Want 进行组件通信、Context API、ExtensionAbility、BundleManager,或处理错误如 16000001(ability 未找到)、16000011(context 不存在)等

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/prorise-cool/claude-code-multi-agent/design-specialist/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 提供 UI/UX 设计、用户研究、视觉设计和品牌一致性能力。当需要设计界面、进行用户研究或创建视觉资产时使用。

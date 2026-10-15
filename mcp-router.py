@@ -15,13 +15,15 @@ Tools:
 Daftarkan ke provider:
   claude mcp add --scope user mcp-router -- python3 ~/.agents/mcp-router.py
 """
-import json, os, sys, time, subprocess, threading, re
+import json, os, sys, time, subprocess, threading, re, urllib.request
 from pathlib import Path
 
 AG = Path.home() / ".agents"
 CATALOG_F = AG / "mcp-catalog.json"
 PARKED_F  = AG / "mcp-parked.json"
 USAGE_F   = AG / "mcp-usage.json"
+CAP_CATALOG_F = AG / "cap-catalog.json"   # aset komunitas (prompt/agent/rule/…)
+CAP_STORE     = AG / "cap-store"          # cache konten on-demand
 IDLE_TTL  = 300   # detik idle sebelum proses MCP dibunuh otomatis
 REAP_EVERY = 60   # interval reaper
 
@@ -289,6 +291,111 @@ def tool_mcp_status(args):
         return "\n".join(out)
 
 
+def tool_cap_search(args):
+    q = (args.get("query") or "").lower().strip()
+    typ = (args.get("type") or "").lower().strip()
+    cat = _load(CAP_CATALOG_F, [])
+    if not cat:
+        return "Katalog aset kosong. Jalankan: python3 ~/.agents/cap-crawler.py"
+    scored = []
+    for it in cat:
+        if typ and it.get("type") != typ:
+            continue
+        hay = (it.get("name", "") + " " + it.get("repo", "") + " " + it.get("path", "")).lower()
+        score = 0
+        for tok in q.split():
+            if tok in it.get("name", "").lower():
+                score += 5
+            if tok in hay:
+                score += 2
+        if score > 0 or not q:
+            scored.append((score, it))
+    scored.sort(key=lambda x: -x[0])
+    if not scored:
+        return "Tidak ketemu aset `%s`." % q
+    out = ["**%d aset** cocok `%s`%s (dari %d total). Ambil isinya: `cap_get(id)`." % (
+        len(scored), q or "*", (" [tipe=%s]" % typ) if typ else "", len(cat)), "",
+        "| tipe | name | repo | id |", "|---|---|---|---|"]
+    for _, it in scored[:40]:
+        out.append("| %s | `%s` | %s | `%s` |" % (
+            it["type"], it["name"], it["repo"], it["id"]))
+    if len(scored) > 40:
+        out.append("\n...dan %d lagi — persempit query/type." % (len(scored) - 40))
+    return "\n".join(out)
+
+
+def tool_cap_get(args):
+    cid = (args.get("id") or "").strip()
+    if not cid:
+        return "Butuh `id` (dapat dari `cap_search`)."
+    cat = _load(CAP_CATALOG_F, [])
+    it = next((x for x in cat if x.get("id") == cid), None)
+    if not it:
+        return "id `%s` tidak ada di katalog." % cid
+    cache = CAP_STORE / it["type"] / (it["id"] + ".md")
+    if cache.exists():
+        body = cache.read_text(encoding="utf-8", errors="ignore")
+    else:
+        body = None
+        for br in ("main", "master"):
+            url = "https://raw.githubusercontent.com/%s/%s/%s" % (it["repo"], br, it["path"])
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "mcp-router/1.0"})
+                body = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "ignore")
+                break
+            except Exception:
+                continue
+        if body is None:
+            return "Gagal ambil konten %s/%s (branch main/master tidak ada)." % (it["repo"], it["path"])
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(body, encoding="utf-8")
+    return "**%s** [%s] %s/%s\n\n%s" % (
+        it["name"], it["type"], it["repo"], it["path"], body[:6000])
+
+
+def tool_retrieve(args):
+    q = (args.get("query") or "").strip()
+    if not q:
+        return "Butuh `query`."
+    k = int(args.get("k") or 5)
+    kind = (args.get("kind") or "").strip() or None
+    try:
+        sys.path.insert(0, str(AG))
+        import retrieve
+        res = retrieve.search(q, k, kind)
+    except Exception as e:
+        return "retrieve err: %s" % str(e)[:120]
+    if not res:
+        return "Tidak ada aset cocok untuk '%s'." % q
+    lines = ["%d aset paling relevan untuk '%s':" % (len(res), q)]
+    for i, r in enumerate(res, 1):
+        lines.append("%d. [%s] %s (★%s, %s) id=%s"
+                     % (i, r["kind"], r["name"], r["stars"], r["source"], r["id"]))
+    lines.append("Ambil isi: cap_get(id=...) untuk aset cap; mcp_use untuk MCP.")
+    return "\n".join(lines)
+
+
+def tool_self_check(args):
+    text = args.get("text") or ""
+    if not text.strip():
+        return "Butuh `text` (draft jawaban untuk dicek)."
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("self_check_mod",
+                                                      str(AG / "self-check.py"))
+        sc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sc)
+        r = sc.check(text)
+    except Exception as e:
+        return "self_check err: %s" % str(e)[:120]
+    out = ["SELF-CHECK: %d/100 (%s), %d kata" % (r["score"], r["verdict"], r["words"])]
+    if not r["issues"]:
+        out.append("  bersih — tidak ada slop/boros terdeteksi.")
+    for it in r["issues"]:
+        out.append("  - [%s] %s (-%d)" % (it["type"], it["detail"], it["penalty"]))
+    return "\n".join(out)
+
+
 TOOLS = [
     ("mcp_list", "Daftar/cari MCP di katalog+parkiran. AI liat apa aja MCP yg ada (tanpa nyalain).",
      {"type": "object", "properties": {"query": {"type": "string"}}, "required": []}),
@@ -301,10 +408,25 @@ TOOLS = [
       "required": ["name", "tool"]}),
     ("mcp_status", "Lihat MCP mana yg lagi idup sekarang + idle-nya.",
      {"type": "object", "properties": {}}),
+    ("cap_search", "Cari ASET komunitas selain MCP: prompts, agents/subagents, slash-commands, hooks, rules(.mdc), plugins, mcp-config, context-file, skills. Katalog-only, nol beban.",
+     {"type": "object",
+      "properties": {"query": {"type": "string"}, "type": {"type": "string"}},
+      "required": []}),
+    ("cap_get", "Ambil isi 1 aset (prompt/agent/rule/…) by id dari cap_search. Konten diunduh on-demand lalu di-cache.",
+     {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}),
+    ("retrieve", "Cari ASET paling relevan dari SEMUA (skill+MCP+prompt/agent/rule, ~147k aset) pakai BM25. Balikin top-k + id. PAKAI INI DULU sebelum memuat banyak aset — hemat token.",
+     {"type": "object",
+      "properties": {"query": {"type": "string"}, "k": {"type": "integer"},
+                     "kind": {"type": "string"}},
+      "required": ["query"]}),
+    ("self_check", "Kritik-diri draft jawaban (anti-slop, struktur, boros token) TANPA LLM. Jalankan SEBELUM kirim jawaban final.",
+     {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}),
 ]
 HANDLERS = {
     "mcp_list": tool_mcp_list, "mcp_search": tool_mcp_search,
     "mcp_use": tool_mcp_use, "mcp_status": tool_mcp_status,
+    "cap_search": tool_cap_search, "cap_get": tool_cap_get,
+    "retrieve": tool_retrieve, "self_check": tool_self_check,
 }
 
 

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/trade/skills/aussenwirtschaft-embargo-nordkorea/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Embargo Nordkorea: Umfassendes Sanktionsregime und Proliferationskontrolle: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

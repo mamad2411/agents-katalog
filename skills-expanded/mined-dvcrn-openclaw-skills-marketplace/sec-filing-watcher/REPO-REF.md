@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/in-liberty420--sec-filing-watcher/skills/sec-filing-watcher/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Monitor SEC EDGAR for new filings and get Telegram/Slack summaries via Clawdbot. Use when setting up SEC filing alerts, adding/removing tickers to monitor, configuring form types, starting/stopping th

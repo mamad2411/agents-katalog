@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/zhaihao118/Micro-Drama-Skills (path: .claude/skills/generate-media/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 短剧媒体生成技能。根据已生成的单部作品目录，调用 Google Gemini API（单一可配置图片模型生成角色图/分镜图），将生成的图片存放到对应各集目录下。支持视觉风格预设配置。关键词：图片生成、Gemini、Google API、分镜图片、角色参考图、media generation、视觉风格。

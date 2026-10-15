@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/crescent617/skill-forge/gamedev-factory/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Yomi 游戏工厂流水线：多 agent 分工做游戏（策划/美术/试玩验收 subagent + 帧驱动 E2E + errors.md 经验闭环）。当立项新游戏、游戏进入量产/验收/收尾阶段，或要用 games/_factory 的引擎与骨架时使用。

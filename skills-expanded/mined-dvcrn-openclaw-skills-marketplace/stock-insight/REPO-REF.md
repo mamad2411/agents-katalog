@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/karlinmoon--stock-insight/skills/stock-insight/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 股票深度分析Skill，遵循「起手式→总分总→可执行结论」三段式分析范式。输出专业感强、有人味、有惊喜的研判报告，检验标准：专业感、更懂用户、有惊喜、本质逻辑、高信噪比、事实准确。触发词：分析一下、研究、深度分析、怎么看、值不值得买、能不能涨、研判、洞察。"

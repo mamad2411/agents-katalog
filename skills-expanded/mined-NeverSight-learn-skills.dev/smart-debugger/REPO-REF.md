@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/sakumyz/skills/smart-debugger/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 前端智能调试助手。从错误信息、控制台日志、异常行为描述快速定位问题代码并给出修复建议。适用于：(1) 运行时错误（TypeError、ReferenceError 等），(2) 控制台警告分析，(3) 页面白屏/卡顿排查，(4) 网络请求异常，(5) 组件渲染异常。与 BugHunter 区别：smart-debugger 聚焦快速定位，BugHunter 做完整闭环修复。

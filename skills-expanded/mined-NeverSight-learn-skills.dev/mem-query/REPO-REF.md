@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zephyrwang6/myskill/mem-query/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: AI个人记忆系统的记忆查询功能。检索各层级记忆文件，综合多层级信息回答用户问题。使用场景：(1) 用户问"我的记忆中关于XXX"时；(2) 用户询问自己的习惯/偏好/价值观时；(3) 需要基于用户历史提供建议时。该skill会自动检索L1-L4各层级，引用来源，给出基于记忆的个性化回答。

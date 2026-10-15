@@ -1,15 +1,15 @@
-# SKILLS CONCEPTS — peran skill (generated 2026-10-09 11:12)
+# SKILLS CONCEPTS — peran skill (generated 2026-10-12 18:27)
 
 Dimensi **apa** peran skill, melengkapi kategori role. Curated = terawat, reference = cek dulu.
 
 | Konsep | Jumlah | Contoh |
 |---|---|---|
-| generator | 15417 | `8-bit-orbit-video-template`, `absolute-upgrade`, `ace-step`, `acquire-codebase-knowledge`, `acreadiness-generate-instructions`, `ad-creative` |
-| reviewer | 15328 | `absolute-audit`, `absolute-docs`, `absolute-spec`, `absolute-work`, `access-review`, `accessibility-auditing` |
-| automator | 11839 | `accessibility`, `ado-windows-git-bash-compatibility`, `adobe-illustrator-scripting`, `advanced-features-2025`, `agent-browser-automation`, `agent-introspection-debugging` |
-| advisor | 6421 | `absolute-init`, `academy-guide`, `add-model-price`, `advanced-array-patterns`, `agent-platform-alert-configuration`, `agent-platform-migrate-from-ai-studio` |
-| integrator | 7276 | `724-office-ai-agent`, `adding-e2e-tests`, `adding-stripe`, `agent-flow-visualization`, `airflow-plugins`, `anki-connect` |
-| analyzer | 6279 | `a-b-test-analysis`, `ab-test-setup`, `ab-testing`, `absolute-deflake`, `absolute-ui`, `academic-search` |
-| transformer | 3301 | `absolute-simplify`, `agent-harness-construction`, `aglais-xqvm-quantum-vm`, `alembic`, `angular-migration`, `at-dispatch-v2` |
-| assistant | 6441 | `accelerated-computing-cudf`, `acreadiness-policy`, `add-educational-comments`, `agency-agents-ai-specialists`, `agent-payment-x402`, `agent-platform-model-registry` |
-| lainnya | 21546 | `3dsvg-interactive-react`, `absolute-debt`, `absolute-prune`, `access-control-rbac`, `accessibility-compliance`, `accessibility-testing` |
+| generator | 15452 | `8-bit-orbit-video-template`, `absolute-upgrade`, `ace-step`, `acquire-codebase-knowledge`, `acreadiness-generate-instructions`, `ad-creative` |
+| reviewer | 15667 | `absolute-audit`, `absolute-docs`, `absolute-spec`, `absolute-work`, `access-review`, `accessibility-auditing` |
+| automator | 11773 | `accessibility`, `ado-windows-git-bash-compatibility`, `adobe-illustrator-scripting`, `advanced-features-2025`, `agent-browser-automation`, `agent-introspection-debugging` |
+| advisor | 6417 | `absolute-init`, `academy-guide`, `add-model-price`, `advanced-array-patterns`, `agent-platform-alert-configuration`, `agent-platform-migrate-from-ai-studio` |
+| integrator | 7282 | `724-office-ai-agent`, `adding-e2e-tests`, `adding-stripe`, `agent-flow-visualization`, `airflow-plugins`, `anki-connect` |
+| analyzer | 6326 | `a-b-test-analysis`, `ab-test-setup`, `ab-testing`, `absolute-deflake`, `absolute-ui`, `academic-search` |
+| transformer | 3335 | `absolute-simplify`, `agent-harness-construction`, `aglais-xqvm-quantum-vm`, `alembic`, `angular-migration`, `at-dispatch-v2` |
+| assistant | 6478 | `accelerated-computing-cudf`, `acreadiness-policy`, `add-educational-comments`, `agency-agents-ai-specialists`, `agent-payment-x402`, `agent-platform-model-registry` |
+| lainnya | 21705 | `3dsvg-interactive-react`, `absolute-debt`, `absolute-prune`, `access-control-rbac`, `accessibility-compliance`, `accessibility-testing` |

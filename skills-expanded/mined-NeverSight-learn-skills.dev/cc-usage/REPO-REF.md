@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/aster110/mycc/cc-usage/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 查看 Claude Code 的 token 用量统计。按日期×模型维度拆分，支持按天数、项目过滤。触发词："/cc-usage"、"看看用量"、"token 消耗"、"用量统计"

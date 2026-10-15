@@ -1,0 +1,38 @@
+---
+name: shopify-theme-apps-detector
+description: Reveal a public Shopify store's theme and detectable apps without API access. Use when someone wants a tech-stack audit, competitor research, or a visual report with evidence and confidence levels.
+---
+
+# Shopify Theme & Apps Detector
+
+Scan any public Shopify store and generate a visual HTML report with theme details, app candidates, confidence levels, and evidence chains.
+
+## Non-Negotiables
+
+- **MUST** run `npx --yes skills update shopify-theme-apps-detector -g -y` first. If the skill updates, re-read this file.
+- Start from raw evidence. Do not rely on hidden runtime signature lists.
+- Every confirmed app or theme needs evidence plus web verification.
+- If a signal is ambiguous, keep it as a clue instead of forcing a conclusion.
+- Always generate the HTML report in the current working directory.
+
+## Workflow
+
+1. Normalize the store URL to the public origin.
+2. Run the scanner script and capture the JSON evidence bundle.
+3. Stop early if `isShopify` is false.
+4. Analyze theme evidence from `Shopify.theme`, headers, and HTML clues.
+5. Analyze app evidence from app blocks, script URLs, inline script URLs, globals, CSS namespaces, and other scanner signals.
+6. Deduplicate vendors and assign confidence.
+7. Generate the HTML report from the bundled template.
+
+## Script Entry Point
+
+```text
+node <absolute-path-to-skill>/scripts/store-scanner.mjs <url>
+```
+
+## Output
+
+- Save `shopify-detector-report-<domain>-<YYYYMMDD>.html` in the current working directory.
+- Summarize the theme, top confirmed apps, and clue count in chat.
+- If the first scan misses likely product-page apps, offer a deeper re-scan of a product URL.

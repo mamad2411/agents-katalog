@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/inkeep/open-knowledge-skills/open-knowledge-pack-worldbuilding/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: How to work in a Worldbuilding project (the `worldbuilding` starter pack): a fiction encyclopedia of characters, settings, themes, factions, and lore. Read when the project has these folders, OR when 

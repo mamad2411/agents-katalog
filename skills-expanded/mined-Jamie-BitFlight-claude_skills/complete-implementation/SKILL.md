@@ -1,0 +1,687 @@
+---
+name: complete-implementation
+argument-hint: <plan-address-or-item-reference>
+user-invocable: true
+description: "Use when all tasks for a feature are marked COMPLETE — runs holistic quality gates including code review, feature verification, integration check, documentation drift audit and update, and context refinement. Creates follow-up plans when issues are found."
+compatibility: Python 3.11+
+metadata:
+  version: 2.2.0
+  last_updated: '2026-08-30'
+---
+
+# Complete Implementation (Quality Gates + Recursion)
+
+<input>
+$ARGUMENTS
+</input>
+
+Load `dh:dh-cli-usage` before using `<sam_cli/>` below.
+
+The `references/recursive-follow-up-handling.md` file loaded by this skill is a plain file, not
+substituted — it shows bare SAM CLI subcommands and args only (e.g. `backlog list --title "..."`),
+never the invocation prefix. Prepend `<sam_cli/>` to every one of them.
+
+---
+
+> [!IMPORTANT]
+> When provided a process map or Mermaid diagram, treat it as the authoritative procedure. Execute steps in the exact order shown, including branches, decision points, and stop conditions.
+> A Mermaid process diagram is an executable instruction set. Follow it exactly as written: respect sequence, conditions, loops, parallel paths, and terminal states. Do not improvise, reorder, or skip steps. If any node is ambiguous or missing required detail, pause and ask a clarifying question before continuing.
+> When interacting with a user, report before acting the interpreted path you will follow from the diagram, then execute.
+
+---
+
+## Input Format Detection
+
+Parse `$ARGUMENTS` to determine the input type before proceeding. A plan address is an opaque
+logical identifier returned by `sam_plan`; pass it through unchanged.
+
+```mermaid
+flowchart TD
+    Input["Read $ARGUMENTS"] --> Q2{"starts with '#'?"}
+    Q2 -->|Yes| IssueHash["Strip '#' → issue_number<br>→ proceed to 'Resolve Issue'"]
+    Q2 -->|No| Q3{"matches ^[0-9]+$ ?"}
+    Q3 -->|Yes| IssueBare["issue_number = input<br>→ proceed to 'Resolve Issue'"]
+    Q3 -->|No| Q4{"contains '/issues/'?"}
+    Q4 -->|Yes| IssueURL["Extract number from URL path<br>→ proceed to 'Resolve Issue'"]
+    Q4 -->|No| Q5{"work-item reference?<br>e.g. bd-a3f8"}
+    Q5 -->|Yes| IssueBeads["issue_id = input str<br>→ Resolve Issue"]
+    Q5 -->|No| Q6{"non-empty string?"}
+    Q6 -->|Yes| PlanAddress["PLAN ADDRESS format<br>→ proceed to 'Resolve Plan Address'"]
+    Q6 -->|No| Err["ERROR: empty input.<br>Expected: plan address or work-item reference."]
+```
+
+---
+
+## Resolve Issue
+
+Entered when input is `#N`, bare `N`, GitHub URL, or another work-item reference such as
+`bd-a3f8`. Normalize it to the opaque `{item_ref}` used by the selected backend. Skip for plan
+address input.
+
+**Step 1 -- Fetch issue data**:
+
+```bash
+<sam_cli/> backlog view --selector "{item_ref}"
+```
+
+If the response contains an `error` key:
+
+```text
+ERROR: Work item {item_ref} not found. Verify the reference and try again.
+```
+
+Stop.
+
+**Step 2 -- Check for linked plan**:
+
+Read the `plan` field from the response.
+
+```mermaid
+flowchart TD
+    Plan{plan field<br>present and non-empty?}
+    Plan -->|Yes| AutoResolve["Read opaque plan address from plan field<br>→ proceed to 'Resolve Plan Address'<br>(existing 7-phase flow)"]
+    Plan -->|No| PropFlow["→ proceed to 'Proportional Quality Gates'"]
+```
+
+When auto-resolving to the SAM path, output:
+
+```text
+Work item {item_ref} has linked plan: {plan_address}
+Proceeding with full quality gates.
+```
+
+**Step 3 -- Extract context for proportional gates**:
+
+From the `backlog_view` response, extract and store:
+
+- `item_ref`: str (the response's non-empty `issue`; otherwise keep the normalized input selector)
+- `title`: str
+- `body`: str (full issue body text)
+- `labels`: list[str]
+- `issue_number`: int or None (GitHub only; used solely for commit-history discovery)
+
+These values are used by the Proportional Quality Gates section below.
+Set `{item_slug}` to the lowercase `{item_ref}` with each non-alphanumeric run replaced by one hyphen.
+
+---
+
+## Proportional Quality Gates
+
+Entered only when the work item has no linked plan. Skip this section for plan-address input or when
+the work item has a linked plan (auto-resolved to the SAM path).
+
+**Step 1 -- Discover modified files**:
+
+```bash
+git log --all --grep="#${issue_number}" --format=%H
+```
+
+Run the commit search only when `issue_number` is present. For each commit SHA returned:
+
+```bash
+git diff-tree --no-commit-id --name-only -r {sha}
+```
+
+Deduplicate the file list. If no commits reference the issue number, fall back to:
+
+```bash
+git diff --name-only main...HEAD
+```
+
+Store the deduplicated file list as `modified_files`.
+
+If `modified_files` is empty after both strategies:
+
+```text
+WARNING: No modified files found for work item {item_ref}.
+Code review and test verification will run against the full working tree.
+```
+
+**Step 2 -- Extract acceptance criteria from issue body**:
+
+Parse the `body` field for an acceptance criteria section. Search for these markers (case-insensitive, in order):
+
+1. `## Acceptance Criteria` header -- extract all content until next `##` header
+2. `**Acceptance Criteria**:` bold marker -- extract all content until next bold marker or `##` header
+3. Lines starting with `- [ ]` (unchecked checkboxes) -- collect all such lines
+
+Store as `acceptance_criteria` (string or None). If none found, set to None.
+
+**Step 3 -- Build proportional quality gate plan**:
+
+Create the SAM plan directly with 5 tasks. The documentation pass (T4 Documentation Drift Audit + T5 Documentation Update) is included on this direct/issue-only route exactly as it is on the full SAM path — a feature reached through proportional gates is held to the same documentation standard as one reached through a linked plan:
+
+```text
+mcp__plugin_dh_sam__sam_plan(
+    config={"action": "create",
+            "slug": "pqg-{item_slug}",
+            "goal": "Proportional quality gate verification for work item {item_ref}",
+            "owner_reference": "{item_ref}",
+            "tasks": [
+                {"id": "T1", "title": "Code Review",        "agent": "code-reviewer",   "dependencies": [],    "priority": 1, "complexity": "medium",
+                 "body": "Review files modified for work item {item_ref}: {modified_files}. Check against acceptance criteria: {acceptance_criteria}"},
+                {"id": "T2", "title": "Test Verification",  "agent": "feature-verifier","dependencies": ["T1"],"priority": 1, "complexity": "medium",
+                 "body": "Verify work item {item_ref} acceptance criteria are met. Files in scope: {modified_files}"},
+                {"id": "T3", "title": "Acceptance Check",   "agent": "integration-checker","dependencies": ["T2"],"priority": 1, "complexity": "low",
+                 "body": "Confirm acceptance criteria for work item {item_ref} pass end-to-end: {acceptance_criteria}"},
+                {"id": "T4", "title": "Documentation Drift Audit", "agent": "doc-drift-auditor","dependencies": ["T3"],"priority": 1, "complexity": "low",
+                 "body": "Audit documentation for drift introduced by work item {item_ref}. item_id={item_ref} (REQUIRED — register the audit-report artifact against it; block if absent). project_root is the repository root (your current working directory). Files in scope: {modified_files}. Report any docs that are now stale, missing, or contradicted by the change."},
+                {"id": "T5", "title": "Documentation Update", "agent": "service-docs-maintainer","dependencies": ["T4"],"priority": 1, "complexity": "low",
+                 "body": "Update documentation to resolve the drift found in T4 for work item {item_ref}. item_id={item_ref} (read the audit-report artifact registered against it). project_root is the repository root (your current working directory). Files in scope: {modified_files}."}
+            ]}
+)
+```
+
+The `pqg-` prefix (proportional quality gate) distinguishes this plan from full SAM gates. Store
+the response's opaque `plan_ref` as `{pqg_plan_address}` and pass it unchanged throughout the
+dispatch loop.
+
+**Step 3a -- Put the plan in the ledger**: the dispatch loop opens an attempt per task, and an
+attempt is a work-ledger row, so bring the freshly authored plan across before the first dispatch:
+
+```bash
+<sam_cli/> plan import --from content --plan-address "{pqg_plan_address}"
+```
+
+**Step 4 -- SAM dispatch loop**:
+
+Use the same SAM Dispatch Loop as the full-plan flow (see "SAM Dispatch Loop (Phases T0-T6)" section). The loop operates identically — 5 tasks instead of 7 is the only structural difference. The proportional plan omits T0 (Multi-Perspective Review) and T6 (Context Refinement), but retains the T4/T5 documentation pass.
+
+**Phase-specific post-dispatch actions for proportional gates**:
+
+```mermaid
+flowchart TD
+    Done{Which task<br>just completed?}
+    Done -->|"T1 Code Review"| T1Post["No follow-up extraction<br>(proportional gates do not<br>generate follow-ups)"]
+    Done -->|"T2 Test Verification"| T2Post["Check test results in agent output<br>If failures: log but do not block<br>(completion gate handles pass/fail)"]
+    Done -->|"T3 Acceptance Check"| T3Post["No post-dispatch action"]
+    Done -->|"T4 Drift Audit"| T4Post{"Read the Total findings count<br>from T4's ARTIFACTS return block<br>(full report is in the audit-report artifact)"}
+    T4Post -->|"0 findings — no drift"| SkipT5["plan state --address {pqg_plan_address}/T5<br>--new-status skipped --reason 'no drift found in T4'"]
+    T4Post -->|"1 or more findings — drift"| T5Ready["T5 remains NOT_STARTED — will be<br>dispatched on next loop iteration"]
+    Done -->|"T5 Documentation Update"| T5Post["No post-dispatch action"]
+    T1Post --> Continue["Continue loop"]
+    T2Post --> Continue
+    T3Post --> Continue
+    SkipT5 --> Continue
+    T5Ready --> Continue
+    T5Post --> Continue
+```
+
+**Detecting drift in T4 output**: The `@dh:doc-drift-auditor` agent returns a `Total findings: {count}` line in its `ARTIFACTS` block and registers the full drift report as the `audit-report` artifact. No drift = `Total findings: 0` → skip T5. Drift = `Total findings` of 1 or more → dispatch T5. If the count line is absent, read the `audit-report` artifact and treat a non-empty `## Findings by Category` as drift.
+
+**Step 5 -- Completion verification gate**:
+
+Execute the shared procedure in
+[./references/completion-verification-gate.md](./references/completion-verification-gate.md) with
+`{plan_address}` = `{pqg_plan_address}`, `{gate_name}` = "Proportional Quality Gate Incomplete",
+`{resume_arg}` = `{item_ref}`, `{next_step}` = "Step 6".
+
+**Step 6 -- Apply status:verified label**:
+
+On verification success:
+
+```text
+mcp__plugin_dh_backlog__backlog_update(selector="{item_ref}", verified=True)
+```
+
+Note — the CLI's `backlog update` has no `--verified` flag. This call must stay MCP.
+
+**Beads backend**: No `dh:state:verified` label — skip this call, continue.
+
+On failure (GitHub only), output:
+
+```text
+COMPLETION BLOCKED — status:verified label could not be applied.
+
+Error: {error}
+Work item: {item_ref}
+
+Fix the error (check backend credentials and access), then re-run /complete-implementation {item_ref}.
+```
+
+Stop. Do not proceed to the Final Step commit.
+
+**Step 7 -- No recursive follow-up handling**:
+
+The issue-only path does not produce follow-up plans. Skip directly to "Final Step: Commit and Push Remaining Changes", then "Confirm All Workers Finished", then "Resolve the Issue".
+
+---
+
+## Resolve Plan Address
+
+**Where task state lives**: a plan's authored content — its tasks, their criteria, the plan-level
+context — is written and read through the `sam_plan` and `sam_task` operations. Everything about a
+task's execution — its status, the attempts opened on it, the sections each attempt appended, the
+outcome each closed with — lives in the work ledger and is reached through the `<sam_cli/>`
+command's `plan` group. `plan import --from content --plan-address {plan_ref}` moves a plan from
+the first into the second, which is what this workflow runs before its first dispatch.
+
+Treat the supplied plan address as opaque. Pass the exact value to every `sam_plan`, `sam_task`,
+CLI `--plan-address`, and skill invocation below. Read the plan once with
+`plan status --plan-address {plan_address}`; use the plan row's `feature` field as `{slug}`
+and its `issue` field as `{item_ref}` when present. Do not derive either value from a path.
+
+---
+
+## Pre-Phase 1: TN Verification Check
+
+Before invoking Phase 1, check for a TN verification report produced by `tn-verification-gate` (which reads the T0 baseline written by `t0-baseline-capture`).
+
+Use the `{slug}` and `{item_ref}` resolved from the plan. When `{item_ref}` is present, read the
+TN-verification artifact via `artifact_read(item_id={item_ref}, artifact_type="TN-verification")`.
+When it is absent, proceed to Phase 1 because no artifact owner is addressable.
+
+The artifact content contains a list of per-criterion `BookendVerification` records — one per
+`acceptance-criteria-structured` entry. There is no top-level `verdict` field. Aggregate the verdict
+by scanning all records: the overall result is FAIL if any record has `status: regressed`;
+otherwise PASS.
+
+```mermaid
+flowchart TD
+    Read["artifact_read(item_id={item_ref}, artifact_type='TN-verification')"] --> Exists{Artifact exists?}
+    Exists -->|No| Proceed["No structured criteria — proceed to Phase 1"]
+    Exists -->|Yes| Scan["Scan all per-criterion records<br>for status: regressed"]
+    Scan --> AnyRegressed{Any criterion<br>has status: regressed?}
+    AnyRegressed -->|No| Proceed
+    AnyRegressed -->|Yes| Stop["STOP — report regressions and block completion"]
+    Stop --> Report["Display each criterion with status: regressed<br>Show check_command, T0 stdout, TN stdout<br>Instruct: fix regressions before re-running"]
+```
+
+If any criterion has `status: regressed`:
+
+1. List each criterion where `status: regressed` with its `check_command`, T0 captured stdout, and TN captured stdout.
+2. Output:
+
+```text
+COMPLETION BLOCKED — TN Verification Failed
+
+Regressed criteria:
+  {criterion-id}: {description}
+    command: {check_command}
+    T0 result: exit {code}, stdout: {stdout}
+    TN result: exit {code}, stdout: {stdout}
+
+Fix the regressions, then re-run /complete-implementation.
+```
+
+3. Stop. Do not proceed to Phase 1.
+
+---
+
+## Pre-Phase 1a: Migration Fidelity Sign-Off
+
+Before proceeding to Artifact Discovery, check for migration signals.
+
+Execute the full gate procedure defined in [./references/migration-fidelity-gate.md](./references/migration-fidelity-gate.md).
+
+**Summary of detection signals** (full evaluable criteria in the reference):
+
+- Issue title or body contains: "migrat", "convert format", "replace .md", "format conversion", "move from", "transition from"
+- Any task `acceptance_criteria` field contains: "delete", "remove source", "after migration complete", "drop the source"
+
+If no signal found — skip gate, proceed to Artifact Discovery.
+
+If signal found — confirm all four fidelity items from the reference before proceeding. If any unconfirmed, emit `COMPLETION BLOCKED — Migration Fidelity Gate` (format in reference) and stop.
+
+---
+
+## Pre-Phase: Artifact Discovery
+
+When `{item_ref}` is known, query its artifact manifest to discover all plan artifacts for this feature:
+
+```bash
+<sam_cli/> artifact list --item-id "{item_ref}"
+```
+
+If the response contains artifacts, pass the manifest and `{item_ref}` to quality gate agents
+(Phases T0-T6) so they can retrieve content with `artifact_read`. If the manifest is empty, proceed
+without optional artifacts. If the call errors, report the provider error and stop; artifact content
+has no second high-level storage route.
+
+---
+
+## Pre-Phase 1b: Process Accumulated Concerns
+
+Execute the full procedure defined in [./references/concerns-processing.md](./references/concerns-processing.md).
+
+**Summary**: Read backlog item → if `## Concerns` has unchecked items, verify each (create backlog item if real; mark unconfirmed if not) → update section → proceed to Quality Gate Plan Creation. If no concerns section, proceed immediately.
+
+---
+
+## Quality Gate Plan Creation
+
+After the pre-phases complete, set up the SAM-enforced quality gate plan.
+
+Use the `{slug}` resolved from the implementation plan's `feature` field.
+
+### Step 1: Check for existing QG plan
+
+```bash
+<sam_cli/> plan list --search "qg-{slug}"
+```
+
+```mermaid
+flowchart TD
+    List["sam_plan(config={action:'list', search:'qg-{slug}'})"] --> Found{QG plan found?}
+    Found -->|No| Create["sam_plan(config={action:'create', ...})<br>tasks list from phase mapping table"]
+    Found -->|Yes| Check{All tasks terminal?}
+    Check -->|"Yes — COMPLETE or SKIPPED"| Skip["Skip to Completion Verification Gate"]
+    Check -->|"No — tasks remain"| Reset["Reset BLOCKED tasks to NOT_STARTED,<br>resume SAM dispatch loop"]
+    Create --> Loop["Enter SAM Dispatch Loop"]
+    Reset --> Loop
+```
+
+When a QG plan is found, store that list entry's opaque `plan_ref` as `{qg_plan_address}`. Omit
+`owner_reference` from the create call below only when `{item_ref}` is absent.
+
+### Step 2: Create QG plan (if not found)
+
+If no QG plan exists, create it directly using the phase mapping table above:
+
+```text
+mcp__plugin_dh_sam__sam_plan(
+    config={"action": "create",
+            "slug": "qg-{slug}",
+            "goal": "Quality gate enforcement for {slug}",
+            "owner_reference": "{item_ref}",
+            "tasks": [
+                {"id": "T0", "title": "Multi-Perspective Review", "agent": "task-worker",     "dependencies": [],           "priority": 1, "complexity": "high"},
+                {"id": "T1", "title": "Code Review",              "agent": "code-reviewer",   "dependencies": [],           "priority": 1, "complexity": "medium"},
+                {"id": "T2", "title": "Feature Verification",     "agent": "feature-verifier","dependencies": ["T1"],       "priority": 1, "complexity": "medium",
+                 "body": "Verify goal achievement for {slug} (work item {item_ref}). plan_address={plan_address} (REQUIRED — this is the original feature plan to read for goals, tasks, and artifacts; the address used to dispatch this task is a separate quality-gate plan used only to claim and complete your own task). item_id={item_ref} (needed to read the architect artifact)."},
+                {"id": "T3", "title": "Integration Check",        "agent": "integration-checker","dependencies": ["T2"],   "priority": 1, "complexity": "medium",
+                 "body": "Verify cross-module integration for {slug} (work item {item_ref}). plan_address={plan_address} (REQUIRED — this is the original feature plan to read for exports, imports, and data flows; the address used to dispatch this task is a separate quality-gate plan used only to claim and complete your own task). item_id={item_ref}."},
+                {"id": "T4", "title": "Documentation Drift Audit","agent": "doc-drift-auditor","dependencies": ["T3"],     "priority": 1, "complexity": "low",
+                 "body": "Audit documentation for drift in {slug} (work item {item_ref}). item_id={item_ref} (REQUIRED — register the audit-report artifact against it; block if absent). project_root is the repository root (your current working directory)."},
+                {"id": "T5", "title": "Documentation Update",     "agent": "service-docs-maintainer","dependencies": ["T4"],"priority": 1, "complexity": "low",
+                 "body": "Update documentation to resolve the drift found in T4 for {slug} (work item {item_ref}). item_id={item_ref} (read the audit-report artifact registered against it). project_root is the repository root (your current working directory)."},
+                {"id": "T6", "title": "Context Refinement",       "agent": "context-refinement","dependencies": ["T5"],    "priority": 1, "complexity": "medium",
+                 "body": "Refine context and audit plan artifacts for {slug} (work item {item_ref}). plan_address={plan_address} (REQUIRED — this is the original feature plan to analyze; the address used to dispatch this task is a separate quality-gate plan used only to claim and complete your own task). item_id={item_ref} (needed only to read and annotate the architect and feature-context artifacts — if empty, skip that part and report it as a gap)."}
+            ]}
+)
+```
+
+Store the response's opaque `plan_ref` as `{qg_plan_address}`. This is the only address used for
+subsequent QG plan and task operations.
+
+### Step 2a: Put the QG plan in the ledger
+
+The plan is authored in the content store; the dispatch loop below opens an attempt per task, and
+an attempt is a work-ledger row. Bring the plan across once, whether it was just created or found:
+
+```bash
+<sam_cli/> plan import --from content --plan-address "{qg_plan_address}"
+```
+
+Safe to run when unsure — a plan the ledger already holds answers `exists` and changes nothing.
+After it, every `plan` command naming `{qg_plan_address}` reads and writes the ledger.
+
+### Step 3: Reopen blocked tasks (on re-run)
+
+If the QG plan already exists and has blocked tasks, send each back before entering the dispatch
+loop. `reclaim` returns the task to `not-started` and records why, in one move:
+
+```bash
+<sam_cli/> plan reclaim \
+  --address "{qg_plan_address}/{task_id}" --reason rerun \
+  --response "{what changed since the block, or what to try differently}"
+```
+
+On `attempts-exhausted`, add `--more-attempts` when the block is worth another try; otherwise
+`plan state --address "{qg_plan_address}/{task_id}" --new-status skipped --reason "{why}"`.
+
+This allows re-running `complete-implementation` to resume from the blocked phase without re-executing completed phases.
+
+---
+
+## SAM Dispatch Loop (Phases T0-T6)
+
+**Phase task mapping:**
+
+| Task | Phase | Agent |
+|------|-------|-------|
+| T0 | Multi-Perspective Review | dh:multi-perspective-review (orchestrated) |
+| T1 | Code Review | code-reviewer |
+| T2 | Feature Verification | feature-verifier |
+| T3 | Integration Check | integration-checker |
+| T4 | Documentation Drift Audit | doc-drift-auditor |
+| T5 | Documentation Update | service-docs-maintainer |
+| T6 | Context Refinement | context-refinement |
+
+### Dispatch Loop
+
+Repeat until `plan ready --plan-address "{qg_plan_address}"` returns an empty `items` list:
+
+**1. Get next ready task:**
+
+```bash
+<sam_cli/> plan ready --plan-address "{qg_plan_address}"
+```
+
+If the result is empty, exit the loop and proceed to Completion Verification Gate.
+
+**2. Dispatch the task:** open the attempt, run the phase, settle the launch, and judge what the
+ledger holds. The full step — the T1-T6 delegation, the T0 self-run, and the codes each command may
+print — is [qg-dispatch-step.md](./references/qg-dispatch-step.md).
+
+**3. Phase-specific post-dispatch actions:**
+
+After each dispatched phase completes, run the phase-specific processing before running
+`plan ready --plan-address "{qg_plan_address}"` again:
+
+```mermaid
+flowchart TD
+    Done{Which task<br>just completed?}
+    Done -->|T0 Multi-Perspective Review| T0Post["Any REJECT — trigger Recursive Follow-up Handling<br>(same path as T1 NEEDS_WORK)."]
+    Done -->|T1 Code Review| T1Post["Read code-review artifact.<br>Verdict drives Recursive Follow-up Handling<br>(Step 1 — fix loop or backlog routing)."]
+    Done -->|T4 Drift Audit| T4Post{"Read the Total findings count<br>from T4's ARTIFACTS return block<br>(full report is in the audit-report artifact)"}
+    T4Post -->|"0 findings — no drift"| SkipT5["plan state --address {qg_plan_address}/T5<br>--new-status skipped --reason 'no drift found in T4'"]
+    T4Post -->|"1 or more findings — drift"| T5Ready["T5 remains NOT_STARTED — will be<br>dispatched on next loop iteration"]
+    Done -->|T6 Context Refinement| T6Post{"DIVERGENCE_REQUIRING_REVIEW block<br>present in T6 agent output?"}
+    T6Post -->|"Yes"| StoreDiv["Store divergence block for final output"]
+    T6Post -->|"No"| Continue["No phase-specific action — continue loop"]
+    Done -->|"T2, T3, T5"| Continue
+    T0Post --> Continue
+    T1Post --> Continue
+    SkipT5 --> Continue
+    T5Ready --> Continue
+    StoreDiv --> Continue
+```
+
+**Detecting drift in T4 output**: same rule as Proportional Quality Gates Step 4 above.
+
+---
+
+## Completion Verification Gate
+
+After the SAM dispatch loop exits, execute the shared procedure in
+[./references/completion-verification-gate.md](./references/completion-verification-gate.md) with
+`{plan_address}` = `{qg_plan_address}`, `{gate_name}` = "Quality Gate Incomplete", `{resume_arg}` =
+`{plan_address}` (the original feature plan address), `{next_step}` = "Recursive Follow-up
+Handling".
+
+---
+
+## Post-Phase-6: Surface Divergence Findings
+
+If the T6 (Context Refinement) sub-agent output contained a `DIVERGENCE_REQUIRING_REVIEW` block (collected in the dispatch loop), include in the final output to the human:
+
+```text
+Plan artifacts have intent divergences requiring your review.
+See: [annotated artifact types and identifiers from agent output]
+Divergences:
+  [list from DIVERGENCE_REQUIRING_REVIEW block]
+```
+
+This is informational, not blocking. The human reviews at their discretion.
+If absent, no additional output is needed — the feature proceeds normally.
+
+---
+
+## Recursive Follow-up Handling
+
+### Constants
+
+`DH_RECURSIVE_REVIEW_TASK_DEPTH = 5`
+
+Maximum number of recursive review-implement-verify cycles permitted within a single
+top-level `/complete-implementation` invocation. When `{recursion_depth}` reaches this
+value, Guard 1 fires: all remaining in-scope follow-ups are routed to the backlog and
+recursion stops.
+
+Initialization: `{recursion_depth}` is set to `0` at skill invocation. It increments by 1
+before each call to `Skill(skill="implement-feature")` in the recursion path. A re-run
+of `/complete-implementation` on the same plan address starts `{recursion_depth}` at `0`.
+
+After all phases complete, route any follow-up plans created by Phase 1 (code-reviewer) to the
+backlog before deciding on recursion. This ensures no follow-up plan is orphaned when the
+orchestrator skips recursion.
+
+### Step 1: Detect Follow-up Plans
+
+Resolve `{review_report}` by running
+[./references/read-code-review-verdict.md](./references/read-code-review-verdict.md). It derives this
+quality-gate plan's own `artifact_id` and matches it exactly, everywhere it looks — `code-review`
+holds one entry per reviewed task and this item also holds the feature plan's. When nothing matches
+it resets and re-dispatches T1, then blocks. An absent verdict is not a passing verdict.
+
+Check the `verdict` field in the report:
+
+- `PASS` — no blocking findings; skip the entire routing section (no follow-ups to route)
+- `NEEDS-WORK` or `FAIL` — extract the "Required changes (blocking)" section; each blocking
+  item becomes a follow-up to route. **When "Required changes (blocking)" is non-empty, run the
+  fix loop first (max 3 cycles, `{fix_cycle}`=0):** create one task per entry (`agent: dh:task-worker`)
+  with `sam_plan(config={"action": "create", "slug": "fix-{slug}-blocking-N", "goal":
+  "Resolve blocking review findings", "tasks": [...], "owner_reference": "{item_ref}"})`; store
+  its returned `plan_ref`, dispatch via `subagent_type="dh:task-worker"`, then send T1 back with
+  `plan reclaim --address "{qg_plan_address}/T1" --reason fixed --response "{what the fix changed}"`
+  and dispatch T1 again — `reclaim` returns it to `not-started` and records the response the next
+  runner reads first. If verdict is `PASS` or blocking entries empty →
+  proceed to Step 2; else `fix_cycle += 1`, repeat or BLOCKED at 3. **On BLOCKED** (exhausted
+  or fix task `blocked`): report `COMPLETION BLOCKED — Blocking Code Review Findings Not
+  Resolved`, do NOT route to backlog, stop, do not apply `status:verified`.
+
+A `NEEDS-WORK` or `FAIL` report names the follow-up plans the reviewer created. If it names none,
+search SAM for plans the reviewer created without recording them in the report:
+
+```bash
+<sam_cli/> plan list --search "{slug}-followup"
+```
+
+Use the parent plan's resolved `{slug}`.
+
+If the report names no follow-up plan and the SAM search returns empty, skip the entire routing
+section — there is nothing to route. Reaching this point requires a verdict that was read; an
+unreadable verdict blocks in the procedure above and never arrives here.
+
+**Error handling**: If the SAM fallback returns plans from a different feature slug, filter results
+to the parent `{slug}`. Store each retained result's opaque `plan_ref` for follow-up operations.
+
+### Steps 2–5: Route Follow-ups to Backlog
+
+Execute the full follow-up routing procedure defined in [./references/recursive-follow-up-handling.md](./references/recursive-follow-up-handling.md).
+
+**Summary**:
+- Step 2: Derive a search slug from each follow-up plan's `feature`; search backlog by title then topic
+- Step 3: Classify scope (in-scope vs out-of-scope); route out-of-scope directly to backlog
+- Step 4: Link follow-up plan to matched backlog item, or create a new item if no match
+- Step 5: Recursion Gate — Guards (depth limit, RT-ICA BLOCKED) then Conditions (slug match + High priority)
+
+---
+
+## Apply status:verified Label
+
+After all phases and follow-up routing complete, apply verified status to the parent work item.
+
+### Step 1: Locate the backlog item
+
+Use the resolved `{item_ref}`. If the plan did not expose an owner reference, search by its
+`{slug}` and store the matched item's `issue` as `{item_ref}`:
+
+```bash
+<sam_cli/> backlog list --title "{slug}"
+```
+
+If zero items match, skip this section — there is no issue to label.
+
+### Step 2: Apply the label
+
+**Beads backend**: No `dh:state:verified` label — skip this step and continue to Final Step.
+
+Call:
+
+```text
+mcp__plugin_dh_backlog__backlog_update(selector="{item_ref}", verified=True)
+```
+
+**Error handling**: If the call returns an `error` key, output:
+
+```text
+COMPLETION BLOCKED — status:verified label could not be applied.
+
+Error: {error}
+Backlog item: {item_ref}
+
+Fix the error (check backend credentials and access), then re-run /complete-implementation.
+```
+
+Stop. Do not proceed to the Final Step commit.
+
+---
+
+## Final Step: Commit and Push Remaining Changes
+
+Check for uncommitted changes and commit any remaining modifications in a single commit.
+
+```bash
+git status
+```
+
+**Issue number in commit message**: Read the current work item:
+
+```bash
+<sam_cli/> backlog view --selector "{item_ref}"
+```
+
+Check the `issue` field on the matching item. If present, append `Fixes #NNN` to the commit message body (NNN = GitHub integer issue number; omit for beads IDs). If no issue number is found, omit it.
+
+Push after committing; skip if the working tree is clean.
+
+---
+
+## Confirm All Workers Finished
+
+After commit+push, confirm every dispatched worker has reached a terminal state — read that
+through `plan status --plan-address "{qg_plan_address}"`, never by assuming a silent worker has
+finished. Each task row carries `status`, `accepted`, `attempts`, and a `stale` flag saying when a
+lease ran out with nobody behind it.
+Each worker was dispatched independently and terminates on its own once its task completes; there
+is no shared group object to release.
+
+---
+
+## Resolve the Issue
+
+For both PQG and plan-linked paths, use the resolved `{item_ref}`. Skip this step only when the
+plan has no owner reference and the fallback lookup in Apply status:verified found no work item.
+
+```bash
+<sam_cli/> backlog resolve --selector "{item_ref}" --summary "Implementation complete — AC verified PASS"
+```
+
+On failure, read the error text.
+
+When it starts with `Open-PR search failed`, GitHub rejected the token, or a proxy or firewall
+blocked the request. Fix the token or the network path, then re-run this step. Resolve through
+`/dh:work-backlog-item resolve {item_ref}` instead, which asks the user before it retries with
+`force=True`.
+
+When it starts with `Open PRs reference issue`, report the PRs listed in `warnings`. Stop.
+
+For every other error, output `COMPLETION BLOCKED — backlog_resolve failed: {error}`. Stop.
+
+---
+
+## Final Handoff Output
+
+Execute the full procedure defined in [./references/final-handoff.md](./references/final-handoff.md).

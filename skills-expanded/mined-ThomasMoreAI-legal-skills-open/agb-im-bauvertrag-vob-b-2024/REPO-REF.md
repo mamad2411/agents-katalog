@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/contracts/skills/agb-im-bauvertrag-vob-b-2024/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für AGB im Bauvertrag VOB B 2024: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

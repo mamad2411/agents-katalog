@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/z1993/alphamao_skills/stock-research/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 自动化股票投资研究工作流 - 使用 NotebookLM Deep Research 搜集财报/研报资料，提取结构化数据,然后由代理执行 6 阶段专业分析（业务/财务/估值/市场观点/驱动因子/投资建议）。Use when researching stocks, analyzing company fundamentals, or evaluating investment opportuniti

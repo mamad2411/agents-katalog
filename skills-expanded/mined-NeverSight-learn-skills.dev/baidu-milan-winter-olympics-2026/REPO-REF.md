@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/wuchubuzai2018/expert-skills-hub/baidu-milan-winter-olympics-2026/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 获取2026年米兰冬奥会数据技能，包括奖牌榜排名、现场新闻报道和赛程安排。从百度体育网页抓取实时的奖牌排行榜信息、最新新闻资讯和比赛赛程。当用户需要获取米兰冬奥会需求，需要查询冬奥会奖牌榜、了解各国奖牌数量、获取现场新闻、查看赛程安排时使用此技能。能够根据指定时间(今天、明天、yyyy-MM-dd日期格式)或指定运动项目获取赛程安排。A skill for retrieving 2026 Mila

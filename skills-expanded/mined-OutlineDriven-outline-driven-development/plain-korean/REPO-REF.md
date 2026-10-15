@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/OutlineDriven/outline-driven-development (path: .devin/skills/plain-korean/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Use when Plain English·Plain Language 원칙으로 한국어 작성·교정·검토, 쉽게 써 줘·명확하게 고쳐 줘·관료적인 표현 줄이기·쉬운 한국어/plain Korean·독자 중심 설명문·이메일·공지·README용, 의미·조건·전문용어 보존, 엄격 통제·절차는 ste-korean 우선, 원문보존·맞춤법만 요청 시 문체 유지'

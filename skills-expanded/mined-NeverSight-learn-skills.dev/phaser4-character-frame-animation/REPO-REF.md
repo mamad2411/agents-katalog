@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/weberwang/phaser-skills/phaser4-character-frame-animation/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 为 Phaser 4 人物制作可直接接入的透明 PNG 序列帧；支持 ground-contact、fixed-canvas 与 explicit 三种根锚点模式，统一 cell、打包 spritesheet 并用跨帧质量门检查连贯性。

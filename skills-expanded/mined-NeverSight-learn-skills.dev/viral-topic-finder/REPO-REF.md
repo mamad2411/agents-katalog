@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tuntun0609/viral-topic-finder/viral-topic-finder/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 根据用户的选题方向，帮助找到流量大、吸引人的具体选题，并生成遵循10大爆款标题原则的标题。适用于内容创作、文章写作、自媒体运营等场景，当用户需要选题建议或标题优化时使用。

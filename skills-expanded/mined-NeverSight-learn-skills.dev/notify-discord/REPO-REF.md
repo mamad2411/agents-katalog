@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tanabee/skills/notify-discord/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Discord の Webhook を使ってメッセージを送信する。

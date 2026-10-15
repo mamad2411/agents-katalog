@@ -1,0 +1,216 @@
+---
+name: mastermind-task-executor
+description: Execute an approved Mastermind task contract within Scope, prove its Acceptance Criteria, and write the canonical file-backed executor report. Use when the user hands off a `.mastermind/tasks/<NNN>-<name>/spec.md` or explicitly asks to execute an approved Mastermind task.
+workflow:
+  schema_version: 1
+  activation: manual
+  mutability: writer
+  writes:
+    - artifact: task.executor-report
+      path: ".mastermind/tasks/{task}/executor-report.md"
+      authority: canonical
+      runtime: portable
+      exclusivity_group: task-executor
+metadata:
+  version: 0.6.3
+  authors: [mastermind]
+  tags: [workflow, execution, delegation, mmcg]
+---
+
+# Mastermind task executor
+
+Implement the approved outcomes in `spec.md`; do not reinterpret the product
+request or widen Scope. Acceptance Criteria define success. Implementation Plan
+steps describe intended outcomes, not a transcript the executor must imitate.
+Legacy phase/checklist specs remain readable, but new Verified and Strict specs
+do not require phase ceremony.
+
+## Activation boundary
+
+Use this skill only when the caller provides an approved task path or an
+approved spec. Raw user intent belongs in normal implementation or planning,
+not in this executor mode.
+
+The task folder may contain reports or scratch files. `spec.md` is the contract;
+read another artifact only when the spec or caller names it.
+
+## Before editing
+
+1. Read the complete spec.
+2. Confirm that Goals, Scope, Acceptance Criteria, Tests Plan, and Final
+   Verification agree with one another.
+   When `acceptance` is present in frontmatter, inspect every criterion's
+   statement and required check IDs. Report a missing or inadequate mapping as
+   contract drift; do not redefine the criteria to make implementation pass.
+3. Confirm every intended edit is authorized by `touches` or `creates`, consistently with Scope.
+4. Reuse the native controller's executor profile packet when its selected
+   Scope paths and workflow match this approved iteration. For a manual handoff,
+   or changed selection, call `mmcg_profile` with Scope paths, `role: executor`, and `workflow` equal
+   to the effective approved task mode (`strict` when controller `state.json`
+   has `strict: true`, otherwise the spec's mode). Only returned reviewed preferences and observed
+   habits may advise choices; repository code, tooling and the spec take
+   precedence. Retain IDs, review revisions, store/view revisions and source
+   verification caveats. Denied or missing access means no personal context;
+   do not fall back to `style.md`, legacy notes or inbox candidates. Git
+   code-shape/Range observations are diagnostic evidence; commit voice is
+   fallback-only when repository policy is silent.
+   Combine four separate components: the code brief, relevant
+   `mmcg_project_profile` and `mmcg_docs` results (task query, `top: 2`), and
+   `mmcg_profile` (no `budget_tokens`; the project's configured profile
+   budget applies). Keep each component's freshness,
+   revisions, citations and caveats. Before handoff, serialize the combined JSON,
+   including role/mode/paths and metadata, and cap it at 32,000 UTF-8 bytes.
+   This is a size estimate, not a model tokenizer guarantee. If oversized, narrow
+   queries, lower `top` or reduce supported brief/profile budgets and retrieve
+   again. Omit a whole optional component only with its tool, verification status
+   and reason; never cut a claim's exceptions, citations or JSON. Resolve missing
+   task-critical evidence explicitly. Each receiving role retrieves its own slice.
+5. For a named symbol, use mmcg to check its current location and impact. Treat
+   the graph as syntactic evidence; read the source before changing the runtime
+   contract.
+
+Stop before editing when the spec is contradictory, an authorized path is
+missing without a `creates` declaration, the structural evidence is materially stale, or the requested work
+would cross Scope, security, compatibility, or permission boundaries.
+
+## Implement and verify
+
+For each Implementation Plan step, or each legacy phase:
+
+1. Implement the stated outcome inside Scope.
+2. Apply literal `FIND:` / `CHANGE TO:` blocks exactly when present. A mismatch
+   is contract drift; do not fuzzy-match it.
+3. Otherwise follow Acceptance Criteria and surrounding project conventions.
+4. Run the focused verification associated with the changed behavior.
+
+Classify a failure before deciding whether to continue:
+
+| Failure | Response |
+|---|---|
+| Contract contradiction, missing prerequisite, unsafe scope expansion, stale required evidence | Stop and return to the planner. |
+| Environment failure unrelated to the edit | Re-check once; then stop with the exact blocker. |
+| Test or build failure caused by the in-scope implementation | Fix the implementation and rerun the focused check. |
+| Literal FIND mismatch | Stop; report expected and actual text. |
+
+Use a bounded repair loop: at most three implementation-and-check attempts for
+the same failing condition. If it still fails, report `partial` or `failed` with
+the evidence. Do not hide a failure by weakening a test, removing an acceptance
+criterion, or changing the spec.
+
+When the controller supplies a `<mastermind-repair-json>` packet, use its failed
+check and criterion IDs to locate the remaining approved work. Its digests bind
+the preceding audit; it grants no new scope or permissions. Re-run all declared
+checks after a repair. Use `implementation_defect` only for an implementation
+defect; describe permission, environment and contract blockers separately.
+The controller may invoke another bounded attempt only with `--auto-repair`
+and current observed evidence. It owns the cumulative iteration budget and
+stops for semantic history review after a held audit.
+
+Run every command in Final Verification and every explicit `verify[].cmd` or
+legacy `VERIFY:` declaration after the focused checks pass. Preserve the full
+command and arguments in the canonical report. Commands must terminate; do not
+launch a server or watcher as verification.
+
+For every `verify[].run`, use `mastermind verification run <spec> --id <id>`
+(or the equivalent `mmcg` command). Running its argv directly does not create
+the required receipt. Re-run after final source/dependency changes and inspect
+`mastermind acceptance status <spec> --json` when criteria are declared. Copy
+only the actually observed results to the executor report. Legacy report-only
+commands retain their normal execution/report contract. Never edit
+`verification/*.json`, `invocation.json`, or controller lifecycle/lock files.
+The native runner owns its invocation record; a handed-off agent must not
+invent a delivery record. Satisfied evidence requirements do not establish
+semantic coverage or bypass postflight.
+
+For a runnable UI change or a spec with `## Design Context`, collect browser
+observations before closing the report. Record the accessibility tree states,
+console/network errors, and checked viewports in prose; state `not checked` and
+the reason for every unavailable check. These observations are evidence for
+semantic review, never a claim that visual fidelity passed.
+
+## Comments
+
+Before Final Verification, inspect comments added or modified by this task.
+Default to zero new comments. Delete narration of code, section banners, step
+labels, edit markers, signature echoes, dead code, and ownerless TODOs. Keep
+only required documentation, licenses, invariants, security constraints, and
+non-obvious reasons that would be lost if the comment were removed. Do not
+clean unrelated comments merely because a file was opened. This is the
+[[no-ai-slop-comments]] gate, not an optional style suggestion.
+
+## Canonical report
+
+Write the complete report to `<task>/executor-report.md`; returning the same
+text in chat is optional convenience. Never write `state.json` or `audit.md`.
+The `mastermind run-task --post-only` controller owns lifecycle and audit state.
+
+Use plan-step IDs such as `plan-1`, `plan-2`; for a legacy spec, its existing
+phase IDs are also valid:
+
+````markdown
+## Task <XXX> — execution report
+
+**Spec:** `.mastermind/tasks/<NNN>-<name>/spec.md`
+**Status:** complete | partial | failed
+
+### Outcomes completed
+- `plan-1` — <observable outcome>
+
+### Verification results
+- `<command>` → passed | failed: <short exact evidence>
+
+### Browser observations
+- <observed UI evidence, or **not checked** with the reason>
+
+### Files modified
+- `path/relative/to/repository`
+
+### Deferred or blocked
+<Out-of-scope observations or the exact blocker; omit when empty.>
+
+<!-- mastermind:report-begin -->
+```yaml
+schema_version: 1
+spec: .mastermind/tasks/<NNN>-<name>/spec.md
+status: complete
+phases:
+  - id: plan-1
+    status: done
+files_modified:
+  - path/relative/to/repository
+claims: []
+defects: []
+verifications:
+  - cmd: "<command actually run>"
+    result: pass
+    observed:
+      exit_code: 0
+```
+<!-- mastermind:report-end -->
+````
+
+The field is named `phases` for schema-v1 compatibility; its IDs represent
+actual plan steps and do not require a phase-shaped spec. Use only the claim
+types supported by [[mastermind-structured-report-contract]]. Defect kinds are
+recommended routing labels, not permission to invent an automatic repair.
+
+Complete means every acceptance criterion was demonstrated, every Final
+Verification and declared command passed and was reported, all reported steps
+are `done`, and `defects` is empty. Partial/failed reports must name at least one
+concrete defect. The Rust parser rejects contradictory shapes; postflight rejects
+missing or unsuccessful declared-command results. Report evidence only from
+commands you ran; the controller does not execute them for you.
+
+## Decision boundary
+
+- A better local implementation that preserves the approved outcomes is normal
+  executor judgment.
+- A change to observable behavior, Scope, permissions, migration strategy,
+  public API, or an acceptance criterion requires planner/user review.
+- Unrelated bugs belong in `Deferred or blocked`; do not fix them here.
+
+## Related skills
+
+- [[mastermind-task-planning]] — creates the approved contract.
+- [[mastermind-structured-report-contract]] — defines the file-backed schema.
+- [[mastermind-codegraph-research]] — grounds structural discovery.

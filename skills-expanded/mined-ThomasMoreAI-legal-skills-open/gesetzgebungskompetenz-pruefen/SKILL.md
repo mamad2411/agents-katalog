@@ -1,0 +1,78 @@
+---
+name: gesetzgebungskompetenz-pruefen
+title: Gesetzgebungskompetenz prüfen
+description: 'Für Gesetzgebungskompetenz prüfen: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: Legistik-Werkstatt.'
+author: Klotzkette
+author_url: https://github.com/Klotzkette/claude-fuer-deutsches-recht/tree/main/legistik-werkstatt/skills/gesetzgebungskompetenz-pruefen
+license: Apache-2.0
+version: 0.1.1
+execution_mode: open
+jurisdiction: de
+practice: constitutional
+language: de
+---
+
+# Gesetzgebungskompetenz prüfen
+
+> Kompetenz vor Inhalt. Ohne Kompetenz ist der ganze Entwurf umsonst.
+
+## Prüfstation 1 - Bund oder Land?
+
+- Bestimmung der **Materie**: was wird geregelt? Materielles Recht, Verfahrensrecht, Organisation, oder Mischung?
+- Suche in **Art. 73 GG** (ausschließliche Bundeskompetenz, 14 Nummern): von Außenpolitik über Verteidigung, Staatsangehoerigkeit, Wahrungseinheit, Bundeseisenbahnen, Postwesen, Telekommunikation, Bundeskriminalpolizei, Zoelle bis zu Atomenergie.
+- Suche in **Art. 74 GG** (konkurrierende Kompetenz, 33 Nummern): von Bürgerlichem Recht (Nr. 1), Strafrecht (Nr. 1), Aufenthaltsrecht, öffentliche Fürsorge, Arbeitsrecht, Wirtschaft, Recht der Bodenverteilung, Wohnungswesen, Straßenverkehr, Atomenergie-Förderung, Boden- und Tierschutz, Lebensmittel- und Bedarfsgegenstände, Hochschulrahmenrecht, Umweltvertraeglichkeitsprüfung, Krankenhaus, Gentechnik, Schienenwegeplanung, etc.
+
+Wenn nichts passt: Landeskompetenz Art. 70 Abs. 1 GG.
+
+## Prüfstation 2 - Erforderlichkeitsklausel Art. 72 Abs. 2 GG
+
+Bei den in Art. 72 Abs. 2 GG aufgezaehlten Materien (z.B. Aufenthalt, öffentliche Fürsorge, Wirtschaft, Hochschulen, Straßenverkehr) braucht der Bund eine zusätzliche Erforderlichkeit:
+
+- "wenn und soweit die Herstellung gleichwertiger Lebensverhältnisse im Bundesgebiet oder die Wahrung der Rechts- oder Wirtschaftseinheit im gesamtstaatlichen Interesse eine bundesgesetzliche Regelung erforderlich macht"
+
+Erforderlichkeitsprüfung in die Begründung des Entwurfs (Abschnitt A I 4) aufnehmen.
+
+## Prüfstation 3 - Abweichungskompetenz Art. 72 Abs. 3 GG
+
+Bei sechs Materien (Jagdwesen, Naturschutz, Bodenverteilung, Raumordnung, Wasserhaushalt, Hochschulzulassung) dürfen Länder abweichende Regelungen treffen. Bundesgesetz muss damit rechnen und eine Anwendungsvorschrift gegen die Abweichung enthalten.
+
+## Prüfstation 4 - Annexkompetenz, Kompetenz kraft Sachzusammenhangs
+
+BVerfGE 3 / 407 (Baurecht): Bund darf in einer Materie Bestimmungen treffen, die nicht ausdruecklich zu seinen Kompetenzen zaehlen, wenn das für den Vollzug der ihm zugewiesenen Materie erforderlich ist. Annexkompetenzen sind eng auszulegen.
+
+## Prüfstation 5 - Sperrwirkung
+
+Hat der Bund von seiner konkurrierenden Kompetenz Gebrauch gemacht? Dann Sperrwirkung für Länder (Art. 72 Abs. 1 GG). Es sei denn: Bund hat ausdruecklich Lückenraum gelassen.
+
+## Prüfstation 6 - Landesverfassung
+
+Wenn Landesgesetz: Prüfung der Landesverfassung. Hat das Land Selbstverwaltung der Kommunen zu wahren (Art. 28 Abs. 2 GG analog Landesverfassungen)? Greift das Gesetz in ein landesverfassungsrechtliches Grundrecht ein (z.B. Bayerische Verfassung Art. 101 Wohnungswesen)?
+
+## Zentrale Normen (Paragrafenkette)
+
+Art. 70 GG (Auffangkompetenz Länder) — Art. 71-73 GG (ausschliessliche Bundeskompetenz) — Art. 72-74 GG (konkurrierende Kompetenz, Erforderlichkeit) — Art. 72 Abs. 3 GG (Abweichungskompetenz) — Art. 80 GG (Verordnungsermaechtigung)
+
+## Ausgabe
+
+Gutachten ein bis zwei Seiten mit:
+
+1. Materie (in zwei Sätzen)
+2. Norm im GG bzw. Landesverfassung
+3. Prüfung Erforderlichkeitsklausel (falls einschlaegig)
+4. Prüfung Sperrwirkung (falls Land)
+5. Empfehlung tragfähig / nicht tragfähig / mit Modifikation tragfähig
+
+<!-- BEGIN ausformulierungspflicht (autogen) -->
+> **Ausformulierungspflicht und Formatstandard.** Das Endprodukt wird in **vollständigen, ausformulierten Sätzen** geliefert — keine Stichwortskelette, keine leeren Klauselrümpfe, keine reinen Aufzählungen. Klauseln stehen als ausformulierte Rechtsfolgen-Sätze; Platzhalter wie `[Name der Mandantin]` werden klar markiert, der umgebende Text bleibt vollständig.
+>
+> **Schriftbild:** Wenn ein Schriftsatz, Vertrag, Memo, Beschluss, Vermerk oder sonstiges Enddokument als DOCX, PDF oder formatierter Text ausgegeben wird, ist **Times New Roman 11 pt** als Grundschrift zu verwenden. Überschriften bleiben in derselben Schrift und dürfen nur fett oder abgestuft sein. Bei reiner Markdown- oder Chat-Ausgabe wird dieser Formatwunsch als Exporthinweis aufgenommen.
+>
+> **Nummerierung:** Gliederung ausschließlich dezimal (`1`, `1.1`, `1.1.1` und so weiter). Keine römischen Ziffern, keine Buchstaben- oder Mischgliederung.
+<!-- END ausformulierungspflicht (autogen) -->
+
+## Anschluss
+
+Wenn tragfähig: weiter mit `normenkartierung`.
+Wenn nicht tragfähig: zurueck zu `legistik-auftragsaufnahme` und Norm-Ebene wechseln.
+
+> Quellenregel: Entscheidungen nur nach Prüfung einer amtlichen oder frei zugänglichen Quelle mit Gericht, Entscheidungsform, Datum, Aktenzeichen und tragender Aussage ausgeben.

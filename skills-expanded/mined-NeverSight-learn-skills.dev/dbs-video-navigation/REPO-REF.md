@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/dontbesilent2025/dbskill/dbs-video-navigation/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 根据本地视频或带时间戳字幕划分章节、话题或步骤，生成可导入剪辑软件的导航条 MP4、动态分段进度和时间表。用户要求视频章节导航、顶部进度条或当前位置提示时使用；不负责平台链接数据提取、标题封面开头文案、风险声明贴片或剪辑原片。

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/micheleangioni/agent-skills/codebase-auditor/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Use this skill when the user asks for a review, audit, evaluation or analysis of a codebase, to identify bugs, security vulnerabilities, performance bottlenecks, or code quality concerns.

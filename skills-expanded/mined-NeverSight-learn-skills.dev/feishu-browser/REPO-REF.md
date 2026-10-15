@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/sandbartrue/openclaw-skills/feishu-browser/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 通过浏览器模拟真人操作飞书网页版。包括发送/读取群聊消息、@人、创建文档、设置文档权限。当需要用瓦力账号在飞书网页上执行操作时使用此skill。

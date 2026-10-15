@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/monicajeon28/gmcruise/ai-model-reference/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: AI 모델 API 호출명 및 가격 참조 가이드. API 키로 AI 모델을 호출할 때 정확한 모델명(model string)과 최신 가격 정보를 제공합니다. 사용 시점: (1) OpenAI, Anthropic, Google, DeepSeek 등의 API 호출 시 모델명이 필요할 때, (2) 토큰 비용/가격 비교가 필요할 때, (3) 최신 추론 모델/FAST 

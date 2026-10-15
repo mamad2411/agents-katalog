@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/insogao/amw/amw-memory-operator/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 使用 replay-first 浏览器记忆方式运行与演进 agent-memory-workbench；适用于轨迹检索、探测/调试、trace 复盘与最小化 JSON 修补（仅允许两条执行分支：normal 主流程 + challenge-handling 阻断处理）。

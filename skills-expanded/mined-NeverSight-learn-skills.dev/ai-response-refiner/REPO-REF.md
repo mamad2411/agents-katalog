@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ntaksh42/agents/ai-response-refiner/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: AI応答を洗練・改善するスキル。粗い出力を流暢で専門的な文章に変換。構造化、明確化、詳細化、トーン調整、専門性向上、読みやすさ改善を実施。

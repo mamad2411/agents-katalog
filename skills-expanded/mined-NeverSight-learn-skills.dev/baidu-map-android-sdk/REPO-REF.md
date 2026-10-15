@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/baidu-maps/android-sdk-skills/baidu-map-android-sdk/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 百度地图 Android SDK 集成与开发规范。覆盖地图展示、MapView/BaiduMap 生命周期、定位、标注与覆盖物、POI 检索、路线规划、步骑行导航；输出符合隐私与 AK 配置的 Android 地图方案。在开发 Android 地图应用、集成百度地图 SDK、MapView、路线规划、POI、导航时使用。

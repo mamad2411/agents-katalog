@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/fatih-developer/fth-skills/api-mock-designer/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Designs realistic API mock servers. Goes beyond happy paths by designing stateful mocks (create order -> get order) for complex integrations.

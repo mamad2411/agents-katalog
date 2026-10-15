@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/emiliodominguez/flow-skills/flow-git-fix/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Git repair that preserves unrelated work. Use for merge or rebase conflicts, interrupted operations, broken stacks, lost commits or authorized branch cleanup. Hands back to `flow-work` or `flow-ship`.

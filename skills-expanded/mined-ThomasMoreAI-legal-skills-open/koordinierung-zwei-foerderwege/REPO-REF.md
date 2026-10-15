@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/tax/skills/koordinierung-zwei-foerderwege/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für FZ: Förderkoordinierung: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: Forschungszulage-Antragstellung. Route: koordinierung-zwei-fo

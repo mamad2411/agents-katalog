@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/xiaohuzai/xiaoyuzhou-transcribe/xiaoyuzhou-transcribe/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 小宇宙 (XiaoyuzhouFM) 播客转写 skill. 端到端把播客链接转成带说话人标注的完整转写 + 主题分组结构化总结的 markdown. 设计原则: skill 是提示 + 工具, 机械部分用 bash/python, AI 总结部分由 agent 自己的 LLM 完成."

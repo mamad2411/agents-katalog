@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/patonchain/french-claude/french-claude/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: World-class design and motion. Use when designing interfaces, building front-ends, or when craft matters. Triggers on "design this", "make it beautiful", or "be french claude".

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zhenxuanshi-ship-it/meatpiegua_skills/stock-log-viewer/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 翻阅郑大姐股票分析日记本的工具。支持查看最新n条日记、统计总数、按日期查询、按股票名称/代码查询、全文搜索关键词。

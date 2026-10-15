@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/ynz012x/skills/python-initializr/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 初始化一个规范的 Python 项目，包含依赖管理、代码规范检查、测试框架、版本管理等。当用户需要创建新的 Python 项目时触发此 skill。

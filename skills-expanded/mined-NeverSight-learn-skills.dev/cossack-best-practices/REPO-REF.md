@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/cossackframework/skills/cossack-best-practices/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Cossack Framework best practices — use built-in features instead of reinventing them

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/pr-pm/prpm/beanstalk-deploy/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Robust deployment patterns for Elastic Beanstalk with GitHub Actions, Pulumi, and edge case handling"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/hei-maom--shumianyu/skills/asr-written-rewriter-stream/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 将分段 asr 文本流在结束时统一整理成流畅书面语，并在用户指定 target_language 时输出译文。适用于语音听写、会议转写、采访整理、播客或视频字幕后处理等场景，尤其适合不需要实时字幕、只需要在整段结束后得到最终书面结果的任务。保持接口抽象、可替换，不绑定任何特定厂商 api。"

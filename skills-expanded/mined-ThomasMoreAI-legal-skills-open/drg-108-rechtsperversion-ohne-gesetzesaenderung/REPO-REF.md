@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/general/skills/drg-108-rechtsperversion-ohne-gesetzesaenderung/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Rechtsperversion ohne Gesetzesänderung: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: Deutsche Rechtsgeschichte. Route: drg-108-rech

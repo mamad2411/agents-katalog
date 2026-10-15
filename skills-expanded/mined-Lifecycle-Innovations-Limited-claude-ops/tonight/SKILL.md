@@ -1,0 +1,46 @@
+---
+name: tonight
+description: "OPS on-demand: This skill should be used when the user asks to \"tomorrow brief\", \"evening wrap\", or…"
+argument-hint: ''
+allowed-tools:
+  - Bash
+  - Read
+---
+
+# /ops:tonight
+
+Load `ops-rules` before acting. Public repo (no personal data). Outbound: one draft → one approval → one send. If `AskUserQuestion` / `Workflow` are missing, follow Rule 10 in `ops-rules` (Hermes: numbered options / two-turn Telegram card; `delegate_task`).
+
+The "before-bed brief." Counterpart to `/ops:go` (morning).
+
+## Output sections
+
+1. **Tomorrow's calendar** — every meeting >=15min with: attendees, prep status (brief
+   exists Y/N), and the suggested 1-line prep ask if no brief exists. Query **every**
+   calendar store (Google `--all` **and** Notion show/calendar/appointments databases
+   when Notion is configured). A miss on Google Calendar is not "nothing tomorrow."
+2. **Birthdays / anniversaries tomorrow** — from Notion People DB. Pre-drafted
+   message ready to send.
+3. **Overdue outreach** — anyone whose `next_nudge_due <= tomorrow`. Top 3 only.
+4. **Top 3 priorities for tomorrow** — pulled from Linear (assignee=me, priority<=High,
+   updated last 7d, not Done).
+5. **Unresolved from today** — ledger entries with `status=awaiting_user` still open.
+
+## Behavior
+
+- Runs in claude-ops when owner is at the Mac
+- Runs in Perplexity when owner isn't (Perplexity reads the same Notion ledger)
+- Both systems write a ledger entry `kind=nudge`, `brand=OPS`, `claim_key=tonight:YYYY-MM-DD`
+  so they don't both fire
+- Push notification only if section 5 has unresolved items OR section 3 has anyone
+  past cadence
+
+## Schedule
+
+Suggested cron: `30 21 * * 1-5` in your own time zone (9:30pm weekdays)
+Or run manually with `/ops:tonight`
+
+## Ledger writes
+
+Each section that surfaces an item writes a sub-entry so morning `/ops:go` can pick
+up where this left off without re-deriving.

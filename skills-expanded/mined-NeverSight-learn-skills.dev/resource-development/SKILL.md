@@ -1,0 +1,145 @@
+---
+name: resource-development
+description: Use when the contract is signed and work packages need to be created — decomposes the contract into bite-sized tasks, sets up git isolation, allocates territories and token budgets, producing the execution plan
+---
+
+# Resource Development: Infrastructure and Tooling
+
+## Overview
+
+The Underboss decomposes the signed Contract into Work Packages, sets up infrastructure for parallel execution, and produces the Execution Plan — the detailed task breakdown that governs The Hit.
+
+## Trigger
+
+Invoked after the Don signs the Contract (The Sit-Down complete).
+
+## Process
+
+### Step 1: Decompose Contract into Work Packages
+
+For each requirement in the Contract:
+1. Identify affected files (create/modify)
+2. Determine territory ownership (which Crew Lead)
+3. Define acceptance criteria (from Contract)
+4. Write verification command
+5. Estimate token budget
+
+Each Work Package must be:
+- **Independent** — Can be implemented without waiting for other Work Packages (within the same territory, order may matter)
+- **Verifiable** — Has a specific test or command that proves it works
+- **Bite-sized** — 2-5 minutes of Worker tasks
+- **Traceable** — References a specific Contract clause
+
+### Step 2: Define Territories
+
+Group Work Packages by domain and define Crew Lead territories:
+
+```markdown
+## Territory: <Name>
+**Domain:** <Description>
+**Files:** <Glob patterns>
+**Work Packages:** WP-001, WP-003, WP-007
+**Workers:** <Parallel count>
+**Budget:** <Token allocation>
+```
+
+### Step 3: Set Up Isolation
+
+If the project uses git:
+- Create a branch for the Heist: `heist/<heist-name>`
+- Optionally create worktrees per territory for true parallel work
+
+If not:
+- Document the isolation strategy (directory copies, etc.)
+
+### Step 4: Verify Prerequisites
+
+Before The Hit begins:
+- [ ] All existing tests pass on the current baseline
+- [ ] Required dependencies are available
+- [ ] File paths in Work Packages are valid
+- [ ] No merge conflicts with the base branch
+
+### Step 5: Produce Execution Plan
+
+Compile everything into the Execution Plan.
+
+## Execution Plan Format
+
+Save to: `docs/gangsta/<heist-name>/plans/YYYY-MM-DD-execution-plan.md`
+
+```markdown
+---
+heist: <heist-name>
+date: YYYY-MM-DD
+total-work-packages: <N>
+territories: <N>
+estimated-total-budget: <tokens>
+---
+
+# Execution Plan: <Heist Name>
+
+## Territories
+
+### Territory: <Name 1>
+**Crew Lead Domain:** <description>
+**Files:** <globs>
+**Workers:** <N parallel>
+**Budget:** <tokens>
+
+### Territory: <Name 2>
+...
+
+## Work Packages
+
+**Prevention Guidance (all Work Packages):** Do NOT reproduce Gangsta-internal spec identifiers (FR-xxx, NFR-xxx, WP-xxx, where xxx is one or more digits) in any deliverable — source code, test files, code comments, or documentation. These identifiers belong only in `docs/gangsta/`.
+
+### WP-001: <Title>
+**Territory:** <Name>
+**Contract Clause:** <FR-NNN>
+**Files:**
+- Create: `path/to/file`
+- Test: `tests/path/to/test`
+**Acceptance Criteria:**
+1. <criterion>
+**Verification:** `<command>`
+**Budget:** <tokens>
+**Dependencies:** None | WP-XXX
+
+### WP-002: <Title>
+...
+
+## Execution Order
+1. Independent packages (can run in parallel): WP-001, WP-002, WP-005
+2. Depends on group 1: WP-003 (needs WP-001)
+3. ...
+
+## Baseline Verification
+- Tests: <PASS/FAIL — must be PASS>
+- Dependencies: <OK/MISSING>
+- Branch: heist/<heist-name> created from <base>
+```
+
+### Step 6: Don Approves Execution Plan
+
+Present to the Don:
+> "Execution Plan ready. <N> Work Packages across <N> territories. Estimated budget: <tokens>. Ready to execute The Hit?"
+
+## Checkpoint
+
+```yaml
+---
+heist: <heist-name>
+phase: resource-development
+status: completed
+timestamp: <ISO 8601>
+next-action: Proceed to The Hit
+artifacts:
+  - docs/gangsta/<heist-name>/plans/YYYY-MM-DD-execution-plan.md
+---
+```
+
+## Omerta Compliance
+- [ ] Spec is Law: Every Work Package traces to a Contract clause
+- [ ] Rule of Budget: Token budgets allocated per territory
+- [ ] Rule of Availability: Execution Plan and checkpoint saved

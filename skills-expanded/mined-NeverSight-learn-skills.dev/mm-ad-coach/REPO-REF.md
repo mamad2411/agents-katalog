@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/lmeimeic0901-source/mm-ad-coach/mm-ad-coach/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: MM广告教练豆包专业版。用户希望从Brief、想法、开头或大纲共创好物分享、合集、科普干货、选购、生活场景或美美小黑板广告时使用，先给两个有实质区别的创意和示意开头，再逐步完成素材检查、大纲、完整稿和局部修改。不处理独立成稿审核、单测横测、探店探厂。

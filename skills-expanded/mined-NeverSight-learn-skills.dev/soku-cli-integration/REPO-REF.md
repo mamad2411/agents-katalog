@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/aradotso/devtools-skills/soku-cli-integration/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Install and use Soku CLI to give AI agents secure command-line access to marketing data, ad platforms, GA4, PostHog, and growth automation.

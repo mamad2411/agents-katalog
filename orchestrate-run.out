@@ -1,0 +1,48 @@
+[2026-10-14 09:35:37] === ORCHESTRATE START target=200000 wave=0 ===
+[2026-10-14 09:36:08] awal: index=103428 files=110307 registry=7117
+[2026-10-14 09:36:08] ---- GELOMBANG 0 ----
+[2026-10-14 09:36:08] RUN: python3 discover-repos.py --wave 0
+[2026-10-14 09:43:02]   | REGISTRY: 7117 -> 7133 (+16 baru)
+[2026-10-14 09:43:02]   | BUCKET: {'>=1000': 1250, '100-999': 1428, '10-99': 1187, '1-9': 758, '0': 2510}
+[2026-10-14 09:43:02]   | DONE wave=0
+[2026-10-14 09:43:02] RUN: python3 skill-miner.py --registry --tarballs
+[2026-10-14 12:20:03]   | 4741/4741 obviousworks/Claude-AI-skills-collection-2026: tarball gagal
+[2026-10-14 12:20:03]   | tarball selesai: ok=485 fail=4256
+[2026-10-14 12:20:03]   | STATS: {'new': 119, 'exists': 1654, 'dup': 40, 'err': 0}
+[2026-10-14 12:20:03] RUN: python3 dedup-skills.py
+[2026-10-14 12:23:42]   | scan: 113603 SKILL.md
+[2026-10-14 12:23:42]   | duplikat ketemu: 417 (hash+nama), pemenang selalu skills-store
+[2026-10-14 12:23:42]   | KARANTINA: pindah=315 skip=102 total=15401 | log: /Users/chaali0324/.agents/.dupes-log.json
+[2026-10-14 12:23:42] RUN: python3 build_skills_index.py
+[2026-10-14 12:25:49]   | Siap dipakai (curated+reference): 101094
+[2026-10-14 12:25:49]   | junk list : /Users/chaali0324/.agents/skills-junk.txt (10991 entri)
+[2026-10-14 12:25:49]   | DB        : /Users/chaali0324/.agents/skills-index.db (89.85 MB)
+[2026-10-14 12:25:49] RUN: python3 gen-types.py
+[2026-10-14 12:26:44]   | TYPES: 36081 | dir_segments: 74057 | file_stems: 39379 | skill: 1638 | mcp: 3913 | plugin: 3943
+[2026-10-14 12:26:45] RUN: python3 cap-crawler.py --no-trending
+[2026-10-14 12:40:59]   | TOTAL 2595 aset -> {'adr': 120, 'agent-config': 60, 'cheatsheets': 120, 'checklists': 120, 'compaction': 180, 'context-engineering': 120, 'evals': 120, 'few-sho
+[2026-10-14 12:40:59]   | TRENDING repo tersimpan: trending-repos.json
+[2026-10-14 12:40:59]   | DONE
+[2026-10-14 12:41:31] hasil gelombang 0: index=112085 files=110111 registry=7133
+[2026-10-14 12:41:31] ---- GELOMBANG 1 ----
+[2026-10-14 12:41:31] RUN: python3 discover-repos.py --wave 1
+[2026-10-14 12:44:20]   | REGISTRY: 7133 -> 7133 (+0 baru)
+[2026-10-14 12:44:20]   | BUCKET: {'>=1000': 1250, '100-999': 1428, '10-99': 1187, '1-9': 758, '0': 2510}
+[2026-10-14 12:44:20]   | DONE wave=1
+[2026-10-14 12:44:20] RUN: python3 skill-miner.py --registry --tarballs
+[2026-10-15 12:28:51]   | 4716/4716 obviousworks/Claude-AI-skills-collection-2026: tarball gagal
+[2026-10-15 12:28:51]   | tarball selesai: ok=3459 fail=1257
+[2026-10-15 12:28:51]   | STATS: {'new': 145562, 'exists': 70572, 'dup': 44634, 'err': 0}
+[2026-10-15 12:28:51] RUN: python3 dedup-skills.py
+[2026-10-15 12:33:34]   | scan: 247026 SKILL.md
+[2026-10-15 12:33:34]   | duplikat ketemu: 39492 (hash+nama), pemenang selalu skills-store
+[2026-10-15 12:33:34]   | KARANTINA: pindah=39390 skip=102 total=54791 | log: /Users/chaali0324/.agents/.dupes-log.json
+[2026-10-15 12:33:34] RUN: python3 build_skills_index.py
+[2026-10-15 12:38:57]   | Siap dipakai (curated+reference): 185917
+[2026-10-15 12:38:57]   | junk list : /Users/chaali0324/.agents/skills-junk.txt (20018 entri)
+[2026-10-15 12:38:57]   | DB        : /Users/chaali0324/.agents/skills-index.db (169.09 MB)
+[2026-10-15 12:38:57] RUN: python3 gen-types.py
+[2026-10-15 12:39:01]   | TYPES: 24102 | dir_segments: 62083 | file_stems: 25244 | skill: 2672 | mcp: 3913 | plugin: 0
+[2026-10-15 12:39:54] hasil gelombang 1: index=205935 files=204459 registry=7133
+[2026-10-15 12:39:54] === TARGET TERCAPAI: 205935 >= 200000 ===
+[2026-10-15 12:41:10] FINAL: index=205935 files=204459

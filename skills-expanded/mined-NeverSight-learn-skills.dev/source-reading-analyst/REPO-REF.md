@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/programmeranthony/expert-coding-harness/source-reading-analyst/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Use when 用户需要理解现有源码结构、定位功能实现、梳理调用链/数据流、评估重构点时。触发场景：源码阅读、代码导读、这段代码在做什么、功能在哪里实现、调用链分析、数据流分析、架构走读、阅读报告、系统摸底、重构前分析。"

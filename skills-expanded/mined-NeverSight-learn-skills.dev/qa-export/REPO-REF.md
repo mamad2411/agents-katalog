@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/reolantern/qa-export/qa-export/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 把会话里的问答原样导出成 Markdown。直接解析 Claude Code / Codex 落在本地的会话记录文件，不让模型复述。当用户说「把这几轮问答记进文档」「导出刚才的对话」「写进 QA 记录」「保存这段问答」时使用。

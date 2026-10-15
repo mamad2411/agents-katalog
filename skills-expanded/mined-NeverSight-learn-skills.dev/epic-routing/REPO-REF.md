@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/rubenpenap/epic-stack-agent-skills/epic-routing/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Guide on routing with React Router and react-router-auto-routes for Epic Stack

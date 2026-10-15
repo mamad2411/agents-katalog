@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/subwukong--youtube-channel-monitor/skills/youtube-channel-monitor/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: YouTube 频道订阅+自动摘要+Telegraph 发布工具。用于：\n 1. 定时监控指定 YouTube 频道的新视频\n 2. 提取视频字幕（支持中英双语）\n 3. 生成可读性强的中文专栏文章\n 4. 自动发布到 Telegraph 并推送到 Telegram 频道\n \n 触发场景：\n - 用户想订阅 YouTube 频道并自动获取更新\n - 需要将 YouTube 视频内容

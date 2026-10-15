@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: cross-jurisdiction/contracts/skills/humor-coach-interpretation-precedent-common/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Low-Key Late-Night Coach: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

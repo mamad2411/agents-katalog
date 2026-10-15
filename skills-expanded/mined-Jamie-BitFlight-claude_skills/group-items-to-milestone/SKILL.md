@@ -1,0 +1,118 @@
+---
+name: group-items-to-milestone
+description: 'Use when assigning backlog items to a GitHub milestone. Args: {milestone-number} [P0|P1|P2|title-filter]. Uses backlog list to load items, shows items with GitHub Issue status, lets user select which to assign. Creates missing GitHub Issues for selected P0/P1 items, assigns all to the milestone, updates Project V2 Status to Backlog. Use after create-milestone to populate a sprint or release.'
+argument-hint: '{milestone-number} [P0|P1|P2|title-filter]'
+user-invocable: true
+---
+
+Load `dh:dh-cli-usage` before using `<sam_cli/>` or `<dh_scripts/>`.
+
+# Group Items to Milestone
+
+Assign backlog items to a GitHub milestone. Bridges .claude/backlog/ per-item files → GitHub Issues → milestone assignment.
+
+API references: milestones, issue-stories, and projects-v2 — see the `/gh` skill reference files.
+
+## Arguments
+
+- `{milestone-number}` — required
+- Optional filter: `P0`, `P1`, `P2`, or title substring to pre-filter the list
+
+```text
+/dh:group-items-to-milestone 3
+/dh:group-items-to-milestone 3 P1
+/dh:group-items-to-milestone 3 github
+```
+
+## Workflow
+
+### Step 1: Resolve Milestone
+
+Call `backlog_list_milestones(state="open")` and filter the returned list for the entry where `number == {number}`. If not found, call `backlog_list_milestones(state="all")` and filter again. Extract `title`, `state`, `open_issues`, `closed_issues` from the matching entry.
+
+If milestone not found or closed, report and stop.
+
+### Step 2: Load Backlog Items
+
+Call `<sam_cli/> backlog list` (flags: `--section` for P0/P1/P2/Ideas, `--title` for a title filter, `--search` for full-text search — same query syntax as MCP `backlog_list(search=...)`). Parse the returned dict — each entry in `items` has `title`, `priority`, `issue`, `plan`, `status`, `milestone`, `file_path`, `groomed`. Filter items by section (P0, P1, P2, Ideas). Apply any title filter.
+
+For each item determine status:
+
+- **Has issue** — `**Issue**: #N` field present → verify state via `backlog_list_issues(state="open")` — check if issue number appears in the returned list
+- **No issue** — P0/P1 item without issue → flagged for creation offer
+- **Already in milestone** — issue already assigned to this milestone → shown pre-checked
+
+### Step 3: Present Selection
+
+```text
+Milestone #{N}: {title}
+
+P0
+  1. [✓] SAM: Error Recovery — Issue #12 (open)
+  2. [ ] bash-development: Fix inaccuracies — no issue yet
+
+P1
+  3. [✓] gitlab-skill: Remove URL — Issue #8 (open)
+  4. [ ] create-backlog-item skill — no issue yet
+  5. [~] commitlint verify flag — Issue #5 (already in this milestone)
+
+Legend: [✓] has issue  [ ] needs issue created  [~] already assigned
+```
+
+Use `AskUserQuestion`: "Which items to add? (comma-separated numbers, or 'all', or 'P0', 'P1')"
+
+### Step 4: Create Missing Issues
+
+For each selected item with no `**Issue**: #N`:
+
+Build the issue body from the sections the item already holds. Copy each one across; omit every section the item does not have. Author nothing here: `/dh:work-backlog-item groom` writes Story and Acceptance Criteria, and this workflow runs before grooming, so it has no source for either. Never derive a section from the item title — a title usually names an undesired current state, so slotting it into an `I want to {goal}` clause asserts a desire for the very thing the item exists to remove. Never emit a placeholder such as `Work matches description`, which passes `groom/finalize.md`'s non-empty check while asserting nothing. An item created through `backlog_add` carries Description only; a body containing Description alone is the correct output, not an incomplete one. Create the issue using the Python script (preferred — handles label creation automatically):
+
+```bash
+uv run .claude/skills/gh/scripts/github_project_setup.py issue create \
+  --title "{type}: {title}" \
+  --body "{issue body}" \
+  --priority-label "priority:{p0|p1|p2|idea}" \
+  --type-label "type:{feature|bug|refactor|docs|chore}" \
+  --milestone {number}
+```
+
+The backlog script automatically writes `issue: '#N'` back to the item's metadata.
+
+Skip issue creation for P2/Ideas items — assign by milestone number only if they already have an issue.
+
+### Step 5: Assign Existing Issues
+
+For selected items that already have issues but are not yet in this milestone, call `backlog_assign_item_to_milestone(issue_number={issue_number}, milestone_number={milestone_number})`. If the response contains an `error` key, the assignment did not happen — skip Steps 6-7 for that item and report the error instead.
+
+### Step 6: Update Project V2 Status
+
+Set Status = `Backlog` for each newly assigned item:
+
+```bash
+uv run .claude/skills/gh/scripts/github_project_setup.py project update-status \
+  --issue {issue_number} \
+  --status Backlog
+```
+
+### Step 7: Report
+
+```text
+Milestone #{N}: {title}
+
+Assigned {count} items:
+  Issue #12: SAM: Error Recovery (existing issue)
+  Issue #14: create-backlog-item skill (new issue created)
+  Issue #5:  commitlint verify flag (already assigned — skipped)
+
+Per-item files updated with {created_count} new issue numbers.
+
+Next step: /dh:groom-milestone {number}
+```
+
+## Error Handling
+
+- Milestone not found: call `backlog_list_milestones(state="open")` and list available milestones, then stop.
+- Issue creation fails: log error per item, continue with remaining.
+- Milestone assignment fails (`backlog_assign_item_to_milestone` response has an `error` key): log error per item, skip Project V2 status update and success reporting for that item, continue with remaining.
+- No items match filter: report and show available sections.
+- Label not found: `github_project_setup.py issue create` handles label creation automatically via `_ensure_label()`.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/alph-ai-official/skills/alphai/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Alph.ai API 主导航 - 帮助查找合适的 API 模块、生成调用代码、提供 API 使用建议。当用户不确定使用哪个模块或需要 API 总览时使用。

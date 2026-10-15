@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/starwreckntx/irp__methodologies-/computational-model-design/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Design computational models for cognitive simulation and analysis.

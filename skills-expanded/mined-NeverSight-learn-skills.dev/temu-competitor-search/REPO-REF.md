@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zhuhongyin/global-ecom-skills/temu-competitor-search/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Temu 竞品与卷王价查询工具。当用户需要在 Temu 平台查找竞品、获取最低价格（卷王价）、分析竞争格局时使用此 skill。输入产品关键词，输出竞品列表、最低价、核心卖点摘要，为核价计算提供卷王价数据。

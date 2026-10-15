@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zanepan2027/zpskill/zp-qa/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 对职业作品集做多格式发布前验收，实际检查桌面与390px网页、Word/PDF逐页渲染、二维码和链接、跨载体数据口径、时间因果、图片资源、生成源与线上副本。Use before publishing or delivering a portfolio website, Feishu/Notion knowledge base, Word/PDF case pack, infographic set

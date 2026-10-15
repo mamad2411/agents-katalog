@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/dalehurley/phpbot/image-tools/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Resize, compress, convert, crop, and inspect images. Use this skill when the user asks to resize an image, compress a photo, convert image format (PNG to JPG etc), crop an image, get image dimensions/

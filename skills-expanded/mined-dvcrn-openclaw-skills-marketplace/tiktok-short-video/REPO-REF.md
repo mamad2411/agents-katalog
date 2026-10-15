@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/zhenyangze--tiktok-short-video/skills/tiktok-short-video/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: TikTok短视频带货创作全指南，包括内容策划、拍摄技巧、剪辑优化、流量获取。使用场景：(1) TikTok短视频带货 (2) TikTok带货视频拍摄 (3) TikTok爆款视频创作 (4) TikTok视频流量获取 (5) TikTok标签策略 (6) TikTok视频数据分析"

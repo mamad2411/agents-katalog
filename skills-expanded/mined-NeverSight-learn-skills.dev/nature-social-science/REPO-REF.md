@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/yuan1z0825/nature-skills/nature-social-science/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 社会科学及相邻学科学术写作与选题论证工作台，覆盖选题构思、文献梳理、论证组织、学术表达四大要素。Use for 找论文题目/研究问题、把兴趣或宽泛主题变成可讨论的研究方向、文献综述与领域版图、区分"研究少"与真正未决的知识问题、设计证据路线与主张边界、新颖性审计与"审稿人2"式攻击、博士/论文可行性评估、导师沟通话术、或检查论文中的过度断言与概念混用。也适用于开题报告、研究计划书、学位论文的选题阶

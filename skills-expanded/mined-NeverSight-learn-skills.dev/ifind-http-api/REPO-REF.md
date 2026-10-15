@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/hanlinlibham/skills/ifind-http-api/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: iFinD HTTP API 调用参考手册

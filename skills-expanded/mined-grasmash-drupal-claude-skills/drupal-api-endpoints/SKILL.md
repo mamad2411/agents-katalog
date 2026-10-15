@@ -1,0 +1,345 @@
+---
+name: drupal-api-endpoints
+description: "Patterns for custom Drupal API endpoints that use UUIDs instead of sequential IDs: route, controller, and fetch templates, response-shape contracts for installed app clients, webhook handlers, authenticated cURL testing, and the JSON:API filter-access cache-poisoning fix. Use when creating custom routes, AJAX or JSON endpoints for a frontend or mobile app, webhook receivers, or JSON:API filters, and before adding an endpoint, to check whether an existing one already serves the need."
+---
+
+# Drupal API Endpoint Patterns
+
+## Critical Rules
+
+**ALWAYS follow these rules for ALL endpoints**:
+
+1. **ALWAYS use UUIDs** - never expose entity IDs.
+2. **ALWAYS check for existing endpoints** before creating a new one.
+3. **NEVER use the core REST module** - use custom routes.
+4. **ALWAYS use JSON** for request/response.
+5. **ALWAYS implement access controls** and caching.
+6. **Place routes in the correct module** - the module that owns the functionality.
+7. **AVOID `/api/*` paths** for custom routes - reserved for JSON:API.
+
+## URL Pattern Convention
+
+**Preferred pattern**: `/MODULE-api/resource/action`
+
+### Examples
+```
+✅ /achievements-api/unlock          # my_achievements module
+✅ /scoring-api/ingest                # my_scoring module
+
+❌ /api/custom-endpoint               # Conflicts with JSON:API
+```
+
+## Check for Existing Endpoints
+
+**ALWAYS search before creating**:
+
+```bash
+# Search all custom module routes
+grep -r "path: '/" web/modules/custom/*/routing.yml
+
+# Search for API patterns
+grep -r "path: '/.*-api" web/modules/custom/
+
+# Check by pattern
+ddev drush ev "print_r(\Drupal::service('router.route_provider')->getRoutesByPattern('/scoring-api')->all());"
+```
+
+## Creating API Endpoints
+
+### Step 1: Define Route (MODULE.routing.yml)
+
+```yaml
+my_module.api.action_name:
+  path: '/my-module-api/entity-type/{uuid}/action'
+  defaults:
+    _controller: '\Drupal\my_module\Controller\ApiController::actionName'
+  methods: [POST]
+  requirements:
+    _user_is_logged_in: 'TRUE'  # For authenticated
+    # OR for public: _access: 'TRUE'
+    _format: 'json'
+  options:
+    parameters:
+      uuid:
+        type: 'string'
+    no_cache: 'TRUE'  # Disable caching if needed
+```
+
+### Step 2: Implement Controller
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\my_module\Controller;
+
+use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Access\AccessResult;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+
+final class ApiController extends ControllerBase {
+
+  /**
+   * Check access for the endpoint.
+   */
+  public function access($uuid) {
+    // Load entity by UUID
+    $entities = \Drupal::entityTypeManager()
+      ->getStorage('entity_type')
+      ->loadByProperties(['uuid' => $uuid]);
+
+    if (empty($entities)) {
+      return AccessResult::forbidden('Entity not found');
+    }
+
+    $entity = reset($entities);
+
+    // Check permissions
+    return AccessResult::allowedIf(
+      $entity->access('update') &&
+      \Drupal::currentUser()->hasPermission('permission_name')
+    )->addCacheableDependency($entity);
+  }
+
+  public function actionName(Request $request, $uuid) {
+    try {
+      // Parse JSON payload
+      $payload = json_decode($request->getContent(), TRUE);
+
+      // Validate payload
+      if (!$payload || !isset($payload['required_field'])) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'error' => 'Invalid payload'
+        ], 400);
+      }
+
+      // Load entity by UUID
+      $entities = \Drupal::entityTypeManager()
+        ->getStorage('entity_type')
+        ->loadByProperties(['uuid' => $uuid]);
+
+      if (empty($entities)) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'error' => 'Entity not found'
+        ], 404);
+      }
+
+      $entity = reset($entities);
+
+      // Perform action
+      // ... business logic ...
+
+      // Clear caches
+      \Drupal::service('cache_tags.invalidator')
+        ->invalidateTags($entity->getCacheTags());
+
+      return new JsonResponse([
+        'success' => TRUE,
+        'data' => [
+          'uuid' => $entity->uuid(),
+          'status' => 'completed'
+        ]
+      ]);
+
+    } catch (\Exception $e) {
+      \Drupal::logger('my_module')->error(
+        'API error: @message',
+        ['@message' => $e->getMessage()]
+      );
+      return new JsonResponse([
+        'success' => FALSE,
+        'error' => 'An error occurred'
+      ], 500);
+    }
+  }
+}
+```
+
+### Step 3: Client Implementation (fetch)
+
+This skill covers the Drupal end of the seam: auth, CSRF tokens, and response
+shape. If the client is built with a JavaScript framework (React, Vue,
+Angular, etc.), also load a skill for that framework and follow its current
+practices, including escaping and XSS guidance when rendering API output.
+
+Use `fetch` with optimistic UI and revert-on-failure — not jQuery `$.ajax`.
+
+```javascript
+try {
+  const response = await fetch(`/my-module-api/entity-type/${entityUuid}/action`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': csrfToken, // from /session/token
+    },
+    body: JSON.stringify({ required_field: value }),
+  });
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(data.error);
+  }
+} catch (err) {
+  // revert optimistic UI change; show error via your project's message helper
+}
+```
+
+## Common Patterns
+
+### Load by UUID (required for all endpoints)
+```php
+$entities = \Drupal::entityTypeManager()
+  ->getStorage('entity_type')
+  ->loadByProperties(['uuid' => $uuid]);
+$entity = !empty($entities) ? reset($entities) : NULL;
+```
+
+### Multiple Permission Check
+```php
+$access = AccessResult::allowedIf(
+  $user->hasPermission('permission_1') ||
+  $user->hasPermission('permission_2')
+)->cachePerPermissions();
+```
+
+### Cache Metadata
+Only a `CacheableResponseInterface` response carries cache metadata (a plain
+`JsonResponse` has no `getCacheableMetadata()` and is never cached by Dynamic
+Page Cache). For a cacheable GET, return core's `CacheableJsonResponse`:
+```php
+use Drupal\Core\Cache\CacheableJsonResponse;
+
+$response = new CacheableJsonResponse($data);
+$response->getCacheableMetadata()
+  ->addCacheContexts(['user', 'user.permissions'])  // drop 'user' only if the data is not per-user
+  ->addCacheTags($entity->getCacheTags());
+```
+Contexts, tags, invalidation and the freshness test a caching change owes:
+see the `drupal-performance` skill (`references/caching-lessons.md` §1, §2, §7).
+
+## Response-Shape Contracts (installed clients)
+
+When an endpoint is consumed by an installed mobile/desktop app, the fleet is
+**never on one version** — often the largest share runs an old build. "The app
+handles it" describes the build on your phone, not the response you changed.
+
+- **Adding keys is safe.** Removing, renaming, or nulling a key is a contract
+  break for any build that reads it.
+- **A new branch of an existing handler must carry every key the other
+  branches carry.** The classic break: a new early-return branch (e.g. "nothing
+  available") omits a string field, and an old build that calls a method on it
+  (`value.replace(...)`) crashes outright.
+- **Record what each supported build reads.** Per route, list the fields each
+  still-supported client version reads, and mark the ones it will crash without
+  (it calls a method on the value). Derive it from each version's shipping
+  source, not the app repo tip.
+- **Test every response branch** of the handler against that record — drive
+  each branch through the real controller and assert the required fields are
+  present and non-null. A route with required reads but no driven branch should
+  fail the test, not pass silently.
+- To retire a field, keep it until the builds that
+  require it fall out of support, or record the break explicitly as an accepted gap.
+
+## Webhook Handlers
+
+Providers retry and can deliver the same event concurrently, and another code
+path (e.g. a post-purchase redirect) may race the webhook for the same object.
+
+```php
+$lock = \Drupal::lock();
+$lock_name = 'my_module_subscription:' . $remote_id;
+if (!$lock->acquire($lock_name, 30)) {
+  // Another process is handling this object; log and exit.
+  return;
+}
+try {
+  // Idempotent upsert: load by remote id, update if found, create if not.
+}
+finally {
+  $lock->release($lock_name);
+}
+```
+
+- **Lock per object**, not globally, keyed by type + remote id.
+- **Upsert idempotently** — a redelivered event updates the existing record and
+  treats "already processed" as success, never creates a duplicate.
+- **User auto-creation must be race-safe:** wrap `save()` in try/catch; on
+  failure, immediately load the user by email and return the existing account
+  instead of failing.
+- Log every attempt; catch and log exceptions rather than letting them escape
+  (an escaped exception typically makes the provider retry).
+
+## Debugging
+
+### Check Watchdog Logs
+```bash
+# Error logs only
+ddev drush watchdog:show --severity=3 --count=10
+
+# Check specific module
+ddev drush watchdog:show --type=my_module
+```
+
+### Test Endpoint
+```bash
+# GET request
+curl -H "Content-Type: application/json" https://<project>.ddev.site/my-module-api/test
+
+# POST with JSON
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"field":"value"}' \
+  https://<project>.ddev.site/my-module-api/entity/UUID/action
+```
+
+## Apply to Files
+- `web/modules/custom/my_module/routing.yml`
+- `web/modules/custom/my_module/src/Controller/*Controller.php`
+
+## Testing with cURL
+
+For testing API endpoints with authenticated requests, see the comprehensive guide:
+- @references/authenticated-curl-examples.md
+
+Quick authenticated GET example:
+```bash
+# Get session with drush, then use cookie
+curl -b /tmp/cookies.txt \
+  -H "Content-Type: application/json" \
+  https://<project>.ddev.site/my-module-api/status
+```
+
+## JSON:API Filter Access (Critical)
+
+When exposing entities via JSON:API with filtering, you MUST implement
+`hook_jsonapi_ENTITY_TYPE_filter_access()`. Without it, Drupal's `TemporaryQueryGuard`
+adds `WHERE 1 = 0` to queries, causing **cache poisoning**.
+
+### Quick Fix Pattern
+
+```php
+/**
+ * Implements hook_jsonapi_ENTITY_TYPE_filter_access() for my_entity.
+ */
+function mymodule_jsonapi_my_entity_filter_access(EntityTypeInterface $entity_type, AccountInterface $account) {
+  if ($account->isAuthenticated()) {
+    return [
+      JSONAPI_FILTER_AMONG_ALL => AccessResult::allowed()
+        ->cachePerPermissions()
+        ->addCacheContexts(['user.roles:authenticated']),
+    ];
+  }
+  return [
+    JSONAPI_FILTER_AMONG_ALL => AccessResult::forbidden()->cachePerPermissions(),
+  ];
+}
+```
+
+**See**: @references/jsonapi-filter-access.md for full documentation on JSON:API cache
+poisoning prevention.
+
+## References
+- @references/authenticated-curl-examples.md
+- @references/jsonapi-filter-access.md

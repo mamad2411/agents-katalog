@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: eu/securities/skills/ins-015-sanktionen-wphg/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Sanktionen und Verteidigung: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

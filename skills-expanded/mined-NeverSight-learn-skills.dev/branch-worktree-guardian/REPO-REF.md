@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tarrragon/claude-skills/branch-worktree-guardian/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Branch Worktree Guardian - Git 分支和 Worktree 管理工具。Use for: (1) 新開發需求時建立隔離分支, (2) 使用 worktree 機制避免分支衝突, (3) 驗證當前工作分支正確性, (4) 預防在錯誤分支上開發"

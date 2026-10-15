@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/nemoarce2007/cumcm-skills/compliance-ai/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 按 2026 年 CUMCM 官方规定撰写 AI 工具使用声明与「AI工具使用详情.pdf」要点，并核对匿名与支撑包清单。在终审通过前后、用户说「AI 声明」「支撑材料」「能不能交」时使用。

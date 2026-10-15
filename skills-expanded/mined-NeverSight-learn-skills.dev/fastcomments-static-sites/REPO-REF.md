@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/fastcomments/skills/fastcomments-static-sites/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: FastComments on static sites

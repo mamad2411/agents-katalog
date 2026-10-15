@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/sinabs--xianyu-auto-reply/skills/xianyu-auto-reply/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 闲鱼自动回复助手。帮用户配置并运行闲鱼（Goofish）消息自动回复服务。用户只需提供浏览器 Cookie，即可后台持续监听闲鱼消息并用 AI 智能回复买家。当用户提到闲鱼、咸鱼、Goofish、二手交易自动回复、闲鱼客服机器人、闲鱼消息监控、闲鱼挂机回复等关键词时触发此 skill。即使用户只是说'帮我自动回复闲鱼消息'或'我想让闲鱼自动回买家'，也应该触发。"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/yejinlei/excel-parser-skill/excel-parser/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 支持多种Excel格式的内容提取和写入技能，使用calamine库处理.xls、.xlsx、.xlsm等格式。当用户需要解析Excel文件、提取表格数据、将Excel转换为文本格式、分析Excel内容、批量处理Excel文件、创建新Excel文件或更新现有Excel文件时，务必使用此技能。适用于数据提取、报表分析、内容审核、数据导出等场景。

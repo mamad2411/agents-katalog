@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/crumley/intent-architecture/intent-architecture/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Intent-governed architecture (the four legs)

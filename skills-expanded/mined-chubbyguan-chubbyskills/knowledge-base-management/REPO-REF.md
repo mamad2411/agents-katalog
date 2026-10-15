@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/chubbyguan/chubbyskills (path: knowledge-base-management/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 管理本地 Markdown/Obsidian 知识库：素材入库、健康检查、增量索引、关键词与 semantic-lite 检索、逐字原文资料包、归档和 MCP 连接。用于搜索知识库、整理资料及为 Agent 准备可定位的引用。"

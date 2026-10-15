@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tenequm/claude-plugins/shadcn-tailwind/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Build UIs with Tailwind CSS v4 and shadcn/ui. Covers CSS variables with OKLCH colors, component variants with CVA, responsive design, dark mode, and Tailwind v4.2 features. Supports Radix UI and Base 

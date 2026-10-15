@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/tarrragon/claude-skills/multi-round-review/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 寫多篇章節後做多輪 agent reviewer audit 的標準流程：每輪換 frame、跨輪 finding 不重疊、停止看多軸涵蓋而非 finding 遞減；Round 1-A 同步 invoke compositional-writing 的字句層 keyword bank。觸發：多輪審查、Round 1/2/3、frame 切換、reviewer 規劃、何時停止 review、寫作 a

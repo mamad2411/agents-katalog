@@ -1,0 +1,8 @@
+curated=3177 total=168818 dup_skipped=11086 rescued=150440
+  curated: 3177
+  reference: 150440
+  junk: 15201
+Siap dipakai (curated+reference): 153617
+junk list : /Users/chaali0324/.agents/skills-junk.txt (15201 entri)
+DB        : /Users/chaali0324/.agents/skills-index.db (139.29 MB)
+retrieve.db siap: 175230 aset (skill+cap+mcp)

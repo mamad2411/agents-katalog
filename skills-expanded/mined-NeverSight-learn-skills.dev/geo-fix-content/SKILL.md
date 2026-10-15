@@ -1,0 +1,269 @@
+---
+name: geo-fix-content
+description: Rewrite website content to maximize AI citability — remove hedge language, add data support, improve self-containment, and optimize structure for AI engines. Use when the user asks to improve content for AI, fix citability, rewrite for AI, remove hedge words, or make content more citable.
+version: 1.0.0
+---
+
+# geo-fix-content Skill
+
+You analyze website content at the paragraph level and provide specific rewrites that maximize AI citability — the likelihood that AI systems will quote, cite, or recommend the content. Every suggestion preserves the original meaning while making the text more quotable, data-backed, and self-contained.
+
+Refer to `references/hedge-words.md` in this skill's directory for the hedge language dictionary and rewrite patterns.
+
+---
+
+## Phase 1: Discovery
+
+### 1.1 Validate Input
+
+Accept input in two forms:
+- **URL** — Fetch the page and extract the main content
+- **Pasted text** — Analyze directly
+
+If a URL is provided:
+- Fetch the page HTML
+- Extract main content body (strip navigation, header, footer, sidebar, ads, cookie banners)
+- Preserve headings, lists, tables, code blocks
+- Note the page title and meta description
+
+### 1.2 Content Inventory
+
+Break the content into analyzable units:
+- Split by paragraphs (separated by blank lines or `<p>` tags)
+- Preserve heading context (which H2/H3 section each paragraph belongs to)
+- Number each paragraph for reference
+- Count total words, sentences, and paragraphs
+
+Print a brief summary:
+
+```
+Content Analysis: {title or domain}
+  Words: {count}
+  Paragraphs: {count}
+  Headings: {count}
+  Scanning for citability issues...
+```
+
+---
+
+## Phase 2: Paragraph-Level Diagnosis
+
+Scan every paragraph for these 6 issue categories:
+
+### 2.1 Hedge Language
+
+Hedge words reduce AI citation probability because AI engines prefer authoritative, confident statements.
+
+**Hedge word categories:**
+
+| Category | Examples | Severity |
+|----------|----------|----------|
+| Uncertainty | maybe, perhaps, possibly, might, could | High |
+| Qualification | somewhat, relatively, fairly, rather, quite | Medium |
+| Approximation | about, around, approximately, roughly, nearly | Medium |
+| Distancing | seems, appears, tends to, suggests, likely | High |
+| Generalization | generally, usually, often, sometimes, typically | Medium |
+| Weakening | a bit, sort of, kind of, in some ways | High |
+
+**Metrics:**
+- **Hedge Density** = (hedge word count / total word count) * 100
+- Target: < 0.5% for high-citability content
+- Critical: > 2.0% indicates systematically weak language
+
+### 2.2 Missing Data Support
+
+Paragraphs that make claims without evidence:
+- Statements with "better", "faster", "more" without numbers
+- Comparisons without baselines
+- Claims about impact without metrics
+- Trends stated without timeframes or sources
+
+### 2.3 Missing Definitions
+
+Technical terms or jargon used without explanation:
+- Acronyms not expanded at first use
+- Industry terms assumed known
+- Concepts referenced without context
+
+### 2.4 Poor Self-Containment
+
+Paragraphs that cannot stand alone:
+- Starts with "This", "It", "They" without clear antecedent
+- Requires reading previous paragraphs to understand
+- References "as mentioned above" or "as we discussed"
+- Depends on surrounding context for meaning
+
+### 2.5 Structural Issues
+
+- Paragraphs longer than 4 sentences (AI prefers 2-3 sentence blocks)
+- Content that should be a list or table but is written as prose
+- Wall of text without visual breaks
+- Missing topic sentence (first sentence doesn't summarize the paragraph)
+
+### 2.6 Weak Answer Blocks
+
+Content that could serve as a direct AI answer but doesn't:
+- Questions in headings without direct answers in the first sentence
+- Definition opportunities missed ("{Term} is..." pattern absent)
+- FAQ content buried in prose instead of Q&A format
+
+### Diagnosis Output
+
+For each paragraph with issues, record:
+
+```
+Paragraph {n} (line {x}): {first 10 words}...
+  Issues:
+    - [HEDGE] 3 hedge words (density: 2.1%)
+    - [DATA] Claim without metrics: "significantly improves..."
+    - [SELF] Starts with "This" — unclear antecedent
+  Severity: HIGH
+```
+
+---
+
+## Phase 3: Rewrite
+
+For each paragraph with issues, generate a rewrite following these rules:
+
+### 3.1 Rewrite Principles
+
+1. **Preserve original meaning** — Never change what the author is saying, only how they say it
+2. **Replace hedge with certainty** — "might help" → "reduces costs by X%"
+3. **Add data placeholders** — If real data is unknown, use `[TODO: add specific metric]`
+4. **Front-load the answer** — Put the key claim in the first sentence
+5. **Make self-contained** — Each paragraph should be quotable in isolation
+6. **Keep it concise** — 2-3 sentences per paragraph, maximum 4
+
+### 3.2 Rewrite Format
+
+For each rewritten paragraph:
+
+```markdown
+### Paragraph {n} (line {x})
+
+**Issues**: {comma-separated issue list}
+
+**Before**:
+> {Original paragraph text}
+
+**After**:
+> {Rewritten paragraph text}
+
+**Changes**:
+- {What was changed and why}
+- {What was changed and why}
+```
+
+### 3.3 Rewrite Patterns
+
+**Hedge → Confident:**
+- "might help" → "helps" or "reduces X by Y%"
+- "seems to indicate" → "indicates" or "shows that"
+- "could potentially improve" → "improves"
+- "is generally considered" → "is"
+- "in some cases" → "[specific condition]"
+
+**Vague → Specific:**
+- "significantly improves" → "improves by 34%"
+- "many customers" → "2,500+ customers" or "[TODO: customer count]"
+- "recently" → "in Q1 2026" or "[TODO: specific date]"
+- "industry-leading" → "[TODO: specific benchmark or ranking]"
+
+**Dependent → Self-Contained:**
+- "This helps..." → "{Product Name} helps..."
+- "It works by..." → "{Feature Name} works by..."
+- "As mentioned above..." → Remove, restate the key fact
+
+**Prose → Structure:**
+- Lists of 3+ items → Bullet list or table
+- Comparisons → Table with columns
+- Sequential steps → Numbered list
+- Features with details → Table (Feature | Description | Benefit)
+
+### 3.4 Skip Rules
+
+Do NOT rewrite paragraphs that:
+- Already score well on all dimensions
+- Are legal disclaimers or regulatory text
+- Are direct quotes from named sources
+- Are code blocks or technical specifications
+
+---
+
+## Phase 4: Output
+
+### 4.1 Generate Fix File
+
+Create a file named `content-fix-{domain}-{YYYY-MM-DD}.md` (or `content-fix-{YYYY-MM-DD}.md` if input was pasted text).
+
+Structure:
+
+```markdown
+# Content Citability Fix: {title}
+
+**Source**: {url or "pasted text"}
+**Date**: {YYYY-MM-DD}
+**Paragraphs analyzed**: {total}
+**Issues found**: {count}
+**Paragraphs rewritten**: {count}
+
+## Citability Score
+
+| Metric | Before | After (est.) |
+|--------|--------|-------------|
+| Hedge Density | {x}% | {y}% |
+| Data-Supported Claims | {x}% | {y}% |
+| Self-Contained Paragraphs | {x}% | {y}% |
+| Avg Paragraph Length | {x} sentences | {y} sentences |
+| Answer Block Patterns | {x} found | {y} found |
+| **Overall Citability** | **{x}/100** | **{y}/100** |
+
+## Issue Summary
+
+| Category | Count | Severity |
+|----------|-------|----------|
+| Hedge Language | {n} | {avg severity} |
+| Missing Data | {n} | {avg severity} |
+| Missing Definitions | {n} | {avg severity} |
+| Poor Self-Containment | {n} | {avg severity} |
+| Structural Issues | {n} | {avg severity} |
+| Weak Answer Blocks | {n} | {avg severity} |
+
+## Rewrites
+
+{All paragraph rewrites from Phase 3}
+
+## Full Rewritten Content
+
+{Complete content with all rewrites applied, ready to copy-paste}
+```
+
+### 4.2 Print Summary
+
+```
+Content Fix: {title or domain}
+
+Paragraphs: {total} analyzed, {n} rewritten
+Hedge Density: {before}% → {after}% (target: < 0.5%)
+Citability Score: {before}/100 → {after}/100 (estimated)
+
+Top issues:
+  1. {issue description} ({n} instances)
+  2. {issue description} ({n} instances)
+  3. {issue description} ({n} instances)
+
+Output: content-fix-{domain}-{date}.md
+```
+
+---
+
+## Quality Gates
+
+1. **Meaning preservation** — Rewrites must not change the author's intent or claims
+2. **Data integrity** — Never invent statistics; use `[TODO: ...]` placeholders for missing data
+3. **Tone consistency** — Match the original content's tone (formal/casual/technical)
+4. **Language matching** — Rewrite in the same language as the original content
+5. **No over-optimization** — Content should still read naturally, not like keyword stuffing
+6. **Rate limiting** — 1 second between requests when fetching URLs
+7. **Maximum scope** — Analyze up to 50 paragraphs per run; suggest splitting for longer content

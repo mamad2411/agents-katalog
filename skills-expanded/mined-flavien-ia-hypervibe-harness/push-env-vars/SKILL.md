@@ -1,0 +1,62 @@
+---
+name: _push-env-vars
+description: Internal helper to push environment variables safely to the local .env AND to Vercel (production + preview + development). Delegates to the bundled scripts/push-env-vars.mjs. Triggered by any skill that needs to set env vars (add-db, add-auth, add-stripe, add-email, add-google-auth, add-github-auth, add-storage, add-analytics, add-cron…). Not meant to be invoked directly by users.
+user-invocable: false
+allowed-tools: Bash
+compatibility: "Agent Skills standard (Claude Code or Codex). Requires Node.js; most workflows also use pnpm, git, and project CLIs (vercel, gh)."
+---
+
+# Push Env Vars - Internal helper
+
+## Communication
+- Detect the user's language from the conversation (the user's own messages, anywhere in the session - not just this invocation: a bare slash command like `/bootstrap` carries no language signal by itself). If nothing in the conversation gives a signal, fall back to the OS locale (`node -e "console.log(Intl.DateTimeFormat().resolvedOptions().locale)"`) before defaulting to English. ALWAYS reply in that language for every user-facing message: questions, progress, confirmations, summaries, errors - including any example text quoted in this skill, which is illustrative and must be translated, never sent verbatim.
+- Use plain, non-technical business language. Never expose internal script names (*.mjs) or jargon; describe actions in human terms.
+- When generating user-facing content for the scaffolded project (UI labels, emails, copy), write it in the user's language too.
+- Show progress as a short natural-language checklist (in-progress and done states).
+
+Push env vars to the local `.env` AND to Vercel (production + preview + development). Delegates to a bundled Node script - never reimplement the push logic inline.
+
+## Invocation
+
+From the **project root** (where `.vercel/project.json` lives), call:
+
+```bash
+node "${CLAUDE_SKILL_DIR}/../../scripts/push-env-vars.mjs" "KEY1=value1" "KEY2=value2"
+```
+
+Pass each `KEY=VALUE` as a single shell-quoted argument. The script splits on the first `=` only, so values containing `=` are preserved.
+
+**A secret never goes as an argument**: an argument can be read in the process list by anything running on the machine. It goes on the standard input, one `KEY=VALUE` per line, from where it already is, never typed nor shown:
+
+```bash
+grep '^DATABASE_URL=' .env | node "${CLAUDE_SKILL_DIR}/../../scripts/push-env-vars.mjs" --stdin
+printf '%s' "$VALUE" | node "${CLAUDE_SKILL_DIR}/../../scripts/_env-line.mjs" KEY | node "${CLAUDE_SKILL_DIR}/../../scripts/push-env-vars.mjs" --stdin
+```
+
+Each line is read as the site reads a line of its `.env`: quotes taken off, a `# comment` left out (since 3.4.5; before, a quoted line reached the hosting with its quotes). A value taken raw from a shell variable therefore goes through `_env-line.mjs` first, which writes it as a `.env` line, between quotes when it has to (a `#`, a quote, a space at its edge). `printf 'KEY=%s\n' "$VALUE"` straight is only for a value the harness generated (hex, base64url). The local `.env` is written the same way, so the site reads back exactly what was pushed.
+
+A `$` too (since 3.4.9): Next expands `$name` in a `.env` even between quotes, and only `\$` keeps a dollar. `_env-line.mjs` writes every `$` as `\$`, a line read with `\$` gives `$` to the hosting, and a line whose `$name` the site would replace with another variable's value is refused, by its name: its value cannot be read from the line alone. Write `\$` in that line for a literal dollar, then push again.
+
+(`printf` is a shell builtin: the value in `$VALUE` never sits in a process argument.) An empty value is refused and nothing is written, because in a pipe it is what a step that failed upstream sends: read a value into a variable and check it (`[ -n "$VALUE" ]`) before the pipe. `--allow-empty` sets an empty value on purpose; `--no-local` writes the hosting only, the local `.env` left as it is.
+
+**Which environments** (`--target`): without it, a variable goes to production and preview (and to development too when its name starts with `NEXT_PUBLIC_`). `--target=production`, `--target=preview`, `--target=production,preview` or `--target=all` name them; an entry of another environment is never touched. A value that must differ between the machine and the site (a live key online, a test key in the local `.env`) is pushed online only:
+
+```bash
+printf '%s=%s\n' KEY "$VALUE" | node "${CLAUDE_SKILL_DIR}/../../scripts/push-env-vars.mjs" --stdin --no-local --target=production,preview
+```
+
+**Taking a variable out** (`--remove`): names only, no value. The line leaves the local `.env` (unless `--no-local`) and the variable leaves every environment of the hosting. With `--target`, only the named environments of the hosting lose it, and the local `.env` is left as it is. A variable that is not there counts as removed.
+
+```bash
+node "${CLAUDE_SKILL_DIR}/../../scripts/push-env-vars.mjs" --remove OLD_KEY ANOTHER_KEY
+```
+
+`--help` prints every option.
+
+## Rules
+
+- **Always** use this helper (never `vercel env add` / `echo KEY=... >> .env` / `printf ... | vercel env ...` inline), and for a removal too (never `vercel env rm`, one environment at a time, nor a throwaway script).
+- **A value read in the vault goes into a project only when asked.** It is pushed into a project's `.env` or its hosting only if the user asked for it for THAT key, or if the calling skill provides for it; in doubt, ask. A difference between the vault's value and the one in the `.env` is not a signal to update anything: the two may differ on purpose (a key with wide rights kept for the assistant, a restricted one for the app). A key with wide rights that went online, even for a few minutes, must be considered exposed.
+- **The hosting freezes its variables when a deployment is built.** When the script's last line says a value was already there (or a variable was removed), the site online keeps the old state until the next deployment: say so, and offer to redeploy with the user's agreement. Never make a pretext commit to force one.
+- The script handles `.env` dedup, `.gitignore` update, the 3 Vercel environments, special characters, and the CLI's preview git-branch quirk (REST API first, CLI fallback).
+- If the script exits non-zero, relay the failure message to the caller - don't retry the push logic yourself.

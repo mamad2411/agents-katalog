@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/morning-start/coze-skills/recruitment-processor/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 自动处理多份招聘markdown文档，识别文档中的图片内容（包括在线图片链接），提取关键信息（职位、薪资、截止时间等），根据用户条件筛选，生成结构化总结报告

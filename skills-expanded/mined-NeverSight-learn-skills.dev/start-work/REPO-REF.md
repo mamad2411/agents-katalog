@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/zephyrwang6/myskill/start-work/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 每日工作启动助手。读取Obsidian收件箱、计划文件，提醒今日待办，询问内容创作计划，展示周计划进度，调用热点采集。触发词："开始工作"、"开启新一天"、"今天做什么"。帮助用户快速进入高效工作状态。

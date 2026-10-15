@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/hehuahong/digi-efgp/efgp-operation/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: 鼎新 EFGP 流程管理系统（efgpcn.digiwin.com/NaNaWeb）浏览器自动化操作，覆盖自动登录、会议室预订（含视讯会议 Zoom 账号订阅）、请假、查考勤、补考勤等门户功能。当用户提到 EFGP、EasyFlow、订会议室/会议申请/视讯会议/Zoom账号、请假、考勤、补考勤，或要求操作 efgpcn.digiwin.com 网站时必须使用本 Skill；即使用户只说"帮我订个

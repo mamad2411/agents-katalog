@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wgpsec/AboutSecurity (path: skills/tool/john-crack/SKILL.md, branch: master)
+- mined: 2026-10-14
+- desc: 使用 John the Ripper 进行离线密码破解。当需要破解哈希（MD5/SHA/NTLM/Kerberos/ZIP/RAR/PDF/SSH Key 等）时使用。John 支持自动检测哈希类型、字典攻击、规则变形、增量爆破，内置 *2john 工具链从各种格式提取哈希。任何涉及离线密码破解、哈希还原、密码审计的场景都应使用此技能"

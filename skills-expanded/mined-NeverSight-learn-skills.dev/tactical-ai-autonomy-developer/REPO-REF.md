@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/daemon-blockint-tech/agentic-enteprises-skill/tactical-ai-autonomy-developer/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Tactical AI & Autonomy Developer

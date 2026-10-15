@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/khaki4/my_skills/bf-metrics/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: sprint-status.yaml의 메트릭 데이터를 분석하여 모델 배당 최적화 및 난이도 재태깅을 제안한다. 읽기 전용 스킬로, 파일 변경 없이 대화로만 결과를 출력한다.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/administrative/skills/erforderlichkeitspruefung-warum-ueberhaupt-regeln/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für NKR-Erforderlichkeitsprüfung — Warum überhaupt regeln: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Tatbestands- oder Anspruchsmatrix. Fachgebiet: Normenkontrollrat (NKR) — Prüfung von Ges

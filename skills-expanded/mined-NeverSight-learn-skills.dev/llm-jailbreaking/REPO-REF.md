@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/pluginagentmarketplace/custom-plugin-ai-red-teaming/llm-jailbreaking/SKILL.md, branch: main)
+- mined: 2026-10-14
+- desc: Advanced LLM jailbreaking techniques, safety mechanism bypass strategies, and constraint circumvention methods

@@ -33,5 +33,235 @@
   "ts": "2026-09-26T17:44:34",
   "skill": "slippy-map-and-product-stack-selection",
   "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T16:15:50",
+  "skill": "postgres-patterns",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T16:47:34",
+  "skill": "golang-patterns",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:03:04",
+  "skill": "managed-agents-curl-raw-http",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:03:04",
+  "skill": "rawrxd-ide-ai-context-rules-2026-standard",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:03:04",
+  "skill": "agent-guidelines-for-agents",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "neo4j-graphql-skill",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "jimf-literature-positioning",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "thick-client",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "post-merge",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "daily-context",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "ynab-automation",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "regulatory-elements",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "aicoin-trading",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "qveris-quant-factor-screen",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "api-conventions",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "cursor-rules-for-linear-hello-world",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "nsaid-safety",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "claim-ledger",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "plugin-planning",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:04",
+  "skill": "bazi-fortune",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "refactoring-ui",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "authenticated-session-acquisition",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "ko-fi-automation",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "klaviyo-local-dev-loop",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "rust-code-navigator",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "add-discord-i-o-skill",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "brand-co-branding",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "swift-uikit-mvvm-rxswift-development-rules",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "eforge-status",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "aeon-unlock-monitor",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "blog-rewrite",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "iso26262",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "policy-research-design",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "s4h-aesthetic-simplicity-analysis",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "lets-go-rss",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:05",
+  "skill": "kiro-spec-init",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "subagent-task-orchestrator",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "storm-research-agent",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "mcp-lsp-project-config",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "vet",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "external-procedure-intake",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "creator-fit-scoring",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "senior-mobile",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "leiga",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-09T17:04:06",
+  "skill": "trigger-tasks",
+  "via": "skill_load"
+ },
+ {
+  "ts": "2026-10-13T10:40:17",
+  "skill": "google-colab-guide",
+  "via": "skill_load"
  }
 ]

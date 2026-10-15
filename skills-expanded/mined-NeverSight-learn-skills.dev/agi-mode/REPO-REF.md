@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/xgent-ai/skills/agi-mode/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 用于 AGI 模式或要求自主攻克复杂任务、持续实验直至可验证交付；普通问答与局部小改动无需加载完整流程。以结果契约、主动实验和反证验证推进并支持恢复。"

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/contracts/skills/deliktsrecht-haftung-fuer-verrichtungen-paragraph-831/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: Für Deliktsrecht: Haftung für Verrichtungen Paragraf 831 BGB: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt. Fachgebiet: BGB BT Prüfer. Route: delikt

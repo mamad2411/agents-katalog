@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/kylinr--pipixia-drama-producer/skills/pipixia-drama-producer/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 皮皮虾职场短剧全流程制作技能。用于为「皮皮虾」（机械龙虾AI-bot）职场短剧生成镜头视频、剪辑成片、配音配乐并发布到飞书群。完整流程：图生视频(I2V) → ffmpeg规范化+剪辑 → TTS配音 → BGM混音 → 飞书媒体消息发送。当用户提到制作皮皮虾短剧、生成新镜头、剪辑视频、配音配乐、或将视频/音频发送到飞书群时激活。"

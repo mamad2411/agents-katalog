@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/dvcrn/openclaw-skills-marketplace (path: plugins/benzema216--trading-coach/skills/trading-coach/SKILL.md, branch: main)
+- mined: 2026-10-15
+- desc: 🏆 AI交易复盘教练 — 把你的券商CSV变成可执行的改进洞察！\n 自动FIFO配对持仓，8维度质量评分(入场/出场/趋势/风险...)，10维度AI洞察。\n 支持富途(中/英)、老虎、中信、华泰等主流券商。\n 触发条件: 用户提供交易CSV、要求分析交易表现、评估交易质量、生成复盘报告、\n 计算盈亏统计、识别交易模式问题、\"帮我复盘\"、\"分析我的交易\"。"
