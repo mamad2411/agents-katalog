@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/olorolor/fundamentals-with-ai/module2-tokens-context/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: tokenization과 context window를 중심으로 긴 입력 처리 한계와 실무 대응 방법(분할, 요약, 우선순위화)을 학습시키는 모듈.

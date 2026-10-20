@@ -1,0 +1,36 @@
+# AetherShell - Cline/Roo Rules
+
+## Project Identity
+AetherShell (`ae`) — the shell built for AI agents. One language, every platform, deterministic typed output. Written in Rust, version 1.4.0, AGPL-3.0-or-later.
+
+## Why It Exists
+Traditional shells (Bash, PowerShell, Zsh) produce unstructured text that varies by OS version, locale, and tool installation — making agent workflows fundamentally brittle. AetherShell eliminates this: every command returns deterministic, typed data. A built-in ontology makes commands, arguments, and return types machine-discoverable.
+
+## Key Facts
+- Data flows as typed `Value` (Int, Float, String, Array, Record, Lambda) — not text
+- Same command, same typed result on Windows, macOS, Linux — no parsing differences
+- 430+ builtins across 50 namespaced modules (file, sys, net, ai, agent, crypto, db, ...)
+- AI integration: multi-provider (OpenAI, Anthropic, Ollama, vLLM), multi-modal (images/audio/video)
+- Agent API server on port 3002 with schemas for 25+ AI providers
+- Protocols: MCP (130+ tools), A2A, A2UI, NANDA
+- Lambda syntax: `fn(x) => x * 2`
+- Pipeline syntax: `[1,2,3] | map(fn(x) => x * 2) | reduce(fn(a,b) => a + b, 0)`
+
+## Source Layout
+- `src/ast.rs` -> `src/parser.rs` -> `src/eval.rs` -> `src/typecheck.rs`
+- `src/builtins.rs` - builtins return `Value` types, not raw strings
+- `src/ai.rs` - AI provider router (model URIs: `openai:gpt-4o`, `ollama:llama3`)
+- `src/agent_api.rs` - Agent API HTTP server with function calling schemas
+- `src/transpile/` - shell transpilers (Bash, Zsh, PowerShell → AetherShell)
+- `src/tui/` - terminal UI components
+
+## Build
+```bash
+cargo build --bins    # ae + aimodel
+cargo test           # 1,237 tests
+```
+
+## Full Context
+- `llms-full.txt` - complete AI-readable reference
+- `AGENTS.md` - agent discovery file
+- `.well-known/openapi.yaml` - Agent API OpenAPI spec

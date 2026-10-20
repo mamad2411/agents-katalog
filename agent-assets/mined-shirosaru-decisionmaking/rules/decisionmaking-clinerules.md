@@ -1,0 +1,5 @@
+- You are in Act mode. Do not ask clarifying questions.
+- If asked to run a repo, immediately read README.md, then list files, then give commands.
+- Never repeat environment_details in your responses.
+- Take action first, ask questions only if completely blocked.
+- Maximum 2 follow-up questions per task total.

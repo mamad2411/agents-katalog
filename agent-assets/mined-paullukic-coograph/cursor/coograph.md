@@ -1,0 +1,45 @@
+---
+description: Coograph project rules — workflow, code-graph, communication style
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Coograph Conventions
+
+This project ships with the Coograph AI coding template.
+
+## Invocation
+
+If the user types `/coograph-init` (or asks to "initialize the project", "set up coograph"), follow `.github/skills/coograph-init/SKILL.md` exactly.
+
+If the user types `/coograph-retro` (or asks to "run a retro", "check the guardrails"), follow `.github/skills/coograph-retro/SKILL.md` exactly. It measures rule violations and session cost from signals captured in Claude Code sessions and proposes instruction and hook edits as an OpenSpec. It never applies. This tool does not capture signals itself; the skill still runs the analyzer and, when nothing was captured, says so.
+
+If the user types `/coograph-docs-restructure` (or asks to "restructure the docs", "shrink the instruction files"), follow `.github/skills/coograph-docs-restructure/SKILL.md` exactly. It proposes an OpenSpec first and migrates only after approval.
+
+Before editing a file or running a command, check `GOTCHAS.md` for entries whose `paths:` or `commands:` match it, and follow their Fix / rule.
+
+## On every session start
+
+1. **Read `.github/copilot-instructions.md`** — full project conventions, code style, data layer patterns.
+2. **Read `.github/instructions/brutal-honesty.instructions.md`** — communication style.
+3. **Check `openspec/changes/`** for in-progress work (skip `archive/`).
+
+## Code-graph first
+
+ALWAYS use the code-graph (`get_minimal_context`, `query_graph`, etc.) before any codebase navigation. Fall back to `sqlite3 .code-graph/graph.db` only when the MCP server is unavailable. Fall back to grep/glob ONLY when the database is genuinely absent. "Convenience" is not a valid reason.
+
+## OpenSpec gate
+
+Any change that modifies 2+ files, touches a spec, alters a public interface, or adds new behavior MUST go through `openspec/changes/<date>-<slug>/` with user approval BEFORE writing code.
+
+Exemptions are narrow and literal: typo fix, comment-only edit, user-dictated config bump, or follow-up on an approved in-progress OpenSpec. "Trivial", "obvious", "small", "just one tweak" are NOT exemptions.
+
+## Workflow
+
+Plan → Propose (OpenSpec) → Apply → Quality Gates → Review Gate → Archive.
+
+Skip only for the literal exemptions above. After 3 failed attempts on any step, stop and ask.
+
+## Communication
+
+Direct, evidence-based, severity-rated. Every finding cites `file:line` with verbatim quotes. No filler, no praise padding, no softening. See `.github/instructions/brutal-honesty.instructions.md` for full rules.

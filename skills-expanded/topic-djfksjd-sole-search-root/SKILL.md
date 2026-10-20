@@ -1,1 +1,0 @@
-skills/sole-search/SKILL.md

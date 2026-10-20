@@ -2,7 +2,6 @@
 ---
 name: technology-advisor
 description: Systematic technology selection using the STRIDE framework (Scope, Test reversibility, Requirements, Identify options, Deep evaluation, Execute). Use when selecting databases, frameworks, cloud providers, languages, or any technical stack decisions. Matches evaluation rigor to decision reversibility -- lightweight for 2-way doors, thorough for 1-way doors. Produces weighted decision matrices with sensitivity analysis.
-tags: [technology-selection, decision-making, stride, evaluation, adr]
 ---
 
 # Technology Advisor

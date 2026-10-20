@@ -1,0 +1,558 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# LLML Technical Specification
+
+Version: 0.3.0, July 1st 2025
+
+## Overview
+
+LLML (Lightweight Language Markup Language) is a data serialization format that transforms nested data structures into human-readable, XML-like markup. This specification defines the exact transformation rules that must be implemented consistently across all language implementations.
+
+## Core Transformation Rules
+
+### 1. Empty Value Handling
+
+Empty values are transformed to empty strings:
+
+```
+llml() → ""
+llml([]) → ""
+llml({}) → ""
+```
+
+Special case for empty named arrays:
+```
+llml({items: []}) → ""  # Empty arrays within objects are omitted entirely
+llml([[], [[]]]) → ""  # Empty arrays within arrays are omitted entirely
+```
+
+### 2. Primitive Value Formatting
+
+All primitive values are wrapped in XML-like tags using the key name:
+
+**Strings:**
+```
+llml({message: "Hello"}) → "<message>Hello</message>"
+llml({empty: ""}) → "<empty></empty>"
+```
+
+**Numbers:**
+```
+llml({count: 42}) → "<count>42</count>"
+llml({temperature: 98.6}) → "<temperature>98.6</temperature>"
+llml({zero: 0}) → "<zero>0</zero>"
+```
+
+**Booleans:**
+```
+llml({enabled: true}) → "<enabled>true</enabled>"  # TypeScript
+llml({enabled: True}) → "<enabled>True</enabled>"  # Python
+llml({disabled: false}) → "<disabled>false</disabled>"  # TypeScript
+llml({disabled: False}) → "<disabled>False</disabled>"  # Python
+```
+
+**Null/None/Undefined:**
+```
+llml({value: null}) → "<value>null</value>"  # TypeScript
+llml({value: None}) → "<value>None</value>"  # Python
+llml({value: undefined}) → "<value>undefined</value>"  # TypeScript
+```
+
+### 3. Key Preservation
+
+Keys are preserved as-is without transformation:
+
+```
+llml({user_name: "Alice"}) → "<user_name>Alice</user_name>"
+llml({userName: "Bob"}) → "<userName>Bob</userName>"
+llml({"key with spaces": "value"}) → "<key with spaces>value</key with spaces>"
+```
+
+### 4. Multiple Key-Value Pairs
+
+Multiple key-value pairs are separated by newlines:
+
+```
+llml({name: "Alice", age: 30, active: true})
+→
+<name>Alice</name>
+<age>30</age>
+<active>true</active>
+```
+
+### 5. Array/List Formatting
+
+Arrays are formatted with special wrapper tags and numbered items:
+
+**Basic Arrays:**
+```
+llml({rules: ["first", "second", "third"]})
+→
+<rules>
+  <rules-1>first</rules-1>
+  <rules-2>second</rules-2>
+  <rules-3>third</rules-3>
+</rules>
+```
+
+**Numeric Arrays:**
+```
+llml({numbers: [1, 2, 3]})
+→
+<numbers>
+  <numbers-1>1</numbers-1>
+  <numbers-2>2</numbers-2>
+  <numbers-3>3</numbers-3>
+</numbers>
+```
+
+**Array Names:**
+```
+llml({user_tasks: ["task1", "task2"]})
+→
+<user_tasks>
+  <user_tasks-1>task1</user_tasks-1>
+  <user_tasks-2>task2</user_tasks-2>
+</user_tasks>
+```
+
+### 6. Direct Array Formatting
+
+When an array is passed directly (not as a property), it uses numeric tags:
+
+```
+llml(["a", "b", "c"])
+→
+<1>a</1>
+<2>b</2>
+<3>c</3>
+```
+
+**Mixed Types:**
+```
+llml([1, "hello", true])
+→
+<1>1</1>
+<2>hello</2>
+<3>true</3>
+```
+
+**Objects in Direct Arrays:**
+```
+llml([{name: "Alice"}, {name: "Bob"}])
+→
+<1>
+  <name>Alice</name>
+</1>
+<2>
+  <name>Bob</name>
+</2>
+```
+
+### 7. Nested Object Formatting
+
+Nested objects are formatted recursively with proper indentation. Nested object properties do not include parent key prefixes:
+
+**Simple Nesting:**
+```
+llml({config: {debug: true, timeout: 30}})
+→
+<config>
+  <debug>true</debug>
+  <timeout>30</timeout>
+</config>
+```
+
+**Key Preservation:**
+```
+llml({user_config: {debug_mode: true, maxRetries: 5}})
+→
+<user_config>
+  <debug_mode>true</debug_mode>
+  <maxRetries>5</maxRetries>
+</user_config>
+```
+
+### 8. Arrays Containing Objects
+
+When arrays contain objects, each object is wrapped with the array name and index. Object properties within arrays do not include the array item prefix:
+
+```
+llml({data: [{name: "Alice", age: 30}, {name: "Bob", age: 25}]})
+→
+<data>
+  <data-1>
+    <name>Alice</name>
+    <age>30</age>
+  </data-1>
+  <data-2>
+    <name>Bob</name>
+    <age>25</age>
+  </data-2>
+</data>
+```
+
+### 9. Complex Mixed Content
+
+Mixed content types are handled by applying the appropriate rule for each type. Nested object properties do not include parent key prefixes:
+
+```
+llml({
+  title: "My Document",
+  sections: ["intro", "body", "conclusion"],
+  metadata: {author: "Alice", version: "1.0"}
+})
+→
+<title>My Document</title>
+<sections>
+  <sections-1>intro</sections-1>
+  <sections-2>body</sections-2>
+  <sections-3>conclusion</sections-3>
+</sections>
+<metadata>
+  <author>Alice</author>
+  <version>1.0</version>
+</metadata>
+```
+
+### 10. Deep Nesting
+
+Deep nesting follows the same rules recursively. Nested object properties do not include parent key prefixes:
+
+```
+llml({level1: {level2: {items: ["a", "b"]}}})
+→
+<level1>
+  <level2>
+    <items>
+      <items-1>a</items-1>
+      <items-2>b</items-2>
+    </items>
+  </level2>
+</level1>
+```
+
+### 11. Multiline Content
+
+Multiline strings are formatted with proper indentation, with leading/trailing whitespace trimmed:
+
+```
+llml({description: `
+    Line 1
+    Line 2
+    Line 3
+    `})
+→
+<description>
+  Line 1
+  Line 2
+  Line 3
+</description>
+```
+
+## Configuration Options
+
+### Indentation
+
+Custom indentation can be specified for nested elements:
+
+```
+llml({message: "Hello"}, {indent: "  "})
+→
+  <message>Hello</message>
+
+llml({items: ["a", "b"]}, {indent: "  "})
+→
+  <items>
+    <items-1>a</items-1>
+    <items-2>b</items-2>
+  </items>
+```
+
+**Direct Arrays with Indentation:**
+```
+llml(["a", "b"], {indent: "  "})
+→
+  <1>a</1>
+  <2>b</2>
+```
+
+### Prefix
+
+All generated tags can be prefixed with a namespace:
+
+```
+llml({config: "value"}, {prefix: "app"})
+→
+<app-config>value</app-config>
+
+llml({items: ["a", "b"]}, {prefix: "app"})
+→
+<app-items>
+  <app-items-1>a</app-items-1>
+  <app-items-2>b</app-items-2>
+</app-items>
+```
+
+**Direct Arrays with Prefix:**
+```
+llml(["a", "b"], {prefix: "item"})
+→
+<item-1>a</item-1>
+<item-2>b</item-2>
+```
+
+### Formatter System
+
+LLML uses a pluggable formatter system to support different output formats and enable language-specific idioms. Each language implementation uses the most idiomatic approach for that language.
+
+> VibeXML means it's Cyrus' Scientific Wild Ass Guess on what is the best input prompt structure, and it's currently a loose, XML-inspired markup language.
+
+**Language-Specific Idiomatic Approaches:**
+
+**Rust - Trait-Based System:**
+```rust
+// Rust uses traits for type-safe, extensible formatting
+use zenbase_llml::{llml, Prompt};
+
+// Built-in types implement Prompt trait
+let result = llml(&json!({"config": {"debug": true}}));
+
+// Custom types implement Prompt trait
+struct CustomType { name: String }
+impl Prompt for CustomType {
+    fn to_prompt(&self) -> String {
+        format!("Custom: {}", self.name)
+    }
+}
+let custom = CustomType { name: "example".to_string() };
+let result = llml(&custom);
+```
+
+**TypeScript - Formatter Maps with Predicates:**
+```typescript
+// TypeScript uses Map<predicate, formatter> for type safety and performance
+import { llml, vibeXML } from 'zenbase-llml';
+
+// Use default VibeXML formatters
+const result = llml({config: {debug: true, timeout: 30}});
+
+// Custom formatters
+const customFormatters = vibeXML();
+const result = llml(data, customFormatters);
+```
+
+**Python - Formatter Dictionaries with Predicates:**
+```python
+# Python uses {predicate: formatter} mapping for clarity
+from zenbase_llml import llml, swag_xml
+
+# Use default swag_xml formatters
+result = llml({"config": {"debug": True, "timeout": 30}})
+
+# Custom formatters
+custom_formatters = swag_xml.copy()
+result = llml(data, custom_formatters)
+```
+
+**Go - Interface-Based System:**
+```go
+// Go uses interfaces for type-safe, extensible formatting
+import "github.com/zenbase-ai/llml/go/pkg/llml"
+
+// Built-in types implement Stringer interface
+result := llml.Format(map[string]interface{}{
+    "config": map[string]interface{}{
+        "debug": true,
+        "timeout": 30,
+    },
+})
+```
+
+## Language-Specific Idiomatic Patterns
+
+Each language implementation follows the most idiomatic approach for that ecosystem:
+
+### Rust - Trait-Based System
+- Uses traits for type-safe, extensible formatting
+- Leverages Rust's ownership system and zero-cost abstractions
+- Implements `Prompt` trait for custom types
+- Uses `serde_json::Value` for JSON compatibility
+- Provides both simple `llml()` and configurable `llml_with_options()`
+
+### TypeScript - Formatter Maps
+- Uses `Map<predicate, formatter>` for type safety and performance
+- Leverages TypeScript's type system and functional programming patterns
+- Provides immutable formatter composition
+- Uses `unknown` type for maximum type safety
+- Supports custom formatters through Map merging and composition
+
+### Python - Formatter Dictionaries
+- Uses dictionary mapping of `predicate -> formatter` for clarity
+- Follows Python's "batteries included" philosophy
+- Supports both positional and keyword arguments
+- Uses duck typing for flexible input handling
+- Provides intuitive dictionary-based formatter customization
+
+### Go - Interface-Based System
+- Uses interfaces for type safety and extensibility
+- Follows Go's composition over inheritance principle
+- Leverages Go's built-in `fmt.Stringer` interface
+- Provides simple, explicit API design
+- Uses `interface{}` for flexible input types
+
+### Key Design Principles by Language
+
+**Rust:**
+- Zero-cost abstractions
+- Memory safety without garbage collection
+- Trait-based polymorphism
+- Explicit error handling
+
+**TypeScript:**
+- Structural typing and type inference
+- Functional programming patterns
+- Immutable data structures
+- Compile-time type safety
+
+**Python:**
+- Duck typing and dynamic dispatch
+- Explicit is better than implicit
+- Batteries included philosophy
+- Readable, maintainable code
+
+**Go:**
+- Simplicity and clarity
+- Composition over inheritance
+- Explicit error handling
+- Standard library conventions
+
+## Language-Specific Implementation Details
+
+### Function Signatures
+
+**Rust:**
+```rust
+// Trait-based approach for type safety and extensibility
+pub trait Prompt {
+    fn to_prompt(&self) -> String;
+}
+
+pub fn llml<T: Prompt>(data: &T) -> String
+pub fn llml_with_options(data: &Value, options: Option<LLMLOptions>) -> String
+
+pub struct LLMLOptions {
+    pub indent: String,
+    pub prefix: String,
+    pub strict: bool,
+}
+```
+
+**TypeScript:**
+```typescript
+// Formatter-based approach with Map<predicate, formatter>
+export const llml = (data: unknown, formatters?: Formatters): string
+
+// Formatters is an iterable of [predicate, formatter] pairs (typically a Map)
+type Formatters = Iterable<[Predicate, Formatter]>
+type Predicate = (data: unknown) => boolean
+type Formatter = (data: unknown, llml: Function, formatters: Formatters) => string
+```
+
+**Python:**
+```python
+# Dictionary-based approach with predicate->formatter mapping
+def llml(data: Any = _SENTINEL, formatters: Formatters = swag_xml) -> str
+
+# Formatters is a dictionary of predicate->formatter mappings
+Formatters = Dict[Callable[[Any], bool], Callable[[Any, Callable, Formatters], str]]
+```
+
+**Go:**
+```go
+// Interface-based approach (to be implemented)
+func Format(data interface{}) string
+```
+
+### Type Representation
+
+**Booleans:**
+- TypeScript: `true`/`false` (lowercase)
+- Python: `True`/`False` (capitalized)
+
+**Null/None:**
+- TypeScript: `null`/`undefined`
+- Python: `None`
+
+## Edge Cases and Special Behaviors
+
+### Empty Arrays in Objects
+Empty arrays within objects are completely omitted from output:
+```
+llml({items: []}) → ""
+```
+
+### Zero and False Values
+Zero and false values are preserved (not treated as empty):
+```
+llml({count: 0}) → "<count>0</count>"
+llml({enabled: false}) → "<enabled>false</enabled>"
+```
+
+### Empty Strings
+Empty strings are preserved with empty tags:
+```
+llml({message: ""}) → "<message></message>"
+```
+
+### Single Argument vs Multiple Arguments
+
+**Python supports both patterns:**
+```python
+# Single object argument
+llml({name: "Alice", age: 30})
+
+# Keyword arguments
+llml(name="Alice", age=30)
+
+# Mixed (single argument takes precedence)
+llml({title: "Document"}, name="Alice")  # Only {title: "Document"} is used
+```
+
+**TypeScript uses single argument:**
+```typescript
+llml({name: "Alice", age: 30})
+```
+
+## Indentation Rules
+
+- Base indentation is applied to all top-level elements
+- Each nesting level adds one more indentation unit
+- Array wrapper tags receive the same indentation as their parent
+- Array items are indented one level deeper than their wrapper
+- Object properties within arrays inherit the array item's indentation level
+
+## Tag Naming Convention (VibeXML Renderer)
+
+1. Preserve all keys as-is (no case conversion)
+2. For array items, append `-{index}` to the key name (1-indexed)
+3. For nested objects: Use child key name only (no parent key prefix)
+4. Apply prefix to all generated tag names if specified
+
+## Validation Requirements
+
+Implementations must produce identical output for identical input across all supported languages. Test suites should verify:
+
+1. All primitive type handling
+2. Empty value scenarios
+3. Key preservation accuracy
+4. Array formatting consistency
+5. Nested structure handling
+6. Configuration option behavior
+7. Multiline content processing
+8. Edge cases and error conditions
+
+This specification ensures consistent behavior across Python, TypeScript, Rust, and Go implementations of LLML.

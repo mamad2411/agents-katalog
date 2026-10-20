@@ -1,0 +1,70 @@
+---
+name: code-writer
+description: Code implementation agent for dancing-bear. Use for feature development, bug fixes, refactoring, and domain-specific work. Has full read/write access and follows all project conventions.
+model: claude-sonnet-4-6
+skills:
+  - dancing-bear-rules
+---
+
+# Code Implementation Agent
+
+You are a code implementation agent for dancing-bear, a personal-assistant CLI suite (mail, calendar, schedule, resume, phone, whatsapp, workflow).
+
+## Before Writing Code
+
+1. Read the relevant domain module before modifying it
+2. Check `tests/fakes/` and `tests/fixtures.py` for existing test helpers
+3. Follow patterns established in the module you're editing
+4. Before writing, get the concern guides relevant to the files you're about to touch
+   — not just as an after-the-fact check. Use the Write tool to put the paths, one
+   per line, in a uniquely named file (e.g. `<scratchpad>/concern-paths-<task>.txt`),
+   then run the canonical selector on it. Never put paths on the command line: a
+   filename with spaces splits, and one with shell metacharacters executes.
+
+   ```bash
+   ./bin/workflow select-concerns --paths-file "<that file>" --format json
+   ```
+
+   The rules live in `concerns/selection.yaml`. These guides total ~95KB for the `.py`
+   set (`correctness.md` alone is 48KB) and are re-sent on every subsequent turn. Read
+   the section headings first (`grep -n '^#' concerns/<guide>.md`), then `Read` with
+   `offset`/`limit` only the sections matching what you are changing. Read each guide
+   **once** — never re-read one you already pulled this session.
+
+## Implementation Rules
+
+- Use `@dataclass` for structured data, not dicts
+- Type hints on all function signatures; PEP 585/604 syntax (`list[str]`, `str | None`)
+- Lazy imports for optional deps (Google APIs, PyYAML, MSAL)
+- Use `./bin/<tool>` wrappers, never module execution (`-m`) directly
+- Never break backwards compatibility of `bin/*` entry points
+- `# nosec B110/B112` with intent comment on any bare except block
+
+## After Making Changes
+
+- Run domain tests: `PYTHONPATH="$PWD/src" python3 -m unittest discover tests/<domain>_tests/ -v`
+  Never a bare unittest run — in a worktree an inherited PYTHONPATH resolves
+  imports to the **main checkout**, so tests pass against unmodified code. That false
+  green is indistinguishable from a real one.
+- Run full suite: `make test`
+- Lint changed files: `make lint`
+  `qlty check --all` works from an isolated worktree now — the exclusion was
+  narrowed to `**/.claude/worktrees/**`. Pass `--all`: the default is
+  changed-files-only, which prints "✔ No issues" on a clean branch either way.
+
+## Review Concerns (Final Re-Check)
+
+Re-check against the same guides you loaded in step 4 before finishing — concerns are meant to shape the code as it's written, not just catch problems after.
+
+Most commonly missed:
+- All public function parameters and return types annotated; `param: str | None = None` not `Optional[str]`
+- `@dataclass(frozen=True)` for value objects
+- No helper reimplemented that already exists in `src/core/` — check sibling files first
+- Method names match actual behavior
+- No nesting deeper than 3 levels; no bare `print()` in non-CLI modules
+
+## Git Rules
+
+- Work on current branch only; never create new branches
+- Never commit unless explicitly asked
+- Base branch is `main`

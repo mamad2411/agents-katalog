@@ -1,0 +1,373 @@
+---
+name: chromecast-casting
+description: Google Cast Protocol v2, message framing, debugging, and test scripts. Use when working on Chromecast casting, debugging Cast protocol issues, or implementing Cast commands.
+---
+
+# Chromecast Implementation
+
+NullPlayer implements Google Cast Protocol v2 for casting audio and video to Chromecast devices.
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `Casting/CastProtocol.swift` | Protocol implementation, message encoding/decoding, session controller |
+| `Casting/ChromecastManager.swift` | Device discovery (mDNS), connection management, public API |
+| `Casting/CastManager.swift` | High-level casting coordinator for all device types; EQ Cast's seam (`eq-profiles` § *EQ Cast*) |
+| `scripts/test_chromecast.swift` | Standalone test script for debugging |
+
+## Discovery
+
+Chromecast devices are discovered via mDNS (Bonjour):
+- Service type: `_googlecast._tcp`
+- Domain: `local.`
+- Uses `NWBrowser` for discovery
+- Resolves to IP:port (default port 8009)
+- Device identity must use the stable Cast TXT `id` record when available, falling back to the Bonjour service instance name. Do not key Chromecast devices by resolved IP/port: different Macs can resolve the same service via different address forms, which creates duplicate menu entries during refresh because refresh keeps existing devices visible.
+
+## Protocol Overview
+
+Google Cast Protocol v2:
+1. **TLS Connection** — Port 8009, self-signed certificate (must accept)
+2. **Protobuf Framing** — 4-byte big-endian length prefix + protobuf message
+3. **Namespaces** — Different message types use different namespace URNs
+4. **Session Flow**:
+   - CONNECT to `receiver-0`
+   - Start heartbeat (PING every 5 seconds)
+   - LAUNCH Default Media Receiver (appId: `CC1AD845`)
+   - Wait for RECEIVER_STATUS with `transportId`
+   - CONNECT to the transportId
+   - LOAD media with URL and metadata
+
+## Message Namespaces
+
+| Namespace | Purpose |
+|-----------|---------|
+| `urn:x-cast:com.google.cast.tp.connection` | Connection management (CONNECT, CLOSE) |
+| `urn:x-cast:com.google.cast.tp.heartbeat` | Keep-alive (PING, PONG) |
+| `urn:x-cast:com.google.cast.receiver` | App lifecycle (LAUNCH, STOP, GET_STATUS) |
+| `urn:x-cast:com.google.cast.media` | Media control (LOAD, PLAY, PAUSE, SEEK, STOP) |
+
+## CastSessionController
+
+The `CastSessionController` class manages a single Chromecast session:
+- Thread-safe with `NSLock` for state access
+- Uses `NWConnection` for TLS socket
+- Completion-based async API (bridged to async/await in ChromecastManager)
+- Implements `CastSessionControllerDelegate` protocol for status updates
+
+## Position Synchronization
+
+Position tracking uses `CastSession` fields, not AudioEngine-local variables:
+
+- `activeSession.position` — last known position reported by Chromecast
+- `activeSession.playbackStartDate` — `Date()` when playback last transitioned to PLAYING; `nil` when paused or buffering
+- `CastManager.currentTime` interpolates: `session.position + Date().timeIntervalSince(session.playbackStartDate)`
+
+**Status polling** (`CastSessionController.startStatusPolling()`) polls `GET_STATUS` every second. Each `MEDIA_STATUS` response updates `session.position` and resets `session.playbackStartDate = Date()` when PLAYING, or sets `playbackStartDate = nil` when not playing.
+
+This handles buffering: when `playerState == BUFFERING`, `playbackStartDate` is cleared so the interpolation freezes at `session.position` until PLAYING resumes.
+
+**Both video and audio** casts use the same session-based tracking. The audio branch in `handleChromecastMediaStatusUpdate` mirrors the video branch exactly.
+
+## Stopping Playback and Closing the App
+
+When the user stops casting Chromecast:
+
+1. `ChromecastManager.stop()` sends `STOP` to the **media session** — stops media but leaves the Default Media Receiver app running on the TV.
+2. `ChromecastManager.stopApp()` sends `STOP` to **`receiver-0`** (receiver namespace) — closes the Default Media Receiver app entirely, triggering HDMI-CEC to dismiss the cast overlay from the TV screen.
+3. A **200 ms sleep** between `stop()` and `disconnect()` ensures STOP bytes flush before the socket is cancelled. Without this, `connection.cancel()` races with the outbound STOP bytes and the Chromecast never processes the command, leaving the video paused on screen.
+
+```swift
+// In ChromecastManager.stop():
+sessionController?.stop()      // STOP to media session
+sessionController?.stopApp()   // STOP to receiver-0
+
+// In CastManager.stopCasting():
+chromecastManager.stop()
+try? await Task.sleep(nanoseconds: 200_000_000)  // 200 ms flush delay
+chromecastManager.disconnect()
+```
+
+## Pre-Load IDLE Guard (`chromecastHasSeenActivePlayback`)
+
+Chromecast sends an initial `IDLE` status immediately after a new media session is created, **before** the `LOAD` command is processed. Without a guard, this IDLE would be interpreted as "media ended" and trigger `stopCasting()`.
+
+`CastManager` maintains:
+```swift
+private var chromecastHasSeenActivePlayback: Bool = false
+```
+
+**Lifecycle:**
+- Reset to `false` at every cast start — in `cast()` before `chromecastManager.cast()`, in `castNewTrack()` before `chromecastManager.cast()`, and in `stopCasting()`.
+- Set to `true` on first `PLAYING` or `BUFFERING` status for both video and audio casts.
+- IDLE is only treated as "media ended" when `chromecastHasSeenActivePlayback == true`.
+- IDLE with `chromecastHasSeenActivePlayback == false` is logged and ignored (pre-load IDLE).
+
+**Critical**: The reset must happen **before** calling `chromecastManager.cast()`, not after. The Chromecast sends its initial IDLE as soon as the new media session is created (during `LOAD`), which can arrive before any `MainActor.run` block scheduled after the cast call executes.
+
+```swift
+// WRONG — reset races with arriving IDLE:
+try await chromecastManager.cast(url: url, metadata: metadata)
+await MainActor.run { self.chromecastHasSeenActivePlayback = false }
+
+// CORRECT — reset before LOAD is issued:
+chromecastHasSeenActivePlayback = false
+try await chromecastManager.cast(url: url, metadata: metadata)
+```
+
+This applies to both `CastManager.cast()` (full connect+cast path) and `CastManager.castNewTrack()` (reuse-existing-session path).
+
+## `.loaded` CastState
+
+`CastState` has a `.loaded` case meaning "LOAD acknowledged by the receiver, awaiting first status update":
+
+- Chromecast video/audio cast: `activeSession.state = .loaded` immediately after `LOAD` is sent.
+- On first `PLAYING` or `BUFFERING` status: `activeSession.state = .casting`.
+- IDLE arriving while `chromecastHasSeenActivePlayback == false` → ignored (pre-load IDLE).
+- IDLE arriving while `chromecastHasSeenActivePlayback == true` → media ended, triggers `stopCasting()`.
+- DLNA/UPnP (no status updates): `activeSession.state = .casting` immediately after LOAD.
+
+UI timers in `CastManager` and `VideoPlayerWindowController` skip updates while `activeSession.state == .loaded` to prevent showing stale time before the receiver has confirmed position.
+
+## Notification Thread Safety
+
+`ChromecastManager` and `UPnPManager` are not `@MainActor`. Their callbacks (NWConnection receive, async HTTP tasks) run on background threads. **Never call `NotificationCenter.default.post` directly from these classes** — observers that touch AppKit will crash with `NSWindow geometry should only be modified on the main thread`.
+
+Use `CastManager.postNotificationOnMain(name:userInfo:)` for all cast notifications from these classes:
+
+```swift
+// WRONG — may be on background thread:
+NotificationCenter.default.post(name: CastManager.sessionDidChangeNotification, object: nil)
+
+// CORRECT — guaranteed to arrive on main:
+CastManager.postNotificationOnMain(name: CastManager.sessionDidChangeNotification)
+```
+
+`postNotificationOnMain` dispatches asynchronously if called off main, synchronously if already on main. Posts inside `await MainActor.run {}` or `DispatchQueue.main.async {}` blocks are already safe and can use `NotificationCenter.default.post` directly.
+
+## Cast Architecture — Single Owner Model
+
+`CastManager.activeSession` is the single authoritative description of the active cast. Every other component reads from `activeSession` and subscribes to `CastManager.sessionDidChangeNotification` for updates.
+
+### `currentCast` Enum
+
+```swift
+public enum CurrentCast: Sendable { case none; case audio; case video }
+```
+
+`CastManager.currentCast` derives from `activeSession`:
+- `.none` — `activeSession == nil`
+- `.audio` — `activeSession.metadata?.mediaType == .audio` (or nil)
+- `.video` — `activeSession.metadata?.mediaType == .video`
+
+Use `currentCast` for the overall audio/video branch. Video controls also have to handle casts started from the player window and from a library menu (`video-playback` § *Casting*).
+
+### Inflight Task Serialization
+
+`cast()` serializes concurrent calls via a private `inflight: Task<Void, Error>?` chain:
+
+```swift
+let task = Task { @MainActor in
+    try? await inflight?.value  // wait for any in-flight cast first
+    // ... actual cast logic
+}
+inflight = task
+try await task.value
+```
+
+### Media Type Teardown
+
+If `cast()` is called while a session is active and the new media type differs (e.g., audio → video), `stopCastingAndAwaitTeardown()` runs before the new `LOAD`. This ensures the prior session is fully stopped and `LocalMediaServer` files are unregistered before the new session starts.
+
+### The video player window's side
+
+When a video is routed to a cast, who owns the cast when the player window closes, and how an audio
+cast closes the window: `video-playback` § *Casting*.
+
+### Mixed-Type Playlists (`castNewTrack`)
+
+`castNewTrack(track:)` dispatches by `track.mediaType`:
+- Video tracks → `_castVideoTrackCore(...)` (requires an active video-capable cast session)
+- Audio tracks → existing audio cast path
+
+Do not assume all playlist tracks are audio. Video items can appear in audio playlists.
+
+### Audio Is Separate
+
+Audio casting remains explicit: if audio is not already casting, playback stays local until the user picks a cast device. `preferredVideoCastDeviceID` is never used for audio.
+
+### CoreAudio Route Churn
+
+Chromecast and other cast sessions can still trigger `AVAudioEngineConfigurationChange` notifications in local `AudioEngine` during receiver, room, Zoom, AirPlay-style, or Wi-Fi route changes. Local graph rebuilds must be deferred while `CastManager.shared.activeSession` exists or `AudioEngine.isAnyCastingActive` is true. See `skills/audio-system/audio-pipelines.md` — Cast Route-Change Safety.
+
+## Media Loading
+
+### LOAD Message Format
+
+```json
+{
+  "type": "LOAD",
+  "media": {
+    "contentId": "http://...",
+    "contentType": "video/mp4",
+    "streamType": "BUFFERED",
+    "metadata": {
+      "type": 0,
+      "metadataType": 0,
+      "title": "Movie Title",
+      "subtitle": "Artist/Description"
+    }
+  },
+  "autoplay": true,
+  "requestId": 1
+}
+```
+
+## Playback Control
+
+After successful LOAD, use the `transportId` for media commands:
+
+| Command | Payload |
+|---------|---------|
+| PLAY | `{"type":"PLAY","mediaSessionId":1,"requestId":N}` |
+| PAUSE | `{"type":"PAUSE","mediaSessionId":1,"requestId":N}` |
+| STOP | `{"type":"STOP","mediaSessionId":1,"requestId":N}` |
+| SEEK | `{"type":"SEEK","mediaSessionId":1,"currentTime":30.5,"requestId":N}` |
+| GET_STATUS | `{"type":"GET_STATUS","requestId":N}` |
+
+To close the Default Media Receiver app (dismiss from TV screen), send STOP to `receiver-0` on the receiver namespace:
+```json
+{"type":"STOP","requestId":N}  // to: "receiver-0", namespace: urn:x-cast:com.google.cast.receiver
+```
+
+### MEDIA_STATUS Response
+
+```json
+{
+  "type": "MEDIA_STATUS",
+  "status": [{
+    "mediaSessionId": 1,
+    "currentTime": 42.5,
+    "playerState": "PLAYING",
+    "media": { "duration": 180.0 }
+  }],
+  "requestId": N
+}
+```
+
+## Volume Control
+
+```json
+{"type":"SET_VOLUME","volume":{"level":0.5},"requestId":N}
+{"type":"SET_VOLUME","volume":{"muted":true},"requestId":N}
+```
+
+## Serving Local Files (`LocalMediaServer`) — Stream, Never Buffer
+
+`LocalMediaServer` serves registered local files over HTTP for cast devices. **Never load a whole
+file into memory to serve it.** A cast device (Chromecast especially) opens playback with
+`Range: bytes=0-`, i.e. it asks for the entire file, and it also issues plain full-file `GET`s. Both
+the range handler and the full-file handler must stream.
+
+- Serving with `Data(contentsOf:)` (full file) or `FileHandle.readData(ofLength: Int(length))` (a
+  `bytes=0-` range spans the whole file) allocates the entire media in RAM. For a multi-GB movie the
+  OS OOM-kills the process with **no crash log** — it looks like the app silently vanishes the instant
+  the cast starts. Small files fit in RAM, so the bug only shows on large media.
+- Both handlers stream via `FileByteStream` (a `AsyncBufferedSequence` of `UInt8` backed by a
+  `FileHandle`, 256 KB chunks) wrapped in `HTTPBodySequence(from:count:)`. This mirrors the
+  `URLSessionByteStream` used for the Subsonic/Jellyfin proxy path. Memory stays flat regardless of
+  file size, and `Content-Length`/`Content-Range` still describe the exact byte count so seeking works.
+- Open and initial seek must succeed before returning `200`/`206`; otherwise return `500`. Do not
+  suppress those errors with `try?`, because a response that advertises `Content-Length` and then
+  yields no bytes leaves the cast client waiting for a body that will never arrive. Subsequent read
+  errors propagate through the body sequence so the connection fails instead of ending as a false
+  successful short response.
+
+## Key Implementation Gotcha: Data Slice Indexing
+
+Swift `Data` slices maintain original indices. When processing a receive buffer:
+
+```swift
+// WRONG:
+let byte = buffer[0]
+let slice = buffer[4..<total]
+
+// CORRECT:
+let byte = buffer[buffer.startIndex]
+let startIdx = buffer.startIndex + 4
+let endIdx = buffer.startIndex + total
+let slice = buffer[startIdx..<endIdx]
+```
+
+## Protocol Debugging
+
+### Standalone Test Script
+
+```bash
+swift scripts/test_chromecast.swift
+```
+
+### `NULLPLAYER_UPNP_LOG` — the DLNA/UPnP wire log
+
+`UPnPManager` is silent unless this is set (`upnpLog`, an `EnvGatedLog` read once at launch);
+any value, even an empty one, turns it on. It is the only view of the DLNA half of
+casting, which matters because DLNA has no status channel — the session goes `.casting` immediately
+after LOAD (see *Discovery*), so nothing else tells you whether the renderer accepted the request.
+
+```bash
+NULLPLAYER_UPNP_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/upnp.log
+```
+
+### `NULLPLAYER_CAST_DISCOVERY_LOG` — the discovery refresh cycle
+
+The periodic refresh (`Refreshing devices...`, the +10s/+15s boosts, `Refresh complete`, idle
+stop, and the Chromecast browser's start/ready/cancel/stop lines) logs every few seconds for the
+life of the app, so it is silent unless this is set; `castDiscoveryLog` in `CastManager.swift`
+(an `EnvGatedLog`) is the gate. Turn it on when devices fail to appear or disappear between refreshes.
+
+```bash
+NULLPLAYER_CAST_DISCOVERY_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/discovery.log
+```
+
+### Debugging a live defect
+
+For a defect that only reproduces in the running app, read `skills/live-ui-testing/SKILL.md` and
+`skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* first.
+**Read the running app's state first:** `skills/app-control/scripts/playback-snapshot.sh` prints
+the cast session and its state, the local engine and player, a measured output level, held
+audio-graph recovery and output routing from a running debug build (see `app-control`,
+*Playback snapshot*). Take one before and after the step that misbehaves.
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Silent crash on receive | Data slice indexing | Use `startIndex` explicitly |
+| TLS connection fails | Certificate rejection | Accept self-signed in verify block |
+| No devices found | mDNS not working | Check network, firewall |
+| Second cast fails with immediate IDLE teardown | `chromecastHasSeenActivePlayback` not reset | Reset flag **before** calling `chromecastManager.cast()`, also in `stopCasting()` |
+| Audio cast play controls do nothing | Session still in `.loaded` state | Use `currentCast == .audio` not `isCasting` to detect audio |
+| Seek bar progresses while paused | `playbackStartDate` not cleared on pause | Set `playbackStartDate = nil` when not PLAYING |
+| `NSWindow geometry should only be modified on the main thread` crash | Posting cast notification directly from `ChromecastManager` or `UPnPManager` off-main | Use `CastManager.postNotificationOnMain(name:)` instead of `NotificationCenter.default.post` |
+| Stop leaves video paused on TV | STOP delivered to media but app still running | Call `stopApp()` after `stop()`; add 200 ms delay before `disconnect()` |
+| Stop command not delivered | Socket closed before bytes flush | Sleep 200 ms between `stop()` and `disconnect()` |
+| `clearVideoTrackInfo()` not called | `wasVideoCast` captured after `activeSession` set to nil | Capture `wasVideoCast = currentCast == .video` **before** disconnect |
+| Video player stays open after switching to audio cast | Not calling `closeForCastTransition()` | Call `WindowManager.closeVideoPlayerForCastTransition()` after audio cast succeeds |
+| Timer drifts during buffering | Not pausing interpolation on BUFFERING | Set `playbackStartDate = nil` on BUFFERING; resume on PLAYING |
+| Controls stop working | CLOSE message received | Check `castSessionDidClose()` delegate callback |
+| Video opens on Chromecast with no player window | Persisted `preferredVideoCastDeviceID` was treated as an automatic route | Route only when `currentCast == .video` with an active session; keep the preference for explicit cast-menu defaults |
+
+## References
+
+- [Google Cast SDK Documentation](https://developers.google.com/cast/docs/developers)
+- [OpenCastSwift](https://github.com/mhmiles/OpenCastSwift) - Reference implementation
+- [node-castv2](https://github.com/thibauts/node-castv2) - Node.js implementation
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs or credentials; pass response bodies
+through the helper rather than omitting them.

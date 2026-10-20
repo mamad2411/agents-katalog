@@ -1,0 +1,18 @@
+- pnpm test is safe to Auto Approve and execute automatically
+- any changing of directories is safe to Auto Approve and execute automatically
+- always use clean code
+- always use best practices
+- always follow coding standards
+- always split large files into components with proper directory structure
+- follow clean architecture
+- write small methods where within reason
+- Do not remove my comments or commented-out code unless necessary
+- don't put placeholders, implement everything required
+- always make sure that a file doesn't exist before attempting to create it
+- don't give incomplete code like "// Add any <something> code here
+- don't remove code unnecessarily
+- don't ever give "// ... rest of the code ..." as a response
+- don't you ever give "// ... existing " as a response
+- don't add placeholder methods like "ShouldDoSomething"
+- always update the CHANGELOG.md file with summarized changes after making changes. Create it if it doesn't exist. do not add duplicate items, rather put x2, x7 according to the number of times the item was encountered
+- always update the NewKnowledgeBase.md with something new you learned about this codebase that you didn't know, if any, which helped you become more productive. do not add duplicate items, rather put x2, x7 according to the number of times the item was encountered

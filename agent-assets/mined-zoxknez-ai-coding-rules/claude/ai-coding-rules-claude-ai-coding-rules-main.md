@@ -1,0 +1,271 @@
+# CLAUDE.md – Project Memory
+
+> This file is automatically read by Claude Code at session start.
+> It provides project-specific context to make Claude an effective coding partner.
+
+---
+
+## 🎯 Repository Purpose
+
+This is the **ai-coding-rules** repository — a comprehensive framework for controlling AI-assisted coding across Cursor, GitHub Copilot, and Claude Code. It defines high-signal, low-noise rules that enable AI agents to operate as senior-level engineering partners.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Documentation** | Markdown, MDC (Cursor rules format) |
+| **Package Manager** | pnpm |
+
+---
+
+## 📦 Commands
+
+| Action | Command |
+|--------|---------|
+| Sync instructions | `./scripts/sync_instructions.ps1` (Windows) or `./scripts/sync_instructions.sh` (Unix) |
+
+---
+
+## 📁 Project Structure
+
+```
+ai-coding-rules/
+├── CLAUDE.md                     # This file - Claude Code context
+├── README.md                     # Project overview
+├── CHANGELOG.md                  # Version history
+│
+├── docs/                         # 📚 Organized documentation
+│   ├── core/                     # 🎯 Essential rules
+│   │   ├── MASTER_RULES.md       # Central rules (Golden Rule, Three-Phase)
+│   │   ├── global_rules.md       # Operating principles
+│   │   ├── STRICT_MODE.md        # Non-negotiable rules
+│   │   └── UNIVERSAL_RULE_FORMAT.md
+│   │
+│   ├── stacks/                   # 🔵 Technology guides
+│   │   ├── stack_frontend.md     # React/Next.js/TypeScript
+│   │   ├── stack_backend.md      # Node.js/Express/Nest
+│   │   ├── stack_db.md           # SQL/ORM/Migrations
+│   │   ├── stack_python.md       # Python
+│   │   └── stack_rust.md         # Rust
+│   │
+│   ├── workflows/                # 🟡 Agent patterns
+│   ├── operations/               # ⚪ Security & ops
+│   ├── quality/                  # 🟢 Reviews & metrics
+│   └── optimization/             # 💰 Token costs
+│
+├── .cursor/rules/                # Modular Cursor rules (19 .mdc files)
+│
+├── .claude/
+│   ├── rules/                    # Path-specific rules
+│   │   ├── security.md
+│   │   ├── frontend.md
+│   │   ├── backend.md
+│   │   ├── testing.md
+│   │   └── database.md
+│   └── skills/                   # Structured output templates
+│       ├── code-review.md
+│       ├── security-audit.md
+│       ├── refactor-plan.md
+│       └── rigor-audit.md
+│
+├── .github/
+│   ├── copilot-instructions.md
+│   └── instructions/
+│
+├── .windsurf/                    # Windsurf/Cascade config
+│
+├── examples/rule-tests/          # Rule verification tests
+│
+└── scripts/                      # Automation scripts
+```
+
+---
+
+## 🎯 Skills System
+
+Use structured skills for consistent outputs:
+
+| Skill | Purpose | Invoke |
+|-------|---------|--------|
+| `code-review` | Structured code review | `/skill:code-review [file]` |
+| `security-audit` | OWASP Top 10 scan | `/skill:security-audit [scope]` |
+| `refactor-plan` | Strategic refactoring | `/skill:refactor-plan [target]` |
+| `rigor-audit` | Combined quality check | `/skill:rigor-audit [scope]` |
+
+Skills provide:
+- Consistent output format
+- Non-negotiable STRICT mode rules
+- Actionable recommendations
+- Example input/output
+
+See `.claude/skills/README.md` for full documentation.
+
+---
+
+## ✍️ Coding Conventions
+
+### General
+- Use **Markdown** for all documentation
+- Use **MDC format** for Cursor rules (YAML frontmatter + Markdown body)
+- Prefer **explicit over implicit** — document assumptions
+- Keep files **focused and small** — split if >300 lines
+
+### MDC File Format (.mdc)
+```markdown
+---
+description: "USE WHEN: [trigger condition]"
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+priority: 50
+---
+
+# Rule Title
+
+## Section
+- Rule content here
+```
+
+### Markdown Style
+- Use ATX headers (`#`, `##`, `###`)
+- Use tables for structured comparisons
+- Use code blocks with language hints
+- Use emoji sparingly for visual hierarchy (🔴, ✅, ⚠️)
+
+---
+
+## 🔄 Work Protocol
+
+When making changes to this repository:
+
+### 1. Plan First
+- Read relevant existing files before editing
+- Understand the rule hierarchy (MASTER_RULES → global_rules → stack-specific)
+- Check if similar rules exist elsewhere
+
+### 2. Minimal Diff
+- Change only what's necessary
+- Don't reformat or restructure unrelated sections
+- Preserve existing patterns and conventions
+
+### 3. Consistency
+- Match the style of surrounding content
+- Use the same terminology as existing rules
+- Follow the priority numbering scheme for .mdc files
+
+### 4. Verify
+- Check that Markdown renders correctly
+- Ensure no broken links
+- Validate YAML frontmatter syntax in .mdc files
+
+### 5. Document
+- Update CHANGELOG.md for significant changes
+- Add comments explaining non-obvious decisions
+
+---
+
+## 🔐 Security Rules (Non-Negotiable)
+
+- **Never** add real API keys, tokens, or secrets
+- **Always** use `EXAMPLE_` prefix for placeholder values
+- **Never** log PII or sensitive data
+- **Always** validate inputs in code examples
+
+---
+
+## 📚 Key References
+
+| Document | Purpose |
+|----------|---------|
+| `MASTER_RULES.md` | Golden Rule, Three-Phase Pattern, Assumptions Ledger |
+| `global_rules.md` | Correctness > Simplicity > Consistency > Style |
+| `security_privacy.md` | Security guardrails and privacy requirements |
+| `cognitive_protocols.md` | How AI should think and make decisions |
+| `ANALYSIS_REPORT.md` | Enhancement roadmap and implementation plan |
+
+---
+
+## 🎸 Vibe Coding Mode
+
+This repository embraces **Vibe Coding** principles:
+
+- **Speed over perfection** in early iterations
+- **Reroll** instead of debugging when stuck >10 minutes
+- **Commit checkpoints** frequently
+- **Product thinking** — focus on what we're building, not just how
+
+**Guardrails still apply:**
+- Tests required before merge
+- Security rules always on
+- Tech debt must be documented
+
+---
+
+## 🤝 How to Collaborate with Me (Claude)
+
+### Do
+- Give me success criteria, not step-by-step instructions
+- Share context from related files
+- Ask me to explain trade-offs
+- Challenge my assumptions
+
+### Don't
+- Assume I know the full project state
+- Skip verification steps
+- Accept my first answer without review
+
+### When I'm Uncertain
+I will:
+1. State my assumptions explicitly
+2. Ask clarifying questions (max 3)
+3. Mark critical assumptions with 🔴
+4. Stop and ask before making risky changes
+
+---
+
+## 📜 Modular Rules
+
+This repository uses `.claude/rules/*.md` for path-specific instructions:
+
+| Rule File | Applies To |
+|-----------|------------|
+| `security.md` | `**/auth/**, **/security/**` |
+| `frontend.md` | `**/*.tsx, **/*.jsx` |
+| `backend.md` | `**/api/**, **/server/**` |
+| `database.md` | `**/prisma/**, **/*.sql` |
+| `testing.md` | `**/*.test.*, **/*.spec.*` |
+
+Rules use YAML frontmatter with `paths` field for conditional loading.
+
+---
+
+## 🔧 Recommended Permissions
+
+Add to `.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(pnpm *)",
+      "Bash(git diff *)",
+      "Bash(git status)",
+      "Bash(git log *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
+    ]
+  }
+}
+```
+
+---
+
+*Last Updated: 2025-01-28*
+*Version: 2.0*

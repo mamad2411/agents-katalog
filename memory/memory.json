@@ -38,7 +38,7 @@
       "observations": [
         "Sebelum kerja: cari skill dulu -> cek MCP relevan -> cek repo-ref; jangan mengarang kalau skill ada",
         "Disuntik 1x/sesi (533 B via SessionStart); suntikan per-prompt (skill-inject) DIMATIKAN 2026-10-09",
-        "Hemat: cari via skill_for_task/skill_search (hasil ≤8, ~1KB); muat ≤2 via skill_load lite (≤2KB); JANGAN baca SKILLS-AVAILABLE.md utuh (90KB)"
+        "Hemat: cari via skill_for_task/skill_search (hasil \u22648, ~1KB); muat \u22642 via skill_load lite (\u22642KB); JANGAN baca SKILLS-AVAILABLE.md utuh (90KB)"
       ]
     },
     {
@@ -94,7 +94,7 @@
         "Skema OTORITATIF = 22 modul (M01-M22) per MODULE-MAP-v2.md; 168 pages; 146 kode FRD; sinkron 1:1 dgn folder BE GenZysFleetOps.Modules/",
         "BE: 22/22 modul tereksekusi (Domain+Features+EF config+migrasi+controller); 27 EF config, 6 migrasi, 26 controller",
         "Dokumentasi lengkap: prd/PRD-M01..M22 + prd/frd (22) + prd/srd (22) + prd/workflow (22) + DOCUMENTATION-INDEX.md + QUICK-REFERENCE.md",
-        "Mobile docs: fleet-app/docs/ (BRD-Mobile + PRD induk + 10 PRD layar + 10 FRD layar + QUICK-REFERENCE) — repo terpisah FathurM4Zmi/fleet-app",
+        "Mobile docs: fleet-app/docs/ (BRD-Mobile + PRD induk + 10 PRD layar + 10 FRD layar + QUICK-REFERENCE) \u2014 repo terpisah FathurM4Zmi/fleet-app",
         "FE stack: React 19 + Vite + Tailwind v4 + shadcn/ui (dikunci, BUKAN Vue); mobile = Flutter",
         "Skema lama 25-modul diarsipkan di prd/_legacy-schema-lama/ (bahan saja)",
         "Cross-cutting: CRC-01..05 (immutability, audit-first, policy authz, ITelemetrySource, envelope); Open decisions OD-03/06/09/12/13"
@@ -108,6 +108,81 @@
         "Fungsi: generate/verify/konsistenkan dokumentasi FMS (PRD/FRD/SRD/Workflow per modul + mobile + quick-ref)",
         "Memaksa skema otoritatif 22 modul + mapping folder BE; larang mengarang modul & edit file generated",
         "Trigger: lengkapi dokumentasi, buat PRD/FRD/SRD/workflow modul, catatan ringkas, sync docs ke 22 modul"
+      ]
+    },
+    {
+      "name": "cline-core-88",
+      "entityType": "config",
+      "observations": [
+        "Cline core skills: 88 symlink native (81 tiered + 7 custom: device-cool, skill-combinator, prompt-booster, skill-router, + unit-test-generator, api-test-suite-generator, postgresql-database-engineering)",
+        "Sisanya 3089 curated via MCP skill-catalog (cepat, hemat RAM M1 8GB)",
+        "Rules Cline: angka katalog 3177, doktrin 81-core sudah diupdate 2026-10-18",
+        "Eval: pass@1 61%, pass@3 83%, precision@3 86% \u2014 baseline 2026-10-18"
+      ]
+    },
+    {
+      "name": "promosi-9-skill-20261018",
+      "entityType": "config",
+      "observations": [
+        "Curated 3177->3186: fact-check-before-trust, verify-quality-gates, verification-before-completion, anti-hallucination-gates, detect-hallucinations, citation-and-ledger-format, wp-rest-api-development, wp-test-strategy, wp-phpstan-review",
+        "Cline core 88->97 skill",
+        "Catatan: ai-hallucination-guard DIBUANG (isi cursor-rules proyek-spesifik), diganti anti-hallucination-gates yg generik",
+        "DB diupdate manual via INSERT/UPDATE (build penuh timeout krn 48rb folder reference)"
+      ]
+    },
+    {
+      "name": "hapus-junk-20261018",
+      "entityType": "config",
+      "observations": [
+        "20.017 folder junk dihapus permanen dari skills-expanded (rm -rf, gagal 0)",
+        "DB: 205.937->185.919 baris, curated 3186 + reference 182.733",
+        "Backup: skills-junk.txt.bak-20261018 + skills-index.db.bak-20261018",
+        "Alasan: user minta hapus permanen, safety check lolos (0 junk di skills-store)"
+      ]
+    },
+    {
+      "name": "gacor-batch2-20261018",
+      "entityType": "config",
+      "observations": [
+        "Curated 3186->3194 (+8): postgres-tuning, k8s-troubleshooter, shadcn-vue, tanstack-vue-table-skilld, pod-crash-debug, rag-pipeline-checkup, api-design-framework, wordpress-hacking",
+        "Cline core 97->105 skill",
+        "Eval: pass@1 61%->75%, pass@3 83%->90%, jujur-negatif 57%->80%",
+        "Test diperbaiki: 6 expect_any ditambah skill baru, 2 kasus WP negatif->positif",
+        "Rules Cline: blok Anti-ngarang WAJIB ditambahkan",
+        "Sisa: vue-chart (design-vue-page menang), lidar-drone (kasus negatif sejati, butuh aturan jujur bukan skill)"
+      ]
+    },
+    {
+      "name": "internet-asset-fetcher-20261019",
+      "entityType": "skill",
+      "observations": [
+        "Skill baru: internet-asset-fetcher (curated 3195) \u2014 fetch image/text/document/media dari internet",
+        "Struktur profesional: SKILL.md + scripts/{fetch,page,browse,media}.py + references/{asset-types,fetch-methods,browsing,mcp-internet,compress,troubleshooting}.md",
+        "Symlink ke 23 tool AI: ~/.adal ~/.aider ~/.claude ~/.cline ~/.codebuddy ~/.codex ~/.gemini ~/.cursorrules ~/.windsurf ~/.continue ~/.roo ~/.qwen ~/.opencode ~/.trae ~/.hermes ~/.iflow ~/.openclaude dll",
+        "MCP terdaftar: internet-fetch + internet-browse (+playwright) di CodeBuddy & Cline",
+        "Uji nyata: fetch example.com \u2192 page.py \u2192 .txt/.html 171 chars OK; dummy.pdf 13KB + sha256 OK; browse open/shot/text OK",
+        "Playwright browser diinstall (chromium headless, ~/Library/Caches/ms-playwright/)",
+        "Katalog curated: 3177 \u2192 3195 skill"
+      ]
+    },
+    {
+      "name": "core-skill-batch-20261019",
+      "entityType": "config",
+      "observations": [
+        "Cline core skill 106 -> 128 (+22 skill dev/infra dari curated)",
+        "Skill ditambahkan: access-control-rbac, accessibility-testing, api-rate-limiting, api-versioning, aws-cloudtrail, aws-lambda, aws-secrets-manager, azure-devops, blue-green-deploy, cdn-setup, chaos-engineering, database-migration, disaster-recovery, docker-compose, editorconfig, github-actions, grafana-dashboard, image-optimization, log-aggregation, monorepo-setup, nextjs-app-router, python-type-hints",
+        "Semua symlink native di ~/.cline/skills/ (aktif tanpa MCP overhead)",
+        "Katalog curated: 3195 skill (total 263,916 entri)"
+      ]
+    },
+    {
+      "name": "core-skill-batch2-20261019",
+      "entityType": "config",
+      "observations": [
+        "Cline core skill 128 -> 198 (+70 skill dev umum: frontend/backend/devops/testing/build/deploy/security)",
+        "Kategori ditambah: vue (5), react (13), golang (2), tailwind (11), redis (3), pytest/jest/vitest (8), docker (7), kubernetes/k8s (6), terraform (4), nginx (2), turborepo/nx/monorepo (4), typescript (2), deploy (4), backup (2), security (3), dll",
+        "Skill MISS (gak ada di store): swagger-spec, openapi-spec, react-native-architecture, react-server-components, react-code-review, tailwindcss-responsive-darkmode, docker-2025-features",
+        "Katalog curated: 3195 skill (total 263,916 entri)"
       ]
     }
   ],

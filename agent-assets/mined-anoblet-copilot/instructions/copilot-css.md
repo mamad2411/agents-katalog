@@ -1,0 +1,11 @@
+- Use [atomic-css](https://github.com/anoblet/atomic)
+- Prioritize utility classes from the atomic package over custom styles
+- Compose complex components using atomic utility classes
+- Prefer full height and width layouts with internal scrolling over fixed height/width with external scrolling
+- Prefer grid and flexbox layouts
+- Ensure box-sizing is set to border-box for all elements
+- Use rem units for font sizes and spacing
+- Ensure responsive design principles are followed
+- Ensure WCAG accessibility standards are met
+- `globalStyles` are injected via the `Base` component and should be included in the `static styles` array.
+- Use utility classes directly in the `render` method's HTML templates.

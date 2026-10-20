@@ -1,0 +1,47 @@
+---
+name: doctor
+description: Check environment and diagnose build issues
+---
+
+Check the development environment for missing dependencies and configuration issues.
+
+Prepend the output with an **Environment** section that includes the canonical version line (see `.claude/commands/version.md` for the parsing recipe):
+
+```
+Environment
+  Claude plugin <plugin_version> · Pulp SDK/CLI <sdk_version>
+```
+
+Then run the full doctor:
+
+```bash
+pulp doctor
+```
+
+Options:
+- `pulp doctor --fix` — auto-fix issues where possible
+- `pulp doctor --ci` — CI mode, exit codes only
+- `pulp doctor --dry-run` — show what `--fix` would do
+- `pulp doctor android` / `pulp doctor ios` — run mobile development environment checks
+- `pulp doctor --versions [--scan-parents] [--json]` — diagnose CLI / SDK / plugin version skew
+- `pulp doctor --validators [--fix] [--dry-run]` — verify auval / pluginval / clap-validator install and code-signature health
+- `pulp doctor --caches [--fix] [--dry-run] [--json]` — audit and heal the FetchContent shared-source cache
+- `pulp doctor gpu [--no-render] [--json]` — perform bounded render/readback and compute/map work; `--no-render` is an unverified inventory/preflight that acquires no GPU device
+- `pulp doctor --host-quirks` / `pulp doctor quirks` — show the runtime DAW host-quirks policy and enforced accommodations
+- `pulp doctor --au-cache --dry-run` — preview macOS AudioComponentRegistrar refresh after AU metadata changes
+- `pulp doctor list` / `pulp doctor --only "<name>"` — enumerate checks or run one targeted probe
+- `pulp doctor --only WidgetBridge` — check generated WidgetBridge `.d.ts`, mock function lists, and JS bridge docs for source-tree input-fingerprint freshness
+- `pulp doctor --only "Control broker"` — run only the observational local carrier probe
+
+Default checks include C++20 compiler availability, CMake, git/git-lfs, LFS-backed Skia binaries when present, generated WidgetBridge API artifacts in source-tree mode, VST3/AudioUnit SDKs where relevant, optional AAX setup, package/platform alignment, Cmajor when used, build configuration, pulp-mcp availability, and optional local control-broker reachability. Broker absence is nonfatal. `reachable-unverified` means only that a carrier accepted a connection; without a trusted peer expectation, do not describe it as healthy or verified. This probe must not create or repair the runtime directory, start a daemon, open a session, or acquire authority.
+
+Run this first when builds fail unexpectedly or on a new machine. Run `pulp doctor --validators` if `pulp validate` aborts with "broken code signature", `pulp doctor --caches` if build/test reports FetchContent cache drift, and `pulp doctor --host-quirks` when DAW accommodations or host-specific runtime behavior look suspicious.
+
+For GPU problems, prefer `pulp doctor gpu --json` before inspecting a build or
+opening a window. Exit 0 means required real-work proofs passed and at least one
+required probe has authentic identity; exit 1 is a completed measured failure,
+and exit 2 is unavailable or unverified evidence. Report the adapter identity
+exactly as Dawn returns it; never infer hardware identity from the backend name
+or describe a null/software adapter as a hardware pass. Probe identities are
+independent and do not assert same-device correlation. The installed command
+and its `pulp_gpu_doctor` MCP peer work outside a source checkout.

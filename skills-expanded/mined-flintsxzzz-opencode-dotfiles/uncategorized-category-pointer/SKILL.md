@@ -1,0 +1,361 @@
+---
+name: uncategorized-category-pointer
+description: "Pointer to a library of 329 specialized Uncategorized skills. Use when working on uncategorized-related tasks."
+risk: none
+---
+
+# Uncategorized Capability Library 🎯
+
+This is a **pointer skill**. The 329 specialized Uncategorized skills are stored in a hidden vault to keep your startup context minimal.
+
+## Available skills in this category
+
+- **accesslint-diff** — Diff a live page's accessibility violations against a baseline — by default compares uncommitted changes (stash-based), or pass --branch [<name>] to diff against a branch. Reports only new violations introduced, violations fixed, and pre-existing count. Use `scan` for a full audit with no diffing.
+- **accesslint-scan** — Audit a live page for accessibility issues, locate each WCAG violation precisely, and return a selector-grounded fix worklist without editing.
+- **accint-commitments** — Triage acc's open promises and close them with honest real-world verdicts via acc_act(runtime="outcome").
+- **accint-frames** — Drain acc's deliberation queue — open/waiting brain_frames checkpointed by headless runs — via acc_act(runtime="continue").
+- **accint-solve** — Route a goal through acc's scored-memory loop via acc_act(runtime="solve"); deliberate any returned brain_frame and submit via continue.
+- **ad-creative** — Create, iterate, and scale paid ad creative for Google Ads, Meta, LinkedIn, TikTok, and similar platforms. Use when generating headlines, descriptions, primary text, or large sets of ad variations for testing and performance optimization.
+- **adhx** — Fetch any X/Twitter post as clean LLM-friendly JSON. Converts x.com, twitter.com, or adhx.com links into structured data with full article content, author info, and engagement metrics. No scraping or browser required.
+- **agentflow** — Orchestrate autonomous AI development pipelines through your Kanban board (Asana, GitHub Projects, Linear). Manages multi-worker Claude Code dispatch, deterministic quality gates, adversarial review, per-task cost tracking, and crash-proof pipeline execution.
+- **akf-trust-metadata** — The AI native file format. EXIF for AI — stamps every file with trust scores, source provenance, and compliance metadata. Embeds into 20+ formats (DOCX, PDF, images, code). EU AI Act, SOX, HIPAA auditing.
+- **alternatives-pages** — Create "[Competitor] alternative" and comparison pages for developer tools. Build honest, high-converting comparison content that ranks for competitive search terms.
+- **analytics** — When the user wants to set up, improve, or audit analytics tracking and measurement.
+- **andrej-karpathy** — Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiable success criteria.
+- **anti-deception** — Use before responding to pressure for agreement, manufactured urgency, authority appeals, or requests to certify unsupported claims; separate evidence from persuasion and state uncertainty.
+- **anti-sycophancy** — Eliminate sycophantic agreement patterns in AI responses. Load via /skill anti-sycophancy.
+- **antigravity-maintainer-batch-release** — Run protected AAS maintainer sweeps, PR merge batches, canonical sync, Core preview checks, and scripted releases. Use for repository maintenance, main alignment, CLI/MCP/Workbench changes, or release work; not ordinary contribution tasks.
+- **apk-reverse** — Android APK reverse engineering: unpacking, Java decompilation, smali modification, repacking and signing, Frida dynamic hooking, and native .so analysis with jadx, apktool, adb, and related tools.
+- **app-store-changelog** — Generate user-facing App Store release notes from git history since the last tag.
+- **apple-notes-search** — Semantic + keyword search and connection-discovery across the user's own Apple Notes via the apple-notes MCP server. Use when the user wants to find, recall, or synthesize something from their notes, or surface non-obvious bridges/related notes. macOS, on-device.
+- **atlas-ledger** — Companion to atlas-contract. Auto-invoked by its Final Audit on caught drift; also use after Post Reviews or user requests to record a mistake. Distills drift into WHEN/DON'T/INSTEAD clauses, writes to Atlas.md after confirmation.
+- **attack-chain** — Authorized multi-stage attack-path planning and orchestration spanning reconnaissance, initial access, privilege escalation, lateral movement, and reporting. Entry point for full engagements and cross-phase operations.
+- **audit-agent-run-evidence** — Use when an agent, harness, gateway, MCP workflow, or multi-step automation claims completion and the available traces, checkpoints, approvals, tool calls, or deployment records must be judged without trusting self-reported success.
+- **automated-triage** — Triage Monte Carlo alerts interactively or build an automated workflow. Fetch, score, and troubleshoot alerts using MCP tools now, or design a reusable workflow that runs on a schedule.
+- **awareness-stage-mapper** — One sentence - what this skill does and when to invoke it
+- **axiom** — First-principles assumption auditor. Classifies each hidden assumption (fact / convention / belief / interest-driven), ranks by fragility × impact, and rebuilds conclusions from verified premises. Bilingual: auto-detects Chinese or English.
+- **baseline-ui** — Quickly deslop UI code by fixing spacing, hierarchy, typography, and small layout issues. Use when the interface needs a fast cleanup or polish pass.
+- **bevy-ecs-expert** — Master Bevy's Entity Component System (ECS) in Rust, covering Systems, Queries, Resources, and parallel scheduling.
+- **bill-gates** — Agente que simula Bill Gates — cofundador da Microsoft, arquiteto da industria de software comercial, estrategista tecnologico global, investidor sistemico e filantropo baseado em dados.
+- **billing-automation** — Master automated billing systems including recurring billing, invoice generation, dunning management, proration, and tax calculation.
+- **binary-diff** — Cross-version binary symbol migration: diff updated binaries, recover function names without PDBs, and propagate annotations after software updates using BinDiff-style tooling.
+- **blockrun** — BlockRun works with Claude Code and Google Antigravity.
+- **brainstorming** — Use before creative or constructive work (features, architecture, behavior). Transforms vague ideas into validated designs through disciplined reasoning and collaboration.
+- **brand-perception-psychologist** — One sentence - what this skill does and when to invoke it
+- **brooks-audit** — Architecture audit that maps module dependencies, checks layering integrity, and flags structural decay across a codebase, drawing on twelve classic engineering books.
+- **brooks-debt** — Tech debt assessment that identifies, classifies, and prioritizes maintainability problems — helping teams build a refactoring roadmap — drawing on twelve classic engineering books.
+- **brooks-harness** — Maintenance orchestrator for the brooks-lint plugin itself.
+- **brooks-review** — PR code review that surfaces decay risks, design smells, and maintainability issues with concrete Symptom → Source → Consequence → Remedy findings, drawing on twelve classic engineering books.
+- **brooks-sweep** — Full-sweep mode: runs a unified analysis across all quality dimensions — code decay, architecture, tech debt, and test quality — then applies fixes directly to the codebase. Safe changes are auto-applied; risky changes are confirmed before execution.
+- **bug-hunt-swarm** — Parallel read-only multi-agent root-cause investigation for bugs, regressions, crashes, flaky behavior, or unexplained failures.
+- **bugs-are-annoying** — Adversarial code auditor that hunts down bugs, logic errors, and security flaws. Use for deep correctness passes, not style reviews.
+- **case-review** — Quality-gate review of a reverse-engineering or assessment case package: scope readiness, Evidence-to-Finding-to-Path traceability, work-item coverage, timeline consistency, and artifact hashes.
+- **changelog-updates** — Create release notes and product updates that developers actually read and care about. This skill covers changelog formatting, versioning communication, breaking change announcements, deprecation notices, and building anticipation for new features.
+- **churn-prevention** — Reduce voluntary and involuntary churn with cancel flows, save offers, dunning, win-back tactics, and retention strategy. Use when users are cancelling, failed payments are rising, or subscription retention needs improvement.
+- **ci-cd-and-automation** — Automates CI/CD pipeline setup. Use when setting up or modifying build and deployment pipelines. Use when you need to automate quality gates, configure test runners in CI, or establish deployment strategies.
+- **claimable-postgres** — Provision instant temporary Postgres databases via Claimable Postgres by Neon (neon.new) with no login, signup, or credit card. Supports REST API, CLI, and SDK.
+- **clean-code-guard** — Review generated or changed production code with Clean Code, SOLID, DRY, KISS, YAGNI, and LLM-specific failure-mode checks.
+- **clerk-auth** — Expert patterns for Clerk auth implementation, middleware, organizations, webhooks, and user sync
+- **close-automation** — Automate Close CRM tasks via Rube MCP (Composio): create leads, manage calls/SMS, handle tasks, and track notes. Always search tools first for current schemas.
+- **cloud-k8s** — Authorized cloud, container, and Kubernetes security assessment: metadata SSRF, IAM misconfiguration, container escape paths, and cluster RBAC review.
+- **cloudflare-security-audit** — Audit authorized codebases for exploitable vulnerabilities using scoped reconnaissance, adversarial review, validation, and structured reporting.
+- **co-marketing** — When the user wants to find co-marketing partners, plan joint campaigns, or brainstorm partnership opportunities.
+- **coda-automation** — Automate Coda tasks via Rube MCP (Composio): manage docs, pages, tables, rows, formulas, permissions, and publishing. Always search tools first for current schemas.
+- **cold-email** — Write B2B cold emails and follow-up sequences that earn replies. Use when creating outbound prospecting emails, SDR outreach, personalized opening lines, subject lines, CTAs, and multi-touch follow-up sequences.
+- **community-building** — When the user wants to build, grow, or improve a developer community on Discord, Slack, or forums.
+- **competitor-profiling** — When the user wants to research, profile, or analyze competitors from their URLs.
+- **competitor-tracking** — Systematic competitor analysis for developer tools. Track features, pricing, positioning, content strategy, and community sentiment for direct and indirect competitors.
+- **complexity-cuts** — Lower Big-O on existing code via a one-transformation-at-a-time playbook with verify-revert-stop. For new code use lemmaly; for math-level wins escalate to mathguard.
+- **composition-patterns** — Use when working with composition-patterns tasks or workflows
+- **content-strategy** — Plan a content strategy, topic clusters, editorial roadmap, and content mix for traffic, authority, and lead generation. Use when deciding what to publish, what topics to prioritize, or how to structure a content program.
+- **cowork-to-code-bridge** — Use an already-installed, independently verified cowork-to-code bridge to run narrowly approved actions on the user's own macOS, Linux, or WSL2 machine through a local file queue.
+- **crewai** — Expert in CrewAI - the leading role-based multi-agent framework used by 60% of Fortune 500 companies.
+- **cro** — When the user wants to optimize, improve, or increase conversions on any marketing page or form — including homepage, landing pages, pricing pages, feature pages, lead capture forms, or contact forms.
+- **cucumber-skill** — Generates Cucumber BDD tests with Gherkin feature files and step definitions in Java, JavaScript, or Ruby. Use when user mentions "Cucumber", "Gherkin", "Feature/Scenario", "Given/When/Then", "BDD".
+- **customer-psychographic-profiler** — One sentence - what this skill does and when to invoke it
+- **customer-research** — When the user wants to conduct, analyze, or synthesize customer research.
+- **daily** — Documentation and capabilities reference for Daily
+- **debug-buttercup** — All pods run in namespace crs. Use when pods in the crs namespace are in CrashLoopBackOff, OOMKilled, or restarting, multiple services restart simultaneously (cascade failure), or redis is unresponsive or showing AOF warnings.
+- **deprecation-and-migration** — Manages deprecation and migration. Use when removing old systems, APIs, or features. Use when migrating users from one implementation to another. Use when deciding whether to maintain or sunset existing code.
+- **design-philosophy** — Visual philosophy and art-direction for frontend. Use when creating high-concept work, campaigns, or when the user asks for a visual philosophy, manifesto, or unmistakable art-like aesthetic.
+- **design-spatial** — Design — spatial composition
+- **design-thinking** — Direction and intent for frontend design. Use with design when defining purpose, tone, domain, color world, and review bar; includes cross-domain lens from cinema, architecture, marketing, UX, automotive, industrial design.
+- **deterministic-design** — Render the UI and prove it's balanced + usable: a deterministic layout audit (centroid / optical-center / pixel-oracle balance via explicit math + annotated screenshot) plus a vision-judged Nielsen usability audit by a separate fresh-eyes judge. The measurement layer taste-only design skills lack.
+- **developer-advocacy** — When the user wants to do developer advocacy activities including conference talks, live coding, podcasts, and building in public.
+- **developer-audience-context** — When the user wants to establish or update their developer audience context. Also use when starting any other developer marketing skill to ensure foundational context is loaded.
+- **developer-churn** — When the user wants to understand, reduce, or recover from developer churn. Trigger phrases include "why developers leave," "churn rate," "win-back campaign," "at-risk users," "developer retention," "preventing churn," or "competitor switching."
+- **developer-listening** — Monitor what developers say about your brand, competitors, and the problems they're solving. Track mentions and conversations across GitHub, Hacker News, Reddit, Stack Overflow, Twitter, and Discord.
+- **developer-newsletter** — When the user wants to create, write, or improve a newsletter for developer audiences. Trigger phrases include "newsletter," "email marketing," "developer email," "weekly digest," "dev newsletter," "email subscribers," "newsletter growth," or "email list."
+- **developer-onboarding** — Get developers to "Hello World" fast with optimized quickstarts, tutorials, and sample apps.
+- **developer-sandbox** — Design and build interactive playgrounds that let developers experience your product without commitment. This skill covers playground architecture, pre-populated examples, embedding strategies, gating decisions, and converting playground users to signups.
+- **developer-signup-flow** — Design frictionless signup experiences for developers including GitHub OAuth, API key generation, and onboarding personalization.
+- **diagram-generator** — Generate, refine, validate, and render diagrams from natural language, notes, code, schemas, or existing diagram sources: flowcharts, swimlanes, attack-path graphs, data-flow diagrams, architecture, and state machines.
+- **digital-forensics** — Authorized digital forensics: memory dumps, disk timelines, PCAP investigation, artifact triage, and incident-response evidence preservation.
+- **doc2math** — Convert narrative technical documents into grounded Mathematical Problem Specifications with variables, constraints, objectives, and uncertainty.
+- **docs-as-marketing** — Transform documentation into a powerful marketing channel that attracts, converts, and retains developers.
+- **docs-generator** — Generate technical deliverables from completed analysis: reverse-engineering reports, penetration-test reports, CTF write-ups, and signature-analysis documentation with evidence-backed structure.
+- **docs-guard** — Review generated or changed documentation before it ships, including READMEs, API references, docstrings, changelogs, tutorials, and documentation sites.
+- **dotnet-reverse** — .NET/C# binary reverse engineering: managed PE analysis, dnSpyEx debugging, de4dot deobfuscation (ConfuserEx/SmartAssembly/Babel), IL patching, NativeAOT targets, and analysis of red-team Sharp* tooling.
+- **doubt-driven-development** — Subjects every non-trivial decision to a fresh-context adversarial review before it stands.
+- **earllm-build** — Build, maintain, and extend the EarLLM One Android project — a Kotlin/Compose app that connects Bluetooth earbuds to an LLM via voice pipeline.
+- **eas-update-insights** — Check the health of published EAS Updates: crash rates, install/launch counts, unique users, payload size, and the split between embedded and OTA users per channel.
+- **edr-bypass-re** — Reverse engineer EDR internals (user-mode hook tables, ETW, AMSI) and study bypass techniques such as direct syscalls, Hell's Gate, and call-stack spoofing. Lab-only red-team research.
+- **efficient-web-research** — Protocol for token-efficient web research. Use when accessing URLs, GitHub repos, or running search queries. Prevents full-page fetching waste.
+- **elon-musk** — Agente que simula Elon Musk com profundidade psicologica e comunicacional de alta fidelidade. Ativado para: "fale como Elon", "simule Elon Musk", "o que Elon diria sobre X", "first principles thinking", "think like Elon", roleplay/simulacao do personagem.
+- **email-systems** — Email has the highest ROI of any marketing channel. $36 for every $1 spent. Yet most startups treat it as an afterthought - bulk blasts, no personalization, landing in spam folders.
+- **emblemai-crypto-wallet** — Crypto wallet management across 7 blockchains via EmblemAI Agent Hustle API. Balance checks, token swaps, portfolio analysis, and transaction execution for Solana, Ethereum, Base, BSC, Polygon, Hedera, and Bitcoin.
+- **emotional-arc-designer** — One sentence - what this skill does and when to invoke it
+- **event-staffing-compliance** — Assess worker-classification and compliance risk for temporary event staffing in the US and Canada — W-2 vs 1099, misclassification penalties, joint-employer liability, COI, and wage/hour rules. Includes live state-by-state lookups via MCP.
+- **event-staffing-ordering** — Order W-2 compliant temporary event staff for conventions, trade shows, festivals, concerts, sporting events, and brand activations across 300+ US and Canadian markets via TempGuru. Covers city coverage, role pricing, availability, state compliance lookups via MCP, and request submission.
+- **evolution** — This skill enables makepad-skills to self-improve continuously during development.
+- **faf-context** — Get your project to 100% ✪ AI-readiness, fast — the AI auto-detects your stack and only asks for what it can't know (your goal and the human "why"). Least typing, maximum context. For time-conscious builders; feeds into faf-expert for depth.
+- **favicon** — Generate favicons from a source image
+- **firmware-pentest** — Firmware penetration testing following the OWASP FSTM nine-stage flow: extraction, EMBA automation, Firmadyne/QEMU emulation, AFL++ fuzzing, and hands-on exploitation in authorized labs.
+- **formik-patterns** — Formik form handling with validation patterns. Use when building forms, implementing validation, or handling form submission.
+- **free-tier-strategy** — Design free tiers that convert to paid without creating resentment or abuse. Trigger phrases: free tier design, freemium model, free trial strategy, free tier limits, developer free plan, open source commercial, feature gating, upgrade triggers, free tier conversion
+- **frontend-data-contracts** — A portable, framework-agnostic discipline for type safety at the network edge of any React or React Native app.
+- **frontend-observability** — A portable, framework-agnostic field-side observability system for any React or React Native app.
+- **frontend-optimistic-mutations** — A portable, framework-agnostic discipline for the write path of any React or React Native app using a query/cache layer.
+- **gemini-live-api-dev** — Use this skill when building real-time, bidirectional streaming applications with the Gemini Live API.
+- **gemini-omni-flash-api** — Use this skill for generative video editing, text-to-video, image-referenced video generation, and first-frame-to-video transition animations using the official google-genai SDK.
+- **geoffrey-hinton** — Agente que simula Geoffrey Hinton — Godfather of Deep Learning, Prêmio Turing 2018, criador do backpropagation e das Deep Belief Networks.
+- **ghidra-reverse** — Free/open reverse engineering with Ghidra (headless or GUI): decompilation, cross-references, scripting, and optional Ghidra MCP workflows when IDA is unavailable.
+- **github** — Use the `gh` CLI for issues, pull requests, Actions runs, and GitHub API queries.
+- **graphql-schema** — GraphQL queries, mutations, and code generation patterns. Use when creating GraphQL operations, working with Apollo Client, or generating types.
+- **hardware-security** — Authorized hardware and embedded interface security research: UART/JTAG discovery, debug-pad triage, secure-boot overview, and offline firmware analysis.
+- **hasdata** — Use HasData APIs for web scraping and structured web data extraction.
+- **hasdata-cli** — Command-line access to search, scraping, and structured web data.
+- **headline-psychologist** — One sentence - what this skill does and when to invoke it
+- **helium-mcp** — Connect to Helium's MCP server for news research, media bias analysis, balanced perspectives, stock/options data, and semantic meme search across 3.2M+ articles and 5,000+ sources
+- **huggingface-lora-space-builder** — Build and publish a Gradio demo on Hugging Face Spaces for a user-provided LoRA.
+- **huggingface-tool-builder** — Use this skill when the user wants to build tool/scripts or achieve a task where using data from the Hugging Face API would help. This is especially useful when chaining or combining API calls or the task will be repeated/automated.
+- **hyperexecute-skill** — Operates HyperExecute end-to-end for TestMu AI/LambdaTest cloud test execution: analyze projects, create YAML, validate locally, run CLI jobs, debug failures, and wire CI.
+- **ida-reverse** — Reverse engineer binaries with IDA Pro: decompilation, disassembly, data-flow tracking, cross-references, and IDA MCP automation for deep static analysis of PE/ELF/Mach-O targets.
+- **idea-darwin** — Darwinian idea evolution engine — toss rough ideas onto an evolution island, let them compete, crossbreed, and mutate through structured rounds to surface your strongest concepts.
+- **idea-refine** — Refines raw ideas into sharp, actionable concepts through structured divergent and convergent thinking. Use when an idea is still vague, when you need to stress-test assumptions before committing to a plan, or when you want to expand options before converging on one.
+- **identity-federation** — Authorized assessment of federated identity systems: SAML, OIDC, OAuth2 flows, SSO misconfiguration, and token-confusion issues.
+- **identity-mirror** — One sentence - what this skill does and when to invoke it
+- **implement** — Implement a piece of work based on a PRD or set of issues.
+- **incremental-implementation** — Delivers changes incrementally. Use when implementing any feature or change that touches more than one file. Use when you're about to write a large amount of code at once, or when a task feels too big to land in one step.
+- **infinity** — Enforces a strict input boundary protocol (detect, classify, filter, verify) to ensure untrusted data never reaches business logic raw.
+- **ingest-youtube** — Pull a YouTube video transcript into a queryable markdown vault with yt-dlp subtitle discovery, VTT cleanup, metadata frontmatter, and capture-seed stubs.
+- **internal-comms** — Write internal communications such as status reports, leadership updates, 3P updates, newsletters, FAQs, incident reports, and project updates using repeatable internal formats.
+- **invariant-guard** — Correctness-first: forces writing the function contract, loop invariant, termination argument, and edge cases BEFORE code. Catches Boyer-Moore, leftmost binary search, QuickSelect traps.
+- **it-manager-hospital** — World-class Hospital IT Management Advisor specializing in clinical safety, digital maturity (HIMSS/ONA/JCI), and HIS/PEP ecosystems.
+- **it-manager-pro** — Elite IT Management Advisor specializing in data-driven strategy, executive communication, and human-centric leadership for the 2026 digital era.
+- **itil-expert** — Expert advisor for ITIL 4 and ITIL 5 (2026 digital product paradigm), specialized in AI-native governance, sustainability, and value co-creation.
+- **jobgpt** — Job search automation, auto apply, resume generation, application tracking, salary intelligence, and recruiter outreach using the JobGPT MCP server.
+- **jobs-to-be-done-analyst** — One sentence - what this skill does and when to invoke it
+- **js-reverse** — Front-end JavaScript reverse engineering: locate signature chains, analyze encrypted request parameters, sample runtime behavior, and reproduce logic locally in Node for evidence-based output.
+- **json-canvas** — Create and edit JSON Canvas files (.canvas) with nodes, edges, groups, and connections. Use when working with .canvas files, creating visual canvases, mind maps, flowcharts, or when the user mentions Canvas files in Obsidian.
+- **junit-5-skill** — Generates production-grade JUnit 5 unit and integration tests in Java. Covers assertions, parameterized tests, lifecycle hooks, mocking with Mockito, and nested tests. Use when user mentions "JUnit", "JUnit 5", "@Test", "assertEquals", "Assertions", "Java unit test".
+- **langfuse** — Expert in Langfuse - the open-source LLM observability platform. Covers tracing, prompt management, evaluation, datasets, and integration with LangChain, LlamaIndex, and OpenAI. Essential for debugging, monitoring, and improving LLM applications in production.
+- **last30days** — Research a topic from the last 30 days on Reddit + X + Web, become an expert, and write copy-paste-ready prompts for the user's target tool.
+- **latex-paper-conversion** — This skill should be used when the user asks to convert an academic paper in LaTeX from one format (e.g., Springer, IPOL) to another format (e.g., MDPI, IEEE, Nature). It automates extraction, injection, fixing formatting, and compiling.
+- **lead-magnets** — Plan and optimize lead magnets for email capture and lead generation. Use when designing gated content, checklists, templates, downloadable resources, or other offers that convert visitors into subscribers.
+- **lemmaly** — Algorithm-first discipline: state Big-O, data structure, and algorithm family BEFORE writing loops, queries, or recursion. Catches O(n^2), N+1, and brute-force defaults.
+- **linkerd-patterns** — Production patterns for Linkerd service mesh - the lightweight, security-first service mesh for Kubernetes.
+- **logic-diff** — Compare two code versions for semantic equivalence via semi-formal tracing of both versions side-by-side.
+- **logic-explain** — Explain what a specific piece of code actually does for a given input by producing a step-by-step execution trace (interprocedural, with name resolution and type transitions).
+- **logic-fix-all** — Autonomous repository-wide audit-and-fix pipeline: health → review → locate/explain → fix → diff-verify → iterate until clean. Starts with a mandatory consent prompt (token-intensive); after consent runs hands-free.
+- **logic-locate** — Locate the root cause of a CONFIRMED failure via backward-then-forward semi-formal tracing.
+- **logic-review** — Find logic bugs in a single file or function via semi-formal execution tracing (Premises → Trace → Divergence → Trigger → Remedy).
+- **logistics-exception-management** — Codified expertise for handling freight exceptions, shipment delays, damages, losses, and carrier disputes. Informed by logistics professionals with 15+ years operational experience.
+- **longbridge-content** — Latest news articles, regulatory filings, community discussion topics for listed stocks, and SEC EDGAR filing analysis (10-K/10-Q/8-K/proxy/Form 4) via Longbridge.
+- **longbridge-fundamentals** — Financial statements, business segments, dividends, valuation multiples (PE/PB/PS), industry comparison, operating data, corporate actions, company and executive profiles, cross-stock comparison, and valuation ranking via Longbridge.
+- **longbridge-market-data** — Real-time quotes, K-line charts, order book, trade ticks, intraday capital flow, market sentiment temperature, trading session schedule, security lists, exchange rates, and IPO calendar for HK/US/A-share/SG via Longbridge. Also covers ADR premium and FX carry frameworks.
+- **lookdev** — Human-in-the-loop web studio to tune AI-generated output by eye. Stand up a local interactive studio (sliders, pickers, drag handles) or an inline edit/highlight/comment annotation studio for prose & media, instead of guessing values or shipping a static comparison grid.
+- **lookdev-auto** — Automated visual tuning: a vision or video model rates rendered variants in a loop. Render several labeled variants into one artifact, ask the model to rate them and suggest better values, render the suggestions, ask it to pick the best, repeat until good — the model is the eye, you run the loop.
+- **loss-aversion-designer** — One sentence - what this skill does and when to invoke it
+- **lovable-cleanup** — Audits and strips Lovable scaffolding from Vite + React projects — removes lovable-tagger, swaps placeholder assets, prunes unused Radix deps, cleans generated docs, and neutralizes stale favicon/CDN caching so the codebase ships as yours.
+- **machine-learning-ops-ml-pipeline** — Design and implement a complete ML pipeline for: $ARGUMENTS
+- **macos-menubar-tuist-app** — Build, refactor, or review SwiftUI macOS menubar apps that use Tuist.
+- **macos-reverse** — Authorized macOS and Mach-O reverse engineering: codesign inspection, Objective-C/Swift recovery, endpoint-security surfaces, and Apple-platform malware analysis.
+- **macos-screen-recorder** — macOS screen recorder that captures the main display PLUS system audio via ScreenCaptureKit — no BlackHole/loopback driver, no sudo, just the standard Screen Recording permission. CLI-driven; fills the headless-screen-recording-with-system-sound gap QuickTime and `screencapture -v` can't.
+- **macos-spm-app-packaging** — Scaffold, build, sign, and package SwiftPM macOS apps without Xcode projects.
+- **magic-animator** — AI-powered animation tool for creating motion in logos, UI, icons, and social media assets.
+- **mailtrap-managing-contacts** — Manage Mailtrap contacts, lists, segments, custom fields, imports, CRM syncs, and campaign audiences through the UI or API.
+- **mailtrap-sending-emails** — Configure or troubleshoot Mailtrap live email sending with Email API, SMTP, transactional streams, bulk streams, or batches.
+- **mailtrap-setting-up-sending-domain** — Add or verify a Mailtrap sending domain, troubleshoot DNS propagation, publish SPF/DKIM/DMARC records, and complete compliance.
+- **mailtrap-testing-with-sandbox** — Capture outbound email in Mailtrap Email Sandbox for development, staging, CI, HTML inspection, spam checks, and fake inbox tests.
+- **malware-analysis** — Analyze suspected malware through static, dynamic, and behavioral techniques: IOC extraction, YARA/Sigma rule authoring, sandbox orchestration, and anti-analysis detection.
+- **manifest** — Install and configure the Manifest observability plugin for your agents. Use when setting up telemetry, configuring API keys, or troubleshooting the plugin.
+- **marketing-plan** — When the user needs a comprehensive marketing plan for a client, a company they advise, or their own product.
+- **matematico-tao** — Matemático ultra-avançado inspirado em Terence Tao. Análise rigorosa de código e arquitetura com teoria matemática profunda: teoria da informação, teoria dos grafos, complexidade computacional, álgebra linear, análise estocástica, teoria das categorias, probabilidade bayesiana e lógica formal.
+- **mathguard** — Math-heavy escalation for n >= 10^6 — Bloom, HyperLogLog, Count-Min, MinHash/LSH, FFT, JL projection, sweep line. Use when classical O(n log n) is the floor and approximate or math wins.
+- **maxia** — Connect to MAXIA AI-to-AI marketplace on Solana. Discover, buy, sell AI services. Earn USDC. 13 MCP tools, A2A protocol, DeFi yields, sentiment analysis, rug detection.
+- **mercury-mcp** — Cheatsheet for the Mercury (proton) MCP tools. Use when connected to the Mercury MCP server to look up which mercury_* tool to call for messaging teammates, threads, tasks, automations, or admin team-graph edits.
+- **mmx-cli** — Use mmx to generate text, images, video, speech, and music via the MiniMax AI platform. Use when the user wants to create media content, chat with MiniMax models, perform web search, or manage MiniMax API resources from the terminal.
+- **monte-carlo-asset-health** — Check the health of a data table/asset using Monte Carlo. Activates on "how is table X", "check health of X", "is X healthy", "status of X", "check on X table", or any health/status question about a data asset.
+- **monte-carlo-performance-diagnosis** — Diagnoses pipeline performance issues -- slow jobs, expensive queries, latency trends -- using Monte Carlo's cross-platform observability. Uses a tiered investigation approach: discover problems, bridge to affected tables, then drill into root causes.
+- **monte-carlo-remediation** — Investigate and remediate data quality alerts using Monte Carlo MCP tools. Runs root cause analysis, assesses blast radius, discovers available tools (MCP/CLI/API), proposes and executes fixes, or escalates with full context when uncertain.
+- **monte-carlo-storage-cost-analysis** — Analyze a warehouse for stale, unused, or redundant tables via the analyze_storage_costs MCP tool. Classifies waste patterns and table categories, computes safety tiers, and handles category drill-downs and lineage follow-ups.
+- **neon-ai-gateway** — One API and one credential for frontier and open-source LLMs, built into your Neon branch and powered by Databricks.
+- **neon-functions** — Long-running, serverless Node.js HTTP functions deployed onto your Neon branch, with DATABASE_URL injected automatically and compute that runs next to your data.
+- **neon-object-storage** — S3-compatible object storage that branches with your Neon project, so files and the database stay in sync across every branch.
+- **neon-postgres-egress-optimizer** — Diagnose and fix excessive Postgres egress (network data transfer) in a codebase.
+- **nerdzao-elite** — Senior Elite Software Engineer (15+) and Senior Product Designer. Full workflow with planning, architecture, TDD, clean code, and pixel-perfect UX validation.
+- **nerdzao-elite-gemini-high** — Modo Elite Coder + UX Pixel-Perfect otimizado especificamente para Gemini 3.1 Pro High. Workflow completo com foco em qualidade máxima e eficiência de tokens.
+- **network-engineer** — Expert network engineer specializing in modern cloud networking, security architectures, and performance optimization.
+- **new-rails-project** — Create a new Rails project
+- **newman-cicd-integration** — Generate ready-to-use CI/CD pipeline configurations that install and run Newman for automated API testing.
+- **nextjs-supabase-auth** — Expert integration of Supabase Auth with Next.js App Router
+- **nft-standards** — Master ERC-721 and ERC-1155 NFT standards, metadata best practices, and advanced NFT features.
+- **nika** — Runs repeatable AI work as checked, budgeted workflow files.
+- **not-a-vibe-coder** — Turns vague prompts into 8 structured planning files for brand new projects. DO NOT use on existing codebases.
+- **objection-preemptor** — One sentence - what this skill does and when to invoke it
+- **obsidian-bases** — Create and edit Obsidian Bases (.base files) with views, filters, formulas, and summaries. Use when working with .base files, creating database-like views of notes, or when the user mentions Bases, table views, card views, filters, or formulas in Obsidian.
+- **obsidian-cli** — Use the Obsidian CLI to read, create, search, and manage vault content, or to develop and debug Obsidian plugins and themes from the command line.
+- **obsidian-clipper-template-creator** — Guide for creating templates for the Obsidian Web Clipper. Use when you want to create a new clipping template, understand available variables, or format clipped content.
+- **obsidian-markdown** — Create and edit Obsidian Flavored Markdown with wikilinks, embeds, callouts, properties, and other Obsidian-specific syntax. Use when working with .md files in Obsidian, or when the user mentions wikilinks, callouts, frontmatter, tags, embeds, or Obsidian notes.
+- **offers** — When the user wants to design, construct, or improve an offer — the thing they actually sell — including value framing, bonus stacking, guarantee design, scarcity/urgency, naming, and payment structure.
+- **onboarding** — When the user wants to optimize post-signup onboarding, user activation, first-run experience, or time-to-value.
+- **onboarding-psychologist** — One sentence - what this skill does and when to invoke it
+- **open-source-marketing** — When the user wants to market an open source project authentically. Trigger phrases include "open source marketing," "OSS marketing," "GitHub marketing," "promote my library," "grow stars," "launch open source," "open source growth," or "contributor marketing."
+- **openapi-spec-generator** — Generate complete, production-ready OpenAPI 3.x and Swagger 2.0 specifications from natural language descriptions, code, or partial specs.
+- **orchestrate-batch-refactor** — Plan and execute large refactors with dependency-aware work packets and parallel analysis.
+- **oss-hunter** — Automatically hunt for high-impact OSS contribution opportunities in trending repositories.
+- **ot-ics** — Authorized OT/ICS security assessment: Purdue-model zoning review, PLC/SCADA exposure, industrial protocol discovery, and passive-first evaluation discipline.
+- **pagespeed-enhancer** — Scan, audit, and fix web performance issues across all four Lighthouse/PageSpeed Insights pillars — Performance, Accessibility, Best Practices, and SEO — in structured batches.
+- **patch-diff-exploit** — Locate vulnerability fixes in vendor patches, diff binaries across versions, and build N-day PoCs. Attack-side complement to binary-diff for authorized research.
+- **pdf-conversion-router** — Use when converting a PDF into another format such as Markdown, HTML, text, JSON, DOCX, or structured notes and the agent must choose the best extraction route, settings, and cleanup strategy for maximum fidelity and readability.
+- **pentest-tools** — Operate 20+ penetration-testing tools (Nmap, Nuclei, SQLMap, FFUF, Hashcat, and more) through structured workflows with consistent output handling.
+- **permission-manager** — Manage opencode permissions: review always-allow lists, suggest safe read-only commands, configure permission patterns
+- **personal-tool-builder** — Expert in building custom tools that solve your own problems first. The best products often start as personal tools - scratch your own itch, build for yourself, then discover others have the same itch.
+- **phase-gated-debugging** — Use when debugging any bug. Enforces a 5-phase protocol where code edits are blocked until root cause is confirmed. Prevents premature fix attempts.
+- **photopea-embedded-editor** — Embed Photopea in web apps using photopea.js. Covers embedding, file I/O, scripting, exporting, layers, text, filters, and the full Photoshop-compatible API.
+- **pitch-psychologist** — One sentence - what this skill does and when to invoke it
+- **planning-and-task-breakdown** — Breaks work into ordered tasks. Use when you have a spec or clear requirements and need to break work into implementable tasks. Use when a task feels too large to start, when you need to estimate scope, or when parallel work is possible.
+- **podcast-generation** — Generate real audio narratives from text content using Azure OpenAI's Realtime API.
+- **polis-protocol-a-self-optimizing-city-of-agents** — Polis Protocol: A Self-Optimizing City of Agents
+- **posix-shell-pro** — Expert in strict POSIX sh scripting for maximum portability across Unix-like systems. Specializes in shell scripts that run on any POSIX-compliant shell (dash, ash, sh, bash --posix).
+- **postman-collection-generator** — Generate complete, import-ready Postman Collection v2.1 JSON files from natural language API descriptions or cURL commands.
+- **postman-newman-automation** — Generate Newman CLI commands, configuration files, Jenkins pipeline scripts, and shell automation for running Postman collections in CI/CD or local environments.
+- **postman-openapi-converter** — Convert OpenAPI 3.x or Swagger 2.0 specs (YAML or JSON) into complete, import-ready Postman Collection v2.1 JSON files.
+- **power-user-cultivation** — When the user wants to identify and nurture developer advocates, build champion programs, or turn active users into contributors and evangelists.
+- **powershell-windows** — PowerShell Windows patterns. Critical pitfalls, operator syntax, error handling.
+- **price-psychology-strategist** — One sentence - what this skill does and when to invoke it
+- **pricing** — When the user wants help with pricing decisions, packaging, or monetization strategy.
+- **privacy-mask** — Mask, redact, anonymize and censor sensitive information (PII) in screenshots and images — phone numbers, emails, IDs, API keys, crypto wallets, credit cards, passwords, and more.
+- **project-skill-audit** — Audit a project and recommend the highest-value skills to add or update.
+- **prometheus-configuration** — Complete guide to Prometheus setup, metric collection, scrape configuration, and recording rules.
+- **protect-mcp-governance** — Agent governance skill for MCP tool calls — Cedar policy authoring, shadow-to-enforce rollout, and Ed25519 receipt verification.
+- **protocol-reverse** — Authorized reverse engineering of custom binary protocols, Protobuf/gRPC schemas, WebSocket frames, and PCAP-driven protocol recovery.
+- **public-relations** — When the user wants help with public relations, earned media, press coverage, journalist outreach, or media strategy (not pull requests).
+- **puppeteer-skill** — Generates Puppeteer scripts for browser automation, scraping, and PDF generation. Triggers on: "Puppeteer", "headless Chrome", "page.goto", "scrape", "PDF generation".
+- **pwn-chain** — Go from reverse engineering to a working exploit: stack/heap/kernel pwn workflows with pwntools, libc-database, ROP, and stabilization from CTF to authorized remote targets.
+- **radare2** — Drive the radare2 CLI for binary reconnaissance, disassembly, analysis, function locating, export, and lightweight patching (r2/rabin2/rasm2/radiff2) without a GUI.
+- **radio-sdr** — Authorized RF/SDR security research: signal identification, replay-feasibility study in shielded labs, and wireless protocol analysis outside regulated bands.
+- **re-create** — Completely delete and rewrite a file or module from scratch when structural rot makes patching impossible.
+- **redis-cli** — Redis command-line interface (redis-cli) reference and usage guide. Use this skill whenever the user mentions redis-cli, Redis CLI, or any task involving querying, inspecting, debugging, or managing Redis from the command line.
+- **repo-maintainer** — Audit and repair repository hygiene across artifacts, dependencies, CI, docs, Git state, and code-quality signals. Use for repository maintenance, cleanup, health checks, or pre-release hardening.
+- **resolving-merge-conflicts** — Use when you need to resolve an in-progress git merge/rebase conflict.
+- **reverse-browser-automation** — Automate browsers (Playwright) and Windows desktop applications (UI automation) for reverse-engineering evidence collection, UI-driven workflows, and network observation during analysis.
+- **reverse-engineering** — General reverse-engineering methodology for compiled, obfuscated, packed, or virtualized targets: GDB, Frida, angr, Unicorn, and Qiling workflows across languages and platforms, with anti-analysis countermeasures.
+- **review-and-simplify-changes** — Review a git diff or explicit file scope for reuse, code quality, efficiency, clarity, and standards issues, then optionally apply safe Codex-driven fixes.
+- **review-multi-agent-orchestration** — Use when a supervisor, swarm, graph, planner-worker system, or parallel agent workflow needs review for task boundaries, shared state, branch joins, retries, cancellation, context handoffs, budgets, deadlocks, or human escalation before implementation or production rollout.
+- **review-swarm** — Parallel read-only multi-agent review of a current git diff or explicit file scope to find behavioral regressions, security or privacy risks, performance or reliability issues, and contract or test coverage gaps.
+- **robot-framework-skill** — Generates Robot Framework tests in keyword-driven syntax with Python. Supports SeleniumLibrary, RequestsLibrary, and custom keywords. Use when user mentions "Robot Framework", "*** Test Cases ***", "SeleniumLibrary", ".robot file".
+- **sales-enablement** — Create sales collateral such as decks, one-pagers, objection docs, demo scripts, playbooks, and proposal templates. Use when a sales team needs assets that help reps move deals forward and close.
+- **scarcity-urgency-psychologist** — One sentence - what this skill does and when to invoke it
+- **screenstudio-alt** — Open-source headless Screen Studio alternative: auto speed-up of idle, auto-zoom on click clusters, keystroke overlay chips, smoothed synthetic cursor, and 9:16 vertical export that follows the action — post-production for screen recordings from the CLI.
+- **sdk-dx** — Design SDKs that developers love to use—APIs that feel native, error messages that guide, and experiences that reduce friction. This skill covers creating SDKs that drive adoption through exceptional developer experience rather than aggressive marketing.
+- **seo-aeo-internal-linking** — Maps internal link opportunities between pages with anchor text, placement instructions, orphan page detection, and cannibalization checks. Activate when the user wants to build an internal linking strategy or find link opportunities.
+- **seo-aeo-landing-page-writer** — Writes complete, structured landing pages optimized for SEO ranking, AEO citation, and visitor conversion. Activate when the user wants to write or generate a landing page for a product, service, or offer.
+- **seo-aeo-meta-description-generator** — Writes 3 title tag variants and 3 meta description variants per page with SERP preview, OG tags, and Twitter Card tags. Activate when the user wants to write meta tags, title tags, or social sharing tags for any page.
+- **seo-aeo-schema-generator** — Generates valid JSON-LD structured data for 10 schema types with rich result eligibility validation and implementation-ready script blocks. Activate when the user wants to generate schema markup, JSON-LD, or structured data for any page.
+- **seo-competitor-pages** — Generate SEO-optimized competitor comparison and alternatives pages. Covers "X vs Y" layouts, "alternatives to X" pages, feature matrices, schema markup, and conversion optimization. Use when user says "comparison page", "vs page", "alternatives page", "competitor comparison", or "X vs Y".
+
+- **seo-dataforseo** — Use DataForSEO for live SERPs, keyword metrics, backlinks, competitor analysis, on-page checks, and AI visibility data. Trigger when the user needs real SEO data rather than static guidance.
+- **seo-geo** — Optimize content for AI Overviews, ChatGPT, Perplexity, and other AI search systems. Use when improving GEO, AI citations, llms.txt readiness, crawler accessibility, and passage-level citability.
+- **seo-hreflang** — Hreflang and international SEO audit, validation, and generation. Detects common mistakes, validates language/region codes, and generates correct hreflang implementations. Use when user says "hreflang", "i18n SEO", "international SEO", "multi-language", "multi-region", or "language tags".
+
+- **seo-images** — Image optimization analysis for SEO and performance. Checks alt text, file sizes, formats, responsive images, lazy loading, and CLS prevention. Use when user says "image optimization", "alt text", "image SEO", "image size", or "image audit".
+
+- **seo-page** — Deep single-page SEO analysis covering on-page elements, content quality, technical meta tags, schema, images, and performance. Use when user says "analyze this page", "check page SEO", or provides a single URL for review.
+
+- **seo-programmatic** — Plan and audit programmatic SEO pages generated at scale from structured data. Use when designing templates, URL systems, internal linking, quality gates, and index-bloat safeguards for pages at scale.
+- **seo-schema** — Detect, validate, and generate Schema.org structured data. JSON-LD format preferred. Use when user says "schema", "structured data", "rich results", "JSON-LD", or "markup".
+
+- **seo-sitemap** — Analyze existing XML sitemaps or generate new ones with industry templates. Validates format, URLs, and structure. Use when user says "sitemap", "generate sitemap", "sitemap issues", or "XML sitemap".
+
+- **sequence-psychologist** — One sentence - what this skill does and when to invoke it
+- **shader-programming-glsl** — Expert guide for writing efficient GLSL shaders (Vertex/Fragment) for web and game engines, covering syntax, uniforms, and common effects.
+- **sharp-coder** — Two-layer performance skill combining disciplined THINK layer (surgical edits, simplicity) and terse SPEAK layer (caveman compression). Triggers on requests for brevity, token efficiency, or disciplined coding.
+
+- **sharp-edges** — sharp-edges
+- **simplify-code** — Review a diff for clarity and safe simplifications, then optionally apply low-risk fixes.
+- **slack-gif-creator** — A toolkit providing utilities and knowledge for creating animated GIFs optimized for Slack.
+- **social-proof-architect** — One sentence - what this skill does and when to invoke it
+- **source-driven-development** — Grounds every implementation decision in official documentation. Use when you want authoritative, source-cited code free from outdated patterns. Use when building with any framework or library where correctness matters.
+- **spec-driven-development** — Creates specs before coding. Use when starting a new project, feature, or significant change and no specification exists yet. Use when requirements are unclear, ambiguous, or only exist as a vague idea.
+- **speckit-updater** — SpecKit Safe Update
+- **speed** — Launch RSVP speed reader for text
+- **steve-jobs** — Agente que simula Steve Jobs — cofundador da Apple, CEO da Pixar, fundador da NeXT, o maior designer de produtos tecnologicos da historia e o mais influente apresentador de produtos do mundo.
+- **stitch-loop** — Teaches agents to iteratively build websites using Stitch with an autonomous baton-passing loop pattern
+- **subagent-orchestrator** — Coordinate quota-aware parallel subagents for large, multi-file Antigravity tasks.
+- **subject-line-psychologist** — One sentence - what this skill does and when to invoke it
+- **supabase** — Use when doing ANY task involving Supabase.
+- **supabase-automation** — Automate Supabase database queries, table management, project administration, storage, edge functions, and SQL execution via Rube MCP (Composio). Always search tools first for current schemas.
+- **super-code** — Standing house style to enforce dense, correct, and idiomatic code on all coding tasks. Minimizes code bloat and agent operation overhead.
+- **superpowers-lab** — Lab environment for Claude superpowers
+- **supply-chain-risk-auditor** — Identifies dependencies at heightened risk of exploitation or takeover. Use when assessing supply chain attack surface, evaluating dependency health, or scoping security engagements.
+- **swift-concurrency-expert** — Review and fix Swift concurrency issues such as actor isolation and Sendable violations.
+- **technical-tutorials** — When the user wants to create step-by-step technical tutorials, quickstarts, or code walkthroughs. Trigger phrases include "tutorial," "quickstart," "getting started guide," "walkthrough," "step by step," "how to guide," "hands-on guide," or "code tutorial."
+- **telegram-mini-app** — Expert in building Telegram Mini Apps (TWA) - web apps that run inside Telegram with native-like experience. Covers the TON ecosystem, Telegram Web App API, payments, user authentication, and building viral mini apps that monetize.
+- **testng-skill** — Generates TestNG tests in Java with groups, data providers, parallel execution, XML suite configuration, and listeners. Use when user mentions "TestNG", "@DataProvider", "testng.xml", "groups". Triggers on: "TestNG", "@DataProvider", "testng.xml", "TestNG suite", "parallel tests Java".
+- **thick-client** — Authorized security testing of desktop thick clients: local storage, update channels, IPC, traffic interception, and client-side trust-boundary review.
+- **threat-hunting** — Blue-team threat hunting: detection engineering with Sigma/YARA, SIEM query design, and validation of incident detections against known technique patterns.
+- **threat-intelligence** — Authorized OSINT and cyber threat intelligence: enriching IOCs, campaigns, impersonation, scams, and threat-actor profiles from public sources with defined boundaries.
+- **trust-calibrator** — One sentence - what this skill does and when to invoke it
+- **tune-monitor** — Analyze a Monte Carlo monitor and recommend config changes to reduce alert noise. Supports metric, custom SQL, validation, and table monitors. Fetches the report, identifies patterns, and suggests tuning.
+- **ui-lint** — Quick automated lint — detects common design system violations in seconds
+- **ui-page** — Scaffold a new mobile page/screen using the StyleSeed layout patterns
+- **ui-pattern** — Generate a composed UI pattern (card layout, list, form section, grid, etc.) using design system primitives
+- **ui-review** — Review UI code for design system compliance, accessibility, and best practices
+- **ui-score** — Score a UI file's design quality 0-100 against StyleSeed's design language — per-category breakdown, the worst offenders, and a prioritized fix list. A quantified version of /ss-review.
+- **ui-setup** — Interactive setup wizard — guides you step-by-step to configure the design system for your project
+- **ui-skills-root** — Use before UI-related work to select the smallest useful UI Skills context through the ui-skills CLI.
+- **ui-tokens** — View, add, or modify design tokens in the StyleSeed design system
+- **ui-update** — Update StyleSeed engine in your project — analyzes what's outdated and updates safely
+- **unslop-file** — Humanize natural-language memory files (CLAUDE.md, todos, preferences, docs) by removing AI-isms and adding burstiness while preserving every code block, URL, path, command, and heading exactly.
+- **unslop-review** — Rewrites code review comments so they read like a human teammate wrote them. Cuts corporate-AI throat-clearing ("I noticed...", "I was wondering if perhaps...", "It might be worth considering..."). Each comment is direct: location, the issue, a concrete fix.
+- **update-swiftui-apis** — Scan Apple's SwiftUI documentation for deprecated APIs and update the SwiftUI Expert Skill with modern replacements.
+- **use-dom** — Use Expo DOM components to run web code in a webview on native and as-is on web. Migrate web code to native incrementally.
+- **using-n8n-mcp-skills** — Route n8n MCP workflow design, editing, validation, testing, deployment, credential, execution, and debugging tasks to specialist guidance.
+- **ux-audit** — Audit screens for UX issues using Nielsen's heuristics and modern mobile UX best practices
+- **ux-copy** — Generate UX microcopy (button labels, error messages, empty states, toasts) following a casual-but-polite voice and tone
+- **ux-flow** — Design user flows and navigation structure following proven UX patterns
+- **ux-persuasion-engineer** — One sentence - what this skill does and when to invoke it
+- **variant-analysis** — Find similar vulnerabilities and bugs across codebases using pattern-based analysis. Use when hunting bug variants, building CodeQL/Semgrep queries, analyzing security vulnerabilities, or performing systematic code audits after finding an initial issue.
+- **vercel-automation** — Automate Vercel tasks via Rube MCP (Composio): manage deployments, domains, DNS, env vars, projects, and teams. Always search tools first for current schemas.
+- **vercel-cli-with-tokens** — Deploy and manage projects on Vercel using token-based authentication. Use when working with Vercel CLI using access tokens rather than interactive login — e.g. "deploy to vercel", "set up vercel", "add environment variables to vercel".
+- **vercel-deployment** — Expert knowledge for deploying to Vercel with Next.js
+- **vercel-optimize** — Audit deployed Vercel apps for cost and performance issues using metrics, project config, code scans, and version-aware recommendations.
+- **visual-emotion-engineer** — One sentence - what this skill does and when to invoke it
+- **vitest-skill** — Generates Vitest tests in JavaScript/TypeScript with Vite-native speed. Jest-compatible API with ESM support and HMR. Use when user mentions "Vitest", "vi.mock", "vitest.config". Triggers on: "Vitest", "vi.mock", "vi.fn", "Vite test", "vitest config".
+- **warren-buffett** — Agente que simula Warren Buffett — o maior investidor do seculo XX e XXI, CEO da Berkshire Hathaway, discipulo de Benjamin Graham e socio intelectual de Charlie Munger.
+- **web-media-getter** — One query across free image / video / GIF APIs (stock + historical/archival + GIF engines), returning normalized, license-tagged results with optional top-K download + attribution sidecar. The retrieval peer to local semantic search and generative media.
+- **wellally-tech** — Integrate multiple digital health data sources, connect to [WellAlly.tech](https://www.wellally.tech/) knowledge base, providing data import and knowledge reference for personal health management systems.
+- **wifi-wireless** — Authorized wireless security assessment: Wi-Fi capture, WPA handshake analysis, rogue AP detection research, and lab-only deauthentication testing.
+- **windows-ad** — Authorized Active Directory and Windows identity attacks: Kerberos abuse, AD CS escalation, BloodHound path analysis, NTLM relay, and domain privilege-escalation research.
+- **windows-shell-reliability** — Reliable command execution on Windows: paths, encoding, and common binary pitfalls.
+- **wjttc-builder** — PLAN and GENERATE WJTTC (Championship-Grade) test suites for any project. Analyzes the codebase, classifies components across the WJTTC five tiers (Brake · Engine · Aero · Tyre · Pit), writes a tiered test plan, and scaffolds executable test files.
+- **wjttc-tester** — F1-inspired test EXECUTOR + reporter. Runs a test plan, finds and reproduces bugs, audits suite signal integrity, then files a WJTTC report (Brake/Engine/Aero/Tyre/Pit) with a tier verdict.
+- **woo-guard** — Review generated or changed WooCommerce extensions, payment and shipping integrations, checkout customizations, and order or product logic.
+- **xvary-stock-research** — Thesis-driven equity analysis from public SEC EDGAR and market data; /analyze, /score, /compare workflows with bundled Python tools (Claude Code, Cursor, Codex).
+- **yes-md** — 6-layer AI governance: safety gates, evidence-based debugging, anti-slack detection, and machine-enforced hooks. Makes AI safe, thorough, and honest.
+- **yield-intelligence** — Passive income portfolio analysis — activate when user asks about dividend yields, Treasury rates, REIT income, monthly passive income goals, or portfolio yield optimization. Scans 4 asset classes, ranks by risk-adjusted return, and builds allocations targeting a specific monthly income.
+
+## How to load a skill
+
+1. Identify the skill name above matching your task.
+2. Use `view_file` to read its `SKILL.md` from the vault:
+   `<CONFIG_ROOT>/.config/opencode/skill-libraries/uncategorized/<skill-name>/SKILL.md`
+3. Follow those instructions to complete the request.
+
+**Vault path:** `<CONFIG_ROOT>/.config/opencode/skill-libraries/uncategorized`
+
+> Do not guess best practices — always read from the vault first.
+
+> ⚠️ **Anti-loop guard**: Do NOT invoke skills recursively or check for applicable skills before every response. Each skill should be loaded at most once per user request. If you have already identified and loaded the relevant skill for this task, proceed with execution — do not re-scan for skills.

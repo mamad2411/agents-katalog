@@ -1,0 +1,76 @@
+---
+description: Best practices for using canvas components in @gravity-ui/graph
+globs: 
+alwaysApply: false
+---
+# General Component Rules
+- use `setState` instead direct setting new value via `this.state =`
+- use `setProps` instead direct setting new value via `this.props =`
+- **Rendering Control:** To request a component re-render, call the `performRender()` method. Do **not** call the `render()` method directly. Calling `setProps` or `setState` automatically triggers a re-render, so you do **not** need to call `performRender()` after them.
+- use `Component.create(props)` method to creating a children component instead `new Component(props)`
+- for creating children component use only method `updateChildren` 
+```typescript 
+protected updateChildren() {
+  return [Component.create(...props)]
+}
+```
+- Update the hit box when geometry changes using the `setHitBox` method.
+- Use `isVisible()` method to check component visibility in viewport before rendering.
+- Clean up resources properly by implementing custom cleanup in the `unmount` method.
+- Use `subscribeSignal` for reactive updates instead of manual event handling.
+- Use theme colors from context: `ctx.fillStyle = this.context.colors.block.background`.
+- Override `stateChanged` method to optimize rendering and perform specific actions when data changes.
+- Use `shouldRender = false` to skip unnecessary renders.
+
+# Canvas Component Structure
+Canvas components are located in src/components/canvas/ and divided into several categories:
+- blocks/ - graph blocks
+- connections/ - connections between blocks
+- anchors/ - anchors for connections
+- layers/ - layers for rendering various elements
+- groups/ - element grouping
+- **Note:** These Canvas components manage rendering directly onto a `<canvas>` element. They are distinct from React components (even those used *within* the HTML layer at high zoom levels, like `GraphBlock`), although they share some lifecycle concepts managed by the core library. Rules specific to Canvas component rendering might not apply directly to React components used for the HTML layer.
+
+# React Integration
+For integration of Canvas components with React, wrappers are used in the src/react-component/ directory. These components allow the use of Canvas in React applications.
+
+# Rendering Layers
+Canvas rendering is organized in layers with different priorities:
+- Background layer (low priority)
+- Block layer (medium priority)
+- Connection layer (medium priority)
+- Selection and interactive elements layer (high priority)
+
+# Zoom Levels
+The scaling system automatically switches between Canvas and HTML/React:
+- Low zoom (ECameraScaleLevel.LOW) - everything is rendered on Canvas
+- Medium zoom (ECameraScaleLevel.MEDIUM) - schematic view with basic interactivity
+- High zoom (ECameraScaleLevel.HIGH) - full React components for rich interactivity
+
+# Block Component Rules
+- Custom block components must extend the `Block` class from `Block.ts`.
+- Do not transform original coordinates onto world coordinates in components.
+- Scale line widths based on camera zoom: `ctx.lineWidth = Math.round(2 / this.context.camera.getCameraScale())`.
+- Implement both schematic and detailed views for components.
+- Handle selection state appropriately in render methods.
+- Optimize text rendering based on zoom level.
+
+# Connection Component Rules
+- Use appropriate curve calculations for connection paths.
+- Update connection path when connected blocks change position.
+- Implement proper hit detection for connection lines.
+- Handle connection selection state visually.
+- When using BatchPath2DRenderer, prefer `update()` over conditional `add()`/`delete()` logic. The `update()` method internally calls `delete()` followed by `add()`, making it unnecessary to track whether an item has been added to the batch.
+
+# Performance Considerations
+When working with Canvas components:
+- Minimize the number of redraws
+- Use caching for complex calculations
+- Apply only necessary transformations
+- Render only visible elements in the current viewport
+
+# Custom Rendering
+For creating custom components:
+- Use the renderBlock property in GraphCanvas to override block display
+- Implement custom components by inheriting from base classes
+- Monitor performance when creating complex custom renderers

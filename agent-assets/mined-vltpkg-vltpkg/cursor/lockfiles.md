@@ -1,0 +1,55 @@
+---
+description: Understanding and working with lockfiles
+globs: src/graph/src/lockfile/*,src/graph/test/lockfile/*
+alwaysApply: false
+---
+# Graph Lockfiles
+
+Auto-generated on install. Ensures reproducible installs, readable diffs, performance optimization.
+
+## Files
+
+- `vlt-lock.json` — main lockfile (committed to source control)
+- `node_modules/.vlt-lock.json` — hidden lockfile with manifests+build data (perf optimization)
+
+## Module Architecture (`src/graph/src/lockfile/`)
+
+**Entry points:**
+- `load.ts`: `load()` (from `vlt-lock.json`), `loadHidden()` (from hidden, sets `throwOnMissingManifest`), `loadObject()` (in-memory, merges lockfile options)
+- `save.ts`: `save()` (minimal), `saveHidden()` (with manifests+build data), `lockfileData()` (Graph→data)
+
+**Support:** `types.ts` (formats, flag helpers), `load-nodes.ts`, `load-edges.ts`
+
+## Data Format
+
+```typescript
+type LockfileData = {
+  lockfileVersion: number
+  options: SpecOptions & { modifiers?: Record<string, string> }
+  nodes: Record<DepID, LockfileNode>  // tuple: [flags, name?, integrity?, resolved?, location?, manifest?, rawManifest?, platform?, bins?, buildState?]
+  edges: LockfileEdges  // { "${fromId} ${name}": "${type} ${bareSpec} ${toId|MISSING}" }
+}
+```
+
+Flags: 0=prod, 1=optional, 2=dev, 3=devOptional
+
+Options stored: `modifiers`, `catalog`, `catalogs`, `scoped-registries`, `jsr-registries`, `registry`, `registries`, `git-hosts`, `git-host-archives`
+
+## Integration
+
+- `ideal/build.ts`: loads lockfile first (prefer Virtual), falls back to Actual
+- `actual/load.ts`: uses hidden lockfile for fast path
+- After loading: hydrates missing node registry data from first incoming edge
+
+## Performance (>50 nodes)
+
+- `load-nodes.ts`: `registryVersionCache` avoids repeated string splitting
+- `load-edges.ts`: `seenNodes` Map caches node lookups, `edgeProcessingQueue` batches mutations, uses `fastSplit()`
+- Hidden lockfile skips filesystem traversal entirely
+
+## Tips
+
+- Share `monorepo`, `packageJson`, `scurry` instances
+- Lockfile loading should gracefully fallback
+- Deterministic node/edge ordering for reproducible diffs
+- Test both regular and hidden formats, modifier change detection, large graphs

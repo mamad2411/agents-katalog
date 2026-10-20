@@ -1,0 +1,167 @@
+---
+name: ai-sdlc-operating-model
+description: "Define the end-to-end software development lifecycle (SDLC) operating model for artificial-intelligence-assisted work: context, classify, plan, implement, validate, review, merge, close, and learn. Name the human or agent authority holder, entry and exit gates, and owning skill at each stage. Compose agent-authorization-matrix, agent-memory-governance, and agent-governance-audit. Use when designing how humans and agents build together, adopting agents on a team, correcting skipped review or surprise merges, or writing an AI-assisted SDLC policy. Produce an operating model and evidence-based gap list. Do NOT use to enforce one stage, define standing permissions, or audit one change's compliance."
+---
+
+# AI-Era SDLC Operating Model
+
+**Reading key:** Artificial intelligence (AI) assists the software
+development lifecycle (SDLC). A pull request (PR) proposes a repository
+change; continuous integration (CI) runs automated checks. This skill
+defines a team process, not a new grant of agent authority.
+
+## Purpose
+
+Turn ad-hoc human+agent collaboration into one named, auditable contract: which
+stages software work moves through, who holds authority at each stage, what gate
+must pass before the next stage, and which execution-discipline skill enforces
+it. This is the umbrella over the Phase 1 pack (the library's eight
+operating-discipline skills listed under "Skills (Phase 1 —
+operating-discipline pack)" in
+[`docs/skills-catalog.md`](../../../docs/skills-catalog.md#skills-phase-1--operating-discipline-pack),
+such as `change-classification-gate` and
+`human-approval-boundary`) — it COMPOSES those skills into a
+lifecycle (each stage cites its enforcing skill) rather than restating their
+procedures, and it is grounded in how work in the repo actually flows, observed
+from PR history, not in an imagined team.
+
+## Use When
+
+- Use when: asked how humans and AI agents should work together end to end —
+  plan, implement, validate, review, merge, close.
+- Use when: adopting AI agents on a team or repo, or scaling from one agent to
+  parallel sessions, and the workflow needs a defined shape.
+- Use when: agent-assisted work shows discipline failures — skipped review,
+  surprise merges, missing evidence, silent scope drift — and the fix is a
+  defined operating model rather than one more incident patch.
+- Use when: writing or overhauling an AI-SDLC / agent-workflow policy document.
+- Do NOT use when: one stage needs enforcing in-flight — startup belongs to
+  `agent-startup-context-gate`, scope to `change-classification-gate`, risky
+  actions to `human-approval-boundary`, diffs to
+  `reviewable-diff-discipline` *(manual-only)*,
+  closeout to `ai-closeout-reporter`.
+- Do NOT use when: the question is what an agent MAY do without approval —
+  that standing policy is `agent-authorization-matrix` (this model cites it).
+- Do NOT use when: judging whether a finished change followed the process —
+  that is `agent-governance-audit`.
+
+## Inputs to Inspect
+
+1. Observed practice: the last 10–20 PRs — who opened, who reviewed, who
+   merged, what evidence shipped, where auto-merge appeared (`gh pr list`,
+   `gh pr view --json author,reviews,mergedBy,autoMergeRequest`).
+2. Agent instruction files (`CLAUDE.md`, `AGENTS.md`, tool rules) and any
+   existing workflow/policy docs — what the team CLAIMS the process is.
+3. Branch protection and CI gates: required checks, review requirements,
+   who can merge (`gh api repos/{owner}/{repo}/branches/<default>/protection`).
+4. The installed skill inventory (`.claude/skills/`) — which stage enforcers
+   already exist and can be composed rather than invented.
+5. The standing `agent-authorization-matrix` and memory policy
+   (`agent-memory-governance`) if present; their absence is a gap to record.
+6. Incident history: past discipline failures and what each one bypassed.
+
+## Workflow
+
+1. **Inspect current practice first.** Reconstruct how the last N changes
+   actually flowed from PR/commit history. Design from observed reality;
+   claimed process that contradicts observed process is a finding.
+2. **Name the stages.** Default: context → classify → plan/approve →
+   implement → validate → review → merge → close → learn. Add or collapse
+   stages only with a reason tied to this repo's work.
+3. **Assign each stage its contract** — a row in the stage-gate map
+   ([references/stage-gate-map.md](references/stage-gate-map.md)): entry
+   condition, exit gate, authority holder (human | agent | agent-with-approval),
+   the enforcing skill (cited by name, its body never restated), and the
+   evidence the stage must leave behind.
+4. **Define the authority summary.** Merge and deploy authority always resolves
+   through `agent-authorization-matrix`; if no matrix exists, record the gap
+   and the interim rule (agents open PRs and stop — a human merges).
+5. **Define failure and escalation paths:** broken mid-task state routes to
+   `agent-failure-recovery` *(manual-only; hand it to the user by name)*;
+   conflicting sources to `source-of-truth-reconciler`;
+   unclear security impact to `human-approval-boundary`. Parallel-session
+   hazards (shared worktrees, stale memory) get explicit rules.
+   - When several AI tools work the repo, record the multi-tool topology as
+     an explicit option, chosen from observed practice: per-tool spokes
+     (thin tool entry files into a shared docs tree, with a platform-role
+     table) or hub-and-spoke (one authoritative rulebook; per-tool files
+     MUST point back and MUST NOT conflict). Add the collision rule: one
+     tool edits a given surface (a page, component or file set) per phase
+     (one approved chunk of work). Detail:
+     [references/stage-gate-map.md](references/stage-gate-map.md); aligning
+     the files themselves is `agent-instruction-consolidator` *(manual-only)*.
+6. **Define the learning loop:** closeouts feed memory under
+   `agent-memory-governance` rules; `agent-governance-audit` spot-checks
+   compliance on a stated cadence; audit findings feed model revisions.
+7. **Gap analysis.** Model vs observed practice: each gap with severity, the
+   observed evidence (PR number, incident), and the control that closes it.
+8. **Deliver the operating-model document** with an incremental adoption
+   sequence — highest-severity gaps first, never everything at once — and a
+   review date.
+
+## Output Format
+
+```
+AI-SDLC OPERATING MODEL
+Scope:        <repo / team / fleet>
+Grounding:    <N PRs + docs inspected, with identifiers>
+Stages:       <stage → entry, exit gate, authority, enforcing skill, evidence>
+Authority:    <summary; merge/deploy defer to agent-authorization-matrix or gap>
+Failure paths:<failure class → route>
+Topology:     <per-tool spokes | hub-and-spoke | single tool; collision rule>
+Learning loop:<memory rules ref, audit cadence>
+Gaps:         <gap → severity → observed evidence → closing control>
+Adoption:     <ordered steps, one gap-cluster at a time>
+Review date:  <date>
+```
+
+## Validation Checklist
+
+- [ ] Every stage has an entry condition, exit gate, authority holder,
+      enforcing skill, and required evidence — no blank cells.
+- [ ] No composed skill's procedure is restated — each is cited by name so the
+      model cannot drift from the skill contracts.
+- [ ] Merge/deploy authority defers to `agent-authorization-matrix` or the gap
+      is recorded with an interim open-PR-and-stop rule.
+- [ ] Gap list cites observed evidence (PR numbers, incidents), not vibes.
+- [ ] Adoption plan is incremental with a review date.
+- [ ] Model grounded in inspected practice, not an imagined team.
+- [ ] Multi-tool repos name their topology and the one-tool-per-surface-
+      per-phase collision rule.
+
+## Gotchas
+
+- Restating skill bodies inside the model creates two copies that drift; the
+  model composes by reference — that is the difference between an umbrella and
+  a duplicate.
+- The claimed process and the observed process usually differ; modeling only
+  the claimed one produces a document nobody follows.
+- Merge authority is where models go vague and incidents live — "the team
+  merges after review" does not say WHO may press the button or arm auto-merge.
+- Over-gating is a failure mode: a model that requires approval for everything
+  gets bypassed, and then protects nothing.
+- The model is versioned policy, not scripture — without a review date and a
+  feedback loop from `agent-governance-audit`, it fossilizes.
+- CI green is a validation signal inside a stage, not a substitute for the
+  review and merge-authority gates.
+
+## Stop Conditions
+
+- Asked to remove or weaken a human authority point (merge, deploy, prod data)
+  as part of "streamlining" → stop; that decision routes through
+  `human-approval-boundary` and must be recorded in the matrix, not slipped
+  into a workflow doc.
+- Existing policy docs contradict each other about the current process →
+  `source-of-truth-reconciler` first; model against the reconciled truth.
+- Observed practice cannot be inspected (no PR history access) → say so and
+  mark the model as ungrounded-draft rather than inventing observations.
+
+## Supporting Files
+
+- [references/stage-gate-map.md](references/stage-gate-map.md) — the full
+  stage × gate × authority × enforcing-skill composition table with per-stage
+  evidence requirements and adoption notes.
+- `evals/evals.json` — trigger + behavior cases.
+- `evals/trigger-evals.json` — discrimination against
+  `agent-authorization-matrix`, `agent-governance-audit`,
+  `agent-memory-governance`, and the Phase 1 stage skills.

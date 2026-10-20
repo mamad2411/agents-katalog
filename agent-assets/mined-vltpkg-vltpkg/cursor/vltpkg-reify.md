@@ -1,0 +1,44 @@
+---
+description: Reify process (applying Diff to node_modules)
+globs: src/graph/src/reify/*,src/graph/test/reify/*
+alwaysApply: false
+---
+# Reify (Apply Graph Changes)
+
+Entry: `src/graph/src/reify/index.ts` → `reify(options)`
+
+Makes on-disk install (Actual) match desired state (Ideal) via minimal filesystem ops.
+
+## Flow
+
+1. Load Actual (if not provided) with `loadManifests: true`
+2. Compute `Diff(actual, ideal)`, copy Actual `buildState` onto kept nodes (`carryBuildState`) — return early if no changes
+3. Prepare `RollbackRemove` for reversibility
+4. **Extract nodes**: `pruneUnsupportedOptional()` first (after lockfile data captured) drops optional adds failing platform/deprecated check + `gc()`, so they're never extracted/linked. Then `addNodes()` → fetch/extract into `.vlt` store (existing targets moved away first). Optional deps use `optionalFail()` to prune subgraphs instead of failing
+5. **Delete edges**: `deleteEdges()` → remove outdated links + bins
+6. Run extraction+deletion via `callLimit(actions, { limit })` where `limit = Math.max(availableParallelism()-1, 1) * 8`
+7. **Add edges**: `addEdges()` → create symlinks + bin links (Windows: `@vltpkg/cmd-shim`)
+8. **Hoist**: `internalHoist()` → `node_modules/.vlt/node_modules/<name>` symlinks. Preference: importer deps > registry > highest version > lexicographic DepID
+9. **Build**: `build()` → lifecycle scripts (preinstall/install/postinstall/prepare), chmod bins. Store-linked packages get private copies (`unshare()`) before their scripts run
+10. **Lockfiles**: save main `vlt-lock.json` (`saveData()`), hidden `node_modules/.vlt-lock.json` (`saveHidden()`)
+11. **Cleanup**: gc if optional failures, delete removed nodes, update importer `package.json` if `add/remove` changed deps, confirm rollback
+
+## Module Responsibilities
+
+- `index.ts` — orchestrator
+- `add-nodes.ts`/`extract-node.ts` — extract into store via `packageInfo.extract()`, platform gating, optional fail
+- `add-edge.ts`/`add-edges.ts` — symlinks + bin links
+- `delete-edge.ts`/`delete-edges.ts` — remove links + `.bin` entries
+- `internal-hoist.ts` — preferred candidate selection + symlinks
+- `symlink-sync.ts` — `symlinkSync`, mkdir parent on ENOENT + retry
+- `build.ts` — lifecycle scripts, chmod bins
+- `unshare.ts` — replace hardlinked files by private copies before a script runs
+- `optional-fail.ts` — `removeOptionalSubgraph`, flags `diff.hadOptionalFailures`; `pruneUnsupportedOptional` pre-extract platform pass
+- `rollback.ts` — best-effort revert
+- `update-importers-package-json.ts`/`calculate-save-value.ts` — save deps to importers
+
+## Usage
+
+Provide `graph` (Ideal). Optionally pass `actual` to skip reload. Required shared instances: `packageInfo`, `packageJson`, `scurry`.
+
+Side effects: filesystem changes under `node_modules`/`.vlt`, lockfile writes, optional `package.json` updates.

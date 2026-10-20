@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/yaklang/hack-skills (path: skills/idor-broken-object-authorization/SKILL.md, branch: main)
-- mined: 2026-09-20
-- desc: SKILL: IDOR / Broken Object Level Authorization — Expert Attack Playbook

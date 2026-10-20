@@ -1,0 +1,379 @@
+---
+description: >
+  Rules and guidelines for linting Markdown, YAML, and JSON documentation files 
+  in this repository. Helps maintain style consistency, correctness, and 
+  readability across all project documentation.
+globs: **/*.md **/*.yaml **/*.json
+alwaysApply: false
+---
+# Documentation Linting Rules
+
+## Overview
+
+This document outlines the linting rules and best practices for maintaining high-quality documentation in our project.
+
+## Linting Process
+
+### Running the Linter
+
+**⚠️ Prerequisite Check: Docker Availability**
+
+Before running the linter, always check if Docker is running:
+
+```bash
+# Check Docker status
+docker info > /dev/null 2>&1
+
+# If the above command fails, Docker is not running
+if [ $? -ne 0 ]; then
+    echo "❌ Docker is not running!"
+    echo "Please start Docker Desktop and try again."
+    echo ""
+    read -p "Continue with manual linting fixes? (Y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Exiting. Please start Docker and run 'yarn lint' again."
+        exit 1
+    fi
+    echo "Proceeding with manual linting fixes..."
+fi
+```
+
+**Then run the linter:**
+
+```bash
+yarn lint
+```
+
+**Note:** This command requires Docker to be installed and running. If Docker is not available, you can:
+1. Start Docker Desktop manually
+2. Or use the manual linting fixes described in the "Automated Fixes" section below
+
+The linter checks:
+- Markdown files (markdownlint)
+- YAML files (yamllint)
+- JSON files (jsonlint)
+- Security issues (gitleaks)
+
+### Link Validation
+
+After successful linting, validate all links in the documentation:
+
+```bash
+yarn test:links
+```
+
+The link validator checks:
+- Internal links (anchors, file references)
+- External links (URLs)
+- Relative path references
+- Broken or inaccessible links
+
+**Note:** Link validation should be run AFTER linting is successful, as it depends on properly formatted markdown files.
+
+#### Link Validation Errors and Resolution
+
+**Common Link Issues:**
+
+1. **Broken Internal Links**
+   - Missing anchor references
+   - Incorrect file paths
+   - Case sensitivity issues
+
+2. **Broken External Links**
+   - URLs that no longer exist
+   - Network connectivity issues
+   - Rate limiting from external sites
+
+3. **Relative Path Issues**
+   - Incorrect relative paths
+   - Missing files referenced in links
+
+**Resolution:**
+```bash
+# Run link validation to identify issues
+yarn test:links
+
+# Fix specific link issues manually
+# Common fixes:
+# - Update incorrect file paths
+# - Remove or replace broken external links
+# - Fix anchor references
+# - Update relative paths
+```
+
+**Best Practice:** Always run link validation before deploying documentation to ensure all links are functional.
+
+### Common Error Types and Resolution
+
+#### 1. Trailing Spaces (MD009)
+**Error:** `MD009/no-trailing-spaces Trailing spaces [Expected: 0 or 2; Actual: 1]`
+
+**Resolution:**
+```bash
+# Remove trailing spaces from a specific file
+sed -i '' 's/ $//' path/to/file.md
+
+# Remove trailing spaces from all markdown files
+find . -name "*.md" -exec sed -i '' 's/ $//' {} \;
+```
+
+**Best Practice:** Always use an editor that shows trailing whitespace or configure your editor to automatically trim trailing spaces on save.
+
+#### 2. Missing Language Specification (MD040)
+**Error:** `MD040/fenced-code-language Fenced code blocks should have a language specified`
+
+**Resolution:**
+```markdown
+# ❌ Bad
+```
+some code here
+```
+
+# ✅ Good
+```bash
+some code here
+```
+
+# ✅ Good for text content
+```text
+some text content
+```
+```
+
+**Common Language Specifiers:**
+- `bash` - Shell commands
+- `json` - JSON data
+- `yaml` - YAML configuration
+- `python` - Python code
+- `javascript` - JavaScript code
+- `text` - Plain text content
+- `markdown` - Markdown content
+
+#### 3. Multiple Consecutive Blank Lines (MD012)
+**Error:** `MD012/no-multiple-blanks Multiple consecutive blank lines [Expected: 1; Actual: 2]`
+
+**Resolution:**
+```bash
+# Remove duplicate blank lines
+sed -i '' '/^$/{N;/^\n$/d;}' path/to/file.md
+```
+
+**Best Practice:** Use exactly one blank line between sections, never more.
+
+#### 4. Unordered List Style (MD004)
+**Error:** `MD004/ul-style Unordered list style [Expected: asterisk; Actual: dash]`
+
+**Resolution:**
+```bash
+# Convert dashes to asterisks
+sed -i '' 's/^- /* /' path/to/file.md
+```
+
+**Best Practice:** Always use asterisks (`*`) for unordered lists, never dashes (`-`).
+
+#### 5. Lists Not Surrounded by Blank Lines (MD032)
+**Error:** `MD032/blanks-around-lists Lists should be surrounded by blank lines`
+
+**Resolution:**
+```markdown
+# ❌ Bad
+Some text here
+* Item 1
+* Item 2
+More text here
+
+# ✅ Good
+Some text here
+
+* Item 1
+* Item 2
+
+More text here
+```
+
+#### 6. Fenced Code Blocks Not Surrounded by Blank Lines (MD031)
+**Error:** `MD031/blanks-around-fences Fenced code blocks should be surrounded by blank lines`
+
+**Resolution:**
+```markdown
+# ❌ Bad
+Some text here
+```bash
+code here
+```
+More text here
+
+# ✅ Good
+Some text here
+
+```bash
+code here
+```
+
+More text here
+```
+
+#### 7. Headings Not Surrounded by Blank Lines (MD022)
+**Error:** `MD022/blanks-around-headings Headings should be surrounded by blank lines`
+
+**Resolution:**
+```markdown
+# ❌ Bad
+Some text here
+## Heading
+More text here
+
+# ✅ Good
+Some text here
+
+## Heading
+
+More text here
+```
+
+## Automated Fixes
+
+### Batch Fix Common Issues
+
+```bash
+# Fix trailing spaces in all markdown files
+find . -name "*.md" -exec sed -i '' 's/ $//' {} \;
+
+# Convert dashes to asterisks in all markdown files
+find . -name "*.md" -exec sed -i '' 's/^- /* /' {} \;
+
+# Remove duplicate blank lines in all markdown files
+find . -name "*.md" -exec sed -i '' '/^$/{N;/^\n$/d;}' {} \;
+```
+
+### Pre-commit Hooks
+
+Consider setting up pre-commit hooks to automatically fix common issues:
+
+```bash
+# Example pre-commit hook
+#!/bin/sh
+# Fix trailing spaces
+find . -name "*.md" -exec sed -i '' 's/ $//' {} \;
+# Convert dashes to asterisks
+find . -name "*.md" -exec sed -i '' 's/^- /* /' {} \;
+```
+
+## Editor Configuration
+
+### VS Code Settings
+
+Add to `.vscode/settings.json`:
+
+```json
+{
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "markdownlint.config": {
+    "MD009": false,
+    "MD004": { "style": "asterisk" }
+  }
+}
+```
+
+### Recommended Extensions
+
+- markdownlint (for VS Code)
+- Prettier (with markdown support)
+- Trailing Spaces (highlights trailing whitespace)
+
+## Quality Checklist
+
+Before committing documentation changes:
+
+- [ ] Run `yarn lint` and fix all errors
+- [ ] Run `yarn test:links` and fix all link issues
+- [ ] Check for trailing spaces
+- [ ] Verify code blocks have language specifications
+- [ ] Ensure lists use asterisks, not dashes
+- [ ] Confirm proper spacing around headings and lists
+- [ ] Validate that code blocks are properly surrounded by blank lines
+- [ ] Check for duplicate blank lines
+
+## Common Patterns
+
+### Code Block with Context
+
+```markdown
+Here's how to use the API:
+
+```bash
+curl -X POST https://api.example.com/endpoint \
+  -H "Content-Type: application/json" \
+  -d '{"key": "value"}'
+```
+
+The response will include...
+```
+
+### Lists with Proper Spacing
+
+```markdown
+The API supports the following features:
+
+* Feature 1 - Description of feature 1
+* Feature 2 - Description of feature 2
+* Feature 3 - Description of feature 3
+
+To get started, follow these steps:
+
+1. Step one
+2. Step two
+3. Step three
+```
+
+### Headings with Context
+
+```markdown
+## Overview
+
+This section provides an overview of the topic.
+
+## Getting Started
+
+Follow these steps to get started.
+
+### Prerequisites
+
+Make sure you have the following installed.
+```
+
+## Troubleshooting
+
+### Persistent Issues
+
+If certain files keep having the same issues:
+
+1. Check if the file is being auto-generated
+2. Verify editor settings are correct
+3. Consider adding the file to `.markdownlintignore` if appropriate
+4. Use `git blame` to identify who last modified the problematic sections
+
+### Performance Tips
+
+For large repositories:
+- Run linting on specific directories: `yarn lint src/pages/`
+- Use `--fix` flags when available
+- Consider running linting in parallel for large file sets
+
+## Integration with CI/CD
+
+Ensure your CI/CD pipeline includes:
+
+```yaml
+- name: Lint Documentation
+  run: yarn lint
+  continue-on-error: false
+
+- name: Validate Links
+  run: yarn test:links
+  continue-on-error: false
+```
+
+This ensures documentation quality and link integrity are maintained across all changes.

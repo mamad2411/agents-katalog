@@ -1,0 +1,60 @@
+# CLAUDE.md
+
+## Agent Workflow
+
+Start each task with the planner agent. Use python-dev to write code, python-test-engineer to write tests. Iterate until qa is satisfied.
+
+## Python Code Standards
+
+**Always invoke the `/dignified-python` skill before writing or reviewing Python code.** This skill enforces LBYL exception handling, modern type syntax, pathlib usage, and other project standards.
+
+## Project Status
+
+**Active Development - Stable Public API**
+
+The project has users. APIs marked with `@public` cannot have breaking changes between minor releases. Non-public internals can be refactored freely. Deprecated APIs must be preserved until a minor release.
+
+## Project Overview
+
+Metaxy is a feature metadata management system for multimodal ML pipelines. It tracks feature versions, dependencies, and data lineage with declarative definitions, automatic change detection, and smart migrations.
+
+## Commands
+
+```bash
+just sync        # Install all dependencies
+just ruff        # Lint and format
+just typecheck   # Type check with ty
+uv run pytest    # Run tests (add -k "pattern" to filter)
+```
+
+## Guardrails
+
+**Git commits**: Do not create commits unless explicitly requested. When asked to commit, follow standard git workflow.
+
+**Tests**:
+
+- Always add or update tests when modifying features. Run `uv run pytest tests/path/to/test.py` to verify changes before considering work complete.
+- Never run the full test suite unless instructed. Only run relevant tests by filtering with `-k "pattern"`, specific files or specific tests `uv run pytest tests/test_migrations.py::test_migration_generation`
+- Use `uv run pytest --tach` to automatically skip tests unaffected by your changes (uses tach's module dependency graph). Prefer this over running the full suite.
+- Always use fixtures to setup data and common values. Always request fixtures with appropriate type annotations.
+
+**Type safety**: Code must pass `just typecheck`. Fix type errors before submitting.
+
+**Snapshot tests**: If tests fail due to snapshot mismatches after intentional changes, update with `uv run pytest --snapshot-update path/to/test.py`.
+
+**Error handling**: Fail fast with clean errors. Do not catch exceptions to handle them gracefully. Let errors propagate with clear messages. Avoid try/except blocks unless re-raising with additional context.
+
+**Docstrings**: Avoid documenting implementation details. Focus on high-level concepts, properties and invariants. Avoid documenting default values as they are already documented in the code.
+
+**Comments**: Write comments that describe the current state of the code, not how it got there. Do not reference refactoring history, deleted code, or previous implementations (e.g., avoid "using X because Y was removed" or "previously this used Z").
+
+**Variable usage**: Avoid introducing variables that are only used once. Prefer method chaining and inline expressions. Exception: use a named variable when it clarifies non-obvious meaning or intent.
+
+## When to Consult Docs
+
+- **Architecture decisions or unfamiliar patterns**: See `docs/guide/` for concepts like feature graphs, migrations, and metadata stores
+- **Backend-specific issues** (DuckDB, ClickHouse, BigQuery): Check `docs/integrations/metadata-stores/` and corresponding test files in `tests/metadata_stores/`
+
+## Writing Docs
+
+Write in complete English sentences. Do not use (braces) excessively. Explain concepts clearly and concisely. First provide a generic explanation, then give a concrete example if necessary. Use `Material for Mkdocs` features: tooltips and admonitions to keep examples aside from the main flow.

@@ -1,0 +1,480 @@
+---
+name: amplify-branch-deployer
+description: 'Configures AWS Amplify branch deployments with production defaults: app creation from a Git repository (GitHub/GitLab/Bitbucket), branch configuration (production/staging/dev with stage tags), build settings (amplify.yml — NOT buildspec.yml, environment variables, build instance type, cache configuration), custom headers, redirects (SPA rewrite vs SSR function routes), basic auth and password protection per branch, custom domain via Route 53 (domain association with sub-domain mapping), backend deployment via Amplify CLI (one backend per branch), CI/CD build frequency (continuous vs manual), notifications on build result (Slack/email), pull request preview (ephemeral environment per PR), monorepo app detection (amplify.yml in subdir + appRoot), SSR (Next.js Lambda. Triggers: create amplify app, configure amplify branch, amplify pull request preview, amplify custom domain, amplify basic auth, amplify monorepo, amplify redirects spa ssr, amplify buildspec, amplify nextjs ssr, amplify serverless functions.'
+license: Apache-2.0
+compatibility: 'Agent runtime that reads SKILL.md (Claude Code, Cursor, Windsurf, Codex, Gemini). For live deployment: AWS CLI v2 with amplify access and an existing Git provider connection (OAuth via console). Works with Terraform aws_amplify_app / aws_amplify_branch / aws_amplify_domain_association resources and CloudFormation AWS::Amplify::App / Branch / Domain templates.'
+metadata:
+  domain: aws-cloudops
+  complexity: medium
+  requires_llm: 'true'
+  phase: '1'
+  supports_pipeline: 'true'
+  entry_point: 'false'
+  family: DevTools
+  task_type: deploy
+  skill_class: capability
+  lifecycle_status: active
+  verdict_shape: READY_TO_DEPLOY | PREREQUISITES_MISSING
+  version: 0.1.0
+  author: Jacky Chan — AWS Community Builder
+  tags: aws, amplify, amplify-branch, cloudops, deploy, devtools, cicd, ssr, monorepo, custom-domain
+  dependencies: aws-orchestrator
+  keywords: aws, amplify, branch, cloudops, deploy, devtools, git, build, pr preview, custom domain, basic auth, monorepo, redirects, ssr, nextjs, serverless functions, route 53
+  when_to_use: Invoke when the user wants to create an AWS Amplify app from a Git repository, configure a branch (production/staging/dev), enable pull request preview, wire a custom domain via Route 53, configure basic auth or password protection per branch, set up SPA or SSR redirects, detect a monoreto app via appRoot, or configure Next.js SSR with Lambda serverless functions. Do NOT invoke for Amplify Studio data modeling (use amplify-studio skills), AppSync API creation in isolation, or Cognito user pool configuration outside of an Amplify backend.
+---
+
+# Amplify Branch Deployer
+
+An AWS CloudOps agent skill that configures AWS Amplify branch
+deployments with correct defaults: branch auto-build on git push, PR
+preview (ephemeral environment per PR), monorepo detection via appRoot,
+custom domain via Route 53, basic auth per branch, SPA vs SSR redirects,
+Next.js SSR via Lambda serverless functions, and the critical
+distinction between `amplify.yml` (the Amplify build spec) and
+`buildspec.yml` (CodeBuild's spec, which Amplify IGNORES). Emits a
+READY_TO_DEPLOY checklist with copy-pasteable verification commands.
+
+## Activation keywords
+
+create Amplify app, configure Amplify branch, Amplify PR preview,
+Amplify custom domain, Amplify basic auth, Amplify monorepo, Amplify
+redirects SPA SSR, Amplify build settings, Amplify Next.js SSR, Amplify
+serverless functions.
+
+## STRICT output contract
+
+When this skill is invoked with an Amplify branch deployment request
+(create an app, configure a branch, set up PR preview, wire a custom
+domain, configure redirects, detect a monorepo, or enable basic auth),
+the agent MUST respond with the READY_TO_DEPLOY checklist defined in the
+"Output format" section using the literal all-caps labels `AMPLIFY:`,
+`VERDICT:`, `CHECKLIST:`, and `VERIFICATION_COMMANDS:`. Do NOT preface
+with prose, headings, or disclaimers — emit the block as the first lines
+of the response. This contract is what assertion-based evals and
+downstream provisioning pipelines rely on; deviating from the literal
+labels breaks automation silently.
+
+If any prerequisite is missing, the verdict is `PREREQUISITES_MISSING`
+with a specific gap citation in the checklist (marked `[✗]`), and
+`READY_TO_DEPLOY` MUST NOT also appear.
+
+## Quick navigation
+
+| Section | When to read |
+|---|---|
+| Prerequisites | Always — verify before provisioning |
+| Steps 1-3 | App creation, branch config, build settings (amplify.yml) |
+| Steps 4-6 | Redirects, custom headers, basic auth |
+| Steps 7-9 | Custom domain, PR preview, monorepo |
+| Steps 10-12 | SSR vs SSG, serverless functions, notifications |
+| Step 13 | Recent features |
+| NEVER do these things | Review before signing off |
+| Output format | The literal checklist template |
+| references/branch-builds-and-preview.md | Branch + PR preview detail |
+| references/domains-redirects-and-auth.md | Domain + redirect + auth detail |
+
+## Mindset
+
+**One-line takeaway:** Amplify builds on git push to a connected branch.
+PR preview creates an ephemeral environment per PR. Monorepo detection
+works via `amplify.yml` in a subdir plus the `appRoot` setting. The
+build config file is `amplify.yml`, NOT `buildspec.yml`.
+
+Three misconceptions dominate Amplify misdesign at provisioning time:
+
+Full corrections (buildspec.yml vs amplify.yml; PR preview is
+ephemeral; monorepo needs appRoot): [references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Configuration dependency graph (novel heuristic)
+
+Amplify configurations are NOT independent. A branch cannot be created
+until the app exists and is connected to a Git repo. A custom domain
+cannot be associated until at least one branch is deployed. PR preview
+cannot fire until the branch is connected and auto-build is enabled.
+
+| Configuration | Hard dependencies | Silent failure / immutability | Enables downstream |
+|---|---|---|---|
+| Amplify app | Git provider connection (OAuth via console); repo URL | IAM service role (optional) for backend deploys | Branches, domain |
+| Git provider connection | One-time OAuth in console (GitHub/GitLab/Bitbucket) | Cannot be fully automated via CLI — must use console for first connection | App creation from repo |
+| Branch | App exists; branch name matches a real Git branch | `enableAutoBuild=true` (default) triggers on push; `false` = manual only | Build, preview, domain mapping |
+| Build settings (amplify.yml) | File at repo root OR `appRoot/amplify.yml` OR inline `buildSpec` on app | `buildspec.yml` is IGNORED — must be `amplify.yml` | Build phases, env vars, cache |
+| Environment variables | Set on app (global) or branch (per-branch) | Branch-level overrides app-level; secrets are masked in logs | Build-time + runtime config |
+| Custom domain | At least one branch deployed; DNS verification via Route 53 CNAME | DNS verification can take 15-45 min; SSL is auto-provisioned | Production URL mapping |
+| Domain association | Domain verified; sub-domain maps to a branch | One branch per sub-domain; apex can map to one branch | `app.example.com → main`, `staging.example.com → staging` |
+| PR preview | Auto-build enabled on the branch; `enablePullRequestPreview=true` | Preview URL rotates per build; torn down on PR close | Ephemeral environment per PR |
+| Basic auth | Set per branch via `update-branch --basic-auth-credentials` | Applied at CDN edge; covers all paths under the branch domain | Password protection per branch |
+| Redirects | `customRules` on app OR `amplify.yml` redirects section | SPA rewrite: `/<*>` to `/index.html` 200; SSR: function routes differ | Client-side routing, SSR routing |
+| Monorepo (appRoot) | `appRoot` set on app; `amplify.yml` in appRoot subdir | Without appRoot, Amplify builds from repo root and misses the app | Sub-dir app detection |
+| SSR (Next.js) | Framework detected; Lambda serverless functions provisioned | SSR requires `ssr` support; SSG is static hosting only | Server-rendered pages via Lambda |
+| Serverless functions | `amplify.yml` functions section; Lambda provisioned per branch | One set of functions per branch/environment | API routes, SSR compute |
+
+**The amplify.yml-vs-buildspec.yml row is the one a baseline model
+misses.** Amplify ignores `buildspec.yml` entirely. The build spec must
+be `amplify.yml` at the repo root (or `appRoot/amplify.yml` for
+monorepos). This is the #1 cause of "my build commands don't run"
+tickets.
+
+**Cross-dependency gotchas:**
+Full catalog (branch-name match, DNS verification timing, PR-preview
+build-minute cost, per-branch SSR Lambdas): [references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Expert heuristic: branch auto-builds on git push
+
+Build flow (webhook auto-wired, amplify.yml read, artifacts to CDN) and
+the console-OAuth prerequisite: [references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Expert heuristic: PR preview creates ephemeral environment
+
+PR-preview lifecycle (per-PR URL, rotation per build, teardown) and the
+stable-staging guidance: [references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Expert heuristic: monorepo detection via appRoot
+
+Monorepo structure walkthrough and the create-app --app-root example:
+[references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Prerequisites (verify before provisioning)
+
+If any are missing, the verdict is **PREREQUISITES_MISSING**.
+
+| Prerequisite | Why it matters | How to verify |
+|---|---|---|
+| Git provider connection | Amplify needs OAuth access to the repo | Console → Amplify → App settings → Repository |
+| Repository URL | App creation requires the Git clone URL | Confirm `https://github.com/<org>/<repo>` |
+| Branch exists in Git | Branch name must match a real Git branch | `git ls-remote --heads <repo>` |
+| `amplify.yml` or inline buildSpec | Build commands won't run without it | Check repo root (or `appRoot/`) for `amplify.yml` |
+| IAM service role (for backend) | Backend deploys need a role for Amplify CLI | `aws iam get-role --role-name amplify-service-role` |
+| Route 53 hosted zone (for custom domain) | Domain verification needs DNS control | `aws route53 list-hosted-zones` |
+| Build instance type chosen | Affects build speed and cost | Choose `small` (default), `medium`, or `large` |
+| Account build quota | Amplify has a monthly build-minute quota | Console → Amplify → Settings → Usage |
+
+If any prerequisite is missing, output `VERDICT: PREREQUISITES_MISSING`
+and cite the specific gap.
+
+## Step 1 — App creation from Git repo
+
+```bash
+aws amplify create-app \
+  --name my-app \
+  --repository https://github.com/org/my-repo \
+  --platform WEB \
+  --iam-service-role-arn arn:aws:iam::123456789012:role/amplify-service-role \
+  --build-spec "version: 1\nfrontend:\n  phases:\n    preBuild:\n      - npm install\n    build:\n      - npm run build\n  artifacts:\n    baseDirectory: .next\n    files:\n      - '**/*'\n  cache:\n    paths:\n      - node_modules/**/*"
+```
+
+**For a monorepo**, add `--app-root packages/web-app`.
+
+The Git provider connection is established in the console (one-time
+OAuth). The CLI creates the app but cannot perform the OAuth handshake.
+
+## Step 2 — Branch configuration (production/staging/dev)
+
+```bash
+aws amplify create-branch \
+  --app-id d2y0lrmp1qq2tu \
+  --branch-name main \
+  --stage PRODUCTION \
+  --enable-auto-build \
+  --environment-variables REACT_APP_API_URL=https://api.example.com,NODE_ENV=production
+```
+
+| Stage | Purpose | Auto-build | Typical domain |
+|---|---|---|---|
+| PRODUCTION | Live production | true | `app.example.com` (custom domain) |
+| BETA | Pre-prod staging | true | `staging.example.com` (custom domain) |
+| DEVELOPMENT | Dev integration | true | `dev.<app-id>.amplifyapp.com` |
+| PULL_REQUEST | PR preview | true | `pr-<n>.<app-id>.amplifyapp.com` (ephemeral) |
+| EXPERIMENTAL | Experiments | false (manual) | `exp.<app-id>.amplifyapp.com` |
+
+**Common mistake:** typo in branch name. The branch name must match a
+real Git branch exactly. A mis-typed name silently never builds.
+
+## Step 3 — Build settings (amplify.yml, NOT buildspec.yml)
+
+The canonical `amplify.yml` at repo root (or `appRoot/`):
+
+```yaml
+version: 1
+frontend:
+  phases:
+    preBuild:
+      - npm install
+    build:
+      - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - node_modules/**/*
+```
+
+**Critical:** this file is `amplify.yml`, NOT `buildspec.yml`. A
+`buildspec.yml` in the same directory is IGNORED. If no `amplify.yml`
+exists, Amplify uses the inline `buildSpec` on the app (settable via
+`create-app --build-spec`).
+
+Environment variables are set on the app (global) or per-branch
+(branch-level overrides app-level):
+
+```bash
+# App-level (all branches)
+aws amplify update-app --app-id d2y0lrmp1qq2tu \
+  --environment-variables GLOBAL_VAR=value
+
+# Branch-level (overrides app-level)
+aws amplify create-branch --app-id d2y0lrmp1qq2tu --branch-name main \
+  --environment-variables API_URL=https://api.prod.example.com
+```
+
+Build instance type: `small` (default, 4GB), `medium` (8GB), `large`
+(16GB). Larger = faster but higher cost per build minute.
+
+## Step 4 — Redirects (SPA vs SSR)
+
+Redirects and rewrites are configured via `customRules` on the app or in
+`amplify.yml`. The pattern differs between SPA and SSR.
+
+**SPA (React/Vue/Angular) — catch-all rewrite to index.html:**
+
+```yaml
+customRules:
+  - source: /<*>
+    target: /index.html
+    status: 200    # MUST be 200 (rewrite), NOT 301 (redirect)
+```
+
+The `status: 200` (rewrite) is critical: it serves `index.html` for all
+paths so client-side routing handles them. A `301` would redirect to
+the literal path `/index.html`, breaking client-side routing.
+
+**SSR (Next.js) — function routes:**
+
+```yaml
+customRules:
+  - source: /api/<*>
+    target: /api/[...path]
+    status: 200
+```
+
+SSR routes are handled by Lambda serverless functions; redirect rules
+must not shadow the function routes. Amplify auto-detects Next.js SSR
+routes from the build output.
+
+**Status code semantics:** `200` = rewrite (URL stays); `301` =
+permanent redirect (URL changes); `302` = temporary redirect. See
+`references/domains-redirects-and-auth.md` for common redirect patterns
+(domain redirect, path redirect, HTTP-to-HTTPS).
+
+## Step 5 — Custom headers
+
+Custom headers are set in `amplify.yml` under the `customHeaders` key
+or per-route via `customRules`:
+
+customHeaders YAML (HSTS, X-Frame-Options, nosniff, immutable cache):
+[references/domains-redirects-and-auth.md](references/domains-redirects-and-auth.md).
+
+Security headers (HSTS, X-Frame-Options, CSP) should always be set for
+production apps. Cache headers on static assets (`/static/*`) with
+content hashing should use immutable caching.
+
+## Step 6 — Basic auth per branch
+
+Basic-auth enable command, credential format, and use cases:
+[references/domains-redirects-and-auth.md](references/domains-redirects-and-auth.md).
+
+## Step 7 — Custom domain via Route 53
+
+```bash
+aws amplify create-domain-association \
+  --app-id d2y0lrmp1qq2tu \
+  --domain-name example.com \
+  --sub-domains \
+    subDomainSetting=PRIMARY,branchName=main,prefix="" \
+    subDomainSetting=PROD,branchName=staging,prefix="staging"
+```
+
+This maps `example.com` (apex) → `main` and `staging.example.com` →
+`staging`. Amplify returns DNS records (CNAME for verification) that
+must be added to Route 53 (or third-party DNS):
+
+```bash
+aws amplify get-domain-association \
+  --app-id d2y0lrmp1qq2tu --domain-name example.com \
+  --query 'domainAssociation.subDomains[*].dnsRecord'
+```
+
+Add the returned CNAME to Route 53 (`route53 change-resource-record-sets
+--hosted-zone-id Z1DXXXXX`). SSL is auto-provisioned via ACM once DNS
+verifies. Propagation: Route 53 ~2-5 min; third-party DNS 15-45 min.
+Amplify does NOT support wildcard sub-domains — each must be explicit.
+See `references/domains-redirects-and-auth.md` for the full Route 53
+record example.
+
+## Step 8 — Pull request preview
+
+```bash
+aws amplify update-branch \
+  --app-id d2y0lrmp1qq2tu \
+  --branch-name main \
+  --enable-pull-request-preview \
+  --pull-request-environment-name pr-preview
+```
+
+Each PR targeting `main` gets an ephemeral environment at
+`https://pr-<n>.<app-id>.amplifyapp.com`. The URL rotates per build
+(a new push to the PR triggers a rebuild with new content). On PR close
+or merge, the environment is torn down.
+
+**Cost control:** set `pullRequestEnvironmentName` to a fixed name to
+reuse a single environment across PRs (only one PR builds at a time).
+Without a fixed name, each PR gets its own environment (parallel builds,
+more build minutes).
+
+## Step 9 — Monorepo app detection
+
+Monorepo commands (create-app --app-root, get-app appRoot, update-app
+--app-root): [references/branch-builds-and-preview.md](references/branch-builds-and-preview.md).
+
+## Step 10 — SSR (Next.js) vs SSG support
+
+SSR/SSG/ISR mode table and the per-branch Lambda cost implication:
+[references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Step 11 — Lambda serverless functions
+
+functions section YAML and per-branch /api invocation:
+[references/branch-builds-and-preview.md](references/branch-builds-and-preview.md).
+
+## Step 12 — Notifications on build result
+
+SNS + EventBridge notification wiring (and Slack via Lambda/Chatbot):
+[references/advanced-patterns.md](references/advanced-patterns.md).
+
+## Step 13 — Recent features
+
+Recent AWS features (2023-2026) — SSR improvements, appRoot GA, build
+instance types, cache, manual trigger, PR cost control: [references/advanced-patterns.md](references/advanced-patterns.md).
+
+## NEVER do these things
+
+1. **NEVER use `buildspec.yml` as the Amplify build spec.** Amplify uses
+   `amplify.yml`. A `buildspec.yml` is IGNORED. This is the #1 cause of
+   "my build commands don't run" tickets.
+
+2. **NEVER assume PR preview is a stable staging URL.** PR preview
+   environments are ephemeral — URL rotates per build, torn down on PR
+   close. Use a dedicated `staging` branch for a stable URL.
+
+3. **NEVER assume monorepo detection is automatic.** Set `appRoot` on
+   the app and place `amplify.yml` in the appRoot subdir. Without
+   `appRoot`, Amplify builds from the repo root and misses the app.
+
+4. **NEVER use status 301 for SPA client-side routing.** Use `status:
+   200` (rewrite) for the catch-all `/<*>` → `/index.html` rule. A 301
+   redirects to the literal `/index.html`, breaking client-side routing.
+
+5. **NEVER set a mis-typed branch name.** The branch name must match a
+   real Git branch exactly. A typo silently never builds.
+
+6. **NEVER assume the Git provider connection works via CLI alone.**
+   The one-time OAuth handshake requires console interaction. The CLI
+   can create the app but cannot perform OAuth.
+
+7. **NEVER forget DNS verification for custom domains.** Domain
+   association requires a CNAME in Route 53 (or third-party DNS).
+   Without verification, SSL is not provisioned and the domain stays in
+   `CREATING`.
+
+8. **NEVER use one PR environment per PR for high-volume repos.** Each
+   PR environment consumes build minutes. Set
+   `pullRequestEnvironmentName` to a fixed name to reuse one
+   environment (lower cost, one PR at a time).
+
+9. **NEVER ignore SSR Lambda costs for multi-branch repos.** SSR deploys
+   Lambda functions per branch. 10 branches = 10 Lambda sets. Monitor
+   costs for high-traffic SSR apps.
+
+10. **NEVER omit security headers in production.** Set HSTS,
+    X-Frame-Options, X-Content-Type-Options, and CSP via
+    `customHeaders` in `amplify.yml`.
+
+## Output format
+
+```text
+AMPLIFY: <app-name> (<app-id>)
+VERDICT: READY_TO_DEPLOY | PREREQUISITES_MISSING
+CHECKLIST:
+  [✓|✗] Git provider connection: <provider> (OAuth via console)
+  [✓|✗] Repository: <repo-url>
+  [✓|✗] App created: <app-id> (appRoot: <root-or-subdir>)
+  [✓|✗] Build spec: amplify.yml at <location> | inline buildSpec on app
+  [✓|✗] Branch: <branch-name> (stage: PRODUCTION|BETA|DEVELOPMENT, auto-build: true|false)
+  [✓|✗] Build instance: small|medium|large
+  [✓|✗] Environment variables: <app-level + branch-level list>
+  [✓|✗] Redirects: SPA rewrite (/<*> → /index.html 200) | SSR function routes | custom
+  [✓|✗] Custom headers: <security-header list>
+  [✓|✗] Basic auth: enabled on <branch> | disabled
+  [✓|✗] Custom domain: <domain> → <branch> (DNS verified | pending)
+  [✓|✗] PR preview: enabled (environment: <name>) | disabled
+  [✓|✗] Monorepo: appRoot=<subdir> | not a monorepo
+  [✓|✗] SSR/SSG: SSR (Next.js, Lambda functions) | SSG (static)
+  [✓|✗] Serverless functions: <count> (per branch)
+  [✓|✗] Notifications: SNS/Slack on build result | none
+VERIFICATION_COMMANDS:
+  aws amplify get-app --app-id <app-id>
+  aws amplify list-branches --app-id <app-id>
+  aws amplify get-domain-association --app-id <app-id> --domain-name <domain>
+```
+
+### Worked example — production branch with custom domain and PR preview
+
+```text
+AMPLIFY: my-web-app (d2y0lrmp1qq2tu)
+VERDICT: READY_TO_DEPLOY
+CHECKLIST:
+  [✓] Git provider connection: GitHub (OAuth via console)
+  [✓] App created: d2y0lrmp1qq2tu (appRoot: packages/web-app — monorepo)
+  [✓] Build spec: amplify.yml at packages/web-app/amplify.yml
+  [✓] Branch: main (stage: PRODUCTION, auto-build: true, build instance: medium)
+  [✓] Redirects: SPA rewrite (/<*> → /index.html 200)
+  [✓] Custom headers: HSTS, X-Frame-Options, X-Content-Type-Options
+  [✓] Basic auth: disabled on main; enabled on staging
+  [✓] Custom domain: example.com → main (DNS verified, SSL active)
+  [✓] PR preview: enabled (environment: pr-preview, reuses single env)
+  [✓] SSR/SSG: SSR (Next.js 14, Lambda functions auto-provisioned)
+  [✓] Serverless functions: 3 (per branch) | Notifications: SNS → Slack
+VERIFICATION_COMMANDS:
+  aws amplify get-app --app-id d2y0lrmp1qq2tu
+  aws amplify list-branches --app-id d2y0lrmp1qq2tu
+  aws amplify get-domain-association --app-id d2y0lrmp1qq2tu --domain-name example.com
+```
+
+## Error handling
+
+Error deep dives (build commands don't run, branch never builds, domain
+stuck CREATING, PR preview, SPA 404, monorepo, SSR routes): [references/error-handling.md](references/error-handling.md).
+
+## References (load on demand)
+
+- [Error handling](references/error-handling.md) - deep dives: build commands don't run, branch never builds, domain stuck CREATING, PR preview, SPA 404, monorepo, SSR routes
+- [Advanced patterns](references/advanced-patterns.md) - mindset misconceptions, dependency-graph gotchas, expert heuristics (auto-build flow, PR preview, monorepo), SSR vs SSG, notifications, recent features
+- [Branch builds and preview](references/branch-builds-and-preview.md) - branch + PR preview detail; monorepo appRoot commands; serverless functions section
+- [Domains, redirects, and auth](references/domains-redirects-and-auth.md) - domain + redirect + auth detail; custom headers YAML; basic auth per branch
+
+## Domain
+
+AWS CloudOps / AWS Amplify Branch Deployment & Git-Driven CI/CD.
+
+## AWS documentation
+
+- **Amplify Hosting overview** — https://docs.aws.amazon.com/amplify/latest/userguide/welcome.html
+- **Getting started (console)** — https://docs.aws.amazon.com/amplify/latest/userguide/getting-started.html
+- **Branch deployments** — https://docs.aws.amazon.com/amplify/latest/userguide/branch.html
+- **PR previews** — https://docs.aws.amazon.com/amplify/latest/userguide/pr-previews.html
+- **Custom domains** — https://docs.aws.amazon.com/amplify/latest/userguide/custom-domains.html
+- **Redirects** — https://docs.aws.amazon.com/amplify/latest/userguide/redirects.html
+- **Build settings (amplify.yml)** — https://docs.aws.amazon.com/amplify/latest/userguide/build-settings.html
+- **Monorepo support** — https://docs.aws.amazon.com/amplify/latest/userguide/monorepo.html
+- **SSR (Next.js)** — https://docs.aws.amazon.com/amplify/latest/userguide/server-side-rendering-amplify.html

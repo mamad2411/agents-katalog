@@ -1,0 +1,161 @@
+---
+name: diff-explainer
+description: Generates an interactive HTML report explaining a git diff — compact teaching glosses on the left, clickable diff lines on the right. Use this skill when the user wants to understand, walk through, annotate, or document a diff, commit, changeset, or PR. This is for explaining/teaching the changes, not for finding bugs. Trigger on phrases like "explain this diff", "walk me through this PR", "annotate these changes", "help me understand what changed", or "what's going on in this commit" — even when the user doesn't explicitly ask for an HTML report. Especially useful when onboarding to a new codebase or learning an unfamiliar framework.
+---
+
+# Diff Explainer
+
+Produces a two-column HTML report: compact glosses on the left, the diff on the right, with clickable entries that highlight the relevant lines. Your job is the **judgment** — what's worth a gloss, how to phrase it, which lines it ties to. A bundled script handles all HTML assembly.
+
+The report is **for a specific reader.** A pattern that's invisible to a Java dev warrants a gloss for a Ruby dev. Calibrating to the reader (step 2) shapes everything that follows.
+
+## Workflow
+
+`build.py` lives in this skill's `scripts/` directory, but the commands below run from the *user's* working directory — so a relative `scripts/build.py` won't resolve. In each command, replace `<skill-dir>` with this skill's absolute base directory (shown to you when the skill loaded), e.g. `~/.claude/skills/diff-explainer/scripts/build.py`. Spell out the full path every time rather than using a shell variable — shell state doesn't persist between separate command invocations.
+
+### 1. Check the diff size
+
+```bash
+git diff --shortstat
+```
+
+Cheap up-front so you don't load a giant diff into context. If additions + removals exceed ~1500 lines, ask the user to scope down before going further — a report that big is expensive to generate and too dense to read. Suggest focusing on specific files or themes; the rest can render as panels with no commentary.
+
+Use `--cached` for staged changes, `main..feature` for branch comparisons, etc.
+
+### 2. Calibrate to the reader
+
+Establish the reader's **positive background** — the languages/frameworks they're already comfortable with. Two things flow from this:
+
+1. **What gets a gloss** (the main thing). A pattern invisible to one reader is obvious to another. Skip constructs the reader already knows; explain the ones they don't.
+2. **How glosses frame** (secondary). When something needs explaining, anchor it in something familiar — "like a `Gemfile`", "this is .NET's answer to `useEffect`".
+
+Negative-only signals ("newer to .NET") aren't enough on their own — .NET is huge, and a Java dev needs different cards than a Ruby dev, even if both are new to it.
+
+Where positive background can come from:
+- A user memory naming it ("comfortable with Ruby/Elm/TypeScript, learning .NET")
+- A direct statement this session
+- Asking the user
+
+Don't infer it from the project's stack, the diff's language, CLAUDE.md, or recent activity — the user might be reading this repo *because* they don't know it.
+
+If you don't have positive background, ask: *"What languages/frameworks are you comfortable with, and which are you newer to? I'll tune the commentary."* Save the answer to user memory so future invocations don't re-ask.
+
+### 3. See the diff with line numbers
+
+```bash
+git diff | python3 <skill-dir>/scripts/build.py show
+```
+
+Output is plain text — one line per diff line, prefixed with its `data-n` value:
+
+```
+FILE app/models/user.rb (modified)
+  1: @@ -1,5 +1,7 @@
+  2:  class User < ApplicationRecord
+  3: +  scope :active, -> { where(archived_at: nil) }
+```
+
+Reference those numbers in your commentary's `lines` field. For context, also look at any new untracked files relevant to the change and skim a few comparable existing files to learn project conventions.
+
+### 4. Write `commentary.json`
+
+Save to `commentary.json` in the current directory. Schema:
+
+```json
+{
+  "title": "feature/PR title",
+  "summary_what": "one-sentence description of what the change does",
+  "summary_why": "one-sentence description of why",
+  "files": [
+    {
+      "path": "src/Auth.cs",
+      "tag": "new",
+      "cards": [
+        {
+          "title": "Dependency injection",
+          "body": "Like Ruby's initializer, but the container instantiates this. Registered in <code>Module.cs</code>.",
+          "lines": "1-5"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Field reference:**
+
+| Field | Values | Notes |
+|-------|--------|-------|
+| `tag` | `new` (green), `mod` (yellow), `infra` (purple), `deleted` (red), `renamed` (blue), `binary` (grey) | `infra` overrides for Terraform, Helm, `.csproj`, Autofac modules, etc. Omit a file and the script infers the tag from the diff. |
+| `title` | short topic name | Appears as the primary gloss title |
+| `body` | plain text or HTML | Plain text gets wrapped in `<p>`; for lists/code use inline HTML (`<ul>`, `<code>`) |
+| `lines` | `"3"` or `"3,7-12"` | Comma-separated `data-n` values; range syntax with `-` |
+
+Skip files you have nothing useful to say about — they'll still render with no commentary.
+
+### 5. Build the report
+
+```bash
+git diff | python3 <skill-dir>/scripts/build.py render commentary.json
+```
+
+The script writes a timestamped HTML file (e.g. `diff-report-2026-05-26-143052.html`), prints the path, and deletes `commentary.json`. Pass `-o <path>` to override.
+
+Open it and share with the user:
+
+```bash
+open diff-report-<timestamp>.html
+```
+
+Offer to adjust depth, add more files, or refocus on specific parts.
+
+---
+
+## What makes good commentary
+
+The report teaches a diff to someone unfamiliar with the language or framework. Two kinds of glosses earn their place:
+
+**Teaching** — when the reader will encounter something they won't recognize. Explain what it is, anchor it in an analogy to something they do know, and name where it comes from: is this the language, the framework, or a pattern specific to this project? A newcomer can't tell these apart without being told, and mistaking a project convention for a universal practice is a common early error.
+
+**Contrast** — when the code differs from what a newcomer might expect based on tutorials, documentation, or other files in this codebase. State the expectation explicitly before explaining the departure. "A standard Rails controller would call `User.create(params)` here..." The reader needs to know their expectation was reasonable before they can update it.
+
+Skip a gloss if the construct would be familiar to someone from the reader's background, or if you'd just be narrating what the diff already shows.
+
+## A good gloss vs a bad gloss
+
+**The test:** if your gloss disappeared, would the reader miss any information that isn't already in the diff? If no, don't write it.
+
+(Examples below assume the reader is a JS/TS dev newer to Rails — adjust the cut for *your* reader.)
+
+### Example 1 — teaching a framework idiom
+
+**Bad** (restates what the diff shows):
+
+> **Adds an active scope**
+>
+> Defines a new scope on the `User` model that filters by `archived_at: nil`.
+
+**Good** (teaches the idiom):
+
+> **ActiveRecord scopes**
+>
+> A `scope` is Rails-speak for a named, chainable filter on a model. Calling `User.active` returns a query equivalent to `User.where(archived_at: nil)` — and because it's a relation, you can keep chaining: `User.active.where(role: :admin)`. Think of it as a method-named query you can compose. You'll see scopes everywhere in this codebase.
+
+The bad gloss just narrates the diff. The good gloss teaches the Rails-specific concept that a JS dev wouldn't pattern-match on, and points to the broader role of scopes in the codebase. *That* is the skill's job.
+
+### Example 2 — contrasting a project convention with the framework default
+
+**Bad** (notes the change but leaves the reader unsure if it's right):
+
+> **Uses a form object**
+>
+> The controller calls `UserForm.new(params).save` instead of `User.create(params)`.
+
+**Good** (grounds the convention so the reader can follow it):
+
+> **Form objects — this project's convention, not Rails default**
+>
+> A typical Rails controller would write `User.create(user_params)` here. This codebase wraps that in a Form Object (`UserForm` in `app/forms/user_form.rb`), which combines validation, persistence, and after-save side-effects in one class. The closest JS analogy is a *service class* or *use-case object* — a wrapper that bundles validation, DB writes, and side-effects in one place instead of scattering them across the route handler. It's not a bug or a code smell — it's the project's chosen pattern, and you'll see it everywhere records are created. Follow the existing shape when adding new controllers: `Form.new(params).save` returns true/false like an ActiveRecord save would.
+
+The bad gloss flags the existence of `UserForm` without explaining anything. The good gloss tells the newcomer: (1) this isn't what Rails normally does, (2) it's a deliberate project choice and you'll see it everywhere, (3) here's the shape to follow. That's how onboarding diffs earn their keep.

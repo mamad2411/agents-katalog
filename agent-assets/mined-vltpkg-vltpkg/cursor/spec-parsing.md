@@ -1,0 +1,125 @@
+---
+description: Package specifier parsing types and protocols
+globs: src/spec/src/*,src/spec/test/*
+alwaysApply: false
+---
+# Package Specifier Parsing (`@vltpkg/spec`)
+
+Parses dependency specifiers into typed `Spec` objects. Used throughout the graph system.
+
+## Spec Types (`SpecType`)
+
+- `registry` — `express@^1.0.0`, `npm:react@18`, `jsr:@am/foo@1`, `registry:URL#name@ver`
+- `git` — `github:user/repo#semver:^1`, `git+ssh://...#branch`
+- `file` — `file:./local-pkg`, `./my-lib`
+- `remote` — `https://example.com/pkg.tgz`
+- `workspace` — `workspace:*`, `workspace:../path`
+
+## Key Properties
+
+- `name` — package name
+- `bareSpec` — raw specifier string (e.g., `^1.0.0`)
+- `type` — one of the SpecTypes above
+- `final` — resolved Spec after alias/subspec unwrapping
+- `registry` — registry URL (for registry type)
+- `namedRegistry` — alias name (e.g., `npm`, `jsr`, `gh`)
+- `scopeRegistry` — URL from scoped-registries config
+- `subspec` — inner Spec for aliases (`alias@npm:pkg@ver` → subspec is the npm spec)
+- `overridden` — true if spec was swapped by a graph modifier
+- `range` — parsed semver Range (if applicable)
+- `gitRemote`, `gitSelector`, `namedGitHost`, `namedGitHostPath` — git fields
+- `remoteURL` — for remote type
+- `catalog`, `catalogName` — catalog protocol fields
+
+## Usage
+
+```typescript
+import { Spec } from '@vltpkg/spec'
+const s = Spec.parse('react', '^18.0.0', specOptions)
+// s.type === 'registry', s.name === 'react', s.bareSpec === '^18.0.0'
+```
+
+## SpecOptions
+
+```typescript
+type SpecOptions = {
+  registry?: string              // NO default — must be configured
+  registries?: Record<string, string>  // named registries (gh; npm is
+                                        // NOT built-in, must be configured)
+  'default-registry-alias'?: string     // default: 'npm' — the alias key
+                                        // in `registries` that bare specs
+                                        // resolve through
+  'jsr-registries'?: Record<string, string>
+  'scoped-registries'?: Record<string, string>
+  'git-hosts'?: Record<string, string>  // template: $1/$2/$committish
+  'git-host-archives'?: Record<string, string>
+  catalog?: Record<string, string>
+  catalogs?: Record<string, Record<string, string>>
+}
+```
+
+## Bare-spec resolution & the `npm` alias
+
+There is **no built-in default registry URL**. A bare spec (`foo`,
+`foo@latest`) or a transitive dep with no explicit registry protocol
+resolves its registry via, in precedence order:
+
+1. `scoped-registries[scope]` (if the name is scoped)
+2. `registry` (the `--registry` scalar)
+3. `registries[<default-registry-alias>]` (default alias is `npm`)
+
+If none is configured, `spec.registry === undefined` and anything that
+needs to build a registry URL fails with a missing-registry error.
+
+The `npm` alias has **no baked-in URL** — real traffic goes through a
+per-account vlt mirror whose URL isn't known ahead of time. Configure it
+via `vlt setup` (writes `registries.npm` + `registries.main`),
+`vlt login --registry=<url>`, `vlt.json`, or `--registry`. In tests,
+pass `registries: { npm: 'https://registry.npmjs.org/' }` so `npm:`
+aliases and bare specs resolve.
+
+`getOptions` merges user config **over** built-in defaults, so every
+built-in alias (`gh`, `jsr`) is user/service-overridable within its own
+map. cli-sdk rejects cross-map or built-in-protocol names at config load
+(`builtinProtocols` is exported for that).
+
+## Undefined protocols
+
+A `<scheme>:` prefix that is neither built-in nor configured throws
+`Protocol custom: is not defined`.
+
+**Built-in:** `catalog:`, `workspace:`, `registry:`, `file:`, `http:`,
+`https:`, `git:`, `git+ssh:`, `git+http:`, `git+https:`, `git+file:`.
+The `default-registry-alias` (default `npm`) is always treated as known.
+
+**Configured:** keys of `registries`, `git-hosts`, and `jsr-registries`
+(plus built-in defaults `gh`, `github`, `gitlab`, `bitbucket`, `gist`,
+`jsr`).
+
+Windows drive letters (`C:/x`) and hostnames (`notgithub.com:user/repo`)
+are not schemes and keep their existing parse behavior. Dist-tags like
+`latest` / `next-9` are unchanged.
+
+pnpm/yarn protocols (`link:`, `portal:`, `patch:`) and unconfigured
+aliases (`custom:`, `vlt:`) throw.
+
+## Defaults
+
+```typescript
+defaultRegistryName = 'npm'   // DepID canonicalization constant only;
+                              // NOT a URL and NOT pre-registered
+defaultRegistries = { gh: 'https://npm.pkg.github.com/' }  // no `npm`
+defaultJsrRegistries = { jsr: 'https://npm.jsr.io/' }
+defaultScopeRegistries = { '@jsr': 'https://npm.jsr.io/' }
+```
+
+`defaultRegistryName` stays `'npm'` because a configured mirror URL maps
+back to the `npm` alias name via `convertToKnownShortRegistryName`, so
+the mirror URL never leaks into DepIDs (empty-registry DepIDs stay
+canonical).
+
+## Architecture
+
+- `src/spec/src/browser.ts` — core `Spec` class (browser-compatible, no node APIs)
+- `src/spec/src/index.ts` — Node.js wrapper adding `inspect()` and path resolution
+- `src/spec/src/types.ts` — type definitions

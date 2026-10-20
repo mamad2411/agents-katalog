@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/krusemediallc/video-editor-agent/reel-style-clone/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: reel-style-clone — forensic style extraction from a reference reel

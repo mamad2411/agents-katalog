@@ -2,7 +2,6 @@
 ---
 name: cloudwatch-observability
 description: Amazon CloudWatch patterns for AI agent observability. Use when monitoring Bedrock agent invocations, tracking token usage, setting up alarms for agent failures, or analyzing agent performance via CloudWatch Logs Insights.
-tags: [aws, cloudwatch, observability, monitoring]
 ---
 
 # Amazon CloudWatch for AI Agent Observability

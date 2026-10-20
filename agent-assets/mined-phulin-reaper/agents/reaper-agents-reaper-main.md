@@ -1,0 +1,4 @@
+- This codebase uses progressive disclosure to manage agent context.
+  - For each package in src/ and each script in `scripts/`, maintain a `README.md` outlining each file's functionality and that of any subpackages.
+  - Maintain an overall outline of packages in `CODEBASE.md`.
+- Python packages are installed in `.venv`. Use `uv run` to run python code.

@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/franklee16/academic-research-skills (path: Awesome-Journal-Skills-main/Computer-Science-Conference-Skills/skills/annual-meeting-of-the-association-for-computational-linguistics/SKILL.md, branch: master)
-- mined: 2026-10-14
-- desc: Use when targeting Annual Meeting of the Association for Computational Linguistics (ACL) or deciding whether a computer-science manuscript fits this venue. Encodes conference fit, framing, evidence ba

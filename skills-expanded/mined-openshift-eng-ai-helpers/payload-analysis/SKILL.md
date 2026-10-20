@@ -1,0 +1,616 @@
+---
+name: payload-analysis
+description: Analyze a payload snapshot to identify root causes of blocking job failures, score candidate PRs, and produce an HTML report with revert recommendations
+argument-hint: "<payload-tag> [--snapshot-dir DIR] [--as-of TIMESTAMP]"
+---
+
+# Payload Analysis
+
+This skill analyzes a payload using a local snapshot (produced by `payload-snapshot`) to identify root causes of blocking job failures and produce a comprehensive HTML report. The snapshot pre-gathers all release controller, GitHub, and CI data so this skill can focus purely on analysis — no live API orchestration required.
+
+It supports **Rejected** payloads (full analysis of all failed blocking jobs), **Ready** payloads (early analysis of blocking jobs that have already failed), and **Accepted** payloads (which may have been force-accepted despite blocking failures).
+
+## When to Use This Skill
+
+Use this skill when you need to:
+
+- Understand why a payload was rejected
+- Investigate failures in a force-accepted payload
+- Assess whether an in-progress ("Ready") payload is likely to be rejected
+- Determine whether failures are new or persistent
+- Identify which PRs likely caused new failures
+- Get a comprehensive overview of payload health with actionable root cause analysis
+- Re-analyze a historical payload against its original snapshot data
+
+## Examples
+
+1. **Analyze an amd64 nightly payload** (auto-creates snapshot if needed):
+   ```
+   /ci:payload-analysis 4.22.0-0.nightly-2026-02-25-152806
+   ```
+
+2. **Analyze using an existing snapshot directory**:
+   ```
+   /ci:payload-analysis 4.22.0-0.nightly-2026-02-25-152806 --snapshot-dir payload/4.22/nightly
+   ```
+
+3. **Analyze an arm64 payload** (architecture inferred from tag):
+   ```
+   /ci:payload-analysis 4.22.0-0.nightly-arm64-2026-02-25-152806
+   ```
+
+## Prerequisites
+
+1. **Python 3** (3.10 or later) — for running the snapshot script if needed
+2. **gcloud CLI** — for subagent artifact download (must-gather, pod logs)
+3. **GitHub CLI (`gh`)** — for step-registry change detection (Step 3.6) and checking existing revert PRs (Step 6.3)
+
+## Bundled Resources
+
+Load these only at the step that needs them — not up front:
+
+- **`references/investigation-subagent.md`** — the verbatim per-job subagent prompt and `ANALYSIS_RESULT` format (Step 4)
+- **`references/report-guide.md`** — per-section content rules for the HTML report (Step 7)
+- **`references/completeness-review.md`** — the completeness-reviewer prompt and response handling (Step 9)
+- **`assets/report-template.html`** — the fill-in-the-blanks HTML report template (Step 7)
+- **`references/ship-status-component-map.md`** — SHIP Status slug mapping (Step 6.5)
+
+The `payload-results-yaml` and `payload-autodl-json` skills define the structured output schemas; load each via the Skill tool at its point of use (Steps 6.7 and 8).
+
+## Implementation Steps
+
+### Step 1: Parse Arguments
+
+**Anchor the output directory before anything else.** Capture the current working directory up front so all output files land in one stable, predictable location even if a later step changes directories:
+
+```bash
+OUTPUT_DIR="$(pwd)"
+```
+
+All three output files — the payload results YAML (Step 6.7), the HTML report (Step 7), and the autodl JSON (Step 8) — MUST be written under `$OUTPUT_DIR`, never into a snapshot subdirectory or a path a later `cd` may have changed. The Step 10 self-check verifies them at `$OUTPUT_DIR`.
+
+The first argument is a **full payload tag** (e.g., `4.22.0-0.nightly-2026-02-25-152806`). Parse from it:
+- `tag`: The specific payload tag to analyze
+- `version`: Extract from the tag (e.g., `4.22` from `4.22.0-0.nightly-...`)
+- `stream`: Extract from the tag (e.g., `nightly` from `4.22.0-0.nightly-...`)
+- `architecture`: Inferred from the tag. The tag format is `<version>-0.<stream>[-<arch>]-<timestamp>`. If no architecture is present between the stream and timestamp, it is `amd64`. Otherwise, the architecture is the segment between the stream and timestamp. Examples:
+  - `4.22.0-0.nightly-2026-02-25-152806` → `amd64`
+  - `4.22.0-0.nightly-arm64-2026-02-25-152806` → `arm64`
+  - `4.22.0-0.nightly-ppc64le-2026-02-25-152806` → `ppc64le`
+
+**Optional flags:**
+- `--snapshot-dir DIR`: Use an existing snapshot directory (Step 2).
+- `--as-of TIMESTAMP`: An RFC 3339 UTC cutoff (e.g. `2026-07-23T07:44:48Z`). When present, this is a **point-in-time analysis**: reason only from evidence that existed at or before this instant, as if you were analyzing the payload the moment it completed.
+
+**Point-in-time boundary.** When `--as-of` is set, treat it as a hard cutoff for every piece of evidence, direct or delegated:
+- Do **not** use later reverts, follow-up comments, subsequent payload outcomes, or the present-day absence of a revert as causal evidence. A PR that was later reverted, or never reverted, tells you nothing about causality as of the cutoff.
+- Timestamp-bound every external lookup. When checking GitHub PRs, step-registry history (Step 3.6), or existing revert PRs (Step 6.3), ignore any commit, PR, comment, or review created after the cutoff.
+- Pass the cutoff to every subagent you dispatch and instruct it to discard post-cutoff artifacts and discussion.
+- If a lookup returns only post-cutoff results, treat that evidence as unavailable rather than as a finding.
+
+When `--as-of` is omitted, analyze against present-day evidence as usual.
+
+### Step 2: Locate or Create Snapshot
+
+The analysis requires a local snapshot produced by the `payload-snapshot` skill. Search for an existing snapshot in this order:
+
+1. **Explicit `--snapshot-dir DIR`**: If provided, look for `DIR/summary.json`. If not found, exit with an error.
+2. **Current directory**: Check if `./summary.json` exists and its `payload_tag` field matches the requested tag.
+3. **Standard relative path**: Check if `payload/<version>/<stream>/summary.json` exists and matches the tag.
+
+If no matching snapshot is found, create one:
+
+```bash
+SNAPSHOT_SCRIPT="${CLAUDE_PLUGIN_ROOT}/skills/payload-snapshot/scripts/payload_snapshot.py"
+if [ ! -f "$SNAPSHOT_SCRIPT" ]; then
+  SNAPSHOT_SCRIPT=$(find ~/.claude/plugins -type f -path "*/ci/skills/payload-snapshot/scripts/payload_snapshot.py" 2>/dev/null | sort | head -1)
+fi
+if [ -z "$SNAPSHOT_SCRIPT" ] || [ ! -f "$SNAPSHOT_SCRIPT" ]; then echo "ERROR: payload_snapshot.py not found" >&2; exit 2; fi
+python3 "$SNAPSHOT_SCRIPT" <payload_tag>
+```
+
+After locating `summary.json`, set `SNAPSHOT_DIR` to the directory containing it. All relative paths in `summary.json` (e.g., `job_json`, `junit_results`, `build_log`, PR paths) resolve from this directory.
+
+The snapshot script automatically prefers release-controller data and falls
+back to Sippy for payloads that have been garbage collected. Do not truncate
+the analysis chain merely because an originating tag is absent from the live
+release controller; use the Sippy-backed `payloads[]` entry and its PR data.
+Check each entry's `source` and `changelog_source` fields when provenance or
+field completeness matters.
+
+### Step 3: Extract Failure Data from Snapshot
+
+Read `summary.json` to extract all data needed for analysis. The snapshot has already done the work of fetching payloads, building the chain, tracking streaks, and collecting PR data.
+
+#### 3.1: Payload Metadata
+
+From `summary.json` top-level fields:
+- `payload_tag`, `phase`, `release_url`, `source`, `architecture`, `stream`, `version`
+- `chain_length`, `baseline_tag`, `hours_since_baseline`
+
+**Record `phase` verbatim** from the `summary.json` metadata (`Accepted`, `Rejected`, or `Ready`). Never infer the phase from the job results or from whether failures exist — a payload can be `Accepted` *with* blocking failures (force-accepted) or `Ready` while jobs are still running. The stored phase drives the force-accept decision (Step 6.4) and the executive summary (Step 7.1), so an inferred phase silently corrupts both.
+
+#### 3.1b: If the Snapshot Is Incomplete, Collect the Data Yourself
+
+Check `summary.json` → `data_complete`. An absent `test_failure_count` means
+*unknown*, not zero — never conclude a job had no test failures, and therefore
+failed for some other reason, from missing data.
+
+When data is missing, collect it yourself from the job's `gcs_url` artifacts
+rather than analyzing around the gap. Do the same for any payload in the chain
+whose per-test data is missing. Report a gap as a limitation only when the
+artifacts themselves are unreachable.
+
+An aggregated job with no per-test results at all is **unclassified**, not part
+of a regression streak — aggregation also fails when too few child runs
+completed or infrastructure killed them. Check the child runs: one that died
+before the test phase cannot have failed a test.
+
+#### 3.2: Failed Blocking Jobs
+
+From `summary.json` → `blocking_jobs.failed_jobs[]`, each entry contains:
+- `name`, `state`, `prow_url`, `gcs_url`, `is_aggregated`, `retries`
+- `rhcos_version`: the RHCOS variant for this job (`rhcos9`, `rhcos10`, `rhcos9_10`, `rhcos9-default`, or `rhcos10-default`)
+- `streak`: `streak_length`, `originating_payload`, `is_new_failure`, `failure_pattern`
+- `build_log_errors`, `test_failure_count`
+- Paths: `job_json`, `junit_results`, `build_log`
+
+For each failed job, read its `job.json` (at `SNAPSHOT_DIR/<job_json>` path) to get `previousAttemptURLs`.
+
+#### 3.3: Candidate PRs
+
+For each failed job's `streak.originating_payload`, find the matching entry in `summary.json` → `payloads[]`. Its `prs[]` array contains the PRs introduced in that payload:
+- `url`, `component`, `number`, `description`
+- Paths to local artifacts: `diff`, `comments`, `jobs`
+
+Treat this as a **preliminary** list only. The job-level streak merges unrelated failure modes, so its originating payload is frequently earlier than the regression being investigated — and candidates gathered from it can omit the causal PR entirely. Before scoring, re-derive the originating payload **per failure mode** from `test_failures.blocking[].first_failed_in` (Step 5) and collect the candidates from *that* payload.
+
+For a Sippy-backed originating payload, the PR list remains usable for
+candidate scoring and the normal GitHub diff/comment/job artifacts are still
+collected. Sippy does not provide release-controller-only
+`nodeImageStreams`, async jobs, or `previousAttemptURLs`; treat those fields as
+unavailable rather than empty evidence.
+
+#### 3.4: Test Failure Details
+
+Only `test_failures.blocking[]` contains failures that can reject the payload. **`test_failures.informing[]` and `test_failures.flakes[]` cannot fail a job or reject a payload** — never score them as candidate causes, never use them to derive a failure mode's originating payload, and never propose a revert for them.
+
+**"Informing job" ≠ "informing test."** These are two completely different
+concepts that share a name:
+
+- **Informing job** (`informing_jobs.failed_jobs[]`): a CI *job* that runs
+  for visibility but does not gate the payload. Its pass/fail status is
+  job-level. An informing job can still contain blocking tests.
+- **Informing test** (`test_failures.informing[]`): an individual *test case*
+  with `lifecycle="informing"`. It can appear inside any job — blocking or
+  informing. Its results never count toward `test_failure_count`.
+
+Never combine informing-job counts with informing-test lists. When
+reporting informing/flake tests, list individual test names from
+`test_failures.informing[]` / `test_failures.flakes[]` — do NOT report
+informing *job* failure counts in the same section.
+
+Report informing and flake tests in their own section of the report (the template's informing-tests block carries the standard caveat). Keep them visible: informing tests are new tests being stabilized, and a badly-behaved test can occasionally damage the cluster it runs on. Investigate one only when there is evidence of that, and say plainly that it is not a rejection cause.
+
+From `summary.json` → `test_failures.blocking[]`:
+- `test_name`, `jobs`, `first_failed_in`, `payloads_failing`
+- `failure_message`, `failure_text` (full, not truncated)
+
+#### 3.5: Build Log Errors
+
+For deeper context, read `build_log.json` (at the `build_log` path) for any failed job. It contains `error_warning_lines[]` with `line_number` and `text`, plus `tail_lines[]` (last 20% of the log).
+
+#### 3.6: Check for CI Infrastructure Changes
+
+For each failed job, check whether changes to the CI step-registry in the `openshift/release` repo correlate with the failure. These changes (modified step scripts, updated URLs, changed environment variables) will never appear in the snapshot's component PR list because they are not payload component changes — but they can break jobs just as effectively.
+
+Extract the date from the `originating_payload` tag (format: `<version>-0.<stream>-YYYY-MM-DD-HHMMSS` or `<version>-0.<stream>-<arch>-YYYY-MM-DD-HHMMSS` for non-amd64). The date is always the last `YYYY-MM-DD` segment before the `HHMMSS` suffix (e.g., `2026-06-16` from `5.0.0-0.nightly-2026-06-16-185706` or `5.0.0-0.nightly-arm64-2026-06-16-185706`). Compute a time window: `since` = originating date minus 1 day at `T00:00:00Z`; `until_timestamp` = originating date plus 1 day at `T23:59:59Z`. **Under `--as-of` (Step 1), set `until_timestamp` to the earlier of that value and the cutoff** so the query never returns commits newer than the payload completion. `until_timestamp` is always a complete RFC 3339 value passed to the query as-is — never append a time suffix to it.
+
+**First, get all step-registry commits in the time window:**
+
+```bash
+gh api "repos/openshift/release/commits?path=ci-operator/step-registry&since=<since_date>T00:00:00Z&until=<until_timestamp>&per_page=100" \
+    --jq '.[] | {sha: .sha[0:11], date: .commit.committer.date, message: (.commit.message | split("\n")[0])}'
+```
+
+If exactly 100 results are returned, fetch subsequent pages by appending `&page=2`, `&page=3`, etc. until a page returns fewer than 100 results.
+
+**Triage the results using failure context from Steps 3.4 and 3.5.** Extract the key signals from the failure: error messages, failing URLs/domains, exit codes, failing script names, and affected subsystems. Use commit messages as an initial filter, but prioritize inspection of diffs when filenames or modified directories appear relevant even if the commit message is generic — many `openshift/release` commits have uninformative messages like "Fix typo" or "Update image" while the actual diff contains the interesting change. Relevant commits typically touch the same subsystem, tool, or infrastructure that appears in the error (e.g., a commit modifying mirror URLs when the failure shows curl errors to a new domain; a commit changing proxy configuration when the failure is a connection refused through a proxy). Ignore commits that clearly target unrelated teams or subsystems (hypervisor updates, unrelated repo onboarding, OWNERS file changes).
+
+For each commit that looks potentially related, retrieve the changed files:
+
+```bash
+gh api "repos/openshift/release/commits/<sha>" --jq '.files[] | {filename, patch}'
+```
+
+First check the filenames — if none correspond to the failing step or any of its dependencies, eliminate that commit immediately without reading the patches. For commits that do touch relevant files, inspect the patches for URL changes, configuration modifications, or script logic changes that could cause the observed failure.
+
+If the commit message includes a PR reference (typically `(#NNNNN)`), retrieve the PR details:
+
+```bash
+gh pr view <pr_number> --repo openshift/release --json number,title,url,mergedAt,body
+```
+
+**After Step 4 subagent results are available**, do a targeted search using the specific step that failed. From the subagent's build log analysis, identify the step-registry path of the step that actually errored (e.g., `gather/must-gather`, `baremetalds/devscripts/proxy`, `ipi/install/install`). Search for recent changes to that exact step and to related steps in the same workflow chain:
+
+```bash
+gh api "repos/openshift/release/commits?path=ci-operator/step-registry/<step_subpath>&since=<since_date>T00:00:00Z&until=<until_timestamp>&per_page=10" \
+    --jq '.[] | {sha: .sha[0:11], date: .commit.committer.date, message: (.commit.message | split("\n")[0])}'
+```
+
+If this finds nothing, also check steps that run earlier in the workflow and set up infrastructure the failing step depends on (e.g., if `openshift-e2e-test` fails due to connectivity, check `baremetalds/devscripts/proxy` or `ipi/conf` steps that configure networking).
+
+**Scoring CI infrastructure candidates.** If a commit/PR modified a step that the failing job executes (or a shared dependency of that step), flag it as a **CI infrastructure candidate** — include it in Step 6.1 scoring alongside component PR candidates. When the failure's error messages reference URLs, domains, binaries, or configurations that were changed by the PR, the error message match signal (+40) should fire strongly. The key test: does the PR's diff introduce, modify, or remove something that appears in the error output?
+
+**A causal CI-infrastructure change MUST appear as a scored entry in the `candidates[]` output**, exactly like a component PR — even when the overall `failure_type` is `infra`. Classifying a failure as infrastructure does not exempt its cause from structured output. Unlike a self-resolving lease/quota blip, a CI-config change is a persistent issue (Step 6.4) that needs a human fix or a revert, so it must be visible to the downstream revert/experiment commands, not buried in prose.
+
+This step catches failures caused by CI tooling changes (mirror URL migrations, proxy configuration updates, script refactors) that are invisible to the snapshot's PR tracking.
+
+#### 3.7: RHCOS RPM Changes
+
+For each failed job's `streak.originating_payload`, find the matching entry in `summary.json` → `payloads[]` and check for `rhcos_changes[]`. This array (when present) contains per-RHCOS-variant RPM diffs showing which packages changed in the underlying RHCOS image for that payload. As with candidate PRs (3.3), treat this as a **preliminary** lookup only — re-derive the originating payload **per failure mode** from `test_failures.blocking[].first_failed_in` (Step 5) before scoring, since the job-level streak can predate the actual regression:
+
+- `name`: Human-readable version (e.g., "Red Hat Enterprise Linux CoreOS 10.2")
+- `tag`: Image stream tag — maps to job RHCOS variants:
+  - `rhel-coreos` → applies to jobs with `rhcos_version` of `rhcos9` or `rhcos9-default`
+  - `rhel-coreos-10` → applies to jobs with `rhcos_version` of `rhcos10` or `rhcos10-default`
+  - Both apply to `rhcos9_10` (heterogeneous) jobs
+- `changed`: `{package_name: {"old": old_version, "new": new_version}}`
+- `added`: newly added packages (when present)
+- `removed`: removed packages (when present)
+
+For each failed job, identify the matching RHCOS variant's RPM changes (if any), from the failure mode's `first_failed_in` payload, based on the job's `rhcos_version` field and the RHCOS tag mapping above. These changes are used as additional context in Step 4 and as scored candidates in Step 6.
+
+#### 3.7b: RHCOS RPM Changelogs
+
+`rhcos_changes[]` names the packages that changed and their version bumps, but not *what* changed inside those packages. The snapshot's **RPM changelog diffs** fill that gap — they contain the actual changelog entries each version bump added, and serve as **the RHCOS equivalent of PR diffs**: just as you read a PR's `code.diff` to understand what a component change did, you read an RPM's changelog to understand what a package bump introduced. In Step 6.1, RHCOS RPM changes with changelogs are scored as candidates alongside PRs.
+
+The data is available in two forms:
+
+1. **Inline in `summary.json`** — `rpm_changelogs[]` at the top level. The baseline entry (the one with `is_baseline: true`) carries its content inline under `diff`: `diff.changed[]` with `package`, `old`, `new`, and `changelog` (the entries the new version added); `diff.added[]` / `diff.removed[]` with `package` and `version`. This covers the full target-vs-baseline diff without a file read.
+
+2. **Per-hop report files** — `rpm_changelogs[]` entries also have a `changelogs` path pointing at `<target-tag>/rpm-changelogs/<variant>/<older-tag>.md`. Read these to find which intermediate payload introduced a specific package bump (useful when the originating payload for a failure is not the baseline). `payloads[]` entries for the target payload and for payloads whose RPMDBs could not be extracted have no `rpm_changelogs[]` at all — the field is absent, not empty. An intermediate hop where the RHCOS image did not change shows `changed: 0, added: 0, removed: 0`; use this to pinpoint which hop introduced a given RHCOS bump.
+
+**Subpackage deduplication.** Multiple binary RPMs are often built from the same source RPM (SRPM) and share identical changelogs. When `diff.changed[]` contains several packages with the same version bump and the same changelog text, they come from one SRPM — read the changelog once and treat them as a single logical change, not separate candidates.
+
+**Variant-specific changelogs differ.** The RHCOS 9 and RHCOS 10 variants carry different packages with different changelogs, even in the same payload chain. When a failure is variant-isolated, compare the changelog entries between the two variants: a change that appears in only one variant's packages is a stronger signal for explaining a variant-isolated failure.
+
+### Step 4: Investigate Each Failed Job in Parallel
+
+For each failed blocking job in the **target payload**, launch a **parallel subagent** to investigate the failure. Pass the subagent the Prow URL and all previous attempt URLs from Step 3.2.
+
+Almost all blocking jobs install a cluster and then run tests, so the job name alone does not tell you the failure type. Each subagent therefore runs the `ci:prow-job-analysis` skill, which classifies the failure and routes to the correct specialized reference internally.
+
+Read `references/investigation-subagent.md` (in this skill's directory) for the **required subagent prompt**, its placeholder definitions, and the mandatory `ANALYSIS_RESULT` structured return format. Use that prompt verbatim (substituting the placeholder values) — do NOT paraphrase, shorten, or write a different prompt; the specific instructions in it are critical for analysis quality.
+
+**Important**: Launch ALL subagents in parallel for maximum speed. Do NOT set the `model` parameter — let subagents inherit the parent model, as these analysis tasks require a capable model.
+
+#### Cross-Platform and Cross-Job Failure Pattern Recognition
+
+After collecting subagent results, look for patterns across multiple jobs:
+
+- **Same failure across a job family** (e.g., all `techpreview` jobs, all `fips` jobs, all `upgrade` jobs): This often indicates a failure specific to that feature set or configuration.
+- **Same failure across multiple platforms**: This often points to a product bug in shared code.
+- **RHCOS variant isolation**: Check whether any failure's root cause or error pattern appears **only** in jobs of one RHCOS variant and **not** in jobs of the other variant. A failure is "variant-isolated" when:
+  - It appears in one or more RHCOS 10 jobs but in zero RHCOS 9 jobs → `failure_scope: "rhcos10-only"`
+  - It appears in one or more RHCOS 9 jobs but in zero RHCOS 10 jobs → `failure_scope: "rhcos9-only"`
+  - Jobs with `rhcos9-default` count as RHCOS 9 for this check
+  - Jobs with `rhcos10-default` count as RHCOS 10 for this check
+  - Jobs with `rhcos9_10` (heterogeneous) count toward both variants for this check
+  - Variant isolation is strong diagnostic context — it narrows the root cause to OS-specific changes (kernel, systemd, SELinux, package differences between RHEL 9 and RHEL 10).
+
+### Step 4b: Consult Previous Claude Analyses
+
+Read the target payload's `payload.json` (at `SNAPSHOT_DIR/<payloads[0].payload>`) and check if a `claude-payload-agent` async job exists with state `Succeeded`. If so, fetch the HTML report from its Prow artifacts:
+
+```
+{prow_artifacts_url}/artifacts/claude-payload-agent/openshift-release-analysis-claude-payload-agent/artifacts/payload-analysis-{tag}-summary.html
+```
+
+Convert the Prow URL to a gcsweb URL and use WebFetch to read it.
+
+**Important**: Previous analyses are a secondary input. Always complete your own analysis first, then compare. Use previous findings to bolster confidence, challenge assumptions, or fill gaps — never adopt conclusions without verifying against the snapshot data.
+
+### Step 5: Validate Failure Streaks
+
+After collecting all subagent results, verify that consecutive failures across payloads share the same root cause. A consecutive failure streak does NOT automatically mean the same root cause.
+
+Compare the subagent's root cause analysis for the target payload against previous payload analyses (from Step 4b) or the failure signatures in the snapshot's streak data.
+
+If a job fails in two consecutive payloads but for **different reasons**, treat each as a separate streak=1 failure with its own originating payload and candidate PRs. Re-split the streak and re-assign originating payloads before proceeding to scoring.
+
+**The job-level streak is not a failure mode's originating payload.** `streak.originating_payload` tracks when the *job* started failing, which merges unrelated modes — an infrastructure blip, a flake, and a real regression all read as one streak. Scoring candidates from a payload that predates the actual regression guarantees misattribution: the causal PR is not even in the candidate set.
+
+For each failure mode, take the originating payload from the matching `test_failures.blocking[]` entry's **`first_failed_in`**. When that is later than the job-level streak's, the job's earlier failures are a different mode — score from `first_failed_in`. Confirm the test passed in the preceding payload; where that payload has no per-test data, check its child runs rather than assuming it was failing.
+
+Establish this before enumerating candidate PRs (Step 6.1). When the two onsets differ, record both and state which drove scoring.
+
+### Step 5b: Adjudicate Conflicting Root Causes
+
+When two or more investigations reach **contradictory root causes for the same failure signature** (same test, same operation, or same error class — across jobs, across retries, or between a subagent and a previous analysis), the analysis is **UNRESOLVED**. It is *not* a tie to be broken by whichever explanation feels more plausible. Resolve it only with discriminating evidence, applying these rules:
+
+- **Discriminating evidence must come from the exact failing operation or phase** — the specific subcommand, step, or reconcile loop that actually errored, not from adjacent activity.
+- **"Cleared" requires positive evidence from the failing code path.** A candidate is exonerated only by positive evidence that its code path executed and completed without error *during the failing operation itself*. A candidate succeeding in a *different* subcommand, phase, or job does **not** clear it.
+- **Absence of a log line is not evidence when the log is truncated.** If the relevant log was truncated, rotated, or never captured, treat the missing line as *unknown*, never as proof that a code path did not execute.
+- **A causal chain must be shown to execute, not merely shown to be possible.** Demonstrate that the proposed mechanism actually ran during the failing operation (via timestamps, ordering, or an emitted log/metric). "This change *could* cause this" is a hypothesis, not a root cause.
+- **When you override a subagent's conclusion, update the stored per-job root cause** so the streak data, YAML, JSON, and HTML all reflect the adjudicated cause. Divergent per-job root causes across outputs are a defect (checked in Step 10).
+
+**Tenacity booster:** Finding a plausible mechanism is the *midpoint* of the investigation, not the end. When rival explanations exist, your job is to *discriminate between them* with evidence from the failing operation — not to stop at the first mechanism that could work. If the evidence cannot discriminate, record the failure mode as UNRESOLVED with its competing hypotheses rather than committing to a guess (a wrong-PR attribution is far more damaging than an honest "unresolved").
+
+### Step 6: Collect Investigation Results and Identify Revert Candidates
+
+Wait for all subagents to complete and collect their analysis results. For each failed job, you now have:
+
+- **Job name** and **Prow URL** (from snapshot)
+- **Failure analysis** (from subagent)
+- **Streak data** (from snapshot: `streak_length`, `originating_payload`, `failure_pattern`)
+- **Candidate PRs** (from snapshot: originating payload's `prs[]`)
+
+#### 6.1: Correlate Failures with Candidates
+
+For each failed job, cross-reference the failure analysis from the subagent with both the **candidate PRs** and the **RHCOS RPM changes** from the originating payload:
+
+- **PRs**: from `summary.json` → `payloads[].prs[]`. Read the PR's `code.diff` file to check for code-level correlation.
+- **RHCOS RPM changes**: from `summary.json` → `payloads[].rhcos_changes[]` for the originating payload, filtered to the RHCOS variant matching the job's `rhcos_version`. Read the RPM changelog (Step 3.7b) to check for content-level correlation — the changelog is the RPM equivalent of a PR's `code.diff`.
+
+If a subagent traced the root cause to a PR outside the payload (e.g., an `openshift/release` PR that modified a CI step registry script), include that PR as a candidate.
+
+**Before scoring, mechanically enumerate every distinct failure mode for each job — do not score only the dominant one.** A single job can fail for more than one reason (e.g., an install timeout *and* an unrelated test regression). For each failed job, first write out each distinct failure mode the subagent identified as an explicit list, then run every candidate through the rubric **once per failure mode** — a candidate that explains failure mode A does not automatically explain failure mode B. Do not collapse a job down to its loudest symptom and score only that. Any failure mode you dismiss as a flake (or as pre-existing) MUST cite the specific evidence for that dismissal — a passing retry with no code change, the same test failing on the *accepted* baseline, or a known-flaky test ID — never an unsupported "intermittent" label.
+
+Score each (failed job, failure mode, candidate) tuple using the following weighted rubric. The rubric applies to both PR candidates and RHCOS RPM candidates — for RPM candidates, read the RPM changelog where the rubric says "PR's diff":
+
+| Signal | Weight | Criteria |
+|--------|--------|----------|
+| New failure mode | +30 | This failure mode was not present in previous payloads **and** is plausibly attributable to something that changed (a PR touches the implicated code path, or an RPM changelog describes a change in the implicated subsystem). A brand-new symptom with no changed code or package behind it does not earn this signal (see infrastructure exclusion below). |
+| Component exclusivity | +10 to +30 | The failure involves a component or subsystem modified by this candidate. **Sole modifier = +30**; 2-3 candidates modify the component = +20; 4+ = +10. For RPM candidates, "component" is the OS-level subsystem the package provides (e.g., a kernel bump is the sole modifier of networking if no PR also touches networking). Count PR and RPM candidates together when determining exclusivity tiers. |
+| Error message match | +10 to +40 | Tiered by how directly the failure output links to the candidate's diff (PR diff or RPM changelog). **Direct match = +40**: an error string, symbol, function name, or identifier from the failure appears verbatim in the diff/changelog. **Same code path / subsystem behavior = +20-30**: the candidate modifies the function, execution flow, or subsystem behavior that produced the error, but the exact message is not in the diff/changelog. **Same subsystem only = +10**: the candidate touches the same subsystem/component but not the specific failing code path. |
+| Multi-job correlation | +10 | The same candidate is implicated in this failure mode across multiple independent jobs |
+| Presubmit coverage gap | +10 | The failing job tests a scenario not covered by the candidate's presubmit tests. (Not applicable to RPM candidates — RPM changes do not run presubmit CI.) |
+
+Maximum possible score is 120, capped at 100. Record the numeric score alongside qualitative rationale.
+
+**Every candidate's rationale MUST itemize the score** — one line per signal that fired — so the number is auditable rather than asserted:
+
+```
+signal_name: +points — one line of concrete evidence
+```
+
+For example:
+
+```
+error_message_match: +40 — panic "nil pointer in reconcileNode" from build-log appears verbatim in the PR diff (controller.go:214)
+component_exclusivity: +30 — sole PR modifying machine-config-operator in the originating payload
+new_failure_mode: +30 — job passed the 6 prior payloads; first failed in the originating payload
+total: 100
+```
+
+Record this breakdown in the candidate's `rationale` field in the YAML/JSON output. A bare score with no itemized breakdown is not acceptable.
+
+The recorded confidence score MUST equal `min(100, sum of itemized signals)`, each signal at exactly its defined weight, one line of evidence per claimed signal. No unclaimed points, no unlisted signals.
+
+**Apply the rubric mechanically, then verify the top-tier claims.** Sum the weights for each signal that fires on concrete evidence. Do NOT adjust the score downward based on speculative counter-arguments like "if this were the sole cause, other jobs would also fail" or "this could be a coincidence" — if the error messages reference the candidate's changes, that's a match, and the fact that some other jobs didn't fail doesn't negate it. **But when the raw sum exceeds the cap** (you claimed a maximum tier on more than one signal at once), re-verify each maximum-tier claim before recording: is the error-message match a true verbatim string/symbol match (+40), or really only same-subsystem (+10)? Is this genuinely the *sole* modifier of the component (+30)? Downgrade any tier that does not survive this check. This self-skepticism pass removes tier inflation without weakening genuinely strong matches. Trust the rubric — it exists to prevent both over- and under-attribution.
+
+**Infrastructure exclusion — do not let unrelated candidates accumulate points.** The rubric measures *product-code causation*. When the root cause is affirmatively infrastructure (Step 6.4 definition) or an affirmatively-identified CI-config change (Step 3.6), payload component PRs and RHCOS RPM changes with **no error-message and no code-path correlation** to the failure must score **at or near zero**. Do not award "new failure mode" or bare "component exclusivity" points to a candidate that merely happens to be present in the payload — "new failure mode" fires only when the failure is plausibly attributable to something that changed. A new symptom whose actual cause is a lease timeout, a quota block, or a step-registry edit is not evidence against an unrelated candidate.
+
+**"Intermittent" and "flake" are conclusions requiring evidence, not default labels.** Before dismissing a failure as a flake, confirm affirmative evidence for it (e.g., the same job passed on retry with no code change, or it is a known-flaky test that also fails on *accepted* payloads). First check whether any candidate touches the failing code path: a reproducible failure in code that changed is a regression, not a flake, even if it does not reproduce on every run.
+
+**When a failed job ends up with zero causally-linked candidates, state why — explicitly, per job.** An empty candidate list is itself a claim: that no payload PR, no RHCOS RPM change, and no CI-infrastructure change (Step 3.6) is causally linked to the failure. Justify it rather than leaving it blank. For each such job, record a one-line rationale explaining why no candidate explains the failure (e.g., "root cause is a Boskos lease timeout — no candidate touches the failing path"; "failure also reproduces on the accepted baseline payload, so it predates every candidate in this originating payload"). State the cross-job correlation explicitly: note whether the same failure mode appears in other failing jobs (pointing to shared infrastructure or a common dependency) or is isolated to this one. A silent empty candidate list is indistinguishable from an un-investigated job and is not acceptable.
+
+#### 6.1b: RHCOS RPM Candidate Notes
+
+RHCOS RPM changes are scored as candidates using the same rubric as PRs. The following notes cover how they differ in practice.
+
+**RHCOS RPM changes are NOT revert candidates.** They cannot be easily reverted from the payload. Even when an RPM candidate scores >= 85, do NOT propose it as a revert in Step 6.2. Instead, surface it as an **"RHCOS RPM candidate"** requiring manual investigation by the RHCOS or platform team. Include it in the `candidates[]` output with `type: "rhcos_rpm"` (see below) so downstream tooling can distinguish it from PR candidates.
+
+**Subpackage dedup.** Multiple binary RPMs built from the same source RPM share identical changelogs. When several packages have the same version bump and the same changelog, score one candidate for the logical change — do not list each subpackage separately.
+
+**Pinpointing which hop introduced the RHCOS change.** The top-level `rpm_changelogs[]` entries include intermediate hops — some may show `changed: 0` (no RPM changes between those two payloads), while others show the actual bump. When the originating payload for a failure mode differs from the baseline, check the intermediate hop's changelog to confirm the RPM change landed in that specific hop, not earlier. This narrows the timing correlation.
+
+**Variant isolation as a signal.** When a failure mode appears only in jobs of one RHCOS variant and not the other (see Cross-Platform and Cross-Job Failure Pattern Recognition), and the matching variant has RPM changes, this is strong supporting evidence for the RPM candidate — it behaves like component exclusivity for the variant-specific subsystem.
+
+For each RHCOS RPM candidate in `candidates[]`, record the standard fields (`confidence_score`, `rationale` with itemized signals, `failing_jobs`) plus:
+- `type`: `"rhcos_rpm"` (distinguishes from PR candidates, which have `type: "pr"`)
+- `rhcos_tag`: the RHCOS image stream tag (e.g., `rhel-coreos-10`)
+- `rhcos_name`: human-readable name (e.g., "Red Hat Enterprise Linux CoreOS 10.2")
+- `package`: the RPM package name (or the logical source package when subpackages are deduped)
+- `old_version`, `new_version`: the version change
+- `changelog_evidence`: the specific changelog entry or entries that relate to the failure (verbatim text from the RPM changelog diff), or `"none"` if the changelog does not contain entries relevant to the failure mode
+
+RHCOS RPM candidates have no `pr_url`, `pr_number`, `component`, or `title` — those fields are PR-only. See the `payload-results-yaml` skill for the full typed schema.
+
+#### 6.2: Propose Revert Candidates
+
+For each candidate PR with a rubric score of **>= 85**, mark it as a **revert candidate**. A PR qualifies when:
+
+1. The failure clearly maps to the PR's changes
+2. The timing is exact — the job was passing before the originating payload
+3. No other plausible explanation — infrastructure flakiness and platform problems have been ruled out
+
+Per OCP policy, PRs that break payloads MUST be reverted. When confidence is high, the report must clearly state that a revert is required — not optional.
+
+For each revert candidate, record: PR URL, description, component, confidence score with rationale.
+
+**Do NOT propose reverts for**: Infrastructure failures, flaky tests that also fail on accepted payloads, jobs where analysis is inconclusive, **or RHCOS RPM candidates** (which have `type: "rhcos_rpm"` — these cannot be reverted through the normal PR process; they require escalation to the RHCOS or platform team).
+
+**Special case — Kubernetes rebase version skew.** When the candidate PR is a **Kubernetes rebase** (a PR in the `openshift/kubernetes` repo, typically a rebase/version-bump onto a new upstream Kubernetes release) **AND** the failures show **kubelet version skew** — the kubelet reporting an older Kubernetes version than the kube-apiserver (e.g., kube-apiserver at `1.36.2` while nodes still run kubelet `1.35.3`) — do **NOT** mark the rebase as a revert candidate, even when its rubric score is >= 85.
+
+The kubelet binary is built **from** the `openshift/kubernetes` source. After a rebase merges, there is an expected lag of hours while the kubelet is rebuilt against the new source and delivered via an updated RHCOS image. During this window the skew is **transient build lag**, not a regression:
+
+- Reverting the rebase would only prevent the kubelet from ever picking up the new version — it does not fix anything.
+- In the structured output, `failure_type` MUST stay one of the fixed enum values (`install`/`test`/`upgrade`/`infra`) — set it to **`test`**, since kubelet version skew produces real test failures. Do **not** put "transient build lag" in `failure_type`. Record the **"transient build lag"** classification in the free-text `root_cause_summary` (e.g., `"kubelet version skew — transient build lag pending kubelet rebuild"`), and treat it as build lag rather than a revert candidate.
+- In the report, record the failure as pending kubelet rebuild: the kubelet must be rebuilt from the rebased source and delivered via an updated RHCOS image. Recommend **monitoring for the rebuilt kubelet (updated RHCOS) to land** so the skew resolves on its own.
+
+#### 6.3: Check if Revert Candidates Were Already Reverted
+
+For each revert candidate:
+
+```bash
+gh pr list --repo <org>/<repo> --search "revert <pr_number>" --json number,title,url,state,createdAt,mergedAt --limit 5
+```
+
+If a revert PR is found:
+- **Merged**: Note when it merged relative to the payload. If after the payload was cut, the fix is expected in the next payload. Do not recommend reverting again.
+- **Open**: Mention the existing revert PR and link to it.
+- **Closed (not merged)**: Ignore.
+
+**Under `--as-of` (Step 1):** ignore any revert PR whose `createdAt` is after the cutoff. For a revert PR created before the cutoff, use only its status as of the cutoff: if `mergedAt` is after the cutoff (or it merged or closed later), treat it as still **Open** — the current `state` and `mergedAt` are present-day values, not point-in-time facts. Never treat the existence — or absence — of a later revert as evidence for or against a candidate. A point-in-time analysis must stand on evidence that existed when the payload completed, not on how the revert played out afterward.
+
+#### 6.4: Determine Force-Accept Recommendation
+
+Force-accepting is only meaningful for a payload that has **not** already been accepted. **If the snapshot's `phase` (Step 3.1) is already `Accepted`, `force_accept_recommended` MUST be `false`** — the question is moot, so do not recommend it regardless of the failures present.
+
+Otherwise, recommend force-accepting when **all** of the following are true:
+
+1. All failures are **temporary** infrastructure issues (`failure_type: "infra"`) — see the definition below
+2. No more than 2 blocking jobs failed
+3. `hours_since_baseline` from `summary.json` is >= 18 (or null)
+
+**What counts as a "temporary infrastructure issue".** The decisive test: *will the failure self-resolve on the next run WITHOUT human action?*
+
+- **Yes → temporary (force-accept eligible):** Boskos/lease acquisition failures, cloud quota exhaustion, transient cloud-provider API errors or throttling, a one-off network timeout to a cloud endpoint, a CI control-plane blip. These clear themselves on retry.
+- **No → persistent (NOT force-accept eligible):** stale or expired credentials, a broken or misconfigured CI step/workflow, a bad mirror/registry URL, a persistent misconfiguration, or any product regression. These fail again on the next run until a human intervenes — force-accepting only defers the problem. Do not classify these as a temporary infra pass; a causal CI-config change is scored as a candidate (Steps 3.6 and 6.1) instead.
+
+**Guard — kubelet version skew from a Kubernetes rebase.** When the blocking failures are caused by kubelet version skew following a Kubernetes rebase (the "transient build lag" case in Step 6.2), recommend **neither force-accept nor force-reject**:
+
+- **Force-accepting is NOT appropriate.** Kubelet version skew produces real test failures, not temporary infrastructure flakes, so it does not satisfy the `failure_type: "infra"` criterion above. Set `force_accept_recommended` to `false`.
+- **Force-rejecting is also NOT appropriate.** Rejecting the payload only makes the next payload assemble sooner, which will hit the **same** skew unless the RHCOS carrying the rebuilt kubelet is ready by then — so it accomplishes nothing except churn.
+
+Instead, recommend the correct action: **wait for the RHCOS with the rebuilt kubelet to land** (i.e., for the transient build lag from Step 6.2 to resolve). Once the updated kubelet is delivered, the skew clears and the payload passes on its own.
+
+#### Failure type
+
+Set `failure_type` from the **root cause**, not the job family (an `e2e-*-upgrade` job can still be `infra`).
+
+- **`infra`**: affirmative infrastructure — Boskos/lease/quota, cloud-provider API throttling or 429s, VIP/DNS reachability loss, Insights/console.redhat.com API 500s, Prow/build-farm outages, broken shared CI configuration, hypershift or cluster **teardown** timeouts after tests completed.
+- **`install`**: installer/provisioning failed before the cluster was up.
+- **`upgrade`**: the upgrade path itself failed (CVO/operators/MCP), not an external API or teardown blip.
+- **`test`**: in-cluster product test failure.
+
+Do not use `test` or `upgrade` merely because the job name contains those words.
+
+#### 6.5: Read SHIP Status (required when SHIP read tools exist)
+
+After classification — and as a check when infrastructure is suspected but not yet committed — correlate each `failure_type: infra` job with the SHIP Status dashboard.
+
+This analysis often runs **hours after** the payload jobs finished. Current dashboard health is the wrong window.
+
+1. Read `references/ship-status-component-map.md` in this skill's directory. Map `component_slug` / `sub_component_slug` to the **broken system**, not to `prowjob.json` `spec.cluster`. That field is where the job ran (every job has one) and is not a default. `build-farm` only when that CI cluster itself failed. Prefer `action: skipped` (`reason: unmapped`) over blaming a cluster that was only the execution venue.
+2. If SHIP Status read tools exist, call **`get_outages_during`** for the mapped component/sub-component with RFC3339 UTC `start`/`end` covering the **job's Prow run window** (start slightly before job start if uncertain; end at job completion, or `--as-of` / `payload_completed_at` if completion is missing). An outage overlapping that window is **affirmative infra evidence**.
+3. Do **not** use `get_infrastructure_status` for this step — that is live "now" health. Do **not** substitute `get_component_outages`; it has no overlap filter. Use `list_components` only when mapping is ambiguous.
+4. Record a `ship_status` observation on each infra job (see the `payload-results-yaml` schema): slugs, the exact `cluster_profile` (on the job and on `ship_status`), `window_start` / `window_end` (the same bounds passed to `get_outages_during`), `observed_health` from the overlap result (`healthy` if none), `existing_outage_id`, `queried_at`, `action: pending`. Empty overlap is still a recorded observation, not a skip. Chai `payload_check` reuses these windows and the cluster profile on the write path.
+5. If mapping is ambiguous, skip that job (`action: skipped`, `reason: unmapped`) and include `list_components` candidates in `reason`. Do not invent slugs. External Red Hat SaaS (Insights, console.redhat.com) is unmapped — skip after `list_components`. Do not use `build-farm` as a stand-in for an unmapped or non-cluster cause.
+6. Detect SHIP read tools by their presence in the tool list (`get_outages_during`, `list_components`), not by a `ship-status` CLI. If those tools are **not** in the tool list, **omit** the `ship_status` key entirely. Do not write `action: skipped` / `reason: unmapped` as a stand-in for missing tools.
+
+The Prow job and this eval use the public SHIP Status MCP (reads only). This step must still run there.
+
+#### 6.6: Record SHIP Status outage (only if `record_payload_infra_outage` exists)
+
+If the `record_payload_infra_outage` tool is available (Chai RWS), pass **mapped** infra jobs in **one** call (`jobs_json` array with `job_name`, `prow_url`, `root_cause_summary`, `cluster_profile`, slugs, and the same `window_start` / `window_end` used in Step 6.5). Include only jobs whose Step 6.5 `ship_status.action` is not `skipped`. Exclude unmapped jobs (`action: skipped`, `reason: unmapped`) — they have no slugs and the wrapper cannot place them. Do not call it once per job. Do not call raw `create_outage`.
+
+Stamp `action` / `outage_id` / `dashboard_url` onto each job from the tool result. The Prow job does not have this tool and skips this step — Chai `payload_check` performs the write later from the YAML snapshot.
+
+#### 6.7: Write Payload Results YAML
+
+Load the `payload-results-yaml` skill now (via the Skill tool) — this is its point of use — and follow it to create `$OUTPUT_DIR/payload-results-{tag}.yaml` (the `$OUTPUT_DIR` captured in Step 1).
+
+This file contains ALL scored candidates across all confidence tiers (HIGH, MEDIUM, LOW), enabling downstream commands to filter by their own criteria. RHCOS RPM candidates (Step 6.1b) are included in `candidates[]` with `type: "rhcos_rpm"` alongside PR candidates (`type: "pr"`), not in a separate array.
+
+**Every affirmatively-identified root cause must be represented as a scored `candidates[]` entry** — including causal CI-infrastructure / step-registry changes (Step 3.6) and RHCOS RPM changes (Step 6.1b), even when the failure's `failure_type` is `infra`. A failure whose cause is known must not leave `candidates[]` empty; each entry carries its itemized rubric breakdown (Step 6.1) in its `rationale`.
+
+### Step 7: Generate HTML Report
+
+Create a self-contained HTML file named **exactly** `payload-analysis-<sanitized_tag>-summary.html` in `$OUTPUT_DIR` (the directory captured in Step 1). The filename MUST end with `-summary.html`. `payload-analysis-<tag>.html` is a defect.
+
+Produce it by filling the bundled template — do NOT write the HTML structure or CSS from scratch; the template is the single source of truth for section order, markup, and styling, which keeps reports consistent across runs:
+
+1. Locate the template:
+
+   ```bash
+   TEMPLATE="${CLAUDE_PLUGIN_ROOT}/skills/payload-analysis/assets/report-template.html"
+   if [ ! -f "$TEMPLATE" ]; then
+     TEMPLATE=$(find ~/.claude/plugins -type f -path "*/ci/skills/payload-analysis/assets/report-template.html" 2>/dev/null | sort | head -1)
+   fi
+   ```
+
+2. Read `references/report-guide.md` (in this skill's directory) for the per-section content rules: how to derive each `{placeholder}` value and when to include, drop, or repeat the marked `BEGIN`/`END` blocks.
+
+3. Copy the template to `$OUTPUT_DIR/payload-analysis-<sanitized_tag>-summary.html` (same `<sanitized_tag>` as the YAML and autodl JSON) and fill it: replace every placeholder, expand repeatable blocks once per item, remove blocks whose condition is false, and strip the marker comments. No unfilled `{placeholder}` or `BEGIN`/`END` marker may remain (verified in Step 10). Do not save a second copy as `payload-analysis-<tag>.html`.
+
+### Step 8: Generate JSON Data File
+
+Load the `payload-autodl-json` skill now (via the Skill tool) — this is its point of use — and follow it to produce `$OUTPUT_DIR/payload-analysis-<sanitized_tag>-autodl.json` (the `$OUTPUT_DIR` captured in Step 1).
+
+See the `payload-autodl-json` skill for the complete schema, row cardinality rules, and field rules.
+
+### Step 9: Completeness Review
+
+After generating the initial report and output files, launch a **dedicated subagent** to check that the analysis is complete and well-supported. The reviewer catches lazy or shallow work — it does NOT challenge or re-score rubric-based confidence scores.
+
+Read `references/completeness-review.md` (in this skill's directory) for the reviewer's inputs, the required reviewer prompt, and how to act on its response. Two invariants worth restating here:
+
+- The reviewer receives **only** the curated inputs listed in the reference — never the full conversation history.
+- **Never lower rubric-based confidence scores** based on the reviewer's response. The rubric is mechanical — if the signals fired, the score stands.
+
+After acting on the response, populate the "Adversarial Review" section of the HTML report with the reviewer's findings and any actions taken.
+
+### Step 10: Final Self-Check, Save, and Present
+
+Before presenting, confirm that **all Step 4 investigation subagents and the Step 9 reviewer have completed and returned their results** — never assemble the report while an investigation is still outstanding. Then run a **mechanical self-check** and fix any gap it finds — do not present a partial report:
+
+1. **All three output files exist at `$OUTPUT_DIR`** (the directory captured in Step 1) and are non-empty. Verify these three exact spec'd filenames — do NOT glob, so that a stray file from a previous run cannot satisfy the check:
+   - HTML report: `$OUTPUT_DIR/payload-analysis-<sanitized_tag>-summary.html`
+   - JSON data file: `$OUTPUT_DIR/payload-analysis-<sanitized_tag>-autodl.json`
+   - Payload results YAML: `$OUTPUT_DIR/payload-results-<sanitized_tag>.yaml`
+2. **The HTML contains every required section** from the Step 7 template: header + executive summary (including the payload-chain context), the revert verdict (or the "No Recommended Reverts" verdict), the force-accept verdict when applicable, the blocking-jobs summary table, a collapsible details block for **every** failed job, the RHCOS Changes section when any payload has RHCOS changes, the informing-tests section when such tests exist, and the Adversarial Review section. No unfilled `{placeholder}` and no `BEGIN`/`END` marker comments remain.
+3. **Cross-output consistency**: phase, failure counts, per-job root causes (including any adjudicated in Step 5b), and scored candidates agree across the HTML, YAML, and JSON.
+4. **Every affirmative root cause appears as a scored `candidates[]` entry** — including causal CI-infrastructure changes, even when `failure_type: infra`.
+5. **HTML filename** ends with `-summary.html`. If a `payload-analysis-*.html` file exists without that suffix, rename it — do not leave the short name as the report.
+6. **SHIP Status**: every `failure_type: infra` job has a `ship_status` observation if `get_outages_during` / `list_components` are in the tool list. Omit the key only when those tools are absent. Mapped slugs must follow `references/ship-status-component-map.md` (broken system, not `spec.cluster` as a default). Every infra observation includes the exact `cluster_profile` on the job and on `ship_status`.
+
+If any check fails, fix it before presenting.
+
+Then tell the user:
+   - Path to each saved file
+   - Brief text summary (number of failures, new vs persistent, key candidate PRs)
+   - Whether the adversarial review changed any conclusions
+   - Mention that `/ci:payload-revert` and `/ci:payload-experiment` can consume the YAML for automated actions
+
+## Error Handling
+
+### No Snapshot Available
+
+If no snapshot is found and the snapshot script fails to create one:
+```
+Error: Could not locate or create a snapshot for {tag}. Run the payload-snapshot skill manually first.
+```
+
+### Subagent Failure
+
+If a subagent fails to analyze a job, include the job in the report with:
+```
+Analysis unavailable: {error_message}
+```
+Do not let one failed subagent block the entire report.
+
+### Missing PR Data
+
+If the snapshot was created without `gh` authentication, PR diffs/comments will be absent. Note this in the report:
+```
+Note: PR diff data not available in snapshot. Scoring based on component match and timing only.
+```
+
+## Notes
+
+- The snapshot is a **frozen archive** — it captures release controller, GitHub, and CI data as it was when the snapshot was taken. This enables re-analysis of historical payloads and provides reproducible results.
+- Subagents still download artifacts from GCS (must-gather, pod logs, step logs) because these are not included in the snapshot. The snapshot provides the data scaffolding; subagents provide deep investigation.
+- The adversarial review adds one subagent call but catches misattributions before they reach the report.
+- For very large numbers of failed jobs (>8), consider whether some share the same underlying failure and group them in the report.
+
+## See Also
+
+- Related Skill: `payload-snapshot` — creates the snapshot data this skill consumes
+- Related Skill: `payload-results-yaml` — schema for the results YAML
+- Related Skill: `payload-autodl-json` — schema for the autodl JSON data file
+- Related Skill: `prow-job-analysis` — deep test/install failure investigation (used by subagents)
+- Related Command: `/ci:payload-revert` — stages reverts for high-confidence candidates
+- Related Command: `/ci:payload-experiment` — tests medium-confidence candidates experimentally

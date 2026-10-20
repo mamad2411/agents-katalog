@@ -1,0 +1,246 @@
+klooAgentGuard — local DLP + observability layer for AI coding agents.
+
+Tauri desktop app (Rust backend, web frontend). Runs a local HTTP server
+on localhost:8008. Agent CLIs/IDEs install hook scripts that POST to this
+server. No proxy — everything is hook-driven.
+
+================================================================================
+SUPPORTED AGENTS
+================================================================================
+
+  Cursor IDE       /cursor_hook/*     cursor_hooks.rs    commands/cursor.rs
+  Claude Code      /claude_hook/*     claude_hooks.rs    commands/claude.rs
+  Codex CLI        /codex_hook/*      codex_hooks.rs     commands/codex.rs
+
+Each agent has:
+  - Hook receiver (axum routes in *_hooks.rs)
+  - Install/uninstall commands (commands/*.rs that write hook scripts + config)
+
+================================================================================
+FEATURES
+================================================================================
+
+DLP (Data Loss Prevention)
+  - Regex + keyword pattern matching against prompts, tool inputs, file reads
+  - Patterns stored in SQLite, configurable per-backend
+  - Can block or pass — detections logged with full context
+  - Files: dlp.rs, builtin_patterns.rs, pattern_utils.rs, dlp_pattern_config.rs
+
+Token Limit
+  - Per-backend max_tokens_in_a_request, blocks if exceeded
+  - Settings: predefined_backend_settings.rs
+
+Dependency Protection
+  - Two independent per-backend settings in dependency_protection:
+      block_malicious_packages  — hard deny when OSV returns vulnerabilities
+      inform_updated_packages   — allow with advisory when a newer version exists
+  - Intercepts two surfaces:
+      1. Bash install commands (all three agents): pip install, npm install,
+         yarn/pnpm/bun add, cargo add, go get, gem install, dotnet add
+         package, composer require, mvn dependency:get
+      2. Dependency file writes (Claude Code only — pre_write hook):
+         requirements.txt, pyproject.toml, package.json, Cargo.toml,
+         go.mod, Gemfile, pom.xml, build.gradle, *.csproj, composer.json
+  - Manifest-driven installs handled: bare `npm install`, `pip install -r
+    requirements.txt`, `composer install` read the dependency file from cwd
+    when the command itself names no packages.
+  - Version precision: tracks `version_is_exact` per package. Range specs
+    (^, ~, >=, *, Cargo's implicit ^) are NOT treated as exact pins —
+    OSV queries for non-exact versions resolve latest from the registry
+    first; update advice only fires for exact pins.
+  - Vulnerability check: POST https://api.osv.dev/v1/query per package,
+    3-second timeout, fail-open, concurrent via futures::join_all.
+    Ecosystems: PyPI, npm, crates.io, Maven, Go, RubyGems, NuGet,
+    Packagist.
+  - Latest version check (6 registries): PyPI, npm, crates.io, RubyGems,
+    NuGet, Go proxy. Maven/Packagist skipped for v1.
+  - Edit/MultiEdit file preview: for Claude's pre_write hook, the full
+    post-edit file content is reconstructed (apply_string_edit on disk
+    content) before parsing, so all dependencies are visible — not just
+    the edited snippet.
+  - Agent-specific behaviour:
+      Claude Code: block + inform (permissionDecisionReason carries both)
+      Codex CLI:   block only (empty stdout required for allow — no inform)
+      Cursor IDE:  block (permission:"deny") + inform (agent_message on allow)
+  - Files: dep_protection.rs (extraction, OSV, registry APIs),
+    predefined_backend_settings.rs (DependencyProtectionSettings)
+  - Frontend: two tiles per agent card ("Vulnerability Guard",
+    "Update Advisor") in backends.js, styled in pages-backends.css
+  - Shared reqwest::Client created in server.rs, passed to all three
+    hook routers via state structs.
+
+Shell Compression (token saving)
+  - Intercepts shell command output, compresses before agent sees it
+  - Claude path: PreToolUse command rewrite through POST /cli_compression
+  - Cursor path: preToolUse command rewrite via `updated_input.command`,
+    also through POST /cli_compression
+  - Codex path: PostToolUse result replacement from /codex_hook/post_tool
+    (the command has already run; the hook replaces what the model sees)
+  - Files: shell_compression/ (mod.rs, compress.rs, executor.rs, patterns.rs)
+  - Enabled per-backend via token_saving.shell_compression setting
+  - Advanced search/diff/JSON compressor flags apply to both paths
+
+Context-Aware File Read Caching (token saving)
+  - Session file cache with stable refs (F1, F2, ...)
+  - Modes: full, diff, lines:N-M — auto-picks best via ctx_smart_read
+  - Files: ctx_read/ (cache.rs, ctx_read.rs, ctx_smart_read.rs, protocol.rs)
+  - Enabled per-backend via token_saving.ctx_read setting
+
+Logging / Observability
+  - All hook events logged to SQLite: prompts, tool calls, DLP detections, usage
+  - Correlation: prompt rows keyed by turn/session, tool rows by tool_use_id
+  - database.rs handles all persistence
+
+Garden (project-level file/module view)
+  - "Each project is a garden": groves = modules (first path segment),
+    clearings = sub-folders within a grove, hero trees = hottest files
+    (full conical trees), bushes = lightly-touched files (undergrowth).
+  - Visual mapping:
+      Tree height   = file size (est_tokens, sqrt-scaled)
+      Trunk width   = line count
+      Canopy tiers  = stacked triangles; more tiers = more touches
+      Canopy color  = top backend (green=Claude, blue=Codex, purple=Cursor)
+      Dead tree     = bare branches + ∅ symbol (file deleted from disk)
+      Depth         = hero trees foreground (bigger, lower), bushes
+                      background (smaller, higher, fainter)
+      Sun           = cache hit ratio (brighter = more cache reads)
+      Gold coins    = full-price input tokens (1 coin ≈ 100K)
+      Copper coins  = cached input tokens (1 coin ≈ 1M)
+  - Layout: groves get weight-proportional widths. Within each grove,
+    files are grouped into clearings by second path segment. Each clearing
+    shows up to 3 hero trees + up to 6 undergrowth bushes, with "+N more"
+    for the rest.
+  - Backend: stats.rs `get_garden_stats` (project picker) and
+    `get_garden_detail` (per-project file breakdown, structs GardenFile /
+    GardenDetail).
+  - File paths come from three sources inside `get_garden_detail`:
+      1. requests.extra_metadata.file_path      — Claude Code hooks
+      2. tool_calls.tool_input.{file_path,path,notebook_path} — Cursor
+      3. Bash tool_input.command parsing        — Codex (Bash-only)
+  - Source 3 uses `extract_paths_from_bash` (tokenize → drop flags/
+    operators/metachar tokens → keep tokens that are path-ish AND resolve
+    to real files under cwd). This is why Codex projects show any trees
+    at all — the paths are buried in `sed`/`nl`/`cat`/`wc` invocations.
+  - Frontend: src/garden.js (self-contained SVG renderer + project picker).
+    No session-based view remains; the Garden tab is only this file view.
+
+Agent Behaviour (session-level observability)
+  - Behaviour Monitor page is now trend-first and day-wise, not a
+    baseline/comparison view.
+  - Top layer shows four compact metric cards with daily mini-graphs:
+      Read-first discipline
+      Exploration balance
+      Bash reliance
+      Tool tempo
+    These cards show the selected-range aggregate plus daily sparkline
+    shape; there is no "vs earlier" logic anymore.
+  - Supporting cards stay high-level:
+      Current Operating Mix: explore/modify/bash/other share bars
+      Current Profile: investigation style, shell reliance, tempo, etc.
+      Coverage: active days, avg turns/session, files touched/session,
+      guardrail activity
+  - Session cards remain expandable for drilldown, but the collapsed view
+    is intentionally summary-only: files touched, read-first %,
+    explore/modify ratio, bash share, tools/turn, plus short flags like
+    read-first, bash-heavy, deep-scan, blocked.
+  - Expanded turn details still show tool tags, file chips, bash command
+    previews, and blocked-turn markers when users need to investigate.
+  - Backend: stats.rs `get_agent_behaviour` (queries requests table,
+    groups by session_id in extra_metadata, correlates prompt and tool rows)
+  - Frontend: src/behaviour.js + src/pages-behaviour.css. Topbar nav item.
+
+Symbol Extraction (tree-sitter)
+  - Extracts imports and definitions from source files using tree-sitter
+    AST parsing. Runs at PostToolUse time when the agent reads/writes/edits
+    a file — reads the file from disk and stores symbols in SQLite.
+  - Supports 10 languages: JavaScript, TypeScript, Python, Rust, Go,
+    Java, C, C++, Ruby, C#. Language detected from file extension.
+  - Symbols extracted:
+      Imports   : import/from/use/require/#include/using statements
+      Definitions: functions, methods, classes, structs, enums, traits,
+                   interfaces, modules, type aliases
+  - Each symbol: { kind, name, source (import path), line }
+  - Files: symbols.rs (extractor + queries), database.rs (file_symbols
+    table), stats.rs (get_file_symbols, get_import_graph commands)
+  - Import graph: `get_import_graph(cwd)` returns edges between project
+    files, with best-effort resolution of import paths to known files.
+  - Frontend integration:
+      * Clicking a tree/bush in the Garden opens a symbol panel (HTML
+        overlay, right side) showing imports grouped by source and
+        definitions grouped by kind (functions, classes, etc.)
+      * Dashed curved lines connect trees that import from each other
+        (rendered as SVG paths behind the tree layer)
+  - Hook wiring:
+      Claude Code: extract_symbols_for_tool() in claude_hooks.rs
+      Codex CLI:   extract_symbols_for_tool() in codex_hooks.rs (with
+                   Bash command path extraction via paths_from_bash_for_symbols)
+      Cursor IDE:  inline extraction in before_tab_file_read_handler
+  - Symbols are best-effort, fire-and-forget. Parse failures or missing
+    files are silently ignored. 500KB file size cap prevents slow parses.
+
+================================================================================
+HOOK LIFECYCLE PER AGENT
+================================================================================
+
+                    Cursor              Claude Code         Codex CLI
+                    ------              -----------         ---------
+Prompt submit       beforeSubmitPrompt  UserPromptSubmit    UserPromptSubmit
+Pre tool use        preToolUse +        PreToolUse          PreToolUse (Bash only)
+                    beforeShell/Read/   (Bash/Read/Write/
+                    Tab/MCP
+                                        Edit/MCP/Notebook)
+Post tool use       afterAgent*         PostToolUse         PostToolUse
+Stop/End            —                   Stop + SessionEnd   Stop
+Session start       —                   SessionStart        SessionStart
+
+Codex quirks:
+  - PreToolUse allowed path = empty stdout (not JSON). Deny = JSON with
+    permissionDecision:"deny". See codex_hooks.rs pre_tool_deny_response.
+  - PostToolUse may return feedback JSON (`decision:"block"`, `reason`,
+    `hookSpecificOutput.additionalContext`, `continue:false`) to replace
+    the completed tool result. This is how Codex shell compression works.
+  - Stop and SessionStart are fire-and-forget for our current handlers.
+  - Hook scripts use silent:true in hooks.json to suppress TUI banners.
+  - ctx_read token saving is not used for Codex.
+
+================================================================================
+KEY FILES
+================================================================================
+
+  src/lib.rs                          App entry, tray icon, window management
+  src/server.rs                       Axum server setup, route mounting,
+                                      shared reqwest::Client for dep protection
+  src/database.rs                     SQLite: logging, settings, DLP, symbols
+  src/symbols.rs                      Tree-sitter symbol extraction (10 langs)
+  src/dep_protection.rs               Dependency protection: package extraction
+                                      from commands + files, OSV vuln check,
+                                      registry version check, manifest resolution
+  src/dlp_pattern_config.rs           DB path resolution (~/.quilrdlpapp)
+  src/predefined_backend_settings.rs  Per-backend settings (DLP, tokens,
+                                      dependency_protection)
+  src/commands/mod.rs                 Tauri command re-exports
+  src/commands/hook_ordering.rs       Hook install ordering logic
+  src/commands/stats.rs               Dashboard, logs, tool calls, Garden,
+                                      symbols (get_file_symbols, get_import_graph)
+  ../src/garden.js                    Frontend Garden view (conical trees, clearings,
+                                      hero/bush layout, symbol panel, import edges)
+  ../src/pages-garden.css             Garden styles (tree shapes, symbol panel, etc.)
+  ../src/backends.js                  Guardian agent cards: DLP, token cap,
+                                      dep protection (Vulnerability Guard,
+                                      Update Advisor) toggles
+  ../src/pages-backends.css           Agent card tile styles incl. dep protection
+  ../src/behaviour.js                 Behaviour Monitor view: daily metric
+                                      trends, mix/profile/coverage, session drilldown
+  ../src/pages-behaviour.css          Behaviour Monitor styles
+
+Hook scripts live at:
+  Claude:  ~/.claude/settings.json (hooks section)
+  Codex:   ~/.codex/hooks.json + ~/.codex/hooks/*.sh
+           (`[features].hooks = true`; legacy `codex_hooks` accepted only
+           when the current key is absent)
+  Cursor:  ~/.cursor/hooks/ (managed by Cursor IDE)
+
+Database: ~/.quilrdlpapp/proxy_requests.db  (resolved in dlp_pattern_config.rs::get_db_path)
+  Tables: requests, tool_calls, dlp_detections, dlp_patterns,
+          compression_cache, settings, predefined_backend_settings,
+          file_symbols (tree-sitter extracted imports/definitions)

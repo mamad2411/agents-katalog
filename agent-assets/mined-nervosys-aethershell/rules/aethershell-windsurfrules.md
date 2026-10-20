@@ -1,0 +1,23 @@
+# AetherShell - Windsurf Rules
+
+## Project
+AetherShell (`ae`) — the shell built for AI agents. One language, every platform, deterministic typed output.
+Written in Rust (v1.4.0, AGPL-3.0-or-later). Traditional shells produce unstructured text that varies by OS, locale, and version — breaking agent workflows. AetherShell eliminates this: every command returns typed, structured data. A built-in ontology makes commands, arguments, and return types machine-discoverable.
+430+ builtins in 50 modules. Multi-provider AI. MCP/A2A/A2UI/NANDA protocols.
+
+## Architecture
+- Language: `ast.rs` -> `parser.rs` -> `eval.rs` -> `typecheck.rs` (Hindley-Milner)
+- Runtime values: `value.rs` - Value enum with Int, Float, String, Bool, Array, Record, Lambda
+- Builtins: `builtins.rs` - always return structured Value types
+- AI: `ai.rs` - model URIs like `openai:gpt-4o`, `ollama:llama3`
+- Agent API: `agent_api.rs` - HTTP/WS/SSE on port 3002, 25+ provider schemas
+- Transpilers: `transpile/` - Bash, Zsh, PowerShell → AetherShell migration
+
+## Conventions
+- `anyhow::Result<Value>` for evaluator functions
+- Builtins return `Value::Record` or `Value::Array`, never raw strings
+- Lambda: `fn(x) => x * 2`
+- Pipeline: `data | transform | filter | aggregate`
+
+## Full Context
+See `llms-full.txt` for complete reference. See `.well-known/openapi.yaml` for Agent API spec.

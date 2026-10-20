@@ -1,3 +1,0 @@
-# Encoder
-
-Encodes snippets.

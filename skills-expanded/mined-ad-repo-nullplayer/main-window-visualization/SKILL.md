@@ -1,0 +1,68 @@
+---
+name: main-window-visualization
+description: The main window's built-in 76×16 (Winamp coordinates) visualization area — twelve display modes, mode switching, persistence, per-mode settings, and embedded renderer lifecycles. Use when modifying the in-skin visualizer area or its menu.
+---
+
+# Main Window Visualization
+
+The main window's built-in visualization area (76×16 pixels in Winamp coordinates) supports twelve display modes. For per-mode shader/algorithm internals see [gpu-vis-modes](../gpu-vis-modes/SKILL.md).
+
+## Modes
+
+| Mode | Description |
+|------|-------------|
+| **Off** | No main-window visualization; leaves the skin's prepared display artwork visible |
+| **Classic** | Low-fi 19-bar spectrum analyzer with skin colors and cropped analyzer sub curve (default; persisted internally as `Spectrum`) |
+| **Cava** | Mono vDSP/Cava bar analyzer drawn with CoreGraphics; colors follow a visible mid→bright range of the active skin palette until overridden |
+| **Enhanced** | Compact professional LED analyzer with cropped sub range, clean peak caps, and restrained meter colors |
+| **Ultra** | Dense professional spectrum analyzer with cropped sub range, fast decay, clean peak caps, and restrained meter colors |
+| **Fire** | GPU flame simulation using Metal compute shaders |
+| **JWST** | Deep space flythrough with 3D star field and JWST diffraction flares |
+| **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks |
+| **Matrix** | Falling digital rain with procedural glyphs mapped to spectrum bands |
+| **Snow** | Audio-reactive snowfall with flurry-to-blizzard intensity and bass-driven wind gusts |
+| **EKG** | Oscilloscope-style ECG monitor; each detected audio peak fires one QRS, height scales with peak prominence (no BPM clock) |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible rendering (see [vis-classic-guide](../vis-classic-guide/SKILL.md)) |
+
+## Switching Modes
+
+- **Double-click** the visualization area to cycle through modes
+- **Visuals → Main Window → Mode** selects a specific mode, including **Off**
+- Persisted per family: Classic in `mainWindowVisMode`, Original in `modernMainWindowVisMode`, so
+  each keeps its mode across a trip through the other. `MainWindowVisMode.defaultsKey(for:)` owns
+  the routing; the menu edits the running family's key and is hidden where it returns nil.
+- Original's mode is kept on launch and family entry and replaced by a skin pick or reset
+  (`ModernSkinLoadReason.keepsSavedMainWindowMode`); Classic's is written only by a reset.
+
+## Settings
+
+All non-`vis_classic` GPU modes share:
+- **Responsiveness** — bar decay (Instant/Snappy/Balanced/Smooth) — `mainWindowDecayMode`
+- **Normalization** — level scaling (Accurate/Adaptive/Dynamic) — `mainWindowNormalizationMode`
+
+Mode-specific:
+- **Cava** — Color Preset, Bars, Smoothing, and Bass Tilt. Uses `cava.mainWindow.*` keys, independent from the standalone Cava window.
+- **Fire** — Flame Style + Fire Intensity — `mainWindowFlameStyle`, `mainWindowFlameIntensity`
+- **Lightning** — Lightning Style — `mainWindowLightningStyle`
+- **Matrix** — Matrix Color + Matrix Intensity — `mainWindowMatrixColorScheme`, `mainWindowMatrixIntensity`
+- **vis_classic** — Profile + Fit to Width (window-scoped UserDefaults keys; see vis-classic-guide)
+
+## Implementation
+
+- **GPU overlay**: `SpectrumAnalyzerView` with `isEmbedded = true` as a subview of the main window
+- **Cava CPU path**: a lazily-created `CavaPresenter(scope: .mainWindow)` feeds `CavaDrawing` in the normal AppKit coordinate space. Classic draws after restoring its flipped skin transform; modern draws inside the scaled spectrum panel.
+- **Embedded EKG sharpness**: EKG history scrolling accumulates fractional motion and shifts the persistent trace texture by whole physical pixels when `isEmbedded = true`. This prevents repeated bilinear resampling from blurring the tiny 76×16 in-skin trace while keeping average scan speed and beat timing unchanged.
+- **vis_classic core**: CPU frame generation via `VisClassicBridge` + `CVisClassicCore`, uploaded to a Metal texture
+- **Positioning**: Winamp coordinates → macOS view coordinates
+- **Lifecycle**: GPU overlay and Cava presenter are created lazily on first activation
+- **CPU efficiency**: The Metal display link and Cava timer/audio consumer pause when the main window is minimized, hidden, or occluded. Cava uses a scope-distinct full-stereo consumer ID.
+- **vis_classic state is window-scoped** — main window and spectrum window keep independent profile/fit/transparent-bg. Use `VisClassicBridge.PreferenceScope` and `*.mainWindow` keys
+
+## Key Files
+
+- `Windows/MainWindow/MainWindowView.swift` — mode switching, overlay (classic UI)
+- `Windows/ModernMainWindow/ModernMainWindowView.swift` — mode switching, overlay (modern UI)
+- `Visualization/SpectrumAnalyzerView.swift` — shared Metal rendering
+- `Cava/CavaSettings.swift` / `Cava/CavaPresenter.swift` — scoped inline Cava preferences and runtime
+- `App/ContextMenuBuilder.swift` — mode selection and mode-specific settings
+- `Visualization/VisualizationPreferences.swift` — centralized main-window reset coverage

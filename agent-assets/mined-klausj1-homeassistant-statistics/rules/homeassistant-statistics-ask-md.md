@@ -1,0 +1,51 @@
+# Ask Mode Rules
+
+This file provides non-obvious context about repository structure and design decisions.
+
+## Project Organization & Counterintuitive Aspects
+
+### Directory Structure
+- Custom component lives in custom_components/import_statistics/ (not in a separate src/ folder)
+- Tests are in tests/ at project root, NOT in custom_components/ subdirectory
+- Config files go in config/ directory when running via scripts/develop
+- Test assets are in tests/testfiles/ (example CSVs, TSVs, JSONs for testing)
+
+### Two-Format Support for Statistics
+The integration handles TWO completely different statistic formats that look similar but behave differently:
+- Internal (. format, e.g., sensor.temperature): Must reference existing entities, uses entity's unit of measurement
+- External (: format, e.g., sensor:custom_stat): Creates new statistics, MUST have unit from CSV file, unit from entity is forbidden
+- The distinction is enforced at multiple validation points and is NOT optional
+
+### Unit Source Complexity
+Units can come from two places, creating a dual-mode system:
+- From entity (unit_from_entity=True): Unit column must NOT exist in CSV, unit fetched from Home Assistant entity
+- From table (unit_from_entity=False): Unit column must exist in CSV, no entity lookup needed
+- But external statistics (: format) ALWAYS require unit from table - mixing modes is impossible for external stats
+- This creates asymmetry: internal stats are flexible, external stats are rigid
+
+### Data Type Mixing in Export
+Unlike import (which accepts ONLY sensors or ONLY counters), export can produce mixed files:
+- One file can contain both min/max/mean columns (sensors) and sum/state columns (counters)
+- Columns for non-applicable types are filled with empty strings
+- This asymmetry exists because export pulls from recorder which may have mixed statistics
+- But direct re-import of mixed files is NOT possible (import rejects mixed min/max/sum)
+
+### Service Handler Asymmetry
+- Import services (import_from_file, import_from_json) are synchronous and blocking
+- Export service (export_statistics) is async with executor calls
+- This intentional asymmetry is because import directly modifies Home Assistant state, export uses recorder API
+- Services are registered in setup() which is synchronous, but export handler's async nature is preserved
+
+### Timezone Handling Philosophy
+- The integration uses zoneinfo.ZoneInfo (Python 3.12 stdlib), NOT pytz (external package)
+- This is a deliberate choice - pytz is imported only for validation of timezone identifier strings
+- Import interprets user-provided timestamps in user's timezone, converts to UTC internally
+- Export reverses this: takes UTC timestamps from recorder, formats them in user's timezone
+- The default format \
+%d.%m.%Y
+%H:%M\ (DD.MM.YYYY HH:MM) reflects European preferences - no seconds, 24-hour format
+
+### Error Handling Philosophy
+- The codebase uses a custom error pattern: handle_error() logs AND raises
+- This pattern allows Home Assistant UI to display error message to users while also logging it
+- It's not a generic exception handling pattern - it's specific to Home Assistant's error display mechanism

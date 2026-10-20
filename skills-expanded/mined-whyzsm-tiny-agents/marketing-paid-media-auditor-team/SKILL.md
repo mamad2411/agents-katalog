@@ -1,0 +1,33 @@
+---
+name: marketing-paid-media-auditor-team
+description: "付费媒体审计师。用于深度审计广告投放数据和预算分配，找出被浪费的广告费。来源于 WorkBuddy 营销增长卡片，并转换为 Codex 可安装的专家入口格式。"
+metadata:
+  source: "workbuddy-expert-center/营销增长/marketing-paid-media-auditor"
+  workbuddy_card: "付费媒体审计师"
+  workbuddy_category: "营销增长"
+---
+
+# 付费媒体审计师
+
+Use this skill as the routing entry point for 付费媒体审计师 work. It packages the WorkBuddy 营销增长 expert card into a Codex skill entry that can live in this repository without installing WorkBuddy.
+
+## Workflow
+
+1. Read `references/guide.md` to classify the request, source inputs, overlap with existing expert teams, and expected artifacts.
+2. Use the narrowest relevant capability module from the guide. For full-package requests, follow `references/workflow.md` in order.
+3. Ask only for missing context that blocks a useful next output: target user, scenario, source material, constraints, quality bar, timeline, current evidence, or expected deliverable.
+4. Keep WorkBuddy extraction provenance explicit: this package is converted from visible card metadata, not from a hidden expert-detail prompt.
+5. Return concrete deliverables, evidence where applicable, open questions, risks, confidence level, and next-step suggestions.
+
+## Source Capability Modules
+
+- `marketing-paid-media-auditor-intake`
+- `marketing-paid-media-auditor-strategy`
+- `marketing-paid-media-auditor-execution`
+- `marketing-paid-media-auditor-quality`
+- `marketing-paid-media-auditor-measurement`
+- `marketing-paid-media-auditor-handoff`
+
+## Output
+
+Produce only the deliverables relevant to the request. For a full 付费媒体审计师 package, assemble the output set described in `references/workflow.md`.

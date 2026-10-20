@@ -1,0 +1,43 @@
+# Architect Mode Rules
+
+This file provides non-obvious architectural constraints and design patterns for the Home Assistant Statistics Import/Export integration.
+
+## Core Architectural Constraints
+
+### Dual-Mode Statistics System
+The architecture supports two mutually exclusive statistic types that require different validation paths:
+
+**Internal Statistics (recorder source)**
+- Format: `sensor.name` (uses `.` separator)
+- Source: Existing Home Assistant entities
+- Unit source: Flexible - can come from entity OR from CSV
+- Validation: Entity must exist in Home Assistant state
+- Use case: Importing historical data for existing sensors
+
+**External Statistics (custom sources)**
+- Format: `domain:name` (uses `:` separator)
+- Source: New statistics created by import
+- Unit source: MUST come from CSV (unit_from_entity forbidden)
+- Validation: Domain cannot be "recorder"
+- Use case: Creating synthetic or third-party statistics
+
+This duality is enforced throughout the codebase and represents a fundamental architectural decision. Mixing modes for a single statistic_id is impossible and explicitly forbidden.
+
+### Asymmetric Import/Export Design
+The architecture intentionally treats import and export differently:
+
+**Import Path**
+- Synchronous processing (blocking operations)
+- Stateless service handlers in `setup()`
+- Strict validation: rejects mixed sensor/counter data
+- Direct Home Assistant state modification
+- Format: CSV/TSV or JSON
+
+**Export Path**
+- Asynchronous processing with executor calls for I/O
+- Recorder API for data retrieval (database queries)
+- Allows mixed sensor/counter data in output
+- Formatted via timezone-aware transformations
+- Format: CSV/TSV (data is sparse) or JSON (data is complete)
+
+This asymmetry exists because import is stateful (modifies Home Assistant) while export is read-only (queries recorder).

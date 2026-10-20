@@ -1,0 +1,73 @@
+---
+description: Graph core data structures (Graph, Node, Edge, Types)
+globs: src/graph/src/graph.ts,src/graph/src/node.ts,src/graph/src/edge.ts,src/graph/src/types.ts,src/graph/test/graph.ts,src/graph/test/node.ts,src/graph/test/edge.ts
+alwaysApply: false
+---
+# Graph Data Structures
+
+## Graph (`graph.ts`)
+
+**Construction**: Seeds `mainImporter` from project root (`file:.` DepID), discovers workspaces, initializes peer contexts.
+
+**Fields:**
+- `importers: Set<Node>` — roots (main + workspaces)
+- `mainImporter: Node`
+- `nodes: Map<DepID, Node>`, `nodesByName: Map<string, Set<Node>>` (sorted by DepID)
+- `edges: Set<Edge>`, `manifests: Map<DepID, NormalizedManifest>`
+- `resolutions: Map<string, Node>` / `resolutionsReverse`
+- `extraneousDependencies: Set<Edge>`
+- `peerContexts: PeerContext[]`, `currentPeerContextIndex: number`
+
+**Key methods:**
+- `addNode()` — creates node, populates indices, keeps `nodesByName` sorted
+- `addEdge(type, spec, from, to?)` — creates/updates edge, de-duplicates
+- `placePackage(fromNode, depType, spec, manifest?, id?, extra?)` — high-level: creates node + edge, splits `extra` into `modifier`/`peerSetHash`
+- `findResolution(spec, fromNode, extra?)` — searches `nodesByName` for satisfying node, cached by spec+location+extra
+- `removeNode(node, replacement?, keepEdges?)`, `gc()` — prune unreachable
+- `recomputeFlags()` — re-derive `dev`/`optional` from importer reachability
+- `resetEdges()` — clears edges, marks manifested nodes as `detached` for reuse
+- `nextPeerContextIndex()` — unique peer context ID generation
+- `toJSON()` → `lockfileData()` for deterministic serialization
+
+**Resolution cache key**: `getResolutionCacheKey(spec.final, from.location, extra)` — includes modifier+peerSetHash.
+
+## Node (`node.ts`)
+
+**Identity**: `id: DepID`, `manifest?`, `name`, `version`, `integrity`, `resolved`, `registry`, `modifier`
+
+**Location**: `location` (default: `./node_modules/.vlt/<DepID>/node_modules/<name>`), `inVltStore()` (memoized), `resolvedLocation(scurry)` (memoized per location + scurry cwd), `nodeModules(scurry)`, `setDefaultLocation()`
+
+**Flags**: `dev`, `optional` (cascade-clear to children), `detached`, `extracted`, `buildState: 'none'|'needed'|'built'|'failed'`
+
+**Platform/bins**: `platform?: { engines?, os?, cpu? }`, `bins?: Record<string, string>`
+
+**Peer**: `peerSetHash?: string` (format: `peer.<hash>[.role]`, appended to DepID as `extra`)
+
+**Workspace**: `workspaces: Map<string, Edge>` (only on `mainImporter`)
+
+**Confused**: `confused = false` — true if manifest name ≠ spec name; preserves `rawManifest`
+
+## Edge (`edge.ts`)
+
+- `from: Node`, `to?: Node` (undefined = missing dep)
+- `type: DependencyTypeShort` — `prod | dev | peer | peerOptional | optional`
+- `spec: Spec` (name enforced at creation)
+- `valid()` — checks `to.id` satisfies `spec`
+
+## Public Types (`types.ts`)
+
+`GraphLike`, `NodeLike`, `EdgeLike` — minimal interfaces for loose coupling with consumers.
+
+## Lockfile Types (`lockfile/types.ts`)
+
+- `LockfileNode` tuple: `[flags, name?, integrity?, resolved?, location?, manifest?, rawManifest?, platform?, bins?, buildState?]`
+- `LockfileEdges`: `{ "${from.id} ${spec.name}": "${type} ${spec.bareSpec} ${to.id | 'MISSING'}" }`
+- Flags: 0=prod, 1=optional, 2=dev, 3=devOptional
+- Helpers: `getFlagNumFromNode()`, `getBooleanFlagsFromNum()`, `getBuildStateFromNode()`
+
+## Invariants
+
+- DepID uniqueness in `nodes` map
+- `edgesOut` keyed by `spec.name`; missing deps = `to=undefined`
+- Resolution cache is extra-aware (modifier+peerSetHash)
+- Deterministic ordering → stable lockfiles

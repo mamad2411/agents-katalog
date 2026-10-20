@@ -1,0 +1,126 @@
+---
+alwaysApply: false
+description: Java SDK Hubs and Scopes
+---
+# Java SDK Hubs and Scopes
+
+## `Scopes`
+
+`Scopes` implements `IScopes` and manages three `Scope` instances, `global`, `isolation` and `current` scope.
+For some data, all three `Scope` instances are combined, for others, a certain one is used exclusively and for some we look at each scope in a certain order and use the data of the first scope that has the data set. This logic is contained in `CombinedScopeView`.
+Data itself is stored on `Scope` instances.
+`Scopes` also has a `parent` field, linking the `Scopes` it was forked off of and a `creator` String, explaining why it was forked.
+
+## `Hub`
+
+Up until major version 7 of the Java SDK the `IHub` interface was a central part of the SDK.
+In major version 8 we replaced the `IHub` interface with `IScopes`. `IHub` has been deprecated.
+While there is some bridging code in place to allow for easier migration, we are planning to remove it in an upcoming major.
+
+## Scope Types
+
+We have introduced some new Scope types in the SDK, allowing for better control over what data is attached where.
+Previously there was a stack of scopes that was pushed and popped.
+Instead we now fork scopes for a given lifecycle and then restore the previous scopes.
+Since Hub is gone, it is also never cloned anymore.
+Separation of data now happens through the different scope types while making it easier to manipulate exactly what you need without having to attach data at the right time to have it apply where wanted.
+
+### Global Scope
+
+Global scope is attached to all events created by the SDK.
+It can also be modified before Sentry.init has been called.
+It can be manipulated using `Sentry.configureScope(ScopeType.GLOBAL, (scope) -> { ... })`.
+
+Global scope can be retrieved from `Scopes` via `getGlobalScope`. It can also be retrieved directly via `Sentry.getGlobalScope`.
+
+### Isolation Scope
+
+Isolation scope can be used e.g. to attach data to all events that come up while handling an incoming request.
+It can also be used for other isolation purposes.
+It can be manipulated using `Sentry.configureScope(ScopeType.ISOLATION, (scope) -> { ... })`.
+The SDK automatically forks isolation scope in certain cases like incoming requests, CRON jobs, Spring `@Async` and more.
+
+Isolation scope can be retrieved from `Scopes` via `getIsolationScope`.
+
+### Current scope
+
+Current scope is forked often and data added to it is only added to events that are created while this scope is active.
+Data is also passed on to newly forked child scopes but not to parents.
+
+Current scope can be retrieved from `Scopes` via `getScope`.
+
+### Combined Scope
+
+This is a special scope type that combines global, isolation and current scope.
+
+Refer to `CombinedScopeView` for each field of interest to see whether values from the three individual scopes are merged,
+whether a specific one is used or whether we're simply using the first one that has a value.
+
+Also see the section about `defaultScopeType` further down.
+
+## Storage of `Scopes`
+
+`Scopes` are stored in a `ThreadLocal` by default (NOTE: this is different for OpenTelemetry, see opentelemetry.mdc).
+This happens through `Sentry.scopesStorage` and `DefaultScopesStorage`.
+
+The lifetime of `Scopes` in the thread local is managed by `ISentryLifecycleToken`.
+When the scopes are forked, they are stored into the `ThreadLocal` and a `ISentryLifecycleToken` is returned.
+When the `Scopes` are no longer needed, e.g. because a request is finished, `ISentryLifecycleToken.close` can be called to restore the previous state of the `ThreadLocal`.
+
+## Old versions of the Java SDK
+
+There were several implementations of the `IHub` interface:
+- `Hub` managed a stack of `Scope` instances, which were pushed and popped.
+- A `Hub` could be cloned, meaning there could be multiple stacks of scopes active, e.g. for two separate requests being handled in a server application.
+
+### Migrating to major version 8 of the SDK
+
+`IHub` has been replaced by `IScopes`
+`HubAdapter` has been replaced by `ScopesAdapter`
+`Hub.clone` should be replaced by using `pushScope` or `pushIsolationScope`
+`Sentry.getCurrentHub` has been replaced by `Sentry.getCurrentScopes`
+`Sentry.popScope` has been deprecated. Instead `close` should be called on the `ISentryLifecycleToken` returned e.g. by `pushScope`. This can also be done in a `try-with-resource` block.
+
+## `globalHubMode`
+The SDK has a `globalHubMode` option which affects forking behaviour of the SDK.
+
+Android has `globalHubMode` enabled by default.
+For JVM Desktop applications, `globalHubMode` can be used.
+For JVM Backend applications (servers) we discourage enabling `globalHubMode` since it will cause scopes to bleed into each other. This can e.g. mean that state from request A leaks into request B and events sent to Sentry contain a mix of both request A and B potentially rendering the data useless.
+
+### Enabled
+
+If `globalHubMode` is enabled, the SDK avoids forking scopes _implicitly_.
+
+This means, retrieving current scopes on a thread where specific scopes do not exist yet for the thread, the root scopes are not forked but returned directly.
+`Sentry.pushScope`, `Sentry.pushIsolationScope` and `Sentry.popScope` are no-ops.
+They are unbalanced API: the caller may never restore the previous scopes, or restore them on a different thread, which would corrupt the globally shared scopes.
+
+`Sentry.withScope` and `Sentry.withIsolationScope` do fork, also when `globalHubMode` is enabled.
+They are balanced by construction and always restore the previous scopes before returning, so they cannot corrupt the shared scopes.
+This matches the cross SDK spec ("fork the current scope, invoke callback, discard the fork when done") and what the SDK did before major version 8.
+
+The suppression of forking via `globalHubMode` only applies when using `Sentry` static API or `ScopesAdapter`.
+In case the `Scopes` instance is accessed directly, forking will happen as if `globalHubMode` is disabled.
+`Sentry.setCurrentScopes`, and thus `Scopes.makeCurrent`, does have an effect when `globalHubMode` is enabled, but only for scopes that descend from the current `rootScopes`.
+`Sentry.getCurrentScopes` ignores all other scopes, because scopes left over from a closed or re-initialized SDK would otherwise be read back from a thread local that the SDK cannot clean up.
+
+`ScopesAdapter` makes use of the static `Sentry` API internally. It allows us to access the correct scopes for the current context without passing it along explicitly. It also makes testing easier.
+
+### Disabled
+
+If `globalHubMode` is disabled, the SDK forks scopes freely, e.g. when:
+- `Sentry.getCurrentScopes()` is executed on a Thread where no specific scopes for that thread have been stored yet. In this case the SDK will fork `rootScopes` (stored in a `Sentry` static property).
+- `withScope` or `withIsolationScope` are executed
+- `pushScope` or `pushIsolationScope` are executed
+
+## `defaultScopeType`
+
+The `defaultScopeType` controls which `Scope` instance is being used for writing to and reading from as a default value.
+When using API like `Sentry.setTag` the SDK adds that tag to the default `Scope`.
+
+This also ensures, customers who migrate to the latest SDK version and already have `Sentry.configureScope` invocations in place, will now write to the default `Scope` instance that was chosen.
+
+The default value for `defaultScopeType` is `ISOLATION` scope for JVM and `CURRENT` scope for Android.
+
+Which fields are written/read from/to `defaultScopeType` is controlled in `CombinedScopeView`.

@@ -1,0 +1,94 @@
+---
+description: Peer dependency context isolation and resolution in vlt graphs
+globs: src/graph/src/ideal/peers.ts,src/graph/test/ideal/peers.ts,src/graph/src/graph.ts,src/dep-id/src/browser.ts
+alwaysApply: false
+---
+# Peer Dependencies
+
+How vlt isolates peer contexts and duplicates packages when peer requirements differ.
+
+## Behavior
+
+1. **Attempt reuse first**: try single version satisfying all peer contexts
+2. **Fork when needed**: subdivide graph into peer context groups on conflict
+3. **Duplicate packages**: clone nodes needing different peer versions
+4. **Track via `peerSetHash`**: `peer.N` identifier in DepID extra
+
+## Core Algorithm (`src/graph/src/ideal/peers.ts`)
+
+### `checkPeerEdgesCompatible()` — 4-Phase Check
+
+0. **Unprocessed Node**: peer edge doesn't exist yet → incompatible (conservative)
+1. **Context Mismatch**: context has different target → idempotency check first (existing target satisfies all specs?) → compatible or fork
+2. **Sibling Mismatch**: sibling edge differs → idempotency check → compatible or fork
+3. **Parent Declared Peer**: parent has alternative candidates → check via `graph.nodesByName.get(peerName)` → fork if alternative satisfies both
+
+Uses per-call memoization (`satisfiesMemo` Map) for `satisfies()` calls.
+
+### `resolvePeerDeps()` — 4-Priority Resolution
+
+1. Direct sibling (same-level dep)
+2. Peer closure: BFS through peer edges of sibling targets (depth limit: 3)
+3. Peer context lookup
+4. Defer to next level
+
+### `postPlacementPeerCheck()` — 3-Phase Post-Level
+
+1. `putEntries()` on all children → collect which need forking
+2. Fork or reuse sibling contexts
+3. `resolvePeerDeps()` on all children
+
+### Helper Functions
+
+- `nodeSatisfiesSpec(node, spec, fromNode, graph)` — wraps `satisfies()`
+- `parseSpec(name, bareSpec, fromNode, graph)` — wraps `Spec.parse` with registry options
+- `getForkKey(peerContext, entries)` — cache key: `{baseIndex}::{signatures}::r{baseRev}`
+- `shouldIgnoreContextMismatch()` — prevents cross-importer peer leakage
+- `findFromPeerClosure()` — BFS through peer edges (depth limit: 3)
+
+## DepID Extra Parameter (`src/dep-id/src/browser.ts`)
+
+`extra` serves dual purpose: modifier + peerSetHash.
+
+- `joinExtra({ modifier?, peerSetHash? })` → combined string or undefined
+- `splitExtra(extra)` → `{ modifier?, peerSetHash? }` (detects `peer.` delimiter)
+
+## Node `peerSetHash` (`node.ts`)
+
+Optional `peerSetHash?: string`. Set during ideal build on context forking. Preserved in serialization, parsed from DepID extra on lockfile load.
+
+## Graph Integration (`graph.ts`)
+
+- Resolution cache keys include full `extra` (modifier+peerSetHash)
+- `placePackage()` splits `extra` → assigns `node.modifier` and `node.peerSetHash`
+- `nodesByName` sorted by DepID for deterministic resolution
+- `peerContextForkCache: Map<string, PeerContext>` — prevents duplicate contexts. Key: `{baseIndex}::{sortedEntrySignatures}`
+
+## Workspace Isolation
+
+Each non-main importer gets fresh peer context:
+```typescript
+if (fromNode.importer && fromNode !== graph.mainImporter) {
+  const nextPeerContext: PeerContext = new Map()
+  nextPeerContext.index = graph.nextPeerContextIndex()
+  initialPeerContext = nextPeerContext
+}
+```
+
+## DSS Selectors
+
+`:peer`, `:peer:optional`, `:has(:peer)`, `:peerOptional`
+
+## Lockfile Format
+
+```
+"~~package@1.0.0~peer.1": [...]     // node with peerSetHash
+"file~. package": "prod ^1.0.0 ~~package@1.0.0~peer.1"  // edge to peer context
+```
+
+## Tips
+
+- Always use `joinExtra()`/`splitExtra()` — never string concatenation
+- Preserve `peerSetHash` when copying/transforming nodes
+- Resolution cache must include full `extra` to avoid incorrect hits
+- Test idempotency: rebuild from lockfile → identical graph

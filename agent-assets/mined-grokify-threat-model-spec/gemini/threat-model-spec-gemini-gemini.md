@@ -1,0 +1,3 @@
+# Threat Model Spec Toolkit
+
+This plugin provides two families of agents. Diagram agents (dfd-creator, attack-flow-visualizer, diagram-quality-reviewer) create security threat modeling diagrams using D2 — Data Flow Diagrams, attack chain visualizations, and sequence diagrams with annotations for STRIDE, MITRE ATT&CK, MITRE ATLAS, and OWASP frameworks. PDLC stage analyst agents (product-definition-analyst, builder-definition-analyst, implementation-analyst, deployment-analyst, builder-operations-analyst, product-operations-analyst) produce per-stage threat model analysis reports via `tms analyze`, one per PDLC stage.

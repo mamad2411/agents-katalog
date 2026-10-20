@@ -1,0 +1,162 @@
+# Spark Repository
+
+Spark is a Bitcoin Layer 2 protocol enabling instant, low-cost Bitcoin transactions using FROST threshold signatures.
+For deep protocol and architecture context, see [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
+
+## Setup
+
+```bash
+mise trust && mise install
+lefthook install  # git hooks (optional)
+```
+
+## Components
+
+- **`spark/`** - Go backend (Signing Operators) - see [`spark/CLAUDE.md`](spark/CLAUDE.md)
+- **`sdks/js/`** - JavaScript/TypeScript SDK - see [`sdks/js/packages/spark-sdk/CLAUDE.md`](sdks/js/packages/spark-sdk/CLAUDE.md)
+- **`signer/`** - Rust FROST signing implementation
+- **`lrc20.dev/`** - BTKN token layer (Rust)
+- **`protos/`** - Protocol buffer definitions
+
+## Code Quality Guidelines
+
+### Comments
+
+Be judicious with comments. Prefer clear naming and well-structured functions over explanatory comments.
+
+**Avoid redundant comments:**
+
+```go
+// Bad - comment just repeats the code
+// Verify operator signatures
+verifyOperatorSignatures(sigs)
+
+// Good - no comment needed, function name is clear
+verifyOperatorSignatures(sigs)
+```
+
+**When comments ARE useful:**
+
+- Non-obvious "why" explanations (e.g., race conditions, protocol requirements)
+- Public API documentation
+- Security-critical sections
+- References to external specs or papers
+
+**Comment quality guidelines:**
+
+- Explain "why", not "what" - the code shows what happens; comments explain reasoning
+- Comments must be self-contained - never reference "the old implementation" since future readers won't have that context
+- Only add non-obvious information - `// Save to database` before `db.Save()` wastes space
+- Don't comment out code - delete it; git remembers
+- A Jira ticket belongs in a comment as `TODO(SP-XXXX)`, or appended as a citation to a comment that already reads on its own - never as a bare "See SP-1234" standing in for the reason
+
+### Logging (Go)
+
+We use **Zap** (`go.uber.org/zap`) for all logging, replacing `log/slog` from the standard library. Zap has two logger types:
+
+- **`SugaredLogger`** — default for logs with dynamic values. Use printf-style formatting via `logger.Sugar()`.
+- **`Logger`** — use only when attaching approved, searchable attributes.
+
+**When to use which:**
+
+- Default to `Sugar()` for dynamic runtime values.
+- Structured fields (`zap.String`, `zap.Error`, etc.) are an allowlist, not a general pattern. Use them only for well-established, indexable keys (e.g., `identity_public_key`, `transfer_id`, `token_create_id`).
+- If a value is not an approved searchable key, log it in the message string, not as a zap field.
+- If unsure whether something should be an attribute, it probably shouldn't be. Use `Sugar()` instead.
+
+```go
+// Good - structured field for a well-known, indexable key
+logger.Info("transfer completed", zap.String("transfer_id", transferID))
+
+// Good - Sugar for printf-style with dynamic values
+logger.Sugar().Infof("transfer completed for %s", transferID)
+
+// Good - Sugar for multiple dynamic values
+logger.Sugar().Infof("rate limiter: enabled %t, window %s, max %d", enabled, window, max)
+
+// Good - combining structured attributes with Sugar
+logger.With(zap.Error(err)).Sugar().Infof("failed to broadcast node tx for node %s", node.ID)
+
+// Bad - dynamic values should not become ad-hoc fields
+logger.Info("just finished things", zap.Int("numberOfThings", numberOfThings))
+
+// Bad - fmt.Sprintf in Logger message (defeats structured logging, use Sugar instead)
+logger.Info(fmt.Sprintf("transfer completed for %s", transferID))
+
+// Bad - generic attribute names that cause type conflicts in OpenSearch
+logger.Info("validation failed", zap.String("got", value), zap.Int("count", n))
+```
+
+**Structured fields:** Only use `zap.String`/`zap.Int`/etc. for reusable, well-established keys on the approved searchable list. Do not create new one-off field names for dynamic values. Check existing usage in the codebase before introducing a new key. Avoid generic attribute names (`got`, `expected`, `count`, `duration`) — these cause type conflicts in OpenSearch when different log sites use different types for the same key.
+
+**Converting between loggers:** Use `logger.Sugar()` to get a `SugaredLogger`, and `sugaredLogger.Desugar()` to get back a `Logger`. Use `logger.With(fields...)` to create a logger that includes attributes in all subsequent logs (used in middlewares to attach `identity_public_key`, etc.).
+
+### Function Length
+
+Keep functions focused and reasonably short. If a function is doing too many things, consider splitting it - but avoid excessive indirection that makes code harder to follow.
+
+### Testing
+
+- Test public interfaces, not internal implementation details
+- Focus on corner cases and error conditions, not just happy paths
+- Write tests that would catch real bugs
+
+## Knobs
+
+A knob declared in `spark/so/knobs/knobs.go` must be given a value in all three config
+sources, at the same value in each:
+
+- `tilt/spark/Tiltfile` — minikube/Tilt, and the CI hermetic suite
+- `so.template.config.yaml` — `run-everything.sh`
+- `docker/operator.config.yaml` — `docker-compose`
+
+No deployed environment reads these; deployed values come from the knobs service. Run
+`./scripts/lint-knobs.sh` after touching a knob — CI runs it too.
+
+**Define the knob, don't add it to the ignore list.** `ALLOWED_MISSING` in
+`scripts/lint-knobs.sh` exempts a knob from all three sources at once, leaving its gated path
+unexercised everywhere. Reach for it only when setting a value is genuinely wrong (a targeted
+per-pubkey knob, say), never as the quick way past a lint failure.
+
+**Prefer enabling a new knob here.** These are the local and CI surfaces, so enabling a knob
+is what puts the new path under the integration suite; leaving it at `0` means the suite keeps
+running the old branch and the new one ships untested. Match the value to how the knob is
+read: `1` for a boolean knob (`GetValue(...) > 0`), `100` for a percentage knob
+(`RolloutRandom` / `RolloutRandomTarget`). `1` on a percentage knob means 1% of calls, which
+makes the suite flaky rather than covered. Shipping a knob defined-but-disabled is a
+legitimate call for the implementer to make — just make it deliberately, and note why. Keep
+that separate from the fallback each call site passes as its default argument, and from the
+deployed value; those generally stay off so a feature can roll out and back without a deploy.
+
+**Tests and knob state.** A test that depends on knob-on behavior should force the knob on
+itself rather than relying on the config default. If enabling a knob breaks pre-existing
+tests *because* of the knob, having those tests pin it to `0` is a reasonable fix. If they
+break for any other reason, that is the regression test doing its job — fix the code, don't
+pin the knob.
+
+## Pull Request Descriptions
+
+PRs are synced to a public mirror. Follow the format in `.github/PULL_REQUEST_TEMPLATE.md`. The `## Public` section is required and CI will fail without it. When using tools that create PRs without a body (e.g., `gt submit` in non-interactive mode), follow up with `gh pr edit <number> --body "..."` to add the description.
+
+## Critical Thinking
+
+Always critically evaluate suggestions, even when they seem reasonable.
+
+**Be direct:**
+
+- Question assumptions - don't just agree, analyze if there are better approaches
+- Challenge decisions that don't fit logically
+- Point out inconsistencies and potential issues
+- Suggest alternative solutions
+
+**Be thorough:**
+
+- Read documentation and issues completely before responding
+- Admit "I don't know" instead of guessing
+
+**Examples:**
+
+- ✅ "I disagree - that belongs in a different file because..."
+- ✅ "Have you considered this alternative approach?"
+- ✅ "This seems inconsistent with the pattern we established..."
+- ❌ Implementing suggestions without evaluation

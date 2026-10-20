@@ -1,0 +1,316 @@
+---
+name: model-context-designer
+description: 'Design what enters and leaves a model context window: assemble vetted inputs server-side under caps and closed schemas, minimize sensitive data, separate controlled-store persistence from transient segments, verify provider retention before claiming end-to-end non-persistence, make reconstruction limits explicit, and document exclusions. Also design the prompt contract for each call: a versioned, owned instruction, its declared inputs, a pointer to the output contract, when the model must decline, and which prompt changes need an evaluation rerun. Distinct from agent-startup-context-gate (session start), ai-cost-guardrail-designer (cost), rag-security-architect (retrieval authorization), agent-harness-architect (call gating), and structured-output-validator (output schema). Use when designing prompt/context assembly, writing or changing a prompt contract, or deciding what an agent may see. Poisoning attack review belongs to memory-context-poisoning-reviewer.'
+---
+
+# Model Context Designer
+
+**Reading key:** the context window is the text a model receives on one
+call; a segment is one named part of it (instructions, user input, history,
+retrieved content, tool output, memory); a prompt contract is the versioned,
+owned record of one call's instruction and what it promises; an evaluation
+rerun is running the feature's evaluation suite again before a prompt change
+ships.
+
+## Purpose
+
+The context window is a supply chain: an unverified input is an unverified
+output. This skill designs that supply chain — what enters and leaves a
+model's context window on every call. The deliverable is a context design
+with six load-bearing parts: (1) context assembled SERVER-SIDE from vetted
+parts, never handed to the model as open access to a data source; (2) hard
+token/size caps per segment and in total, with deterministic priority and
+truncation rules; (3) CLOSED input schemas — every segment that enters the
+window passes a defined shape; (4) secrets, personal data, and raw payloads
+minimized, and what must ride anyway excluded from controlled application
+stores where possible, with provider retention separately checked and the
+persisted-vs-transient split explicit per segment; (5)
+reconstructibility — what the model saw on any past call can be established
+afterward; and (6) designed exclusions — what is deliberately NOT in the
+window, documented with reasons, so absence is a decision rather than an
+accident. It also writes the prompt contract for each call: the
+instruction's version and owner, its declared inputs, a pointer to its output
+contract, when the model must decline, and which prompt changes need an
+evaluation rerun. This skill DESIGNS the curated context; the security review of
+context and memory for poisoning belongs to
+`memory-context-poisoning-reviewer` — it PRODUCES the artifact that skill
+reviews.
+
+## Use When
+
+- Use when: designing or overhauling how a prompt/context is assembled for a
+  model call — which segments, from where, in what order, under what caps.
+- Use when: deciding what data an artificial intelligence (AI) feature or agent may see — the model
+  currently gets a whole record, table, or document dump because scoping was
+  never designed.
+- Use when: secrets, personal data, or raw payloads are landing in prompts
+  and prompt logs, and the persisted-vs-transient question has no answer.
+- Use when: nobody can say afterward what the model saw for a given call, or
+  what was left out of the window and why.
+- Use when: writing or changing a prompt contract — a feature's instruction
+  has no version or owner, no declared inputs, no pointer to its output
+  contract, no decline conditions, or no rule for which edits need an
+  evaluation rerun.
+- Auto-invocable: a pure design skill — it produces a context specification
+  and changes no live system or data flow.
+- Do NOT use when: the job is the ATTACK REVIEW of context or memory — can
+  untrusted content poison what gets stored and trusted later — that is
+  `memory-context-poisoning-reviewer`. This skill DESIGNS the curated
+  context; the security review of it belongs to that skill.
+- Do NOT use when: the subject is session-START context — verifying the repo,
+  loading governing docs before work begins — that is
+  `agent-startup-context-gate`; this skill owns RUNTIME per-call context
+  assembly, a different moment with a different failure mode.
+- Do NOT use when: the question is the token/spend BUDGET itself — caps as
+  cost policy are `ai-cost-guardrail-designer`; the cap is a cost decision,
+  the curation is a content decision, and this skill designs content within
+  the caps that skill prices.
+- Do NOT use when: the question is retrieval AUTHORIZATION — who may retrieve
+  which documents is `rag-security-architect`; this skill curates what the
+  (already-authorized) retrieval feeds the window.
+- Do NOT use when: the subject is redaction mechanics and output-path echo
+  checks for sensitive data — that is `sensitive-disclosure-guard`; this
+  skill decides the context diet those controls apply to.
+- Do NOT use when: the question is gating the CALL — identity, authority,
+  budget rungs — that is `agent-harness-architect`; the harness gates the
+  call, this skill curates what rides in it. The harness also keeps an
+  agent's instructions as server-side versioned artifacts; an agent's prompt
+  contract points to that version instead of restating custody.
+- Do NOT use when: the ask is the output schema itself or its
+  validate-before-use ladder — that is `structured-output-validator`; the
+  prompt contract points to that contract, never restates it.
+- Do NOT use when: the ask is running the regression gate on a prompt
+  change — that is `ai-evaluation-harness` *(manual-only)*; the contract's
+  change policy says WHEN a rerun is needed, that skill runs it.
+
+## Inputs to Inspect
+
+1. Every context source feeding the call today: system instructions, user
+   input, conversation history, retrieved documents, tool outputs, memory,
+   ambient state — with each source's trust class and current size behavior.
+2. How assembly happens now: server-side composition from vetted parts vs
+   client-assembled strings vs the model holding a live connection to a data
+   source (open access — the anti-pattern).
+3. What downstream persists: prompt logs, traces, conversation stores — and
+   whether secrets or personally identifiable information (PII) currently
+   land in any of them.
+4. The spend caps in force (`ai-cost-guardrail-designer` output if present):
+   the budget the content design must fit inside.
+5. The retrieval layer's authorization posture (`rag-security-architect`
+   output if present): what the retriever is allowed to return — the
+   ceiling on what curation can admit.
+6. Reconstruction demands: audit, compliance, or debugging requirements to
+   show what the model saw for a past call, and any retention limits pulling
+   the other way.
+7. The consumers of model output: what downstream trusts the answer, which
+   determines how much an unverified input costs.
+
+## Workflow
+
+When a human must choose a context policy such as exact reconstruction
+versus never-persist, define unfamiliar terms and each viable option and why
+it fits. Compare case-specific audit value, sensitive-data exposure, model
+quality, money, setup time, and ongoing upkeep; state unknown costs instead
+of guessing. Recommend one from the known requirements and
+provider-retention facts and explain why it fits the user's goals and what
+fact would change the recommendation before one atomic decision question.
+Ask for a missing deciding fact first when needed. Keep routine design
+choices within this skill; a preference does not authorize storage-policy
+changes or provider calls.
+
+1. **Inventory the segments.** Name every candidate segment for the window
+   (instructions, user input, history, retrieved content, tool output,
+   memory) with its source, trust class, and size behavior. A segment nobody
+   can name is a segment nobody is curating.
+2. **Assemble server-side.** The final context is composed server-side from
+   vetted parts. The model never gets open access to a store "so it has
+   everything" — a curated diet, not access. Client-supplied fragments are
+   inputs to validation, never pre-assembled context.
+3. **Set hard caps with deterministic degradation.** A token/size cap per
+   segment and in total. When content exceeds a cap, what is dropped or
+   summarized follows a designed priority order — not "whatever fit last".
+   The caps' PRICE comes from `ai-cost-guardrail-designer`; this step decides
+   what the capped space carries.
+4. **Close the input schemas.** Every segment entering the window passes a
+   closed schema: shape, size, and allowed content class. Free-form blobs
+   are the exception and are named as such. An input that fails its schema
+   does not enter the window — the supply chain rejects unverified goods at
+   the dock, not after they ship.
+5. **Minimize and split persisted-vs-transient.** Secrets, personal data,
+   and raw payloads: first minimize (does the model need the value, or a
+   reference/derivative?); what must ride anyway goes on a transient channel
+   excluded from controlled application stores and logs. Check provider-side
+   retention, logging and processing terms before claiming it is never
+   persisted anywhere. Mark every segment PERSISTED or TRANSIENT
+   explicitly — an unmarked segment defaults to the strictest treatment.
+6. **Design reconstructibility honestly.** What the model saw must be
+   establishable afterward: persisted segments by content or
+   reference+version; transient segments by class, shape, and hash — never
+   by storing the sensitive content that was excluded from persistence.
+   State the honest trade: reconstruction of transient segments proves WHAT
+   KIND of thing rode along, not its verbatim value. Where a verbatim
+   requirement and a never-persist requirement collide → Stop Conditions.
+7. **Design the exclusions.** List what is deliberately NOT in the window —
+   other tenants' data, unscoped history, whole-record dumps, standing
+   secrets — each with its reason. Absence must be a documented decision; an
+   accidental exclusion is a bug wearing a compliance costume, and an
+   accidental inclusion is a leak.
+8. **Prove the caps and exclusions can fail.** Design the tests: over-cap
+   input is truncated by the designed priority (not silently admitted); a
+   schema-failing segment is rejected; an excluded class is demonstrably
+   absent from an assembled context; a transient segment is demonstrably
+   absent from every persisted store. A verifier that cannot fail is theater
+   with an exit code.
+9. **Write the prompt contract.** One record per model call, using
+   [references/prompt-contract-template.md](references/prompt-contract-template.md):
+   the instruction's identifier, version and owner; its declared inputs (the
+   segments from step 1); a pointer to the output contract
+   `structured-output-validator` owns, never a restated schema; the
+   conditions under which the model must decline, each with its expected
+   decline response; and a change policy that marks each kind of prompt
+   edit as needing an evaluation rerun or not. An edit that changes the
+   output contract, the declared inputs or the decline conditions always
+   needs a rerun, which runs under `ai-evaluation-harness` *(manual-only)*.
+   A contract with no decline conditions is incomplete: add them rather than
+   leave refusal to chance. For an agent, the version points to the
+   instruction artifact `agent-harness-architect` keeps.
+10. **Deliver the design** in the Output Format, seams cited: poisoning
+   review, session-start gate, cost policy, retrieval authorization (authz), disclosure
+   mechanics, output schema, evaluation rerun — composed, never restated.
+
+## Output Format
+
+When asking for this build choice, show each option's meaning, reason,
+case-specific benefits and limits, money/setup/upkeep or unknowns, and
+a justified recommendation before the one decision question.
+
+```
+MODEL CONTEXT DESIGN — <feature/agent>
+Principle: the context window is a supply chain — an unverified input is an
+  unverified output; a curated diet, not open access.
+Segments: <name — source — trust class — schema — cap — priority —
+  PERSISTED|TRANSIENT>
+Assembly: <server-side composer; order; what happens on over-cap (designed
+  degradation); no open-access paths>
+Input schemas: <per segment: shape/size/content class; rejection behavior>
+Minimization: <secret/PII/raw-payload decisions: value vs reference vs
+  derivative; the transient channel and its guarantees>
+Reconstructibility: <per segment: content | reference+version | class+hash;
+  the honest limit on transient segments>
+Exclusions (designed): <what is NOT in the window — each with reason>
+Failure proofs: <over-cap, schema-reject, exclusion-absence,
+  transient-not-persisted — the test for each>
+Prompt contract: <instruction id — version — owner>
+  Declared inputs: <segment names from Segments above>
+  Output contract: <pointer to the structured-output-validator contract>
+  Decline when: <condition → expected decline response>
+  Change policy: <edit kind → evaluation rerun needed | not needed, and why>
+Handoffs: poisoning attack review → memory-context-poisoning-reviewer;
+  session-start context → agent-startup-context-gate; spend caps →
+  ai-cost-guardrail-designer; retrieval authz → rag-security-architect;
+  redaction/echo mechanics → sensitive-disclosure-guard; call gating and
+  agent instruction custody → agent-harness-architect; output schema →
+  structured-output-validator; evaluation rerun → ai-evaluation-harness
+  (manual-only)
+Open questions / risks: <each with risk-if-wrong / who answers>
+```
+
+## Validation Checklist
+
+- [ ] User-facing build choices explain terms, reasons, costs or unknowns,
+      pros/cons, and a justified recommendation before one atomic question.
+- [ ] Every segment is named with source, trust class, schema, cap,
+      priority, and an explicit PERSISTED or TRANSIENT mark.
+- [ ] Assembly is server-side from vetted parts; no path gives the model
+      open access to a data source in place of curated content.
+- [ ] Hard caps exist per segment and in total, with deterministic,
+      designed degradation — never "whatever fit".
+- [ ] Every input passes a closed schema before entering the window;
+      schema failures are rejected, not admitted.
+- [ ] Secrets/PII/raw payloads are minimized first; what rides is on the
+      transient channel excluded from controlled application persistence;
+      provider retention and logging are checked separately.
+- [ ] What the model saw is reconstructible afterward, with the transient
+      limitation stated honestly (class/shape/hash, never stored content).
+- [ ] Exclusions are designed and documented with reasons — nothing is
+      absent (or present) by accident.
+- [ ] Every cap, schema, exclusion, and transient guarantee has a designed
+      proof it can fail.
+- [ ] Every model call has a prompt contract with a version and an owner,
+      declared inputs, an output-contract pointer, decline conditions, and a
+      change policy saying which edits need an evaluation rerun.
+- [ ] The yields are stated: poisoning review →
+      memory-context-poisoning-reviewer; neighboring lanes cited, not
+      restated.
+
+## Gotchas
+
+- "Give the model everything so it has context" is the anti-pattern this
+  skill exists to replace: open access is not context engineering, it is
+  the absence of it — and every unverified byte admitted is an unverified
+  byte in the answer.
+- Prompt logs are where transient data goes to become permanent: the
+  transient channel must be checked against every controlled store — traces,
+  analytics, conversation history, error reports — not just the obvious log.
+- A cap without a designed priority order silently drops the most important
+  segment on the worst day; "truncate from the end" is a decision, make it
+  deliberately.
+- Reconstructibility promised as "we log the full prompt" contradicts the
+  transient channel the moment a secret rides along — the honest design
+  records class+hash for transient segments and says so.
+- "Just a wording tweak" is how an untested prompt ships: small edits move
+  refusals and output fields. The change policy decides whether a rerun is
+  needed, not the editor's confidence.
+- History is a segment too: unbounded conversation history is the cap
+  violation everyone forgets, and yesterday's unvetted content re-enters
+  today's window through it.
+- An exclusion nobody wrote down gets "fixed" by the next engineer who
+  notices the model lacks the data — designed exclusions carry their reason
+  precisely so helpfulness doesn't reverse them.
+- Schema-valid is not trust: a closed schema bounds shape and class, it does
+  not make retrieved content's INSTRUCTIONS safe — injected instructions in
+  admitted content are the lane of `prompt-injection-defender` *(manual-only)*; say so, don't
+  solve it here.
+
+## Stop Conditions
+
+- A verbatim-reconstruction requirement and a never-persist requirement
+  collide on the same segment (compliance wants the exact content, policy
+  forbids storing it) → surface the conflict with the honest options
+  (reference+version, class+hash, scoped retention with its own controls)
+  and stop for a human decision; do not promise both absolutes.
+- The context sources themselves are unknown — nobody can name what feeds
+  the window today → inventory first; a curation design over an unknown
+  supply chain is fiction.
+- The request is to widen the diet to open access (a live connection to a
+  store in place of curated segments) → refuse the open-access design,
+  present the curated alternative, and escalate if the requirement survives.
+- Wiring the design into a live pipeline (changing what production prompts
+  contain) → implementation under the repo's approval path; this skill
+  designs, it does not deploy.
+- The real concern is poisoning of stored memory/context, retrieval
+  authorization, or redaction mechanics → hand to
+  `memory-context-poisoning-reviewer` / `rag-security-architect` /
+  `sensitive-disclosure-guard` and stop.
+
+## Supporting Files
+
+- `evals/evals.json` — behavior cases: the ad-hoc context-stuffing design,
+  the secrets-in-prompt-logs split, the reconstruction-vs-never-persist
+  edge, the open-access refusal, the prompt-contract version bump that
+  needs an evaluation rerun, the missing decline conditions, and the
+  poisoning-review should-not-trigger.
+- `evals/trigger-evals.json` — discrimination against
+  `agent-startup-context-gate` (session-start vs per-call runtime),
+  `ai-cost-guardrail-designer` (cap price vs content),
+  `rag-security-architect` (retrieval authz vs curation),
+  `sensitive-disclosure-guard` (redaction mechanics),
+  `agent-harness-architect` (in-batch: call gating vs context content, and
+  agent instruction custody), `structured-output-validator` (output schema
+  vs prompt contract), `ai-evaluation-harness` *(manual-only)* (running the
+  rerun vs deciding when one is needed), `prompt-injection-defender` *(manual-only)*
+  (injection defense vs a prompt contract), and the design-vs-review seam
+  against `memory-context-poisoning-reviewer`.
+- [references/prompt-contract-template.md](references/prompt-contract-template.md)
+  — the prompt contract record, its change-policy table, and a filled
+  example.

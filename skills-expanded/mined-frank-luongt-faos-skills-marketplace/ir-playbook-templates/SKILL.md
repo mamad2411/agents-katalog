@@ -2,7 +2,6 @@
 ---
 name: ir-playbook-templates
 description: Incident response playbook templates following NIST SP 800-61 phases for six common incident types
-tags: [playbook, security]
 ---
 
 # Incident Response Playbook Templates

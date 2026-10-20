@@ -1,0 +1,29 @@
+---
+description: 前端类型与错误处理统一规范
+globs: ["web/src/**/*.vue", "web/src/**/*.ts", "web/src/**/*.tsx"]
+---
+# Frontend Type and Error Policy
+
+在修改前端代码时，必须遵循以下类型与错误处理约束，避免回退到松散实现。
+
+## 1. DTO 与 Mapper 先行
+- 新增或修改后端响应字段时，先更新 `web/src/types/api.ts`。
+- 需要结构转换或兼容逻辑时，优先放在 `web/src/api/mappers/*`，不要散在组件或 store 中。
+- 后端新增可选枚举/配置型元数据（如 race、alignment、realm 等）给前端选择器使用时，应优先通过 DTO 暴露 `value + label` 或结构化实体；前端不应自行维护会展示给用户的中文硬编码选项表。
+
+## 2. 禁止扩散 any
+- 新增代码不得引入无必要 `any`。
+- 必须临时使用时，需明确过渡目的，并限制在最小范围。
+
+## 3. 错误处理统一出口
+- 记录日志优先使用 `web/src/utils/appError.ts`（`logError` / `logWarn`）。
+- 用户提示统一通过消息层（`message`），避免重复弹窗或风格不一致。
+
+## 4. Socket 消息处理分层
+- `web/src/api/socket.ts` 只负责 transport。
+- 消息业务分发统一在 `web/src/stores/socketMessageRouter.ts`，不要在组件中按消息类型分支。
+
+## 5. 前端 i18n 边界
+- `.vue` / composable 中新增用户可见文案必须走 `vue-i18n` 或后端已本地化 DTO，不能直接写中文兜底。
+- 组件 fallback 文案也必须可本地化，例如 race 缺失时不能 fallback 为 `'人族'`，应使用 `t(...)` 或后端提供的默认实体。
+- 为标题、按钮、tab、badge、状态栏入口、卡片标题等短槽位新增 i18n key 时，应优先设计短标签语义（必要时提供 `*_short`），把完整解释放到 `*_desc`、tooltip、help 或正文 key。不要把一个长 `title` 同时用于首屏大标题、状态栏、窄按钮和弹窗标题；法语、越南语等语言会显著变长，翻译必须能在真实容器里放下，同时保持自然准确。

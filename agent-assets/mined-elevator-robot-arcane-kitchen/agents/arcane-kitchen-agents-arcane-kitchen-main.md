@@ -1,0 +1,236 @@
+# AGNET
+
+This file is the always-current quick guide for AI/code agents working in this repo.
+
+## Rule 1
+
+When the project changes, update this file in the same PR.
+
+## When AGNET.md must be updated
+
+- New or changed product behavior
+- Backend/data model changes
+- Auth or permission changes
+- Deployment/infrastructure workflow changes
+- New contributor or review process changes
+- License or legal changes
+- New dev-only features that affect the development workflow
+
+## Recipe Data Structure
+
+Recipes now include a `utensils` field (array of strings) for kitchen tools needed:
+- Displayed in recipe previews as a bulleted list
+- Included in recipe fingerprint for deduplication
+- Optional (empty if not provided)
+
+Recipe identity fields:
+- `Recipe.ownerId` is the authoritative owner and authorization key
+- `Recipe.createdBy` is denormalized display metadata and must match the owner's `@username`
+- Recipe creation, edits, username changes, and ownership transfers synchronize `createdBy`
+
+UserProfile login reconciliation:
+- On every successful login, the backend `UserProfile` row is checked first and wins over Cognito/local cache values
+- Cognito attributes seed a `UserProfile` only when the backend row is missing
+- Missing first-signup profiles receive one random preset avatar and keep it until changed
+
+Authentication submission:
+- Custom sign-in and account creation requests are deduplicated while in flight so one attempt cannot send multiple confirmation codes
+- Recipe ownership uses the Cognito subject (`sub`/`userId`), never the Cognito login username, when publishing or mutating recipes
+
+## User-Facing Errors
+
+- `ErrorArtwork` uses the supplied catwitch image at `/images/catwitch.webp` on unavailable-content and recovery screens. Keep the complete image and caption visible; do not crop it.
+- Discover feed-loading failures use a text-only retry panel, without catwitch artwork.
+- Discover renders no placeholder tiles or visible loading message while an empty feed request is pending, including Retry. Existing recipe cards stay mounted during background loads; a screen-reader status and `aria-busy` indicate loading.
+- `AppErrorBoundary` and startup/configuration fallbacks show catwitch artwork and reload recovery instead of a blank application. The production service worker precaches the artwork and `offline.html` for unavailable navigations.
+- `src/utils/userFacingErrors.ts` is the shared boundary for displaying backend, Cognito, storage, and network errors to users.
+- Use `getUserFacingErrorMessage()` for UI messages and keep raw errors in `console.error` diagnostics only; do not render raw `error.message` or serialized error objects.
+
+## Profile Route Resolution
+
+- Workspace first paint comes from the current URL, never the previous tab in localStorage. Cached/resolved profiles remain mounted during background revalidation; uncached routes use `ProfileSkeleton`, and profile recipe skeletons appear only on the initial feed load.
+- Profile routes track the requested sanitized username independently from the resolved profile record, so loading or failed `/u/:username` lookups cannot fall through to the signed-in user's profile.
+- A profile route renders the private profile only when its requested username matches the signed-in user's username; unresolved routes render a loading or not-found state.
+
+## Hosting And Image Fallbacks
+
+- Amplify Hosting serves client-side routes through the SPA rewrite in `amplify.yml`; direct `/discover` and `/discover/` visits must resolve to `index.html`.
+- Profile and recipe cards use local/inline fallbacks for missing images and must not reference nonexistent `/api/placeholder/*` endpoints.
+
+## Cognito Hosted-UI Domains
+
+- The production `main-branch` stack owns the `arcanekitchen` Cognito domain prefix.
+- Other Amplify branch stacks retain Amplify-managed unique domains; do not reuse the production prefix across branch deployments.
+- Production OAuth callbacks include the generated `main.<app-id>.amplifyapp.com` origin when `AWS_APP_ID` is available, so Google sign-in can be tested before the custom-domain cutover.
+
+## Recipe Save Counts
+
+- Save counts ("hearts") are DERIVED from the `Favorite` records, not a stored counter: the count on a recipe is the number of `Favorite` rows whose `recipeId` matches it — i.e. how many people currently have it saved.
+- To make this queryable, `Favorite` authorization includes `read` for authenticated users and guests (in addition to the owner write via `ownerDefinedIn('userId')`).
+- `RecipeBuilder.tsx` loads all favorites once (`Favorite.list`) and builds a `recipeId → count` map (`recipeSaves` state); `toggleFavoriteRecipe` updates the map optimistically (±1) alongside the `Favorite` create/delete.
+- The save-count load falls back from `userPool` to `identityPool` auth (same pattern as the recipe feed) so guests get real counts too; `Favorite.list` with no `authMode` fails for guests.
+- Card previews, the expanded view, and the Profile page (published + saved card counts) all read from `recipeSaves`; clicking the heart toggles the save (the heart was removed from the image overlay). The legacy `FeedRecipe.saves` string field (`'New'`) is NOT a count and must not be used for display.
+
+## Routing (React Router)
+
+- The community recipe page is named **Emporium** in headings, document titles, navigation, and user-facing copy. Its existing `/discover` URL and internal `Discover` view key remain compatible with shared links.
+
+- Unknown routes show a dedicated recovery page; route-aware document titles distinguish Discover, Build, Saved, Drafts, Profile, and Admin. Admin matching is exact, not a prefix match.
+- Shared recipe/profile paths accept trailing slashes and malformed URI escapes cannot crash route parsing. Query-string recipe IDs are decoded once.
+- Returning to a profile URL without `?recipe=` dismisses the recipe overlay; renaming your profile replaces its route with the new handle.
+- Account menus include Profile and Drafts, with no separate Saved recipes item. Saved is accessed from the profile collection panels. Legacy `/saved` links redirect signed-in users to `/u/:username?collection=saved` while preserving recipe parameters; guests receive a sign-in invitation.
+- All `AccessibleDialog` overlays dismiss on backdrop click by default, alongside keyboard containment, Escape dismissal, and focus restoration. Clicks within dialog content do not dismiss it; existing pending-save guards still apply.
+- Discover distinguishes request failures (with Retry), empty collections, empty filters (with Clear all filters), and successful search counts. Search covers recipe text, tags, and authors; it does not claim to index ingredient records.
+- Nonempty drafts autosave without requiring a photo or ingredients, and the debounce survives navigation between workspace views. Browser refresh/unmount during the debounce is still a follow-up.
+- Authentication initialization waits for the live session check before showing the workspace, including when cached auth exists.
+- Shared styles provide visible keyboard focus, higher-contrast muted text, and reduced-motion support.
+
+- The SPA is wrapped in `BrowserRouter` (in `src/main.tsx`). `react-router-dom` is a dependency.
+- The recipe "modal" opens in-place on top of the current page: opening a recipe calls `navigate('<current-pathname>?recipe=<id>')` so the base page stays in the URL (open-from-Discover, -Saved, -Profile all work; no more `stayInView` hack).
+- Recipe attribution links (`by @username`) dismiss any open recipe overlay and activate an exact author filter in Discover from every recipe view; the selected author appears only in the dismissible Author Collection banner, which includes a `View author profile` action to `/u/:username`. Comment-author links also dismiss the recipe overlay before navigating to `/u/:username`.
+- Author profiles are full pages only, never popups. Comment authors and mentions navigate directly to `/u/:username`.
+- Usernames render without a leading `@` in profile/account identity and editor-preview displays; `@username` is reserved for clickable published recipe attribution and comment mentions.
+- Recipe sharing copies the recipe URL directly to the clipboard and shows temporary `Copied!` feedback; it does not open a share menu or render a green status banner.
+- `RecipeBuilder` derives view + modal from the URL via `useLocation`/`useNavigate`:
+  - `recipeId = getRecipeIdFromPath(pathname + search)` → expanded recipe modal (`expandRecipe`), resolved from the feed or a direct `Recipe.get` for deep links.
+  - `/u/:username` (`getProfileUsernameFromPath`) → Profile view.
+  - `/discover` `/build` `/saved` `/drafts` → mapped by `viewForPath`; bare `/` redirects to `/discover`.
+- Closing the recipe modal removes its `recipe` parameter while preserving the profile collection selection (legacy `/recipe/:id` deep links fall back to Home on close).
+- A `/u/:username` route matching the signed-in user's normalized username renders the editable private profile view, including published recipes, drafts, and saved recipes; other matching profiles render the read-only public view.
+- Public profiles show published recipes only; Drafts and Saved tabs are private and must not render for another user's profile.
+- `UserProfileView`'s `RecipeCard` click must only fall back to `window.location.assign('/recipe/<id>')` when there is NO `onOpenRecipe` handler — never use `onOpenRecipe?.(id) ?? window.location.assign(...)`, because `onOpenRecipe` returns `undefined` (void) and `??` would then always hard-navigate to the legacy deep-link route, forcing a `Recipe.get` load instead of the in-place modal.
+- The route-sync `useEffect` (`syncRecipeRoute`) must NOT re-open a recipe that was just dismissed: the effect depends on `expandedRecipeId`, so `collapseExpandedRecipe` sets `justClosedRecipeIdRef` to the id being closed and the effect skips re-expanding that id while the URL's `?recipe=` param is still pending a `navigate` flush. Without this guard, closing would reset `expandedRecipeId` → the effect re-runs → finds the recipe still in the URL → reopens the modal.
+- Keep all URL writes on `navigate()`/`useNavigate()` — do NOT mix raw `history.pushState`/`replaceState` with the router.
+- Discover and Build are not global navigation tabs. The recipe explorer is the home surface, its search row owns the responsive `Create recipe` action, and the editor header owns the contextual `Back to recipes` action.
+- The Discover search bar groups standard search, clear, and newest/oldest sort controls in one responsive surface; sorting is a labeled icon toggle rather than a separate select.
+- Discover opens directly with search, Create recipe, filters, and the feed; there is no promotional welcome card above the search controls.
+- The Emporium banner (`.ak-discover-intro`) must not shrink in its scrolling flex column. Keep `flex-shrink: 0` so long feeds cannot collapse the banner and clip search controls.
+- Discover filters come only from tags on loaded community recipes. There are no All/Favorites/New/My recipes shortcut chips or New card badges. Selecting an active tag again clears it; names such as “All” are valid ordinary community tags. Counts deduplicate each recipe's tags case-insensitively.
+- Primary content uses centered `max-w-6xl` rails where practical; profile cards use shared theme tokens, profile identity stacks on narrow screens, and forms/body copy remain left-aligned for readability.
+
+## Profile & Avatars
+
+- User-facing copy calls the theme choice a “sign,” never “Birthsign.” Picker titles are “What's your sign?”, “Who's your familiar?”, and “Where's your sanctuary?” Profile modals have no Reset actions or horizontal action-row dividers. Internal `birthsignArtwork` and asset paths remain compatible.
+- “Who are you?” combines username and portrait choices under one Save changes action. There is no standalone username-edit button. Cancel discards both drafts; username validation and the 30-day cooldown remain, with inline feedback. A locked username still permits portrait changes.
+- “Who are you?” shows the portrait grid first, followed by the Name editor and format/cooldown guidance, with no tabs. One Save changes action applies both. Visible help/errors call the handle a name.
+
+- The portrait dialog is titled “Who are you?” and expands to show its responsive preset grid without an internal scroll area. Character names reveal on hover/focus and remain visible on touch devices. Only the outer overlay scrolls on constrained screens.
+- Familiar selection opens by clicking its image. Owner-only artwork controls show hover/focus hints and a gentle press response, respecting reduced motion. Cancel discards selection; Save waits for backend success and failures retain the selection for retry.
+- The familiar section heading is “Familiar.” Portrait, Sanctuary, and Familiar hover states brighten the artwork without visible change-label overlays; accessible control names remain. Profile Share always copies the profile URL to the clipboard, showing Copying… then Copied! with a checkmark. Failures offer Try again; it never opens native sharing.
+- There is no general Customize profile button. The Sanctuary banner opens its picker, and the rectangular sign artwork beside the bio opens the sign picker. The portrait has a thin antique-brass rim with delicate etched arcs; the username is bottom-aligned and slightly overlaps its right edge. Clicking the portrait opens “Who are you?” directly, without a camera button. Quests are non-editable Coming soon placeholders; Recipes has a Pin recipe/Change pinned recipe action. Each focused dialog preserves other profile choices.
+- Profile sharing lives in the Sanctuary banner. The bio appears beside the portrait as “A note from the chef” without a nested card. Owners click the text area (or activate it with the keyboard) to edit; there is no separate Edit button.
+- Saved recipes have no separate authenticated page; the profile's private Saved collection is URL-backed through `?collection=saved`, including refresh and back/forward navigation. Drafts use the viewer's Sanctuary artwork and shared banner typography.
+
+- Profile customization includes nine sign presets, six Sanctuary choices (The Library, The Cottage, The Inn, The Garden, The Observatory, The Manor), six named familiars, and one optional pinned published recipe. Main and side quests temporarily show Coming soon with no edit actions; stored quest data is preserved. Focused dialogs use “Save changes.” Sanctuary is stored in the legacy `calling` field with stable option IDs. Signs theme the full application palette. Tenet and pantry customization/display have been removed; legacy JSON is preserved for compatibility.
+- Identity copy evokes an old culinary archive with restrained occult unease. Use original omens, vocations, and named companions (Salem is the black cat; Luna is the rabbit); avoid cute magic slogans and franchise-specific lore. See `docs/profile-sanctuaries.md` for the roster.
+- The recipe editor groups essentials, ingredients, and method into spaced manuscript-style sections. Tags and notes/equipment use optional disclosures; the form includes photo selection/replacement. Prep time is entered in minutes and stored in the existing `HH:mm` duration format. Step fields have explicit accessible labels and resize vertically.
+- `UserProfile.kitchenIdentity` is optional JSON, normalized through `src/utils/kitchenIdentity.ts` and persisted through `saveKitchenIdentityToBackend`. Customization waits for a successful owner-authenticated backend write before updating caches/UI; errors leave the editor open for retry. No Cognito attributes are added.
+- Public profiles show published recipes only. Owners switch between Recipes and Saved in a full-width two-column tab-style row: each option takes half the width, with centered labels, small counts, and an active underline; no artwork icons or descriptions. Saved has a screen-reader privacy description. Drafts remain at `/drafts` through the account menu, not on the profile. Signature recipes resolve only against that profile’s published collection; missing/deleted pins are hidden.
+- Profile customization and avatar selection use `AccessibleDialog`; the customization form previews choices before save and Cancel discards them. Community save totals derive from published-recipe favorites, with no placeholder follower, level, or achievement counts.
+- The 500-character About bio edits in place with identical reading/editing text metrics. A hidden text mirror sizes the editor immediately to the full bio without a height cap or internal scrolling; focus does not scroll the page.
+- Deploy the updated Amplify data schema and regenerate outputs before using Kitchen Sanctuary persistence in a live environment.
+- **The DynamoDB `UserProfile` model is the backend source of truth** for public profiles (`/u/:username` pages + recipe author attribution). One row per user: `userId` (owner), `username` (required, GSI key), `displayName` (required), `bio`, `avatar`, `needsUsernameSetup`. Auth is `ownerDefinedIn('userId')` for writes + authenticated/guest read, with `secondaryIndexes([index('username'), index('userId')])`. See `docs/data-models.md`.
+- `RecipeBuilder` loads all public profiles once via `listUserProfilesFromBackend` into `backendProfilesByUserId`/`backendProfilesByUsername`; `/u/:username` (`profileRouteProfile`) and recipe author hydration read from these backend maps first, falling back to localStorage.
+- Username uniqueness is enforced server-side by `isUsernameTakenServerSide` (backend list check) on create/rename — no Lambda; a tiny race window is accepted. Because `username` is a GSI key, renames delete + recreate the row (can't UpdateItem a GSI key).
+- **Cognito is not the source of truth.** Every profile edit is still mirrored into Cognito attributes via `syncProfileToCognito` (`displayName`→`nickname`, `bio`→`custom:bio`, `avatar`→`custom:avatar`), and edits also sync to the `UserProfile` model via `syncUserProfilesToBackend` (owner-scoped, best-effort).
+- **The deployed Cognito pool schema is immutable.** Only attributes created when the pool was first deployed can be written (`nickname`, `custom:bio`, `custom:avatar`, character-preference customs). Adding new attributes to `amplify/auth/resource.ts` breaks the stack update — do not add any without recreating the pool (which deletes all users)
+- `amplify/auth/resource.ts` declares the mutable attributes: `nickname`, `custom:bio`, `custom:avatar`, plus character-preference customs (`custom:cookingStyle`, `custom:magicalSpecialty`, `custom:favoriteIngredients`)
+- The username/handle has no free Cognito attribute in the frozen schema, so it lives only in the `UserProfile` model + localStorage cache
+- For offline/first-paint, profile data is cached in localStorage under `arcaneKitchen.userProfiles` (a record keyed by user id), seeded from Cognito attributes on sign-in; reads prefer `userAttributes` values; it is NOT the source of truth
+- Avatars are preset fantasy portraits in `src/assets/avatars/`; the picker and random assignment use `DEFAULT_AVATAR_FILES`. Witch is retired from that roster; its asset remains for existing saved portraits. There is no custom photo upload.
+- Optimized at build time via `vite-plugin-image-optimizer` (sharp, ~74% size reduction); all avatar `<img>` tags use `loading="lazy"`
+- Selected avatar filename is saved to `custom:avatar` + `profileData.avatar` + the `UserProfile` row; displayed via `<img src={url} />`
+- New profiles without an existing avatar are seeded with one random preset avatar from `src/assets/avatars/` and persist it until changed
+- Fallback: if no avatar selected, shows the initial letter of the display name
+- The external-profile block shows only `profileRouteProfile.avatar` (never the viewer's own avatar), and shares the profile handle via `shareProfile` → `onShareProfile`
+
+## CloudFront CDN
+
+- `amplify/backend.ts` creates a CloudFront distribution (via CDK escape hatch) and exports its domain via `CfnOutput` + `backend.addOutput({ custom: { CloudFrontDomain } })`
+- On bootstrap, `src/main.tsx` reads `outputs.custom.CloudFrontDomain` from `amplify_outputs.json` and stores it via `setCloudFrontDomain()` in `src/amplifyConfig.ts`
+- `getRecipeImageSource` in `RecipeBuilder.tsx` reads it dynamically at image-resolution time via `getCloudFrontDomain()`, falling back to `VITE_CLOUDFRONT_DOMAIN` env var
+- No env var needed after `npx ampx sandbox deploy` — the domain is auto-detected from the outputs
+
+## Sanctuary Design Language
+
+- `docs/identity-art-prompts.md` is the editable artwork prompt book for all nine Birthsigns, six Sanctuaries, and six Familiars. Each entry is one self-contained generation paragraph. The constellation-only Birthsign prompts remain a reference; the supplied artwork includes illustrated figures around the stars. All six Sanctuaries and Familiars use light/dark artwork pairs selected by system color scheme.
+- `ColorSchemeImage` renders both variants as overlapping layers and crossfades their opacity when the system color scheme changes. Use it for all paired light/dark imagery instead of an abrupt `<picture>` source swap; the global reduced-motion rule minimizes the transition when requested.
+- Birthsign artwork lives in `src/assets/birthsigns/` as 1536×1024 WebP files, mapped to stable theme IDs by `src/theme/birthsignArtwork.ts`. The picker and saved artwork use uncropped 3:2 frames, independent of bio height. Saved artwork feathers only the outer 3% on each edge; the interior remains fully opaque, without an oval mask or rounded crop. Picker artwork stays unfaded. Artwork hover brightens the image rather than outlining the frame; keyboard focus remains visible.
+- Birthsign order is The Wanderer, The Raven, The Wyrm, The Watcher, The Sage, The Fae, The Witch, The Sorcerer, The Mage. Legacy theme IDs remain stable for saved profiles. The Mage uses the former Witch mulberry palette, the Witch uses muted yellow-green, and the Sorcerer pairs crimson accents with pale blue reading surfaces and a crimson/deep-blue banner.
+
+- `SanctuaryHeading` and `SanctuaryMotif` in `src/components/ui/` share the profile atmosphere presets across Saved, Drafts, Build, and Admin. Build uses the signed-in viewer's Sanctuary artwork instead of the generic motif and shows only New recipe/Edit recipe plus its contextual back action.
+- Profile, Discover, and Build banners use responsive Sanctuary artwork. Profiles do not repeat the Sanctuary icon or name beside the identity; the banner image is the public indicator. Discover and Build use the signed-in viewer's Sanctuary.
+- Profile banners show the username as a single truncated line over the artwork; do not repeat it in the profile body or add a generic Sanctuary heading, Birthsign name, symbol, or lore line. The former username area presents the bio as an About section. Discover has no eyebrow label above Emporium, and shared empty states have no decorative pseudo-icon.
+- Banner titles use the `Almendra` display face with Fraunces/serif fallbacks; body copy and form controls retain the existing typography.
+- Page headers, recipe placeholders, and accent/focus colors inherit the signed-in viewer’s saved `kitchenIdentity.theme` through `src/theme/sanctuaryTheme.ts`; guests use Moonlit. Visiting another cook keeps the viewer’s app theme while that cook’s profile banner retains its own atmosphere.
+- The login modal uses the original `/images/member-kitchen-hero.webp` as an edge-to-edge 3:2 tabletop for its initial choice screen. Compact email/recovery views grow only to fit their content, capped by the visible viewport; secondary email actions share a row. There is no wood-extension asset, added image band, or white/stacked fallback; scrolling is reserved for constrained screens.
+- Initial and desktop artwork uses `object-fit: contain` in a matching 3:2 frame. Compact expanded forms use a centered `cover` fit so the original image fills the content-sized frame without stretching or margins; some outer scenery is cropped in that mode.
+- Sign-in opens with one non-selectable, stylized `Arcane Kitchen` heading, native Google SSO and a visible `Continue with email` disclosure; there is no OR divider. Choosing email hides social sign-in and focuses the email field. Credentials stay mounted when switching options, and errors/recovery retain email mode unless the user explicitly goes back. The X is anchored to the image’s top-right; do not restore extra welcome copy.
+- All authentication headings are non-selectable. Submit, password recovery, and back-navigation buttons share the glass treatment, including Amplify's native link-style buttons.
+- Auth glass-button rules exclude `.amplify-alert__dismiss`; error alerts reserve a compact dismiss column so messages wrap normally instead of being squeezed by a full-width close button.
+- `AuthModal` owns the viewport-bounded image/form layout and visual-viewport keyboard resizing. Keep its close control outside the scrollable form area; Amplify container widths must be fluid and its default form padding removed inside `.auth-panel` to avoid clipping. Native form keyboard behavior is preserved, and the install prompt is hidden while authentication is open.
+- Discover remains search-first with no promotional hero. Recipe cards and expanded recipes use parchment surfaces, clear serif headings, restrained jewel accents, and keyboard-activatable recipe titles.
+- Shared `ak-panel`, `ak-recipe-card`, `ak-eyebrow`, `ak-banner-action`, and `ak-empty-state` classes live in `src/index.css`. Button/Input/Card/Badge use these theme tokens instead of separate dark/neon styling.
+- Glass controls share `--ak-glass-*` tokens and explicit `ak-button-*` variants. `ui/Button` forwards native refs, defaults to `type="button"`, and provides loading, choice, image, menu, banner, overlay, and quiet variants. Native framework controls keep scoped adapters; never apply glass styling to every raw button or alert-dismiss control.
+- `RecipeTagFilters` owns the community tag row and overflow disclosure. Primary navigation/logo buttons remain visually transparent and spring on press (except reduced motion); the sort toggle has fixed narrow/wide widths so Newest/Oldest cannot shift layout.
+- Shared controls have a smaller press bounce than the logo and respect reduced motion. Headings and static login-modal text are non-selectable; login inputs retain native text selection/editing.
+- The Build workspace scrolls as one column below 1024px, with preview following the form; desktop retains independently scrolling editor and preview panes. Keep the `ak-workspace-build` and `ak-editor-fields` hooks when adjusting layout.
+- Catwitch remains the complete, uncropped recovery artwork. Shared auth inputs associate labels and errors with their fields; pale-on-parchment error colors must not be reintroduced.
+
+## Merlin Color Palette
+
+- `src/theme/merlinPalette.ts` is the centralized Merlin/wizard accent palette (`MERLIN_PALETTE`) plus `randomMerlinColor()`.
+- Add/remove hex entries there; every consumer updates automatically.
+- The Discover tag filters pick a random palette color on every filter click, applied as the selected button's background via inline `style` (Tailwind can't do dynamic arbitrary colors). All palette colors read well with white text.
+- Recipe tags in the Build editor/preview and expanded recipe modal receive stable random colors from the same palette when they load; dynamic colors use inline `style` values.
+- Profile collection underlines use a cool-to-warm left-to-right progression from the same palette: Recipes, then Saved.
+- `StartupLoading` presents a parchment startup scene with an Almendra title and lightweight inline pot illustration. Steam, embers, and activity dots use CSS motion with reduced-motion support; one Merlin accent is chosen per display. The live startup status remains until auth resolves, without artificial delay or progress percentages. After 12 seconds it offers a reload action with an honest long-wait message; the timer is cleared on unmount.
+- The sign-in button (`Button` primary variant in `src/components/ui/Button.tsx`) uses amethyst/indigo tones from the palette.
+- Active and selected controls use `randomMerlinColor()` from `src/theme/merlinPalette.ts`; do not add hard-coded orange or brown button states.
+
+## Service Worker (PWA)
+
+- The SW (`public/sw.js`) is registered **only in production** (`import.meta.env.PROD` in `src/main.tsx`). In dev mode any previously registered SW is unregistered and any leftover caches are purged instead.
+- Why: `sw.js` serves same-origin static GETs cache-first, except runtime `amplify_outputs.json`, which is always fetched from the network. Caching Vite dev modules (`/node_modules/.vite/deps/*`) across optimize passes yields duplicate module instances in the browser ("Invalid hook call: dispatcher is null"). Hashed prod bundles are immutable and safe.
+- `amplify_outputs.json` is never cached because stale branch Identity Pool IDs cause authentication and data requests to fail after an Amplify environment is replaced.
+- Caches left behind by an unregistered dev SW can hold stale/mangled copies of unhashed source modules (e.g. the old pre-router `RecipeBuilder.tsx`), so dev boot also runs `caches.delete()` on every recognized cache name.
+- If the dev console still shows the duplicate-React error after a code fix, unregister the SW + clear site data once (DevTools → Application → Service Workers).
+
+## Admin Dashboard
+
+- Admin collections provide search, visibility/account-state filters, ten-row result pages, status badges, and links to recipes/conversations. Recipe/comment loading follows backend pagination; refresh failures retain existing records and distinguish unavailable collections from empty results.
+- Existing destructive actions use a keyboard-accessible confirmation dialog. All admin writes are deduplicated while pending, check GraphQL errors before changing UI state, and show success/error feedback. Refresh and mutation controls are disabled during conflicting operations.
+- Planning and progress are tracked in `docs/admin-dashboard.md`.
+- Admin membership uses the Cognito `Admins` group; the first administrator is assigned manually through Cognito/AWS administration.
+- Recipe and comment admin mutations are authorized by the `Admins` group in `amplify/data/resource.ts`; frontend checks must not be treated as authorization.
+- The initial protected admin UI is available at `/admin` and reads the live Cognito session group claim; group membership is not persisted in localStorage.
+- Primary routes remain consistent: Discover is `/discover`, Build is `/build`, and the admin dashboard is `/admin` from the profile dropdown.
+- The authenticated profile dropdown is shared by the main app and admin dashboard through `src/components/ProfileDropdown.tsx`; keep its identity data, menu items, icons, and styling consistent across routes.
+- User deletion, banning, content hiding, restoration, audit logging, and ownership transfers use the admin-only `adminActions` backend mutation; public feed filtering and a fully atomic multi-record ownership transaction remain follow-up work.
+- `Recipe` and `Comment` include moderation visibility metadata; `UserProfile` stores moderation state and `AdminAuditLog` stores admin-action history. Privileged operations and feed filtering must still be backend-enforced before these fields are used in production flows.
+- The admin Users tab reads all Cognito users through the admin-authorized `listAdminUsers` query; `UserProfile` remains the source for app profile and moderation metadata.
+- The `Admins` Cognito group uses a separate identity-pool role, so admin recipe-image uploads require an explicit `Admins` storage rule in addition to the authenticated rule.
+
+## Agent checklist for every PR
+
+- Vitest runs `src/**/*.{test,spec}.{ts,tsx}`; run the Node CLI test separately with `node --test scripts/resolve-ampx-entry.test.cjs`.
+
+1. Check whether any change made AGNET.md inaccurate.
+2. If yes, update AGNET.md before opening or merging the PR.
+3. Keep updates short, factual, and specific.
+4. Update related docs (`README.md`, `docs/*`) when needed.
+
+## AWS Account Migration Tool
+
+- `scripts/migrate-aws-account.cjs` migrates production Cognito identities, application records, and recipe images from the Brain account to the dedicated Arcane.Kitchen account; configuration is in `scripts/aws-account-migration.config.cjs`.
+- Migration artifacts belong under ignored `.migration/`; they contain user data and must never be committed.
+- AWS-mutating commands are dry-run-only unless given the exact `--apply --confirm-account 617394174030` guard.
+- The final source export must be created after writes are frozen with `--confirm-source-frozen`; rehearsal exports cannot be applied.
+- Three native-plus-Google duplicate pairs merge into 11 destination users. Profile conflicts and administrator grants require explicit approval in `identity-review.json`; four duplicate favorites are intentionally collapsed.
+- Run `node --test scripts/migrate-aws-account.test.cjs` in addition to the existing Node CLI test. See `docs/aws-account-migration-runbook.md` for the ordered workflow.
+
+## Writing style
+
+- Prefer simple bullets over long paragraphs.
+- Remove outdated statements instead of stacking contradictions.
+- If something is not final, mark it clearly as temporary.

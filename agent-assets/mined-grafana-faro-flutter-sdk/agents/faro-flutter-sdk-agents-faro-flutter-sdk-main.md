@@ -1,0 +1,381 @@
+# AGENTS.md - Grafana Faro Flutter SDK
+
+## Project Overview
+
+This is a **production-grade Flutter SDK** that implements the Grafana Faro protocol for mobile observability. It provides real user monitoring (RUM) for Flutter applications, capturing telemetry and correlating it with backend data for full-stack observability.
+
+**Target Users**: Flutter developers integrating observability into production mobile applications.
+
+### What is Grafana Faro?
+
+Grafana Faro is an observability protocol designed by Grafana Labs for frontend and mobile application monitoring. It provides a standardized way to collect, process, and visualize application telemetry data.
+
+### Telemetry Data Types
+
+- **Logs**: Application logs and messages
+- **Exceptions**: Error and exception data with stack traces
+- **Measurements**: Performance metrics (CPU, memory, frame rates)
+- **Events**: User interactions and application lifecycle events
+- **Traces**: Distributed tracing with OpenTelemetry integration
+
+### SDK Features
+
+- Device & application info tracking
+- Cold/warm start metrics and ANR detection
+- Automatic Flutter error capture
+- HTTP network request monitoring
+- Asset loading performance
+- Offline event caching
+- Session tracking
+
+### Documentation Links
+
+- [Faro Flutter SDK on GitHub](https://github.com/grafana/faro-flutter-sdk)
+- [Faro Flutter SDK on pub.dev](https://pub.dev/packages/faro)
+- [Grafana Alloy faro.receiver](https://grafana.com/docs/alloy/latest/reference/components/faro/faro.receiver)
+- [Grafana Frontend Observability](https://grafana.com/docs/grafana-cloud/monitor-applications/frontend-observability/)
+
+---
+
+## SDK Architecture
+
+### Project Structure
+
+```
+lib/
+├── faro.dart                 # Main public API (barrel exports)
+├── src/
+│   ├── faro.dart            # Core SDK implementation
+│   ├── configurations/      # Config objects and policies
+│   ├── device_info/         # Device and session management
+│   ├── integrations/        # Framework integrations
+│   ├── models/              # Data models and serialization
+│   ├── transport/           # Network and batching logic
+│   ├── tracing/             # OpenTelemetry integration
+│   └── util/                # Shared utilities
+ios/Classes/                 # iOS-specific implementation (Swift)
+android/src/main/java/       # Android-specific implementation (Java)
+test/                        # Unit and widget tests
+example/                     # Example Flutter app
+```
+
+### Design Principles
+
+- **Minimal Impact**: Low overhead on host applications
+- **Privacy First**: Configurable data collection with user consent
+- **Production Ready**: Robust error handling and edge case management
+- **Backwards Compatible**: Public API changes require careful consideration
+- **Clean Code**: Readable, maintainable code with clear intent
+- **TDD When Applicable**: Test-driven development with a pragmatic approach — write tests first when it adds value, but don't be dogmatic
+
+---
+
+## Build/Test Commands
+
+```bash
+flutter test                              # Run all tests
+flutter test test/path/to/test.dart       # Run single test file
+flutter analyze                           # Static analysis and linting
+dart format .                             # Format code
+flutter pub get                           # Install dependencies
+```
+
+### Android Native Unit Tests
+
+Android-specific Java code (in `android/src/main/java/`) has JUnit tests in
+`android/src/test/java/`. Run them via Gradle from the example app:
+
+```bash
+cd example/android && ./gradlew :faro:testDebugUnitTest
+```
+
+### iOS Native Unit Tests
+
+Swift code (in `ios/faro/Sources/faro/`) has
+[Swift Testing](https://developer.apple.com/xcode/swift-testing/) tests in
+`example/ios/RunnerTests/`. They live under `example/` because they are run via
+the example app's Xcode project, which is the convention for Flutter plugins.
+
+Build the example app at least once so the platform build files exist, then run
+the tests against any available simulator:
+
+```bash
+cd example/ios && xcodebuild test -workspace Runner.xcworkspace \
+  -scheme Runner -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
+
+CI runs these on a macOS runner in the `build & test iOS` job, which also gives
+us the only iOS compile coverage we have.
+
+Locally they are opt-in, because a run needs a simulator and takes about a
+minute, against a second for the Android JUnit tests. Pass `--ios` to include
+them whenever you have touched Swift:
+
+```bash
+dart tool/pre_release_check.dart --ios
+```
+
+---
+
+## Code Style Guidelines
+
+- Use package imports (`package:faro/...`) not relative imports
+- Prefer `final` over `var`, use `const` constructors when possible
+- Single quotes for strings
+- Lines max 80 characters
+- Always declare return types
+- Use `@visibleForTesting` for test-only public members
+- Strict null safety: avoid `!` operator unless absolutely necessary
+- Use meaningful names, avoid abbreviations
+- Document all public classes and methods with `///`
+
+## Error Handling
+
+```dart
+try {
+  // Operation
+} on SpecificException catch (error) {
+  // Handle specific error
+} catch (error) {
+  // Handle general error
+}
+```
+
+- Use specific exception types, catch specific errors first
+- Implement proper cleanup in `dispose()` methods
+- Never log sensitive information
+
+## Commit Messages
+
+Follow `.gitmessage` template: `type(scope): description`
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+
+## Changelog Entries
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com). Entries
+are written for SDK users, not for us. Wrap at 80 characters.
+
+- **One change per bullet.** Don't bundle unrelated changes into one entry.
+- **Lead with impact**, then the explanation. Bold the opening noun phrase so
+  the file is skimmable.
+- **Keep entries under ~10 lines.** If it runs longer, the detail belongs in
+  `doc/Reference.md` — end with "See the Reference docs for details."
+- **Don't restate what the docs already cover.** Platform internals, API names
+  and algorithm details go in the docs, not here.
+- **Bold anything that changes the user's data or app**, such as a drop in
+  telemetry volume, a new manifest component, or a breaking API change.
+- Group under Added / Changed / Deprecated / Removed / Fixed / Security, and
+  link the issue as a full URL rather than a bare number:
+  `([#123](https://github.com/grafana/faro-flutter-sdk/issues/123))`.
+
+
+## Pull Requests
+
+Use the PR template at `.github/pull_request_template.md`. The template includes:
+
+- **Description**: Explain the "what" and "why" — keep it concise but complete
+- **Related Issue(s)**: Link to issues being fixed or related
+- **Type of Change**: Check the appropriate box(es)
+- **Checklist**: Confirm docs, tests, and changelog are updated
+- **Additional Notes**: Optional context for reviewers
+
+
+---
+
+## Example App Development
+
+When developing features in `example/`, follow the architecture established in `example/lib/features/tracing/`.
+
+### Feature Folder Structure
+
+```
+example/lib/features/<feature_name>/
+├── domain/                           # Business logic layer
+│   └── <feature>_service.dart        # Service class with business logic
+├── models/                           # Data models
+│   └── <model>.dart                  # Immutable model classes (use Equatable)
+└── presentation/                     # UI layer
+    ├── <feature>_page.dart           # Widget (ConsumerWidget)
+    └── <feature>_page_view_model.dart # ViewModel + providers
+```
+
+### Riverpod ViewModel Pattern
+
+Each feature's presentation layer uses this pattern:
+
+**1. UiState Class** - Immutable state with Equatable:
+
+```dart
+class FeaturePageUiState extends Equatable {
+  const FeaturePageUiState({required this.data, required this.isLoading});
+  final List<SomeModel> data;
+  final bool isLoading;
+  FeaturePageUiState copyWith({...}) => ...;
+  @override
+  List<Object?> get props => [data, isLoading];
+}
+```
+
+**2. Actions Interface** - Defines user actions:
+
+```dart
+abstract interface class FeaturePageActions {
+  void clearData();
+  Future<void> loadData();
+}
+```
+
+**3. ViewModel** - Private Notifier implementing Actions:
+
+```dart
+class _FeaturePageViewModel extends Notifier<FeaturePageUiState>
+    implements FeaturePageActions {
+  late FeatureService _service;
+  @override
+  FeaturePageUiState build() {
+    _service = ref.watch(featureServiceProvider);
+    return const FeaturePageUiState(data: [], isLoading: false);
+  }
+  // Implement actions, delegate business logic to service
+}
+```
+
+**4. Two Public Providers**:
+
+```dart
+final _viewModelProvider = NotifierProvider<_FeaturePageViewModel, FeaturePageUiState>(...);
+
+// For watching state
+final featurePageUiStateProvider = Provider<FeaturePageUiState>((ref) {
+  return ref.watch(_viewModelProvider);
+});
+
+// For calling actions
+final featurePageActionsProvider = Provider<FeaturePageActions>((ref) {
+  return ref.read(_viewModelProvider.notifier);
+});
+```
+
+**5. Page Widget** - ConsumerWidget using both providers:
+
+```dart
+class FeaturePage extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final uiState = ref.watch(featurePageUiStateProvider);
+    final actions = ref.watch(featurePageActionsProvider);
+    // Build UI using uiState, call actions for user interactions
+  }
+}
+```
+
+### Reference Implementation
+
+See `example/lib/features/tracing/` for the complete pattern.
+
+---
+
+## Development Environment
+
+### Services overview
+
+This is a client-side Flutter SDK with no server component. All unit tests run without external services. The only external dependency is a Faro collector URL for runtime telemetry, which is optional for development.
+
+### Key commands
+
+Standard build/test commands are documented in the **Build/Test Commands** section above. Running `flutter pub get` at the workspace root also resolves `example/` dependencies (they share a workspace).
+
+### Example app configuration
+
+The example app requires `example/api-config.json` (gitignored). Create it by running:
+
+```bash
+export FARO_COLLECTOR_URL="https://your-collector-url" && bash tool/create-api-config-file.sh
+```
+
+A placeholder URL works for building/testing. The file is passed via `--dart-define-from-file` at runtime. See `example/api-config.example.json` for the expected format.
+
+### Running the example app
+
+If an Android emulator or iOS simulator is available, run the example app directly:
+
+```bash
+cd example && flutter run -t lib/main.dart --dart-define-from-file api-config.json
+```
+
+To build the example APK without running it (useful in headless/CI environments where no emulator is available):
+
+```bash
+cd example && flutter build apk -t lib/main.dart --dart-define-from-file api-config.json
+```
+
+### QA smoke-test overrides
+
+The example app reads optional QA dart-define keys (`FARO_QA_RUN_ID`, `FARO_QA_INITIAL_USER_JSON`) from `api-config.json` to inject session attributes and an initial user without patching source code. Include them in the config file:
+
+```json
+{
+  "FARO_COLLECTOR_URL": "https://...",
+  "FARO_QA_RUN_ID": "smoke-123",
+  "FARO_QA_INITIAL_USER_JSON": "{\"id\":\"qa-user\",\"username\":\"bot\"}"
+}
+```
+
+Then run as usual: `flutter run --dart-define-from-file api-config.json`
+
+See `example/README.md` § "QA Smoke Test Configuration" for the full reference.
+
+### Before pushing to a PR (run on EVERY push, not just the first)
+
+Run the pre-release check script before **every** push to a PR branch — not only when first opening the PR. CI runs these same gates on every push, so validating locally first avoids wasted CI cycles. Formatting is by far the most common cause of red CI:
+
+```bash
+dart tool/pre_release_check.dart
+```
+
+This validates formatting (`dart format --set-exit-if-changed .`), static analysis, tests, and CHANGELOG content in one step. Run the full script every time — do not substitute a partial check like `flutter analyze`, which does not catch formatting.
+
+Add `--ios` when the change touches Swift, to also run the iOS native tests.
+
+See `CONTRIBUTING.md` for the full contributor workflow.
+
+### Real-device testing via BrowserStack
+
+If `BROWSERSTACK_USERNAME` and `BROWSERSTACK_ACCESS_KEY` are set, the example APK can be tested on a real Android device using BrowserStack App Automate. Upload via the BrowserStack REST API with `custom_id=faro-flutter-example`, then use Appium REST calls to interact with the app. Flutter exposes UI elements through the Accessibility Bridge, so `accessibility id` element lookups work for buttons with text labels (e.g., `"Change Route"`, `"Simple Span"`). For card-style `ListTile` widgets, the accessibility label is the concatenated title and subtitle separated by `\n`.
+
+### Validating telemetry changes against Grafana Cloud
+
+When a change affects emitted telemetry (logs, events, exceptions, measurements,
+spans, trace/span context, or any `structuredMetadata` field), validate it
+end-to-end against the real data in Grafana Cloud (Loki + Tempo), not just unit
+tests. The `tool/telemetry/` directory has generic, dependency-free Dart helpers
+for this — verifying log↔trace correlation, diffing the emitted telemetry shape
+before/after a change (e.g. branch vs `main`), and listing a session's full
+signal timeline. They shell out to the `gcx` CLI.
+
+See `tool/telemetry/README.md` for the full workflow, inputs to gather, and the
+gcx/Loki/Tempo gotchas.
+
+### Gotchas
+
+- `flutter pub get` in the root resolves both SDK and `example/` dependencies due to workspace configuration — no need to run it separately in `example/`.
+- The `example/pubspec.lock` is checked in but may show as modified after `flutter pub get` due to platform-specific dependency resolution differences. This is expected and should not be committed.
+
+---
+
+## Headless / CI Environment Notes
+
+These notes apply to the Cursor Cloud VM environment, where no display server or emulator is available.
+
+### Flutter SDK
+
+Flutter is installed at `/opt/flutter`. The `PATH` is set in `~/.bashrc` to include `/opt/flutter/bin` and the bundled Dart SDK.
+
+### Android SDK
+
+The Android SDK is installed at `/opt/android-sdk`. The `ANDROID_HOME` env var and PATH additions are set in `~/.bashrc`. Flutter is already configured to use this SDK via `flutter config --android-sdk`.
+
+No Android emulator is available in these environments. Use `flutter build apk` to verify compilation, or use BrowserStack for on-device testing (see above).
+- Security issues should be reported via [Grafana's security issue reporting page](https://grafana.com/legal/report-a-security-issue/) and not directly in this repository.

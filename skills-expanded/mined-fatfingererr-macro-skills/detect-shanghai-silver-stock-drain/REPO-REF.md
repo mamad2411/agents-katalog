@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/fatfingererr/macro-skills (path: skills/detect-shanghai-silver-stock-drain/SKILL.md, branch: master)
-- mined: 2026-09-20
-- desc: 以公開交易所庫存資料為核心，量化上海白銀庫存耗盡的方向、速度與加速度，並將其轉成可交易的供給緊縮訊號。

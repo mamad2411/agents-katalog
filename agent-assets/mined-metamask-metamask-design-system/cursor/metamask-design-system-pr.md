@@ -1,0 +1,119 @@
+---
+description: Generate a comprehensive PR description using the pull request template and current branch diff
+globs: ['**/*']
+alwaysApply: false
+---
+
+When the user types `@pr`, automatically generate a comprehensive pull request description and create the PR using GitHub CLI by:
+
+1. **Analyzing the current branch diff** to understand:
+
+   - What files were added, modified, or deleted
+   - What components/features were changed
+   - The scope and nature of changes (feat, fix, chore, etc.)
+   - Any new dependencies or breaking changes
+
+2. **Following the PR template structure** from `.github/pull_request_template.md`:
+
+   - Fill in the Description section with a clear summary
+   - Identify any related issues if mentioned in commits
+   - Suggest manual testing steps based on changes
+   - Collect Storybook before/after screenshots for visual UI changes (see Visual evidence below)
+   - Pre-check relevant checklist items
+
+3. **Smart content generation**:
+
+   - **Description**: Write 2-3 sentences explaining what changed and why
+   - **Related issues**: Look for issue references in commit messages
+   - **Manual testing steps**: Generate realistic testing steps based on the components changed
+   - **Screenshots/Recordings**: For visual UI changes, run `.cursor/skills/visual-regression-collect/SKILL.md` and embed GitHub-attached PNGs. Do not leave this section as a placeholder.
+   - **Checklist items**: Auto-check items that are clearly satisfied
+
+4. **Component-specific intelligence**:
+
+   - For Figma Code Connect files: Mention design system alignment
+   - For React/React Native changes: Note cross-platform consistency
+   - For test files: Highlight testing improvements
+   - For build/config changes: Note infrastructure updates
+   - For documentation: Mention docs updates
+
+5. **Visual evidence (required for UI changes)**:
+
+   - Follow `.cursor/skills/visual-regression-collect/SKILL.md` before considering the PR complete.
+   - Capture Storybook before/after for **every visual dependent**, not only files in the diff (primitives such as `ButtonBase` affect `Button`, `ButtonHero`, `ButtonFilter`, `SelectButton`, and so on; see [PR #1494](https://github.com/MetaMask/metamask-design-system/pull/1494)).
+   - Crop tightly around the changed UI (component bounding box + 8–16px). Do not attach a full-screen shot of a small component such as Badge.
+   - Attach PNGs with `gh --attach` (v2.99.0+, [changelog](https://github.blog/changelog/2026-09-01-github-cli-media-in-issues-pull-requests-and-comments/)). Never paste Cursor artifact URLs.
+   - If the PR already exists and UI changed, recapture and `gh pr edit --body-file ... --attach ...` so Screenshots/Recordings shows the latest set.
+
+6. **Create the PR using GitHub CLI**:
+
+   - Generate a concise PR title based on the changes (e.g., "feat: add Avatar Figma Code Connect integration")
+   - Create a secure temporary file with a unique name using a UUID or random string (e.g., `pr-description-[uuid].md`)
+   - Ensure the `.cursor/temp/` directory exists, create it if needed
+   - Save the generated description to the temporary file (Markdown image refs must use the same local PNG paths passed to `--attach`)
+   - Execute: `gh pr create --title "[generated-title]" --body-file .cursor/temp/pr-description-[unique-id].md --draft` plus one `--attach 'path/to/file.png#Alt text'` per screenshot
+   - If successful, display: "Draft PR created successfully: [PR-URL]"
+   - Provide next steps: "Review the description and run `gh pr ready` when ready for review"
+   - Clean up temporary file after successful PR creation
+   - If PR creation fails, ensure the temporary file is deleted to prevent accumulation
+
+7. **Display the generated description and PR creation status**:
+
+```markdown
+## **Description**
+
+[Auto-generated description based on diff analysis]
+
+## **Related issues**
+
+[Auto-detected or "Fixes: <!-- Add issue links -->"]
+
+## **Manual testing steps**
+
+[Component-specific testing steps based on changes]
+
+## **Screenshots/Recordings**
+
+[GitHub-attached before/after Storybook captures of every visual dependent, or "Not applicable" for non-visual PRs]
+
+## **Pre-merge author checklist**
+
+- [x] [Auto-check items that are clearly satisfied]
+- [ ] [Leave unchecked items that need manual verification]
+
+## **Pre-merge reviewer checklist**
+
+- [ ] I've manually tested the PR (e.g. pull and build branch, run the app, test code being changed).
+- [ ] I confirm that this PR addresses all acceptance criteria described in the ticket it closes and includes the necessary testing evidence such as recordings and or screenshots.
+```
+
+**Special handling for common patterns**:
+
+- Avatar components → "Enhances avatar component suite with..."
+- Figma files → "Adds Figma Code Connect integration for..."
+- Build configs → "Updates build configuration to..."
+- Bug fixes → "Resolves issue with..."
+- New features → "Implements new functionality for..."
+
+**Example auto-generated descriptions**:
+
+- For Avatar Figma files: "Adds Figma Code Connect integration for Avatar components, ensuring design-to-code alignment between React and React Native implementations."
+- For build changes: "Updates TypeScript build configuration to exclude Figma Code Connect files from production builds while maintaining development type checking."
+- For component updates: "Enhances [ComponentName] with [specific improvements] and ensures cross-platform consistency between React and React Native versions."
+
+**GitHub CLI Integration**:
+
+- Always create PR as draft initially using `--draft` flag
+- Use semantic PR titles following conventional commits (feat:, fix:, chore:, etc.)
+- Generate unique temporary filenames using UUIDs or random strings to avoid conflicts
+- Show the GitHub CLI command being executed: `gh pr create --title "..." --body-file .cursor/temp/pr-description-[unique-id].md --draft` with `--attach` flags when screenshots exist
+- After successful creation, display: "✅ Draft PR created successfully: [PR-URL]"
+- Provide next steps: "Review the description and run `gh pr ready` when ready for review"
+- If `gh` command fails, display the generated description and provide manual instructions
+- Always clean up temporary files regardless of success or failure to prevent accumulation
+
+**Error Handling**:
+
+- If GitHub CLI is not installed: "Please install GitHub CLI: `brew install gh` or visit https://cli.github.com"
+- If not authenticated: "Please authenticate with GitHub: `gh auth login`"
+- If branch has no remote: "Please push your branch first: `git push -u origin [branch-name]`"

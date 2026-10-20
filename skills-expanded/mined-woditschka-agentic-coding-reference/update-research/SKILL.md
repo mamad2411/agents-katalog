@@ -1,0 +1,142 @@
+---
+name: update-research
+description: >-
+  Check upstream tool documentation for drift in the version-stamped
+  surfaces: docs/cross-tool-strategy.md, docs/native-sandbox.md,
+  docs/open-weight-models.md, and the workflow doc's stamped sections. Fetches source URLs, compares claims
+  against current doc, and reports drift. Use when updating the
+  cross-tool strategy guide or checking for tool changes.
+compatibility:
+  - claude-code
+metadata:
+  version: "1.0"
+  author: team
+---
+
+# update-research
+
+## Scope
+
+| Scope | What It Checks |
+|-------|---------------|
+| *(all)* | All sources |
+| `claude-code` | Claude Code docs only |
+| `copilot` | GitHub Copilot CLI docs only |
+| `opencode` | OpenCode docs only |
+| `community` | Community resources only |
+
+## Sources
+
+Fetch each URL listed in `docs/cross-tool-strategy.md` Section 4 (Sources), filtered by the selected scope. **That section is the single authoritative source list** — do not invent URLs, and do not maintain a copy here. A URL added to or retired from the doc is automatically in or out of scope.
+
+## Process
+
+### 1. Fetch Sources
+
+Fetch each URL in the selected scope. If a URL returns an error (404, 403, timeout), note it as a potential doc restructure.
+
+### 2. Extract Key Claims
+
+For each source, extract the current state of:
+
+| Category | What to Look For |
+|----------|-----------------|
+| **Frontmatter fields** | New, renamed, or deprecated YAML fields for agents/skills |
+| **Discovery paths** | Changes to where tools look for agents, skills, rules files |
+| **Tool permissions** | New tool names, permission syntax changes |
+| **Model support** | New models, changed model IDs, deprecated models |
+| **Multi-agent** | Agent Teams status changes, new orchestration features |
+| **Compatibility** | Changes to cross-tool behavior (CLAUDE.md reading, AGENTS.md fallback) |
+| **New features** | Capabilities not mentioned in the current doc |
+| **Deprecations** | Features marked deprecated or removed |
+
+### 3. Compare Against Current Doc
+
+Read `docs/cross-tool-strategy.md` and compare each claim against what the sources say now. Also read the version-stamped surfaces of `docs/specialist-agent-workflow.md`: the §1 Agent Teams status and cost claims, and the §6 migration playbook's install steps. The frontmatter and model-pin matrix lives in `cross-tool-strategy.md` § Agents / Subagents, covered by the read above. And read `docs/native-sandbox.md`'s Sources block — its `strictAllowlist` facts are pinned to a Claude Code build range and this skill is their only refresh path. Read `docs/open-weight-models.md`'s Sources block the same way: its `modelOverrides` observations are pinned to a Claude Code build and contradict the model-configuration page on two points (subagent frontmatter precedence, gateway bypass); a re-check on a newer build that reverses either observation is a drift finding, and so is a change to the Copilot CLI own-models variables or the OpenCode model `id` field. The battery's per-tool frontmatter pins (`FRONTMATTER_VOCABULARY` and the OpenCode permission keys in `harness/verify_harness/checks/sync.py`) restate the § Agents / Subagents facts — a frontmatter drift finding names both edit sites. The bundled-skill roster pin (`CLAUDE_CODE_BUNDLED_SKILLS` in the same file) mirrors Claude Code's bundled skill and command list — a bundled skill added upstream is a drift finding against it ([ADR 2026-08-11](../../../docs/adr/2026-08-11-bundled-skill-names-are-reserved.md)). Flag:
+
+- **Outdated**: Doc says X, source now says Y
+- **Missing**: Source describes feature not mentioned in doc
+- **Deprecated**: Doc recommends something the source marks deprecated
+- **Broken URL**: Source URL returns error or redirects
+- **Version drift**: Doc references old version numbers or dates
+
+### 4. Present Findings
+
+```
+## Research Update: [date]
+
+### Scope: [all | claude-code | copilot | opencode | community]
+
+### Outdated Claims
+1. **Section N.N [title]** — line NN
+   - **Current doc:** [what it says]
+   - **Source says:** [what the source now says]
+   - **Source URL:** [url]
+   - **Suggested fix:** [specific edit]
+
+### New Features (not in doc)
+1. **[tool] [feature name]**
+   - **What:** [description]
+   - **Source URL:** [url]
+   - **Where to add:** Section N.N
+   - **Impact on projects:** [does this affect samples/go or samples/java-spring-boot configs?]
+
+### Deprecations
+1. **Section N.N [title]** — line NN
+   - **What:** [feature] is now deprecated
+   - **Source URL:** [url]
+   - **Suggested fix:** [specific edit]
+
+### Broken URLs
+1. **Section N.N** — line NN
+   - **URL:** [url]
+   - **Status:** [404 | redirect to X | timeout]
+
+### Version Drift
+1. **Section N.N** — line NN
+   - **Current doc:** [old version/date]
+   - **Current:** [new version/date]
+
+### No Changes
+- [list sections that are still accurate]
+
+### Summary
+- X outdated claims
+- Y new features to document
+- Z deprecations
+- W broken URLs
+- V version updates needed
+```
+
+### 5. Propose Edits
+
+For each finding, propose a specific edit to `docs/cross-tool-strategy.md` (or to the named `specialist-agent-workflow.md` surfaces, or the battery's frontmatter pins, when those drift):
+- Quote the exact text to replace
+- Provide the replacement text
+- Note which section tables need updates
+
+Do NOT apply edits automatically. Present them for review.
+
+### 6. Cascade Check
+
+After edits are applied, recommend:
+
+1. Run `harness/verify-harness.py --quick` (tier 0 for a docs-only edit); before committing a substantive change, `/audit-harness` per the maintainer loop in the root `CLAUDE.md`.
+2. Check if any new frontmatter fields should be added to project agent definitions.
+3. Check if any new skill discovery paths change the compatibility rules.
+4. Update the `Status:` snapshot date at the top of `docs/cross-tool-strategy.md`.
+
+## What NOT to Change
+
+- **Architecture decisions** (file-based coordination, agent thinness) — design choices, not tool documentation.
+- **Frontier-capability guidance** (the workflow doc's Agent-Teams rows) — only change if Agent Teams exits experimental or a tool adds new orchestration.
+- **Migration playbook phases** — only change if tool installation or setup steps change.
+- **Cross-tool strategy matrix** — only change if a tool's strengths/weaknesses shift materially.
+
+## Handling Conflicting Sources
+
+If two sources disagree:
+1. Prefer official documentation over blog posts.
+2. Prefer newer docs over older docs.
+3. If unclear, flag as ambiguous and ask the user.
+4. Note the conflict in the findings so the user can verify.

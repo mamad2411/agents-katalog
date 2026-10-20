@@ -1,1 +1,0 @@
-../../plugins/gateflow/skills/tb-best-practices/SKILL.md

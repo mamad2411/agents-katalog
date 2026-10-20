@@ -2,7 +2,6 @@
 ---
 name: databricks-app-apx
 description: Build full-stack Databricks applications using APX framework (FastAPI + React).
-tags: [cloud, databricks]
 ---
 
 # Databricks APX Application

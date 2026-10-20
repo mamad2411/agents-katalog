@@ -149,3 +149,85 @@ ditulis         : /Users/chaali0324/.agents/SKILLS-AVAILABLE.md (371 KB)
                   /Users/chaali0324/.agents/SKILLS-CATEGORIES.md
                   /Users/chaali0324/.agents/skills-index.json
 ===== 2026-10-12T03:50:41Z rebuild-all done =====
+===== 2026-10-19T01:40:36Z rebuild-all start =====
+[1/4] mining registry (quality gate stars>=50, max 60 repo)...
+registry mode: 60 kandidat (stars>=50)
+deepseek-ai/deepseek-harness -> 35 SKILL.md
+firecrawl/firecrawl -> 5 SKILL.md
+Significant-Gravitas/AutoGPT -> 12 SKILL.md
+Snailclimb/JavaGuide -> 0 SKILL.md
+open-webui/open-webui: skip (HTTP Error 404: Not Found)
+langchain-ai/langchain -> 0 SKILL.md
+farion1231/cc-switch -> 0 SKILL.md
+Shubhamsaboo/awesome-llm-apps -> 10 SKILL.md
+microsoft/generative-ai-for-beginners -> 1 SKILL.md
+ruvnet/RuView -> 54 SKILL.md
+punkpeye/awesome-mcp-servers -> 0 SKILL.md
+infiniflow/ragflow -> 1 SKILL.md
+ChatGPTNextWeb/NextChat -> 0 SKILL.md
+koala73/worldmonitor -> 60 SKILL.md
+unclecode/crawl4ai -> 0 SKILL.md
+netdata/netdata -> 27 SKILL.md
+dair-ai/Prompt-Engineering-Guide -> 0 SKILL.md
+shareAI-lab/learn-claude-code -> 4 SKILL.md
+microsoft/ai-agents-for-beginners -> 282 SKILL.md
+headroomlabs-ai/headroom -> 0 SKILL.md
+thedaviddias/Front-End-Checklist -> 393 SKILL.md
+daytonaio/daytona -> 0 SKILL.md
+asgeirtj/system_prompts_leaks -> 215 SKILL.md
+shanraisshan/claude-code-best-practice -> 9 SKILL.md
+Mintplex-Labs/anything-llm -> 0 SKILL.md
+gsd-build/get-shit-done -> 0 SKILL.md
+sansan0/TrendRadar -> 0 SKILL.md
+tw93/Pake -> 2 SKILL.md
+microsoft/autogen -> 0 SKILL.md
+crewAIInc/crewAI -> 3 SKILL.md
+aaif-goose/goose -> 1 SKILL.md
+router-for-me/CLIProxyAPI -> 0 SKILL.md
+hesreallyhim/awesome-claude-code -> 0 SKILL.md
+bojieli/ai-agent-book -> 30 SKILL.md
+VoltAgent/awesome-openclaw-skills -> 0 SKILL.md
+CherryHQ/cherry-studio -> 40 SKILL.md
+elder-plinius/CL4R1T4S -> 0 SKILL.md
+QuantumNous/new-api -> 3 SKILL.md
+mudler/LocalAI -> 0 SKILL.md
+HKUDS/nanobot -> 12 SKILL.md
+jeecgboot/JeecgBoot -> 0 SKILL.md
+zhayujie/CowAgent -> 3 SKILL.md
+siyuan-note/siyuan -> 1 SKILL.md
+sickn33/agentic-awesome-skills -> 8360 SKILL.md
+DeusData/codebase-memory-mcp -> 0 SKILL.md
+MadsLorentzen/ai-job-search -> 9 SKILL.md
+LibreChat-AI/LibreChat -> 3 SKILL.md
+Kong/kong: skip (HTTP Error 403: rate limit exceeded)
+chatanywhere/GPT_API_free: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+Wei-Shaw/sub2api: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+langchain-ai/langgraph: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+chatboxai/chatbox: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+tinyhumansai/openhuman: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+AstrBotDevs/AstrBot: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+luongnv89/claude-howto: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+HKUDS/DeepTutor: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+codewhale-hq/Codewhale: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+pingcap/tidb: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+drawdb-io/drawdb: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+mindsdb/mindshub: skip (<urlopen error [Errno 8] nodename nor servname provided, or )
+STATS: {'new': 98, 'exists': 543, 'dup': 3, 'err': 1}
+[2/4] build_skills_index.py (scan SKILL.md -> DB)...
+curated=3194 total=192599 dup_skipped=2142 rescued=188288
+  curated: 3194
+  reference: 188288
+  junk: 1117
+Siap dipakai (curated+reference): 191482
+junk list : /Users/chaali0324/.agents/skills-junk.txt (1117 entri)
+DB        : /Users/chaali0324/.agents/skills-index.db (157.69 MB)
+[3/4] skills-index-md.py (regenerate SKILLS-INDEX.md)...
+ditulis: /Users/chaali0324/.agents/skills-INDEX.md (5.0 KB) · total=192599 · kategori=26
+[4/4] skills-router.py (regenerate SKILLS-AVAILABLE.md + skills-index.json)...
+curated tersedia: 3194 skill (cap 0/kategori)
+reference (cari manual): 188288
+kategori        : 24
+ditulis         : /Users/chaali0324/.agents/SKILLS-AVAILABLE.md (373 KB)
+                  /Users/chaali0324/.agents/SKILLS-CATEGORIES.md
+                  /Users/chaali0324/.agents/skills-index.json
+===== 2026-10-19T03:27:48Z rebuild-all done =====

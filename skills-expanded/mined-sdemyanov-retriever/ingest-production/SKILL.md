@@ -1,0 +1,45 @@
+---
+name: ingest-production
+description: >
+  Use this skill when the user wants Retriever to ingest a processed litigation or
+  eDiscovery production such as a DAT/OPT/TEXT/IMAGES set, a Bates-numbered volume,
+  or explicitly asks to run ingest-production.
+metadata:
+  version: "1.1.17"
+---
+
+> Operates under `retriever:routing`. If the user's intent actually fits a different tier — another `retriever:*` skill, a Tier 2 slash, a Tier 3 `tools.py` subcommand, or (last resort) direct DB access — stop and re-route against the ladder before continuing.
+
+# Retriever Production Ingest
+
+Use this skill when the user says things like:
+
+- "ingest this production"
+- "load this DAT/OPT set"
+- "index this Bates production"
+- "run ingest-production"
+
+## Load order
+
+1. Read [../workspace/workspace.md](../workspace/workspace.md).
+2. Read [../parsing/parsing.md](../parsing/parsing.md).
+3. Read [../schema/schema.md](../schema/schema.md) if Bates fields, family reconstruction, or source parts matter.
+4. Use [../tool-template/tools.py](../tool-template/tools.py) as the canonical tool entrypoint.
+
+## Execution rules
+
+- Confirm or infer both the workspace root and the candidate production root.
+- For a newly selected workspace, always run `python3 skills/tool-template/tools.py workspace status --quick <workspace>` before the first ingest. For already-known workspaces, run it whenever runtime state is unclear.
+- If `workspace init` or the first ingest fails with SQLite `WAL`, journal-mode, mount, or sandbox wording, stop normal production-ingest execution and follow the [mounted/sandboxed SQLite bootstrap troubleshooting](../workspace/workspace.md#mounted-fs-bootstrap).
+- Do not conclude the workspace is unsupported from `df`, `mount`, or host filesystem labels alone.
+- Existing DB writes do not prove fresh bootstrap will succeed; distinguish existing-DB behavior from fresh-create behavior on the exact target `.retriever/retriever.db` path.
+- Follow the shared ingest preflight in [../workspace/workspace.md](../workspace/workspace.md) before running workspace-local commands. That contract handles missing tools, clean-but-stale auto-upgrades, user-modified tool protection, and mounted-path bootstrap troubleshooting without changing the chosen production-ingest intent.
+- Validate that the target looks like a supported processed production root, not just a loose folder of files.
+- For normal Claude Code use, prefer the bounded plain ingest facade and pass the production root as a scoped path:
+  `python3 skills/tool-template/tools.py ingest <workspace> --recursive --path <production-root-relative-path> --budget-seconds 35`
+- Continue with `next_recommended_commands` while `more_work_remaining: true`; stop only on `completed`, `failed`, or `canceled`.
+- Run `ingest-production` only when the user explicitly asks for that command, when running outside the normal bounded Claude Code command window, or when debugging production-only parity.
+- Do not fall back to loose-file-only ingest. Plain `ingest` without `--file-types` should detect and route the production through the production pipeline.
+- Summarize created, updated, unchanged, and retired logical documents.
+- Call out family reconstruction, linked page images, docs missing linked text, docs missing linked images, and docs missing linked natives.
+- Note that produced Bates values become `control_number` and that linked `TEXT/`, `IMAGES/`, and `NATIVES/` files remain source parts rather than top-level documents.

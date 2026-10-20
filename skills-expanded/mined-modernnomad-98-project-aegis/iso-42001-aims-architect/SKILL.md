@@ -1,0 +1,266 @@
+---
+name: iso-42001-aims-architect
+description: 'Design ISO/IEC 42001:2023 certification readiness — the AI management system (AIMS) under clauses 4–10, AI risk assessment and treatment, AI system impact assessment, and Annex A control-objective selection. Verify details against licensed text; public Annex A counts conflict. Shipped Phase 1.5 guidance and ai-governance-risk-reviewer provide design routes through compliance-control-foundation, while organizational controls and evidence require separate verification. Composes statement-of-applicability-author, compliance-evidence-collector, and ai-lifecycle-risk-manager. Use for ISO 42001 readiness or AIMS design. Do NOT use for one feature''s posture (ai-governance-risk-reviewer), the RMF program (ai-lifecycle-risk-manager), the ISMS (iso-27001-isms-architect), or the SoA document.'
+---
+
+# ISO 42001 AIMS Architect
+
+**Reading key:** ISO/IEC means the International Organization for
+Standardization and the International Electrotechnical Commission; AI means
+artificial intelligence; AIMS means AI management system; ISMS means
+information security management system (the ISO/IEC 27001 counterpart); SoA
+means Statement of Applicability; NIST AI RMF means the National Institute of
+Standards and Technology AI Risk Management Framework; EU means European
+Union; ML means machine learning; SOC 2 (System and Organization Controls 2)
+is an attestation report defined by the AICPA (American Institute of
+Certified Public Accountants); JTC 1/SC 42 is the joint ISO/IEC committee and
+subcommittee that develops AI standards; org means organization.
+
+## Purpose
+
+Design the AI Management System that ISO/IEC 42001:2023 certification
+audits examine. The standard reuses the harmonized management-system
+skeleton (clauses 4–10, same shape as 27001 — verified from the standard's
+table of contents) and adds AI-specific machinery: AI risk assessment (6.1.2/8.2), AI
+risk treatment (6.1.3/8.3), and the AI system impact assessment
+(6.1.4/8.4) that evaluates consequences for individuals and societies, not
+just the organization. Shipped governance guidance for AI systems and the
+`ai-governance-risk-reviewer` provide design guidance, not proof that a
+consumer organization has implemented or operated AI controls. Verify
+mechanisms, owners, status, and evidence before mapping them. This skill
+wraps verified mechanisms in the certifiable
+management system (scope, policy, impact assessments, SoA via
+`statement-of-applicability-author`, internal audit, management review)
+rather than re-deriving them. Readiness design only; certification is the
+accredited body's decision.
+
+*Provenance (history, not operative definitions):* the roadmap's planning
+decision **D9** is the design premise that shipped skills route control work.
+This skill's design routes were originally labelled by library build phase —
+**Phase 1.5** (the AI software development lifecycle governance skills) and
+**Phase 7** (the AI security and large language model systems pack). Those
+labels are catalog history; the Workflow and Inputs above now name the packs
+directly.
+
+## Use When
+
+- Use when: asked to design or build an AI management system, or to
+  prepare for ISO 42001 certification.
+- Use when: scoping 42001 — which AI systems fall in scope, what the AIMS
+  requires beyond an existing ISMS, how AI risk/impact assessments are
+  structured.
+- Use when: an org with AI governance practice (risk reviews, agent
+  governance) needs it formalized into certifiable management-system form.
+- Do NOT use when: reviewing ONE AI feature's governance/risk posture —
+  `ai-governance-risk-reviewer` (its per-feature reviews become AIMS
+  operational evidence).
+- Do NOT use when: operationalizing the NIST AI RMF functions as a risk
+  program — `ai-lifecycle-risk-manager` (the voluntary risk method that
+  pairs with, but does not certify, the AIMS).
+- Do NOT use when: the information-security ISMS
+  (`iso-27001-isms-architect`), the SoA document
+  (`statement-of-applicability-author`), or readiness gaps
+  (`compliance-gap-auditor`).
+
+## Inputs to Inspect
+
+1. The licensed ISO/IEC 42001:2023 text — clause wording, Annex A
+   (normative, "Reference control objectives and controls"), Annex B
+   (normative implementation guidance), Annex C/D (informative). Without
+   it, design on verified structure only; finer claims become verification
+   items.
+2. The AI system inventory: which systems/features use AI, their roles
+   (provider/user of AI), autonomy levels, and affected parties — seeded
+   from `ai-governance-risk-reviewer` outputs where they exist.
+3. Shipped AI governance guidance to use as design routes: the AI software
+   development lifecycle governance pack (called Phase 1.5 in the library's
+   catalog — `ai-sdlc-operating-model` stages/authority, `agent-authorization-matrix` *(manual-only)*
+   standing authority, `agent-memory-governance` *(manual-only)*, `agent-governance-audit`
+   per-change audits), `ai-governance-risk-reviewer` feature reviews,
+   `ai-threat-modeler` threat models, `ai-evaluation-harness` *(manual-only)* eval
+   practice. Inspect separate organizational artifacts before calling any
+   mapped mechanism implemented or auditable.
+4. The `compliance-control-foundation` catalog (AI governance domain) and
+   any existing ISMS — 42001 alongside 27001 shares context/leadership/
+   support machinery; design the delta, not a duplicate.
+5. Obligations landscape: AI-related legal/regulatory/contractual
+   requirements (EU AI Act exposure via `ai-governance-risk-reviewer`'s
+   obligation mapping — flagged for legal review, never asserted as legal
+   conclusions).
+
+## Workflow
+
+1. **Define AIMS scope and context (clause 4).** Which AI systems and
+   organizational roles (developer, provider, user of AI) are in scope;
+   interested parties — including affected individuals/groups, which 42001
+   weighs heavily; internal/external issues. Record the org's AI role per
+   system: obligations differ by role.
+   When the boundary is not already set by the owner, explain that **AIMS**
+   means the organization's AI management system and **scope** is the set of
+   AI systems, organizational activities and roles, and supporting people and
+   processes that this design covers. Present a bounded first scope (named
+   systems plus their required dependencies) and a broader inventory scope
+   only if both remain viable after checking known obligations and affected-
+   party coverage. For each viable boundary, explain why it fits the stated
+   goal, which systems, roles, affected groups, dependencies, and evidence it
+   includes or leaves outside, its benefits and risks, and its setup, audit,
+   and upkeep time and money costs (or explicitly unknown costs). Do not
+   invent an audit quote or silently exclude a material obligation or
+   affected group. Recommend a boundary with the reason and the fact that
+   would change it, then ask the owner one scope question. If a missing
+   obligation or affected-party fact prevents a defensible comparison, ask
+   for that deciding fact and route legal interpretation to human review.
+2. **Establish leadership artifacts (clause 5).** AI policy, top-management
+   commitment, named accountable roles — align with the accountable-owner
+   discipline `ai-governance-risk-reviewer` already enforces per feature.
+3. **Stand up the three-assessment machinery (clause 6 + 8)** using
+   [references/aims-clause-map.md](references/aims-clause-map.md):
+   - **AI risk assessment (6.1.2, operated via 8.2):** method and register
+     for risks OF the AI systems (technical inputs from
+     `ai-threat-modeler`).
+   - **AI risk treatment (6.1.3, via 8.3):** treatment decisions selecting
+     Annex A control objectives → SoA delegated to
+     `statement-of-applicability-author` (it serves 42001 rows natively).
+   - **AI system impact assessment (6.1.4, via 8.4):** per-system
+     assessment of consequences for individuals and societies (fairness,
+     safety, rights, societal effects) — the artifact orgs most often lack;
+     define trigger points (new system, material change) and reviewers.
+4. **Plan support (clause 7).** AI competence (who understands the models
+   and their limits), awareness, documented information — model/feature
+   cards from `ai-governance-risk-reviewer` slot in as documented
+   information about AI systems.
+5. **Design operation (clause 8).** How assessments and controls run in
+   the AI lifecycle — map to `ai-sdlc-operating-model` stages and
+   `ai-lifecycle-risk-manager` functions so the AIMS operates through
+   existing machinery, not beside it. Third-party AI (providers, models)
+   maps to `supply-chain-security-reviewer`'s AI/ML surface plus vendor
+   management.
+6. **Select Annex A control objectives via the foundation.** Use the two
+   packs named above — the AI software development lifecycle governance
+   pack and the AI security and large language model systems pack — to
+   find candidate routes; map only verified operated
+   mechanisms with evidence to objectives. Missing or unverified mechanisms
+   get owners and verification actions. Counts and identifiers come only from the
+   licensed Annex A — public sources conflict.
+7. **Build performance evaluation (clause 9) and improvement (clause 10).**
+   Internal audit program covering the AIMS (per-change audits from
+   `agent-governance-audit` are inputs, not substitutes — the AIMS audit
+   examines the SYSTEM), management review cadence, nonconformity routing.
+8. **Produce the readiness plan** with owners, dates, the
+   ISMS-delta note where a 27001 system exists, evidence handoff to
+   `compliance-evidence-collector`, and the verification-items list.
+
+## Output Format
+
+```
+AIMS DESIGN — <org>, ISO/IEC 42001:2023
+Scope: <AI systems in scope + org role per system (developer/provider/user)>
+Scope choice, if owner decision remains: <AIMS/scope terms; viable boundaries and why; coverage and exclusions including affected groups, dependencies and evidence; benefits/risks; setup/audit/upkeep time and money costs or unknowns; recommendation, reason and change condition; one owner question>
+Context: <interested parties incl. affected individuals/groups; issues>
+Clause artifacts:
+  5: AI policy, named accountable roles
+  6+8: AI risk assessment (6.1.2/8.2, register) | AI risk treatment (6.1.3/8.3 → SoA)
+       | AI system impact assessment (6.1.4/8.4: individuals/societies, triggers, reviewers)
+  7: AI competence, documented information (model/feature cards slot in)
+  8: lifecycle integration (→ ai-sdlc-operating-model, ai-lifecycle-risk-manager); third-party AI (→ supply-chain-security-reviewer)
+  9: AIMS internal audit program; management review cadence
+  10: nonconformity + corrective action routing
+Annex A selection: objective-by-objective map to compliance-control-foundation (mechanism | net-new+owner)
+ISMS delta: <shared machinery reused vs AIMS-specific additions, if 27001 exists>
+Evidence: → compliance-evidence-collector
+Verification items: <licensed-text specifics — clause wording, Annex A entries; counts NEVER asserted>
+Readiness plan: <artifact → owner → date>; certification decision belongs to the accredited body
+```
+
+## Validation Checklist
+
+- [ ] AI system inventory with org role per system anchors the scope.
+- [ ] If the owner must choose scope, the comparison explains terms, viable
+      boundaries, coverage and limits, benefits and risks, cost or unknowns,
+      and a reasoned recommendation before one owner question.
+- [ ] All three assessments designed distinctly: risk (6.1.2), treatment
+      (6.1.3 → SoA), impact on individuals/societies (6.1.4) — the impact
+      assessment is not folded into org risk.
+- [ ] Existing governance artifacts (the AI lifecycle governance pack,
+      `ai-governance-risk-reviewer`) used as design routes; only separately
+      verified operated organizational controls map as mechanisms, not
+      re-specified.
+- [ ] Annex A selection cites only licensed-text entries; no counts stated
+      from public sources.
+- [ ] Internal audit + management review designed with evidence hooks;
+      per-change `agent-governance-audit` positioned as input, not
+      substitute.
+- [ ] ISMS-shared machinery reused where 27001 exists (one context/
+      leadership/support spine, two standards served).
+- [ ] Verification-items list present; no certified/will-pass claims.
+
+## Compliance Precision Rules
+
+- ISO/IEC 42001:2023 is a **certifiable** AI-management-system standard
+  (first edition, 2023-12; harmonized clauses 4–10 incl. 6.1.2–6.1.4;
+  Annex A normative "Reference control objectives and controls", Annex B
+  normative guidance, C/D informative; developed by ISO/IEC JTC 1/SC 42 —
+  structure verified from the standard's table of contents). SOC 2 is an AICPA
+  **attestation** — never conflate.
+- **Never state 42001 Annex A control/objective counts**: secondary
+  sources conflict ("38 controls / 9 objectives" vs "42 objectives") —
+  the reconciliation record deliberately leaves them unstated; use only
+  the licensed table.
+- NIST AI RMF is a **voluntary companion** (the risk method underneath),
+  not a certification target — `ai-lifecycle-risk-manager` owns it.
+- EU-procurement demand for 42001 is positioning, not a standards claim;
+  EU AI Act obligation mapping is flagged for legal review, never asserted
+  as a legal conclusion.
+- Readiness design only; the accredited certification body decides
+  certification.
+
+## Gotchas
+
+- The impact assessment (6.1.4) is the distinctive artifact: orgs with
+  mature security risk practice still miss "what does this AI system do to
+  individuals and societies." Budget real design time for triggers,
+  method, and reviewers.
+- Role determines obligations: developing AI, providing AI to customers,
+  and using third-party AI carry different control weight — an inventory
+  without per-system roles produces a mis-scoped AIMS.
+- Don't build a second management system beside an existing ISMS: the
+  harmonized structure exists so context, leadership, documented
+  information, audit, and review machinery can be shared. Design the
+  delta.
+- Per-feature reviews don't aggregate by themselves: reports produced by
+  the organization and tied to verified operated controls can contribute
+  operational evidence, but the AIMS also needs the system-level register
+  and assessment processes those reports feed.
+- Fast-moving AI vendors churn the third-party surface: model/provider
+  changes are AIMS-relevant changes — wire them into change management
+  and impact-assessment triggers, or the system rots in a quarter.
+- Annex B is normative guidance for the Annex A controls — design against
+  it when licensed; don't improvise implementation depth from blog posts.
+
+## Stop Conditions
+
+- No AI system inventory can be established — stop; an AIMS without knowing
+  which AI systems exist and in what role is fiction.
+- Top-management sponsorship absent — surface before designing; clause 5
+  cannot be retrofitted.
+- The licensed standard text is unavailable AND clause-exact wording or
+  Annex A entries are required — deliver structure-level design with
+  verification items; never fabricate objectives or counts.
+- Asked for one feature's go/no-go, the RMF program, the SoA document, or
+  gap assessment — hand to `ai-governance-risk-reviewer`,
+  `ai-lifecycle-risk-manager`, `statement-of-applicability-author`, or
+  `compliance-gap-auditor` respectively.
+- An impact assessment surfaces likely serious harm or a prohibited-use
+  pattern — escalate to the named accountable human and legal review; do
+  not design around it.
+
+## Supporting Files
+
+- [references/aims-clause-map.md](references/aims-clause-map.md) — the
+  clause 4–10 artifact checklist with the 6.1.2/6.1.3/6.1.4 three-
+  assessment design patterns, the shipped-artifact mechanism map, and the
+  ISMS-delta guide.
+- `evals/evals.json` — trigger + behavior cases.
+- `evals/trigger-evals.json` — discrimination within the compliance
+  cluster and against `ai-governance-risk-reviewer`,
+  `ai-lifecycle-risk-manager`, and `ai-sdlc-operating-model`.

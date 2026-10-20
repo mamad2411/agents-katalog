@@ -263,5 +263,12 @@
   "compressmcp": {
     "command": "compressmcp",
     "args": []
+  },
+  "animation-workflow": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "animation-workflow-mcp"
+    ]
   }
 }

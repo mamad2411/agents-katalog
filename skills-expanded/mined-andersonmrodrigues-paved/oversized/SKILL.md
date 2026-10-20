@@ -1,0 +1,173 @@
+---
+name: oversized
+description: >-
+  Does a sample task. Use when a sample is needed.
+---
+
+# Sample
+
+## When to use
+
+When a sample is needed.
+
+## Procedure
+
+1. Read the sibling code.
+2. Compare with `core.repository.diff`.
+3. Step number 3 of a procedure that should have been a reference.
+4. Step number 4 of a procedure that should have been a reference.
+5. Step number 5 of a procedure that should have been a reference.
+6. Step number 6 of a procedure that should have been a reference.
+7. Step number 7 of a procedure that should have been a reference.
+8. Step number 8 of a procedure that should have been a reference.
+9. Step number 9 of a procedure that should have been a reference.
+10. Step number 10 of a procedure that should have been a reference.
+11. Step number 11 of a procedure that should have been a reference.
+12. Step number 12 of a procedure that should have been a reference.
+13. Step number 13 of a procedure that should have been a reference.
+14. Step number 14 of a procedure that should have been a reference.
+15. Step number 15 of a procedure that should have been a reference.
+16. Step number 16 of a procedure that should have been a reference.
+17. Step number 17 of a procedure that should have been a reference.
+18. Step number 18 of a procedure that should have been a reference.
+19. Step number 19 of a procedure that should have been a reference.
+20. Step number 20 of a procedure that should have been a reference.
+21. Step number 21 of a procedure that should have been a reference.
+22. Step number 22 of a procedure that should have been a reference.
+23. Step number 23 of a procedure that should have been a reference.
+24. Step number 24 of a procedure that should have been a reference.
+25. Step number 25 of a procedure that should have been a reference.
+26. Step number 26 of a procedure that should have been a reference.
+27. Step number 27 of a procedure that should have been a reference.
+28. Step number 28 of a procedure that should have been a reference.
+29. Step number 29 of a procedure that should have been a reference.
+30. Step number 30 of a procedure that should have been a reference.
+31. Step number 31 of a procedure that should have been a reference.
+32. Step number 32 of a procedure that should have been a reference.
+33. Step number 33 of a procedure that should have been a reference.
+34. Step number 34 of a procedure that should have been a reference.
+35. Step number 35 of a procedure that should have been a reference.
+36. Step number 36 of a procedure that should have been a reference.
+37. Step number 37 of a procedure that should have been a reference.
+38. Step number 38 of a procedure that should have been a reference.
+39. Step number 39 of a procedure that should have been a reference.
+40. Step number 40 of a procedure that should have been a reference.
+41. Step number 41 of a procedure that should have been a reference.
+42. Step number 42 of a procedure that should have been a reference.
+43. Step number 43 of a procedure that should have been a reference.
+44. Step number 44 of a procedure that should have been a reference.
+45. Step number 45 of a procedure that should have been a reference.
+46. Step number 46 of a procedure that should have been a reference.
+47. Step number 47 of a procedure that should have been a reference.
+48. Step number 48 of a procedure that should have been a reference.
+49. Step number 49 of a procedure that should have been a reference.
+50. Step number 50 of a procedure that should have been a reference.
+51. Step number 51 of a procedure that should have been a reference.
+52. Step number 52 of a procedure that should have been a reference.
+53. Step number 53 of a procedure that should have been a reference.
+54. Step number 54 of a procedure that should have been a reference.
+55. Step number 55 of a procedure that should have been a reference.
+56. Step number 56 of a procedure that should have been a reference.
+57. Step number 57 of a procedure that should have been a reference.
+58. Step number 58 of a procedure that should have been a reference.
+59. Step number 59 of a procedure that should have been a reference.
+60. Step number 60 of a procedure that should have been a reference.
+61. Step number 61 of a procedure that should have been a reference.
+62. Step number 62 of a procedure that should have been a reference.
+63. Step number 63 of a procedure that should have been a reference.
+64. Step number 64 of a procedure that should have been a reference.
+65. Step number 65 of a procedure that should have been a reference.
+66. Step number 66 of a procedure that should have been a reference.
+67. Step number 67 of a procedure that should have been a reference.
+68. Step number 68 of a procedure that should have been a reference.
+69. Step number 69 of a procedure that should have been a reference.
+70. Step number 70 of a procedure that should have been a reference.
+71. Step number 71 of a procedure that should have been a reference.
+72. Step number 72 of a procedure that should have been a reference.
+73. Step number 73 of a procedure that should have been a reference.
+74. Step number 74 of a procedure that should have been a reference.
+75. Step number 75 of a procedure that should have been a reference.
+76. Step number 76 of a procedure that should have been a reference.
+77. Step number 77 of a procedure that should have been a reference.
+78. Step number 78 of a procedure that should have been a reference.
+79. Step number 79 of a procedure that should have been a reference.
+80. Step number 80 of a procedure that should have been a reference.
+81. Step number 81 of a procedure that should have been a reference.
+82. Step number 82 of a procedure that should have been a reference.
+83. Step number 83 of a procedure that should have been a reference.
+84. Step number 84 of a procedure that should have been a reference.
+85. Step number 85 of a procedure that should have been a reference.
+86. Step number 86 of a procedure that should have been a reference.
+87. Step number 87 of a procedure that should have been a reference.
+88. Step number 88 of a procedure that should have been a reference.
+89. Step number 89 of a procedure that should have been a reference.
+90. Step number 90 of a procedure that should have been a reference.
+91. Step number 91 of a procedure that should have been a reference.
+92. Step number 92 of a procedure that should have been a reference.
+93. Step number 93 of a procedure that should have been a reference.
+94. Step number 94 of a procedure that should have been a reference.
+95. Step number 95 of a procedure that should have been a reference.
+96. Step number 96 of a procedure that should have been a reference.
+97. Step number 97 of a procedure that should have been a reference.
+98. Step number 98 of a procedure that should have been a reference.
+99. Step number 99 of a procedure that should have been a reference.
+100. Step number 100 of a procedure that should have been a reference.
+101. Step number 101 of a procedure that should have been a reference.
+102. Step number 102 of a procedure that should have been a reference.
+103. Step number 103 of a procedure that should have been a reference.
+104. Step number 104 of a procedure that should have been a reference.
+105. Step number 105 of a procedure that should have been a reference.
+106. Step number 106 of a procedure that should have been a reference.
+107. Step number 107 of a procedure that should have been a reference.
+108. Step number 108 of a procedure that should have been a reference.
+109. Step number 109 of a procedure that should have been a reference.
+110. Step number 110 of a procedure that should have been a reference.
+111. Step number 111 of a procedure that should have been a reference.
+112. Step number 112 of a procedure that should have been a reference.
+113. Step number 113 of a procedure that should have been a reference.
+114. Step number 114 of a procedure that should have been a reference.
+115. Step number 115 of a procedure that should have been a reference.
+116. Step number 116 of a procedure that should have been a reference.
+117. Step number 117 of a procedure that should have been a reference.
+118. Step number 118 of a procedure that should have been a reference.
+119. Step number 119 of a procedure that should have been a reference.
+120. Step number 120 of a procedure that should have been a reference.
+121. Step number 121 of a procedure that should have been a reference.
+122. Step number 122 of a procedure that should have been a reference.
+123. Step number 123 of a procedure that should have been a reference.
+124. Step number 124 of a procedure that should have been a reference.
+125. Step number 125 of a procedure that should have been a reference.
+126. Step number 126 of a procedure that should have been a reference.
+127. Step number 127 of a procedure that should have been a reference.
+128. Step number 128 of a procedure that should have been a reference.
+129. Step number 129 of a procedure that should have been a reference.
+130. Step number 130 of a procedure that should have been a reference.
+131. Step number 131 of a procedure that should have been a reference.
+132. Step number 132 of a procedure that should have been a reference.
+133. Step number 133 of a procedure that should have been a reference.
+134. Step number 134 of a procedure that should have been a reference.
+135. Step number 135 of a procedure that should have been a reference.
+136. Step number 136 of a procedure that should have been a reference.
+137. Step number 137 of a procedure that should have been a reference.
+138. Step number 138 of a procedure that should have been a reference.
+139. Step number 139 of a procedure that should have been a reference.
+140. Step number 140 of a procedure that should have been a reference.
+141. Step number 141 of a procedure that should have been a reference.
+142. Step number 142 of a procedure that should have been a reference.
+143. Step number 143 of a procedure that should have been a reference.
+144. Step number 144 of a procedure that should have been a reference.
+145. Step number 145 of a procedure that should have been a reference.
+146. Step number 146 of a procedure that should have been a reference.
+147. Step number 147 of a procedure that should have been a reference.
+148. Step number 148 of a procedure that should have been a reference.
+149. Step number 149 of a procedure that should have been a reference.
+150. Step number 150 of a procedure that should have been a reference.
+151. Step number 151 of a procedure that should have been a reference.
+152. Step number 152 of a procedure that should have been a reference.
+153. Step number 153 of a procedure that should have been a reference.
+154. Step number 154 of a procedure that should have been a reference.
+155. Step number 155 of a procedure that should have been a reference.
+156. Step number 156 of a procedure that should have been a reference.
+157. Step number 157 of a procedure that should have been a reference.
+158. Step number 158 of a procedure that should have been a reference.
+159. Step number 159 of a procedure that should have been a reference.

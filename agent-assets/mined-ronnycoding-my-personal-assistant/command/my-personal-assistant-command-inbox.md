@@ -1,0 +1,251 @@
+# Inbox Intelligence Command
+
+Scan Apple Mail inbox for the last 48 hours and extract actionable intelligence with professional context awareness, focusing on job opportunities, urgent items, and time-sensitive requests.
+
+## Phase 1: Data Collection
+
+Execute the email scanning script to gather inbox data:
+
+```bash
+osascript .claude/skills/scan-inbox/scripts/scan_inbox.scpt 48 false
+```
+
+## Phase 2: Intelligence Extraction & Categorization
+
+Analyze each email and categorize based on the following priority matrix:
+
+### 🔴 CRITICAL - Job Opportunities (Priority Score: 100)
+**Detection Keywords:**
+- Role indicators: "interview", "position", "role", "opportunity", "career", "hiring", "application", "candidate"
+- Seniority levels: "Principal", "Senior", "Staff", "Lead", "Architect"
+- Engineering roles: "Engineer", "Developer", "Architect", "Technical Lead"
+
+**Extraction Requirements:**
+- Company name (from sender domain or subject)
+- Role title (exact phrase)
+- Sender name and email address
+- Action required (interview, application, response)
+- Received timestamp
+
+**Exclusions:**
+- Generic job board digests (Torre bulk emails, LinkedIn daily digests)
+- "Apply now" promotional emails without specific role
+- Job alerts with dozens of listings (bulk newsletters)
+
+**Professional Context Filters:**
+- Prioritize: Python, Backend, Cloud, AI/ML, Distributed Systems
+- Seniority match: Principal, Senior, Staff levels
+- Work style: Remote-first or hybrid opportunities
+- De-prioritize: Junior, Entry-level, Intern positions
+
+---
+
+### 🔴 URGENT - Time-Sensitive Items (Priority Score: 90)
+**Detection Keywords:**
+- Urgency: "urgent", "ASAP", "immediate", "critical", "important"
+- Deadlines: "expires", "deadline", "due by", "expires in [N] days", "by [date]"
+- Action required: "action required", "please respond", "needs approval", "approval needed"
+
+**Extraction Requirements:**
+- What's due or expiring
+- Deadline date/time (if present)
+- Who requested it
+- Consequences of missing deadline
+
+---
+
+### 🟡 IMPORTANT - Meeting Requests (Priority Score: 70)
+**Detection Keywords:**
+- Meeting: "meeting", "schedule", "calendar", "availability", "invite"
+- Calls: "call", "sync", "catchup", "1:1", "discussion"
+- Events: "webinar", "conference", "presentation"
+
+**Extraction Requirements:**
+- Meeting purpose
+- Participants or organizer
+- Proposed times (if any)
+- Response deadline
+
+---
+
+### 🟡 IMPORTANT - Financial Items (Priority Score: 70)
+**Detection Keywords:**
+- Financial: "payment", "invoice", "billing", "subscription"
+- Actions: "withdraw", "renewal", "expires", "domain"
+- Accounts: "account", "funds", "balance", "statement"
+
+**Extraction Requirements:**
+- Service or account affected
+- Amount (if present)
+- Due date or expiration
+- Action required
+
+---
+
+### 🟢 INFORMATIONAL - Work Updates (Priority Score: 50)
+**Sources:** Jira, Confluence, GitHub, Slack, project management tools
+
+**Detection Keywords:**
+- Platforms: "Jira", "Confluence", "GitHub", "GitLab", "Trello"
+- Notifications: "mentioned you", "assigned to you", "due", "updated", "commented"
+
+**Extraction Requirements:**
+- Platform name
+- Notification type
+- Action required (if any)
+
+---
+
+### ⚪ LOW PRIORITY - Newsletters/Promotional (Priority Score: 20)
+**Indicators:**
+- Mass emails (generic greetings, unsubscribe links)
+- Tech news digests (daily/weekly roundups)
+- Marketing emails (promotional offers, discounts)
+- Social media notifications (likes, follows, etc.)
+
+**Action:** Flag as batch-processable, group by type
+
+---
+
+## Phase 3: Priority Scoring Algorithm
+
+For each email, calculate a total priority score (0-100):
+
+1. **Base Score** (from category above)
+2. **Professional Relevance** (+20 points):
+   - Contains: Python, FastAPI, Django, Backend, Cloud, AWS, Kubernetes, AI, ML, RAG, LLM
+3. **Seniority Match** (+15 points):
+   - Role includes: Principal, Senior, Staff (matching career level)
+4. **Time Sensitivity** (+10 points):
+   - Deadline within 48 hours
+   - Expires soon
+5. **Sender Reputation** (+10 points):
+   - Direct recruiter (not job board)
+   - Known company (tech companies, startups)
+   - Human sender (not noreply@)
+
+**Final Sort:** Descending by total score
+
+---
+
+## Phase 4: Structured Presentation
+
+Present the analysis in this format:
+
+```markdown
+📬 INBOX INTELLIGENCE (N unread, 48h scan)
+
+## 🔴 CRITICAL ACTIONS (N items)
+
+### 🎯 JOB OPPORTUNITIES
+• **[Role Title] - [Company]**
+  From: [Sender Name] <email>
+  Received: [Time]
+  Score: [Priority Score]/100
+  Action: [What needs to be done]
+  Relevance: [Why this matters - tech stack, seniority, etc.]
+
+[Additional job opportunities...]
+
+### ⏰ URGENT / TIME-SENSITIVE
+• **[Subject or Description]**
+  From: [Sender]
+  Deadline: [Date/Time]
+  Action: [What's required]
+
+[Additional urgent items...]
+
+---
+
+## 🟡 IMPORTANT (N items)
+
+### 💼 MEETING REQUESTS
+[List meeting invites...]
+
+### 💳 FINANCIAL ITEMS
+[List financial actions...]
+
+---
+
+## 🟢 WORK UPDATES (N items)
+• Jira: [Count] notifications
+• Confluence: [Count] mentions
+• GitHub: [Count] updates
+
+---
+
+## ⚪ NEWSLETTERS/PROMOTIONAL (N items)
+• Tech News: [Count] items ([Sources...])
+• Promotional: [Count] items
+• Social: [Count] items
+**Recommendation:** Batch-process during downtime
+
+---
+
+## 💡 RECOMMENDED ACTIONS (Priority Order)
+1. 🎯 **PRIORITY**: [Highest priority action - typically job opportunity]
+2. ⏰ **URGENT**: [Time-sensitive items]
+3. 📝 **IMPORTANT**: [Meeting responses, work items]
+4. 💳 **FINANCIAL**: [Renewals, payments]
+5. 📰 **OPTIONAL**: Batch-process newsletters
+
+---
+
+## 📊 INBOX SUMMARY
+• **Actionable Items:** [Count] (require immediate attention)
+• **Job Opportunities:** [Count]
+• **Urgent Deadlines:** [Count]
+• **Work Notifications:** [Count]
+• **Can Wait:** [Count]
+
+Would you like me to:
+- Draft a response to any specific email?
+- Get more details about a particular item?
+- Set reminders for time-sensitive actions?
+- Create calendar blocks for email processing?
+```
+
+---
+
+## Phase 5: Error Handling & Edge Cases
+
+**No Emails:**
+```
+✅ **INBOX IS CLEAN**
+No new emails in the last 48 hours. Enjoy the peace!
+```
+
+**Permission Errors:**
+```
+⚠️ **CANNOT ACCESS MAIL**
+Check: System Settings → Privacy & Security → Automation
+Enable: Terminal (or Claude app) → Mail
+```
+
+**Malformed Data:**
+- Skip problematic emails
+- Log issue but continue processing
+- Mention skipped count in summary
+
+---
+
+## Professional Context Profile
+
+This command is optimized for:
+- **Role:** Senior/Principal Software Engineer
+- **Focus:** Backend Engineering, Cloud Infrastructure, AI/ML
+- **Tech Stack:** Python (FastAPI, Django), AWS, Kubernetes, Distributed Systems
+- **Career Stage:** Senior → Principal → Staff progression
+- **Work Style:** Remote-first, asynchronous collaboration
+- **Location:** Costa Rica (America/Costa_Rica timezone)
+
+---
+
+## Success Criteria
+
+✅ Job opportunities detected with 100% accuracy (e.g., Teramind Principal Engineer)
+✅ Urgent items properly flagged and prioritized
+✅ Work notifications grouped and summarized
+✅ Newsletters identified and batched
+✅ Clear action items with specific next steps
+✅ Professional context applied (Python/backend/cloud focus)

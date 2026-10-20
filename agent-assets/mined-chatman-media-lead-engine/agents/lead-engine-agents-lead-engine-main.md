@@ -1,0 +1,346 @@
+# AGENTS.md — AI Agent Instructions
+
+Rules, patterns and context for AI agents working in this codebase.
+For architecture and feature overview see [README.md](README.md) and [docs/strategy/ROADMAP.md](docs/strategy/ROADMAP.md).
+
+---
+
+## Dev environment
+
+- **Runtime:** [Bun](https://bun.sh) 1.3.14+. Never use Node/npm directly.
+- **Database:** PostgreSQL 17 + pgvector (`pgvector/pgvector:pg17`), via Docker Compose on port **5434** (not 5432 — avoids conflicts with other local Postgres instances).
+- **Linter/formatter:** [Biome](https://biomejs.dev/). Run `bun run check` to lint+format. CI runs the same check.
+
+### First-time setup
+
+```bash
+git clone git@github.com:chatman-media/lead-engine.git
+cd lead-engine
+bun install
+cp .env.example .env               # fill in at minimum: PLATFORM_MASTER_KEY
+bun db:up                          # start postgres container
+DATABASE_URL=postgres://lead:lead@localhost:5434/lead_engine \
+  bun run apps/api/scripts/reset-and-migrate.ts
+```
+
+### Daily commands
+
+```bash
+bun db:up             # start Postgres (docker compose)
+bun db:down           # stop it
+bun db:reset          # drop volumes + re-migrate (clean slate)
+bun db:psql           # psql shell inside the container
+
+bun run dev           # apps/api on PORT=3000
+bun run dev:worker    # apps/worker (outbound queue + channel-reload polling)
+bun run dev:ui        # apps/admin-ui on http://localhost:5173
+
+bun run typecheck     # tsc across all packages (must pass before pushing)
+bun run test          # full test suite (~3300 tests across ~300 files)
+bun run check         # biome lint + format check
+```
+
+---
+
+## Environments & deploy
+
+| Среда | URL | Что |
+|---|---|---|
+| Прод | `https://exchanges.agency` | лендинг (`apps/landing/dist` на корне) + API/webhooks (proxy → :3000) |
+| Прод-админка | `https://client.exchanges.agency` | admin-ui SPA на корне поддомена (сборка с `ADMIN_UI_BASE=/`); `/api`,`/ws` проксируются на тот же :3000 — same-host, без CORS. `exchanges.agency/admin` → 301 сюда |
+| Дев | `https://dev.exchanges.agency` | полная копия в `/opt/lead-engine-dev`: порт **3001**, БД `lead_engine_dev`, юниты `lead-engine-dev-api/-worker`; админка здесь осталась на `/admin/` |
+
+**CD:** push в `main` → прод; push в ветку `dev` → дев-инстанс (оба — job'ы в `ci.yml`, SSH → `deploy.sh`). Рабочий цикл: фичи → `dev` → проверка на дев-стенде → PR `dev → main`. Детали и серверная разметка: [docs/operations/CD_SETUP.md](docs/operations/CD_SETUP.md), [docs/operations/SERVER_RUNBOOK.md](docs/operations/SERVER_RUNBOOK.md).
+
+Гочи:
+- API статику почти не раздаёт (только `/widget.js`) — лендинг/админку отдаёт nginx; proxy всего `/` на API даёт 404 на корне.
+- `ADMIN_UI_BASE=/` задан **только** в прод-`.env` (`/opt/lead-engine/.env`); в дев-`.env` его быть не должно, иначе сломается `/admin/` на дев-домене.
+- Каналы (Telegram-боты и т.п.) на деве — только отдельные: продовый бот, подключённый к деву, перетянет вебхук на себя и прод перестанет получать сообщения.
+
+---
+
+## Dev login
+
+After `bun db:reset` the DB is empty. **Public signup is closed by default**
+(`POST /api/auth/signup` → `403 signup_disabled`) — for local dev set
+`ALLOW_PUBLIC_SIGNUP=1` in `.env` first, then register via UI or curl:
+
+```bash
+# .env: ALLOW_PUBLIC_SIGNUP=1
+curl -s -X POST http://localhost:3000/api/auth/signup \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"bob@demo.io","password":"test1234"}' | jq .token
+```
+
+**Default dev credentials:** `bob@demo.io` / `test1234`
+
+After signing in, the `OnboardingGate` redirects to `/onboarding` until the
+mandatory wizard is complete (channel + chat-LLM; exchange also needs funnel +
+rate + requisite). See [docs/engineering/ONBOARDING.md](docs/engineering/ONBOARDING.md).
+
+The first admin of a tenant gets `role=superadmin` automatically. To test cross-tenant isolation or manager-role restrictions, sign up a second tenant or invite a manager:
+
+```bash
+# Invite a manager (as superadmin)
+curl -s -X POST http://localhost:3000/api/admin/admins/invite \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"carol@demo.io","role":"manager"}'
+```
+
+---
+
+## Running tests
+
+> Full testing guide: [docs/engineering/TESTING.md](docs/engineering/TESTING.md).
+
+Tests require a live Postgres instance. Each integration test creates an isolated DB via `createIsolatedDb` and applies migrations before the suite runs.
+
+```bash
+# Run everything
+DATABASE_URL=postgres://lead:lead@localhost:5434/lead_engine bun test
+
+# Run a specific package
+bun test packages/kb
+
+# Run a specific test file
+DATABASE_URL=postgres://lead:lead@localhost:5434/lead_engine \
+  bun test apps/api/src/routes/auth.integration.test.ts
+
+# Run with coverage
+DATABASE_URL=postgres://lead:lead@localhost:5434/lead_engine bun test --coverage
+```
+
+### Integration test pattern
+
+Each integration test (`apps/api/src/routes/*.integration.test.ts`) spins up its own
+isolated Postgres DB via `createIsolatedDb`, applies all migrations, and wires an
+isolated Hono app with the same routes as `apps/api/src/index.ts` — no shared state
+between suites. Full boilerplate:
+[TESTING.md → Паттерн интеграционного теста](docs/engineering/TESTING.md).
+
+---
+
+## Architecture invariants (critical — do not break)
+
+### 1. RLS — Row-Level Security
+
+Every tenant-scoped table has `FORCE ROW LEVEL SECURITY`. **All production reads/writes MUST go through `withTenant(db, tenantId, fn)`** which wraps the callback in a transaction and runs `SET LOCAL app.tenant_id = <id>` before any query.
+
+**Never** run direct queries against tenant tables outside `withTenant`. The RLS policy will return empty results (silent data leak / corruption) instead of erroring.
+
+In production the app connects under a **`NOSUPERUSER NOBYPASSRLS`** Postgres role. On boot both `apps/api` and `apps/worker` log either `"RLS enforced"` (info) or `"RLS not enforced"` (warn). A warn means the DB role is misconfigured — fix it before handling real traffic.
+
+Tested in: `packages/storage/src/rls.integration.test.ts` (8 tests) and `apps/api/src/multi-tenant.integration.test.ts` (10 E2E tests).
+
+### 2. Split-transaction pipeline
+
+Inbound handling uses strictly-ordered phases:
+
+```
+async — optional voice media download + STT, NO open transaction
+tx1  — persist (contact + conversation + message + cheap extractFields)
+       connection returned to pool after tx1
+async — stageClassifier + memoryExtractor, NO open transaction
+tx1b — apply current_stage, lead auto-advance, memory attribute merge
+async — reply.generate() — 1-2s LLM call, NO open transaction
+tx2  — enqueue outbound_queue entries
+async fire-forget — photo classification (never blocks webhook response)
+```
+
+**Invariant:** media download, STT, stage classification, memory extraction,
+reply.generate, outbound HTTP, and photo/OCR LLM calls must not run inside
+`withTenant` transactions. The reply split is validated by test:
+`events.indexOf("llm-call") < events.indexOf("tx-open")`.
+
+### 3. Hot-reload (no restarts needed)
+
+Changing LLM configs, channels, or tenant status goes live in ≤30s without restarting any process:
+- `apps/api`: `InMemoryLlmRouter.invalidate(tenantId)` + `ChannelRegistry.reloadTenant(tenantId)` — instant
+- `apps/worker`: polls `tenant-reloader` every 30s (configurable via `WORKER_CHANNEL_RELOAD_MS`)
+
+Never hardcode channel configs or LLM keys — always read through the router/registry.
+
+---
+
+## Package map
+
+```
+packages/
+  storage            — Drizzle schema, migrations, RLS helpers
+  llm-router         — ChatClient / EmbeddingClient / per-tenant config (BYOK + purpose routing)
+  kb                 — RAG pipeline: hybrid search, ingest, answer, reranker, MMR, multi-query
+  sales              — CoachAnalyzer, StageClassifier, ELO ranking
+  conversation-engine — processInbound pipeline, withTenant, DAL
+  channel-core       — ChannelAdapter contract, Inbound, OutboundEnvelope
+  channel-telegram   — BotAPI + MTProto userbot (GramJS)
+  channel-whatsapp   — Meta Graph API
+  channel-facebook   — Meta Messenger Send API
+  channel-vk         — VK Callback API + messages.send
+  channel-max        — MAX Bot API webhook + messages.send
+  channel-web        — WebSocket chat widget
+  observability      — JsonLogger, PlatformMetrics
+  verticals          — VerticalTemplate registry + funnel phase backbone (phases.ts)
+
+apps/
+  api                — Hono HTTP server: webhooks + admin API + WS
+  worker             — Outbound dispatcher (SKIP LOCKED) + polling reload
+  admin-ui           — React 19 + Vite SPA (Tailwind v4 + shadcn/ui)
+  widget             — Embed script < 50KB gzip
+  landing            — Marketing site
+  vertical-*         — Vertical template packages: exchange, concierge,
+                       modeling, real-estate, recruitment, saas, scooter,
+                       video, visa
+```
+
+**Dependency direction (acyclic):**
+```
+conversation-engine → llm-router, kb, sales, storage
+kb                  → llm-router
+sales               → kb, llm-router
+channel-*           → channel-core
+apps/api            → conversation-engine, channel-*, sales, kb, llm-router
+apps/worker         → conversation-engine, channel-*
+```
+
+---
+
+## Key schema tables
+
+Полный список таблиц вынесен в
+[ARCHITECTURE.md → Schema tables](docs/engineering/ARCHITECTURE.md#schema-tables-full-reference)
+(источник истины — `packages/storage/src/schema.ts`). Enum CHECK-ограничения,
+которые ломают вставку при нарушении:
+
+**`stage_definitions.kind` enum:** only `'intake' | 'active' | 'terminal_won' | 'terminal_lost'` — CHECK constraint will reject anything else.
+
+**`stage_definitions.phase`:** NULL for anchors (intake/terminal); for `active` stages ∈ `'qualify' | 'offer' | 'clear' | 'fulfill'` (CHECK). `validateBackbone()` in `packages/verticals` enforces phase monotonicity + mandatory `qualify`/`offer` — funnel `apply` returns `400` on violation.
+
+**`conversations.source` enum:** only `'bot' | 'userbot' | 'self_play'` — CHECK constraint.
+
+**`service_catalog_items.route_type` enum:** only `'manual' | 'funnel' | 'partner_service' | 'webhook'`. A curated marketplace provider install creates/links `partners`, `partner_services`, and `service_catalog_items`; custom providers follow the same path. See [docs/engineering/SERVICE_CATALOG.md](docs/engineering/SERVICE_CATALOG.md).
+
+---
+
+## RAG pipeline (packages/kb)
+
+The full retrieval pipeline in `answerWithRag` / `answerWithRagStream`:
+
+```
+1. [opt] rewriteQuery        — resolves pronouns/ellipsis from history
+2. [opt] expandQueries       — LLM generates N variants → embed all in one batch (multiQuery)
+3. vector / hybrid search    — pgvector cosine OR RRF(vector+BM25)
+4. [opt] rrfMerge            — fuse N result lists if multi-query active
+5. [opt] applyDynamicThreshold — drop hits with distance > threshold (autoTrimDistance)
+6. [opt] mmrDiversify        — Maximal Marginal Relevance (mmr)
+7. [opt] reranker.rerank     — cross-encoder second pass, Jina or Cohere (reranker)
+8. prompt composition        — style + persona + skills + hooks + context
+9. LLM generation
+10.[opt] fact-checker        — hallucination guard (reflect)
+```
+
+All stages are opt-in via `AnswerInput` fields. See `packages/kb/README.md` for usage.
+
+---
+
+## Prompts layer (`src/prompts/`)
+
+Все литеральные тексты LLM-промптов живут в `src/prompts/` своего workspace
+(`packages/kb`, `packages/sales`, `packages/conversation-engine`, `apps/api`),
+по файлу на домен + `index.ts`-реестр. Композиция (`composeSystemPrompt`,
+`buildSystemPrompt`, сборка блоков из retrieval/style) остаётся обычным кодом.
+
+Правила:
+
+- **Правишь формулировку промпта** → правь файл в `prompts/`, код не трогай.
+- **Новый промпт** → новый файл в `prompts/` (константа или template-функция,
+  если текст интерполирует runtime-значения) + ре-экспорт в `prompts/index.ts`.
+- `prompts/`-файлы **ничего не импортируют** (кроме `import type`) — чистые
+  данные, без циклов. Если промпту нужны значения из кода — делай
+  template-функцию и передавай их параметрами.
+- Имена с доменным префиксом: `REFLECT_SYSTEM_PROMPT`, `COACH_SYSTEM_PROMPT`,
+  `buildFieldExtractorSystemPrompt(...)`.
+- Не-промптовые тексты (реплики бота, лейблы UI, persona-конфиги) в
+  `prompts/` не кладём.
+
+Авто-улучшение промптов: `scripts/prompt-improve-loop.sh`
+(см. `docs/engineering/PROMPT_IMPROVE_LOOP.md`) — цикл работает поверх
+`prompts/`-слоя.
+
+---
+
+## Common pitfalls
+
+| Mistake | Why it fails | Fix |
+|---|---|---|
+| Query outside `withTenant` | RLS returns empty (silent) | Always wrap in `withTenant(db, tenantId, fn)` |
+| `stage_definitions` with `kind='regular'` | CHECK constraint violation | Use `'active'` |
+| `conversations.source='web'` | CHECK constraint violation | Use `'bot'` for web/whatsapp/facebook/vk/max channel-initiated convos |
+| Missing `funnelId` in `stage_definitions` | NOT NULL violation | Insert funnel first, use returned id |
+| `constructor.name` checks in tests | Returns `"Object"` in CI (minification) | Use `instanceof` after matching import |
+| Direct `postgres()` without `onnotice` | Noisy test output | Pass `{ onnotice: () => {} }` in test setups |
+| LLM key not encrypted | Stored in plaintext in `tenant_secrets` | Use `setEncryptedSecret` / `getDecryptedSecret` |
+| Provider/channel credential in notes/metadata | Leaks secrets through API/audit/logs | Store credentials in `tenant_secrets`; metadata may contain only marker/config data |
+| `service_catalog_items.route_type='partner_service'` without `partnerServiceId` | Runtime cannot create provider handoff/deal | Create/link `partner_services` first, or use `manual`/`funnel` |
+| Reranker without extra candidates | Reranker sees only topK → no improvement | Set candidateK=topK×3 before reranker call |
+
+---
+
+## Adding a new API route
+
+1. Create `apps/api/src/routes/my-feature.ts` — export `makeMyFeatureRoutes({ db })`
+2. Register in `apps/api/src/index.ts`
+3. Add auth middleware: `app.use("/api/admin/my-feature/*", makeRequireAuth(...))`
+4. Create integration test `apps/api/src/routes/my-feature.integration.test.ts` following the pattern above
+5. Add endpoint to the API table in `README.md`
+
+### Route conventions
+
+```ts
+export function makeMyFeatureRoutes({ db }: { db: PostgresJsDatabase<typeof schema> }) {
+  const app = new Hono();
+
+  app.get("/api/admin/my-feature", async (c) => {
+    const admin = c.get("admin");           // set by makeRequireAuth middleware
+    // Always scope by tenantId:
+    const rows = await withTenant(db, admin.tenantId, (tx) =>
+      tx.select().from(myTable).where(eq(myTable.tenantId, admin.tenantId))
+    );
+    return c.json({ items: rows });
+  });
+
+  return app;
+}
+```
+
+---
+
+## Commits and PRs
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat(scope):` — new feature (cuts minor version)
+- `fix(scope):` — bug fix (cuts patch)
+- `test(scope):` — tests only
+- `docs:` — documentation
+- `chore:` — tooling, deps, refactor
+
+Scope = package or app name: `feat(kb):`, `fix(api):`, `test(auth):`, etc.
+
+Before pushing: `bun run typecheck && DATABASE_URL=... bun test`.
+
+---
+
+## Env vars (minimum for local dev)
+
+```bash
+DATABASE_URL=postgres://lead:lead@localhost:5434/lead_engine
+PLATFORM_MASTER_KEY=<openssl rand -hex 32>    # required — AES-256-GCM for secrets
+TELEGRAM_WEBHOOK_SECRET=dev-tg-secret         # any string for local dev
+```
+
+Everything else is optional for local dev. WhatsApp, Facebook, and MAX can use
+global fallback webhook envs (`WHATSAPP_VERIFY_TOKEN` / `WHATSAPP_APP_SECRET`,
+`FACEBOOK_VERIFY_TOKEN` / `FACEBOOK_APP_SECRET`, `MAX_WEBHOOK_SECRET`) but SaaS
+channel credentials should be saved per tenant through `/channels`. VK
+credentials are per-tenant only. For production see the full table in
+[README.md#deployment](README.md#deployment).

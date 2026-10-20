@@ -1,0 +1,229 @@
+---
+alwaysApply: true
+description: Automated Lighthouse auditing patterns and best practices
+---
+# Lighthouse Audit Automation
+
+## 🎯 Purpose
+
+Automate Lighthouse audits to ensure consistent 100% scores across all categories, presets, and URL paths.
+
+## 📋 Audit Script
+
+### Location
+
+`lighthouse-audit.sh` - Main audit script
+
+### Usage
+
+```bash
+# Test local development server (default: http://localhost:8080)
+./lighthouse-audit.sh
+
+# Test specific URL
+./lighthouse-audit.sh http://localhost:8080
+
+# Test production URL
+./lighthouse-audit.sh https://wchklaus97.github.io/remind-me-pwa
+```
+
+### Features
+
+- ✅ Tests all URL paths (/, /app, /#app)
+- ✅ Tests both mobile and desktop presets
+- ✅ Generates JSON and HTML reports
+- ✅ Validates scores meet 100% requirement
+- ✅ Provides detailed summary
+
+## 🔧 Prerequisites
+
+### Required Tools
+
+1. **Lighthouse CLI**:
+   ```bash
+   npm install -g lighthouse
+   ```
+
+2. **Node.js** (for score extraction):
+   ```bash
+   # Check if installed
+   node --version
+   ```
+
+### Installation
+
+```bash
+# Make script executable
+chmod +x lighthouse-audit.sh
+
+# Install Lighthouse CLI
+npm install -g lighthouse
+```
+
+## 📊 Test Coverage
+
+### URL Paths Tested
+
+- `/` - Landing page
+- `/app` - Application page
+- `/#app` - Application page (hash route)
+
+### Presets Tested
+
+- **mobile** - Mobile device preset
+- **desktop** - Desktop device preset
+
+### Categories Tested
+
+- Performance
+- Accessibility
+- Best Practices
+- SEO
+
+## 🎯 Score Requirements
+
+**Minimum Score**: 100% for all categories
+
+The script will:
+- ✅ Pass if all scores ≥ 100%
+- ❌ Fail if any score < 100%
+
+## 📁 Output
+
+### Report Location
+
+`./lighthouse-reports/` directory
+
+### Report Files
+
+- `{path}_{preset}_{timestamp}.report.json` - JSON report
+- `{path}_{preset}_{timestamp}.report.html` - HTML report
+
+### Example Files
+
+```
+lighthouse-reports/
+├── root_mobile_20250102_143022.report.json
+├── root_mobile_20250102_143022.report.html
+├── root_desktop_20250102_143022.report.json
+├── root_desktop_20250102_143022.report.html
+├── _app_mobile_20250102_143022.report.json
+├── _app_mobile_20250102_143022.report.html
+└── ...
+```
+
+## 🔄 Integration
+
+### Pre-Commit Hook
+
+Add to `.git/hooks/pre-commit`:
+
+```bash
+#!/bin/bash
+# Run Lighthouse audit before commit
+./lighthouse-audit.sh http://localhost:8080
+if [ $? -ne 0 ]; then
+    echo "Lighthouse audit failed. Please fix issues before committing."
+    exit 1
+fi
+```
+
+### CI/CD Integration
+
+Add to `.github/workflows/github-pages-deploy.yml`:
+
+```yaml
+- name: Run Lighthouse Audit
+  run: |
+    # Start local server
+    dx serve &
+    sleep 10
+    
+    # Run audit
+    ./lighthouse-audit.sh http://localhost:8080
+    
+    # Upload reports as artifacts
+    if [ -d "lighthouse-reports" ]; then
+      mkdir -p lighthouse-artifacts
+      cp lighthouse-reports/*.html lighthouse-artifacts/
+    fi
+```
+
+## 📋 Best Practices
+
+### DO:
+- ✅ Run audit before every commit
+- ✅ Run audit on both local and production URLs
+- ✅ Review HTML reports for detailed insights
+- ✅ Fix issues immediately if scores drop below 100%
+- ✅ Keep reports for historical tracking
+
+### DON'T:
+- ❌ Don't commit if audit fails
+- ❌ Don't ignore score drops
+- ❌ Don't skip mobile preset testing
+- ❌ Don't test only one URL path
+
+## 🧪 Manual Testing
+
+### Quick Test
+
+```bash
+# Test single URL and preset
+lighthouse http://localhost:8080 \
+  --preset=mobile \
+  --output=html \
+  --output-path=./report.html \
+  --view
+```
+
+### Full Test Suite
+
+```bash
+# Run full audit suite
+./lighthouse-audit.sh
+```
+
+## 🔍 Troubleshooting
+
+### Issue: Lighthouse CLI not found
+
+**Solution**:
+```bash
+npm install -g lighthouse
+```
+
+### Issue: Node.js not found
+
+**Solution**:
+```bash
+# Install Node.js
+# macOS: brew install node
+# Linux: apt-get install nodejs
+```
+
+### Issue: Scores below 100%
+
+**Solution**:
+1. Review HTML reports for detailed issues
+2. Check `.cursor/CODE_STANDARDS_100.md` for requirements
+3. Fix issues according to zero tolerance rules
+4. Re-run audit
+
+### Issue: Server not running
+
+**Solution**:
+```bash
+# Start development server
+dx serve
+
+# Or build and serve
+dx build --release --platform web
+dx serve
+```
+
+## 📚 Resources
+
+- [Lighthouse CLI Documentation](https://github.com/GoogleChrome/lighthouse/blob/main/docs/cli.md)
+- [Lighthouse Scoring Guide](https://developer.chrome.com/docs/lighthouse/performance/performance-scoring/)
+- [Code Standards for 100%](./core/code-standards-100.mdc)

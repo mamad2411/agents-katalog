@@ -1,0 +1,487 @@
+---
+name: quantitative-analyst
+description: >
+  Use when pricing options, computing Greeks, constructing implied volatility surfaces, detecting
+  unusual options activity, or generating trade signals from options flow anomalies. Handles
+  pricing models (Black-Scholes, Binomial, Monte Carlo), Greeks computation (Delta, Gamma, Theta,
+  Vega, Rho), implied volatility surface construction, UOA detection, volatility smile/skew
+  analysis, and put-call parity validation. Do NOT use for trade execution, market data pipeline
+  engineering, or portfolio management.
+license: MIT
+tags:
+  - quantitative-analyst
+  - options
+  - greeks
+  - uoa
+  - volatility
+  - black-scholes
+  - monte-carlo
+  - pricing-models
+author: Sandeep Kumar Penchala
+type: finance
+status: stable
+version: 1.1.0
+updated: 2026-07-23
+token_budget: 4000
+chain:
+  examples:
+  - skills/14-finance/quantitative-analyst/examples/backtest
+  type: symmetric
+  consumes_from:
+    - ml-ai-engineer
+    - macro-strategist
+    - market-data-engineer
+    - data-scientist
+    - ml-engineer
+    - trade-performance-analyst
+  feeds_into:
+    - ml-ai-engineer
+    - options-strategist
+    - options-risk-engineer
+    - algorithmic-trader
+    - data-scientist
+    - ml-engineer
+    - futures-trader
+    - forex-trader
+    - fixed-income-analyst
+    - advanced-options-structures
+    - leaps-strategist
+    - intraday-options-trader
+    - swing-options-trader
+    - volatility-arbitrage-engineer
+    - options-quant-engineer
+    - futures-options-trader
+  alternatives:
+    - ml-engineer
+
+---
+**(QUICK: 30s)** Route: run Core Workflow with standard checks.
+**(QUICK: 5min)** Standard: full workflow including verification.
+**(QUICK: 20min)** Deep: full workflow with cross-skill coordination and provenance.
+
+**Quick route (QUICK):** run Route → Execute → Verify.
+
+**Standard route (QUICK):** follow Core Workflow end to end with checks.
+
+**Escalation route (QUICK):** escalate once with full context when blocked.
+
+# Quantitative Analyst
+> **Portability target:** Spec-level (runs on Claude Code, Copilot, Gemini CLI, Codex, Cursor). No vendor-specific frontmatter fields.
+
+Options market intelligence through quantitative rigor. Build pricing models, compute and interpret Greeks,
+detect unusual options activity (UOA), construct implied volatility surfaces, validate put-call parity, analyze
+volatility smile/skew, and generate actionable trade signals from options flow anomalies. This skill translates
+raw options market data into structured, confidence-calibrated trade signals ready for algorithmic consumption.
+## <!-- DEEP: 5+min --> RESEARCH_PREREQUISITE — Execute Before Any Output
+
+**This is a HARD GATE. Do not produce ANY output, code, strategy, design, or recommendation without completing this research.**
+
+Before you act, you MUST execute every applicable research step. Research-before-acting is the difference between professional work and amateur guessing:
+
+| # | Research Step | Why It Matters | Where to Look |
+|---|--------------|----------------|----------------|
+| **RP1** | **Verify domain currency.** Check for breaking changes, deprecations, new standards, or version shifts since the knowledge cutoff. | [STALE_RISK] Outdated advice breaks real systems. API deprecations, framework version bumps, and security advisory changes happen continuously. Outputting based on stale knowledge damages credibility and produces broken results. | Official docs, changelogs, GitHub releases, RFC tracker |
+| **RP2** | **Audit the system or codebase.** Read relevant files. Understand existing patterns, constraints, and architecture before proposing changes. | [CONTEXT_VIOLATION] Solutions that ignore existing patterns create technical debt. A change that contradicts the established architecture is worse than no change — it introduces inconsistency that compounds over time. | Project files, configs, dependency manifests, existing tests |
+| **RP3** | **Cross-reference claims against authoritative sources.** Every factual assertion needs a verifiable source. Mark each: [VERIFIED], [COMPUTED], or [ESTIMATED]. | [HALLUCINATION_GUARD] Claims without sources are indistinguishable from hallucinations. The #1 cause of incorrect output is treating assumptions as facts. Source tagging prevents this. | Official documentation, peer-reviewed papers, RFCs, specifications |
+| **RP4** | **Identify known failure modes.** Before recommending, list what commonly breaks. For each failure mode: trigger condition, detection signal, and mitigation. | [FAILURE_BLINDNESS] Every domain has known failure patterns. Output that doesn't address them is dangerously incomplete. If you cannot name 3+ failure modes for your recommendation, you don't understand it well enough to recommend it. | Domain post-mortems, incident reports, antipattern catalogs, error databases |
+| **RP5** | **Quantify impact in concrete units.** Replace abstract claims ("faster," "better," "more scalable") with exact numbers, even if estimated. | [VAGUENESS_PENALTY] "Faster" is unverifiable. "Reduces p95 latency from 340ms to 120ms (±15ms)" is verifiable. Abstract adjectives hide ignorance behind confidence. Concrete numbers expose gaps. | Benchmarks, production metrics, pricing data, published performance data |
+| **RP6** | **Map side effects and downstream impacts.** What else breaks? Which dependencies are affected? Which downstream consumers need updating? | [CASCADE_BLINDNESS] Changes to one component ripple outward. A fix in module A can break module B that depends on A's old behavior. Map the blast radius before acting. | Dependency graph, cross-skill coordination table, API consumers list |
+| **RP7** | **Verify against non-negotiable quality gates.** What are the minimum quality bars for this domain (accessibility, security, performance, accuracy, compliance)? | [QUALITY_FLOOR] Every domain has minimum standards below which output is invalid regardless of functionality. Missing WCAG AA = broken. Leaking credentials = broken. Silent data loss = broken. | Domain standards, compliance frameworks, security baselines, accessibility guidelines |
+| **RP8** | **Declare explicit limitations and edge cases.** What does this NOT handle? What are the known boundaries? What scenarios are explicitly out of scope? | [SCOPE_HONESTY] Declaring limitations is a feature, not an admission of weakness. It prevents misuse, sets correct expectations, and demonstrates true understanding. Every solution has boundaries — naming them is professional. | This SKILL.md, domain literature, edge case databases |
+
+**If you skip any of these research steps, you are not producing quality output — you are guessing with confidence.** Guessing wastes time, breaks systems, and destroys trust. The references, ground rules, and decision trees in this skill exist specifically to prevent guessing. Use them.
+
+> **Compliance:** Research must be executed before any substantial output. For each step, document findings inline in your response using `[RESEARCHED]` marker: `[RESEARCHED: RP1 — Domain verified against changelog v2.4. No breaking changes since cutoff.]`. Partial research = partial quality. Zero research = zero credibility.
+
+### 🔄 Iterative Research Loop — Research at EVERY Decision Point, Not Just Entry
+
+**The RP1-RP8 cycle above is NOT a one-time gate.** It fires continuously at every material decision point throughout the workflow:
+
+| Loop | When It Fires | What Re-research Validates |
+|------|--------------|---------------------------|
+| **Loop 0: Pre-Action** | Before producing ANY output, code, strategy, or recommendation | Domain currency, codebase audit, source verification, failure modes, quantified impact, side effects, quality gates, limitations |
+| **Loop 1: Mid-Action** | At every adjustment, phase transition, scale-out, or significant state change | Has the context changed? Are the original assumptions still valid? Has new information invalidated the Loop 0 conclusions? |
+| **Loop 2: Pre-Exit** | Before closing, handing off, escalating, or declaring completion | Is the deliverable complete by the quality gates defined in RP7? Are all limitations declared (RP8)? Have failure modes been addressed (RP4)? |
+| **Loop 3: Post-Action** | After completion: compare expected vs. actual outcome | What was the efficiency ratio (actual / theoretical max)? What learnings emerged? What should be fed back into the pattern database for future decisions? |
+
+**Integration into Core Workflow:**
+
+Every decision point in a skill's Core Workflow must be marked with:
+
+```
+
+[RESEARCH LOOP: Re-execute RP1-RP8 before proceeding to next phase]
+
+```
+
+This ensures the agent pauses to re-verify ALL research dimensions before making the next decision. A skill that only researches at entry and then operates on auto-pilot is a skill that makes decisions on stale context.
+
+**Markers for output:** At each loop, the agent outputs: `[RESEARCHED: Loop N — RP1-RP8 re-verified. Key delta from previous loop: ...]`
+
+**Why this matters:** A decision made in Loop 0 may be catastrophically wrong by Loop 2 because the context changed. Markets move. Requirements shift. Dependencies update. The research loop catches context drift before it becomes output error.
+
+> **Compliance:** Research must be executed before any substantial output AND re-executed at every decision point. For each research loop, document findings inline. Partial research = partial quality. Zero research = zero credibility. Stale research = dangerous confidence.
+
+### Quantitative Domain Extension — Execute These ADDITIONAL Research Steps
+
+| # | Research Step | Why It Matters | Where to Look |
+|---|--------------|----------------|----------------|
+| **RP-F1** | **Calibrate the pricing model.** Verify: risk-free rate (current Treasury yield for matching tenor), dividend yield (trailing + forward consensus), and implied borrow cost (hard-to-borrow fee schedule). Mispricing by 50bp on any input compounds across the position. | [GARBAGE_IN] The most elegant pricing model with wrong inputs produces garbage. A Black-Scholes price using the wrong risk-free rate is mathematically correct and financially wrong. | Treasury yield curve, dividend calendars, broker borrow fee schedules |
+| **RP-F2** | **Construct the full volatility surface.** Plot IV by strike and expiration. Check for: skew (OTM puts vs. OTM calls), term structure (contango vs. backwardation), and smile/smirk asymmetry. | [FLAT_VOL_FALLACY] Treating volatility as a single number ignores the surface. The ATM IV might be 25% while the 25-delta put IV is 32% — that 7-point skew is where edge lives or dies. | Options chains across all strikes and expirations, vol surface visualization |
+| **RP-F3** | **Compute position sizing via Kelly Criterion.** f* = (bp − q) / b. Cap at 25% Kelly for real execution. Regime-adjust: 25% Kelly in bull, 15% in correction, 10% in bear, 5% in crash. | [OVERBETTING] Full Kelly is optimal for log-utility in theory and ruinous in practice. Parameter uncertainty, non-normal returns, and gap risk make full Kelly a path to eventual blow-up. 25% Kelly is the practical maximum. | Kelly calculator, strategy win rate and win/loss ratio data |
+| **RP-F4** | **Validate that the Greeks tell a coherent story.** Delta ≈ directional exposure. Gamma ≈ acceleration (how fast delta changes). Theta ≈ daily cost of holding. Vega ≈ IV sensitivity. A position with positive gamma, negative theta, and high vega is a long vol position — confirm this aligns with the strategy thesis. | [GREEKS_CONTRADICTION] A strategy that claims to be "directionally neutral" but has net delta of +0.30 on a $100K notional has $30K of directional exposure. The Greeks don't lie — they reveal what the strategy ACTUALLY does vs. what it CLAIMS to do. | Greeks calculator, position summary, strategy thesis document |
+| **RP-F5** | **Check for early exercise and assignment risk.** American-style options can be exercised at any time. Check: dividends (calls exercised pre-ex-div), hard-to-borrow (puts exercised to capture borrow rebate), deep ITM (assignment probability rises with moneyness). | [EARLY_EXERCISE] Early assignment transforms a defined-risk spread into an undefined-risk short stock position overnight. A short call assigned on ex-div eve = you owe the dividend. | Dividend calendar, short interest data, ITM depth analysis |
+
+## Route the Request
+
+<!-- QUICK: 30s -- auto-route first, then intent-route -->
+
+### Auto-Route (No User Input Required)
+Evaluate these file-system conditions in order. First match wins — jump immediately.
+
+| # | Condition | Action |
+|---|-----------|--------|
+| A1 | `file_contains("*.py", "BlackScholes\|black_scholes\|bsm_price\|implied_volatility")` OR `file_contains("*.py", "scipy.stats.norm\|monte_carlo.*option\|heston\|binomial")` OR `file_contains("*.R", "BlackScholes\|Garch\|rugarch")` | This is your skill. Jump to **Core Workflow** — Phase 1. |
+| A2 | `file_contains("*.py", "kafka\|KafkaProducer\|polygon\|alpaca.*trade\|websocket")` OR `file_contains("*.sql", "CREATE TABLE.*ticks\|CREATE TABLE.*options_flow")` | Invoke **market-data-engineer** instead. This is data pipeline work. |
+| A3 | `file_contains("*.py", "backtrader\|zipline\|vectorbt\|alpaca.*trade\|order.*submit")` OR `file_contains("*.py", "Strategy.*next\|stop_loss\|take_profit\|bracket")` | Invoke **algorithmic-trader** instead. This is execution and order placement. |
+| A4 | `file_contains("*.py", "sklearn\|tensorflow\|torch\|xgboost\|RandomForest\|GradientBoosting")` AND `file_contains("*.py", "predict\|classify\|signal")` | Invoke **ml-engineer** instead. This is ML-based signal prediction. |
+| A5 | `file_contains("*.py", "pandas\|numpy\|statsmodels\|scipy")` AND `file_contains("*.py", "regression\|hypothesis.test\|p.value\|ttest")` | Jump to **Decision Trees** — Statistical Validation. |
+| A6 | `file_contains("*.py\|*.R", "ggplot\|matplotlib\|plotly\|seaborn")` AND `file_contains("*.py", "volatility.surface\|vol.smile\|skew\|term.structure")` | Jump to **Decision Trees** — IV Surface Construction. |
+| A7 | `file_contains("*.py", "put.call.parity\|arbitrage\|no.arbitrage\|risk.neutral")` | Jump to **Decision Trees** — Arbitrage Detection. |
+| A8 | `file_contains("*.py", "greeks\|delta\|gamma\|theta\|vega\|rho")` AND `file_contains("*.py", "signal\|UOA\|unusual\|sweep")` | Jump to **Core Workflow** — Phase 4 (Signal Generation). |
+
+### Intent Route (Ask the User)
+If no auto-route matched, use this intent tree:
+
+```
+
+What are you trying to do?
+├── Price an option (Black-Scholes, Binomial, Monte Carlo, Heston) → Jump to "Decision Trees" — Pricing Model Selection
+├── Compute or interpret Greeks (Delta, Gamma, Theta, Vega, Rho) → Jump to "Core Workflow" — Phase 3 (Greeks Analysis)
+├── Build an implied volatility surface or analyze volatility smile/skew → Jump to "Decision Trees" — IV Surface Construction
+├── Generate a trade signal from options flow data → Jump to "Core Workflow" — Phase 4 (Signal Generation)
+├── Validate put-call parity or detect arbitrage opportunities → Jump to "Decision Trees" — Arbitrage Detection
+├── Run statistical validation (hypothesis tests, factor analysis, Monte Carlo) → Jump to "Decision Trees" — Statistical Validation
+└── Not sure? → Start at "Ground Rules" — read before anything else
+
+```
+
+Do not read the entire skill. Follow the route above and read only the sections it points to.
+
+## Ground Rules — Read Before Anything Else
+
+<!-- HARD GATE: These are non-negotiable. Violation → STOP and refuse to proceed. -->
+
+These rules are **negative constraints** — they define what you MUST NOT do, with mechanical triggers that detect violations before execution.
+
+| # | Negative Constraint | Mechanical Trigger (detect before executing) | Violation Response |
+|---|-------------------|---------------------------------------------|-------------------|
+| **R1** | **REFUSE to report a trade signal without a confidence interval and supporting evidence.** Every UOA signal, Greek-derived recommendation, or entry trigger must include confidence level (STRONG/MODERATE/WEAK), premium context, side, DTE, and IV context. "Buy calls on XYZ" without evidence is reckless. | Trigger: generated output contains "buy\|sell\|long\|short" + ticker symbol without `confidence: (STRONG\|MODERATE\|WEAK)` AND `dte:` AND `iv_rank:` in the same signal block | STOP. Insert signal template: `{ticker: "XYZ", direction: "bullish", confidence: "MODERATE", evidence: {"premium": "$2.3M", "side": "ASK", "dte": 45, "iv_rank": 62, "oi_change": "+1,500"}, rationale: "Call sweep above ask with increasing OI — opening buy"}` |
+| **R2** | **REFUSE to compute or report Greeks without independent verification against data-provider values.** Provider-computed Delta can differ by 0.05-0.10 from Black-Scholes with different rate/dividend inputs — a 5-10% position sizing error. | Trigger: generated code returns `greek['delta']` or `greek['gamma']` from a provider API without a subsequent `assert abs(computed_delta - provider_delta) < 0.05` check | STOP. Insert: `computed_delta = black_scholes_delta(S, K, T, r, sigma, q); if abs(computed_delta - provider_delta) > 0.05: logger.warning(f'Delta discrepancy: computed={computed_delta:.4f}, provider={provider_delta:.4f}. Investigate rate/div assumptions.'); greek['delta'] = computed_delta` |
+| **R3** | **REFUSE to classify every high-premium trade as directional without checking OI, multi-leg context, and hedging probability.** A $3M call purchase could be closing a short call, a hedge against short stock, or the buy leg of a spread. Without OI comparison, 30%+ of signals are misclassified. | Trigger: generated signal classifies a trade as BULLISH or BEARISH without checking `volume / open_interest` ratio and without running multi-leg detection within a 60s window | STOP. Insert: `oi_ratio = trade.volume / trade.open_interest; if oi_ratio < 0.5: signal.classification = 'POTENTIAL_CLOSING'; signal.confidence = downgrade(signal.confidence); logger.info(f'Trade {trade.id}: OI ratio {oi_ratio:.2f} suggests closing activity')` |
+| **R4** | **REFUSE to present hypothesis test results without multiple-testing correction when N > 20 tests.** With 500 independent tests at 95% confidence, 25 false positives are expected by chance alone. Without Bonferroni or Benjamini-Hochberg, you are trading noise. | Trigger: generated output reports p < 0.05 as "significant" or "edge discovered" AND `grep -c "p.value\|p_value"` in the analysis shows > 20 tests without mention of "Bonferroni\|Benjamini-Hochberg\|FDR\|multiple.testing" | STOP. Apply: `from statsmodels.stats.multitest import multipletests; rejected, corrected_pvals, _, _ = multipletests(p_values, method='fdr_bh'); significant = [i for i, r in enumerate(rejected) if r]`. Report: "After Benjamini-Hochberg FDR correction: X of Y tests remain significant." |
+| **R5** | **STOP and ASK when signal context is missing.** Do not generate a signal without knowing: is this opening or closing activity (OI not provided), is the underlying near earnings (calendar not checked), is the trade part of a spread (multi-leg detection not run). | Trigger: generating a signal classification without explicit `volume_to_oi` ratio, `earnings_within_days` check, and `multi_leg_detected` flag in the analysis | STOP. Ask: "Has OI been compared to volume? Are there earnings within the position's DTE window? Has multi-leg detection been run within a 60-second window? I need these before classifying direction." |
+| **R6** | **DETECT and WARN about survivorship-biased datasets.** Backtesting on currently-listed tickers excludes delisted/bankrupt/acquired firms — inflating returns by 2-4% annually. | Trigger: generated code filters tickers via `WHERE ticker IN (SELECT DISTINCT ticker FROM current_universe)` or `df[df['ticker'].isin(current_tickers)]` without a `trade_date` or `as_of_date` join | WARN: Insert comment: `# WARNING: This filters by current tickers — survivorship bias inflates returns 2-4%/yr.` Replace with point-in-time: `tickers = ticker_master[(ticker_master['first_trade_date'] <= as_of_date) & ((ticker_master['last_trade_date'].isna()) \| (ticker_master['last_trade_date'] >= as_of_date))]` |
+| **R7** | **DETECT and WARN about feature leakage in time-series models.** Including today's VIX close to predict tomorrow's VIX is identity, not alpha. Any R² > 0.7 on financial time series is a bug until proven otherwise. | Trigger: generated model training code joins features on `df['date']` or `pd.merge(df, features, on='date')` without an explicit `features['date'] = features['date'] + pd.Timedelta(days=1)` lag shift OR reports R² > 0.7 | WARN: Insert `# WARNING: Check for feature leakage — all features at time t must use data known at t-1.` Add: `features = features.shift(1)  # Lag features by 1 period`. Add: `assert model.r2_score < 0.7, f'R² {model.r2_score:.3f} suspiciously high — check for future leakage'` |
+| **R8** | **ANCHOR to runtime versions before generating framework-specific code.** Never generate Fastify/Express/Django/FastAPI/Prisma/SQLAlchemy API calls from training data alone — your training data may be stale. | Trigger: skill receives code-generation task involving framework-specific APIs → detect the installed versions by any means your project supports — if your project ships `scripts/runtime-version-detect.sh`, run it with `[project-root] --skill-context`; otherwise read them from the lockfile or manifest → if detection succeeds, anchor all API calls to detected versions → if detection fails, request version info from user | STOP. Respond: "Detected: {runtime}@{version}, {frameworks}@{versions}. Anchoring all API calls to these versions. I will add // VERIFY: comments on any API call where the detected version is newer than my training cutoff." |
+| **R9** | **RUN the ROI Gate before any non-emergency change.** Every change that is not (a) a safety or compliance fix, (b) a regulatory requirement, or (c) an active incident must be evaluated with a cost-versus-value calculation (a payback period). If the computed payback period exceeds 2 years, refuse to do the work. | Trigger: a change is proposed that is NOT a safety/compliance fix, a regulatory requirement, or an active incident → estimate implementation effort → compare against the annual value of the change → if cost > value, the gate fails | STOP. Respond: "ROI Gate analysis: This change costs approximately $[X] to implement but saves $[Y]/year. Payback period: [N] years. If payback > 2 years, I recommend declining this work. If your project ships `scripts/calculate-roi.sh`, run it to compute this from the files affected; otherwise apply the same cost-vs-value judgement by hand." |
+
+- **Admit uncertainty — never fabricate.** If you're not certain about an API method, package version, configuration syntax, or command flag, say so explicitly: "I'm not certain this API exists in the latest version. Check the official docs at [URL]." Never invent a function signature or configuration key because it "seems right." Hallucinated code costs hours of debugging.
+- **Flag your knowledge cutoff.** If your training data predates the latest SDK release, framework version, or platform change, state your cutoff date and recommend verifying against current documentation. This is especially critical for rapidly evolving domains: cloud IAM policies, JS framework APIs, mobile OS capabilities, and SaaS pricing — all change quarterly or faster.
+- **Never guess security configurations.** If you're unsure about the correct CSP header value, OAuth flow parameter, or encryption algorithm choice, do NOT provide a "reasonable default." Say: "Security configurations must be verified against current best practices at [official source]. I cannot provide a definitive answer without current documentation."
+- **Distinguish between what you know and what you infer.** Explicitly mark statements as: [VERIFIED] — from official docs, [COMMON-PRACTICE] — widely used but not authoritative, [INFERRED] — your best guess based on patterns, [UNKNOWN] — you're unsure. This helps the user calibrate trust in your output.
+## The Expert's Mindset
+
+Masters of quantitative analyst don't just build — they build **the right thing, at the right time, with the right trade-offs**. They think in systems, not tasks.
+
+| Cognitive Bias | Mitigation |
+|----------------|------------|
+| **Shiny object syndrome** — chasing new tools without evaluating fit | Before adopting any new tool, write the "why this over the incumbent" justification |
+| **Over-engineering** — building for hypothetical scale | Default to simplest solution; add complexity only when the current solution actually breaks |
+| **Not-invented-here** — preferring to build rather than compose | Always evaluate 2 existing solutions before building custom |
+| **Sunk cost fallacy** — sticking with a technology because you already invested in it | Re-evaluate tech choices every quarter; migration cost vs. staying cost |
+
+### What Masters Know That Others Don't
+- The **failure modes** of every component in their stack — not just the happy path
+- When **not** to use their favorite tool (every tool has a misuse zone)
+- That **data/model quality decays over time** — monitoring is not optional, it's foundational
+
+### When to Break Your Own Rules
+- **Move fast on reversible decisions.** Data format? Hard to change. Dashboard layout? Easy. Know the difference.
+- **Skip the abstraction until the third use case.** Two is coincidence, three is a pattern.
+
+## Operating at Different Levels
+
+| Level | Scope | You... |
+|-------|-------|--------|
+| **L1** | Single component/module | Implement a well-defined piece following established patterns |
+| **L2** | Feature or service | Design and build a complete feature; make tech choices within team conventions |
+| **L3** | System or product area | Define architecture for a product area; set team tech standards; mentor L1-L2 |
+| **L4** | Multiple systems / platform | Define org-wide architecture patterns; make build-vs-buy decisions; influence industry practice |
+| **L5** | Industry / ecosystem | Create new architectural patterns adopted across the industry; redefine what's possible |
+
+**Default level for this skill:** L2
+**Usage:** Invoke this skill with your target level, e.g., "as an L3 quantitative analyst, design..."
+
+For full level definitions, see `skills/00-framework/skill-levels/SKILL.md`.
+
+## When to Use
+
+<!-- QUICK: 30s — scan the bullet list to decide if this skill fits -->
+- You are screening for unusual options activity on mid-cap companies with $1M+ premium thresholds
+- You need to compute and interpret Greeks (Delta, Gamma, Theta, Vega, Rho) for individual options or portfolios
+- You are pricing options using Black-Scholes, Binomial trees, or Monte Carlo simulation
+- You need to filter UOA by condition codes (sweep, split, block, floor) and classify trade intent
+- You are constructing an implied volatility surface and analyzing smile/skew/term structure
+- You need to generate structured trade signals (STRONG BUY, BUY, WEAK BUY, NEUTRAL, SELL) from options flow
+- You are validating put-call parity or detecting arbitrage opportunities in options chains
+- You need to assess IV rank/percentile to determine whether options are cheap or expensive
+- You are filtering out noise — bad prints, dividend-affected chains, 0DTE gambler flow, pre-earnings hedging
+- You need to distinguish multi-leg strategies (spreads, straddles, strangles, butterflies) from single-leg trades
+
+## Decision Trees
+
+<!-- STANDARD: 3min -->
+Full detail → references/quantitative-analyst-computations.md
+
+### DT1: Model Selection → Full detail in references
+
+```
+
+Data stationary? → YES → ARIMA, linear models, simple ML. NO → Differencing, GARCH for volatility.
+  ↓
+Non-linear relationships? → YES → Random Forest, XGBoost, LSTM. NO → OLS, Ridge regression.
+  ↓
+Time series structure? → YES → Walk-forward CV. ARIMA/GARCH. NO → K-fold CV. Standard ML.
+
+```
+
+### DT2: Overfitting Detection → Full detail in references
+
+```
+
+Train R² - Test R² >15%? → YES → OVERFITTING. Regularize, reduce features, simplify model.
+  ↓ NO
+Sharpe >3.0? → YES → SUSPICIOUS. Check for look-ahead bias, survivorship bias, data leakage.
+  ↓ NO → Model passes ✓
+
+```
+
+### Decision Tree 1: In-scope or out?
+- In-scope: follow Core Workflow and verify.
+- Out-of-scope: route to the owning skill and stop.
+
+## Gotchas
+
+| Gotcha | Cost | Fix |
+|--------|------|-----|
+| Algorithm executes with stale market data producing incorrect signals | $10K-$1M in trading losses per incident | Implement data freshness heartbeat checks; halt trading on stale data; use redundant data feeds with failover under 100ms |
+| Backtest overfits to historical data — 'looks great in backtest, fails in production' | $50K-$500K in strategy deployment losses | Use walk-forward validation; out-of-sample test on unseen periods; incorporate transaction costs and slippage in backtest; paper trade for 30+ days before live |
+| Position sizing error due to unhandled edge case (corporate action, split, dividend) | $5K-$100K in unintended exposure | Automate corporate action handling; add position size sanity limits as circuit breakers; reconcile positions against prime broker daily |
+| Personal finance plan excludes emergency fund leading to forced asset liquidation | $5K-$50K in opportunity cost and tax penalties | Build 3-6 month emergency fund before investing; keep in high-yield savings; treat as non-negotiable first step in any financial plan |
+| Home purchase decision based on pre-approval max without accounting for hidden costs | $20K-$100K in financial strain over first year | Model total cost of ownership including taxes, insurance, maintenance (1-2% of home value/year), HOA, and utilities; stay under 28% DTI for housing |
+
+| Gotcha | Cost | Fix |
+|--------|------|-----|
+| Algorithm executes with stale market data producing incorrect signals | $10K-$1M in trading losses per incident | Implement data freshness heartbeat checks; halt trading on stale data; use redundant data feeds with failover under 100ms |
+| Backtest overfits to historical data — 'looks great in backtest, fails in production' | $50K-$500K in strategy deployment losses | Use walk-forward validation; out-of-sample test on unseen periods; incorporate transaction costs and slippage in backtest; paper trade for 30+ days before live |
+| Position sizing error due to unhandled edge case (corporate action, split, dividend) | $5K-$100K in unintended exposure | Automate corporate action handling; add position size sanity limits as circuit breakers; reconcile positions against prime broker daily |
+| Personal finance plan excludes emergency fund leading to forced asset liquidation | $5K-$50K in opportunity cost and tax penalties | Build 3-6 month emergency fund before investing; keep in high-yield savings; treat as non-negotiable first step in any financial plan |
+| Home purchase decision based on pre-approval max without accounting for hidden costs | $20K-$100K in financial strain over first year | Model total cost of ownership including taxes, insurance, maintenance (1-2% of home value/year), HOA, and utilities; stay under 28% DTI for housing |
+
+## Verification
+
+- [ ] Stationarity: all time series tested for stationarity (ADF test) — non-stationary series differenced or cointegrated
+- [ ] Sharpe ratio: annualized correctly based on actual return frequency, not √252 assumption
+- [ ] Multiple testing: p-values adjusted when testing > 1 hypothesis — adjustment method documented
+- [ ] Monte Carlo: key risk metrics (max drawdown, VaR, CVaR) reported as distributions, not point estimates
+- [ ] Reproducibility: full pipeline runs from raw data to final metrics with a single command
+
+## Verification Guardrails
+
+Before delivering work, verify: self-check against What Good Looks Like, no broken references, continuity with State Log, no fabricated APIs/versions/capabilities, Error Recovery paths exercised, cross-skill dependencies satisfied. If any fail, revise before delivering.
+
+## Anti-Hallucination
+<!-- STANDARD: 3min -->
+
+- Admit uncertainty. If you cannot determine the correct approach, ask — do not guess.
+- Flag your knowledge cutoff. If this project uses tools or patterns you have not seen, state your assumptions.
+- Never guess security. If work touches auth, payments, or PII, route to security-reviewer.
+- [VERIFIED] — Confirmed against official documentation or published standards
+- [COMMON-PRACTICE] — Widely used in the industry
+- [INFERRED] — Reasonable extrapolation from general principles
+- [UNKNOWN] — Requires verification against specific context
+
+## Best Practices
+
+1. **Always validate before you analyze** — Stale quotes, bad prints, and dividend-adjusted chains produce phantom UOA signals. Run Phase 1 data validation on every batch. A bad-print call sweep on a dead strike looks ident
+2. **Premium alone isn't enough — OI comparison is essential** — A $2M call purchase that's actually closing an existing position is bearish, not bullish. Without OI comparison, you're trading the wrong side 30%+ of the tim
+3. **Side (ASK vs BID) determines intent, not just direction** — An ask-side fill means the trader crossed the spread to get in. A bid-side fill means they hit the bid to get out (or sell). Mid-market fills on negotiated tr
+4. **Time decay is the silent killer — Theta must be part of every signal** — A bullish signal on 5-DTE options is fundamentally different from the same signal on 60-DTE options. At 5 DTE, Theta burns 3-5% of premium per da
+5. **IV rank tells you if you're overpaying** — Buying options at IV rank > 80 means you're paying top-dollar for premium. The signal may be directionally correct but the entry price is terrible. Factor IV rank into positio
+6. **Earnings create noise, not signal** — 60-70% of unusual options activity in the 3 days before earnings is hedging or volatility arbitrage, not directional bets. Always check the earnings calendar. If a signal falls wit
+7. **Multi-leg detection separates smart money from gamblers** — A $3M call purchase could be: (a) naked directional bet, (b) leg of a bull call spread (buying ATM, selling OTM), (c) closing leg of a short call. Multi-leg d
+8. **Sector context amplifies or dampens signals** — A bullish call sweep on a stock whose sector ETF is down 3% on the week is fighting the tape. Sector tailwind (+2%+) upgrades signal confidence; sector headwind (−2%+) do
+
+> Full depth: `references/best-practices.md`
+
+## Error Decoder
+
+| Symptom | Root Cause | Fix | Lesson |
+|---|---|---|---|
+| Strategy looks great in backtest, dies live — the "edge" was data leakage | Future information (e.g., full-period normalization, lookahead in signals) leaked into the backtest | Audit every feature for lookahead; walk-forward or point-in-time data only; run a leakage test before trusting any backtest | The first question about any backtest is not "is it profitable?" but "could it have known the future?" |
+| P-value / Sharpe quoted from too few samples — a 6-month result treated as proof | Insufficient out-of-sample data; multiple testing inflates apparent significance | Require ≥1 year out-of-sample and ≥5 walk-forward windows; correct for multiple comparisons; report confidence intervals | Statistical significance requires enough independent samples — small-sample ratios are noise with a calculator |
+| Results change wildly when parameters are nudged — curve-fit strategy | Parameters optimized in-sample without stability testing | Sensitivity analysis across the parameter grid; prefer flat, stable regions over sharp optima; out-of-sample validation on untouched data | A strategy that only works at its exact optimized parameters is a description of the past, not a prediction |
+| Survivorship or selection bias inflates performance — only winners in the universe | Backtest universe built from today's listings or hindsight selection | Use point-in-time universe data; include delisted names; document universe construction | If the universe only contains survivors, the backtest inherits their luck |
+| Live fills systematically worse than modeled — execution cost ignored | Backtest assumed mid-price fills with no slippage, fees, or impact | Model bid/ask spread, commission, and market impact at trade size; compare live vs paper fills monthly | The gap between modeled and real fills is where backtest alpha goes to die — model execution honestly |
+
+> Full decoder: `references/error-decoder.md`
+## Production Checklist
+
+Before delivering, verify:
+
+- [ ] **CR01: Pricing model matches the contract.** Exercise style, dividend handling, vol dynamics and rate tenor recorded in an assumption table and reconciled against the chain. European → closed-form acceptable; American or early-exercise → lattice/least-squares; path-dependent → simulation.
+- [ ] **CR02: Greeks independently reproduced.** Delta, gamma, theta, vega, rho recomputed from the stated (S, K, T, r, q, σ) and diffed against provider values; Delta gap ≥ 0.05 explained before use (R2).
+- [ ] **CR03: IV surface built from clean quotes.** Stale (>60s), cancelled/corrected condition codes, and earnings-contaminated strikes excluded before any surface is fit.
+- [ ] **CR04: Skew and term structure reported.** 25Δ put IV − 25Δ call IV (skew in vol points) and front-vs-back-month ATM difference both stated, not just an ATM IV.
+- [ ] **CR05: Put-call parity residuals bounded.** Residual per strike compared against round-trip spread + fees; anything larger treated as a data error, not an arbitrage.
+- [ ] **CR06: UOA signals carry the full evidence block.** ticker, direction, confidence, premium, side, DTE, IV rank, OI change present in every signal (R1).
+- [ ] **CR07: Direction classification gated on OI ratio.** volume/OI computed per strike; ratio < 0.5 downgrades the signal; ratio > 1.0 required before calling it opening activity (R3).
+- [ ] **CR08: Multi-leg structure resolved.** 60-second same-underlying window scanned for spreads, straddles, strangles and butterflies before any signal is labelled directional.
+- [ ] **CR09: Earnings and ex-div calendars applied.** Trades inside the 2-day earnings blackout downgraded; ITM short legs with an ex-div date inside DTE flagged for assignment risk (RP-F5).
+- [ ] **CR10: Multiple-testing correction applied.** Any batch over 20 hypothesis tests carries Benjamini-Hochberg FDR or Bonferroni; the count of survivors is reported, not the raw p-values (R4).
+- [ ] **CR11: Survivorship and leakage guards in place.** Point-in-time ticker universe used for any backtest; feature lag asserted; R² > 0.7 on a financial time series treated as a leakage bug until proven otherwise (R6, R7).
+- [ ] **CR12: Reproducibility pinned.** Pipeline runs raw data → final metrics in one command; r, q and σ pinned; second run with identical inputs is byte-identical.
+
+> Full checklist with validation commands: `references/checklist.md`
+
+## State Log
+All material decisions, regime/calibration changes, and escalations are appended to the decision ledger ({at, what, by}); version bumps are recorded in the repository changelog so context is recoverable without replaying prior sessions.
+
+## Error Recovery
+| Symptom | First Action | If That Fails | Last Resort |
+|---------|-------------|---------------|-------------|
+| Model/backtest disagrees with live market | Re-validate inputs and data source; reproduce the signal | Cross-check against a second data vendor and regime filter | Escalate with both datasets attached; do not trade on the disagreement |
+| Strategy underperforms its backtest | Check regime drift, slippage, and position sizing assumptions | Recalibrate parameters against the current regime | Mark the strategy suspended until recalibration is verified |
+| Data feed gap or stale quote | Confirm feed status and timestamp freshness | Fail over to the secondary feed; widen execution guards | Halt automated flow; escalate with the incident record |
+| Unexpected risk/limit breach | Freeze position growth; recompute exposure | Reduce size to within limits | Escalate with full P&L and exposure evidence |
+
+## Cross-Skill Coordination
+| Upstream Skill | What You Receive | When to Involve |
+|----------------|------------------|-----------------|
+| `data-engineer` / market-data sources | Clean price/volume and fundamentals | Before any model or strategy work |
+| `quantitative-analyst` or analytics | Model outputs and statistical baselines | When validating signals or calibrating |
+| `options-risk-engineer` / risk tooling | Limits and exposure context | When sizing positions or setting guards |
+
+## Failure Modes & Exit Rules
+
+**Failure modes and known limitations** (what can go wrong, when it breaks):
+- Failure mode: stale or mis-sourced input data produces a confident but wrong read. Mitigate by pinning the data revision and re-verifying before acting.
+- Failure mode: the regime changes after calibration (bull -> correction -> bear -> crash). Mitigate by treating regime as a state to re-check, not a constant.
+- Failure mode: liquidity thins exactly when the position needs to exit. Worst case: the intended stop-loss cannot fill at the planned level.
+- Failure mode: leverage amplifies a small adverse move into a large loss. Edge case: margin call cascades before any exit rule can act.
+- Failure mode: crowding - the same signal is held by many participants and unwinds at once. Known limitation: correlation rises in stress.
+- Failure mode: model overfit - the backtest captures noise. Mitigate by holding out data and demanding the pattern repeats out-of-sample.
+- Failure mode: execution slippage and spread widen in fast markets. What goes wrong: realized fill is worse than the modeled fill.
+- Failure mode: counterparty or venue risk materializes (halt, rejection, failed settlement). Mitigate with venue fallbacks and pre-trade checks.
+- Failure mode: a black-swan event outside the modeled distribution. What breaks: every correlated hedge at once. Mitigate by sizing for it anyway.
+
+**Exit conditions / stop-loss rules:**
+- Stop-loss: exit the position when the loss reaches the pre-defined level for this strategy; the level is set at entry and not widened intraday.
+- Exit condition: close the position when the original thesis is invalidated (signal gone, data revised, regime flipped).
+- Exit condition: time stop - if the expected catalyst has not appeared by the plan horizon, exit and re-evaluate.
+- Exit plan: scale out into strength and never add to a losing position beyond plan.
+
+**Regime notes (bull / correction / bear / crash):**
+- Bull market: trends and momentum strategies tend to work; fade-strategy drawdowns are shallow; chase risk is the main failure mode.
+- Correction (bull market pullback): mean-reversion can work; trend entries need patience; avoid adding risk at the first green candle.
+- Bear market: short-duration and defensive positioning matter; long-biased strategies must respect the lower regime; rallies are exit opportunities.
+- Crash regime: correlation goes to one, liquidity evaporates, and stop-losses gap. Position sizing is the only reliable defense; assume the crash can always come.
+
+**Provenance of this guidance:**
+- [COMMON-PRACTICE] Stop-loss placement, exit rules, and regime states are standard risk-management practice in trading literature.
+- [ESTIMATED] Threshold levels quoted in this SKILL are illustrative calibrations, not broker-verified figures.
+- [COMPUTED] Scenario arithmetic in the backtest example is deterministic and reproducible from its stated assumptions.
+- [VERIFIED] The skill's structural invariants (sections, chain, references) are verified by the repository gates.
+- [COMMON-PRACTICE] Regime definitions follow standard market-cycle nomenclature (bull/correction/bear/crash).
+- [ESTIMATED] The failure-mode likelihood ordering is qualitative judgment, not a measured statistic.
+
+## References
+
+Detailed reference material loaded on demand:
+
+- **Core Workflow — Full Implementation**: See [core-workflow.md](references/core-workflow.md)
+- **Anti-Patterns**: See [anti-patterns.md](references/anti-patterns.md)
+- **Best Practices**: See [best-practices.md](references/best-practices.md)
+- **Calibration — How to Know Your Level**: See [calibration.md](references/calibration.md)
+- **Production Checklist**: See [checklist.md](references/checklist.md)
+- **Error Decoder**: See [error-decoder.md](references/error-decoder.md)
+- **Footguns**: See [footguns.md](references/footguns.md)
+- **Volatility Term Structure & VIX Futures**: See [volatility-term-structure.md](references/volatility-term-structure.md) — VIX futures curve, contango/backwardation, VRP, roll yield, calendar spread edge, strategy selection framework, early warning system
+
+## Core Workflow
+
+1. Intake: read the task and confirm scope.
+2. Execute: perform the domain work per this skill's guidance.
+3. Verify: check the output against the request with concrete evidence before delivering.
+
+## Proactive Triggers
+
+- New task arrives that matches the description: invoke this skill's workflow.
+- Existing output needs re-verification: re-run the verify step rather than assuming.
+- A claim lacks a source: flag it instead of passing it forward.
+
+## What Good Looks Like
+
+A finished piece of options analytics prices the instrument with a model whose assumptions match the instrument, proves its Greeks against a second source, reads the whole volatility surface rather than one ATM number, and emits a signal that a downstream trader can act on without re-deriving anything.
+
+| # | Complete when... | Verify |
+|---|-----------------|--------|
+| ☐ | Complete when the pricing model is chosen to match the instrument's exercise style, dividend and vol dynamics (closed-form for European, lattice for American/early-exercise, simulation for path-dependent) | Assumption table (exercise style, dividend yield, vol dynamics, rate tenor) attached and each row reconciled against the chain's actual contract spec |
+| ☐ | Complete when computed Greeks are cross-checked against the data provider and any Delta disagreement is under 0.05 | Diff every computed Greek vs. provider value; where Delta differs by ≥ 0.05, re-derive r and q and log which input explains the gap (per R2) |
+| ☐ | Complete when the IV surface is constructed from cleaned quotes only, with skew (25Δ put vs 25Δ call) and term structure (front vs back month) both reported | Surface plot by strike × expiry; earnings-contaminated and stale quotes excluded; ATM-vs-25Δ IV spread stated in vol points |
+| ☐ | Complete when put-call parity residuals are inside transaction costs for every strike checked | `C − P` vs `S·e^(−qT) − K·e^(−rT)` per strike; any residual above round-trip spread + fees flagged as data error, not arbitrage |
+| ☐ | Complete when every UOA signal carries ticker, direction, confidence (STRONG/MODERATE/WEAK), premium, side (ASK/BID/MID), DTE, IV rank and OI change | Signal block validated against the R1 template; a bare "buy calls" with no confidence field fails the check |
+| ☐ | Complete when direction is classified only after OI ratio and multi-leg detection are computed | Show volume/OI ratio per strike and the 60-second multi-leg grouping result; ratio < 0.5 downgrades the signal to POTENTIAL_CLOSING |
+| ☐ | Complete when pre-earnings activity is screened out of the directional signal set | Trades within 2 calendar days of earnings flagged and downgraded one confidence level; hedging-flow noise excluded |
+| ☐ | Complete when hypothesis-test batches over 20 comparisons carry a multiple-testing correction | Benjamini-Hochberg or Bonferroni applied; report "X of Y tests remain significant after FDR correction", never raw p < 0.05 alone |
+| ☐ | Complete when early-exercise and assignment risk is flagged for every ITM short leg with an ex-div date inside its DTE | Dividend calendar intersected with short-leg expiries; deep-ITM and hard-to-borrow cases called out per RP-F5 |
+| ☐ | Complete when the end-to-end pipeline is reproducible from raw data to final metrics and every model input (r, q, σ) is pinned | Single command reruns the full path; outputs are byte-identical on a second run with the same pinned inputs |
+## Deliberate Practice
+
+- Run the workflow on a real task and compare output against the request.
+- Review where verification caught an error and encode that check into the routine.
+- Calibrate: adjust approach based on what the last N outputs revealed.
+
+## Anti-Rationalization
+
+- ❌ "This edge case won't happen" — every claimed edge case gets a concrete check.
+- ❌ "It works because it must" — assert only what you can demonstrate.
+- ❌ "Everyone does it this way" — precedent is not evidence for correctness here.
+- ❌ "The output looks plausible" — plausible is not verified; run the check.
+- ✅ State the risk of being wrong and what would change your mind.
+
+## When NOT to Use
+
+- The task needs judgment or authority this skill does not own.
+- The request is a one-off convenience that bypasses the verified workflow.
+- A specialized peer skill owns the exact scenario — route there instead.
+- There is no way to verify the output against a source of truth.
+
+## Anti-Patterns
+
+- ❌ Adding unverified claims to look complete | ✅ Marking unknowns as unknown
+- ❌ Copying the structure without the evidence | ✅ Filling every section from the actual task
+- ❌ Looping on the same failed approach | ✅ Changing one lever per retry
+- ❌ Hiding a limitation until review | ✅ Naming limitations up front
+- ❌ Optimizing for length | ✅ Optimizing for verifiable correctness
+- In-scope: proceed through Core Workflow.
+- Out-of-scope: route to the owning skill and stop.
+
+### Decision Tree 2: Verify or escalate?
+- Verifiable locally: run the check and record the result.
+- Blocked externally: escalate once with full context.
+
+### Decision Tree 3: Ship or revise?
+- Meets What Good Looks Like: deliver with evidence.
+- Gaps found: revise before delivering.

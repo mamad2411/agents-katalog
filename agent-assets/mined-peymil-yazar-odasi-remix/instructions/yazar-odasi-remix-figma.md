@@ -1,0 +1,11 @@
+---
+applyTo: '**'
+---
+- Due to figma's restrictions a 1-1 implementation of code is not possible. Try to use adaptive design like flex, grids and etc. Try to not use absolute positions keep in mind that this app should also be visible in phones.
+- Ignore bowframe svg.
+- When importing svgs download them from Figma and put it under components icons as inline svg. Don't give reference to figma directory.
+- Use semantic HTML elements and accessible attributes where possible.
+- Don't reimplement header and footer in pages. They are already implemented and renderend in _index.tsx
+- Don't create subfolders in icons folder.
+- Don't use button svgs. Create them as a component without svg code also check if a similar component already created.
+- If you are implementing a page and it is not reusable create it directly under routes. If page involves reusable components put them under components folder and reference it in routes.

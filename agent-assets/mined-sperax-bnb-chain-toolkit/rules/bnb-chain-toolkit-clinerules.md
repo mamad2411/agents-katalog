@@ -1,0 +1,21 @@
+# BNB Chain AI Toolkit
+
+> 78 AI agents, 6 MCP servers, 1,100+ tools for BNB Chain and  networks.
+
+## Structure
+
+- `agents/` — 78 AI agent definitions
+- `mcp-servers/` — 6 MCP servers
+- `docs/` — Comprehensive documentation
+
+## Commands
+
+- `bun install` — Install dependencies
+- `bun run build` — Build agent index
+- `bun run format` — Format agent JSONs
+
+## Terminal Management
+
+- Always use background terminals (`isBackground: true`)
+- Always kill terminals after commands complete
+- Do not reuse foreground shell sessions

@@ -1,0 +1,159 @@
+# Backend Guidelines
+
+Hono API server with PostgreSQL. See root [AGENTS.md](../../AGENTS.md) for general project guidelines.
+
+## Database
+
+**Always reference [docs/database-conventions.md](../../docs/database-conventions.md) for database design.**
+
+### Key Rules
+- Use PostgreSQL schemas (never `public`)
+- Internal `id` (SERIAL) - never expose in API
+- External `external_id` (UUID) - always use in API
+- Use `TEXT` for strings, never `VARCHAR(n)`
+- Always include `created_at` and `updated_at`
+
+### PgTyped Queries
+- All queries in `.sql` files for type generation
+- Queries organized by schema: `queries/auth/`, `queries/friends/`
+
+## Hono Patterns
+
+### File Structure
+```
+src/
+├── routes/           # API route handlers
+├── middleware/       # Request middleware
+├── services/         # Business logic
+├── utils/            # Utility functions
+└── queries/          # SQL query files
+```
+
+### Routes
+- Group by resource: `routes/auth.ts`, `routes/friends.ts`
+- Use Hono's router for path grouping
+- Apply middleware at route group level
+
+### Middleware
+- Auth middleware validates JWT tokens
+- Request logging with pino
+- Error handling with consistent response format
+
+### Services
+- Business logic separate from routes
+- Services call database queries
+- Handle validation with ArkType schemas
+
+## Error Handling
+
+**Always use custom error classes from `utils/errors.ts` instead of raw `Error`.**
+
+### Available Error Classes
+
+| Error Class | Status Code | Use Case |
+|-------------|-------------|----------|
+| `AuthenticationError` | 401 | Invalid credentials |
+| `UserNotFoundError` | 404 | User not found |
+| `FriendNotFoundError` | 404 | Friend not found |
+| `BirthdayAlreadyExistsError` | 409 | Duplicate birthday |
+| `FriendCreationError` | 500 | Friend creation failed |
+| `AppPasswordCreationError` | 500 | App password creation failed |
+| `DatabaseConnectionError` | 500 | No database connection |
+| `ConfigurationError` | 500 | Invalid configuration |
+| `OverpassApiError` | 502 | Overpass API errors |
+
+### Usage Pattern
+
+Routes and services just **throw** the typed error — a single global
+`app.onError` handler in `src/index.ts` maps it to the right status and JSON
+body, logs it (warn for <500, error for >=500) and reports 5xx to Sentry.
+Don't write per-route `try/catch` + `isAppError` blocks; the only intentional
+try/catch in routes are for things like JSON parsing (use `parseBody` from
+`utils/http.ts`).
+
+```typescript
+// In services or routes - just throw
+import { FriendNotFoundError } from '../utils/errors.js';
+
+const friend = await friendsService.getFriendById(userId, friendId);
+if (!friend) {
+  throw new FriendNotFoundError();
+}
+// The global onError turns this into 404 { error: 'Friend not found' }.
+```
+
+`isAppError` still exists for the rare case you need to branch on it (e.g. the
+`onError` handler itself), but routes should not need it.
+
+### Why Custom Errors?
+
+- Type-safe error handling with `instanceof` checks
+- Consistent HTTP status codes via `statusCode` property
+- Better Sentry/logging integration
+- Improved debugging with proper stack traces
+
+## Authentication
+
+- **Better Auth** (1.5.5) with passkeys; sessions managed by Better Auth and
+  stored in `auth.session`. Session cookies are HTTP-only.
+- `authMiddleware` validates the session and resolves both the Better Auth
+  user id and the legacy `auth.users.external_id` (UUID) used by domain queries.
+- DAV (CardDAV/CalDAV) uses app passwords, bcrypt-hashed.
+- The legacy JWT/bcrypt user-auth path has been removed.
+
+## API Response Format
+
+```typescript
+// Success — bare resource (no envelope)
+T
+
+// Error — flat shape emitted by the global onError handler
+{ error: string, code?: string, details?: unknown }
+
+// Paginated — friends use { friends, total, page, pageSize, totalPages };
+// newer endpoints use { data: T[], pagination: { page, pageSize, totalCount, totalPages } }
+```
+
+## Commands
+
+```bash
+# From monorepo root
+aube --filter @freundebuch/backend dev           # Run dev server
+aube --filter @freundebuch/backend build         # Build for production
+aube --filter @freundebuch/backend test          # Run tests
+aube --filter @freundebuch/backend type-check    # Check types
+
+# Or from apps/backend/
+aube dev
+aube build
+aube test
+```
+
+### Migrations
+
+```bash
+aube migrate:create <name>    # Create new migration
+aube migrate                  # Run pending migrations
+aube migrate:down             # Rollback last migration
+```
+
+- Always implement `down()` for rollback
+- Make migrations idempotent (`IF NOT EXISTS`)
+- Run in dependency order
+
+### PgTyped
+
+```bash
+aube pgtyped                  # Generate types from SQL (one-time)
+aube pgtyped:watch            # Watch mode for development
+```
+
+Run `aube pgtyped` after:
+- Creating/modifying `.sql` query files
+- Running migrations that change schema
+
+## Related Epics
+
+- Epic 0: Project Setup
+- Epic 1: Contact Management API
+- Epic 4: Authentication

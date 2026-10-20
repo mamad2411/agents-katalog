@@ -1,0 +1,209 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Test-Driven Development (TDD) Rules
+
+## TDD Mindset and Common Challenges
+
+### Expected Psychological Resistance
+TDD practices will feel counterintuitive and uncomfortable:
+- **Hardcoded returns feel "too simple"** - Returning `0` or `1` seems wasteful, but it's the correct minimal step
+- **The urge to implement ahead is strong** - You'll want to solve multiple test cases at once; resist this
+- **Minimal steps feel inefficient** - Taking tiny steps seems slow but actually accelerates development
+- **Predictions feel unnecessary** - Stating what will fail seems obvious, but builds crucial understanding
+- **Push through this discomfort** - These feelings indicate you're following the discipline correctly
+
+### Why This Discipline Works
+Understanding the deeper purposes helps maintain discipline:
+- **Baby steps reveal simpler solutions** - Implementing only what tests demand often uncovers approaches simpler than over-engineered first attempts
+- **One-test-at-a-time prevents complexity** - Not thinking ahead eliminates unnecessary features and abstractions
+- **Predictions build confidence** - Explicit expectations create deeper understanding of what you're testing and why
+- **Refactoring becomes natural** - Mandatory improvement attempts prevent technical debt accumulation
+- **The process fights harmful instincts** - Programming instincts often lead to premature optimization and over-engineering
+
+### Common TDD Failure Modes
+Watch for these violations of discipline:
+- **Planning beyond base functionality** - Including advanced features in initial test list instead of focusing on core functionality
+- **Multiple active tests** - Converting more than one `it.todo()` to executable test code at once
+- **Implementing beyond tests** - Adding features or logic not demanded by current failing test
+- **Skipping predictions** - Running tests without explicitly stating expected failures
+- **Avoiding refactoring** - Moving to next test without attempting at least one improvement
+- **Premature abstraction** - Creating complex solutions when simple ones pass tests
+- **Ignoring the uncomfortable** - Abandoning discipline when it feels "too simple" or "too slow"
+
+### Remember
+- **Discomfort is a signal you're doing it right** - TDD should feel constraining at first
+- **Trust the process** - Simple steps compound into elegant solutions
+- **Discipline over instinct** - Follow the rules even when they feel wrong
+- **Each violation compounds** - Small shortcuts lead to big complexity problems
+
+## Core TDD Process
+
+1. **Test List First**
+   - Create a list of test cases using `it.todo()` for BASE FUNCTIONALITY ONLY before writing any implementation
+   - This helps understand the scope of the core feature (not advanced features)
+   - Example for String Calculator base functionality:
+     ```typescript
+     describe("String Calculator", () => {
+       it.todo("should return 0 for empty string");
+       it.todo("should return number for single number");
+       it.todo("should return sum for two numbers");
+       it.todo("should return sum for multiple numbers");
+       // NOT: advanced features like custom delimiters, ignore >1000, etc.
+     });
+     ```
+
+2. **One Test at a Time**
+   - Convert exactly ONE `it.todo()` to executable test code at a time
+   - All other tests remain as `it.todo()` descriptions
+   - Never have more than one failing test in red phase
+   - Implement only what's needed to make that single test pass
+   - Don't think ahead or implement features for future tests
+
+3. **Red-Green-Refactor Cycle**
+   - **Red Phase (Compilation Error)**
+     - Start with a non-existent function
+     - Test should fail with compilation error
+     - This ensures we're truly starting from scratch
+
+   - **Red Phase (Runtime Error)**
+     - Create empty function that returns undefined/wrong value
+     - Test should fail with assertion error
+     - This verifies our test is working as expected
+
+   - **Green Phase**
+     - Implement minimal code to make the test pass
+     - Don't add features for future tests
+     - Don't optimize or refactor yet
+
+   - **Refactor Phase**
+     - MUST attempt at least one refactoring
+     - If no improvement is possible, document why
+     - **Naming Evaluation (First Priority)**:
+       - Ask: "Does this name clearly describe what the function actually does based on all tests we have so far?"
+       - Ask: "Has the function's purpose become clearer/more specific through the latest test?"
+       - Rename if the name doesn't capture the current full intent
+       - Especially critical when new functionality changes the nature of what the function does
+     - Apply ATP (Absolute Transformation Premise) to measure improvements:
+       - Calculate mass before and after refactoring
+       - Aim for lower mass where possible
+       - Document mass changes
+     - Apply 4 Rules of Simple Design:
+       - Tests must pass
+       - No duplication
+       - Reveals intent
+       - Fewest elements
+     - If no refactoring improves the code:
+       - Document why no refactoring was possible
+       - Explain why current state is optimal
+       - Move to next test
+
+4. **Guessing Game**
+   - Before running tests, explicitly state:
+     - Which test will fail
+     - Type of error (compilation/assertion)
+     - Expected vs actual values
+     - Expected diff output
+   - Run the test
+   - Compare actual result with prediction
+   - This helps understand what we're testing and why
+
+5. **Baby Steps**
+   - Make the smallest possible change to get to green
+   - If a test fails, make it pass with the simplest implementation
+   - Don't try to solve multiple problems at once
+   - Each step should be clear and verifiable
+
+## Best Practices
+
+1. **Test Structure**
+   - One assertion per test when possible
+   - Clear, descriptive test names
+   - Tests should be independent
+   - No test should depend on another test's state
+
+2. **Implementation**
+   - Start with the simplest possible implementation
+   - Don't add features until there's a test for them
+   - Don't optimize until all tests are green
+   - Keep the code clean and maintainable
+
+3. **Documentation**
+   - Tests serve as documentation
+   - Test names should describe the behavior
+   - Comments should explain why, not what
+   - Document mass calculations and refactoring decisions
+   - Document when no refactoring is possible
+
+## Common Pitfalls to Avoid
+
+1. **Writing too many tests at once**
+   - Stick to one test at a time
+   - Don't implement multiple features simultaneously
+
+2. **Skipping the red phase**
+   - Always start with a failing test
+   - Don't write implementation before test
+
+3. **Over-engineering**
+   - Don't add features without tests
+   - Don't optimize prematurely
+
+4. **Not refactoring**
+   - Take time to clean up code
+   - Remove duplication
+   - Improve readability
+   - Always attempt refactoring after green phase
+   - Use ATP to measure improvements
+
+## Example Workflow
+
+1. Create test list:
+   ```typescript
+   describe("Calculator", () => {
+     it.todo("should return 0 for empty input");
+     it.todo("should return number for single input");
+     it.todo("should add two numbers");
+   });
+   ```
+
+2. Activate first test:
+   ```typescript
+   it("should return 0 for empty input", () => {
+     expect(calculate([])).toBe(0);
+   });
+   ```
+
+3. Predict failure:
+   - Test will fail with compilation error
+   - Function doesn't exist yet
+
+4. Create empty function:
+   ```typescript
+   function calculate(numbers: number[]): number {
+     return undefined as any;
+   }
+   ```
+
+5. Predict failure:
+   - Test will fail with assertion error
+   - Expected: 0
+   - Received: undefined
+
+6. Implement minimal solution:
+   ```typescript
+   function calculate(numbers: number[]): number {
+     return 0;
+   }
+   ```
+
+7. Refactor:
+   - Calculate initial mass
+   - Attempt at least one refactoring
+   - Calculate new mass
+   - Document improvements or explain why none were possible
+   - Ensure all tests still pass
+
+8. Move to next test

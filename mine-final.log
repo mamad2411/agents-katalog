@@ -1,0 +1,14 @@
+=== miner selesai 2026-10-19 14:48 ===
+SCAN_HITS=      63
+curated=3194 total=263915 dup_skipped=17099 rescued=236473
+  curated: 3194
+  reference: 250123
+  junk: 10598
+Siap dipakai (curated+reference): 253317
+junk list : /Users/chaali0324/.agents/skills-junk.txt (10598 entri)
+DB        : /Users/chaali0324/.agents/skills-index.db (209.14 MB)
+retrieve.db siap: 270327 aset (skill+cap+mcp)
+SKILLS=263915
+ASSETS=270327
+BLOCKED=   23106
+=== selesai 15:07 ===

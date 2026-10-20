@@ -1,0 +1,78 @@
+# CLAUDE.md - Niko Table Registry
+
+## Project Overview
+
+Niko Table is a composable, shadcn-compatible data table component registry built with TanStack Table and React. The documentation site is powered by Astro Starlight. Components follow an open-code philosophy — users copy the source into their projects and own it.
+
+## Commands
+
+- `npm run dev` — Start dev server (http://localhost:4321)
+- `npm run build` — Full build: `astro check && shadcn build && astro build`
+- `npm run registry:build` — Rebuild component registry from `registry.json`
+- `npm run lint` — ESLint with auto-fix
+- `npm run format` — Prettier formatting
+
+## Project Structure
+
+```
+src/
+  components/niko-table/
+    core/           # DataTableRoot, DataTable, context, structure components
+                    # (regular, virtualized, DnD, and virtualized DnD variants)
+    components/     # Context-aware wrappers (DataTable* prefix, use useDataTable())
+    filters/        # Direct table prop components (Table* prefix)
+    hooks/          # Table-specific hooks
+    lib/            # Utilities (formatting, filtering, styles)
+    types/          # TypeScript types
+    config/         # Feature detection
+  content/docs/     # Astro Starlight MDX documentation
+  registry/new-york/examples/  # Registry example implementations
+```
+
+## Architecture Rules
+
+- **Layer dependency (one-way only)**: Shared → Niko Table → Registry → Documentation
+- **Two-layer component pattern**:
+  - `components/` = context-aware (`DataTable*` prefix, use `useDataTable()` hook)
+  - `filters/` = direct prop (`Table*` prefix, accept `table` prop)
+- **No barrel exports**: Use direct file imports only (e.g. `@/components/niko-table/core/data-table-root`, `@/components/niko-table/lib/constants`) for tree-shaking and to follow the shadcn pattern. Do not add or use `index.ts` re-exports for core, components, filters, hooks, lib, or config. Types may use `types/index.ts` as the single types module.
+- Registry examples must be self-contained (import only from `@/components/niko-table/*` direct paths and `@/components/ui`)
+- Use semantic color tokens (`bg-success`, `text-destructive`) not hardcoded Tailwind colors
+
+## Row Menu & Hook Conventions
+
+- **Composable-first row actions**: define row actions ONCE as a declarative component — `function XRowMenu(props){ const row = useDataTableRow<T>(); return <><RowMenuItem …/>…</> }` using the polymorphic `RowMenuItem` / `RowMenuSub` / … from `data-table-row-menu` — and drop the SAME `<XRowMenu/>` into the kebab cell (inside `<DataTableRowMenuScope surface="dropdown">`) and the body's `<DataTableRowContextMenuSlot>`. It renders as a dropdown or context menu by the surface it reads from context. No `(row) =>` render function and no injected component maps at the call site; no duplicated item lists. Per-row opt-out uses the slot's `enabledFor` predicate.
+- **Context-scope hooks must throw outside their provider**: a hook that reads a required context (e.g. `useDataTableRow`, `useRowMenuSurface`) must detect the missing provider (use a sentinel default, not `undefined`, since a legitimate value may be `undefined`/`null`) and throw an actionable error — never silently return `undefined` for callers to trip over later.
+- **Body-side per-row render resolvers must return a STABLE callback identity** so memoized rows (`React.memo` `BodyRow`) don't re-render when the body re-renders for unrelated reasons. A resolver that closes over `children` produces a fresh function each render; wrap it in the latest-ref pattern (`useResolvedRowContextMenuRenderer`): keep the freshly-resolved fn in a ref and hand out a memoized wrapper whose identity only changes when the menu's presence changes. Bodies must consume the hook, not the raw resolver.
+
+## DnD Architecture
+
+Built on `@dnd-kit`. Three tiers of components:
+
+1. **Filters** (`/filters/`) — Low-level primitives: `TableRowDndProvider`, `TableDraggableRow`, `TableRowDragHandle`, `TableColumnDndProvider`, `TableDraggableHeader`, `TableDragAlongCell`
+2. **Components** (`/components/`) — Context-aware wrappers: `DataTableRowDndProvider`, `DataTableRowDragHandle`, `DataTableColumnDndProvider`, `DataTableDraggableHeader`, `DataTableDragAlongCell`
+3. **Core** (`/core/`) — Structure components:
+   - Standard: `DataTableDndBody`, `DataTableDndHeader`, `DataTableDndColumnBody`
+   - Virtualized: `DataTableVirtualizedDndBody`, `DataTableVirtualizedDndHeader`, `DataTableVirtualizedDndColumnBody`
+
+**Constraint**: Row DnD should NOT be combined with sorting/filtering (data order conflicts). Column DnD IS safe to combine with any feature.
+
+## Documentation Patterns
+
+- MDX files in `src/content/docs/niko-table/`
+- Overview API docs in `overview/` subdirectory (`core.mdx`, `components.mdx`, `filters.mdx`)
+- Example pages in `src/content/docs/examples/` (`row-dnd-table.mdx`, `column-dnd-table.mdx`, etc.)
+- Sidebar navigation defined in `astro.config.mts`
+- `CodePreview` component references registry examples by name: `<CodePreview demo="niko-table/example-name" />`
+- Source code buttons link to GitHub using `GITHUB_REPO_URL` env variable
+- Doc page pattern: frontmatter → overview with CodePreview → installation → code examples → props tables → key points → when to use → next steps
+
+## Adding New Components
+
+1. Create component in appropriate directory (`core/`, `components/`, or `filters/`)
+2. Do not add barrel `index.ts`; consumers import from the component file directly
+3. Add registry entry in `registry.json` if installable
+4. Create example in `src/registry/new-york/examples/niko-table/`
+5. Document in corresponding `overview/` MDX file
+6. Create example page MDX in `src/content/docs/examples/`
+7. Add sidebar entry in `astro.config.mts`

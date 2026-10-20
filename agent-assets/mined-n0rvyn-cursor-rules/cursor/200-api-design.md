@@ -1,0 +1,88 @@
+---
+description: "200: RESTful API design principles and patterns"
+scopes: [chat, edit]
+tags: [api, design-patterns]
+priority: 200
+globs:
+  - "**/*.ts"
+  - "**/*.js"
+  - "**/*.py"
+  - "**/*.go"
+  - "**/*.java"
+alwaysApply: false
+---
+
+## 🎯 Template-First Approach
+- **Express Services**: Use skeleton from @templates/express-service.ts for new API endpoints
+- **Python Services**: Use pattern from @templates/python-service.py for async service classes
+- **React Components**: Follow @templates/react-component.tsx for UI components
+
+## 📡 RESTful Conventions
+- Use HTTP verbs correctly: GET (read), POST (create), PUT (update), DELETE (remove)
+- Resource URLs: `/api/users/{id}` not `/api/getUser?id=123`
+- Return consistent JSON structure: `{success: boolean, data?: any, error?: string}`
+- Use proper HTTP status codes: 200, 201, 400, 401, 403, 404, 500
+- Use plural nouns for resource endpoints
+- Follow consistent URL patterns: `/api/v1/resources/{id}`
+
+## 📊 Response Formatting
+- Implement consistent pagination format:
+```json
+{
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "per_page": 20,
+    "total": 100,
+    "total_pages": 5
+  }
+}
+```
+
+## 🔐 Security Standards
+- Always validate input parameters using middleware (express-validator, Joi, etc.)
+- Implement rate limiting on all public endpoints
+- Use HTTPS in production, include security headers
+- Never expose internal error details to clients
+- Use JWT tokens for authentication
+- Implement proper token validation
+- Use middleware for authentication checks
+
+## 📝 Documentation Requirements
+- Include OpenAPI/Swagger documentation for all endpoints
+- Document request/response schemas with examples
+- Maintain API versioning strategy: `/api/v1/`, `/api/v2/`
+- Keep CHANGELOG.md updated for API changes
+- Include request/response examples
+- Document authentication requirements
+
+## 🚨 DEV ONLY - Development Environment
+*These rules apply only during development*
+- Enable detailed error logging with stack traces
+- Allow CORS from localhost origins
+- Include debug endpoints for testing
+- Use development database with seed data
+
+## 🔒 PROD ONLY - Production Environment
+*These rules apply only in production*
+- Disable debug endpoints and verbose logging
+- Implement strict CORS policies
+- Use environment variables for all configuration
+- Enable request logging and monitoring
+- Implement circuit breaker patterns for external services
+
+## 🎛️ Error Handling
+- Use custom error classes with proper inheritance
+- Log errors with context (user ID, request ID, timestamp)
+- Return user-friendly error messages
+- Implement retry logic for transient failures
+- Implement consistent error response format
+- Include error codes for programmatic handling
+
+## 📊 Performance Optimization
+- Implement response caching where appropriate
+- Use database indexing for frequently queried fields
+- Implement pagination for list endpoints (limit/offset or cursor-based)
+- Monitor response times and set SLA targets
+- Compress responses when beneficial
+- Use connection pooling for database connections

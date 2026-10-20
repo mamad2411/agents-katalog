@@ -1,0 +1,98 @@
+# AGENTS.md
+
+Cross-tool agent instructions for [dx-aem-flow](https://easingthemes.github.io/dx-aem-flow) — AI-assisted Azure DevOps development workflows.
+
+> This file is the cross-platform equivalent of `CLAUDE.md`. Tools that read AGENTS.md include Codex, Copilot, Cursor, Windsurf, Zed, Jules, Gemini CLI, and others. Claude Code reads `CLAUDE.md` (which contains the full contributor guide); this file provides the essential subset for all other agents. Since v2.1.277 Claude Code can read AGENTS.md as well, via the built-in `agents-md@builtin` plugin — but its default mode only falls back to AGENTS.md in projects that have no `CLAUDE.md`, so in this repo `CLAUDE.md` stays authoritative.
+
+## What This Is
+
+Four installable plugins for AI-assisted development workflows. Pure Markdown (skills, agents, rules, templates) with shell helper scripts. No build system.
+
+| Plugin | Directory | Purpose | Skill prefix |
+|--------|-----------|---------|--------------|
+| **dx-core** | `plugins/dx-core/` | Platform-agnostic ADO/Jira workflow: requirements, planning, execution, review, PR | `dx-*` |
+| **dx-hub** | `plugins/dx-hub/` | Multi-repo orchestration | `dx-hub-*` |
+| **dx-aem** | `plugins/dx-aem/` | AEM-specific verification, QA, demo capture | `aem-*` |
+| **dx-automation** | `plugins/dx-automation/` | Autonomous AI agents running as ADO pipelines | `auto-*` |
+
+## Plugin Structure
+
+Each plugin follows this layout:
+```
+plugin/
+├── .claude-plugin/plugin.json   # Plugin manifest
+├── .mcp.json                    # MCP server config
+├── agents/                      # Agent definitions (*.md with YAML frontmatter)
+├── skills/                      # Skill directories (*/SKILL.md)
+├── rules/                       # Default prompt templates
+├── hooks/                       # Lifecycle hooks
+├── data/                        # Seed files copied to project by init
+├── shared/                      # Reference files read by skills at runtime
+└── templates/                   # Init-time file templates
+```
+
+## Key Conventions
+
+### Config-Driven — Never Hardcode
+
+All project-specific values live in `.ai/config.yaml`. Skills read config at runtime. Never hardcode build commands, branch names, URLs, or org names.
+
+### Spec Directory Convention
+
+Per-ticket output goes to `.ai/specs/<id>-<slug>/` with predictable filenames (`raw-story.md`, `explain.md`, `research.md`, `implement.md`). Skills find each other's output by convention.
+
+### Three-Layer Override System
+
+```
+.ai/rules/<topic>.md  >  config.yaml overrides  >  plugin defaults (rules/*.md)
+```
+
+### Skill Format (Agent Skills standard)
+
+Skills use the [Agent Skills](https://agentskills.io/specification) open standard:
+
+```yaml
+---
+name: my-skill
+description: One-line with trigger phrases
+argument-hint: "<what user passes>"
+model: sonnet          # optional — opus | sonnet | haiku
+effort: medium         # optional — low | medium | high | xhigh | max
+---
+```
+
+Skills live in `plugins/{plugin}/skills/<name>/SKILL.md`.
+
+### Agent Format
+
+```yaml
+---
+name: dx-my-agent
+description: What it does
+tools: Read, Write, Glob, Grep, Bash
+model: sonnet
+---
+```
+
+Agents live in `plugins/{plugin}/agents/<name>.md`.
+
+### MCP Servers
+
+Six MCP servers across plugins: ADO, Atlassian, Figma, axe (accessibility), AEM, Playwright.
+
+## Contributing
+
+- No hardcoded org URLs, project names, paths, build commands, or branch names
+- `scm.provider` supports `ado` only — repo/PR skills call `mcp__ado__*` directly; there is no GitHub,
+  GitLab or Bitbucket code path. Work-item tracking is the one real choice (`tracker.provider: ado | jira`)
+- Skill naming: kebab-case with plugin prefix (`dx-req`, `aem-verify`, `auto-deploy`)
+- Versioning is automated via semantic-release on push to `main`
+- Structural validation (`scripts/validate-*.sh`) runs in CI on every PR, as do all test suites — CI
+  discovers every `*.test.js` under `plugins/` and `cli/`, and every `run-tests.sh` / `*.test.sh`
+  under `plugins/` and `scripts/`, rather than listing them,
+  so a new suite needs no workflow change but MUST be hermetic (no live ADO/AEM/network, no reliance on
+  ambient git config)
+- Structural checks cannot tell you a script works, and `node --check` / `bash -n` only parse syntax — run the
+  relevant suite when changing anything under `data/lib/` or `skills/*/scripts/`
+- Behavioral evals live in `plugins/<plugin>/evals/` and run via `claude plugin eval` — two suites so far in `dx-core/evals/` (`plan-validate-finds-gap`, `routing`); add one alongside non-trivial skill changes where practical
+- See `CLAUDE.md` for the full contributor guide with architecture details

@@ -1,48 +1,48 @@
-# SKILLS AVAILABLE — katalog CURATED (3177 ditampilkan dari 3177 · cap 55/kategori)
+# SKILLS AVAILABLE — katalog CURATED (3195 ditampilkan dari 3195 · cap 55/kategori)
 
 > **Untuk AI: JANGAN baca file ini utuh (123 KB = boros). Baca `TOKEN-SAVER.md` (2 KB) dulu.**
 > Kalau ada skill yang cocok, pakai skill itu dulu — jangan mengarang dari nol.
 > Cari cepat: `~/.agents/skill-search.sh "<kata kunci>"` atau tool MCP `skill_search`.
 
-> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (91258 entri scraping)
+> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (250123 entri scraping)
 > **tidak** ditampilkan karena tidak terawat — cari lewat `skill-search.sh` bila perlu.
 > Ini memperbaiki bug lama yang mencampur curated+reference sebagai "curated".
 
-Sumber: `3177` skill curated (dari `103428` entri total di index). Katalog penuh: `skills-index.db`.
+Sumber: `3195` skill curated (dari `263916` entri total di index). Katalog penuh: `skills-index.db`.
 Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKILLS-CATEGORIES.md` (4 KB).
 
 ## Peta cepat kategori
 
 | Kategori | Curated | Reference (cari manual) |
 |---|---|---|
-| backend-developer | 849 | 23160 |
-| designer | 504 | 11525 |
-| frontend-developer | 314 | 7394 |
-| game-developer | 300 | 7167 |
-| devops-engineer | 296 | 6753 |
-| creative-producer | 268 | 7629 |
-| productivity-automator | 125 | 600 |
-| qa-engineer | 113 | 6975 |
-| mobile-developer | 108 | 2749 |
-| data-scientist | 81 | 3211 |
-| security-specialist | 63 | 2799 |
-| ai-engineer | 49 | 2312 |
-| tech-writer | 24 | 1382 |
-| data-engineer | 22 | 1321 |
-| devtools-engineer | 18 | 1575 |
-| product-manager | 16 | 1111 |
-| fullstack-generalist | 8 | 626 |
-| agent-orchestrator | 6 | 170 |
-| agent-ux | 5 | 189 |
-| architect | 4 | 299 |
-| agent-memory | 1 | 147 |
-| analyst | 1 | 467 |
-| blockchain-developer | 1 | 389 |
+| backend-developer | 857 | 68428 |
+| designer | 506 | 32944 |
+| frontend-developer | 316 | 21255 |
+| game-developer | 301 | 19998 |
+| devops-engineer | 297 | 19161 |
+| creative-producer | 268 | 20449 |
+| productivity-automator | 125 | 1463 |
+| qa-engineer | 115 | 15270 |
+| mobile-developer | 108 | 7596 |
+| data-scientist | 81 | 8452 |
+| security-specialist | 63 | 8051 |
+| ai-engineer | 50 | 4267 |
+| tech-writer | 24 | 3250 |
+| data-engineer | 23 | 2951 |
+| devtools-engineer | 18 | 3281 |
+| product-manager | 16 | 3022 |
+| fullstack-generalist | 8 | 1313 |
+| agent-orchestrator | 6 | 375 |
+| agent-ux | 5 | 458 |
+| architect | 4 | 596 |
+| agent-memory | 1 | 347 |
+| analyst | 1 | 1270 |
+| blockchain-developer | 1 | 899 |
 | (tanpa kategori) | 1 | 0 |
 
 ---
 
-## backend-developer (849 curated)
+## backend-developer (857 curated)
 
 - **absolute-audit** — Vulnerability and security scan (defensive, your own repo): dependency CVEs plus risky c
 - **accelerated-computing-cudf** — Official NVIDIA-authored guidance for NVIDIA cuDF GPU DataFrames, pandas acceleration, d
@@ -93,6 +93,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **analytics-tracking** — Set up, audit, and debug analytics tracking implementation — GA4, Google Tag Manager, ev
 - **analyze-cloud-costs** — Analyze Langfuse Cloud infrastructure cost structure using Metabase cost marts. Use when
 - **anomaly-detection** — Identify unusual patterns, outliers, and anomalies in data using statistical methods, is
+- **anti-hallucination-gates** — Use before claiming done/fixed/passing — or before asserting something is absent: not in
 - **antigravity-manager** — AI coding agent skill for Antigravity Manager — a Tauri v2 + Rust desktop app and Docker
 - **anything-analyzer-cdp** — Electron desktop app that captures web traffic via Chrome DevTools Protocol and uses AI 
 - **api-authentication** — Implement secure API authentication with JWT, OAuth 2.0, API keys, and session managemen
@@ -208,6 +209,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **circleci** — Configure CircleCI workflows and orbs for continuous integration and deployment. Create 
 - **circuit-breaker-pattern** — Implement circuit breaker patterns for fault tolerance, automatic failure detection, and
 - **cis-benchmarks** — Audit and remediate CIS benchmark violations. Use automated tools to assess compliance a
+- **citation-and-ledger-format** — Make source support auditable across markdown, spreadsheets, documents, and slide output
 - **ck** — Persistent per-project memory for Claude Code. Auto-loads project context on session sta
 - **claude-api** — Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, to
 - **claude-hud-statusline** — A Claude Code plugin that displays a real-time HUD showing context usage, active tools, 
@@ -656,10 +658,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **playwright-dev** — Explains how to develop Playwright - add APIs, MCP tools, CLI commands, and vendor depen
 - **playwright-triage** — Triage a Playwright bug report by reproducing it from the information in the issue. Use 
 - **plugin-master** — Complete guide to Claude Code plugin development, architecture, directory layout, compon
+- **pod-crash-debug** — Diagnose pod crash failures (CrashLoopBackOff, OOMKilled, Error, RunContainerError). Che
 - **polyglot-integration** — Integrate multiple programming languages using FFI, native bindings, gRPC, or language b
 - **popup-cro** — When the user wants to create or optimize popups, modals, overlays, slide-ins, or banner
 - **post-mortem** — /cs:post-mortem <decision> — Honest retrospective on an executed decision, scored agains
 - **postgres** — PostgreSQL best practices, query optimization, connection troubleshooting, and performan
+- **postgres-tuning** — PostgreSQL 17/18+ performance tuning and optimization. Covers async I/O configuration, q
 - **postgresql** — Administer PostgreSQL databases. Configure replication, backups, and performance tuning.
 - **postgresql-database-engineering** — Comprehensive PostgreSQL database engineering skill covering indexing strategies, query 
 - **postgresql-optimization** — PostgreSQL-specific development assistant focusing on unique PostgreSQL features, advanc
@@ -714,6 +718,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **rag** — Implements document chunking, embedding generation, vector storage, and retrieval pipeli
 - **rag-implementation** — Build Retrieval-Augmented Generation (RAG) systems for LLM applications with vector data
 - **rag-infrastructure** — Build and operate Retrieval-Augmented Generation (RAG) infrastructure with vector stores
+- **rag-pipeline-checkup** — Verify a RAG pipeline end-to-end, chunking, embeddings, retrieval quality, reranking, gr
 - **rails-patterns** — Ruby on Rails framework patterns for Rails 7.1+ and 8.x apps. Covers the directory contr
 - **ralphinho-rfc-pipeline** — RFC-driven multi-agent DAG execution pattern with quality gates, merge queues, and work 
 - **rate-limiting-abuse-protection** — Implements rate limiting and abuse prevention with per-route policies, IP/user-based lim
@@ -862,6 +867,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **vector-database-ops** — Deploy, manage, and optimize vector databases for AI applications. Covers Qdrant, Weavia
 - **vercel-labs-emulate** — Local drop-in API emulation for Vercel, GitHub, and Google services in CI and no-network
 - **vercel-xhttp-relay** — Deploy an XHTTP relay on Vercel Edge Functions to proxy Xray/V2Ray traffic and hide your
+- **verification-before-completion** — Use when about to claim work is complete, fixed, or passing, before committing or creati
 - **verification-loop** — A comprehensive verification system for Claude Code sessions. Use when verifying a Claud
 - **verify-agent-action** — Review a proposed AI-agent action or human-approval packet before execution. Use when an
 - **vertical-slice** — Vertical Slice Architecture (VSA) for .NET applications — one of several supported archi
@@ -889,12 +895,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **workiq-copilot** — Guides the Copilot CLI on how to use the WorkIQ CLI/MCP server to query Microsoft 365 Co
 - **workspace-surface-audit** — Audit the active repo, MCP servers, plugins, connectors, env surfaces, and harness setup
 - **worldmonitor-intelligence-dashboard** — Real-time global intelligence dashboard with AI-powered news aggregation, geopolitical m
+- **wp-phpstan-review** — WordPress PHPStan review for Codex. Use when reviewing phpstan config, baseline strategy
+- **wp-test-strategy** — WordPress test strategy guidance for Codex. Use when deciding what to test, how deeply t
 - **wrap-up** — Owns the session handoff lifecycle: the end-of-session ritual that captures completed wo
 - **write-coding-standards-from-file** — Write a coding standards document for a project using the coding styles from the file(s)
 - **x-api** — X/Twitter API integration for posting tweets, threads, reading timelines, search, and an
 - **x-twitter-growth** — X/Twitter growth engine for building audience, crafting viral content, and analyzing eng
 
-## designer (504 curated)
+## designer (506 curated)
 
 - **3dsvg-interactive-react** — Turn SVGs into interactive React 3D components using the 3dsvg library and visual editor
 - **8-bit-orbit-video-template** — Hyperframes-based video template for retro pixel deck motion design. Use when users want
@@ -927,6 +935,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **animation-micro-interaction-pack** — Provides reusable interaction patterns and motion presets that make UI feel polished. In
 - **anti-ui-slop** — Stop coding agents from shipping generic UI. Use UIZZE''s 800,000+ real web and iOS scre
 - **api-design** — REST API design patterns including resource naming, status codes, pagination, filtering,
+- **api-design-framework** — Use this skill when designing REST, GraphQL, or gRPC APIs. Provides comprehensive API de
 - **api-design-principles** — Master REST and GraphQL API design principles to build intuitive, scalable, and maintain
 - **api-design-reviewer** — Comprehensive REST API design review with automated linting, breaking-change detection, 
 - **api-error-handling** — Implement comprehensive API error handling with standardized error responses, logging, m
@@ -1396,12 +1405,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **wix-headless-replatform** — Clone, rebuild, migrate, or reverse-engineer a public website home page into a Wix Headl
 - **wix-vibe-headless** — Client-only, dependency-free REST scaffolds for connecting an already-built front end (a
 - **workflow-orchestration-patterns** — Design durable workflows with Temporal for distributed systems. Covers workflow vs activ
+- **wp-rest-api-development** — WordPress REST API review for Codex. Use when reviewing custom routes, permission callba
 - **wpds** — WordPress Design System. Apply WordPress's official design tokens, typography, and compo
 - **wx-favorites-report** — End-to-end pipeline to extract, decrypt, and visualize WeChat Mac favorites from encrypt
 - **zero-trust** — Implement zero-trust network architecture. Configure identity-based access, micro-segmen
 - **zod-validation-utilities** — Creates reusable Zod v4 schemas, validates API payloads, forms, and configuration input,
 
-## frontend-developer (314 curated)
+## frontend-developer (316 curated)
 
 - **absolute-deflake** — Flaky test fixes: detect nondeterministic tests empirically (repeat/shuffle/parallel run
 - **accessibility** — Consolidated accessibility skill entrypoint for WCAG 2.2, ARIA Authoring Practices, cogn
@@ -1662,6 +1672,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **seeker-domains** — Resolve and display .skr domain names in Solana mobile apps, in both directions between 
 - **seo-auditing** — Audit technical SEO — meta tags, structured data, Open Graph, sitemaps, robots.txt, perf
 - **setting-up-astro-project** — Initialize and configure Astro/Airflow projects. Use when the user wants to create a new
+- **shadcn-vue** — shadcn-vue for Vue/Nuxt with Reka UI components and Tailwind. Use for accessible UI, Aut
 - **ship-gate** — Pre-production audit that scans a codebase for security, database, deployment, code qual
 - **shopify-onboarding-merchant** — Set up a Shopify store. Use whenever someone asks to make, build, open, or set up a stor
 - **shuffle-json-data** — Shuffle repetitive JSON objects safely by validating schema consistency before randomisi
@@ -1682,6 +1693,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **tailwindcss-debugging** — Tailwind CSS debugging and troubleshooting common issues. PROACTIVELY activate for: (1) 
 - **tailwindcss-performance** — Tailwind CSS performance optimization including v4 improvements. PROACTIVELY activate fo
 - **taiwan-md-knowledge-base** — AI-native open knowledge base about Taiwan built with Astro v5, featuring bilingual cont
+- **tanstack-vue-table-skilld** — Headless UI for building powerful tables & datagrids for Vue. ALWAYS use when writing co
 - **tavily-key-generator-proxy** — Auto batch-register Tavily API keys via browser automation and pool them behind a unifie
 - **threejs** — Three.js skills for creating 3D elements and interactive experiences in the browser — sc
 - **troubleshooting-astro-deployments** — Troubleshoot Astronomer production deployments with Astro CLI. Use when investigating de
@@ -1718,7 +1730,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **xlsx** — Use this skill any time a spreadsheet file is the primary input or output. This means an
 - **yourvpndead-vpn-detection** — Android app that detects VPN/proxy servers (VLESS/xray/sing-box) via local SOCKS5 vulner
 
-## game-developer (300 curated)
+## game-developer (301 curated)
 
 - **academy-guide** — Stop and check this skill before finishing any reply to a question about how to use Clau
 - **accessibility-auditor** — Audits and implements web accessibility (a11y) following WCAG 2.1 guidelines with ARIA p
@@ -2018,10 +2030,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **wildworld-dataset** — WildWorld large-scale action-conditioned world modeling dataset with 108M+ frames from a
 - **wix-docs** — Look up the Wix API/SDK documentation to confirm an exact endpoint, HTTP method, request
 - **woocommerce-automation** — Automate WooCommerce e-commerce operations including orders, inventory, customers, and m
+- **wordpress-hacking** — Activate this skill whenever the user mentions WordPress, WP, WooCommerce, WP plugin, WP
 - **yeet** — Use only when the user explicitly asks to stage, commit, push, and open a GitHub pull re
 - **zustand-state-builder** — Implements lightweight state management using Zustand with TypeScript, persistence, devt
 
-## devops-engineer (296 curated)
+## devops-engineer (297 curated)
 
 - **acreadiness-policy** — Help the user pick, write, or apply an AgentRC policy. Policies customise readiness scor
 - **add-uint-support** — Add unsigned integer (uint) type support to PyTorch operators by updating AT_DISPATCH ma
@@ -2197,6 +2210,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **k8s-debug** — Diagnose and fix Kubernetes pods, CrashLoopBackOff, Pending, DNS, networking, storage, a
 - **k8s-manifest-generator** — Create production-ready Kubernetes manifests for Deployments, Services, ConfigMaps, and 
 - **k8s-security-policies** — Implement Kubernetes security policies including NetworkPolicy, PodSecurityPolicy, and R
+- **k8s-troubleshooter** — Systematic Kubernetes troubleshooting and incident response. Use this skill whenever the
 - **k8s-yaml-generator** — Generate/create/scaffold Kubernetes YAML — Deployment, Service, ConfigMap, Ingress, RBAC
 - **k8s-yaml-validator** — Validate, lint, audit, or dry-run Kubernetes manifests (Deployment, Service, ConfigMap, 
 - **knowledge-ops** — Knowledge base management, ingestion, sync, and retrieval across multiple storage layers
@@ -2719,7 +2733,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **tong-jincheng-interpersonal-skill** — 童锦程视角 Skill — 用深情祖师爷的思维框架分析人际关系、恋爱问题与人性洞察
 - **tong-jincheng-relationship-skill** — 童锦程视角 Skill — 用深情祖师爷的思维框架分析人际关系、恋爱问题与人性洞察
 
-## qa-engineer (113 curated)
+## qa-engineer (115 curated)
 
 - **absolute-docs** — Diátaxis-driven documentation for AI coding agents: write, improve, or audit tutorials, 
 - **absolute-init** — One-time setup for absolute: interview how you want it to behave (output style, autonomy
@@ -2756,6 +2770,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **dependency-audit** — Use when auditing project dependencies for security vulnerabilities, outdated packages, 
 - **dependency-scanning** — Scan package dependencies for known vulnerabilities using Snyk, Dependabot, and OWASP De
 - **dependency-upgrade** — Manage major dependency version upgrades with compatibility analysis, staged rollout, an
+- **detect-hallucinations** — Use this to detect when an LLM is making things up, so you can flag or block confident-b
 - **dev-onboarding-builder** — Creates comprehensive developer onboarding documentation and materials including step-by
 - **disaster-recovery** — Implement disaster recovery strategies and runbooks. Configure RPO/RTO targets and failo
 - **ecc-tools-cost-audit** — Evidence-first ECC Tools burn and billing audit workflow. Use when investigating runaway
@@ -2832,6 +2847,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **testing** — Testing strategy for .NET 10 applications. Covers xUnit v3, WebApplicationFactory for in
 - **trump-code-market-signals** — AI-powered analysis of Trump's social media posts to predict stock market movements usin
 - **ui-screenshots** — Capture screenshots of web apps during development using Playwright and PIL. Supports fu
+- **verify-quality-gates** — Run the project's quality gates, map results to spec acceptance criteria, and produce ve
 - **whatcable-macos-usb-inspector** — macOS menu bar app that identifies USB-C cable capabilities and charging diagnostics usi
 - **writing-tests** — Analyze existing code and write comprehensive unit and integration tests for it. Detects
 
@@ -3096,7 +3112,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **update-specification** — Update an existing specification file for the solution, optimized for Generative AI cons
 - **workshop-create** — Create a new workshop or use an existing directory as one. Handles two paths: (A) use an
 
-## ai-engineer (49 curated)
+## ai-engineer (50 curated)
 
 - **add-educational-comments** — Add educational comments to the file specified, or prompt asking for file to comment if 
 - **agent-platform-prompt-management** — Manages and orchestrates prompts in Agent Platform. Use when you need to create, list, r
@@ -3111,6 +3127,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **deepseek-ocr** — Expert skill for using DeepSeek-OCR, a vision-language model for optical character recog
 - **dingtalk-workspace-cli** — Use DingTalk Workspace CLI (dws) to manage DingTalk contacts, calendar, todos, attendanc
 - **enhance-prompt** — Improve prompts with design specs and UI/UX vocabulary. Useful for design-to-code workfl
+- **fact-check-before-trust** — Triggers a secondary verification pass for any agent output containing factual claims, n
 - **finalize-agent-prompt** — Finalize prompt file using the role of an AI agent to polish the prompt for the end user
 - **from-the-other-side-anitta** — Rigorous challenge profile for Anitta: assumption checks, evidence calibration, and defe
 - **go-mcp-server-generator** — Generate a complete Go MCP server project with proper structure, dependencies, and imple
@@ -3175,7 +3192,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **vscode-ext-localization** — Guidelines for proper localization of VS Code extensions, following VS Code extension de
 - **writing-commit-messages** — Write clear, conventional commit messages with proper type prefixes, scopes, and body co
 
-## data-engineer (22 curated)
+## data-engineer (23 curated)
 
 - **clawd-code-python-port** — Python port of Claude Code agent harness — tools, commands, task orchestration, and CLI 
 - **company-research** — Conduct comprehensive company research and due diligence. Analyze business model, compet
@@ -3186,6 +3203,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **deepagents-python-quickstart** — Scaffold a minimal local Deep Agent in Python by following the official quickstart, usin
 - **doc-parser** — This skill enables advanced document parsing using docling - IBM's state-of-the-art docu
 - **github-sandbox-file-downloader** — Download files into a GitHub repository by writing special commit messages that trigger 
+- **internet-asset-fetcher** — Fetch any internet asset to local files — images, text/articles, documents (PDF/DOCX/XLS
 - **java-refactoring-extract-method** — Refactoring using Extract Methods in Java Language
 - **keyid-agent-kit-mcp** — Give AI agents (Claude, Cursor) a real email address with 27 MCP tools for inbox, send, 
 - **lead-routing** — Intelligent lead assignment and routing - AI-powered scoring, territory mapping, round-r

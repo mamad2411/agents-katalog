@@ -1,0 +1,356 @@
+# Instructions for AI Agents
+
+This document defines how AI agents should discover, load, and execute skills from this repository. Follow these instructions precisely — they are the operating contract between this skill library and any agent that uses it.
+
+## Discovering Skills
+
+Skills are located in the `skills/` directory. Each skill is a standalone markdown file with YAML frontmatter containing metadata.
+
+### How to Find the Right Skill
+
+1. **Check the command**: If the user invokes a slash command (e.g., `/wb`, `/design`, `/deploy`), load the corresponding skill file directly.
+2. **Use the meta-skill when no command is clear**: If there is no slash command and the right workflow is unclear, read `skills/using-amazon-skills/SKILL.md` first. Use it to route the request to the correct lifecycle phase and skill chain.
+3. **Read the frontmatter**: every `skills/*/SKILL.md` opens with a YAML block carrying exactly three keys — `name`, `description` and `leadership_principles` (verified on all 28 skills). There is no `triggers` field: judge fit from `description`, which states what the skill is for and when it applies.
+4. **Check the phase**: skills carry no `phase` field either. The lifecycle grouping lives outside the files — in the skill catalogue in `README.md` (*All 28 Skills*), grouped by phase, and in the routing flow of `skills/using-amazon-skills/SKILL.md`. Use those to browse by phase.
+5. **When in doubt, ask**: If multiple skills could apply after consulting the meta-skill, ask the user which workflow they want to follow rather than guessing.
+
+### Skill Loading Protocol
+
+When a skill is activated:
+
+1. Read the full skill file
+2. Execute the **Context Assessment** section to determine if the skill applies
+3. If it applies, follow the **Process** section step by step
+4. At each **Verification Checkpoint**, evaluate the criteria before proceeding
+5. If a blocking checkpoint fails, stop and surface the issue to the user
+6. When complete, confirm all verification checkpoints have been met
+
+## Operating Behaviors
+
+These behaviors apply whenever you are operating under this skill library. They are non-negotiable.
+
+### 0. Respect Approval Gates
+
+**When a skill specifies a human approval gate, you MUST pause and present your work.** Do not proceed until the user explicitly approves. This applies to:
+- **Working Backwards (/wb):** Each of the 5 stages (Listen → Define → Invent → Refine → Test) has a mandatory gate. Complete one stage, present the output, ask the user to review, and wait for explicit approval before advancing.
+- **Spec creation (/design):** Each artifact (requirements.md → design.md → tasks.md) has a mandatory gate. Present each document for review before generating the next.
+- **The only exception is /build task execution.** Once specs are approved, /build executes tasks autonomously following the dependency graph — no pause needed between tasks.
+
+Violating an approval gate (e.g., jumping from Listen to PR/FAQ, or generating all spec files without pauses) is a critical process failure. If you notice yourself about to skip a gate, stop and present your work to the user.
+
+**An open BLOCKING finding is itself a gate — including inside `/build`.** A finding at canonical severity BLOCKING that is still open removes the option to approve and advance: the only remaining options are fix it, accept it with the risk recorded in the accepted-risk table, or pause. A review report without a parseable verdict block counts as BLOCKING. This changes the *option set* of the gates listed above; it adds no new gate and it does not reorder them. "Accept it" is not a verbal justification — it is a row in the accepted-risk table with a mitigation, an owner and a date (Operating Behavior 3), and that row is what takes the finding out of `OPEN`. The canonical level is defined in *One Severity Scale and One Verdict Scale* below; the verdict block is the three-line terminal block each reviewer in `agents/` ends its report with.
+
+### 1. Surface Assumptions
+
+Never proceed on an unstated assumption. If you find yourself thinking "I assume the user means X," stop and ask.
+
+**Do this:**
+```
+I'm about to design the API assuming REST over HTTP. The skill allows for 
+GraphQL or gRPC as well. Which protocol fits your context?
+```
+
+**Not this:**
+```
+Here's the REST API design...
+(proceeds without confirming the assumption)
+```
+
+### 2. Manage Confusion Budget
+
+Complexity is a budget, not a feature. Every architectural decision has a "confusion cost" — the cognitive load it imposes on the next engineer who encounters it.
+
+When implementing:
+- Choose the approach that a new team member could understand in under 5 minutes
+- If you can't explain why something is complex in one sentence, simplify it
+- Prefer boring technology over clever technology
+- Count the number of concepts someone needs to hold in their head simultaneously — keep it under 7
+
+### 3. Push Back When Warranted
+
+You are not a yes-machine. If a user's request conflicts with a skill's guidance, say so clearly and explain why.
+
+**Push back when:**
+- A request would skip a blocking verification checkpoint
+- A design introduces unnecessary complexity
+- A deployment plan lacks rollback capability
+- A solution doesn't address the stated customer problem
+- Technical debt is being introduced without acknowledgment
+
+**How to push back:**
+```
+I want to flag a concern before proceeding. The skill requires [X] at this 
+stage because [rationale]. Your request would skip this, which historically 
+leads to [consequence]. Would you like to:
+1. Address [X] first, then proceed
+2. Explicitly acknowledge the risk and proceed anyway (two-way door only) — I will log it in the accepted-risk table
+3. Take a different approach that satisfies both goals
+```
+
+**Where an accepted risk goes.** "Acknowledged and proceeding" is only a decision if it is written down somewhere a human will read again. Record it as a row in the review artifact of the phase in question — `implementation-review.md`, the design review, the ORR checklist, whichever artifact that phase produces — using the four columns the ORR checklist already uses (`skills/operational-readiness-review/templates/orr-checklist.md` → *Conditional Items*):
+
+| Item # | Mitigation | Resolution Owner | Target Date |
+|--------|-----------|-----------------|-------------|
+| What was accepted, and against which checkpoint or requirement | What reduces the exposure meanwhile (or "none") | Who owns closing it | When it is revisited |
+
+A risk with no owner and no date is not accepted — it is forgotten.
+
+### 4. Enforce Simplicity
+
+The Simplicity Bar Raiser is always active. At every decision point, ask:
+
+- Is this the simplest solution that solves the problem?
+- Am I adding this because it's needed now, or because it might be needed later?
+- Could I explain this architecture to a new hire in 5 minutes?
+- What can I remove?
+
+**YAGNI (You Ain't Gonna Need It)** is a first-class principle. If a feature or abstraction isn't needed for the current iteration, don't build it. Document it in a "Future Considerations" section if you want to preserve the idea.
+
+### 5. Verify, Don't Assume
+
+Never mark a verification checkpoint as "passed" based on assumption. Actually verify:
+
+- **"Tests pass"** → Run the tests, don't assume they pass
+- **"API contract is stable"** → Check for breaking changes against the previous version
+- **"Rollback works"** → Describe the specific rollback procedure and confirm it's tested
+- **"Customer problem validated"** → Point to the specific data or feedback
+
+If you can't verify something, say so explicitly:
+```
+I cannot verify checkpoint "Load test completed" because no load testing 
+infrastructure is configured. Options:
+1. Set up load testing (I can help with this)
+2. Defer this checkpoint with documented risk acceptance — recorded as a row in the accepted-risk table (see Operating Behavior 3)
+3. Use traffic estimation as a proxy
+```
+
+### 6. API First (the 2002 API Mandate, applied)
+
+Every customer-facing surface is an API. The API is the contract; everything behind it is private implementation.
+
+- A **client** is anything that consumes an API: web UI, mobile app, CLI, SDK, MCP server, AI agent, another internal service, partner integration, batch ETL job. **All clients are equivalent from the contract's point of view.** Use "client" or "API consumer" — never "frontend" alone.
+- The API may be REST, GraphQL, gRPC, an async / event surface, a data contract, an MCP tool surface, an AI agent tool definition, a webhook, a CLI, or an SDK. The protocol does not change the rule.
+- **Pick the right contract standard for the protocol.** OpenAPI is not the universal answer. REST → OpenAPI; GraphQL → SDL; gRPC → `.proto`; async/events → AsyncAPI + JSON Schema / Avro / Protobuf; data → ODCS (or store-native); MCP → MCP manifest; AI agent tools → provider-native tool spec. See `skills/api-contract-first/SKILL.md` for the full mapping.
+- During `/design`, Step 2 (API Contract) is **mandatory** — every design has an API. If you cannot identify the API, the design is not finished.
+- During `/spec` and `/build`, **API specs precede client specs.** No client spec is created or implemented before the API it consumes is specified and frozen.
+- If a client needs behavior the API doesn't expose, evolve the API. Do not embed logic in the client to work around a missing API capability.
+
+For the full guidance, see `skills/using-amazon-skills/SKILL.md` (Operating Behavior 9) and `skills/api-contract-first/SKILL.md`.
+
+### 7. Match the Ceremony to the Change
+
+The agent picks the right ceremony level — never the user.
+
+- **Trivial** (< 2h, no customer impact): direct to code with Code Quality Bar. No spec.
+- **Small** (2h-1d, customer-facing but local): direct to code OR a single lightweight spec.
+- **Medium** (1d-1wk, feature in existing product): `/spec` → `/build`.
+- **Large** (1wk+, architectural change or new service): full `/design` → `/spec` → `/build`.
+- **New product**: `/wb` → `/design` → `/spec` → `/build`.
+
+Each command (`/build`, `/spec`, `/design`) starts with **Step 0: State Detection + Proportionality Check**. When ambiguity requires a choice, the agent uses outcome-framed options (time, scope, traceability), never process names ("Tier 1", "PR/FAQ" do not appear in the question).
+
+For **brownfield projects** (existing code without BLA artifacts), the agent proactively offers **`/onboard`** for medium/large changes. `/onboard` has 3 paths the user picks from:
+- **(A) Anchor only** — Design Doc + API contracts + Threat Model from existing code (~15–30min)
+- **(B) Validate the *why*** — Path A + inferred PR/FAQ + hard questions from `doc-bar-raiser` where code can't answer (~30–45min)
+- **(C) Forward WB + Gap Analysis** — full `/wb` from scratch with gates + Path A + gap-analysis.md comparing "what we'd build today" vs "what exists" (~1–2h)
+
+Greenfield invocations (`/wb` and friends) are isolated by trigger and never invoke `/onboard`.
+
+Full ladder in `skills/using-amazon-skills/SKILL.md` → "Match the Ceremony to the Change". Brownfield discovery process in `skills/brownfield-discovery/SKILL.md`. That ladder carries five knob columns beside each level — **Mandatory bar raisers**, **Deterministic verification that runs**, **Completion evidence required**, **Iteration budget** and **Flow events emitted** — so what a level costs is readable in its row instead of inferred from prose, and it is read monotonically: a case may lower ceremony within its level, never raise it above what the level declares.
+
+### 8. /build Is Fully Autonomous by Default — Run to Feature Completion
+
+Approval gates happen during `/design` (when specs are created). Once `/build` starts, the agent runs **all specs end-to-end without asking for permission between them**. "Done" means every spec in `.bla/specs/` is in a terminal state, not "I finished one spec, should I continue?"
+
+The agent stops only for one of these four reasons:
+1. **Hard blocker** — sub-agent reports `[!]` and resolution requires human input
+2. **FAILED Post-Implementation Review** — fundamental gap (not minor fixes)
+3. **Green-build gate cannot self-recover** — tests broken in a way the agent cannot fix within scope
+4. **User explicitly asked to pause** — e.g., *"build spec by spec, ask me before each one"* in the original prompt
+
+⛔ Anti-patterns: stopping at end of a spec to ask "proceed?", presenting status with implicit "continue?", declaring "done" while `tasks.md` has `[ ]` or while there are subsequent specs. None of these are valid stop reasons.
+
+### 9. Track Tasks During /build
+
+The orchestrator (the agent running `/build`) owns `tasks.md`. Sub-agents do not edit it.
+
+- Before dispatching a wave: flip every task in the wave from `[ ]` to `[-]` and save the file.
+- As each sub-agent reports back: flip its task to `[x]` (success) or `[!]` (blocked, with reason).
+- Before declaring the wave complete: re-read `tasks.md` and verify no task is still `[ ]` or `[-]`.
+- A spec is only complete when every task is `[x]` or `[!]`. That is *execution closure* — nothing left to dispatch — and it is not the same as delivery: a spec holding a `[!]` on an unimplemented acceptance criterion cannot be given verdict `PASSED` in `implementation-review.md`.
+
+For the full state-transition protocol and resume rules, see `.claude/commands/build.md`.
+
+### 10. Implementation Memory During /build
+
+After the current spec/tasks and `coherence-review.md` action items are known, read `skills/implementation-memory/SKILL.md` and `.bla/implementation-memory.md` if present. Select active rules using multi-signal matching (Tags, File patterns, or `Applies when` prose). A rule is selected only when its `Phase` matches the current phase and any one of those signals matches; a rule whose `Phase` belongs to another phase is never selected, however well its tags or patterns fit. Increment `Hit count` for each selected rule. Unmatched rules are ignored and never become requirements. This is an internal mechanism, not a separate user-facing command.
+
+**Semi-automatic trigger (primary population path):** When implementation review verdict is PASSED WITH FIXES NEEDED and fix tasks are done, generate a self-reflection, extract up to 2 candidate learnings, and present to user for Accept / Reject / Edit. Do not wait for the user to ask.
+
+**Manual trigger:** When verdict is PASSED, ask the user to test, bring feedback, and debug. Update memory only after user asks for Quality Memory Review.
+
+**Periodic nudge:** If `Builds without update` counter in the memory file is ≥3, include a reminder in the end-of-build summary.
+
+**Multi-source capture:** Implementation memory can also be fed from `/review` (recurring code review findings) and `/learn` (COE implementation-level corrective actions). Same admission checks and rejection rules apply.
+
+**Staleness:** Rules unused for >90 days or unselected in 5 consecutive reviews are flagged for pruning during Quality Memory Review. The agent asks the user before removing.
+
+Keep memory fixed-size (max 12 rules), procedural, and harness-agnostic.
+
+### 11. Code Quality Bar (during writing, not after)
+
+While writing code in `/build`:
+
+- **Pick the paradigm by context.** Functional core, imperative shell as default. SOLID where entities have lifecycle. Procedural for short scripts.
+- **Naming carries the design.** No `process`, `data`, `info`, `temp` in production code.
+- **Functions do one thing at one level of abstraction.** Small and shallow.
+- **Cyclomatic complexity is a smell, not a metric.** High branching means decomposition, not tolerance.
+- **No comments that describe *what*; only *why*.** Rename and extract until comments are unnecessary.
+- **No dead code, no premature abstractions, no `any`/`unknown` escape hatches, no mutable globals.** `unknown` at the boundary, validated before use, is correct; `unknown` that flows into business logic is the escape hatch.
+- **Errors are values at boundaries, exceptions inside.** Provider exceptions don't leak into business logic.
+
+For the full bar, see `skills/incremental-implementation/SKILL.md` → "Code Quality Bar".
+
+## Decision Framework: Two-Way vs One-Way Doors
+
+This classification determines how much process rigor to apply:
+
+### One-Way Doors (Irreversible or Very Costly to Reverse)
+
+- Public API contracts
+- Database schema migrations (especially column drops)
+- Data deletion
+- Security model changes
+- Service decomposition / merging
+- Pricing model changes
+
+**Process**: Full skill execution, all bar raisers, explicit sign-off required.
+
+### Two-Way Doors (Easily Reversible)
+
+- Internal implementation details
+- UI changes behind feature flags
+- Configuration changes with rollback
+- A/B tests
+- Internal API changes with single consumer
+- Documentation updates
+
+**Process**: Lightweight skill execution, bias for action, iterate quickly.
+
+### How to Classify
+
+Ask these questions:
+1. If this is wrong, can we undo it within 1 hour? → Two-way door
+2. Does this affect external consumers who we don't control? → One-way door
+3. Does this involve data loss or corruption risk? → One-way door
+4. Can we put this behind a feature flag? → Likely two-way door
+5. Would reverting require coordination across teams? → One-way door
+
+## Bar Raiser Interaction Protocol
+
+When a skill specifies bar raiser review:
+
+1. **Activate the persona** — Shift into the bar raiser's perspective
+2. **Ask the questions** — Present bar raiser questions to the user
+3. **Evaluate honestly** — Don't rubber-stamp; if something doesn't meet the bar, say so
+4. **Block if necessary** — For blocking checkpoints, refuse to proceed until criteria are met
+5. **Document the decision** — Record what was reviewed, what passed, and any conditions
+
+### One Severity Scale and One Verdict Scale
+
+**These two tables rename nothing. They declare equivalence.** A reviewer already writing `[blocker]` keeps writing `[blocker]`; what the table adds is the statement — in one place, for the first time — of what `[blocker]` actually blocks. Every label in the *aliases* column already exists on disk in the file named next to it. None was invented here, none was moved, and no surface is asked to adopt another surface's spelling. When you read a finding or a verdict produced anywhere in this repository, map it through the relevant table and act on the **canonical** level, not on the wording.
+
+#### Severity of a finding
+
+| Canonical level | What this level blocks, exactly | Existing aliases on disk |
+|---|---|---|
+| **BLOCKING** | Removes the option to approve and advance. While one BLOCKING finding is open, the gate cannot be passed — a justification does not buy passage, only a fix does. | `[BLOCKING]` (`skills/code-review-bar-raising/SKILL.md`, `skills/design-review/SKILL.md`, `skills/spec-driven-implementation/SKILL.md`) · `[blocker]` (`agents/code-review-bar-raiser.md`) · `[FIX REQUIRED]` (`.claude/commands/build.md`) · 🚫 **Must fix** (`.claude/commands/review.md`) · **Critical** and **High** (`agents/security-guardian.md`) · 🔴 (`agents/requirements-analyzer.md`) · ❌ **FAIL** (`skills/operational-readiness-review/SKILL.md`, item level) |
+| **IMPORTANT** | Does not block the gate. Requires either a fix **or** a justification recorded where it can be audited later (see Operating Behavior 3 for where an accepted risk goes). Silence is not a resolution; an IMPORTANT finding that is neither fixed nor recorded is an open finding. | `[IMPORTANT]` (`skills/code-review-bar-raising/SKILL.md`, `skills/design-review/SKILL.md`) · `[WARNING]` (`skills/spec-driven-implementation/SKILL.md`) · `[concern]` (`agents/code-review-bar-raiser.md`) · ⚠️ **Should fix** (`.claude/commands/review.md`) · **Medium** (`agents/security-guardian.md`) · 🟡 (`agents/requirements-analyzer.md`) · ⚠️ **CONDITIONAL** (`skills/operational-readiness-review/SKILL.md`) |
+| **MINOR** | Blocks nothing and is never a gate condition. Fix it while you are in the file; close the review without it if you are not. It must never be the reason a gate is held. | `[NIT]` (`skills/code-review-bar-raising/SKILL.md`) · `[NOTE]` (`skills/design-review/SKILL.md`, `skills/spec-driven-implementation/SKILL.md`) · `[MINOR]` (`.claude/commands/build.md`) · `[nit]` (`agents/code-review-bar-raiser.md`) · 💡 **Consider** (`.claude/commands/review.md`) · **Low** (`agents/security-guardian.md`) |
+| **QUESTION** | Does not block by itself, but prevents a clean APPROVED while it is unanswered *and* the answer could change scope, contract or risk. Once answered it either closes or is re-raised at its own level. | `[QUESTION]` (`skills/code-review-bar-raising/SKILL.md`, `skills/design-review/SKILL.md`) · `[question]` (`agents/code-review-bar-raiser.md`) |
+
+`[PRAISE]` (`skills/code-review-bar-raising/SKILL.md`) and `[OK]` (`.claude/commands/build.md`) are outside this scale and outside every count: praise is not a finding and a satisfied check is not a finding. Keep the surface's own severity word inside the finding text wherever it carries information the canonical level throws away — `Critical` versus `High` with a CWE number in `agents/security-guardian.md` both map to BLOCKING, and both must stay readable as written.
+
+#### Verdict on a review
+
+| Canonical verdict | What this level blocks, exactly | Existing aliases on disk |
+|---|---|---|
+| **APPROVED** | Blocks nothing. The work advances to the next stage. | **PASSED** (`.claude/commands/build.md`) · **PASS** (`agents/implementation-verifier.md`) · **APPROVED** (`skills/design-review/SKILL.md`, `skills/spec-driven-implementation/SKILL.md`, `skills/operational-readiness-review/`) |
+| **APPROVED WITH NOTES** | Blocks nothing. The work advances **with the open items recorded**, and with a target date wherever the surface has a field for one. Advancing without recording them converts this verdict into APPROVED, which is a misreport. | **PASSED WITH FIXES NEEDED** (`.claude/commands/build.md`) · **PASS WITH WARNINGS** (`agents/implementation-verifier.md`) · **APPROVED WITH NOTES** (`skills/design-review/SKILL.md`, `skills/spec-driven-implementation/SKILL.md`) · **APPROVED WITH CONDITIONS** (`skills/operational-readiness-review/templates/orr-checklist.md`) |
+| **NOT APPROVED** | Blocks advancing entirely. Stop and escalate to the human; do not self-fix your way past it. | **FAILED** (`.claude/commands/build.md`) · **FAIL** (`agents/implementation-verifier.md`) · **NEEDS REVISION** (`skills/design-review/SKILL.md`, `skills/spec-driven-implementation/SKILL.md`) · **NOT APPROVED** (`skills/operational-readiness-review/templates/orr-checklist.md`) · **RE-DESIGN** (`skills/design-review/SKILL.md`, design only) |
+| **INCOMPLETE** | Blocks advancing, and is **not** a quality judgement. It is the declaration that the review could not be performed: the artifact is absent, it is still byte-identical to its template, it carries no verdict line, or the evidence the review needs was never presented. Report what is missing; do not convert it into NOT APPROVED, and never into APPROVED. | None — INCOMPLETE is new to this table and has no alias on disk yet. |
+
+`NOT-EXECUTED` is the item-level counterpart of INCOMPLETE, already in use: `agents/implementation-verifier.md` admits `NOT EXECUTED` in its `Result` column and counts it in the report header. A review whose items are all NOT-EXECUTED is INCOMPLETE; a review with some NOT-EXECUTED items still reports a real verdict, with those items named.
+
+### When Multiple Bar Raisers Apply
+
+Execute them in this order:
+1. Customer Obsession (is this solving the right problem?)
+2. Simplicity (is this the simplest approach?)
+3. Security (is this safe?)
+4. Architecture (is this well-designed?)
+5. Code Quality (is this well-implemented?)
+6. Operations (is this operable?)
+7. Learning (are we capturing lessons?)
+
+If any bar raiser blocks, resolve their concern before proceeding to the next.
+
+## Error Handling
+
+### When a Skill Doesn't Fit
+
+If you've loaded a skill and the Context Assessment reveals it doesn't apply:
+
+```
+I loaded the [skill name] skill, but after assessing the context, it doesn't 
+apply here because [reason]. A better fit might be [alternative skill] or 
+we could proceed without a specific skill framework. What would you prefer?
+```
+
+### When Steps Are Ambiguous
+
+If a skill's instructions are ambiguous in your specific context:
+
+1. State what you understand
+2. State what's ambiguous
+3. Propose your interpretation
+4. Ask for confirmation before proceeding
+
+### When User Requests Conflict with Skills
+
+The user always has final authority. But your job is to ensure they make **informed** decisions:
+
+1. Clearly state the conflict
+2. Explain the rationale behind the skill's recommendation
+3. Describe the risk of deviating
+4. If the user decides to deviate, record the deviation as a row in the accepted-risk table (see Operating Behavior 3) — what was skipped, what mitigates it, who owns it, when it is revisited — and proceed
+
+## Continuous Improvement
+
+If you notice a skill is:
+- Missing a step that caused issues
+- Including a step that's consistently unnecessary
+- Ambiguous in a way that required clarification
+- Missing a verification checkpoint that would have caught a problem
+
+Surface this to the user and suggest they open an issue or contribute an improvement.
+
+## Keep the Documentation Truthful in the Same Commit
+
+This repository *is* documentation: a stale cross-reference is a broken instruction, not a cosmetic defect. When you add, remove or rename a file, directory, command, skill, agent or frontmatter field, search the repository for references to the old name and update every one of them **in the same commit** as the change itself.
+
+Surfaces to search, at minimum: `README.md`, `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/`, every `*/commands/` directory, `harness/kiro/`, and `docs/`.
+
+Three checks before you consider the change done:
+
+- Counts stated in prose or badges (for example "28 skills") still match what is on disk.
+- No cross-reference points at a path, heading or field that no longer exists.
+- If you renamed something, you grepped the old name across the whole repository and found nothing left.
+
+A follow-up commit "fix the docs" is not acceptable: between the two commits the contract lies, and an agent reading it acts on the lie.
+
+`CHANGELOG.md` is the one deliberate exception to this rule: it is written only by a change that affects users, so an agent must not add an entry for a typo fix, an internal rename or a new predicate that changes no behaviour — when an entry *is* owed, it still lands in the same commit as the change.
+
+---
+
+*These operating behaviors are mechanisms, not suggestions. Follow them consistently — that's how quality compounds over time.*

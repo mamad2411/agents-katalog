@@ -1,0 +1,69 @@
+---
+description: Auto-route Frontend Expert suite skills — chat-first, judgment first, slash optional
+alwaysApply: true
+---
+
+# Frontend Expert (auto)
+
+**Users should not need slash commands.** Map natural language to skills yourself. Pillars: `docs/pillars.md`.
+
+## Intent → load (mandatory)
+
+| User intent (examples) | Load skills in order |
+|------------------------|----------------------|
+| Build/change UI, page, screen, component, layout, styling | `design-direction` (if non-trivial) → (+ **`prototype`** if comparing/stressing) → `design-foundations` → `tokens` → (+ **`marketing`** if landing) → `components` → **`anti-slop-code`** → **`responsive`** → **`motion`** (light) → `anti-slop-design` → `polish` → `accessibility` |
+| + form / validasi | above + `forms` |
+| + API list/detail / async data | above + `data-fetching` |
+| + shell / sidebar / routing | above + `app-shell` |
+| + architecture / folder / state | + `architecture` |
+| + SEO / meta / OG | + `seo` |
+| Mobile / responsive / semua device | **`responsive` MUST** |
+| Marketing landing / homepage / logo cloud / testimonials | + **`marketing`** (section stack **hand-roll** — not `@tailark`/block registry) → `motion` → `seo` as needed |
+| Animation / transition / motion / marquee / parallax / text reveal | above + `motion` (families/patterns in `motion-families.md`; hand-roll — not registry default) |
+| Inspeksi animasi / frame by frame / jelaskan transisi | **`motion-inspection`** (then `motion` to fix) |
+| Match Figma / mock / pixel perfect / fidelity | `fidelity` → `tokens` → `responsive` → `polish` |
+| Lighthouse / axe / DevTools / measured scores | `devtools` → `accessibility` → `performance` |
+| Hierarchy / unclear primary / competing CTAs | `design-direction` Hierarchy pass → `design-foundations` → `anti-slop-design` → `polish` |
+| Grid / spacing / alignment / density / "layout berantakan" / "struktur layout" / "rapikan struktur" | `design-foundations` → `tokens` → `responsive` |
+| Typography / type scale / multi-h1 | `design-direction` Typography ladder → `design-typography` → `polish` |
+| Font choice / wrapping / truncation | `design-typography` → `responsive` → `accessibility` |
+| Palette / OKLCH / dark mode / contrast | `tokens` → `design-color` → `accessibility` |
+| Card / modal / radius / shadow / elevation | `tokens` → `design-surfaces` → `polish` |
+| Component props / API / “prop terlalu banyak” | `components` |
+| Prototype / varian / side-by-side / bandingkan arah / cek semua state | `design-direction` (if needed) → **`prototype`** |
+| Kode terasa AI / rapikan kode / dampak ke modul lain / error handling generik / edge case | `anti-slop-code` (not `anti-slop-design`, not `polish`) |
+| UI copy / CTA / error / empty state | `content-design` |
+| Copy terasa AI / tulisan generik / “unlock seamless” / “tulisan AI” | `content-design` (not `anti-slop-design`, not `polish`) |
+| Figma Auto Layout / Fill / Hug | `responsive` (Auto Layout ↔ CSS) |
+| Feels off / rapihin detail / micro polish | `polish` (+ `anti-slop-design` if generik) — one pass |
+| Design audit, AI slop, "UI jelek/generik", visual review | `anti-slop-design` → `polish` → `tokens` → `responsive` → `accessibility` → `performance` (+ `motion` / **`motion-inspection`** if animated; + `marketing` if landing) |
+| Tests / TDD / coverage / regresi UI | `testing` → `components` → `accessibility` |
+| Polish / rapihin **sampai bagus** / until audit passes | `quality-loop` (max 3) |
+| Slow UI / LCP / optimize performance | `performance` |
+| WebGL / shader / Plasma / animated canvas background | **`webgl` required** |
+| Sentry / analytics / observability | `monitoring` |
+
+Skip `design-foundations` for isolated color, typography, copy, token, component-state, motion, and micro-polish changes.
+
+**“Rapihin”:** alone on existing UI → `polish`. “Rapikan struktur” → `design-foundations`. Copy / “tulisan AI” → `content-design`. “Rapikan kode” → `anti-slop-code`. “Sampai bagus” → `quality-loop`.
+
+## Expert judgment
+
+For blank-canvas or ambiguous UI: offer **2–3 approaches + tradeoffs + one recommendation** before coding. Skip for tiny clear fixes or “just implement”. See skill `design-direction`.
+
+## Rules (compliance — do not silently skip)
+
+- Prefer project design system if one exists; else walk token decision tree in `references/token-preset-scoring.md`
+- **Responsive: MUST** — `responsive`; Conventions `Responsive: 320/768/1024/1440 checked` + **full-width primary CTA <768**
+- **Hierarchy + Typography: MUST** on blank-canvas / layout polish — Hierarchy pass + one h1 / type ladder (`design-direction`)
+- **Foundations:** coherent container/grid, spacing relationships, shared anchors, one focal path (`design-foundations`)
+- **Icons: MUST use [Reicon](https://reicon.dev)** unless project icon lib or text-only waiver
+- Light **Motion** defaults on shell/dashboard (`motion`) unless waived; marketing: name families/patterns and hand-roll (registry install is not the pack default)
+- **Shell chrome:** theme in **topbar** (icon); profile = **avatar → account menu**; product filters = **custom select** (`app-shell` / `components`)
+- **Marketing landing:** section stack via `marketing` / `landing-sections.md` — not hero-only; **hand-roll** (not block-registry install)
+- WebGL/shader/plasma → load **`webgl`**; prefer Plasma
+- No raw hex, purple/indigo defaults, Lorem ipsum, or `rounded-2xl` everywhere
+- Handle loading / error / empty; keyboard accessible
+- Before DONE on UI builds, output the **Conventions check** from `references/compliance-gates.md`
+- Optional shortcuts only: `/ui`, `/design`, `/audit`, `/test-ui`, `/polish`
+- Audits: do not fabricate visual metrics without tokens/screenshots

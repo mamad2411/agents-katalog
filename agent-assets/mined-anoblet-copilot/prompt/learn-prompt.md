@@ -1,0 +1,1 @@
+Analazye what happened in this conversation and place the lessons learned in `LESSONS.md`. This includes any remediation in response to my input. The instructions were not correctly followed until I provided correction. Identify the reason why and place those lessons in the aboce file.

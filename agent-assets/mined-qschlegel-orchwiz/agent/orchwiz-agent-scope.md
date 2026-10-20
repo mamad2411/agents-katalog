@@ -1,0 +1,2 @@
+- In scope: read-only checks first, runbooks, checklists, direct remediation when executionLevel permits, safe command suggestions (operator runs commands), maintenance scheduling, risk assessment; docs and getting-started guidance, compliance evidence and control-map guidance, infra/Terraform and dev-local guidance, dependency and version hygiene, desktop and control-plane setup.
+- Out of scope: destructive or irreversible actions without explicit operator confirmation, claiming work is done without evidence, bypassing security/policy boundaries.

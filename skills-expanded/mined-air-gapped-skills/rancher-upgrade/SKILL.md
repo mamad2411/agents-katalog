@@ -1,0 +1,238 @@
+---
+name: rancher-upgrade
+description: >-
+  Plan and sequence COMMUNITY-edition Rancher upgrades across air-gapped multi-cluster fleets — a
+  management/"hosting" Rancher cluster plus the downstream RKE2/K3s clusters it provisions. Covers the community
+  release model (2.11→2.15, community-vs-Prime cadence, EOL), the Kontainer Driver Metadata (KDM) matrix
+  deciding which downstream k8s minors each Rancher version can manage (and the stranding risk when a
+  host-Rancher bump outruns its sub-clusters), cross-cluster upgrade ordering, the
+  embedded-CAPI→Rancher-Turtles migration, Fleet coupling, cert-manager/Helm/backup prerequisites, backup-
+  restore-operator + etcd rollback, and the air-gapped upgrade procedure (which images/charts/KDM to mirror).
+  Assumes the Helm-on-Kubernetes install. Community editions only; Prime content excluded. Companion to k8s-components-checker,
+  which owns the management-cluster k8s compatibility verdict; this skill owns the upgrade methodology and
+  downstream coordination.
+when_to_use: >-
+  Use whenever the user mentions "rancher upgrade", "upgrade Rancher", "Rancher 2.X to 2.Y", "KDM", "which k8s
+  can my Rancher manage", "downstream cluster stranded", "Rancher Turtles migration", "embedded cluster-api
+  removed", "Fleet Helm v4", "Rancher air-gap upgrade", or "rancher-backup / cert-manager prerequisite" — or
+  plans an upgrade of a Rancher management cluster and the downstream clusters under it, even without naming KDM
+  or Turtles. NOT for Harvester, single-node Docker installs, or the single-cluster component-compat verdict
+  (use k8s-components-checker).
+---
+
+# rancher-upgrade
+
+Plan, sequence, and de-risk a **community-edition Rancher** upgrade across a real fleet: a
+management ("hosting") cluster and the downstream RKE2/K3s clusters it provisions. The hard part
+of a Rancher upgrade is almost never the `helm upgrade` itself — it's the **cross-cluster
+coordination**: a management-cluster Rancher bump silently changes which downstream Kubernetes
+versions the fleet can run, and getting the order wrong strands sub-clusters or forces a rebuild.
+
+**Community editions only.** SUSE Rancher Prime backports, Prime-only patches, and Prime support
+matrices are out of scope — flag them when they appear, never build a plan on them. House Rule #1.
+
+## Companion to k8s-components-checker — who owns what
+
+This skill is the upgrade-methodology companion to `k8s-components-checker` (same repo), mirroring
+the `argo-cd-apps ↔ compat/argo-cd.md` split. The boundary is load-bearing — respect it to avoid
+drift:
+
+| Question | Skill |
+|----------|-------|
+| "Is Rancher version X compatible with the **management cluster's** k8s minor?" | **k8s-components-checker** — `references/compat/rancher.md` is the single source of truth for the mgmt-cluster k8s window per Rancher minor. **Cite it; never restate those numbers here.** |
+| "Is component Y (Cilium, Rook, …) OK on k8s 1.NN on one cluster?" | **k8s-components-checker** (per-cluster verdict) |
+| "How do I plan/sequence a Rancher version upgrade, and what happens to my **downstream** clusters?" | **this skill** |
+| "Which downstream RKE2/K3s k8s minors can Rancher 2.X manage?" (KDM) | **this skill** |
+| Harvester host→guest upgrade coordination | **`harvester-upgrade`** (same repo) — it owns the Harvester ladder. Load it *alongside* this skill when Harvester sits under the fleet: each Harvester hop is gated on upgrading the **external Rancher first**, so a Rancher plan here is the leading half of that pairing. Get the Harvester↔Rancher pairing from `harvester-upgrade`; never restate it here. |
+
+## The mental model — two coupled axes
+
+A Rancher fleet upgrade moves on two axes that are **decoupled but ordered**:
+
+1. **Management-cluster axis** — the k8s minor the Rancher server itself runs on, and the Rancher
+   version. (k8s window → cite `compat/rancher.md`.)
+2. **Downstream axis** — which RKE2/K3s k8s minors Rancher can *provision and manage*, governed by
+   **Kontainer Driver Metadata (KDM)**, NOT by the management cluster's own k8s version.
+
+The rule that ties them: **introducing a downstream k8s *minor* requires upgrading Rancher first;
+downstream *patch* upgrades do not.** So the management Rancher always moves before any downstream
+minor bump — and a trailing downstream cluster can fall out of support when the host Rancher rolls
+forward. This is the single most common way a fleet upgrade goes wrong. See
+`references/kdm-downstream-matrix.md`.
+
+## Workflow
+
+### 1. Establish the change set and the fleet shape
+
+- **Install type first — this skill assumes the Helm-on-Kubernetes install.** The same command that
+  gets the version answers this: an empty result means there is no Helm-managed `rancher` release,
+  and the likeliest reason is a **single-node Docker install** (`docker run rancher/rancher`, still
+  a documented method). That upgrades by stopping the container, backing up its data volume, and
+  starting a new container from the newer image against the same volume — **no `helm upgrade`, no
+  cert-manager chart, no BRO, no etcd snapshot, no KDM coordination.** Effectively nothing below
+  applies. **Say so and stop** rather than emitting a Helm plan; point at the Rancher docs'
+  single-node-with-Docker upgrade page.
+- **Versions:** current Rancher minor+patch, target Rancher minor. Get this from the cluster
+  (`helm list -A -n cattle-system | grep rancher`), not from memory.
+- **Fleet shape:** does this Rancher actually provision downstream clusters?
+  `kubectl get clusters.cluster.x-k8s.io -A` (populated = real fleet; empty = standalone mgmt
+  cluster — the CAPI/Turtles migration is then a near-non-event). `kubectl get
+  clusters.provisioning.cattle.io -A` — any row whose name ≠ `local` is a downstream cluster.
+- **Air-gap?** If the registry is internal-mirror-only, the air-gap procedure (what to mirror)
+  applies — `references/air-gap-procedure.md`. (Direct-pull clusters skip mirroring entirely.)
+- **Kubeconfig path:** if the operator's kubeconfig is Rancher-proxied (`server` contains `/k8s/clusters/`),
+  switch to a Rancher-independent admin kubeconfig BEFORE upgrading — `helm upgrade` of the rancher
+  release restarts the proxy pods and severs the API mid-apply. `references/prereqs-and-ordering.md`
+  § Pre-flight.
+
+### 2. Compute the upgrade path (no minor skipping)
+
+The only supported path between minors is **latest-COMMUNITY-patch-of-current-minor → latest-
+COMMUNITY-patch-of-next-minor, one minor at a time** (2.11→2.12→2.13→2.14→2.15; never 2.11→2.14).
+Intra-minor patch jumps are fine.
+
+**Operator insists on a skip** ("one window", "I accept the risk"): never write the skipping
+`helm upgrade`, even when told not to lecture. A skip fails mechanically: the management-cluster
+k8s windows of minors three apart share no k8s minor (2.12 runs on 1.31–1.33, 2.15 on 1.34–1.36),
+and downstreams can only be lifted to minors the *current* Rancher's KDM offers, so they strand.
+Give the fewer-windows version instead: every hop chained in one window with a gate between hops
+(rollout complete, clusters Active, fresh etcd snapshot), and each required mgmt/downstream k8s
+bump placed before the hop that needs it.
+
+⛔ **The rung is the community ceiling, not the newest tag.** Rancher ships both editions to one
+GitHub feed, so for every minor except the current one the newest tag is **Prime-only** and
+uninstallable here — `sort -V | tail -1` silently yields a target the operator cannot use. Derive
+each rung edition-aware (House Rule #1 + #3): `references/lifecycle.md` § Latest patch per minor.
+
+### 3. For each minor step, run the pre-flight → upgrade → post-flight runbook
+
+The per-minor breaking changes and the ordered runbook live in `references/per-minor-runbook.md`.
+Prerequisites common to every step (cert-manager window, Helm floor, mandatory backup, RKE1 sweep,
+API aggregation layer) and the cross-cluster ordering + rollback floor are in
+`references/prereqs-and-ordering.md`.
+
+### 4. Coordinate the downstream clusters
+
+Before bumping the host Rancher, check every downstream cluster's k8s minor against the **target**
+Rancher's KDM window (`references/kdm-downstream-matrix.md`). Lift any *trailing* downstream into
+the new window **first**, or it loses manageability after the host upgrade. After the host upgrade
+(which ships a new KDM branch), the newly-unlocked downstream minors become selectable — bump
+downstreams then.
+
+### 5. Produce the plan
+
+Emit an ordered plan: per-minor-step pre-flight gates, the upgrade command (air-gap variant if
+applicable), post-flight verification, and the downstream-coordination steps interleaved at the
+right points. Cite the reference + grounded version for every specific claim. Recognizable shape:
+
+```
+<cluster/fleet> — Rancher <current> → <target>   (path: <minor steps, no skips>)
+
+prerequisites  - cert-manager <window> · Helm <floor> · RKE1 sweep · BRO backup + etcd snapshot
+downstream     - <cluster>: k8s <ver> — <in target's KDM window | lift to ≥X BEFORE host upgrade>
+                 source: references/kdm-downstream-matrix.md
+per step (×N)  1. pre-flight gates  2. upgrade mgmt Rancher  3. post-flight  4. bump downstream
+blockers       - <one-way rollback / known regression / Prime-gated path>  source: references/<file>.md
+```
+
+Every cited version is cluster-reported or freshly `gh`-grounded (House Rule #3), never from memory;
+target versions follow look-ahead (House Rule #4).
+
+## House rules (encode into every plan)
+
+1. **Community editions only.** Flag Prime-gated versions/patches/features; never plan on them.
+   The reliable community-vs-Prime signal is the GitHub release-notes first line — see
+   `references/lifecycle.md`.
+2. **Cite, don't restate, the mgmt-cluster k8s window.** That lives in
+   `k8s-components-checker/references/compat/rancher.md`. Pointing at it keeps the two skills from
+   drifting.
+3. **Never invent versions; ground or abstain (House Rule #8 in k8s-components-checker).** k8s *windows* and KDM
+   *mechanics* are methodology the skill states. Specific release/patch *numbers* — "latest 2.13
+   patch", "Turtles version on 2.14", "BRO chart for 2.12" — are volatile and the #1 fabrication
+   risk. State a specific version only if it is cluster-reported, freshly grounded via `gh`, or
+   explicitly marked `UNVERIFIED`. Grounding method (anti-confirmation): anchor on
+   `gh api repos/rancher/rancher/releases/latest`, enumerate-and-derive the real latest patch,
+   **never** ask "does vX.Y.Z exist?" (existence/list queries get rubber-stamped). `gh` must be run
+   with **valid auth** from the operator's workstation — anonymous is 60 requests/hour and exhausts
+   almost immediately on an enumeration sweep (`gh auth status` first). Repo map + protocol:
+   `references/lifecycle.md` § Grounding.
+4. **Look-ahead version targeting.** When recommending any target version, pick the one that covers
+   the operator's *next* planned hop too, not the bare immediate minimum — a version sitting at its
+   own support ceiling forces an avoidable second upgrade. (Same rule as k8s-components-checker
+   House Rule #9.)
+
+   **And ground the patch floor on advisories, not just on "latest".** Rancher ships security
+   advisories in batches, and they set a *minimum* patch per minor that the latest-patch lookup does
+   not tell you. Enumerate them the same way you enumerate releases:
+
+   ```bash
+   gh api repos/rancher/rancher/security-advisories --paginate \
+     --jq '.[] | "\(.severity) \(.published_at[0:10]) \(.ghsa_id) \(.summary)"'
+   # then, for one advisory, the per-minor patched floors:
+   gh api repos/rancher/rancher/security-advisories --paginate \
+     --jq '.[] | select(.ghsa_id=="GHSA-...") | .vulnerabilities[]
+           | "\(.vulnerable_version_range) -> \(.first_patched_version)"'
+   ```
+
+   One advisory sets several floors at once: CVE-2026-44945 (CRITICAL, cross-cluster impersonation)
+   lists `< 2.14.2`, `< 2.13.8`, `< 2.12.12`, `< 2.11.16`. A ladder targeting "a recent 2.11" lands
+   inside it. **`first_patched_version` is almost always null on this feed** — derive the floor from
+   `vulnerable_version_range`; "no patched version listed" does not mean "no fix".
+
+   **On community edition most of those floors are unreachable, and that decides the plan.** Rancher
+   publishes community patches for a minor only while it is the newest minor; the day minor N+1 GAs,
+   minor N's next patch becomes a Prime-docs redirect. Verified across every 2.11–2.15 release
+   (2026-09-15): `v2.11.4` turned Prime the day 2.12.0 shipped, `v2.12.4` the day before 2.13.0,
+   `v2.13.4` and `v2.14.4` on their successors' GA dates. So the community ceiling is frozen at the
+   last patch before the next GA, while advisory floors keep climbing:
+
+   | Minor | Community ceiling | Highest advisory floor | Reachable on community? |
+   |-------|-------------------|------------------------|-------------------------|
+   | 2.15  | v2.15.2           | 2.15.2                 | **yes** — 2.15.1 is below it |
+   | 2.14  | v2.14.3           | 2.14.6                 | no — 3 non-community patches |
+   | 2.13  | v2.13.3           | 2.13.10                | no — 7 |
+   | 2.12  | v2.12.3           | 2.12.14                | no — 11 |
+   | 2.11  | v2.11.3           | 2.11.18                | no — 15 |
+
+   **Consequence: every community minor except the newest is inside an unpatched CRITICAL.** 2.13,
+   2.12 and 2.11 all sit below CVE-2026-44939's floors (command injection via unsanitized YAML,
+   `< 2.13.6` / `< 2.12.10` / `< 2.11.14`), and 2.13/2.12/2.11 below CVE-2026-44945's as well. There
+   is no patch-in-place remediation for any of them. The current top floor on every minor is
+   CVE-2026-88804 (CRITICAL, unauthenticated UI-settings write → stored XSS); its ranges carry a `v`
+   prefix (`>=v2.14.0, <v2.14.6`), so a `< 2.` regex misses them.
+
+   **Fleet is a second feed with the same shape.** `rancher/fleet` advisories (CVE-2026-88808,
+   CRITICAL, agent writes with cluster-admin) floor at Fleet `0.16.2 / 0.15.7 / 0.14.11`; Rancher
+   pins the Fleet it installs (`fleetVersion` in the tag's `build.yaml`), so community 2.14.3 runs
+   Fleet 0.15.4 and only 2.15.2 (Fleet 0.16.2) clears it. Sweep both feeds.
+
+   **So do not answer a community security question with a patch number.** The remediation is the
+   minor hop — which makes House Rule #5's ladder the security path, not merely the supported one,
+   and makes the look-ahead rule above mandatory rather than advisory: land on the newest minor or
+   you land somewhere unpatchable. Re-derive both columns at plan time; the ceilings move only on a
+   GA, but the floors move with every batch.
+5. **Management Rancher upgrades BEFORE downstream k8s minor bumps**, always. And **no minor
+   skipping** on the Rancher axis. Violating either is the classic fleet-stranding / rebuild path.
+6. **Back up before every step.** An RKE2 etcd snapshot of the management cluster is the real
+   rollback floor — the 2.14 CAPI-v1beta2 boundary is one-way without it. Add a backup-restore-operator
+   backup *if BRO is installed*; many community installs have none, so don't block on it (substitute
+   targeted resource exports — Rancher/Fleet objects + the auth AuthConfig & secrets). See
+   `references/prereqs-and-ordering.md` § Backup & rollback.
+
+## Decision guide
+
+| Task | Read |
+|------|------|
+| Community vs Prime, cadence, EOL, latest-patch grounding, `gh` repo map | `references/lifecycle.md` |
+| Which downstream k8s a Rancher minor can manage; stranding; air-gap KDM mirror | `references/kdm-downstream-matrix.md` |
+| cert-manager / Helm / backup prereqs, cross-cluster ordering, etcd rollback | `references/prereqs-and-ordering.md` |
+| embedded-CAPI→Turtles migration, CAPRKE2/CAAPF, Fleet per-minor + Helm v4 | `references/capi-turtles-fleet.md` |
+| Air-gapped upgrade: what to mirror, `helm upgrade` flags, downstream RKE2 SUC | `references/air-gap-procedure.md` |
+| Per-minor (2.11→2.15) breaking changes + ordered pre/upgrade/post runbook | `references/per-minor-runbook.md` |
+
+Each reference carries a header stating **what was grounded and when — and what was NOT re-derived
+on the latest pass**. Read that header before citing anything from the file: a claim under a
+"not re-derived" disclaimer must be re-grounded at use time regardless of the file's headline date.
+Otherwise re-ground per House Rule #3 **only if the stamp is stale** (≳1–2 weeks) — same-day
+re-grounding is wasted churn the operator will (rightly) push back on; don't present it as an
+unconditional step.

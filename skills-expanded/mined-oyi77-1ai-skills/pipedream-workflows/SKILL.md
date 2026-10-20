@@ -1,0 +1,233 @@
+---
+name: pipedream-workflows
+description: Use when pipedream serverless workflows — triggers, code steps, pre-built
+  actions, data stores, HTTP. Use when working with pipedream workflows.
+domain: automation
+author: oyi77
+license: Apache-2.0
+subdomain: workflow-automation
+tags:
+- automation
+- pipedream
+- productivity
+- workflow
+- workflows
+version: 1.0.0
+category: automation
+---
+
+
+## Overview
+
+Pipedream is a serverless integration and compute platform. It lets you build event-driven workflows with Node.js code steps, 1000+ pre-built app actions, and HTTP triggers — all running on serverless infrastructure.
+
+## Capabilities
+
+- Build workflows with HTTP, cron, or app event triggers
+- Write Node.js code steps with full npm access
+- Use 1000+ pre-built app actions
+- Store data in built-in Data Stores
+- Make HTTP requests to any API
+- Deploy as REST API endpoints
+- Use connected accounts for OAuth apps
+
+## When to Use
+
+**Trigger phrases:**
+- "pipedream workflows"
+- "Building event-driven automation with custom code"
+- "Needing serverless compute for integration logic"
+- "Wanting npm package access in automation workflows"
+
+
+- Building event-driven automation with custom code
+- Needing serverless compute for integration logic
+- Wanting npm package access in automation workflows
+- Building webhook receivers and API endpoints
+- Replacing custom scripts with managed workflows
+
+## When NOT to Use
+
+- Task is simple enough for Zapier (use Zapier for no-code)
+- You need complex workflow orchestration (use n8n)
+- Task is about data storage, not workflow automation
+- You don't have API access to the services being integrated
+- Task requires real-time processing (use streaming tools)
+- You need to build a custom application (use development tools)
+
+## Pseudo Code
+
+Implementation patterns for common use cases with this skill.
+
+
+### Workflow Structure
+
+```
+Trigger → Code Step → HTTP Request → IF → Pre-built Action → Code Step
+```
+
+### Trigger Types
+
+| Type | Config |
+|------|--------|
+| HTTP | `$.interface.http` — webhook endpoint |
+| Schedule | `$.interface.timer` — cron or interval |
+| App Event | New email, GitHub issue, etc. |
+
+### Code Step (Node.js)
+
+```javascript
+// Access previous step data
+const prevData = $.steps.trigger.event;
+
+// Use npm packages
+const axios = require('axios');
+const _ = require('lodash');
+
+// Make HTTP request
+const response = await axios.get('https://api.example.com/data', {
+  headers: { Authorization: `Bearer ${$.auth.api_key}` },
+});
+
+// Process data
+const filtered = _.filter(response.data, item => item.active);
+
+// Return data to next step
+return {
+  count: filtered.length,
+  items: filtered,
+};
+```
+
+### HTTP Request Step
+
+```javascript
+// Built-in HTTP request
+const response = await $.http.request({
+  method: 'POST',
+  url: 'https://api.example.com/webhook',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  data: {
+    event: $.steps.trigger.event.type,
+    payload: $.steps.process.items,
+  },
+});
+
+return response.data;
+```
+
+### Data Store
+
+```javascript
+// Get value
+const count = await $.service.data_store.get('counter') || 0;
+
+// Set value
+await $.service.data_store.set('counter', count + 1);
+
+// Delete
+await $.service.data_store.delete('counter');
+
+// List keys
+const keys = await $.service.data_store.keys();
+```
+
+### Connected Accounts
+
+```javascript
+// Access connected account
+const slack = $.app.slack;
+const github = $.app.github;
+
+// Use in API calls
+const response = await axios.post('https://slack.com/api/chat.postMessage', {
+  channel: '#alerts',
+  text: `New event: ${$.steps.trigger.event.type}`,
+}, {
+  headers: { Authorization: `Bearer ${slack.$auth.oauth_access_token}` },
+});
+```
+
+### Deploy as API
+
+```javascript
+// HTTP trigger creates an endpoint like:
+// https://endpoint.p.punique.com/abc123
+
+// Handle different methods
+if ($.trigger.event.http.method === 'POST') {
+  return { status: 'received', data: $.trigger.event.body };
+}
+
+if ($.trigger.event.http.method === 'GET') {
+  return { status: 'ok', timestamp: Date.now() };
+}
+```
+
+### Error Handling in Steps
+
+```javascript
+try {
+  const result = await riskyOperation();
+  return { success: true, data: result };
+} catch (error) {
+  // Return error to flow (doesn't stop workflow)
+  return {
+    success: false,
+    error: error.message,
+    step: 'process_data',
+  };
+}
+```
+
+## Common Patterns
+
+| Pattern | When to Use |
+|---------|------------|
+| HTTP Trigger → Process → Respond | API endpoint |
+| Schedule → Fetch → Transform → Store | ETL |
+| App Event → Code → Notify | Event-driven automation |
+| Webhook → Validate → Route | Multi-tenant webhooks |
+| Data Store get/set | Stateful workflows |
+| Code Step + npm | Complex logic with libraries |
+
+## Error Handling
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| Step timeout | Long-running code | Optimize or use `$.flow.delay()` |
+| npm package not found | Not in allowed list | Use built-in `$.http` instead |
+| Data Store limit exceeded | Too many keys | Clean up old entries |
+| Auth error | Expired token | Reconnect account |
+
+## Red Flags
+
+- Not testing workflows before deployment
+- Ignoring error handling in workflows
+- Missing logging and monitoring
+- Not documenting workflow logic
+- Ignoring rate limits and quotas
+
+## Verification
+
+- [ ] Workflows are tested end-to-end
+- [ ] Error handling is in place
+- [ ] Logging and monitoring are configured
+- [ ] Workflow logic is documented
+- [ ] Rate limits are respected
+
+## Process
+
+1. Analyze the task requirements
+2. Apply domain expertise
+3. Verify output quality
+
+## Anti-Rationalization Table
+
+| Rationalization | Reality |
+|---|---|
+| "Manual is faster for one-off tasks" | One-off tasks become recurring. Automate early, save time later. |
+| "I will add error handling later" | You never do. Handle errors from day one. |
+| "Automation is overkill" | If you do it twice, automate it. If you do it daily, it is critical infrastructure. |

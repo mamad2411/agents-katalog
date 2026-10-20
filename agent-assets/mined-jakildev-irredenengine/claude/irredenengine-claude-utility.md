@@ -1,0 +1,56 @@
+# engine/utility/ — file and path helpers
+
+Minimal header-only utilities. No classes, no state — just a few free
+functions for reading files and composing paths. Used by `asset/`,
+`video/`, and creation startup code.
+
+## Entry point
+
+`engine/utility/ir_utility.hpp` — umbrella header that pulls in
+`file_utils.hpp` and `path_utils.hpp`.
+
+## What's here
+
+- `IRUtility::readFileAsString(filepath)` — load a text file into a
+  `std::string`. No encoding normalization. On failure: logs fatal +
+  asserts in debug builds; returns `{}` silently in release.
+- `IRUtility::joinPath(dir, filename, ext)` — concatenate a directory,
+  filename, and extension. Handles separator insertion.
+- `IRUtility::pathWithExtension(path, ext)` — replace or append an
+  extension.
+- `IRUtility::formatNumberedFilename(prefix, index, width, ext)` — e.g.
+  `("screenshot", 7, 4, "png") → "screenshot_0007.png"`. Used for
+  screenshot/recording serial numbers.
+- `IRUtility::userDataDir(appName)` — resolve the platform per-user data
+  dir (`$XDG_DATA_HOME` / `~/Library/Application Support` / `%APPDATA%`)
+  for save files that must survive a clean reinstall. Like `joinPath`, it
+  composes the path only — it does **not** create the directory. Used by
+  the `.irkv` key/value store (`engine/asset/`).
+- `IRUtility::resolveContainedPath(canonicalBase, path)` — the one check
+  for a caller-supplied path that must stay under a root (`IRFile`, the
+  launcher catalog, tool spawns). `containedPathRejection(path)` is its
+  lexical half, for a parser that has no base to resolve against.
+- `IRUtility::findOnPath(name, suffixes)` — resolve the first regular file
+  for a command name using an explicit suffix preference.
+- `IRUtility::envFlagSet(name)` — true iff env var `name` is set and
+  non-empty (both "unset" and "present but empty" read as false). The one
+  place a boolean env toggle is read; e.g. `IR_PERSIST_DUMP` gates the world
+  snapshot's `.json.txt` debug dump (`engine/world/`).
+
+## Gotchas
+
+- **`readFileAsString` failure is build-mode dependent.** In debug builds
+  it calls `IRE_LOG_FATAL` + `IR_ASSERT(false)`, which throws
+  `std::runtime_error` via `engAssert`. In release both macros are
+  no-ops and the function returns `{}` silently. Don't depend on the
+  exception in production paths.
+- **Separator handling is C++-string-based.** It assumes forward slashes
+  work on Windows (they do, mostly). If a path eventually reaches a Win32
+  API that insists on backslashes, normalize at the call site.
+- **No directory creation.** `joinPath` does not `mkdir -p`. The caller
+  is responsible for making sure the target directory exists before
+  writing.
+- **Don't grow this into a kitchen sink.** If you're adding a string
+  helper, a time helper, or a random helper, put it in the module that
+  needs it (`math/` for random, `profile/` for time scaffolding, etc.)
+  — `utility/` is intentionally narrow.

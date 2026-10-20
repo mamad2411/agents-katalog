@@ -1,0 +1,32 @@
+---
+description: "060: Token efficiency and context management"
+scopes: [chat, edit]
+tags: [token-efficiency, context-management]
+priority: 60
+globs:
+alwaysApply: false
+---
+
+## 💰 Token Conservation
+- **Template References**: Use `@templates/pattern.ts` instead of explaining patterns
+- **Diff-Only Responses**: Output code changes, minimize explanatory text
+- **Pattern Libraries**: Reference existing `@src/patterns/` rather than recreating
+- **Concise Comments**: Write brief, focused inline documentation
+
+## ⚡ Performance Optimization
+- **Targeted Context**: Use `@specific/file.ts` rather than broad directory references
+- **Selective Max Mode**: Only enable for cross-file refactoring (not single-file edits)
+- **Smart File Selection**: Reference only files directly relevant to current task
+- **Batch Related Changes**: Group similar modifications in single session
+
+## 🎯 Focus Strategies
+- **Single Responsibility**: One task per conversation turn
+- **Clear Scope**: Define exact boundaries before starting implementation
+- **Minimal Viable Change**: Implement smallest change that satisfies requirement
+- **Reuse Over Reinvent**: Leverage existing functions/components when possible
+
+## 📏 Conversation Management
+- **Session Limits**: Start fresh conversation after 40+ exchanges
+- **Context Transfer**: Use `@file` references to carry key context to new sessions
+- **Progress Checkpoints**: Summarize completed work before major context switches
+- **Focused Questions**: Ask specific, targeted questions rather than open-ended ones

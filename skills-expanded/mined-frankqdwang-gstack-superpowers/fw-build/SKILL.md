@@ -1,0 +1,95 @@
+---
+name: fw-build
+description: "Use for approved implementation with Superpowers worktrees, TDD, execution plans, subagents, and verification."
+manifest_hash: sha256:f8601b037062d68df84a78fa341053fa326ad90c46b5ab3d8e93b790c69d8e12
+generated_from: workflow.manifest.yaml
+---
+
+# fw-build
+
+Generated wrapper skill for the curated gstack + Superpowers workflow.
+
+## Stage Contract
+
+- Stage: build
+- Owner: codex-orchestrator
+- Role: Core
+- Primary method: superpowers
+- Methods: superpowers
+- Contract: Execute implementation discipline with worktree, TDD, plan execution, and verification practices.
+
+## Inputs
+
+- Approved implementation plan that links to its spec, repository context, and verification expectations.
+
+## Outputs
+
+- Scoped code changes, tests, verification evidence, and remaining risks.
+
+## Required References
+
+- superpowers/skills/using-git-worktrees/SKILL.md
+  - Read active materialization: `../../references/upstreams/superpowers/commits/6fd4507659784c351abbd2bc264c7162cfd386dc/skills/using-git-worktrees/SKILL.md`
+- superpowers/skills/test-driven-development/SKILL.md
+  - Read active materialization: `../../references/upstreams/superpowers/commits/6fd4507659784c351abbd2bc264c7162cfd386dc/skills/test-driven-development/SKILL.md`
+- superpowers/skills/executing-plans/SKILL.md
+  - Read active materialization: `../../references/upstreams/superpowers/commits/6fd4507659784c351abbd2bc264c7162cfd386dc/skills/executing-plans/SKILL.md`
+- adapters/superpowers/orchestration-boundary.md
+  - Read: `../../references/adapters/superpowers/orchestration-boundary.md`
+- superpowers/skills/subagent-driven-development/SKILL.md
+  - Read active materialization: `../../references/upstreams/superpowers/commits/6fd4507659784c351abbd2bc264c7162cfd386dc/skills/subagent-driven-development/SKILL.md`
+- superpowers/skills/verification-before-completion/SKILL.md
+  - Read active materialization: `../../references/upstreams/superpowers/commits/6fd4507659784c351abbd2bc264c7162cfd386dc/skills/verification-before-completion/SKILL.md`
+
+## Conditional References
+
+- None
+
+## Suppressed Routes
+
+- None
+
+
+## Policy Notes
+
+- Superpowers subagent-driven instructions define implementation discipline only; Codex host policy controls whether agents can be spawned.
+- fw-build consumes the approved plan and uses its linked spec as the scope-compliance source.
+
+## Execution Rules
+
+- Read this wrapper first, then read every required reference listed above before acting.
+- Read conditional references only when the user request reaches that gate.
+- If an active upstream materialization is unavailable, report that the wrapper is blocked on upstream sync instead of guessing from installed skills.
+- Treat installed skills as callable surfaces, not source-of-truth project documentation.
+- Keep one execution owner for the current task.
+
+## Workflow-Run JSON Output
+
+Every run of this wrapper should be able to produce a machine-readable stage artifact with this shape:
+
+```json
+{
+  "wrapper": "fw-build",
+  "stage": "build",
+  "owner": "codex-orchestrator",
+  "primary_method": "superpowers",
+  "methods": [
+    "superpowers"
+  ],
+  "status": "success|needs-user|blocked|failed",
+  "manifest_hash": "sha256:f8601b037062d68df84a78fa341053fa326ad90c46b5ab3d8e93b790c69d8e12",
+  "inputs": [],
+  "outputs": [],
+  "references_read": [],
+  "suppressed_routes": [],
+  "policy_notes": [
+    "Superpowers subagent-driven instructions define implementation discipline only; Codex host policy controls whether agents can be spawned.",
+    "fw-build consumes the approved plan and uses its linked spec as the scope-compliance source."
+  ],
+  "verification": {
+    "commands": [],
+    "artifacts": []
+  },
+  "next_action": null
+}
+```

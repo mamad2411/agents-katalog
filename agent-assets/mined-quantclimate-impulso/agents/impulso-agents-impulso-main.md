@@ -1,0 +1,169 @@
+# AGENTS.md
+
+This file provides guidance to AI coding agents working in this repository.
+
+## Project Overview
+
+Impulso is a Python library for Bayesian Vector Autoregression (VAR). Early stage, requires Python >=3.11.
+
+## Commands
+
+```bash
+# Install dependencies and prek hooks
+make install
+
+# Run all code quality checks (lock file, pre-commit, type checking)
+make check
+
+# Run tests with coverage
+make test
+
+# Run a single test
+uv run python -m pytest tests/test_foo.py::test_foo -v
+
+# Run only fast tests (skip MCMC sampling)
+uv run python -m pytest -m "not slow" -v
+
+# Type check only
+uv run ty check
+
+# Lint/format only
+uv run ruff check . && uv run ruff format .
+
+# Build the Sphinx/MyST-NB docs (executes + caches notebooks; full MCMC)
+make docs
+
+# Build docs in smoke mode, warnings-as-errors (fast MCMC; the PR CI gate)
+make docs-ci
+
+# Serve the built docs locally on :8000
+make docs-serve
+
+# Check external links resolve (no notebook execution)
+make docs-linkcheck
+
+# Multi-version test (Python 3.11-3.14)
+uv run tox
+```
+
+## Architecture
+
+- **Source**: `src/impulso/` — library code, built as a wheel via Hatchling
+- **Tests**: `tests/` — pytest with `--cov`, 90% coverage target (codecov.yaml)
+- **Docs**: `docs/` — Sphinx + MyST-NB (`docs/conf.py`), tutorials as executable **jupytext `py:percent` `.py` notebooks** (read via `nb_custom_formats`), prose/reference pages as MyST `.md`. Docstrings auto-rendered via Sphinx `autosummary` (summary tables + per-object pages generated under `docs/reference/generated/`, gitignored; custom stub templates in `docs/_templates/autosummary/` emit MyST) + `napoleon`. `sphinx-codeautolink` links API names in tutorial code to the reference; `sphinxcontrib-bibtex` powers `{cite}` (bib in `docs/references.bib`); `sphinx-sitemap` emits `sitemap.xml`; `numfig` + labelled `$$…$$ (label)` equations cross-referenced with `` {eq}`label` ``. Link-preview (Open Graph) tags come from `sphinxext-opengraph`; a page opts into a custom `og:image` via a `meta` directive in its first markdown cell. Notebooks execute at build via jupyter-cache; no outputs are committed. Theme: `shibuya`. Tutorial `.py` files are excluded from ruff (they are notebooks, not library code).
+
+### Core Pipeline
+
+The library follows an immutable pipeline where each stage produces the next:
+
+```
+VARData → VAR.fit() → FittedVAR → .set_identification_strategy() → IdentifiedVAR
+```
+
+- **`VARData`** (`data.py`): Validated, frozen Pydantic model holding endogenous/exogenous arrays + DatetimeIndex. Constructor `from_df()` for DataFrame input.
+- **`VAR`** (`spec.py`): Model specification (lags, prior). Calling `.fit(data, sampler)` builds a PyMC model, samples, and returns `FittedVAR`.
+- **`FittedVAR`** (`fitted.py`): Reduced-form posterior. Provides `.forecast(steps)` → `ForecastResult` and `.set_identification_strategy(scheme)` → `IdentifiedVAR`.
+- **`IdentifiedVAR`** (`identified.py`): Structural VAR. Provides `.impulse_response()` → `IRFResult`, `.fevd()` → `FEVDResult`, `.historical_decomposition()` → `HistoricalDecompositionResult`.
+
+### Extensibility via Protocols
+
+Three `Protocol` classes in `protocols.py` define the extension points:
+
+- **`Prior`**: must implement `build_priors(n_vars, n_lags, *, sigma) → dict`. Concrete: `MinnesotaPrior`.
+- **`Sampler`**: must implement `sample(model) → InferenceData`. Concrete: `NUTSSampler`.
+- **`IdentificationScheme`**: must implement `identify(idata, var_names) → InferenceData`. Concrete: `Cholesky`, `SignRestriction`.
+
+### Result Objects
+
+All result types (`results.py`) inherit from `VARResultBase` and provide `.median()`, `.hdi()`, `.to_dataframe()`, and `.plot()`. Plot methods delegate to `plotting/` subpackage.
+
+### Base Model Classes (`_base.py`)
+
+Two base classes centralise Pydantic config:
+
+- **`ImpulsoBaseModel`**: `frozen=True, arbitrary_types_allowed=True` — for models holding numpy arrays, InferenceData, etc.
+- **`ImpulsoModel`**: `frozen=True` only — for models with standard Python types (e.g., `Cholesky`, `SignRestriction`).
+
+All domain models inherit from one of these. Use `object.__setattr__` only for internal setup (e.g., making arrays read-only in validators).
+
+### Key Patterns
+
+- **Lazy imports**: PyMC, plotting modules, and cross-module types are imported inside methods (or guarded by `TYPE_CHECKING`) to avoid circular imports and reduce import time.
+- **Prior registry**: `spec.py` maps string shorthands (e.g., `"minnesota"`) to `Prior` classes via `_PRIOR_REGISTRY`.
+- **Runtime type checking**: `impulso.enable_runtime_checks()` wraps public API classes with beartype decorators. Intended for test suites.
+- **`select_lag_order(data, max_lags)`**: OLS-based information criteria (AIC/BIC/HQ) for choosing VAR lag order — fast, no MCMC.
+
+## Tooling
+
+- **Package manager**: uv (lock file must stay in sync — `uv lock --locked`)
+- **Linter/Formatter**: Ruff — line length 120, target py311, auto-fix enabled
+- **Type checker**: ty (configured for `.venv`, Python 3.11). Ignores `unresolved-attribute`, `not-subscriptable`, and `invalid-argument-type` due to ArviZ/PyMC/pandas dynamic attrs.
+- **Prek**: Ruff checks, vulture (dead-code check, `[tool.vulture]` + `vulture_whitelist.py`), and standard hooks (trailing whitespace, TOML/YAML/JSON validation)
+- **CI**: GitHub Actions (`main.yml`) runs on push/PR: `quality` (prek + `uv lock --locked` + `ty check`), `tests-and-type-check` (3.11–3.14 matrix, `-m "not slow"`, Codecov uploaded from the 3.11 and 3.12 legs only — one leg per PyMC/ArviZ family, merged into a single report), `lowest-direct-deps` and `arviz-1-2-compat` (dependency-floor and ArviZ `>=1.2,<2` legs), `wheel-install` (builds the wheel, installs it into a clean environment), and `build-docs` (smoke-renders on PRs with `IMPULSO_DOCS_CI=1`, full-renders with real MCMC on push to `main` with `IMPULSO_DOCS_RESILIENT=1`, restoring the jupyter-cache between runs so one broken notebook cannot block the site). The `@pytest.mark.slow` MCMC suite runs separately via `slow-tests.yml` (3.11/3.12 legs, weekly schedule, `workflow_dispatch`, and push to `main`). Notebook outputs are NOT committed — notebooks execute at build time. A scheduled/on-release full render runs via `full-render-notebooks.yml`. Tutorials read `IMPULSO_DOCS_CI` (smoke draws) and Sphinx sets `IMPULSO_DOCS_BUILD=1` (disables the sampler progress bar).
+
+## Test Fixtures (`conftest.py`)
+
+Shared fixtures available in all test files:
+
+- **`rng`**: Deterministic `np.random.default_rng(42)`.
+- **`var_data_2v`**: 2-var VAR(1) DGP, 200 obs (stable coefficients).
+- **`var_data_3v_dgp2`**: 3-var VAR(2) DGP, 200 obs.
+- **`synthetic_idata_2v`**: Synthetic `InferenceData` mimicking a fitted 2-var VAR(1) — no MCMC needed. Use for fast tests of post-fitting logic.
+
+## Code Conventions
+
+- Ruff lint rules: `YTT, S, B, A, C4, T10, SIM, I, C90, E, W, F, PGH, UP, RUF, TRY`
+- `assert` is allowed in tests (`S101` ignored for `tests/*`)
+- `E501` (line length), `E731` (lambda assignment), and `TRY003` (long exception messages) are globally ignored
+- Docstrings follow Google style (Args/Returns sections)
+- Docstring inline code uses **single backticks** (Markdown-native — the
+  autosummary stub templates render docstrings as MyST): write `` `Foo.bar` ``,
+  not `` ``Foo.bar`` ``. Cross-references are plain text — no RST `:meth:` /
+  `:class:` directives.
+
+## PyMC / Sampling Gotchas
+
+- **LKJCholeskyCov/LKJCorr are broken** with PyMC 5.28 + PyTensor 2.38 + NumPy 2.4 (einsum unpacking bug). Use manual Cholesky parameterization instead (HalfCauchy diagonal + Normal off-diagonal), as done in `spec.py`.
+- **Parallel sampling segfaults**: Use `cores=1` in `NUTSSampler` for tests to avoid multiprocessing crashes. Tests marked `@pytest.mark.slow` exercise MCMC.
+- **Interrupted nutpie runs return NaN-padded posteriors, not errors**: nutpie catches KeyboardInterrupt (e.g. a MyST-NB cell hitting `nb_execution_timeout` and tearing down the kernel), aborts, and returns the partial trace — unfinished draws come back NaN with `diverging` zero-filled, so diagnostics print `ESS = nan` with "0 divergences". `NUTSSampler.sample` guards against this and raises. Keep each docs notebook MCMC cell under the 1800 s cell budget; nutpie runs chains in parallel threads regardless of `cores`, so a cell's wall time tracks one chain's `tune + draws`.
+
+## PR Review Policy
+
+When reviewing pull requests, structure all feedback into two categories:
+
+### In-Scope (block merge until resolved)
+- Bugs, logic errors, or correctness issues in the diff
+- Violations of the coding standards defined in this file
+- Security concerns in changed code
+- Missing or broken tests for changed behaviour
+- Type errors, API-contract mismatches, or CI-breaking changes
+
+### Out-of-Scope (track as separate issues)
+- Pre-existing tech debt not introduced by this PR
+- Refactoring in unchanged code
+- Performance improvements unrelated to the PR
+- Feature ideas or enhancements
+- Documentation gaps outside changed files
+- Architectural concerns requiring design discussion
+
+**Default to out-of-scope when uncertain.** Do not block PRs for tangential work.
+
+Format in-scope items as a checklist with severity (P0/P1/P2) and line references.
+Format out-of-scope items as complete issue drafts with title, labels, context,
+problem description, suggested approach, and affected files.
+
+Use the `/pr-review` command for the full review workflow.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues at `QuantClimate/Impulso`, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

@@ -1,0 +1,14 @@
+---
+description: Guidelines for interacting with Logseq (Direct File I/O vs Local HTTP API)
+globs: "src/**/*.py"
+---
+
+## Direct File I/O (The Plumber Way)
+- Most operations in Matryca Plumber are performed by directly reading/writing the local `.md` files in the graph directory.
+- **Never** use the HTTP API for background linting, semantic indexing, or graph analysis. Rely on the local file system using proper parsing, UTF-8 encoding, and optimistic concurrency (mtime checks).
+
+## The Local HTTP API (Future/Active Agent Bridge)
+- If building live interactive tools (e.g., MCP endpoints) that require Logseq to be running, use the Local HTTP API: `http://localhost:12315`.
+- **Authentication:** send the token as a **Bearer** token in the `Authorization` header.
+- **Protocol:** Requests use **JSON-RPC**-shaped payloads over HTTP.
+- Favor Direct File I/O unless real-time UI manipulation inside Logseq is strictly required.

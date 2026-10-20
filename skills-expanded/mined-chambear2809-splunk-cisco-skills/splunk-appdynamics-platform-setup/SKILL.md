@@ -1,0 +1,136 @@
+---
+name: splunk-appdynamics-platform-setup
+description: "Use when the user asks for AppDynamics On-Premises, Virtual Appliance, Enterprise Console, Controller
+  host setup, Events Service, EUM Server, Synthetic Server, HA, upgrade, or secure platform runbooks.
+  Render, validate, and gate Splunk AppDynamics On-Premises and Virtual Appliance platform workflows,
+  including Enterprise Console, Controller, Events Service, EUM Server, Synthetic Server, planning,
+  platform quickstart, release notes, compatibility, HA, backup, restore, upgrades, and secure platform
+  hardening."
+compatibility: "No direct Splunk Platform runtime dependency. This workflow can be used alongside Splunk Cloud Platform 10.5.2605 through its documented external APIs or handoffs."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "not-applicable"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk AppDynamics Platform Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- The user asks for AppDynamics On-Premises, Virtual Appliance, Enterprise Console, Controller host setup, Events
+  Service, EUM Server, Synthetic Server, HA, upgrade, or secure platform runbooks.
+- Preview and review the splunk appdynamics platform setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-appdynamics-platform-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-appdynamics-platform-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+Render-first owner for AppDynamics self-managed platform workflows. Platform
+mutations are high-blast-radius and require reviewed runbooks; Enterprise
+Console changes are additionally gated by `--accept-enterprise-console-mutation`.
+The skill tracks the current AppDynamics On-Premises 26.8.0 Enterprise Console
+and Controller deployment documentation for CLI-capable platform work. The
+Virtual Appliance manual runs on its own release cadence and currently
+publishes 26.1.0, so appliance workflows stay on that version rather than
+being relabeled to 26.8.0.
+
+```bash
+bash skills/splunk-appdynamics-platform-setup/scripts/setup.sh --render
+bash skills/splunk-appdynamics-platform-setup/scripts/validate.sh
+bash skills/splunk-appdynamics-platform-setup/scripts/setup.sh \
+  --apply enterprise-console --accept-enterprise-console-mutation \
+  --spec path/to/platform.yaml
+```
+
+Live apply requires one explicit section: `enterprise-console`,
+`vmware-ovftool`, or `vmware-govc`. Bare `--apply` is rejected so a platform
+bootstrap and an appliance deployment cannot be conflated. Rendered executors
+also default to dry-run unless invoked through the gated wrapper (or their
+documented action environment variable is set explicitly).
+
+The renderer emits:
+
+- `platform-topology-inventory.yaml` with the reviewed component and host map.
+- `deployment-method-selector.yaml` and `deployment-method-matrix.md` to route
+  users across classic On-Premises, Virtual Appliance, GUI, CLI, and
+  discover/upgrade paths without making them know the product taxonomy first.
+- `enterprise-console-command-plan.sh` with session-safe Enterprise Console CLI
+  commands for platform, credential, host, version, diagnosis, and job discovery.
+- `classic-onprem-deployment-runbook.md`,
+  `controller-install-upgrade-runbook.md`, `component-deployment-runbook.md`,
+  `virtual-appliance-deployment-runbook.md`, `platform-ha-backup-runbook.md`,
+  and `platform-security-checklist.md` for support-gated or outage-prone work.
+- `virtual-appliance-vmware-inventory.yaml`,
+  `virtual-appliance-ovftool-plan.sh`, `virtual-appliance-govc-plan.sh`, and
+  `virtual-appliance-vmware-validation.sh` for vSphere or standalone ESXi OVA
+  deployment handoff without passing VMware passwords on shell command lines.
+- `platform-validation-probes.sh` for local static checks and optional live
+  reachability probes.
+
+VMware live validation requires `APPD_SSH_KNOWN_HOSTS_FILE` whenever SSH
+`appdctl` checks are enabled. Host-key enrollment is an operator prerequisite;
+the generated script does not accept new keys implicitly or suppress failed
+boot/cluster checks.
+
+First-class deployment coverage:
+
+- Classic On-Premises Enterprise Console Express GUI, Custom GUI, CLI, and
+  Discover/Upgrade GUI/CLI flows.
+- Classic component installers for Linux Events Service, Windows Events Service
+  manual deployment, EUM Server GUI/console/silent installer modes, and
+  Synthetic Server dependency sequencing.
+- Virtual Appliance infrastructure targets for VMware vSphere, VMware ESXi,
+  Microsoft Azure, AWS, KVM, and ROSA. The VMware path includes OVF Tool and
+  govc dry-run plans, OVA placement guidance, OVF property inspection, three
+  node network inventory, and `appdctl show boot` validation.
+- Virtual Appliance Standard and Hybrid service deployment with `appdcli`
+  validation handoffs.

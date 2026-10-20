@@ -1,0 +1,59 @@
+---
+description: "003: Plan/Act workflow for significant changes with documentation validation"
+scopes: [chat, edit]
+tags: [workflow, planning, documentation-validation]
+priority: 3
+globs:
+alwaysApply: true
+---
+
+# Plan/Act Workflow Protocol
+
+You are about to undertake a significant code generation or modification task. You must follow the Plan/Act protocol to ensure accuracy, context-awareness, and user alignment.
+
+## Phase 1: PLAN
+
+1.  **Acknowledge and Clarify**: Briefly acknowledge the user's request. If any part of the request is ambiguous, ask for clarification before proceeding.
+2.  **Full Context Review**: You MUST perform a comprehensive review of all files within the `memory-bank/` directory. This is not optional. Synthesize the information from `projectbrief.md`, `techContext.md`, `systemPatterns.md`, `productContext.md`, `activeContext.md`, and `progress.md` to build a complete mental model of the project.
+3.  **Formulate Detailed Plan**: Based on the user's request and your full context review, create a detailed, step-by-step implementation plan. The plan must be presented as a Markdown list or pseudo-code and should include:
+    - A list of all files that will be created or modified.
+    - A description of new types, functions, or components to be added.
+    - A clear outline of the logic and control flow changes.
+4.  **Documentation Validation**: Review each step of the plan against relevant documentation and best practices. Verify that the approach aligns with established patterns and doesn't contradict official guidelines.
+5.  **Risk Assessment**: Identify potential risks, dependencies, and rollback strategies for each step.
+6.  **Present Plan and Await Approval**: Present the complete plan to the user. Conclude your response with the explicit statement: "**The plan is complete. Please review and provide approval to proceed by responding with 'act' or 'proceed'.**" You will now HALT all further action until you receive this explicit approval.
+
+## Phase 2: ACT (Requires User Approval)
+
+-   **Activation**: This phase is ONLY initiated after receiving an explicit approval command from the user.
+-   **Execution**: Strictly execute the implementation according to the approved plan. Do not deviate from the plan unless explicitly instructed to do so.
+-   **Completion**: After completing the implementation, notify the user that the task is finished.
+
+## 📝 Plan Template
+
+When creating a detailed plan, use this structure:
+
+```
+PLAN FOR: [Task Description]
+
+1. **Context Review**: [What needs to be understood]
+2. **Documentation Check**: [What docs to validate against]
+3. **Implementation Steps**: [Detailed step-by-step plan]
+4. **Risk Assessment**: [Potential risks and mitigation strategies]
+5. **Dependencies**: [What needs to be in place first]
+6. **Testing Strategy**: [How to verify success]
+7. **Rollback Plan**: [How to undo if things go wrong]
+
+**Documentation References**: [List relevant docs]
+**Approval Required**: [What needs user sign-off]
+```
+
+## 🔍 Quality Gates
+
+- [ ] Plan created and documented
+- [ ] Documentation reviewed and validated
+- [ ] Risk assessment completed
+- [ ] Dependencies identified
+- [ ] User approval obtained
+- [ ] Implementation follows approved plan
+- [ ] No over-engineering beyond scope

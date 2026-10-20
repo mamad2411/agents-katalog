@@ -1,0 +1,173 @@
+---
+name: authentik
+description: Authentik self-hosted IdP on Kubernetes. This skill should be used when deploying via Helm, configuring SAML/OAuth2 providers, blueprints, Google Workspace SSO, forward-auth, branding, or app SSO.
+---
+
+# Authentik
+
+Self-hosted identity provider supporting SAML, OAuth2/OIDC, LDAP, and proxy authentication. Designed for Kubernetes deployment via Helm with declarative configuration through blueprints.
+
+## Version
+
+Documented against **2026.8** (current line; releases every three months since
+2026.2). **Read [releases-2026.md](references/releases-2026.md) before writing
+blueprints or config against an older memory of authentik** — the 2026.x line
+changed several things this skill previously documented differently:
+
+| Change | Version | Impact |
+|---|---|---|
+| `meta_hide: true` replaces the `blank://blank` launch-URL hack | 2026.5 | Existing apps auto-migrate, but blueprints keep overwriting — update them |
+| `user.ak_groups` → `user.groups` | 2026.2 | Property mappings and policy expressions |
+| Unified SAML endpoint `/application/saml/<slug>/` | 2026.x | Binding-specific paths still work |
+| `AUTHENTIK_WEB__BASE_URL` | 2026.8 | Optional now, **required from 2026.11** |
+| `AUTHENTIK_POSTGRESQL__DIRECT__*` for transaction-mode poolers | 2026.8 | Proper PgBouncer support |
+| Listen default `0.0.0.0` → `[::]` | 2026.5 | IPv4-only clusters must set it back |
+| Proxy outpost rewritten Go → Rust | 2026.8 | 1-to-1 functional match; endpoints and headers unchanged — so a `/auth/nginx` 500 is **not** a 2026.8 regression, don't chase it as one |
+
+## Quick Start
+
+### Helm Deployment
+
+```bash
+helm repo add authentik https://charts.goauthentik.io
+helm repo update
+helm upgrade --install authentik authentik/authentik -f values.yaml -n authentik --create-namespace
+```
+
+Initial setup: `https://<host>/if/flow/initial-setup/`
+
+For Helm values reference and ArgoCD app-of-apps integration, see [deployment.md](references/deployment.md).
+
+## Task Reference
+
+### SAML Provider Setup
+Configure SAML providers for SSO with applications (ArgoCD, Grafana, etc.).
+- Provider settings, NameID policies, signing certificates
+- Metadata URL: `/application/saml/<slug>/metadata/`
+- SSO URL (2026.x unified, handles SSO + SLO on both bindings): `/application/saml/<slug>/`
+- Legacy binding-specific SSO URL (still supported): `/application/saml/<slug>/sso/binding/post/`
+- See [saml.md](references/saml.md)
+
+### Blueprints (Declarative Config)
+YAML-based declarative configuration for flows, stages, providers, applications.
+- v1 schema: `version`, `metadata`, `context`, `entries`
+- Tags: `!KeyOf` (intra-blueprint only), `!Find`, `!FindObject` (2025.8+), `!Env`, `!Context`, `!Format`, `!If`, `!Condition`, `!Enumerate`. **`!Slice` does not exist** — common mis-citation.
+- `state:` values: `present` (reconcile drift), `created` (create-once-ignore-after), `must_created` (fail if exists), `absent` (delete)
+- Mount via ConfigMap at `/blueprints/custom/` in server + worker pods, atomic per-file transactions, 60min reapply cadence
+- See [blueprints.md](references/blueprints.md) for the structural overview; [blueprints-examples-auth.md](references/blueprints-examples-auth.md) and [blueprints-examples-proxy.md](references/blueprints-examples-proxy.md) for full examples
+- **State semantics, !KeyOf scoping, first-boot chicken-and-egg**: [blueprints/sync_states.md](references/blueprints/sync_states.md)
+- **LDAP sources** (`user_matching_mode`, password sync, delete_not_found): [blueprints/ldap_sources.md](references/blueprints/ldap_sources.md)
+
+### Traefik Forward Auth Middleware
+Protect apps behind Traefik using Authentik proxy provider outpost.
+- Proxy provider → embedded or standalone outpost
+- Traefik `forwardAuth` middleware pointing to outpost
+- Headers: `X-authentik-username`, `X-authentik-groups`, `X-authentik-email`
+- See [middleware-setup.md](references/middleware-setup.md) for setup, CRDs, and headers
+- See [middleware-blueprint.md](references/middleware-blueprint.md) for blueprint example
+- **Fronting an SPA or anything using XHR/SSE/WebSocket? Read
+  [forward-auth-xhr-cors.md](references/forward-auth-xhr-cors.md) BEFORE shipping.**
+  `access_token_validity` defaults to `hours=1`, and the outpost re-mints by **302 to
+  the authorize flow**. That is invisible on navigation and fatal on XHR — the redirect
+  crosses origin, so the browser turns it into a CORS error the page cannot intercept,
+  and the token can never be re-minted without a manual reload. Presents as random
+  disconnects/timeouts, not as an auth problem. Fix is a longer
+  `access_token_validity` (bounded above by `refresh_token_validity`, and equal to the
+  group-revocation lag) plus a second middleware on `/auth/nginx` (401, no redirect)
+  selected by `Sec-Fetch-Mode`.
+- **`/auth/nginx` is not a drop-in for Traefik's `forwardAuth`.** It derives the request
+  URL from `X-Original-URL` **only**, and Traefik sends `X-Forwarded-Proto/Host/Uri` and
+  has no setting that emits it. A bare `forwardAuth` pointed at it returns **500 on every
+  request** (`failed to detect a forward URL from nginx`), which Traefik forwards verbatim
+  with the backend never contacted — blank SPAs, working navigation, no auth error in the
+  console. Compose a `headers` middleware injecting `X-Original-URL` with the `forwardAuth`
+  via a `chain`. Full recipe, plus the ArgoCD `Replace=true` needed when converting an
+  existing middleware to a chain, in
+  [forward-auth-xhr-cors.md](references/forward-auth-xhr-cors.md).
+
+### Hiding Applications from the Application Dashboard
+Set `meta_hide: true` to hide a proxy-provider Application's tile without changing its policies (UI label: **Hide from Application Dashboard**; "My Applications" was renamed the Application Dashboard in 2026.5). Hide forward-auth proxies that **duplicate** an existing OIDC/SAML user-facing app; keep visible (with a real launch URL) for proxies that ARE the only user-facing entry.
+- **2026.5 replaced the old `meta_launch_url: "blank://blank"` sentinel.** Existing apps auto-migrate on upgrade, but a blueprint still writing `blank://blank` overwrites the migration every reconcile — update the blueprint. On pre-2026.5 the literal must be `blank://blank`; `blank://` alone fails the URL validator with `Enter a valid URL`.
+- See [hide-from-library.md](references/hide-from-library.md)
+
+### Google Workspace SAML Login
+"Login with Google" via SAML federation source.
+- Google Admin Console: custom SAML app → ACS URL + Entity ID
+- Authentik: SAML source with Google SSO URL + signing certificate
+- See [google-source.md](references/google-source.md)
+
+### Application Integrations
+SAML/OIDC setup for common self-hosted apps.
+- ArgoCD OIDC via Dex (recommended, supports CLI) → [integrations/argocd-oidc.md](references/integrations/argocd-oidc.md)
+- ArgoCD SAML via Dex → [integrations/argocd-saml.md](references/integrations/argocd-saml.md)
+- Grafana, Gitea, MinIO, generic SAML → [integrations.md](references/integrations.md)
+- **Critical (pre-2026 / legacy paths)**: SAML SSO URLs must use `/sso/binding/post/` not `/sso/binding/redirect/` (CSRF). On 2026.x the unified `/application/saml/<slug>/` endpoint handles both bindings and sidesteps the choice.
+
+### Configuration & Environment Variables
+All settings via `AUTHENTIK_*` env vars. Double underscore (`__`) separates nested keys.
+- Core: `SECRET_KEY`, `LOG_LEVEL`, `COOKIE_DOMAIN`, `WEB__BASE_URL` (2026.8+, required from 2026.11)
+- PostgreSQL: connection, SSL/TLS, read replicas, and `POSTGRESQL__DIRECT__*` for transaction-mode poolers (2026.8+; supersedes the `DISABLE_SERVER_SIDE_CURSORS` PgBouncer workaround). `CONN_OPTIONS` deprecated in 2026.5
+- Storage: file or S3 backend, per-category overrides (media, reports)
+- Web/Worker tuning: Gunicorn workers/threads, Dramatiq task settings
+- Listen addresses (default `[::]` since 2026.5), cache timeouts, email/SMTP, outpost image base
+- Values support `env://` and `file://` URI syntax for indirection
+- See [configuration-core.md](references/configuration-core.md) for core, PostgreSQL, cache, email, listeners, web/worker
+- See [configuration-storage.md](references/configuration-storage.md) for storage, outposts, security, airgapped settings
+
+### Airgapped / Offline Deployment
+Disable all outbound connections for air-gapped environments:
+- `AUTHENTIK_DISABLE_UPDATE_CHECK=true` — disable version checker
+- `AUTHENTIK_DISABLE_STARTUP_ANALYTICS=true` — disable startup analytics
+- `AUTHENTIK_ERROR_REPORTING__ENABLED=false` — disable Sentry
+- Avatars: set to `initials` in System > Settings (default uses Gravatar)
+- Event map: leave the brand's `branding_map_tiles` empty to use the bundled offline basemap (2026.8+)
+- GeoIP: auto-skipped if DB files missing at `/geoip/`
+- Mirror container images and Helm chart to internal registries
+- Set `AUTHENTIK_OUTPOSTS__CONTAINER_IMAGE_BASE` to internal registry
+- See [configuration-storage.md](references/configuration-storage.md) (Airgapped Deployment Settings section)
+
+### Branding & Theming
+Custom logos, colors, CSS, and per-domain visual identity via the `authentik_brands.brand` model.
+- Brand fields: title, logo, favicon, custom CSS, default flow background, `branding_map_tiles` (2026.8+)
+- Brand flow slots: authentication, invalidation, recovery, unenrollment, user settings, device code, plus `flow_user_switch` / `flow_request` (2026.8+) and `flow_lockdown` (2026.5+)
+- Logo theme variants with `%(theme)s` placeholder (light/dark)
+- Patternfly CSS variables (`--pf-global--primary-color--*`) for color schemes
+- Flow-level overrides: per-flow backgrounds and layout (stacked, content_left/right, sidebar)
+- Multi-domain brands: different branding per domain with wildcard support
+- Custom font loading, UI element hiding, Shadow DOM `::part()` targeting
+- See [branding/brand-model.md](references/branding/brand-model.md) — brand fields, attributes, asset serving, API
+- See [branding/custom-css-colors.md](references/branding/custom-css-colors.md) — CSS variables, color schemes, fonts
+- See [branding/custom-css-components.md](references/branding/custom-css-components.md) — login/card/nav styling, shadow DOM, hiding elements
+- See [branding/blueprints-basic.md](references/branding/blueprints-basic.md) — declarative brand config, multi-domain
+- See [branding/blueprints-flow.md](references/branding/blueprints-flow.md) — branded login flow with custom layout
+
+### Property Mappings & Policies
+Custom attribute statements and access control.
+- SAML mappings: Python expressions with `request`, `user`, `provider` variables (Python 3.14 since 2026.2)
+- 7 default SAML mappings (Email, Groups, Name, UPN, User ID, Username, WindowsAccountName)
+- **`user.ak_groups` deprecated in 2026.2 — use `user.groups`** (legacy use logs a config warning)
+- Expression policies for conditional access
+- See [saml.md](references/saml.md)
+
+## Key URLs
+
+| Endpoint | URL Pattern |
+|----------|-------------|
+| Admin UI | `/if/admin/` |
+| User UI | `/if/user/` |
+| SAML Metadata | `/application/saml/<slug>/metadata/` |
+| SAML unified SSO+SLO (2026.x) | `/application/saml/<slug>/` |
+| IdP-initiated SSO (2026.x) | `/application/saml/<slug>/init/` |
+| SAML SSO (POST, legacy) | `/application/saml/<slug>/sso/binding/post/` |
+| SAML SSO (Redirect, legacy) | `/application/saml/<slug>/sso/binding/redirect/` |
+| SAML SLO (legacy) | `/application/saml/<slug>/slo/binding/[post\|redirect]/` |
+| IdP-initiated SSO (legacy) | `/application/saml/<slug>/sso/binding/init/` |
+| OAuth2 Authorize | `/application/o/authorize/` |
+| OIDC Discovery | `/application/o/<slug>/.well-known/openid-configuration` |
+| OAuth2 DCR (2026.8+) | `/application/o/register/` (see provider's `dcr_registration`) |
+| Forward auth (Traefik) | `/outpost.goauthentik.io/auth/traefik` |
+| Forward auth (nginx/XHR) | `/outpost.goauthentik.io/auth/nginx` — **requires `X-Original-URL`**, else 500 |
+| Outpost health | `outpost:9300/metrics` |
+
+## Release Notes
+2026.x changes that affect this skill's guidance — breaking changes, new env vars, new brand/provider fields, and the OAuth2/PAM/agent-account feature surface: [releases-2026.md](references/releases-2026.md)

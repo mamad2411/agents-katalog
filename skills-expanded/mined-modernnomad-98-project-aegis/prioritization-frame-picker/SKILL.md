@@ -1,0 +1,194 @@
+---
+name: prioritization-frame-picker
+description: Pick a prioritization framework for a decision — match the situation to a frame (RICE, WSJF/cost-of-delay, value-vs-effort/ICE, Kano, opportunity scoring, MoSCoW), surface its inputs and reliability, guard against false rigor, handle must-do and incomparable items outside the score, and produce a ranked list or honest categories/groups with assumptions and applicable uncertainty explicit. Owns the prioritization method; sequencing over time is roadmap-under-uncertainty-planner's. Use when a backlog needs ranking, stakeholders argue about priority, a scoring model is gamed or over-trusted, or a method must be chosen. Do NOT use to sequence a roadmap (roadmap-under-uncertainty-planner), spec one feature (product-spec-writer), or elicit requirements (requirements-gathering-facilitator).
+---
+
+# Prioritization Frame Picker
+
+Terms used below: **RICE** scores reach, impact, confidence, and effort;
+**WSJF** means weighted shortest job first and compares cost of delay with
+job size; **ICE** scores impact, confidence, and ease; and **MoSCoW** groups
+release scope into must, should, could, and won't have. The **Kano** model
+classifies basic, performance, and delight factors; **opportunity scoring**
+compares importance with current satisfaction. For example, RICE may rank
+comparable feature requests, while WSJF addresses time-sensitive work;
+mandatory compliance work stays outside either score.
+
+## Purpose
+
+Every team has a prioritization framework and most use the wrong one for
+the decision in front of them — RICE-scoring a list of legal-compliance
+must-dos, or eyeballing value-vs-effort for a portfolio where timing
+dominates. Worse, the framework's numeric output gets treated as truth:
+a RICE score of 42.7 built from three guesses and a made-up reach figure
+outranks a strategic bet because the bet "didn't score well". This skill
+picks the frame that fits the decision, names the inputs it needs and
+how reliable they are, guards against the false rigor of precise scores
+on soft data, pulls must-do and incomparable items out of the formula
+where they belong, and produces a ranked list whose assumptions and
+sensitivity are on the table. It owns the RANKING; sequencing the ranked
+set over horizons is `roadmap-under-uncertainty-planner`'s.
+
+## Use When
+
+- Use when: a backlog or set of initiatives needs ranking and there's no
+  agreed method, or the current one doesn't fit.
+- Use when: stakeholders argue about priority and a shared, explicit
+  frame would move the conversation from opinion to assumptions.
+- Use when: an existing scoring model is being gamed, or its numbers are
+  trusted far beyond the quality of their inputs.
+- Use when: choosing which prioritization framework to adopt for a team
+  or a specific decision.
+- Do NOT use when: the items are already ranked and the task is to
+  sequence/communicate them over time — that is
+  `roadmap-under-uncertainty-planner`.
+- Do NOT use when: the task is detailing ONE chosen item (problem, scope,
+  acceptance criteria) — that is `product-spec-writer`.
+- Do NOT use when: the real gap is not knowing what's needed or valuable
+  yet — elicit first with `requirements-gathering-facilitator`;
+  prioritizing unknowns produces confident nonsense.
+
+## Inputs to Inspect
+
+1. What's being prioritized: comparable features, a mixed portfolio,
+   bugs, experiments, or whole initiatives — the object determines the
+   frame.
+2. The goal the ranking serves: growth, retention, revenue, risk
+   reduction, flow/throughput — the frame's "value" must mean this.
+3. The available inputs and their quality: is there real reach/usage data
+   or are impact and reach guesses? Which numbers are evidence vs
+   fiction?
+4. Time sensitivity: whether cost-of-delay/timing dominates (favoring
+   WSJF) or value/effort is roughly time-stable.
+5. The non-negotiables: compliance, security, keep-the-lights-on, and
+   contractual must-dos that shouldn't be forced through a value formula.
+
+## Workflow
+
+For any user-facing build choice, define terms and each viable path's purpose;
+compare case-specific pros/cons and money, setup, and maintenance costs (mark
+unknowns). Recommend one and why, then ask one atomic decision question. If a
+deciding fact is missing, ask only for that fact this turn. A choice does not
+authorize execution.
+
+1. **Frame the decision before the framework.** State what's being
+   ranked, toward what outcome, with what input quality and time horizon.
+   The wrong frame applied rigorously is worse than the right frame
+   applied roughly.
+2. **Select the frame to fit.** Match, don't default: RICE for many
+   comparable features where reach matters; WSJF / cost-of-delay when
+   timing and flow dominate; value-vs-effort or ICE for a fast, coarse
+   cut; Kano to classify basic vs performance vs delighter; opportunity
+   scoring for importance-vs-satisfaction gaps; MoSCoW for release
+   scoping. Name the chosen frame's fit AND its limits.
+3. **Expose the inputs and their reliability.** List each input the frame
+   needs and mark it evidence or guess. Use the confidence factor (RICE's
+   confidence, or an explicit discount) to deflate scores built on
+   guesses — that is what it's for.
+4. **Refuse false rigor.** Where the frame uses numeric inputs, score in
+   ranges or buckets (t-shirt sizes), not false decimals; test whether
+   the order holds if a soft input is off by 2×. For category frames such
+   as Kano or MoSCoW, record the classification evidence and uncertain
+   boundaries instead of inventing a numeric sensitivity calculation.
+5. **Handle items the formula can't.** Pull must-dos (compliance,
+   security, reliability) into a protected lane rather than letting a low
+   value score bury them. Flag strategic bets that score poorly but
+   matter, and genuinely incomparable items, for explicit human judgment
+   — the frame informs, it doesn't overrule.
+6. **Produce the result honestly.** Return a ranked list when the chosen
+   frame supports one. MoSCoW returns ordered groups with within-group
+   ties; Kano returns satisfaction categories without inherent priority.
+   If a total order is required, use a second suitable frame or ask the
+   human to decide. Include inputs and their quality, confidence,
+   the applicable sensitivity result, and items handled outside the frame.
+7. **Hand off.** State that sequencing the ranked set over horizons —
+   with dependencies, capacity, and re-planning — is
+   `roadmap-under-uncertainty-planner`'s job.
+
+Framework selection guide, input-reliability discipline, and the
+sensitivity-check method:
+[references/prioritization-frames-sheet.md](references/prioritization-frames-sheet.md).
+
+## Output Format
+
+When asking for a build choice, show the explained options and justified
+recommendation before the one question.
+
+```
+PRIORITIZATION — <what's being ranked>, toward <outcome>
+Frame:        <RICE | WSJF | value/effort | ICE | Kano | opportunity | MoSCoW> — why it fits; limits
+Inputs:       <inputs the frame needs, each marked [evidence] | [guess]>
+Result:       <ranked list, MoSCoW ordered groups, or Kano categories without priority>
+Confidence:   <how much the input quality supports the order>
+Sensitivity:  <numeric-input order test, or category-boundary uncertainty>
+Outside the frame:
+  Must-do lane: <compliance/security/keep-lights-on — protected, not value-scored>
+  Strategic/incomparable: <flagged for human judgment>
+Handoff:      sequencing over time → roadmap-under-uncertainty-planner
+```
+
+## Validation Checklist
+
+- [ ] User-facing build choices explain terms, reasons, costs or unknowns,
+      pros/cons, and a justified recommendation before one atomic question.
+- [ ] The decision is framed (object, outcome, input quality, time
+      horizon) before a framework is chosen.
+- [ ] The framework is matched to the situation with its fit AND limits
+      stated — not defaulted.
+- [ ] Every input is marked evidence or guess; guesses discount the
+      score via a confidence factor.
+- [ ] Numeric scores are ranges/buckets, not false decimals; applicable
+      sensitivity or category-boundary uncertainty is reported.
+- [ ] Must-dos are in a protected lane; strategic/incomparable items are
+      flagged for human judgment, not buried by the formula.
+- [ ] Assumptions and ties are explicit; Kano categories are not treated
+      as a priority order or a total order.
+- [ ] Sequencing over time is handed to `roadmap-under-uncertainty-planner`.
+
+## Gotchas
+
+- A precise score launders guesses into authority: 42.7 looks earned even
+  when reach and impact were invented. Round to buckets so the precision
+  matches the evidence.
+- Defaulting to RICE (or whatever the org uses) for every decision
+  mis-ranks whole classes of work — timing-dominated portfolios,
+  must-dos, delighters. The frame is a choice, not a habit.
+- The confidence factor exists precisely to punish confident guessing;
+  teams that set it to 100% on everything have removed the one honest
+  part of RICE.
+- Forcing compliance and security must-dos through a value formula either
+  games the inputs to make them "win" or buries genuinely required work.
+  Put them in a lane above the score.
+- A strategic bet that scores badly is often the point of the strategy —
+  the formula optimizes for the measurable, and the measurable is
+  short-term. Keep human judgment above the number for those.
+- If the ranking flips when one soft input moves within its plausible
+  range, you don't have a ranking — you have noise. Report that instead
+  of a false order.
+- Prioritizing before requirements are understood ranks fantasies. If the
+  value of items is unknown, elicit first.
+
+## Stop Conditions
+
+- The items are already ranked and the task is to sequence/communicate
+  them over time → route to `roadmap-under-uncertainty-planner`.
+- The value/need of the items is genuinely unknown (no requirements yet)
+  → route to `requirements-gathering-facilitator` first; ranking unknowns
+  is confident nonsense.
+- Stakeholders demand a single definitive number to end the debate when
+  the inputs are guesses → surface the sensitivity and the assumptions,
+  and route the real trade-off to a human decision rather than
+  manufacturing a decisive score.
+- A must-do (legal/security) is being value-scored to justify de-
+  prioritizing it → halt and move it to the protected lane; do not
+  produce a ranking that buries required work.
+
+## Supporting Files
+
+- [references/prioritization-frames-sheet.md](references/prioritization-frames-sheet.md)
+  — the framework selection guide (fit/inputs/limits per frame), the
+  input-reliability discipline, and the sensitivity-check method.
+- `evals/evals.json` — behavior cases including frame selection, the
+  false-rigor refusal, and the must-do-lane handling.
+- `evals/trigger-evals.json` — discrimination against `roadmap-under-uncertainty-planner`
+  (rank vs sequence), `product-spec-writer`, and `requirements-gathering-facilitator`.

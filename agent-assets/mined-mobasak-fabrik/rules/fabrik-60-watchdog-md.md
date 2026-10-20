@@ -1,0 +1,231 @@
+---
+activation: glob
+globs: ["**/watchdog*", "**/specs/services/*.yaml", "**/fabrik-lib/watchdog/**", "**/state.db", "**/emitter_inbox*", "**/WatchdogConfig*", "**/cost_ledger*"]
+description: Watchdog sidecar contract — when to enable, how Tier A/B/C/D act, OAuth inheritance, fail-safe emitter, cost ceilings
+trigger: glob
+currency_pass: 2026-09-02
+---
+<!-- CONSUMER: Coding agents (all) + Traycer (tech-plan step)
+     GOAL: Per-project AI sysadmin sidecar — autonomous diagnosis + Tier A bleed-stop, Tier B opt-in, Tier C escalate, Tier D code-remediation (opt-in, human-gated), cost-capped, OAuth-inherited Claude Code subprocess
+     TRAYCER USAGE: When a spec opts into watchdog or shape.kind implies it, inject "wire the emitter at meaningful business events; declare WatchdogConfig if non-default" into ticket ACs. Reference this pack + 58-resilience + 55-observability.
+     AGENT USAGE: Vendor watchdog/emitter/ into projects that need watchdog catch. Never call the sidecar from main app — emit incidents to the inbox instead. Don't put secrets in details. -->
+
+# Watchdog Contract
+
+**Activation:** Glob — watchdog spec field, sidecar source, emitter library, related state.db / emitter_inbox / cost_ledger files.
+**Purpose:** Per-project AI sysadmin sidecar that diagnoses anomalies via Claude Code (subprocess) and dispatches scoped remediations. Four tiers: A auto, B opt-in, C escalate, D code-remediation (opt-in, human-gated). Bounded by `WatchdogConfig` budget caps on the ops-only path (Tier D is not — see Operating loop step 4) and a deadman timer.
+
+---
+
+## When to enable
+
+**EVERY PROJECT GETS A WATCHDOG** (operator ruling **D-052**, 2026-08-31). There is no shape test and no
+"when to enable" judgment left to make: author no `enabled: false`, and treat an existing one as drift.
+
+| Shape | Default | Override |
+|---|---|---|
+| any `kind` — `service`, `worker`, `wordpress`, `static` | **on** | tune the caps (`daily_budget_usd`, `daily_invocations_cap`), never the switch |
+| any | — | `watchdog: { daily_budget_usd: 5.0, auto_tier_b: true, llm_actions: [reset_db_pool] }` for a fuller posture (`auto_tier_b` alone adds nothing to the model's menu) |
+
+⚠️ **This table previously claimed a shape-driven default** (`python-api`/`node-api` conditional on
+`is_admin_dashboard` OR `has_persistent_data`; `static-site`/`docusaurus` off). That was **never what the
+resolver did** — `resolve_applicability` is a one-line unconditional `watchdog_cfg.get("enabled", True)`
+with **no `kind` test at all** (`orchestrator/infrastructure.py`:359-373, whose own comment says the matrix here "stays
+operator discipline, not encoded behaviour"). So the table described a discipline, not a behavior, and the
+discipline is now superseded. Anything relying on the old rows — including a spec comment justifying an
+opt-out — is stale.
+
+**Disabling is a RULING, not a default.** `infra: { watchdog: false }` and `enabled: false` both still
+work mechanically; using either without a `docs/DECISIONS.md` row is the drift D-052 exists to end. A
+third-party or upstream image is NOT a reason on its own: the sidecar builds from
+`/opt/fabrik-lib/watchdog/watchdog_sidecar` (`drivers/watchdog.py`:127) and needs the project's SOURCE only
+for the code-fix tiers (`propose_fix_prs` / `auto_code_fix`, both default `false`) — ops-only monitoring
+watches the CONTAINER, so it works fine against an image you did not build.
+
+Existing specs without a `watchdog:` block inherit the default and don't break.
+
+**Make it project-specific** — set `watchdog.project_system_prompt_file: docs/WATCHDOG_PROMPT.md` (project-relative Markdown, ≤32 KB). The driver injects its contents as `WATCHDOG_SYSTEM_PROMPT`; the sidecar appends it as a `## This project` section *after* the canonical veteran-sysadmin prompt (rails never replaced). Use it to teach the watchdog THIS app's architecture, failure modes, what "healthy" means, and hands-off zones. **Fail-soft:** a missing / unreadable / oversized / absolute / `..`-escaping path is ignored (logged warning) and the sidecar runs the canonical prompt only — a prompt-file problem never disables the watchdog or blocks the deploy, and a bad path is never read. Commit the prompt file to the repo before `fabrik apply` (the driver reads it hub-side at render).
+
+---
+
+## Architecture summary
+
+- **One sidecar per spec.** Image: `fabrik/watchdog:<project_id>`. Built by the watchdog driver (`src/fabrik/drivers/watchdog.py`) at `fabrik apply` time with placeholders rendered.
+- **Mounts (all per-project, set by driver):**
+  - `~/.claude/` (RO from host) → `/home/watchdog/.claude/` — Claude Code OAuth credentials. Sidecar does NOT carry an API key.
+  - `/var/lib/watchdog/` (RW, named volume) — `state.db` + `cost_wal.db` + `proposed/<project_id>/` PR workspace + `keys/git-deploy.key` (RO, 600).
+  - `/var/run/docker.sock` — scoped read access via PreToolUse hook + claude-settings allow/deny; only `docker logs|inspect|stats|restart <main_container>` and `docker exec <main> ps|df|cat /proc/*` are allowed.
+  - `/opt/<project_id>/` (RO) — the project tree for `Read`/`Grep`/`Glob`. This is the `/project` mount the fix lane reads conventions from (`.windsurf/rules/*` + `CLAUDE.md` are gitignored, so a bare clone would lose them); code changes materialize into a writable scratch worktree, never the RO mount.
+- **Database access (auto-provisioned, per-project).** When a spec has `shape.needs_database` **and** the watchdog is applicable (`spec.watchdog.enabled`, default true), the postgres registrar mints two dedicated roles on the app DB alongside the app's owner role and injects their DSNs into the project `.env` (read by the sidecar via `env_file`):
+  - `WATCHDOG_DB_URL_RO` → `{db}_wd_ro`, **SELECT-only** (`LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE`, `CONNECT`+`USAGE`+`SELECT`, incl. future tables via `ALTER DEFAULT PRIVILEGES FOR ROLE <owner>`). The sidecar's default DSN — the diagnosis lane across all tiers.
+  - `WATCHDOG_DB_URL_RW` → `{db}_wd_rw`, **DML-only** (SELECT/INSERT/UPDATE/DELETE + sequence usage; **no DDL, no DROP, not owner**). Consumed only by the Tier-C approved-write lane.
+  - Per-project by design: each sidecar's DSN reaches ONLY its own DB (a compromised RO cred can't read another tenant). Password lifecycle mirrors `DATABASE_URL`: a fresh password is minted + injected only when a role is newly created; an existing role is preserved (no rotation), so its `.env` DSN stays valid and a cached-image re-apply never breaks a running sidecar. The batch runs under `\set ON_ERROR_STOP on` (failures raise, never false-succeed); grants are re-applied every apply (idempotent — covers newly-added tables); `ALTER DEFAULT PRIVILEGES` targets the real DB owner (looked up from `pg_database.datdba`, omitted when unresolvable), so it works on postgres-owned legacy DBs. Roles are non-owner / non-superuser (least privilege) — on `FORCE ROW LEVEL SECURITY` tables the RO lane sees only policy-permitted rows; a multi-tenant app needing cross-tenant diagnosis adds a policy for `{db}_wd_ro` upstream. Teardown: `drop_database` also drops the two roles (`DROP ROLE IF EXISTS`, on both the DB-present and already-gone paths) so a drop+recreate never orphans them; a provisioning failure surfaces as a `watchdog-db-roles` entry in the deploy resource summary (not just a log warning). (Distinct from the shared, manual `scripts/provision_watchdog_ro.py` escape hatch, which this supersedes for the auto path.)
+- **State machine** (agent.py):
+  1. Snapshot main container (logs + inspect + restart count).
+  2. Rule-pass for OOM/panic/traceback/5xx-spike.
+  3. Drain `emitter_inbox` (events from main app via vendored emitter).
+  4. Per incident: cost-cap check (ops-only path — see the ⚠️ below) → LLM diagnose (Claude Code primary, OpenRouter fallback) → action dispatch → **if code-class and Tier-D enabled: generate+test fix → Telegram-gate → apply via deploy adapter → verify/rollback → record**; else record → escalate if Tier C. ⚠️ With `auto_code_fix` on, the coordinator diagnoses with no cap check and records neither the diagnosis nor its fix runs — the daily caps do not bound Tier D (`core/cost-budget.md` § The Watchdog's Caps; filed to fabrik-lib).
+  5. Deadman: any unacked Tier C past `deadman_timeout_seconds` (default 300) → `docker restart <main>` + Apprise re-alert with `[DEADMAN-TIMEOUT]` prefix.
+
+---
+
+## Action allow-list (Tier A / B / C / D)
+
+**Tier A** — no `auto_tier_b` needed. `restart_container` is always offered; `clear_file_cache` and `pause_worker` only once listed in `watchdog.llm_actions`; `scale_concurrency` is never offered (fabrik-lib SB-103). Bounded by the daily caps (`daily_budget_usd`, `daily_invocations_cap`) on the ops-only path; `per_incident_budget_usd` is accepted and ignored (§ Cost behavior).
+
+| Action | What | Guards |
+|---|---|---|
+| `restart_container` | `docker restart <main>` | Refuses 14-entry shared-infra list (postgres-main, redis-main, traefik, authelia, …) |
+| `clear_file_cache` | `rm -rf /project/<subpath>/*` | Path-escape rejected; scoped under `/project/` |
+| `scale_concurrency` | env edit + `compose up -d <main>` | Never offered to the model (fabrik-lib SB-103) — not an `llm_actions` entry; CONST_CASE env-key validation |
+| `pause_worker` | Redis SETEX `<project_prefix>:pause:<resource>` | Matches `pause-state` vendor read contract; TTL ∈ [5, 3600]s |
+
+⚠️ **`drop_queue_items` and `rotate_locks` are NO LONGER Tier A** — the module moved them to the
+Tier-C **approved-write lane** (`actions.py::TIER_C_WRITE_HANDLERS`), fail-closed behind TWO gates:
+`WATCHDOG_ALLOW_DB_WRITES` (default OFF) and a provisioned `WATCHDOG_DB_URL_RW`. Absent either, the
+handler returns `skipped`, not a mutation. § Architecture already said this ("Consumed only by the
+Tier-C approved-write lane"); this table had not caught up, so the pack promised two automatic
+DB-mutating actions that are impossible by default. Both are also never offered to the model (fabrik-lib SB-103, `actions.py::NEVER_OFFERED`), so today neither runs even with both gates open.
+
+| Approved-write (Tier C lane) | What | Guards |
+|---|---|---|
+| `drop_queue_items` | `DELETE … ORDER BY <age_col> LIMIT N` | Both gates above; identifier validation; row cap 1..10000 |
+| `rotate_locks` | `UPDATE … SET locked_at = NULL WHERE locked_at < now() − interval` | Both gates above; identifier validation; age ∈ [30, 86400]s |
+
+**Tier B** — opt-in per spec: list the action in `watchdog.llm_actions` (e.g. `llm_actions: [reset_db_pool]`) AND set `watchdog.auto_tier_b: true` — the sidecar offers the model only `restart_container` + `escalate_apprise` (plus `create_fix_pr` on the code-fix lane) until an action is listed — or, with the field unset or empty, a `WATCHDOG_LLM_ACTIONS` line in the project `.env` (fabrik-lib D-412; the allowed names are `src/fabrik/spec_loader.py::WATCHDOG_LLM_OPT_INS`). `auto_tier_b: false` stays the one revert switch: a listed Tier-B action is then held and not offered. Without opt-in, Tier B diagnosis escalates as Tier C.
+
+| Action | What | Guards |
+|---|---|---|
+| `wipe_redis_cache` | `SCAN` + `DEL` pattern | Project-prefixed forcibly; 100k key safety cap |
+| `reset_db_pool` | POST `/admin/reset-db-pool` with `X-Internal-Token` | Requires `SERVICE_INTERNAL_SECRET_KEY` env |
+| `install_log_drop_rule` | Add regex drop to promtail via hub update service | Never offered to the model (being retired, fabrik-lib SB-095) — not an `llm_actions` entry; refuses too-broad patterns (`.*`, `.+`, `^.*$`) |
+
+**Tier C** — escalate-only by default. With `propose_fix_prs: true`, also pushes branch `watchdog/<incident_id>`.
+
+| Action | What | Guards |
+|---|---|---|
+| `escalate_apprise` | POST to Apprise → Telegram | always allowed |
+| `create_fix_pr` | `git push -u origin watchdog/<incident_id>` | Requires `WATCHDOG_PROJECT_GIT_REMOTE` + deploy key; refuses pushes to main/master/develop/staging/production/release/*; refuses force-push, branch deletion, `git config`, `git rebase`, `git reset --hard`, `git tag` |
+
+**Tier D** — code-remediation, **off by default**, opt-in like B/C and **human-gated**. This is the only tier that can change running code, and it never does so silently.
+
+**Enable:** `watchdog: { auto_code_fix: true }` in the spec **plus** an injected `deploy_adapter` + `test_cmd` (the `code_fix_window_sec` silence window defaults to 300 s — `WatchdogConfig` in `src/fabrik/spec_loader.py`, D-378 — see below). Absent → Tier D is unavailable and code-class incidents behave exactly as today (Tier C escalate / `propose_fix_prs`). `fabrik apply` then checks three more prerequisites (`WatchdogDriver._gate_tier_d`): a **git remote** (`watchdog.project_git_remote`, else the spec's `source.repository`) — missing skips the watchdog sidecar entirely: the rest of the deploy completes, the watchdog is recorded as a failed registrar and the CLI reports it; an **app-container HEALTHCHECK** — missing degrades Tier D to escalate-only with an ERROR at apply, because auto-rollback-on-health would be blind; and **snapshot storage** in `/opt/<id>/.env` — `STORAGE_BACKEND=b2` with `B2_KEY_ID`, `B2_APPLICATION_KEY` and `B2_BUCKET_NAME`, or `STORAGE_BACKEND=supabase` with `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` and `SUPABASE_BUCKET` — missing degrades Tier D to escalate-only with an ERROR at apply, because the sidecar refuses every apply it cannot snapshot first (D-451; `/opt/fabrik/docs/CONFIGURATION.md` § Tier-D snapshot storage).
+
+| Action | What | Guards |
+|---|---|---|
+| `create_fix_pr` | the dispatch key the coordinator's code-class fork reads (`coordinator.py::_is_code_fix`), routing the incident to REMEDIATE — there is no separate Tier-D action key, and the fork runs only for a trigger-bus signal (`trigger_sources` + `critical_paths`, [self-healing § Tier D](self-healing.md)); the always-on poll path never offers it (`agent.py` builds its menu with `code_fix_enabled=False`, so `check_proposal` refuses a reply naming it — fabrik-lib D-412); on the trigger-bus lane the chain is: generate a fix on `watchdog/<incident_id>` → tests pass (**HARD gate**) → secret-scan the diff → blast-radius guard → Telegram the diff with **Approve / Reject / STOP** → on approval **OR** silence past `code_fix_window_sec` → `deploy_adapter.apply(branch)` → VERIFY health → **auto-rollback on regression** | Isolated clone only (never the RO `/project` mount); deploy mechanism **injected** (no in-place src edit); every apply/rollback written to the `deploys` audit table; push restrictions apply to the **LLM's own bash** (hook + settings deny-list: no main/master, no force-push, no `git config`/`rebase`/`reset --hard`/`tag`); the **deploy adapter is the sole sanctioned main-push path** — it merges the fix branch into `deploy_branch` (default `main`) and uses `--force-with-lease` ONLY on rollback |
+
+---
+
+## Owner approval flow for Tier B opt-in
+
+1. Spec author edits `specs/services/<id>.yaml`: `watchdog: { auto_tier_b: true, llm_actions: [<the Tier-B action>] }`.
+2. `fabrik apply` registrar picks up the change, renders compose with `WATCHDOG_AUTO_TIER_B=true` and `WATCHDOG_LLM_ACTIONS=<the action>`.
+3. Each Tier-B action is recorded in the sidecar's `state.db`; a skip, refusal or failure is escalated via Apprise (there is no separate "Tier B activated" notice).
+4. The operator can revert by setting `auto_tier_b: false` and re-applying — the next sidecar boot reads the new env, the listed Tier-B action leaves the menu, and a reply naming it is refused and escalated (Tier C).
+
+Same flow for `propose_fix_prs: true` — first PR fires `[Watchdog proposed PR] watchdog/<incident_id> at <repo>`.
+
+### Tier-D code-remediation gate (the human-in-the-loop terminal)
+
+When the Tier-D lane produces a **green, secret-scanned, blast-radius-clean** diff, the sidecar fires a Telegram message carrying the diff + **Approve / Reject / STOP**:
+
+- **Approve** → `deploy_adapter.apply(branch)` immediately.
+- **Reject** → discard the branch; fall back to Tier C escalate.
+- **STOP** → kill-switch: disable Tier-D for this project until re-enabled in the spec.
+⚠️ **We chose the MINORITY convention on silence, deliberately — know what it rests on.** The
+prevailing pattern in published autonomous-remediation designs is **"silence is denial"**: an
+approval request that times out resolves to REJECTION, and an unanswered approval never converts
+into consent. Ours is the inverse — `TIMEOUT` routes through the same branch as `APPROVE` and the
+fix deploys. That is defensible here for a specific reason: this fleet is unattended, so
+silence-as-denial would mean a green-tested fix for a live incident simply never lands, and the
+incident continues. But the inversion is only safe while THREE things hold, and all three are load
+bearing — if any is disabled, the window stops being a review gate and becomes a delay:
+1. **the test gate is HARD** — `remediation/fixer.py` runs `test_cmd` in the isolated clone and
+   only a green, secret-clean run yields `FixProposal(ok=True)`; anything else retries rather than
+   proposing,
+2. **health is verified after apply and regressions AUTO-ROLLBACK** — `coordinator.py::_verify`
+   calls the injected `verify_health`, and a False result routes to `_rollback` using
+   `incidents.deploy_ref_before`, and
+3. **the STOP kill-switch works** — `Decision.STOP` rolls back to the prior live ref and escalates.
+An operator turning off (1) or (2) while leaving `auto_code_fix: true` has built an
+unattended-deploy pipeline, not a supervised one. Prefer denial-on-silence wherever a missed window is cheaper than a wrong deploy.
+
+- **No response within `code_fix_window_sec`** (default **300 s**, spec range 60–3600; D-378) → treated as approval and applied. A fix that silence can auto-apply has already passed the tests, the secret scan and the blast-radius guard; it deploys only after a pre-apply snapshot marker is recorded, and rolls back to the previous code ref when post-apply health (or the opt-in golden check) regresses — so the default is short. Rollback catches a health regression and, where a golden file covers it, a known-answer regression; a wrong fix that passes both is never caught, so a project that wants a longer human review sets the field explicitly. It IS the operator-bound terminal (see [self-healing](self-healing.md) acceptance checklist), not a fully-autonomous layer.
+
+Every apply/rollback is written to the `deploys` table (and the approval to `approvals`); post-apply health VERIFY failing triggers automatic rollback. Tier-D requires the `auto_code_fix` opt-in **plus** an injected `deploy_adapter` + `test_cmd`, and an apply that passed the git-remote, HEALTHCHECK and snapshot-storage checks above; absent any of these, code-class incidents stay Tier C.
+
+---
+
+## Integration with adjacent vendor modules
+
+- **`pause-state`** — worker code reads pause flags via the vendored `pause-state` module. Watchdog writes flags directly via `redis.setex(<project_prefix>:pause:<resource>, ttl, "watchdog")` matching the read contract. Workers see the pause without code change.
+- **`async-http-client`** — sidecar's OpenRouter fallback uses `httpx` directly (not async); circuit-breaker for OpenRouter is implicit in `llm_client.diagnose`'s primary→fallback→rule-only chain rather than a per-call breaker.
+- **`abuse-prevention`** — host-app side only. Sidecar does not call it. If the host app fires `abuse_event` → emitter → sidecar reads → LLM proposes Tier A `pause_worker` for the offending resource — offered only once `pause_worker` is listed in `watchdog.llm_actions`.
+- **`cost-budget`** — vendored into the sidecar tree (`/opt/fabrik-lib/watchdog/watchdog_sidecar/cost_budget.py`); writes go through `record_cost`/`replay_wal` so the shared `cost_ledger` table on postgres-main carries every project's burn. Daily caps via `check_caps` + `drop_to_rule_only_mode`.
+
+---
+
+## Cost behavior
+
+- **Claude Code returns `total_cost_usd` directly** in its `--output-format json` envelope; the sidecar records that value — a list-price estimate on a subscription, not 0 — so it counts toward `daily_budget_usd`; `daily_invocations_cap` counts calls (`core/cost-budget.md` § What the Ledger's Dollars Mean).
+- **OpenRouter** carries real per-token dollar cost; OpenRouter returns usage and cost on every response (the old `usage.include` flag is deprecated and has no effect).
+- **Per-incident cost.** ⚠️ NOT enforced by a `--max-budget-usd` flag — that is explicitly banned (`llm_client.py`: *"no $ caps on sysadmin"*, per the operator directive that per-call caps break the diagnose loop), and `per_incident_cap_usd` is accepted for API compatibility but not enforced at the call site. Spend is OBSERVED (`total_cost_usd` from the Claude envelope) and bounded by the daily caps, not clipped mid-incident. OpenRouter fallback timeout is 60s.
+- **`daily_budget_usd`** + **`daily_invocations_cap`** enforced by `cost_budget.check_caps` on the ops-only path; over-cap routes the incident to rule-only escalation (no LLM call) and tags the Apprise alert with `(BUDGET-CAP)`.
+
+---
+
+## Anti-patterns
+
+- **Calling the sidecar from main app.** Use the emitter (vendor `watchdog/emitter/`). The sidecar is a one-way reader; HTTP back-channel breaks fail-safe.
+- **Bypassing the PreToolUse hook.** Hook + claude-settings allow-list + sandbox.filesystem + docker.sock scoping are 4-layer defense-in-depth. If you "just need" to let Claude run an arbitrary `bash` command, the right move is to add the command to claude-settings.json — never `chmod -x` the hook.
+- **Putting secret tokens in `details`.** The LLM sees every value. Even with WebFetch/WebSearch gated to allowedDomains, log exfil via reasoning text is the worst-case prompt injection. Pass IDs, not values.
+- **Running sidecar as root.** Claude Code refuses bypass mode under root/sudo on Linux. The Dockerfile creates UID 1000 `watchdog`; honor it.
+- **Editing `/opt/<id>/src` in-place from the sidecar.** In-place src editing from the sidecar is still **banned** — code changes go through the isolated workspace + injected deploy adapter. **Without Tier-D opt-in, watchdog never merges** (operator merges, via the PR workspace at `/var/lib/watchdog/proposed/<project_id>/` pushed to `watchdog/<incident_id>`). **With Tier-D**, watchdog MAY apply a tested, secret-scanned, blast-radius-clean fix via the deploy adapter after explicit Telegram approval or a configured silence window, with auto-rollback armed and a STOP kill-switch.
+- **Letting `emit_incident()` raise.** It catches everything by design. If you "fix" it to raise, you've coupled the main app's billing/checkout path to telemetry — exactly the brittleness this contract avoids.
+- **Reusing `<project_prefix>` across projects.** It namespaces redis keys + emitter events; collision = one project sees another's pause flag.
+
+---
+
+## Worked example — OOM diagnosis
+
+1. Main container hits OOM-kill (kernel `oom-killer` log line).
+2. Sidecar's next 60s tick:
+   - `gather_snapshot` captures `docker logs --since 120s <main>` containing the `oom-killer` line.
+   - `detect_anomalies` regex hits `_LOG_TRIGGERS["oom_kill"]` → incident with `severity=urgent`.
+   - `state.record_incident(...)` → uuid7 row in `incidents`.
+   - `cost_budget.check_caps` returns under-cap.
+   - `llm_client.diagnose` invokes `claude -p` with the incident + snapshot. Claude returns `{tier: "A", action: "restart_container", reasoning: "OOM with no obvious leak — restart restores baseline RSS", confidence: 0.9}`.
+   - `actions.execute("A", "restart_container", {}, ctx)` → `_restart_main` → `docker restart <main>` → `ActionResult(status="success")`.
+   - `state.record_action(...)` + `state.resolve_incident(id, "auto")`.
+   - No Apprise alert (Tier A success).
+3. Cost ledger row: `provider=claude-code`, `cost_usd=<from envelope>`, `in_tokens=<…>`, `out_tokens=<…>`.
+4. If the same OOM repeats inside the cost window, `check_caps` may flip the project to rule-only mode; the next OOM escalates as Tier C with `(BUDGET-CAP)` — operator sees Telegram alert without an LLM call. Deadman armed; if operator doesn't ack within 300s, `docker restart <main>` fires as bleed-stop and an Apprise re-alert lands.
+
+---
+
+## Doc Sync — the sidecar is a FLEET-AI-visible service (D-065)
+
+A watchdog sidecar is a real container deployed beside the app, with its own image, mounts, env and
+cost behaviour. `docs/OPERATIONS.md` + `docs/DEPLOYMENT.md` are how the hub's deploy AI learns what
+runs on the VPS, so a project that enables the watchdog and does not say so in those two files has a
+fleet-AI blind spot — the deploy agent cannot reason about a container it has never been told about.
+
+⚠️ Measured 2026-09-01: `tryton-crm` runs `tryton-crm-watchdog` (up, healthy) and **neither** its
+`OPERATIONS.md` nor its `DEPLOYMENT.md` mentions a watchdog at all. So this is the live default, not
+a hypothetical.
+
+**When `watchdog.enabled` is true, the same change updates:**
+- `docs/DEPLOYMENT.md` — that a sidecar is deployed, its image, and which tiers are enabled
+  (`llm_actions` / `auto_tier_b` / `propose_fix_prs` / `auto_code_fix` are the operator-visible switches).
+- `docs/OPERATIONS.md` — how to read its state (`state.db`, the `deploys` audit table), where
+  escalations land (Apprise → Telegram), and the STOP kill-switch.
+- `docs/RESILIENCE.md` — the sidecar's own tick cadence belongs in the jobs/intervals inventory.
+
+## Cross-references
+
+- Spec field: [`src/fabrik/spec_loader.py`](../../../src/fabrik/spec_loader.py) `WatchdogConfig` class.
+- Sidecar source: `/opt/fabrik-lib/watchdog/watchdog_sidecar/` (vendored into image by driver at apply time).
+- Emitter: `/opt/fabrik-lib/watchdog/emitter/`.
+- Cost ledger schema: shared `cost_ledger` on `postgres-main`, provisioned once by Fabrik postgres registrar.
+- Adjacent packs: [55-observability](55-observability.md) (preventive visibility), [58-resilience](58-resilience.md) (preventive circuit-breakers), [cost-budget](cost-budget.md) (vendored module reference), [app-audit-log](app-audit-log.md) (cross-tenant audit trail).

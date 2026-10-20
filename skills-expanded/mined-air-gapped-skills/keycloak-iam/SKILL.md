@@ -1,0 +1,313 @@
+---
+name: keycloak-iam
+description: Operate, configure, deploy, secure, and integrate with Keycloak (open-source IAM) — the modern Quarkus distribution (24.x–26.8.x), the Keycloak Operator with `Keycloak` and `KeycloakRealmImport` CRDs, realm/client/identity-provider configuration, plus legacy 16.x–23.x instances (incl. WildFly "-legacy" builds) and verifying realm/client config survived a version migration.
+when_to_use: Use whenever the user mentions Keycloak, Red Hat build of Keycloak (RHBK), `kc.sh`, `kcadm.sh`, `keycloak.conf`, `KC_*` / `KCRAW_*` env vars, the Keycloak Operator, a `Keycloak` or `KeycloakRealmImport` custom resource, or asks about server tuning (hostname / proxy / db / cache flags, `--optimized` builds), Kubernetes deployment (HA topology, probes, zero-downtime upgrades), security hardening (FGAP v2, client policies, FAPI, DPoP, JWT-Authz-Grant, federated client auth, redirect URI safety, CVEs), OIDC/SAML/IdP brokering with Keycloak as the IdP, LDAP/AD federation, themes / custom SPIs, or operations (Prometheus metrics, OTLP tracing, realm export/import, backup, upgrade matrix). Also trigger on old/unknown Keycloak versions ("we run 17/18/19-legacy", `/auth` URL paths, `/opt/jboss/keycloak`, old AngularJS admin console), upgrade-ladder questions ("what breaks going 1x→26"), and migration verification ("compare realm before/after upgrade", "did the migration keep our client settings"). In a thread already established as Keycloak-focused, keep triggering on follow-up realm/client/IdP/SSO questions even when "Keycloak" isn't repeated in every message. Do NOT trigger on generic IAM/SSO/OIDC questions with no Keycloak context (e.g. Auth0, Okta, Entra ID, Cognito, or a from-scratch OAuth server).
+---
+
+# Keycloak IAM — operator's reference skill
+
+This skill covers running, configuring, deploying, and integrating with **Keycloak**, the open-source identity & access management server. It targets the modern **Quarkus-based** distribution (24.x → 26.8.x); for instances still in the field on 16.x–23.x — including the WildFly **"-legacy"** builds that ended at 19.0.3 — and for verifying realm migrations off them, route to `legacy-and-migration.md`. Versions and breaking changes are current to **Keycloak 26.8.0**; the reference files are still written against the 26.6 feature set, so treat 26.7/26.8-only features as unresearched there and read the release notes directly.
+
+The Red Hat build of Keycloak (RHBK) is downstream of upstream Keycloak with longer support windows and the same surface area; advice here applies to both unless explicitly noted.
+
+**Siblings in the `k8s` plugin.** Keycloak is almost always deployed behind
+something and packaged by something, and both are common failure sources rather
+than Keycloak bugs: reverse-proxy headers, TLS termination and rate limiting in
+front of it are **`traefik-hardening`** (a Keycloak that emits wrong issuer URLs
+or loops on redirect is usually a proxy-header problem, not an IAM one);
+authoring or fixing the chart that deploys it is **`helm`**; running it under
+OpenShift's SCC and arbitrary-UID constraints is **`openshift-app`**.
+
+## How to use this skill
+
+Keycloak is a large product. Don't try to load everything — route to one or two reference files based on what the user is asking, then go deep.
+
+```
+references/
+├── server-config.md         → CLI/env vars, kc.sh, kcadm.sh, hostname, db, cache,
+│                              TLS/proxy, logging, features, bootstrap-admin, KCRAW_
+├── k8s-deployment.md        → Operator install, Keycloak CR, KeycloakRealmImport,
+│                              raw manifests, HA topology, probes, autoscaling
+├── security-hardening.md    → Realm policies, brute force, FGAP v2, client policies
+│                              (FAPI/OAuth 2.1), DPoP, redirect URI safety, recent CVEs
+├── integration.md           → OIDC/SAML flows, IdP brokering, LDAP/AD federation,
+│                              themes, SPIs, admin clients (Java/JS/kcadm/Terraform)
+├── observability.md         → Metrics, OTLP tracing, structured logging, health
+│                              probes, troubleshooting recipes
+├── upgrade-and-backup.md    → Upgrade matrix, zero-downtime patches, realm
+│                              export/import, DB backup, disaster recovery
+└── legacy-and-migration.md  → Identifying/operating old versions (16.x–23.x,
+                               WildFly "-legacy" builds), per-version breaking-
+                               change ladder 16→current, and verifying a migrated
+                               realm/clients against the pre-migration export
+                               (normalize+diff recipe + expected-diffs allowlist)
+```
+
+**Routing cheatsheet:**
+
+| User question                                                              | Read first                            |
+|----------------------------------------------------------------------------|---------------------------------------|
+| "How do I set the hostname / proxy / DB?"                                  | `server-config.md`                    |
+| "Why is my login redirecting in a loop?"                                   | `server-config.md` (hostname/proxy)   |
+| "How do I deploy Keycloak on Kubernetes?" / "Operator vs raw manifests"    | `k8s-deployment.md`                   |
+| "Show me a Keycloak CR" / "What goes in `spec.*`?"                         | `k8s-deployment.md` + `assets/examples/` |
+| "How do I do zero-downtime upgrades?"                                      | `k8s-deployment.md` + `upgrade-and-backup.md` |
+| "Harden my realm" / "FAPI / OAuth 2.1 / DPoP / FGAP"                       | `security-hardening.md`               |
+| "Recent CVEs?" / "Is 26.x.y vulnerable?"                                   | `security-hardening.md` §CVE table    |
+| "Wire my SPA / mobile app / service to Keycloak"                           | `integration.md`                      |
+| "Configure SAML / OIDC IdP / LDAP / social login"                          | `integration.md`                      |
+| "Custom theme / authenticator / event listener / mapper"                   | `integration.md` §SPIs / §Themes      |
+| "What metrics / Grafana dashboard / Prometheus / OTLP"                     | `observability.md`                    |
+| "Realm export gotchas" / "How do I back up?" / "Liquibase migration stuck" | `upgrade-and-backup.md`               |
+| "What version is this old instance?" / anything on WildFly / `-legacy` / `/auth` paths / 16.x–23.x | `legacy-and-migration.md` §1–2 |
+| "We're on 1x.x — what breaks if we upgrade?"                               | `legacy-and-migration.md` §3          |
+| "Did the migration keep all realm/client settings?" / compare realm before vs after | `legacy-and-migration.md` §4 + `assets/compare/` |
+
+**When in doubt about a CLI flag**, the source of truth is `https://www.keycloak.org/server/all-config` (full option index). When in doubt about a CR field, the source of truth is the CRD YAML in `keycloak-k8s-resources` at the version tag (see §"Authoritative sources" below).
+
+## Version map
+
+Latest stable: **Keycloak 26.8.0** (2026-10-01). **Minimum safe: 26.7.5 or 26.8.0.**
+Every 26.7 patch was a security batch — 26.7.1 (12 CVEs), 26.7.2 (two
+account-takeover class), 26.7.3 (20), 26.7.4 (6, incl. CVE-2026-17526: impersonation
+role → realm admin), 26.7.5 (15, 2026-09-30). Anything below 26.7.5 is missing
+some of them. The 26.6 line ended at **26.6.4** (2026-06-26) for community users —
+later `26.6.x` git tags ship no GitHub Release and no quay.io image.
+
+**There is no 27.x**; 26.x is the current line. Plan for one thing now though:
+Keycloak has announced it **removes all uses of SHA1 in version 27**.
+
+**Support window is narrower than most people assume.** The project's security
+policy fixes issues "in the current `major.minor` release … or for lower
+severity vulnerabilities or hardening in the following `major.minor` release".
+That is effectively the current minor only — there is no N-minors-back window.
+Long-term support is the commercial Red Hat build, not upstream. Do **not** quote specific CVE IDs from memory; pull the authoritative list with `gh api repos/keycloak/keycloak/security-advisories` and `gh release view <version> --repo keycloak/keycloak --json body`. **The feed alone is not enough** — its `first_patched_version` fields are empty, so read the candidate releases' notes to learn which version actually closes a CVE. See `security-hardening.md` §CVE table for how to surface the current set.
+
+Notable changes through the 26.x line:
+
+| Version  | Key changes (operator-relevant)                                                                |
+|----------|------------------------------------------------------------------------------------------------|
+| 26.8.x   | `stateless` (multi-cluster v2) **supported**; `multi-site` (v1) deprecated, `clusterless` to be removed; login failures stored in the DB; Client Secret Rotation and SCIM API on by default; Realm Operator EOL; Quarkus 3.40. Breaking changes: §26.8.0 below |
+| 26.7.x   | SCIM user provisioning (**preview**), multi-cluster HA **without external caches** (preview — supersedes the external-Infinispan topology this skill documents), OpenID Shared Signals Framework (experimental), Identity Brokering API **V2** (V1 deprecated, still default-on), step-up auth for SAML clients, HAProxy + Traefik reverse-proxy blueprints. *Not yet researched at reference depth — read the release notes* |
+| 26.6.x   | Workflows, JWT Authorization Grant, Federated client auth, **Zero-downtime patch updates**, KCRAW_ env prefix, automatic K8s truststore, graceful HTTP shutdown, configurable Service name/port in Operator, organization groups, sensitive-info redaction in HTTP access logs. **26.6.2, 26.6.3 and 26.6.4 are all security batches**; 26.6.4 (2026-06-26) is the last 26.6 patch seen — see the advisory feed for the CVE sets they close |
+| 26.5.x   | Token Exchange Standard (RFC 8693) GA, declarative-user-profile GA, FIPS via Bouncy Castle, ECC keys default for new realms, Java 25 added (server image still on JDK 21 for FIPS) |
+| 26.4.x   | hostname-v2 GA + `hostname-v1` removed, Quarkus 3.20 LTS, `--proxy-headers` (replaces `--proxy edge|reencrypt`) |
+| 26.3.x   | Organizations GA, Account Console v3 GA, Admin UI on PatternFly React, FGAP v2 preview |
+| 26.2.x   | OIDC client policies v2, persistent user sessions GA |
+| 26.0.0   | `KEYCLOAK_ADMIN` removed → `KC_BOOTSTRAP_ADMIN_*`, persistent user sessions on by default, hostname-v2 by default |
+
+Always cross-check with the release-notes body via `gh release view <tag> --repo keycloak/keycloak --json body --jq '.body'`. Do not rely solely on this table — bump the date and verify.
+
+## 26.8.0 breaking changes (upgrading guide)
+
+Do these **before** the upgrade unless the row says otherwise:
+
+| Change | Action |
+|---|---|
+| `view-clients` no longer sees client secrets (masked `**********`) | Automation that reads secrets needs `manage-clients`. |
+| IdP mappers can no longer grant admin roles, directly or via group (CVE-2026-12388) | Default `allowAdminRoleMapping=false`, existing IdPs included; a `manage-realm` admin enables it per IdP. Earlier grants are not removed. |
+| Operator: Secrets behind `KeycloakOIDCClient` `spec.client.auth.secretRef` need label `operator.keycloak.org/kind=KeycloakOIDCClient` | Label them first, or the CR goes `HasErrors`. |
+| `--features=preview` no longer enables `stateless` | Set `--features=stateless` explicitly, plus `--cache-embedded-cluster-name=<unique>` (not `ISPN`) — without it the server refuses to start. |
+| Login failures stored in the DB by default (`login-failures` v2) | Expect more DB connections/CPU; `--features=login-failures:v1` restores in-memory (deprecated, incompatible with `stateless`). |
+| Token-exchange delegation needs FGAP v2; scope `delegation` → `delegation:user` | Update clients requesting the old scope. |
+| `initiating_idp` logout param ignored; upstream IdP always logged out | Temporary: `allow-initiating-idp-logout-param` (deprecated). |
+| X.509 *user* authenticators need "CA subject DN" | Set it per authenticator; old configs still work until the next major. |
+| Offline-session indexes rebuilt | Tables > 300 000 rows: index creation is skipped at migration and done in the background after startup (PostgreSQL, Oracle, MySQL/MariaDB, MSSQL Enterprise); otherwise run the logged SQL by hand. |
+| Async commit now also on MSSQL/Oracle (ephemeral tables) | MSSQL: DBA runs `ALTER DATABASE … SET DELAYED_DURABILITY = ALLOWED`, or opt out with `--spi-connections-jpa--quarkus--async-commit=false`. |
+| Disabled clients dropped from `aud`; Authorization Services resource URIs normalized | Review policies that relied on either. |
+
+Also: the Realm Operator (`KeycloakRealm`/`KeycloakClient`) reached end of life —
+use `KeycloakRealmImport` plus the preview `KeycloakOIDCClient`/`KeycloakSAMLClient`.
+Extensions using Quarkus internals or the Vert.x HTTP client need retesting (Quarkus 3.40).
+
+## 26.7.x breaking changes (upgrading guide, verified 2026-09-15)
+
+These bite on upgrade and several are silent. Sourced from the upgrading guide,
+which carries items the release notes do not.
+
+**26.7.0**
+
+| Change | Action |
+|---|---|
+| Feature renamed `dynamic-scopes` → **`parameterized-scopes`** | `--features=dynamic-scopes` no longer matches. Switch the flag. The DB attribute `is.dynamic.scope` auto-migrates. Parameterized scopes now also need `parameterized.scope.type`; a `custom` type additionally needs `parameterized.scope.regexp`. |
+| **`view-system` admin role removed** | Introduced in 26.5.4 and deprecated immediately; removed for security. Full server information now needs a `master`-realm user with `manage-realm`. |
+| Identity Provider alias is immutable | Changing an alias via the Admin REST API after creation returns `400`. |
+| X.509 client auth: "Certificate Authority subject DN" is **compulsory** | "Allow regex pattern comparison" is deprecated. New client policy executor `tls-client-auth-ca-subject-dn`. |
+| Client secrets always 86 characters | Length no longer varies with signing algorithm; existing secrets unaffected. |
+| `shutdown-timeout` default 1s → **10s** | Caches now rebalance before shutdown. Restore with `shutdown-timeout=1s`. |
+| Session cookies hashed with SHA-384 | `KC_AUTH_SESSION_HASH` and `KEYCLOAK_SESSION` replaced on next request; no config needed. |
+| Removed config keys | `spi-user-sessions--infinispan--use-batches`, `spi-user-sessions--infinispan--max-batch-size`. |
+
+**26.7.1** — Admin API access tightened twice, and both can lock people out:
+admin roles granted **via protocol mappers no longer grant Admin API access**
+(only directly-assigned roles do), and client-scope assignment endpoints now
+require `manage` on client scopes. A regression where a custom realm role named
+`admin` could not be updated in non-master realms was fixed in the same release.
+
+**26.7.2** — the legacy client-initiated account-linking endpoint
+`/realms/{realm}/broker/{provider}/link` is **disabled by default**. Migrate to
+AIA `kc_action=idp_link`; `allow-client-initiated-account-linking` restores it
+temporarily and is itself deprecated.
+
+**26.7.3** — redirect URIs containing OIDC response parameters (`state`, `code`,
+`session_state`, …) are **rejected by default**. The escape hatch
+`allow-oidc-params-in-redirect-uris` is deprecated with removal planned for 27,
+and `allow.oidc.params.in.redirect.uris` allows per-client migration. Separately,
+Authorization Services now reserve the **`kc.` claim prefix** for server-controlled
+attributes and filter user-supplied claims carrying it.
+
+**26.7.5** — the `client-updater-source-groups` client-policy condition matches
+the **full group path**. A value without a leading slash means a top-level group
+(`topGroup` → `/topGroup`, unchanged); a subgroup configured by simple name must
+become its full path (`/topGroup/level2group`).
+
+**Feature status moved too.** `step-up-authentication-saml` went preview →
+**supported**. SCIM is now **preview** (`--features=scim-api`). Identity
+Brokering API **V2** is supported but off by default while V1 is deprecated and
+still on by default. The experimental `token-exchange-external-internal:v2` was
+removed.
+
+### Multi-cluster HA without external Infinispan (`stateless`, multi-cluster v2)
+
+**On 26.8+ it is supported and v1 is deprecated:** `multi-site` (v1, external
+Infinispan) is deprecated for removal in a future major, `clusterless` will be
+removed — migrate both to `stateless` (keycloak.org/high-availability/multi-cluster-v2/migrate-from-v1-to-v2).
+The bullets below describe **26.7**, where it was still preview.
+
+Enable with **`--features=stateless`** (26.8+: plus `--cache-embedded-cluster-name`). It connects clusters through their
+embedded Infinispan caches and propagates invalidation **through the database**
+using an outbox table that other sites poll, which is what removes the external
+Infinispan requirement and the Kubernetes/AWS-specific assumptions with it.
+
+On 26.7:
+
+- **It is preview**, stated as such on the introduction and concepts pages.
+- **v1 is not deprecated** (it is from 26.8). The HA overview lists single-cluster, multi-cluster
+  v1 and multi-cluster v2 side by side as current choices; only v2 carries the
+  preview admonition. v1 remains the non-preview path.
+- The documented cost is roughly **twice the database CPU and write IOPS**,
+  since session data lives in the database and less is cached.
+- 26.7.2 fixed an upgrade regression specific to this provider: upgrading to
+  26.7.0 with preview features on failed when the stateless cluster provider
+  captured a null `NodeInfo` before `postInit`.
+
+## Authoritative sources
+
+When the user asks about something specific, prefer these sources over generic recall. Cited paths are relative to repo root — access via a local clone, or fetch via `gh api repos/<owner>/<repo>/contents/<path>`.
+
+- **Upstream source** (`keycloak/keycloak`)
+  - CLI option mappers: `quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/configuration/mappers/*PropertyMappers.java`
+  - Option definitions (descriptions, defaults): `quarkus/config-api/src/main/java/org/keycloak/config/*Options.java`
+  - Operator Java code + CRD generators: `operator/src/main/java/org/keycloak/operator/`
+  - Themes (login/email/account/admin): `themes/src/main/resources/theme/` + `js/apps/{account-ui,admin-ui}/`
+  - asciidoc guides operators rarely think to read: `docs/guides/server/*.adoc`, `docs/guides/operator/*.adoc`, `docs/guides/high-availability/*.adoc`
+
+- **Operator install manifests** (`keycloak/keycloak-k8s-resources`)
+  - Each Keycloak version has a git tag (e.g. `26.7.0`) with the manifests under `kubernetes/`. Through 26.6 that was three files; **26.7+ has more, and the operator crash-loops (`Couldn't start informer for keycloaksamlclients...`) if the extra CRDs aren't applied** — vendor the whole directory listing, not a remembered file list:
+    - `keycloaks.k8s.keycloak.org-v1.yml` — the `Keycloak` CRD. Write CRs as **`k8s.keycloak.org/v2beta1`** (storage version since 26.6); `v2alpha1` is deprecated but served with an identical schema, so migrating is an `apiVersion` edit
+    - `keycloakrealmimports.k8s.keycloak.org-v1.yml` — the `KeycloakRealmImport` CRD
+    - `keycloakoidcclients…`/`keycloaksamlclients….yml` (26.7+) — client CRDs, required by the operator even if unused
+    - `kubernetes.yml` — Operator Deployment + RBAC + ServiceAccount (assumes install namespace `keycloak`; one hardcoded ClusterRoleBinding subject — use the docs' kustomize-overlay approach for other namespaces)
+    - `kustomization.yml`, `cluster-wide/` (26.7+). **Don't copy `kustomization.yml` into a directory that has its own `kustomization.yaml`** — kustomize then fails with `Found multiple kustomization files`. Either apply upstream's directory as-is (`kubectl apply --server-side -k`), or vendor only the four CRD files plus `kubernetes.yml` into your own overlay; a `cp *.yml` loop picks up both.
+  - The repo's `main` branch has only the README + LICENSE; the actual manifests live in tags. Use `git checkout <tag>` against a clone, or `gh api repos/keycloak/keycloak-k8s-resources/contents/kubernetes?ref=<tag>` to fetch raw. (Do NOT assume the repo is stale just because `main` looks empty.)
+
+- **Online docs**: `https://www.keycloak.org/`
+  - `/server/all-config` — every CLI option, every default
+  - `/server/configuration` — concept overview, build-time vs runtime
+  - `/operator/installation`, `/operator/basic-deployment`, `/operator/advanced-configuration`, `/operator/realm`, `/operator/keycloak-cr`, `/operator/rolling-updates`
+  - `/high-availability/` — multi-cluster, external Infinispan, CloudNativePG recipe
+  - `/securing-apps/` — OIDC layers, SAML, DPoP, JWT-Authz-Grant, MCP authorization server (CIMD)
+  - `/docs/<version>/server_admin/` and `/docs/<version>/server_development/` — admin and SPI guides
+
+- **gh CLI** (per the user's `gh-cli-preferred` rule):
+  - Release notes: `gh release view <tag> --repo keycloak/keycloak --json body --jq '.body'`
+  - Issues: `gh issue view <N> --repo keycloak/keycloak`
+  - Search: `gh search issues --repo keycloak/keycloak "<query>"`
+  - Security advisories: `gh api repos/keycloak/keycloak/security-advisories`
+
+When the user references a specific behavior, *check the source clone or CRD YAML before answering* — option names, defaults, and JSON field names get renamed across releases (e.g. `--proxy edge|reencrypt|passthrough` → `--proxy-headers xforwarded|forwarded` in 26.4; `KEYCLOAK_ADMIN` → `KC_BOOTSTRAP_ADMIN_*` in 26.0; the `hostname-v2` rewrite). Stale answers are worse than "let me check."
+
+## Production guardrails (the checklist that matters)
+
+These are the things that bite operators most. Don't suggest a Keycloak deployment that violates them without a stated reason.
+
+1. **Run `kc.sh build` before `start --optimized`** in a custom image, or set `spec.startOptimized: true` only after baking the build. Otherwise startup pays the auto-build cost on every pod start.
+2. **`--hostname` must be a real, externally-resolvable URL** in production, with `--hostname-strict=true` (default). Do not run with `hostname-strict=false` outside of dev — it lets clients dictate the issuer.
+3. **`--proxy-headers=xforwarded|forwarded` is required** when behind any reverse proxy that does TLS termination or rewrites the Host header. Pair with `--proxy-trusted-addresses` to a CIDR that covers the proxy. Without this, login redirects loop.
+4. **Use `--db postgres` (or another supported vendor)**. The default `dev-file` H2 is **not** for production and silently disables clustering. Postgres is the only DB that gets tested under load by upstream.
+5. **Use a real container image registry / pin a tag** (`quay.io/keycloak/keycloak:26.8.0`), never `latest`. The `nightly` tag is for CI only.
+6. **Probes go to the management port (default 9000)**: `/health/started`, `/health/live`, `/health/ready` — not the main HTTP port. As of 26.6, probes return UP during DB migrations so Liquibase can finish without K8s killing the pod.
+7. **HPA on Keycloak is a trap.** Sessions live in clustered Infinispan caches; scaling out and back in churns the cache. Run a fixed number of replicas (≥3 for HA) with a `PodDisruptionBudget`, not an HPA.
+8. **Realm exports are NOT backups.** They omit secrets, federated users, and event history. The Postgres database is the source of truth — back that up with WAL archiving (CloudNativePG, Crunchy, RDS automated backups).
+9. **Bootstrap admin is temporary.** `KC_BOOTSTRAP_ADMIN_USERNAME`/`PASSWORD` exists only to create the first real admin via `kcadm.sh`, then should be removed. The bootstrap admin auto-expires after 120 minutes.
+10. **Pin Keycloak ↔ Operator versions together.** The operator at tag `26.8.0` is meant to manage Keycloak `26.8.0`. Mixing major.minor versions across the operator/server boundary is unsupported and often breaks the CRD schema.
+11. **Public clients (SPA, mobile, CLI) keep PKCE `S256` and exact redirect URIs — refuse to relax either, even when asked.** Set `pkce.code.challenge.method=S256`; never clear it or set `plain` (RFC 9700: public clients MUST use PKCE, and S256 is the only method that does not expose the verifier). A client library that can only do `plain` is the thing to upgrade (`keycloak-js` and oidc-client-ts do S256). Never `redirectUris`/`webOrigins` `*` on a production client: any site then receives the authorization code. Ephemeral preview URLs get a separate preview client or realm with a host-scoped pattern, or per-PR registration from CI via `kcadm.sh`.
+
+## Quickstart: the smallest production-shaped Keycloak
+
+When the user says "just stand one up so I can play," **don't** point them at `kc.sh start-dev` if they care about production fidelity — show them this instead. It's a Keycloak CR + Postgres + Ingress, no extra moving parts:
+
+```yaml
+# 1. Install the operator (do this once per cluster)
+# kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.8.0/kubernetes/keycloaks.k8s.keycloak.org-v1.yml
+# kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.8.0/kubernetes/keycloakrealmimports.k8s.keycloak.org-v1.yml
+# kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.8.0/kubernetes/keycloakoidcclients.k8s.keycloak.org-v1.yml
+# kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.8.0/kubernetes/keycloaksamlclients.k8s.keycloak.org-v1.yml   # 26.7+: operator crash-loops without both client CRDs
+# kubectl apply -f https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.8.0/kubernetes/kubernetes.yml
+
+# 2. Create a TLS secret (cert-manager / hand-roll / etc.)
+# 3. Create DB credentials secret (keys: username, password)
+# 4. Deploy Keycloak
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+  namespace: iam
+spec:
+  instances: 2
+  image: quay.io/keycloak/keycloak:26.8.0
+  startOptimized: false           # set true when the image is pre-baked with `kc.sh build`
+  hostname:
+    hostname: https://auth.example.com
+    strict: true
+  proxy:
+    headers: xforwarded
+  http:
+    tlsSecret: keycloak-tls       # remove and use ingress for edge termination
+  db:
+    vendor: postgres
+    host: postgres-rw.iam.svc
+    database: keycloak
+    usernameSecret: { name: keycloak-db, key: username }
+    passwordSecret: { name: keycloak-db, key: password }
+  bootstrapAdmin:
+    user:
+      secret: keycloak-bootstrap-admin   # keys: username, password
+  update:
+    strategy: Auto                # rolling when the compatibility check passes: patches, and usually minors (26.6+)
+  features:
+    enabled: ["organizations", "admin-fine-grained-authz:v2"]
+```
+
+See `assets/examples/` for fuller examples (with HA tuning, `KeycloakRealmImport`, raw-manifest deployment without the operator, network policies).
+
+## Common operator pitfalls
+
+- **"What version am I running?" from inside a realm** — deliberately absent from every UI except master's *Server info* page (version disclosure = hardening). Non-master admins with `manage-realm` get the version from `GET /admin/serverinfo` (26.5.4+): `kcadm.sh get serverinfo | jq -r .systemInfo.version` — note kcadm's `--fields` is useless here (it trims `systemInfo` but still dumps the ~0.5 MB remainder of the document); the `view-system` workaround was removed in 26.7. Infra-side: image tag, boot log line, or `kcadm.sh help | head -1` in the pod.
+- **"What's the admin URL for realm X?"** — not discoverable in the UI. Pattern: `/admin/{login-realm}/console/#/{managed-realm}` — the first segment picks which realm *authenticates* you (its `security-admin-console` client), the fragment picks the realm being *edited*. Realm-local admins: `/admin/<their-realm>/console/` (no realm dropdown, their realm only). Master admins: `/admin/master/console/#/<realm>`. End-user self-service: `/realms/<realm>/account/`. Prefix all with the server's relative path (`/auth` on legacy-layout installs).
+
+- **`hostname-strict=false` "fixes" my login** → No, it papers over a proxy/headers misconfig. Set `--proxy-headers` correctly instead.
+- **"Why is my custom theme not appearing?"** → The theme must be baked into a custom image and `kc.sh build` re-run; dropping a theme jar into a stock image at runtime no longer works. Themes are packaged into the optimized server jar.
+- **"Operator pod logs are flooded with warnings"** → On 26.6.0 exactly, that's `#47872`, fixed in 26.6.1. Upgrade to the latest 26.6.x.
+- **"Realm import keeps failing on existing realm"** → `KeycloakRealmImport` is *create-or-replace*; it won't merge. Use `kcadm.sh` for incremental edits, or accept the realm-as-config GitOps trade-off.
+- **"My JS admin client is broken on 26.6.0"** → 26.6.0 shipped a broken `@keycloak/keycloak-admin-client` package, fixed in 26.6.1. Use the latest 26.6.x.
+- **JGroups ERROR "closing inbound before receiving peer's close_notify" while a pod shuts down** (TCP + mTLS, 26.7.x–26.8.x, typically during a rolling update) → benign: the cluster still forms and maintainers report no production impact (#53482, open). Don't roll back over it; check the cluster view and `/health/ready` instead.
+- **"Liquibase changelock stuck"** → A previous migration crashed mid-flight. `DELETE FROM DATABASECHANGELOGLOCK WHERE ID=1` (after confirming no other instance is migrating). See `observability.md` §troubleshooting for the safe procedure.
+- **"I'm getting `KC_*` substitution surprises with `$` in passwords"** → Use the new `KCRAW_*` prefix (26.6+) instead of `KC_*` for any value that contains `$`.
+
+## Style
+
+- When citing options, give the **exact** flag *and* the env var: ``--proxy-headers / `KC_PROXY_HEADERS` ``. Operators copy-paste; getting it half right costs them an hour.
+- Prefer linking to the source file or release-notes URL the user can verify, over restating from memory. Releases between 26.0 and 26.6 renamed flags and removed others; "I'm pretty sure" is wrong about half the time.
+- When the user is on a pre-26 version, surface the upgrade urgency *briefly* (a one-liner pointing at the upgrade guide). Don't lecture.
+- The user is sophisticated — skip the "Keycloak is an open-source IAM solution from Red Hat" preamble. Get to the answer.

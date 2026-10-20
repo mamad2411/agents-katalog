@@ -1,0 +1,31 @@
+---
+description: Deprecated — use api-ref-router and modular api-ref-* rules with api-eval skill
+globs: static/**/*.json
+alwaysApply: false
+---
+
+# API reference guidelines (deprecated)
+
+This monolith rule was split for efficiency. Use instead:
+
+## Skills
+
+| Command | Purpose |
+|---------|---------|
+| `/api-eval` | Audit: Redocly lint + OpenAPI version + FFS style guide + copy rules |
+| `/api-review` | Catalog descriptions (ref tables with proposed content) |
+| `/api-fix` | Fix **Redocly lint** and **structure** (`api-ref-structure.mdc`) |
+
+See [api-ref-skills.mdc](api-ref-skills.mdc) and [.cursor/skills/](../skills/).
+
+## Rules
+
+- [api-ref-router.mdc](api-ref-router.mdc) — routing
+- [api-ref-structure.mdc](api-ref-structure.mdc)
+- [api-ref-copy.mdc](api-ref-copy.mdc)
+- [api-ref-schema.mdc](api-ref-schema.mdc)
+- [api-ref-examples.mdc](api-ref-examples.mdc)
+- [api-ref-tags-errors.mdc](api-ref-tags-errors.mdc)
+- [api-ref-ffs-styleguide.mdc](api-ref-ffs-styleguide.mdc)
+
+Spec path resolution: [.cursor/skills/_shared/resolve-api-spec.md](../skills/_shared/resolve-api-spec.md).

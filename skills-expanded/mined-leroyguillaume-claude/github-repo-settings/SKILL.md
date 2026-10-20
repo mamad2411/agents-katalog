@@ -1,0 +1,164 @@
+---
+name: github-repo-settings
+description: >-
+  GitHub repo settings via `gh`: labels, merge methods, branch deletion,
+  Pages.
+  TRIGGER when: user asks to sync labels with `.github/release.yaml`, change
+  merge methods, toggle head-branch deletion, or enable GitHub Pages; a repo
+  gains an `actions/deploy-pages` workflow; a Pages deploy fails because Pages
+  is off.
+  SKIP when: editing workflows or release-note categories
+  (`github-actions-conventions`).
+---
+
+# GitHub repository settings (`gh` CLI)
+
+Administer GitHub repo settings from the CLI. All commands use `gh`, so the repo
+is inferred from the current directory's `origin` remote unless `--repo` is given.
+
+## Sync labels to `.github/release.yaml`
+
+`.github/release.yaml` only governs **PR labels** — the changelog generator reads
+the labels on merged PRs, nothing else. So it is **not** the full set of labels a
+repo should have. Two distinct purposes coexist:
+
+- **Issue-triage labels** (`bug`, `enhancement`, `question`, `help wanted`, …):
+  classify *reported* problems/requests. They legitimately exist even when absent
+  from `release.yaml`. **Do not delete them just because the changelog config
+  doesn't reference them.**
+- **PR / changelog labels** (`feature`, `fix`, `chore`, `dependencies`, `rust`, …):
+  classify the *change shipped*. These are what `release.yaml` maps to categories.
+
+The same concept often has both: `bug` (issue) ↔ `fix` (PR), `enhancement` (issue)
+↔ `feature` (PR). Inside one changelog category, listing both members of such a
+pair is a duplicate — pick one (the PR-side label) and drop the other from
+`release.yaml`; but keep the issue-side label alive on the repo. That is also
+what `github-pr-conventions` assumes when it labels a PR: `fix`/`feature` by
+default, `bug`/`enhancement` only where a repo still maps them.
+
+The `"*"` catch-all in `release.yaml` is a wildcard, **not** a real label — never
+create it.
+
+Procedure:
+
+1. Read `.github/release.yaml`, collect every concrete label it maps (drop `"*"`).
+   These must all exist on the repo.
+2. List current labels: `gh label list --limit 100`.
+3. Create any release.yaml label that's missing. Add any repo label missing from
+   release.yaml into the right category (or `exclude`) **if it's a PR label**;
+   leave issue-triage labels out of `release.yaml` but keep them on the repo.
+4. Only delete a label when the user actually wants it gone — never purely because
+   it's absent from `release.yaml`.
+
+The block below is a superset: keep `breaking`, the issue-triage labels, and
+only the category and exclude labels the repo's `release.yaml` maps (see the
+notes after it).
+
+```bash
+gh label create feature       --description "New feature"                   --color 0e8a16 --force
+gh label create fix           --description "Bug fix"                       --color d73a4a --force
+gh label create chore         --description "Maintenance / housekeeping"    --color fef2c0 --force
+gh label create dependencies  --description "Dependency updates"            --color 0366d6 --force
+gh label create documentation --description "Documentation only"            --color 0075ca --force
+gh label create breaking      --description "Backwards-incompatible change" --color b60205 --force
+gh label create security      --description "Security fix"                  --color b60205 --force
+gh label create deprecation   --description "Deprecates a feature, removed in a later release" --color fbca04 --force
+gh label create performance   --description "Performance improvement"       --color 5319e7 --force
+# the exclude label, only when release.yaml has an `exclude.labels` entry
+gh label create ignore-for-release --description "Exclude from release changelog" --color ededed --force
+# issue-triage labels stay even though release.yaml never maps them
+gh label create bug         --description "Something isn't working" --color d73a4a --force
+gh label create enhancement --description "New feature or request"  --color a2eeef --force
+gh label list --limit 100   # verify
+```
+
+Notes:
+
+- **`breaking` is always created**, on every repo. If `release.yaml` has no
+  *Breaking changes* category, add one — as the **first** category, since
+  GitHub files a PR under the first match and a breaking PR also carries its
+  `feature`/`fix` label (see `github-actions-conventions` for the baseline file).
+- Otherwise, only create the category labels the repo's `release.yaml` actually
+  maps; the exclude label only makes sense alongside an `exclude.labels` entry.
+- **Leave the ecosystem labels to Dependabot.** With its default labels it
+  creates `rust`, `github_actions`, `docker`, `python`, `javascript` (npm)
+  itself; creating your own variant gives the repo two labels for one concept.
+  **When `dependabot.yaml` sets `labels`**, Dependabot applies only those,
+  silently skipping any the repo lacks — create them yourself.
+- `gh label create --force` upserts, so it is safe to re-run.
+- Deleting a label removes it from every issue/PR it is on and **cannot be
+  undone** — it is destructive. Absence from `release.yaml` is **not** a reason to
+  delete; only do it when the user explicitly wants the label gone, and confirm
+  the delete list first.
+- Leave GitHub's default `bug` / `enhancement` colours and descriptions as-is
+  unless asked to unify them with the new labels.
+
+## Restrict merge methods to squash-only
+
+```bash
+gh repo edit --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false
+gh repo view --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed   # verify
+```
+
+Expected verification output:
+
+```json
+{"mergeCommitAllowed":false,"rebaseMergeAllowed":false,"squashMergeAllowed":true}
+```
+
+This greys out the "Create a merge commit" and "Rebase and merge" buttons on
+PRs, leaving squash as the only option. Adjust the flags to allow other methods
+(e.g. `--enable-rebase-merge` to add rebase back).
+
+## Auto-delete head branches on merge
+
+```bash
+gh repo edit --delete-branch-on-merge
+gh repo view --json deleteBranchOnMerge   # verify -> {"deleteBranchOnMerge":true}
+```
+
+Once on, merging a PR deletes its head branch automatically (the branch is still
+recoverable from the PR's "Restore branch" button for a while). Pass
+`--delete-branch-on-merge=false` to turn it back off.
+
+## Enable GitHub Pages in GitHub Actions mode
+
+Any repo with a workflow that runs `actions/deploy-pages` (the `docs` pipeline
+of `github-actions-conventions`) needs Pages switched on with **source "GitHub
+Actions"** (`build_type: workflow`), never "Deploy from a branch" (`legacy`).
+Without it the `deploy` job fails with a 404 from the Pages API, and a
+`legacy` source would publish a `gh-pages` branch instead of the uploaded
+artifact. Do it as soon as the workflow lands, not after its first red run.
+
+Check first — the answer decides between create and update:
+
+```bash
+gh api repos/{owner}/{repo}/pages --jq '{build_type, html_url, cname}'
+```
+
+A 404 means Pages is off; create it:
+
+```bash
+gh api -X POST repos/{owner}/{repo}/pages -f build_type=workflow
+```
+
+Already on with `"build_type": "legacy"`; switch it:
+
+```bash
+gh api -X PUT repos/{owner}/{repo}/pages -f build_type=workflow
+```
+
+Verify — `build_type` must read `workflow`:
+
+```bash
+gh api repos/{owner}/{repo}/pages --jq .build_type
+```
+
+Notes:
+
+- `gh api` fills `{owner}` and `{repo}` from the current directory's `origin`.
+- `html_url` in the answer is the public URL; a Starlight site's `site`/`base`
+  follow it (see `starlight-conventions`). Leave `cname` alone unless the user
+  asks for a custom domain — setting one changes every URL of the site.
+- Pages on a private repo needs a paid plan; the POST then fails with a 422.
+  Say so rather than making the repo public.

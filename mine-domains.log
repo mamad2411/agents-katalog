@@ -1,0 +1,1441 @@
+00:04:01 === DISCOVER domains=security ===
+00:04:03 discover security/security: +5 (total 5)
+00:04:04 discover security/cybersecurity: +5 (total 10)
+00:04:04 discover security/appsec: +5 (total 14)
+00:04:05 discover security/pentest: +5 (total 18)
+00:04:06 discover security/threat-modeling: +5 (total 23)
+00:04:07 discover security/sast: +5 (total 28)
+00:04:07 discover security/secrets-management: +5 (total 33)
+00:04:08 discover security/supply-chain-security: +5 (total 38)
+00:04:09 discover security/malware-analysis: +5 (total 42)
+00:04:10 discover security/osint: +5 (total 46)
+00:04:10 discover security/incident-response: +5 (total 50)
+00:04:11 discover security/cryptography: +5 (total 55)
+00:04:12 discover security/zero-trust: +5 (total 59)
+00:04:13 discover security/cloud-security: +5 (total 61)
+00:04:13 registry: +61 repo baru (total 61)
+00:04:13 mining 3 repo (known names 184912)
+00:04:16 === SELESAI: +0 skill dari 3 repo, blocked=0 ===
+00:05:44 === DISCOVER domains=security ===
+00:05:45 discover security/security p1: 100 repo (total 100)
+00:06:02 discover security/cybersecurity p1: 100 repo (total 162)
+00:06:17 discover security/appsec p1: 100 repo (total 220)
+00:06:32 discover security/pentest p1: 100 repo (total 279)
+00:06:47 discover security/threat-modeling p1: 100 repo (total 357)
+00:07:00 registry: +357 repo baru (total 357)
+00:07:01 mining 5 repo (known names 184912)
+00:07:02 BLOCKED ParzivalHack/PySpector (BLOCKED:downloader-exec)
+00:07:02 BLOCKED xwtro0tk1t-cloud/harness (BLOCKED:secret-exfil)
+00:07:05 BLOCKED sheeki03/tirith (BLOCKED:downloader-exec)
+00:07:05 === SELESAI: +3 skill dari 5 repo, blocked=3 ===
+00:11:10 === DISCOVER domains=security ===
+00:11:11 discover security/security p1: 100 repo (total 100)
+00:11:25 discover security/cybersecurity p1: 100 repo (total 162)
+00:11:40 discover security/appsec p1: 100 repo (total 220)
+00:11:54 discover security/pentest p1: 100 repo (total 279)
+00:12:08 discover security/threat-modeling p1: 100 repo (total 357)
+00:12:21 registry: +357 repo baru (total 357)
+00:12:21 mining 8 repo (known names 184912)
+00:12:29 === SELESAI: +26 skill dari 8 repo, blocked=0 ===
+00:13:52 === DISCOVER domains=security,database,network,devops,ai-agent,rag,mlops,data ===
+00:13:53 discover security/security p1: 100 repo (total 357)
+00:14:01 discover security/security p2: 100 repo (total 448)
+00:14:08 discover security/security p3: 100 repo (total 539)
+00:14:22 discover security/cybersecurity p1: 100 repo (total 539)
+00:14:31 discover security/cybersecurity p2: 100 repo (total 583)
+00:14:39 discover security/cybersecurity p3: 100 repo (total 618)
+00:14:53 discover security/appsec p1: 100 repo (total 618)
+00:15:00 discover security/appsec p2: 100 repo (total 686)
+00:15:08 discover security/appsec p3: 100 repo (total 734)
+00:15:22 discover security/pentest p1: 100 repo (total 734)
+00:15:30 discover security/pentest p2: 100 repo (total 795)
+00:15:37 discover security/pentest p3: 100 repo (total 853)
+00:15:52 discover security/threat-modeling p1: 100 repo (total 853)
+00:16:00 discover security/threat-modeling p2: 100 repo (total 907)
+00:16:08 discover security/threat-modeling p3: 100 repo (total 927)
+00:16:23 discover security/sast p1: 100 repo (total 984)
+00:16:30 discover security/sast p2: 100 repo (total 1036)
+00:16:38 discover security/sast p3: 100 repo (total 1097)
+00:16:52 discover database/database p1: 100 repo (total 1179)
+00:16:59 discover database/database p2: 100 repo (total 1228)
+00:17:07 discover database/database p3: 100 repo (total 1285)
+00:17:21 discover database/sql p1: 100 repo (total 1354)
+00:17:29 discover database/sql p2: 100 repo (total 1383)
+00:17:37 discover database/sql p3: 100 repo (total 1442)
+00:17:52 discover database/postgresql p1: 100 repo (total 1509)
+00:17:59 discover database/postgresql p2: 100 repo (total 1549)
+00:18:08 discover database/postgresql p3: 100 repo (total 1605)
+00:18:22 discover database/mysql p1: 100 repo (total 1658)
+00:18:30 discover database/mysql p2: 100 repo (total 1689)
+00:18:37 discover database/mysql p3: 100 repo (total 1736)
+00:19:21 === DISCOVER domains=security,database,network,devops,ai-agent,rag,mlops,data ===
+00:19:22 discover security/security p1: 100 repo (total 357)
+00:19:30 discover security/security p2: 100 repo (total 448)
+00:19:37 discover security/security p3: 100 repo (total 539)
+00:19:52 discover security/cybersecurity p1: 100 repo (total 539)
+00:19:59 discover security/cybersecurity p2: 100 repo (total 583)
+00:20:07 discover security/cybersecurity p3: 100 repo (total 618)
+00:20:21 discover security/appsec p1: 100 repo (total 618)
+00:20:30 discover security/appsec p2: 100 repo (total 686)
+00:20:38 discover security/appsec p3: 100 repo (total 734)
+00:20:52 discover security/pentest p1: 100 repo (total 734)
+00:21:00 discover security/pentest p2: 100 repo (total 795)
+00:21:09 discover security/pentest p3: 100 repo (total 853)
+00:21:23 discover security/threat-modeling p1: 100 repo (total 853)
+00:21:30 discover security/threat-modeling p2: 100 repo (total 907)
+00:21:38 discover security/threat-modeling p3: 100 repo (total 927)
+00:21:52 discover security/sast p1: 100 repo (total 984)
+00:22:00 discover security/sast p2: 100 repo (total 1036)
+00:22:07 discover security/sast p3: 100 repo (total 1097)
+00:22:21 discover database/database p1: 100 repo (total 1179)
+00:22:29 discover database/database p2: 100 repo (total 1228)
+00:22:37 discover database/database p3: 100 repo (total 1285)
+00:22:52 discover database/sql p1: 100 repo (total 1354)
+00:23:00 discover database/sql p2: 100 repo (total 1383)
+00:23:07 discover database/sql p3: 100 repo (total 1442)
+00:23:21 discover database/postgresql p1: 100 repo (total 1509)
+00:23:29 discover database/postgresql p2: 100 repo (total 1549)
+00:23:37 discover database/postgresql p3: 100 repo (total 1605)
+00:23:51 discover database/mysql p1: 100 repo (total 1658)
+00:24:00 discover database/mysql p2: 100 repo (total 1689)
+00:24:08 discover database/mysql p3: 100 repo (total 1736)
+00:24:23 discover database/sqlite p1: 100 repo (total 1811)
+00:24:31 discover database/sqlite p2: 100 repo (total 1852)
+00:24:39 discover database/sqlite p3: 100 repo (total 1884)
+00:24:54 discover database/mongodb p1: 100 repo (total 1924)
+00:25:16 discover database/mongodb p2: 100 repo (total 1954)
+00:25:26 discover database/mongodb p3: 100 repo (total 2003)
+00:25:55 discover network/networking p1: 100 repo (total 2062)
+00:26:05 discover network/networking p2: 100 repo (total 2100)
+00:26:14 discover network/networking p3: 100 repo (total 2146)
+00:26:36 discover network/tcp-ip p1: 62 repo (total 2179)
+00:26:46 discover network/dns p1: 100 repo (total 2240)
+00:26:54 discover network/dns p2: 100 repo (total 2270)
+00:27:03 discover network/dns p3: 100 repo (total 2308)
+00:27:19 discover network/tls p1: 100 repo (total 2353)
+00:27:28 discover network/tls p2: 100 repo (total 2373)
+00:27:37 discover network/tls p3: 100 repo (total 2408)
+00:27:53 discover network/firewall p1: 100 repo (total 2440)
+00:28:01 discover network/firewall p2: 100 repo (total 2457)
+00:28:09 discover network/firewall p3: 100 repo (total 2487)
+00:28:26 discover network/packet-analysis p1: 100 repo (total 2500)
+00:28:35 discover network/packet-analysis p2: 100 repo (total 2515)
+00:28:45 discover network/packet-analysis p3: 100 repo (total 2524)
+00:29:06 discover devops/devops p1: 100 repo (total 2566)
+00:29:15 discover devops/devops p2: 100 repo (total 2592)
+00:29:24 discover devops/devops p3: 100 repo (total 2634)
+00:30:05 discover devops/kubernetes p1: 100 repo (total 2661)
+00:30:29 discover devops/kubernetes p2: 100 repo (total 2671)
+00:30:50 discover devops/kubernetes p3: 100 repo (total 2694)
+00:31:07 discover devops/terraform p1: 100 repo (total 2736)
+00:31:16 discover devops/terraform p2: 100 repo (total 2752)
+00:31:24 discover devops/terraform p3: 100 repo (total 2788)
+00:31:42 discover devops/docker p1: 100 repo (total 2842)
+00:31:50 discover devops/docker p2: 100 repo (total 2864)
+00:31:58 discover devops/docker p3: 100 repo (total 2900)
+00:32:40 discover devops/ci-cd p1: 100 repo (total 2972)
+00:33:12 discover devops/ci-cd p2: 100 repo (total 3016)
+00:33:30 discover devops/ci-cd p3: 100 repo (total 3037)
+00:34:14 discover devops/observability p1: 100 repo (total 3080)
+00:34:35 discover devops/observability p2: 100 repo (total 3111)
+00:34:45 discover devops/observability p3: 100 repo (total 3131)
+00:46:24 discover ai-agent/ai-agents p1: 100 repo (total 3157)
+00:47:05 discover ai-agent/ai-agents p2: 100 repo (total 3185)
+02:36:20 discover ai-agent/ai-agents p3: 100 repo (total 3201)
+02:36:38 discover ai-agent/agent-skills p1: 100 repo (total 3241)
+02:36:49 discover ai-agent/agent-skills p2: 100 repo (total 3267)
+02:36:57 discover ai-agent/agent-skills p3: 100 repo (total 3307)
+02:37:13 discover ai-agent/claude-skills p1: 100 repo (total 3332)
+02:37:22 discover ai-agent/claude-skills p2: 100 repo (total 3367)
+02:37:30 discover ai-agent/claude-skills p3: 100 repo (total 3390)
+03:08:53 discover ai-agent/mcp p1: 100 repo (total 3463)
+03:37:07 discover ai-agent/mcp p2: 100 repo (total 3513)
+03:37:15 discover ai-agent/mcp p3: 100 repo (total 3573)
+03:37:30 discover ai-agent/tool-use p1: 100 repo (total 3625)
+03:37:39 discover ai-agent/tool-use p2: 100 repo (total 3691)
+03:37:46 discover ai-agent/tool-use p3: 100 repo (total 3739)
+04:26:32 discover ai-agent/multi-agent p1: 100 repo (total 3811)
+04:38:09 discover ai-agent/multi-agent p2: 100 repo (total 3854)
+04:38:18 discover ai-agent/multi-agent p3: 100 repo (total 3890)
+04:38:33 discover rag/rag p1: 100 repo (total 3974)
+04:38:41 discover rag/rag p2: 100 repo (total 4000)
+04:54:16 discover rag/rag p3: 0 repo (total 4000)
+05:40:25 discover rag/retrieval-augmented-generation p1: 0 repo (total 4000)
+05:40:35 discover rag/embeddings p1: 100 repo (total 4047)
+06:11:15 discover rag/embeddings p2: 100 repo (total 4087)
+06:40:10 discover rag/embeddings p3: 100 repo (total 4131)
+06:40:26 discover rag/vector-search p1: 100 repo (total 4191)
+06:40:34 discover rag/vector-search p2: 100 repo (total 4246)
+06:40:42 discover rag/vector-search p3: 100 repo (total 4288)
+06:55:35 discover rag/knowledge-graph p1: 100 repo (total 4358)
+06:55:43 discover rag/knowledge-graph p2: 100 repo (total 4418)
+06:55:52 discover rag/knowledge-graph p3: 100 repo (total 4474)
+06:56:08 discover rag/reranking p1: 100 repo (total 4502)
+07:12:48 discover rag/reranking p2: 100 repo (total 4550)
+07:41:34 discover rag/reranking p3: 0 repo (total 4550)
+07:41:43 discover mlops/mlops p1: 100 repo (total 4584)
+07:41:51 discover mlops/mlops p2: 100 repo (total 4610)
+07:43:11 discover mlops/mlops p3: 100 repo (total 4651)
+07:59:11 discover mlops/fine-tuning p1: 100 repo (total 4689)
+07:59:24 discover mlops/fine-tuning p2: 100 repo (total 4717)
+07:59:37 discover mlops/fine-tuning p3: 100 repo (total 4755)
+07:59:55 discover mlops/lora p1: 100 repo (total 4846)
+08:00:04 discover mlops/lora p2: 100 repo (total 4872)
+08:00:13 discover mlops/lora p3: 100 repo (total 4914)
+08:00:32 discover mlops/quantization p1: 100 repo (total 4944)
+08:00:49 discover mlops/quantization p2: 100 repo (total 4971)
+08:00:59 discover mlops/quantization p3: 100 repo (total 4992)
+08:01:15 discover mlops/model-serving p1: 100 repo (total 5002)
+08:01:24 discover mlops/model-serving p2: 100 repo (total 5018)
+08:01:33 discover mlops/model-serving p3: 100 repo (total 5043)
+08:01:49 discover mlops/inference p1: 100 repo (total 5107)
+08:01:58 discover mlops/inference p2: 100 repo (total 5135)
+08:02:06 discover mlops/inference p3: 100 repo (total 5149)
+08:02:23 discover data/data-engineering p1: 100 repo (total 5192)
+08:02:32 discover data/data-engineering p2: 100 repo (total 5217)
+08:02:41 discover data/data-engineering p3: 100 repo (total 5240)
+08:02:57 discover data/etl p1: 100 repo (total 5324)
+08:03:05 discover data/etl p2: 100 repo (total 5362)
+08:03:13 discover data/etl p3: 100 repo (total 5410)
+08:03:29 discover data/data-pipeline p1: 100 repo (total 5474)
+08:03:40 discover data/data-pipeline p2: 100 repo (total 5502)
+08:03:48 discover data/data-pipeline p3: 100 repo (total 5544)
+08:04:04 discover data/analytics p1: 100 repo (total 5612)
+08:04:13 discover data/analytics p2: 100 repo (total 5637)
+08:04:20 discover data/analytics p3: 100 repo (total 5664)
+08:04:36 discover data/spark p1: 100 repo (total 5716)
+08:04:45 discover data/spark p2: 100 repo (total 5756)
+08:04:53 discover data/spark p3: 100 repo (total 5807)
+08:05:08 discover data/dbt p1: 100 repo (total 5850)
+08:05:17 discover data/dbt p2: 100 repo (total 5883)
+08:05:25 discover data/dbt p3: 100 repo (total 5923)
+08:05:38 registry: +5566 repo baru (total 5923)
+08:05:40 mining 5923 repo (known names 184938)
+08:05:46 progress 10/5923 repo | +3 skill | blocked=0 | 7s | 0.4 skill/s
+08:05:49 progress 20/5923 repo | +10 skill | blocked=0 | 10s | 1.0 skill/s
+08:05:56 progress 30/5923 repo | +21 skill | blocked=0 | 17s | 1.3 skill/s
+08:05:58 progress 40/5923 repo | +53 skill | blocked=0 | 19s | 2.8 skill/s
+08:06:06 progress 50/5923 repo | +75 skill | blocked=0 | 26s | 2.9 skill/s
+08:06:42 progress 60/5923 repo | +88 skill | blocked=0 | 62s | 1.4 skill/s
+08:06:56 progress 70/5923 repo | +97 skill | blocked=0 | 76s | 1.3 skill/s
+08:07:01 progress 80/5923 repo | +109 skill | blocked=0 | 81s | 1.3 skill/s
+08:07:09 progress 90/5923 repo | +114 skill | blocked=0 | 89s | 1.3 skill/s
+08:07:14 progress 100/5923 repo | +131 skill | blocked=0 | 95s | 1.4 skill/s
+08:22:23 progress 110/5923 repo | +230 skill | blocked=0 | 1003s | 0.2 skill/s
+08:22:29 progress 120/5923 repo | +327 skill | blocked=0 | 1010s | 0.3 skill/s
+08:22:44 progress 130/5923 repo | +607 skill | blocked=0 | 1025s | 0.6 skill/s
+08:23:17 progress 140/5923 repo | +616 skill | blocked=0 | 1058s | 0.6 skill/s
+08:23:35 progress 150/5923 repo | +1457 skill | blocked=0 | 1076s | 1.4 skill/s
+08:24:25 progress 160/5923 repo | +1838 skill | blocked=0 | 1125s | 1.6 skill/s
+08:24:44 progress 170/5923 repo | +2043 skill | blocked=0 | 1145s | 1.8 skill/s
+08:25:17 progress 180/5923 repo | +2721 skill | blocked=0 | 1178s | 2.3 skill/s
+08:40:40 progress 190/5923 repo | +2881 skill | blocked=0 | 2101s | 1.4 skill/s
+08:40:57 progress 200/5923 repo | +2976 skill | blocked=0 | 2117s | 1.4 skill/s
+08:43:34 progress 210/5923 repo | +3379 skill | blocked=0 | 2274s | 1.5 skill/s
+08:43:53 progress 220/5923 repo | +4415 skill | blocked=0 | 2293s | 1.9 skill/s
+08:59:25 progress 230/5923 repo | +4742 skill | blocked=0 | 3225s | 1.5 skill/s
+08:59:48 progress 240/5923 repo | +4797 skill | blocked=0 | 3248s | 1.5 skill/s
+09:03:40 progress 250/5923 repo | +4864 skill | blocked=0 | 3480s | 1.4 skill/s
+09:03:52 progress 260/5923 repo | +5232 skill | blocked=0 | 3493s | 1.5 skill/s
+09:08:19 progress 270/5923 repo | +5416 skill | blocked=0 | 3759s | 1.4 skill/s
+09:09:37 progress 280/5923 repo | +5647 skill | blocked=0 | 3837s | 1.5 skill/s
+09:24:48 progress 290/5923 repo | +5672 skill | blocked=0 | 4748s | 1.2 skill/s
+09:25:47 progress 300/5923 repo | +6571 skill | blocked=0 | 4808s | 1.4 skill/s
+09:28:35 progress 310/5923 repo | +6648 skill | blocked=0 | 4976s | 1.3 skill/s
+09:29:09 progress 320/5923 repo | +6951 skill | blocked=0 | 5010s | 1.4 skill/s
+09:35:53 progress 330/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 340/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 350/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 360/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 370/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 380/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 390/5923 repo | +7009 skill | blocked=0 | 5413s | 1.3 skill/s
+09:35:53 progress 400/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 410/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 420/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 430/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 440/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 450/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 460/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 470/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 480/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 490/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:53 progress 500/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 510/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 520/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 530/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 540/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 550/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 560/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 570/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 580/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 590/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 600/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 610/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 620/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 630/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 640/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 650/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 660/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 670/5923 repo | +7009 skill | blocked=0 | 5414s | 1.3 skill/s
+09:35:54 progress 680/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 690/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 700/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 710/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 720/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 730/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 740/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 750/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 760/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 770/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 780/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 790/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 800/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:54 progress 810/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 820/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 830/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 840/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 850/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 860/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 870/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 880/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 890/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 900/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 910/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 920/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 930/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 940/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 950/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 960/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 970/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 980/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 990/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 1000/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 1010/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 1020/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 1030/5923 repo | +7009 skill | blocked=0 | 5415s | 1.3 skill/s
+09:35:55 progress 1040/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1050/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1060/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1070/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1080/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1090/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1100/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1110/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1120/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1130/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1140/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1150/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1160/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1170/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1180/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1190/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:55 progress 1200/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1210/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1220/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1230/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1240/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1250/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1260/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1270/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1280/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1290/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1300/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1310/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1320/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1330/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1340/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1350/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1360/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1370/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1380/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1390/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1400/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1410/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1420/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1430/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1440/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1450/5923 repo | +7009 skill | blocked=0 | 5416s | 1.3 skill/s
+09:35:56 progress 1460/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1470/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1480/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1490/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1500/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1510/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1520/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1530/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1540/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1550/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1560/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1570/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1580/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1590/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1600/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1610/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1620/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1630/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1640/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1650/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1660/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:56 progress 1670/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1680/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1690/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1700/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1710/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1720/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1730/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1740/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1750/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1760/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1770/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1780/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1790/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1800/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1810/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1820/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1830/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1840/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1850/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1860/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1870/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1880/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1890/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1900/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1910/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1920/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1930/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1940/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1950/5923 repo | +7009 skill | blocked=0 | 5417s | 1.3 skill/s
+09:35:57 progress 1960/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 1970/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 1980/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 1990/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2000/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2010/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2020/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2030/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2040/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2050/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2060/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2070/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2080/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2090/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2100/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2110/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2120/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2130/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:57 progress 2140/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2150/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2160/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2170/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2180/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2190/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2200/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2210/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2220/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2230/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2240/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2250/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2260/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2270/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2280/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2290/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2300/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2310/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2320/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2330/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2340/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2350/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2360/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2370/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2380/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2390/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2400/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2410/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2420/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2430/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2440/5923 repo | +7009 skill | blocked=0 | 5418s | 1.3 skill/s
+09:35:58 progress 2450/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2460/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2470/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2480/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2490/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2500/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2510/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2520/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2530/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2540/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2550/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2560/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2570/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2580/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2590/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2600/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2610/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2620/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2630/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2640/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2650/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:58 progress 2660/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2670/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2680/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2690/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2700/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2710/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2720/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2730/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2740/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2750/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2760/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2770/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2780/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2790/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2800/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2810/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2820/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2830/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2840/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2850/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2860/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2870/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2880/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2890/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2900/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2910/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2920/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2930/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2940/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2950/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2960/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2970/5923 repo | +7009 skill | blocked=0 | 5419s | 1.3 skill/s
+09:35:59 progress 2980/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 2990/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3000/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3010/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3020/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3030/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3040/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3050/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3060/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3070/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3080/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3090/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3100/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3110/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3120/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3130/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3140/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3150/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3160/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3170/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3180/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3190/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3200/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:35:59 progress 3210/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3220/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3230/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3240/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3250/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3260/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3270/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3280/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3290/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3300/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3310/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3320/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3330/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3340/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3350/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3360/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3370/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3380/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3390/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3400/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3410/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3420/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3430/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3440/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3450/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3460/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3470/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3480/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3490/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3500/5923 repo | +7009 skill | blocked=0 | 5420s | 1.3 skill/s
+09:36:00 progress 3510/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3520/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3530/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3540/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3550/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3560/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3570/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3580/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3590/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3600/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3610/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3620/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3630/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3640/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3650/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3660/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3670/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3680/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3690/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:00 progress 3700/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3710/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3720/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3730/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3740/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3750/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3760/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3770/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3780/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3790/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3800/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3810/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3820/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3830/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3840/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3850/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3860/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3870/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3880/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3890/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3900/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3910/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3920/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3930/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3940/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3950/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3960/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3970/5923 repo | +7009 skill | blocked=0 | 5421s | 1.3 skill/s
+09:36:01 progress 3980/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 3990/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4000/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4010/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4020/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4030/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4040/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4050/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4060/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4070/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4080/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4090/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4100/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4110/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4120/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4130/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4140/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4150/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4160/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:01 progress 4170/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4180/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4190/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4200/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4210/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4220/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4230/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4240/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4250/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4260/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4270/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4280/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4290/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4300/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4310/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4320/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4330/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4340/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4350/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4360/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4370/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4380/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4390/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4400/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4410/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4420/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4430/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4440/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4450/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4460/5923 repo | +7009 skill | blocked=0 | 5422s | 1.3 skill/s
+09:36:02 progress 4470/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4480/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4490/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4500/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4510/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4520/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4530/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4540/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4550/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4560/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4570/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4580/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4590/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4600/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4610/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4620/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4630/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4640/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4650/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4660/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4670/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:02 progress 4680/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4690/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4700/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4710/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4720/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4730/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4740/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4750/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4760/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4770/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4780/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4790/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4800/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4810/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4820/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4830/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4840/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4850/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4860/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4870/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4880/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4890/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4900/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4910/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4920/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4930/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4940/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4950/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4960/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4970/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4980/5923 repo | +7009 skill | blocked=0 | 5423s | 1.3 skill/s
+09:36:03 progress 4990/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5000/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5010/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5020/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5030/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5040/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5050/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5060/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5070/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5080/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5090/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5100/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5110/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5120/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5130/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5140/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5150/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5160/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5170/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5180/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5190/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5200/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5210/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5220/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:03 progress 5230/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5240/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5250/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5260/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5270/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5280/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5290/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5300/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5310/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5320/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5330/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5340/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5350/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5360/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5370/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5380/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5390/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5400/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5410/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5420/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5430/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5440/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5450/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5460/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5470/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5480/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5490/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5500/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5510/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5520/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5530/5923 repo | +7009 skill | blocked=0 | 5424s | 1.3 skill/s
+09:36:04 progress 5540/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5550/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5560/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5570/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5580/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5590/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5600/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5610/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5620/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5630/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5640/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5650/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5660/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5670/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5680/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5690/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5700/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5710/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5720/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5730/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5740/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:04 progress 5750/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5760/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5770/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5780/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5790/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5800/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5810/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5820/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5830/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5840/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5850/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5860/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5870/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5880/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5890/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5900/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:36:05 progress 5910/5923 repo | +7009 skill | blocked=0 | 5425s | 1.3 skill/s
+09:42:21 progress 5920/5923 repo | +7009 skill | blocked=0 | 5801s | 1.2 skill/s
+09:42:21 === SELESAI: +7009 skill dari 5923 repo, blocked=0 ===
+10:48:22 === DISCOVER domains=security,database,network,devops,ai-agent,rag,mlops,data ===
+10:48:31 discover security/security p1: 100 repo (total 5925)
+10:48:39 discover security/security p2: 100 repo (total 5926)
+10:48:47 discover security/security p3: 100 repo (total 5926)
+10:49:03 discover security/security path:skills p1: 100 repo (total 5962)
+10:49:11 discover security/security path:skills p2: 100 repo (total 5975)
+10:49:19 discover security/security path:skills p3: 100 repo (total 5976)
+10:49:35 discover security/security path:.claude p1: 100 repo (total 6057)
+10:49:43 discover security/security path:.claude p2: 100 repo (total 6116)
+10:49:51 discover security/security path:.claude p3: 100 repo (total 6167)
+10:50:07 discover security/security path:plugins p1: 100 repo (total 6182)
+10:50:15 discover security/security path:plugins p2: 100 repo (total 6225)
+10:50:23 discover security/security path:plugins p3: 100 repo (total 6267)
+10:50:40 discover security/cybersecurity p1: 100 repo (total 6267)
+10:53:02 discover security/cybersecurity p2: 100 repo (total 6267)
+10:53:10 discover security/cybersecurity p3: 100 repo (total 6267)
+10:53:48 discover security/cybersecurity path:skills p1: 100 repo (total 6281)
+10:53:58 discover security/cybersecurity path:skills p2: 100 repo (total 6286)
+10:54:07 discover security/cybersecurity path:skills p3: 100 repo (total 6289)
+10:54:37 discover security/cybersecurity path:.claude p1: 100 repo (total 6307)
+10:54:47 discover security/cybersecurity path:.claude p2: 100 repo (total 6311)
+10:54:55 discover security/cybersecurity path:.claude p3: 100 repo (total 6312)
+10:55:22 discover security/cybersecurity path:plugins p1: 100 repo (total 6320)
+10:55:31 discover security/cybersecurity path:plugins p2: 100 repo (total 6329)
+10:55:41 discover security/cybersecurity path:plugins p3: 100 repo (total 6333)
+10:55:57 discover security/appsec p1: 100 repo (total 6333)
+10:56:05 discover security/appsec p2: 100 repo (total 6333)
+10:56:13 discover security/appsec p3: 100 repo (total 6334)
+10:56:30 discover security/appsec path:skills p1: 100 repo (total 6340)
+10:56:39 discover security/appsec path:skills p2: 100 repo (total 6361)
+10:56:48 discover security/appsec path:skills p3: 100 repo (total 6390)
+10:57:03 discover security/appsec path:.claude p1: 100 repo (total 6442)
+10:57:13 discover security/appsec path:.claude p2: 100 repo (total 6497)
+10:57:21 discover security/appsec path:.claude p3: 100 repo (total 6542)
+10:57:37 discover security/appsec path:plugins p1: 100 repo (total 6559)
+10:57:46 discover security/appsec path:plugins p2: 100 repo (total 6593)
+10:57:54 discover security/appsec path:plugins p3: 100 repo (total 6617)
+10:58:10 discover security/pentest p1: 100 repo (total 6617)
+10:58:18 discover security/pentest p2: 100 repo (total 6617)
+10:58:26 discover security/pentest p3: 100 repo (total 6618)
+10:58:41 discover security/pentest path:skills p1: 100 repo (total 6629)
+10:58:51 discover security/pentest path:skills p2: 100 repo (total 6643)
+10:59:00 discover security/pentest path:skills p3: 100 repo (total 6664)
+10:59:16 discover security/pentest path:.claude p1: 100 repo (total 6717)
+10:59:24 discover security/pentest path:.claude p2: 100 repo (total 6766)
+10:59:32 discover security/pentest path:.claude p3: 100 repo (total 6797)
+10:59:47 discover security/pentest path:plugins p1: 100 repo (total 6804)
+10:59:57 discover security/pentest path:plugins p2: 100 repo (total 6805)
+11:00:06 discover security/pentest path:plugins p3: 100 repo (total 6819)
+11:00:23 discover security/threat-modeling p1: 100 repo (total 6820)
+11:00:33 discover security/threat-modeling p2: 100 repo (total 6820)
+11:00:46 discover security/threat-modeling p3: 100 repo (total 6820)
+11:01:01 discover security/threat-modeling path:skills p1: 100 repo (total 6827)
+11:01:14 discover security/threat-modeling path:skills p2: 100 repo (total 6841)
+11:01:23 discover security/threat-modeling path:skills p3: 100 repo (total 6857)
+11:01:39 discover security/threat-modeling path:.claude p1: 100 repo (total 6906)
+11:01:49 discover security/threat-modeling path:.claude p2: 100 repo (total 6940)
+11:02:03 discover security/threat-modeling path:.claude p3: 100 repo (total 6985)
+11:02:22 discover security/threat-modeling path:plugins p1: 100 repo (total 6998)
+11:02:31 discover security/threat-modeling path:plugins p2: 100 repo (total 7018)
+11:02:41 discover security/threat-modeling path:plugins p3: 99 repo (total 7038)
+11:02:56 discover security/sast p1: 100 repo (total 7038)
+11:03:05 discover security/sast p2: 100 repo (total 7038)
+11:03:14 discover security/sast p3: 100 repo (total 7038)
+11:03:33 discover security/sast path:skills p1: 100 repo (total 7059)
+11:03:43 discover security/sast path:skills p2: 100 repo (total 7083)
+11:03:52 discover security/sast path:skills p3: 100 repo (total 7110)
+11:04:07 discover security/sast path:.claude p1: 100 repo (total 7160)
+11:04:16 discover security/sast path:.claude p2: 100 repo (total 7187)
+11:04:26 discover security/sast path:.claude p3: 100 repo (total 7207)
+11:04:44 discover security/sast path:plugins p1: 100 repo (total 7216)
+11:04:56 discover security/sast path:plugins p2: 100 repo (total 7232)
+11:05:07 discover security/sast path:plugins p3: 100 repo (total 7246)
+11:05:25 discover database/database p1: 100 repo (total 7246)
+11:05:35 discover database/database p2: 100 repo (total 7247)
+11:05:43 discover database/database p3: 100 repo (total 7248)
+11:05:58 discover database/database path:skills p1: 100 repo (total 7272)
+11:06:07 discover database/database path:skills p2: 100 repo (total 7289)
+11:06:15 discover database/database path:skills p3: 100 repo (total 7318)
+11:06:31 discover database/database path:.claude p1: 100 repo (total 7384)
+11:06:38 discover database/database path:.claude p2: 0 repo (total 7384)
+11:06:47 discover database/database path:plugins p1: 100 repo (total 7407)
+11:06:56 discover database/database path:plugins p2: 100 repo (total 7434)
+11:07:04 discover database/database path:plugins p3: 100 repo (total 7465)
+11:07:19 discover database/sql p1: 100 repo (total 7465)
+11:07:27 discover database/sql p2: 100 repo (total 7465)
+11:07:34 discover database/sql p3: 0 repo (total 7465)
+11:07:42 discover database/sql path:skills p1: 0 repo (total 7465)
+11:07:52 discover database/sql path:.claude p1: 100 repo (total 7525)
+11:08:10 discover database/sql path:.claude p2: 100 repo (total 7560)
+11:08:22 discover database/sql path:.claude p3: 100 repo (total 7618)
+11:08:39 discover database/sql path:plugins p1: 100 repo (total 7634)
+11:08:49 discover database/sql path:plugins p2: 100 repo (total 7650)
+11:09:00 discover database/sql path:plugins p3: 100 repo (total 7668)
+11:09:18 discover database/postgresql p1: 100 repo (total 7669)
+11:09:28 discover database/postgresql p2: 100 repo (total 7669)
+11:09:39 discover database/postgresql p3: 100 repo (total 7669)
+11:09:58 discover database/postgresql path:skills p1: 100 repo (total 7682)
+11:10:10 discover database/postgresql path:skills p2: 100 repo (total 7699)
+11:10:21 discover database/postgresql path:skills p3: 100 repo (total 7734)
+11:10:37 discover database/postgresql path:.claude p1: 100 repo (total 7791)
+11:10:52 discover database/postgresql path:.claude p2: 100 repo (total 7841)
+11:11:04 discover database/postgresql path:.claude p3: 100 repo (total 7905)
+11:11:24 discover database/postgresql path:plugins p1: 100 repo (total 7917)
+11:11:37 discover database/postgresql path:plugins p2: 100 repo (total 7941)
+11:11:51 discover database/postgresql path:plugins p3: 100 repo (total 7974)
+11:12:11 discover database/mysql p1: 100 repo (total 7974)
+11:12:27 discover database/mysql p2: 100 repo (total 7974)
+11:12:46 discover database/mysql p3: 100 repo (total 7975)
+11:13:04 discover database/mysql path:skills p1: 100 repo (total 7998)
+11:13:15 discover database/mysql path:skills p2: 100 repo (total 8008)
+11:13:30 discover database/mysql path:skills p3: 100 repo (total 8024)
+11:13:54 discover database/mysql path:.claude p1: 100 repo (total 8082)
+11:14:07 discover database/mysql path:.claude p2: 100 repo (total 8140)
+11:14:18 discover database/mysql path:.claude p3: 100 repo (total 8180)
+11:14:42 discover database/mysql path:plugins p1: 100 repo (total 8196)
+11:14:54 discover database/mysql path:plugins p2: 100 repo (total 8204)
+11:15:07 discover database/mysql path:plugins p3: 100 repo (total 8208)
+11:15:26 discover database/sqlite p1: 100 repo (total 8208)
+11:15:39 discover database/sqlite p2: 100 repo (total 8208)
+11:15:52 discover database/sqlite p3: 100 repo (total 8209)
+11:16:07 discover database/sqlite path:skills p1: 100 repo (total 8239)
+11:16:15 discover database/sqlite path:skills p2: 100 repo (total 8272)
+11:16:23 discover database/sqlite path:skills p3: 100 repo (total 8303)
+11:16:40 discover database/sqlite path:.claude p1: 100 repo (total 8360)
+11:16:48 discover database/sqlite path:.claude p2: 100 repo (total 8400)
+11:16:56 discover database/sqlite path:.claude p3: 100 repo (total 8455)
+11:17:12 discover database/sqlite path:plugins p1: 100 repo (total 8473)
+11:17:21 discover database/sqlite path:plugins p2: 100 repo (total 8503)
+11:17:30 discover database/sqlite path:plugins p3: 100 repo (total 8536)
+11:17:45 discover database/mongodb p1: 100 repo (total 8536)
+11:17:56 discover database/mongodb p2: 100 repo (total 8536)
+11:18:04 discover database/mongodb p3: 100 repo (total 8536)
+11:18:20 discover database/mongodb path:skills p1: 100 repo (total 8551)
+11:18:29 discover database/mongodb path:skills p2: 100 repo (total 8560)
+11:18:37 discover database/mongodb path:skills p3: 100 repo (total 8574)
+11:18:52 discover database/mongodb path:.claude p1: 100 repo (total 8617)
+11:19:01 discover database/mongodb path:.claude p2: 100 repo (total 8671)
+11:19:11 discover database/mongodb path:.claude p3: 100 repo (total 8704)
+11:19:26 discover database/mongodb path:plugins p1: 100 repo (total 8709)
+11:19:34 discover database/mongodb path:plugins p2: 100 repo (total 8710)
+11:19:43 discover database/mongodb path:plugins p3: 100 repo (total 8731)
+11:20:00 discover network/networking p1: 100 repo (total 8731)
+11:20:08 discover network/networking p2: 100 repo (total 8731)
+11:20:15 discover network/networking p3: 100 repo (total 8732)
+11:20:31 discover network/networking path:skills p1: 100 repo (total 8756)
+11:20:40 discover network/networking path:skills p2: 100 repo (total 8767)
+11:20:49 discover network/networking path:skills p3: 100 repo (total 8799)
+11:21:05 discover network/networking path:.claude p1: 100 repo (total 8866)
+11:21:13 discover network/networking path:.claude p2: 100 repo (total 8913)
+11:21:21 discover network/networking path:.claude p3: 100 repo (total 8956)
+11:21:37 discover network/networking path:plugins p1: 100 repo (total 8976)
+11:21:45 discover network/networking path:plugins p2: 100 repo (total 9002)
+11:21:54 discover network/networking path:plugins p3: 100 repo (total 9023)
+11:22:09 discover network/tcp-ip p1: 62 repo (total 9023)
+11:22:18 discover network/tcp-ip path:skills p1: 28 repo (total 9023)
+11:22:28 discover network/tcp-ip path:.claude p1: 6 repo (total 9023)
+11:24:54 discover network/tcp-ip path:plugins p1: 0 repo (total 9023)
+11:25:03 discover network/dns p1: 100 repo (total 9023)
+11:25:12 discover network/dns p2: 100 repo (total 9023)
+11:25:20 discover network/dns p3: 100 repo (total 9024)
+11:25:37 discover network/dns path:skills p1: 100 repo (total 9046)
+11:25:46 discover network/dns path:skills p2: 100 repo (total 9058)
+11:25:54 discover network/dns path:skills p3: 100 repo (total 9072)
+11:26:09 discover network/dns path:.claude p1: 100 repo (total 9125)
+11:26:18 discover network/dns path:.claude p2: 100 repo (total 9167)
+11:26:26 discover network/dns path:.claude p3: 0 repo (total 9167)
+11:26:35 discover network/dns path:plugins p1: 0 repo (total 9167)
+11:26:45 discover network/tls p1: 100 repo (total 9168)
+11:26:55 discover network/tls p2: 100 repo (total 9168)
+11:27:04 discover network/tls p3: 100 repo (total 9168)
+11:27:23 discover network/tls path:skills p1: 100 repo (total 9193)
+11:27:31 discover network/tls path:skills p2: 100 repo (total 9207)
+11:27:46 discover network/tls path:skills p3: 100 repo (total 9223)
+11:28:01 discover network/tls path:.claude p1: 100 repo (total 9276)
+11:28:10 discover network/tls path:.claude p2: 100 repo (total 9311)
+11:28:17 discover network/tls path:.claude p3: 100 repo (total 9356)
+11:28:35 discover network/tls path:plugins p1: 100 repo (total 9367)
+11:28:45 discover network/tls path:plugins p2: 100 repo (total 9383)
+11:28:58 discover network/tls path:plugins p3: 100 repo (total 9392)
+11:29:18 discover network/firewall p1: 100 repo (total 9392)
+11:29:29 discover network/firewall p2: 100 repo (total 9392)
+11:29:39 discover network/firewall p3: 100 repo (total 9393)
+11:30:16 discover network/firewall path:skills p1: 100 repo (total 9408)
+11:30:43 discover network/firewall path:skills p2: 100 repo (total 9417)
+11:30:56 discover network/firewall path:skills p3: 100 repo (total 9427)
+11:31:15 discover network/firewall path:.claude p1: 100 repo (total 9467)
+11:31:28 discover network/firewall path:.claude p2: 100 repo (total 9506)
+11:31:42 discover network/firewall path:.claude p3: 100 repo (total 9553)
+11:32:03 discover network/firewall path:plugins p1: 100 repo (total 9564)
+11:32:13 discover network/firewall path:plugins p2: 100 repo (total 9575)
+11:32:26 discover network/firewall path:plugins p3: 100 repo (total 9593)
+11:32:45 discover network/packet-analysis p1: 100 repo (total 9593)
+11:32:58 discover network/packet-analysis p2: 100 repo (total 9593)
+11:33:11 discover network/packet-analysis p3: 100 repo (total 9593)
+11:33:29 discover network/packet-analysis path:skills p1: 100 repo (total 9597)
+11:33:40 discover network/packet-analysis path:skills p2: 26 repo (total 9597)
+11:33:51 discover network/packet-analysis path:.claude p1: 36 repo (total 9597)
+11:34:03 discover network/packet-analysis path:plugins p1: 13 repo (total 9597)
+11:34:26 discover devops/devops p1: 100 repo (total 9597)
+11:34:37 discover devops/devops p2: 100 repo (total 9597)
+11:34:48 discover devops/devops p3: 100 repo (total 9597)
+11:35:07 discover devops/devops path:skills p1: 100 repo (total 9659)
+11:35:17 discover devops/devops path:skills p2: 100 repo (total 9671)
+11:35:27 discover devops/devops path:skills p3: 100 repo (total 9704)
+11:35:47 discover devops/devops path:.claude p1: 100 repo (total 9779)
+11:36:08 discover devops/devops path:.claude p2: 100 repo (total 9820)
+11:36:21 discover devops/devops path:.claude p3: 100 repo (total 9861)
+11:36:44 discover devops/devops path:plugins p1: 100 repo (total 9898)
+11:37:00 discover devops/devops path:plugins p2: 100 repo (total 9918)
+11:37:11 discover devops/devops path:plugins p3: 100 repo (total 9920)
+11:37:36 discover devops/kubernetes p1: 100 repo (total 9920)
+11:37:50 discover devops/kubernetes p2: 100 repo (total 9920)
+11:38:00 discover devops/kubernetes p3: 100 repo (total 9920)
+11:38:21 discover devops/kubernetes path:skills p1: 100 repo (total 9937)
+11:38:32 discover devops/kubernetes path:skills p2: 100 repo (total 9945)
+11:38:41 discover devops/kubernetes path:skills p3: 100 repo (total 9958)
+11:38:59 discover devops/kubernetes path:.claude p1: 100 repo (total 9988)
+11:39:10 discover devops/kubernetes path:.claude p2: 100 repo (total 10008)
+11:39:25 === MINE-ONLY: 10008 repo di registry ===
+11:39:25 registry: +0 repo baru (total 10008)
+11:39:27 mining 10008 repo (known names 192856)
+11:40:53 progress 10/10008 repo | +42 skill | blocked=0 | 86s | 0.5 skill/s
+11:45:38 progress 20/10008 repo | +309 skill | blocked=0 | 370s | 0.8 skill/s
+11:46:40 progress 30/10008 repo | +809 skill | blocked=0 | 433s | 1.9 skill/s
+11:51:30 progress 40/10008 repo | +1817 skill | blocked=0 | 722s | 2.5 skill/s
+11:53:45 progress 50/10008 repo | +2159 skill | blocked=0 | 857s | 2.5 skill/s
+11:55:09 === MINE-ONLY: 10008 repo di registry ===
+11:55:09 registry: +0 repo baru (total 10008)
+11:55:12 mining 10008 repo (known names 195015)
+11:55:21 progress 10/10008 repo | +0 skill | blocked=0 | 9s | 0.0 skill/s
+12:00:58 progress 20/10008 repo | +0 skill | blocked=0 | 346s | 0.0 skill/s
+12:01:33 progress 30/10008 repo | +0 skill | blocked=0 | 381s | 0.0 skill/s
+12:02:22 progress 40/10008 repo | +0 skill | blocked=0 | 430s | 0.0 skill/s
+12:03:42 progress 50/10008 repo | +1000 skill | blocked=0 | 510s | 2.0 skill/s
+12:04:46 progress 60/10008 repo | +1462 skill | blocked=0 | 574s | 2.5 skill/s
+12:05:37 progress 70/10008 repo | +1534 skill | blocked=0 | 624s | 2.5 skill/s
+12:06:42 progress 80/10008 repo | +2146 skill | blocked=0 | 690s | 3.1 skill/s
+12:07:47 progress 90/10008 repo | +2214 skill | blocked=0 | 755s | 2.9 skill/s
+12:09:11 progress 100/10008 repo | +2853 skill | blocked=0 | 839s | 3.4 skill/s
+12:10:12 progress 110/10008 repo | +3999 skill | blocked=0 | 900s | 4.4 skill/s
+12:10:40 progress 120/10008 repo | +4484 skill | blocked=0 | 928s | 4.8 skill/s
+12:11:35 progress 130/10008 repo | +5515 skill | blocked=0 | 983s | 5.6 skill/s
+12:12:47 progress 140/10008 repo | +5658 skill | blocked=0 | 1054s | 5.4 skill/s
+12:13:33 progress 150/10008 repo | +5944 skill | blocked=0 | 1100s | 5.4 skill/s
+12:14:07 progress 160/10008 repo | +6098 skill | blocked=0 | 1135s | 5.4 skill/s
+12:15:29 progress 170/10008 repo | +6180 skill | blocked=0 | 1217s | 5.1 skill/s
+12:15:52 progress 180/10008 repo | +6255 skill | blocked=0 | 1240s | 5.0 skill/s
+12:16:06 progress 190/10008 repo | +6430 skill | blocked=0 | 1253s | 5.1 skill/s
+12:16:40 progress 200/10008 repo | +6648 skill | blocked=0 | 1287s | 5.2 skill/s
+12:17:19 progress 210/10008 repo | +6791 skill | blocked=0 | 1327s | 5.1 skill/s
+12:21:19 progress 220/10008 repo | +7368 skill | blocked=0 | 1567s | 4.7 skill/s
+12:21:26 progress 230/10008 repo | +7373 skill | blocked=0 | 1574s | 4.7 skill/s
+12:22:46 progress 240/10008 repo | +7999 skill | blocked=0 | 1654s | 4.8 skill/s
+12:23:17 progress 250/10008 repo | +8542 skill | blocked=0 | 1685s | 5.1 skill/s
+12:24:07 progress 260/10008 repo | +9092 skill | blocked=0 | 1735s | 5.2 skill/s
+12:24:58 progress 270/10008 repo | +9429 skill | blocked=0 | 1786s | 5.3 skill/s
+12:25:58 progress 280/10008 repo | +9789 skill | blocked=0 | 1846s | 5.3 skill/s
+12:27:07 progress 290/10008 repo | +9942 skill | blocked=0 | 1915s | 5.2 skill/s
+12:27:27 === MINE-ONLY: 10008 repo di registry ===
+12:27:27 registry: +0 repo baru (total 10008)
+12:27:28 mining 6 repo (known names 205441)
+12:27:34 === SELESAI: +0 skill dari 6 repo, blocked=0 ===
+12:27:46 === MINE-ONLY: 10008 repo di registry ===
+12:27:46 registry: +0 repo baru (total 10008)
+12:27:48 mining 10008 repo (known names 205441)
+12:27:55 progress 10/10008 repo | +0 skill | blocked=0 | 7s | 0.0 skill/s
+12:28:47 progress 20/10008 repo | +0 skill | blocked=0 | 59s | 0.0 skill/s
+12:29:04 progress 30/10008 repo | +0 skill | blocked=0 | 76s | 0.0 skill/s
+12:29:22 progress 40/10008 repo | +0 skill | blocked=0 | 94s | 0.0 skill/s
+12:29:37 progress 50/10008 repo | +0 skill | blocked=0 | 109s | 0.0 skill/s
+12:30:14 progress 60/10008 repo | +0 skill | blocked=0 | 146s | 0.0 skill/s
+12:30:25 progress 70/10008 repo | +0 skill | blocked=0 | 157s | 0.0 skill/s
+12:30:48 progress 80/10008 repo | +0 skill | blocked=0 | 180s | 0.0 skill/s
+12:31:01 progress 90/10008 repo | +0 skill | blocked=0 | 193s | 0.0 skill/s
+12:31:17 progress 100/10008 repo | +0 skill | blocked=0 | 209s | 0.0 skill/s
+12:33:24 progress 110/10008 repo | +0 skill | blocked=0 | 336s | 0.0 skill/s
+12:34:11 progress 120/10008 repo | +0 skill | blocked=0 | 383s | 0.0 skill/s
+12:34:58 progress 130/10008 repo | +0 skill | blocked=0 | 430s | 0.0 skill/s
+12:35:29 progress 140/10008 repo | +0 skill | blocked=0 | 461s | 0.0 skill/s
+12:36:04 progress 150/10008 repo | +0 skill | blocked=0 | 496s | 0.0 skill/s
+12:36:40 progress 160/10008 repo | +0 skill | blocked=0 | 532s | 0.0 skill/s
+12:36:49 progress 170/10008 repo | +56 skill | blocked=0 | 541s | 0.1 skill/s
+12:42:49 progress 180/10008 repo | +57 skill | blocked=0 | 901s | 0.1 skill/s
+12:42:49 progress 190/10008 repo | +57 skill | blocked=0 | 901s | 0.1 skill/s
+12:42:49 progress 200/10008 repo | +57 skill | blocked=0 | 901s | 0.1 skill/s
+12:43:04 progress 210/10008 repo | +57 skill | blocked=0 | 916s | 0.1 skill/s
+12:43:31 progress 220/10008 repo | +58 skill | blocked=0 | 943s | 0.1 skill/s
+12:43:50 progress 230/10008 repo | +58 skill | blocked=0 | 962s | 0.1 skill/s
+12:44:19 progress 240/10008 repo | +58 skill | blocked=0 | 991s | 0.1 skill/s
+12:44:29 progress 250/10008 repo | +58 skill | blocked=0 | 1001s | 0.1 skill/s
+12:44:45 progress 260/10008 repo | +58 skill | blocked=0 | 1017s | 0.1 skill/s
+12:45:06 progress 270/10008 repo | +58 skill | blocked=0 | 1038s | 0.1 skill/s
+12:45:35 progress 280/10008 repo | +58 skill | blocked=0 | 1067s | 0.1 skill/s
+12:45:54 progress 290/10008 repo | +58 skill | blocked=0 | 1086s | 0.1 skill/s
+12:46:38 progress 300/10008 repo | +590 skill | blocked=0 | 1130s | 0.5 skill/s
+12:47:06 progress 310/10008 repo | +865 skill | blocked=0 | 1157s | 0.7 skill/s
+12:47:40 progress 320/10008 repo | +1148 skill | blocked=0 | 1192s | 1.0 skill/s
+12:47:53 progress 330/10008 repo | +1424 skill | blocked=0 | 1205s | 1.2 skill/s
+12:48:57 progress 340/10008 repo | +1574 skill | blocked=0 | 1269s | 1.2 skill/s
+12:49:35 progress 350/10008 repo | +1669 skill | blocked=0 | 1307s | 1.3 skill/s
+12:50:04 progress 360/10008 repo | +2211 skill | blocked=0 | 1336s | 1.7 skill/s
+12:50:16 progress 370/10008 repo | +2455 skill | blocked=0 | 1348s | 1.8 skill/s
+12:50:54 progress 380/10008 repo | +2593 skill | blocked=0 | 1386s | 1.9 skill/s
+12:51:35 progress 390/10008 repo | +3596 skill | blocked=0 | 1427s | 2.5 skill/s
+12:51:53 progress 400/10008 repo | +3691 skill | blocked=0 | 1445s | 2.6 skill/s
+12:52:08 progress 410/10008 repo | +3804 skill | blocked=0 | 1460s | 2.6 skill/s
+12:52:31 progress 420/10008 repo | +4239 skill | blocked=0 | 1483s | 2.9 skill/s
+12:52:58 progress 430/10008 repo | +4773 skill | blocked=0 | 1510s | 3.2 skill/s
+12:53:08 progress 440/10008 repo | +4830 skill | blocked=0 | 1520s | 3.2 skill/s
+12:55:02 progress 450/10008 repo | +4868 skill | blocked=0 | 1634s | 3.0 skill/s
+12:55:38 progress 460/10008 repo | +5872 skill | blocked=0 | 1670s | 3.5 skill/s
+12:56:02 progress 470/10008 repo | +5969 skill | blocked=0 | 1694s | 3.5 skill/s
+12:56:23 progress 480/10008 repo | +6563 skill | blocked=0 | 1715s | 3.8 skill/s
+12:56:48 progress 490/10008 repo | +6894 skill | blocked=0 | 1740s | 4.0 skill/s
+12:57:15 progress 500/10008 repo | +7103 skill | blocked=0 | 1767s | 4.0 skill/s
+12:57:40 progress 510/10008 repo | +7411 skill | blocked=0 | 1792s | 4.1 skill/s
+12:57:54 progress 520/10008 repo | +7549 skill | blocked=0 | 1806s | 4.2 skill/s
+12:58:07 progress 530/10008 repo | +7687 skill | blocked=0 | 1819s | 4.2 skill/s
+12:58:17 progress 540/10008 repo | +7830 skill | blocked=0 | 1829s | 4.3 skill/s
+12:58:35 progress 550/10008 repo | +8853 skill | blocked=0 | 1847s | 4.8 skill/s
+12:59:10 progress 560/10008 repo | +9642 skill | blocked=0 | 1882s | 5.1 skill/s
+13:00:25 progress 570/10008 repo | +9847 skill | blocked=0 | 1957s | 5.0 skill/s
+13:00:51 progress 580/10008 repo | +9861 skill | blocked=0 | 1983s | 5.0 skill/s
+13:01:09 progress 590/10008 repo | +10016 skill | blocked=0 | 2001s | 5.0 skill/s
+13:01:30 progress 600/10008 repo | +10179 skill | blocked=0 | 2022s | 5.0 skill/s
+13:02:07 progress 610/10008 repo | +10391 skill | blocked=0 | 2059s | 5.0 skill/s
+13:02:23 progress 620/10008 repo | +10630 skill | blocked=0 | 2075s | 5.1 skill/s
+13:02:31 progress 630/10008 repo | +11158 skill | blocked=0 | 2083s | 5.4 skill/s
+13:02:52 progress 640/10008 repo | +11510 skill | blocked=0 | 2104s | 5.5 skill/s
+13:03:11 progress 650/10008 repo | +12129 skill | blocked=0 | 2123s | 5.7 skill/s
+13:03:26 progress 660/10008 repo | +12795 skill | blocked=0 | 2138s | 6.0 skill/s
+13:03:41 progress 670/10008 repo | +13048 skill | blocked=0 | 2153s | 6.1 skill/s
+13:03:49 progress 680/10008 repo | +13091 skill | blocked=0 | 2161s | 6.1 skill/s
+13:04:09 progress 690/10008 repo | +13165 skill | blocked=0 | 2181s | 6.0 skill/s
+13:04:12 progress 700/10008 repo | +13165 skill | blocked=0 | 2184s | 6.0 skill/s
+13:04:20 progress 710/10008 repo | +13189 skill | blocked=0 | 2192s | 6.0 skill/s
+13:04:45 progress 720/10008 repo | +13814 skill | blocked=0 | 2217s | 6.2 skill/s
+13:05:18 progress 730/10008 repo | +14089 skill | blocked=0 | 2250s | 6.3 skill/s
+13:05:54 progress 740/10008 repo | +16109 skill | blocked=0 | 2286s | 7.0 skill/s
+13:06:59 progress 750/10008 repo | +16328 skill | blocked=0 | 2351s | 6.9 skill/s
+13:07:14 progress 760/10008 repo | +16933 skill | blocked=0 | 2366s | 7.2 skill/s
+13:07:26 progress 770/10008 repo | +17078 skill | blocked=0 | 2378s | 7.2 skill/s
+13:08:12 progress 780/10008 repo | +17597 skill | blocked=0 | 2424s | 7.3 skill/s
+13:08:29 progress 790/10008 repo | +17661 skill | blocked=0 | 2441s | 7.2 skill/s
+13:08:51 progress 800/10008 repo | +17713 skill | blocked=0 | 2463s | 7.2 skill/s
+13:09:01 progress 810/10008 repo | +18018 skill | blocked=0 | 2473s | 7.3 skill/s
+13:09:15 progress 820/10008 repo | +18041 skill | blocked=0 | 2487s | 7.3 skill/s
+13:09:32 progress 830/10008 repo | +18141 skill | blocked=0 | 2504s | 7.2 skill/s
+13:09:44 progress 840/10008 repo | +18320 skill | blocked=0 | 2516s | 7.3 skill/s
+13:09:58 progress 850/10008 repo | +18765 skill | blocked=0 | 2530s | 7.4 skill/s
+13:10:07 progress 860/10008 repo | +19040 skill | blocked=0 | 2539s | 7.5 skill/s
+13:10:22 progress 870/10008 repo | +19450 skill | blocked=0 | 2554s | 7.6 skill/s
+13:10:47 progress 880/10008 repo | +19746 skill | blocked=0 | 2579s | 7.7 skill/s
+13:10:56 progress 890/10008 repo | +20292 skill | blocked=0 | 2588s | 7.8 skill/s
+13:11:07 progress 900/10008 repo | +20496 skill | blocked=0 | 2599s | 7.9 skill/s
+13:11:15 progress 910/10008 repo | +20706 skill | blocked=0 | 2607s | 7.9 skill/s
+13:11:25 progress 920/10008 repo | +20758 skill | blocked=0 | 2617s | 7.9 skill/s
+13:11:32 progress 930/10008 repo | +20920 skill | blocked=0 | 2624s | 8.0 skill/s
+13:11:56 progress 940/10008 repo | +20953 skill | blocked=0 | 2647s | 7.9 skill/s
+13:12:09 progress 950/10008 repo | +21035 skill | blocked=0 | 2661s | 7.9 skill/s
+13:12:39 progress 960/10008 repo | +21243 skill | blocked=0 | 2691s | 7.9 skill/s
+13:12:57 progress 970/10008 repo | +21499 skill | blocked=0 | 2709s | 7.9 skill/s
+13:13:06 progress 980/10008 repo | +21509 skill | blocked=0 | 2718s | 7.9 skill/s
+13:13:19 progress 990/10008 repo | +21674 skill | blocked=0 | 2731s | 7.9 skill/s
+13:13:22 progress 1000/10008 repo | +21716 skill | blocked=0 | 2734s | 7.9 skill/s
+13:13:25 progress 1010/10008 repo | +21716 skill | blocked=0 | 2737s | 7.9 skill/s
+13:13:37 progress 1020/10008 repo | +22044 skill | blocked=0 | 2749s | 8.0 skill/s
+13:14:10 progress 1030/10008 repo | +22157 skill | blocked=0 | 2782s | 8.0 skill/s
+13:14:37 progress 1040/10008 repo | +22412 skill | blocked=0 | 2809s | 8.0 skill/s
+13:15:32 progress 1050/10008 repo | +22503 skill | blocked=0 | 2864s | 7.9 skill/s
+13:16:00 progress 1060/10008 repo | +22620 skill | blocked=0 | 2892s | 7.8 skill/s
+13:16:45 progress 1070/10008 repo | +22675 skill | blocked=0 | 2937s | 7.7 skill/s
+13:17:54 progress 1080/10008 repo | +23263 skill | blocked=0 | 3006s | 7.7 skill/s
+13:18:20 progress 1090/10008 repo | +23358 skill | blocked=0 | 3032s | 7.7 skill/s
+13:19:02 progress 1100/10008 repo | +23434 skill | blocked=0 | 3074s | 7.6 skill/s
+13:19:49 progress 1110/10008 repo | +23436 skill | blocked=0 | 3120s | 7.5 skill/s
+13:20:03 progress 1120/10008 repo | +23694 skill | blocked=0 | 3135s | 7.6 skill/s
+13:20:23 progress 1130/10008 repo | +23740 skill | blocked=0 | 3155s | 7.5 skill/s
+13:20:33 progress 1140/10008 repo | +23803 skill | blocked=0 | 3165s | 7.5 skill/s
+13:20:59 progress 1150/10008 repo | +24027 skill | blocked=0 | 3191s | 7.5 skill/s
+13:21:05 progress 1160/10008 repo | +24235 skill | blocked=0 | 3197s | 7.6 skill/s
+13:21:50 progress 1170/10008 repo | +24262 skill | blocked=0 | 3242s | 7.5 skill/s
+13:22:16 progress 1180/10008 repo | +24404 skill | blocked=0 | 3268s | 7.5 skill/s
+13:22:50 progress 1190/10008 repo | +24550 skill | blocked=0 | 3302s | 7.4 skill/s
+13:23:00 progress 1200/10008 repo | +24629 skill | blocked=0 | 3312s | 7.4 skill/s
+13:23:05 progress 1210/10008 repo | +24730 skill | blocked=0 | 3317s | 7.5 skill/s
+13:23:30 progress 1220/10008 repo | +24802 skill | blocked=0 | 3342s | 7.4 skill/s
+13:23:48 progress 1230/10008 repo | +25373 skill | blocked=0 | 3360s | 7.6 skill/s
+13:24:12 progress 1240/10008 repo | +25947 skill | blocked=0 | 3384s | 7.7 skill/s
+13:24:38 progress 1250/10008 repo | +25980 skill | blocked=0 | 3410s | 7.6 skill/s
+13:24:50 progress 1260/10008 repo | +26160 skill | blocked=0 | 3422s | 7.6 skill/s
+13:25:10 progress 1270/10008 repo | +26738 skill | blocked=0 | 3442s | 7.8 skill/s
+13:25:42 progress 1280/10008 repo | +27169 skill | blocked=0 | 3474s | 7.8 skill/s
+13:25:50 progress 1290/10008 repo | +27443 skill | blocked=0 | 3482s | 7.9 skill/s
+13:26:05 progress 1300/10008 repo | +27638 skill | blocked=0 | 3497s | 7.9 skill/s
+13:26:21 progress 1310/10008 repo | +28410 skill | blocked=0 | 3513s | 8.1 skill/s
+13:26:35 progress 1320/10008 repo | +28664 skill | blocked=0 | 3527s | 8.1 skill/s
+13:26:55 progress 1330/10008 repo | +29489 skill | blocked=0 | 3547s | 8.3 skill/s
+13:27:08 progress 1340/10008 repo | +29539 skill | blocked=0 | 3560s | 8.3 skill/s
+13:27:40 progress 1350/10008 repo | +30090 skill | blocked=0 | 3592s | 8.4 skill/s
+13:28:42 progress 1360/10008 repo | +30251 skill | blocked=0 | 3654s | 8.3 skill/s
+13:29:03 progress 1370/10008 repo | +30776 skill | blocked=0 | 3675s | 8.4 skill/s
+13:29:35 progress 1380/10008 repo | +30888 skill | blocked=0 | 3707s | 8.3 skill/s
+13:29:59 progress 1390/10008 repo | +31487 skill | blocked=0 | 3731s | 8.4 skill/s
+13:30:23 progress 1400/10008 repo | +31550 skill | blocked=0 | 3755s | 8.4 skill/s
+13:30:38 progress 1410/10008 repo | +31655 skill | blocked=0 | 3770s | 8.4 skill/s
+13:31:00 progress 1420/10008 repo | +31912 skill | blocked=0 | 3792s | 8.4 skill/s
+13:31:15 progress 1430/10008 repo | +32090 skill | blocked=0 | 3807s | 8.4 skill/s
+13:31:27 progress 1440/10008 repo | +32149 skill | blocked=0 | 3819s | 8.4 skill/s
+13:31:51 progress 1450/10008 repo | +32256 skill | blocked=0 | 3843s | 8.4 skill/s
+13:32:17 progress 1460/10008 repo | +32332 skill | blocked=0 | 3869s | 8.4 skill/s
+13:32:27 progress 1470/10008 repo | +32387 skill | blocked=0 | 3879s | 8.3 skill/s
+13:32:44 progress 1480/10008 repo | +32577 skill | blocked=0 | 3896s | 8.4 skill/s
+13:32:55 progress 1490/10008 repo | +32657 skill | blocked=0 | 3907s | 8.4 skill/s
+13:33:13 progress 1500/10008 repo | +32700 skill | blocked=0 | 3925s | 8.3 skill/s
+13:33:37 progress 1510/10008 repo | +33014 skill | blocked=0 | 3949s | 8.4 skill/s
+13:33:56 progress 1520/10008 repo | +33047 skill | blocked=0 | 3968s | 8.3 skill/s
+13:34:39 progress 1530/10008 repo | +33160 skill | blocked=0 | 4011s | 8.3 skill/s
+13:34:51 progress 1540/10008 repo | +33333 skill | blocked=0 | 4023s | 8.3 skill/s
+13:34:56 progress 1550/10008 repo | +33334 skill | blocked=0 | 4028s | 8.3 skill/s
+13:35:01 progress 1560/10008 repo | +33380 skill | blocked=0 | 4033s | 8.3 skill/s
+13:35:02 progress 1570/10008 repo | +33383 skill | blocked=0 | 4034s | 8.3 skill/s
+13:35:05 progress 1580/10008 repo | +33383 skill | blocked=0 | 4037s | 8.3 skill/s
+13:35:05 progress 1590/10008 repo | +33384 skill | blocked=0 | 4037s | 8.3 skill/s
+13:35:05 progress 1600/10008 repo | +33384 skill | blocked=0 | 4037s | 8.3 skill/s
+13:35:05 progress 1610/10008 repo | +33384 skill | blocked=0 | 4037s | 8.3 skill/s
+13:35:15 progress 1620/10008 repo | +33662 skill | blocked=0 | 4047s | 8.3 skill/s
+13:35:38 progress 1630/10008 repo | +33749 skill | blocked=0 | 4070s | 8.3 skill/s
+13:36:10 progress 1640/10008 repo | +34131 skill | blocked=0 | 4102s | 8.3 skill/s
+13:36:19 progress 1650/10008 repo | +34361 skill | blocked=0 | 4111s | 8.4 skill/s
+13:36:48 progress 1660/10008 repo | +34390 skill | blocked=0 | 4140s | 8.3 skill/s
+13:37:14 progress 1670/10008 repo | +35265 skill | blocked=0 | 4166s | 8.5 skill/s
+13:37:42 progress 1680/10008 repo | +35332 skill | blocked=0 | 4194s | 8.4 skill/s
+13:37:58 progress 1690/10008 repo | +35617 skill | blocked=0 | 4210s | 8.5 skill/s
+13:38:26 progress 1700/10008 repo | +35666 skill | blocked=0 | 4238s | 8.4 skill/s
+13:39:01 progress 1710/10008 repo | +35943 skill | blocked=0 | 4273s | 8.4 skill/s
+13:39:10 progress 1720/10008 repo | +36023 skill | blocked=0 | 4282s | 8.4 skill/s
+13:39:46 progress 1730/10008 repo | +36252 skill | blocked=0 | 4318s | 8.4 skill/s
+13:45:19 progress 1740/10008 repo | +37275 skill | blocked=0 | 4651s | 8.0 skill/s
+13:45:24 progress 1750/10008 repo | +37282 skill | blocked=0 | 4656s | 8.0 skill/s
+13:45:38 progress 1760/10008 repo | +37408 skill | blocked=0 | 4670s | 8.0 skill/s
+13:51:00 progress 1770/10008 repo | +37425 skill | blocked=0 | 4992s | 7.5 skill/s
+13:51:29 progress 1780/10008 repo | +37689 skill | blocked=0 | 5021s | 7.5 skill/s
+13:54:13 progress 1790/10008 repo | +37709 skill | blocked=0 | 5185s | 7.3 skill/s
+13:54:44 progress 1800/10008 repo | +37804 skill | blocked=0 | 5216s | 7.2 skill/s
+13:55:03 progress 1810/10008 repo | +38363 skill | blocked=0 | 5235s | 7.3 skill/s
+13:55:12 progress 1820/10008 repo | +38376 skill | blocked=0 | 5244s | 7.3 skill/s
+13:55:26 progress 1830/10008 repo | +38604 skill | blocked=0 | 5258s | 7.3 skill/s
+13:57:21 progress 1840/10008 repo | +38723 skill | blocked=0 | 5373s | 7.2 skill/s
+13:57:52 progress 1850/10008 repo | +38740 skill | blocked=0 | 5404s | 7.2 skill/s
+13:58:02 progress 1860/10008 repo | +38769 skill | blocked=0 | 5414s | 7.2 skill/s
+13:58:19 progress 1870/10008 repo | +38796 skill | blocked=0 | 5431s | 7.1 skill/s
+13:58:51 progress 1880/10008 repo | +38840 skill | blocked=0 | 5463s | 7.1 skill/s
+13:59:04 progress 1890/10008 repo | +38907 skill | blocked=0 | 5476s | 7.1 skill/s
+13:59:20 progress 1900/10008 repo | +38989 skill | blocked=0 | 5492s | 7.1 skill/s
+13:59:29 progress 1910/10008 repo | +39043 skill | blocked=0 | 5501s | 7.1 skill/s
+14:00:05 progress 1920/10008 repo | +39060 skill | blocked=0 | 5537s | 7.1 skill/s
+14:00:22 progress 1930/10008 repo | +39065 skill | blocked=0 | 5554s | 7.0 skill/s
+14:00:31 progress 1940/10008 repo | +39600 skill | blocked=0 | 5563s | 7.1 skill/s
+14:00:44 progress 1950/10008 repo | +39674 skill | blocked=0 | 5576s | 7.1 skill/s
+14:01:14 progress 1960/10008 repo | +39799 skill | blocked=0 | 5606s | 7.1 skill/s
+14:01:27 progress 1970/10008 repo | +40282 skill | blocked=0 | 5619s | 7.2 skill/s
+14:01:45 progress 1980/10008 repo | +40393 skill | blocked=0 | 5637s | 7.2 skill/s
+14:02:02 progress 1990/10008 repo | +40407 skill | blocked=0 | 5654s | 7.1 skill/s
+14:02:14 progress 2000/10008 repo | +40939 skill | blocked=0 | 5666s | 7.2 skill/s
+14:02:33 progress 2010/10008 repo | +41028 skill | blocked=0 | 5685s | 7.2 skill/s
+14:17:24 progress 2020/10008 repo | +41581 skill | blocked=0 | 6576s | 6.3 skill/s
+14:18:01 progress 2030/10008 repo | +41696 skill | blocked=0 | 6613s | 6.3 skill/s
+14:18:13 progress 2040/10008 repo | +41796 skill | blocked=0 | 6625s | 6.3 skill/s
+14:18:23 progress 2050/10008 repo | +41967 skill | blocked=0 | 6635s | 6.3 skill/s
+14:18:38 progress 2060/10008 repo | +42156 skill | blocked=0 | 6650s | 6.3 skill/s
+14:18:45 progress 2070/10008 repo | +42309 skill | blocked=0 | 6657s | 6.4 skill/s
+14:19:11 progress 2080/10008 repo | +42332 skill | blocked=0 | 6683s | 6.3 skill/s
+14:19:23 progress 2090/10008 repo | +42457 skill | blocked=0 | 6695s | 6.3 skill/s
+14:19:36 progress 2100/10008 repo | +42679 skill | blocked=0 | 6708s | 6.4 skill/s
+14:20:11 progress 2110/10008 repo | +43469 skill | blocked=0 | 6743s | 6.4 skill/s
+14:20:52 progress 2120/10008 repo | +44105 skill | blocked=0 | 6784s | 6.5 skill/s
+14:21:24 progress 2130/10008 repo | +44152 skill | blocked=0 | 6816s | 6.5 skill/s
+14:22:19 progress 2140/10008 repo | +44260 skill | blocked=0 | 6871s | 6.4 skill/s
+14:24:55 progress 2150/10008 repo | +44338 skill | blocked=0 | 7027s | 6.3 skill/s
+14:25:04 progress 2160/10008 repo | +44476 skill | blocked=0 | 7036s | 6.3 skill/s
+14:25:23 progress 2170/10008 repo | +44831 skill | blocked=0 | 7055s | 6.4 skill/s
+14:25:31 progress 2180/10008 repo | +44876 skill | blocked=0 | 7063s | 6.4 skill/s
+14:25:46 progress 2190/10008 repo | +44925 skill | blocked=0 | 7078s | 6.3 skill/s
+14:25:53 progress 2200/10008 repo | +44966 skill | blocked=0 | 7085s | 6.3 skill/s
+14:26:09 progress 2210/10008 repo | +45031 skill | blocked=0 | 7101s | 6.3 skill/s
+14:26:23 progress 2220/10008 repo | +45336 skill | blocked=0 | 7115s | 6.4 skill/s
+14:26:54 progress 2230/10008 repo | +45664 skill | blocked=0 | 7145s | 6.4 skill/s
+14:27:23 progress 2240/10008 repo | +46412 skill | blocked=0 | 7175s | 6.5 skill/s
+14:27:49 progress 2250/10008 repo | +46501 skill | blocked=0 | 7201s | 6.5 skill/s
+14:28:14 progress 2260/10008 repo | +46745 skill | blocked=0 | 7226s | 6.5 skill/s
+14:28:26 progress 2270/10008 repo | +46999 skill | blocked=0 | 7238s | 6.5 skill/s
+14:28:40 progress 2280/10008 repo | +47087 skill | blocked=0 | 7252s | 6.5 skill/s
+14:28:49 progress 2290/10008 repo | +47199 skill | blocked=0 | 7261s | 6.5 skill/s
+14:28:58 progress 2300/10008 repo | +47306 skill | blocked=0 | 7270s | 6.5 skill/s
+14:29:14 progress 2310/10008 repo | +47364 skill | blocked=0 | 7286s | 6.5 skill/s
+14:29:24 progress 2320/10008 repo | +47617 skill | blocked=0 | 7296s | 6.5 skill/s
+14:29:43 progress 2330/10008 repo | +48068 skill | blocked=0 | 7315s | 6.6 skill/s
+14:29:49 progress 2340/10008 repo | +48265 skill | blocked=0 | 7321s | 6.6 skill/s
+14:29:59 progress 2350/10008 repo | +48502 skill | blocked=0 | 7331s | 6.6 skill/s
+14:30:05 progress 2360/10008 repo | +48627 skill | blocked=0 | 7337s | 6.6 skill/s
+14:30:26 progress 2370/10008 repo | +48790 skill | blocked=0 | 7358s | 6.6 skill/s
+14:33:43 progress 2380/10008 repo | +48849 skill | blocked=0 | 7555s | 6.5 skill/s
+14:34:01 progress 2390/10008 repo | +48913 skill | blocked=0 | 7573s | 6.5 skill/s
+14:34:14 progress 2400/10008 repo | +49152 skill | blocked=0 | 7586s | 6.5 skill/s
+14:34:32 progress 2410/10008 repo | +49503 skill | blocked=0 | 7604s | 6.5 skill/s
+14:34:44 progress 2420/10008 repo | +49539 skill | blocked=0 | 7616s | 6.5 skill/s
+14:34:58 progress 2430/10008 repo | +49617 skill | blocked=0 | 7630s | 6.5 skill/s
+14:35:13 progress 2440/10008 repo | +49939 skill | blocked=0 | 7645s | 6.5 skill/s
+14:35:19 progress 2450/10008 repo | +49963 skill | blocked=0 | 7651s | 6.5 skill/s
+14:35:32 === MINE-ONLY: 10008 repo di registry ===
+14:35:32 registry: +0 repo baru (total 10008)
+14:35:35 mining 10008 repo (known names 260429)
+14:35:41 progress 10/10008 repo | +0 skill | blocked=0 | 6s | 0.0 skill/s
+14:35:57 progress 20/10008 repo | +0 skill | blocked=0 | 22s | 0.0 skill/s
+14:36:25 progress 30/10008 repo | +0 skill | blocked=0 | 50s | 0.0 skill/s
+14:37:23 progress 40/10008 repo | +0 skill | blocked=0 | 108s | 0.0 skill/s
+14:37:33 progress 50/10008 repo | +0 skill | blocked=0 | 118s | 0.0 skill/s
+14:37:48 progress 60/10008 repo | +0 skill | blocked=0 | 133s | 0.0 skill/s
+14:38:01 progress 70/10008 repo | +0 skill | blocked=0 | 146s | 0.0 skill/s
+14:38:18 progress 80/10008 repo | +0 skill | blocked=0 | 163s | 0.0 skill/s
+14:38:25 progress 90/10008 repo | +0 skill | blocked=0 | 170s | 0.0 skill/s
+14:38:38 progress 100/10008 repo | +0 skill | blocked=0 | 183s | 0.0 skill/s
+14:38:48 progress 110/10008 repo | +0 skill | blocked=0 | 193s | 0.0 skill/s
+14:39:03 progress 120/10008 repo | +0 skill | blocked=0 | 207s | 0.0 skill/s
+14:39:11 progress 130/10008 repo | +0 skill | blocked=0 | 215s | 0.0 skill/s
+14:39:24 progress 140/10008 repo | +0 skill | blocked=0 | 229s | 0.0 skill/s
+14:39:38 progress 150/10008 repo | +0 skill | blocked=0 | 242s | 0.0 skill/s
+14:39:44 progress 160/10008 repo | +0 skill | blocked=0 | 248s | 0.0 skill/s
+14:39:49 progress 170/10008 repo | +0 skill | blocked=0 | 253s | 0.0 skill/s
+14:40:05 progress 180/10008 repo | +0 skill | blocked=0 | 270s | 0.0 skill/s
+14:40:06 progress 190/10008 repo | +0 skill | blocked=0 | 270s | 0.0 skill/s
+14:40:09 progress 200/10008 repo | +0 skill | blocked=0 | 273s | 0.0 skill/s
+14:40:18 progress 210/10008 repo | +0 skill | blocked=0 | 282s | 0.0 skill/s
+14:40:27 progress 220/10008 repo | +1 skill | blocked=0 | 291s | 0.0 skill/s
+14:40:33 progress 230/10008 repo | +1 skill | blocked=0 | 298s | 0.0 skill/s
+14:40:45 progress 240/10008 repo | +1 skill | blocked=0 | 310s | 0.0 skill/s
+14:40:51 progress 250/10008 repo | +1 skill | blocked=0 | 315s | 0.0 skill/s
+14:40:54 progress 260/10008 repo | +1 skill | blocked=0 | 318s | 0.0 skill/s
+14:40:57 progress 270/10008 repo | +1 skill | blocked=0 | 322s | 0.0 skill/s
+14:41:09 progress 280/10008 repo | +1 skill | blocked=0 | 334s | 0.0 skill/s
+14:41:14 progress 290/10008 repo | +1 skill | blocked=0 | 338s | 0.0 skill/s
+14:41:23 progress 300/10008 repo | +1 skill | blocked=0 | 348s | 0.0 skill/s
+14:41:29 progress 310/10008 repo | +1 skill | blocked=0 | 354s | 0.0 skill/s
+14:41:35 progress 320/10008 repo | +1 skill | blocked=0 | 360s | 0.0 skill/s
+14:41:35 progress 330/10008 repo | +1 skill | blocked=0 | 360s | 0.0 skill/s
+14:41:45 progress 340/10008 repo | +1 skill | blocked=0 | 370s | 0.0 skill/s
+14:41:55 progress 350/10008 repo | +1 skill | blocked=0 | 380s | 0.0 skill/s
+14:42:04 progress 360/10008 repo | +1 skill | blocked=0 | 389s | 0.0 skill/s
+14:42:09 progress 370/10008 repo | +1 skill | blocked=0 | 394s | 0.0 skill/s
+14:42:23 progress 380/10008 repo | +1 skill | blocked=0 | 408s | 0.0 skill/s
+14:42:43 progress 390/10008 repo | +1 skill | blocked=0 | 428s | 0.0 skill/s
+14:42:51 progress 400/10008 repo | +1 skill | blocked=0 | 436s | 0.0 skill/s
+14:43:10 progress 410/10008 repo | +1 skill | blocked=0 | 455s | 0.0 skill/s
+14:43:19 progress 420/10008 repo | +1 skill | blocked=0 | 463s | 0.0 skill/s
+14:43:28 progress 430/10008 repo | +1 skill | blocked=0 | 473s | 0.0 skill/s
+14:43:31 progress 440/10008 repo | +1 skill | blocked=0 | 475s | 0.0 skill/s
+14:43:46 progress 450/10008 repo | +1 skill | blocked=0 | 490s | 0.0 skill/s
+14:44:00 progress 460/10008 repo | +525 skill | blocked=0 | 504s | 1.0 skill/s
+14:44:27 progress 470/10008 repo | +525 skill | blocked=0 | 532s | 1.0 skill/s
+14:44:31 progress 480/10008 repo | +525 skill | blocked=0 | 536s | 1.0 skill/s
+14:44:41 progress 490/10008 repo | +525 skill | blocked=0 | 546s | 1.0 skill/s
+14:44:47 progress 500/10008 repo | +525 skill | blocked=0 | 552s | 1.0 skill/s
+14:45:01 progress 510/10008 repo | +526 skill | blocked=0 | 565s | 0.9 skill/s
+14:45:02 progress 520/10008 repo | +526 skill | blocked=0 | 567s | 0.9 skill/s
+14:45:02 progress 530/10008 repo | +526 skill | blocked=0 | 567s | 0.9 skill/s
+14:45:02 progress 540/10008 repo | +526 skill | blocked=0 | 567s | 0.9 skill/s
+14:45:04 progress 550/10008 repo | +526 skill | blocked=0 | 569s | 0.9 skill/s
+14:45:13 progress 560/10008 repo | +526 skill | blocked=0 | 578s | 0.9 skill/s
+14:45:31 progress 570/10008 repo | +526 skill | blocked=0 | 596s | 0.9 skill/s
+14:45:48 progress 580/10008 repo | +534 skill | blocked=0 | 613s | 0.9 skill/s
+14:45:56 progress 590/10008 repo | +534 skill | blocked=0 | 621s | 0.9 skill/s
+14:46:07 progress 600/10008 repo | +534 skill | blocked=0 | 632s | 0.8 skill/s
+14:46:13 progress 610/10008 repo | +534 skill | blocked=0 | 638s | 0.8 skill/s
+14:46:14 progress 620/10008 repo | +534 skill | blocked=0 | 638s | 0.8 skill/s
+14:46:14 progress 630/10008 repo | +534 skill | blocked=0 | 638s | 0.8 skill/s
+14:46:21 progress 640/10008 repo | +534 skill | blocked=0 | 646s | 0.8 skill/s
+14:46:24 progress 650/10008 repo | +534 skill | blocked=0 | 649s | 0.8 skill/s
+14:46:26 progress 660/10008 repo | +534 skill | blocked=0 | 651s | 0.8 skill/s
+14:46:27 progress 670/10008 repo | +534 skill | blocked=0 | 652s | 0.8 skill/s
+14:46:35 progress 680/10008 repo | +534 skill | blocked=0 | 659s | 0.8 skill/s
+14:46:43 progress 690/10008 repo | +534 skill | blocked=0 | 668s | 0.8 skill/s
+14:46:46 progress 700/10008 repo | +534 skill | blocked=0 | 671s | 0.8 skill/s
+14:49:57 === MINE-ONLY: 10008 repo di registry ===
+14:49:57 registry: +0 repo baru (total 10008)
+14:50:12 mining 10008 repo (known names 261113)
+14:50:14 progress 10/10008 repo | +0 skill | blocked=0 | 2s | 0.0 skill/s
+14:53:41 progress 20/10008 repo | +1516 skill | blocked=0 | 209s | 7.3 skill/s
+14:55:04 progress 30/10008 repo | +2106 skill | blocked=0 | 292s | 7.2 skill/s
+15:01:13 progress 40/10008 repo | +2615 skill | blocked=0 | 660s | 4.0 skill/s
+15:02:05 progress 50/10008 repo | +3116 skill | blocked=0 | 713s | 4.4 skill/s
+15:04:02 progress 60/10008 repo | +3617 skill | blocked=0 | 830s | 4.4 skill/s
+15:04:52 progress 70/10008 repo | +4617 skill | blocked=0 | 880s | 5.2 skill/s
+15:06:57 progress 80/10008 repo | +5117 skill | blocked=0 | 1005s | 5.1 skill/s
+15:07:50 progress 90/10008 repo | +5617 skill | blocked=0 | 1058s | 5.3 skill/s
+15:11:03 progress 100/10008 repo | +6617 skill | blocked=0 | 1251s | 5.3 skill/s
+15:13:38 progress 110/10008 repo | +7117 skill | blocked=0 | 1406s | 5.1 skill/s
+15:15:47 progress 120/10008 repo | +7132 skill | blocked=0 | 1534s | 4.6 skill/s
+15:25:51 progress 130/10008 repo | +7133 skill | blocked=0 | 2139s | 3.3 skill/s
+15:32:17 progress 140/10008 repo | +7133 skill | blocked=0 | 2524s | 2.8 skill/s
+15:35:54 progress 150/10008 repo | +7133 skill | blocked=0 | 2742s | 2.6 skill/s
+15:35:57 progress 160/10008 repo | +7133 skill | blocked=0 | 2744s | 2.6 skill/s
+15:39:20 progress 170/10008 repo | +7780 skill | blocked=0 | 2948s | 2.6 skill/s
+15:44:21 progress 180/10008 repo | +8314 skill | blocked=0 | 3249s | 2.6 skill/s
+15:44:32 progress 190/10008 repo | +8314 skill | blocked=0 | 3260s | 2.6 skill/s
+15:45:29 progress 200/10008 repo | +8405 skill | blocked=0 | 3317s | 2.5 skill/s
+15:46:40 progress 210/10008 repo | +8585 skill | blocked=0 | 3387s | 2.5 skill/s
+15:55:26 progress 220/10008 repo | +8752 skill | blocked=0 | 3913s | 2.2 skill/s
+16:00:19 progress 230/10008 repo | +8881 skill | blocked=0 | 4207s | 2.1 skill/s
+16:03:51 progress 240/10008 repo | +9481 skill | blocked=0 | 4419s | 2.1 skill/s
+16:04:56 progress 250/10008 repo | +9526 skill | blocked=0 | 4483s | 2.1 skill/s
+16:05:00 progress 260/10008 repo | +10026 skill | blocked=0 | 4488s | 2.2 skill/s
+16:11:56 progress 270/10008 repo | +11433 skill | blocked=0 | 4904s | 2.3 skill/s
+16:12:51 progress 280/10008 repo | +12067 skill | blocked=0 | 4958s | 2.4 skill/s
+16:13:30 progress 290/10008 repo | +12567 skill | blocked=0 | 4997s | 2.5 skill/s
+16:15:20 progress 300/10008 repo | +12635 skill | blocked=0 | 5108s | 2.5 skill/s
+16:16:13 progress 310/10008 repo | +12712 skill | blocked=0 | 5161s | 2.5 skill/s
+16:16:37 progress 320/10008 repo | +13212 skill | blocked=0 | 5185s | 2.5 skill/s
+16:16:37 progress 330/10008 repo | +13212 skill | blocked=0 | 5185s | 2.5 skill/s
+16:18:15 progress 340/10008 repo | +13771 skill | blocked=0 | 5282s | 2.6 skill/s
+16:19:29 progress 350/10008 repo | +13936 skill | blocked=0 | 5357s | 2.6 skill/s
+16:20:35 progress 360/10008 repo | +14097 skill | blocked=0 | 5422s | 2.6 skill/s
+16:21:41 progress 370/10008 repo | +14214 skill | blocked=0 | 5489s | 2.6 skill/s
+16:21:55 progress 380/10008 repo | +14714 skill | blocked=0 | 5503s | 2.7 skill/s
+16:23:55 progress 390/10008 repo | +15351 skill | blocked=0 | 5623s | 2.7 skill/s
+16:25:26 progress 400/10008 repo | +15424 skill | blocked=0 | 5713s | 2.7 skill/s
+16:27:51 progress 410/10008 repo | +16033 skill | blocked=0 | 5859s | 2.7 skill/s
+16:28:28 progress 420/10008 repo | +16533 skill | blocked=0 | 5896s | 2.8 skill/s
+16:28:46 progress 430/10008 repo | +16547 skill | blocked=0 | 5914s | 2.8 skill/s
+16:28:54 progress 440/10008 repo | +16547 skill | blocked=0 | 5922s | 2.8 skill/s
+16:29:18 progress 450/10008 repo | +16547 skill | blocked=0 | 5946s | 2.8 skill/s
+16:31:51 progress 460/10008 repo | +16602 skill | blocked=0 | 6098s | 2.7 skill/s
+16:34:35 progress 470/10008 repo | +16691 skill | blocked=0 | 6263s | 2.7 skill/s
+16:35:53 progress 480/10008 repo | +16733 skill | blocked=0 | 6341s | 2.6 skill/s

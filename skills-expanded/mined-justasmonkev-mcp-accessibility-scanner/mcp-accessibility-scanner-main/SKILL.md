@@ -1,0 +1,346 @@
+# Accessibility Scanner CLI Skill
+
+Use the local CLI when you want direct automation without attaching an MCP client.
+
+For AI agents using this skill: always launch the interactive REPL with `npx --allow-scripts=re2 mcp-accessibility-scanner interactive` and send tool calls there. Do not use the default MCP server mode from this skill.
+
+For Electron apps, prefer launching them through this CLI with `--cdp-launch-command` instead of using a separate automation layer.
+
+## CLI Modes
+
+### Interactive REPL
+
+Start a readline prompt for tool execution. This is the required mode for AI agents using this skill. Type `<tool-name> <json>` to call tools.
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner interactive
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless interactive
+```
+
+REPL example session:
+
+```
+> browser_navigate {"url":"https://example.com"}
+> scan_page {"violationsTag":["wcag2aa"]}
+> audit_keyboard {}
+> browser_close {}
+```
+
+### List Tools
+
+Print all available tools and their descriptions.
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner list-tools
+npx --allow-scripts=re2 mcp-accessibility-scanner --caps vision,pdf list-tools
+```
+
+### MCP Server (do not use from this skill)
+
+Running the CLI without a subcommand starts the MCP server over stdio for MCP clients. This skill does not use that mode.
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless --browser chrome
+```
+
+## Global CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `--browser <browser>` | Browser to use: `chrome`, `firefox`, `webkit`, `msedge` |
+| `--headless` | Run browser in headless mode (headed by default) |
+| `--caps <caps>` | Comma-separated extra capabilities: `vision`, `pdf`, `verify`, `devtools`, `install` (allows browser downloads) |
+| `--viewport-size <size>` | Browser viewport, e.g. `"1280, 720"` |
+| `--device <device>` | Device emulation, e.g. `"iPhone 15"` |
+| `--output-dir <path>` | Directory for output files (reports, screenshots) |
+| `--config <path>` | Path to configuration file |
+| `--user-data-dir <path>` | Browser profile directory |
+| `--profile-dir-name <name>` | Chrome profile directory for extension mode (`--extension`/`--connect-tool` only), e.g. `Profile 1`; requires `--user-data-dir` |
+| `--isolated` | Keep browser profile in memory only |
+| `--storage-state <path>` | Storage state file for a fresh context; existing CDP/VS Code contexts and `--extension` reject imports. Use `--isolated` with CDP, or omit the state and sign in interactively. |
+| `--executable-path <path>` | Custom browser executable |
+| `--cdp-endpoint <endpoint>` | Connect to existing CDP endpoint |
+| `--cdp-header <header>` | CDP connect header, e.g. `"Authorization: Bearer <token>"`. Repeat the flag for multiple |
+| `--cdp-timeout <ms>` | Timeout for connecting to the CDP endpoint (default 30000) |
+| `--cdp-launch-command <command>` | Launch a Chromium-family desktop app with CDP enabled |
+| `--cdp-launch-args <args>` | Comma-separated launch arguments. Use `{port}` placeholder for the debug port |
+| `--cdp-launch-cwd <path>` | Working directory for the launched app |
+| `--cdp-launch-port <port>` | Fixed CDP port for the launched app |
+| `--cdp-launch-startup-timeout <ms>` | How long to wait for the launched app CDP endpoint |
+| `--proxy-server <proxy>` | Proxy server, e.g. `"http://myproxy:3128"`; credentials in the URL (`"http://user:password@myproxy:3128"`) are sent as proxy username/password |
+| `--proxy-bypass <bypass>` | Comma-separated domains to bypass proxy |
+| `--allowed-origins <origins>` | Semicolon-separated allowed origins |
+| `--blocked-origins <origins>` | Semicolon-separated blocked origins |
+| `--block-service-workers` | Block service workers |
+| `--ignore-https-errors` | Ignore HTTPS certificate errors |
+| `--user-agent <ua>` | Custom user agent string |
+| `--host <host>` | Server bind host (default: localhost) |
+| `--port <port>` | Port for MCP Streamable HTTP transport |
+| `--navigation-timeout <ms>` | Page navigation timeout (default: 60000) |
+| `--default-timeout <ms>` | Default Playwright operation timeout (default: 5000) |
+| `--timeout-idle <ms>` | Release the default browser after inactivity; reopen on the next tool call (default: 0, disabled). Explicit browser sessions retain their separate TTL. |
+| `--save-session` | Save session to output directory |
+| `--save-trace` | Save Playwright trace to output directory |
+| `--snapshot-boxes` | Include viewport-relative `[box=x,y,width,height]` metadata in snapshots |
+| `--no-sandbox` | Disable browser sandboxing |
+| `--image-responses <mode>` | `"allow"` (default), `"omit"`, or `"only"`. `only` removes text from successful MCP responses containing images while retaining errors, browser lifecycle notices, structured content and resource links; interactive mode rejects it because the REPL prints text only. `"auto"` aliases `"allow"`. |
+
+## Accessibility Scanning Tools
+
+### scan_page
+
+Scan the current page for accessibility violations using Axe.
+
+```json
+{"violationsTag": ["wcag2aa", "wcag21aa", "wcag22aa"]}
+```
+
+The scan injects Axe into the frames that are already open and runs it there; it no longer opens a helper page, which is what used to fail on Electron CDP targets with `Target.createTarget: Not supported`. If a scan still fails on such a target, keep using the CLI session, select the live app tab with `browser_tabs`, and run Axe through `browser_evaluate` by injecting the local `node_modules/axe-core/axe.min.js` bundle.
+
+### audit_site
+
+Crawl and aggregate accessibility violations across multiple pages. Writes a JSON report.
+
+```json
+{
+  "startUrl": "https://example.com",
+  "strategy": "links",
+  "maxPages": 25,
+  "maxDepth": 2,
+  "sameOriginOnly": true,
+  "violationsTag": ["wcag2aa"]
+}
+```
+
+**Crawl strategies:**
+- `links` (default) - Follow all `<a>` links up to `maxDepth`
+- `nav` - Scan the start page, then follow only navigation links found on that page inside `<nav>`, `<header>`, or `[role="navigation"]` (single-hop)
+- `sitemap` - Fetch URLs from sitemap XML (use `sitemapUrl` to override default `/sitemap.xml`)
+- `provided` - Scan an explicit `urls` array
+
+**Key options:**
+- `maxPages` (1-200, default 25)
+- `maxDepth` (0-5, default 2, links strategy only)
+- `includeSubdomains` - Allow subdomains when `sameOriginOnly=true`
+- `excludePathPatterns` - Regex patterns to skip (default: `logout|signout`)
+- `reportFile` - Custom output filename
+
+**Behind a login:** the crawl shares the browser context, so signing in with `browser_navigate` / `browser_fill_form` first is enough. Alternatively record a session with `npx playwright@1.63.0 codegen --save-storage=auth.json <login-url>` (pinned to the server's own Playwright, so the recorded state matches what it replays) and start the server with `--storage-state ./auth.json` — fresh contexts receive it at creation, and default persistent mode uses a disposable profile that cannot combine with `--user-data-dir`. Existing CDP and VS Code contexts reject imports before taking a snapshot or resetting storage; add `--isolated` for CDP, or sign in interactively. `--extension` refuses storage imports entirely. On Playwright 1.63.0, IndexedDB snapshots can lose `Map` and `Set` contents, so a captured state is not a lossless backup of those records. Extend `excludePathPatterns` with anything else that ends the session (account deletion, session revocation, account/locale switchers) — it replaces the default, so keep `logout|signout` in the list. If the crawl loses cookies it started with, the result opens with `WARNING: cookie(s) …` lines and the report carries a `sessionLosses` list naming, per lost cookie, the page reached after any redirect, even when that page failed to load; if one of them was the session cookie, everything scanned after that page was audited signed-out. Monitoring continues past the first loss (each cookie is reported once, where it vanished), and URLs discovered mid-crawl join cookie tracking before being visited. Cookie values are not compared and a cookie the browser dropped at its own expiry is ignored, but any other cookie the crawl started with and lost is reported — nothing marks a cookie as an authentication one.
+
+### scan_page_matrix
+
+Run accessibility scans across viewport, media, and zoom variants. Compares each variant against a baseline.
+
+```json
+{
+  "violationsTag": ["wcag2aa"],
+  "reloadBetweenVariants": false
+}
+```
+
+**Default variants:** baseline, mobile (375x812), desktop (1280x720), forced-colors, reduced-motion, zoom-200
+
+**Custom variants:**
+
+```json
+{
+  "variants": [
+    {"name": "baseline"},
+    {"name": "tablet", "viewport": {"width": 768, "height": 1024}},
+    {"name": "dark-mode", "media": {"colorScheme": "dark"}},
+    {"name": "zoom-150", "zoomPercent": 150}
+  ]
+}
+```
+
+**Media options:** `colorScheme` (light/dark), `forcedColors` (active/none), `contrast` (more/no-preference), `reducedMotion` (reduce/no-preference)
+
+### audit_keyboard
+
+Audit keyboard tab order, focus visibility, skip links, and focus traps. Writes a JSON report.
+
+```json
+{
+  "maxTabs": 50,
+  "checkSkipLink": true,
+  "checkFocusVisibility": true,
+  "checkFocusTrap": true,
+  "screenshotOnIssue": true,
+  "maxIssueScreenshots": 3
+}
+```
+
+**Key options:**
+- `includeShiftTab` - Alternate Tab/Shift+Tab
+- `activateSkipLink` - Press Enter when skip link found
+- `stopOnCycle` (default true) - Stop on focus trap detection
+- `jumpScrollThresholdPx` (default 800) - Scroll delta for jump detection
+
+## Violation Tag Reference
+
+**WCAG standards:**
+`wcag2a`, `wcag2aa`, `wcag2aaa`, `wcag21a`, `wcag21aa`, `wcag21aaa`, `wcag22a`, `wcag22aa`, `wcag22aaa`, `section508`
+
+**Categories:**
+`cat.aria`, `cat.color`, `cat.forms`, `cat.keyboard`, `cat.language`, `cat.name-role-value`, `cat.parsing`, `cat.semantics`, `cat.sensory-and-visual-cues`, `cat.structure`, `cat.tables`, `cat.text-alternatives`, `cat.time-and-media`
+
+## Browser Automation Tools
+
+These tools are always available and work in the interactive REPL.
+
+### Navigation & Page
+
+| Tool | Description |
+|------|-------------|
+| `browser_navigate` | Navigate to URL: `{"url": "https://..."}` |
+| `browser_navigate_back` | Go back to previous page |
+| `browser_close` | Close the page |
+| `browser_resize` | Resize window: `{"width": 1280, "height": 720}` |
+| `browser_emulate_media` | Emulate color scheme, reduced motion, forced colors, contrast, or print/screen media |
+| `browser_snapshot` | Capture accessibility snapshot; pass `{"boxes": true}` to include element bounds |
+| `browser_take_screenshot` | Take screenshot (png/jpeg/webp, fullPage option) |
+| `browser_wait_for` | Wait for text/time: `{"text": "loaded"}` or `{"time": 5}` |
+
+### Interaction
+
+| Tool | Description |
+|------|-------------|
+| `browser_click` | Click element by ref: `{"element": "Submit", "ref": "s1e5"}` |
+| `browser_type` | Type text: `{"element": "Search", "ref": "s1e3", "text": "query", "submit": true}` |
+| `browser_press_key` | Press key: `{"key": "Enter"}` |
+| `browser_hover` | Hover over element |
+| `browser_drag` | Drag between elements |
+| `browser_drop` | Drop external files or data onto an element: `{"element": "Dropzone", "ref": "e7", "paths": ["/path/to/file"]}` (paths are read on the server host) |
+| `browser_select_option` | Select dropdown option |
+| `browser_fill_form` | Fill multiple form fields at once |
+| `browser_file_upload` | Upload files: `{"paths": ["/path/to/file"]}` |
+| `browser_handle_dialog` | Handle browser dialog: `{"accept": true}` |
+| `browser_evaluate` | Run JavaScript on page: a function or a bare expression such as `{"function": "document.title"}` |
+
+### Tabs & Config
+
+| Tool | Description |
+|------|-------------|
+| `browser_tabs` | Manage tabs: `{"action": "list"}`, `{"action": "new"}`, `{"action": "close"}`, `{"action": "select", "index": 1}` |
+| `browser_navigation_timeout` | Set navigation timeout (30s-20min) |
+| `browser_default_timeout` | Set default operation timeout (30s-20min) |
+| `browser_session_open` | Open a separate browser session (its own browser context: tabs, cookies, storage); returns a `browserSessionId` that the non-session browser tools accept as an optional argument (omit it for the default session). Rejected in modes that share one live browser context (non-isolated CDP attach, extension) |
+| `browser_session_close` | Close a session opened with `browser_session_open`: `{"browserSessionId": "bs_..."}` |
+
+### Diagnostics
+
+| Tool | Description |
+|------|-------------|
+| `browser_console_messages` | Get all console messages |
+| `browser_network_requests` | Get all network requests, numbered |
+| `browser_network_request` | Get credential-redacted headers and body metadata for one request: `{"index": 3}` |
+
+### Optional Tools (require `--caps`)
+
+**`--caps install`:** `browser_install {}` - Install the configured browser. Disabled by default. If the browser is missing and installation is authorized, restart the REPL with `npx --allow-scripts=re2 mcp-accessibility-scanner --caps install interactive`, preserving the existing browser options, then call `browser_install {}`. This downloads executable code through Playwright without independent archive checksum/signature verification; trust the download source and TLS configuration before enabling it. Alternatively, use a provisioned browser with `--executable-path`. Explicit `core-install` settings remain supported as a deprecated alias for `install`.
+
+**`--caps pdf`:** `browser_pdf_save` - Save page as PDF
+
+**`--caps verify`:** `browser_verify_element_visible`, `browser_verify_text_visible`, `browser_verify_list_visible`, `browser_verify_value`
+
+**`--caps vision`:** `browser_mouse_move_xy`, `browser_mouse_click_xy`, `browser_mouse_drag_xy`
+
+**`--caps devtools`:** `browser_start_recording`, `browser_stop_recording` - Record a browser flow as Playwright JavaScript. Handshake-free HTTP clients must open a browser session and pass its `browserSessionId` to both tools; shared-context modes need a stateful MCP connection.
+
+## Common Recipes
+
+### Full WCAG 2.2 AA audit of a site
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless interactive
+```
+
+```
+> browser_navigate {"url":"https://example.com"}
+> audit_site {"strategy":"links","maxPages":50,"maxDepth":3,"violationsTag":["wcag2aa","wcag21aa","wcag22aa"]}
+```
+
+### Quick single-page scan
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless interactive
+```
+
+```
+> browser_navigate {"url":"https://example.com/page"}
+> scan_page {"violationsTag":["wcag2aa"]}
+```
+
+### Scan an interactive state
+
+Keep navigation, interactions and scans in the same REPL session. A URL crawl opens a temporary tab and does not reproduce the current tab's open dialogs or validation errors.
+
+```text
+1. browser_navigate to the test page, wait for ready content, then scan_page {}
+2. browser_snapshot, then browser_click with a current ref to open an HTML dialog
+3. browser_wait_for the dialog text, then scan_page {}
+4. Submit invalid test data, wait for the validation message, then scan_page {}
+5. Capture browser_take_screenshot and record the state and reproduction steps
+```
+
+`scan_page` scans the live tab without navigation. `browser_handle_dialog` is for JavaScript alert/confirm/prompt dialogs, not HTML modals. Keep `reloadBetweenVariants: false` when using `scan_page_matrix` on transient UI, and check that responsive changes did not reset it. Review incomplete results and coverage warnings; test keyboard behavior and error announcements separately. See the README's [interactive-state workflow](README.md#scan-dialogs-and-validation-states).
+
+For login controls requiring individual key events, clear the field with `browser_type` and `text: ""`, then type with `slowly: true` (which appends). Confirm a signed-in page before auditing. See [login troubleshooting](README.md#when-a-login-form-does-not-advance), including container networking.
+
+### Responsive + media variant scan
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless interactive
+```
+
+```
+> browser_navigate {"url":"https://example.com"}
+> scan_page_matrix {"violationsTag":["wcag2aa","wcag21aa"]}
+```
+
+### Keyboard accessibility audit with screenshots
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless interactive
+```
+
+```
+> browser_navigate {"url":"https://example.com"}
+> audit_keyboard {"screenshotOnIssue":true,"maxIssueScreenshots":5,"activateSkipLink":true}
+```
+
+### Scan specific pages from a list
+
+```bash
+npx --allow-scripts=re2 mcp-accessibility-scanner --headless interactive
+```
+
+```
+> audit_site {"strategy":"provided","urls":["https://example.com/","https://example.com/about","https://example.com/contact"],"violationsTag":["wcag2aa"]}
+```
+
+### Electron app flow
+
+Launch the app binary directly if `open -a` does not expose the CDP port. If the app is already running, quit it first so the debug flag is applied on a clean start.
+
+```bash  
+npx --allow-scripts=re2 mcp-accessibility-scanner interactive --cdp-launch-command /Applications/YourApp.app/Contents/MacOS/YourApp --cdp-launch-args=--remote-debugging-port={port} --cdp-launch-port 9222 --cdp-launch-startup-timeout 20000
+```
+
+Typical REPL flow:
+
+```
+> browser_tabs {"action":"list"}
+> browser_tabs {"action":"select","index":1}
+> browser_evaluate {"function":"() => ({ url: location.href, text: document.body.innerText, links: Array.from(document.querySelectorAll('a,button,[role=button]')).map((el, i) => ({ i, text: (el.textContent || '').trim(), tag: el.tagName, href: el.getAttribute('href') })) })"}
+> browser_evaluate {"function":"() => document.querySelector('SELECTOR_FOR_NEXT_STEP')?.click()"}
+```
+
+If `scan_page {}` still fails on the Electron target, use this Axe fallback from the same REPL session:
+
+```json
+{
+  "function": "async () => { if (!window.axe) { await new Promise((resolve, reject) => { const script = document.createElement('script'); script.src = 'file:///ABSOLUTE/PATH/TO/node_modules/axe-core/axe.min.js'; script.onload = resolve; script.onerror = () => reject(new Error('Failed to load axe')); document.head.appendChild(script); }); } const results = await window.axe.run(document); return { url: location.href, violations: results.violations.length, incomplete: results.incomplete.length, passes: results.passes.length, inapplicable: results.inapplicable.length, rules: results.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.length })) }; }"
+}
+```

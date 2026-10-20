@@ -1,0 +1,55 @@
+---
+description: Vendor-neutral public tooling policy with a narrow, license-evidenced project-naming exception
+globs: *
+alwaysApply: true
+---
+
+# Tooling & Static Analysis Policy
+
+## Default
+
+- Keep public documentation, CI/CD, and commit messages vendor-neutral. Do not name third-party local development tools, AST indexers, or custom MCP servers unless the narrow maintainer-evaluation exception below applies.
+- Do not add tool-specific local ignore patterns to the public `.gitignore`; use local-only Git exclude files for personal dev tooling artifacts.
+- When referring to local code audits in docs or issues, use generic terms like "Local Static Analysis", "AST tooling", or "Graph-based code analysis" unless the exception below applies.
+
+## Maintainer tooling-evaluation exception
+
+This is a repository editorial rule, not a statement that licenses prohibit factual references. It permits a narrow, factual mention of an exact software project in a maintainer-facing tooling evaluation only when all conditions below are met:
+
+1. Scope the permission to the named project or component, not its vendor, parent company, other products, hosted services, plugins, or bundled distribution.
+2. Bind the name to the exact source release/tag or commit reviewed. If a runtime artifact was evaluated, identify that artifact separately; a source-repository license does not establish the license of a binary, bundle, plugin, service, or dependency set.
+3. Verify the license from an official, immutable upstream license file at that same release/tag or commit. Record the project/repository, exact revision, SPDX identifier, immutable license URL, verification date, and whether the claim covers source only or the evaluated artifact.
+4. For general candidates, accept only a single SPDX identifier from this explicit non-reciprocal allowlist: `MIT`, `BSD-2-Clause`, `BSD-3-Clause`, `Apache-2.0`, or `ISC`. This list is a narrow editorial eligibility rule, not a complete legal classification of open-source licenses. Only the exact pinned-source exceptions below depart from this single-identifier rule.
+5. Exclude unknown, custom, proprietary, copyleft, mixed, or compound license expressions unless an exact pinned-source exception below applies. Do not infer eligibility from a vendor's other open-source projects, an OSI-approval badge, a package-registry label, or a moving default-branch license. OSI approval alone does not classify a license as non-copyleft.
+6. State evidence limits. Naming permission does not imply endorsement, partnership, compatibility, security, quality, support, adoption, or a recommendation. Do not use logos or promotional language.
+
+### Exact pinned-source exception: Windows launcher qualification
+
+The following one-time exception permits factual naming of the exact upstream source required by the bounded Windows x64 generated-launcher qualification lane. It does not broaden eligibility for other versions, artifacts, packages, products, or services.
+
+- Project/repository: `uv`, `astral-sh/uv`.
+- Exact source revision: `bea138450f0e620a4ce5765b0e38cff7b9f0799f`.
+- Exact upstream template file: `crates/uv-trampoline-builder/trampolines/uv-trampoline-x86_64-console.exe`.
+- File identity: Git blob `c6d3881fc6b7d3ef0c6d3c08d505ab2b4c0ad9c4`, 45,056 bytes, SHA-256 `0447a4febf43fdd958e4236129d6050b1dad64c124c43355d557542b3229cae8`.
+- License evidence at that same immutable revision: upstream `Cargo.toml` declares `MIT OR Apache-2.0`; the corresponding [`LICENSE-MIT`](https://github.com/astral-sh/uv/blob/bea138450f0e620a4ce5765b0e38cff7b9f0799f/LICENSE-MIT) and [`LICENSE-APACHE`](https://github.com/astral-sh/uv/blob/bea138450f0e620a4ce5765b0e38cff7b9f0799f/LICENSE-APACHE) are available at the same commit. The declaration is a dual-license choice, not a claim that the expression is a single SPDX identifier.
+- Immutable source metadata: [`Cargo.toml`](https://github.com/astral-sh/uv/blob/bea138450f0e620a4ce5765b0e38cff7b9f0799f/Cargo.toml).
+- Verification date: 2026-09-28. This records the upstream repository declaration and exact file identity; it is not an independent legal determination of the PE template, a generated candidate, another binary, a distribution, or the repository as a whole.
+- Permitted use: factual maintainer-facing references needed to fetch, bind, and qualify this exact PE template as a non-executed input. Re-verify the revision, file identity, and license evidence before changing any bound value.
+
+All other conditions and evidence limits above remain in force. This exception does not imply endorsement, partnership, compatibility, support, security, quality, or a general recommendation. It grants no authority beyond the separately authorized bounded workflow and its exact pinned input.
+
+This exception grants no authority to download, install, execute, add dependencies, change CI, or publish compatibility/support claims. Preserve the separate authorization and evidence gates for those actions. It never relaxes the absolute assistant/model/tool authorship-attribution prohibition in `AGENTS.md`.
+
+### Exact pinned-source exception: qualification-tool acquisition
+
+This exception permits only factual CI, helper, test and recovery references needed by the separately authorized qualification-tool acquisition programme. It covers `uv` / `astral-sh/uv`, version `0.12.19`, at source `bea138450f0e620a4ce5765b0e38cff7b9f0799f`.
+
+The source declares `MIT OR Apache-2.0` in immutable [Cargo.toml](https://github.com/astral-sh/uv/blob/bea138450f0e620a4ce5765b0e38cff7b9f0799f/Cargo.toml), with [LICENSE-MIT](https://github.com/astral-sh/uv/blob/bea138450f0e620a4ce5765b0e38cff7b9f0799f/LICENSE-MIT) and [LICENSE-APACHE](https://github.com/astral-sh/uv/blob/bea138450f0e620a4ce5765b0e38cff7b9f0799f/LICENSE-APACHE). Verification date: 2026-10-18. This records the source declaration only, not an independent legal determination of any archive, executable, dependency set or distribution. The retained immutable source/license evidence must be reverified before changing a bound value.
+
+| Platform | Exact archive | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| Linux x86_64 | `uv-x86_64-unknown-linux-gnu.tar.gz` | 19,831,732 | `23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8` |
+| macOS arm64 | `uv-aarch64-apple-darwin.tar.gz` | 16,988,553 | `a9a8df1eedeb192f2e47e40e2faabfb387db4b850209118786d42f89dde3e0ba` |
+| Windows x64 | `uv-x86_64-pc-windows-msvc.zip` | 17,955,780 | `6dbb02d79e419522f1c500f0adb1cddcff0cda7d59b0d66ea7f5e3b4a1b2f5f0` |
+
+Archive identity is independent of naming eligibility; runtime bytes still require their declared acquisition and qualification gates. No permission extends to another version, company, project, product, service, plugin or unpinned artifact. No logos, promotion, endorsement, partnership, support or security claims are permitted. Preserve the existing non-executed template exception, the general allowlist, all operational authorization boundaries and the absolute maintainer-only authorship rule. This editorial exception does not itself authorize downloads, execution, dependencies, CI changes or publication.

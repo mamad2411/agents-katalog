@@ -2,7 +2,6 @@
 ---
 name: composio-sdk
 description: Build AI agents and apps with Composio - access 200+ external tools with Tool Router or direct execution
-tags: [composio, tool-router, agents, mcp, tools, api, automation]
 ---
 
 # Composio

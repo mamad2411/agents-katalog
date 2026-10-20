@@ -1,0 +1,64 @@
+# AGENTS.md - docs
+
+Docs guidance for agents.
+
+## Current docs
+
+Use `marmot-architecture/index.md` as the entry point. The `overview/` pages are the current orientation set. The
+`further-context/` pages are deeper background and may contain older exploratory wording.
+
+The Marmot protocol specification lives in `github.com/marmot-protocol/marmot`. Use it for implementation-neutral
+Marmot protocol text. Keep repository and engine-specific notes in `marmot-architecture/` or crate docs.
+
+`required-features.md` is the protocol boundary principles document. Treat it as a high-level constraint, not an
+implementation checklist.
+
+## Layout
+
+- `marmot-architecture/` - architecture, contracts, and diagnostics; see `marmot-architecture/AGENTS.md`.
+- `integration/` - versioned client integration guides (`<version>.md`), `README.md` index, and `TEMPLATE.md`.
+- `release/` - concise per-version release notes plus `wn-homebrew.md` (Homebrew tap checklist).
+- `quic-broker-deployment.md` - `marmot-quic-broker` sidecar deployment.
+- `external-signer-accounts.md` - accounts whose Nostr key is held by a host external signer.
+- `explorations-of-multi-device.md` - exploratory, non-normative multi-device notes.
+- `learnings.md` - historical log kept for archaeology only; do not treat as current contract.
+
+## Editing rules
+
+- Update `updated:` dates in front matter when changing a dated architecture page.
+- Keep spec-like language in `marmot-architecture/cgka-engine-spec.md`,
+  `marmot-architecture/cgka-engine-canonicalization-contract.md`, and `marmot-architecture/distributed-convergence.md`.
+- Keep overview docs short. Move long rationale into `further-context/`.
+- When changing code behavior, update `marmot-architecture/overview/current-state.md` if the public status changed.
+- Keep observability guidance current in `marmot-architecture/overview/observability.md` when tracing/logging policy
+  changes.
+- When a protocol rule graduates from exploratory architecture text, link to the matching document in
+  `github.com/marmot-protocol/marmot` instead of copying the rule into multiple docs.
+
+## Client integration and release documentation
+
+`../crates/marmot-uniffi/README.md` is the current client integration entry point;
+its method reference and the C symbol reference enumerate all exports. Versioned
+`integration/<version>.md` guides explain the exact upgrade delta, while
+`release/<version>.md` remains concise. Starting with 0.10.2, each release requires
+both, with reciprocal links and an entry in `integration/README.md`.
+
+Follow `../release.md#release-documentation`. Verify behavior against the named tags,
+separate required adoption from optional features and automatic fixes, include platform
+ownership/lifecycle examples and concrete validation, and state any remaining limitations.
+Do not move release tags for documentation added after publication; mark those guides as
+supplements and use a merged documentation commit URL when publishing release links.
+Do not label lower-level APIs deprecated without actual source deprecation evidence.
+
+## Verification
+
+After doc changes, run:
+
+```sh
+rg -n \
+  "TODO|TBD|open question|future SQLite|production storage|retry-deferred|AlreadyAtEpoch.*Peel" \
+  docs \
+  --glob '!AGENTS.md'
+```
+
+Review matches before deciding whether they are stale.

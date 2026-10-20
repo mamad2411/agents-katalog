@@ -1,0 +1,52 @@
+---
+description: N9E 前端仓库结构、技术栈与全局编码约定（始终生效）
+alwaysApply: true
+---
+
+# N9E 前端项目
+
+## 目录速览
+
+```
+src/
+├── components/     # 通用 UI 与业务无关的基础组件
+├── pages/          # 路由页面
+├── plus/           # Plus 扩展（datasource、parcels 等，路径别名 plus:/*）
+├── plugins/        # 数据源等插件化功能（含 Explorer/Dashboard 等）
+├── store/          # Zustand 等状态
+├── services/       # 接口与领域服务
+├── utils/          # 工具函数
+├── routers/        # 路由配置
+├── theme/          # 主题与 CSS 变量（如 variable.css）
+├── locales/        # 国际化资源
+├── assets/         # 静态资源
+├── types/          # 全局类型
+├── App.tsx
+└── main.tsx
+```
+
+## 技术栈与风格
+
+- TypeScript + React Hooks；优先函数组件，避免 class 组件。
+- 组件 Props 使用 `interface` 显式声明，避免 `any`。
+- 遵循仓库既有格式与 Prettier 配置；改动保持最小范围，不重写无关模块。
+- 不臆测接口或业务逻辑；上下文不足时说明缺口或反问。
+- **类型收窄优先使用原生接口**：用 `Array.isArray` 代替 `_.isArray`，用 `typeof x === 'number'` 代替 `_.isNumber`，用 `x == null` 代替 `_.isNil`，以此类推。lodash 的类型守卫函数在缺少 `@types/lodash` 时不会被 TypeScript 识别为类型守卫，导致 `unknown` 类型无法收窄。
+
+## 数据与错误
+
+- 异步请求须有错误处理（`try/catch`、`.catch`、`onError` 等，与现有模式一致）。
+
+## 折叠面板与表单
+
+- `antd` 的 `Collapse.Panel` 初始折叠时不会挂载内容。面板内包含需要参与校验、回填或提交的 `Form.Item` / `Form.List` 时，必须添加 `forceRender`，确保字段注册到 Form；仅用于展示的内容不需要添加。
+
+## 样式与颜色
+
+- 颜色、主题相关值使用 `src/theme/variable.css`（及现有主题体系）中的变量，避免魔法色值。
+- **Tailwind 与 Less 的分工、反模式与迁移方式** 见 `.cursor/rules/tailwind-usage.mdc`（匹配 `src/**/*.{ts,tsx,less,css}` 时自动注入）。
+
+## 测试
+
+- 使用 Vitest + Testing Library。
+- 测试文件命名：`*.test.ts` / `*.test.tsx` 或 `*.spec.ts` / `*.spec.tsx`，与待测文件同目录或约定目录即可。

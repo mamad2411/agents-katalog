@@ -1,0 +1,340 @@
+# Skill: Architecture Pattern Scaffolding
+
+> Generates port interfaces, implementation guides, directory structures, and other non-placeholder scaffolding from Build Brief architecture pattern decisions. Ensures autonomous coding agents start with the right structure, not a blank file.
+
+---
+
+## Trigger
+
+Activated when coding starts (after brief approval and ticket creation). Consumes Section 2 (Architecture Patterns) and Section 8 (Task Breakdown) from the brief.
+
+## Input Contract
+
+```json
+{
+  "build_brief_id": "string",
+  "architecture_patterns": [
+    {
+      "area": "string (e.g., data_access, error_handling, config)",
+      "convention": "string (e.g., ports-and-adapters, repository pattern, typed errors)",
+      "reference_files": ["string (file paths in repo)"],
+      "decision_type": "Type 1 | Type 2"
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "string",
+      "description": "string",
+      "area": "backend | frontend | infra | observability",
+      "pattern_ref": "string (which pattern applies)"
+    }
+  ],
+  "repo_path": "string",
+  "language": "typescript | python | scala | go | javascript",
+  "output_directory": "string"
+}
+```
+
+## Output Contract
+
+```json
+{
+  "scaffolded_files": [
+    {
+      "path": "string",
+      "type": "port | adapter | factory | config | test_helper",
+      "responsibility": "one-line single-responsibility statement intended to become the file's module doc",
+      "content": "string",
+      "pattern": "string (which architecture pattern)",
+      "todos": ["string (what the coding agent needs to implement)"]
+    }
+  ],
+  "directory_structure": "string (tree output)",
+  "implementation_guide": "string (instructions for coding agents)",
+  "summary": "string"
+}
+```
+
+## Behavior
+
+### 0. Apply Target Repo Conventions First
+
+If the Build Brief carries target repo conventions, scaffolding must consume those rules before proposing files. For repos with the Interralis-style rule set, every planned file gets a one-line responsibility statement intended to become the file's module doc verbatim. If that line needs `and`, split the planned file before codegen receives it.
+
+Recursive rule: when a scaffolded file's responsibility grows sub-parts during implementation, the executor must split it into a directory module following the same shape immediately, not as cleanup. A grown file becomes:
+
+```text
+feature.rs          # thin coordinator: module doc index, shared rules, curated re-exports
+feature/
+  parser.rs         # one responsibility
+  evaluator.rs      # one responsibility
+  impure_shell.rs   # side effects, documented as impure shell
+```
+
+Catch-all names and roles are antipatterns: `utils`, `helpers`, `common`, `project`, `collect`, `misc`, and files whose responsibility is "data and logic" or "parse and execute" must be split or renamed to the single job they own.
+
+Worked example: if `collect.rs` starts as "collect project metadata" but grows filesystem reads, process execution, parsing, and summarization, it must become a directory module such as `collect/fs_impure_shell.rs`, `collect/process_impure_shell.rs`, `collect/parser.rs`, and `collect/summary.rs`, with `collect.rs` left as the thin coordinator. The fix is not to keep the file because it is short; size and line count are not architecture criteria.
+
+### 1. Analyze Reference Implementations
+
+Before generating anything, read the reference files from the brief:
+
+```bash
+# Read each reference file to understand the exact convention
+cat [reference_file_path]
+
+# Find all files following the same pattern
+find . -path "*/domain/repos/*" -o -path "*/ports/*" | head -20
+find . -path "*/adapters/*" -o -path "*/server/adapters/*" | head -20
+
+# Find dependency injection / wiring
+grep -r "bind\|provide\|register\|inject" --include="*.ts" --include="*.scala" --include="*.py" | head -10
+
+# Find module boundaries
+find . -name "index.ts" -o -name "__init__.py" -o -name "mod.rs" | head -20
+```
+
+### 2. Generate Port Interfaces
+
+For each domain concept identified in the task breakdown, generate a port interface that follows the repo's existing convention.
+
+**Detection logic:**
+- If repo uses traits (Scala): generate `trait`
+- If repo uses abstract classes (Python): generate `ABC`
+- If repo uses interfaces (TypeScript): generate `interface`
+- If repo uses base classes (JavaScript): generate `class` with `throw new Error("Not implemented")`
+- If repo uses Go interfaces: generate `interface`
+
+**Example outputs by language:**
+
+```scala
+// domain/repos/WidgetRepo.scala
+trait WidgetRepo[F[_]]:
+  def create(widget: Widget): F[WidgetId]
+  def getById(id: WidgetId): F[Option[Widget]]
+  def updateStatus(id: WidgetId, status: WidgetStatus): F[Unit]
+```
+
+```typescript
+// domain/repos/WidgetRepo.ts
+export interface WidgetRepo {
+  create(widget: Widget): Promise<WidgetId>;
+  getById(id: WidgetId): Promise<Widget | null>;
+  updateStatus(id: WidgetId, status: WidgetStatus): Promise<void>;
+}
+```
+
+```python
+# domain/repos/widget_repo.py
+from abc import ABC, abstractmethod
+
+class WidgetRepo(ABC):
+    @abstractmethod
+    async def create(self, widget: Widget) -> WidgetId:
+        pass
+
+    @abstractmethod
+    async def get_by_id(self, id: WidgetId) -> Optional[Widget]:
+        pass
+
+    @abstractmethod
+    async def update_status(self, id: WidgetId, status: WidgetStatus) -> None:
+        pass
+```
+
+### 3. Generate Adapter Contracts and Implementation Targets
+
+For each port interface, generate only what is safe to scaffold without leaving mergeable placeholders:
+- the adapter file path and naming convention in the implementation guide
+- constructor and dependency requirements
+- pattern rules the real adapter must follow
+- failing tests that define the required behavior
+
+Do **not** generate runtime adapter implementations with placeholder bodies such as `NotImplementedError`, `todo!()`, `unimplemented!()`, `pass`, or TODO comments in production source paths.
+
+**CRITICAL:** Scaffolding output is planning context only. It must never satisfy task completion, Definition of Done, or merge gates.
+
+**The paired QA test file is the real spec:**
+```python
+# tests/test_postgres_widget_repo.py (generated by QA skill, already failing)
+async def test_create_widget_persists():
+    """Given valid widget data, When create() called, Then widget exists in DB."""
+    repo = PostgresWidgetRepo(test_db)
+    widget_id = await repo.create(Widget(name="test"))
+    assert await repo.get_by_id(widget_id) is not None
+```
+
+The coding agent receives the contract + the failing test. Its job: create the real implementation directly. Scaffolding is not considered working code.
+
+### 4. Generate Domain Types
+
+If the task breakdown references new domain types (entities, value objects, enums):
+- Generate type definitions following existing conventions
+- Place them in the correct directory
+- Include validation logic only if the rules are fully specified; otherwise put the requirement in the implementation guide instead of emitting placeholder runtime logic
+
+### 5. Generate Wiring / Registration
+
+If the repo uses dependency injection or module registration:
+- Generate the binding/registration for new ports → adapters
+- Follow the existing wiring pattern (e.g., `Module`, `Container`, `provider`, etc.)
+
+### 6. Generate Directory Structure
+
+Create any new directories needed, following existing conventions:
+
+```bash
+# Example output
+src/
+├── domain/
+│   ├── entities/
+│   │   └── Widget.ts          # NEW: domain entity
+│   ├── repos/
+│   │   └── WidgetRepo.ts      # NEW: port interface
+│   └── errors/
+│       └── WidgetErrors.ts    # NEW: typed domain errors
+├── server/
+│   └── adapters/
+│       └── PostgresWidgetRepo.ts  # NEW: adapter implementation target
+└── tests/
+    └── helpers/
+        └── WidgetFactory.ts   # NEW: test factory
+```
+
+For every planned source file, include the responsibility line in the scaffold output. For Rust modules, that line is intended to become the first `//!` line. For coordinator files, include a one-line index of submodules and their jobs and keep the coordinator re-export-only or orchestration-only.
+
+### 6.5 Generate Architecture Tests When Native Tests Exist
+
+When the target repo has a test suite, scaffolding must emit or instruct emitting architecture tests that enforce the generated layout. The reference pattern is Interralis `tests/integration/*_architecture.rs`:
+
+- coordinator files stay re-export-only or thin orchestration files
+- declared-pure files contain no filesystem, subprocess, environment, database, or network calls
+- side-effect calls live in files whose module doc declares an impure shell
+- no architecture test may use file size or line count as a criterion
+
+### 7. Generate Implementation Guide
+
+Produce a markdown guide that coding agents consume:
+
+```markdown
+## Implementation Guide for [Feature Name]
+
+### Files to Implement (in order)
+1. `domain/entities/Widget.ts` — Responsibility: define the Widget entity with validation
+2. `domain/repos/WidgetRepo.ts` — Responsibility: declare the Widget persistence port
+3. `server/adapters/PostgresWidgetRepo.ts` — Responsibility: implement the Widget persistence adapter from generated tests and pattern rules
+4. `server/routes/WidgetRouter.ts` — Add endpoints per task [JIRA-124]
+5. `tests/widget_architecture.test.ts` — Enforce generated coordinator, pure-core, and impure-shell boundaries
+6. `tests/widget.test.ts` — Run QA-generated tests after implementation
+
+### Pattern Rules
+- Domain layer MUST NOT import from server layer
+- Adapters MUST implement the full port interface
+- All errors MUST use typed errors from domain/errors/
+- All new dependencies MUST be injected, not imported directly
+- If any planned file grows sub-parts, split it into a directory module immediately and preserve one responsibility per file.
+- Coordinator files stay thin; worker logic moves into submodules.
+- Pure files contain no filesystem, subprocess, environment, database, or network calls.
+- File size and line count are never architecture criteria.
+
+### Reference Implementations
+- Similar port: [file path]
+- Similar adapter: [file path]
+- Similar router: [file path]
+```
+
+## MCP Server Contract
+
+### Tool: `scaffold_from_patterns`
+
+```json
+{
+  "name": "scaffold_from_patterns",
+  "description": "Generate port interfaces, transitional adapter scaffolding, and directory structure from Build Brief architecture patterns",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "build_brief": {
+        "type": "string",
+        "description": "Section 2 (Architecture Patterns) + Section 8 (Task Breakdown) as markdown"
+      },
+      "repo_path": {
+        "type": "string",
+        "description": "Path to the repository root"
+      },
+      "output_directory": {
+        "type": "string",
+        "description": "Where to write scaffolded files (default: repo source root)"
+      },
+      "dry_run": {
+        "type": "boolean",
+        "default": true,
+        "description": "If true, show files without creating"
+      }
+    },
+    "required": ["build_brief", "repo_path"]
+  }
+}
+```
+
+### Tool: `validate_scaffold`
+
+```json
+{
+  "name": "validate_scaffold",
+  "description": "Validate that scaffolded code compiles and follows pattern conventions",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "scaffolded_files": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Paths to scaffolded files to validate"
+      },
+      "repo_path": {
+        "type": "string"
+      }
+    },
+    "required": ["scaffolded_files", "repo_path"]
+  }
+}
+```
+
+## CLI Interface
+
+```bash
+# Preview scaffolding from build brief
+adlc-scaffold generate --brief ./build-brief.md --repo ./my-repo --dry-run
+
+# Generate scaffolding
+adlc-scaffold generate --brief ./build-brief.md --repo ./my-repo
+
+# Validate scaffolded files compile
+adlc-scaffold validate --repo ./my-repo
+
+# Generate implementation guide only
+adlc-scaffold guide --brief ./build-brief.md --repo ./my-repo --output ./implementation-guide.md
+```
+
+## Quality Gates
+
+- [ ] Every port interface matches the repo's existing convention (trait, interface, ABC, etc.)
+- [ ] Every adapter extends/implements its port correctly
+- [ ] Scaffolded files compile (type check passes)
+- [ ] Directory structure follows existing conventions
+- [ ] Every scaffolded source file has a one-line single-responsibility statement intended for its module doc
+- [ ] Recursive split rule is documented for any file that may grow sub-parts
+- [ ] Domain layer has no imports from infrastructure layer
+- [ ] Wiring/registration is generated if DI is used
+- [ ] Implementation guide references correct file paths
+- [ ] No generated scaffold is treated as complete work
+- [ ] Validation fails if scaffold artifacts remain at task completion
+- [ ] Architecture tests or explicit instructions enforce coordinator-thin, pure-core, and impure-shell boundaries when the repo has tests
+- [ ] No quality gate uses file size or line count
+
+## Framework Hardening Addendum
+
+- **Contract versioning:** Scaffolding input/output contracts must include `contract_version`.
+- **Schema validation:** Validate architecture pattern inputs against canonical Build Brief contract fields before generating scaffolding.
+- **Idempotency:** File generation operations must be idempotent by target path and component identifier to prevent duplicate scaffolding.
+- **Structured errors:** Emit typed failure payloads for pattern mismatch, missing references, or unresolved dependencies.

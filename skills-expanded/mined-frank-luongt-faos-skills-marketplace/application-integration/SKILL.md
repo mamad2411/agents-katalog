@@ -2,7 +2,6 @@
 ---
 name: application-integration
 description: Google Cloud Application Integration and Integration Connectors for enterprise system connectivity. Use when connecting AI agents to SAP, Oracle, Salesforce, ServiceNow, Snowflake, or other enterprise systems via pre-built GCP connectors.
-tags: [gcp, integration, connectors, enterprise]
 ---
 
 # Google Cloud Application Integration

@@ -1,1 +1,0 @@
-/Users/junchenyou/Documents/OKX-Hackthon/weclaude/SKILL.md

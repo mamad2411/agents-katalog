@@ -1,0 +1,162 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Interaction Language
+
+Default to communicating with developers in Chinese (中文), unless explicitly asked to use another language. Note that this applies only to conversational interaction; code, commit messages, and GitHub issue/PR content still follow their respective conventions documented below (which require English).
+
+## Build Commands
+
+CrossPaste is a Kotlin Multiplatform application using Gradle. Key commands:
+
+- **Run the application**: `./gradlew app:run`
+- **Build**: `./gradlew build`
+- **Run tests (fast tier)**: `./gradlew app:desktopTest` — the default; suites annotated `@IntegrationTest` (real processes, full pairing handshakes, wall-clock timing) are excluded
+- **Run all tests including integration tier**: `./gradlew app:desktopTest -PintegrationTests` — release/beta CI builds run this; PR CI runs only the fast tier
+- **Code formatting**: `./gradlew ktlintFormat`
+- **Code style check**: `./gradlew ktlintCheck`
+- **Run single test**: `./gradlew test --tests "ClassName.testMethodName"` (add `-PintegrationTests` if the class is `@IntegrationTest`-tagged)
+
+When adding a test suite that spawns processes, performs real pairing/sync handshakes, or sleeps on wall-clock time (roughly: anything adding multiple seconds), tag the class with `@com.crosspaste.test.IntegrationTest` so it lands in the integration tier instead of slowing every PR.
+
+First startup downloads JBR (JetBrains Runtime) and gradle dependencies automatically.
+
+## Code Architecture
+
+### High-Level Structure
+- **Desktop multiplatform app**: Built with Compose Multiplatform and Kotlin
+- **Database**: SQLite with SQLDelight for type-safe queries
+- **Networking**: Ktor for client/server communication with custom encryption
+- **UI**: Compose Multiplatform with Material 3 design
+- **DI**: Koin for dependency injection across modules
+
+### Multi-Platform Strategy
+CrossPaste is a cross-platform product covering Desktop (this repo) and Mobile (Android/iOS, separate private repos). The `commonMain` code is designed to be shared across both Desktop and Mobile platforms — it gets copied to the mobile projects. When modifying `commonMain` code, always consider mobile compatibility: avoid desktop-only APIs, keep interfaces platform-agnostic, and ensure changes won't break mobile consumers.
+
+### Key Source Directories
+- `app/src/commonMain/kotlin/`: Shared business logic across Desktop and Mobile platforms
+- `app/src/desktopMain/kotlin/`: Desktop-specific implementations
+- `app/src/desktopTest/kotlin/`: Desktop platform tests
+- `app/src/commonMain/sqldelight/`: Database schema definitions
+
+### Core Module Organization
+The application follows a modular architecture defined in `CrossPasteModule.kt`:
+
+- **appModule()**: Core application services and managers
+- **sqlDelightModule()**: Database layer and DAOs
+- **networkModule()**: Client/server networking with encryption
+- **securityModule()**: Cryptographic services and secure storage
+- **pasteTypePluginModule()**: Handlers for different clipboard data types
+- **pasteComponentModule()**: Clipboard monitoring and processing
+- **uiModule()**: UI components and screen providers
+- **viewModelModule()**: ViewModels for UI state management
+
+### Key Architectural Patterns
+- **Dependency Injection**: Koin modules organize services by domain
+- **Repository Pattern**: DAOs abstract database operations
+- **Plugin Architecture**: Extensible paste type handlers (text, images, files, etc.)
+- **Platform Abstraction**: Common interfaces with platform-specific implementations
+- **Secure Communication**: End-to-end encryption for cross-device sync
+
+### Database Schema
+SQLDelight manages database schema in `.sq` files:
+- `PasteDatabase.sq`: Main paste item storage
+- `PasteTaskDatabase.sq`: Background task management
+- `SecureDatabase.sq`: Encrypted data storage
+- `SyncRuntimeInfoDatabase.sq`: Device synchronization state
+
+### Native Platform Integration
+- **macOS**: Swift integration via `MacosApi.swift` compiled to dylib
+- **Windows/Linux**: JNA for native API access
+- **Global shortcuts**: Platform-specific keyboard listeners
+- **System tray**: Cross-platform tray implementation
+
+## Development Environment
+
+### Platform-Specific Setup
+- **macOS**: Xcode tools required for Swift compilation
+- **All platforms**: JBR is automatically downloaded to `jbr/` directory
+- **Proxy configuration**: Available in `gradle.properties` for restricted networks
+
+### Testing
+- Tests use MockK for mocking
+- Platform-specific test utilities in `desktopTest/`
+- System property `appEnv=TEST` is set automatically during test runs
+
+#### Test Tiers
+
+The desktop suite is split into two tiers via the JUnit 5 tag `integration`. Every new test class MUST be assigned to the correct tier:
+
+- **Fast tier (default, untagged)** — runs on every PR (`./gradlew app:desktopTest`) and must stay fast. A fast-tier test uses mocks/fakes, in-memory SQLite (`TestDriverFactory`), and virtual time (`runTest`); a whole class should finish in well under a second.
+- **Integration tier (`@com.crosspaste.test.IntegrationTest` on the class)** — excluded from PRs; runs with `-PintegrationTests`, which the release and beta build workflows pass, so published artifacts are always gated by the full suite.
+
+Tag a class `@IntegrationTest` if it does ANY of the following:
+- spawns real child processes (e.g. headless daemon launch tests)
+- performs full cryptographic pairing/sync handshakes end to end
+- opens real sockets/servers and exchanges real network traffic beyond a trivial request
+- sleeps or waits on wall-clock time (real `delay`/timeouts not under `runTest` virtual time)
+- takes more than ~1 second for the class in total
+
+Everything else stays untagged in the fast tier. Do not "fix" a slow test by tagging it if it could instead be rewritten against virtual time or mocks — tagging is for tests whose value comes from exercising the real thing. Never delete or weaken a test to make the fast tier faster; move it to the integration tier instead.
+
+## Code Style and Conventions
+
+- **Commit messages**: Use emoji prefixes (see `doc/en/CommitMessage.md`)
+- **Code formatting**: Enforced via ktlint with exclusions for generated code
+- **Package structure**: Organized by feature domain under `com.crosspaste`
+- **Platform files**: Use `.desktop.kt` suffix for platform-specific implementations
+- **Utility usage**: Always check `com.crosspaste.utils` and prefer existing utility classes (e.g., FileUtils, DateUtils, StringUtils) instead of implementing new ones.
+- **UI sizing**: When adding size/dimension constants in UI code, prefer using values defined in `com.crosspaste.ui.theme.AppUISize` instead of inline literal `dp`/`sp` values.
+- **Thread-safe collections**: In `commonMain` code, prefer thread-safe Map/Set from `io.ktor.util.collections` (e.g., `ConcurrentMap`, `ConcurrentSet`) over platform-specific concurrent collections.
+- **Coroutine `delay`**: Always pass a `Duration` to `kotlinx.coroutines.delay`, never a raw number. Write `delay(280L.milliseconds)` / `delay(2.seconds)`, not `delay(280L)` or `delay(2000)`. Add `import kotlin.time.Duration.Companion.milliseconds` (or `.seconds`) as needed. This applies to both production code and tests.
+- **Koin module declaration order**: Inside a Koin `module { }`, declaration order is irrelevant at runtime (`single { }` is lazy and resolved by type — confirmed no `createdAtStart` eager singletons), so order serves readability only. Group bindings by functional sub-domain with `// region <Name>` / `// endregion` markers, and sort alphabetically by bound type within each group. Do not order the whole module strictly alphabetically (it scatters related bindings). Modules that are already cohesive single-responsibility functions need no extra regions.
+
+## Key Technical Details
+
+- **Encryption**: Asymmetric encryption for secure device-to-device communication
+- **Discovery**: mDNS/Bonjour for local network device discovery
+- **Storage**: Local-only architecture with no cloud dependencies
+- **Performance**: Coroutines for async operations, caching for clipboard history
+
+## Windows cmd.exe / PowerShell Interop Pitfalls
+
+Lessons from #4633 (native messaging bridge never launched). They apply to any generated script, manifest, or config that Windows will execute:
+
+- **Never normalize Windows paths to forward slashes when the path will be executed by cmd.exe** (`.bat`/`.cmd` hosts, `cmd /c` invocations — e.g. Chromium launches non-`.exe` native messaging hosts via `cmd /d /s /c "<path>"`). cmd.exe cannot execute a forward-slash path. In JSON, keep backslashes and escape them (`\\`) instead of converting to `/`. Forward-slash paths appearing to work in manual tests (PowerShell `Start-Process`, Win32 APIs) proves nothing about cmd.exe.
+- **Never embed literal non-ASCII paths in generated `.bat` files.** The files are written as UTF-8 but cmd.exe reads them in the OEM code page (e.g. GBK), garbling non-ASCII (e.g. Chinese user profile) paths. Derive paths at run time instead (`%~dp0` for script-relative files); cmd expands it in Unicode.
+- **Target Windows PowerShell 5.1 semantics in generated PowerShell**, not PowerShell 7. Known trap: `[System.Threading.Tasks.Task]::Run({ ScriptBlock })` fails overload resolution on 5.1 (`MethodCountCouldNotFindBest`) — and even when converted, ScriptBlocks can't run on non-runspace threads. Prefer pure .NET calls (e.g. `$stream.CopyToAsync(...)`).
+- Reference implementation for all three rules: `NativeMessagingHostService` and its test.
+
+## Code Formatting
+
+Before attempting to compile or build the project, always run `./gradlew ktlintFormat` first. If the command fails with errors, investigate and fix the issues. If it succeeds and modifies files, understand that the changes are purely stylistic and semantically equivalent to the original code — do not treat reformatted code as something that needs review or further modification.
+
+## Commit Message Convention
+Format: `<emoji code> <description>`
+
+Types:
+- :sparkles: new feature
+- :bug: Bug fix
+- :hammer: Refactoring
+- :memo: docs
+- :art: code style
+- :zap: performance
+- :white_check_mark: test
+- :construction_worker: build/ci
+- :heavy_plus_sign: add dependency
+- :heavy_minus_sign: remove dependency
+- :arrow_up: dependency upgrade
+- :arrow_down: dependency downgrade
+
+Examples from this project:
+- :sparkles: add OCR support for images
+- :bug: resolve navigation crash on back press
+- :hammer: extract SwipeableDeviceRow component
+- :construction_worker: bump kotlin to 2.0.0
+
+Language: English for commit messages
+
+## Issue and Pull Request Language
+
+All GitHub issue titles/bodies and pull request titles/bodies (including summaries, descriptions, and notes) MUST be written in English. Do not use Chinese or any other language in issue/PR content, even when the conversation with the user is in another language. If translating existing non-English text, preserve the technical detail and intent exactly.

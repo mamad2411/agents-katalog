@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/criminal/skills/owi-uebergang-revision-staatsanwaelte/SKILL.md, branch: main)
-- mined: 2026-10-15
-- desc: Für Owi Übergang Revision Staatsanwälte: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

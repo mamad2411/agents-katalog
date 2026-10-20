@@ -1,0 +1,675 @@
+---
+name: cognitive-load-theory
+description: "Sweller's Cognitive Load Theory (CLT) for agents reviewing skill bodies, prompts, docs, dashboards, and agent outputs for avoidable cognitive burden. Working memory holds ~4 chunks; CLT splits load into intrinsic (irreducible difficulty), extraneous (avoidable load from poor presentation — ELIMINATE), and germane (the schema-building work applied to intrinsic load — PROTECT). Use when writing a SKILL.md body, designing prompts (am I asking the model to hold too much at once?), building dashboards (per-screen cognitive budget), authoring docs (is intrinsic load segmented?), or checking whether modern features (long context, structured outputs, prompt caching, subagents) actually reduce load or just move it. Do NOT use for retrieval/session working-set design (use context-management), token budget and compaction timing (use context-window), prompt engineering tactics (use prompt-craft), or token-efficient representation (use compression)."
+license: MIT
+compatibility: "Markdown, Git, any agent-skill runtime"
+allowed-tools: Read Grep
+metadata:
+  relations: "{\"related\":[\"context-window\",\"compression\",\"layout-composition\",\"visual-hierarchy\",\"microcopy\",\"writing-humanizer\",\"summarization\",\"guardrails\",\"context-management\",\"prompt-craft\",\"information-architecture\",\"best-practice\"],\"verify_with\":[\"prompt-craft\",\"information-architecture\",\"best-practice\"]}"
+  subject: quality-assurance
+  scope: "Portable cognitive-load review for skill bodies, prompts, documentation, dashboards, and agent outputs. Teaches Sweller's intrinsic/extraneous/germane load taxonomy (including the modern post-2010 reframing of germane load as resource allocation / productive processing), element interactivity, working-memory chunk and duration limits, the named CLT instructional effects, segmentation, chunking, worked examples, expertise reversal, structure-over-prose checks, and upstream-displacement checks for modern LLM/tooling features. Excludes retrieval/session working-set design (context-management), token budget math and compaction timing (context-window), provider-specific prompt tactic authoring (prompt-craft), token-efficient representation mechanics (compression), and broad instructional design beyond the CLT mechanisms grounded here."
+  public: "true"
+  taxonomy_domain: quality/cognition
+  stability: experimental
+  keywords: "[\"cognitive load theory\",\"working memory\",\"intrinsic load\",\"extraneous load\",\"germane load\",\"chunking\",\"segmentation\",\"element interactivity\",\"expertise reversal\",\"prompt design\"]"
+  triggers: "[\"cognitive-load-skill\",\"working-memory-skill\",\"clt-skill\"]"
+  grounding: "{\"subject_matter\":\"Portable cognitive-load theory for authored human-facing and model-facing materials, including skill bodies, prompts, documentation, dashboards, agent outputs, and agent-runtime load diagnosis\",\"grounding_mode\":\"universal\",\"truth_sources\":[\"https://doi.org/10.1207/s15516709cog1202_4\",\"https://doi.org/10.1023/A:1022193728205\",\"https://doi.org/10.1007/s10648-019-09465-5\",\"https://doi.org/10.1177/0963721420922183\",\"https://doi.org/10.1007/s10648-023-09817-2\",\"https://doi.org/10.1007/s10462-026-11510-z\",\"https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents\",\"https://arxiv.org/abs/2509.18458\",\"https://arxiv.org/abs/2509.19517\",\"https://arxiv.org/abs/2510.05381\",\"https://arxiv.org/abs/2506.06843\",\"https://arxiv.org/abs/2410.11272\",\"https://arxiv.org/abs/2601.20412\",\"https://arxiv.org/abs/2605.23196\",\"https://platform.claude.com/docs/en/build-with-claude/compaction\",\"https://platform.claude.com/docs/en/build-with-claude/context-editing\",\"https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool\",\"https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices\",\"https://code.claude.com/docs/en/skills\",\"https://opencode.ai/docs/skills/\",\"https://developers.openai.com/api/docs/guides/structured-outputs\",\"https://developers.openai.com/api/docs/guides/function-calling\",\"https://developers.openai.com/api/docs/guides/tools-tool-search\",\"https://developers.openai.com/api/docs/guides/prompt-caching\",\"https://developers.openai.com/api/docs/guides/prompting\",\"https://developers.openai.com/api/docs/guides/prompting/migrate-from-prompt-object\",\"https://developers.openai.com/api/docs/deprecations\",\"https://ai.google.dev/gemini-api/docs/caching\"],\"failure_modes\":[\"shorter_mistaken_for_lower_load\",\"germane_load_treated_as_independent_additive_dial\",\"long_context_treated_as_comprehension\",\"prompt_cache_treated_as_clarity\",\"structured_output_treated_as_understanding\",\"subagents_split_work_but_add_coordination_load\",\"skill_body_bloats_after_progressive_disclosure\",\"cognitive_overload_attack_misclassified_as_style_issue\",\"length_treated_as_free_for_model_readers\",\"distractor_cleanup_assumed_linear\",\"tool_catalog_schema_load_ignored\",\"unfiltered_tool_output_treated_as_free\",\"context_editing_treated_as_understanding\",\"prompt_object_storage_treated_as_prompt_quality\",\"deep_reference_tree_mistaken_for_progressive_disclosure\"],\"evidence_priority\":\"equal\"}"
+  mental_model: "Working memory is a small workspace with only a few independent novel units available at once — plan around ~4 chunks while remembering that estimates vary (3–5 is the safer range) and that expertise changes what counts as one chunk. Cognitive Load Theory asks whether the material's element interactivity is intrinsic to the task, imposed by presentation (extraneous), or productive schema-building work (germane). Good design sequences unavoidable intrinsic load, eliminates extraneous load, and frees capacity so the learner can devote germane processing to schema construction through examples, self-explanation, contrast, and practice."
+  purpose: "This skill prevents agents from treating 'simplify' as 'make shorter.' It gives a precise review lens for skill bodies, prompts, docs, dashboards, and agent outputs: identify which kind of load each section creates, remove only unnecessary presentation burden, keep worked examples and structure that build schemas, and verify that newer model/tool features did not merely hide the load in a different layer."
+  concept_boundary: "This skill diagnoses cognitive load in authored or presented material. It is not source selection, session-state pruning, token-budget accounting, compaction timing, prompt phrasing craft, plain-language editing, token compression, or general pedagogy beyond the cognitive-load mechanisms named here."
+  analogy: "Cognitive Load Theory is like RAM management for comprehension: intrinsic load is the program that must run, extraneous load is unnecessary background work, and germane processing is useful caching that makes the next run easier."
+  misconception: "The common mistake is thinking reduced cognitive load always means shorter output. Cutting context, examples, contrast, or schema-building structure can increase intrinsic load and waste the freed capacity that should go to germane processing; the correct first target is extraneous load."
+  skill_graph_source_repo: "https://github.com/jacob-balslev/skill-graph"
+  skill_graph_project: Skill Graph
+  skill_graph_canonical_skill: skills/quality-assurance/cognitive-load-theory/SKILL.md
+  skill_graph_export_description: shortened for Agent Skills 1024-character description limit; canonical source keeps the full routing contract
+  skill_graph_canonical_description_length: "1133"
+---
+## Concept Card
+
+**What it is:** Cognitive Load Theory (CLT) is a psychological framework originating with John Sweller (1988) that explains how human working memory processes new information and what design decisions help or hinder schema formation. It is the scientific backbone behind "keep it simple" intuitions — but with actionable precision about *which* complexity to cut and which to preserve.
+
+**Mental model:** Working memory is a small workspace — only a few independent novel units at once (plan around ~4 chunks; 3–5 is the safer current range — Miller's 7±2, revised by Cowan to ~4), and it holds novel information for only seconds unless rehearsed. CLT describes the load on that workspace in terms of intrinsic load (the task itself) and extraneous load (how you presented the task); germane load is the portion of working-memory effort that gets applied to building schemas out of the intrinsic material. Total load must stay below capacity or learning and comprehension fail.
+
+**Why it exists:** Without CLT, agents default to "simplify" without knowing what to cut. They might remove worked examples (germane processing of intrinsic load, valuable) while keeping verbose prose around a table (extraneous load, wasteful). CLT gives a precise vocabulary for the tradeoff. Its deeper grounding is evolutionary (Geary's biologically *secondary* knowledge): we did not evolve to acquire reading, mathematics, or code effortlessly, so this material runs into the working-memory bottleneck and *needs* deliberate instructional design — unlike biologically *primary* skills such as speech or face recognition, which we acquire without it.
+
+**What it is NOT:** Not a general UX heuristic. Not the same as plain-language writing. Not about reducing all complexity — germane processing (building schemas) is *desirable* and should not be starved. Not retrieval design (see `context-management`). Not a token-budget model, compression algorithm, or complete instructional-design theory.
+
+**Adjacent concepts:** working memory, element interactivity, chunking, schema theory, dual-channel processing (Mayer's multimedia learning), segmentation principle, split-attention effect, redundancy effect, expertise reversal effect, transient information effect, context saturation, attentional residue, prompt overflow, tool-use capability boundary.
+
+**One-line analogy:** CLT is like RAM management for humans — intrinsic load is the program you must run, extraneous load is unnecessary background processes, and germane load is the OS caching data so the next run is faster.
+
+**Common misconception:** "Reducing cognitive load always means making things shorter or simpler." Wrong — cutting worked examples, removing context, or over-abstracting increases intrinsic load and wastes the freed capacity that should go to schema-building. The correct target is *extraneous load only*.
+
+**Measurement note:** Cognitive load is not just a metaphor — it is *measured*, classically with subjective rating scales (the Paas single-item mental-effort scale), dual-task performance, and physiological signals. This skill applies CLT as a design lens rather than running formal measurement, but the underlying loads are empirically tractable, not hand-wavy.
+
+# Cognitive Load Theory
+
+## Concept of the skill
+
+Working memory is a small workspace with only a few independent novel units available at once — plan around ~4 chunks while remembering that estimates vary (3–5 is the safer range) and that expertise changes what counts as one chunk.
+
+## Domain Context
+
+**What is this skill?** Sweller's Cognitive Load Theory for agents writing skill content, designing prompts, building UI/dashboards, and authoring documentation. Use when evaluating whether a skill body, prompt, UI screen, doc section, review comment, or agent output is imposing unnecessary cognitive load on its reader or user. The question is not "is it long?" but "what must the reader (or model) hold simultaneously, and why?" Do NOT use for retrieval and context-loading design (use `context-management`), token budget math and compaction timing (use `context-window`), prompt engineering tactics (use `prompt-craft`), or instructional design beyond what grounds the theory here.
+
+## Coverage
+
+- The three-load taxonomy (intrinsic, extraneous, germane) with definitions, examples, and the modern post-2010 reframing of germane load as processing/resource-allocation.
+- Element interactivity as the determinant of intrinsic load, and how it falls with expertise.
+- Working-memory capacity and duration limits, the long-term-memory escape hatch, and expertise-dependent chunking.
+- Segmentation, simple-to-complex sequencing, prerequisite activation, and progressive disclosure.
+- The named CLT instructional effects (worked-example, split-attention, redundancy, modality, expertise-reversal, guidance-fading, completion-problem, goal-free, transient-information, isolated-elements, collective/collaborative working memory).
+- A five-step diagnostic protocol; application to skill writing, prompt design, dashboards, docs, audit output, and agent responses.
+- How the working-memory analogy transfers (and where it breaks) to LLM context, with 2024–2026 evidence.
+- Current model-facing CLT stress tests as diagnostic patterns: CogniLoad-style independent manipulation of intrinsic difficulty, distractor density, and task length (including its U-shaped distractor response); ICE-style separation of context saturation from attentional residue; and ToolLoad-Bench-style tool-interaction graphs plus presentation-load capability cliffs for tool-use agents.
+- Tool-use cognitive load (interaction-graph depth, oversized tool surfaces, raw tool-output sprawl) and multimodal presentation burden.
+- Upstream-displacement checks for modern LLM capabilities: long context, multimodal context, structured outputs, prompt caching, deferred tool search, prompt-as-code, context editing / compaction, memory tools, prompt optimizers, stronger models, and subagents.
+- A worked example reducing extraneous load in agent audit output; a measurement orientation; and common failure modes including the "simplify to lose germane content" trap.
+
+This skill does not cover the full Mayer multimedia-learning research programme, formal load-measurement study design, assessment/test design, retrieval design, token accounting, prompt-security hardening, or copywriting style beyond what CLT directly explains.
+
+## Load Audit Kernel
+
+When time or context is tight, apply this kernel before reading the full catalogue:
+
+| Step | Ask | Keep / change |
+|---|---|---|
+| 1. Audience | What does the reader/model already chunk? | Calibrate novice, mixed, expert, or model-facing expertise. |
+| 2. Intrinsic map | Which elements must interact simultaneously? | Segment, sequence, activate prerequisites, or externalize a workspace. |
+| 3. Extraneous scan | What search, redundancy, hidden state, transient prose, or inconsistent format is presentation-only burden? | Remove, integrate, pin, group, normalize, or make persistent. |
+| 4. Germane protection | Which examples, contrasts, labels, schemas, or self-explanation prompts build future transfer? | Preserve or add only if they help schema construction. |
+| 5. Runtime displacement | Has a tool/API/runtime moved the load elsewhere? | Structured outputs, caching, long context, and subagents solve only their mechanism. |
+| 5a. Model/tool surface | If a model or agent is the reader, what raw length, tool-schema count, raw tool-output volume, task switching, or tool-interaction chain must it hold? | Defer rarely-used tools, shrink the initial callable surface, distill raw tool results into decisive evidence, or route capacity math to `context-window` and tool mechanics to `prompt-craft` / tool-call ownership. |
+| 6. Boundary route | Is the fix source selection, token budget, prompt tactic, compression, security, or UI composition? | Route implementation to the owning skill; keep CLT as diagnosis. |
+
+Default move: do not shorten first. Classify the load first, then remove only extraneous burden. (The full five-step Diagnostic Protocol in §5 expands this kernel; the kernel is the always-visible fast path before the theory catalogue.)
+
+## Philosophy of the skill
+Every agent output — a SKILL.md body, a prompt, a dashboard widget, a Linear comment — competes for space in the reader's working memory alongside everything else they hold. An agent that generates a 3-paragraph preamble before the actual answer forces the reader to hold that prose until they reach the substance. An agent that uses a consistent table format for comparative data lets the reader chunk the format into a single schema slot and spend their remaining capacity on the content. CLT is the theoretical justification for structure-over-prose, examples-before-explanation, and segmentation. Without it, quality guidance is cargo-culted. With it, agents can reason precisely about *why* a design choice reduces or increases cognitive burden. But CLT also prevents over-trimming: the goal is not minimum tokens; the goal is maximum useful comprehension within capacity.
+
+CLT is also a *living* theory, not a 1988 relic. It has been refined repeatedly — the reconceptualization of germane load (Sweller 2010), the "20 years later" synthesis (Sweller, van Merriënboer & Paas 2019), and an explicit account (Sweller 2023) of how replication failures drove the theory's expansion rather than its collapse. Apply the current model, not the introductory-textbook caricature.
+
+## Cross-Domain Synergy
+
+CLT is a theoretical foundation that neighboring skills draw on, but it owns *load diagnosis*, not their mechanisms. The table states both the help and the boundary so the synergy never drifts into a co-ownership claim.
+
+| Neighbor | How CLT helps | Boundary |
+|---|---|---|
+| `information-architecture` | Explains why grouping, labels, and wayfinding reduce search load. | IA owns cross-page structure and findability. |
+| `layout-composition` / `visual-hierarchy` | Explains why one focal path, grouping, and stable visual weight reduce simultaneous decisions. | Layout and visual hierarchy own concrete screen composition. |
+| `prompt-craft` | Explains why prompt segmentation, examples, and clear output contracts reduce simultaneous instruction burden. | Prompt-craft owns provider-specific wording, role placement, and prompt tactics. |
+| `context-management` | Shares the small-working-set intuition. | Context-management owns evidence selection and live session working-set discipline; CLT does **not** own the agent's session working memory. |
+| `context-window` | Shares the finite-capacity analogy. | Context-window owns token budgets, model limits, headroom, and compaction timing. |
+| `compression` / `summarization` | CLT can identify extraneous representation burden. | Compression and summarization own representation mechanics and meaning-preserving condensation. |
+| `microcopy` / `writing-humanizer` | CLT explains why functional wording and non-robotic prose matter. | Those skills own sentence-level copy and voice. |
+| `guardrails` | CLT recognizes when high-load presentation is being *weaponized* (the "cognitive overload attack" inflates effective load with long, nested context to bypass safety controls). | Guardrails owns the *defense*; CLT only diagnoses the load the attack exploits. |
+
+---
+
+## 1. When to Invoke CLT
+
+Use this skill when the active question is about cognitive burden in material already chosen for presentation:
+
+| Question | CLT lens |
+|----------|----------|
+| "Is this skill section too long?" | Which load type is the length adding? Cut only extraneous. |
+| "Should I split this prompt into two?" | Intrinsic load exceeds single-session working-memory capacity → segment. |
+| "Why is this dashboard hard to read?" | Per-screen load budget exceeded; count independent chunks, then group/prioritize before deleting data. |
+| "Should I remove this example from the skill?" | Only if it's redundant (extraneous). If it builds a schema, keep it — it's the substrate for germane processing. |
+| "Does this doc section need more context?" | Yes if removing context increases intrinsic load for the reader. |
+| "Should I use a table or prose here?" | Table chunks multiple dimensions into one schema slot → lower extraneous load. |
+| "Will this scaffolding help my reader?" | Only if they're a novice for this material; for experts the same scaffolding may *raise* load (expertise reversal). |
+| "Does a bigger context window solve this?" | No. It solves capacity pressure, not presentation burden or reader comprehension. |
+| "Can structured outputs replace prompt instructions?" | Often yes for schema enforcement, but CLT still reviews examples, constraints, and human-facing output. |
+
+**Do NOT invoke this skill for:**
+- Deciding *what* retrieval files to load or drop in a session (use `context-management`)
+- Calculating token budgets, context health states, compaction timing, or model limits (use `context-window`)
+- Writing the actual copy / prose (use `writing-humanizer` or `microcopy`)
+- Choosing prompt phrasing strategies, provider role semantics, or structured-output API syntax (use `prompt-craft`)
+- Compressing tokens, payloads, files, images, or long context (use `compression`)
+
+---
+
+## 2. The Load Model — Three Load Types
+
+### 2.1 Intrinsic Load — irreducible difficulty of the task itself
+
+Determined by the **element interactivity** of the material: how many things must be held *simultaneously* because they interact with each other. High interactivity = high intrinsic load. A task with many independent elements that can each be understood in isolation is low intrinsic load even if there are many of them; a task with few elements that all depend on each other is high intrinsic load. It is not the same as length — a short proof can be high intrinsic load; a long table of independent rows is low.
+
+| Signal | Example | Management move |
+|--------|---------|-----------------|
+| Many interdependent concepts | Debugging a recursive algorithm while tracking stack frames and invariants | Segment the trace; show one frame transition first. |
+| Prior knowledge required | Reading a diff that assumes familiarity with a domain-specific pattern | Activate prerequisites before the diff. |
+| Multiple steps that reference each other | A 7-step migration guide where step 4 depends on step 2's output | Show one phase at a time with checkpoint outputs. |
+| Mixed audience expertise | Novices and experts reading the same skill | Design for novices, add fast paths for experts. |
+
+**Intrinsic load is relative to the reader's expertise.** Element interactivity is not a fixed property of the material — it falls as expertise rises. When several interacting elements are already stored as one schema in long-term memory, the reader treats them as a *single* element, so high-element-interactivity material becomes low-element-interactivity material (Sweller 2010). This is why the same page is dense for a novice and trivial for an expert.
+
+**Model-reader caveat (length is a separate channel, not intrinsic).** The "length is not load" rule above is about *intrinsic* load for a *human* reader, and it stays correct: element interactivity and expertise — not raw length — determine what must be processed together. For an *LLM or agent* reader, raw sequence length is an **additional, separable load channel** even at zero interactivity: attention budget depletes per token and mid-context recall degrades regardless of how independent the rows are. CogniLoad (arXiv:2509.18458) makes this concrete — it tunes intrinsic difficulty (`d`), distractor-to-signal ratio (`ρ`), and task length (`N`) as *independent* dials and finds length a dominant constraint at fixed `d` and `ρ`; Du et al. (arXiv:2510.05381, "Context Length Alone Hurts LLM Performance Despite Perfect Retrieval") shows degradation as input length rises even when retrieval succeeds. So treat length as **separate from intrinsic load, not as irrelevant**: first ask whether the elements interact, then ask whether the reader is a model whose attention/search/generation path still pays for the full sequence. Do not corrupt the taxonomy — intrinsic load remains element interactivity; length is its own pressure. Route the token-budget half to `context-window`; CLT owns the diagnosis that the length is itself the load.
+
+**Management strategies:**
+- **Segmentation**: Break into sub-tasks where each segment can be completed before the next is shown.
+- **Prior-knowledge activation**: Surface prerequisite concepts before the main material so they pre-load as chunks.
+- **Worked examples**: Replace problem-solving with example-study while schemas are forming (reduces intrinsic load during early learning).
+- **Isolated-elements first**: For very high-interactivity material, teach the elements in isolation first (accepting temporarily incomplete understanding), then present them interacting once each is chunked.
+
+**Rule:** Intrinsic load cannot be eliminated — the task is what it is. It can only be managed by sequencing, scaffolding, chunking, moving content behind prerequisites, and raising the reader's expertise.
+
+### 2.2 Extraneous Load — unnecessary load from poor presentation
+
+Load that arises from the *way* the information is presented, not from the information itself. This is the only load type that should be aggressively eliminated.
+
+| Source | Example | Elimination tactic |
+|--------|---------|--------------------|
+| Split-attention effect | Having to look at a diagram in one place and its legend somewhere else | Integrate labels directly or place legend adjacent. |
+| Redundancy effect | Restating in prose what a table already communicates clearly | Keep the table; cut the prose unless it adds interpretation. |
+| Coherence violation | Including interesting-but-irrelevant context that the reader must process and then discard | Remove or move to a reference note. |
+| Verbose preamble | Three paragraphs explaining what you're about to say before saying it | Start with the answer, then add rationale. |
+| Inconsistent formatting | Different heading levels for the same type of content across sections | Normalize the pattern. |
+| Missing visual hierarchy | A flat wall of text or flat metric grid with no structural cues | Add grouping, labels, and salience order. |
+| Transient information | Key content that scrolls away (long streamed reasoning, prior chat turns) and must be held in memory | Make important information persistent and re-readable; pin it where the reader can re-read it. |
+| Hidden state | Output assumes the reader remembers a prior caveat | Repeat the caveat where it is used or segment the flow. |
+| Unfiltered tool output | Dumping a raw 5MB JSON response or unparsed HTML into the window | Filter, map, or extract only the necessary fields before reasoning over it. |
+
+### 2.3 Germane Processing — the schema-building work applied to intrinsic load
+
+Cognitive effort spent constructing, organizing, or automating a mental model. This effort is *desirable* — it is the mechanism of learning and skill acquisition. The goal is to free enough capacity (by removing extraneous load) that the reader can spend it on schema construction, while total load stays within capacity. It is not a blank check to add complexity: germane processing is valuable only when it helps the reader understand, transfer, or automate the material.
+
+| Source | Example | Keep / add when |
+|--------|---------|-----------------|
+| Worked examples | Step-by-step solutions with explicit reasoning | Novices need a solution path before independent application. |
+| Faded examples | Full example → partial completion → independent task | The learner is moving from novice to practice. |
+| Variability practice | Multiple examples of the same concept in different contexts | Transfer across contexts matters. |
+| Self-explanation prompts | "Why does this rule apply here?" | The reader must connect a rule to a case. |
+| Analogies | Mapping a new concept onto a familiar schema (e.g., "CLT is like RAM management") | The analogy preserves the mechanism and is not mistaken for literal equivalence. |
+| Contrasting cases | Showing what's wrong alongside what's right | Boundary recognition matters. |
+
+**Rule:** Eliminate extraneous load first. Use the freed capacity for germane processing only when the material's goal includes understanding, transfer, or future application.
+
+### 2.4 Modern refinement — germane load is resource *allocation*, not a third tank
+
+The introductory model presents three *additive* loads (intrinsic + extraneous + germane ≤ capacity). The current theory is more precise, and getting this right prevents a real reasoning error.
+
+Sweller (2010), reaffirmed in the "20 years later" synthesis (Sweller, van Merriënboer & Paas 2019) and in Paas & van Merriënboer (2020), holds that **germane load is not an independent source of load with its own knob.** It is the portion of working-memory resources *allocated to dealing with the intrinsic load* — i.e., the effort that actually goes into building schemas from the task's interacting elements. (Kalyuga's 2011 critique made the same point sharply: "germane load" is redundant unless redefined as resources devoted to intrinsic rather than extraneous load.) The honest accounting is therefore:
+
+> **Total load = intrinsic + extraneous.** Germane load is how much of the capacity left after extraneous removal is genuinely devoted to the intrinsic material.
+
+Why this matters for design:
+- You **cannot "add germane load"** as a separate ingredient. You free capacity by cutting extraneous load, and you make germane processing *likely* by giving the reader something worth building a schema from (worked examples, varied cases, contrasts).
+- "Promote germane" is shorthand for "remove extraneous so the freed capacity lands on schema construction, and present the intrinsic material so that construction is invited." It is causally correct under the modern model; the older additive phrasing is a teaching simplification.
+- The practical checklist in this skill is unchanged by the refinement — but your *reasoning* about it should be: don't imagine a germane dial you can turn up independently of the task.
+
+This is also why the original three-additive-bucket diagram survived as a teaching device: the *practice* (eliminate extraneous, protect schema-building structure) is identical. **Use the additive picture to teach; use the allocation picture to reason.** The traditional three-label vocabulary is retained throughout this skill for practical review and eval compatibility.
+
+---
+
+## 3. Working Memory and Chunking
+
+### The ~4-chunk finding
+
+Cowan (2001) revised Miller's 7±2 downward: *the reliable limit of working memory is approximately 4 independent chunks* — not 7 (current human-AI CLT summaries phrase the bound as roughly 3–5 new units; plan around ~4). Treat the number as a planning heuristic, not a literal universal ceiling. Crucially, what counts as a "chunk" depends on expertise: an expert chess player chunks a board position into one unit; a novice processes each piece separately. Working memory is also **duration-limited**: novel information decays within seconds unless rehearsed, which is why transient, scroll-away content is costly.
+
+The deep asymmetry CLT rests on: working memory is severely limited for *novel* information, but **effectively unlimited when drawing organized knowledge from long-term memory.** Schemas in long-term memory are the escape hatch from the 4-chunk ceiling — the entire point of promoting schema formation.
+
+**Implications:**
+
+| Situation | Working-memory implication |
+|-----------|---------------------------|
+| Novice reader encountering an unfamiliar pattern | Each element is a separate chunk; total capacity exhausted quickly |
+| Expert reader encountering a known pattern | The entire pattern is one chunk; more capacity for novel details |
+| An agent writing for a mixed audience | Design for the novice's chunking capacity; experts will auto-compress |
+| A 10-column dashboard widget | If column meanings are not already chunked, viewer hits capacity before first insight |
+| A prompt with eight interacting constraints | The model may satisfy some and drop others unless the work is sequenced or schema-backed |
+
+### Chunking strategies
+
+1. **Label by type, not by instance**: Instead of 10 separate data points, introduce a category that chunks them (e.g., "fulfillment metrics" as a header that frames the following 5 rows).
+2. **Consistent structure as a free chunk**: When every SKILL.md section follows the same format, the reader chunks the format itself — freeing all 4 slots for content.
+3. **Pre-load schemas**: Front-load the concept card / summary so the reader builds a lightweight schema before encountering detail.
+4. **Segment before elaborating**: Deliver the simplest complete unit first, add complexity in subsequent passes.
+5. **Move enforcement to structure**: Tables, schemas, typed fields, and UI grouping reduce interpretation burden.
+6. **Support then fade**: Keep worked examples for novices, then replace some solution steps with completion prompts when the reader has enough schema.
+
+---
+
+## 4. The Named CLT Effects (catalogue)
+
+CLT is not one rule; it is a family of empirically established **effects**, each a specific instructional manipulation that lowers extraneous load or manages intrinsic load. Knowing the named effects turns vague "this feels heavy" intuitions into nameable, fixable diagnoses. Each row maps the effect to its agent-authoring application.
+
+| Effect | What it says | Agent-authoring application |
+|--------|--------------|-----------------------------|
+| **Worked-example effect** | Novices learn more from studying solved examples than from solving equivalent problems (Sweller 1988). | Keep before/after worked examples in skill bodies; cut surrounding prose, not the example. |
+| **Split-attention effect** | Forcing the reader to integrate two separated-but-related sources (diagram + distant legend) raises load. | Co-locate labels, captions, and the thing they describe; don't make readers hold one section to parse another. |
+| **Redundancy effect** | Presenting the *same* information two ways (prose restating a clear table) raises load — more is not safer. | Delete prose that duplicates a table/diagram; pick one representation. |
+| **Modality effect** | Splitting information across complementary channels (visual + auditory) can expand effective capacity vs. all-visual. | For multimodal LLMs/agents: a clean architecture diagram + brief text separates channels and is lower load than 1000 lines of prose describing spatial relationships; conversely, irrelevant visual distractors (messy screenshots, UI clutter) still consume attention budget. Don't pile every cue into one dense visual block. |
+| **Expertise-reversal effect** | Scaffolding that helps novices *hurts* experts — the extra support becomes redundant load (Kalyuga). | Match scaffolding to the reader's expertise; for an expert audience, fade examples and detailed steps. |
+| **Guidance-fading effect** | As expertise grows, guidance should be progressively withdrawn (worked example → completion problem → full problem). | Layer skills: heavy worked examples for first contact, terse reference for the practiced reader. |
+| **Completion-problem effect** | Partially worked examples the reader finishes bridge worked examples and independent problem-solving. | "Fill-in" templates and partial scaffolds are a load-calibrated middle ground between full examples and bare instructions. |
+| **Goal-free effect** | Removing a specific goal ("find angle X") and asking "find what you can" lowers means-ends search load for novices. | Open-ended exploratory framings can reduce load when a fixed target would force heavy search. |
+| **Transient-information effect** | Information that disappears (speech, animation, scroll-away context) raises load because it must be held in memory. | Prefer persistent, re-readable structure over long streamed reasoning or content that scrolls out of view. |
+| **Isolated-elements effect** | For very high element interactivity, teaching elements in isolation first (then combined) beats full interaction up front. | Decompose a dense interacting procedure into isolated pieces before showing the full interacting whole. |
+| **Collective / collaborative working memory effect** | A group can pool working memory to handle load no individual could — at the cost of transactive coordination overhead. | Relevant to multi-agent designs: distributing load across agents helps, but coordination is itself a load (arXiv 2506.06843). |
+
+**Note on expertise-dependence:** most of these effects are *novice* effects — they appear for learners without the relevant schema and weaken or reverse as expertise rises (the expertise-reversal effect is the meta-statement of this). Always ask "who is the reader, and what do they already chunk?" before applying an effect.
+
+---
+
+## 5. Diagnostic Protocol
+
+Use this five-step protocol before editing. **Do not begin by shortening. Begin by classifying.**
+
+| Step | Question | Output |
+|------|----------|--------|
+| 1. Name the audience | What can this reader/model already chunk? | Novice / mixed / expert assumption. |
+| 2. Count interacting elements | What must be held simultaneously because pieces interact? | Intrinsic-load map. |
+| 3. Mark presentation burden | What search, redundancy, inconsistency, transient/hidden state is imposed by presentation? | Extraneous-load findings. |
+| 4. Identify schema builders | What examples, contrasts, labels, or prompts help future application? | Germane-processing keep/add list. |
+| 5. Choose the smallest load-aware intervention | Segment, group, integrate, delete, move, table, example, or API/schema enforcement? | Concrete edit with boundary skill if needed. |
+
+---
+
+## 6. Application: Writing Skills
+
+When authoring or reviewing a `SKILL.md` body, apply the three-load taxonomy to each section before cutting content.
+
+### Checklist
+
+| Question | If YES → action |
+|----------|-----------------|
+| Does this section restate what the heading already conveys? | Extraneous redundancy → cut the restatement |
+| Is this section longer than the information it communicates? | Extraneous verbosity → compress to table or bullets |
+| Does this section require the reader to cross-reference another section to understand it? | Split-attention → integrate or re-sequence |
+| Does this section contain a worked example? | Germane substrate → keep it; do not cut for length |
+| Does this section teach a reusable distinction? | Germane processing → preserve or enrich with contrast |
+| Does this section assume private or unstated prerequisites? | Intrinsic load raised by missing context → add prerequisite activation or boundary |
+| Does this section use a consistent format with neighboring sections? | If YES: format-as-chunk is working → maintain consistency |
+| Is my reader an expert who already holds this schema? | Expertise reversal → fade the scaffolding; a terse reference beats a worked example |
+
+### Writing skills *for agents* — the expertise-reversal caveat
+
+A subtle trap specific to this library: the *reader* of a SKILL.md is usually a frontier model with enormous prior knowledge. For a topic the model already chunks, heavy worked examples and step-by-step scaffolding can become **redundancy / expertise-reversal load** — they restate what the model already holds and crowd out the genuinely novel content (the project's conventions, boundaries, and decisions). The fix is not to strip examples reflexively, but to ask which content is *novel* to a strong model: examples that encode this project's non-obvious choices are germane; examples that re-teach a well-known pattern the model already has are extraneous for that reader. Calibrate scaffolding to the *novelty for the actual reader*, not to a hypothetical beginner.
+
+### Runtime-loaded skills — progressive disclosure is not a license to bloat
+
+Modern agent runtimes increasingly solve part of the load problem by loading skills on demand. Claude Code documents that a skill body loads only when used, OpenCode exposes skills through an on-demand native `skill` tool, and OpenAI's Agents SDK names skills as a progressive-disclosure primitive. This is a real upstream displacement of the old "put everything in the always-loaded instructions" pattern.
+
+It does **not** remove CLT from skill authoring:
+
+| Runtime fact | CLT implication |
+|---|---|
+| Skill descriptions are visible before the body. | The description must carry the routing contract and negative boundary without requiring the full body. |
+| Once invoked, a skill body can remain in context across turns. | Every line after invocation becomes recurring working-set load until compaction or session end. |
+| Claude Code re-attaches invoked skills after compaction within a bounded skill budget. | Put the application kernel and boundary early; do not bury the usable procedure after a long source trail. |
+| Supporting files cost little until loaded. | Move detailed papers, source notes, and variant examples into references while keeping the core procedure in SKILL.md. |
+| First-party skill best-practices treat the SKILL.md as an operating *overview* that links **one hop** out to references, not a deep nested reference tree. | Keep the body a navigable kernel + overview; push depth one hop into `references/`. A reference *tree* the reader must traverse several hops to act on reintroduces split-attention and search load — the very extraneous burden progressive disclosure was meant to remove. One hop out is disclosure; a hop-chain is just relocated load. |
+| Subagents may start with smaller or forked context. | A subagent prompt must state the specific skill slice needed; "use the whole skill" can reintroduce load. |
+
+Skill-body rule: progressive disclosure reduces *injection* load, not *comprehension* load. Keep the body structured for the moment it is invoked, with a short kernel first and detailed reference material behind explicit links.
+
+**Body/reference budget rule:** treat `SKILL.md` as the operating layer and sibling reference files as the source trail. First-party Claude skill guidance recommends keeping the main body compact and moving growing detail into directly linked files; the important CLT mechanism is not a universal line cap but **one-hop** progressive disclosure. A full skill can still preserve deep knowledge — the invoked body carries the kernel, boundaries, and decision procedures, while papers, source notes, long examples, and variant catalogues live in references the agent loads only when the task asks for them. Avoid nested reference trees: if `SKILL.md` points to a reference that points to another reference for the actual rule, the reader may inspect only the first hop and miss the substance. Do not delete curated knowledge merely because the body is large; preserve it behind a clear pointer unless it is wrong, redundant, or harmful.
+
+### Anti-patterns in skill bodies
+
+| Anti-pattern | Load type | Fix |
+|---|---|---|
+| Four-paragraph intro before the actual content | Extraneous (preamble) | Move preamble to Concept Card; open sections with the content |
+| "This section covers X. X is important because..." | Extraneous (redundancy) | Remove the meta-commentary; start with X |
+| Removing the worked example to save tokens | Germane substrate destroyed | Keep the example; cut prose around it instead |
+| Using different heading levels for equivalent content | Extraneous (inconsistency) | Normalize heading hierarchy |
+| Abstract rule with no boundary case | Intrinsic load left unmanaged | Add a contrasting case |
+| Five adjacent bullets that all say "be clear" | Extraneous (redundancy) | Merge into one actionable rule |
+| Re-teaching a pattern a strong reader already chunks | Extraneous (expertise reversal) | Cut to a reference; spend the space on what's novel to this reader |
+
+---
+
+## 7. Application: Designing Prompts and Agent Instructions
+
+Prompt design is working-memory design for the model. The model's context window is not literally working memory, but the principles transfer functionally: a prompt that requires holding many interdependent instructions simultaneously creates a load-like degradation — drop, drift, or malformed output. Use CLT to decide *when* a prompt is overloading the processor; use `prompt-craft` for the exact provider tactics.
+
+### High-intrinsic-load prompt signals
+
+| Signal | Why it's high load | CLT-informed move |
+|--------|-------------------|-------------------|
+| Multiple tasks stated in one unsequenced prompt | Model must track all tasks simultaneously | Split into phases with one deliverable per phase |
+| Later instructions that modify earlier ones | Model must retroactively reinterpret prior context | Put stable rules first; avoid exceptions unless needed |
+| Abstract instructions with no examples | Model must construct the intent without schema | Add a minimal positive example or use structured outputs |
+| Long preamble before the actual instruction | Model must retain preamble while processing what follows | Put the primary task in the first sentence |
+| User data not separated from instructions | Competing instruction sources | Delimit data and state which source has authority |
+| Output schema described only in prose | Schema adherence depends on obedience | Use provider structured-output features when available |
+
+### CLT-informed prompt design
+
+| Strategy | What it does | Boundary |
+|----------|--------------|----------|
+| **Segment high-intrinsic tasks** | Split into sequential prompts; each builds on the prior output | CLT owns rationale; prompt-craft owns exact prompt shape |
+| **Example-first for novel formats** | Show the output format before describing it abstractly | Prompt-craft owns few-shot selection details |
+| **Front-load the primary task** | State what you want in sentence 1; justification follows | Prompt-craft owns role/message placement |
+| **Consistent instruction schema** | Reuse the same structure across related prompts so the format becomes a chunk | Context-engineering owns broader injection design |
+| **One constraint per instruction** | Avoid compound constraints ("do X but not Y, unless Z") | Guardrails own runtime safety controls |
+| **Use structured outputs for strict shapes** | Moves schema enforcement out of prose | Provider docs/API own implementation |
+
+### Does CLT actually transfer to LLMs? (what the 2024–2026 research shows)
+
+The working-memory analogy is *partly* empirical now, with important caveats — state both honestly rather than asserting a clean equivalence:
+
+- **The model vendors now make the analogy first-party.** Anthropic's *Effective context engineering for AI agents* (2025-09-29, published alongside Claude Sonnet 4.5 and Agent Skills) states it directly: "Like humans, who have limited working memory capacity, LLMs have an 'attention budget' that they draw on when parsing large volumes of context. Every new token introduced depletes this budget by some amount." Their guiding principle — "good context engineering means finding the *smallest possible* set of high-signal tokens that maximize the likelihood of some desired outcome" — is the LLM-side restatement of CLT's first rule: **eliminate extraneous load before anything else.** They name the degradation mechanism "**context rot**": as the number of tokens in the context window increases, the model's ability to accurately recall information from that context decreases. This is not a loose metaphor borrowed by a blog — it is the model provider's own design doctrine, which makes CLT's review lens *more* load-bearing for agent work, not less. (Boundary: the *token-budget accounting* this implies is owned by `context-window`; CLT owns the diagnosis of which load each retained token imposes.)
+- **The transfer is real but mechanistically different.** An LLM has a bounded active workspace at inference: attention weights are spread across all tokens in a fixed context window, so every added token consumes attention budget. A recent framework (*Overloaded minds and machines*, Springer 2026, doi 10.1007/s10462-026-11510-z) maps Sweller's three loads onto this — intrinsic from task complexity, extraneous from poor structure and distractors, germane from productive in-context reasoning. The mechanism (finite biological working memory vs. distributed attention budget) differs, so treat it as a strong analogy, not an identity.
+- **Overload shows threshold, then collapse.** As effective load rises (long dependency chains, poorly structured instructions, irrelevant distractors), accuracy holds up to a point and then degrades abruptly — the same shape CLT predicts for humans, and consistent with "lost-in-the-middle" / context-rot findings. Segmentation and distractor removal are load reductions, not just style.
+- **The two LLM load mechanisms now have names and numbers.** The ICE benchmark (Interleaved Cognitive Evaluation, arXiv:2509.19517, 2025) deconfounds two distinct extraneous-load mechanisms and maps them onto the CLT taxonomy: **Context Saturation** — "extraneous, task-irrelevant information" — is the LLM form of *extraneous load*; **Attentional Residue** — "interference from task-switching" — is a load source this skill treats as first-class (it is why interleaving unrelated subtasks in one prompt degrades output even when the total token count is modest). The numbers show the threshold-then-collapse shape concretely: Gemini-2.0-Flash held 85% accuracy in the control condition but degraded significantly under saturation (β ≈ −0.003 per % load, p < 0.001), while smaller models (Llama-3-8B-Instruct, Mistral-7B-Instruct) scored 0% across *all* conditions on high-intrinsic-load multi-hop tasks — the cleanest available evidence that intrinsic load imposes a hard capacity ceiling, not a gradual slope, for weaker reasoners. The authors frame cognitive load as "a key contributor to reasoning failures, supporting theories of hallucination-as-guessing under uncertainty."
+- **All three CLT loads are now independently tunable dials in LLMs — and the dials behave unexpectedly.** CogniLoad (arXiv:2509.18458, 2025) generates synthetic logic puzzles with factorial control over intrinsic difficulty (`d`), distractor-to-signal ratio (`ρ`, extraneous load), and task length (`N`, a proxy for germane-processing demand), then scores 22 reasoning models. Two findings refine this skill's guidance. (1) **Task length is a dominant, independent constraint** — performance falls with length even when intrinsic difficulty and distractor density are held fixed. For *model-facing* material, raw length is its own load dimension, not just a side effect of interactivity (see the §2.1 caveat). (2) **Distractor load is non-monotonic, and worst at *intermediate* intrinsic difficulty.** On easy tasks added distractors barely hurt; at medium difficulty the accuracy trough *widens and deepens* before partially rebounding at very high distractor ratios — a U-shape, not a straight line. The actionable consequence: do not assume "fewer distractors is always proportionally better." The highest payoff from removing extraneous material is on *moderately hard* tasks, where the model has just enough capacity to be tipped over the edge; on trivially easy or already-saturated tasks the same cleanup buys less. This is the cleanest available evidence that intrinsic, extraneous, and length load are *separable* in LLMs, which is the premise the whole skill rests on.
+- **Load can be weaponized.** The "cognitive overload attack" (arXiv 2410.11272) deliberately inflates a model's effective load with long, nested context to slip past safety guardrails — a security reason to flag high-load presentation, connecting this skill to `guardrails`. A 2026 result, "Prompt Overflow" (arXiv:2605.23196), sharpens the mechanism: malicious instructions can be fragmented and interleaved with benign filler so no inspected segment crosses a local risk threshold, while the downstream LLM can still reconstruct the full intent — an inspection-execution mismatch between what a safety gateway reviews and what the model infers. (The paper's own terms are "Prompt Overflow", "risk-aware fragmentation", and "inspection-execution mismatch"; this skill describes the mechanism, not coined labels.)
+- **The analogy's limit.** Humans apply *metacognitive control* — they notice overload and self-trigger strategies (take notes, simplify). Current models mostly need that scaffolding supplied explicitly in the prompt or workflow. So "design the model's working memory for it" is the actionable transfer; "the model will manage its own load" is not yet reliable.
+
+### Tool-use cognitive load
+
+Tool-use is its own load surface, and 2026 evidence makes the mechanisms concrete. ToolLoad-Bench (arXiv:2601.20412) parametrically scales tool-use *intrinsic* load — formalized as a **Tool Interaction Graph** over the solution path (the dependency structure of the steps) — and *extraneous* load from ambiguous task/tool presentation and distractor tools, and finds each model has a distinct "cognitive profile": a baseline capability plus a load-sensitivity slope, with a sharp **performance cliff** once load crosses its boundary (the threshold-then-collapse shape, not a linear decline). Three distinct tool-use load sources follow, each with its own move:
+
+1. **Interaction-graph depth (intrinsic).** When an agent starts dropping or hallucinating tool steps, do not only reach for a stronger model — first ask whether the *interaction-graph depth* of the task exceeds this model's cliff, and segment or externalize before that point. Splitting a deep tool chain across subagents can move it back under a model's cliff (or add merge load above it).
+2. **Tool-surface size (extraneous).** A large catalog of tools/functions exposed up front forces the model to scan and hold many options before acting — distinct from any single tool's interaction-graph depth. Keep the initial tool surface small; defer large or rarely-used tools behind on-demand tool search / discovery (now first-party OpenAI guidance) so they load only when relevant.
+3. **Raw tool-output sprawl (extraneous).** Forwarding raw, unfiltered tool output (a 5MB JSON blob, unparsed HTML) into active reasoning saturates the window. Distill raw results into the small set of facts, source paths, errors, IDs, and open unknowns the next step needs, *before* the next model call. (This raw-dump diagnosis is a general extraneous-load inference plus the direct purpose of Claude's tool-result clearing; ToolLoad-Bench grounds the interaction-graph, ambiguous-presentation, distractor-tool, and capability-cliff findings, not raw-output dumping specifically.) Boundary: `context-management` owns evidence selection and tool owners own result semantics; CLT diagnoses the sprawl.
+
+### Long-context evidence externalization
+
+Long context is not the same as low load. Recent long-context studies show degradation even when the relevant evidence is present and retrievable (Du et al., "Context Length Alone Hurts LLM Performance Despite Perfect Retrieval", arXiv:2510.05381); one practical mitigation is to turn the long-context task into a short-context task by first extracting or reciting the decisive evidence, then solving from that compact workspace.
+
+Use this CLT move when the model must reason over many interacting facts buried in a large context:
+
+1. Retrieve or identify the evidence using the owning retrieval/context skill.
+2. Externalize the decisive evidence in a short, persistent block: facts, source paths, constraints, and open unknowns.
+3. Solve from that block, not from an instruction to "consider everything above."
+4. Keep the evidence block visible next to the answer or tool call it supports.
+
+Boundary: CLT owns the diagnosis that hidden long-context evidence is extraneous or high intrinsic load. `context-management` owns which evidence to select, `context-window` owns the token budget, and `summarization` owns the condensation mechanics.
+
+### Agent load matrix
+
+Use this matrix to avoid treating all "model overload" as one thing. (It generalizes the named LLM mechanisms above — Context Saturation and Attentional Residue — into the broader agent-runtime load sources, each routed to its owning skill.)
+
+| Load mechanism | Signal | CLT diagnosis | First move | Boundary owner |
+|---|---|---|---|---|
+| Context saturation | Relevant fact is present but drowned in long or repetitive input | Extraneous load from excess surrounding material; sometimes sheer length load | Extract a compact evidence block before reasoning | `context-management`, `summarization` |
+| Attentional residue | Prompt switches tasks or asks for interleaved reasoning modes | Intrinsic load from competing task schemas; task-switching interference distinct from raw token count | Segment phases and reset the local task frame; finish one task class before switching | `prompt-craft` |
+| Tool-result sprawl / interaction-graph cliffs | Raw tool outputs accumulate and later steps depend on hidden state; or the solution path's Tool Interaction Graph deepens until accuracy collapses | Transient/hidden-state extraneous load, plus intrinsic load from interaction-graph depth that shows discrete capability cliffs (arXiv:2601.20412) | Pin the distilled result and drop raw output from active reasoning; decompose or segment the interaction graph before the cliff | `context-management`, `context-window` |
+| Tool-surface overload | A large catalog of tools/functions is exposed up front; the model must scan and hold many options before acting | Extraneous load from an oversized *initial* function surface — distinct from any single tool's interaction-graph depth | Keep the initial tool surface small; defer large or rarely-used tools behind on-demand tool search / discovery so they load only when relevant | agent orchestration / `prompt-craft` |
+| Schema-in-prose | Output contract is embedded in paragraphs | Extraneous load and unreliable conformance | Use structured outputs/schema where supported, plus human-readable instructions | `prompt-craft` |
+| Subagent handoff overhead | Split agents ask each other for missing context or return incompatible summaries | Coordination load may exceed saved intrinsic load; tool-call solution paths show discrete capability cliffs as their Tool Interaction Graph grows (arXiv:2601.20412), so splitting a deep tool chain across agents can move it back under a model's cliff — or add merge load above it | Give each subagent one owner, bounded evidence, and a mergeable return shape | agent orchestration / `context-management` |
+| Guardrail inspection mismatch | Safety checker sees chunks, primary model sees the combined long prompt | High-load security exposure, not just poor readability; malicious instructions can be fragmented and interleaved with benign filler so no inspected segment crosses a local threshold while the model reconstructs full intent (inspection-execution mismatch, arXiv:2605.23196) | Route to `guardrails`; inspect tool/action intent outside untrusted long context; enforce hard segment bounds | `guardrails` |
+
+### Example: refactoring a high-load prompt
+
+**Before (high extraneous and intrinsic load):**
+```
+I need you to look at this audit output from our skill review system and think about which findings are the most important ones and then also consider whether any of them might actually be incorrect given the context of how skills work in our system, and then write a summary that could be used in a Linear comment explaining what needs to be done.
+```
+
+**After (segmented, reduced extraneous load):**
+```
+Step 1: Classify each finding below as VALID or INVALID. A finding is invalid if it misunderstands how our skill schema works.
+
+[findings]
+
+Step 2: Of the VALID findings, rank by severity: BLOCKING, ADVISORY, NITPICK.
+
+Step 3: Write a Linear comment summarizing the BLOCKING findings and their required fixes.
+```
+
+The second version segments intrinsic load, removes preamble verbosity, makes the invalidity rule local to the classification step, gives severity an explicit schema, and provides a consistent schema for each step.
+
+---
+
+## 8. Application: UI / Dashboards
+
+Per-screen cognitive budget is a CLT concept: a screen imposes load through the number of independent data points, interaction affordances, labels, legends, hidden state, visual weight, and task dependencies the viewer must process simultaneously.
+
+### Budget heuristics
+
+| Guideline | Rationale |
+|-----------|-----------|
+| Max 4-5 independent ungrouped data points per widget | Matches working-memory chunk limit |
+| Group related metrics under a labeled category | The label becomes a single chunk |
+| One primary decision path per screen zone | Competing focal points consume attention |
+| Consistent card structure across the dashboard | Format chunked → all capacity for content |
+| Progressive disclosure for detail | Show summary first; reveal detail on demand |
+| Put legends, units, and labels where they are used | Prevents split-attention |
+| Normalize numeric precision and status symbols | Prevents parsing each value format separately |
+| Avoid same-visual-weight competing CTAs | Multiple salient actions compete for the same chunk slot |
+
+### Common dashboard extraneous-load sources
+
+| Source | Fix |
+|--------|-----|
+| 12-column table with no grouping | Group by category; hide secondary columns behind expand/detail |
+| Redundant title + axis label + legend | Integrate axis label into chart; remove the duplicate |
+| Color-coded data with no legend visible | Move legend adjacent to chart or encode in tooltip (avoids split-attention) |
+| Mixed decimal precision across a single widget | Normalize precision so reader doesn't parse each format separately |
+| Status indicators without consistent icon meaning | Define a fixed icon vocabulary (same icon = same meaning everywhere) |
+| Three equal-weight CTAs | Pick one primary action; demote or nest the rest |
+
+---
+
+## 9. Modern Agent Capability Check
+
+Run this upstream-displacement check before assuming CLT advice is obsolete because of a newer model or tooling feature.
+
+| Newer capability | What it improves | What it does NOT solve | Skill boundary |
+|---|---|---|---|
+| Large (1M-token) context windows | More material can *fit* in one request; supports holistic document, repo, and multimodal analysis | A bigger window raises what *fits*, but does **not** raise the effective working set — and via context rot / attention-budget depletion it can *lower* it: every added token depletes attention and mid-context recall degrades (Anthropic, 2025; lost-in-the-middle). Noisy or badly sequenced material is still hard to use. | `context-window` owns token budgets |
+| Multimodal context (vision/audio) | Eliminates the extraneous load of converting spatial/visual information into prose; leverages the modality effect natively | Irrelevant visual distractors (messy screenshots, UI clutter) still consume attention budget; text-heavy images can cause OCR/attention interference, and complex cross-modal interactions can raise intrinsic load if not integrated | `context-window` owns token budgets; `prompt-craft` owns multimodal prompt composition |
+| Prompt caching | Stable prefixes can cost less and respond faster | It does not make the cached instructions cognitively clearer; cache misses and unstable prefixes can add operational burden. Cost displacement, not comprehension displacement. | `context-window` / provider docs own caching mechanics |
+| Context editing / compaction | Removes accumulated stale tool results or summarizes old turns to keep the window under control. As of 2026 these are shipped first-party: compaction (auto-summarize near the limit) and context editing / tool-result clearing ("clear the stale result, keep the decision it informed") — the latter a direct implementation of the transient/hidden-state mitigation | It does not make the *retained* tokens cognitively clearer or better sequenced; the edited summary can be lossy or too abstract | `context-window` / `context-management` own pruning policy |
+| Tool search / deferred tool exposure | Shrinks the initial function surface the model must hold; large or rarely-used tools load on demand instead of all up front (first-party OpenAI guidance) | It does not make the *surfaced* tools clearer — an overlapping, poorly-named, or still-too-large active set is high load once exposed; it displaces *when* tools appear, not their per-tool burden | agent orchestration / `prompt-craft` own tool-catalog design; CLT reviews the surfaced set's load |
+| Tool-result distillation before reasoning | Raw tool outputs can be reduced to decisive facts, source paths, errors, IDs, and open unknowns before the next model call | It does not prove the chosen facts are sufficient or correct; over-aggressive distillation can hide evidence | `context-management` owns evidence selection; tool owners own result semantics; CLT diagnoses raw-result sprawl |
+| Structured Outputs / schemas | Output shape can be enforced outside prose | The reader still needs understandable content, examples, and decisions; schema-conformant values can still be semantically wrong | `prompt-craft` owns API tactic; CLT reviews burden |
+| Prompt-as-code (prompt content kept in versioned application code; OpenAI deprecated the stored reusable *prompt object* on 2026-06-03, with `v1/prompts` shutting down 2026-11-30, in favor of this) | Moves prompt text into versioned application code instead of a platform-stored prompt-by-reference object — location/duplication displacement | It does not make the prompt cognitively clearer; the same unclear instructions are merely relocated into code (or, in the legacy direction, into a stored object). Displacement of *where* the prompt lives, **not** proof of prompt quality | `prompt-craft` owns prompt authoring and provider tactics; CLT reviews the referenced content's burden |
+| Stronger reasoning models | Some tasks require less scaffolding and fewer micro-instructions | A stronger model can still drop constraints when the task is overstuffed, contradictory, hidden-state-laden, or interleaved; it still hits non-linear performance cliffs on deep Tool Interaction Graphs | `prompt-craft` owns model-specific prompting |
+| Prompt optimizers | They can find prompt simplifications or migration changes | They optimize observed behavior, not source-grounded load diagnosis or eval evidence | `evaluation` / `prompt-craft` verify behavior |
+| Agent Skills / progressive disclosure (just-in-time skill loading) | Skill content loads on demand instead of all up front — segmentation at the tooling layer | The *content* of each loaded skill still imposes its own load; an invoked body can persist across turns, and a bloated SKILL.md is just as heavy once loaded | `skill-scaffold` owns the SKILL.md contract; CLT reviews the per-skill burden |
+| Memory tools (persistent store + retrieve across turns) | Moves transient, scroll-away state into re-readable persistent storage — a direct counter to the transient-information effect. Now a first-party agent primitive (e.g. the memory tool shipped alongside compaction and tool-result clearing), not just a hand-rolled pattern | Retrieval precision/recall is a separate problem; badly retrieved memory re-imposes load | `context-management` owns retrieval; CLT diagnoses the load of what surfaces |
+| Subagents / specialized agents | Work can be split by responsibility and tool authority | Splitting badly can create coordination, duplicated-context, and merge load that exceeds the intrinsic load saved | Agent orchestration owns delegation; CLT reviews instruction burden |
+| Hosted tools / file search | Retrieval and execution can move out of the prompt | Tool output can still be verbose, stale, ungrouped, or poorly summarized | `context-management` owns selection |
+| Guardrails / safety checkers | Can block unsafe inputs, outputs, or actions | Long-input overflow can evade a checker's inspection window while remaining actionable to the primary model; risk-aware fragmentation bypasses local inspection while the downstream model reassembles the full payload (arXiv:2605.23196) | `guardrails` owns the defense; CLT flags overload as a risk signal |
+
+**Rule:** A newer upstream feature displaces CLT only when it removes the same *mechanism* of load. Most features move load between layers: from prompt prose to API schema, from one large agent to subagents, from repeated prefixes to a cache, or from always-loaded instructions to on-demand skills. **Upstream displacement test:** name the exact load mechanism a feature removes; if it only changes *where* the load appears — cost, cache, tool output, handoff, schema, or compaction summary — CLT still applies to the remaining presented material.
+
+---
+
+## 10. Worked Example: Reducing Extraneous Load in Audit Output
+
+**Before (high extraneous load):**
+```
+Audit Results for skills/my-skill/SKILL.md:
+
+After reviewing the skill carefully I noticed that there are a few things that 
+could be improved. The first issue I want to mention is that the description field 
+in the frontmatter doesn't actually have the use_when and not_for patterns that 
+we require. Also, looking at the relations section, I see that verify_with is 
+empty which means the skill has no verification partners. Additionally, the eval 
+file has only one eval which is below the minimum we set.
+
+I think these should be fixed but the skill is otherwise in reasonable shape.
+```
+
+**After (low extraneous load, structured):**
+
+```
+## Audit: skills/my-skill/SKILL.md
+
+| Finding | Severity | Fix |
+|---------|----------|-----|
+| description missing use_when / not_for pattern | BLOCKING | Add "Use when: ... Do NOT use for: ..." |
+| relations.verify_with is empty | ADVISORY | Add at least one verify_with skill |
+| evals/comprehension.json has fewer than 5 cases | BLOCKING | Add realistic boundary and application cases |
+
+Overall: 2 BLOCKING. Fix before marking PASS.
+```
+
+**What changed:**
+- Removed verbal preamble ("After reviewing the skill carefully I noticed...")
+- Replaced prose with a table — each finding is now one chunk
+- Made severity and fix explicit rather than embedded in prose
+- Removed hedging ("I think", "otherwise in reasonable shape") — extraneous load with no information content
+- Preserved the germane structure: finding, severity, fix, and overall status
+
+---
+
+## 11. Common Failure Modes
+
+| Failure mode | Load consequence | Detection signal | Fix |
+|---|---|---|---|
+| "Simplify" interpreted as "make shorter" | Cuts germane substrate (worked examples, analogies) | More follow-up questions, weaker application | Classify load before cutting |
+| Removing context to reduce word count | Increases intrinsic load (reader must infer what was removed) | Reader asks follow-up questions that context would have answered | Add prerequisite activation or local context |
+| Adding beautiful prose to describe what a table already shows | Extraneous redundancy | Section length ≠ information density | Cut prose or add interpretation only |
+| Designing a prompt in one large block | High intrinsic load; model can't segment | Model produces mixed output or drops constraints | Segment by deliverable |
+| Consistent formatting abandoned mid-document | Format chunk broken; reader spends capacity re-orienting | Mixed heading levels, inconsistent table structures | Normalize section pattern |
+| Equating "expert content" with "high cognitive load" | False: experts chunk more; appropriate material for audience reduces load | Ask: who is the reader? What do they already chunk? | Match scaffolding to audience |
+| Heavy scaffolding for an expert reader | Expertise reversal — the support becomes redundant load | Examples re-teach what the reader already holds; novel content gets crowded out | Add a fast path or fade examples |
+| Novice scaffolding removed for experts only | Intrinsic load spikes for novices | Novices ask basic follow-ups | Keep novice path; add collapsible/optional depth |
+| Key info delivered as transient streamed prose | Transient-information load — reader can't re-read it | Reader re-asks for something that already scrolled past | Make important information persistent |
+| Long context treated as clarity | Extraneous noise remains | Model cites irrelevant details or misses core task | Use `context-management` and CLT together |
+| Schema enforcement left in prose | Output shape is unreliable | JSON/fields drift or malformed output | Use structured outputs; keep prompt human-readable |
+| Dumping raw tool output into context | Extraneous load (saturation); raw blob crowds out the decisive facts | Context rot, hallucinated parameters on the next tool call, missed core fields | Filter/map/extract tool outputs strictly into decisive facts before injecting |
+| Distractor cleanup assumed monotonic / aimed at easy tasks | Effort spent where extraneous removal buys least; the medium-hard danger zone left dirty | Removing distractors barely moved an easy task; a medium-difficulty task still fails | Extraneous-load payoff is U-shaped and peaks at *intermediate* intrinsic difficulty (CogniLoad) — clean the medium-hard material first |
+| Imagining a "germane dial" you can turn up independently | Mis-models the theory; leads to padding "to add germane load" | You're adding content that doesn't remove extraneous load or build a schema | Free capacity by cutting extraneous; invite schema-building |
+| Prompt caching treated as clarity | Cached prefixes are cheaper/faster but still cognitively heavy | Cache hit improves cost but outputs still miss constraints | Rewrite or segment the cached prefix; do not hide unclear instructions behind caching |
+| Prompt-object / prompt-as-code storage treated as prompt quality | Moving a prompt into a stored object or into application code displaces *where* it lives, not its clarity | The relocated prompt still drops constraints or reads as a wall of instructions | Review the rendered prompt's instruction burden regardless of where it is stored |
+| Skill progressive disclosure treated as free context | Skill body loads later but still persists once invoked | Invoked skill crowds out task evidence or survives compaction as a large reattached block | Put a compact kernel first; move deep references behind explicit files |
+| Deep reference tree mistaken for progressive disclosure | A reference that points to another reference for the actual rule; reader inspects only the first hop | Reader acts on partial guidance; the substantive rule was two hops away | Keep references one hop from the body; split by directly linked file, not by deep chains |
+| Subagents used as load dumping | Delegation saves local context but adds handoff and merge burden | Parent spends more effort reconciling subagent outputs than doing the work | Split only independent work; require small, typed return shapes |
+| Long-context evidence assumed usable because present | Relevant evidence exists but reasoning still degrades | Model retrieves a fact but fails the multi-step answer | Externalize decisive evidence before solving |
+| Guardrail chunking mismatch ignored | Safety checker reviews segmented prompt but primary model sees full assembled context | Long benign-looking chunks combine into actionable unsafe instruction via risk-aware fragmentation | Route to `guardrails`; inspect action intent with least privilege; monitor cross-window signal density |
+
+---
+
+## 12. Measuring Cognitive Load (orientation, not a procedure)
+
+This skill is a *design lens*, but the loads it names are empirically measurable — useful to know so claims about load aren't treated as pure opinion:
+
+- **Subjective rating** — the Paas single-item mental-effort scale (rate effort 1–9) is the classic, cheap measure; some protocols rate intrinsic and extraneous separately.
+- **Dual-task / secondary-task** — performance on a concurrent task drops as primary-task load rises.
+- **Performance and behavioral traces** — error rate, time-on-task, re-reads, and (for agents) dropped constraints or degraded accuracy under longer/denser context.
+- **Physiological** — pupil dilation, EEG, and similar are used in research settings.
+
+For model-facing material, use behavioral proxies rather than pretending to run human measurement:
+
+- Constraint-drop rate across fixed prompts.
+- Accuracy as context length, distractor count, or task interleaving increases.
+- Accuracy as task length changes while intrinsic difficulty and distractor density are held fixed (length as its own channel).
+- Accuracy as distractor density changes while task length and intrinsic difficulty are held fixed, checking for U-shaped / non-monotonic effects rather than assuming a linear cleanup payoff.
+- Error rate as tool-interaction graph depth, branching, or ambiguity increases.
+- Error rate as raw tool-output volume/noise increases, before and after distilling decisive results.
+- Function-call accuracy as the initial callable tool surface grows, then after deferred tool search or smaller tool sets.
+- Tool-call or schema-error rate before/after segmentation.
+- Number of re-reads, follow-up clarifications, or failed handoffs.
+- Cache-hit/cost metrics only as operational evidence, never as evidence that comprehension load dropped.
+
+Treat these as triangulation signals. A lower token bill or faster response does not prove lower cognitive load unless the task-success signal improves too. You will rarely run formal human measures in an authoring task; the point is that "this section adds extraneous load" is a claim that *could* be tested, and you should reach for the closest cheap evidence (a re-read, a confused follow-up, a dropped constraint) rather than asserting load from taste alone.
+
+---
+
+## 13. Rating Criteria
+
+Rate any output (skill body, prompt, doc section, dashboard widget) against CLT:
+
+| Score | Criterion |
+|-------|-----------|
+| **5** | Extraneous load eliminated. Schema-building substrate (worked examples, contrasts) preserved so freed capacity lands on germane processing. Structure is consistent and chunks the format. Scaffolding matched to the reader's expertise. Intrinsic load segmented where it exceeds single-pass capacity. Upstream features used only when they actually remove load. |
+| **4** | Extraneous load mostly eliminated. Minor redundancy remains but does not impede comprehension. Germane substrate intact. Structure mostly consistent. |
+| **3** | Some extraneous elements (preamble, redundant prose) present but not dominant. Germane substrate mostly intact. Structure inconsistent in places; segmentation incomplete. |
+| **2** | Significant extraneous load (verbose intro, split-attention, redundancy). Some schema-building content removed. Reader/model must do significant work to find or apply the substance. |
+| **1** | Dominant extraneous load (wall of text, no structure, redundancy throughout). Schema-building substrate absent or destroyed. Reader/model cannot reliably extract the core information. |
+
+### Evidence signals (did load actually drop?)
+
+- Reader asks questions the artifact should have answered.
+- Model output drops one of several constraints.
+- Reviewer says "I could not find the actual instruction."
+- Dashboard viewer cannot name the top insight after one scan.
+- The same explanation must be repeated in follow-up comments.
+- A stronger model improves fluency but not correctness or task completion.
+
+---
+
+## Verification
+
+After applying CLT, verify:
+
+- [ ] The target audience/expertise level was named.
+- [ ] Intrinsic load was managed through sequencing, prerequisite activation, or worked examples.
+- [ ] Extraneous load was removed without deleting schema-building content.
+- [ ] Germane processing was preserved or added only where it improves transfer or application.
+- [ ] Tables, examples, labels, and headings create reusable chunks instead of decoration.
+- [ ] For model-facing artifacts, raw length was checked as a separate load channel rather than dismissed because element interactivity was low.
+- [ ] For distractor-heavy model tasks, cleanup priority considered floor/ceiling effects: mixed-signal, medium-stress cases may benefit most, while trivial or already-saturated cases may not.
+- [ ] Tool-schema / function-catalog load was checked; rarely-used tools were deferred or routed to the owning tool/prompt skill where appropriate.
+- [ ] Raw tool output was treated as a possible extraneous-load source; decisive results were pinned or distilled before later reasoning where appropriate.
+- [ ] Context editing, compaction, memory, prompt caching, and prompt-as-code were classified as load displacement, not as proof that retained content is understandable.
+- [ ] Prompt/application changes route provider-specific tactics to `prompt-craft`.
+- [ ] Retrieval, token budget, compaction, and compression decisions route to their owning skills.
+- [ ] Modern tooling was checked for real displacement: schema/API/caching/subagent/skill-loading features replace only the load mechanism they actually own.
+- [ ] Any proposed movement of content from `SKILL.md` body to references preserved a direct pointer and a recorded reason; no curated knowledge was removed without wrong/redundant/harmful evidence.
+- [ ] A before/after or concrete case proves the change reduced burden without hiding substance.
+
+---
+
+## Audit Status
+
+Audit/eval/provenance state lives in the sibling `audit-state.json` sidecar, not in the skill body. Run the Skill Audit Loop to update verdicts, freshness, and eval state; the teaching surface should not duplicate those values.
+
+---
+
+## Do NOT Use When
+
+| Use instead | When |
+|---|---|
+| `context-management` | The task is deciding what evidence or files enter, stay in, or leave an active session working set. |
+| `context-window` | The task is token capacity, context zones, compaction timing, output headroom, or model window selection. |
+| `prompt-craft` | The task is exact prompt wording, provider roles, few-shot format, structured-output implementation, or prompt-injection hardening. |
+| `compression` | The task is token-efficient representation, payload compression, semantic summarization, token pruning, or storage/network compression. |
+| `information-architecture` | The task is navigation, sitemap, page hierarchy, wayfinding, or findability beyond CLT diagnosis. |
+| `layout-composition` / `visual-hierarchy` | The task is concrete responsive layout, grid/flex composition, scan pattern, or visual salience design. |
+| `microcopy` / `writing-humanizer` | The task is final UI wording, prose tone, voice, readability style, or AI-tell removal after the load diagnosis. |
+| `guardrails` | The task is *defending* against cognitive-overload prompt-injection attacks; CLT only diagnoses the load that the attack exploits. |
+| `evaluation` | The task is scoring a completed artifact against acceptance criteria. |
+
+---
+
+## Reference Trail
+
+The canonical sibling `references/sweller-1988.md` remains the local source trail. This enrich pass also checked current external sources on the 2010 germane reconceptualization (Sweller), the "20 years later" synthesis (Sweller, van Merriënboer & Paas 2019), Paas & van Merriënboer (2020), Kalyuga (2011), the replication-crisis account (Sweller 2023), digital/online-learning CLT, the named-effects catalogue, the LLM cognitive-load framework (*Overloaded minds and machines*, Springer 2026), the cognitive-overload attack (arXiv 2410.11272), multi-agent CLT (arXiv 2506.06843), and current OpenAI / Anthropic / Google Gemini / OpenCode guidance on long context, structured outputs, prompt caching, agent decomposition, tool-surface size and deferred tool search, prompt-as-code (the OpenAI prompt-object deprecation), and the one-hop skill-body reference budget. New in this multi-model pass: **Anthropic's first-party *Effective context engineering for AI agents* (2025-09-29)**, which names the LLM "attention budget", "context rot", and the smallest-high-signal-token principle, alongside Claude's 2026 first-party compaction, context editing / tool-result clearing, and memory-tool docs; the **ICE benchmark (arXiv:2509.19517)**, which names and measures the two LLM extraneous-load mechanisms (Context Saturation, Attentional Residue); the **CogniLoad benchmark (arXiv:2509.18458)**, which factorially tunes intrinsic difficulty, distractor ratio, and task length across 22 reasoning models and finds task length a dominant constraint with a U-shaped distractor response; **Du et al., "Context Length Alone Hurts LLM Performance Despite Perfect Retrieval" (arXiv:2510.05381)**, the basis for the evidence-externalization move; **ToolLoad-Bench (arXiv:2601.20412)**, which models tool-use intrinsic load as a Tool Interaction Graph and shows discrete capability cliffs; the **"Prompt Overflow" inspection-execution-mismatch result (arXiv:2605.23196)** and the OWASP prompt-injection cheat sheet; OpenAI's function-calling / tool-search guidance and the 2026-06-03 reusable prompt-object deprecation (migrate-from-prompt-object + deprecations pages); and current Claude Code / OpenCode / OpenAI Agents-SDK skill-runtime docs on progressive disclosure. Keep external source URLs in the `grounding.truth_sources` metadata and the `references/sweller-1988.md` sidecar rather than the teaching surface.
+
+---
+
+## Skill Graph context
+
+<!-- skill-graph-context:start (generated — do not edit by hand) -->
+
+**Classification**
+- Subject: `quality-assurance`
+- Public: `true`
+- Domain: `quality/cognition`
+- Scope: Portable cognitive-load review for skill bodies, prompts, documentation, dashboards, and agent outputs. Teaches Sweller's intrinsic/extraneous/germane load taxonomy (including the modern post-2010 reframing of germane load as resource allocation / productive processing), element interactivity, working-memory chunk and duration limits, the named CLT instructional effects, segmentation, chunking, worked examples, expertise reversal, structure-over-prose checks, and upstream-displacement checks for modern LLM/tooling features. Excludes retrieval/session working-set design (context-management), token budget math and compaction timing (context-window), provider-specific prompt tactic authoring (prompt-craft), token-efficient representation mechanics (compression), and broad instructional design beyond the CLT mechanisms grounded here.
+
+**When to use**
+- Triggers: `cognitive-load-skill`, `working-memory-skill`, `clt-skill`
+
+**Related skills**
+- Verify with: `prompt-craft`, `information-architecture`, `best-practice`
+- Related: `context-window`, `compression`, `layout-composition`, `visual-hierarchy`, `microcopy`, `writing-humanizer`, `summarization`, `guardrails`, `context-management`, `prompt-craft`, `information-architecture`, `best-practice`
+
+**Concept**
+- Mental model: Working memory is a small workspace with only a few independent novel units available at once — plan around ~4 chunks while remembering that estimates vary (3–5 is the safer range) and that expertise changes what counts as one chunk. Cognitive Load Theory asks whether the material's element interactivity is intrinsic to the task, imposed by presentation (extraneous), or productive schema-building work (germane). Good design sequences unavoidable intrinsic load, eliminates extraneous load, and frees capacity so the learner can devote germane processing to schema construction through examples, self-explanation, contrast, and practice.
+- Purpose: This skill prevents agents from treating 'simplify' as 'make shorter.' It gives a precise review lens for skill bodies, prompts, docs, dashboards, and agent outputs: identify which kind of load each section creates, remove only unnecessary presentation burden, keep worked examples and structure that build schemas, and verify that newer model/tool features did not merely hide the load in a different layer.
+- Boundary: This skill diagnoses cognitive load in authored or presented material. It is not source selection, session-state pruning, token-budget accounting, compaction timing, prompt phrasing craft, plain-language editing, token compression, or general pedagogy beyond the cognitive-load mechanisms named here.
+- Analogy: Cognitive Load Theory is like RAM management for comprehension: intrinsic load is the program that must run, extraneous load is unnecessary background work, and germane processing is useful caching that makes the next run easier.
+- Common misconception: The common mistake is thinking reduced cognitive load always means shorter output. Cutting context, examples, contrast, or schema-building structure can increase intrinsic load and waste the freed capacity that should go to germane processing; the correct first target is extraneous load.
+
+**Grounding**
+- Mode: `universal`
+- Truth sources: `https://doi.org/10.1207/s15516709cog1202_4`, `https://doi.org/10.1023/A:1022193728205`, `https://doi.org/10.1007/s10648-019-09465-5`, `https://doi.org/10.1177/0963721420922183`, `https://doi.org/10.1007/s10648-023-09817-2`, `https://doi.org/10.1007/s10462-026-11510-z`, `https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents`, `https://arxiv.org/abs/2509.18458`, `https://arxiv.org/abs/2509.19517`, `https://arxiv.org/abs/2510.05381`, `https://arxiv.org/abs/2506.06843`, `https://arxiv.org/abs/2410.11272`, `https://arxiv.org/abs/2601.20412`, `https://arxiv.org/abs/2605.23196`, `https://platform.claude.com/docs/en/build-with-claude/compaction`, `https://platform.claude.com/docs/en/build-with-claude/context-editing`, `https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool`, `https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices`, `https://code.claude.com/docs/en/skills`, `https://opencode.ai/docs/skills/`, `https://developers.openai.com/api/docs/guides/structured-outputs`, `https://developers.openai.com/api/docs/guides/function-calling`, `https://developers.openai.com/api/docs/guides/tools-tool-search`, `https://developers.openai.com/api/docs/guides/prompt-caching`, `https://developers.openai.com/api/docs/guides/prompting`, `https://developers.openai.com/api/docs/guides/prompting/migrate-from-prompt-object`, `https://developers.openai.com/api/docs/deprecations`, `https://ai.google.dev/gemini-api/docs/caching`
+
+**Keywords**
+- `cognitive load theory`, `working memory`, `intrinsic load`, `extraneous load`, `germane load`, `chunking`, `segmentation`, `element interactivity`, `expertise reversal`, `prompt design`
+
+<!-- skill-graph-context:end -->

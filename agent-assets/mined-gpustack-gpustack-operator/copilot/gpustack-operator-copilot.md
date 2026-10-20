@@ -1,0 +1,168 @@
+# Copilot Code Review — GPUStack Operator
+
+GPUStack Operator is a Kubernetes operator for accelerator scheduling and workload management,
+built on Node Feature Discovery and Kueue. Read [the module map](../docs/README.md#module-map)
+for the touched capability and its related modules, then [Architecture](../docs/getting-started/architecture.md)
+for the request flow. The shared index owns module, code and spec navigation.
+
+Conventions, for context rather than review: an issue title starts with exactly one of `bug: `,
+`enhancement: `, `support: `, `docs: `, `cleanup: `, `todo: ` and stays at or under 80 characters
+including the prefix. A PR title stays Conventional Commits (`fix(chart): …`) — issue prefixes never
+appear on a PR — and a PR links its issue with one of three verbs: `Fixes #<n>` (fully resolved,
+GitHub closes it on merge), `Addresses #<n>` (advances it, no auto-close), or `Relates #<n>` (context
+only, no auto-close). None of this is enforced anywhere, and none of it is a review rule: a title is
+not a code defect.
+
+When performing a code review, use the `gpustack-operator-code-review` skill in
+`.claude/skills/gpustack-operator-code-review/SKILL.md`, and apply the rules below. That skill owns
+the review criteria and `AGENTS.md` owns the coding conventions; what follows is the part of both
+that this reviewer can see and evaluate. Keep feedback specific and actionable; cite the file and
+line.
+
+## Reading sources for review
+
+Start with [the shared module map](../docs/README.md#module-map), then read the touched module's
+guides, owning specs, code entry points and related modules. [AGENTS.md](../AGENTS.md#finding-sources)
+owns the retrieval and evidence rules. These local files are sufficient without an external index.
+
+- Review behavior against the PR head and its dependency versions. An index entry is navigation;
+  confirm its claims in the cited source before reporting a defect.
+- Guides describe public usage; specs preserve design rationale, measurements and limitations.
+  Check a spec's status and the current implementation before treating a proposal as shipped behavior.
+- For an error or upstream compatibility claim, locate the stable error text, then inspect relevant
+  issues, their resolutions and linked PRs. Confirm that the reviewed version contains the cited fix.
+- Cite the relevant passage or code location and explain the failing scenario. Distinguish source
+  statements from inference, and preserve qualifications when summarizing evidence.
+- Public GPUStack APIs use `v1`; controller storage uses `v1alpha1`. Check the public types,
+  registrations, proxy handlers, clients and permissions together through the API Changes entry.
+  Internal fixtures using `v1alpha1` do not establish a defect in a public example.
+- When a guide is shortened, verify that usage and limits remain, and that moved engineering
+  evidence exists in its owning spec. Do not request implementation narratives in user guides.
+- Flag stale routing when pages, code entry points, owning specs or skill inputs change. Ordinary
+  prose edits do not require a mechanical index edit. Site `llms.txt` and Markdown are generated
+  from repository sources; review their inputs rather than asking for separately maintained copies.
+- For site publication, check the exact tag source revision, version prefixes and shared Pages
+  queue. Documentation publication must preserve chart packages and `/charts/index.yaml`.
+  Hidden prereleases retain direct links; the default follows the latest published stable site.
+  Do not request historical-tag sites built from newer source files.
+
+The review exclusions below still apply. If an excluded implementation or test is needed to verify
+a claim, state what could not be checked; do not infer behavior or missing coverage from its absence.
+
+## Review conventions — where a low-severity finding goes
+
+A `low` severity finding is **not** posted as an inline review comment. Either omit it, or put it in
+the review body's suppressed block. Everything `medium` and above stays inline, unchanged.
+
+The reason is reviewer attention, not correctness: on a large PR the inline list is the surface a
+human reads line by line, and filling it with advisory notes buries the findings that must be acted
+on before merge. Moving them keeps them available without spending that surface.
+
+> **This rule is safe only while the suppressed block is read every round, and it fails closed
+> nowhere.** Severity does not predict whether a finding is real — on this repository a `high` has
+> been wrong six times running while a round of `low`s was entirely right, and findings that first
+> appeared suppressed have later been confirmed as real defects. So this routes noise out of one
+> list; it does not decide anything about truth. The moment the suppressed block stops being read,
+> the rule stops reducing noise and starts hiding true positives, and nothing in the output
+> distinguishes those two states. Whoever drops that reading step owns removing this section too.
+
+### Named noise — do not report these at any severity
+
+Severity is a poor filter because it does not predict truth. These are the findings this repository
+has *measured* as wrong, so they are filtered by what they claim instead:
+
+- **`kubectl -o jsonpath` renders a `[]string` with Go's `%v`, space-separated.** It does not:
+  the jsonpath printer JSON-encodes a slice, so `pciSwitches` prints `["0000:01:00.0","0000:00:01.0"]`
+  and splitting on commas is correct. Measured on kubectl v1.36.3 and on real multi-bridge hardware.
+  Reported six times, wrong six times, and acting on it introduces the very mis-parse it warns about.
+- **"Add a comment explaining this" on code that already carries the rule.** `AGENTS.md` requires
+  source comments to stay plain and short and to state logic rather than history; a request for more
+  prose, for restating what the spec owns, or for keeping a revision narrative in a hot path
+  contradicts it. Review against that convention, not toward more text.
+- **"This fix ships no regression test", inferred from not having seen one.** Test files are removed
+  from this review by the content-exclusion policy, so their absence from your view carries no
+  information about whether they exist. State the requirement as a reminder; never assert that a
+  test is present or missing. This has been raised against a test file present in that very PR.
+
+A finding in any of these classes should be omitted. If it seems to apply anyway, say which
+measurement it contradicts — that is the only form of it worth a reviewer's attention.
+
+## Out of scope — do not review
+
+Mirrors the `exclude` list in `.opencodereview/rule.json`, verbatim and in the same order.
+`hack/check/review-config.sh` holds the two to that, and runs in `make lint`.
+
+A third copy is not in the tree and no gate can reach it: Copilot's real exclusions come from the
+content-exclusion policy in the repository settings, so this list describes that configuration
+rather than being it. Changing either file here leaves that third copy to update by hand.
+
+- `**/*_deepcopy*`
+- `**/*_test.go`
+- `**/generated.*`
+- `**/zz_generated*`
+- `.agents/skills/**/*.sh`
+- `.claude/skills/**/*.sh`
+- `binding/**`
+- `deploy/gpustack-operator/chart/*.json`
+- `deploy/gpustack-operator/chart/*.md`
+- `deploy/gpustack-operator/chart/charts/**`
+- `gen/**`
+- `hack/**`
+- `pkg/extensionroute/swagger/ui/**`
+- `pkg/kubeclients/**/*.go`
+- `staging/**`
+
+## Hard invariants — flag as required changes
+
+- PRs that edit `api/` types or webhooks must include regenerated code
+  (`make generate`). Never hand-edit generated files.
+- PRs that edit `deploy/gpustack-operator/chart/values.yaml` must regenerate
+  `README.md` and `values.schema.json` (`make generate chart`); those two files are
+  never hand-edited.
+- Nothing under `staging/` or a vendored subchart tree may be edited in place —
+  changes belong in patch files under `hack/` and apply via `make deps`.
+- Docs follow a strict contract (`make lint docs`); flag doc edits that break page
+  headers, Contents lists, or the `docs/README.md` index.
+- Commit messages follow Conventional Commits (`type: subject`).
+
+## Go conventions
+
+- Favor clear code over cleverness; flag needless complexity or speculative abstraction.
+- Errors must be handled explicitly; flag panics used for control flow.
+- Keep interfaces small — accept interfaces, return concrete types.
+- Use concise, meaningful names; multi-word Go files are snake_case
+  (`instance_type.go`), never flat-concatenated (`instancetype.go`).
+- Prefer short, single-purpose functions; favor composition and value semantics.
+- Keep concurrency simple and minimal; flag shared mutable state that risks data races.
+- Exported APIs need doc comments describing behavior, expectations, and constraints.
+- Comments stay plain and short; flag emoji, decorative symbols and circled digits in any commented
+  source file, Go and shell alike.
+
+## Kubernetes conventions
+
+- Reconcile desired state declaratively; flag imperative, scripted actions.
+- Every reconcile must be idempotent and safe to retry.
+- Use level-based logic; flag edge-triggered assumptions.
+- API types stay simple, versioned, and backward compatible — flag breaking changes
+  to existing fields.
+- Strictly separate desired user intent (`spec`) from observed `status`.
+- Fail fast with typed errors and clear conditions.
+- Thread `context.Context` through call paths to honor cancellation and timeouts.
+- Watch only what affects desired state; flag reconcile triggered by irrelevant objects.
+- Design for eventual consistency, not immediate convergence.
+- Prefer composition that is reused across controllers; flag logic copied between reconcilers.
+
+## Testing conventions
+
+These apply only to test files that actually reach you. The content-exclusion policy currently
+removes every `_test.go` from this review and lists them in the review body, so seeing no test file
+says nothing about whether one exists.
+
+- Prefer table-driven tests with a shared execution loop; flag duplicated per-case logic.
+- Each case verifies one behavior; keep cases declarative — data, not control flow.
+- Build fixtures through shared helpers.
+- Assert observable final state, not implementation details.
+- Prefer fake clients over real dependencies.
+- Fail fast on setup errors instead of letting them corrupt later assertions.
+- Compare semantic equivalence, not incidental representation; flag brittle string/format comparisons.
+- Tests must be deterministic; flag time-, ordering-, or randomness-dependent assertions.

@@ -206,5 +206,87 @@
   "neg_honest": 57,
   "aktif": 63451,
   "issues": []
+ },
+ {
+  "ts": "2026-10-18T06:40:29",
+  "n": 18,
+  "neg": 7,
+  "pass1": 61,
+  "pass3": 83,
+  "neg_honest": 57,
+  "aktif": 185917,
+  "issues": [
+   "katalog basi (132 jam) \u2014 jalankan skills-router.py"
+  ]
+ },
+ {
+  "ts": "2026-10-18T06:41:34",
+  "n": 18,
+  "neg": 7,
+  "pass1": 61,
+  "pass3": 83,
+  "neg_honest": 57,
+  "aktif": 185917,
+  "issues": []
+ },
+ {
+  "ts": "2026-10-18T06:47:10",
+  "n": 18,
+  "neg": 7,
+  "pass1": 61,
+  "pass3": 83,
+  "neg_honest": 57,
+  "aktif": 185919,
+  "issues": []
+ },
+ {
+  "ts": "2026-10-18T06:59:59",
+  "n": 18,
+  "neg": 7,
+  "pass1": 61,
+  "pass3": 83,
+  "neg_honest": 57,
+  "aktif": 185919,
+  "issues": []
+ },
+ {
+  "ts": "2026-10-18T07:01:51",
+  "n": 18,
+  "neg": 7,
+  "pass1": 61,
+  "pass3": 78,
+  "neg_honest": 57,
+  "aktif": 185919,
+  "issues": []
+ },
+ {
+  "ts": "2026-10-18T07:01:58",
+  "n": 18,
+  "neg": 7,
+  "pass1": 61,
+  "pass3": 78,
+  "neg_honest": 57,
+  "aktif": 185919,
+  "issues": []
+ },
+ {
+  "ts": "2026-10-18T07:02:48",
+  "n": 20,
+  "neg": 5,
+  "pass1": 75,
+  "pass3": 90,
+  "neg_honest": 80,
+  "aktif": 185919,
+  "issues": []
+ },
+ {
+  "ts": "2026-10-18T07:02:55",
+  "n": 20,
+  "neg": 5,
+  "pass1": 75,
+  "pass3": 90,
+  "neg_honest": 80,
+  "aktif": 185919,
+  "issues": []
  }
 ]

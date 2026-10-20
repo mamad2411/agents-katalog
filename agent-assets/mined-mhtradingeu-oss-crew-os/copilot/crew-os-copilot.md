@@ -1,0 +1,30 @@
+# Copilot Instructions for MH-OS Superapp
+
+- Monorepo: `apps/back-end` (Express/TS), `apps/front-end` (Next 16 app router), shared DTOs in `packages/shared`; Node >=20, npm >=10.
+- Backend entry: `src/server.ts` -> `initEventHub()` -> `createApp()` (`src/app.ts`). `/health` open, `/api/v1/auth` public; all other `/api/v1/*` behind `authenticateRequest`.
+- Mounted routers (`src/app.ts`): auth, users, brand, product, pricing, crm, marketing, sales-reps, dealers, partners, competitor, stand, stand-pos, affiliate, loyalty, inventory, finance, white-label, automation, communication, knowledge, security, admin, ai, social-intelligence, operations, support, activity, notifications, platform-ops.
+- Module pattern: `src/modules/<name>/` with `<name>.routes.ts` (Router + `requirePermission` + `validateBody`), `<name>.controller.ts` (handlers only), `<name>.service.ts` (business logic + Prisma), `<name>.validators.ts` (Zod from `@mh-os/shared`), `<name>.events.ts` (publish via `core/events/event-bus`), optional `<name>.types.ts`/`ai.ts`/`http`; export router in `index.ts`, mount in `app.ts` under `/api/v1/<name>`.
+- Core abstractions: `core/http/errors.ts` (`ApiError` helpers), `core/http/middleware/validate.ts`, `core/http/http-types.ts`, `core/http/params.ts`; security via `core/security/auth-middleware.ts` (JWT -> `req.user`), `core/security/rbac.ts` (permission cache + policy checks, SUPER_ADMIN bypass), `core/security/jwt.ts`; events via `core/events/event-bus.ts` and subscribers in `core/events/register.ts`; AI via `core/ai/orchestrator.ts` + `orchestrateAI/makeCacheKey` with caching and deterministic fallbacks; Prisma client in `core/prisma.ts`.
+- Prisma schema: `apps/back-end/prisma/schema.prisma` (172 models) covering auth/users/tenants/brands/plans; CRM (Lead/Pipeline/Deal/CRMTask/InteractionLog); Marketing (Campaign/ContentPlan/SEOContent); Sales (SalesRep/RoutePlan/Order/Quote/Targets/commissions); Pricing/Product (BrandProduct/ProductPricing/ProductPriceDraft/CompetitorPrice/AIPricingHistory); Inventory/Warehouse/PO/Shipment; Loyalty (Program/Tier/Customer/Transaction); Affiliate; Stand/StandPOS (Stand/Inventory/Order/Refill/Kpi); Finance (Expense/RevenueRecord/Invoice/TaxProfile/BudgetPlan); Automation (AutomationEvent/Rule/Workflow/ExecutionLog); Knowledge/AI (AIAgentConfig/AIInsight/AIReport); Social-intelligence (SocialMention/Trend/Influencer/CompetitorSocialReport); Support (Ticket/TicketMessage/TicketAssignment); Notifications; OperationsTask; White-label. Align new data to existing domains/relations.
+- Auth flow: `auth.routes.ts` + `validateBody` (shared Zod). `auth.service.ts` hashes passwords, builds session via Prisma selects, signs JWT (`core/security/jwt.ts`), emits `auth.session.created/refreshed`; `me` requires JWT. Keep `/auth` open; others use `authenticateRequest` + `requirePermission`.
+- RBAC: permissions in Prisma Role/Permission/Policy; seeds under security-governance. `requirePermission` checks cached codes and policy `rulesJson` (brand/tenant/role). Guard AI endpoints with domain + AI permissions when applicable.
+- AI usage: use `aiOrchestrator` or `orchestrateAI({ key, messages, fallback })`; always provide deterministic fallback JSON and cache keys (`makeCacheKey`); persist AI outputs to domain models (e.g., `AIInsight`, `AIPricingHistory`) when required.
+- Events: publish domain events in `<module>.events.ts` (e.g., auth session, pricing draft lifecycle). Register new subscribers in `core/events/register.ts` for side effects.
+- DTO/validation: define Zod schemas in `packages/shared/src/dto/*`, re-export via shared index; validators import from shared; controllers assume parsed DTOs; services throw `ApiError` (`badRequest/unauthorized/forbidden/notFound`); `validateBody` maps errors to 400.
+- New module checklist: create controller/service/routes/validators/events/types; export router; mount in `app.ts`; add permissions + seeds; add Prisma models/migration; add shared DTOs if frontend/other modules consume; register subscribers if emitting/consuming events; secure with `authenticateRequest` + `requirePermission`.
+- Database workflow: edit schema; run `npm run prisma migrate dev` locally or `docker compose exec backend npx prisma migrate deploy`; commit schema + migrations; `prisma generate` runs postinstall; seed via `npm run seed:core` or module seeds; never drop prod DB.
+- Dev/test/build: root `npm run dev` (Turbo) runs back/front; root `npm run build` builds shared then backend; root `npm run typecheck` (Turbo). Backend: `npm run dev|lint|typecheck|build|start|clean|auto:new-module`. Frontend: `npm run dev|lint|typecheck|build|start`. Keep backend `tsc` clean; prefer `typecheck` before PRs.
+- Frontend: Next app router segments `(dashboard)`, `(auth)`, `(onboarding)`, `(app)` with domain pages (pricing, products, crm, marketing, loyalty, ai, stand-pos, etc.) using shared DTOs; align API calls to `/api/v1/<module>`.
+- Continue/agents: config `.continue/config.yml`; prompts `.continue/prompts/`; rules `.continue/rules/` (secure configuration, backend protocol). Open VS Code at repo root so paths resolve; avoid modifying archives.
+- Docker: copy `.env.sample` -> `.env`, `apps/back-end/.env.example` -> `.env`; `docker compose build`; `docker compose up db` then backend (optionally frontend); `docker compose down --volumes` to reset. Ports: backend `${PORT:-4000}`, frontend `${FRONTEND_PORT:-3000}`.
+- Archives under `archive_old/` are legacy—do not modify unless requested.
+- Automation Phase C rules: 
+  - Runtime is PLAN_ONLY
+  - No side effects without Governance approval
+  - tenantId is mandatory on all AutomationEvents
+- NEVER enrich or mutate AutomationEvent inside dispatcher/runtime
+- Event must be fully valid before entering Automation pipeline
+- Do NOT place demo, test, or example files inside apps/back-end/src
+- Always use explicit .js extensions in ESM imports
+- Prefer barrel exports via index.ts
+- If unsure about domain ownership, DO NOT create new logic; ask for clarification

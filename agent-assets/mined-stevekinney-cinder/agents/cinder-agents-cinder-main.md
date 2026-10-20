@@ -1,0 +1,141 @@
+# AGENTS.md
+
+> **Building an app that uses cinder?** Read [`packages/components/AGENTS.md`](./packages/components/AGENTS.md) § Using cinder in your app.
+>
+> **Editing cinder itself?** Read [`packages/components/AGENTS.md`](./packages/components/AGENTS.md) § Contributing to cinder.
+
+This file covers repo-wide Bun workspace conventions.
+
+## Pull request review: test timeouts are not a fix
+
+Never approve a pull request whose only change increases a test timeout, retry count, or other wait threshold. A bumped `timeout`, `testTimeout`, `--timeout`, `retries`, `waitFor` deadline, or `slow()` multiplier hides a real problem instead of fixing it: a slow assertion, a race condition, an unmocked network call, an unbounded retry loop, or resource contention under CI load.
+
+There is no exception. It does not matter whether the pull request explains the root cause, links to a failing run, cites a legitimately larger workload, or fixes everything else in the diff cleanly: if any part of the change increases a timeout, retry count, or wait threshold, do not approve it. Request changes and require the timeout or retry value to be reverted to its prior value, with the actual slowness or flakiness fixed in source or test code instead.
+
+This rule applies even when the rest of the diff looks reasonable and the timeout change is buried in an otherwise unrelated pull request. Flag it as a blocking comment, not a suggestion.
+
+### The one sanctioned exception: dependency installs
+
+`.github/actions/install-dependencies` retries `bun install --frozen-lockfile` exactly once, with the package cache cleared. This is the only retry in the repository that is not a defect, and it is recorded here so reviewers do not have to relitigate it on every pull request that touches CI.
+
+It is an exception because the rule's rationale does not reach it. A retry is forbidden because it masks a flaky or slow test. A dependency install runs _before any spec is collected_, so a failure there has exercised nothing about the code under test and there is no test outcome for the retry to hide. `Integrity check failed for tarball` is a corrupted download, not a race in our code.
+
+The exception is bounded, and every bound is load-bearing:
+
+- **One retry.** Not a loop, not a configurable count, no backoff to tune.
+- **Installs only.** `testTimeout`, `--timeout`, Playwright `retries`, `waitFor` deadlines, and `slow()` multipliers remain forbidden with no exception whatsoever. A pull request that cites this section to justify one of those is misreading it — keep flagging those as blocking.
+- **Defined once.** Every install step that retries does so by referencing the composite action; none contains a retry of its own. A retry written inline in a workflow is still a defect, however similar it looks to this one. (One site deliberately does _not_ retry: `update-baselines` installs after checking out an arbitrary dispatched ref, where a local action reference would not resolve. It uses a plain install rather than an inlined copy — a job without the retry is a smaller cost than a second copy of the exception.)
+- **Annotated, never silent.** The retry emits a `::warning::`. If those annotations become common, the transient failure has become a standing one and the answer is a real fix, not a second retry.
+
+Granted by the project lead on 2026-09-11 for [CIN-607](https://linear.app/lost-gradient/issue/CIN-607). Widening it — a second retry, a new site, a different command — needs the same authority, not a reviewer's judgement.
+
+## Component authoring pre-flight
+
+Before adding a component, load the repository-local `cinder-component-authoring`
+skill (mirrored under `.agents/skills/` and `.claude/skills/`) and complete its
+checklist:
+
+<!-- component-authoring-checklist:start -->
+
+- [ ] Search the component inventory and compose an existing primitive before creating a new one. (#919, #929)
+- [ ] A new component requires behavior, state, or accessibility semantics its parts do not already provide; layout or presentation variations become props, variants, or documented example presets (see docs/decisions/component-admission-bar.md). (#919, #929)
+- [ ] Check docs/component-api-conventions.md before adding or naming a public prop. (#922)
+- [ ] Name a curated collection `<Singular>Group`, never a bare plural of an existing singular component; a bare plural is legal only as a domain mass noun that composes no matching singular (see docs/component-api-conventions.md, "\*Group versus plural component names"). `check:prop-conventions` rejects a new bare-plural name that shadows an existing singular. (#1416)
+- [ ] Apply the `cinder-_floating-surface` class to floating panels (defined in `_floating-surface.css`), and compose form controls from `Input` and `FormField`. (#921, #923)
+- [ ] Use a rotating chevron for disclosure controls that render an indicator; use direction-aware lateral chevrons for nested submenus, keep intentionally text-only disclosures icon-free, and use icons from the @lucide/svelte set. (#957)
+- [ ] Add tests for resulting state and resting appearance, not only transitions. (#931)
+- [ ] For every leaf, add a substantive test, README skeleton, stylesheet registration in src/styles/components.css, generated exports, and the sidebar count-gate update. (#310)
+- [ ] For every new token, add check-token-contrast.test.ts coverage and its docs/tokens.md entry; tokens-doc-drift.test.ts must stay green. (#310)
+- [ ] Keep the structural mirror pipeline guard and its regression tests in sync when changing the public workflow contract. (#310)
+- [ ] Get a design review for every new component; record its nearest neighbours, why it exists, and the review outcome in `*.a11y.md`. (#968)
+- [ ] For a novel interaction model, get an accessibility review covering focus management, the keyboard matrix, and assistive-technology announcements; record the outcome in `*.a11y.md`. (#968)
+
+<!-- component-authoring-checklist:end -->
+
+The checklist's machine-readable source of truth is
+`packages/components/scripts/component-conventions.ts`; `components:create`
+links every new component README to the live package guidance.
+
+The human review items are required because tooling cannot decide whether a
+component is drab, bulbous, ugly, poorly laid out, or built around the wrong
+interaction model. Record the durable review outcome beside the component;
+pull-request discussion alone is not the record.
+
+## Essential Commands
+
+### Development
+
+```bash
+bun install              # Install workspace dependencies
+bun run build            # Build @lostgradient/cinder, @lostgradient/cinder-mcp, then @lostgradient/editor
+```
+
+### Testing
+
+This public repository builds and publishes the mirror artifacts. Corvidae owns the full source lint, type, unit, coverage, and browser suites; its `bun run validate` runs before a source revision is mirrored. The generated `.github/workflows/mirror-verify.yaml` checks the public pull request's exact package builds, tarballs, declarations, and consumers. The release workflow checks the same published artifacts again.
+
+Run focused checks for target-owned changes using scripts that the affected package actually defines:
+
+```bash
+bun run typecheck
+bun run --filter=@lostgradient/cinder test
+bun run --filter=@lostgradient/testing test
+bun run --filter=@lostgradient/cinder validate:consumer
+bunx prettier --check AGENTS.md
+```
+
+The root manifest no longer defines `test`, `lint`, `test:browser`, `validate`, `format`, or `format:check`. Do not present those old commands as public-mirror quality gates. The Playwright fixtures and screenshot baseline workflow live in the private Corvidae source workspace.
+
+### Validation ownership
+
+For ordinary work here, run focused regressions and generated-artifact checks for touched target-owned files. A mirror pull request must pass its generated `mirror-verify` workflow before merge; publication requires the target release workflow and live registry checks. Corvidae's complete source validation is separate evidence tied to the source revision in the mirror commit trailer.
+
+### Code Quality
+
+Use `bunx prettier --check <paths>` for touched files and `bunx prettier --write <paths>` when formatting them. Run package-specific lint or type checks when those scripts cover the changed files.
+
+### Package Artifacts
+
+```bash
+bun run --filter=@lostgradient/cinder components:generate
+bun run --filter=@lostgradient/cinder components:check
+bun run --filter=@lostgradient/cinder exports:check
+bun run --filter=@lostgradient/cinder validate:consumer
+bun run --filter=@lostgradient/cinder package:weight:check
+bun run --filter=@lostgradient/cinder-mcp build
+bun run --filter=@lostgradient/cinder-mcp test
+bun run --filter=@lostgradient/cinder-mcp validate:consumer
+bun run --filter=@lostgradient/cinder-mcp package:weight:check
+```
+
+Run `components:generate` after changing component source metadata, examples, constraints, variables, generated README sections, or export-affecting component files.
+
+## Workspace Layout
+
+| Workspace             | Purpose                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `packages/components` | Published `@lostgradient/cinder` package.                                                                              |
+| `packages/testing`    | Private Playwright, axe, and visual-regression harness.                                                                |
+| `packages/markdown`   | Published `@lostgradient/markdown` package (headless Markdown pipeline, rendering, diffing, templating).               |
+| `packages/mcp`        | Published `@lostgradient/cinder-mcp` package (Node-only Model Context Protocol server for Cinder component discovery). |
+| `packages/commentary` | Private review/comment anchoring and editor (ProseMirror/Milkdown) runtime utilities.                                  |
+
+## Architecture Notes
+
+- **Bun workspace:** Use `bun` commands and the root `bun.lock`; do not introduce npm or Yarn lockfiles.
+- **Published packages:** `@lostgradient/cinder` lives in `packages/components`; `@lostgradient/editor` lives in `packages/editor`. `@lostgradient/chat` stopped publishing on 2026-10-14.
+- **Private packages:** `@cinder/*` packages are private implementation workspaces. Some are packed into the published artifact through `packages/components/scripts/pack-for-publish.ts`.
+- **Svelte 5:** The public peer range is `svelte >=5.56.0 <6`.
+- **Styles:** The base stylesheet is `@lostgradient/cinder/styles`; component CSS is opt-in through `@lostgradient/cinder/<component>/styles`, or all-in through `@lostgradient/cinder/styles/all`.
+- **Generated metadata:** `packages/components/components.json` is the source for machine-readable component discovery. Component READMEs, schemas, variables, examples, constraints, and package exports are generated from component source and sidecars.
+- **Worktrees need a real `node_modules`:** never symlink a worktree's root `node_modules` to another checkout's. Doing so aliases one dependency tree under two path prefixes, which collides Bun's path-keyed module cache — local SSR/hydration test runs then fail deterministically with `Unseekable reading file: .../node_modules/esm-env/index.js` (or Bun parsing a package's `package.json` as JavaScript), pointing at a healthy file and reading like flakiness. Run a real `bun install` in each worktree. `pre-push` **detects** a symlinked tree and names the fix, but does not repair it — per the fail-open push layer in [`docs/validation-topology.md`](./docs/validation-topology.md), nothing in that hook can fail a push, and it deliberately mutates nothing: the value is naming an opaque failure, not saving one `bun install`.
+
+## Documentation
+
+- Root consumer/developer overview: [`README.md`](./README.md)
+- Long-form docs index: [`docs/README.md`](./docs/README.md)
+- Published package README: [`packages/components/README.md`](./packages/components/README.md)
+- MCP package README: [`packages/mcp/README.md`](./packages/mcp/README.md)
+- Package contribution guidance: [`packages/components/AGENTS.md`](./packages/components/AGENTS.md)
+
+When documentation mentions commands, prefer root workspace commands with `bun run --filter=<package>` for package-specific gates. Avoid bare `bun test` in docs unless the local package script intentionally wraps it.

@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/Klotzkette/claude-fuer-deutsches-recht (path: berufsrecht-wirtschaftspruefer/skills/wirtschaftspruefer-whistleblowerhinweis-im-pruefmandat-kammeran/SKILL.md, branch: main)
-- mined: 2026-10-13
-- desc: Für Wirtschaftsprüfer Whistleblowerhinweis im Prüfmandat Kammeran: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt."

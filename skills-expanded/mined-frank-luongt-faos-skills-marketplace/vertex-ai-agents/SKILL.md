@@ -2,10 +2,9 @@
 ---
 name: vertex-ai-agents
 description: Google Vertex AI Agent Builder patterns for building enterprise AI agents with Gemini. Use when designing agents with OpenAPI tools, data stores, playbooks, multi-agent orchestration, or deploying on Google Cloud.
-tags: [gcp, vertex-ai, agents, gemini]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # Vertex AI Agent Builder
 

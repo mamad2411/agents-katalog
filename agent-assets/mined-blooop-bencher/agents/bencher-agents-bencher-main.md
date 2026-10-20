@@ -1,0 +1,151 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Common Development Commands
+
+The project uses Pixi for package management and task automation. Key commands:
+
+### Development Tasks
+- `pixi run ci` - Run complete CI pipeline (format, lint, test with coverage)
+- `pixi run test` - Run pytest test suite
+- `pixi run format` - Format code with ruff
+- `pixi run lint` - Run ruff linting and ty type checking
+- `pixi run coverage` - Run tests with coverage reporting
+- `pixi run generate-docs` - Generate documentation from examples
+- `pixi run demo` - Run demo example (example_image.py)
+
+### AI Agent Integration
+- `pixi run agent-iterate` - Full CI cycle for AI agents (includes docs, tests, commits, and fixes)
+
+### Testing Individual Examples
+To test a specific example: `pixi run python bencher/example/example_simple_float.py`
+
+### Important
+- **ALWAYS use the pixi environment for every command.** Never run raw `python`, `pytest`, `ruff`, or any other tool directly — always prefix with `pixi run` (e.g. `pixi run python ...`, `pixi run pytest ...`). This ensures the correct dependencies and environment are used.
+
+### How to Use Bencher
+See **[docs/how_to_use_bencher.md](docs/how_to_use_bencher.md)** for the complete guide
+on using bencher — sweep types, result types, the `benchmark()` pattern, plot callbacks,
+and common mistakes. **Read this before writing any benchmark or example.**
+
+### Updating Examples & Docs
+1. Add or modify the example implementation under `bencher/example/`.
+2. Register the example in `bencher/example/meta/generate_examples.py` so the documentation generator emits a notebook (pick an appropriate gallery subdirectory).
+3. Run `pixi run generate-docs` to regenerate gallery notebooks.
+4. Update relevant user docs (for instance `docs/intro.md` or gallery sections) to mention the new example.
+5. Make sure conf.py includes the docs that are added
+6. Execute `pixi run ci` before committing to ensure formatting, linting, and tests all pass.
+
+## Code Architecture
+
+Bencher is a benchmarking framework built around these core concepts:
+
+### Core Components
+- **Bench**: Main benchmarking class that orchestrates parameter sweeps and result collection
+- **BenchRunner**: Higher-level interface for managing multiple benchmark runs
+- **BenchCfg/BenchRunCfg**: Configuration classes for benchmark setup and execution
+- **ParametrizedSweep**: Base class for defining parameter sweep configurations
+
+### Parameter System
+- Uses the `param` library for parameter definitions with metadata
+- **Sweep Classes**: `IntSweep`, `FloatSweep`, `StringSweep`, `EnumSweep`, `BoolSweep`
+- Parameters define search spaces with bounds and sampling strategies
+- Results stored in N-dimensional xarray structures
+
+### Results System
+- **BenchResult**: Container for benchmark results and visualizations
+- **HoloviewResult**: Base class for interactive plots (scatter, line, heatmap, etc.)
+- **ComposableContainer**: Framework for combining multiple result types
+- **Video/Image Results**: Support for multimedia outputs
+- Results automatically cached using diskcache based on parameter hashes
+- **Result type selection**: Use `ResultBool` for binary outcomes (success/failure), `ResultFloat` for continuous metrics, `ResultString` for text, `ResultImage`/`ResultVideo`/`ResultPath` for files
+
+### Data Flow
+1. Define parameter sweep configuration class inheriting from ParametrizedSweep
+2. Implement benchmark function that takes config instance, returns metrics dict
+3. Bench calculates the Cartesian product of all parameter combinations
+4. Each combination executed (with caching), results stored in N-D tensor
+5. Automatic plot type deduction based on parameter/result types
+6. Results cached persistently for reuse
+
+### Key Directories
+- `bencher/` - Main package source
+- `bencher/example/` - Comprehensive examples organized by input dimensions
+- `bencher/variables/` - Parameter sweep and result variable definitions
+- `bencher/results/` - Result containers and visualization classes
+- `test/` - Test suite
+
+### Repository Layout
+- `plans/` - Current improvement plans (read `plans/README.md` first); `plans/archive/`
+  holds historical ones, each with an `ARCHIVED:` header saying why — never execute those.
+- `scripts/` - Developer/CI shell and profiling scripts, invoked from Pixi tasks.
+- `resource/` - Vestigial ROS ament index marker (`resource/bencher`, zero bytes). No code
+  reads it; it lands in the wheel only because hatchling's `include = ["bencher", ...]`
+  pattern matches any path named `bencher` at any depth.
+- `ralph.yml` + `PROMPT.md` - Config and task prompt for the Ralph agent orchestrator
+  (`pixi run ralph`, used by the `agent-iterate` flows).
+- `rockerc.yaml` - rocker/docker dev-container configuration.
+- The build is hatchling via `pyproject.toml` only; there is no setuptools shim.
+
+### Configuration Files
+- `pyproject.toml` - Project dependencies and Pixi task definitions
+- `ruff.toml` - Code formatting/linting configuration (100 char line length)
+- Line length limit: 100 characters (configured in ruff.toml)
+
+### Testing Strategy
+- Uses pytest framework
+- Coverage reporting with coverage.py
+- Examples serve as integration tests
+- Meta-generated examples in `bencher/example/meta/`
+- **Collect/render split coverage** (`bencher/render.py`): three layers guard the
+  out-of-process render pipeline against divergence from the normal `plot_sweep` path —
+  (A) parity tests in `test/test_render.py` assert `collect()` computes the same dataset
+  as `plot_sweep()`; (B) `test/test_split_render_examples.py` round-trips every result
+  type through save → load → render; (C) setting `BENCHER_FORCE_SPLIT_RENDER=1` reroutes
+  every auto_plot report build through that serialize/render-from-loaded path, so
+  `pixi run test-split` re-runs the *entire* suite over the split pipeline (its own CI
+  job, `ci-split`).
+
+### Generated Example Naming Convention
+
+All auto-generated examples live under `bencher/example/generated/`. Each filename must
+be **globally unique** across the entire generated tree — no two files may share a basename
+even if they are in different subdirectories. This is required because the documentation
+build uses filenames as RST page stems and thumbnail identifiers.
+
+**Pattern:** `{section_prefix}{descriptive_dimensions}.py`
+
+Every filename uses a **section prefix** from the table below (each already includes
+the `example_` prefix), followed by the varying dimensions encoded in the name:
+
+| Section Prefix | Output Directory | Varying Dimensions |
+|---|---|---|
+| `example_sweep_` | `{N}_float/{variant}/` | float count, cat count, variant |
+| `example_plot_` | `plot_types/` | plot type |
+| `example_bool_plot_` | `bool_plot_types/` | plot type |
+| `example_result_` | `result_types/result_{type}/` | result type, input dims |
+| `example_composable_` | `composable_containers/` | backend, compose type |
+| `example_sampling_` | `sampling/` | strategy |
+| `example_stats_` | `statistics/` | variant |
+| `example_const_vars_` | `const_vars/` | example |
+| `example_optim_` | `optimization*/` | objectives, dims, over_time |
+| `example_advanced_` | `advanced/` | example |
+| `example_workflow_` | `workflows/` | example |
+| `example_perf_` | `performance/` | variant |
+| `example_regression_` | `regression/` | variant |
+| `example_yaml_` | `yaml/` | format |
+| `example_publish_` | `publishing/` | example |
+| `example_rerun_` | `rerun/` | example |
+| `example_agg_` | `aggregation/` | aggregation form, agg_fn |
+| `example_cartesian_` | `cartesian_animation/` | (single example) |
+| `example_container_tab_` | `container_tabs/` | layout mode |
+| `example_levels_` | `levels/` | variant |
+
+**Rules for adding new generators:**
+1. Every filename must start with `example_` followed by a unique section prefix.
+2. Encode **every** varying dimension in the filename — never rely on the folder path alone.
+3. The Python function inside the generated file must also start with `example_` (the test
+   harness and doc builder use this prefix for discovery).
+4. Register the generator in `generate_examples.py:generate_python_files()` and add
+   corresponding entries to `SECTION_GROUPS` for gallery placement.

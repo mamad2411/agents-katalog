@@ -1,1 +1,0 @@
-.claude/commands/add-skill.md

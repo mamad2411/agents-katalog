@@ -1,0 +1,12 @@
+- Target ESNext
+- Use the `.ts` extension when importing local TypeScript files
+- Use TSDoc comments for all functions and classes
+- Prefer `const` over `let` wherever possible
+- Use async/await syntax for handling asynchronous operations instead of Promises directly
+- Ensure all functions and methods have explicit return types defined
+- Use interfaces to define object shapes instead of type aliases where possible
+- Organize imports: external libraries first, then internal modules, with a blank line between groups
+- Use template literals for string concatenation instead of the `+` operator
+- Use optional chaining and nullish coalescing operators for safer property access and default values
+- Adhere to SOLID principles in class and module design
+- Do not use `npx tsx`. Use `node src/index.ts`.

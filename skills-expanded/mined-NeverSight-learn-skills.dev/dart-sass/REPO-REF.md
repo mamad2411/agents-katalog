@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/partme-ai/full-stack-skills/dart-sass/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: Provides comprehensive guidance for Dart Sass including Sass syntax, compilation, mixins, functions, and best practices. Use when the user asks about Dart Sass, needs to compile Sass to CSS, use Sass 

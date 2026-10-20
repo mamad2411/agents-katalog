@@ -2,7 +2,6 @@
 ---
 name: databricks-app-python
 description: Build Python-based Databricks applications using Dash, Streamlit, or Flask.
-tags: [databricks, python]
 ---
 
 # Databricks Python Application

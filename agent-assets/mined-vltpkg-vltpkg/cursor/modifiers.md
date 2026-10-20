@@ -1,0 +1,75 @@
+---
+description: Understanding Graph Modifiers
+globs: src/graph/src/modifiers.ts,src/graph/test/modifiers.ts
+alwaysApply: false
+---
+# Graph Modifiers
+
+Overrides/resolutions and package extensions via DSS selectors in `vlt.json`.
+
+## Concepts
+
+- **Edge modifiers** (overrides): Replace dependency specs. Value = string spec (e.g., `"^1.0.0"`, `"-"` to remove)
+- **Node modifiers** (package extensions): Augment manifests. Value = object with deps/peerDeps/etc.
+- Uses DSS (Dependency Selector Syntax) for matching. Most specific selector wins (CSS specificity).
+
+## User Config (`vlt.json`)
+
+```json
+{
+  "modifiers": {
+    ":root > #a > #b": "^1.0.0",
+    "#react": "^19",
+    "#unwanted": "-",
+    "#some-pkg": { "peerDependencies": { "react": "^18 || ^19" } }
+  }
+}
+```
+
+Importer selectors: `:root` (main), `:workspace` (any workspace), `:project` (any importer)
+
+## Key Modules
+
+- `src/graph/src/modifiers.ts` — `GraphModifier` class
+- `src/dss-parser/` — DSS query AST
+- `src/dss-breadcrumb/` — Interactive breadcrumb walking (provides `parseBreadcrumb()`, `specificitySort()`)
+- `src/vlt-json/` — loads config
+
+## Type Definitions
+
+```typescript
+type EdgeModifierEntry = { type: 'edge', query: string, breadcrumb: ModifierBreadcrumb, spec: Spec, value: string, refs: Set<{name, from}> }
+type NodeModifierEntry = { type: 'node', query: string, breadcrumb: ModifierBreadcrumb, manifest: NormalizedManifest, refs: Set<{name, from}> }
+type ModifierActiveEntry = { modifier: ModifierEntry, interactiveBreadcrumb, originalFrom: Node, originalEdge?, modifiedEdge? }
+```
+
+## GraphModifier Class
+
+**Static**: `maybeLoad(options)` (returns instance or undefined), `load(options)` (throws if no vlt.json)
+
+**Methods:**
+- `tryImporter(importer)` — match against `:root`/`:workspace`/`:project`
+- `tryNewDependency(from, spec)` — returns highest-specificity match
+- `tryDependencies(from, deps)` → `Map<string, ModifierActiveEntry>`
+- `updateActiveEntry(from, active)` — advance breadcrumb
+- `rollbackActiveEntries()` — restore original edges for incomplete matches
+- `removesImporterEdge(importer, spec)` — selector of the winning modifier for a direct importer dep when its value is `"-"`, else `undefined` (used by `getImporterSpecs` to skip/drop it, and `install` to reject explicit adds)
+
+## Integration with Ideal Build
+
+```typescript
+const modifiers = GraphModifier.maybeLoad(options)
+for (const importer of importers) {
+  modifiers?.tryImporter(importer)
+  const refs = modifiers?.tryDependencies(importer, deps)
+  await appendNodes(..., modifiers, refs, ...)
+}
+// In append-nodes: check activeModifier, swap spec if complete, update after placement
+// queryModifier included in DepID extra via joinExtra()
+```
+
+## Tips
+
+- `rollbackActiveEntries()` called after traversal to clean partial matches
+- Use `skipLoadingNodesOnModifiersChange` when reusing graph but modifiers changed
+- Deterministic ordering ensures reproducible lockfiles after changes

@@ -1,0 +1,317 @@
+---
+name: meta-context-watcher
+description: Use when a session's context is large enough that quality is degrading or compaction is close, when a Stop nudge reports the handover threshold was crossed, or on "write a handover", "hand this over", "context is getting full", or "let's start a fresh session". Also use when a session picks up from an existing handover.md or OPEN-WORK.md, or is asked what to do next - "read the handover", "what next", "what's next for <project>", "what is still open", "list the open points" - when unfinished work or an unmet user request must outlive the session and belongs in the standing backlog, when open items keep sinking under whatever was worked on last, or on "add this to the backlog", "clean up the backlog"
+---
+
+# Write the handover, then start clean
+
+A long session gets worse before it gets full. Accuracy falls from roughly 300-400k tokens on a 1M
+window and from about 50k on a 200k one, while Claude Code does not auto-compact until around 83% -
+and compaction DISCARDS working detail rather than preserving it.
+
+Both numbers are dated, and neither is measured here. The accuracy figures are Chroma's 2025
+context-rot study, read second-hand from a summary rather than from the paper; the 83% is Claude
+Code product behaviour that can move in any release. Treat them as the order of magnitude that
+justifies handing over early, never as thresholds to tune against - and re-check both before
+quoting either as current. Between those two points is where
+a session should be handed over deliberately instead of truncated.
+
+## The one rule
+
+**Write only what the next session cannot re-derive.**
+
+It inherits the repository, the git history, the CLAUDE.md cascade and the memory store. Only one
+thing dies with this session: what you were part-way through, and why you chose it.
+
+## Two files, because they have opposite lifetimes
+
+`handover.md` describes ONE MOMENT and is replaced wholesale every time. `OPEN-WORK.md` is the
+STANDING BACKLOG and is only ever edited line by line.
+
+Keeping both in one file is what made the backlog rot. A handover is rewritten from what the
+writing session has in mind, so every item is re-encoded from memory once per session, and it is
+re-encoded in proportion to how recently it was TOUCHED. The item nobody worked loses one
+attribute per rewrite: first its method, then its count, then its own heading, until it is a
+clause in a sentence. Measured over one day in this repo, five tracked items - an 88-target audit
+the user had asked for, a reviewer pass, 206 unframed bodies, 57 flagged candidates, 5 queued
+contributions - went from named bullets with counts to absent, with no line saying any of them had
+been closed.
+
+| Goes in `handover.md`                        | Goes in `OPEN-WORK.md`                          |
+|----------------------------------------------|-------------------------------------------------|
+| what is part-done RIGHT NOW, and its state   | anything not finished that outlives the session |
+| what is uncommitted                          | anything the user asked for and has not got     |
+| decisions this session took, with the reason | work that is blocked, and on whom               |
+| the one next action                          | the ranked list that next action is drawn from  |
+
+`OPEN-WORK.md` sits at the repo root, tracked, one item per line:
+
+```
+- [ ] (YYYY-MM-DD) [rank] ORIGIN: what it is | size: how much is left | open: why | next: the action
+```
+
+The date is when it was FIRST raised and never changes. `ORIGIN` is `USER:` (their own words where
+they gave any) or `FOUND:`. `size` is how much is left; it is the field that disappears first when
+a list is retyped, and it breaks ties within an origin, so it is not optional. It is NOT the first
+ranking key - see below, where reading it as one is a named failure. Closing an item is `- [x]` plus
+`| closed: <reason>`; the line stays. When you close several items in one pass, tag each reason
+`measured:` or `argued:`, because afterwards a closure settled by evidence and one settled by
+reasoning look identical, and only the second is open to reopening. A SessionStart hook prints the
+top ranks with their age.
+
+That closing rule is the default, not an override: when a backlog file's own header states a
+different one ("a solved item is DELETED"), the header governs that file. Before deleting a line,
+ask git whether the file is tracked (`git ls-files --error-unmatch OPEN-WORK.md` exits 0 when it
+is): in an untracked or gitignored backlog a deleted line is gone for good, with nothing to diff it
+back from, so name what you deleted in your reply.
+
+**An item belongs in the `OPEN-WORK.md` of the repo whose code needs the change, not the repo you
+found it from.** A bug found in a sibling repo, a template, or a project that depends on this
+one goes into THAT repo's backlog, its line carried over unchanged with its first-raised date -
+create the file there if it has none, tracked or excluded the way that repo keeps its own working
+files - and this file keeps at most a closed line, `| closed: moved to <repo>/OPEN-WORK.md`.
+Where a line sits reads as who owns the work: the next session picks the top item of its own
+backlog and starts editing another repo's code from here, so a general-purpose library ends up
+doing an application's work.
+
+**Rank in TENS** - 10, 20, 30. An insertion is then a new number instead of a renumbering of
+every line below it, which keeps a reorder out of the diff of an unrelated change.
+
+**A free rank is free over EVERY line of the file, closed `[x]` lines included.** A closed item
+keeps its number and the SessionStart listing shows open items only, so a number a closed line
+holds looks free; take it and "rank 40" names two items in every handover and commit after. Read
+the whole file before picking. The SessionStart block names any rank an open item shares with
+another line - give the open item a free number before citing it.
+
+**How rank is decided, in this order:**
+
+1. A `USER:` item outranks every `FOUND:` item. Someone is waiting on the first kind and nobody is
+   waiting on the second, and no count changes that. Size is a tiebreak, never the first key: read
+   the other way round, a big internal sweep displaces the thing the user actually asked for, which
+   is the failure in a new costume.
+2. A `USER:` item the USER has deferred sits below the live `USER:` items and still above every
+   `FOUND:` one. They asked for it and put it off; they did not stop wanting it. Record who
+   deferred it and when in the `open:` field, because a deferral with no owner reads as your
+   judgement a week later.
+3. Among items of the same origin, the bigger `size` goes first. A big item is the one that never
+   fits into a spare moment, so it is the one that starves. An item whose size is unknown sorts
+   after the sized ones of its origin, and sizing it is then its own next action.
+4. Blocked keeps its rank. Being blocked on the user is a reason to go and ask, not a demotion.
+   Blocked is a value for `open:`, never a third `ORIGIN` - there are two origins and inventing a
+   third puts the item in a category nothing sorts. When you park several items behind ONE
+   resource (a test window, a node, a device due back), check once that the resource is durable
+   and write in each `open:` field what it was checked against: a resource that is transient or
+   already gone stalls every dependent with nothing showing it.
+
+**Never infer a date you do not have.** When the source does not say when an item was first
+raised, write TODAY's date with a question mark - `(2026-08-31?)` - or the bare word
+`(unknown)`, and say `first seen here` in the `open:` field. Both parse, and an undated item
+sorts last within its rank because it makes no age claim. An estimated date is worse than an admitted unknown: age is the entire signal
+that makes a long-carried item conspicuous, and a plausible guess silently resets it. The same
+goes for `size`: `size: unknown` is a usable line, an invented count is not.
+
+## What belongs in it
+
+- **In flight** - what is part-done, how far it got, and what state it is in right now. A
+  background subagent still running is in flight too: `/clear` resets the conversation, not the
+  session process, so it keeps working, can commit and push, and reports into the NEXT
+  conversation. Name it, its branch, and what to do with its report.
+- **Committed, or not** - uncommitted work can vanish; the reader cannot guess which they got.
+- **Decided, and why** - choices a reader would otherwise reopen, with the reason that settled them.
+- **Decided against, and why** - so it is not mistaken for an oversight and redone.
+- **Still open, untouched** - ONE LINE each, pointing at `OPEN-WORK.md` for the detail. Never a
+  summary of the backlog: a summary is the re-encoding, and re-encoding is what loses it. These two
+  were one heading once, and merging them is what let an undecided item sit under a heading that
+  reads as decided.
+- **Lessons for the next nap** - ONE LINE each, trigger-first ("When <situation>, <directive>"),
+  under a heading of exactly that name. The nap captures them; this session does not.
+- **The exact next action** - the command or edit to start with, not a direction of travel. **It
+  must be the top-ranked open item in `OPEN-WORK.md`, or the file must say plainly why a
+  lower-ranked one goes first.** Recency is not a reason. "It is what I was working on", "it is
+  nearly done", "the user mentioned it most recently" and "it is small" are the four that get
+  written, and none of them outranks a bigger item the user is still waiting on.
+- **Files that matter** - repo-relative PATHS, not bare filenames; inferring them is the work
+  this file exists to save.
+- **How to verify** - the commands that prove the work still stands. Never write HEAD's sha, "tree
+  is clean" or "CI is green on HEAD" as a result: committing the handover moves HEAD, so the line is
+  stale on landing and each correction moves it again. State the property plus the command that
+  checks it (for CI: `ci_wait.py --ref HEAD` from `bitranox:compuse-toolbox`), or quote a result for an earlier, final sha and
+  say which commit it belongs to.
+
+## What does NOT belong
+
+| Excuse for including it                 | Why it is wrong                                                                                                                                                                                                                                                                                                                                                      |
+|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "The conventions are important"         | CLAUDE.md loads automatically. Restating it wastes the handover.                                                                                                                                                                                                                                                                                                     |
+| "Recent commits give context"           | `git log` re-derives that in one command. Say what is UNCOMMITTED.                                                                                                                                                                                                                                                                                                   |
+| "Explain how this file was produced"    | Provenance is narrative. The reader needs state, not a session story.                                                                                                                                                                                                                                                                                                |
+| "Capture the lessons into memory first" | A lesson is ONE LINE under `## Lessons for the next nap`, and the nap captures it. An engine call at the end of a full session is where the tool gets fixed instead of the work: measured over three weeks of transcripts, that capture was the bridge from every handover into an engine fix and a plugin release shipped from whatever project the session was in. |
+| "Summarise everything, to be safe"      | A handover nobody finishes reading is a handover that failed.                                                                                                                                                                                                                                                                                                        |
+
+## Procedure
+
+1. **Record the lessons, do not capture them.** Each durable thing this session learned goes into
+   the handover as ONE line under `## Lessons for the next nap`, worded trigger-first, with no slug
+   and no engine call. Do NOT invoke `bitranox:meta-self-improve` here and do not run
+   `memory_engine.py`: the file is committed, so the line has reached the store's front door, and
+   `bitranox:meta-dream-nap` / `bitranox:meta-dream-tree` walk it in from there. A lesson about
+   the TOOLING (a hook, a skill, the engine) is the same one line, prefixed `tooling:`, and it is
+   NOT a reason to open the tool now.
+2. **RECONCILE the outgoing handover into `OPEN-WORK.md` BEFORE you overwrite it.** Read the file
+   you are about to destroy and take every item in it that is not finished. Each one either
+   already has a line in `OPEN-WORK.md`, or you add it now with its first-raised date, its size
+   and its next action - in the `OPEN-WORK.md` of the repo that owns the fix, which is not
+   always this one (see "Two files"); an item you believe is finished gets `- [x]` and a reason,
+   in the file, not in your head. What you do not carry across goes SILENTLY, because a missing
+   item looks exactly like an item that was closed - and nobody diffs a handover against its predecessor
+   looking for absences. Being able to recover the old text from git is not the same as noticing
+   there was something to recover. Do this reconcile FIRST, while the outgoing file is still in
+   front of you: afterwards you are auditing from memory, which is the failure itself.
+
+   Add the same way anything the USER asked for in this session and did not get, in their own
+   words. A request that lives only in the sentence they typed is one re-ask away from being lost,
+   and they will not know to re-ask.
+
+   Decisions and trap notes get the same audit ("do not change X, it looks wrong but is right"):
+   grep the code, the tests and `OPEN-WORK.md` for each one, and re-home any that has no other home
+   into the code it protects, as a comment or docstring saying WHY, before the overwrite. A trap
+   note exists because the code looks wrong, so nothing else records it.
+
+3. **Copy the outgoing `handover.md` to `handover.prev.md` first, unless git already holds it
+   exactly.** Git holds it exactly when `git ls-files --error-unmatch handover.md` and
+   `git diff --quiet HEAD -- handover.md` both exit 0. In every other case - gitignored, never
+   added, or edited since its last commit - copy it, and keep the copy out
+   of commits (ignore it beside `handover.md`, or list it in `.git/info/exclude` where `handover.md`
+   is tracked). An overwrite is a one-way step: a rewrite that truncates the old lessons
+   mid-sentence leaves nothing showing it unless an earlier text survives to diff against. After
+   writing, diff the new file against that earlier text and account for every item that vanished.
+   Copy only before a WHOLESALE rewrite, never before an in-place edit such as the STALE line: the
+   `.prev` copy is the one step of history, and an unneeded copy replaces the last rewrite's backup
+   with a near-identical file. Before replacing an existing `handover.prev.md`, check what it holds
+   and diff it first if it backs a rewrite nobody has checked yet.
+4. **Write `handover.md` at the repo root, OVERWRITING whatever is there.** A stale handover from an
+   earlier session is superseded the moment you write yours - replace it wholesale, never append to
+   it and never keep both. There is exactly one `handover.md`, and it describes one moment; two of
+   them, or one with two moments in it, leaves the reader deciding which half is true. Commit it
+   along with `OPEN-WORK.md`: tracking them costs one diff per session and buys a history for the
+   one file that is destroyed on purpose every time, so a dropped item can be recovered once
+   somebody notices. Check first that neither carries a secret, an internal hostname or a private
+   address, because a tracked file in a public repo publishes all three permanently.
+5. **End the file with its own expiry instruction:**
+
+   > Read this, then replace the first line with `# STALE - read <date>, work continued`. Do not
+   > delete it - if this session ends badly it is the only record of where things stood.
+
+6. **Re-read it as the next session.** Any line the repo could have told them is a line to cut.
+7. **STOP. The handover is the LAST thing you do in this session.** Writing it ends the session's
+   work. Do NOT start a new task, resume the one you were part-way through, or "just finish" the
+   small thing first - not even the next action you have just written into the file. Every edit made
+   after the handover is work the handover does not describe, so the next session inherits a file
+   that is already wrong about the state it exists to report, which is worse than no handover at all.
+   If the user asks for something new, write the handover, stop, and let them re-ask after the clear.
+8. **Make the `/clear` nudge the last line, then stop.** Say the handover is written, name the file,
+   and tell the user to type `/clear`. It is an instruction, not an invitation: "type `/clear` when
+   you're ready" hands back a decision nobody asked them to make. You cannot run it yourself -
+   built-in slash commands are not invocable by the model - and that is the half that goes missing
+   when the wording is rebuilt from scratch, so send it as written, changing one thing only - the
+   path:
+
+   > Handover written to `handover.md`. Type `/clear` to start the next session - I cannot run it
+   > for you.
+
+   `handover.md` there is the path slot, not a literal to copy. Send the path that reaches the file
+   from where the user is standing, and a bare basename only when that is unambiguous: a second
+   `handover.md` in another worktree, checkout or package makes the bare name point at somebody
+   else's file, and the reader cannot tell which one they opened.
+
+   **Nothing follows it.** Not a recap of what you just wrote, not an offer to keep going, not "let
+   me know if you want X first", not a question. A reply that ends by inviting more work invites it
+   into THIS session, which is the one thing the handover exists to prevent.
+
+   Anything you genuinely owe the user goes BEFORE that line, in one sentence. A question they asked
+   while you were writing is the case that matters: say you are not answering it in this session and
+   that they should re-ask after the clear, then send the nudge. Step 7 sends them back to re-ask,
+   which only works if they know the question was heard - dropping it in silence reads as ignored.
+
+## When you are the one READING a handover
+
+Absorb it, then **mark it STALE in place**. Both alternatives fail: left untouched, the session
+after next reads a passed moment as current; deleted, the record is gone the instant it is read, so
+a crash mid-task leaves nothing saying where the work stood.
+
+The STALE line is a working-tree edit and stays one: never make a commit just for it (auto mode
+refuses an unrequested commit, and a standalone "mark stale" commit is noise). Where `handover.md`
+is tracked, the line goes into the next commit the user asks for, or is replaced by the next
+handover; where it is gitignored there is nothing to commit. Say in your reply that `handover.md`
+now carries an uncommitted STALE line, so the dirty tree has an owner instead of tripping the next
+gate or session.
+
+Never amend a stale handover to update it - write a NEW one and replace the file. An edited handover
+holds two moments with no way to tell them apart.
+
+**Read `OPEN-WORK.md` too, and read it FIRST.** The handover tells you where the last session
+stopped; the backlog tells you what is actually worth doing, and the two answers are routinely
+different. A handover's next action is one session's view of one moment, and the item that has
+been waiting longest is the one least likely to be in it.
+
+**Before naming the next item, or saying nothing here can be worked, classify EVERY open line.**
+Run `grep -n '^- \[ \]' OPEN-WORK.md`, put each line in blocked, deferred, other-repo or workable,
+and state that classification with your answer. Reasoning down from the top ranks stops at the
+first run of blocked items and declares the backlog exhausted while workable items sit below it.
+
+**A line saying a PR is blocked on the maintainer, with nothing open, is a snapshot.** Reviewers,
+the maintainer and the user can all post after it was written, and neither PR state nor the check
+list shows a review thread. Read references/stale-pr-verdict.md before acting on such a line: it
+gives the commands that list later reviews, unresolved threads and comments, and says what to do
+with a public promise the user made on the PR.
+
+**A background agent the handover names as running is LIVE.** It survived the `/clear`, may have
+committed or pushed since, and will report into this conversation. Check its branch
+(`git log origin/<default>..<its branch>`) and origin for new commits, and wait for or message it
+instead of starting the same fix in parallel.
+
+**Before working an item, check which repo its fix lands in.** If that is not the repo you are in,
+the item is misfiled: move it to the owning repo's `OPEN-WORK.md`, close it here as moved, and take
+the next item that is this repo's own. Work the moved one only from a session in that repo, or
+when the user asks for it here.
+
+**An item that continues a skill's procedure (a review sweep, a plan being executed) is resumed by
+invoking that skill again,** and where the item's wording and the skill's current text disagree,
+the skill wins. The line paraphrases the rule as it stood the day it was written; a skill can
+change its exit rule after that, and a session resuming from the paraphrase follows the old rule
+while believing it follows the skill. When writing such an item, name the skill and record where
+the work stands, never restate the skill's rules.
+
+## When it fires on its own
+
+A `Stop` hook measures context from the transcript's last recorded usage - the real per-request
+figure, not an estimate - and blocks when it crosses `min(context_handover_pct of the window,
+context_handover_cap)`.
+
+The window comes from the model family on the transcript's most recent assistant record, so nothing
+needs configuring for a known family. A model id no family table knows - a gateway model such as
+glm-5.3 behind `ANTHROPIC_BASE_URL` - takes the window its launcher declared in
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`, the variable Claude Code defines for exactly that case; the hook
+reads it from its own environment. A model that is neither known nor declared falls back to a
+200k window that errs small on purpose. In one rule: family table first, then the launcher's
+declaration, then 200k - a known family always wins, so a globally exported declaration left over
+from another model cannot override a measured family window.
+
+Its warning about the overwrite asks git whether `handover.md` is tracked in the repo it fires in
+and says which case applies, because some repos commit the file and others ignore it.
+
+Declining is not permanent: the next ask waits until context has grown another tenth of the window,
+because a decline at 40% is "not yet" while 90% is a different question.
+
+If it ever reports measuring MORE context than the window, the detection failed - set
+`context_window` explicitly via `bitranox:meta-memory-settings`. That is reported rather than
+ignored because a threshold nothing can reach looks exactly like a watcher that works.
+
+## Not the same as its neighbours
+
+- `bitranox:meta-dream-nap` - consolidates MEMORY after a compaction; it prunes task state as noise.
+- `bitranox:meta-dream-tree` - the periodic store consolidation, which also ends by nudging `/clear`.
+- `bitranox:meta-self-improve` - durable facts. The NAP runs it on the handover's lessons; this
+  session records them and stops.
+
+This skill is the only one that preserves TASK state, and it runs BEFORE the wall, not after.

@@ -1,0 +1,81 @@
+<!-- Read by Windsurf Cascade. Silent-truncates at 6,000 chars. Keep lean. -->
+# Cascade Agent Contract
+
+**Routing:** Kilo → `AGENTS-compact.md`; Traycer → `AGENTS.md`. **Auto-loaded:** `.windsurf/rules/**/*.md` by globs (recursive) — don't duplicate.
+**WordPress** (if `expertise-pack/`): read `wpf-expertise-pack-spec-v3.md` first — never guess WP-CLI/keys/slugs, no raw SQL/serialized-PHP.
+
+## FIRST OUTPUT (every response)
+```
+RULES ACTIVE: CASCADE | <3 rules from this file you applied>
+PACKS: <pack codes whose globs match this turn's file scope, or "none">
+```
+Listing a pack = you read it. Pure-planning = `PACKS: none`.
+
+## Orient (every task)
+1. Read `project.yaml` (`type`), `README.md`, `INDEX.md`, `compose.yaml`, `Dockerfile`, `.env.example`, `pyproject.toml`/`package.json`.
+2. `AFCL.md`: read if exists; append friction as hit.
+3. Glob-matched `.windsurf/rules/` packs auto-activate. Honour packs in the ticket's Context Files.
+4. **Planning only:** read `AGENTS.md`; run `scripts/select_rules.py`; read every ACTIVE + matching AVAILABLE pack (binding); ground steps in `path:line`. Not planning → skip (packs glob-activate on edit).
+5. **Executing a plan:** first read the plan + spec + `AGENTS.md` + all ACTIVE packs (`select_rules.py`). Those + `.windsurf/rules/`, `docs/`, `AFCL.md`, codebase grep are self-service — exhaust before escalating.
+
+## Behavior
+- **Check before create:** file exists = STOP, ask.
+- **Present before execute:** plan → approval → execute. Read-only IDE calls (`read_file`/`grep_search`/`list_dir`/`find_references`) exempt.
+- **Plan-execution override:** a pre-approved plan suspends *present-before-execute* + *no-commit-unless-said* **for its scope** — the plan IS approval. Commit per phase (explicit paths), run code-review at phase boundaries, fix autonomously, obey other HARD STOPS. Stop only on: 3 same-test failures, missing infra, unresolvable spec contradiction → `BLOCKED: <what> — searched <where> — missing <need>`.
+- **NEVER `run_terminal_cmd`** for long cmds (`npm i`/`pytest`/`docker`/`fabrik`/builds/deploys, >10s — Cascade hangs). Use `run_command`, never one terminal: `rund -- <cmd>` → `runwait $(runlast) 60` → `runc $(runlast)`. Doc: `long-command-monitoring.md`.
+- **Stay on task:** no unsolicited advice. **Conflict:** rule pack > ticket — surface first. **State conflict:** contradicts existing state → stop, report; never silently overwrite.
+- **Subagent dispatch** (full rule: `.windsurf/rules/core/62-using-subagents.md` § Dispatch policy + § Parallelism, auto-loaded) — gradeable fan-out → **pool-default** (`run_agents`/`pick_models`, ≤$1.5/Mtok, records to the flywheel via `record_agent_run`, not `record_run`); native subagents added **on top** for GUI / authoritative-high-risk / decide-merge. **Parallelism has two shapes or it SILENTLY SERIALIZES:** read-only → `tools_enabled=False` (each its own group → parallel); tools-enabled → `tools_enabled=True` + **disjoint `owned_paths`** (empty/overlapping = one serial group). Pass `n` to `pick_models` (default 1); `max_concurrency` 4.
+
+## Completion Contract
+1. **IMPLEMENT** — Strict Scope; adjacent fixes only in-Scope. 1 test for core path (skip docs-only).
+1a. **SELF-REVIEW (fixed point)** — re-read your diff for bugs, edge cases, plan/pack deviations; fix; re-run gate; repeat until green AND a fresh review finds nothing new.
+2. **GATE** — run ticket's `Final Gate Instruction` to `status:"success"`. Flags: **`--json` (std — FULL Tier 2: mypy+bandit+semgrep+schema/plan/docs)** · `--lean --json` (fast Tier‑1 subset for in-iteration self-review, NOT the completion gate) · `--systemic --json` (epic). Add **`--check`** for a read-only run (never mutates); a bare run auto-fixes + auto-stages **only your changed files** (the gate scopes every fixer + `ruff` to the diff, incl. committed-unpushed; Fabrik-synced files excluded in projects). Ref: `/opt/fabrik/docs/workflows/FINAL_GATE_WORKFLOW.md` (upstream-only).
+3. **CHANGELOG** — one entry under `## [Unreleased]` (gate-enforced).
+4. **LESSONS LEARNT** — ticket field `none` OR entry in `docs/LESSONS_LEARNT.md`. Silence = failure.
+5. **EXIT** — gate green → COMMIT your own work (explicit pathspecs + Agent Provenance Trailers; never bundle others' files), then PUSH it (`git push`; rejected → dirty tree: defer · clean: `git pull --rebase=merges` then push · conflict: `git rebase --abort` + report · NEVER --force). Uncommitted or unpushed = unfinished.
+
+## HARD STOPS — Cascade mechanics
+| Rule | Instead |
+|:--|:--|
+| `git push --force`/`-f` to a shared branch · commits without provenance trailers · bundling others' files | commit AND push YOUR OWN work at task end (pathspecs + trailers, then plain `git push`) |
+| `git add -A`/`.`/`commit -a` · overwrite `CHANGELOG.md` `[Unreleased]` | Shared `master`. Stage explicit paths (`git add <file>…`), `git diff --cached` first, never bundle others' files. Append atop `[Unreleased]` (don't reset). After auto-stage: `git reset`, re-add yours. |
+| `fabrik redeploy` git-sourced w/o `git push` first | `commit`→`push`→`redeploy`; VPS `git pull`s from GitHub, not `/opt/` |
+| `DB_HOST=localhost` / `@localhost:` in env | `postgres-main:5432` / `redis-main:6379` (`localhost` = the container) |
+| edit outside ticket Scope | strict Scope only |
+| modify `pyproject.toml`/`requirements.txt`/`package.json`/lockfiles | only if ticket authorises |
+| files outside project tree | local project paths only — EXCEPT `/opt/fabrik-mail/` (operator-sanctioned fabrik-mail store: `mail.py`/`mail_notify.py` read+write the durable `<repo>/{inbox,archive}` mailboxes there) |
+| recreate `.venv` / replace existing Docker config | extend, don't replace |
+| `/tmp/` | project `.tmp/` |
+| new `.md` outside allowlist | root files · scaffold docs · `docs/development/plans/YYYY-MM-DD-plan-<n>.md` · `docs/reference/**` · `docs/archive/**` · `docs/superpowers/plans/**` · `docs/superpowers/specs/**` |
+
+Infra/security hard stops (compose limits/ports/`gzip`/`container_name`-no-UUID, Authelia, Alpine, port-ranges, `/health`-bypass, M2M `internal_auth.py`, `pip install`, kebab-case) → the auto-loading `30-ops.md` + `35-security-auth.md` packs, which fire on the relevant edit and carry full detail.
+
+## External Knowledge — Search, Don't Guess
+Training is stale. 3rd-party API/SDK: (1) repo first — `grep_search` `docs/`, `AFCL.md`, `LESSONS_LEARNT.md`; (2) else `search_web` → `*web_search_exa` → `*firecrawl_search`, cite URL in code; (3) 3 misses → `BLOCKED: <vendor> — <searched> — <missing>`. Skip stdlib, syntax, Fabrik conventions.
+
+## Environment
+WSL Ubuntu, Linux paths. Same code runs unmodified in WSL dev (PG localhost, `.env`) and VPS Docker (`postgres-main`, `compose.yaml`). Self-host by default.
+
+## FINAL OUTPUT (last 6 lines, every task-completing response)
+```
+GATE: <command run> → success|failure
+DOCS UPDATED: <files | none>
+CHANGELOG: <entry title | n/a>
+LESSONS LEARNT: <none | docs/LESSONS_LEARNT.md entry title>
+DONE: <one line — what this run delivered: commits/artifacts, not intentions>
+NEXT: <named successor — /fabrik-<x> <args> | operator decision: <what> | none — terminal>
+```
+Missing any line = failure. Run gate → success, then output the 6 lines. NEXT: must be runnable
+without re-derivation; a vague NEXT ("continue") is a missing line.
+
+**EVERY OTHER response ends with the two-line STATE footer** (operator mandate 2026-08-10 — no
+exempt turns: conversational, clarifying, read-only, mid-plan status all carry it):
+```
+STATE: <where things stand — stage/board/loop position, one line>
+NEXT: <successor command · operator decision awaited · "awaiting your reply" · none — terminal>
+```
+It never replaces the 6-line block on a task-completing response; a footer `NEXT:` naming
+undispatched own-session work is the same checkpoint-stall the Stop hook blocks.
+
+## Spec contract awareness
+`specs/services/<id>.yaml::shape` drives registrars on `fabrik apply`. Code MUST match shape: DB call → `needs_database`; cache → `needs_cache`; `/metrics` → `exposes_metrics`; search → `has_search_feature`; admin UI behind auth → `is_admin_dashboard`. Mismatch = registrar skipped = broken deploy. Preview `fabrik plan <spec>` is hub-side (not on a project's PATH); from a project, reason from the shape flags.

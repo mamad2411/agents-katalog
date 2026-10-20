@@ -1,0 +1,312 @@
+# AGENTS.md
+
+Universal working rules for repository tasks. Project-specific instructions override these where they conflict.
+
+## Before Editing
+
+1. **Define success.** State the required outcome, acceptance criteria, preserved behavior, constraints, and non-goals.
+2. **Establish the boundary.** Identify owners, consumers, inputs, outputs, dependencies, interfaces, and affected environments.
+3. **Separate evidence from inference.** Current code, tests, file placement, wiring, counts, versions, and other observed state describe what exists; they do not prove intended ownership, durable design intent, or the correct change location.
+4. **Surface consequential uncertainty.** State assumptions and competing interpretations. Resolve uncertainty that could change scope, compatibility, ownership, or architecture before editing.
+5. **Choose the smallest viable change.** Prefer existing abstractions and established dependencies over new code. Compare viable approaches by evidence, blast radius, trade-offs, maintenance cost, and reversibility.
+
+## Claims and Evidence
+
+The rules above govern changes. These govern statements — in a reply, an issue, a commit message, a code comment, or a brief handed to a subagent.
+
+- **A claim about the world needs a command.** Do not state a fact about this codebase, another repository, a library, or a tool's behavior unless something run in the current session established it. Where no check was run, mark the claim unverified in the same sentence.
+- **A subagent's characterization is not evidence.** It is a claim with the same standing as your own. Check the artifact it describes before repeating it or building on it.
+- **Contradicting evidence stops the work.** An empty grep, a truncated capture, a result that disagrees with the plan already in flight — resolve it before continuing. These are the cheapest signals available and the easiest to walk past.
+- **An unverified claim that reaches an issue, a commit, or a comment becomes a premise.** Later readers cannot distinguish it from a checked fact and will cite it as one. Correcting the claim later does not retract the work built on it — revisit that too.
+- **A working tree is not the repository.** Read committed state — `git show <ref>:<path>` — before describing what a repository contains. A checkout can hold another session's uncommitted work, and reading it reports that work as the repo's own.
+- **Absence of a config is not absence of a tool, and presence is not use.** A disabled stanza reads as presence to grep while meaning the opposite; a tool can also be configured in a file that names it nowhere. Check where the tool is actually resolved from — the lockfile, the hook, the CI step.
+
+## While Editing
+
+- Change only what is required for the defined outcome.
+- Do not refactor, reformat, or clean unrelated code.
+- Match established repository conventions.
+- Remove only artifacts made obsolete by your change.
+- Do not add speculative flexibility, abstractions, fallbacks, or features.
+- Reassess the plan when evidence contradicts an assumption.
+
+## Verification
+
+- Validate each affected boundary independently.
+- Do not generalize success from one test, harness, environment, or consumer.
+- Prefer tests that demonstrate required behavior over implementation-detail tests.
+- Verify relevant regression, compatibility, static-analysis, and runtime checks.
+
+## Before Commit
+
+Review the complete diff against this `AGENTS.md` before committing.
+
+- Confirm every changed line is required by the defined outcome and complies with the repository instructions above.
+- Identify every new constraint, threshold, default, prohibition, workflow step, fallback, abstraction, or policy introduced by the diff. Keep it only when its existence is justified by the user requirement, repository evidence, an applicable external contract, or measured behavior; otherwise remove or demote it to an explicitly labeled hypothesis or experiment parameter.
+- Remove unrelated cleanup, duplicated guidance, speculative flexibility, and implementation detail that does not earn its maintenance cost.
+- Re-run affected verification when the diff review changes behavior.
+
+Do not commit while a known unjustified constraint or instruction-compliance violation remains in the diff.
+
+## Completion
+
+Before declaring success, confirm:
+
+- acceptance criteria are demonstrated;
+- required checks pass;
+- no known affected boundary remains unverified;
+- no unnecessary changes remain in the diff;
+- remaining uncertainty, limitations, or follow-up work is stated explicitly.
+
+---
+
+# Project-specific: skilllint
+
+## Repository change map
+
+Use the narrowest owner that matches the change before searching broadly.
+
+| Change | Primary seam |
+| --- | --- |
+| CLI and validation orchestration | `packages/skilllint/plugin_validator.py` (legacy central seam; decomposition tracked in #283) |
+| path selection and discovery | `packages/skilllint/scan_runtime.py` |
+| individual lint rules | `packages/skilllint/rules/` |
+| rule metadata and catalog | `packages/skilllint/rule_registry.py` |
+| provider behavior | `packages/skilllint/adapters/` |
+| untrusted external structures | `packages/skilllint/boundary/` |
+| provider schemas | `packages/skilllint/schemas/` |
+| output and reporting | `packages/skilllint/reporting.py` |
+| repository maintenance tooling | `scripts/` |
+| package unit/integration tests | `packages/skilllint/tests/` |
+| project/tooling tests and benchmarks | `tests/` |
+
+The root `pyproject.toml` owns the Python package configuration even though the
+package lives below `packages/skilllint/`. Do not infer a per-package
+`pyproject.toml` from the directory name.
+
+
+## Repository surface classes
+
+Before a broad repository search, read `docs/repository-surfaces.toml`. It
+classifies the main trees by their role and whether they are architectural
+evidence by default. The most-specific matching path wins.
+
+- Treat `product` and current architecture documentation as primary evidence.
+- Treat `project-tooling` and tests as supporting evidence for the behavior
+  they exercise, not automatic ownership of product behavior.
+- Treat `agent-runtime`, `generated-state`, `vendor`,
+  `historical-planning`, and `test-fixture` content as non-authoritative for
+  current product architecture unless the task explicitly concerns that
+  surface or current product code/documentation cites it as authority.
+- A failing or passing test is evidence about behavior; deliberately synthetic
+  fixtures are not evidence that the product itself has that structure.
+
+## Fast iteration loop
+
+For iterative feedback while a change is still in progress, use the repository
+fast profile:
+
+```sh
+uv run python scripts/run_fast_tests.py
+```
+
+Pass affected pytest paths/options after the script name to narrow the boundary.
+Do not run narrowed `uv run pytest <path>` directly because repository-wide
+coverage settings can make an otherwise passing narrow test exit nonzero.
+The fast profile excludes tests marked `slow` and disables repository-wide
+coverage collection so a narrowed scope is judged only on that affected boundary.
+It is evidence about the selected fast-test boundary only and does not replace
+the completion gate below.
+
+## Verifying a change
+
+```sh
+uv run prek run --all-files   # ruff, ruff-format, ty, actionlint, markdownlint, shellcheck, ...
+uv run pytest                 # not a prek hook
+```
+
+Run these, not the individual tools — the hook set is the gate, and a subset of
+it passing is not evidence.
+
+## Changing dependencies
+
+`scripts/uvu <uv-add-args> <package>...` — never hand-edit a version string.
+
+## Running skilllint during development
+
+Always invoke the CLI via `uv run skilllint …` — it resolves to the editable
+source in `.venv` (current worktree HEAD). Never `uv tool install`; a frozen
+global copy goes stale and shadows the source you're editing.
+
+## After pushing to a branch
+
+1. **Check CI pipelines** — use `gh run list --limit 10` to see recent runs. If the benchmark or test workflow hasn't triggered (e.g. the workflow file only exists on the branch, not yet on `main`), open a PR to get it running.
+
+2. **Trigger workflow_dispatch manually** — only works if the workflow exists on the default branch. Use:
+   ```
+   gh workflow run <workflow-file>.yml --ref <branch>
+   ```
+
+3. **Check for PR review comments** — after a PR is open, poll with:
+   ```
+   gh pr checks <pr-number>
+   gh api repos/{owner}/{repo}/pulls/<pr-number>/comments
+   ```
+
+4. **`gh` auto-detects the repo unless a `127.0.0.1` proxy hides it — check with `gh repo view`, then pass `--repo`.**
+
+## Benchmark workflow
+
+- Triggers on: PRs targeting `main`, or `workflow_dispatch` (once the file is on `main`)
+- Does **not** trigger on plain branch pushes
+- Scripts live in `scripts/` — `bench_io.py` (subprocess/I/O) and `bench_cpu.py` (in-process)
+- Fixtures in `tests/fixtures/`:
+  - `benchmark-plugin-1000-skills.zip` — clean, no violations (no-op scan)
+  - `benchmark-plugin-violations.zip` — 200 skills with fixable FM004/FM007/FM009 violations
+- `skilllint check --fix` operates **in-place**, so fix benchmarks must copy the fixture to a temp dir before each timed run
+
+## Vendor documentation cache (`skilllint docs`)
+
+When agents need external documentation (Claude hooks docs, Cursor rules docs, etc.), they must **not** use WebFetch or MCP URL-reading tools to pull pages into context. Fetch to disk first, then read from disk.
+
+### CLI commands
+
+```
+# Cache a page (prints the file path to stdout)
+skilllint docs fetch URL
+
+# Cache all unique normalized rule authority URLs
+skilllint docs fetch-authorities
+
+# List sections in a cached file
+skilllint docs sections FILE
+
+# Extract a single section (heading text or markdown anchor slug)
+skilllint docs section FILE HEADING
+
+# Verify file integrity against its .meta.json sidecar
+skilllint docs verify FILE
+
+# Find the most recent cached file for a page name
+skilllint docs latest PAGE_NAME
+```
+
+### Standalone script (outside the skilllint CLI)
+
+```
+uv run --script scripts/fetch_doc_source.py fetch URL
+uv run --script scripts/fetch_doc_source.py sections FILE
+uv run --script scripts/fetch_doc_source.py section FILE HEADING
+uv run --script scripts/fetch_doc_source.py verify FILE
+uv run --script scripts/fetch_doc_source.py latest PAGE_NAME
+```
+
+`scripts/fetch_doc_source.py` is a PEP 723 standalone script with `[tool.uv.sources]` pointing to the local skilllint package. Same commands as `skilllint docs`, usable before `skilllint` is installed.
+
+### File locations
+
+- Cached pages: `.claude/vendor/sources/{page-name}-{YYYY-MM-DD-HHMM}.md`
+- Sidecar metadata: `.claude/vendor/sources/{page-name}-{YYYY-MM-DD-HHMM}.meta.json`
+- Page names are derived from the URL path (e.g. `https://docs.anthropic.com/en/docs/claude-code/settings.md` → `claude-code--settings`)
+
+### Offline-first behaviour
+
+Stale cache is served when the network is unavailable (`STALE` status, warning to stderr). The command only fails when **no cache exists AND the network is down**.
+
+### Agent instructions
+
+Before capturing a URL, inspect `.claude/vendor/{provider}/` for an equivalent
+authoritative Markdown or RST source from the maintained vendor clone. Read the
+matching path and section directly when it exists; this source-first check must
+not invoke URL capture. Record the path and section used. If no equivalent
+local source exists, run `uv run skilllint docs fetch URL` (or the standalone
+script above), then read the cache path printed on stdout. A rendered page may
+remain authoritative when Markdown/RST cannot represent the authority; capture
+that URL in that case. `fetch-authorities` is an on-demand URL operation and is
+used only after the same local-source check. Never use WebFetch or an MCP
+URL-reading tool to pull vendor documentation into context.
+
+For large cached files, narrow with `docs sections` and `docs section` first.
+
+### Relationship to `fetch_platform_docs.py`
+
+`scripts/fetch_platform_docs.py` handles **bulk vendor sync** — git clones and HTTP crawl to `.claude/vendor/{provider}/`. `skilllint docs` handles **on-demand single-page capture** to `.claude/vendor/sources/`. Both scripts import shared low-level utilities from `packages/skilllint/vendor_io.py`. `scripts/fetch_spec_schema.py` also imports from `vendor_io.py`.
+
+## No inline CI code
+
+Never write logic directly in `.github/workflows/*.yml` `run:` blocks beyond a single-line call.
+
+**Why:** Inline shell in YAML cannot be linted, has no syntax highlighting, cannot be unit-tested, and is invisible to ruff/shellcheck.
+
+**Rule:** Any logic beyond a trivial one-liner belongs in `scripts/`. Create a Python or shell script there and call it from the workflow:
+
+```yaml
+# BAD — logic inline in CI
+- name: Run benchmark
+  run: |
+    python -c "import json, pathlib; ..."
+    if [ -f result.json ]; then
+      ...
+    fi
+
+# GOOD — script in scripts/, called from CI
+- name: Run benchmark
+  run: python scripts/bench_io.py /tmp/bench-plugin --output scripts/results/bench_io_gh.json
+```
+
+This applies to: data processing, conditional logic, multi-step setup, JSON manipulation, file operations.
+
+## Test directory layout
+
+The project has two test locations — this is intentional, not accidental.
+
+### `packages/skilllint/tests/`
+Unit and integration tests for the `skilllint` package itself: validators, CLI, adapters, reporters, frontmatter utilities. These tests import directly from the package and run entirely in-process.
+
+### `tests/` (root)
+Project-level tests that are not owned by any package:
+- `test_fetch_platform_docs.py` — tests `scripts/fetch_platform_docs.py`, a root-level project script
+- `tests/benchmarks/` — performance benchmarks that invoke `skilllint` as an installed CLI via subprocess (black-box tests); cannot live inside the package tests because they treat `skilllint` as an external process
+- `tests/fixtures/` — shared zip archives used by the benchmark suite
+
+### Rule: where does a new test go?
+- Tests that `import` from `skilllint` → `packages/skilllint/tests/`
+- Tests for root-level scripts (`scripts/*.py`) → `tests/`
+- Benchmarks (subprocess/CLI invocation) → `tests/benchmarks/`
+
+Both locations are discovered by `pytest` via `testpaths = ["**/tests"]` in `pyproject.toml`.
+
+## Python typing policy
+
+External input is ingested only through explicit boundaries (`packages/skilllint/boundary/`, `*_ingest.py`, etc.), validated with **Pydantic** (`BaseModel` / `TypeAdapter`, strict mode where producer errors must not be coerced away), and passed inward as concrete types. Property-test boundary validators with **Hypothesis** where practical.
+
+**Typed core (non-boundary code):** no `typing.Any`, no treating raw external payloads as domain data, and **no `cast()`** — `cast()` is not validation. The only `cast()` permitted is **at a typed boundary**, immediately after a proof step (runtime narrowing, Pydantic output, or a documented library guarantee), per `docs/TYPING_POLICY.md` §2–§4. Tests that must violate static rules for coverage (e.g. Protocol `...` stubs, frozen-dataclass mutation assertions) isolate that in a **named helper or method** marked `@no_type_check` with a one-line rationale — not `cast()` lies or blanket `# ty: ignore`.
+
+**Type checking:** `uv run ty check packages/` only (CI / pre-commit). `pyproject.toml` keeps **mypy** and **basedpyright** effectively off so they do not overlap or conflict with `ty` or duplicate config. Full standard: `docs/TYPING_POLICY.md`.
+
+## No invented constraints
+
+Every numeric constant — threshold, max length, timeout, cap — must have a source: a spec URL, a config value, a library default, or a comment explaining the reasoning. A numeric limit without one is invented, not derived.
+
+**Invented constraint (bad):**
+```python
+if len(summary) > 60:
+    summary = summary[:57] + "..."
+```
+
+Where does 60 come from? No spec, no comment, no justification.
+
+**Sourced constraint (good):**
+```python
+# Claude Code spec: skill names 1-64 chars, alphanumeric + hyphens
+# https://docs.anthropic.com/claude-code/skills#naming
+MAX_SKILL_NAME_LENGTH = 64
+```
+
+Check whether the library already handles it before adding a limit — Rich tables auto-size columns, Requests has timeouts. If there's no source, find the spec or remove the limit.
+
+## Diagnostic discipline
+
+**Compare the failing run to the most recent successful run before proposing any fix.** The observable delta between last success and first failure is the evidence; every claim beyond that delta is speculation.
+
+**Implement the smallest diff that addresses the observed failure.** If the fix is one line, it must be one line — not a restructure.

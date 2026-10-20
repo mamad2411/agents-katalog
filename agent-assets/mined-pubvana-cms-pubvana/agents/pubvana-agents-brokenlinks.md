@@ -1,0 +1,119 @@
+# AGENTS.md: Broken Links plugin
+
+Guidance for AI agents contributing to this plugin, which is part of the main Pubvana repo.
+
+## Overview
+
+Broken Links scans outbound links in published posts and pages, checks each via HTTP, and stores results in the `broken_links` table. Admins review, recheck, or permanently dismiss entries under **Tools > Broken Links**. A CLI command supports automated or manual scanning.
+
+- **Package:** `pubvana/brokenlinks` (`pubvana.json:2`), category `tools`
+- **License:** MIT, matching the main project (repo `composer.json` declares `"license": "MIT"`)
+- **PHP floor:** not declared in the plugin; the main project requires PHP `^8.2` (repo `composer.json`)
+- **Namespace:** `Pubvana\Plugins\BrokenLinks` (`Plugin.php:5`), with `Controllers`, `Services`, `Models`, `Database\Migrations`, and `commands` sub-namespaces
+- **Runtime dependencies (declared at the app level, not in the plugin):** `flightphp/active-record` (model base), `enlivenapp/migrations` (migration base), `enlivenapp/flight-shield` (auth), `enlivenapp/flight-sessions` (flash messages); core engine services `$app->db()`, `adext()`, `settings()`, `session()`, `redirect()`; curl extension for HTTP checks
+- **Config:** `Config/Config.php`: `routePrepend` (`broken-links`), `timeout` (`10`), `max_redirects` (`5`), `user_agent` (`Pubvana-LinkChecker/1.0`), `verify_targets` (`true`), `max_bytes` (`1048576`)
+- **Docs:** `README.md`
+
+## Project guidelines
+
+1. **Collect sources via adext, not hardcoded queries.** `BrokenLinksService::collectSources()` reads `$app->adext()->get('brokenlinks', 'source')` and calls each registered callable. Plugins register their own content sources; BrokenLinks never reaches into other plugins' tables directly. Reason: clean separation of concerns, extensibility without coupling.
+2. **Dismissal is permanent.** Once `dismissed = 1`, the row is never updated, re-enabled, or touched on re-scan (`Services/BrokenLinksService.php:274-276`). The upsert skips dismissed rows entirely. Reason: permanent dismissal prevents scan noise from dismissed entries re-appearing.
+3. **Sequential URL checking.** All HTTP checks run one at a time (`Services/BrokenLinksService.php:scan()`). Reason: shared-host friendly, avoids hammering external servers.
+4. **Never modify dismissed rows during upsert.** The upsert method returns early if the existing entry is dismissed (`Services/BrokenLinksService.php:274-276`). Reason: a re-scan must not override a permanent dismiss decision.
+5. **Upsert keys on (source_type, source_id, url_hash).** The unique index prevents duplicate rows for the same URL in the same content item (`Database/Migrations/2026-09-17-105227`). The SHA1 hash enables indexing without a full-text key. Reason: deterministic deduplication across scans.
+6. **Reconcile each source after scanning it.** Once every URL in a source is checked, rows with 2xx status are deleted (`Services/BrokenLinksService.php:323-330`) and rows for links no longer present are pruned (`Services/BrokenLinksService.php:355-373`). Dismissed rows are never pruned. Reason: a fixed link or a link deleted from the content should stop showing as broken. A source cut short by the web scan time budget is not reconciled, so links that were never checked are not pruned.
+7. **Use DOMDocument for HTML link extraction.** Parse `<a href>` tags with `LIBXML_NOERROR | LIBXML_NOWARNING` to suppress warnings on fragment HTML (`Services/BrokenLinksService.php:497-506`). Reason: handles real-world HTML from Jodit editors better than regex alone.
+8. **Filter to external URLs only.** Same-host, mailto, tel, javascript, data, and fragment-only links are excluded (`Services/BrokenLinksService.php:523-551`). Reason: only outbound links need HTTP checking.
+9. **HTTP checks use curl directly, not a framework HTTP client.** HEAD first, GET fallback when a server refuses HEAD (403, 405, 501), configurable timeout and redirect limit (`Services/BrokenLinksService.php:592-611`). Reason: avoids adding a framework dependency; curl is universally available on shared hosts.
+10. **SSRF vetting on every hop.** `checkUrl()` only ever probes http/https targets whose resolved addresses are public (loopback, private, link-local incl. cloud metadata, CGNAT, multicast, reserved, and unspecified ranges are blocked over IPv4 and IPv6). Redirects are followed by hand with every hop re-vetted (no `CURLOPT_FOLLOWLOCATION`); vetted addresses are pinned via `CURLOPT_RESOLVE` so curl cannot re-resolve. Response bodies are capped at `max_bytes`. Reason: outbound checks must never reach internal hosts, and a DNS-rebinding attack must not swap the target between vetting and connect. `verify_targets => false` is the escape hatch for hosts with no PHP DNS functions and a curl built without the connect-time option; it weakens protection.
+11. **Code samples are text, not links, and trailing punctuation is not part of a URL.** The bare-URL pass reads content with `stripCodeRegions()` applied: `<pre>`/`<code>` containers, Markdown fenced blocks, and inline code spans are blanked. Every candidate passes through `trimUrlPunctuation()` before it is keyed, and a URL with no host is dropped. Reason: a docs page full of snippets otherwise reports every example URL as broken, and a URL quoted in prose arrives with its closing quote or comma attached, which fails DNS and produces a second row for the same link.
+12. **Fresh model instances via private `model()` helper.** Every query that needs a new model instance calls `$this->model()` (`Services/BrokenLinksService.php:1056-1059`). Reason: shared instances hold query state across calls.
+13. **DateTimeImmutable for every timestamp write.** All `now()` calls use `new \DateTimeImmutable()` (`Services/BrokenLinksService.php:1042-1044`). Reason: immutable timestamps prevent accidental mutation.
+14. **Controllers strip `_csrf_token` before forwarding POST data.** Standard v3 pattern. Reason: prevents CSRF token from being stored or processed as data.
+
+## Repository layout
+
+```
+plugins/BrokenLinks/
+├── Config/Config.php                                      routePrepend, timeout, max_redirects, user_agent, verify_targets, max_bytes
+├── Controllers/
+│   └── BrokenLinksAdminController.php                     Admin UI: list, scan, recheck, dismiss
+├── Database/
+│   └── Migrations/
+│       └── 2026-09-17-105227_CreateBrokenLinksTable.php   broken_links table
+├── Models/
+│   └── BrokenLink.php                                     broken_links table model
+├── Services/
+│   └── BrokenLinksService.php                             Core logic: scan, extract, check, CRUD
+├── commands/
+│   └── BrokenLinksCheckCommand.php                        CLI: broken-links:check
+├── Views/
+│   └── admin/
+│       └── index.php                                      Admin view: grouped results
+├── Plugin.php                                             Entry point; routes, dashboard, service facade
+├── pubvana.json                                           Manifest; admin.menu (Tools > Broken Links)
+├── AGENTS.md                                              This file
+└── README.md                                              User documentation
+```
+
+## Core architecture
+
+**Service.** One singleton is mapped: `brokenLinks` (`Plugin.php:32-38`), built from the engine PDO, app instance, and plugin config.
+
+**Content sources.** Plugins register as content sources via adext type `brokenlinks` slot `source`. Each registration provides a `label` and a `callable` that returns `array<int, array{type: string, id: int, title: string, content: string}>`. The Blog and Pages plugins each register their own source; future plugins follow the same pattern. `collectSources()` iterates all registrations.
+
+**Scanning flow.** `scan()` collects sources, extracts external links from each via DOMDocument + regex, checks each URL via curl HEAD (GET fallback when HEAD is refused), upserts results, then reconciles each fully scanned source: 2xx rows are deleted and rows for links no longer present are pruned. A web-triggered scan passes a time budget (from `max_execution_time`) so it stops and reports a partial run before PHP hard-times-out; CLI and cron scan without a limit. Results are keyed on `(source_type, source_id, url_hash)`.
+
+**Admin screen.** A single page under **Tools > Broken Links** shows results grouped by source (post/page badge + title as edit link). Actions: Run Scan (full), Recheck (single URL), Dismiss (permanent). A toggle shows/hides dismissed entries.
+
+**CLI.** `php pubvana broken-links:check` runs the same scan logic. Returns exit code 1 if any broken links found, 0 otherwise. Auto-discovered by Runway from `plugins/BrokenLinks/commands/`.
+
+**Cron.** The plugin registers a `24h` core cron task (`pubvana.brokenlinks`) that runs `scan()` daily. The system crontab runs the root `cron` script, which calls `CronService::run('24h')` and runs each registered `24h` task. The task never throws; broken-link findings are informational and surfaced on the admin screen, so it stays quiet in the error log unless a real (uncaught) failure occurs. There is no separate cron CLI command: scanning on demand is `broken-links:check`.
+
+## Development and testing
+
+This plugin has no `composer.json`. It is exercised through the full app and has a unit suite in `tests/Unit/Plugins/BrokenLinks/`.
+
+- Lint/static analysis (app-wide, from the repo root):
+  - `composer phpstan` (level 8)
+  - `find plugins/BrokenLinks -name '*.php' -exec php -l {} \;`
+- Manual verification checklist:
+  - [ ] Run a scan from the admin UI; confirm it checks outbound links in published posts and pages
+  - [ ] Confirm links to the same site are excluded from scanning
+  - [ ] Confirm mailto, tel, javascript, and data URLs are excluded
+  - [ ] Recheck a single broken link that returns a non-2xx status
+  - [ ] Recheck a broken link that is now reachable; confirm it is removed
+  - [ ] Remove a broken link from a post or page, rescan; confirm the entry disappears
+  - [ ] Dismiss a broken link; confirm it no longer appears in the default view
+  - [ ] Show dismissed entries; confirm dismissed links appear with muted styling
+  - [ ] Run `php pubvana broken-links:check` and confirm CLI output
+  - [ ] Run a scan twice; confirm no duplicate rows are created
+  - [ ] Confirm a dismissed row is not updated when the same URL is found broken again
+
+- Coverage: the unit suite covers `BrokenLinksService` (scan, extraction, CRUD, dismissal) and the SSRF vetting path. `<!-- TODO: add [coverage target] -->`
+
+## Coding standards
+- **PHPStan (level 8):** every model carries `@property`/`@method` annotations for its columns and the ActiveRecord magic it uses, and every service facade has a `@phpstan-method` entry in `phpstan-stubs.php`. Run `composer phpstan` before committing.
+
+1. **`declare(strict_types=1);` at the top of every class file** (`Plugin.php:3`). No exceptions.
+2. **Models extend `Pubvana\Models\AbstractModel` and declare their table string in the constructor** (`Models/BrokenLink.php:33-36`).
+3. **Keep the `@property` column docblocks in sync with the migrations** (`Models/BrokenLink.php:8-19`).
+4. **Pull fresh model instances through a private `model()` helper** (`Services/BrokenLinksService.php:1056-1059`). Reason: a shared instance would hold query state across calls.
+5. **Use `DateTimeImmutable` for every timestamp write** (`Services/BrokenLinksService.php:1042-1044`).
+6. **Controllers strip `_csrf_token` before forwarding POST data.**
+7. **Dismissed rows are never modified by the scan service.** The upsert returns early on dismissed entries.
+8. **Content sources are registered via adext, not hardcoded.** The service iterates `$app->adext()->get('brokenlinks', 'source')`.
+9. **SSRF vetting stays on.** Keep every outbound hop vetted (public addresses only, pinned resolves, manual redirect re-validation, `max_bytes` cap). The `verify_targets` escape hatch must never become the default.
+
+## PR / contribution checklist
+
+- [ ] `declare(strict_types=1)` present; no em dashes in new prose
+- [ ] PHP syntax verified (`php -l`) and PHPStan level 8 is clean
+- [ ] Dismissal is permanent; upsert skips dismissed rows
+- [ ] Content sources registered via adext, not hardcoded queries
+- [ ] Sequential URL checking preserved
+- [ ] SSRF vetting intact: no `CURLOPT_FOLLOWLOCATION`, hops pinned, size cap present
+- [ ] New/changed behavior covered by `tests/Unit/Plugins/BrokenLinks/`
+- [ ] Fresh model instances via `model()` helper
+- [ ] DateTimeImmutable for all timestamps
+- [ ] README updated if user-facing behavior or config changed

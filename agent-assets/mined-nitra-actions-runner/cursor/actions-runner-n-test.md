@@ -1,0 +1,389 @@
+---
+description: JS-тести (*.test.mjs) живуть у tests/. Правило `test` керує stryker.config.mjs + vitest.config.mjs (конфіг cargo-mutants — концерн cargo_mutants_config правила rust у @7n/rules-lang-rust).
+version: '2.8'
+globs: "**/{.n-rules.json,package.json,stryker.config.mjs,vitest.config.mjs,vitest.config.js},**/*.test.mjs"
+alwaysApply: false
+---
+
+Правило **test** керує розміщенням тестових файлів, безпекою ізоляції тестів (заборона `process.chdir`, відносних шляхів у FS, ручного store/restore console), налаштуванням Vitest/Stryker baseline. Конфігурація cargo-mutants для Rust — концерн `cargo_mutants_config` правила `rust` (@7n/rules-lang-rust).
+
+## Покриття + мутаційне тестування
+
+Канонічна команда — `npx @7n/test coverage` (пакет `@7n/test`, **не** `@7n/rules` — цей пакет лише постачає providers, оркестратор живе окремо): збирає метрики покриття (`vitest run --coverage`, `cargo llvm-cov` тощо) і мутаційного тестування (Stryker з vitest-runner + `coverageAnalysis: 'perTest'`, `cargo-mutants`) з усіх активних провайдерів у `.n-rules.json#rules` і пише `COVERAGE.md` у корінь проєкту.
+
+**Scoped-режим `--changed`:** `npx @7n/test coverage --changed` звужує scope до файлів, змінених від git merge-base поточної гілки з `main` або `origin/main`. У changed-режимі `COVERAGE.md` **не** перезаписується і LLM-класифікація не запускається.
+
+**`--fix`:** `npx @7n/test coverage --fix` — після збору метрик агент виправляє survived-мутанти й повторює coverage.
+
+Провайдери живуть у `npm/rules/<rule>/coverage/coverage.mjs` (цей пакет, `@7n/rules`). Оркестратор — у `@7n/test` (`npm/src/coverage/coverage.mjs`), який резолвить providers з `node_modules/@7n/rules/rules`. Проєкт-споживач має мати `@7n/test` як devDependency, аби `npx @7n/test coverage` резолвився без мережевого fetch щоразу.
+
+У `package.json` (корінь) має бути `scripts.coverage` із викликом `npx @7n/test coverage`.
+
+### Multi-workspace iteration
+
+У monorepo `@7n/test coverage` ітерує усі workspaces з власним `package.json` і агрегує метрики lcov + Stryker у єдиний `JS`-рядок `COVERAGE.md`. Workspace без тестів пропускається без помилки.
+
+- `package.json`:
+
+```json
+{
+  "scripts": {
+    "coverage": ["@7n/test coverage"],
+    "test": ["vitest", "--bun"]
+  }
+}
+```
+
+## Розміщення тестових файлів у каталозі `tests/`
+
+JS-тести у пакеті лежать у **піддиректорії `tests/`** поряд із кодом, який тестується, а **не безпосередньо біля джерельного файлу**.
+
+```
+rules/foo/js/bar/
+├── check.mjs               ← JS-джерело
+└── tests/
+    └── check.test.mjs      ← тест check.mjs
+```
+
+**Чому так:**
+
+- Каталог-з-кодом залишається чистим: продакшен-модулі, политики, темплейти не миготять серед тестових файлів.
+- Один погляд на дерево показує, що піде у npm tarball (все, крім `tests/` і `__fixtures__/` — їх ловить `package.json#files` через негативні globs).
+- Якщо тест переростає у мульти-файловий — він уже у власному каталозі, без хаотичного розкидання.
+
+**Виняток — Rego unit-тести (`*_test.rego`):** лишаються **поряд із полісі-файлом** відповідно до загальноприйнятого OPA/Conftest community-патерну. `conftest verify -p <dir>` рекурсивно підхоплює їх незалежно від місця в каталозі.
+
+```
+rules/foo/policy/package_json/
+├── package_json.rego       ← Rego-правило
+├── package_json_test.rego  ← Rego unit-тести (поряд, не у tests/)
+└── target.json
+```
+
+**Спеціальні випадки:**
+
+- **Integration-тести на рівні пакета** — у `<root>/tests/` (наприклад `npm/tests/`). Це не «біля файлу», а виокремлений каталог для тестів, що покривають весь пакет.
+- **Fixtures**: `__fixtures__/` (для shared) і `fixtures/` (для rule-specific) також живуть **усередині `tests/`**: `tests/__fixtures__/...` і `tests/fixtures/...`.
+- **Test helpers** (`test-helpers.mjs`) можуть лишатися у `scripts/utils/` як shared infra — конвенція стосується файлів `*.test.mjs`.
+
+**Гарантії tarball-чистоти** через `package.json#files`:
+
+```json
+"files": [
+  "...",
+  "!**/*.test.mjs",
+  "!**/*_test.rego",
+  "!**/__fixtures__/**",
+  "!**/fixtures/**",
+  "!**/test-helpers.mjs"
+]
+```
+
+Recursive globs ловлять файли всередині `tests/` так само, як ловили б їх біля джерела.
+
+`npx @7n/rules fix test` (concern `location`) проходить деревом пакета й перевіряє: **кожен `*.test.mjs` файл лежить усередині каталогу з ім'ям `tests`** (точне співпадіння басенейму батьківської директорії). Файли поза цим каталогом репортуються з порадою куди їх перенести.
+
+`*_test.rego` перевіркою **не охоплюються** — вони не переміщуються.
+
+Пропускаються: `node_modules`, `.git`, `dist`, `build`, `.venv`, `venv`, шляхи з `.n-rules.json:ignore`.
+
+## Заборона `import ... from 'bun:test'`
+
+Тести проєкту виконуються через **vitest** (`vitest run`, а також `@7n/test coverage`, який ганяє `vitest run --coverage` + Stryker з `vitest-runner`) — `bun:test` там не резолвиться взагалі: `Cannot find package 'bun:test'`. Файл з таким імпортом ламає весь coverage/mutation-прогін workspace-а (реальні помилки не маскуються — одна `bun:test`-згадка валить весь `@7n/test coverage`).
+
+- **Заборонено** `import { ... } from 'bun:test'` у будь-якому `*.test.{mjs,js}`.
+- **Auto-fix (T0):** якщо всі імпортовані специфікатори мають прямий 1:1 еквівалент у vitest — `describe`, `test`, `it`, `expect`, `beforeEach`, `beforeAll`, `afterEach`, `afterAll` — джерело переписується на `'vitest'` без зміни специфікаторів чи call-sites.
+- **Без auto-fix:** якщо import містить `mock`, `spyOn`, `jest` чи інший специфікатор без прямого еквіваленту — T0 файл не чіпає. У vitest ці API живуть під `vi.*` namespace (`vi.fn()`, `vi.spyOn(...)`), тож самого перезапису джерела недостатньо — потрібне ручне (або LLM-ladder) виправлення call-sites. Violation залишається до фіксу.
+
+**Перевірка** (`rules/test/no-bun-test-import/main.mjs`): сканує `**/*.test.{mjs,js}`, шукає `import { ... } from 'bun:test'` (можливо багаторядковий), парсить специфікатори і визначає `fixable`.
+
+## Заборона ручного store/restore `console` у тестах
+
+`console.log` / `console.error` / `console.warn` — **process-wide** мутації, рівно як `process.cwd()`. Якщо тест перехоплює їх через `const orig = console.log; console.log = (...) => …; try { … } finally { console.log = orig }`, паралельний test файл у `pool: 'forks'` (різний процес) ізольований, але в межах **одного** процесу всі тести у файлі ділять єдиний `console`-об'єкт. Якщо try/finally не виконається (наприклад, асинхронна помилка повз `await`), restore не спрацює і наступні тести втрачають вивід.
+
+Тому:
+
+- **Канон**: `vi.spyOn(console, 'log').mockReturnValue()` (та аналоги для `error`/`warn`/`info`) + `afterEach(() => vi.restoreAllMocks())`. Vitest сам слідкує за scope mock-у і гарантовано відновлює оригінал між тестами, навіть якщо тест кинув виняток.
+- **Заборонено**: ручний store/restore (`const orig = console.log; console.log = stub`). Виняток — коли тест **необхідно** перехопити вивід **до** того, як завантажиться модуль із top-level-логуванням; у цьому випадку фіксуй pattern explicit-коментарем.
+- Якщо потрібен лог зі stub-ом — `const logs = []; vi.spyOn(console, 'log').mockImplementation((...args) => logs.push(args.join(' ')))`.
+
+**Перевірка** — концерн `no-console-store-restore` (`rules/test/js/no-console-store-restore.mjs`): AST-сканер, який ловить присвоєння `console.<method> = …` у `*.test.{js,mjs}`.
+
+## Заборона `process.chdir` у тестах
+
+`process.chdir(dir)` — **process-wide** мутація. Vitest за замовчуванням ставить `pool: 'threads'`, і всі workers ділять один процес: паралельний test file може перехопити cwd сусіда посеред FS- або `git`-операції. У реальному інциденті це призвело до того, що `git init`+`git commit` із tmp-фікстури потрапив у реальний робочий репозиторій і створив rogue commit з автором `test <test@test>`, знищивши `npm/package.json` / `CHANGELOG.md`.
+
+Тому:
+
+- **У тестах заборонено** `process.chdir(...)` напряму та будь-які хелпери, що його викликають (історичний `withTmpCwd` видалений у `1.28.0`).
+- Канон: `withTmpDir(async dir => { ... })` зі `scripts/utils/test-helpers.mjs` — створює tmpdir і передає **абсолютний** `dir` у callback **без** `process.chdir`.
+- Усі FS-операції у тесті — через `join(dir, …)` і `writeJson(join(dir, …), …)` / `ensureDir(join(dir, …))` (хелпери валідують `isAbsolute`).
+- Усі child-процеси — `execFile(bin, args, { cwd: dir })`, `spawnSync(bin, args, { cwd: dir })`.
+- Concern-функції правил — `await check(dir)`, `await applies(dir)`, `await fix(dir)`; усі production функції приймають перший параметр `cwd = process.cwd()` (default зберігає CLI-сумісність).
+
+**Перевірка** (`rules/test/js/no-process-chdir.mjs`): сканує `**/*.test.{js,mjs}` і падає з ❌ на будь-яке вживання `process.chdir(`.
+
+**Кожен виклик `execFile`/`execFileSync`/`spawn`/`spawnSync`** у `*.test.{js,mjs}` приймає або **явний `{ cwd: dir }`** (де `dir` — змінна, не `process.cwd()`), або працює з **абсолютними шляхами** до бінарників/fixture-файлів. Це гарантує, що мутаційний test-flow у `pool: 'forks'` не страждає від implicit-`process.cwd()`-stride між тестами в одному воркері.
+
+## Заборона відносних шляхів у FS-функціях тестів
+
+**`no-relative-fs-path`** (`rules/test/js/no-relative-fs-path.mjs`) — AST-сканер (`oxc-parser`): знаходить виклики FS-функцій із `node:fs`/`node:fs/promises` (`writeFile`, `copyFile`, `mkdir`, `readFile`, `existsSync`, `rename`, `symlink`, `cp`, … включно з `*Sync`-варіантами та `writeJson`/`ensureDir`-хелперами), де path-аргумент — це **string literal** без префікса `/`, `\`, `file:`, `http(s):`, `data:`, чи Windows-disk-letter `C:\`.
+
+Виклики `copyFile`/`rename`/`symlink`/`link`/`cp` перевіряють **обидва** path-аргументи.
+
+Виклики з обчисленим path (`join(dir, …)`, змінна, template-literal з виразом) пропускаються — припускається, що обчислений шлях абсолютний.
+
+**Чому важливо:** відносний path у FS-виклику означає запис/читання відносно `process.cwd()` на момент виклику. У `pool: 'threads'` (дефолт Vitest) паралельні файли ділять процес — cwd може змінитися між тестами. Інцидент `v1.28.0`: `copyFile(src, 'default.conf.template')` у `tests/check-rule-fixtures.test.mjs` записав файл у production tree замість sandbox.
+
+**Канон:** замінювати відносні шляхи на `join(dir, 'filename')`, де `dir` — абсолютний tmpdir із `withTmpDir`.
+
+**Список FS-функцій, що перевіряються:**
+
+| Функція | Перевірювані аргументи |
+|---|---|
+| `writeFile`, `readFile`, `appendFile`, `mkdir`, `rmdir`, `rm`, `unlink` | 1-й |
+| `access`, `stat`, `lstat`, `chmod`, `chown`, `truncate`, `existsSync`, `readdir` | 1-й |
+| `copyFile`, `rename`, `symlink`, `link`, `cp` | 1-й і 2-й |
+| `writeJson`, `ensureDir` (test-helpers) | 1-й |
+
+Усі `*Sync`-варіанти охоплені аналогічно.
+
+## Обовʼязкові скрипти в package.json
+
+Rego-пакет: `test.package_json`
+
+Цільовий файл: `package.json` кожного workspace.
+
+Перевіряє substring-відповідність значень у `scripts`:
+
+| Поле | Має містити |
+|---|---|
+| `scripts.coverage` | `@7n/test coverage` |
+| `scripts.test` | `vitest` і `--bun` (напр. `"bun run --bun vitest run"`) |
+
+Substring-семантика: команди-обгортки (наприклад `bun run pre-coverage && npx @7n/test coverage`, `bun run pre-test && bun run --bun vitest run`) дозволені — головне, щоб потрібні рядки були присутні.
+
+**Чому `--bun` для `scripts.test`:** без Bun-рушія (`bun run vitest` без `--bun`, чи vitest під Node) `import { SQL } from 'bun'` та інші Bun-нативні built-in модулі не резолвуються у forked test-процесах — консьюмери змушені тримати exclude-списки для тестів, що їх торкаються. Під `bun run --bun vitest run` forked pool-процеси успадковують Bun-рушій і резолюція працює без жодних exclude.
+
+Канон підтягується через `--data`: [package.json.contains.json](./template/package.json.contains.json)
+
+## Sandbox-aware тести (Stryker)
+
+Stryker за замовчуванням копіює репо у sandbox-каталог (`reports/stryker/.tmp/sandbox-XXX/`), щоб AST-патчити мутантів без зачеплення робочого дерева. У sandbox **немає `.git/`**, і будь-який тест, що звертається до **реального** git-дерева через `import.meta.url + N≥3 рівнів вгору** (типу`const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..', '..')`) фактично адресує sandbox-корінь, а не справжній репо. Це ламає`git rev-parse`/`git ls-files`/перевірки`.n-rules.json`/CHANGELOG-співставлення — Stryker dry-run падає, мутаційний прогон не стартує,`mutation.json` лишається stale.
+
+**Канон**: тест не повинен залежати від реального git-дерева через `import.meta.url + N≥3 рівнів вгору`. Якщо тест перевіряє git-логіку — ізолюй **повністю**:
+
+```js
+await withTmpDir(async dir => {
+  execFileSync('git', ['init', '-q', '--initial-branch=main'], { cwd: dir })
+  await writeFile(join(dir, 'a.sh'), '#!/bin/sh\n', 'utf8')
+  execFileSync('git', ['add', '-A'], { cwd: dir })
+  expect(listShellScriptPaths(dir)).toEqual(['a.sh'])
+})
+```
+
+Приклад у репо: `rules/text/lint/tests/run-shellcheck.test.mjs` — тест `listShellScriptPaths всередині git-репо`.
+
+**Виняток** — top-level smoke-аудит тести, що **за визначенням** перевіряють інваріанти **живого** репо (структура файлів, узгодженість CHANGELOG з `package.json`, кожне правило має fixture). Приклади: `tests/integration-repo-checks.test.mjs`, `tests/check-rule-fixtures.test.mjs`. Такі тести **не дають додаткового coverage у unit-сенсі** — концерни, які вони перевіряють, уже покриті per-rule unit-тестами (`rules/<rule>/js/tests/`). Захищаємо їх `test.skipIf(env.STRYKER_MUTATOR_WORKER)` від запуску всередині Stryker-sandbox:
+
+```js
+import { env } from 'node:process'
+
+test.skipIf(env.STRYKER_MUTATOR_WORKER)('узгоджені з поточним деревом', async () => {
+  // …перевірки на REPO_ROOT
+})
+```
+
+**Перевірка** — концерн `sandbox-aware-test` (`rules/test/js/sandbox-aware-test.mjs`): сканер `*.test.{js,mjs}`, який знаходить тести з `import.meta.url`-deep-relative навігацією (4+ `..`-рівнів) і вимагає або `withTmpDir` у їхніх `test`-блоках, або `test.skipIf(env.STRYKER_MUTATOR_WORKER)`.
+
+## Налаштування mutation-testing: Stryker + Vitest baseline
+
+Якщо у `.n-rules.json#rules` присутнє правило `js` — правило `test` створює canonical baseline `stryker.config.mjs` + `vitest.config.mjs` у **кожному** JS-root проєкту: у кожному workspace з власним `package.json` (або в корені для single-package). У monorepo з `workspaces: ['app', 'scripts']` отримаєте `app/stryker.config.mjs` + `app/vitest.config.mjs` і `scripts/stryker.config.mjs` + `scripts/vitest.config.mjs`.
+
+Якщо у JS-root уже лежить legacy `vitest.config.js` — він лишається валідним, новий `.mjs` поряд не створюється, а `vitest.configFile` у скопійованому `stryker.config.mjs` приводиться до фактичного імені.
+
+Канон Stryker config (Vitest runner + perTest): [stryker.config.baseline.mjs](./data/stryker_config/stryker.config.baseline.mjs)
+
+### Vue SFC (`<script setup>` macros)
+
+Якщо у JS-root знайдено бодай один `.vue` під `src/` (skip `node_modules`/`dist`/`reports`) — концерн ставить **vue-варіант** baseline ([`stryker.config.vue.baseline.mjs`](./data/stryker_config/stryker.config.vue.baseline.mjs)) замість звичайного і додатково копіює локальний Stryker `Ignore`-плагін [`stryker-vue-macros-ignorer.mjs`](./data/stryker_config/stryker-vue-macros-ignorer.mjs) поряд із конфігом.
+
+Плагін реєструється як `plugins: ['@stryker-mutator/vitest-runner', './stryker-vue-macros-ignorer.mjs']` + `ignorers: ['vue-macros']` і виключає з мутацій виклики `<script setup>`-макросів: **`defineProps`**, **`defineEmits`**, **`defineModel`**, **`defineSlots`**, **`defineExpose`**, **`defineOptions`**. Без плагіна Stryker огортає аргументи макроса у coverage-тернарник (`stryMutAct_9fa48(...) ? {} : (stryCov_9fa48(...), {...})`), а `@vue/compiler-sfc` падає з `defineProps() in <script setup> cannot reference locally declared variables` — макроси мають бути статично-аналізованими на етапі compile-sfc.
+
+JS-root без `.vue` отримує дефолтний baseline без `plugins`/`ignorers` (backward-compatible). Обидва файли копіюються idempotent — наявний `stryker.config.mjs` / `stryker-vue-macros-ignorer.mjs` не перетирається.
+
+**Augment існуючого config.** Якщо у Vue JS-root `stryker.config.mjs` **уже лежить** (наприклад, після апгрейду з версії без Vue-підтримки), концерн `stryker_config` точково вставляє у наявний файл `plugins: [..., './stryker-vue-macros-ignorer.mjs']` і `ignorers: ['vue-macros']`, зберігши решту полів і коментарів. Редагування — string-splice за AST-аналізом (oxc-parser — лише для пошуку offsets, не для re-serialize), тож форматування й коментарі не переписуються; idempotent — повторний `fix test` не дублює entries. Якщо `export default` — **не** object-literal (factory/функція/змінна) або масиви динамічні (spread/computed), augment пропускається з вимогою додати плагін вручну згідно [`stryker.config.vue.baseline.mjs`](./data/stryker_config/stryker.config.vue.baseline.mjs).
+
+### `.gitignore` тест-артефактів
+
+Концерн `stryker_config` без дублювання додає у кореневий `.gitignore` тест-патерни:
+
+- `**/reports/stryker/` — увесь каталог Stryker-output-у (backup'и `tempDirName`, `mutation.json`, HTML/dashboard-репорти якщо додасте інші reporter-и).
+- `**/coverage/` — весь output vitest v8 coverage (`lcov.info` + HTML `lcov-report/`). Ефемерний: регенерується кожним прогоном, фінальні метрики живуть у `COVERAGE.md`.
+
+Це запобігає випадковому коміту build-артефактів.
+
+## Vitest API — обов'язкові конвенції (для генерації тестів LLM)
+
+Цей розділ адресований генераторам тестів (LLM, local і cloud). Порушення будь-якого пункту — рівнозначне синтаксичній помилці: тест не запуститься або дасть хибно-позитивний результат.
+
+Канон: тести виконуються через **vitest** під Bun-рушієм (`bun run --bun vitest run`, див. `test.package_json`), а не через нативний `bun test` — `import ... from 'bun:test'` заборонено (`no-bun-test-import`). API нижче — саме vitest, не bun:test і не jest.
+
+### 1. Модульна система — лише ESM
+
+`*.test.mjs` завжди ESM; `require()` у `.mjs` кидає `ERR_REQUIRE_ESM`.
+
+✓ `import { foo } from '../foo.mjs'`
+✗ `const { foo } = require('../foo.mjs')`
+
+### 2. `vi.*` замість `jest.*`
+
+Проект використовує Vitest, не Jest. Будь-який `jest.fn()`, `jest.mock()`, `jest.spyOn()` — помилка компіляції або runtime-помилка.
+
+✓ `vi.fn()`, `vi.mock(...)`, `vi.spyOn(...)`
+✗ `jest.fn()`, `jest.mock(...)`, `jest.spyOn(...)`
+
+### 3. Кастинг mock-функцій — лише `vi.mocked()`
+
+✓ `vi.mocked(fetch).mockResolvedValue(res)`
+✗ `(fetch as vi.Mock).mockResolvedValue(res)` — TypeScript у `.mjs` не компілюється
+
+### 4. `toBe` vs `toEqual`
+
+`toBe` (Object.is) — для примітивів (`string`, `number`, `boolean`, `null`, `undefined`).
+`toEqual` (deep equality) — для об'єктів і масивів.
+
+`toBe({…})` для об'єктів **завжди false** (різні посилання) — використовуй `toEqual`.
+
+✓ `expect(count).toBe(3)`
+✓ `expect(result).toEqual({ ok: true })`
+✗ `expect(result).toBe({ ok: true })`
+
+**Перевірка** (`rules/test/vitest-api-conventions/main.mjs`): сканує `**/*.test.{mjs,js}`, шукає `expect(...).toBe(...)` з об'єктним/масивним літералом як першим аргументом — таке порівняння завжди `false` через reference equality, незалежно від вмісту.
+
+### 5. Моки для Date / часу
+
+`vi.spyOn(Date).mockReturnValue(…)` **не працює** з `new Date()` (TypeError: Date is not a constructor при `new`).
+
+✓
+
+```js
+vi.useFakeTimers()
+vi.setSystemTime(new Date('2024-01-01'))
+afterEach(() => vi.useRealTimers())
+```
+
+✗ `vi.spyOn(global, 'Date').mockReturnValue(new Date('2024-01-01'))`
+
+### 6. Моки для `process.env`
+
+`process.env.X = '…'` забруднює глобальний стан; `vi.spyOn(process, 'env')` не дає ізоляції між тестами.
+
+✓
+
+```js
+vi.stubEnv('KEY', 'val')
+afterEach(() => vi.unstubAllEnvs())
+```
+
+✗ `process.env.KEY = 'val'` (без відновлення)
+
+### 7. Модулі з top-level side-effect
+
+Якщо source-модуль читає `process.env` або викликає функцію на рівні модуля — env/моки мають бути встановлені **до** `import`; сам import — dynamic.
+
+✓
+
+```js
+vi.stubEnv('KEY', 'val')
+const { fn } = await import('../index.js')
+```
+
+✗ статичний `import { fn } from '../index.js'` коли source викликає функцію на рівні модуля
+
+### 8. Cleanup у `afterEach` — обов'язковий
+
+Після кожного тест-файлу з mock-ами — відновлення стану:
+
+```js
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  vi.useRealTimers() // лише якщо vi.useFakeTimers() використовувався
+})
+```
+
+Пропуск `afterEach` — витік стану між тестами в одному файлі.
+
+### 9. FormData у Node.js
+
+`formData.get('field')` повертає `Blob | string | null`. Для file-полів — `toBeInstanceOf(Blob)`, НЕ `toBe('filename')`.
+
+✓ `expect(formData.get('file')).toBeInstanceOf(Blob)`
+✗ `expect(formData.get('file')).toBe('photo.jpg')`
+
+---
+
+### Канонічний шаблон тест-файлу
+
+```js
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { myFn } from '../my-module.mjs'
+
+vi.mock('../dep.mjs', () => ({ dep: vi.fn() }))
+
+beforeEach(() => {
+  vi.stubEnv('API_KEY', 'test-key')
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2024-06-01'))
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  vi.useRealTimers()
+})
+
+describe('myFn', () => {
+  it('повертає очікуване значення', async () => {
+    const result = await myFn()
+    expect(result).toEqual({ ok: true })
+  })
+})
+```
+
+## Vitest: `pool: 'forks'` як захист від race у `process.cwd()`
+
+**`vitest-config-pool-forks`** (`rules/test/js/vitest-config-pool-forks.mjs`) — substring-перевірка `pool: 'forks'` у `vitest.config.mjs` (або legacy `vitest.config.js`; `.mjs` пріоритетніший).
+
+**Чому:** Defense-in-depth проти race у `process.cwd()` між паралельними test файлами. Навіть якщо хтось пропустить заборону `process.chdir`, fork-ізоляція не дасть race у production tree — кожен test-файл отримує власний процес зі своїм `cwd`.
+
+Якщо `vitest.config.mjs` / `vitest.config.js` відсутній — перевірка пропускається (pass без помилки).
+
+**Canonical `vitest.config.mjs`** (для довідки — `pool: 'forks'` + `include` + `coverage`) — у `rules/test/js/data/vitest_config/vitest.config.baseline.js`:
+
+- `environment: 'node'`
+- `coverage.provider: 'v8'` з lcov+text-summary репортами
+- `include: ['**/*.test.{js,mjs}', 'tests/**/*.test.{js,mjs}']` — підхоплює тести у `tests/`-піддиректоріях і top-level integration suites у `<root>/tests/`
+
+У `package.json#scripts` має бути `"test": "bun run --bun vitest run"` (substring `vitest` + `--bun`; допустимі локальні розширення-обгортки) та опційно `"test:watch": "vitest"`.
+
+**Frontend-варіант (Vue/Vite + happy-dom):**
+
+Для проєктів зі своїм `vite.config.js` `vitest.config.mjs` має повторно використовувати vite-плагіни та aliases і перемкнути `environment` на `'happy-dom'` (або `'jsdom'`):
+
+```js
+import { defineConfig, mergeConfig } from 'vitest/config'
+import viteConfig from './vite.config.js'
+
+export default mergeConfig(viteConfig, defineConfig({
+  test: {
+    include: ['**/*.test.{js,mjs}', 'tests/**/*.test.{js,mjs}'],
+    environment: 'happy-dom',
+    coverage: { provider: 'v8', reporter: ['lcov', 'text-summary'] }
+  }
+}))
+```
+
+Концерн ставить node-варіант baseline; перехід на frontend — ручна модифікація, після якої концерн уже не перетирає (idempotent).

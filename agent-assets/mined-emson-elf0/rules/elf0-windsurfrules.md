@@ -1,0 +1,21 @@
+<coding_guidelines>
+- My project's programming language is python
+- Use early returns when possible
+- Always add documentation when creating new functions and classes
+- Add a file location at the top of each file
+- Always follow best practices for python and the libraries used
+- Think hard about the best way to implement a feature
+- Always focus on simple file structures and patterns, for flexibility and ease of maintenance
+- Always try to understand the logic first and make minimal best practice code changes
+- Always use absolute import paths and not relative import paths, DO NOT USE RELATIVE IMPORTS
+</coding_guidelines>
+
+<documentation>
+- Always add a simple file location at the top of each file. e.g. `# src/my_module/my_file.py`, DO NOT USE `"""Location: src/my_module/my_file.py"""`
+</documentation>
+
+<principles>
+- Where code could get complex use software design patterns to make it simple and maintainable
+- Where code is ambiguous, always try to understand the logic first and make minimal best practice code changes
+- Try to use compound functions made up of discreet and well defined subfunctions
+</principles>

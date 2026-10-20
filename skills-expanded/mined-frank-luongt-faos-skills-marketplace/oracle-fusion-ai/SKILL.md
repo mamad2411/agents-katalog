@@ -2,7 +2,6 @@
 ---
 name: oracle-fusion-ai
 description: Oracle Fusion Cloud AI and OCI Generative AI integration patterns. Use when connecting AI agents to Oracle ERP, HCM, SCM via REST APIs, or using Oracle's 50+ pre-built AI agents for finance, HR, and supply chain.
-tags: [oracle, erp, fusion, oci]
 ---
 
 # Oracle Fusion Cloud AI Integration

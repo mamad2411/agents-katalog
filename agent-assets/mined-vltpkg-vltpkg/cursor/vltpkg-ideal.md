@@ -1,0 +1,56 @@
+---
+description: Build Ideal Graphs from manifests and starting graphs
+globs: src/graph/src/ideal/*
+alwaysApply: false
+---
+# Building Ideal Graphs
+
+Entry: `src/graph/src/ideal/build.ts` → `ideal.build(options)`
+
+## Overview
+
+1. Select starting graph: prefer Virtual (lockfile), fallback to Actual
+2. Merge `add`/`remove` with importer manifest deltas
+3. Expand via manifest fetching, recursively placing packages
+4. Reuse existing satisfying nodes to minimize network
+5. Optionally extract tarballs during construction (early extraction)
+
+## Starting Graph (`build.ts`)
+
+Loads Virtual from `vlt-lock.json` (`lockfile.load()`), falls back to Actual (`actual.load()`). Delegates to `buildIdealFromStartingGraph()`.
+
+## Merge & Expansion (`build-ideal-from-starting-graph.ts`)
+
+- Computes importer deltas via `get-importer-specs.ts` (compares manifests to graph)
+- Prunes satisfied deps via `remove-satisfied-specs.ts`
+- User `add`/`remove` overrides computed deltas
+- `refresh-ideal-graph.ts` orders importers, calls `appendNodes()` per importer
+- After expansion: `setDefaultLocation()`, `remove-nodes.ts`, `graph.gc()`, `graph.recomputeFlags()`
+
+## Node Appending (`append-nodes.ts`)
+
+- **Existing edge preference**: lockfile target preferred if it satisfies spec (idempotency)
+- **Peer compatibility**: `checkPeerEdgesCompatible()` before reuse, with idempotency checks
+- **Candidate fallback**: if first node is peer-incompatible, tries others deterministically
+- **New nodes**: fetch manifest → pick version → place node → recurse children
+- **3-phase BFS per level**: A) parallel fetch (read-only) → B) serial mutations (sorted by DepID) → C) peer check
+
+See `@graph/ideal-append-nodes.mdc` for full BFS architecture, `@graph/peers.mdc` for peer contexts.
+
+## Early Extraction
+
+When `actual` graph provided, new nodes destined for vlt store are extracted in parallel during construction. Tracked via `node.extracted`.
+
+## Workspace Peer Isolation
+
+Non-main importers get fresh peer contexts in `appendNodes()` to prevent cross-workspace peer leakage. Fork cache prevents duplicate contexts.
+
+## Options
+
+`projectRoot`, `packageJson`, `scurry`, `monorepo` (shared instances), `packageInfo` (required), `add?`, `remove?`, `actual?` (for early extraction), `modifiers?`
+
+## Guarantees
+
+- **Idempotent**: same lockfile → identical graph
+- Reuses nodes satisfying specs, preferring existing edge targets
+- Stable locations set where applicable

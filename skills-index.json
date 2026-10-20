@@ -1,9 +1,9 @@
 {
- "generated": "2026-10-12T18:27:36",
- "tier1_count": 3177,
- "total_curated": 3177,
- "total_index": 103428,
- "total_reference": 91258,
+ "generated": "2026-10-19T16:41:23",
+ "tier1_count": 3195,
+ "total_curated": 3195,
+ "total_index": 263916,
+ "total_reference": 250123,
  "per_category_cap": 0,
  "categories": {
   "(tanpa kategori)": [
@@ -41,6 +41,7 @@
    "deepseek-ocr",
    "dingtalk-workspace-cli",
    "enhance-prompt",
+   "fact-check-before-trust",
    "finalize-agent-prompt",
    "from-the-other-side-anitta",
    "go-mcp-server-generator",
@@ -137,6 +138,7 @@
    "analytics-tracking",
    "analyze-cloud-costs",
    "anomaly-detection",
+   "anti-hallucination-gates",
    "antigravity-manager",
    "anything-analyzer-cdp",
    "api-authentication",
@@ -252,6 +254,7 @@
    "circleci",
    "circuit-breaker-pattern",
    "cis-benchmarks",
+   "citation-and-ledger-format",
    "ck",
    "claude-api",
    "claude-hud-statusline",
@@ -700,10 +703,12 @@
    "playwright-dev",
    "playwright-triage",
    "plugin-master",
+   "pod-crash-debug",
    "polyglot-integration",
    "popup-cro",
    "post-mortem",
    "postgres",
+   "postgres-tuning",
    "postgresql",
    "postgresql-database-engineering",
    "postgresql-optimization",
@@ -758,6 +763,7 @@
    "rag",
    "rag-implementation",
    "rag-infrastructure",
+   "rag-pipeline-checkup",
    "rails-patterns",
    "ralphinho-rfc-pipeline",
    "rate-limiting-abuse-protection",
@@ -906,6 +912,7 @@
    "vector-database-ops",
    "vercel-labs-emulate",
    "vercel-xhttp-relay",
+   "verification-before-completion",
    "verification-loop",
    "verify-agent-action",
    "vertical-slice",
@@ -933,6 +940,8 @@
    "workiq-copilot",
    "workspace-surface-audit",
    "worldmonitor-intelligence-dashboard",
+   "wp-phpstan-review",
+   "wp-test-strategy",
    "wrap-up",
    "write-coding-standards-from-file",
    "x-api",
@@ -1221,6 +1230,7 @@
    "deepagents-python-quickstart",
    "doc-parser",
    "github-sandbox-file-downloader",
+   "internet-asset-fetcher",
    "java-refactoring-extract-method",
    "keyid-agent-kit-mcp",
    "lead-routing",
@@ -1350,6 +1360,7 @@
    "animation-micro-interaction-pack",
    "anti-ui-slop",
    "api-design",
+   "api-design-framework",
    "api-design-principles",
    "api-design-reviewer",
    "api-error-handling",
@@ -1819,6 +1830,7 @@
    "wix-headless-replatform",
    "wix-vibe-headless",
    "workflow-orchestration-patterns",
+   "wp-rest-api-development",
    "wpds",
    "wx-favorites-report",
    "zero-trust",
@@ -1999,6 +2011,7 @@
    "k8s-debug",
    "k8s-manifest-generator",
    "k8s-security-policies",
+   "k8s-troubleshooter",
    "k8s-yaml-generator",
    "k8s-yaml-validator",
    "knowledge-ops",
@@ -2402,6 +2415,7 @@
    "seeker-domains",
    "seo-auditing",
    "setting-up-astro-project",
+   "shadcn-vue",
    "ship-gate",
    "shopify-onboarding-merchant",
    "shuffle-json-data",
@@ -2422,6 +2436,7 @@
    "tailwindcss-debugging",
    "tailwindcss-performance",
    "taiwan-md-knowledge-base",
+   "tanstack-vue-table-skilld",
    "tavily-key-generator-proxy",
    "threejs",
    "troubleshooting-astro-deployments",
@@ -2767,6 +2782,7 @@
    "wildworld-dataset",
    "wix-docs",
    "woocommerce-automation",
+   "wordpress-hacking",
    "yeet",
    "zustand-state-builder"
   ],
@@ -3061,6 +3077,7 @@
    "dependency-audit",
    "dependency-scanning",
    "dependency-upgrade",
+   "detect-hallucinations",
    "dev-onboarding-builder",
    "disaster-recovery",
    "ecc-tools-cost-audit",
@@ -3137,6 +3154,7 @@
    "testing",
    "trump-code-market-signals",
    "ui-screenshots",
+   "verify-quality-gates",
    "whatcable-macos-usb-inspector",
    "writing-tests"
   ],
@@ -3239,95 +3257,95 @@
   },
   "agent-memory": {
    "curated": 1,
-   "reference": 147
+   "reference": 347
   },
   "agent-orchestrator": {
    "curated": 6,
-   "reference": 170
+   "reference": 375
   },
   "agent-ux": {
    "curated": 5,
-   "reference": 189
+   "reference": 458
   },
   "ai-engineer": {
-   "curated": 49,
-   "reference": 2312
+   "curated": 50,
+   "reference": 4267
   },
   "analyst": {
    "curated": 1,
-   "reference": 467
+   "reference": 1270
   },
   "architect": {
    "curated": 4,
-   "reference": 299
+   "reference": 596
   },
   "backend-developer": {
-   "curated": 849,
-   "reference": 23160
+   "curated": 857,
+   "reference": 68428
   },
   "blockchain-developer": {
    "curated": 1,
-   "reference": 389
+   "reference": 899
   },
   "creative-producer": {
    "curated": 268,
-   "reference": 7629
+   "reference": 20449
   },
   "data-engineer": {
-   "curated": 22,
-   "reference": 1321
+   "curated": 23,
+   "reference": 2951
   },
   "data-scientist": {
    "curated": 81,
-   "reference": 3211
+   "reference": 8452
   },
   "designer": {
-   "curated": 504,
-   "reference": 11525
+   "curated": 506,
+   "reference": 32944
   },
   "devops-engineer": {
-   "curated": 296,
-   "reference": 6753
+   "curated": 297,
+   "reference": 19161
   },
   "devtools-engineer": {
    "curated": 18,
-   "reference": 1575
+   "reference": 3281
   },
   "frontend-developer": {
-   "curated": 314,
-   "reference": 7394
+   "curated": 316,
+   "reference": 21255
   },
   "fullstack-generalist": {
    "curated": 8,
-   "reference": 626
+   "reference": 1313
   },
   "game-developer": {
-   "curated": 300,
-   "reference": 7167
+   "curated": 301,
+   "reference": 19998
   },
   "mobile-developer": {
    "curated": 108,
-   "reference": 2749
+   "reference": 7596
   },
   "product-manager": {
    "curated": 16,
-   "reference": 1111
+   "reference": 3022
   },
   "productivity-automator": {
    "curated": 125,
-   "reference": 600
+   "reference": 1463
   },
   "qa-engineer": {
-   "curated": 113,
-   "reference": 6975
+   "curated": 115,
+   "reference": 15270
   },
   "security-specialist": {
    "curated": 63,
-   "reference": 2799
+   "reference": 8051
   },
   "tech-writer": {
    "curated": 24,
-   "reference": 1382
+   "reference": 3250
   }
  }
 }

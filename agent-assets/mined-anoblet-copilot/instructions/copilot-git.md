@@ -1,0 +1,11 @@
+- Do not modify the git state
+- Do not use `git checkout` or `git restore`
+- Do not switch branches
+- Do not create, delete, or rename branches
+- Do not create, delete, or modify tags
+- Do not rewrite commit history (no `git rebase`, `git commit --amend`, etc.)
+- Do not add or remove files from the repository
+- Do not stage or unstage changes (no `git add` or `git reset`)
+- Do not commit changes
+- Do not push or pull from remote repositories
+- Do not clone repositories

@@ -1,0 +1,4 @@
+- Framework: STM32 HAL libraries in C.
+- Architecture: Highly modular. Separate logic into individual `.c` and `.h` files within `Core/Src` and `Core/Inc`.
+- Communication: Old physical LCD/Button logic must be replaced with UART (ESP32/Nextion) command parsing.
+- Output: Return ONLY code patches or requested plans. No verbose explanations.

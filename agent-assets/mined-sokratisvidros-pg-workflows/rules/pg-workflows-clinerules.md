@@ -1,0 +1,144 @@
+# pg-workflows - Cline Rules
+
+## Project Overview
+
+pg-workflows is a TypeScript workflow engine using PostgreSQL for durable execution, event-driven orchestration, and automatic retries. Built on pg-boss. No extra infrastructure beyond PostgreSQL.
+
+## Code Style & Conventions
+
+- Use Biome for linting and formatting (NOT ESLint or Prettier)
+- No semicolons
+- Use Vitest for testing
+- Use bunup for building
+- ESM-first module system with CJS compatibility
+- Use Zod for input validation schemas
+- Use KSUID for generating workflow run IDs
+
+## Project Structure
+
+- `packages/pg-workflows/src/index.ts` - Public API re-exports
+- `packages/pg-workflows/src/definition.ts` - `workflow()` factory function
+- `packages/pg-workflows/src/engine.ts` - `WorkflowEngine` class (core orchestrator)
+- `packages/pg-workflows/src/types.ts` - All public types, enums, interfaces
+- `packages/pg-workflows/src/error.ts` - Error classes (`WorkflowEngineError`, `WorkflowRunNotFoundError`)
+- `packages/pg-workflows/src/ast-parser.ts` - Static analysis of workflow handlers
+- `packages/pg-workflows/src/db/` - Database queries, migrations, types
+- `packages/ui/` - React dashboard package (`@pg-workflows/ui`)
+- `examples/node/` - CLI examples
+- `examples/dashboard/` - Next.js dashboard example
+
+## Core API
+
+### Defining workflows
+
+```typescript
+import { workflow } from 'pg-workflows';
+import { z } from 'zod';
+
+const myWorkflow = workflow(
+  'workflow-id',
+  async ({ step, input, runId, workflowId, timeline, logger }) => {
+    const result = await step.run('step-1', async () => {
+      return { processed: input.data };
+    });
+    return result;
+  },
+  {
+    inputSchema: z.object({ data: z.string() }),
+    timeout: 60000,
+    retries: 3,
+  }
+);
+```
+
+### Engine setup
+
+```typescript
+import { WorkflowEngine } from 'pg-workflows';
+import PgBoss from 'pg-boss';
+
+const engine = new WorkflowEngine({
+  boss: new PgBoss({ connectionString: process.env.DATABASE_URL }),
+  workflows: [myWorkflow],
+});
+await engine.start();
+```
+
+### Step types
+
+- `step.run(stepId, handler)` - Durable step, runs exactly once, result persisted in PostgreSQL
+- `step.waitFor(stepId, { eventName, timeout?, schema? })` - Pause and wait for an external event
+- `step.pause(stepId)` - Manual pause; resume with `engine.resumeWorkflow()`
+- `step.waitUntil(stepId, { date })` - Wait until a date (not yet implemented)
+
+### Engine methods
+
+- `engine.startWorkflow({ workflowId, resourceId?, input, options? })` - Start a new run
+- `engine.pauseWorkflow({ runId, resourceId? })` - Pause a run
+- `engine.resumeWorkflow({ runId, resourceId? })` - Resume a paused run
+- `engine.cancelWorkflow({ runId, resourceId? })` - Cancel a run
+- `engine.triggerEvent({ runId, resourceId?, eventName, data? })` - Send event to waiting workflow
+- `engine.getRun({ runId, resourceId? })` - Get run details
+- `engine.checkProgress({ runId, resourceId? })` - Get progress percentage
+- `engine.getRuns({ resourceId?, statuses?, workflowId?, limit? })` - List runs (cursor pagination)
+- `engine.registerWorkflow(definition)` - Register a workflow dynamically
+- `engine.unregisterWorkflow(workflowId)` - Unregister a workflow
+
+### Key types
+
+```typescript
+enum WorkflowStatus { PENDING = 'pending', RUNNING = 'running', PAUSED = 'paused', COMPLETED = 'completed', FAILED = 'failed', CANCELLED = 'cancelled' }
+enum StepType { PAUSE = 'pause', RUN = 'run', WAIT_FOR = 'waitFor', WAIT_UNTIL = 'waitUntil' }
+```
+
+### Error classes
+
+- `WorkflowEngineError(message, workflowId?, runId?, cause?)` - Base error
+- `WorkflowRunNotFoundError(runId?, workflowId?)` - Run not found
+
+## AI & Agent Workflows
+
+pg-workflows is ideal for AI agents and LLM pipelines. Key patterns:
+
+- **Multi-step agents** - Each LLM call is a durable `step.run()`. On crash, the agent resumes from the last completed step - no wasted LLM calls.
+- **Human-in-the-loop** - `step.waitFor('review', { eventName: 'human-reviewed' })` pauses for human review. Zero cost while waiting.
+- **RAG pipelines** - embed → search → generate → validate as discrete, cached steps.
+- **Tool-use agents** - Each tool invocation is a `step.run()` with a unique ID. Results survive crashes and retries.
+- **Retries for flaky LLM APIs** - Built-in exponential backoff handles 429/500 errors automatically.
+
+```typescript
+const agent = workflow('ai-agent', async ({ step, input }) => {
+  const plan = await step.run('plan', async () =>
+    await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: input.prompt }] })
+  );
+  for (const task of plan.tasks) {
+    await step.run(`task-${task.id}`, async () =>
+      await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: task.description }] })
+    );
+  }
+}, { retries: 3, timeout: 30 * 60 * 1000 });
+```
+
+## Important Rules
+
+1. Step IDs must be unique within a workflow. In loops, use dynamic IDs: `step.run(\`process-${item.id}\`, ...)`
+2. Step results are cached - on retry, completed steps skip execution and return persisted results
+3. `resourceId` is optional, useful for multi-tenant scoping and querying runs by external entity
+4. Workflow handlers are statically analyzed at registration time to extract step definitions
+5. Migrations run automatically on `engine.start()`
+6. Retry logic uses exponential backoff: `2^retryCount * 1000ms`
+7. The `workflow()` function returns a `WorkflowDefinition` - it does NOT execute the workflow
+
+## Environment Variables
+
+- `DATABASE_URL` - PostgreSQL connection string (required)
+- `WORKFLOW_RUN_WORKERS` - Number of workers (default: 3)
+- `WORKFLOW_RUN_EXPIRE_IN_SECONDS` - Job expiration in seconds (default: 300)
+
+## Commands
+
+- `bun run build` - Build engine then UI
+- `bun run test` - Run tests with vitest
+- `bun run lint` - Lint with Biome
+- `bun run lint:fix` - Auto-fix lint issues
+- `bun run format` - Format with Biome

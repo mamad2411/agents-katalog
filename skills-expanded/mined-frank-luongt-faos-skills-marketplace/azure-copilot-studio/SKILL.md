@@ -2,7 +2,6 @@
 ---
 name: azure-copilot-studio
 description: Microsoft Copilot Studio patterns for building low-code AI bots with 1,000+ Power Platform connectors. Use when creating enterprise chatbots connected to SAP, Salesforce, ServiceNow, Oracle, or other systems via Power Platform.
-tags: [azure, copilot, power-platform, low-code]
 ---
 
 # Microsoft Copilot Studio

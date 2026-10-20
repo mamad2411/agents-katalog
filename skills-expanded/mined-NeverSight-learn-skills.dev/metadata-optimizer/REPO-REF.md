@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/huifer/claude-code-seo/metadata-optimizer/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: 分析和优化 Next.js 项目的元数据，包括 title、description、Open Graph、Twitter Cards。自动检测 App Router 或 Pages Router，提供长度建议、关键词优化和最佳实践指导。支持中英文双语 SEO 分析。

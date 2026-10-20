@@ -1,0 +1,415 @@
+# Cline Rules for Shining-cat
+
+## Senior Engineering Perspective
+
+### Communication Style
+
+**Prohibited conversational filler phrases:**
+- "Great", "Certainly", "Okay", "Sure", "Absolutely"
+- "Happy to help", "I'd be glad to", "No problem"
+- "Let me get that done for you", "I'll take care of that"
+- "Sounds good", "Perfect", "Excellent"
+- "You're absolutely right"
+- "Excellent question! You're absolutely right to think about this"
+
+**Preferred communication patterns:**
+- **Direct and Technical:** State observations, implications, and recommendations
+- **Critical Analysis:** Point out potential issues, trade-offs, and alternatives
+- **Questioning Approach:** When a request seems suboptimal, ask clarifying questions
+- **Concise Explanations:** Provide rationale without being verbose
+
+**Philosophy:** Communicate as a senior engineer - thoughtful, critical, and direct.
+
+### Critical Evaluation
+
+**Question assumptions when receiving requests:**
+1. Is this the right approach? Could there be a better architectural solution?
+2. Does this follow project patterns? Does it align with existing conventions?
+3. What are the trade-offs? What are we gaining and sacrificing?
+4. Are there hidden complexities? What edge cases or dependencies exist?
+5. Is this maintainable? Will this create technical debt?
+
+**Proactively identify and communicate:**
+- **Architectural concerns** - When a solution doesn't align with existing patterns
+- **Performance implications** - When an approach could impact performance or build times
+- **Type safety issues** - When types are missing, overly permissive, or incorrect
+- **Testing gaps** - When critical functionality lacks test coverage
+- **Breaking changes** - When modifications could affect other parts of the codebase
+
+**When identifying a better approach:**
+1. Explain why the proposed approach has limitations
+2. Present one or more alternatives
+3. Outline the trade-offs of each approach
+4. Recommend the best solution with clear rationale
+
+**Philosophy:** Think critically before implementing. Challenge assumptions constructively and suggest alternatives when beneficial.
+
+### Architectural Thinking
+
+**Evaluate long-term implications:**
+- **Scalability** - Will this pattern work as the codebase grows?
+- **Reusability** - Could this be abstracted into a shared utility or component?
+- **Coupling** - Are we creating tight dependencies between modules?
+- **Testing complexity** - Does this make the code harder to test?
+
+**Flag situations that create technical debt:**
+- Quick fixes that bypass proper patterns
+- Missing types or using overly broad types
+- Copy-pasted code that should be extracted
+- Disabled linter rules without justification
+
+**Philosophy:** Consider long-term implications, not just immediate fixes. Proactively identify risks and technical debt.
+
+### Questioning Requirements
+
+**Challenge requests when:**
+- The requirement is vague or unclear
+- The proposed solution seems overly complex
+- There's a simpler approach that accomplishes the same goal
+- The request conflicts with established patterns
+- The user may not understand the full implications
+
+**Use questions to guide toward better solutions:**
+- "What's the underlying problem we're trying to solve here?"
+- "Have you considered using [existing pattern/component]?"
+- "This approach has [trade-off]. Is that acceptable?"
+- "Would [alternative approach] better serve the use case?"
+- "What's the expected behavior when [edge case occurs]?"
+
+**When to defer to the user:**
+- The user has context you don't have
+- Business requirements override technical preferences
+- The user explicitly states they understand the trade-offs
+- Time constraints necessitate a pragmatic solution
+
+**After raising concerns:**
+- Don't get stuck in analysis paralysis
+- If the user confirms their approach, proceed efficiently
+- Document any accepted technical debt
+- Focus on implementation quality
+
+**Philosophy:** Be constructive and specific. Provide actionable alternatives and explain reasoning. Execute decisively once direction is clear.
+
+## Convention Plugins & Dependencies
+
+**CRITICAL: Module build files should ONLY contain project dependencies.**
+
+**When a module needs an external library dependency:**
+
+1. **NEVER add external libs directly to module build.gradle.kts**
+   - ❌ WRONG: `implementation(libs.androidx.navigation3.runtime)`
+   - ✅ RIGHT: Apply appropriate convention plugin
+
+2. **Check convention plugins FIRST:**
+   - Review `build-logic/convention/src/main/kotlin/.../plugins/`
+   - Identify which plugin provides the needed dependency
+   - Apply the plugin to the module
+
+3. **If no existing plugin provides the dependency:**
+   - Consider if this is a common need across modules
+   - If yes: Create or update a convention plugin
+   - If no: Discuss with user before adding direct dependency
+
+**Common Convention Plugins:**
+- `simplehiit.android.library` - Base Android library
+- `simplehiit.android.library.compose` - Compose dependencies
+- `simplehiit.compose.navigation` - Navigation 3 dependencies
+- `simplehiit.koin` - Koin DI dependencies
+- `simplehiit.testing` - Test dependencies
+- `simplehiit.android.application.handheld` - Mobile app dependencies
+- `simplehiit.android.application.tv` - TV app dependencies
+
+**Module build.gradle.kts should look like:**
+```kotlin
+plugins {
+    alias(libs.plugins.simplehiit.android.library)
+    alias(libs.plugins.simplehiit.compose.navigation)
+    alias(libs.plugins.simplehiit.testing)
+}
+
+dependencies {
+    // ONLY project dependencies
+    implementation(projects.models)
+    implementation(projects.commonUtils)
+    testImplementation(projects.testUtils)
+}
+```
+
+**Philosophy:** Convention plugins centralize external dependency management, ensuring consistency and making it easy to update versions project-wide.
+
+## Build & Testing Behavior
+
+**DO NOT attempt to build the project or run tests (unless specifically requested).**
+- The development environment has specific setup requirements that make automated builds/tests unreliable
+- The developer will manually run all builds and tests during their review and appropriation phase
+- Focus on code generation, file modifications, and analysis only
+- When work is complete, do not suggest or execute build/test commands in the completion step
+
+**Philosophy:** Environment setup is critical. Gradle's toolchain mechanism ensures the correct Java version is used for the build, making it portable.
+
+## Documentation & Comments
+
+**Add KDoc/JavaDoc documentation for:**
+- Public methods and functions
+- Complex or non-obvious logic that requires explanation
+- Methods with non-trivial parameters or return values
+
+**DO NOT add inline comments that:**
+- Simply restate what was discussed in conversation (e.g., "// Adding an additional check on the data here")
+- Describe obvious code behavior
+- Serve as conversation artifacts rather than code documentation
+
+**Philosophy:** Documentation should add value for future developers, not echo our implementation discussion.
+
+## Planning & Analysis Documents - _WIP-plans/ Workflow
+
+### Document Locations
+
+**All planning, analysis, and summary documents must be created in `_WIP-plans/` folder:**
+- Analysis documents (e.g., logic analysis, architecture review)
+- Planning documents (e.g., refactoring plans, implementation strategies)
+- Summary documents (e.g., change summaries, refactoring summaries)
+- Work-in-progress documents
+- Any other temporary planning artifacts
+
+**The `docs/` folder is reserved for:**
+- Permanent project documentation
+- Reference guides
+- Architecture decision records (ADRs)
+- Process documentation that becomes part of the project
+
+### Naming Conventions for _WIP-plans/
+
+**ALL documents MUST be prefixed with last edit date in YYYYMMDD_ format for chronological sorting.**
+
+**Active work (ongoing) - Use present tense:**
+- `YYYYMMDD_WIP-[feature-name].md` - Main tracking document for ongoing work
+- `YYYYMMDD_[FEATURE]_MODULE_REFACTORING_PLAN.md` - Planning documents (uppercase feature name)
+- `YYYYMMDD_[FEATURE]_MODULE_LOGIC_ANALYSIS.md` - Analysis documents
+
+**Completed work (merged) - Use past tense suffix:**
+- `YYYYMMDD_WIP-[feature-name]-merged.md` - Summary after branch merge
+- `YYYYMMDD_[FEATURE]_MODULE_REFACTORING_SUMMARY.md` - Final summary of completed work
+- `YYYYMMDD_[FEATURE]_MODULE_EXTRACTION_SUMMARY.md` - Summary of extraction/major refactoring
+
+**Examples:**
+- Active: `20260102_WIP-viewmodel-refactoring.md`
+- Merged: `20260103_WIP-models-extraction-merged.md`
+- Active: `20260102_HOME_MODULE_REFACTORING_PLAN.md`
+- Complete: `20260103_HOME_MODULE_REFACTORING_SUMMARY.md`
+
+**When updating existing documents:**
+- Rename the file with the new date prefix reflecting the update date
+- This keeps files sorted by recency automatically
+
+### Mandatory Workflow Steps
+
+**1. ALWAYS Check _WIP-plans/ When Starting ANY Task:**
+- Use `list_files` on `_WIP-plans/` at task start
+- Read relevant WIP documents for context
+- These documents prevent re-explaining ongoing work
+- Identify which documents relate to current task
+
+**2. When User Announces "I merged the branch":**
+Execute this workflow:
+
+a) **Create Merge Summary Document:**
+   - Filename: `YYYYMMDD_WIP-[feature-name]-merged.md`
+   - Include:
+     - What was completed in this branch
+     - What was NOT completed (remaining work)
+     - Key architectural decisions made
+     - Breaking changes or migration notes
+     - Next steps for continuing work
+
+b) **Update Main WIP Document:**
+   - Mark completed sections as merged
+   - Update "Remaining Work" section
+   - Add merge date to completed items
+
+c) **Clean Up Obsolete Documents:**
+   - Review all files in `_WIP-plans/`
+   - **Delete planning docs for FULLY completed work:**
+     - Analysis documents if work is done
+     - Planning documents if work is done
+     - Intermediate summaries superseded by final summary
+   - **Keep documents for ongoing work:**
+     - Main WIP tracking documents
+     - Plans for remaining modules/features
+     - Analysis still relevant to future work
+
+d) **Confirm Cleanup with User:**
+   - List files being deleted
+   - List files being kept
+   - Explain rationale for each decision
+   - Get user confirmation before deleting
+
+**3. Document Lifecycle Example:**
+
+```
+Task: Home Module Refactoring
+├─ Active Phase:
+│  ├─ 20260102_HOME_MODULE_LOGIC_ANALYSIS.md (created during analysis)
+│  ├─ 20260102_HOME_MODULE_REFACTORING_PLAN.md (created for planning)
+│  └─ 20260102_WIP-viewmodel-refactoring.md (main tracker)
+│
+├─ Merge Phase:
+│  ├─ 20260102_WIP-home-refactor-merged.md (created)
+│  ├─ 20260103_HOME_MODULE_REFACTORING_SUMMARY.md (created, permanent)
+│  ├─ DELETE: 20260102_HOME_MODULE_LOGIC_ANALYSIS.md (work complete)
+│  ├─ DELETE: 20260102_HOME_MODULE_REFACTORING_PLAN.md (work complete)
+│  └─ KEEP: 20260102_WIP-viewmodel-refactoring.md (tracks ALL modules)
+```
+
+### Philosophy
+
+**Why this workflow:**
+- **Context preservation** - Never lose track of what's done and what remains
+- **Clean workspace** - Remove obsolete docs to reduce noise
+- **Clear naming** - Know at a glance which docs are active vs historical
+- **Continuity** - Pick up work seamlessly across sessions and branches
+
+**Key principle:** The `_WIP-plans/` folder is your collaborative notebook. Keep it current, organized, and focused on ACTIVE work. Archive completed work in merge summaries, then clean up planning artifacts.
+
+## Kotlin Code Style
+
+### Imports
+
+**Always use proper imports at the top of the file:**
+- Add all type imports in the import section at the top of the file
+- ❌ WRONG: `private fun sort(users: List<fr.shiningcat.simplehiit.domain.common.models.User>)`
+- ✅ RIGHT: Add `import fr.shiningcat.simplehiit.domain.common.models.User` at top, then use `List<User>`
+
+**Never use inline fully-qualified names:**
+- Inline package paths make code harder to read and maintain
+- They bypass IDE import management and refactoring tools
+- They obscure which types are actually being used
+
+**Philosophy:** Proper imports improve readability and maintainability. Let the IDE manage imports, not inline qualifications.
+
+### Idiomatic Kotlin
+
+**Always use idiomatic Kotlin syntax:**
+- Leverage Kotlin language features over Java-style code
+- Use extension functions, data classes, sealed classes, and other Kotlin idioms
+- Prefer Kotlin standard library functions (let, apply, run, also, with) when appropriate
+- Use property delegation, lambda expressions, and destructuring where it improves clarity
+- Follow Kotlin naming conventions and style guidelines
+
+**Avoid static methods and utility classes:**
+- ❌ WRONG: Object classes with static utility methods
+- ❌ WRONG: Companion objects used as static utility holders
+- ✅ RIGHT: Extension functions for utility behavior
+- ✅ RIGHT: Dependency injection for shared logic
+- ✅ RIGHT: Top-level functions when appropriate
+
+**Philosophy:** Write Kotlin code that leverages the language's strengths. Avoid Java patterns that Kotlin provides better alternatives for. Make code testable and maintainable by favoring injection over static utilities.
+
+### Defensive Coding & Resilience
+
+**Write defensive code to prevent crashes and ensure resilience:**
+- **Goal: Zero crashes** - Anticipate and handle error conditions proactively
+- **Graceful degradation** - Fail safely with fallback behavior when possible
+- **Prevent uncaught exceptions** - Use try-catch for risky operations, validate inputs
+- **Thread safety** - Protect shared mutable state with proper synchronization
+- **Race condition prevention** - Use appropriate concurrency primitives (Mutex, synchronized, atomic operations)
+
+**Common defensive patterns:**
+- ✅ Validate nullable inputs before use, provide safe defaults
+- ✅ Use `runCatching`, `getOrNull()`, `getOrElse()` for operations that may fail
+- ✅ Wrap external API calls (network, database, file I/O) in try-catch blocks
+- ✅ Use `@Volatile`, `Mutex`, or atomic classes for concurrent access to mutable state
+- ✅ Prefer immutable data structures to reduce concurrency risks
+- ✅ Add null checks and bounds checks before array/collection access
+- ✅ Use sealed class hierarchies for error handling instead of exceptions when appropriate
+- ✅ Log errors appropriately while still providing fallback behavior
+
+**Anti-patterns to avoid:**
+- ❌ Assuming external operations always succeed (network calls, file operations)
+- ❌ Accessing shared mutable state without synchronization
+- ❌ Ignoring potential null/empty states
+- ❌ Letting exceptions crash the app without graceful handling
+- ❌ Using unsafe collection operations (get vs getOrNull, first vs firstOrNull)
+
+**Philosophy:** Anticipate failure modes and handle them proactively. Build resilient code that degrades gracefully rather than crashes. Optimize for reliability and user experience.
+
+## Code Accuracy - Verify Don't Guess
+
+**NEVER guess parameter names, enum values, function names, or other code identifiers:**
+- ❌ WRONG: Assume a parameter is named `userId` because it seems conventional
+- ❌ WRONG: Guess an enum value is `ACTIVE` without checking the actual definition
+- ❌ WRONG: Use `getUserById()` without verifying the actual method name
+- ✅ RIGHT: Use `read_file` to check the actual class/interface definition
+- ✅ RIGHT: Use `search_files` to find how the code is used elsewhere
+- ✅ RIGHT: Use `list_code_definition_names` to see available methods/properties
+
+**Before writing code that references existing types, methods, or values:**
+1. **Locate the source** - Find where the type/method/enum is defined
+2. **Read the definition** - Verify exact names, parameter types, and signatures
+3. **Check usage examples** - See how it's used elsewhere in the codebase
+4. **Use exact names** - Match capitalization, spelling, and parameter order precisely
+
+**Common mistakes to avoid:**
+- Guessing constructor parameter names without checking the data class definition
+- Assuming enum values follow a pattern without verifying all cases
+- Using camelCase when the project uses snake_case (or vice versa)
+- Inverting boolean parameter names (e.g., `isEnabled` vs `isDisabled`)
+- Getting parameter order wrong in function calls
+
+**Tools for verification:**
+- `read_file` - Read class definitions, interfaces, enums directly
+- `search_files` - Find usage patterns across the codebase
+- `list_code_definition_names` - Survey available methods/classes in a module
+
+**Philosophy:** Build errors from typos and wrong names are preventable. Always verify actual code definitions before referencing them. A 30-second file check prevents a 5-minute build failure.
+
+## Commit Messages & Pull Request Descriptions
+
+**Commit messages should be concise and focused:**
+- Maximum 2 lines
+- Summarize what changed, not the entire context
+- Focus on the technical change itself
+
+**Pull request descriptions should be concise:**
+- No need to describe all intentions or full background
+- Focus on: **what changed, why it changed, and how it solves the need**
+- Skip lengthy explanations of context already known to the team
+
+**Philosophy:** Commit messages and PR descriptions are technical summaries, not conversation logs. Keep them actionable and focused on the essential information.
+
+## File Change Handling
+
+**When files have been modified since your last edit:**
+- DO NOT automatically revert changes to what you remember from earlier in the conversation
+- Assume the developer has made purposeful edits as part of the collaborative process
+- If you notice a change that seems detrimental or problematic, ask about it and voice your concern
+- Discuss any concerning changes before making modifications
+
+**Philosophy:** Respect the iterative nature of our collaboration. File changes between edits are intentional unless proven otherwise.
+
+## When in Doubt: Guiding Principles
+
+**Project goals prioritize learning and best practices over minimalism:**
+- Primary goal: experimentation, learning, and skill improvement
+- Favor canonical, idiomatic patterns even if they add complexity
+- Strictly follow official best practices and framework recommendations
+- Prefer proper separation of concerns over fewer files
+
+**Module-appropriate patterns:**
+- Android modules (`android/*`): Google/Android framework patterns and conventions
+- Shared-UI modules (`shared-ui/*`): Pure Kotlin, testable without Android dependencies
+- Domain modules (`domain/*`): Pure Kotlin, KMP-ready, framework-agnostic
+- Apply the right paradigm for each layer's context
+
+**When choosing between approaches:**
+- **Testability**: Prefer testable architecture over convenience
+- **Separation of Concerns**: Extract logic when it improves clarity, even if it adds classes
+- **Reusability**: Consider if logic could be shared or reused elsewhere
+- **Platform Independence**: Keep business logic free from Android dependencies when possible
+
+**Acceptable trade-offs:**
+- More files/classes for better organization ✓
+- Additional abstraction layers for proper separation ✓
+- Verbose but explicit over concise but unclear ✓
+
+**Philosophy:** Build for learning and long-term maintainability, not minimal line count. Follow established patterns rigorously to develop proper architectural instincts.

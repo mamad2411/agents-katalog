@@ -1,0 +1,1 @@
+Follow `/AGENTS.md`, `/PROJECT_STATUS.json`, and the nearest directory-level `AGENTS.md`. Use `npm run task -- <OAF-ID>` before implementation. Do not enable networked adapters or external writes by default.

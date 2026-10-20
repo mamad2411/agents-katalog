@@ -1,0 +1,22 @@
+- Assume the latest lts version of Node.js is being used.
+- Use ES modules (i.e., `import`/`export` syntax) instead of CommonJS (`require`/`module.exports`).
+- Use `async`/`await` for asynchronous operations instead of callbacks or `.then()` chaining.
+- Prefer built-in Node.js modules (like `fs/promises`, `path`, `http`, etc.) over third-party libraries unless absolutely necessary.
+- Use modern JavaScript features (like destructuring, spread/rest operators, template literals, etc.) to write clean and concise code.
+- Handle errors gracefully using `try/catch` blocks and provide meaningful error messages.
+- Follow consistent coding style and conventions (e.g., indentation, naming conventions, semicolons, etc.) throughout the codebase.
+- Write modular code by breaking down functionality into smaller, reusable functions or classes.
+- Include JSDoc comments for functions and classes to improve code documentation and maintainability.
+- Ensure proper use of TypeScript types and interfaces to enhance type safety and code clarity.
+- Run TypeScript natively (https://nodejs.org/en/learn/typescript/run-natively). Do not use `ts-node` or other transpilation tools. Do not use `--experimental-strip-types`.
+- Use ES module resolution for TypeScript (i.e., `"moduleResolution": "node"` in `tsconfig.json`).
+- When working with file paths, use the `path` module to ensure cross-platform compatibility.
+- ALWAYS use absolute paths for file operations.
+- ALWAYS ensure directories exist (mkdir -p logic) before writing files.
+- Check if files exist before writing to avoid collisions, or handle errors.
+- For environment variables, use the built-in `process.env` object.
+- When creating HTTP servers or clients, use the built-in `http` or `https` modules.
+- Avoid using deprecated Node.js APIs or features.
+- Packages scoped with `@anoblet` are either local, submodules, or installed via repository URL.
+- Import `@types/node` when necessary
+- Use the `--env-file` flag to load environment variables from a `.env` file when running scripts, but do not use `dotenv` or similar libraries in the codebase.

@@ -1,0 +1,348 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Repository overview
+
+This repo is the implementation of **mhl** (Meta-Harness Language, `.mh`): a declarative
+language for describing AI agent pipelines — agents, tools, memory, MCP servers,
+prompts, and the pipelines that wire them together. It has three tracked parts:
+
+- **`src/mhl-runtime/`** — the Go implementation of the `mhl` CLI (parser, interpreter,
+  runtime, LSP). This is where nearly all engineering work happens.
+- **`vscode-mhl/`** — a VS Code extension providing syntax highlighting, diagnostics, and
+  completion for `.mh` files; it's a thin `vscode-languageclient` wrapper around `mhl lsp`.
+- **`docs/site/`** — `reference.html` (and `index.html`) is the single, canonical language
+  reference, deployed as-is to GitHub Pages by `.github/workflows/page.yml`. There is no
+  separate wiki; some example fields may still be aspirational, not yet implemented — see
+  "Docs vs. implementation" below before trusting an example as ground truth.
+
+A `dotnet/` directory may be present locally but is `.gitignore`d in its entirety — it is not
+part of this repository and unrelated to `mhl`.
+
+## Commands
+
+All Go commands run from `src/mhl-runtime`:
+
+```sh
+make build            # builds dist/mhl and sample/mhl
+make test             # go test ./...
+make functional-test  # runs `mhl test` against sample/syntax and sample/features
+go vet ./...
+make release          # cross-compiles linux-amd64, darwin-arm64, windows-amd64
+make verify-release   # release + asserts each binary is non-empty
+```
+
+Focused iteration:
+
+```sh
+go test ./internal/lang/parser/...          # one package
+go test -run TestName ./...                 # one test by name, across packages
+go test ./internal/cli/... -run TestName -v # one test, verbose
+```
+
+CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `make build`, `make test`, then
+`make functional-test`, in that order — reproduce locally before pushing.
+
+`internal/lang/parser`'s `TestFixturesParse` fails out of the box (`test/fixtures` doesn't
+exist in this checkout) — a pre-existing gap, not something a normal change will have caused.
+
+The built CLI itself:
+
+```sh
+mhl init [dir]  # scaffolds an immediately-runnable main.mh; never overwrites
+mhl run <pipeline.mh> [--input key=value ...] [--resume [--force]] [--format text|json] [--dry-run]  # --resume refuses a checkpoint whose pipeline definition changed shape (digest), --force downgrades to warning; --format json emits one typed result/error object (runtime.StepError / InvalidInputsError feed its kind/step/hint), run output → its `log` field; --dry-run = validate (parse/imports/lint/input contract — presence *and* declared value types, via the shared `execsvc.coerceInputs`) + print static plan via execsvc.Inspect, executes nothing
+mhl test <file.mh|dir>
+mhl lint [dir]
+mhl lsp        # LSP server over stdio, used by vscode-mhl
+mhl serve mcp [dir]                 # workflows as MCP tools (stdio JSON-RPC)
+mhl serve mcp --http [--addr h:p] [--token t] [--state-dir path] [--principal-header h] [--drain-timeout d] [--max-concurrent-runs n] [--single-replica] [dir]  # ... over Streamable HTTP (POST /mcp; GET /healthz, /readyz, /metrics); --single-replica (or MHL_SERVE_SINGLE_REPLICA) is required to start with a non-cas `extension state`
+mhl serve a2a [--addr h:p] [--token t] [--principal-header h] [dir]  # workflows as A2A skills (HTTP JSON-RPC); same bearer/principal-header/Origin/body-cap guard as `serve mcp --http` (a2aserver.Config, security.go)
+mhl version    # or --version / -v
+```
+
+The "serve" adapters share `internal/execsvc` (the reusable run core: `execsvc.Run(Request) →
+Result`, `execsvc.Load(dir)` for a directory of workflows). `internal/mcpserver` puts one MCP
+tool per pipeline/workflow on top (`tools/call` → `execsvc.Run`, `inputSchema` ←
+`runtime.Pipeline.InputSchema()`, `description` ← the optional `description: "..."` body
+property, else generic); its `server.dispatch(ctx, *session, rpcMsg) *rpcMsg` is
+transport-independent — `Serve` (stdio, `server.go`) and `ServeHTTP` (Streamable HTTP,
+`http.go`: `POST /mcp` — plus `POST /mcp/<method>` thin wrappers so an external policy
+engine can gate one method, body `method` still authoritative — JSON responses only,
+`Mcp-Session-Id` sessions + the stateless `_meta` form; a `TokenVerifier` (`verifier.go`:
+static token, or `--principal-header` trusted-header) yields a principal that keys run
+ownership via `httpServer.ownerOf`, else the Phase-0 session hash; loopback-`Origin` guard)
+both drive it. HTTP-only, in
+`runs.go`: `run/start`/`run/status`/`run/resume`/`run/cancel`/`run/list`/`run/logs` — async
+execution (returns a `runId`, poll for current step / `reached` steps / final vars) for
+workflows too long to hold a `tools/call` open; backed by `execsvc.Request.OnStep`. Because
+this family is HTTP-only, the HTTP transport sets `server.asyncRuns`, so `initialize` /
+`server/discover` advertise it under `capabilities.experimental["mhl.run"]`
+(`{version, methods}`) and each `tools/list` entry gets `_meta.mhl.run`; stdio has neither.
+Because a stock MCP client (VS Code, Claude Desktop) can only call `tools/call`, the HTTP
+`tools/list` also carries six `mhl_run_*` **control tools** (`runtools.go`): `serveMCP`
+rewrites a `tools/call` on one of those names to the matching `run/*` method
+(`bridgeRunToolParams` maps params + carries `_meta` across) before the drain/slot/routing
+logic, then `asToolResult` re-frames the reply as a `CallToolResult` (status object →
+`structuredContent`). Adding/renaming a `run/*` method → update `asyncRunMethods` **and**
+`runToolMethod` in `runtools.go`. Read-only detail is exposed as MCP **resources**
+(`resources.go`, `resources` capability, both transports): `resources/list` +
+`resources/read` for `mhl://workflow/<name>` (a manifest projected from
+`runtime.Pipeline` — steps, inputs, checkpoint, declared deps — so it can't drift),
+`mhl://workflow/<name>/source`, and HTTP-only `mhl://run/<id>/{logs,result}` (owner-gated
+like `run/status`); `dispatch` serves the `workflow` URIs, `serveMCP` splices in the `run`
+ones and `asToolResult` adds `resource_link`s to a bridged reply. `run/resume` continues
+a stopped run from its checkpoint — per-step checkpointing is on by default
+(`runtime.DefaultCheckpointConfig`, applied in `PipelineFromAST`), so the `checkpoint { ... }`
+block is optional and only needed to override a field (`ttl`) or opt out entirely
+(`checkpoint: { enabled: false }`) — or a run suspended by the
+`pause(reason?)` builtin (the HITL primitive — a gate step calls `pause("awaiting …")`, the
+run parks in `state: "paused"` / `resumable: true` with its subtree kept, then
+`run/resume {runId, arguments}` re-enters that step with the decision merged in; `pause`
+writes its own checkpoint even when the block is disabled, and it is a control signal
+like `break`, not a catchable error like `fail()`). Signal path: `interpreter.pauseSignal`
+→ `IsPause` → `runtime.PauseSignal` → `RunResult.Paused` / `LoopResult.TerminalReason
+"pause"` → `execsvc.Result.Paused` → `mcpserver` `state: "paused"`. Via
+`execsvc.Request.{Session,Resume}`; `--state-dir` / `MHL_SERVE_STATE_DIR` makes that run
+state outlive the process (else a per-process temp dir), or a single
+`extension state <Name> [from "<id>"] { ... }` declaration (legacy kind name `store` still
+accepted, both in the declaration and from an older package — `cli/storext.go`'s
+`lookupStateExtension`) in the serve dir routes all durable state
+(sessions + `run/*` checkpoints/owner) through that extension instead — `cli/serve.go` binds
+it host-side (`storext.go`), `mcpserver`'s `ext*` adapters (`extstore.go`) wrap it as the
+`KVStore` the `SessionStore`/`CheckpointStore`/`runtime.StateStore` seams speak; the run
+*registry* stays in-memory per pod. A caller `--state-dir` also swaps the in-memory
+`SessionStore` for `diskSessionStore` (`store.go`: one JSON file per id under
+`<state-dir>/.mhl/state/sessions/`), so an `Mcp-Session-Id` minted on one replica resolves on
+any other without a forced re-`initialize`; no `--state-dir` keeps `memSessionStore`. When `h.cps.Shared()` (a caller `--state-dir` or an
+extension state), `execRun` publishes a `RunStatusRec` per `OnStep` and `reconstructRun`
+falls back to it (no checkpoint yet) so another replica's `run/status` sees a `working` run
+it never started (marked `remote`, re-read each poll); `run/cancel` for a `remote` run writes
+a `cancel` flag the owning replica polls (1s `watchRemoteCancel` + step boundary) →
+distributed cancel. When the shared store is an `extension state` that advertised the `cas`
+capability (`LockingKVStore`: `PutIfAbsent`/`CompareAndSwap`), `httpServer.lock` (`runlock.go`)
+is a coarse per-run lease — `execRun` `acquire`s `run/<id>/lock` and heartbeats it
+(`runLockTTL` 30s, renew at `/3`). Each acquisition carries a random `token` in the lease
+record (kept per-runID in `runLock.tokens`); `renew`/`release` act only on that exact
+acquisition, so a stale holder that lost the lease cannot renew or delete a successor's — and
+`release` is a conditional `CompareAndSwap` to an expired tombstone, never an unconditional
+`Delete`. A confirmed lease is a hard precondition: an `acquire` **error** fails the run
+("could not acquire run execution lease"), it does not proceed uncoordinated; `heartbeatLock`
+(`heartbeatDecision`) `cancel()`s the run when the lease is lost **or** when renews have failed
+long enough that it is within one heartbeat of expiry (stop before, not after, two writers
+become possible). `peek` returns `lockUnknown`+err on a store read failure, distinct from
+absent/expired: `runResume` refuses ("cannot verify … lease"), `markIfLeaseExpired` leaves the
+run `working`. A second replica's `execRun`/`runResume` for the same `runId` is refused
+("executing on another replica"); a genuinely lapsed lock is taken over by `CompareAndSwap`;
+`markIfLeaseExpired` makes a `remote` `working` run with an absent/expired lock report
+`failed`+`resumable` (takeover is an explicit `run/resume`, never auto). A `Store` without
+`cas` is a startup **error** unless `--single-replica` / `MHL_SERVE_SINGLE_REPLICA`
+acknowledges a one-writer deployment (`h.lock == nil` then); plain `--state-dir` (no `Store`)
+is unchanged. Still not fenced (a stale holder can write a checkpoint — a later increment).
+Each run is owned by its caller (`httpServer.ownerOf` —
+the `--principal-header` principal hashed, else sha256 of the Mcp-Session-Id);
+`run/{status,resume,cancel,list,logs}` only act for that caller — a non-owner gets "unknown
+runId". A principal-owned run persists its owner (`CheckpointStore.WriteOwner`), so after a
+restart `reconstructRun` hands it back only to that principal; a session-hash owner is not
+persisted and the first caller to name the (unguessable) runId reclaims it. End-to-end request flow for all
+modes (stdio, HTTP sync, HTTP async, resume) with sequence diagrams:
+`internal/mcpserver/FLOW.md`. `internal/a2aserver`
+puts one A2A skill per workflow on top
+(`message/send` starts a task, `tasks/get`/`tasks/cancel` drive it; skill + inputs are named
+explicitly in `message.metadata.skill` / `.input`). Both dispatched from `internal/cli/serve.go`.
+A pipeline/workflow body property (`checkpoint`, `spawn`, `repeat`, `context`, `description`,
+`output`) is declared once in `ast.PipelineBodyProperties` (`internal/lang/ast/pipeline.go`);
+`lint.checkPipelineProperties` and `internal/lsp/properties.go` both derive from it, so adding
+one is that entry plus its value-reading case in `runtime.PipelineFromAST`.
+A pipeline/workflow may also carry a typed signature, `workflow X(req: In): Out` (`ast.Pipeline.Param`
+/`Returns`, projected onto `runtime.Pipeline.InputParam`/`OutputType`): the param type's fields
+become `Pipeline.Inputs` (so `ValidateInputs`/`InputSchema`/coercion are unchanged) but are bound
+as one object by `Pipeline.BindInputs`; `Out` requires an explicit `output:` (lint
+`checkPipelineSignature`) and `execsvc` checks the projection → `runtime.OutputContractError`;
+`Pipeline.OutputSchema()` feeds MCP `outputSchema` (enum variants filled in at any depth from
+`Pipeline.Enums`). The param is read-only: `interpreter.pipelineConstNames` and
+`lint.checkConstReassign` seed it as a const. Shape fields may be optional (`base?: T`,
+`types.Type.Optional`). New AST fields are tagged `digest:"omitzero"` so unused ones don't change
+`DefinitionDigest` (pinned by `TestDefinitionDigestUnchangedByOmitzeroFields`).
+
+VS Code extension, from `vscode-mhl` (needs `mhl` built first — `mhl.serverPath` defaults to
+`mhl` on `PATH`):
+
+```sh
+npm install
+npm run compile   # esbuild bundle to out/extension.js
+npm run watch
+npx @vscode/vsce package   # .vsix
+```
+Open `vscode-mhl/` in VS Code and press F5 for an Extension Development Host.
+
+## Architecture — `src/mhl-runtime`
+
+`internal/` is split into four groups with a strict, one-way dependency order (see
+`src/mhl-runtime/README.md` for the full rationale):
+
+| Group | Answers | Depends on |
+|---|---|---|
+| `internal/lang/` | What is valid `.mh` syntax, and what does it parse into? | nothing else here |
+| `internal/engine/` | How does a parsed program actually run? | `lang`, `features` |
+| `internal/features/` | What can a `.mh` program *do*? | `lang/ast` (a few packages only) |
+| `internal/cli/` | How is this invoked from a terminal? | `lang`, `engine`, `features` |
+
+`features` packages never import `engine` or `cli`; `engine` never imports `cli`. Most
+`features` packages (`memory`, `tools`, `nativeops`, `traffic`, `auth`, `adapters`) have no
+idea `.mh` exists at all — they're plain Go APIs the interpreter calls into.
+
+Key packages:
+
+- **`internal/lang/ast`** — the parsed program's Go types. Participle struct tags on each
+  node (e.g. `` `parser:"'agent' @Ident?"` ``) *are* the grammar — reserved keywords live next
+  to the node they introduce (`agent.go`, `pipeline.go`, ...), not in a separate keywords file.
+  `literal.go` holds the shared "unwrap a bare literal" readers (`StringValue`, `BoolValue`,
+  `DurationValue`, `BareObject`, ...) that every declaration's static config (an agent's
+  `command:`, a pipeline's `checkpoint: { ttl: 7d }`) is read through outside the interpreter's
+  full expression evaluator.
+- **`internal/lang/parser`** — lexer + compiled Participle parser (`Parse`/`ParseExpr`).
+- **`internal/lang/lint`** — static analysis (broken imports, undeclared agents, misconfigured
+  config) shared by `mhl lint` and diagnostics published by the LSP.
+- **`internal/engine/interpreter`** — the tree-walking evaluator. `eval.go` is expressions;
+  `exec.go`/`RunStep` is statements; `agent.go`/`memory_ops.go`/`prompt_ops.go` dispatch
+  `Agent.run(...)`/`Memory.method(...)`/prompt rendering; `tool.go`'s `nativeOpCall` dispatches
+  the reserved native namespaces (`cmd`, `git`, `fs`, `http`, `json`, `log`) a `tool` method
+  body or any expression position can call. This is the one package where `lang` and
+  `features` meet.
+- **`internal/engine/runtime`** — pipeline execution order, `loop pipeline`'s repeat policy,
+  and checkpoint persistence for `--resume`. Knows step *names* only, not step behavior.
+  `pipeline` and `workflow` are one node (`ast.Pipeline.Kind`) and run identically here —
+  `goto` works in both; `internal/lang/lint` (`checkPipelineGoto`) is what rejects `goto`
+  outside a `workflow` and validates the target step exists. `Runner.Run` / `LoopRunner.Run`
+  take a `context.Context` first arg, checked at each step / iteration boundary; `StepFunc` is
+  `func(ctx, step, *RunContext) error`. `interpreter.RunStep` takes that ctx too and sets it as
+  `evalCtx.goctx`, so a run-level cancel also aborts a blocking call already in flight — an
+  agent subprocess/HTTP call, a `cmd`/`git`/`http` native op, an extension call (`goctxOf(ctx)`
+  everywhere those are issued). `RunTests` and direct interpreter-test calls pass no ctx;
+  `goctxOf` normalizes nil to `context.Background()`. A step's (or a `parallel` group's)
+  optional `timeout <dur>` header clause (`ast.Step.Timeout`, projected onto
+  `runtime.Pipeline.StepTimeouts`) is enforced in `runner.go`'s `execStage` via
+  `context.WithTimeout` on that one step's ctx; an expiry wraps `runtime.ErrStepTimeout` and
+  flows through `saveCancelCheckpoint` (resume point written when checkpointing is on), i.e.
+  it fails the step like `fail()` — per attempt, deadline never persisted.
+  `lint.checkPipelineStepTimeout` rejects a non-positive value. A `loop pipeline`/`loop
+  workflow` declaration may also carry a `max <N>` header clause (`ast.Pipeline.Max`,
+  `loop workflow Refine max 3 { ... }`) — pure sugar for `repeat { max_iterations: N }`,
+  projected onto `runtime.Pipeline.MaxIterations` in `PipelineFromAST` (an explicit
+  `repeat` block's `max_iterations` still wins). `lint.checkLoopMax` rejects a non-positive
+  value, use without the `loop` prefix, and use alongside `repeat { max_iterations }`.
+- **`internal/engine/value`** — value vs. reference semantics. Plain `[]any`/`map[string]any`
+  are values: `interpreter.evalPostfix` returns `value.DeepCopy` of any variable read, so names
+  never alias (writes go through `execAssign` on the stored value). `ref { ... }` / `ref (expr)`
+  (`ast.RefExpr`) builds a `*value.Ref` (ID + Fields), shared by pointer; `applyTrailers`/index
+  helpers/`callValueMethod` `unref` it. Identity is persisted: `RedactVarsForCheckpoint` runs
+  `value.EncodeRefs` and `RehydrateVars` runs `value.DecodeRefs` (StateSchemaVersion 2), so both
+  the disk store and an `extension state` keep it. A Ref never leaves the interpreter: native-op/
+  extension args (`callArgs.materialized`), `memory`/`mem` writes and execsvc results
+  (`publicVars`) are `value.Materialize`d; `Ref.MarshalJSON` covers json.Marshal paths.
+  `parallel` branches get `value.CloneRefs` copies and `runtime.mergeRefFields` merges them by
+  ID + field (same field, different values → conflict). `obj with { field: value, ... }`
+  (`ast.Postfix.WithTail`/`ast.WithOp`, `interpreter.evalWithTail`) copies `obj`
+  (`value.DeepCopy`, so a `ref`-typed field keeps its shared identity the same way any other
+  object-literal field does) and overrides the listed fields on that copy — added as a field on
+  `Postfix` rather than a new `Unary.Operand` wrapper type specifically so `DefinitionDigest`
+  (`runtime/digest.go`) stays byte-identical for every program that doesn't use it (`digest:
+  "omitzero"` alone isn't enough once a *wrapper* type is introduced between two already-hashed
+  fields — the wrapper's own field name changes the hash regardless of omitzero on its contents).
+- **`internal/execsvc`** — `Run(Request) (*Result, error)`: the reusable "run a pipeline,
+  get a structured result" entry point extracted from `cli.runPipeline`. `internal/cli`'s
+  `run` and (later) the MCP/A2A server adapters call it. `Request.Context` carries the
+  cancel/deadline; the caller owns `interpreter.SetSessionExtensions`.
+- **`internal/features/*`** — `prompt`, `memory` (kv/json/log/jsonl backends),
+  `mcp`, `nativeops` (the actual `cmd.exec`/`fs.read`/... implementations behind `tool.go`),
+  `tools` (low-level subprocess exec), `adapters` (runs an agent's `cli/*` or `ollama/*`
+  engine), `traffic` (retry/backoff, response caching), `auth` (credential resolution).
+- **`internal/cli`** — argument parsing/dispatch only; hands off immediately to the packages
+  above.
+- **`internal/lsp`** — the `mhl lsp` server. Completion (`completion.go`, `blockcontext.go`,
+  `properties.go`), symbol discovery (`symbols.go`), and the callable-signature catalogue
+  (`signatures.go`, powering completion `detail`/`documentation` and `textDocument/signatureHelp`)
+  **duplicate the interpreter's knowledge by hand** — there is no shared source of truth. When
+  adding/changing a native op (`tool.go`'s `nativeOpCall`), a value method (`eval.go`'s
+  `callValueMethod`), a memory/mcp method, or a declaration property (`agent.go`,
+  `runtime/pipeline.go`), update the matching LSP tables too — including `signatures.go` and
+  `docs/site/stdlib.html`. `signatures_test.go` fails when the method *sets* drift, but not
+  when a signature's parameter list or prose goes stale.
+
+### Docs vs. implementation
+
+`docs/site/Docs-Reference.dc.html` (and, for normative language behavior, `Docs-Specification.dc.html`)
+is the single source of truth for the language surface — there is no
+separate wiki; keep it in sync with `agent.go`/`agent_hooks.go`/`pipeline_hooks.go` rather than
+letting a second copy of this explanation drift. For agents specifically,
+`internal/engine/interpreter/agent.go` reads `engine`, `command`, `args`, `endpoint`,
+`temperature`, `log`, `trace`, `retry`, `cache`, `rate_limit`, `fallback`, `before`, `after`.
+There is no declarative tool/extension scope list on an agent: when an agent needs a `tool` or
+`extension`, it is called from a `before`/`after` hook (agent_hooks.go), which are real:
+`before: () -> {...}` runs before the prompt is built — an ordinary zero-param lambda whose body
+resolves declared `tool`/`extension`/`agent` names, native ops and `mem` like any expression, and
+whose returned object's fields become `${...}` bindings the prompt can interpolate. `after: () ->
+{...}` runs once on the final response, with it bound in the body as `result`; a string return
+replaces `.run()`'s value, anything else is passthrough. Both reject a parameter list. Fields the docs may still show (`api_key`,
+`timeout`, `system_instructions`) are not read anywhere in `agent.go` and are silently ignored if
+written.
+`retry.backoff`, `cache.strategy`, and `rate_limit.on_exceeded` each implement exactly one value
+today (`"exponential"`, `"exact"`, `"queue"` respectively — see `ast.AgentRetryConfig` et al.);
+declaring any other value is a build-time error (caught by both `mhl lint` and `mhl run`), not
+silently accepted. Before relying on a docs example, grep the relevant
+`internal/engine/interpreter` or `internal/features/nativeops` file for the exact property/op
+name.
+
+A pipeline/workflow (and `loop pipeline`/`loop workflow`) has its own, unrelated set of five
+lifecycle hooks — `session_start`, `session_end`, `step_start`, `step_end`, `stop_failure`
+(`internal/engine/interpreter/pipeline_hooks.go`'s `RunPipelineHook`, wired in
+`internal/execsvc/execsvc.go`) — each a single-parameter lambda body property
+(`ast.PipelineBodyProperties`), unlike agent `before`/`after`'s zero parameters. They are
+observation-only: a non-nil return is a runtime error, and a failure inside any of them aborts
+the run like any other error, *except* a failure inside `stop_failure` itself, which is only ever
+logged, never allowed to replace the failure it was reporting. `stop_failure`'s `reason` comes
+from `runtime.StepError.Kind` — a closed set (`"failed"`, `"timeout"`, `"cancelled"`,
+`"max_step_visits"`) plus a `"runtime_error"` fallback for anything not step-shaped — which is
+**not** the same thing as a `loop pipeline`'s `LoopResult.TerminalReason == "max_iterations"`: the
+latter is a soft, non-error stop that fires `session_end`, never `stop_failure`, despite the
+near-identical name. `session_start`/`session_end` fire once per whole run (once per
+`execsvc.Run` call, covering every iteration of a loop); `step_start`/`step_end` fire once per
+step execution, including once per loop iteration and once per `parallel` branch.
+
+Each hook's single lambda parameter is bound to one of three **builtin global types** —
+`SessionContext`, `StepContext`, `FailureContext` — registered in `internal/lang/types/types.go`'s
+package-private `aliases` map right alongside `string`/`number`/`bool`/etc., so a bare `: Type`
+name anywhere in the language (an `input`, a tool method param/return) resolves them exactly like
+a primitive keyword, and a program cannot redeclare one (same "shadows a builtin" static error).
+`ast.PipelineBodyProperty.ParamType` names which one a given hook's parameter carries — read only
+by `internal/lsp` (`hookcontext.go`'s `hookParamCompletionAt`/`objectTypeFieldItems`), which is
+what turns `session.`/`step.`/`failure.` inside a hook body into real field completion, resolved
+from `types.Parse` rather than a second hand-written field list. The hook lambda itself is never
+type-annotated in practice and the runtime never checks `Param.Type` against the bound value —
+mhl lambdas stay fully dynamically typed; the type exists for the annotation surface and the LSP,
+not for runtime enforcement. `execsvc.go` always emits every field of the relevant type on every
+firing (nil where a particular firing has nothing to say, e.g. `session_start`'s `vars`/`broke`),
+never omitting a key — `types.Check`'s `v == nil` bypass is what makes one `SessionContext` shape
+correctly describe both `session_start` and `session_end`'s payload; do not go back to omitting
+inapplicable keys; a missing key trips Check's "missing field" error for a program that does
+type-check against `SessionContext` explicitly.
+
+## Testing conventions
+
+- `internal/cli` tests are largely black-box, end-to-end: write `.mh` source to a temp dir,
+  run it through `cli.Run([]string{"run", ...}, buf)`, assert on stdout — exercising the
+  parser, interpreter, and runner together the way a real `mhl run` would.
+- `internal/features/*` and `internal/lang/*` additionally have focused unit tests beside the
+  code they cover.
+- `sample/syntax` and `sample/features` (migrated from the old `test/e2e/{lang/syntax,features}`)
+  hold real `.mh` programs exercised via `mhl test`/`mhl lint`, not `go test`; `make
+  functional-test` runs both directories through the `sample/mhl` binary `make build` produces.
+- Prefer table-driven cases for parser/runtime behavior.
+
+## Coding style
+
+Idiomatic `gofmt`-formatted Go, tabs, documented exported identifiers, small package-focused
+changes. Lowercase package/file names; `snake_case` only where an existing filename already
+requires it. Conventional Commit messages (`feat(scope): ...`, `fix(scope): ...`,
+`test(scope): ...`).

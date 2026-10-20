@@ -1,0 +1,784 @@
+<!-- DO NOT REGENERATE: This CLAUDE.md is manually maintained. If /init is run, DO NOT overwrite — inform the user that CLAUDE.md already exists and is comprehensive. -->
+
+# Claude Code Project Instructions
+
+## Project Overview
+
+Personal Assistants: unified, dependency-light CLIs for personal workflows across mail, calendars, schedules, phone layouts, resumes, and WhatsApp. Built to be safe by default (plan and dry-run first), with a single YAML source of truth for Gmail and Outlook filters.
+
+**Constraints:** Python 3.11, dependency-light, stable public CLI
+
+**Self-contained:** All helpers and utilities are repo-internal. External dependencies are minimal and lazily imported. This design ensures public CLI backwards compatibility and reduces fragility from external package changes. Internal APIs can be refactored freely—update all call sites atomically without backwards-compatible wrappers.
+
+**Primary consumers:** LLM agents — CLI schemas, help text, and agentic capsules are designed for token-efficient LLM consumption. Keep output terse and accurate.
+
+## Quick Start
+
+```bash
+# Setup
+make venv
+
+# Run tests
+make test
+
+# CLI help
+./bin/assistant <mail|calendar|schedule|resume|phone|whatsapp|maker> --help
+./bin/mail --help
+./bin/calendar --help
+```
+
+## Architecture
+
+```
+src/                      # all Python source packages (installable via package-dir=src)
+  mail/                   # Gmail/Outlook providers, CLI wiring, helpers
+  calendars/              # Outlook calendar CLI + Gmail scans
+  schedule/               # plan/apply calendar schedules
+  resume/                 # extract/summarize/render resumes
+  phone/                  # iOS layout tooling
+  whatsapp/               # local-only ChatStorage search
+  desk/                   # desktop/workspace tooling
+  maker/                  # utility generators
+  charts/                 # render time-series charts from JSON (line/bar/area/dual)
+  diagrams/               # Mermaid diagram generation (flowchart/sequence/gantt/pie; telemetry cost/token pies)
+  slides/                 # generate PowerPoint decks from YAML deck definitions
+  sheets/                 # generate styled .xlsx spreadsheets from YAML workbook definitions
+  workflow/               # YAML DAG workflow engine (parse/compile/run/lint/list/status)
+  core/                   # shared helpers
+  telemetry/              # Claude Code session telemetry (cost, tokens, TUI)
+  worker/                 # background job queue and daemon
+  apple_music/            # Apple Music CLI
+  wifi/                   # Wi-Fi CLI
+  qlty/                   # qlty scan/triage wrapper (tiers findings by remediation strategy)
+bin/                      # entry wrappers and helper scripts
+tests/                    # lightweight unittest suite
+.llm/                     # LLM context, flows, capsules
+configs/                  # runtime config templates (e.g. launchd plist)
+out/                      # legacy/opt-in outputs (`--out-dir out`); default is outside the checkout
+```
+
+## LLM Context Files
+
+Read in order for best context:
+1. `.llm/CONTEXT.md` - system overview and rules
+2. `.llm/MIGRATION_STATE.md` - current status and remaining work
+3. `.llm/PATTERNS.md` - copy-paste templates for common tasks
+4. `./bin/llm domain-map --stdout` - where things live in the codebase. Generator-owned
+   and not checked in: `.llm/DOMAIN_MAP.md` exists only after
+   `./bin/llm derive-all --include-generated`, so read it via the command, not the path.
+
+## CLI Argument Conventions
+
+All CLIs use argparse with positional subcommand dispatch. Arguments are passed directly. Most CLIs accept a `--` separator before flags (used by the workflow engine in `src/workflow/compiler.py`); a small set (`llm`, `docs`) omit it.
+
+**Dispatch model**: `./bin/assistant <app> <subcommand> [flags]`
+
+| Entry point | Subcommand depth | Example |
+|---|---|---|
+| `./bin/assistant` | dispatches to app | `./bin/assistant mail labels sync` |
+| `./bin/mail` | 2–3 levels deep | `mail labels sync --dry-run` |
+| `./bin/calendar` | 2–3 levels deep | `calendar outlook add --subject "..."` |
+| `./bin/llm` | 1–2 levels deep | `llm agentic --stdout` |
+| `./bin/worker` | 1 level deep | `worker enqueue --type <type>` |
+| `./bin/telemetry` | 1 level deep | `telemetry cost --days 7` |
+
+**Key rules:**
+- Subcommands are positional, not flag-prefixed
+- Flags (`--dry-run`, `--profile`, `--format`) always follow the subcommand
+- The `assistant` dispatcher strips the app name and passes remaining argv directly to the app's `main()`
+- The workflow engine (`src/workflow/compiler.py`) inserts `--` before flags for most skills; `llm` and `docs` CLIs are exempt (`_NO_SEPARATOR_CLIS`). `docs` is reserved for a planned external documentation CLI — no `bin/docs` ships today
+- `--` separator is now **optional** for all CLIApp-based CLIs (mail, calendar, schedule, resume, phone, whatsapp, desk, wifi, maker, apple_music, workflow, worker, slides, sheets, telemetry, qlty, charts, diagrams, github); `src/core/cli_framework.py` strips bare `--` tokens automatically. The workflow engine's `_NO_SEPARATOR_CLIS` exemption for `llm`/`docs` remains unchanged.
+- Auto-derived agentic schema: **all 19 apps** support `--agentic --agentic-format json` to emit a machine-readable parser schema that never drifts from the real CLI; add `--agentic-compact` to strip low-value fields; add `--agentic-domain <prefix>` to filter to one subcommand group. Run `./bin/llm inventory --stdout` for the authoritative list — it prints the exact invocation per app, because `./bin/<app>` is wrong for three of them (`apple-music` and `qlty` use `-assistant` wrappers, and `resume` goes through `./bin/assistant resume`).
+- Most apps get this via `CLIApp.run_with_assistant()`. Four wire it manually to preserve legacy no-subcommand exit codes: charts (1) and diagrams (0) call `assistant.add_agentic_flags(parser)` then `maybe_emit_agentic(...)` before their `cmd_func is None` branch; worker (1) and workflow (2) pass `on_no_command=` through `run_with_assistant()`.
+
+## Development Rules
+
+**Do:**
+- Keep CLI flags/subcommands stable; add new under `labels`, `filters`, `outlook`
+- Prefer wrapper executables (`./bin/mail`) over `python -m`
+- Use profiles in `~/.config/credentials.ini`; avoid `--credentials/--token`
+- Apply lazy imports for optional deps (Google APIs, PyYAML)
+- Keep helpers small, focused; prefer OO where cohesive (e.g., LabelSync, FilterSync)
+- Update README minimally when adding user-facing commands; add tests for new CLI surfaces
+
+**LLM Consumer Rules:**
+- Keep help text terse (1-line descriptions, no prose)
+- Ensure `--help` output matches actual implementation
+- Verify agentic schema (`--agentic`) accurately reflects CLI structure
+- Use `--agentic-compact` output for token efficiency
+- Test CLI discovery: `./bin/llm agentic --stdout` must be accurate
+- Flows in `.llm/FLOWS.yaml` must reference valid CLI paths
+
+**Avoid:**
+- Broad refactors that rename modules or move public entry points
+- Heavy new dependencies; global imports for optional modules
+- Emitting secrets/tokens in logs or passing them via flags
+- Bare `except Exception: continue/pass` blocks without a `# nosec B110/B112` comment explaining the intent (e.g., `# nosec B112 - skip malformed entries silently`)
+- Verbose help strings that waste tokens
+- Mismatched argument names between argparse and code
+- Breaking backwards compatibility of public CLI commands or parameters (bin/* entry points)
+- Moving utilities to external packages (keep self-contained for stability)
+- Maintaining backwards-compatible wrappers for internal APIs (update all call sites instead)
+
+## Testing and Code Quality
+
+**Worker state dir is private during tests — under the supported invocations
+below.** `tests/_private_worker_state.py` sets `DANCING_BEAR_WORKER_STATE_DIR`
+to a fresh `tempfile.mkdtemp()` (and raises if `mkdtemp` lands inside the real
+state dir, e.g. via `TMPDIR`), so the "original" value that per-test isolation
+restores to (via `QueueRootIsolationMixin`) is already a private temp directory.
+Per-test isolation alone cannot stop a worker thread that outlives its test and
+finishes after the restore — it would write into whatever the "restored" value
+is.  The invariant is pinned by `tests/worker_tests/test_state_dir_is_private.py`.
+
+Import order does not matter: `worker.queue_ops.QUEUE_ROOT` has no import-time
+value.  Unless explicitly assigned, every read of it (and every `_q(None)`)
+resolves the env var at that moment, so a `worker` import that happens before
+the bootstrap is harmless.  What matters is only that the bootstrap has run
+before the first test does.  To pin `QUEUE_ROOT` in a test, use
+`mock.patch.object(q, "QUEUE_ROOT", ...)` or `QueueRootIsolationMixin`; both
+delete the attribute afterwards.  Re-assigning a saved value would pin it.
+
+The bootstrap is called from `tests/__init__.py` and from the `__init__.py` of
+`worker_tests`, `workflow_tests`, and `infra` (each loads it by path, so it works
+whether or not `tests` is the top-level package).  It runs whenever unittest
+imports one of those packages — which a `-s tests/<pkg>` discovery **without
+`-t .`** never does: the start directory becomes the top level, and unittest
+does not import a top-level directory's `__init__.py`.
+
+| Invocation | Bootstrap via | Supported |
+|---|---|---|
+| `make test` / `make cov` (bare `-m unittest`) | `tests/__init__.py` | Yes |
+| `coverage run -m unittest discover` (CI, no `-s`/`-t`) | `tests/__init__.py` | Yes |
+| `python3 -m unittest discover -s tests -t .` | `tests/__init__.py` | Yes |
+| `python3 -m unittest discover -s tests/<pkg> -t .` | `tests/__init__.py` + `<pkg>/__init__.py` | Yes |
+| `python3 -m unittest tests.<pkg>.<module>` (dotted) | `tests/__init__.py` | Yes |
+| `python3 -m unittest discover -s tests` (no `-t`) | subpackage `__init__.py` | Yes |
+| `python3 -m unittest discover -s tests/<pkg>` (no `-t`) | only if a loaded module imports the `tests` package | **No** |
+
+The last row is not protected.  A whole-directory run of `worker_tests`,
+`infra`, or `workflow_tests` happens to end up private today, because some
+module in each imports `tests.*`; a narrowed run does not — a load-only probe
+of `-s tests/infra -p test_qwen_wrapper.py` and
+`-s tests/worker_tests -p test_worker_state_dir.py` leaves the variable unset.
+Always pass `-t .` with `-s tests/<pkg>` (the repo requires it anyway:
+`tests/resume_tests/docx` shadows python-docx without it).
+
+**Linting (qlty):**
+- Check files: `~/.qlty/bin/qlty check path/to/file.py`
+- Check module: `~/.qlty/bin/qlty check src/mail/`
+- Auto-fix: `~/.qlty/bin/qlty check --fix path/to/file.py`
+- Linters: ruff (style), bandit (security), complexity metrics
+
+- **`make lint` is NOT sufficient before opening a PR.** It runs ruff only.
+  CI runs `qlty check`, which adds bandit and radarlint on top — so a branch
+  can be green on `make lint` and still fail CI. Always run qlty over the files
+  the branch actually changes before pushing:
+
+  ```bash
+  git diff --name-only main...HEAD          # note THREE dots
+  ~/.qlty/bin/qlty check $(git diff --name-only main...HEAD)
+  ```
+
+  The destructive-bash guard hook rejects that second form in a worktree-isolated
+  session ("too complex to verify") because of the command substitution. Split it:
+  write the list to a file first, then pass the paths explicitly.
+
+  Findings that ruff never reports and qlty does: `bandit:B105`/`B106`
+  (hardcoded-password heuristics, which fire on any `token=`/`password=` kwarg
+  — usually false positives in tests), and `radarlint-python:python:S1481`
+  (unused local, where ruff's F841 stays silent because an attribute
+  assignment like `args.profile = None` counts as a use).
+- **Use `main...HEAD` (three dots), not `main..HEAD`.** Two dots diffs against
+  the current tip of main, so every commit merged into main since you branched
+  shows up as if it were yours. On a day-old branch that turned 9 changed files
+  into 46, burying the real findings. Three dots diffs against the merge-base —
+  your changes only, and the same set CI evaluates.
+- Suppress a genuine false positive inline with a reason, matching the existing
+  convention (`# nosec B106 - test file path, not a secret`). See
+  `tests/mail_tests/test_config_resolver.py` for the house style.
+- For repo-wide triage prefer `./bin/qlty-assistant` over raw qlty: it merges
+  `check` + `smells` (disjoint sets — running one hides the other), defaults to
+  `--all`, dedupes clone groups, and ranks findings by remediation tier
+- That repo-wide form is for *triage*, not for pre-PR verification. It reports
+  findings across the whole tree, most of which predate your branch, so a real
+  regression of yours is easy to miss in the volume. Scope to `main...HEAD` as
+  above when the question is "did I introduce anything new?"
+- On a test-heavy branch `qlty smells` adds little: it skips test files, so a
+  9-path scan may analyse structure on only 1 of them. `qlty check` is the gate
+  that matters there.
+- `./bin/qlty-assistant scan --expect-min N` fails loudly on an implausibly
+  empty scan — still worth using as a sanity check on any surprisingly clean result
+- **A single clean scan proves nothing.** qlty caps findings per run and the cap is
+  nondeterministic: 16 identical runs on an unchanged tree yielded 0–4 findings each,
+  while the union was 22. Two consecutive matching runs can both be the same capped
+  subset. Always use `--rescan-until-stable` on `./bin/qlty-assistant scan` or
+  `triage` (a qlty-assistant flag — raw `qlty check` rejects it); never trust one clean result. Do not use
+  `--filter` to verify a finding is gone — `--filter=radarlint-python` frequently
+  returns "✔ No issues" in the same minute an unfiltered run reports radarlint findings.
+- **qlty now scans correctly from inside an agent worktree.** The exclusion is
+  `**/.claude/worktrees/**`, narrowed from `**/.claude/**`. The old pattern also
+  matched the `.claude/` directory *inside* each worktree — and since a worktree
+  is a full checkout, a scan run from one reported "0 issues" against 0 scanned
+  files. That false clean was indistinguishable from a real pass and hid findings
+  until CI. Verified by injecting a probe defect: `ruff:F811`, `ruff:E402`, and
+  `bandit:B307` are all reported from within a worktree.
+- The narrowed pattern still excludes worktrees when scanning **from the main
+  checkout**, which is what it is for — there are dozens of them, and each is a
+  full copy of the repo.
+- Exclusions resolve relative to the scan root, which is why the same pattern can
+  exclude a path from one root and not another.
+
+**Linting (ruff directly):**
+- Use `make lint` (or `make lint-fix`), never a bare `ruff check`
+- There is **no standalone `ruff` on PATH**. CI lints through `qlty check`, which
+  runs ruff from qlty's own pinned tool cache — so `ruff check <file>` fails as
+  "command not found", and a `pip install ruff` would drift from the version CI
+  enforces. `bin/ruff-resolve.sh` resolves the qlty-pinned build (override with
+  `RUFF_BIN=`), and `make lint` wraps it over `src/`, `tests/`, and `bin/`
+- This matters because a bare `ruff` may not exist, and a missing tool is not a
+  passing lint. (The companion trap — `qlty check` in a worktree silently
+  scanning zero files — was fixed by narrowing the exclusion to
+  `**/.claude/worktrees/**`; see the qlty section above.)
+- If the tool cache is cold, run any `~/.qlty/bin/qlty check` once to populate
+  it, then `make lint`
+- Suppression codes are linter-specific: `# noqa:` takes ruff codes (`F401`,
+  `S602`), `# NOSONAR` takes SonarQube codes (`S3776`, `S3516`). A SonarQube code
+  in a `# noqa:` suppresses nothing and makes ruff warn on every run
+
+**Dead code (vulture):**
+- `make deadcode` runs vulture 2.16 against `[tool.vulture]` in
+  `pyproject.toml`. The baseline is **0 findings** and CI has a blocking
+  `deadcode` job, so new dead code fails the build.
+- **Every suppression mechanism is repo-wide except one.** `ignore_names` is
+  global by construction — and so is a whitelist module, which is the trap. A
+  whitelist is vulture's documented mechanism and *looks* path-scoped because
+  it sits beside the file it covers, but it is just source that vulture scans:
+  reading a name there clears it everywhere. Demonstrated by A/B probe — with
+  a whitelist naming `rect` present, a dead `rect` planted in `src/core/` went
+  unreported; with the whitelist moved away, it was reported. Generic
+  attribute names (`rect`, `display`, `function`, `github`) are the ones that
+  bite, because a future dead symbol elsewhere can share the name.
+- The only line-scoped suppression is a trailing `# noqa`. Note
+  `# vulture: ignore` does **nothing** — it is not a supported form.
+- **Vulture auto-reads `pyproject.toml` from the CWD even without `--config`.**
+  Its `paths` key then overrides any path you pass, so `vulture src/one/file.py`
+  run from the repo root silently rescans the configured paths instead. A
+  single-file check must run from outside the repo with an absolute path.
+- Probe any suppression rather than reasoning about it: plant a dead symbol of
+  that name in an unrelated module and confirm it is still reported. Use a
+  *live* (referenced) class — vulture reports a dead class and stops, so a dead
+  class masks whether the attribute inside it was suppressed.
+
+**Type checking (mypy):**
+- `make typecheck` is unchanged and still **report-only** — it prints findings
+  and exits 0. Two targets alongside it *do* block:
+  - `make typecheck-changed` — mypy over only the files this branch changed,
+    failing on any error in a file that was clean at baseline
+  - `make typecheck-ratchet` — repo-wide, failing only if a package's error
+    count grew
+- CI runs both in a dedicated `typecheck` job. It needs `fetch-depth: 0`; a
+  shallow clone has no merge-base, and the changed-files diff would come back
+  empty — a pass that checked nothing. The script hard-fails on an unresolvable
+  base ref rather than degrading quietly.
+- Baseline lives in `typecheck-baseline.json`, measured on **Linux**, the
+  platform CI enforces on. It is per-package, so a regression in a small package
+  is visible instead of lost in the total. **Read the total from the file rather
+  than from prose** — it drops with every type-fixing PR, and a number quoted
+  here goes stale fast (it ran 680 → 566 → 371 → 347 → **0**, reached in #411):
+
+  ```bash
+  python3 -I -S -c "import json;d=json.load(open('typecheck-baseline.json'));print(d['total'])"
+  ```
+
+  Note `make typecheck` defaults to `TYPECHECK_PATHS ?= src`, so it measures
+  `src/` alone, while the baseline's total spans `src` + `tests` + `bin` —
+  and `tests` is the largest single contributor. A smaller src-only number is
+  scope, not an improvement.
+- **The count is platform-dependent, and that is expected.** Both platforms are
+  at 0 today, but macOS has historically reported a few more errors than Linux,
+  concentrated in `mail` and `tests`, and can again.
+  `rumps` is pinned `sys_platform == 'darwin'`, so mypy analyses the menubar
+  tests on macOS and not on Linux. Run `make typecheck-ratchet` on macOS and it
+  reports the difference and exits 0 rather than failing on something you did
+  not cause — CI is the enforcing run. Regenerate the baseline on Linux.
+- **When the gate fails on code you did not write:** `legacy_files` (files
+  grandfathered as reported-but-not-blocking) is now **empty**, so every file
+  blocks. If you are blocked, the error is new — most likely in code you
+  touched, or exposed by a signature you changed. Fix it rather than
+  suppressing it.
+- **Never add `# type: ignore`** to get past the gate. That trades a real
+  signal for suppression noise.
+- Fixed some errors? Lower the ceiling: `make typecheck-baseline`, then commit
+  `typecheck-baseline.json`. Nothing updates it automatically — a silent rewrite
+  would let a regression raise its own ceiling. Generate it on Linux; from macOS,
+  take the numbers from the CI job's failure output, which prints them.
+
+**Testing:**
+- Run tests: `make test` (pins `PYTHONPATH` to this checkout — always prefer it)
+- With coverage: `make cov`
+- Add targeted tests only for new CLI surfaces/behaviors
+- Never run tests that require network/secrets without explicit user approval
+
+**CRITICAL — never run bare `python3 -m unittest` in a worktree.** An inherited
+`PYTHONPATH` (direnv activated in the main checkout, or the main repo's venv
+still active in the shell) takes precedence over the editable install and
+silently resolves `core`/`mail`/`worker` to the **main checkout's** source. Tests
+then pass against unmodified code — a false green that looks identical to a real
+one, and only turns red once a newly added module is imported by name.
+
+- Use `make test`, or `PYTHONPATH="$PWD/src" python3 -m unittest discover -s tests -t .`
+- `make check-env` verifies imports resolve to the current checkout and fails loudly if not
+- This applies to subagents too: an agent verifying with bare `python3` in an
+  isolated worktree is not verifying anything
+
+**CRITICAL — exit code 0 is not evidence the suite ran.** `test:` depends on
+`venv:`. When several agent worktrees run `make test` concurrently they race on
+shared pip/build state, and `make venv` can die in a way that still reports
+`EXIT=0` with **no `Ran N tests` line anywhere in the output**. A green exit from
+a run that executed zero tests is indistinguishable from a real pass.
+
+Always confirm the summary line, never the exit code alone:
+
+```bash
+make test > /tmp/t.log 2>&1; echo "EXIT=$?"; grep -E "^Ran [0-9]+ tests" /tmp/t.log
+```
+
+- The `2>&1` is required: unittest writes `Ran N tests`, `OK`, and `FAILED` to
+  **stderr**. Redirecting only stdout, or piping to `tail` without merging
+  stderr, hides the verdict along with every failure
+- No `Ran N tests` line means the suite did not run — re-run it, do not report a
+  baseline
+
+**CRITICAL — a CLI can print pre-change behaviour from a source tree you are not
+editing.** The symptom is a command that shows the old output while your edit is
+plainly in the file, which looks exactly like "the fix didn't work."
+
+**`./bin/*` and `make` now resolve imports correctly. A bare `python3` does
+not.** Read that as a correctness guarantee, not a security boundary: the repair
+fixes *which checkout a module comes from*, and nothing more. A foreign
+`sitecustomize.py` still executes under every Python wrapper — see the
+`sitecustomize` note below — because Python runs it before any Python-level
+guard can exist. If `PYTHONPATH` names a checkout you would not run code from,
+the wrappers do not make that safe; fix the environment.
+
+The repair lives in one place, `bin/_pathrepair.py`, and every entry point loads
+it by explicit filesystem path rather than by `import` — a module whose job is to
+fix a broken import path cannot depend on that path already being correct, and a
+plain `import` could silently load a *foreign* checkout's copy and repair
+nothing.
+
+Before re-execing, each entry point drops any `PYTHONPATH` entry that is a
+*different* checkout's `src/` (identified by a sibling `pyproject.toml` that
+names **this** project — deliberately narrow, so unrelated third-party entries
+survive), rewrites the variable so the re-exec and any child process inherit the
+correction, and then forces its own `src/` to the *front* of `sys.path`. Set
+`DANCING_BEAR_PATH_DEBUG=1` to see what was dropped.
+
+Coverage is **every `bin/` entry point that imports a repo module**, by two
+routes: the generated wrappers are symlinks to `bin/_router.py`, while `bin/llm`,
+`bin/path-guard`, and `bin/pr-assistant` are standalone scripts calling the same
+shared module. All are pinned by `tests/infra/test_pathrepair_shared.py` and
+`tests/infra/test_router_pythonpath.py`, including end-to-end cases that execute
+the real binaries. Revert the repair and those suites go red.
+
+That is narrower than "all of `bin/`", which an earlier revision claimed.
+`code-review-log-findings.py`, `code-review-backfill-log.py`,
+`check_test_discovery.py`, `mypy_ratchet.py` and `uuidgen-pair` are Python entry
+points with no repair wired in — deliberately, because none of them import a
+repo module, so there is nothing for a foreign checkout to shadow. Audited by
+grepping every `bin/` file with a Python shebang for repo imports; re-run that
+before adding one. They remain exposed to the `sitecustomize` hole like every
+other interpreter, which is not something the repair can close.
+
+`bin/llm` and `bin/path-guard` were **not** covered until #368's follow-up commit:
+they kept the old membership-only guard while the router had moved on. With a
+foreign checkout ahead of ours on `PYTHONPATH` they raised
+`ModuleNotFoundError: No module named 'core.llm_cli'` / `'core.path_guard'`, and
+against a *real* foreign checkout they would have silently run the other tree's
+code instead. `bin/pr-assistant` was likewise wired only once it grew a repo
+import (through `core.github`); if you add another standalone script under
+`bin/` that imports a repo module, wire it to `bin/_pathrepair.py` too.
+
+Do **not** treat `bin/_wrappers.yaml`'s `manual:` list as that inventory — it is
+a generator exclusion list, not a hazard list, and it is incomplete for this
+purpose: `bootstrap`, `bootstrap-otel`, `pr-assistant`, `worker-install-launchd`,
+and `worker-wait` are all standalone scripts absent from it.
+
+**There are two separate hazards, and a script can carry either.** Ask both
+questions, not just the first:
+
+1. **Does it import a repo module?** If so, a foreign checkout can shadow that
+   module — wire it to `bin/_pathrepair.py`. Among those five, `bin/bootstrap`
+   and `bin/pr-assistant` do.
+2. **Does it start a Python interpreter at all?** If so, a foreign
+   `PYTHONPATH` executes that tree's `sitecustomize.py` during startup,
+   *before* the `-c` body runs — so the hazard does not depend on what the
+   script imports. Use `python3 -I -S`.
+
+An earlier revision of this section got that wrong, reasoning that
+`worker-wait`'s `python3 -c` "touches `sys` and `json` only, which a foreign
+checkout cannot shadow". True about the imports, and irrelevant to the startup
+hook: a planted `sitecustomize.py` ran under it anyway. `bin/worker-wait:34` is
+now `python3 -I -S`. Check both questions, not the file list.
+
+**`sitecustomize` is a gap none of this closes.** Python imports
+`sitecustomize`/`usercustomize` from `PYTHONPATH` entries during interpreter
+startup — before any Python-level guard can run. A foreign checkout's
+`sitecustomize.py` therefore executes under every wrapper, the router included.
+That is why the `python3 -I -S` rule below exists, and why it is not optional.
+
+This previously read "the `bin/*` wrappers are **not** at fault." That was
+wrong, and measurably so: with `PYTHONPATH` pointing at the main checkout, a
+wrapper run from a worktree imported `calendars` and `resume` from the **main**
+tree. A `PYTHONPATH` entry outranks the editable install's `.pth`, so even the
+worktree's own `.venv` interpreter resolved to the other checkout. The old
+`if str(SRC_ROOT) not in sys.path` guard was a no-op whenever our `src/` was
+present but ordered behind the foreign entry.
+
+The root cause is direnv, not the wrappers: `.envrc` exports
+`PYTHONPATH="$PWD/src"`, and direnv loads the `.envrc` of whichever checkout the
+shell *started* in. A worktree's `.envrc` is a different file and is not on
+direnv's allow list, so it never runs.
+
+**Nothing auto-approves that `.envrc`, deliberately.** `.envrc` is a tracked,
+branch-controlled file, so a hook that ran `direnv allow` for you would trust
+and execute shell code from whatever branch it just checked out — including an
+untrusted PR's — before anyone read it. `.claude/scripts/name-worktree.sh`
+therefore only prints a reminder on stderr; approving it is your call, after
+reading the file:
+
+```bash
+cd .claude/worktrees/<wt> && direnv allow .
+```
+
+Until you do, a `SessionStart` hook (`.claude/scripts/check-pythonpath.sh`)
+warns whenever `PYTHONPATH` names another checkout of this project, and the
+repair plus the Makefile keep the CLI entry points and `make` correct
+regardless.
+
+**Any configured hook that runs Python MUST use `python3 -I -S`** — every hook
+type, not just `SessionStart`. Hooks execute with the session's environment,
+which is exactly when `PYTHONPATH` may name a foreign checkout — and Python
+imports `sitecustomize`/`usercustomize` from `PYTHONPATH` entries during
+interpreter startup. A bare `python3 -c` hook therefore runs code from that
+checkout before any warning is emitted. `-I` ignores `PYTHONPATH` and the user
+site directory; `-S` skips `site.py`, which is what performs those imports.
+Demonstrated with a planted `sitecustomize.py`, and pinned by
+`tests/infra/test_check_pythonpath_hook.py`, which walks **all** hook types in
+`settings.json` and fails if any of them starts an unisolated interpreter.
+
+Stating this as a `SessionStart` rule is how the hole stayed open through two
+revisions of that test: `.claude/scripts/name-worktree.sh` is a `WorktreeCreate`
+hook that also runs Python, and a rule scoped to one hook type reads as a
+licence for every other. Prefer a pure-shell hook
+where the work is trivial — `check-pythonpath.sh` builds its JSON with parameter
+expansion for exactly this reason.
+
+What still redirects the import:
+
+- **An inherited `PYTHONPATH` used by anything the router does not run** — a
+  bare `python3 -c ...`, `python3 -m unittest`, or an ad-hoc probe. `PYTHONPATH`
+  entries land ahead of the editable install's `.pth`, so another checkout's
+  `src/` wins and the command reports behaviour from source you are not editing.
+  The CLI entry points and `make` are immune (see above); assume nothing else
+  is. This is the one that keeps biting — it caused three separate misdiagnoses
+  in a single session, including one probe that returned a confident wrong
+  answer about whether a guard was load-bearing.
+  "Everything under `bin/` is covered" is the wrong mental model, and stating it
+  that way hid a live bug twice: `bin/llm` and `bin/path-guard` are standalone
+  scripts rather than router symlinks, and `bin/bootstrap` is **bash**, so a
+  scan for Python `sys.path` guards never saw its
+  `.venv/bin/python -c "import mail; …"` verify step at all. Coverage follows
+  the code, not the directory
+- **Invoking a wrapper by absolute path** from another checkout — that runs
+  *that* checkout's source, correctly and by design
+- **A `.venv` whose editable install points elsewhere** — each worktree's
+  `.venv/…/__editable__*.pth` holds the absolute `src/` of whichever checkout
+  ran `make venv` in it
+
+**The general rule, which covers this case, the `unittest` case, and the
+`make venv` race above: before concluding a change did not take effect, print
+where the module actually loaded from.**
+
+```bash
+python3 -I -S -c "import importlib.util as u, os, sys; sys.path[:0] = os.environ.get('PYTHONPATH','').split(os.pathsep); s = u.find_spec('resume'); print(s.origin if s else 'not found')"
+```
+
+If that path is not under the tree you are editing, the code never ran — the
+change is fine and the environment is wrong.
+
+**Do not use the obvious short form, `python3 -c "import resume;
+print(resume.__file__)"`.** You would run it in exactly the situation where
+`PYTHONPATH` names a checkout you do not trust, and `import` executes that
+tree's `sitecustomize.py` at interpreter startup *and* its package `__init__`
+before printing anything. Demonstrated with a planted pair: the short form runs
+both, the form above runs neither and prints the same path. `-I -S` skips the
+startup hooks, `find_spec` locates the module without importing it, and
+re-adding `PYTHONPATH` to `sys.path` by hand keeps the answer faithful to real
+resolution order. This is the same diagnostic
+`.claude/scripts/check-pythonpath.sh` prints, for the same reason.
+
+**Coverage exemptions** (`.coveragerc`):
+- `*/__main__.py` is omitted. These are `python -m <pkg>` entry shims: a
+  docstring, `from .cli import main`, and a `__main__` guard. The only
+  measurable statement is the import, so a test there asserts that Python can
+  import a module — not that the CLI works. Cover the underlying `cli.main`
+  instead; `make bin-wrappers-check` verifies the wrappers actually dispatch.
+- Do **not** write tests whose only purpose is to import a module and raise its
+  coverage number. A test must assert behaviour.
+- Note that a re-export-only `__init__.py` already reports ~100% because any
+  import of the package executes it. That number is free, not earned — don't
+  read it as evidence the package is tested.
+- Conversely, do **not** exempt a module just because it reports 0%. Check why
+  first. `src/telemetry/tui/` once sat at 0% because `textual` was never
+  declared as a dependency, so the lazy import in `telemetry/tui/__init__.py`
+  never fired — a missing optional dep reports as 0%, indistinguishable from
+  untested code. That was a real gap, fixed by declaring the `[tui]` extra.
+- **An optional dependency must be declared as an extra and installed wherever
+  coverage is measured** (`make cov`, `make dev-venv`, and CI all install
+  `[tui]`). An undeclared optional dep silently zeroes out whole modules.
+- Guard optional imports at the narrowest scope that needs them. Only
+  `telemetry live` requires textual; `stats` and `summary` render via Rich and
+  must not be gated behind a textual check.
+
+**CI/CD:**
+- `.github/workflows/ci.yml` runs qlty checks + tests with coverage on push/PR
+- Coverage uploaded to qlty for tracking
+- Both jobs must pass for merge
+
+## Check for an Existing Workflow First
+
+**Before starting any multi-step task, check whether a workflow already does it.**
+`./bin/workflow list` is the authoritative catalog and shows 56 workflows (as of
+2026-09-23; the count grows, so trust the command over this number). Counting the
+files instead overstates it: of 76 YAML files under `workflows/`, 19 are
+`fragment: true` includes that cannot run on their own.
+
+56 is the *listable* count, not quite the runnable one — `workflow list` skips
+everything under `workflows/shared/`, and one file there
+(`workflows/shared/critique.yaml`) is a non-fragment workflow that can be invoked
+directly. So 57 are runnable and 56 are listed.
+
+Reinventing a workflow wastes the work already invested in it and produces a
+second, diverging implementation of the same process.
+
+Count them with `./bin/workflow list --format json`, not by grepping the table —
+the text output wraps long descriptions across lines, so `grep -c` over it
+returns far too many.
+
+```bash
+./bin/workflow list                      # live catalog — authoritative
+./bin/workflow list | grep -i <keyword>  # narrow by intent
+```
+
+Applies when the request is a *process* with more than a couple of steps —
+review a PR, mine concerns, sweep complexity, expand coverage, debug CI, tailor
+a resume, open a PR, reorganize the phone layout. Skip it for single-file edits,
+quick reads, and git operations.
+
+Decision order:
+
+1. **A workflow matches** → run it: `./bin/workflow run <file> --params k=v`.
+   Say which one you're using and why.
+2. **A workflow nearly matches** → run it and note the gap, or improve that
+   workflow. Do **not** fork a near-duplicate.
+3. **Nothing matches** → do the task directly. If it is likely to recur, offer
+   to capture it with `/write-workflow`.
+
+Use `/select-workflow` when the intent is clear but the file name isn't. Treat
+any catalog in a SKILL.md as a fast-path index only — it drifts, so confirm
+against `./bin/workflow list` before claiming a workflow does or doesn't exist.
+
+Improving an existing workflow beats adding a new one. When you run one by hand
+and hit a gap the YAML didn't cover, fix the YAML — that is how these get better.
+
+## Key Commands
+
+```bash
+# Check for an existing workflow BEFORE doing multi-step work
+./bin/workflow list
+
+# Token-efficient agentic schemas (prefer over --help)
+./bin/mail --agentic --agentic-format yaml --agentic-compact
+./bin/llm agentic --stdout
+
+# Domain map
+./bin/llm domain-map --stdout
+
+# Flows
+./bin/llm flows --list
+./bin/llm flows --id <flow_id> --format md
+
+# Visualization + orchestration
+./bin/charts render <spec.json>          # render a chart (also: grid, reshape)
+./bin/diagrams from-yaml <spec.yaml>     # Mermaid from YAML (also: render, validate, embed, telemetry)
+./bin/workflow run <workflow.yaml>       # run a YAML DAG (also: parse, compile, lint, list, status)
+```
+
+## Auto-Familiarization
+
+At conversation start, BEFORE responding to the user's first request, run:
+
+```bash
+./bin/llm familiar --stdout
+```
+
+This emits a read-only familiarization capsule (skip paths, step sequence). Use `--compact` for minimal token usage.
+
+## Generated Output Location
+
+Generated artifacts are written **outside the checkout** by default, resolved by
+`src/core/paths.py`:
+
+1. an explicit `--out-dir` passed to the command
+2. `$DANCING_BEAR_DATA_HOME`
+3. `$XDG_DATA_HOME/dancing-bear`
+4. `~/.local/share/dancing-bear` (default)
+
+Each domain gets a subdirectory (`<data-home>/resume`, `<data-home>/charts`, …).
+A relative `--out-dir` is still honoured as-is, so `--out-dir out` writes to
+`./out` for scripts that expect the old behaviour.
+
+Rationale: relative defaults resolve against the working directory, so running a
+command from the repo wrote generated files — including resumes carrying PII —
+into the checkout. Those paths are gitignored, which prevents an accidental
+commit but not an accidental `git clean -fdx`.
+
+New output-producing domains should call `core.paths.output_dir("<domain>")`
+rather than defaulting to a relative path.
+
+## Credentials (Profiles)
+
+Use profiles in `~/.config/credentials.ini`:
+
+```ini
+[mail.gmail_personal]
+credentials = /path/to/google_credentials.json
+token = /path/to/token.json
+
+[mail.outlook_personal]
+outlook_client_id = <YOUR_APP_ID>
+tenant = consumers
+outlook_token = /path/to/outlook_token.json
+```
+
+## Config Source of Truth
+
+- Filter configs (when used): the tracked template is `config/filters_unified.example.yaml`; the live config lives outside the checkout at `~/.config/dancing-bear/filters_unified.yaml`; derived outputs follow "Generated Output Location" above
+- Always run plan first, then apply with dry-run, then apply for real
+
+## Security
+
+- Never commit `credentials.json` or tokens
+- Restrict scopes to labels/settings/readonly/modify where required
+- If sensitive data appears in logs, redact and rotate immediately
+
+## Wait Policy — Monitor vs sleep-poll
+
+Never use a bare `sleep` loop in a Bash tool call to wait for a condition.
+
+- **Background task**: Set `run_in_background: true` on the Bash tool call, then use the Monitor tool with the returned task ID to stream output and get notified on completion.
+- **Poll until condition**: Run `until <check>; do sleep 2; done` inside Monitor — you get one notification when the loop exits.
+- **One-time fixed delay** (`sleep 1` to let a server bind its port): acceptable. Sleep-as-retry-loop: never.
+
+## Worktree Isolation
+
+**Session-level**: Always launch with `claude -w` to auto-create a worktree. Each session gets its own branch and working directory under `.claude/worktrees/`, preventing sessions from clobbering each other.
+
+**Make it the default**: add `alias claude='claude -w'` to `~/.zshrc` so `-w` doesn't need to be typed (or remembered) on every launch.
+
+**Subagent-level**: When spawning an Agent that writes code, use `isolation: "worktree"` so the subagent works in its own isolated copy of the repo. This prevents the subagent's edits from colliding with the parent session's working directory. Read-only agents (research, search, exploration) do not need isolation.
+
+**CRITICAL — isolated worktrees do not auto-merge back**: Files written by a subagent with `isolation: "worktree"` live in its own ephemeral worktree branch and are **never automatically copied back to the parent branch**. After an isolated agent completes, you must explicitly copy its output files into the correct branch worktree before staging and committing. Always verify the agent's result is in the right place with `git status` on the target branch worktree before committing.
+
+**Which worktree to commit to**: Identify the correct worktree with `git worktree list` before making any edits or commits. The session worktree (`wf_*`) may be sparse (few files). The branch you want to commit to may live in a different named worktree. Always check — never assume the main checkout is on your feature branch.
+
+**If launched without `-w`**: Call `EnterWorktree` before your first file edit. Skip only for read-only requests (explain, search, explore).
+
+**Git safety**:
+- Never push directly to `main` — always use a PR from a worktree/feature branch
+- Never force-push to `main`
+- Never `git add -A` or `git add .` — stage specific files by name
+- Never `git reset --hard`, `git clean -f`, `git checkout .` without explicit approval
+- Before opening a PR, rename the ephemeral worktree branch to a conventional name: `feat/`, `fix/`, `chore/`, `docs/`
+- After any subagent fan-out, run `git status` in **both** the subagent worktree and the target branch worktree to confirm files landed where intended
+- Never commit to the main checkout without first verifying `git branch --show-current` matches your feature branch
+
+**Parallel sessions** (tmux): Use `claude --tmux` to open a new pane with its own worktree, or split manually (`Ctrl-b %` / `Ctrl-b "`) and run `claude` in each pane. Each session is fully isolated — separate directory, branch, and context.
+
+**Agent Teams** (coordinated parallel work): For 5+ tasks that need status tracking or mid-flight steering, use `TeamCreate` + `TaskCreate` instead of plain `Agent()` calls. Partition tasks by file/module to avoid conflicts — subagents in a team share the same worktree.
+
+**Team lifecycle**:
+1. `TeamCreate` — create the team and get a `team_id`
+2. `TaskCreate` (per agent) — spawn each teammate with its role and initial prompt
+3. Work phase — send steering messages via `SendMessage` as needed; read status via the team tools
+4. `TeamDelete` — tear down the team after all tasks are complete
+
+**Keep teams open** when tasks may produce follow-up work mid-flight (e.g., a reviewer finds bugs that the code-writer must fix). **Close immediately** when all tasks are independent and complete with no expected follow-up (e.g., parallel research or validation runs).
+
+**Cleanup**:
+- `git worktree list` — see active worktrees
+- `git worktree remove .claude/worktrees/<name>` — remove one
+- `git worktree prune` — prune stale references
+
+## Agent Definitions
+
+| Agent | Model | Use For |
+|-------|-------|---------|
+| `code-writer` | Sonnet | Feature development, bug fixes, refactoring |
+| `doc-writer` | Sonnet | PR descriptions, changelogs, postmortems, READMEs |
+| `reviewer` | Sonnet | Code review, dead code analysis, pattern finding |
+| `tester` | Sonnet | Test writing, coverage expansion, test refactoring |
+| `researcher` | Haiku | Fast codebase exploration, context gathering |
+| `Explore` | Haiku | File pattern search, keyword search, "how does X work" |
+| `Plan` | Sonnet | Implementation planning, architecture design |
+| `fact-checker` | Haiku | Validate reports/docs after doc-writer completes |
+| `unit-validator` | Haiku | Per-artifact validation, structured JSON findings |
+| `cross-unit-validator` | Sonnet | Multi-artifact consistency checking |
+| `ci-fixer` | Sonnet | CI failure diagnosis and fix |
+| `code-writer-opus` | Opus | Escalate from code-writer when Sonnet is stuck or producing incorrect code after retries |
+| `tester-opus` | Opus | Escalate from tester when Sonnet fails to produce passing tests after iteration |
+| `critic` | Opus | Adversarial critique of plans, workflow designs, architecture decisions |
+| `haiku-reviewer` | Haiku | Concern-sweep fan-out stages; writes JSON findings, no Bash |
+| `workflow-author` | Sonnet | Authoring and editing workflow YAML DAGs |
+| `thread-fixer` | Sonnet | One PR review thread per agent; fixes only what that thread asked, never resolves it |
+
+**Spawn teammates** for multi-file changes, test writing, code review, research. Use `isolation: "worktree"` for agents that write code (`code-writer`, `tester`, `ci-fixer`). Read-only agents (`reviewer`, `researcher`, `Explore`, `Plan`, `fact-checker`, validators) do not need isolation.
+
+**After isolated agents finish**: copy their output files from their worktree into the correct feature-branch worktree, verify with `git status`, then commit. Isolated agent edits never merge back automatically.
+
+Do inline for single-line fixes, quick reads, git operations.
+
+**Backstop agents** (spawn after primary work completes):
+- `fact-checker` — always spawn after composing reports, postmortems, cost analyses, PR descriptions, or any deliverable that aggregates data from multiple sources.
+- `reviewer` — code review, dead code analysis, pattern finding. Spawn after parallel implementation agents complete.
+
+**Model selection**: Haiku for lookup + comparison. Sonnet for synthesis, judgment, multi-step reasoning. Inherit Opus only when generating code that will ship.
+
+**Delegation Default** — when to spawn vs inline:
+
+| Condition | Action |
+|-----------|--------|
+| Write/modify code touching >1 file | Spawn `code-writer` with `isolation: "worktree"` |
+| Write/modify code in 1 file, >3 tool calls expected | Spawn `code-writer` with `isolation: "worktree"` |
+| Write/modify code in 1 file, ≤3 tool calls | Inline edit |
+| Add or expand tests | Spawn `tester` with `isolation: "worktree"` |
+| Research / explore / read-only | Inline or spawn `researcher`/`Explore` (no isolation) |
+| PR description, changelog, postmortem | Spawn `doc-writer`, then backstop with `fact-checker` |
+| CI failure diagnosis + fix | Spawn `ci-fixer` with `isolation: "worktree"` |
+| Single-line fix, quick read, git op | Inline — no spawn needed |
+
+**No nested Skill() invocations in sub-agents**: Sub-agents that call `Skill()` (workflow/slash-command invocations) go silent — the skill never executes and the agent produces no output. Always give sub-agents concrete CLI commands or explicit instructions instead of delegating to workflow skills.
+
+## PR Reviews
+
+When reviewing PRs, follow `.github/CLAUDE_REVIEW.md` for detailed guidelines. Key points:
+- Prioritize: Security > Bugs > Breaking Changes > Tests > Maintainability
+- Use severity markers: 🔴 Blocking, 🟡 Suggestions, 🟢 Nice to Have
+- Include file:line references and concrete fix suggestions
+- Skip style nitpicks and generated files
+
+## Ignore During Scanning
+
+Skip these heavy/non-core paths: `.venv/`, `.cache/`, `.git/`, `src/maker/`, `_disasm/`, `out/`, `_out/`, `backups/`, `personal_assistants.egg-info/`

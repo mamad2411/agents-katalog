@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/contracts/skills/zugang-empfangsbeduerftiger-formgerechter/SKILL.md, branch: main)
-- mined: 2026-10-15
-- desc: Für Zugang empfangsbedürftiger Willenserklärungen Paragraf 130 BGB: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

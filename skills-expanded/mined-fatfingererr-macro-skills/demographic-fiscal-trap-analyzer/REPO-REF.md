@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/fatfingererr/macro-skills (path: skills/demographic-fiscal-trap-analyzer/SKILL.md, branch: master)
-- mined: 2026-09-20
-- desc: 分析人口老化、債務動態、官僚膨脹與通膨稀釋交互作用下的「財政陷阱」風險，量化各國/地區的財政脆弱度並識別潛在的貨幣稀釋路徑

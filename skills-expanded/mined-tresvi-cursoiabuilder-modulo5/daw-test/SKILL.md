@@ -1,0 +1,74 @@
+---
+name: daw-test
+description: >
+  Runs the project's tests, generating missing ones when needed. A blocking gate.
+  Trigger: /daw-test, during DAW's CODE phase.
+---
+
+# Skill: /daw-test
+
+## Description
+Runs the project's tests. Generates missing tests where needed. A blocking gate.
+
+## Inputs
+- Scope: an explicit argument, the modified files (`git diff`), or the full suite.
+- `.daw/rules/testing.instructions.md` for the conventions.
+- The spec/fix-plan, to know which tests are expected.
+- The project's test runner: the "Stack" section of `AGENTS.md`.
+
+## Execution Protocol
+
+1. **Detect the scope:**
+   - With an argument → run that module's/file's tests.
+   - Post-block in CODE → run the block's tests.
+   - In the closeout sequence → run the full suite.
+
+2. **Check that the tests exist:**
+   - For each modified logic file, check whether a corresponding test exists.
+   - If it does not → generate one following `.daw/rules/testing.instructions.md`.
+   - **Rule #0 applies to any test you generate:** a test that modifies data creates its own data in
+     setup, only operates on what it created, and cleans up in teardown. Never destructive
+     operations against existing environment data.
+
+3. **Run the tests:**
+   - Use the test runner command declared in `AGENTS.md` ("Stack" section).
+   - Capture the full output.
+
+4. **Analyze the results:**
+   - On failure: work out whether the bug is in the test or in the code.
+   - Fix and re-run. Max 3 attempts before reporting to the user.
+
+## Output Format
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  /daw-test [scope] — [PASSED | BLOCKED]                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  [file.test.ext]:                                            │
+│    ✅/❌ [test name]                                         │
+│                                                              │
+│  Tests generated: [N]                                        │
+│                                                              │
+│  ────────────────────────────────────────────────────────────│
+│  Total: X passed, Y failed                                   │
+│  Coverage: XX% lines, XX% branches (if available)            │
+│  Next: [recommended action] (attempt N/3)                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## PASS/FAIL criteria
+- **PASSED:** 0 failing tests → `gates.tests` = `true`.
+- **BLOCKED:** 1+ failing tests → fix and re-run.
+
+> This skill is a **runner**, not an artifact validator: it reports pass/fail. Test *quality*
+> (coverage thresholds, AC traceability, sad paths) is evaluated in the VERIFY phase by
+> `daw-verify-module`, against §5 of the rule catalog. A green suite here does not mean the tests
+> are good enough — it means they pass.
+
+## Updating .daw-state.json
+- `gates.tests` → `true` on PASS in the closeout sequence.
+
+## Language
+
+Write the report in the language the user is working in.

@@ -1,0 +1,408 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## This Repo's SCM
+
+**This repo is on GitHub** (`github.com/easingthemes/dx-aem-flow`), not Azure DevOps. For any git operation on this repo (branches, PRs, commits, checks), use `git` and `gh` CLI — **never** ADO MCP tools (`mcp__ado__repo_*`, `mcp__ado__pipelines_*`). The plugin *contents* describe ADO workflows for consumer projects; the repo itself is GitHub.
+
+## What This Is
+
+Four Claude Code plugins for AI-assisted Azure DevOps development workflows. There is no build system — plugins are pure Markdown (skills, agents, rules, templates) with shell helper scripts.
+
+- **dx-core** (`plugins/dx-core/`) — Platform-agnostic ADO/Jira workflow: requirements → planning → execution → review → PR. Works with any tech stack. Skills prefixed `dx-*`.
+- **dx-hub** (`plugins/dx-hub/`) — Multi-repo orchestration: hub init, config, status. Skills prefixed `dx-hub-*`.
+- **dx-aem** (`plugins/dx-aem/`) — AEM-specific verification, QA, and demo capture. Includes AEM project knowledge (seed data). Requires dx. Skills prefixed `aem-*`.
+- **dx-automation** (`plugins/dx-automation/`) — Autonomous AI agents (DoR checker, DoD checker, DoD fixer, PR reviewer, PR answerer, BugFix agent, QA agent, DevAgent, DOCAgent, Estimation, SimpleAgent) running 24/7 as ADO pipelines. **Azure-native Service Hooks are the default trigger path and need no AWS at all; the Lambda router is optional, for teams that want central dedupe, rate limits and token-budget gating.** **SimpleAgent, BugFix, DoR and the multi-repo hub router ship with their own `resources.webhooks` listener (no Lambda)** — a work-item comment containing the agent's token (`@kai-simple`, `@kai-bugfix` on a Bug, `@kai-dor` on a User Story) fires the pipeline directly via its `resources.webhooks` Incoming WebHook. BugFix (`/dx-bug-all`) adds full resumable recovery over its triage→verify→fix steps (the per-ticket `bugfix/<id>-*` branch is the durable state store; `dx-bug-all.recovery.*` config); DoR is a stateless check (no recovery). The remaining WI agents (DoD, DoD fixer, QA, DevAgent, DOCAgent, Estimation) have no listener of their own yet — Azure-native they run via `ado-cli-hub.yml`, the hub router that resolves the agent from `agents.json` and fans out per repo, which is the Azure-native equivalent of `wi-router.mjs`; a per-agent hook means adding a `resources.webhooks` block mirroring `ado-cli-dor.yml`. PR Reviewer runs from an ADO build validation policy and never used AWS. PR Answerer is the one agent still Lambda-only, because its identity / self-comment / bot-loop gates live in `pr-router.mjs`. Do not describe Lambda as the default or as required. Requires dx. Skills prefixed `auto-*`.
+  - **SimpleAgent** (`@kai-simple` comment trigger) applies small AEM changes (a11y / color / spacing / copy) by splitting work into authoring (AEM MCP write) or code (file edits → PR) paths. 9 confidence gates; ≤5 files / ≤50 lines / ≤10 JCR writes. Backed by the `/dx-simple` skill in dx-core. **Trigger is fully Azure-native (no Lambda):** a comment containing the configured token (default `@kai-simple`; `dx-simple.recovery.trigger-token`) on the work item fires an ADO **Service Hook** (event *work item commented on*, filter *comment contains the token*) → an **Incoming WebHook service connection** → the pipeline's `resources.webhooks` listener. The **same event covers both the first run and recovery** — the Lambda `wi-router.mjs` is **not** in this path (its `AGENTS` array has no `simple` entry). **Resumable recovery (TODO #141):** the per-ticket git branch is a durable state store — every phase/gate checkpoints `resume-state.json` (via `scripts/save-state.sh`); Phase 0 (`scripts/resume-check.sh`) discovers the branch by anchored ticket-id match and dispatches on `status` (fresh run vs. resume). A blocked/crashed run resumes when a human replies the token again. Token + attempt cap are config (`dx-simple.recovery.*`); requires `.ai/specs/` tracked in git; recovery is **human-re-triggered, never automatic**.
+
+AEM project knowledge (seed data) is now built into dx-aem — no separate plugin needed.
+
+## Testing Changes
+
+```bash
+# Add local marketplace (once)
+/plugin marketplace add /path/to/dx-aem-flow
+
+# Install plugins from marketplace
+/plugin install dx-core@dx-aem-flow
+/plugin install dx-aem@dx-aem-flow
+
+# Test a skill
+/dx-init
+/aem-init
+
+# Test standalone scaffold (bootstraps for any AI agent)
+node cli/bin/dx-scaffold.js /tmp/test-project --all
+```
+
+No compilation step. Verification happens at four levels:
+
+| Level | What it checks | How |
+|-------|----------------|-----|
+| Structural | naming, frontmatter, manifest/version consistency, collisions, plus Claude Code's own manifest/hook schema (`claude plugin validate --json` via `scripts/check-plugin-schema.sh`; CI installs a pinned CLI) | `scripts/validate-*.sh` — runs in CI on every PR |
+| Helper scripts | deterministic bash in `skills/*/scripts/`, `data/lib/` and `scripts/` | any `run-tests.sh` or `*.test.sh` under `plugins/` or `scripts/` — **discovered** and run in CI on every PR (11 today) |
+| JS units | deterministic JS in `plugins/dx-core/data/lib/`, the `dx-automation` Lambda routers, and `cli/` | any `*.test.js` under `plugins/` or `cli/` — **discovered** and run in CI on every PR via `node --test` |
+| Behavioral (evals) | does the skill actually produce the right result | `claude plugin eval` against `plugins/<plugin>/evals/` — **not** wired to CI (billed agent runs) |
+
+**`claude plugin test` does not fit here.** It runs a *mod's* `*.test.ts` files (a plugin with a JS/TS hooks module, v2.1.287+); our plugins have no mods, and our `hooks.json` command hooks are covered by `claude plugin validate` (schema) and the bash suites (scripts). Revisit only if we ship a mod (TODO #208, #246).
+
+Everything not covered above is still manual — run the skill in a test project and check that config is read correctly, output files land in expected locations, and no hardcoded values leak in.
+
+**A structural check cannot tell you a script works.** The four `validate-*.sh` read frontmatter, manifests and counts; they pass happily over a script that dies on its first call. The suites above were local-only until 2026-09-17, and in that window a corrupt test fixture sat red on `main` and two fatal defects in `.ai/lib` shipped in a release ([#197](https://github.com/easingthemes/dx-aem-flow/pull/197), [#198](https://github.com/easingthemes/dx-aem-flow/pull/198)). Two habits follow: a change to anything under `data/lib/` or `skills/*/scripts/` needs its suite run, and `node --check` / `bash -n` are **not** verification — they parse syntax and cannot see a rejected argument, a schema change, or a wrong enum value. Run the thing.
+
+**CI discovers suites, it does not list them.** `validate.yml` globs for `*.test.js` under `plugins/` and `cli/`, and for `run-tests.sh` / `*.test.sh` under `plugins/` **and `scripts/`** (the validators are scripts too, and a validator nobody has watched fail is indistinguishable from a blind one — `scripts/validate-skills.test.sh`), so a new suite is picked up with no workflow change — a hardcoded list is how suites go unrun in the first place (that PR shipped with three of the six wired in, and review found a fourth before discovery found all six). The constraint this places on a new suite: **it must be hermetic** — no live ADO, AEM, or network, and no dependence on ambient git config. The existing suites seed throwaway git repos and set `user.email`/`user.name` per repo; they pass with `GIT_CONFIG_GLOBAL=/dev/null` and an empty `HOME`. Two patterns worth copying: `cli/test/helpers.js` also sets an unroutable `http.proxy` on each fixture repo so `git remote set-head origin --auto` fails instantly instead of dialling a real host, and `plugins/dx-automation/data/lambda/__tests__/helpers.js` clears `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` so dedupe, rate-limit and DLQ take their fail-open path and stub `globalThis.fetch` for the one remaining outbound call. A check that needs a live service belongs in a skill, not in a `*.test.sh`.
+
+### Behavioral evals (`plugins/<plugin>/evals/`)
+
+A skill is instructions for a model, so the same prompt can produce different output on different runs. Evals score a skill over repeated runs against a fixture whose correct answer is known in advance — the opposite of an assertion, which expects one exact value.
+
+```bash
+TMPDIR=/tmp claude plugin eval plugins/dx-core --case <case-name> \
+  --runs 3 --ablation none --scaffold --no-publish --allow-tools Write Bash
+```
+
+`claude plugin eval` shipped as a documented command in Claude Code v2.1.269 (2026-09-11) — no early-access enablement needed any more; run `claude plugin eval --help` for the current flags. `TMPDIR=/tmp` keeps the sandbox from discovering `~/.claude/skills`. Pin `--model` and `--judge-model` before comparing scores over time, or a model rollout reads as a regression.
+
+Cost is real: agent runs are billed, `llm`/`baseline` graders add 3 judge calls each, and `--ablation with-without` doubles the run count. Structural graders (`regex`, `file_exists`, `tool_used`, `tool_order`) are free. Pilot with `--runs 1` and cap with `--max-cost-usd`. Don't wire this to every push — release tags or manual dispatch.
+
+**Authoring rules:**
+- Fixtures carry a **known** defect plus correct distractors, so graders measure both recall (found the real problem) and precision (didn't invent others).
+- Prefer deterministic graders. Use `llm` only when no exact oracle exists — **a judge can be argued out of its rubric by a confident wrong answer; a regex cannot.**
+- **Sanity-check every suite against a known-bad input.** A green suite means either the skill is good or the grader is blind, and you can't tell which until something that should fail does. Each grader needs its own failing case; one scenario only exercises the graders it touches.
+- Run artifacts land in `plugins/*/evals/results/` and are gitignored.
+
+Current coverage is two suites in `dx-core/evals/`: `plan-validate-finds-gap` (see its README for a judge that passed a report its rubric said to fail) and `routing` (14 Skill-routing cases, `tool_used: Skill` graders; its no-skill grader has not yet been seen failing — TODO #252).
+
+### Standalone CLI (`cli/`)
+
+`cli/bin/dx-scaffold.js` is a zero-dependency Node.js utility that replicates `/dx-init` + `/aem-init` output for any AI coding agent. It reads templates from `plugins/` at runtime — no bundling needed. When adding new templates or data files, the scaffold picks them up automatically (it iterates directories). Only changes to the scaffolding logic itself (new file categories, new placeholders) require updating `cli/lib/scaffold.js`.
+
+**Always-generated files:** `.github/agents/` (agent definitions) and `AGENTS.md` (agent discovery) are always generated regardless of flags — they're consumed by Copilot CLI, VS Code Chat, Codex CLI, Windsurf, and the Copilot coding agent — and, since Claude Code v2.1.277, by Claude Code itself in projects that have **no** `CLAUDE.md` (see § Cross-Platform Agent Support). The plugins deliberately do not generate a project `CLAUDE.md` — it describes the consumer's own codebase, not our workflow — so the install docs state it as a prerequisite (`/init` generates one). The `--copilot` flag only controls extra Copilot-specific files (`copilot-instructions.md`, `.github/README.md`).
+
+## Architecture
+
+### Cross-Platform Agent Support
+
+This repo supports multiple AI coding agents:
+
+| File | Purpose | Platforms |
+|------|---------|-----------|
+| `CLAUDE.md` | Full contributor guide (primary) | Claude Code |
+| `AGENTS.md` | Cross-tool instructions (subset of CLAUDE.md) | Codex, Copilot, Cursor, Windsurf, Zed, Jules, Gemini CLI — **and Claude Code since v2.1.277**, see below |
+| `GEMINI.md` | Gemini CLI context (references AGENTS.md) | Gemini CLI |
+| `gemini-extension.json` | Gemini extension manifest | Gemini CLI |
+| `.codex/INSTALL.md` | Codex skill symlink instructions | Codex |
+| `.claude-plugin/` | Claude Code + Copilot CLI manifests | Claude Code, Copilot CLI |
+| `.cursor-plugin/` | Cursor manifests (with explicit paths) | Cursor |
+
+When updating architecture sections in CLAUDE.md, check if AGENTS.md needs a corresponding update.
+
+**Claude Code reads AGENTS.md too (v2.1.277+).** Support ships as a built-in plugin, `agents-md@builtin` ([`mods/agents-md`](https://github.com/anthropics/claude-code/tree/main/mods/agents-md)), not as engine behaviour. Four modes via the `instructionFiles` option:
+
+| Mode | Behaviour |
+|------|-----------|
+| `claude-md` | Only `CLAUDE.md` (pre-2.1.277 behaviour) |
+| `claude-md-or-agents-md` | **Default** — `AGENTS.md` is read only in projects that have no `CLAUDE.md` |
+| `claude-md-and-agents-md` | Both load together across the directory tree |
+| `managed-only` | Only org-managed instruction files; project files dropped |
+
+Set it in `/config` → Project instructions, or in `~/.claude/settings.json`:
+
+```json
+{ "pluginConfigs": { "agents-md@builtin": {
+    "options": { "instructionFiles": "claude-md-and-agents-md" } } } }
+```
+
+**What this means here:** this repo has a root `CLAUDE.md`, so under the default mode our `AGENTS.md` is still invisible to Claude Code — CLAUDE.md stays the primary file and AGENTS.md stays the cross-tool subset. Nothing changes unless a contributor opts into `claude-md-and-agents-md`, and if they do, the two files are both in context at once — one more reason to keep AGENTS.md a subset, never a copy.
+
+Caveats vs native `CLAUDE.md` handling: nested `AGENTS.md` files attach only on text `Read` calls, they do not refresh after mid-session edits, external `@` imports need prior approval carried over from `CLAUDE.md` imports, and a subdirectory's `AGENTS.md` also attaches on an `@`-mention since v2.1.290. Since **v2.1.281** the feature works on Bedrock, Vertex AI, Foundry, LLM gateways and with telemetry off — so a `dx-automation` pipeline on those providers now loads a consumer's `AGENTS.md` too when the consumer has no `CLAUDE.md`.
+
+### Four-Plugin Design
+
+Plugins are independently installable. Non-AEM projects only need dx-core (+ dx-hub for multi-repo). Each plugin has:
+```
+plugin/
+├── .claude-plugin/plugin.json   # Plugin manifest (shared by Claude Code + Copilot CLI)
+├── .cursor-plugin/plugin.json   # Cursor manifest (with explicit skill/agent/hook paths)
+├── .mcp.json                    # MCP server config
+├── agents/                      # Agent definitions (*.md with YAML frontmatter)
+├── skills/                      # Skill directories (*/SKILL.md)
+├── rules/                       # Default prompt templates
+├── hooks/                       # Plugin hooks (hooks.json)
+├── data/                        # Seed files copied to project by init
+├── shared/                      # Reference files read by skills
+└── templates/                   # Init-time file templates
+    ├── rules/                   #   Convention rules → .claude/rules/
+    ├── instructions/            #   Detailed docs → .github/instructions/
+    └── agents/                  #   Copilot agents → .github/agents/
+```
+
+### Config-Driven — Never Hardcode
+
+All project-specific values live in `.ai/config.yaml` (generated by `/dx-init`, extended by `/aem-init`). Skills read config at runtime. Instead of hardcoding `mvn clean install`, read `build.command`. Instead of `develop`, read `scm.base-branch`. Instead of `http://localhost:4502`, read `aem.url`.
+
+**Config-driven is not provider-agnostic.** `scm.provider` has exactly one implemented value: `ado`. Every repo, branch and PR skill calls `mcp__ado__*` directly — there is no GitHub, GitLab or Bitbucket code path. Work-item *tracking* is the one place with a real choice (`tracker.provider: ado | jira`). Do not reintroduce a `github` value into config templates or docs without a code path behind it.
+
+### Spec Directory Convention
+
+Per-ticket output goes to `.ai/specs/<id>-<slug>/` with predictable filenames (`raw-story.md`, `explain.md`, `research.md`, `implement.md`, etc.). Skills find each other's output by convention — no data passing needed.
+
+### Three-Layer Override System
+
+```
+.ai/rules/<topic>.md  >  config.yaml overrides:  >  plugin defaults (rules/*.md)
+```
+
+`.ai/rules/` contains shared rules (pr-review, pr-answer, pragmatism, plan-format) read by both dx skills and the automation pipeline agents. Editing these files changes behavior for local development AND automated pipelines. System prompt wrappers in `.ai/automation/prompts/` reference shared rules via `{{PLACEHOLDER}}` tokens.
+
+Projects can also shadow entire skills by creating `.claude/skills/<name>/SKILL.md`.
+
+### Model Tier Strategy
+
+Model tiering is applied at two levels: agents use `model:` in their frontmatter, and skills can also specify `model:` and `effort:` frontmatter for direct execution without an agent.
+
+| Tier | Effort | Use | Agents / Skills |
+|------|--------|-----|-----------------|
+| Opus | `xhigh` | Hardest reasoning — multi-file architectural review, complex verification, root-cause debugging. **Escalation tier _above_ the `high` baseline** | Reserved for `dx-step-verify`, `dx-pr-review` when escalation is needed; opt-in via `effort: xhigh` frontmatter |
+| Opus | `high` | Deep reasoning (code review, planning, verification). **Set explicitly** — Opus 5.5 defaults to `medium`; `validate-skills.sh` errors on `model: opus` without `effort:` | dx-code-reviewer agent; dx-plan, dx-step-verify, dx-pr-review skills |
+| Sonnet | (model default — `medium` on Sonnet 5.5) | Execution (steps, PR review, inspections) | dx-pr-reviewer agent, aem-inspector, aem-editorial-guide-capture, aem-bug-executor; dx-step, dx-req, dx-step-fix skills |
+| Haiku | `low` (skills); model default `medium` (agents) | Simple lookups (file search, doc search). Haiku 5.5 is the `haiku` alias since v2.1.293 | dx-file-resolver, dx-doc-searcher, aem-page-finder agents; dx-ticket-analyze, dx-help skills |
+
+Write `model: opus | sonnet | haiku` in frontmatter, never a version-pinned model id — the alias follows the current default generation, a pinned id goes stale.
+
+**Default effort moved with the 5.5 models.** Per the [model-config docs](https://code.claude.com/docs/en/model-config), Opus 5.5, Sonnet 5.5 and Haiku 5.5 default to `medium` — one level below Opus 5's `high` — while every other effort-capable model defaults to `high` (Opus 4.7: `xhigh`). The aliases resolve per provider: on the Anthropic API `opus`/`sonnet`/`haiku` are the 5.5 models; on Bedrock/Vertex/Foundry some resolve to older models with a `high` default. So the effort a `model:` line gets depends on where it runs — which is why Opus-tier files state `effort: high` instead of inheriting it (all five Opus skills and `dx-code-reviewer` do; TODO #222). Sonnet and Haiku agents deliberately inherit the vendor default.
+
+**Copilot agents carry the same tiers** (`plugins/*/templates/agents/*.agent.md.template`, TODO #228). A template whose `<!-- Source: -->` is a tiered Claude agent or skill sets `model:` as a fallback list of display names, newest first — `['Claude Opus 5.5', 'Claude Opus 5']` — which both Copilot CLI (v1.0.24+) and VS Code Chat accept, plus `reasoning-effort:` where the source sets `effort:` (Copilot CLI applies it since v1.0.88; VS Code ignores it). Templates for untiered skills and the coordinators leave `model:` unset and follow the user's picker. Bump the lists with the upstream sweeps. `validate-structure.sh` requires frontmatter on line 1 (the `<!-- Source: -->` comment goes below it) and `model:` as a list.
+
+**Tier escalation:** with `effort: high` set explicitly, every Opus skill/agent gets deep reasoning. Use `xhigh` only as a deliberate step **above** that baseline: when a step has demonstrably failed at `high`, or when reviewing >5 files of changes. `xhigh` costs more and runs slower — it's not a free upgrade. The **lean system prompt is also default** (all models except Haiku/Sonnet/Opus ≤4.7), so skills need less hand-holding prose — see the concise-body audit ([TODO #113](docs/todo/todo-skill-conventions.md)).
+
+**`effort:` frontmatter only started taking effect in v2.1.267 (2026-09-09)**, which fixed `effort:` on custom commands, skills and subagents being **silently ignored** on models whose default effort is pinned (Opus 4.7, Opus 4.8, Fable 5). Any `effort:` we set before that release was a no-op on those models — so the tiering above is only now actually in force, and the `xhigh` skills have never been measured against `high`. Re-check before assuming an escalation helped. Related: the same release added a `maxEffortLevel` setting (top-level or per-model under `modelSettings`) that caps effort across every provider — useful as a cost ceiling for `dx-automation` pipeline runs.
+
+### MCP Servers
+
+- **dx:** ADO MCP (`@azure-devops/mcp`) — work items, PRs, repos
+- **dx:** Atlassian MCP — Jira issues, Confluence pages
+- **dx:** Figma MCP — design extraction, screenshots, tokens
+- **dx:** axe MCP — accessibility testing
+- **aem:** AEM MCP (HTTP) — JCR content, components, dialogs
+- **aem:** Playwright MCP (`@playwright/mcp`) — browser automation
+
+### Plugin MCP Tool Naming — CRITICAL
+
+MCP servers in a plugin's `.mcp.json` get a prefixed tool name: `mcp__plugin_<plugin-name>_<server>__<tool>`. Always use the full prefix in skill/agent files:
+
+| Server | Plugin | Full tool prefix | WRONG shorthand |
+|--------|--------|-----------------|-----------------|
+| ADO | *(project-level)* | `mcp__ado__` | *(n/a — no prefix)* |
+| Atlassian | *(project-level)* | `mcp__atlassian__` | *(n/a — no prefix)* |
+| Figma | dx-core | `mcp__plugin_dx-core_figma__` | `mcp__figma__` |
+| axe | dx-core | `mcp__plugin_dx-core_axe-mcp-server__` | `mcp__axe-mcp-server__` |
+| AEM | dx-aem | `mcp__plugin_dx-aem_AEM__` | `mcp__AEM__` |
+| Playwright | dx-aem | `mcp__plugin_dx-aem_playwright__` | `mcp__playwright__` |
+
+**Why:** Subagents resolve tools by exact name or ToolSearch. The shorthand doesn't match the actual registered tool names, causing "tool not found" failures.
+
+#### Cross-platform tool naming
+
+Skill/agent files use the Claude Code prefix shown above. On other platforms the LLM transparently maps prefixed names to whatever is registered locally — they're prose hints to the model, not literal function calls. Reference for the registered name on each platform:
+
+| Platform | Registered name format | Example (AEM `getNodeContent`) |
+|----------|-----------------------|-------------------------------|
+| Claude Code | `mcp__plugin_<plugin>_<server>__<tool>` (double underscore) | `mcp__plugin_dx-aem_AEM__getNodeContent` |
+| Copilot CLI | bare name (no prefix; LLM maps from Claude prefix) | `getNodeContent` |
+| VS Code Chat | bare name | `getNodeContent` |
+| Codex CLI | TOML-configured `[mcp_servers.<server>]`; **no dotted tool-name prefix** — tool names constrained to `^[a-zA-Z0-9_-]+$` (dots disallowed). Plugins (`.codex-plugin/`, Mar 2026) bundle skills/hooks/MCP/apps, not agents. | `getNodeContent` |
+| Gemini CLI | `mcp_<server>_<tool>` (single underscore). Server name **must not contain `_`**; on cross-server tool-name collision Gemini promotes to `serverAlias__tool` (double underscore). | `mcp_aem_getnodecontent` |
+
+When adding a new MCP server, no per-platform action is needed — the LLM resolves names from the `tools:` and `mcpServers:` declarations in agent frontmatter.
+
+### Hook System — Platform Separation
+
+Plugin hooks and Copilot CLI hooks are **largely separate systems**, with one overlap: Copilot CLI *also* reads plugin `hooks/hooks.json` (confirmed back to 2026-05-05 logs), so it is not Claude-Code-exclusive.
+
+| Hook source | Active in |
+|-------------|-----------|
+| Plugin `hooks/hooks.json` | Claude Code CLI (`Stop` / `SubagentStop`) **and** Copilot CLI (reads the same file). Copilot ignored `PostToolUse` `matcher` through v1.0.45 — **fixed in v1.0.63 (2026-06-15)**, matchers now honored. |
+| `.github/hooks/hooks.json` | Copilot CLI only (events: 1.0.10+; Notification 1.0.18+; HTTP hooks 1.0.35+; `agentStop`/`subagentStop` closed 2026-04-07). **v1.0.40+: in `copilot -p` outside a trusted folder, requires `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true` exported in shell** (`=1` is ignored) — without it, repo hooks are silently ignored. |
+| Agent frontmatter `hooks:` | VS Code Chat (1.111+); skill-isolated subagents experimental in 1.118+. **Copilot CLI v1.0.97+** too, while that agent is selected — but only in a **trusted folder** (the prompt-mode env opt-in does not load them; verified on 1.0.98). Our shell-capable `.github/agents` templates carry the branch guard this way; `scripts/check-agent-hooks.sh` keeps them verbatim (TODO #245) |
+
+To give both platforms the same safety hooks, install to both locations. `/dx-init` step 9i handles branch-guard + Stop guard. **Event-name mapping:** Claude Code uses `Stop` / `SubagentStop`; Copilot CLI uses `agentStop` / `subagentStop`. See the docs site (`website/`) for full details.
+
+Latest upstream sweep: `docs/research/2026-10-15-upstream-sweep.md` (Claude Code to v2.1.301, Copilot CLI to v1.0.98; each sweep is a delta to the previous one). The last full platform-state snapshot is still `docs/research/2026-06-10-platform-state-update.md` — [TODO #171](docs/todo/TODO.md) tracks the overdue one.
+
+**Copilot CLI v1.0.40+ shell exports** — when targeting Copilot, add these to `~/.zshrc` / `~/.bashrc`:
+
+```bash
+export GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true
+export GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP=true
+```
+
+Without `WORKSPACE_MCP`, project-root `.mcp.json` is also silently ignored. **The value must be `true`** — Copilot compares `=== "true"` (v1.0.40 and v1.0.98 bundles; `=1` seen doing nothing on 1.0.98, TODO #249). The gates apply to `copilot -p` only; a trusted folder loads both without them.
+
+### Hook Profiles — `DX_HOOK_PROFILE`
+
+Control hook strictness via the `DX_HOOK_PROFILE` environment variable:
+
+| Profile | Level | Behavior |
+|---------|-------|----------|
+| `minimal` | 1 | Only blocking safety hooks (branch-guard). Skip informational hooks. |
+| `standard` | 2 | **Default.** All hooks enabled. |
+| `strict` | 3 | All hooks + extra guardrails (future use). |
+
+Set in your shell: `export DX_HOOK_PROFILE=minimal` to suppress informational hooks during focused work, or `strict` for CI/pipeline environments. Hook scripts use `source hook-profile.sh && require_profile "standard"` to gate themselves.
+
+### Hook Authoring — Key Fields
+
+| Field | Purpose | Example |
+|-------|---------|---------|
+| `matcher` | Which tool events to listen for | `"Bash"`, `"Edit"`, `"mcp__*figma*"` |
+| `if` | Fine-grained permission rule filter (evaluated before spawning) | `"Bash(git commit*)"`, `"Edit(**/.claude-plugin/**)"` |
+| `statusMessage` | Spinner text while hook runs | `"Checking branch protection..."` |
+| `async` | Non-blocking background execution | `true` for observational hooks |
+| `asyncRewake` | Background execution that wakes Claude on exit-code-2 | `true` for long checks that must signal failure |
+| `timeout` | Seconds before canceling | `30` for quick checks |
+| `once` | One-shot per-session (skill/agent frontmatter only — NOT settings.json) | `true` for init scripts |
+| `onFailure` | `"continue"` (default) or `"block"` — what happens when a `command`/`http` hook can't start, times out, exits with a code other than 0/2, or returns invalid output. `"block"` acts like exit 2 (denies on `PermissionRequest`). No effect on `Stop`/`SubagentStop`/`TaskCompleted`/`TeammateIdle` or on `async`/`asyncRewake` hooks. v2.1.295+ | `"block"` for safety guards (TODO #243) |
+
+**Available events (Claude Code):** `SessionStart`, `Setup`, `SessionEnd`, `UserPromptSubmit`, `UserPromptExpansion`, `Stop`, `StopFailure`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PostToolBatch` (parallel-tool batch), `PermissionRequest`, `PermissionDenied`, `SubagentStart`, `SubagentStop`, `TaskCreated`, `TaskCompleted`, `TeammateIdle`, `FileChanged`, `ConfigChange`, `CwdChanged`, `InstructionsLoaded`, `WorktreeCreate`, `WorktreeRemove`, `PreCompact`, `PostCompact`, `Elicitation`, `ElicitationResult`, `Notification`, `MessageDisplay` (transform or hide assistant text as it is displayed), `DirectoryAdded` (after `/add-dir` or SDK `register_repo_root`), `PreModelSwitch` / `PostModelSwitch` (block, confirm or annotate a model switch, v2.1.251+). Handler `type:` values: `command`, `http`, `mcp_tool`, `prompt`, `agent`.
+
+**Exit codes:** `0` = success (parse JSON from stdout), `2` = blocking error (stderr as feedback), other = non-blocking error. **Never use exit 1 for blocking** — it's treated as a non-blocking error (shown only in verbose mode).
+
+**Decision fields (JSON on stdout, under `hookSpecificOutput`):** `PreToolUse` takes `permissionDecision` (`allow` | `deny` | `ask` | `defer`) + `permissionDecisionReason`, and `updatedInput` to rewrite the tool's arguments before it runs (validated like Claude's own input since v2.1.300). `PermissionDenied` takes `retry: true` to tell the model it may retry — exit codes are ignored on that event.
+
+## Conventions for Adding Skills/Agents
+
+### Skill Structure
+
+```yaml
+---
+name: my-skill
+description: One-line with trigger phrases
+argument-hint: "<what user passes>"
+model: sonnet          # optional — opus | sonnet | haiku
+effort: medium         # optional — low | medium | high | xhigh | max
+context: fork          # optional — run in isolated subagent
+agent: agent-name      # optional — subagent type for context: fork
+paths: ["**/*.ts"]     # optional — limit auto-activation to file patterns
+---
+```
+
+- Skills go in `plugins/{dx-core,dx-hub,dx-aem,dx-automation}/skills/<name>/SKILL.md`
+- Helper scripts go in `skills/<name>/scripts/*.sh`
+- Naming: kebab-case, plugin prefix required. Format: `{plugin}-{name}` (e.g., `dx-agent-all`, `aem-init`). Group prefixes within dx: `dx-req-*`, `dx-plan-*`, `dx-step-*`, `dx-pr-*`, `dx-bug-*`, `dx-agent-*`. Coordinators use `-all` suffix.
+
+### Flow Control (branching skills only)
+
+Skills with decision gates, retry loops, or conditional paths use a DOT digraph as the single source of truth for execution flow:
+
+```dot
+digraph skill_name {
+    "Action" [shape=box];
+    "Decision?" [shape=diamond];
+    "Terminal" [shape=doublecircle];
+
+    "Action" -> "Decision?";
+    "Decision?" -> "Next action" [label="yes"];
+    "Decision?" -> "Terminal" [label="no"];
+}
+```
+
+Detailed instructions go in `## Node Details` sections keyed by node name. Every digraph node must have a matching `### Section` heading (exact match). Do NOT use numbered steps for branching skills — the graph IS the flow.
+
+Linear skills (no branching) continue to use numbered steps.
+
+### Agent Structure
+
+```yaml
+---
+name: dx-my-agent
+description: What it does
+tools: Read, Write, Glob, Grep, Bash
+model: sonnet
+---
+```
+
+- Agents go in `plugins/{dx-core,dx-aem}/agents/<name>.md`
+- Naming: plugin prefix + descriptive role (`dx-code-reviewer`, `aem-inspector`)
+
+### Plugin Manifest (Dual-Platform)
+
+`plugin.json` is read by **both** Claude Code and Copilot CLI. **NEVER** add `agents` or `skills` fields when using default directories (`agents/`, `skills/`) — specifying them **breaks Claude Code** with `"agents: Invalid input"` validation errors. Both platforms auto-discover default directories automatically. Only add these fields for non-standard paths (e.g., `"agents": ["./specialized-agents"]`).
+
+Full schema and compatibility matrix: see the docs site (`website/`) → "Plugin Manifest — Dual-Platform Format"
+
+### Checklist
+
+- No hardcoded org URLs, project names, paths, build commands, or branch names
+- Config fields documented if new ones are introduced
+- Update `docs/reference/skill-catalog.md` or `docs/reference/agent-catalog.md`
+- Shell scripts are `chmod +x`
+- A new or longer model-invocable `description` grows the skill listing; `validate-skills.sh` check 11 fails past `LISTING_BASELINE`. Trim first. Raising the baseline is fine when the growth is deliberate — say why in the commit and the comment next to it. Do not reach for `disable-model-invocation` to make room unless nothing (skill, subagent, request) needs to reach that skill (TODO #238).
+- **Versioning is automated** — semantic-release bumps every version file on push to `main` based on conventional commit prefixes: all 4 plugin manifests (both `.claude-plugin` and `.cursor-plugin`), `gemini-extension.json`, `marketplace.json`, and the config template. The authoritative list lives in `scripts/bump-versions.sh` + `.releaserc`; `scripts/validate-structure.sh` enforces they stay in sync. Use `feat:` for minor, `fix:` for patch, `BREAKING CHANGE:` in body for major. `chore:`, `docs:`, `ci:` do not trigger releases. Do NOT manually edit version numbers.
+- In commit messages, write TODO numbers as `TODO-176`, never a bare `#176`: semantic-release links every `#N` in a commit as a GitHub issue in `CHANGELOG.md` (3.9.1 lists TODOs 176 and 249–251 as closed issues). `(#123)` PR suffixes added by the squash merge are fine.
+
+### Superpowers Soft-Dependency Pattern
+
+Skills can optionally reference [superpowers](https://github.com/obra/superpowers) methodology skills using a soft-dependency pattern:
+
+```markdown
+If `superpowers:<skill-name>` is available, invoke it to [benefit].
+
+**Fallback (if superpowers not installed):** [condensed inline guidance]
+```
+
+This works across all platforms: Claude Code invokes via Skill tool, Copilot CLI/VS Code Chat follow the fallback. Six skills currently use this pattern: dx-plan, dx-step, dx-step-fix, dx-step-verify, dx-agent-all, dx-pr.
+
+## TODO Tracking
+
+All TODOs live in `docs/todo/`. Structure:
+
+```
+docs/todo/
+├── TODO.md              # Master tracker — numbered table with links
+├── todo-testing.md      # Detail file per topic
+├── todo-copilot-cli.md
+├── todo-automation.md
+├── todo-config.md
+├── todo-website.md
+├── todo-naming-ux.md
+├── todo-pipeline.md
+└── todo-bugs.md
+```
+
+**Rules:**
+- `TODO.md` is the single index — every item gets a numbered row with priority, status, date, and link to a detail file
+- Detail files are grouped by topic (`todo-<topic>.md`), not by date or conversation
+- When adding a TODO: add a row to `TODO.md` AND add/update the relevant detail file
+- Multiple items can link to different sections of the same detail file
+- Never scatter TODOs in other locations — always use `docs/todo/`
+
+**Detail file item format — every item MUST include:**
+```markdown
+## Item title
+
+**Added:** YYYY-MM-DD
+**Problem:** What's wrong or missing — describe the problem, not just a solution. Problems don't change; solutions do.
+**Scope:** Exact files, directories, or skills affected. Agent must know WHERE to look.
+**Done-when:** A concrete, verifiable check — a command to run, a file to check, a grep to execute. An agent must be able to confirm completion without guessing.
+**Approach:** (optional) Proposed solution, migration steps, or design notes.
+```
+
+**Verification rule:** When checking TODO status, run the `Done-when` check. Do not infer status from absence of files that might have been intentionally deleted — that's the whole point of having an explicit check.
+
+## Documentation
+
+Documentation lives in two places:
+
+| Location | Purpose |
+|----------|---------|
+| `website/` | Astro docs site — full documentation, tutorials, architecture |
+| `docs/reference/` | Machine-readable catalogs and config schema (used by skills) |
+
+To run the docs site locally:
+```bash
+cd website && npm install && npm run dev
+```
+
+Always organize docs by topic in the website. Use `docs/reference/` only for files that skills read programmatically.

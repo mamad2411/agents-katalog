@@ -2,7 +2,6 @@
 ---
 name: android-app-testing
 description: Automated testing for Android applications using Appium with Espresso driver. Use when testing native Android apps (.apk files), verifying mobile UI functionality, automating gestures (swipe, scroll, tap), or running blackbox tests on Android devices/emulators. Covers Espresso (fast, source-required) and UI Automator 2 (black-box) approaches.
-tags: [android, mobile-testing, appium, espresso, ui-automator]
 ---
 
 # Android App Testing

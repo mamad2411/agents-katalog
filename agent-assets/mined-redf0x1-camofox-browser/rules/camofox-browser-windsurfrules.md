@@ -1,0 +1,67 @@
+CamoFox cheat sheet (ultra-compact). Canonical details: AGENTS.md.
+
+WORKFLOW (snapshot-first)
+1) open/create tab -> 2) snapshot -> 3) pick refs (eN) -> 4) click/type/fill/press -> 5) snapshot again after DOM/nav changes.
+Always pass user scope (`--user` / `userId`) and stable `tabId`.
+Prefer refs over CSS selectors.
+Use `--format json` for parsing/agents.
+
+TOP COMMANDS
+camofox open <url> [--user u] [--viewport WxH] [--geo preset]
+camofox close [tabId] [--user u]
+camofox navigate <url> [tabId] [--user u]
+camofox snapshot [tabId] [--user u]
+camofox screenshot [tabId] [--output f] [--full-page]
+camofox annotate [tabId] [--output f]
+camofox click <ref> [tabId] [--user u]
+camofox type <ref> <text> [tabId] [--user u]
+camofox fill '[e1]="v1" [e2]="v2"' [tabId] [--user u]
+camofox scroll [up|down|left|right] [tabId] [--amount n]
+camofox select <ref> <value> [tabId] [--user u]
+camofox hover <ref> [tabId] [--user u]
+camofox press <key> [tabId] [--user u]
+camofox drag <fromRef> <toRef> [tabId] [--user u]
+camofox get-url [tabId] [--user u]
+camofox get-text [tabId] [--selector css] [--user u]
+camofox get-links [tabId] [--user u]
+camofox get-tabs [--user u]
+camofox eval "document.title" [tabId] [--user u]
+camofox wait <condition> [tabId] [--timeout ms] [--user u]
+camofox search "q" [tabId] --engine google|youtube|amazon|bing|reddit|duckduckgo|github|stackoverflow
+camofox session save <name> [tabId]
+camofox session load <name> [tabId]
+camofox session list
+camofox session delete <name> [--force]
+camofox cookie export [tabId] --path cookies.json
+camofox cookie import cookies.json [tabId]
+camofox auth save <profile>
+camofox auth load <profile> --inject --username-ref eX --password-ref eY
+camofox auth list | auth delete <profile> | auth change-password <profile>
+camofox server start [--background] [--port p]
+camofox server stop
+camofox server status
+camofox health | version | info
+camofox run flow.txt [--continue-on-error]
+
+API QUICK REF
+Base URL: http://localhost:9377
+Create/list tab: POST /tabs ; GET /tabs?userId=u
+Core loop: POST /tabs/:tabId/navigate -> GET /tabs/:tabId/snapshot?userId=u -> POST /tabs/:tabId/click|type|press
+Inspection/control: GET /tabs/:tabId/links|stats|screenshot ; POST /tabs/:tabId/evaluate|evaluate-extended|wait|back|forward|refresh
+Session/downloads: DELETE /tabs/:tabId ; DELETE /sessions/:userId ; GET /users/:userId/downloads ; GET/DELETE /downloads/:downloadId
+
+ESSENTIAL RULES
+- Snapshot before interaction; refresh refs after navigation/major DOM change.
+- Include user scope for all tab-bound operations.
+- Use refs (`eN`) first, selector fallback second.
+- Keep outputs machine-safe: prefer `--format json`.
+- Never print secrets; use auth vault + `--inject`.
+- Reuse existing routes/commands and preserve compatibility aliases.
+
+SEARCH MACROS
+@google_search,@youtube_search,@amazon_search,@reddit_search,@reddit_subreddit,@wikipedia_search,@twitter_search,@yelp_search,@spotify_search,@netflix_search,@linkedin_search,@instagram_search,@tiktok_search,@twitch_search
+
+STACK + AUTH
+Node 20+, TypeScript strict, Express, Commander.js, Jest, Camoufox engine; API key optional (`CAMOFOX_API_KEY`), auth vault uses encrypted local storage.
+
+See AGENTS.md for full command, endpoint, and workflow specification.

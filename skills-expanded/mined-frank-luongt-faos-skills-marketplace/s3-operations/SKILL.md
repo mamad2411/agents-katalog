@@ -2,7 +2,6 @@
 ---
 name: s3-operations
 description: Amazon S3 operations for AI agent workflows including document staging, knowledge base ingestion, and artifact storage. Use when agents need to read, write, or manage files in S3 for RAG pipelines or data processing.
-tags: [aws, s3, storage, data]
 ---
 
 # Amazon S3 Operations for AI Agents

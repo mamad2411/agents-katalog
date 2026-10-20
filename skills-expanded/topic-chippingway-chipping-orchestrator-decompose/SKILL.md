@@ -1,1 +1,0 @@
-../../../.agents/skills/decompose/SKILL.md

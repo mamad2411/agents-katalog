@@ -1,0 +1,92 @@
+---
+description: Visible console, TensorBoard with train jobs, logs/_tmp captures, no repo-root tmp
+globs: scripts/**
+alwaysApply: false
+---
+
+# Script execution — console and temp output
+
+Applies when running or editing files under `scripts/`.
+
+## Visible console
+
+- Stream train/decode/long jobs to a **visible Cursor terminal**; log-only redirect as the sole sink is not OK.
+- **Console + `logs/<topic>.log` (tee)** is fine — terminal remains primary.
+- Never launch a long job with `> logs/... 2>&1`, `*> logs/...`, or any equivalent that hides live output from the terminal.
+
+From PowerShell, use:
+
+```powershell
+& venv\Scripts\python.exe scripts/<script>.py <args> 2>&1 | Tee-Object -FilePath logs/<topic>_<run>.log
+$code = $LASTEXITCODE
+if ($code -ne 0) { exit $code }
+```
+
+**PowerShell anti-pattern (hides the console):** never combine a file redirect with Tee like
+`1> logs/out.json 2>&1 | Tee-Object ...` or `> logs/out.log 2>&1 | Tee-Object ...`.
+Stdout is bound to the file **before** the pipeline, so Tee (and the Cursor terminal) receive nothing — progress vanishes into the file only. That violates visible-console even if a log path looks correct.
+
+For scripts that split **JSON on stdout** / **progress on stderr** (e.g. `eval_ar_onset_offline.py`):
+
+```powershell
+& venv\Scripts\python.exe scripts/eval_ar_onset_offline.py <args> `
+  2>&1 | Tee-Object -FilePath logs/<topic>_<run>.log
+```
+
+Keep one tee stream to the terminal + log; extract JSON from the log afterward if needed. Do **not** `1>`-redirect stdout away from Tee to “save JSON cleanly” unless you also mirror progress to the console some other way.
+
+If a tool backgrounds the command after its foreground timeout, the same tee pipeline must remain attached so the visible terminal continues receiving live output.
+
+## TensorBoard with training
+
+When launching a **training** job that writes Keras TensorBoard callbacks (`callback_root_dir` / `callbacks/.../logs`):
+
+1. **Start TensorBoard in a separate terminal before or with the train command** — do not wait for the user to ask.
+2. Point `--logdir` at the **stage** log tree, not one run folder.
+3. Tell the user the URL (`http://localhost:6006/` by default) when training starts.
+
+```powershell
+& venv\Scripts\tensorboard.exe --logdir callbacks/ar/ladder/logs --port 6006
+```
+
+Runs of one **stage** share a `callback_root_dir`, so every run lands in the same `logs/` tree as `{YYYYMMDD-HHMMSS}-AR_ONSET-{run_label}-…`. Sorting that tree by name is chronological, and one `--logdir` shows the whole stage — no launcher script or `--logdir_spec` juggling.
+
+| Stage | `callback_root_dir` | `--logdir` |
+| ----- | ------------------- | ---------- |
+| AR scaling ladder (all rungs + SS variants) | `callbacks/ar/ladder` | `callbacks/ar/ladder/logs` |
+| DDC placement | `callbacks/ddc/placement` | `callbacks/ddc/placement/logs` |
+| DDCL placement | `callbacks/ddc/ddcl_placement` | `callbacks/ddc/ddcl_placement/logs` |
+| ITGPT placement | `callbacks/ddc/itgpt_placement` | `callbacks/ddc/itgpt_placement/logs` |
+| Everything AR | — | `callbacks/ar` |
+
+Keras TensorBoard must log to `logs/{YYYYMMDD-HHMMSS}-{run}/`, not the stage `logs/` root. A root `logs/train` folder overwrites prior curves and forces a new `callback_root_dir` per experiment, which makes overlay in TensorBoard ugly. Do not invent `placement_128ep`-style stage trees to preserve curves.
+
+Reruns never overwrite prior curves. In the UI, check multiple runs in the left sidebar to overlay metrics. Reuse a server on the same port only when its `--logdir` already covers the new run.
+
+## Temp paths
+
+| Purpose            | Path                                                |
+| ------------------ | --------------------------------------------------- |
+| Command capture    | `logs/<topic>_<run>.log` (gitignored)               |
+| Disposable scratch | `_tmp/<topic>/...` (gitignored; delete when done)   |
+| Research record    | `EXPERIMENT_LOG.md` (`EXP-…`) — not raw logs in git |
+
+**Do not** create `tmp_*` or `_tmp_*` at the repository root (use `_tmp/<topic>/`). Do not commit captures or scratch files.
+
+## Rerun path hygiene
+
+When the user says **rerun** / **increase epochs** / tweak hyperparams on an existing config: **keep the same** `model_output_dir` and `callback_root_dir` (and log basename). Do **not** invent `_epN` / `_run2` suffixes unless they ask for a separate artifact tree or to preserve the prior checkpoint.
+
+## AR config / TensorBoard naming
+
+- Reserve **`smoke`** for tiny gate runs (e.g. 10-song `configs/ar/smoke.json`). Multi-song scale-up configs use **`scale_<Nt>t_<Nv>v`** (not `smoke_…`).
+- AR TensorBoard run suffixes include **`{train}t{val}v-ep{epochs}`** (and `es{patience}` when early stopping is on) via `_get_experiment_name` — do not rely on the parent `callback_root_dir` alone to tell splits apart.
+- `callback_root_dir` names the **stage** (e.g. `callbacks/ar/ladder`), shared by every run in it; `run.run_label` (e.g. `r2_50t`, `r2_ss_50t`) names the variant inside the run folder. `model_output_dir` stays **per variant** — it writes a fixed `ar_onset_model.keras` that would otherwise be overwritten.
+
+## GPU scheduling
+
+WSL GPU jobs are **serial**: one training run at a time; no parallel GPU training + GPU inference. Enforced by `logs/gpu_wsl.lock` in `stepcovnet.wsl_gpu_lock` (see [wsl-gpu-stepcovnet skill](../../skills/wsl-gpu-stepcovnet/SKILL.md) § GPU scheduling).
+
+## PowerShell note
+
+`exit_code: 1` from WSL stderr warnings is not failure by itself — read terminal or `logs/` output.

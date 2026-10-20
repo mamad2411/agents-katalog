@@ -1,0 +1,107 @@
+# BeerTracker AI Coding Guidelines
+
+(This file lives in the root of the BeerTracker codebase as `copilot-instructions.md` and is used to guide AI code generation tools. There is a symlink from .github to this file to make sure copilot will read it)
+
+**TL;DR:** Keep changes small and explicit — procedural Perl, direct SQL with DBI, pass a `$c` context hash, prefer clarity over cleverness. For architecture details see `doc/design.md`.
+
+
+## Architecture Overview
+BeerTracker is a procedural Perl FastCGI web application for personal beer tracking. It uses SQLite for data storage and runs under Apache. The main entry point is `code/index.fcgi`, which dispatches requests to focused modules in `code/` based on the `o` parameter (e.g., `o=Board` for beerboard.pm).
+
+Key components:
+- **Database**: SQLite file `beerdata/beertracker.db` with schema in `doc/db.schema`. Tables: glasses (drinking events), brews (beverages), locations (places), persons, comments, taps.
+- **Modules**: ~30 Perl modules in `code/` for specific functionalities (e.g., beerboard.pm for bar beer lists, db.pm for database helpers). We try to keep modules focused and small, ideally <300 lines, but some are larger.
+- **CGI Handling**: `code/index.fcgi` handles all requests, routing based on `o` parameter. POST requests are wrapped in eval for error handling.
+- **Templates**: HTML is generated directly in Perl using print statements with qq{} for multi-line strings.  
+- **Scraping**: Perl scripts in `scripts/` scrape beer menus from bar websites (e.g., oelbaren.pl).
+- **Static Assets**: CSS/JS in `static/`, served with cache-busting timestamps from index.fcgi. We can safely
+assume that they are loaded and available when generating HTML.
+
+Data flows from browser forms to index.fcgi, which calls module post*() functions for writes, then redirects to display pages.
+
+## Development Workflow
+- **Dev Environment**: Work in `beertracker-dev` directory (blue background indicates dev mode).
+- **Database Changes**: Implement schema changes via `code/migrate.pm` migrations. Remind the user to run `tools/dbdump.sh` to update `doc/db.schema`. Some changes (alter table) require manual steps; document those in commit message. Changes to views and indexes, and adding columns work well with dbchange.sh. Do not ever use sqlite to change the schema, nor edit doc/db.schema directly.
+- **Versioning**: Git pre-commit hook runs `tools/makeversion.sh` to update `code/VERSION.pm` with commit count.
+- **Testing**: `tools/test-unit` runs pure function unit tests (no server needed). `tools/test-http` runs GET smoke tests and POST round-trip tests against the dev server. `./tools/testall` runs both. Round-trip tests use Danish ø characters to verify UTF-8 handling. Use `superuser::copyproddata()` to sync production data to dev.
+- **Deployment**: Git pull code to production, should migrate the database on first run if schema changed. / Apache config in `etc/apache-config.example.txt` is mostly stable; avoid changes there if possible. It is actually used as the real Apache config in production. The dev version runs from the same config, so changes there should be tested carefully.
+- **Plan files**: are kept under plans. They are used to track AI instructions for implementing a change.
+They should be named like '557-photo.md' where 557 is the issue number. Once done, the plan file can be moved into plans/done, if I want to keep some historical records. Or it can just be deleted.
+
+## Key Patterns and Conventions
+- **Context Hash**: Pass `$c` hash containing globals (username, dbh, url, etc.) to all functions.
+- **Parameter Handling**: Use `util::param($c, "key")` for CGI params; handles GET/POST uniformly.
+- **Database Access**: Direct SQL with DBI; `db::open_db($c, "rw")` for POST requests, "ro" for GET requests. Foreign keys enforced. db.pm has helpers for common queries. Use those when possible, to get consistent logging and error handling.
+- **Memory caching**: Cache.pm implements a simple cache so we don't need to create pages every time we show them. It gets cleared when ever we reload the fcgi script, either manually, touching the version.pm, or after each POST record, so there should not be any risk of stale cache.
+- **Error Handling**: `util::error()` for fatal errors; database errors logged to STDERR and shown in HTML. In dev mode we should aim to log all SQL statements, but not in production.
+- **Rollback** Index.fcgi catches errors, and rolls back transactions. 
+- **Filtering**: Use `q` param for grep-style filtering (e.g., `?q=IPA`); 
+- **Links**: Build URLs as `$c->{url}?o=Operation&e=ID`; use `uri_escape_utf8()` for params.
+- **Display Helpers**: `util::unit()` for values with units (e.g., "33<small>cl</small>"); `util::datestr()` for dates.
+- **Scraping**: Use LWP::UserAgent and XML::LibXML; output JSON to STDOUT for beer lists.
+- **UTF-8**: All source and data is UTF-8; set `binmode STDOUT, ":utf8"` in index.fcgi
+- **No Frameworks**: Pure Perl, no ORM or web framework; procedural style with modules.
+- The system lives in the local time zone. Since beer drinking often spans midnight, we offset the date by 6 hours to group late-night drinking into the previous day. This is handled in SQL queries with `datetime(Timestamp, '-6 hours')`.
+- Time stamps are always as ISO strings.
+- After editing any code (and checking it with perl -c), touch **code/VERSION.pm** to trigger a reload. Do not change the version number, that is done at commit time. Do the touch in a separate call, so I can allow that without confirmation.
+- All links should have the text inside a <span> element. For example: `<a href='...?o=Comment&e=123'><span>[123]</span></a>`. This is to make the link style apply only to the underline.
+
+## Code Style Details
+- **General Principles**: Write clean, readable, maintainable code. Use meaningful variable and function names. Include comments for complex logic. Follow Perl best practices.
+- **Dialog**: Always state first what you are about to do, before doing it.
+- **Language Features**: use strict; use warnings; use feature 'unicode_strings'; use utf8. use open ':encoding(UTF-8)'; binmode STDOUT, ":utf8" where needed.
+- **Code Structure**: Functions start with "sub function_name {". Use "my $c = shift;" for context object. Return values explicitly. Use early returns for error conditions. Functions end with "} # function_name".
+- **Variables and Naming**: Use lowercase: $variablename. Descriptive names: $beerlist, $locationid. Context object is $c. Database handle is $c->{dbh}. CGI object is $c->{cgi}.
+- **HTML Generation**: Use print qq{<html>...}; for HTML output. Escape special characters. Use CSS classes and inline styles. Generate forms with method="POST" for data modification.
+- **JavaScript Integration**: Use <script> tags for client-side logic. Inline JavaScript for simple interactions. Use event handlers like onclick. JavaScript should be in separate files under `static/`, but there
+are still some inline scripts in the HTML for simplicity.
+- **SQL Style**: Use uppercase for keywords: SELECT, INSERT, UPDATE. Use placeholders (?) for parameters. Join tables explicitly. Use meaningful table aliases.
+- **Comments**: Use # for single-line comments. Use # TODO for future improvements. Document function purposes. Explain complex algorithms.
+- **Control Structures**: Use foreach for loops: foreach my $item (@list). Use if/elsif/else for conditionals. Use early returns to reduce nesting. Use next/last for loop control.
+- Avoid the ?: operator.
+- **Regular Expressions**: Use =~ for matching. Use capturing groups when needed. Prefer simple patterns over complex ones.
+- **String Handling**: Use double quotes for interpolation: "Hello $name". Use qq{} for multi-line strings. Handle UTF-8 encoding properly.
+- **Arrays and Hashes**: Use -> for hash access: $hash->{key}. Use @ for array operations. Use scalar() for counting: scalar(@array).
+- **File Operations**: Use open with lexical filehandles: open my $fh, ">$file". Check open success: or util::error("Could not open $file: $!"). Close filehandles explicitly.
+- **External Commands**: Use backticks for command execution: my $output = `command`. Check $? for success. Use timeout for web scraping.
+- **JSON Handling**: Use JSON module: JSON->new->utf8->decode($json). Pretty-print for debugging: ->pretty->encode($data).
+- **CGI Parameters**: Use util::param($c, "name") for getting parameters. Validate and sanitize input. Handle missing parameters gracefully.
+- **Logging**: Use STDERR for server-side logging. Include timestamps when relevant. Log important operations and errors.
+- **Testing**: Test syntax with perl -c. Test functionality manually. Check database integrity after changes.
+- **Version Control**: Do NOT commit without explicit instructions from me. I try to keep commits logical. Include descriptive commit messages, with references to issue numbers where possible. Keep history clean and meaningful.
+
+## Common Tasks
+- **Add New Operation**: Add dispatch in index.fcgi (POST in eval block, GET in main if-elsif chain), create module in `code/`.
+- **Database Query**: Prepare with `$sth = $c->{dbh}->prepare($sql); $sth->execute(@params);` while loop for results. Or use the helpers in db.pm when possible.
+- **Form Handling**: Hidden inputs for state; `accept-charset='UTF-8'`; redirect after POST.
+- **Beer Board**: Scrape to JSON, store in tap_beers table, display in beerboard.pm with expand/collapse JS.
+- **Debugging**: Print to STDERR for logs; `$c->{devversion}` for dev-specific behavior.
+
+## Examples
+- **Dispatch Pattern**: `if ($c->{op} =~ /Board/i) { beerboard::beerboard($c); }`
+- **SQL Insert**: `$c->{dbh}->do("INSERT INTO glasses (Username, Timestamp) VALUES (?, ?)", undef, $c->{username}, time());`
+- **Filter Link**: `filt($c, "IPA", "span", "IPA beers")` creates `<a href='...?q=IPA'>IPA beers</a>`
+- **Context Usage**: `my $username = $c->{username}; my $url = $c->{url};`
+- **Scraping Output**: `print encode_json({ maker => $maker, beer => $beer, alc => $alc });`
+
+## Priorities
+- Focus on direct SQL, context passing, and CGI dispatch. Avoid over-abstraction; prioritize readability and direct data manipulation.
+- Be precise and explicit in all code generation. No fluff
+- Do ask clarifying questions if requirements are ambiguous. 
+- don't try to be too clever or use advanced Perl features unnecessarily. Keep it simple and maintainable.
+- Avoid duplicating code; if you find yourself writing similar code, consider refactoring into a helper function in db.pm or util.pm.
+
+## Interactions
+- When designing a new feature or making changes, feel free to ask clarifying questions 
+- When I ask you to check a module, check for
+  - adherence to the architecture and code style guidelines
+  - consistency with existing patterns in the codebase
+  - potential bugs or issues in the logic
+  - opportunities for refactoring or improvement 
+  - dead and unused code that can be removed
+  - code duplication that can be refactored into helper functions
+  - Important: Make no changes before checking with the user. Just list your findings first.
+  - Do not list all things that are all right, only those that might be issues or improvements. 
+- always be explicit about what you are doing and why, before doing it.
+- If you need to make changes, list them clearly and ask for confirmation before proceeding.
+- Avoid emojis and fluff in your responses; be concise and to the point.

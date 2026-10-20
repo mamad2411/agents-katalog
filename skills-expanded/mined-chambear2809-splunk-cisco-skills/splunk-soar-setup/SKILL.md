@@ -1,0 +1,278 @@
+---
+name: splunk-soar-setup
+description: "Use when the user asks to install Splunk SOAR On-prem, build a SOAR cluster, onboard SOAR Cloud, install
+  Automation Broker, install splunk-side SOAR apps, or wire up SOAR with Splunk Enterprise Security.
+  Render, preflight, apply, and validate the full Splunk SOAR lifecycle: Splunk SOAR (On-prem)
+  unprivileged single-instance install, On-prem cluster install with external services (PostgreSQL local
+  or AWS RDS, GlusterFS, Elasticsearch, HAProxy), SOAR Cloud onboarding helper (JWT capture, IP allowlist,
+  REST automation user provisioning), Splunk SOAR Automation Broker on Docker or Podman with FIPS
+  detection, Splunk-side apps (Splunk App for SOAR Splunkbase 6361, Splunk App for SOAR Export Splunkbase
+  3411), and ES integration readiness with a fail-closed Mission Control UI handoff."
+compatibility: "Splunk Cloud Platform 10.5.2605: conditional. Follow documented package, entitlement, topology, and customer-managed runtime guardrails; self-managed paths use the separate Enterprise 10.6 compatibility contract."
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk SOAR Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Install Splunk SOAR On-prem, build a SOAR cluster, onboard SOAR Cloud, install Automation Broker, install splunk-
+  side SOAR apps, or wire up SOAR with Splunk Enterprise Security.
+- Preview and review the splunk soar setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-soar-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-soar-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+## Shared add-on completion gate
+
+Whenever this workflow installs, configures, or hands off a Splunk-side SOAR
+app or add-on, follow the
+[shared completion gate](../shared/ta_completion_gate.md). Package delivery
+alone is not success; validate applicable event/action flow and shipped views,
+or record explicit package evidence that no dashboards ship.
+
+This skill covers every documented Splunk SOAR install path:
+
+- **On-prem single instance** (unprivileged) — `soar-prepare-system` followed
+  by `soar-install`.
+- **On-prem cluster** (>= 3 nodes) — `make_cluster_node.pyc` plus external
+  PostgreSQL / GlusterFS / Elasticsearch / HAProxy.
+- **SOAR Cloud** — Splunk-provisioned tenant; the skill handles JWT capture,
+  IP allowlist, REST automation-user / token creation, and Automation Broker
+  install for connecting back to a private network.
+- **Splunk-side integration** — installs Splunk App for SOAR (Splunkbase
+  6361) and Splunk App for SOAR Export (Splunkbase 3411) via the existing
+  [`skills/splunk-app-install`](../../skills/splunk-app-install/SKILL.md)
+  skill.
+- **ES integration readiness** — calls
+  [`skills/splunk-enterprise-security-config`](../../skills/splunk-enterprise-security-config/SKILL.md)
+  `integrations.soar` engine path.
+
+## Agent Behavior — Credentials
+
+Never paste passwords, JWT tokens, or `pgbouncer`/postgres passwords into
+chat.
+
+```bash
+bash skills/shared/scripts/write_secret_file.sh /tmp/soar_admin_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/soar_api_token
+bash skills/shared/scripts/write_secret_file.sh /tmp/postgres_master_password
+bash skills/shared/scripts/write_secret_file.sh /tmp/pgbouncer_password
+```
+
+The skill reads these via `--*-file` flags and never embeds the value in
+rendered output.
+
+`cloud/automation-user.sh` is idempotent when its destination already holds a
+private single-link mode-600 token: it exits without a REST mutation. A new
+mint or rotation requires the explicit non-secret gate
+`SOAR_ACCEPT_TOKEN_MINT_OR_ROTATION=true`; rotation also requires
+`SOAR_ROTATE_AUTOMATION_TOKEN=true`. The helper fsyncs a private pre-POST
+journal beside the token. An interrupted/uncertain POST, missing response key,
+or uncertain atomic write becomes `ambiguous` and blocks retries until an
+operator inspects the automation user and revokes any orphan token.
+
+## Quick Start
+
+Render a single-instance unprivileged install:
+
+```bash
+SOAR_TGZ_SHA256="$(awk '{print $1}' /secure/vendor/splunk-soar.sha256)"
+bash skills/splunk-soar-setup/scripts/setup.sh \
+  --phase render \
+  --soar-platform onprem-single \
+  --soar-home /opt/soar \
+  --soar-https-port 8443 \
+  --soar-hostname soar01.example.com \
+  --soar-tgz /tmp/splunk_soar-unpriv-8.5.0.tgz \
+  --soar-tgz-sha256 "${SOAR_TGZ_SHA256}"
+```
+
+Render a 3-node cluster with external PostgreSQL on AWS RDS:
+
+```bash
+SOAR_TGZ_SHA256="$(awk '{print $1}' /secure/vendor/splunk-soar.sha256)"
+bash skills/splunk-soar-setup/scripts/setup.sh \
+  --phase render \
+  --soar-platform onprem-cluster \
+  --soar-home /opt/soar \
+  --soar-https-port 8443 \
+  --soar-hosts soar01,soar02,soar03 \
+  --soar-ssh-known-hosts-file /secure/ssh/known_hosts \
+  --soar-tgz /tmp/splunk_soar-unpriv-8.5.0.tgz \
+  --soar-tgz-sha256 "${SOAR_TGZ_SHA256}" \
+  --external-pg "mode=rds,host=soar-db.cluster-xyz.us-east-1.rds.amazonaws.com,port=5432" \
+  --external-gluster gluster01,gluster02 \
+  --external-es es01,es02,es03 \
+  --load-balancer haproxy01
+```
+
+Render a SOAR Cloud onboarding bundle and Automation Broker install:
+
+```bash
+bash skills/splunk-soar-setup/scripts/setup.sh \
+  --phase render \
+  --soar-platform cloud \
+  --soar-tenant-url https://example.splunkcloudgc.com/soar \
+  --soar-automation-token-file /tmp/soar_automation_token \
+  --automation-broker "runtime=docker,fips=auto"
+```
+
+Apply Splunk-side apps:
+
+```bash
+bash skills/splunk-soar-setup/scripts/setup.sh \
+  --phase splunk-side-apps \
+  --apply \
+  --splunk-side-apps "app_for_soar=true,app_for_soar_export=true"
+```
+
+All mutating phases (`apply`, `onprem-single`, `onprem-cluster`,
+`automation-broker`, `splunk-side-apps`, and `all`) require
+the explicit `--apply` gate. Render, preflight, status, and validation remain
+non-mutating.
+Mutating on-prem package phases additionally require
+`--soar-tgz-sha256` sourced from a trusted vendor or controlled artifact
+handoff. The wrapper validates that digest and the complete archive member
+graph before rendering or contacting a cluster host. Each installer extracts
+into a private validation stage before privileged host changes, requires the
+single top-level `splunk-soar` root and non-link installer entrypoints, then
+moves the validated root through a private same-filesystem promotion stage
+without replacing an existing installation.
+`--phase es-integration` exits nonzero before any mutation because the supported
+ES engine models `conf-essoar` as inventory/preflight-only. Complete tenant
+pairing, token entry, notable forwarding, and Adaptive Response verification in
+the documented Mission Control UI.
+Cluster provisioning, backup, and restore require a pre-enrolled SSH
+known-hosts file; generated scripts use strict host-key checking and never
+silently accept a new host key.
+
+To mint the rendered Cloud automation token after review:
+
+```bash
+SOAR_ACCEPT_TOKEN_MINT_OR_ROTATION=true \
+  bash splunk-soar-rendered/cloud/automation-user.sh
+```
+
+Do not delete an `*.mint-state.json` file in `in_progress` or `ambiguous`
+state to force a retry. Reconcile the live user's tokens and revoke any
+unknown credential first.
+
+Validate Splunk-side SOAR apps (reads credentials from the project-root
+`credentials` file, checks that `splunk_app_soar` is installed, and prints a
+handoff hint for the SOAR UI):
+
+```bash
+bash skills/splunk-soar-setup/scripts/validate.sh \
+  --soar-url https://soar01.example.com:8443
+```
+
+Add `--export` to also require the Splunk App for SOAR Export (Splunkbase
+3411). For SOAR server-side health checks, run the rendered
+`splunk-soar-rendered/validate.sh` after the server-side install phases
+complete.
+
+## What It Renders
+
+Under `splunk-soar-rendered/`:
+
+- `onprem-single/{prepare-system.sh, install-soar.sh, post-install-checklist.md}`
+- `onprem-cluster/{make-cluster-node.sh, backup.sh, restore.sh}`
+- `onprem-cluster/external-services/{postgres-rds.tf, postgres-local.sh, gluster-volume.sh, elasticsearch.yml, haproxy.cfg}`
+- `shared/safe_extract_tar.py`
+- `cloud/{onboarding-checklist.md, jwt-token-helper.sh, ip-allowlist.json, apply-allowlist.sh, automation-user.sh}`
+- `automation-broker/{docker-compose.yml, podman-compose.yml, install.sh, add-ca-certificate.sh, preflight.sh}`
+- `splunk-side/{install-app-for-soar.sh, install-app-for-soar-export.sh, configure-phantom-endpoint.sh}`
+- `validate.sh`
+
+## Out of Scope
+
+- SOAR Cloud tenant provisioning (Splunk-managed; users get an invite from
+  Splunk).
+- Custom playbook authoring (use SCM/Git outside this skill).
+- Vendor-specific SOAR connector apps (catalog-aware, not installed).
+- SOAR licensing (commercial, separate from Splunk Enterprise licensing).
+- Multi-tenant SOAR On-prem (Splunk Professional Services).
+- SOAR Cloud → On-prem repatriation.
+
+## References
+
+- [reference.md](reference.md) for cluster topology, external-services
+  setup, FIPS handling, REST `automation` user model, ES integration map,
+  and backup/restore flow.
+- [template.example](template.example) for the non-secret intake worksheet.
+
+## MCP Tools
+
+This skill includes checked-in, read-only Splunk MCP custom tools generated
+from `mcp_tools.source.yaml`.
+
+Validate or regenerate the tool artifact:
+
+```bash
+python3 skills/shared/scripts/mcp_tools.py validate skills/splunk-soar-setup
+python3 skills/shared/scripts/mcp_tools.py generate skills/splunk-soar-setup
+```
+
+Load the tools into Splunk MCP Server:
+
+```bash
+bash skills/splunk-soar-setup/scripts/load_mcp_tools.sh
+```
+
+The loader uses the supported `/mcp_tools` REST batch endpoint by default. Use
+`--allow-legacy-kv` only for older MCP Server app versions that lack that
+endpoint.

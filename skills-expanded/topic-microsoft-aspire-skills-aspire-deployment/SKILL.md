@@ -1,1 +1,0 @@
-../../../../../skills/aspire-deployment/SKILL.md

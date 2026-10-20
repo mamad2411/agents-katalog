@@ -2,10 +2,9 @@
 ---
 name: bigquery-ai
 description: BigQuery AI and ML patterns for Gemini-powered analytics. Use when building natural language SQL, ML.GENERATE_TEXT pipelines, Cortex Framework data foundations, or grounding agents in warehouse data.
-tags: [gcp, bigquery, analytics, gemini]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # BigQuery AI for Gemini-Powered Analytics
 

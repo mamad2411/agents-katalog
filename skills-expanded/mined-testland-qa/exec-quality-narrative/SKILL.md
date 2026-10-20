@@ -1,0 +1,107 @@
+---
+name: exec-quality-narrative
+description: "Build-an-X workflow that turns already-computed quality data - weekly digests, KPI roll-ups, DORA delivery metrics, escape-defect trends, OKR grading - into an executive or QBR narrative structured by the Minto Pyramid Principle: governing answer first, MECE-grouped support beneath it, SCQA opening (Barbara Minto, The Pyramid Principle, ISBN 978-0273710516). Distinct from single-team digest computation (which computes the RAG digest from raw CI and tracker signals; this skill consumes such digests and writes the upward story), from portfolio-review aggregation (which aggregates teams into a portfolio review; this skill is the communication layer either output feeds), and from QA OKR authoring (forward-looking commitments; this skill narrates what happened and what it means). Use before a QBR, board update, or exec review when the data exists but the story does not."
+metadata:
+  keywords: "executive-narrative, qbr, minto-pyramid, dora-metrics, quality-reporting, scqa"
+  version: "1.1.7"
+---
+
+# exec-quality-narrative
+
+## Overview
+
+QA leaders usually walk into a QBR with the data inverted: twelve slides of metrics building toward a conclusion on slide thirteen. Executives read in the opposite direction. The **Minto Pyramid Principle** (Barbara Minto, *The Pyramid Principle: Logic in Writing and Thinking*, ISBN 978-0273710516) prescribes that "ideas should be communicated in a pyramid format in which ideas are organized top-down, starting with a main idea", with groupings under it that are **MECE** - mutually exclusive, collectively exhaustive - because, per Minto, one "can't derive an idea from a grouping unless the ideas in the grouping are logically the same, and in logical order" ([Barbara Minto, Wikipedia](https://en.wikipedia.org/wiki/Barbara_Minto)). The book's opening device is **SCQA**: Situation, Complication, Question, Answer - state the stable context, the thing that changed, the question that raises, and the answer immediately.
+
+This skill applies that structure to quality data your existing test tooling already produces: the answer at the top, two to four MECE support groups under it, every number citing the artifact it came from.
+
+## When to use
+
+- A QBR, board update, or exec quality review is scheduled and the inputs (digests, KPI tables, OKR grades) exist but read as data, not narrative.
+- Leadership asks "is quality getting better or worse?" and the honest answer needs structure plus evidence rather than a dashboard link.
+- A quality investment ask (headcount, tooling, time) needs an exec-shaped argument built on the quarter's evidence.
+
+Do **not** use this skill to:
+
+- Compute the underlying metrics - the `qa-manager` agent (this plugin) computes single-team digests from CI and tracker data, and `quality-status-digest` Part 2 rolls teams into a portfolio review. This skill starts where they end.
+- Draft next quarter's commitments - OKR drafting is out of scope; the narrative may end by pointing at the team's OKR set, not by inventing one.
+- Report to engineering peers. The audience here holds budget, not backlogs; a sprint-level test report is a different artifact.
+
+## Step 1 - Capture the inputs
+
+| Input | Source | Role in the narrative |
+|---|---|---|
+| **Quality digests** | Per-team quality digest output, or equivalent | Pass-rate trend, escape counts, flake debt with citations already attached |
+| **Portfolio roll-up** | Portfolio roll-up output, if multi-team | Cross-team table, risk heatmap, capacity view |
+| **DORA delivery metrics** | CI / deploy data per [dora.dev](https://dora.dev/guides/dora-metrics-four-keys/) | Delivery context executives often already know from engineering reporting |
+| **OKR grading** | The team's OKR set + end-of-quarter grades | Commitment-vs-delivery evidence |
+| **Escape trend** | Defect-tracker trend (e.g., a defect-trend narrative) | The quality outcome line executives care about most |
+| **Audience + ask** | Who reads this, and what decision (if any) is being requested | Determines the Answer sentence and whether the narrative is informational or an investment case |
+
+Halt with `UNCITED_INPUTS` if the supplied numbers carry no source artifacts: a narrative built on unattributed figures collapses at the first follow-up question.
+
+## Step 2 - Verify the DORA vocabulary before using it
+
+Executives increasingly hear DORA terms from engineering leadership, so use them precisely. DORA defines **five** software delivery metrics, evolved from the original four keys and grouped as throughput and instability; the verbatim definitions are in [references/dora-metrics.md](references/dora-metrics.md).
+
+Two precision rules for the narrative: (1) escape-defect rate is a defect-leakage metric, **not** a DORA metric - DORA measures delivery; do not blend them under one label (single-team digest reporting draws the same line); (2) if the org still says "the four keys", note the recovery-time rename rather than silently mixing old and new names.
+
+## Step 3 - Write the pyramid top: SCQA + the Answer sentence
+
+Draft the governing thought before touching slides. Per the SCQA device:
+
+- **Situation:** the stable fact the audience already accepts ("We ship weekly to 40k customers; quality reporting covers all four product teams.")
+- **Complication:** what changed ("Q2 doubled deployment frequency while QA headcount was flat.")
+- **Question:** the question that complication forces ("Did quality hold?")
+- **Answer:** one sentence, with the trend and the cost attached ("Quality held on three of four teams; checkout regressed and needs one decision from this group.")
+
+The Answer sentence is the narrative's title. If it cannot be written, the analysis is not done; go back to the inputs, not to the slide deck.
+
+## Step 4 - Build 2 - 4 MECE support groups
+
+Group every finding under headers that do not overlap and jointly cover the story. A grouping that works repeatedly for quality narratives: **outcomes** (escapes, incidents, customer-visible quality), **delivery** (DORA metrics, cycle time), **commitments** (OKR grades), **capacity/risk** (staffing, flake debt, bus factors). Each group gets one claim sentence supported by cited numbers; per Minto, the items inside a group must be "logically the same" ([Wikipedia, Barbara Minto](https://en.wikipedia.org/wiki/Barbara_Minto)) - do not mix an outcome stat into the delivery group because it is impressive.
+
+## Step 5 - Emit the narrative
+
+Lead with the Answer sentence as the title, follow with SCQA in two lines, then the 2 - 4 MECE groups, then the ask as its own header. Each group carries one claim sentence plus cited numbers. Minimal shape:
+
+```markdown
+# Quality QBR - <quarter>
+**Answer first:** <trend on N-1 of N teams; the one regression; the one decision needed>.
+**Situation.** <stable context>. **Complication.** <what changed, cited>. **Question.** <did quality hold?>
+## 1. Outcomes ...   ## 2. Delivery ...   ## 3. Commitments ...   ## 4. The decision
+```
+
+Everything below this layer in the real document is appendix - per-team tables, the digests themselves, methodology - that executives can descend into but do not need to reach the answer. See [references/qbr-narrative-example.md](references/qbr-narrative-example.md) for the fully worked QBR narrative with real numbers and their sources.
+
+## Anti-patterns
+
+| Anti-pattern | Why it fails | Fix |
+|---|---|---|
+| Conclusion on the last slide | Executives decide in the first two minutes; the build-up reads as hedging | Answer-first per the pyramid |
+| Metric dump as narrative | Data without a governing claim delegates the synthesis to the reader | Step 3: no deck before the Answer sentence exists |
+| Overlapping groups | The same fact argued twice reads as padding; MECE exists to prevent it | Step 4 grouping check |
+| Calling escape rate a DORA metric | Mislabels defect leakage as delivery performance; one informed exec follow-up sinks the room's trust | Step 2 vocabulary rules ([dora.dev](https://dora.dev/guides/dora-metrics-four-keys/)) |
+| Uncited numbers | First "where is that from?" without an answer discredits the cited ones too | Step 1 halts on uncited inputs |
+| Good-news filtering | Hiding the checkout regression converts a report into a liability when it surfaces anyway | The Complication slot exists precisely for the bad news |
+| Burying the ask | A decision request hidden in slide 11 gets no decision | The ask is a top-level group with its own header |
+
+## Limitations
+
+- **Garbage in, story out.** The narrative inherits the quality of the digests and trackers beneath it; this skill structures evidence, it cannot create it.
+- **SCQA and the pyramid are cited to the book.** The Minto sources fetchable online describe the pyramid and MECE; SCQA's full treatment is in the book itself (cited in References), used here as a management framework.
+- **No automatic data pulls.** This skill consumes outputs of the agents named in Step 1; wiring live dashboards into prose is out of scope.
+- **One narrative, one audience.** A board version and an engineering-leadership version differ in Answer and asks; produce two artifacts rather than one compromise.
+
+## Hand-off targets
+
+- **Single-team digest inputs** → the `qa-manager` agent (this plugin).
+- **Multi-team portfolio inputs** → `quality-status-digest` Part 2 portfolio roll-up (this plugin).
+- **Next quarter's commitments the narrative points at** → the team's own OKR planning artifacts.
+- **Capability asks surfaced in the narrative** → capability gap analysis for the train-vs-hire grounding.
+
+## References
+
+- Barbara Minto, *The Pyramid Principle: Logic in Writing and Thinking*, ISBN 978-0273710516 - pyramid structure, SCQA opening, answer-first discipline.
+- Barbara Minto (Wikipedia) - pyramid format "organized top-down, starting with a main idea"; MECE; the logical-grouping quote: https://en.wikipedia.org/wiki/Barbara_Minto (fetched 2026-06-10).
+- DORA software delivery metrics - five-metric model and verbatim definitions used in Step 2: https://dora.dev/guides/dora-metrics-four-keys/ (fetched 2026-06-10).
+- The `qa-manager` agent and `quality-status-digest` (this plugin) - the upstream producers of this skill's digest and roll-up inputs.

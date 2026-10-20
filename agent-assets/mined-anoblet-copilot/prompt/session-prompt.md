@@ -1,0 +1,5 @@
+- Review the session history (.copilot/sessions/)
+- Identify specifications from each session for each package
+- (prompt.md) should be used as the source of truth
+- Limit the instructions to 16000 tokens
+- Generate (.copilot/sessions/session.instructions.md)

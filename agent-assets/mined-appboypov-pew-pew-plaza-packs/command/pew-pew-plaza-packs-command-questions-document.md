@@ -1,0 +1,80 @@
+# Prompt Command
+
+When this command is used, check if any required information is missing. If so, ask the user to provide it. Otherwise, proceed with the request.
+
+---
+
+@prompts/research-project.md
+
+Create a new questions document for the current context and activate questions document mode.
+
+<instructions>
+1. Analyze the current context and user's goals
+2. Create a comprehensive questions document following [[issue-creation-conventions]] naming patterns
+3. Filename: `[context-name]-questions.md` (use appropriate context identifier)
+4. Structure the document with sections for different phases or topics
+5. After creating the document, activate @modes/question-mode.md to begin the iterative refinement process
+</instructions>
+
+<document-structure>
+# 📋 [Project/Feature Name] Questions
+
+**Goal:** [Clearly state the interpreted goal based on user's request]
+
+Please answer the questions in each section by providing the number of your choice.
+When you're done with a section, please reply with "done".
+
+---
+
+## 🎯 Initial Questions - Iteration 1
+*[Mark complete when done: [ ]]*
+
+[Create comprehensive questions that can be answered with one of the options below, following these priorities:]
+- **Prefer questions answerable with Yes/No** to reduce cognitive load
+- Focus on maximum value in four areas:
+  - 🔧 **Improve**: What can be enhanced?
+  - ➕ **Add**: What new elements are needed?
+  - ➖ **Remove**: What should be eliminated?
+  - 🚫 **Exclude**: What should be ruled out?
+
+**Answer options for all questions:**
+1. Yes
+2. No
+3. Research Project (I'll find the answer in the project)
+4. Research tools (I'll find the answer on the web / using mcp tools)
+5. Skip
+
+---
+
+## 📝 Additional Information
+
+If you have any additional context or requirements not covered above, please add them here:
+
+```
+[Space for free-form input]
+```
+
+---
+
+## ✅ Answered Questions Archive
+
+*[This section will be populated as questions are answered]*
+</document-structure>
+
+<process>
+1. **Determine Context**: Identify the appropriate context name from the user's request
+2. **Create Document**: Write the questions document with initial high-value questions
+3. **Focus on Value**: Ensure questions target the most impactful decisions first
+4. **Activate Mode**: After creating, immediately activate @modes/question-mode.md
+5. **Begin Iteration**: Start the question-answer-refine cycle
+</process>
+
+<constraints>
+- ALWAYS create only ONE questions document per context
+- ALWAYS use the 5-option format when possible
+- ALWAYS organize by value type (Improve/Add/Remove/Exclude)
+- ALWAYS include space for additional context
+- NEVER create multiple question documents for same context
+</constraints>
+
+Begin by identifying the context and creating the appropriate questions document.

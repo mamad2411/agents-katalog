@@ -2,7 +2,6 @@
 ---
 name: snowflake-cortex
 description: Snowflake Cortex AI patterns for in-warehouse LLM inference, text-to-SQL (Cortex Analyst), and RAG (Cortex Search). Use when building AI agents that operate on Snowflake data without data movement.
-tags: [snowflake, cortex, analytics, llm]
 ---
 
 # Snowflake Cortex AI

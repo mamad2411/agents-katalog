@@ -1,0 +1,116 @@
+---
+description: |
+  当用户要求"新建实体/设计模型/Entity/PO/DTO"时触发（structure-boot 栈）。
+  覆盖 DDD 7+1 模块模型分层、Entity/PO 分离、Delegate 模式、包名约束。
+
+triggers:
+  - 新建实体
+  - 设计模型
+  - Entity
+  - PO
+  - DTO
+  - VO
+  - 领域模型
+  - model
+  - structure-boot 模型
+
+priority: high
+alwaysApply: false
+globs: "**/*Entity.java, **/*PO.java, **/*DTO.java, **/*VO.java, **/*Query.java, changes/**/*.md"
+
+category: model-design
+stack: structure-boot
+role: developer
+maturity: stable
+
+reads-before-action:
+  - wiki/structure-boot/developer.md
+  - wiki/_common/model-design.md
+
+related-skills:
+  - model-design
+  - structure-boot-new-entity
+
+when-to-use: |
+  在 structure-boot 项目里新建模型类、加字段
+when-not-to-use: |
+  仅阅读现有模型
+version: "0.3.0"
+since: "2026-08-13"
+---
+
+> **通用规范** (已安装于 `wiki/_common/`):
+> - `wiki/_common/api-design.md`: API 设计通用原则
+> - `wiki/_common/architecture.md`: 分层架构通用原则
+> - `wiki/_common/cache-design.md`: 缓存设计规范
+> - `wiki/_common/ci-cd-pipeline.md`: CI/CD 流水线规范
+> - `wiki/_common/code-review-checklist.md`: Code Review 通用原则
+> - `wiki/_common/coding-conventions.md`: 通用编码约定（coding-conventions）
+> - `wiki/_common/concurrency.md`: 并发编程规范
+> - `wiki/_common/database-design.md`: 数据库设计规范
+> - `wiki/_common/deployment.md`: 部署规范
+> - `wiki/_common/detailed-design.md`: 详细设计（LLD）规范
+> - `wiki/_common/distributed-transaction.md`: 分布式事务规范
+> - `wiki/_common/docker.md`: Docker 规范
+> - `wiki/_common/documentation.md`: 文档管理规范
+> - `wiki/_common/error-handling.md`: 错误处理公约
+> - `wiki/_common/git-workflow.md`: Git 工作流（分级规范）
+> - `wiki/_common/git.md`: Git 分支策略与工作流规范
+> - `wiki/_common/github-workflow.md`: GitHub 工作流（gh CLI + PR + Release）
+> - `wiki/_common/high-level-design.md`: 概要设计（HLD）规范
+> - `wiki/_common/kubernetes.md`: Kubernetes 规范
+> - `wiki/_common/legacy-onboarding.md`: 老项目接入指南
+> - `wiki/_common/logging.md`: 日志规范
+> - `wiki/_common/maven-publish.md`: Maven 发布规范
+> - `wiki/_common/messaging.md`: 消息队列规范
+> - `wiki/_common/migration-strategies.md`: 迁移策略详解
+> - `wiki/_common/model-design.md`: 模型设计规范
+> - `wiki/_common/naming.md`: 通用命名规范
+> - `wiki/_common/npm-publish.md`: npm 发布规范
+> - `wiki/_common/observability.md`: 可观测性规范
+> - `wiki/_common/performance.md`: 性能优化规范
+> - `wiki/_common/project-form-decision.md`: 项目形态决策指南
+> - `wiki/_common/project-structure.md`: 项目结构约定
+> - `wiki/_common/requirement-analysis.md`: 需求分析规范
+> - `wiki/_common/security.md`: 安全基线
+> - `wiki/_common/testing-strategies.md`: 测试策略
+> - `wiki/_common/transaction.md`: 本地事务规范
+> - `wiki/_common/version-management.md`: 版本管理规范
+> 
+> 在编码决策前应加载对应规范文件。
+
+
+# structure-boot 模型设计规范
+
+> 完整规范详见 `wiki/structure-boot/developer.md` + `wiki/_common/model-design.md`
+
+## 硬约束（MUST）
+
+- ✅ **MUST** 按 DDD 7+1 模块分层：Entity 在 `domain`，PO 在 `repository-mybatis`
+- ✅ **MUST** 包名：Entity `cn.structured.{X}.domain.entity`；PO `cn.structured.{X}.repository.po`
+- ✅ **MUST** `repository-mybatis` 模块实际包是 `cn.structured.{X}.repository.repository.*`（**双 repository**，历史遗留）
+- ✅ **MUST** Entity ↔ PO 转换在 `MybatisPlusDelegate` 显式实现 `toEntity` / `toPo`
+- ✅ **MUST** Entity 含审计字段：`id` / `tenantId` / `createdAt` / `updatedAt` / `is_deleted`
+
+## 命名
+
+| 层 | 模式 | 示例 |
+|---|---|---|
+| Entity | `{X}Entity` | `UserEntity` |
+| PO | `{X}PO` | `UserPO` |
+| DTO | `{X}DTO` | `UserDTO` |
+| VO | `{X}VO` | `UserVO` |
+| Query | `{X}Query` | `UserQuery` |
+
+## 禁止（MUST NOT）
+
+- ❌ Entity 上加 `@TableId` / `@TableLogic`
+- ❌ Service / Controller 直接返回 PO / Entity
+- ❌ Service 层注入 Mapper / PO
+- ❌ 依赖 MapStruct 等自动转换（MUST 显式手写 `toEntity` / `toPo`）
+
+## 关联
+
+- Wiki：`wiki/structure-boot/developer.md` `wiki/_common/model-design.md`
+- 技能：`model-design` / `structure-boot-new-entity`
+- 规则：`common-model-design`

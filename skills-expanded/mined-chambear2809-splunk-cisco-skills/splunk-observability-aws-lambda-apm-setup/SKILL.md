@@ -1,0 +1,331 @@
+---
+name: splunk-observability-aws-lambda-apm-setup
+description: "Use when the user asks to instrument Lambda functions for APM/tracing, attach the Splunk OTel Lambda
+  layer, wire SPLUNK_ACCESS_TOKEN safely, set up Lambda APM dashboards or detectors, or migrate from
+  Datadog, New Relic, or ADOT to Splunk OTel. Render, validate, and optionally apply Splunk OpenTelemetry
+  Lambda layer APM instrumentation for AWS Lambda functions in Splunk Observability Cloud. Covers Node.js,
+  Python, and Java runtime wiring, safe token delivery through Secrets Manager or SSM SecureString, layer
+  ARN snapshots, Lambda metrics extension opt-in, container-image snippets,
+  SAM/CDK/Terraform/CloudFormation/AWS CLI assets, vendor coexistence checks, X-Ray coexistence,
+  GovCloud/China refusal, rollback, discovery, and doctor reports."
+compatibility: "No direct Splunk Platform runtime dependency. This workflow can be used alongside Splunk Cloud Platform 10.5.2605 through its documented external APIs or handoffs."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "not-applicable"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Observability Cloud — AWS Lambda APM Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Instrument Lambda functions for APM/tracing, attach the Splunk OTel Lambda layer, wire SPLUNK_ACCESS_TOKEN safely,
+  set up Lambda APM dashboards or detectors, or migrate from Datadog, New Relic, or ADOT to Splunk OTel.
+- Preview and review the splunk observability aws lambda apm setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+Render-first skill that owns the complete lifecycle of Splunk OTel Lambda
+layer attachment. The workflow is render-first by default. AWS Lambda function
+changes only happen when the operator explicitly runs `--apply` after reviewing
+the rendered plan.
+
+The skill is the live fulfillment of the `handoffs.lambda_apm` stub emitted by
+`splunk-observability-aws-integration` (previously marked "future companion").
+
+## Coverage Model
+
+| Section | Coverage status |
+|---------|----------------|
+| Beta acknowledgement | `api_validate` |
+| Target function validation | `api_validate` |
+| Layer ARN resolution (snapshot) | `api_validate` |
+| Exec-wrapper wiring | `api_validate` |
+| Token delivery (Secrets Manager / SSM) | `api_apply` |
+| X-Ray coexistence flag | `api_validate` |
+| IAM ingest-egress policy (local collector disabled) | `api_validate` / `not_applicable` |
+| Terraform variant | `handoff` |
+| CloudFormation variant | `handoff` |
+| SAM template variant | `handoff` |
+| CDK TypeScript + Python variant | `handoff` |
+| SAR advisory | `handoff` |
+| Container-image Dockerfile snippet | `handoff` (image targets only) |
+| AWS CLI apply plan | `api_apply` |
+| Span attribute validation | `api_validate` |
+| Vendor-coexistence check | `api_validate` |
+| SnapStart guidance (Java) | `api_validate` |
+| Lambda@Edge | `not_applicable` (refused) |
+| Provisioned Concurrency (SAM/CFN emit) | `api_validate` |
+| `splunk-lambda-metrics` extension layer | `api_validate` (opt-in) |
+| GovCloud / China | `not_applicable` (refused) |
+| Cross-skill handoffs | `handoff` / `not_applicable` |
+
+## Safety Rules
+
+- Never ask for the Splunk O11y access token in conversation.
+- Never pass `SPLUNK_ACCESS_TOKEN` as a command-line value. Use `--token-file`.
+  The apply helper rotates the selected AWS secret, fetches it into a private
+  temporary file, and merges it into the Lambda environment without exposing
+  it in rendered files, shell history, or process arguments.
+- Token files must be regular, single-hardlink files containing one non-empty
+  printable-ASCII value with at most one trailing LF or CRLF, and no larger
+  than the backend limit (4 KiB for default-tier SSM Parameter Store;
+  64 KiB for Secrets Manager) with mode `600`. The generated writer opens the file once
+  with `O_NOFOLLOW`, verifies stable inode, metadata, and content fingerprints,
+  and builds the AWS payload from that descriptor. Use `write_secret_file.sh`
+  to create one without shell-history exposure.
+- `--allow-loose-token-perms` is an explicit development-only escape that
+  relaxes only the source mode check. The setup wrapper propagates it to the
+  generated writer; regular-file, non-symlink, single-hardlink, size, UTF-8,
+  and fingerprint checks remain mandatory.
+- Reject direct-secret flags: `--token`, `--access-token`, `--api-token`,
+  `--o11y-token`, `--sf-token`, `--password`.
+- `signalfx/splunk-otel-lambda` is BETA. Gate all operations behind
+  `accept_beta: true` in the spec or `--accept-beta` on the CLI.
+- GovCloud (`us-gov-*`) and China (`cn-*`) regions have no published layers.
+  The renderer fails with `not_applicable` coverage; do not fabricate ARNs.
+
+## Five-mode UX
+
+| Mode | Flag | Purpose |
+|------|------|---------|
+| render | `--render` (default) | Produces the plan tree. No AWS calls. |
+| apply | `--apply [SECTIONS]` | Runs the rendered aws-cli plan. Sections: `layer,env,iam,validation`. |
+| validate | `--validate [--live]` | Static checks plus an optional unauthenticated ingest-endpoint reachability probe; `--live` does not validate configured state or telemetry arrival. |
+| doctor | `--doctor` | Vendor conflict, ADOT, X-Ray, snapshot-freshness checks. |
+| quickstart | `--quickstart` | Render + print exact `--apply` command. |
+
+`--quickstart-from-live --target FUNCTION` writes only an allowlisted subset of
+the Lambda configuration to a mode-`600` snapshot. It deliberately excludes
+`Environment` (and therefore environment secrets), revision IDs, and other
+unneeded response fields.
+
+## Primary Workflow
+
+### 1. Copy and edit the spec
+
+```bash
+cp skills/splunk-observability-aws-lambda-apm-setup/template.example my-lambda-spec.yaml
+# fill in realm, targets (function names, regions, runtimes, arches)
+```
+
+### 2. Render
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --render \
+  --spec my-lambda-spec.yaml \
+  --realm us1
+```
+
+### 3. Review the plan
+
+```
+splunk-observability-aws-lambda-apm-rendered/
+  01-overview.md               # plan summary + apply command
+  02-targets.md                # per-function targets + resolved layer ARNs
+  03-layers.md                 # layer attachment plan
+  04-env.md                    # environment variable plan
+  05-validation.md             # validation steps
+  aws-cli/apply-plan.sh        # guarded AWS CLI apply helper
+  terraform/main.tf            # Terraform resource snippets
+  cloudformation/snippets.yaml # CloudFormation snippets
+  sam/template.yaml            # AWS SAM template snippet
+  cdk/lambda-apm-stack.ts      # CDK TypeScript snippet
+  cdk/lambda_apm_stack.py      # CDK Python snippet
+  sar/README.md                # SAR advisory (Splunk does not publish SAR)
+  container-image/             # Dockerfile.<runtime> (image-package targets only)
+  iam/                         # IAM policy (local collector disabled only)
+  scripts/write-splunk-token.sh # one-time token write to secret backend
+  scripts/handoffs.sh           # cross-skill handoff drivers
+  coverage-report.json          # per-section coverage status
+```
+
+### 4. Write the access token to the secret backend (once)
+
+```bash
+# Prepare the token file (never put the value in shell history):
+bash skills/shared/scripts/write_secret_file.sh /tmp/splunk_o11y_token
+
+# Write token to Secrets Manager (or SSM if secret_backend: ssm):
+TOKEN_FILE=/tmp/splunk_o11y_token \
+  bash splunk-observability-aws-lambda-apm-rendered/scripts/write-splunk-token.sh
+
+# Keep the local file until the apply step below completes, then delete it.
+```
+
+### 5. Apply
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --apply \
+  --spec my-lambda-spec.yaml \
+  --realm us1 \
+  --token-file /tmp/splunk_o11y_token
+
+rm /tmp/splunk_o11y_token
+```
+
+Or apply only specific sections:
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --apply layer,env \
+  --spec my-lambda-spec.yaml
+```
+
+## Quickstart (single command)
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --quickstart \
+  --spec my-lambda-spec.yaml \
+  --realm us1 \
+  --accept-beta
+```
+
+The quickstart renders the plan and prints the exact `--apply` command to run
+next. No AWS calls happen until you explicitly run `--apply`.
+
+## GitOps mode (Terraform / CloudFormation only)
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --render \
+  --gitops-mode \
+  --spec my-lambda-spec.yaml
+```
+
+`--gitops-mode` suppresses the `aws-cli/` directory and produces only
+`terraform/` and `cloudformation/` artifacts.
+
+The Terraform variant necessarily reads the token as plaintext and stores it
+in Terraform state as part of the Lambda environment. Use only an encrypted,
+access-controlled remote backend with locking and never commit local state;
+prefer the CloudFormation dynamic-reference or guarded AWS CLI variant when
+state cannot be protected to the same standard as the token.
+
+## Doctor
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --doctor \
+  --target my-function \
+  --realm us1
+```
+
+Doctor checks: beta status, snapshot freshness, vendor conflicts (Datadog /
+New Relic / AppDynamics / Dynatrace), ADOT conflict, X-Ray coexistence flag,
+and VPC egress reminder when `local_collector_enabled: false`.
+
+## Rollback
+
+```bash
+# Detach layer only:
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --rollback layer \
+  --target my-function
+
+# Remove env vars only:
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --rollback env \
+  --target my-function
+
+# Detach IAM ingest-egress policy (only when local_collector_enabled=false):
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --rollback iam \
+  --target my-function
+
+# Full rollback (layer → env → iam in sequence):
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/setup.sh \
+  --rollback all \
+  --target my-function
+```
+
+Each rollback section renders idempotent AWS CLI commands for review; the skill
+never mutates AWS without operator review.
+
+## Hand-offs
+
+- CloudWatch Lambda metrics → [`splunk-observability-aws-integration`](../splunk-observability-aws-integration/SKILL.md)
+- Lambda APM dashboards → [`splunk-observability-dashboard-builder`](../splunk-observability-dashboard-builder/SKILL.md)
+- Cold-start / error / latency detectors → [`splunk-observability-native-ops`](../splunk-observability-native-ops/SKILL.md)
+- Lambda log ingestion → [`splunk-connect-for-otlp-setup`](../splunk-connect-for-otlp-setup/SKILL.md)
+- Gateway OTel Collector path → [`splunk-observability-otel-collector-setup`](../splunk-observability-otel-collector-setup/SKILL.md) (set `handoffs.gateway_otel_collector: true` and `local_collector_enabled: false`)
+- FROM `splunk-observability-aws-integration` → this skill is the fulfillment of `handoffs.lambda_apm: true`
+
+## Out of Scope
+
+- Lambda log ingestion (handed off to `splunk-connect-for-otlp-setup`)
+- CloudWatch metrics for AWS/Lambda namespace (handed off to `splunk-observability-aws-integration`)
+- AppDynamics serverless instrumentation (handled by `splunk-appdynamics-apm-setup`)
+- AlwaysOn Profiling for Lambda (not officially supported in `signalfx/splunk-otel-lambda`)
+- Go, Ruby, .NET Lambda runtimes (no published layers from publisher 254067382080)
+- GovCloud / China regions (no published layers; renderer refuses with `not_applicable`)
+- Lambda@Edge (no env-var injection support in the Lambda@Edge execution model; renderer refuses)
+
+## Validation
+
+```bash
+bash skills/splunk-observability-aws-lambda-apm-setup/scripts/validate.sh \
+  --output-dir splunk-observability-aws-lambda-apm-rendered
+```
+
+Static checks: required files, IAM JSON shape, secret-leak scan.
+With `--live`: runs an unauthenticated reachability-only probe of the Splunk
+ingest endpoint. It does not validate Lambda configuration, token authorization,
+span export, or APM data arrival. Invoke the function and verify its expected
+span attributes in APM for configured-state acceptance.
+
+See [`references/splunk-doc-feature-matrix.md`](references/splunk-doc-feature-matrix.md) for the full feature matrix and limitations.

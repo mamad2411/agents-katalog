@@ -1,0 +1,29 @@
+# XnaFiddle Repository Guidelines
+
+## What Is This?
+
+XnaFiddle is a standalone KNI game runner with an in-browser C# editor. It is a Blazor WASM app with a WebGL canvas and Monaco code editor that lets users write, compile, and run XNA/KNI game code directly in the browser.
+
+## Skills
+
+On **any** task — research, maintenance, new features, bug fixes, refactors, docs, reviews — first check whether an available skill applies, and load it before proceeding. Skills (e.g. `file-loading`, `intellisense`, `verify`, `run`, `code-review`) carry condensed, repo-specific knowledge that prevents rediscovering subsystem details from scratch. When a skill matches the work, invoke it; if none fit, say so briefly and continue. This check is in addition to, not a replacement for, the Agent Workflow below.
+
+**Finding an existing skill stale or wrong** → fix it directly, no suggestion or confirmation needed. This is correcting an inaccuracy, not a new-content judgment call.
+
+**Proactively suggest a new skill** when — and only when — you finish work having re-derived reusable subsystem knowledge that no skill covers. Don't wait to be asked; surface it as a suggestion and let the user decide (don't create one unprompted). But the bar is **high**: every skill line costs tokens on every relevant load, so err toward *not* proposing. Only suggest when you're confident the knowledge will be re-hit by a concrete upcoming task, not for one-off facts the code already records or that this conversation alone needed. When unsure, stay silent.
+
+## Agent Workflow
+
+For every task, invoke the appropriate agent from `.claude/agents/` before proceeding. The agent's instructions provide guidelines for how the task should be performed. Before doing any work, announce which agent you are using such as "Invoking coder agent for this task..."
+
+Available agents:
+- **coder** — Writing or modifying code and unit tests for new features or bugs
+- **qa** — Testing, reviewing changes, and verifying correctness
+- **refactoring-specialist** — Refactoring and improving code structure
+- **docs-writer** — Writing or updating documentation
+- **product-manager** — Breaking down tasks and tracking progress
+- **security-auditor** — Security reviews and vulnerability assessments
+
+Select the agent that best matches the task at hand. For tasks that span multiple concerns (e.g., implement a feature and write tests), invoke the relevant agents in sequence.
+
+When the user references a GitHub issue (a URL or `#N`) and asks to work on it, the **issue-workflow** skill carries the process (read the issue + comments, branch, build-verify, open the PR immediately). It is one of the skills the *Skills* check above should load.

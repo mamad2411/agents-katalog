@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/olorolor/fundamentals-with-ai/module1-llm-basics/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: LLM의 본질(확률적 토큰 예측), hallucination의 구조적 원인, temperature의 의미를 학습시키는 모듈.

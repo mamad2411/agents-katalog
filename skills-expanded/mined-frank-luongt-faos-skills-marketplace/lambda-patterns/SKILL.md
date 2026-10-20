@@ -2,10 +2,9 @@
 ---
 name: lambda-patterns
 description: AWS Lambda patterns for AI agent tool execution. Use when building Bedrock Agent action groups, serverless API backends for agent tools, or event-driven AI processing pipelines.
-tags: [aws, lambda, serverless, agents]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # AWS Lambda Patterns for AI Agent Tools
 

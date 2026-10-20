@@ -1,0 +1,401 @@
+# Project Instructions
+
+> **Charter (what this file owns)**: architecture (`## Architecture Overview`), skill
+> routing (`## Skill Invocation Rules` — the authoritative skill-routing table),
+> the Issue-First rule, and the dead-code policy. Branching, CI-check commands, and
+> test placement are owned by `.claude/conventions/` (`branching.md`, `ci-checks.md`,
+> `testing.md`); `.claude/instructions.md` is a quick-reference/FAQ layer that links
+> here rather than restating. When adding a convention, give it one owner and link to
+> it — do not restate it in another file (see Issue #849).
+
+## Issue-First Rule
+
+**Before making any file change — code, configuration, skill, or documentation —
+always create a GitHub Issue first by invoking the `/issue` skill.**
+
+This rule applies to ALL file changes, including cases not listed in the Skill
+Invocation Rules table below. No file should be created or modified without a
+backing Issue.
+
+### Exemptions (no Issue required)
+
+- Fixing a typo or formatting error explicitly requested inline by the user
+- Updating `## Architecture Overview` in this file after an implementation
+  (covered by the `/implement` skill's Step 7)
+- Invoking `/issue` itself — creating a GitHub Issue is not a file change;
+  `/issue` IS the Issue-First gate, so it has no prior Issue of its own to
+  wait on (applies equally to `/code-review` Step 3.5 and `/implement`
+  Step 3.6, both of which invoke `/issue` on the project's behalf)
+
+### Why This Rule Exists
+
+Without this rule, Claude may treat unlisted operations (e.g., creating a new skill
+file, adding a config entry) as exempt from the issue-first workflow and proceed
+directly to file changes. A backing Issue ensures every change is intentional,
+reviewable, and traceable.
+
+### Recent Incidents
+
+- **2026-03-29**: Claude attempted to create `.claude/skills/split/SKILL.md` directly
+  without creating a GitHub Issue first, because "creating a skill file" was not
+  explicitly listed in the Skill Invocation Rules table. Fixed by Issue #382.
+
+---
+
+## Skill Invocation Rules
+
+When the user requests any of the following operations, ALWAYS invoke the corresponding skill defined in `.claude/skills/` directory. Never execute these operations directly without following the skill procedures.
+
+| User Request | Skill to Invoke | Key Requirements |
+|--------------|-----------------|------------------|
+| Commit changes | /commit | Branch guard, secrets check, English message (fmt/clippy via `.githooks/`) |
+| Create PR | /pr | Run pre-flight checks, English title/body |
+| Push to remote | /pre-push | Run all validations before push |
+| Create Issue | /issue | English title/body, proper template |
+| Implement Issue | /implement | Full workflow from branch to PR |
+| Dependabot Alert | /dependabot | Use CVE/GHSA ID (never alert number), `security` label |
+| Prepare Release | /release | Version bump, CHANGELOG update, PR to `develop` (then develop→main manually) |
+| Sync CLI options to config | /sync-config | Audit `ConfigFile`, `MergedConfig`, `CONFIG_TEMPLATE` for gaps |
+| Split Issue into subtasks | /split | Confirm decomposition before creating Issues; all Issues in English |
+| Propose or evaluate a feature idea | /ideate | Run triage, competitive analysis, draft Issue |
+| Review code quality before commit | /code-review | Spawn Reviewer Agent; do not recheck CI concerns (fmt/clippy) |
+
+### Why This Rule Exists
+
+Skills contain mandatory pre-flight checks and language requirements that prevent:
+- CI failures from formatting issues (`cargo fmt --all -- --check`)
+- Clippy warnings causing CI failures (`-D warnings` flag)
+- Language inconsistencies in GitHub artifacts (all must be in English)
+- Missing code quality validations
+- Direct commits to protected branches (`main`, `develop`)
+
+### Recent Incidents
+
+- **PR #121**: Created in Japanese, `cargo fmt --all -- --check` failed in CI
+- **Issue #59**: `cargo clippy` was run without `-D warnings`, causing CI failure after push
+- **2026-04-18**: v2.2.0 release promoted an empty `[Unreleased]` section. Features added in PRs #441–#483 were never recorded in CHANGELOG. Fixed by Issue #491 (added gate in `/release` Step 3.6 and `/pr` Step 4.5).
+- **2026-05-09 (Issue #511)**: `--check-abandoned` CLI flag was added without updating README.md, README-JP.md, `examples/sample-project/config/uv-sbom.config.yml`, or any example project README. Root cause: `/implement` Step 4 said "update docs as needed" without a concrete gate; `/pr` had no documentation backstop. Fixed by Issue #568 (`/implement` Step 4.3 CLI Flag Documentation Gate) and Issue #569 (`/pr` Step 4.6 CLI Flag Documentation Backstop).
+- **2026-07-08 (Issue #669)**: The `--check-non-pypi` flag (Issue #627) satisfied `/implement` Step 4.3.D with a README paragraph and a hand-fabricated example-output block, but no shipped example project's `uv.lock` contains a non-PyPI source, so running the flag against any example produces empty output. Root cause: Step 4.3.D only required a README *mention*, not *proof* of non-empty output. Fixed by Issue #669 (Step 4.3.D now requires actually running the flag against example data and producing real, non-empty output; a missing trigger is a blocker, not a gap). Note: `/pr` Step 4.6.D has the same weakness and should be hardened in a follow-up Issue.
+- **2026-09-19**: During #790's implementation, a `/code-review` 🟡 finding on an
+  untouched file (`loader.rs` i18n bypass) and an Architect-flagged, user-confirmed
+  documentation fix (CLAUDE.md's false env-var precedence claim) were both reported
+  in prose but never turned into tracked Issues — a human had to ask before Issues
+  #795/#796 were created. Fixed by Issue #797 (`/code-review` Step 3.5 and
+  `/implement` Step 3.6 Follow-up Issue Gates).
+- **2026-09-27 (Issue #867)**: `/split`'s decomposition of #853 into subtasks
+  #858–#862 (each migrating a network client onto the new shared
+  `src/shared/response_size_guard.rs`) recurringly omitted that module's `//!`
+  adoption-list doc comment and the parent CHANGELOG entry from every subtask's
+  `Files to Update/Create` — the gap was independently rediscovered by the
+  Architect Agent in #859, #860, and #861 in turn. Fixed by Issue #867 (`/split`
+  Step 2 Shared-Dependency Convergence Check, surfaced in the user-facing proposal,
+  plus a Step 4 carry-over backstop).
+
+### Enforcement
+
+When a user requests any operation listed above (even in Japanese), Claude MUST:
+
+1. Recognize the operation type
+2. Invoke the corresponding skill
+3. Follow ALL steps defined in the skill, including pre-flight checks
+4. Ensure all outputs (commits, PRs, Issues) are in English
+
+## Feature Discussions
+
+When the user proposes, discusses, or asks Claude to evaluate a new feature idea,
+Claude MUST follow this process before responding with implementation suggestions.
+
+### Step 0: Check current implementation state (MANDATORY — run before Step 1)
+
+Before proposing or evaluating any feature, read these two files to build an exhaustive
+list of already-implemented capabilities:
+
+1. `src/cli/mod.rs` — all current CLI flags (e.g., `--severity-threshold`, `--license-allow`)
+2. `src/config.rs` — all current config keys (e.g., `severity_threshold`, `license_policy`)
+
+For each feature idea (your own or the user's), check whether it is already covered by an
+existing CLI flag or config key. If it is, do NOT propose it as a new feature — instead,
+state explicitly: "This is already implemented as `--flag-name` / config key `key_name`."
+
+### Step 1: Read vision and triage files (MANDATORY)
+
+Before responding to any feature proposal, read these two files:
+
+1. `.claude/product-vision.md` — understand the product identity and design philosophy
+2. `.claude/feature-triage.md` — apply the 4-step triage checklist
+
+### Step 2: Run triage
+
+Apply the checklist in `.claude/feature-triage.md` to the proposed feature.
+Produce a triage result in the format defined in that file.
+
+### Step 3: Respond with triage result
+
+Structure your response as:
+
+1. **Triage result** (from Step 2) — clearly state PASS/STOP/priority
+2. **Recommendation** — one of:
+   - "This fits the vision. Recommend creating an Issue." → invoke /ideate or /issue
+   - "This is on the anti-roadmap. Here's why: [reason]."
+   - "This is out of scope. A better tool for this is: [tool]."
+   - "This needs more information: [specific question]."
+3. **If PASS**: suggest next action (run /ideate skill to draft Issue, or /issue directly)
+
+### When this process applies
+
+Trigger this process when the user says anything like:
+- "I want to add [feature]"
+- "What if we supported [X]?"
+- "Can uv-sbom do [Y]?"
+- "Let's implement [Z]"
+- "Feature idea: ..."
+
+### Skill for feature ideation
+
+If a feature passes triage and the user wants to proceed to Issue creation,
+invoke the `/ideate` skill or `/issue` skill directly.
+
+| Operation | Skill | When |
+|-----------|-------|------|
+| Evaluate feature idea | (manual triage, see above) | Before any Issue |
+| Draft Issue from approved idea | /ideate | Feature passed triage |
+| Create Issue directly | /issue | Feature already approved by user |
+
+## Agent Invocation Rules
+
+Role-based agents in `.claude/agents/` provide specialized perspectives for open-ended analysis tasks. Invoke the appropriate agent when you need domain expertise beyond what skills and context files provide.
+
+| Situation | Agent to Invoke | File |
+|-----------|----------------|------|
+| Evaluating a feature proposal | PdM | `.claude/agents/pdm.md` |
+| Reviewing code structure or module placement | Architect | `.claude/agents/architect.md` |
+| Security review of new CVE/network code | Security Expert | `.claude/agents/security.md` |
+| Reviewing English README or documentation | DevRel | `.claude/agents/devrel.md` |
+| Reviewing `src/i18n/` or `README-JP.md` | i18n Specialist | `.claude/agents/i18n.md` |
+| Reviewing test coverage for a new feature | QA Engineer | `.claude/agents/qa.md` |
+| Checking release readiness before `/release` | Release Manager | `.claude/agents/release.md` |
+| Planning decomposition of a large Issue before `/split` | PM | `.claude/agents/pm.md` |
+
+### Agents vs Skills
+
+- **Skills** = procedural workflows ("what steps to take") — e.g., `/commit`, `/release`
+- **Agents** = domain perspectives ("what lens to apply") — e.g., PdM, Architect
+
+Agents complement skills: the Release Manager agent judges readiness; the `/release` skill executes the mechanics.
+
+---
+
+## README Update Checklist
+
+Trigger this checklist when **any** of the following is true:
+- README.md content is being changed directly
+- A new CLI flag or config key was added (see also: /implement Step 4.3)
+- A new user-facing feature was implemented
+
+When triggered, check if the following files also need updates:
+
+| File | Action Required | Notes |
+|------|-----------------|-------|
+| README-JP.md | Translate changes | Full translation of README.md |
+| python-wrapper/README.md | Reflect if applicable | PyPI-focused, keep concise |
+
+### When to update each file
+
+- **README-JP.md**: Always update when README.md content changes
+- **python-wrapper/README.md**: Update when changes affect:
+  - Installation instructions
+  - Basic usage examples
+  - New user-facing features (brief mention)
+  - Version/badge updates
+
+## Architecture Overview
+
+### Design Pattern
+Hexagonal Architecture (Ports & Adapters) with Domain-Driven Design principles.
+
+### Module Structure
+
+| Path | Responsibility |
+|------|----------------|
+| `src/cli/` | CLI entrypoint, argument parsing, config resolution |
+| `src/cli/config_resolver/` | Merges CLI args / config file into `MergedConfig` (no environment-variable layer — `uv-sbom` reads no environment variables during config resolution); split into `mod.rs` (struct + orchestrator only) since #788, `loader.rs` (config file I/O), `list_merge.rs` (generic list-merge helpers), `field_resolvers.rs` (the eight simple per-field resolvers + `DEFAULT_ABANDONED_THRESHOLD_DAYS`, extracted from `mod.rs` in #789), `license_policy_resolver.rs` (`resolve_unknown_license_handling`, `resolve_license_policy`, extracted from `mod.rs` in #790); `MergedConfig`, `merge_config`, and `load_config` are the only items visible outside the module |
+| `src/application/` | Use cases, DTOs, factories, read models |
+| `src/sbom_generation/` | Pure domain logic (no I/O dependencies) |
+| `src/ports/` | Trait definitions for infrastructure (inbound/outbound) |
+| `src/ports/inbound/` | Inbound port traits (e.g. use case interfaces) |
+| `src/ports/outbound/` | Outbound port traits (e.g. repository, network interfaces) |
+| `src/adapters/inbound/` | Inbound adapter implementations |
+| `src/adapters/outbound/network/` | PyPI and OSV HTTP clients |
+| `src/adapters/outbound/formatters/` | CycloneDX, Markdown, and Diff (Markdown/JSON) output formatters |
+| `src/adapters/outbound/filesystem/` | File read/write adapters |
+| `src/adapters/outbound/uv/` | uv.lock file parsing |
+| `src/adapters/outbound/console/` | Console/progress reporter adapter |
+| `src/shared/` | Common error types and utilities |
+| `src/config.rs` | `ConfigFile` struct (deserialized from TOML config) |
+| `src/i18n/` | Locale and message catalog |
+
+### Key Types
+
+| Type | Location | Role |
+|------|----------|------|
+| `MergedConfig` | `src/cli/config_resolver/mod.rs` | Final resolved config (CLI > config file > default; no env-var layer); `load_config` re-exported from `loader.rs` via `pub use` since #788 |
+| `ConfigFile` | `src/config.rs` | Raw deserialized config file struct |
+| `SbomRequest` / `SbomResponse` | `src/application/dto/` | Input/output for the main use case |
+| `GenerateSbomUseCase<LR,PCR,LREPO,PR,VREPO,MREPO,PCREPO=(),USIM=()>` | `src/application/use_cases/generate_sbom/` | Orchestrates SBOM generation; 6th param `MREPO: MaintenanceRepository` added in #555; 7th param `PCREPO: PythonCompatibilityRepository` (defaults to `()`) added in #681; 8th param `USIM: UvLockSimulator` (defaults to `()`, no `+ Clone` bound — only ever borrowed) added in #704, replacing a direct `UvLockAdapter` construction inside `advise_upgrades_if_requested`; `mod.rs` holds only the struct, `new()`, and `execute()` — methods live in sibling `impl` blocks split by responsibility across `filtering.rs`, `checks.rs`, `upgrade.rs`, `response.rs` (all `pub(super)`) since #711 |
+| `CheckAbandonedPackagesUseCase` | `src/application/use_cases/check_abandoned_packages.rs` | Fetches PyPI maintenance info for all packages with progress bar and soft-fail per package |
+| `DiffRequest` | `src/application/dto/diff_request.rs` | Input DTO for the diff use case (source, project_path, check_cve) |
+| `DiffResult` | `src/application/dto/diff_result.rs` | Output of `GenerateDiffUseCase::execute`; wraps domain `DependencyDiff` with `Option<CveDeltaView>` to keep domain layer free of read-model dependencies |
+| `GenerateDiffUseCase<LR,DLR,VR>` | `src/application/use_cases/generate_diff.rs` | Orchestrates dependency diff: reads current via LockfileReader, base via DiffLockfileReader, runs DependencyDiffAnalyzer, optionally fetches CVE delta via VulnerabilityRepository; 3rd param `VR` (default `()`) added in #599 |
+| `CveDeltaView` / `CveDeltaEntry` | `src/application/read_models/cve_delta_view.rs` | Read model for CVE exposure diff between two lock file snapshots; wired into `GenerateDiffUseCase` in #599; consumed by diff formatters (Markdown/JSON) in #600 |
+| `Package` | `src/sbom_generation/domain/` | Core domain model for a dependency |
+| `EnrichedPackage` | `src/sbom_generation/domain/enriched_package.rs` | Value object pairing a `Package` with license/description/sha256 metadata; moved out of `ports/outbound/` in #703 (it has no I/O, so it never belonged there) |
+| `UvLockSimulator` / `SimulationResult` | `src/sbom_generation/domain/uv_lock_simulator.rs` | Domain-owned port (async trait) for simulating `uv lock --upgrade-package`; implemented by `adapters::outbound::uv::UvLockAdapter`. Unlike other outbound ports, this one is defined in the domain — not `src/ports/outbound/` — because the `UpgradeAdvisor` domain service originally consumed it directly as a generic bound (moved in #703). As of #716, `UpgradeAdvisor` no longer consumes this trait (see below); it remains here for now rather than moving to `ports/outbound/`, borrowed by `SimulateUpgradesUseCase` in the application layer |
+| `SimulateUpgradesUseCase<'a, S: UvLockSimulator>` | `src/application/use_cases/simulate_upgrades.rs` | Deduplicates direct dependencies across `ResolutionEntry` values and runs `UvLockSimulator::simulate_upgrade` once per unique name, sequentially, producing `SimulationOutcomes` for `UpgradeAdvisor` to compare; borrows the simulator (no `Clone` bound on `USIM`, per #704). Added in #716, extracted from `UpgradeAdvisor::advise`'s former I/O loop |
+| `GroupReachabilityAnalyzer` | `src/sbom_generation/domain/services/group_reachability_analyzer.rs` | Pure domain service for BFS-based group reachability traversal; wired into `GenerateSbomUseCase` via `apply_group_filter` in #623 |
+| `GroupRoots` | `src/ports/outbound/lockfile_reader.rs` | Type alias `HashMap<String, Vec<String>>` mapping dependency group name → root package names; extracted from `[manifest.dependency-groups]` in `uv.lock`; consumed by group reachability traversal in #622; wired into use case in #623 |
+| `NonPyPiPackageView` / `NonPyPiPackagesReport` | `src/application/read_models/non_pypi_package.rs` | Read model for packages sourced from non-PyPI origins (git, url, private registry); populated by `GenerateSbomUseCase` when `check_non_pypi` is true; rendered by the Markdown formatter's `non_pypi_packages` section (#656, #660) |
+| `PythonIncompatibilityView` / `PythonCompatibilityReport` | `src/application/read_models/python_compatibility.rs` | Read model for packages incompatible with a target Python version, independent of how `requires_python` data is fetched; added in #679; constructed by `CheckPythonCompatibilityUseCase` in #680; wired into `GenerateSbomUseCase`/`main.rs` via `--target-python` in #681; rendered by the Markdown formatter's `python_compatibility` section (dual heading: issues table vs. all-clear) in #682 |
+| `CheckPythonCompatibilityUseCase` | `src/application/use_cases/check_python_compatibility.rs` | Fetches `requires_python` for all packages concurrently via `PythonCompatibilityRepository` (bounded by `MAX_CONCURRENT`), evaluates with `PythonCompatibilityChecker::is_incompatible`, and builds a `PythonCompatibilityReport`; soft-fails per-package fetch errors; added in #680; wired into `GenerateSbomUseCase` in #681 |
+| `PythonCompatibilityChecker` | `src/sbom_generation/domain/services/python_compatibility_checker.rs` | Stateless domain service evaluating PEP 440 `Requires-Python` constraints against a target Python version; moved out of `ports/outbound/python_compatibility_repository.rs` in #705 (it was pure logic with no I/O, so it never belonged in `ports/`); takes `Option<&str>` rather than the `PythonCompatibilityInfo` DTO to avoid a domain→ports import |
+| `ProgressBarHandle` | `src/application/use_cases/progress_bar.rs` | Shared indicatif progress-bar helper (background-thread polling an `AtomicUsize` counter) used by `CheckAbandonedPackagesUseCase` and `CheckPythonCompatibilityUseCase` to avoid duplicating the spawn/poll/finish pattern |
+| `ExplainView` | `src/application/read_models/explain_view.rs` | Read model for the `--explain <PACKAGE>` dependency-path query (`target_package`, `found`, `is_direct`, `paths`); populated by `GenerateSbomUseCase::build_explain_view_if_requested` (`checks.rs`) by reusing `DependencyGraph::find_paths_to` (no new traversal logic — same pattern as `ResolutionAnalyzer::analyze`); added in #768. `None` when no dependency graph was built (non-Markdown output) or `explain_package` is unset; `Some(found: false)` for an invalid/nonexistent package name. Carried into `SbomReadModel.explain_view` by `SbomReadModelBuilder::build_with_project` and rendered by the Markdown formatter's `explain` section (single `## Dependency Explanation` heading covering all three states — transitive, direct, not-found — plus the compound direct-and-transitive case) in #769; CycloneDX JSON is out of scope |
+| `DependencyTreeBuilder` / `TreeNode` | `src/sbom_generation/domain/services/dependency_tree_builder.rs` | Pure domain service building a depth-limited, cycle-safe dependency tree (`TreeNode { name, children, truncated }`) from `DependencyGraph::children_of` (new accessor added alongside it); per-path visited-set with backtracking (same cycle-safety strategy as `find_paths_to`), diamond dependencies intentionally not deduplicated; added in #780 as the foundational data layer for the dependency tree visualization feature (parent #736). `TreeNode` deliberately has no `version` field — `DependencyGraph` has no version data to draw from; wired into `GenerateSbomUseCase` in #781 via `--show-dependency-tree`/`--dependency-tree-depth` |
+| `DependencyTreeView` / `DependencyTreeNodeView` | `src/application/read_models/dependency_tree_view.rs` | Read model for the `--show-dependency-tree` visualization; converts the domain `TreeNode` tree into `DependencyTreeNodeView` (all `String`/`Option<String>`, formatter-ready) and joins each node's `version` from `enriched_packages` — the domain `TreeNode` has no version data. Populated by `GenerateSbomUseCase::build_dependency_tree_if_requested` (`checks.rs`, same shape as `build_explain_view_if_requested`) only when `show_dependency_tree` is true and a dependency graph was built; added in #781. Carried into `SbomReadModel.dependency_tree` by `SbomReadModelBuilder::build_with_project` and rendered by the Markdown formatter's `dependency_tree` section as an ASCII-connector tree (`├──`/`└──`/`│`, wrapped in a ` ```text ` fence, package name + version only) in #782; the former `SbomResponse.dependency_tree` `#[allow(dead_code)] // WIRE(#782)` annotation was removed once this consumer landed. CycloneDX JSON is out of scope |
+| `MemberFindings` / `EnabledChecks` | `src/cli/workspace_summary.rs` | CLI-presentation-layer types (binary-only, not part of `lib.rs`) for `--workspace` mode's aggregate summary, added in #737. `MemberFindings::from_response` extracts per-member check results from a completed `SbomResponse` before it is moved into `render_and_present` (which consumes it by value). `EnabledChecks::from_merged` reads which checks were actually requested from `MergedConfig`; aggregate-line visibility is gated on this rather than on per-member `Option` report presence, since a check can be enabled but still yield `Ok(None)` for a given member — deriving visibility from report presence would silently drop an enabled check's line (the inverse of the #669 failure mode). `render_workspace_aggregate` is a pure function producing the printable lines, wired into `run_workspace` in `src/main.rs` |
+| `ProjectConfigError` | `src/ports/outbound/project_config_reader.rs` | Typed port-level error (thiserror) returned by `ProjectConfigReader` implementations instead of localized text; currently one variant, `PyprojectNotFound`, whose English `Display` is the library contract. Downcast and localized by `GenerateSbomUseCase::analyze_dependencies_if_requested` (`filtering.rs`), where `Locale` is in scope; added in #870 so the adapter never builds localized text and the trait signature stays unchanged. Lives in `ports/` (not `shared/error.rs`) because the application layer may import ports but not adapters, and the binary's own `mod ports;` copy is self-consistent for raise/downcast |
+| `ConfigError` | `src/config.rs` | Typed error (thiserror, 6 variants carrying structured data only) replacing `config.rs`'s former `anyhow::bail!()`/`.with_context()` calls in `generate_config_template`, `load_config_from_path`, `discover_config`, and `validate_config`; added in #834 per the localization strategy decided in #832. Its `#[error(...)]` templates are the library's English `Display` contract, kept byte-for-byte identical to the pre-#834 hardcoded strings. Rendered in the caller's locale by `render_config_error` in the new `src/cli/error_display.rs` (binary-only, not part of `lib.rs`, same pattern as `workspace_summary.rs`); `render_error_chain` (also there) replaces `main.rs`'s former `print_error_chain` body, downcasting `anyhow::Error` to `ConfigError` when present. Deliberately placed in `config.rs` rather than as new `SbomError` variants in `src/shared/error.rs`, since `main.rs`'s local `mod shared;` would otherwise make `shared::error::SbomError` a distinct type from the library's copy, causing a CLI-layer downcast to silently fail depending on which copy raised the error |
+
+### Important Invariants
+
+- **Config resolution order**: CLI args > config file > defaults. There is no
+  environment-variable layer — `uv-sbom` reads no environment variables during config
+  resolution (clap's `env` feature is not enabled in `Cargo.toml`, and no `#[arg(env = ...)]`
+  attributes exist anywhere in `src/cli/`). This order is enforced in
+  `config_resolver/mod.rs` and must not be changed without updating tests.
+- **Domain layer has no I/O**: `src/sbom_generation/` must never import from `adapters` or `ports`.
+  `UpgradeAdvisor` was historically the one exception — it consumed `UvLockSimulator` as a generic
+  bound and awaited it directly — but as of #716 it is a pure, synchronous comparator like every
+  other domain service; the simulation-running loop now lives in `SimulateUpgradesUseCase`
+  (application layer). `UvLockSimulator` itself still lives in `src/sbom_generation/domain/` rather
+  than `src/ports/outbound/` (#703), but that placement is no longer load-bearing for this invariant
+  — see the doc comment on `sbom_generation::domain::uv_lock_simulator` for the current rationale.
+- **All GitHub artifacts (commits, PRs, Issues) must be in English** — enforced by skills in `.claude/skills/`.
+
+### Error Message Localization Policy (decided in #832, parent #821)
+
+`--lang ja` localizes the error *frame* (`error_header`, `error_caused_by`) and the
+error text of the **CLI and config layers only**. Error *payloads* originating in the
+domain, adapter, and `shared::error` layers are permanently English. This is an
+intentional, permanent limitation — not a gap to be closed later.
+
+| Layer | Error text localized? | Where rendered |
+|-------|----------------------|----------------|
+| `src/main.rs` ad-hoc `bail!` | Yes (#833) | in place; `Messages` already in scope |
+| `src/config.rs` | Yes (#834) | `src/cli/error_display.rs` renders typed `ConfigError` |
+| `src/application/use_cases/generate_sbom/filtering.rs` `bail!` | Yes (#870) | in place; `self.locale` in scope |
+| `src/adapters/outbound/filesystem/file_reader.rs` missing `pyproject.toml` | Yes (#870) | typed `ProjectConfigError`, localized in `filtering.rs` |
+| `src/shared/error.rs` (`SbomError`) | **No — permanent** | n/a |
+| `src/sbom_generation/` (domain `bail!`) | **No — permanent** | n/a |
+| `src/adapters/outbound/network/`, `uv/`, `shared/security.rs` | **No — permanent** | n/a |
+
+**Why `SbomError` payloads stay English (to be closed as won't-fix, see #835)**
+
+1. Every variant interpolates a field that cannot be translated by us:
+   `details` is the `Display` of a `std::io::Error` or `toml::de::Error`
+   (third-party / OS-generated), and `suggestion` / `reason` / `hint` are
+   free-form English assembled at ~25 construction sites across
+   `shared/security.rs`, `adapters/outbound/filesystem/*`, and `application/dto/*`.
+2. Localizing only the `#[error(...)]` templates would produce sentence-level
+   language mixing (`uv.lock ファイルが見つかりません: /path … 💡 ヒント: Run \`uv lock\``),
+   which is worse UX than a localized frame around consistently English internals.
+3. `SbomError` is part of the public `uv_sbom` **library** API; its `Display` is a
+   contract for downstream Rust consumers, who have no `Locale`. Localization
+   belongs at the CLI presentation boundary, not in the library's error type.
+4. `src/main.rs` declares its own `mod shared;` while also importing `uv_sbom::config`,
+   so `shared::error::SbomError` (binary copy) and `uv_sbom::shared::error::SbomError`
+   (library copy) are distinct types. Downcast-based rendering of `SbomError` would
+   silently fail depending on which copy raised the error.
+
+**Why domain-layer `bail!` text stays English**
+
+Localizing `src/sbom_generation/` would require the domain layer to import
+`crate::i18n::Messages`, introducing a domain → presentation dependency that violates
+the "Domain layer has no I/O" invariant above. These sites are defensive invariant
+checks on internally-constructed data and are rarely user-reachable. If they must ever
+be localized, the only acceptable route is typed domain errors rendered at the CLI
+boundary — never an `i18n` import inside `src/sbom_generation/`.
+
+**Invariant: error text is stringified only in the CLI layer**
+
+New user-facing error text must be produced by `src/cli/error_display.rs` (to be
+created in #834; until then, by a site that already holds `&Messages`), never by
+embedding localized strings in
+`src/config.rs`, `src/shared/`, `src/sbom_generation/`, or `src/adapters/`.
+`src/config.rs` must stay free of any `i18n` dependency (see also the doc comment on
+`warn_unknown_fields` in `src/cli/config_resolver/loader.rs`).
+
+### Files NOT to touch unless their issue explicitly targets them
+
+- `src/adapters/outbound/network/` — HTTP client internals (unrelated to most refactors)
+- `src/i18n/` — Locale catalogs (separate concern)
+
+## Dead Code Policy
+
+### Prohibition: Speculative `#[allow(dead_code)]`
+
+Never add `#[allow(dead_code)]` to silence the dead_code lint speculatively.
+Examples of prohibited patterns:
+
+```rust
+// ❌ PROHIBITED — "Reserved for future issue" pattern
+#[allow(dead_code)]  // Reserved for Issue #N
+pub fn compute_something(&self) -> Result<Output> { ... }
+
+// ❌ PROHIBITED — stub field without current consumer
+#[allow(dead_code)]  // Will be used in Issue #M
+pub current_version: String,
+```
+
+**Why**: These stubs accumulate silently, become technical debt, and require
+large-scale cleanup (e.g., PR #488: 388 lines deleted across 26 files).
+Bulk removal is error-prone when multiple structs share field names.
+
+### Acceptable Use Cases
+
+`#[allow(dead_code)]` is allowed ONLY for:
+
+| Use Case | Required Format |
+|----------|-----------------|
+| serde wire-format fields that are deserialized but not yet processed in Rust | `#[allow(dead_code)] pub experimental_flag: Option<bool>` on a `#[derive(Deserialize)]` struct |
+| `#[cfg(test)]`-bounded test helpers defined in a test module | Inside `#[cfg(test)] mod tests { ... }` only |
+| Foundational type/function in a sequential PR split whose consumer is a concrete tracked issue, not yet reachable from the binary | Must use the standardized format: `#[allow(dead_code)] // WIRE(#N): remove when <description>`. The attribute MUST be removed in Issue #N via the Step 4.0 cleanup gate. |
+
+In all cases, add a comment explaining WHY the field is intentionally unused in
+production code. For the WIRE case, the consuming issue number (#N) MUST exist as
+an open GitHub Issue, and the description after the colon MUST state the removal
+condition clearly.
+
+### YAGNI Workflow
+
+If you identify that a future issue will need a field/method that doesn't exist yet:
+
+1. **Do NOT add the stub field.** The future issue will introduce it when needed.
+2. **Note the need** in the current Issue or PR description.
+3. **Open a new Issue** describing what needs to be added and why.
+4. Close the current PR without the stub. The future issue owns its own implementation.
+
+### Clippy Requirement
+
+CI and all local checks MUST use `cargo clippy --all-targets --all-features -- -D warnings`
+— `--lib` alone misses dead code visible only from binary and integration-test
+targets. The canonical command block, and why each flag is required, lives in
+`.claude/conventions/ci-checks.md`; it is enforced by `.githooks/pre-push` and
+`.github/workflows/ci.yml`, and mirrored by `/pr`'s pre-flight. Do not weaken this to
+`--lib` only.
+
+### Recent Incidents
+
+- **2026-05-24 (Issue #598)**: Added `CveDeltaView` and `CveDeltaEntry` read model
+  types with `#[allow(dead_code)]` in a standalone foundational PR. Free-form comment
+  was not machine-scannable, so removal in #599 was not enforced. Fixed by Issue #604
+  with the WIRE convention and the Step 4.0 cleanup gate.

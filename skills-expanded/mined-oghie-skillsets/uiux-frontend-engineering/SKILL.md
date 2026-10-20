@@ -1,0 +1,76 @@
+---
+name: uiux-frontend-engineering
+description: Use when designing, reviewing, implementing, or validating UI/UX and frontend experiences for web, mobile, responsive apps, design systems, Figma-to-code handoff, frontend stack/library selection, personas, UX mapping, information architecture, UI patterns, accessibility, interaction design, UX research, usability testing, theme/token application, or XR/spatial interfaces.
+version: 0.1.0
+author: oghie
+license: MIT
+metadata:
+  hermes:
+    tags: ['creative', 'uiux', 'frontend', 'design']
+    source: https://github.com/oghie/skillsets
+---
+
+# UIUX Frontend Engineering
+
+## Core Rule
+Treat UI as a tested product interface, not decoration: connect user goals, business goals, interaction model, visual system, implementation constraints, and validation evidence before shipping screens or components.
+
+## First Pass
+1. Classify the task: UX strategy, research, persona, UX mapping, IA/sitemap, user flow, wireframe, prototype, mockup, UI pattern selection, visual UI, design system, frontend stack/library selection, frontend implementation, responsive/mobile, accessibility, redesign/review, handoff, or XR/spatial interface.
+2. Identify target surface: web, mobile web, native mobile, desktop web app, kiosk, embedded screen, WebXR, VR, AR, MR, or spatial computing.
+3. Name users, context, primary jobs, failure modes, conversion or task metric, platform constraints, input method, and trust/safety concerns.
+4. Decide fidelity: sketch/flow, low-fidelity wireframe, clickable prototype, high-fidelity visual, coded prototype, production component, or XR graybox.
+5. Select validation before implementation: heuristic review, accessibility audit, responsive screenshots, usability test, click/first-impression test, A/B test, performance check, or XR comfort review.
+
+## Required Reads By Task
+- End-to-end UX process, discovery, personas, user interviews, analytics, card sorting, surveys, support tickets, wireframes, validation, handoff, or QA: `references/ux-process-and-research.md`.
+- Persona strategy, "Comparing Key Persona Types", buyer/customer/user/proto-persona distinction, goal-directed/role-based/fictional/engaging personas, customer journey maps, empathy maps, experience maps, service blueprints, touchpoints, or friction mapping: `references/personas-and-ux-mapping.md`.
+- Information architecture, IA principles, taxonomy, labels, navigation models, search, card sorting, tree testing, HTML/XML/mobile/image/video/news sitemaps, or sitemap handoff: `references/information-architecture-and-sitemaps.md`.
+- Wireframes, prototypes, mockups, fidelity choice, paper/Wizard-of-Oz/clickable/coded prototypes, microcopy, microinteractions, or mockup-to-implementation readiness: `references/wireframes-prototypes-and-mockups.md`.
+- UI pattern selection, visual hierarchy patterns, Z-pattern/F-pattern layouts, primary actions, forgiving input, breadcrumbs, progressive disclosure, lazy registration, infinite scroll, modals, cards, autocomplete, sticky navigation, mobile UI patterns, or dark-pattern review: `references/ui-patterns-catalog.md`.
+- Psychology laws, cognitive load, target sizing, choice overload, familiarity, aesthetics, memory, complexity, responsiveness, ethics, or dark-pattern risk: `references/psychology-and-interaction-laws.md`.
+- Visual UI composition, Gestalt, hierarchy, color, typography, spacing, affordance, signifiers, forms, cards, states, icons, illustrations, or motion: `references/visual-interface-composition.md`.
+- Figma, design systems, tokens, components, auto layout, constraints, responsive/adaptive design, plugin/handoff flow, or developer collaboration: `references/responsive-design-systems-and-handoff.md`.
+- Frontend framework/library selection, styling approach, component library choice, Radix UI, shadcn/ui, Ant Design, Mantine UI, MUI, vanilla CSS, CSS Modules, Linaria, PostCSS, Bulma, Tailwind CSS, or stack trade-offs: `references/frontend-stack-and-library-selection.md`.
+- Frontend implementation, accessibility, performance, state coverage, visual QA, component contracts, framework-neutral CSS/component mapping, or production readiness: `references/frontend-implementation-quality.md`.
+- Mobile/touch design, one-handed use, touch targets, mobile navigation, forms, gestures, device preview, or native-app constraints: `references/mobile-and-touch-ux.md`.
+- XR, spatial computing, WebXR, VR, AR, MR, 3D UI, spatial objects, OOUX, locomotion, comfort, haptics, voice, gaze, avatars, embodiment, safety, or spatial analytics: `references/xr-spatial-ux-and-3d-interfaces.md`.
+- AI-assisted design, generative assets, design copilots, AI disclosure, sourcing, IP, safety, privacy, transparency, or manipulation risk: `references/ai-assisted-and-ethical-design.md`.
+- Theme/style selection, static token database, CSS variables, framework/library token mapping, or visual style guardrails: `references/theme-token-database.md` and the relevant file under `theme/`.
+
+## Task Playbooks
+- Build or redesign a product UI: `tasks/product-ui-build.md`.
+- Convert theme/style into implementation tokens and components: `tasks/design-system-token-implementation.md`.
+- Review an existing UI/UX or frontend: `tasks/usability-review-and-redesign.md`.
+- Build responsive or mobile-first frontend: `tasks/responsive-mobile-frontend.md`.
+- Design or review XR/spatial interface: `tasks/xr-spatial-interface-design.md`.
+- Prepare prototype validation, handoff, and QA: `tasks/prototype-validation-handoff.md`.
+
+## Theme Contract
+- Do not modify `theme/` unless the user explicitly asks for theme authoring.
+- Treat `theme/index.yaml` as the registry and each style file as the source of truth.
+- Read `theme/_schema/style.schema.yaml` only when field meaning is unclear.
+- Prefer a style because its `use_cases`, `mood`, `keywords`, and `avoid_when` match the product, not because it looks novel.
+- Map tokens directly into implementation variables; do not invent a parallel palette, radius scale, spacing scale, or motion personality.
+
+## Design Discipline
+- Start with the user's task and failure path, then choose UI structure.
+- Prefer the existing project stack when it is coherent; add or change UI libraries only after naming the accessibility, theming, delivery-speed, density, bundle, SSR, and maintenance trade-offs.
+- Use familiar patterns by default; depart from convention only when the new pattern improves the core task and can be tested.
+- Design every interactive component with states: default, hover, focus, active, disabled, loading, empty, error, success, and reduced-motion where relevant.
+- Make accessibility structural: semantic markup, keyboard path, target size, contrast, labels, focus order, captions/alternatives, motion controls, and screen-reader names.
+- Treat responsive design as layout behavior, not breakpoint cosmetics: define constraints, grid, content priority, reflow rules, and overflow behavior.
+- For XR, design objects, spatial relationships, interaction distance, comfort, onboarding, and safety before polishing panels.
+- For AI-generated UI or assets, document sourcing, disclosure, rights risk, user trust, and human review.
+
+## Visual And Diagram Standards
+- Use diagrams to clarify process, hierarchy, interaction, object relationships, state transitions, or validation loops.
+- Prefer reusable templates in `templates/` for UX process, validation loop, persona comparison, UX mapping, IA/sitemap flow, UI pattern decisions, responsive token mapping, component state matrix, and spatial object maps.
+- For frontend work, verify rendered output with screenshots at mobile and desktop widths; for XR/WebGL/WebXR, verify the scene is nonblank, framed, and interactive.
+
+## Script Helpers
+- Run `scripts/uiux_static_audit.py <file-or-dir>` to scan design plans, UI specs, PR notes, or Markdown docs for missing users, flows, accessibility, responsive behavior, states, validation, handoff, ethics, and XR concerns.
+- Run `scripts/theme_catalog.py --root uiux_frontend_skill/theme --list` to list available style ids, or filter with `--category` and `--keyword` before selecting a theme.
+
+## Output Standard
+Lead with the design judgment or implementation path. State target surface, users, core task, chosen process depth, style/theme decision, UX laws or heuristics used, component/state coverage, responsive/mobile/XR handling, validation checks, implementation risks, and what remains uncertain.

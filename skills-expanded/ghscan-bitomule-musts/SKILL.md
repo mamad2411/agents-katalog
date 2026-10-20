@@ -1,1 +1,0 @@
-../../../skills/musts/SKILL.md

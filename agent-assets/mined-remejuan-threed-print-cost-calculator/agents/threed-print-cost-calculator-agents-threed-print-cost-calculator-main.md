@@ -1,0 +1,113 @@
+# threed_print_cost_calculator
+
+## Commands
+- Setup: `fvm flutter pub get`
+- Format: `fvm dart format .`
+- Analyze: `fvm flutter analyze`
+- Tests: `make flutter_test`
+- Do not use `dart-mcp-server_run_tests` in this repo. It does not honor `fvm` here and can resolve against the wrong system Dart/Flutter SDK. Use `fvm flutter test ...` for focused tests and `make flutter_test` for the full suite.
+- Android release builds (`fvm flutter build appbundle --release`, Play upload artifacts) require signing credentials only present on CI. Do not expect local Android release builds to succeed unless CI-style signing env vars or keystore files are explicitly provided.
+- Husky install: `fvm dart run husky install` (run after clone)
+- Single test file: `fvm flutter test path/to_test.dart`
+- Coverage: `./scripts/coverage.sh` (`lcov` required)
+- Codegen: `make flutter_generate`
+- Patrol release-gate E2E: `PATROL_FLUTTER_COMMAND="fvm flutter" patrol test --device emulator-5554 --no-uninstall`
+- Optional legacy integration sweep: `fvm flutter test integration_test`
+- Store metadata translation: `/metadata-translate` (opencode project command)
+
+## Git hooks (Husky)
+- Pre-commit: `fvm dart format . && fvm flutter analyze` (auto-fixes formatting, blocks on analysis warnings)
+- Pre-push: `make flutter_test` (full test suite)
+- Bypass: `git commit --no-verify` or `git push --no-verify`
+- To add a hook: `fvm dart run husky add .husky/<hook-name> "<command>"`
+
+## Verify order
+- Default: `fvm flutter analyze` -> `make flutter_test`
+- If translations or generated code changed: run `make flutter_generate` before analyze/test
+- If `intl_*.arb` changes but `lib/l10n/app_localizations.dart` does not, treat that as a broken sync and fix it before finishing
+- If app-shell or premium/history flows changed: run relevant `integration_test/` or Patrol journey
+
+## Architecture
+- App startup: `lib/main.dart` initializes Firebase, App Check, Crashlytics, RevenueCat, Localizely, SharedPreferences, Sembast, migrations, then Riverpod overrides.
+- Root widget: `lib/app/app.dart`. Main shell: `lib/app/app_page.dart`.
+- Feature roots: `lib/calculator/`, `lib/history/`, `lib/settings/`, `lib/database/`, `lib/purchases/`, `lib/shared/`.
+- `HistoryPage` exists only for premium users; `AppPage` dynamically removes that tab for free users.
+- **Currency-agnostic**: All values are raw numbers. Do not show `$`, `€`, `£`, `¥`, or any currency symbol in labels, helpers, or UI surfaces. Exception: store-formatted prices and symbols inside RevenueCat's native Customer Center billing UI are allowed.
+
+## Shared UI rules
+- Prefer existing shared primitives before adding feature-local styling: `AppSurfaceCard`, `AppExpansionCard`, `AppSearchBar`, `AppPrimaryButton`, `AppSecondaryButton`, `AppTertiaryButton`, `AppFilterChip`, `StockStatusBadge`.
+- Prefer shared tokens from `lib/shared/app_ui_tokens.dart` for spacing/radius (`kAppSpace*`, `kAppSurfaceRadius*`, `kAppSearchSectionPadding`) instead of new `EdgeInsets`/`SizedBox`/`BorderRadius` literals.
+- Prefer semantic color tokens from `lib/shared/app_colors.dart` (`TEXT_*`, `ICON_*`, `STATUS_*`, `BORDER_*`, overlay tokens) instead of `Colors.*` or raw `Color(...)` values.
+- When touching search/header rows, keep padding rhythm aligned with `kAppSearchSectionPadding` unless a feature has a documented exception.
+- If a screen needs a new reusable visual pattern, extract or extend a shared widget under `lib/shared/widgets/` instead of duplicating the shell in-place.
+
+## Testing quirks
+- Widget tests should use `test/helpers/helpers.dart`; it installs mock SharedPreferences, in-memory Sembast, no-op analytics, and `AppLocalizations.localizationsDelegates`.
+- Integration tests should use `integration_test/helpers/integration_test_harness.dart`; it seeds in-memory DB/prefs and fake purchases for free vs premium flows.
+- Startup/migration behavior has dedicated coverage in `test/main_migration_test.dart`; keep migration order stable when touching bootstrap/database startup.
+- Hidden in-app test overlays may use BotToast, but visible dialogs should stay in the project's standard `AlertDialog`/Material style.
+
+## Localisation
+- Never leave user-facing copy hardcoded when the existing l10n system should be used.
+- Source of truth for app strings: `lib/l10n/intl_*.arb`
+- After any ARB change, run: `fvm flutter gen-l10n`
+- Never manually edit generated localisation files.
+- Use the project's existing generated localisation access pattern consistently. Do not introduce a second localisation API in new code.
+- If adding a new key, update the English ARB first, regenerate, then update all supported locale ARBs.
+- Update all supported locales when adding or changing keys. Reuse existing wording patterns. Use placeholders instead of string concatenation.
+- Audit every changed widget, dialog, banner, snackbar, and empty state for hardcoded user-facing text before merge.
+- Keep developer-only strings out of l10n, including logs, debug messages, test descriptions, identifiers, analytics keys, and API field names, unless explicitly required.
+- Sample or preview data may stay hardcoded when it is clearly demo content rather than product UI copy.
+- Prefer passing localized strings into pure helpers rather than reading localisation state inside them.
+
+## Store metadata (App Store / Play Store)
+- English source files live in `fastlane/metadata/ios/en-GB/` and `fastlane/metadata/android/en-GB/`
+- iOS push locale: en-GB (default ASC locale; content sourced from `fastlane/metadata/ios/en-GB/`)
+- Android changelogs use `default.txt` per locale — non-English locale `default.txt` files are updated during translation sync
+- Run `/metadata-translate` to sync non-English translations from English source (no store push)
+- Run `make metadata_push_ios` / `make metadata_push_android` to push to stores
+- Use `make metadata_validate` to check for missing/untranslated files
+- See `docs/store-localisation.md` for full workflow
+
+## File Layout
+- Before broad exploration, read `docs/navigation.md`.
+- Treat the repository root as the only default filesystem context. Use repo-relative paths for all `Read`, `Grep`, `Glob`, `List`, and search operations.
+- The repo may be displayed as `~/Projects/threed_print_cost_calculator` while tools may expand it to `/Users/remelehane/Projects/threed_print_cost_calculator`; treat those as the same repo and still use only relative paths such as `lib/l10n/`, never the expanded absolute path.
+- Do not use absolute paths or `~`-expanded paths for files or directories inside this repository. If a tool call would target `/Users/remelehane/Projects/threed_print_cost_calculator/...` or `~/Projects/threed_print_cost_calculator/...`, rewrite it to the equivalent relative path first.
+- Never search parent directories or paths outside the repository unless the task explicitly requires external files.
+- Only request permission for filesystem access when the target is genuinely outside the repository root. If a permission prompt would be caused by an in-repo absolute path, cancel and retry with a relative path.
+- Use `.` for whole-repo searches and narrow with targeted repo-relative paths such as `lib/calculator/` or `test/history/`.
+- Exploration budget before first plan: max 8 `Read`, 4 `Grep`, 2 `Bash` calls.
+- Prefer targeted `rg`/content search over broad filesystem scans.
+- Produce a short plan before code changes.
+- MCP is optional and not the first step. Use `codebase-memory-mcp_search_graph` only after `docs/navigation.md`, mainly to confirm relationships or cross-feature links. Limit to 2 MCP queries unless clearly justified.
+- Update docs when feature behavior, analytics/events, architecture, persistence, premium, localization, testing, or CI notes change.
+- Prefer `docs/feature-map.md` for feature-level changes and `docs/architecture.md` for patterns, persistence, premium, localization, testing, and CI notes.
+
+## Product planning and roadmap
+- ClickUp is the lightweight operational roadmap: TLDR feature summaries, status, priority, dependencies, release targeting, and execution notes.
+- Keep ClickUp task status in sync with implementation progress. Move tasks out of `to do` when work starts, and update them to the `review` status when implementation is complete or deliberately cancelled.
+- When working from a ClickUp task, set the task start date when implementation begins, move status as work progresses, and record time spent if ClickUp time tracking is available. If time tracking is not available, leave a final comment with approximate time spent and what was completed.
+- Repo docs are the implementation source of truth: specs, architecture, data models, edge cases, technical decisions, and agent instructions.
+- Do not duplicate full implementation specs in ClickUp. Link ClickUp tasks to the relevant repo docs instead.
+- When a repo doc is linked to a ClickUp task, include the ClickUp task ID in the doc metadata/header so agents can update the correct task without searching.
+- Preferred doc metadata format: `ClickUp Task: <task_id>` near the top of the doc, under the title or summary.
+- Keep LLM wiki/docs changes in repo so they remain versioned with code and reviewable in PRs.
+
+## Changelog rules
+- CHANGELOG.md is user-facing but more detailed than store notes
+- Only include changes with user impact
+- Keep structure consistent (Added, Changed, Fixed)
+- New entries go at the top
+
+## Documentation
+- `docs/navigation.md` - Repo navigation map for agents before broad exploration.
+- `docs/feature-map.md` - Feature-by-feature path map, state, services, models, and tests.
+- `docs/architecture.md` - Current architecture, persistence, premium, localization, testing, and CI notes.
+- `docs/README.md` - Documentation index
+- `docs/gcode/` - G-code parser docs (overview, edge cases, slicer-specific docs, preview, test matrix)
+- `docs/dev/patrol-ci.md` - Patrol E2E testing guide
+- `docs/architecture/` - Architecture notes (e.g., performance)
+- `docs/decisions/` - Architecture Decision Records (ADRs)
+- `docs/product/` - Product specs and designs. Link from ClickUp tasks when a roadmap item has implementation detail.
+- `docs/inbox/` - Work-in-progress notes before promotion into stable docs

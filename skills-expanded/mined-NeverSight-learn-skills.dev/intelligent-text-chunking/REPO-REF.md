@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/findinfinitelabs/chuuk/intelligent-text-chunking/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: Split large texts into meaningful, AI-optimized chunks while preserving semantic coherence and document structure. Covered by the large-document-processing skill — see that skill for full details.

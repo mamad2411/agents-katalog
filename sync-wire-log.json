@@ -1,5 +1,5 @@
 {
- "ts": "2026-09-25T10:32:00",
+ "ts": "2026-10-18T06:41:03",
  "mode": "tiered",
  "wired": [
   "accessibility",
@@ -87,9 +87,9 @@
  "totals": {
   "dead_removed": 0,
   "retargeted": 0,
-  "created": 122,
-  "kept_valid": 4819,
-  "real_dir_kept": 30,
+  "created": 0,
+  "kept_valid": 5022,
+  "real_dir_kept": 31,
   "pruned": 0
  },
  "removed": []

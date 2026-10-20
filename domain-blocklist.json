@@ -1,0 +1,1 @@
+{"ParzivalHack/PySpector": {"reason": "BLOCKED:downloader-exec", "domain": "security", "ts": "2026-10-19"}, "xwtro0tk1t-cloud/harness": {"reason": "BLOCKED:secret-exfil", "domain": "security", "ts": "2026-10-19"}, "sheeki03/tirith": {"reason": "BLOCKED:downloader-exec", "domain": "security", "ts": "2026-10-19"}}

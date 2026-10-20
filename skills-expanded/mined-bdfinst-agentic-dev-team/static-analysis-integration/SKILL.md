@@ -1,0 +1,235 @@
+---
+name: static-analysis-integration
+description: >-
+  SARIF-first pre-pass stage for /code-review that runs available static
+  analysis tools and normalizes their output to the unified finding envelope
+  defined in security-primitives-contract v1.0.0. Deduplicates findings across
+  tools and passes confirmed issues to AI agents so they can focus on semantic
+  concerns.
+role: worker
+user-invocable: false
+version: 2.0.0
+maintainers:
+  - bdfinst
+  - unassigned   # TODO: name a second maintainer before shipping to production; bus-factor minimum is 2.
+required-primitives-contract: ^1.0.0
+---
+
+# Static Analysis Integration (SARIF-first)
+
+Maintenance policies for adapters and rulesets live in `maintenance.md` — those are out-of-runtime concerns.
+
+## Constraints
+
+1. Collect and report only — read source and tool output; make no code edits.
+2. Graceful degradation: if no tools are installed, return `status: skip`; absence is never a pipeline failure.
+3. Deduplicate across tools: the same issue reported by multiple tools appears once, attributed to the higher-priority source.
+
+## Tool tiers
+
+### Tier 1 — required baseline (SARIF native)
+
+| Tool | SARIF invocation | Capability |
+|---|---|---|
+| semgrep | `semgrep scan --sarif --config auto` | SAST |
+| gitleaks | `gitleaks detect --report-format sarif --report-path - --no-verify` | secrets |
+| trivy | `trivy config --format sarif --skip-update --offline-scan <path>` + `trivy fs --format sarif --skip-update --offline-scan <path>` | IaC + supply-chain |
+| hadolint | `hadolint --format sarif <Dockerfile>` | IaC (Dockerfile) |
+| actionlint | binary emits JSON; thin adapter maps to SARIF `result` (see `references/tool-configs.md`) | CI/CD |
+| pmd | `pmd check -d . -R <resolved-ruleset> -f sarif --no-progress` — language-conditional: dispatched (and hinted when missing) only when `.java` files are in the target set; detection probes the repo-local `.pmd/` bin before PATH; ruleset resolution in `references/tool-configs.md` | Java code quality |
+| ruff | `ruff check --output-format sarif .` (ruff ≥ 0.3.1) | Python lint + autofix (language-conditional — see step 1) |
+
+### Tier 2 — optional SARIF adapters
+
+Shipped in P2 Step 3b. Not part of the baseline.
+
+### Tier 3 — bespoke JSON adapters
+
+Shipped in P2 Step 3b for tools without upstream SARIF. Each adapter ≤ 40 LOC. A thin adapter normalizes `security-review` agent output into the unified envelope (see `adapters/security-review-adapter.py`). Rule_id lookup is driven by `plugins/dev-team/knowledge/security-review-rule-map.yaml`; malformed categories hard-fail, well-formed-but-unmapped categories fall back to `security-review.*` with a WARN.
+
+mypy (≥ 1.11, `mypy --output json`) normalizes via `adapters/mypy-adapter.py` — rule ids `mypy.python.<error-code>`; on older mypy (no `--output json`) the adapter degrades to a skip-with-warning. Language-conditional like ruff (see step 1). Invocation and field mapping in `references/tool-configs.md`.
+
+### Convention, accessibility, and performance probes (#1979)
+
+Two **additional invocations of tools already in the tiers above** — no new binaries, no new adapters, no network. Each exists to hand review agents a deterministic finding where a lens would otherwise re-derive one by inference, and each is separate from its tool's main lane so the main lane keeps reflecting the project's own gating configuration:
+
+| Probe | Invocation | Displaces |
+|---|---|---|
+| ruff convention | `ruff check --select N,PLR2004 --output-format sarif .` | the mechanical half of `naming-review` (PEP 8 naming, magic values in comparisons) |
+| oxlint frontend | `npx oxlint --jsx-a11y-plugin --react-plugin --react-perf-plugin -D perf --format sarif .` | the mechanical half of `a11y-review`; feeds `performance-review` on the JS/TS side (`no-await-in-loop` is the N+1 shape) |
+
+Both are language-conditional, never `[REQUIRED]`, and never gate — they are context, exactly like the rest of the pre-pass. Invocation details, the measured calibration behind them, and the JS/TS magic-number opt-in are in `references/tool-configs.md`.
+
+**Cross-language performance context.** When the Repowise MCP tools are available, the caller injects `get_health`'s static I/O-in-loop / N+1 findings into the pre-pass context alongside these, rather than having `performance-review` fetch them per dispatch. **Semgrep's registry performance rulesets (`p/performance`) are deliberately NOT used**: resolving a registry pack requires an outbound call to `semgrep.dev`, which would break the offline posture § 1b establishes for this pre-pass — and the pack the spike named does not resolve at all (`--config p/performance` returns HTTP 404, verified on semgrep 1.174.0). Shipping our own performance rules is possible but is a separate piece of work: every rule this repo ships needs passing/failing fixtures under the `semgrep rule fixtures` CI gate. The oxlint `perf` lane covers the JS/TS side offline; anything beyond it stays with the agent.
+
+**lizard** (complexity metrics) normalizes via `adapters/lizard-adapter.py` — rule ids `lizard.complexity.<metric>`; **jscpd** (copy-paste duplication) via `adapters/jscpd-adapter.py` — rule id `jscpd.duplication.clone`. Both are Tier 3 by this file's own taxonomy (bespoke adapter, not SARIF-native), but both are *baseline* capabilities rather than optional extras: they are the deterministic source for the two metric families the review panel would otherwise re-derive by inference on every run — function complexity/size/parameter count, and duplicated blocks (#1974). Neither is language-conditional; lizard covers ~15 languages and jscpd ~150, so both are probed on every target set. Invocation, thresholds, and field mapping in `references/tool-configs.md`.
+
+### Tier 4 — legacy (pre-SARIF)
+
+ESLint / tsc remain callable via native JSON for older flows. Not part of the Step 3a baseline; migrate to SARIF when upstream lands. (The legacy Python entry is retired — ruff replaces it outright as the Tier 1 Python source.)
+
+## Execution flow
+
+### 1. Detect available tools
+
+For each Tier 1 tool, run `command -v <tool>`. Record presence in a tool-map. Missing Tier 1 tools surface as a **warning group** via the install-hint format below — never a pipeline failure.
+
+**Language-conditional tools** (ruff, mypy) are probed and dispatched — and their missing-tool hints surfaced — only when `.py` files are in the target set. A non-Python repo never sees a "ruff missing" or "mypy missing" warning, and language-conditional tools never carry the `[REQUIRED]` prefix.
+
+If no Tier 1 tools are present, return:
+
+```json
+{ "status": "skip", "tools": [], "findings": [], "summary": "No static analysis tools detected." }
+```
+
+### 1b. Offline enforcement (gitleaks, trivy)
+
+These tools default to making network calls; in restricted-egress environments those calls hang or fail and take the pre-pass down with them. Both are pinned to local-only operation so the pre-pass never depends on outbound network access.
+
+**gitleaks** runs with `--no-verify`. Verification (confirming a detected secret is a live credential) is the only outbound call gitleaks makes; disabling it keeps detection fully pattern-based and offline. No preflight needed — the flag is always on.
+
+**trivy** runs with `--skip-update --offline-scan` on both `trivy config` and `trivy fs`. Before dispatching trivy, run the **offline DB preflight** against the local cache (`${TRIVY_CACHE_DIR:-$HOME/.cache/trivy}/db/trivy.db`):
+
+| Local DB state | Action | Warning |
+|---|---|---|
+| absent | skip trivy | `trivy local DB missing — run: trivy image --download-db-only` |
+| mtime age ≤ 7 days | run (fresh) | none |
+| mtime age > 7 days | run anyway | `trivy DB is N days old — consider refreshing with: trivy image --download-db-only` |
+
+`N` is the integer day count. The 7-day boundary is inclusive (exactly 7 days = fresh; strictly greater than 7 days = stale). A missing or stale DB is **never a hard pipeline failure** — it degrades to a skip or a warning, consistent with the graceful-degradation constraint.
+
+### 2. Run available tools in parallel
+
+Dispatch each available tool's invocation. Each returns SARIF on stdout (or via its adapter). Collect SARIF documents keyed by tool name.
+
+**Target walk MUST include CI/CD workflow files** even when they live outside the walked tree (monorepo case — walk up to the repo root to find them). Glob list: [`knowledge/ci-cd-file-scope.md`](../../knowledge/ci-cd-file-scope.md).
+
+Invoke every Tier-1 tool that can process them — actionlint for GitHub Actions, trivy-config for any CI YAML, semgrep with `p/github-actions` (or the bundled `crypto-anti-patterns.yaml` rule that catches `printenv` in workflow `run:` blocks).
+
+Record which CI directories were scanned:
+
+```json
+{ "ci_dirs_scanned": [".github/workflows", ".gitlab-ci.yml"], ... }
+```
+
+If none found, record `"ci_dirs_scanned": []`. The caller can then surface "no CI files in scope" when a CI config would be expected.
+
+### 3. Normalize to unified finding envelope
+
+The shared SARIF parser (`references/sarif-parser.md`) walks each SARIF document's `runs[*].results[*]` and emits one unified finding per result:
+
+| SARIF path | Unified finding field | Notes |
+|---|---|---|
+| `results[*].ruleId` | `rule_id` | Prefixed: `<tool>.<lang?>.<rule>` |
+| `results[*].locations[0].physicalLocation.artifactLocation.uri` | `file` | Repo-relative POSIX |
+| `results[*].locations[0].physicalLocation.region.startLine` | `line` | 1-indexed |
+| `results[*].locations[0].physicalLocation.region.startColumn` | `column` | 1-indexed, optional |
+| `results[*].level` | `severity` | `error`→`error`, `warning`→`warning`, `note`→`suggestion`, `none`/absent→`info` |
+| `results[*].message.text` | `message` | Truncated to 500 chars |
+| `runs[*].tool.driver.rules[ruleIndex].properties.cwe` | `cwe[]` | If present: `["CWE-N"]` |
+| `runs[*].tool.driver.name` | `metadata.source` | e.g. `"semgrep"` |
+| result-level `properties.confidence` | `metadata.confidence` | Default `medium` if absent |
+
+The parser MUST validate each emitted finding against unified-finding-v1 before returning; schema violations fail the run with a named tool + rule id.
+
+### 4. Deduplicate
+
+Two findings are duplicates if they share `file`, `line`, and either (a) identical `rule_id`, or (b) `message` cosine similarity > 0.85 on normalized text. When duplicates exist, keep the higher-priority tool:
+
+```
+semgrep > gitleaks > trivy > hadolint > actionlint > ruff > mypy > oxlint > (legacy ESLint > tsc) > lizard > jscpd
+```
+
+lizard and jscpd rank last deliberately. They report *metric* classes no other tool reports (complexity numbers, clone locations), so a genuine collision is rare; when one does occur, a correctness or security finding at that line should always outrank a metric reading of it.
+
+### 5. Consult ACCEPTED-RISKS.md
+
+If present at repo root, apply suppression per `plugins/dev-team/knowledge/accepted-risks-schema.md`. Suppressed findings are removed from the return value but logged to the audit trail.
+
+### 6. Return structured result
+
+```json
+{
+  "status": "pass|warn|fail",
+  "tools_available": ["semgrep", "hadolint"],
+  "tools_missing": [
+    { "tool": "gitleaks", "install_hint": "gitleaks — secrets detection. install: brew install gitleaks" }
+  ],
+  "findings": [ /* unified finding envelope v1.0 objects */ ],
+  "summary": "12 findings from 2 tools: 3 errors, 7 warnings, 2 suggestions"
+}
+```
+
+`status`: `fail` if any finding has `severity: error`; `warn` if warnings only; `pass` if no findings or no tools available.
+
+## Install-hint format
+
+```
+<tool-name> — <capability-tier>. install: <package-manager> install <name>
+```
+
+Examples:
+
+```
+semgrep — SAST. install: pip install semgrep
+gitleaks — secrets detection. install: brew install gitleaks
+trivy — IaC + supply-chain scanning. install: brew install trivy
+hadolint — Dockerfile linting. install: brew install hadolint
+actionlint — GitHub Actions linting. install: brew install actionlint
+ruff — Python lint + autofix. install: python3 -m pip install ruff (project venv / dev requirements)
+mypy — Python type checking. install: python3 -m pip install mypy (project venv / dev requirements)
+lizard — complexity metrics. install: python3 -m pip install lizard (project venv / dev requirements)
+jscpd — copy-paste duplication detection. install: npm install -g jscpd
+```
+
+Print install-hints grouped by capability tier (secrets / IaC / CI-CD / supply-chain / SAST / data-flow). Required tools carry a `[REQUIRED]` prefix; absence of a required tool is a hard failure at install time, absence of an optional tool is a warning. Tier-implementation labels ("SARIF adapter", "bespoke-JSON adapter", "legacy") are internal vocabulary and never surface in user-facing text.
+
+### Missing-tool remediation convention (#838)
+
+When a command hits a **missing REQUIRED tool**, the remediation must name the
+onboarding command first — the consistent, discoverable one-command entry point
+— and give the raw install hint alongside it:
+
+> Run `/project-init` (or `/setup`) to set up this repo's tooling, or install directly: `<raw install hint>`.
+
+Onboarding ownership: `/project-init` installs the static-analysis lane tools
+(ruff, mypy, oxlint, dotnet-format, PMD) **and** the detection-gated capability
+tools other skills depend on — semgrep, hadolint/trivy/grype, `adr`, `gh`, and
+Playwright + Chromium — per its
+`skills/project-init/references/capability-tools.md` registry. The pointer
+names `/project-init` as the one-command entry point and the tool-specific
+install command stays as the direct fallback. Machine output (e.g.
+semgrep-analyze's `--programmatic` JSON) stays prose-free: the onboarding
+pointer lives only in the human-facing branch.
+
+## Agent context injection
+
+When findings are passed to review agents, format them so agents don't re-report confirmed static findings:
+
+```text
+## Static Analysis Pre-Pass Results
+
+The following issues were detected deterministically by static analysis.
+Do not re-report these issues. Focus on semantic and architectural concerns
+that static analysis cannot detect.
+
+| Tool | Severity | File | Line | Rule | Message |
+|------|----------|------|------|------|---------|
+| semgrep | error | src/api/handler.ts | 42 | javascript.express.audit.xss | Potential XSS |
+| gitleaks | error | .env.example | 3  | generic.aws-access-key | AWS key pattern in committed file |
+```
+
+If no findings: "Static analysis pre-pass ran (tools: <list>). No findings — all clear."
+
+This context goes to **all** review agents, not just security-review.
+
+## Related
+
+- `references/tool-configs.md` — per-tool invocation commands, adapter scripts, install hints; hosts the "Build-time lanes" registry for `/build`'s static self-heal pass
+- `references/language-setup.md` — user-facing per-language setup guide for the build-time self-heal pass and this pre-pass
+- `references/sarif-parser.md` — normalized mapping from SARIF `result` to unified finding envelope v1.0
+- `evals/static-analysis-tools/tier1-mocks/` — tier-1 mocked SARIF fixtures
+- `evals/static-analysis-tools/tier2-integration/` — tier-2 real-binary integration tests (nightly CI)
+- `knowledge/security-primitives-contract.md` — unified finding envelope v1.0
+- `knowledge/accepted-risks-schema.md` — per-project suppression policy
+- `maintenance.md` — adapter and ruleset lifecycle policies

@@ -1,0 +1,5 @@
+- jest config is located in jest.config.mjs and jest.setup.ts
+- Implement tests first, run tests after implementation to verify.
+- Don't create new d.ts files. Ask the user first what to do.
+- Don't create random mocks. Ask the user first. 
+- Node 18 and after use fetch (based on undici), don't install anything else. 

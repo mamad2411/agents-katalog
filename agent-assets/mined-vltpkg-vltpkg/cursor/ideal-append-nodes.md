@@ -1,0 +1,91 @@
+---
+description: Breadth-first dependency graph building with peer context management
+globs: src/graph/src/ideal/append-nodes.ts,src/graph/src/ideal/refresh-ideal-graph.ts,src/graph/src/ideal/types.ts
+alwaysApply: false
+---
+# Append Nodes Architecture
+
+Core BFS graph builder in `src/graph/src/ideal/append-nodes.ts`.
+
+## 3-Phase BFS Loop (per level)
+
+### Phase A: Parallel Fetch (read-only)
+`fetchManifestsForDeps()` fetches manifests without graph mutations. Returns `FetchResult`:
+- `placementTasks: NodePlacementTask[]` — nodes to place
+- `reuseTasks: ReuseTask[]` — deferred edge creation for existing nodes
+- `forkRequests: PeerContextEntryInput[]` — accumulated peer context fork entries
+
+Errors: every `manifestPromise` is side-caught; `Promise.all` fails the level on the first rejection (others may still be in flight). `refreshIdealGraph` side-catches in-flight early extractions when the build fails.
+
+### Phase B: Serial Mutations (deterministic)
+Sort results by `${node.id}::${depth}`. For each (in order):
+1. Apply `forkRequests` → `forkPeerContext()`
+2. Apply `reuseTasks` → `graph.addEdge()` (sorted)
+3. `processPlacementTasks()`:
+   - `startPeerPlacement()` → get `peerSetHash` + queued entries
+   - `graph.placePackage(from, type, spec, manifest, id, joinExtra({ peerSetHash, modifier }))`
+   - `endPeerPlacement()` → get `{ putEntries, resolvePeerDeps }` for Phase C
+
+### Phase C: Post-Placement Peer Check
+`postPlacementPeerCheck(graph, levelResults)`:
+1. `putEntries()` on all children → detect which need forking
+2. Fork/reuse sibling contexts
+3. `resolvePeerDeps()` from context
+
+## Workspace Peer Isolation
+
+Non-main importers get fresh peer contexts:
+```typescript
+if (fromNode.importer && fromNode !== graph.mainImporter) {
+  const nextPeerContext: PeerContext = new Map()
+  nextPeerContext.index = graph.nextPeerContextIndex()
+  initialPeerContext = nextPeerContext
+}
+```
+
+## Existing Edge Preference (Idempotency)
+
+```typescript
+const existingEdge = fromNode.edgesOut.get(spec.name)
+if (existingEdge?.to && !existingEdge.to.detached && satisfiesFinal(existingEdge.to)) {
+  existingNode = existingEdge.to  // Preserve lockfile resolution
+} else if (lockedNode && lockedFits(lockedNode)) {
+  existingNode = lockedNode  // graph.lockedResolutions target, detached after resetEdges()
+} else {
+  existingNode = graph.findResolution(spec, fromNode, queryModifier)
+}
+```
+
+## Locked Version Hydration (no `node_modules`)
+
+A detached `existingNode` is always the lockfile target. With a manifest (hidden lockfile / actual graph) it is reused as-is. Without one (plain `vlt-lock.json`, no `node_modules`), `fetchManifestsForDeps` first hydrates every fitting locked node: `lockedVersionFetch()` rebuilds the exact spec from the DepID via `hydrate()` + `Spec.parse()` with current options (the dep-id memo ignores options), `hydrateLockedNode()` fetches it once per node (shared `hydrations` map) and sets `node.manifest`. The rest of the pipeline, including `checkPeerEdgesCompatible()`, then sees the same nodes the hidden-lockfile path sees, so a rebuild never drifts to the newest satisfying version. Guards: registry specs only, `exact.final.registry === spec.final.registry`, fetched `manifest.version === node.version`. Any miss leaves the node bare and the range fetch runs as before.
+
+## Candidate Fallback (Peer-Incompatible)
+
+If first satisfying node fails peer check, lazy-load `graph.nodesByName.get(name)` candidates and try each until compatible one found.
+
+## Error Handling
+
+- **Optional deps**: `removeOptionalSubgraph()` if parent is optional; skip if edge is optional; throw if required
+- **Cycles / duplicates**: `seen` marked at enqueue; a node placed by several parents in one level is queued once (first in sorted order)
+- **Nameless deps**: `fixupAddedNames()` for specs like `github:foo/bar`
+
+## Modifier Integration
+
+Check `activeModifier?.interactiveBreadcrumb.current === modifier.breadcrumb.last` for complete match. If complete and has `spec`, swap it. If `spec.bareSpec === '-'`, skip dep entirely. After placement: `modifiers.updateActiveEntry(node, active)`.
+
+## Key Types
+
+```typescript
+type FetchResult = { placementTasks: NodePlacementTask[], reuseTasks: ReuseTask[], forkRequests: PeerContextEntryInput[] }
+type ReuseTask = { type: DependencySaveType, spec: Spec, fromNode: Node, toNode: Node }
+type AppendNodeEntry = { node: Node, deps: Dependency[], depth: number, peerContext: PeerContext, updateContext: { putEntries, resolvePeerDeps }, modifierRefs? }
+type PeerContext = Map<string, PeerContextEntry> & { index?: number }
+```
+
+## Performance
+
+- Level parallelism for manifest fetching
+- Read-only fetch phase prevents timing-based non-determinism
+- `seen` Set prevents cycles and duplicate work
+- Early extraction for new nodes during graph building (skip peer/optional deps)

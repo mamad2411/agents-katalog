@@ -1,0 +1,148 @@
+# CLAUDE.md
+
+## Project Overview
+
+OPRE OPS is the Portfolio Management System for OPRE (Office of Planning, Research and Evaluation), replacing the legacy MAPS system. It's a full-stack web application with a Flask/SQLAlchemy backend API and a React/Redux frontend, containerized with Docker.
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8080
+
+## Subdirectory Guides
+
+Each major directory has its own `CLAUDE.md` with detailed commands, architecture, and patterns:
+
+- **`backend/ops_api/CLAUDE.md`**: Backend Flask API — commands, testing, architecture, authorization patterns
+- **`backend/data_tools/CLAUDE.md`**: ETL and data import — load_data CLI, test fixtures, environment configs
+- **`frontend/CLAUDE.md`**: React frontend — commands, testing, RTK Query, component patterns
+- **`docs/TESTING.md`**: Testing philosophy and the test-type decision matrix — consult before adding any new test, at any layer
+
+## Data Model
+
+PostgreSQL with SQLAlchemy ORM. Key domain entities:
+
+- **CANs** (Contract Account Numbers): Funding sources with budgets and fiscal year tracking
+- **Agreements**: Contracts or grants with budget line items
+- **Projects**: Organizational units that group agreements
+- **Portfolios**: Top-level organizational structure
+- **Budget Line Items**: Line-level budget allocations linking agreements to CANs
+- **Users**: Authentication and authorization with role-based permissions
+
+All models have automatic audit history tracking via the event system.
+
+## Fee Percentage Format Convention
+
+**CRITICAL**: Fee percentages are stored and passed as whole numbers throughout the stack (e.g., `5.0` = 5%, not `0.05`). The frontend `calculateTotal` helper in `frontend/src/helpers/agreement.helpers.js` divides by 100 internally — do NOT pre-divide.
+
+```javascript
+// CORRECT
+const fee = calculateTotal(budgetLines, 5.0); // 5% fee rate
+
+// INCORRECT — results in 0.05% fee rate
+const fee = calculateTotal(budgetLines, 5.0 / 100);
+```
+
+## Docker
+
+The application runs four services: **db** (PostgreSQL), **data-import** (seeds test data), **backend** (Flask, port 8080), **frontend** (Vite, port 3000).
+
+```bash
+docker compose up --build             # Full app with hot reload
+docker compose up --build -d          # Detached mode
+docker compose up db data-import --build  # Database + test data only
+docker system prune --volumes         # Clean state between E2E runs
+```
+
+## Pre-Commit Workflow
+
+**ALWAYS run these checks before committing and pushing:**
+
+### Frontend Changes
+```bash
+cd frontend
+bun run format              # Auto-fix formatting
+bun run lint --fix          # Auto-fix linting issues
+bun run test --watch=false  # Run all unit tests
+```
+
+### Backend Changes
+```bash
+cd backend/ops_api
+pipenv run black --config ./pyproject.toml .  # Auto-format
+pipenv run nox -s lint                        # Linting check
+pipenv run pytest                             # Run all tests
+```
+
+**Why this matters:** Pre-commit hooks will catch some issues, but running these manually first:
+- Prevents CI failures from formatting/linting
+- Catches test failures before pushing
+- Saves time by finding issues locally
+
+## Commit Message Standards
+
+Uses **Conventional Commits** enforced by commitlint.
+
+```
+<type>: <description>
+```
+
+**Types:** feat, fix, refactor, test, docs, chore, style
+
+- Always use conventional commit format (commitlint will reject non-conforming commits)
+- Check recent commits with `git log --oneline -5` to match repository style
+- Include ticket numbers in branch names (e.g., `OPS-4927/feature-name`), not in commit messages
+- **Single line only, under 100 characters** — no multiline body, no blank lines
+- **No trailers** — no `Co-Authored-By`, no `Signed-off-by`, nothing after the subject line
+- Always commit with `git commit -m "type: description"` — never HEREDOC (multiline fails commitlint)
+
+## Branching
+
+Always branch from `main` (not from another feature branch), unless explicitly instructed otherwise.
+
+**Naming patterns:**
+- Ticket work: `OPS-NNNN/short-description` (e.g. `OPS-6028/disable-save-draft`)
+- Docs/tooling with no ticket: `docs/short-description` (e.g. `docs/claude-commit-conventions`)
+- Hotfixes: `OPS/hotfix-description`
+
+**Rules:**
+- Never commit directly to `main`
+- Branch names use kebab-case after the prefix
+- Keep descriptions short — 3-5 words max
+
+## Pre-commit Hooks
+
+Required for development. Enforces linting, formatting, and security scanning.
+
+```bash
+pre-commit install
+pre-commit install --hook-type commit-msg
+```
+
+## Pull Request Standards
+
+- **Never add `Closes #NNN`, `Fixes #NNN`, or `Resolves #NNN`** to PR descriptions. The team's process requires additional review and QA steps before a story moves out of "in progress" — auto-closing on merge skips those steps.
+- Reference the ticket in the branch name only (e.g. `OPS-5931/feature-name`).
+
+## CI/CD
+
+GitHub Actions for CI/CD. Workflows in `.github/workflows/`.
+- Dev and staging deploy automatically on push to `main`
+- Production deploys manually via GitHub Actions
+
+Flaky E2E test detection runs automatically in CI. Use the `/e2e-tests` skill to run, monitor, or fix E2E tests.
+
+## Claude Actions
+
+Reusable automation scripts in `.claude/actions/`:
+
+- **`monitor-ci.sh`**: Monitor GitHub Actions CI runs until completion
+- **`quick-ci-status.sh`**: Instantly check the latest CI run status
+
+See [`.claude/actions/README.md`](.claude/actions/README.md) for usage.
+
+## Claude Story Templates
+
+Story templates in `.claude/templates/` for planning and implementation:
+
+- **`feature-story.md`**, **`bug-story.md`**, **`refactor-story.md`**
+
+See [`.claude/templates/README.md`](.claude/templates/README.md) for usage. Story files in `.claude/stories/` are tracked in git.

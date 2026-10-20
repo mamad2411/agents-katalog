@@ -1,0 +1,406 @@
+---
+activation: glob
+globs: ["**/auth/**", "**/security/**", "**/middleware/**", "**/.env", "**/.env.*", "**/secrets/**", "**/.ssh/**", "**/internal_auth.py", "**/*.key", "**/*.pem"]
+description: Security & auth discipline — JWT rules, CORS policy, secret handling, CSP, session patterns, sensitive-file backup, generated-password policy, M2M internal-auth canonical pattern
+trigger: glob
+currency_pass: 2026-09-01
+---
+<!-- CONSUMER: Coding agents (all) + Traycer (tech-plan step)
+     GOAL: Auth architecture (Pattern A: FastAPI / Pattern B: Supabase Auth), CORS, CSP, token storage, M2M auth
+     TRAYCER USAGE: Referenced during tech-plan to decide auth pattern. Injects Pattern A or B into ticket ACs.
+     AGENT USAGE: Follow the pattern specified in the ticket. Both patterns documented here. -->
+
+# Security & Auth Rules
+
+Apply when working on authentication, authorization, CORS, security headers, or session management. Skip for pure UI layout, database models, or infrastructure files.
+
+---
+
+## Identity Provider (project-type dependent)
+
+The auth architecture depends on the project's scaffold type and domain module decisions. Two canonical patterns exist:
+
+### Pattern A — FastAPI as sole IdP (self-hosted auth) — **DEFAULT**
+
+**The default for ALL new projects, including user-facing SaaS + mobile.** Vendor `fabrik-lib/fastapi-user-auth`: the app issues its own JWTs — **Argon2id** (the vendored argon2-cffi defaults meet OWASP minimums; never Argon2i) + timing-equalized login, atomic refresh-token rotation (`DELETE … RETURNING`), JWT `jti` denylist revocation, and dual-mode tenant-isolation RLS. Supabase is retired as a default (see `agents-fabrik.md § Supabase`); reach for Pattern B only for a project that *already* runs on Supabase Auth.
+
+- FastAPI owns credential hashing (Argon2), user state, token issuance, and validation.
+- Do not use NextAuth.js, Clerk, Auth0, or Firebase Auth.
+- All clients (Next.js, React Native, Chrome Extension) are API consumers only.
+
+#### Passwordless is the DEFAULT sign-in for every surface (operator ruling, 2026-08-28)
+
+`fastapi-user-auth` ships `passwordless_enabled: bool = True` (`fastapi_user_auth/settings.py:38`) and exposes exactly
+two endpoints — `POST /auth/passwordless/request` and `GET|POST /auth/passwordless/verify`. **New
+projects use it as the primary sign-in on every applicable scaffold type**; a password form is an
+ADDITIONAL affordance a project justifies, never the default door.
+
+**Honest limit:** email OTP / magic links are NOT phishing-resistant (a code or link can be captured
+and replayed). Passkeys (WebAuthn — domain-bound, phishing-resistant) are the upgrade path when a
+project's threat model demands that property; the vendored lib does not ship them yet, so such a
+project files the fabrik-lib request FIRST, never hand-rolls WebAuthn.
+
+**Two delivery mechanisms, and the choice is per SURFACE, not per taste:**
+
+| | **OTP code** (user types 6 digits) | **Magic link** (user clicks) |
+|---|---|---|
+| Needs | nothing — a text input | a landing the platform can route to |
+| `saas-skeleton` | ✅ | ✅ `/login/link/[token]` (`saas/60-saas-ui.md`) |
+| `mobile-app` | ✅ | ✅ Universal Links / App Links, already mandated in `mobile-app/80-mobile.md` § Deep linking — custom schemes are fallback only |
+| `chrome-extension` | ✅ **use this** | ⚠️ only via `chrome.identity.launchWebAuthFlow` + the `https://<ext-id>.chromiumapp.org/` redirect the pack already mandates; a bare mailed link lands in a TAB that cannot reach `chrome.storage.session` |
+| `desktop-app` | ✅ **use this** | ⚠️ needs a registered custom protocol handler; the token then goes to `safeStorage` (`desktop-app/72-desktop.md`) |
+
+**The OTP code path is the universal floor** — it needs no platform machinery and works identically
+everywhere, so a surface that cannot cleanly land a link ships the code path rather than a password.
+
+`static-site` and `docusaurus` are out of scope unless they grow an authenticated area.
+
+#### API-based systems (`python-api`, `node-api`, `file-api`, `file-worker`, `python-api-gpu`)
+
+**They have no sign-in UI, so "OTP vs magic link" does not apply to THEM — but they are not
+exempt from auth, and two of the three cases below are the passwordless flow seen from the
+server side.** Every inbound request to a Fabrik API is exactly one of three kinds, and the
+service MUST be able to say which:
+
+| Caller | Mechanism | Where it is defined |
+|---|---|---|
+| **A human**, via a SaaS / mobile / extension / desktop client | the app's own **JWT** minted by `fastapi-user-auth` — including by the passwordless endpoints above. The API **validates**, it does not re-authenticate | § Pattern A (Argon2id, 15-min access, refresh rotation, `jti` denylist, RLS via `auth.uid()`) |
+| **Another Fabrik service** (Docker-to-Docker on the `fabrik` network) | `X-Internal-Token` + `internal_auth.py`, `hmac.compare_digest`, 403 on reject | § Internal Service Auth (M2M) below — **never** an inline `APIKeyHeader`, never a per-service key name |
+| **Nobody** (genuinely public) | no auth — and it must be a DELIBERATE, listed decision, not an endpoint someone forgot to protect | health/metrics only: `/health`, `/healthz`, `/metrics`, `/api/health` are Authelia-bypassed by design (`core/30-ops.md`) |
+
+**A `python-api` that IS the IdP** — i.e. it vendors `fastapi-user-auth` — owns the passwordless
+endpoints themselves (`/auth/passwordless/request` and `/verify`) and everything in this section
+applies to it directly, not by reference. That is the common case for a SaaS or mobile backend:
+the human-facing surface renders the one-email-field door, and this service is what mints and
+validates the session behind it.
+
+**Network isolation is NOT auth.** Being on the `fabrik` network with no host `ports:` is a
+deployment property, not an authorization one — an API that skips the token check because "only
+our own services can reach it" is unauthenticated the moment anything else lands on that network.
+
+**Binding matters:** a verify request whose browser/device did not make the corresponding request is
+REFUSED (`binding_mismatch`) and audited as `auth.passwordless_refused` (`core/app-audit-log.md`).
+An approval link opened somewhere the user did not start must never mint a session silently.
+
+### Pattern A-compat — FastAPI IdP on a Supabase-shaped schema (migration off Supabase Auth)
+
+Use when a project is **migrating off Supabase Auth** but wants to retain its existing `auth.uid()`-based RLS policies, `auth.users` FKs/triggers, and `authenticated`/`service_role` grants **unchanged** — a verified zero-rewrite, zero-loss migration. This is a third, legitimate position ("Pattern A, Supabase-schema-compatible"), **not** a fork of Pattern A's token rules: FastAPI becomes the sole IdP and the token lifecycle is **exactly Pattern A** (Argon2 / 15-min HS256 access / 7-day opaque PG refresh / Redis denylist). The database keeps Supabase's **PostgreSQL contract**, now owned natively:
+
+- **`auth` schema + `auth.users`** table — own it natively (`encrypted_password` holds the Argon2 hash). Existing FKs to `auth.users(id)` and triggers keep working with zero edits.
+- **`auth.uid()` / `auth.jwt()` / `auth.role()`** SQL helpers, reimplemented over the `request.jwt.claims` GUC with Supabase-faithful semantics (definitions in `saas/95-multi-tenant-saas.md` § Dual-Mode RLS).
+- **`anon` / `authenticated` / `service_role`** roles — `NOLOGIN NOINHERIT`; `service_role` carries `BYPASSRLS`, mirroring Supabase's privileged key for M2M.
+- **The GUC contract** — the app sets, per transaction, exactly what Supabase's PostgREST set from the JWT:
+  ```sql
+  SELECT set_config('role', 'authenticated', true);   -- never service_role on the request path (saas/95)
+  SELECT set_config('request.jwt.claims', $1, true);  -- '{"sub":"<user-uuid>","role":"authenticated"}', bound — SET LOCAL takes no parameter
+  ```
+  With these set, `auth.uid()` resolves to `<user-uuid>` and every existing policy enforces as before. Unset/invalid → `auth.uid()` returns `NULL` → deny (the invariant below).
+
+Tenant isolation, the dual-mode RLS contract, the `auth.*` helper definitions, `fabrik_admin`, and the cross-tenant probe live in `95-multi-tenant-saas.md`. The canonical reference build is trade-intelligence's `000_native_auth.sql` (auth schema + helpers) + `053_force_rls_and_admin.sql` (FORCE RLS + `fabrik_admin`).
+
+> **Fail-closed invariant (hard, every mode).** `auth.uid()` and `current_tenant_id()` MUST return `NULL` (→ the policy denies) on unset, empty, or malformed claims — wrap the body in `EXCEPTION WHEN OTHERS THEN RETURN NULL`. **Never** raise and never default to a value: a default turns one bad/empty JWT into a cross-tenant read, and a raise turns a deny into a 500. This is the single most security-critical line in the build — verify it explicitly with a no-context probe (`SELECT auth.uid()` → `NULL`).
+
+### Pattern B — Supabase Auth + FastAPI backend (legacy / migration-only)
+
+Use ONLY when a project **already runs on Supabase Auth** (a legacy or in-flight project). **Not for new work** — new user-facing products use Pattern A (`fabrik-lib/fastapi-user-auth`). A project still on Pattern B should plan its move to Pattern A / Pattern A-compat (see `agents-fabrik.md § Supabase`). The Supabase-JWT-validation guidance below remains authoritative for such projects.
+
+- **Supabase Auth** handles user registration, login, password hashing, OAuth providers (including Sign in with Apple — mandatory on iOS if any social login is offered), email verification, and password reset.
+- **FastAPI** handles custom business logic, M2M auth, and any endpoints that need data beyond what Supabase exposes. FastAPI validates Supabase JWTs per the Supabase JWT validation section below — it does not issue its own user tokens.
+- **Authelia** protects admin/back-office dashboards via Traefik forward-auth. Not for end-user auth.
+- For multi-tenant SaaS: Supabase RLS enforces tenant isolation at the database level. See `95-multi-tenant-saas.md` for full patterns.
+
+**Which pattern?** **Pattern A by default** — every new project, including `saas-skeleton` / `mobile-app`. Use Pattern B only if the project *already* runs on Supabase Auth (its `spec.shape` / domain module says so and it hasn't migrated yet), and plan its move to Pattern A / Pattern A-compat.
+
+---
+
+## Token Lifecycle
+
+### Pattern A (FastAPI-issued tokens)
+
+- Issue **short-lived JWT access tokens** (15 minutes) signed with HS256.
+- Issue **long-lived opaque refresh tokens** (7 days) stored in PostgreSQL alongside user and device metadata. Refresh tokens are not JWTs — they are cryptographically random strings.
+- Deleting the refresh token ends the session — no new access tokens issue. For instant revocation of the outstanding access token, the vendored lib SHIPS the JWT `jti` denylist (short-TTL, Redis) — wire it, don't rebuild it; it is part of the canonical lifecycle, not an optional bolt-on.
+- The JWT signing secret must be at least 256 bits, generated via `openssl rand -hex 32`, and injected via Pydantic Settings. Never hardcode it.
+- Use HS256 while the issuer and verifier are the SAME service (Pattern A's shape — sound and simplest). The moment a second party must verify without minting, switch to an asymmetric alg — prefer EdDSA (Ed25519) or ES256 over RSA (smaller keys/signatures, fewer footguns).
+- **Pin the algorithm in the VERIFIER** — pass an explicit allow-list (`algorithms=["HS256"]`), never let the library dispatch on the token header's `alg`. Header-driven dispatch is the classic confusion attack (an RS256 public key replayed as an HS256 HMAC secret); `alg: none` is rejected unconditionally.
+
+### Pattern B (Supabase-issued tokens) — legacy / migration-only
+
+- Supabase issues JWTs automatically on login. Token lifecycle is managed by Supabase — do not override.
+- Refresh is handled by the Supabase client SDK (`supabase-js`, `supabase-py`). Do not build custom refresh logic.
+- For server-side operations that need elevated privileges, use the Supabase `service_role` key (env var, never exposed to clients).
+
+### Supabase JWT Validation (Pattern B — legacy / migration-only) — canonical for that pattern
+
+- Confirm which signing algorithm the project uses BEFORE writing validation code. Supabase's default shifted from symmetric HS256 (legacy/older projects) to asymmetric ES256/RSA (new JWT signing keys). The two are NOT interchangeable.
+- **Preferred:** validate via the Supabase client's `getClaims()` (`supabase-py` / `supabase-js`). It verifies asymmetric tokens LOCALLY against the JWKS public keys and automatically falls back to server-side `getUser()` for legacy HS256 tokens or an unknown `kid`. One call handles both signing models — no branching.
+- **If hand-rolling** (no client lib): fetch JWKS from `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`, match the `kid` from the token header, verify the ES256/RSA signature, cache keys (respect the 10-min edge cache; re-fetch on unknown `kid` for rotation). **Warning:** this endpoint is EMPTY on HS256 projects — JWKS validation will silently fail. For HS256 projects, verify with the legacy JWT secret (symmetric) instead.
+- **Signature is not validation.** EVERY path MUST also assert: `aud == "authenticated"`, `iss == https://<project-ref>.supabase.co/auth/v1`, and `exp` not passed. Verifying only the signature accepts tokens minted for other audiences.
+- Do NOT call `getUser()` (a network round-trip) on every protected request when asymmetric keys are available — use local `getClaims()`; reserve the round-trip for the HS256 fallback.
+
+## Factor VI (Processes) — Sticky Sessions
+
+**CRITICAL: 12-Factor mandate.**
+
+"Sticky sessions are a violation of twelve-factor and should never be used or relied upon."
+
+"Session state belongs in 'a datastore that offers time-expiration, such as Memcached or Redis.'"
+
+=> Mandate: processes are stateless/share-nothing. **STICKY SESSIONS ARE BANNED** (not just file-based sessions). Session state goes to `redis-main` (Redis) with a TTL. Never in-process memory, never on local disk. Any design that assumes "the same user hits the same process" is a violation.
+
+### ✅ Correct
+
+```python
+# Session state in Redis with TTL
+session_data = redis_main.get(f"user_session:{session_id}")
+if not session_data:
+    redis_main.setex(f"user_session:{session_id}", 3600, user_data)
+```
+
+### ❌ Banned
+
+```python
+# Process-specific session state — VIOLATIONS
+user_cache[user_id] = session_obj          # in-process dict: dies with the process, invisible to replicas
+open(f"/tmp/session_{user_id}", "w")       # local disk: same problem, plus survives to confuse the NEXT process
+```
+
+## Token Storage by Client
+
+| Client | Pattern A (FastAPI) | Pattern B (Supabase) |
+|--------|---------------------|----------------------|
+| **Next.js (Web)** | HttpOnly, Secure, SameSite=Lax cookie | `supabase-js` manages via cookie or localStorage (configure SSR cookie strategy) |
+| **React Native** | `expo-secure-store` | `expo-secure-store` via `supabase-js` custom storage adapter |
+| **Chrome Extension (MV3)** | `chrome.storage.session` | `chrome.storage.session` via `supabase-js` custom storage adapter |
+
+- **Pattern A:** The FastAPI `/auth/login/web` endpoint returns a `Set-Cookie` header with `httponly=True`, `secure=True`, `samesite="lax"`. Mobile/extension endpoints return the token in the JSON response body.
+- **CSRF (Pattern A cookie auth):** the session cookie stays `SameSite=Lax`; an explicit CSRF defense is *separately* required on top — satisfy it with a double-submit CSRF token, or with `SameSite=Strict` on the state-changing endpoints. `Lax` and `Strict` are not competing values for the session cookie: the cookie is `Lax`, and `Strict` is one of the two ways to meet the separate CSRF requirement. `SameSite=Lax` alone does not cover all CSRF vectors (e.g., top-level GET navigations with side effects).
+- **Pattern B (legacy / migration-only):** The Supabase client SDK handles token storage. On mobile, wrap with `expo-secure-store` (never AsyncStorage or MMKV for tokens). See `80-mobile.md` § Backend Integration.
+- **Both patterns:** Never store JWTs in `localStorage` or `sessionStorage` on web. Never store JWTs in AsyncStorage or MMKV on mobile.
+- **Chrome Extension (MV3) specifics:** `chrome.storage.session` defaults to `TRUSTED_CONTEXTS`, so **content scripts cannot read the token** — keep it in the SW / extension-page context and have content scripts fetch it via SW-mediated messaging (`chrome.runtime.sendMessage`), not a direct read. For social login use `chrome.identity.launchWebAuthFlow` with **PKCE** (`code_verifier` via `crypto.subtle`, held in `storage.session`, redirect `https://<ext-id>.chromiumapp.org/`); the **backend** does the code-for-token exchange. **Never a heavy browser auth SDK** (Auth0-SPA-JS, `oidc-client-ts`) — they assume DOM/`localStorage`/iframes and break in the service worker. Pin a manifest `key` so the extension ID (and thus the `chrome-extension://<id>` CORS origin) is stable across machines. Full detail: `chrome-ext/70-chrome-ext.md`.
+
+---
+
+## Next.js Defense-in-Depth
+
+- **Never rely solely on the framework's request-shaping layer for access control.** CVE-2025-29927 (the `x-middleware-subrequest` bypass) proved COMPLETE middleware bypass via one crafted header; it is long patched upstream, but the rule outlives the patch — current Next.js even RENAMED the file to say so: `middleware.ts` became **`proxy.ts`**, explicitly repositioned as request-shaping, not a security boundary. ⚠️ **On current majors a leftover `middleware.ts` is SILENTLY IGNORED at build** — nonce injection and redirects stop executing with no error; rename it when upgrading.
+- Use `proxy.ts` (older majors: `middleware.ts`) only for UX redirects (e.g. redirect to `/login` if cookie missing).
+- All Server Actions, Route Handlers, and Server Components that access sensitive data or perform mutations must call a `verifySession()` Data Access Layer utility that cryptographically validates the token with the backend (FastAPI or Supabase JWKS).
+
+---
+
+## CORS Policy
+
+- `CORSMiddleware` in FastAPI must populate `allow_origins` from environment variables (Pydantic Settings). Never hardcode origins.
+- `allow_origins=["*"]` combined with `allow_credentials=True` is **banned** — browsers reject this combination and it signals misconfiguration.
+
+| Client | Origin Pattern | Notes |
+|--------|---------------|-------|
+| **Next.js** | `https://app.example.com` | Exact match, no trailing slash |
+| **React Native** | N/A (no browser CORS) | Native HTTP client — not subject to CORS |
+| **Chrome Extension** | `chrome-extension://<id>` | Use `allow_origin_regex` in dev; exact ID in production |
+
+---
+
+## Content Security Policy
+
+- Next.js `proxy.ts` (older majors: `middleware.ts`) must generate a per-request cryptographic nonce (`crypto.randomUUID()`, base64-encoded) and build the full directive: `Content-Security-Policy: script-src 'nonce-{n}' 'strict-dynamic'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`.
+- A bare nonce without `'strict-dynamic'` and locked-down fallbacks (`object-src 'none'`, `base-uri 'none'`) gives weaker protection than implied — always include the full directive.
+- Only `<script>` tags with the matching `nonce` attribute execute. This forces dynamic SSR for protected routes — an acceptable trade-off for XSS protection.
+
+---
+
+## FastAPI Security Headers
+
+Apply via ASGI middleware with **precomputed constants** (no per-request string building):
+
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` — add `preload` **only** if deliberately submitting to the HSTS preload list (all-subdomains-HTTPS-forever, hard to reverse; not a safe blanket default)
+- `X-Content-Type-Options: nosniff`
+- `Content-Security-Policy: frame-ancestors 'none'` — the MODERN clickjacking control (CSP Level 2; browsers ignore XFO when it is present)
+- `X-Frame-Options: DENY` — kept as the legacy fallback only; formally obsoleted by `frame-ancestors`, never ship it ALONE
+- `Referrer-Policy: strict-origin-when-cross-origin`
+
+---
+
+## Internal Service Auth (M2M)
+
+Every Fabrik HTTP service uses the canonical internal-auth pattern. Docker-to-Docker communication within the `fabrik` network must NOT rely on network isolation alone.
+
+| Aspect | Value |
+|---|---|
+| Header | `X-Internal-Token` |
+| Env var | `SERVICE_INTERNAL_SECRET_KEY` (same value as `/opt/fabrik/.env`) |
+| Module | `internal_auth.py` (copy into `app/` or `src/` of every service) |
+| Import | `from internal_auth import require_internal_token` |
+| Validation | `hmac.compare_digest` (constant-time) |
+| Reject status | 403 |
+
+**Never** write inline `APIKeyHeader` / `require_api_key`. **Never** use per-service key names (`SERVICE_API_KEY`, `PROXY_API_KEY`). Scaffold `python-api` auto-emits `internal_auth.py`, `metrics.py` (REQUEST_COUNT / ERROR_COUNT / ACTIVE_JOBS / PROCESSING_COUNT), `/metrics` endpoint (Authelia-bypassed), and `SERVICE_INTERNAL_SECRET_KEY` in `.env.example`.
+
+**Calling another internal service (client side):**
+
+```python
+import httpx
+from src.config import get_settings
+
+async def call_internal_service():
+    headers = {"X-Internal-Token": get_settings().service_internal_secret_key}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get("https://<service>.vps1.ocoron.com/api/endpoint", headers=headers)
+    return resp.json()
+```
+
+Note: use internal Docker DNS (`http://<service>:<port>/api/endpoint`) for `fabrik`-network calls, NOT the public Traefik edge URL. Use `https://<service>.vps1.ocoron.com` only for genuinely cross-network calls. Always async, always with timeout, config via Pydantic Settings. See `58-resilience.md` for full timeout/retry/CB patterns.
+
+**Blast radius warning:** the shared `SERVICE_INTERNAL_SECRET_KEY` is identical across all services — compromise of any one service exposes the M2M credential for all. Document a rotation procedure, and issue a **per-service token** (not the shared key) for any internet-exposed service or one ingesting untrusted input.
+
+## Factor III (Config) — Environment Variables Only
+
+**CRITICAL: 12-Factor mandate.**
+
+"config is stored 'in environment variables'"
+
+"litmus test: 'whether the codebase could be made open source at any moment, without compromising any credentials'"
+
+"'env vars are granular controls, each fully orthogonal to other env vars' — 12F explicitly REJECTS batching config into named groups like 'development'/ 'production'."
+
+=> Mandate: config via env vars only (`os.getenv("KEY", "default")`); **ZERO secrets/constants in code**. Apply the open-source litmus test to every change. **BANNED**: grouped/named env config sets (e.g. a `config/production.yml` or a `settings.production` group) — env vars are granular and orthogonal, set per deploy. (The pack already covers secret handling — cross-reference existing secret patterns and extend with config orthogonality.)
+
+### ✅ Correct
+
+```python
+# Environment variables only - granular and orthogonal.
+# DSNs and secrets get NO fallback — a missing value fails LOUDLY at boot
+# (a localhost default silently points a container at ITSELF, not the shared DB).
+import os
+
+database_url = os.environ["DATABASE_URL"]     # required — KeyError at boot if absent
+jwt_secret_key = os.environ["JWT_SECRET_KEY"]  # required
+redis_url = os.environ["REDIS_URL"]            # required
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",")  # non-secret: default OK
+
+# Never: settings.production.database_url or config.production.yml
+# Never: hardcoded defaults or secrets in source; never a localhost fallback
+# In an APPLICATION these reads live inside Pydantic Settings (10-python § Config) —
+# shown raw here only to isolate the 12-factor point; vendored fabrik-lib modules
+# read their own knobs bare by design (25-data-postgres § rubric carve-out).
+```
+
+### ❌ Banned
+
+```python
+# Grouped/named config sets - VIOLATION
+from app.config.production import database_url  # BANNED
+from settings import production as config       # BANNED
+
+# Secrets in code - VIOLATION  
+JWT_SECRET_KEY = "hardcoded-secret-value"     # BANNED  # noqa
+DATABASE_PASSWORD = "secret123"               # BANNED  # noqa
+
+# Cannot open source without compromising credentials - VIOLATION
+```
+
+---
+
+## Sensitive Data Protection
+
+Before editing `.env`, `*.key`, `*.pem`, files under `secrets/`, or `.ssh/`:
+
+```bash
+cp <file> <file>.backup.$(date +%Y%m%d-%H%M%S)
+```
+
+- Destructive scripts on prod data: dry-run first, show diff.
+- Credentials change: full diff approval before applying.
+
+---
+
+## Password Policy
+
+For **programmatically generated** passwords (service accounts, DB users, internal tokens — NOT user-input passwords):
+
+- **32 characters**, charset `[a-zA-Z0-9]` only (no symbols — survives `.env` round-trip + shell quoting).
+- Generator: Python `secrets.choice(string.ascii_letters + string.digits)`.
+- Banned literals: `postgres`, `admin`, `password`, `password123`, and any default vendor credential.
+
+Applies to: Authelia bootstrap, `fabrik scaffold` credential generation, ops scripts.
+
+---
+
+## Rate Limiting
+
+- Hard rate limits, as **Redis-backed** token buckets, on every other route `fastapi-user-auth` mounts (the passwordless request is the next bullet) — each takes a credential, a code or an address (paths relative to where the router is included, `/auth` by default): `POST /auth/login`, `POST /auth/login/web`, `POST /auth/signup`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/verify-email`, `POST /auth/password-reset/request`, `POST /auth/password-reset/confirm` and `GET|POST /auth/passwordless/verify`. In-memory buckets are per-process and bypassable behind multiple workers — single-process services only.
+- `POST /auth/passwordless/request` is ALREADY capped per email and per IP in Redis by the library (`AUTH_PASSWORDLESS_REQUEST_CAP`, `AUTH_PASSWORDLESS_IP_REQUEST_CAP`): tune those, add no second limiter, and never answer it with 429 — it returns 202 either way, so throttling never reveals an account. `POST /auth/passwordless/verify` has a per-code attempt cap (`AUTH_PASSWORDLESS_ATTEMPT_CAP`) but no per-IP bound; the project adds that bucket.
+- Apply limits on **both** axes: per-IP (brute force) and per-account (credential stuffing) — except where the request carries no account key: `GET /auth/passwordless/verify`, `POST /auth/password-reset/confirm`, `POST /auth/verify-email`, `POST /auth/refresh` and `POST /auth/logout` carry only a token, so they are limited per IP.
+- Pattern B configures Supabase Auth's own rate limits and proxies none of its endpoints; Pattern A-compat uses the list above unchanged.
+- Credential stuffing and brute-force attacks are the primary threats these limits address.
+
+---
+
+## Transactional Email
+
+For password resets, verification emails, receipts, and all transactional mail: use **Resend** via the MJML+Jinja2 pipeline defined in `86-email-templates.md`. Send compiled HTML via Resend API directly from FastAPI — no intermediate gateway.
+
+Escalate mission-critical auth mail (reset, receipts) to **Postmark** only on measured deliverability issues. See `86-email-templates.md` § ESP Decision Log for rationale.
+
+---
+
+## Banned Patterns
+
+| Pattern | Use Instead |
+|---------|-------------|
+| `localStorage` / `sessionStorage` for JWTs | HttpOnly cookies (web), `expo-secure-store` (mobile), `chrome.storage.session` (ext) |
+| `react-native-keychain` for Supabase tokens | `expo-secure-store` (Expo ecosystem standard) |
+| AsyncStorage or MMKV for JWTs | `expo-secure-store` |
+| Middleware-only authorization in Next.js | Verify session in Server Actions / Server Components via DAL |
+| `allow_origins=["*"]` + `allow_credentials=True` | Explicit origin list from env vars |
+| NextAuth.js / Clerk / Firebase Auth | FastAPI (Pattern A) or Supabase Auth (Pattern B) |
+| RS256 for single-service signing + verification | HS256 with 256-bit secret (Pattern A only) |
+| Hardcoded JWT secret in source | Pydantic Settings env var (`get_settings().jwt_secret_key`) |
+| Trusting Docker network isolation alone | `X-Internal-Token` + shared secret |
+| Custom refresh logic with Supabase Auth | Supabase client SDK handles refresh |
+| `service_role` key exposed to client | Server-side only, via env var |
+| `auth.uid()` / `current_tenant_id()` that raises or defaults on unset/invalid claims | `EXCEPTION WHEN OTHERS THEN RETURN NULL` (fail-closed deny) |
+| Rewriting existing `auth.uid()` RLS policies when leaving Supabase Auth | Pattern A-compat — own `auth.*` + the `request.jwt.claims` GUC; policies stay unchanged |
+| Broad `^/api/` Authelia bypass when only a sub-prefix is authenticated | `shape.bearer_bypass_prefix: "^/api/v1"` — bypass only the path the app authenticates |
+
+---
+
+## Related Rule Packs
+
+- `10-python.md` — Pydantic Settings for secrets, `AsyncClient` for M2M calls
+- `30-ops.md` — Authelia forward-auth Traefik labels, `/health` bypass, internal service DNS
+- `55-observability.md` — GlitchTip for auth error tracking
+- `58-resilience.md` — timeout/retry/CB for M2M inter-service calls
+- `80-mobile.md` — Pattern B token storage (`expo-secure-store`), Sign in with Apple mandate
+- `86-email-templates.md` — Resend pipeline for auth transactional email (ESP Decision Log in § ESP Decision Log)
+- `95-multi-tenant-saas.md` — dual-mode RLS (native + Pattern A-compat) for tenant isolation; canonical `auth.uid()` / `current_tenant_id()` fail-closed helpers + `fabrik_admin`
+
+---
+
+## Done When
+
+- [ ] Auth pattern (A or B) matches the project's domain module and scaffold type.
+- [ ] Pattern A: FastAPI is the sole token issuer — no frontend auth libraries handle identity.
+- [ ] Pattern B: Supabase Auth configured; FastAPI validates Supabase JWTs via JWKS; RLS enabled on tenant-scoped tables.
+- [ ] Pattern A-compat: `auth` schema owned natively (`auth.users` + `auth.uid()/jwt()/role()` + `anon`/`authenticated`/`service_role`); app sets `role` + `request.jwt.claims` GUCs per transaction; token lifecycle stays Pattern A.
+- [ ] Fail-closed verified: `auth.uid()` / `current_tenant_id()` return `NULL` on unset/invalid context (no-context probe → helper `NULL`, scoped read denies).
+- [ ] Bearer bypass scoped: `shape.bearer_bypass_prefix` narrows the Authelia bypass to the actually-authenticated API prefix — no unauthenticated `/api/*` route left public by a default `^/api/` bypass.
+- [ ] Web login uses HttpOnly + Secure + SameSite=Lax cookie (Pattern A) or Supabase SSR cookie strategy (Pattern B).
+- [ ] Mobile tokens stored in `expo-secure-store` — never AsyncStorage or MMKV.
+- [ ] All Next.js Server Actions and data-fetching Server Components call `verifySession()`.
+- [ ] CORS origins loaded from environment variables — no wildcards with credentials.
+- [ ] CSP nonce injected per-request in Next.js `proxy.ts` (older majors: `middleware.ts` — no leftover `middleware.ts` on current majors, it is silently ignored).
+- [ ] FastAPI responses include HSTS, X-Content-Type-Options, `frame-ancestors` (+ legacy X-Frame-Options) headers.
+- [ ] JWT verifier pins its algorithm allow-list — no header-dispatched `alg`, `none` rejected.
+- [ ] Auth endpoints have rate limiting configured.
+- [ ] Internal service calls use `X-Internal-Token` header validation.
+- [ ] Transactional email via Resend + `86-email-templates.md` pipeline — no phantom gateway.
+
+---
+
+## Spec Contract — Auth Registrars
+
+A dedicated admin host on its own domain — never the customer-facing app's domain — behind 2FA: set `shape.is_admin_dashboard: true` there. The Authelia registrar adds a per-domain `two_factor` rule on `fabrik apply`, so every path on that domain sits behind 2FA except the standing `/health` and `/metrics` bypasses (D-366, `saas/60-saas-ui.md` § Admin). API services with bearer auth: set `shape.has_bearer_api: true` — the registrar inserts an Authelia **bypass** rule *before* the `two_factor` catch-all so machine/bearer callers aren't hit with interactive 2FA. Don't add Traefik `authelia-forward` middlewares manually — the scaffolder + registrars emit them.
+
+> **⚠️ Bearer bypass scope — security-critical.** The bypass defaults to `^/api/`, which makes the **entire** `/api/*` surface public (un-2FA'd). If the application authenticates only a **sub-prefix** (e.g. `/api/v1` carries the bearer/internal-token check) while OTHER `/api/*` routes are unauthenticated (legacy / admin / destructive), you **MUST** narrow the bypass with `shape.bearer_bypass_prefix: "^/api/v1"` — otherwise `fabrik apply` exposes those routes to the public internet. **Bypass ONLY the path the app itself authenticates.** Value must start with `^/`; the verifier (`orchestrator/verifier.check_api_bypass`) probes the configured prefix on deploy. When unsure whether a service has un-auth'd `/api/*` routes, ask the app owner before relying on the `^/api/` default.

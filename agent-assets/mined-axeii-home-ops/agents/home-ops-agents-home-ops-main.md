@@ -1,0 +1,355 @@
+# AGENTS.md
+
+Home-ops IaC repo — Kubernetes cluster managed with Flux CD, Talos Linux, and SOPS/Age encryption.
+
+## Project model
+
+Claude works as the **medior developer** — it implements changes, validates them, and presents PRs for review. The human maintainer is the **senior** — reviews code, runs final checks, and merges approved PRs.
+
+- AI **does**: write code, run validation, create commits via `but`, open PRs via GitHub MCP tools (`github_create_pull_request`), check konflate blast radius, report cautions.
+- AI **does not**: merge PRs, push to `main` directly, approve its own changes, skip validation hooks, run auto-merge, or merge without explicit human approval.
+- Every change goes through `pre-commit` and the full validation pipeline before a PR is opened.
+- The PR description must follow the shape under "Creating PRs" below. The reviewer skims it before reading the diff, so short and specific beats complete.
+
+### When to create PRs
+
+- **Task complete**: when a discrete set of related, validated changes is done — commit, push, and open a PR.
+- **Session end**: if there are uncommitted changes that pass validation, commit and open a PR before ending the session. Every session leaves a clean working tree or a ready-to-review PR.
+- **One concern per PR**: separate unrelated changes into their own PRs so each can be reviewed and merged independently.
+
+## Project layout
+
+- `kubernetes/apps/` — App manifests organized by namespace (e.g. `observability/`, `media/`, `default/`).
+- `kubernetes/flux/` — Flux GitOps config (cluster kustomizations, Helm repos, namespaces).
+- `kubernetes/components/` — Shared Kustomize components (common labels, sops, gatus, volsync).
+- `talos/` — Talos Linux node config, patches, and secrets.
+- `scripts/` — Helper scripts for validation, backups, and DNS.
+- `justfile` — All operations go through `just`. Run `just --list` to see available commands.
+
+## Toolchain
+
+Every CLI this repo needs is pinned in `mise.toml` at the repo root — `talosctl`, `kubectl`, `flux`,
+`talhelper`, `sops`, `helmfile`, `stern`, `yq`, `jq`, `just`, `fd`, `pre-commit`, plus `flate` and
+`yayamlls`. Install [mise](https://mise.jdx.dev) and run `just tools` (or `mise install`).
+
+CI installs from the same `mise.toml` via `jdx/mise-action`, so local runs and the merge gate use
+identical binaries. Do not install these tools by hand or with Homebrew — an unpinned copy on PATH
+is exactly what made local validation diverge from CI before. `mise ls --current` shows what is
+active.
+
+mise also supplies `KUBECONFIG`, `SOPS_AGE_KEY_FILE`, and `TALOSCONFIG` via its `[env]` block. This
+replaced direnv and `.envrc`; running both is explicitly unsupported by mise, so do not reintroduce
+direnv.
+
+## Validation
+
+- **BEFORE** committing, ALWAYS run `pre-commit run --all-files` and fix any errors first. The commit must pass all pre-commit checks.
+- Run `just configure` to encrypt any plaintext secrets and validate manifests.
+- Run `just validate` to validate YAML schemas on source files via yayamlls.
+- Run `just flate-test` to verify all Flux resources render successfully with flate.
+- Run `python3 scripts/find_mistakes.py` to check for broken Kustomize references (needs `fd`).
+- Add always new line at the end of files
+
+## Talos changes
+
+- Run `just talos-genconfig` to regenerate node configs after editing `talos/patches/`.
+- Apply to each control plane node: `just talos-apply IP=192.168.69.110` (repeat for .111, .112).
+- Static pod resources (apiserver, etcd, etc.) live in `talos/patches/controller/`. Always set both `requests` and `limits`.
+- Check for OOM issues: `talosctl -n <node-ip> dmesg | grep -i "oom\|kill"`.
+- Talos/K8s upgrades are automated via [tuppr](https://github.com/home-operations/tuppr) in `system-upgrade` namespace.
+  - Renovate bumps versions in `TalosUpgrade`/`KubernetesUpgrade` CRs — merge the PR, Flux applies, tuppr orchestrates.
+  - Talos and Kubernetes arrive as separate PRs (`talos` and `kubernetes` groups). The `Find Mistakes` CI check fails a Kubernetes version the pinned Talos does not support, so a Kubernetes minor waits until the Talos upgrade that supports it has merged.
+  - Before moving to a new Talos minor, add its row to `TALOS_KUBERNETES_SUPPORT` in `scripts/find_mistakes.py`. The check fails on a Talos minor it does not know.
+  - Upgrades run during maintenance window (Sunday 02:00 Europe/Paris) with Ceph noout pre/post hooks.
+  - Manual upgrade still possible: `task talos:upgrade-node IP=192.168.69.110`.
+
+## Secrets
+
+- NEVER commit unencrypted secrets. All secrets use SOPS with Age encryption.
+- Secret files are named `*.sops.yaml`. The `age.key` must never be committed.
+- Ask the user to handle encryption, or use `just configure` to auto-encrypt.
+
+## Commits and PRs
+
+Use GitButler CLI (`but`) for all version control writes (commits, branches, pushes). Delegate VCS to the
+gitbutler skill for command detail. Use GitHub MCP tools (`github_create_pull_request`,
+`github_issue_write`, etc.) for all GitHub API operations. Never use `git add`, `git commit`, `git push`,
+or `gh pr create` for write operations. Never force-push, never skip hooks.
+
+### Before committing
+
+1. Always run `pre-commit run --all-files` and fix any errors.
+2. Run the full validation pipeline if Kubernetes manifests changed:
+   - `just configure` → `just validate` → `just flate-test` → `python3 scripts/find_mistakes.py`
+3. Inspect the diff: `but diff` (selected dirty files/hunks), `but status` (commit/branch layout).
+
+### Making commits
+
+- Use `but commit -b <branch> -m "<msg>" <ids>` to create a branch and commit in one step.
+- Use file/hunk IDs from `but diff` — never stage blindly.
+- Write concise, imperative-mood commit messages matching the existing repo style.
+
+### Creating PRs
+
+1. Push the branch with `but push <branch-name>`.
+2. Create the PR via MCP: `github_create_pull_request` with title, body (`head` branch, `base: "main"`, `owner: "axeII"`, `repo: "home-ops"`).
+3. Write the body to the shape below.
+4. Present the PR URL to the human maintainer for review.
+
+#### PR body shape
+
+Four headings, nothing else, whole body under 30 lines.
+
+```markdown
+## What
+## Why
+## Risk
+## Validation
+```
+
+- One line under a heading is the target. Use bullets only for genuinely separate items.
+- **What.** The resources or files that changed and the behaviour that changes with them. The reviewer has the diff, so do not restate it file by file.
+- **Why.** The problem this solves, in a sentence or two. Link the issue instead of retelling it.
+- **Risk.** Blast radius: namespaces touched, whether storage, networking or RBAC is involved, whether Flux restarts anything on reconcile. Konflate cautions go here. "None, docs only" is a complete answer.
+- **Validation.** Which steps ran and that they passed. Name the steps, do not paste their output. Paste output only for a failure you are shipping around on purpose.
+- Leave out session narrative, summary preambles, emoji headings, and tables of changed files.
+- Investigation notes, rejected alternatives, and long logs go in a PR comment or a linked issue, not in the body.
+- Run the `unslop` skill over the body before posting, if it is installed.
+
+### Review flow
+
+- After pushing, check konflate for blast radius: `konflate_list_pull_requests` → `konflate_get_pr_summary(<number>)`.
+- Address any konflate cautions (data-loss, immutable-field, RBAC) before requesting review.
+- Wait for CI (flate, yayamlls) to pass.
+- Report the konflate summary and any cautions in the PR description so the human reviewer can assess risk.
+- **Never merge your own PRs.** The human maintainer reviews and merges approved PRs.
+
+### Creating issues
+
+For bugs, tech debt, or tasks outside a PR workflow, create a GitHub issue. Use the `github` MCP server's structured tools for issue operations.
+
+- `github_issue_write` with `method: "create"` — Create a new issue with title, body, labels, assignees.
+- `github_search_issues` / `github_list_issues` — Find existing issues.
+- Keep issues scoped to one concern. Reference related PRs/issues by number rather than summarizing them.
+
+#### Issue body shape
+
+Three headings, nothing else, whole body under 25 lines.
+
+```markdown
+## What
+## Why
+## What's needed
+```
+
+- **What** is the observed problem, **Why** is what it costs or blocks, **What's needed** is the fix or the next step to find one.
+- Evidence gathered while investigating (logs, `kubectl` output, radar findings) goes in a follow-up comment, not the opening body. The body holds what a reader needs to decide whether to care.
+- Run the `unslop` skill over the body before posting, if it is installed.
+
+Fallback: `gh issue create` is also permitted if MCP tools are unavailable.
+
+## Useful commands
+
+- `just reconcile` — Force Flux to reconcile the cluster.
+- `kubectl get pods -n <namespace>` — Check pod status.
+- `kubectl top nodes` — Check resource usage.
+
+## CI tools
+
+- **flate** — Offline Flux renderer. `flate test all --path kubernetes/flux` validates all resources render. Used in CI as a synchronous merge gate.
+- **yayamlls** — YAML language server with Kubernetes schema validation. `yayamlls validate --render kubernetes/` validates source + rendered Flux output. Also provides editor LSP support via `.yayamlls.yaml`.
+- **konflate** — PR review service deployed in the `flux-system` namespace. Renders PRs with flate, surfaces blast radius, image changes, and danger flags. Posts status checks and summary comments. Web UI at `konflate.juno.moe`.
+
+## Auto-merge policy
+
+The `.github/workflows/auto-merge.yaml` workflow runs daily at 02:00 UTC and applies these rules:
+
+| Category | Detection | Min age | Days | Konflate gate |
+|---|---|---|---|---|
+| **patch / digest** | `type/patch`, `type/digest` | **2d** | any | no failures, no cautions |
+| **minor** (release train) | `type/minor` | **3d** | **Fri–Sat** (Europe/Berlin) | no failures, no cautions |
+| **major (ci/gh-action)** | `type/major` + `renovate/github-action` | **2d** | any | no failures (cautions allowed) |
+| **major (other)** | `type/major`, not `renovate/github-action` | — | MANUAL | — |
+| **critical infra** | `needs-review` label, or title/branch matches `ceph\|cilium\|flux\|dragonfly` | — | MANUAL | — |
+| **area/talos** | `area/talos` label (`talos/**`) | — | MANUAL | — |
+
+- **Cluster quiet window:** Sun 00:00–05:00 UTC — no merges (Talos upgrade window).
+- **Sleep between merges:** 300 seconds to let Flux reconcile before the next merge.
+- Konflate re-render is triggered before each merge gate via `KONFLATE_PUSH_TOKEN`.
+- **Bulk merge** (`.github/workflows/bulk-merge-prs.yaml`) also excludes rook-ceph, `area/talos`, `type/major`, `type/minor`, and `hold`.
+- **Defense in depth:** The `pr-classify` workflow applies `needs-review` and `risk/critical` labels to
+  critical-infra PRs. Auto-merge hard-skips any PR with the `needs-review` label regardless of the
+  title/branch regex — two independent detection layers must both fail for a critical upgrade to
+  auto-merge.
+- **Konflate** is reachable only from inside the home network (private IP). From GitHub Actions, the
+  konflate gate is skipped — the auto-merge relies on label/age/day rules alone. `Konflate` as a
+  required status check in branch protection won't work from outside the network.
+- **Konflate write-back** posts a summary PR comment + commit status after each render when reachable (inside the network).
+- **Setup:** add `KONFLATE_PUSH_TOKEN` (random 32-byte hex) to 1Password `konflate` item and as a GitHub Actions secret; confirm the GitHub App has `checks: write` + `pull-requests: write` permissions.
+
+## Cloudflare WAF rules
+
+Required WAF rules for the `juno.moe` zone (effective only when DNS records are Proxied/orange-cloud — required for `external.juno.moe` to route through the Cloudflare Tunnel):
+
+| # | Rule name | Priority | Expression | Action |
+|---|---|---|---|---|
+| 1 | Block threats | 0 | `(cf.threat_score gt 40)` | Block |
+| 2 | Allow github webhooks | 20 | `(http.request.uri.path contains "/hook") and (ip.src in {192.30.252.0/22, 185.199.108.0/22, 140.82.112.0/20, 143.55.64.0/20})` | Skip |
+| 3 | Block bots | 10 | `(cf.client.bot)` | Block |
+| 4 | Allow kromgo and konflate | 45 | `((http.host wildcard "kromgo.juno.moe*") or (http.host eq "konflate.juno.moe")) and (ip.geoip.country eq "US")` | Skip |
+| 5 | Allow only home country | 5 | `(ip.geoip.country ne "CZ")` | Block |
+
+- **Rule 2** replaces the previous broad `/hook OR /api/` rule — `/api/` is no longer opened to everyone; GitHub Actions reaches konflate `/api/` via Rule 4 (host + US country).
+- **Rule 3** uses Cloudflare's `cf.client.bot` field (verified bots flag) — more reliable than the previous `Known Bots equals true`.
+- **GitHub webhook IPs** are published at `https://api.github.com/meta` under `hooks`. Update Rule 2's IP list when GitHub announces new ranges.
+
+## Observability
+
+- Metrics and logs ship to **self-hosted VM** (`metrics.internal`, `logs.internal`) via Alloy (in `observability` namespace).
+- `kubernetes/apps/observability/grafana-cloud/` — Alloy deployment with River config (remote-writes to VM Prometheus/Loki).
+- `kubernetes/apps/observability/kromgo/` — README badges, queries VM Prometheus API.
+- `kubernetes/apps/observability/gatus/` — HTTP health checks, independent of metrics backend.
+- `kubernetes/apps/observability/grafana/instance/` — Self-hosted Grafana instance managed by grafana-operator (ingress at grafana.internal).
+- Exporters (node-exporter, kube-state-metrics, smartctl-exporter, etc.) run locally, scraped by Alloy via ServiceMonitors.
+- Credentials stored in 1Password as `observability-vm` (Prometheus URL/user, Loki URL/user, API token).
+
+## Claude Code agents, skills, and commands
+
+This project ships its Claude Code configuration in `.claude/` (tracked in git, so it is reviewed
+like any other change). `CLAUDE.md` at the repo root imports this file, so everything below loads
+automatically at session start.
+
+### Agents (`.claude/agents/`)
+
+- **cluster-radar** — Read-only live-cluster investigator. Triages via the radar MCP server
+  (`issues` → `diagnose` → `get_events` → `get_changes` → logs) and falls back to
+  `kubectl`/`flux`/`talosctl` when radar is unavailable. It never mutates the cluster — fixes come
+  back as manifest changes so they land through Flux.
+- **grafana-logs** — Loki and Prometheus query agent. Holds the datasource UIDs and Loki label
+  schema, grinds through log volume in its own context, and returns a summary plus a Grafana
+  deeplink instead of raw lines.
+- **ship** — Runs the full validation chain, commits with `but`, pushes, and opens the PR via the
+  GitHub MCP server. It cannot merge — that capability is deliberately withheld.
+
+Delegate to these rather than doing cluster or log investigation inline: their output stays out of
+the main context window.
+
+Two behaviours worth knowing, both observed directly rather than inferred (Claude Code
+2.1.236, 2026-08-30 — re-check before relying on either if your build is much newer):
+
+- **Editing an agent file does not take effect until Claude Code restarts.** A `.claude/agents/*.md`
+  edited mid-session keeps running with the definition loaded at startup — the agent will answer
+  from its old instructions and give no indication they are stale. Restart before testing a change.
+- **Declared built-in tools can be silently dropped.** `cluster-radar` declares `Grep` and `Glob`
+  but a backgrounded run received neither — 25 tools instead of 27, with no error. Seen once, in a
+  backgrounded subagent; whether foreground runs differ was not tested. It falls back to `Bash`
+  (`grep -rn …`) so nothing breaks, but do not assume a declared built-in is present. MCP tools
+  were unaffected.
+
+### Skills (`.claude/skills/`)
+
+- **gitbutler** — GitButler CLI (`but`) reference: commits, hunk selection, stacks, history edits.
+- **flux-validate** — The five-step validation pipeline in order with common failures and fixes.
+- **sops-secrets** — SOPS/Age encryption workflow for creating and verifying `*.sops.yaml` files.
+
+The Cloudflare skills come from the `cloudflare` plugin marketplace, enabled in
+`.claude/settings.json`.
+
+### Commands (`.claude/commands/`)
+
+- `/validate` — Run the full validation chain (`just configure` → `just validate` → `just flate-test`
+  → `find_mistakes.py` → `pre-commit`).
+- `/triage [namespace|app]` — Cluster health sweep via the cluster-radar agent.
+- `/ship [description]` — Validate, commit, push, and open a PR via the ship agent.
+
+### MCP servers
+
+- **radar** — `http://localhost:49412/mcp`, served by Radar.app. **Radar.app must be running**, or
+  every radar tool fails; agents fall back to `kubectl`/`flux` and say so.
+- **grafana** — points at `grafana.juno.moe`. Datasources: Prometheus `PBFA97CFB590B2093`,
+  Loki `P8E80F9AEF21F6940`.
+- **github** — repository, issue, and pull request operations.
+
+These are configured per-project in `~/.claude.json`, not in the repo, because the Grafana service
+account token would otherwise be committed.
+
+## GitHub Copilot CLI
+
+Copilot CLI works in this repo too, sharing the same instructions and an equivalent set of agents.
+
+### What is shared automatically
+
+Copilot CLI discovers `AGENTS.md` and `CLAUDE.md` at the repository root on its own, and supports
+the same `@relative/path` include syntax, so `CLAUDE.md` → `@AGENTS.md` resolves there exactly as
+it does in Claude Code. **This file is the single source of truth for both tools** — no
+`.github/copilot-instructions.md` is needed, and adding one would only duplicate this.
+
+### Agents (`.github/agents/*.agent.md`)
+
+The same three agents as `.claude/agents/`, in Copilot's schema — `cluster-radar`, `grafana-logs`,
+and `ship`, with the same read-only and no-merge boundaries. Invoke one with:
+
+```bash
+copilot --agent cluster-radar -p "<question>"
+```
+
+Repository agents live in `.github/agents/`; user-level ones in `~/.copilot/agents/`, and a
+user-level agent of the same name wins.
+
+**`.github/agents/*.agent.md` is generated — do not edit it.**
+
+Copilot CLI *does* read `.claude/agents/*.md`, so symlinking the two directories — the usual advice
+for sharing AI config — looks like it works. It does not, and it fails silently. Verified against
+CLI v1.0.82:
+
+| Agent file | `tools:` entry | Result |
+| --- | --- | --- |
+| `.claude/agents/probe.md` | `mcp__github__get_me` | **silently dropped**; agent had built-ins only |
+| `.github/agents/probe.agent.md` | `github/get_me` | granted and invoked successfully |
+
+This is deliberate on GitHub's part — the docs state that "all unrecognized tool names are ignored,
+which allows product-specific tools to be specified in an agent profile without causing problems."
+That tolerance is what makes sharing *instruction* files across tools work so well, and it is
+exactly what makes sharing *agent* files dangerous: `cluster-radar` symlinked into Copilot would
+load cleanly, report no error, and have zero radar tools.
+
+Two facts worth keeping in mind:
+
+- `.github/agents/` **wins** over `.claude/agents/` on a name conflict, so the generated files are
+  the ones in effect. Deleting them does not fall back gracefully — it silently strips every MCP
+  tool from all three agents.
+- Copilot ignores `model:` with a warning (`specifies model "inherit" which is not available`), so
+  model selection cannot be shared either.
+
+The bodies are identical, so `.claude/agents/` is the single source and the Copilot copies are
+generated from it:
+
+```bash
+python3 scripts/sync_agents.py           # regenerate after editing .claude/agents/
+python3 scripts/sync_agents.py --check   # what the pre-commit hook runs
+```
+
+The `sync-agents` pre-commit hook fails on any drift in either direction — an edit to a source
+that was not regenerated, or a hand-edit to a generated file. If an agent gains a tool with no
+Copilot equivalent, the script exits with the tool name rather than silently dropping it; add the
+mapping to `BUILTINS` in the script.
+
+### MCP servers for Copilot
+
+Copilot CLI reads `~/.copilot/mcp-config.json` — it does **not** auto-load a repo-level
+`.github/mcp.json` (that path applies to other Copilot surfaces). `github-mcp-server` is built in,
+so only `radar` and `grafana` need configuring, and both live in the user config because of the
+Grafana token.
+
+`.github/mcp.json` is kept as the committed, secret-free definition of the radar server. Apply it
+explicitly with:
+
+```bash
+copilot --additional-mcp-config @.github/mcp.json
+```
+
+### Not shared
+
+Slash commands (`.claude/commands/`) and skills (`.claude/skills/`) are Claude Code only. Copilot
+CLI can load `.github/skills/`, but the skills are not duplicated there — their content is either
+already in this file or reachable by reading `.claude/skills/`.

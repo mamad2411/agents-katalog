@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/qianwenflow/qwskill/qws/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: QWS AI 采访统一入口。Use when the user says /qws, qws, 调取QWS, 想接受AI采访，或希望通过连续提问把经历、想法或判断说清。

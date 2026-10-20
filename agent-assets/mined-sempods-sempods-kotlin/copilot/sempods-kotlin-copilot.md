@@ -1,0 +1,84 @@
+# GitHub Copilot instructions
+
+The canonical guidance is the root [`AGENTS.md`](../AGENTS.md), reached through the shared hub
+[`docs/agents/ai-instructions.md`](../docs/agents/ai-instructions.md). Read both when you can follow
+a link.
+
+Copilot Chat loads this file in isolation, so the minimum is repeated below. It is a **subset** —
+the canonical file is the source of truth and this file is updated after it, never instead of it.
+For the invariants that canonical file is [`CONTRIBUTING.md`](../CONTRIBUTING.md) §"What this
+project will not change"; for everything else it is `AGENTS.md`. The registered duplication is
+listed in the hub under "Auto-injection constraints".
+
+## What sempods is
+
+An open standard and its Kotlin/JVM reference implementation for self-hosted "semantic pods": a pod
+is an isolated tenant holding RDF, reachable over HTTP, usable by many apps. Nineteen Gradle
+modules, fifteen of them published to Maven Central under `org.sempods`. Public repository,
+Apache-2.0.
+
+## Non-negotiable invariants
+
+1. Every statement belongs to exactly one **context** — a named graph, and the permission boundary.
+2. Reads and writes are sandboxed to the contexts a request holds rights for, enforced server-side;
+   a client-supplied dataset clause — `FROM` / `FROM NAMED` and the protocol's graph parameters
+   alike — is never trusted.
+3. A CRUD write names its target context explicitly — there is no implicit fallback.
+4. Context-based permissions are the single authorization model. No parallel policy language.
+5. Pods are isolated by default. Cross-pod access happens only through an explicit, specified
+   mechanism.
+6. The protocol stays standard Semantic Web — RDF, SPARQL, JSON-LD, SHACL. Convenience belongs in
+   client SDKs, not in the protocol.
+7. No false security promises. Revoking access means "no further access", not "forget what you
+   already saw", and the documentation says so.
+
+A change that breaks one of these is declined however well it is implemented. Errors are
+deterministic HTTP codes; prefer an explicit spec plus a conformance test over clever query
+rewriting.
+
+A **grant** is durable server-side policy on a context (`<context-iri>#read|write|manage`) and never
+travels in a token. A **scope** is an OAuth scope and does. Parts of the code still say "scope"
+where "grant" is meant.
+
+## Commands
+
+```bash
+# Tests need the infrastructure up first, or the S3 suite skips silently and the Mongo suites fail.
+docker compose -f deployments/local/compose.yaml -f deployments/test/compose.test.yaml up -d
+deployments/test/garage/init.sh
+
+./gradlew test checkNoLoggingBinding checkNoTestLibrariesInPom checkNoMissingPomDependencies checkDocLinks checkImageMetadata checkPublishedSignatures
+./gradlew buildHealth      # the api/implementation boundary — a separate CI job
+```
+
+There is **no formatter and no linter** — no ktlint, detekt, spotless or `.editorconfig`. Do not
+introduce one and do not assume one ran. Match the surrounding style: two-space indent, trailing
+commas, backtick test method names, no licence headers, KDoc carrying the field-level contracts.
+
+## Documentation
+
+Public plans and progress live in issues. Routine bot-generated dependency updates use their PR
+under the [documented exception](../docs/agents/documentation-strategy.md#automated-dependency-updates).
+Embargoed security fixes use the private advisory/fix PR under SECURITY.md; keep evidence private.
+Every PR records documentation and check evidence;
+behaviour changes update IST documentation, KDoc and affected `context7.json` assertions **in the
+same change**, including partial PRs. Close an issue only after all acceptance is met by merged work.
+Logic that follows the standard needs no documentation at all — and when a special case becomes
+ordinary, its documentation and comments are deleted.
+
+Full rules: [`docs/agents/documentation-strategy.md`](../docs/agents/documentation-strategy.md).
+To review documentation — a change, a pull request or a path — follow
+[`docs/agents/doc-review.md`](../docs/agents/doc-review.md).
+
+## Naming
+
+The product name is **sempods**, all lowercase, in prose, log messages, env vars, package names and
+collection names — never "SemPods" or "Sempods". Kotlin types carrying it take the `Sempods` prefix
+(`SempodsClient`). A pod is not the product: `newPod()`, "a pod", "the pod owner".
+[`docs/naming.md`](../docs/naming.md) is the authority, and its §3 lists the names that are frozen
+because a deployed host, a database or a published IRI depends on them.
+
+## Commits
+
+Full imperative sentences in plain English — **not** Conventional Commits, no `feat:` prefix. Every
+commit needs `Signed-off-by` (`git commit -s`); the DCO workflow fails the pull request otherwise.

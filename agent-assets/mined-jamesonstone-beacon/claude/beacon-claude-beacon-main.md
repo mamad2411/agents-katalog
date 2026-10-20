@@ -1,0 +1,70 @@
+# CLAUDE
+
+## Purpose
+
+- This file is a routing table, not the full manual
+- Start at `docs/agents/README.md` and load only the guidance needed for the current decision
+- Use native agent planning for research, clarification, design, and implementation planning
+- Treat repo-local markdown under `docs/` as persistent repository memory
+
+## Repository Memory Gate
+
+- Before implementation, inspect relevant code and existing repository memory
+- Decide semantically whether the work contains material rationale that code and tests cannot preserve
+- When material rationale exists, create or adopt `docs/specs/<feature>/SPEC.md` before editing implementation files and capture the accepted native plan
+- When code and tests are sufficient, do not create documentation solely to satisfy a process; record `not required` in the final Repository Memory report
+- During implementation, keep material decisions and discoveries current in the spec
+- After implementation and validation, load `docs/references/rules/constitution-curation.md`; curate feature rationale into `SPEC.md`, demonstrated project invariants into `docs/CONSTITUTION.md`, reusable practices into `docs/references/` or `docs/references/rules/`, and domain knowledge into its existing canonical documentation
+- Remove transient planning chatter and code-recoverable detail during curation; retain material superseded decisions with rationale
+
+## Final Response Contract
+
+- Every implementation final response must include:
+  - `Repository Memory`
+  - `Decision: created | updated | refactored | deleted | not required`
+  - `Rationale: <why this is the correct persistence decision>`
+  - `Artifacts: <paths or none>`
+
+## Runtime Routing
+
+- `docs/agents/README.md` — classify the work and choose the next document
+- `docs/agents/WORKFLOWS.md` — native planning, implementation, and repository-memory lifecycle
+- `docs/agents/GUARDRAILS.md` — completion, safety, and hard rules
+- `docs/agents/RLM.md` — just-in-time context loading
+- `docs/agents/TOOLING.md` — skills, post-plan dispatch, and secondary inputs
+
+## Testing And Validation Gate
+
+- Before implementation or validation, load `docs/references/rules/testing-and-environment-validation.md` and the project's `docs/references/testing.md`
+- Preserve language-native code-level tests and pull-request checks; end-to-end and live-integration suites supplement rather than replace them
+
+## Application Architecture Gate
+
+- Before implementing API or backend routes, controllers or handlers, services, repositories, persistence adapters, or gateways, load `docs/references/rules/backend-service-architecture.md`
+- Before implementing frontend routes or pages, feature orchestration, state flows, data adapters, or reusable components, load `docs/references/rules/frontend-application-architecture.md`
+- Treat both rules as responsibility boundaries rather than mandatory directory names, and preserve stronger repo-local architecture
+
+## GitHub Delivery Hard Gate
+
+- Issue, branch, staging, commit, push, and PR actions are mutation boundaries
+- Before a delivery mutation, load `docs/agents/GUARDRAILS.md` and relevant `docs/references/rules/*` delivery rules
+- Repo-local Kit rules outrank generic GitHub or plugin defaults
+
+## AWS Context Hard Gate
+
+- If `.kit.yaml` defines an enabled AWS context, run `kit aws verify` before the first AWS-dependent command and again immediately before AWS mutation
+- Use only the verified configured profile; stop on missing credentials, incomplete configuration, or identity mismatch
+
+## Knowledge Map
+
+- `docs/specs/<feature>/SPEC.md` — material feature rationale and living implementation history
+- `docs/CONSTITUTION.md` — project invariants
+- `docs/references/` — reusable repo-wide knowledge and practices
+- domain documentation — canonical domain behavior and interfaces
+- `docs/notes/<feature>/` — optional source material, never canonical truth by itself
+
+## Constraints
+
+- Keep CLAUDE short and stable
+- Put durable workflow guidance in `docs/agents/*` instead of expanding always-loaded files
+- Do not ingest or depend on agent transcripts as repository memory

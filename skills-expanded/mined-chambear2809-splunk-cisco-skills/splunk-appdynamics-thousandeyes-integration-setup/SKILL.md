@@ -1,0 +1,145 @@
+---
+name: splunk-appdynamics-thousandeyes-integration-setup
+description: "Use when Codex needs to configure AppDynamics ThousandEyes token readiness, Dash Studio ThousandEyes
+  widgets, Browser/Mobile RUM ThousandEyes network metrics, ThousandEyes native AppDynamics integration
+  runbooks for test recommendations and alert notifications, ThousandEyes API-backed
+  tests/labels/tags/alert rules/dashboards/templates, or a custom webhook fallback that posts ThousandEyes
+  alerts into AppDynamics custom events. Render, validate, and safely gate the AppDynamics-ThousandEyes
+  integration across AppDynamics SaaS, On-Premises, and Virtual Appliance."
+compatibility: "No direct Splunk Platform runtime dependency. This workflow can be used alongside Splunk Cloud Platform 10.5.2605 through its documented external APIs or handoffs."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "not-applicable"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk AppDynamics ThousandEyes Integration Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Codex needs to configure AppDynamics ThousandEyes token readiness, Dash Studio ThousandEyes widgets,
+  Browser/Mobile RUM ThousandEyes network metrics, ThousandEyes native AppDynamics integration runbooks for test
+  recommendations and alert.
+- Preview and review the splunk appdynamics thousandeyes integration setup workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-appdynamics-thousandeyes-integration-setup/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-appdynamics-thousandeyes-integration-setup/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+Own the AppDynamics-ThousandEyes integration end to end. The skill renders
+reviewable artifacts first and keeps live product mutation behind explicit gates.
+
+## Safe Workflow
+
+```bash
+bash skills/splunk-appdynamics-thousandeyes-integration-setup/scripts/setup.sh --render
+bash skills/splunk-appdynamics-thousandeyes-integration-setup/scripts/validate.sh
+bash skills/splunk-appdynamics-thousandeyes-integration-setup/scripts/setup.sh \
+  --apply assets,webhook --accept-appd-te-mutation --spec path/to/appd-te.yaml
+```
+
+Use a local spec derived from `template.example` for customer work. Never put
+ThousandEyes tokens, AppDynamics passwords, OAuth client secrets, or API keys in
+the spec, shell history, rendered files, or chat. Use chmod-600 secret files.
+
+## What This Skill Covers
+
+- AppDynamics `Administration > Integrations > ThousandEyes` token enablement,
+  rotation, disablement, and Dash Studio query readiness.
+- Dash Studio ThousandEyes widget constraints: Time Series, Metric Number, and
+  Gauge only; one TE query per widget; group-by only for Time Series; disabled
+  tests excluded; max time range 90 days; no time range comparison.
+- Browser/Mobile RUM ThousandEyes network metrics. Treat this as SaaS-supported
+  unless an on-premises or Virtual Appliance Controller exposes the documented
+  UI.
+- ThousandEyes native AppDynamics integration runbook. Test recommendations are
+  cSaaS-only; alert notifications need a reachable Controller URL and Create
+  Events permission.
+- ThousandEyes API-backed assets through the existing
+  `splunk-observability-thousandeyes-integration` skill: tests, alert rules,
+  labels, tags, dashboards, and templates.
+- ThousandEyes Integrations API custom webhook fallback: generic connector,
+  webhook operation, connector assignment, alert-rule notification fragments,
+  and AppDynamics custom event probe.
+
+## Boundaries
+
+- Do not claim a public ThousandEyes API can create the native AppDynamics
+  integration unless Cisco documents that endpoint. Render the UI runbook and
+  accept an existing native integration ID for alert rules.
+- Do not use ThousandEyes Webhook Operations APIs for ThousandEyes for
+  Government instances.
+- Do not mutate ThousandEyes assets without `--accept-appd-te-mutation` and the
+  downstream `--i-accept-te-mutations` gate.
+- `--apply` executes only explicit `assets`, `webhook`, or `event` sections
+  (`all` means all three). It requires a customer-specific spec, a numeric
+  account-group ID, non-example targets, and chmod-600 secret files.
+
+## Rendered Outputs
+
+Primary outputs include:
+
+- `appd-te-readiness.yaml`
+- `thousandeyes-token-runbook.md`
+- `dash-studio-query-runbook.md`
+- `eum-network-metrics-runbook.md`
+- `te-assets-spec.yaml`
+- `handoff-thousandeyes-assets.sh`
+- `te-native-appd-integration-runbook.md`
+- `te-appd-webhook-payloads/connector.json`
+- `te-appd-webhook-payloads/operation.json`
+- `te-alert-notification-fragments.json`
+- `te-api-apply-plan.sh`
+- `appd-events-api-probe.sh`
+- `te-appd-admin-checklist.md`
+
+Read `reference.md` before applying or adapting the rendered API payloads.

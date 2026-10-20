@@ -1,1 +1,0 @@
-../../skills/catalog/callstack-diff/SKILL.md

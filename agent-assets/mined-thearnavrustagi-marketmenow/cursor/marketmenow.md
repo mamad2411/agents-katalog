@@ -1,0 +1,83 @@
+---
+description: MarketMeNow architecture and coding conventions
+alwaysApply: true
+---
+
+# MarketMeNow Architecture Rules
+
+## Project Layout
+
+```
+src/marketmenow/          # Platform-agnostic core (models, ports, core logic, workflows)
+src/marketmenow/steps/    # Reusable workflow steps (generate, post, discover, etc.)
+src/marketmenow/workflows/# Built-in workflow definitions
+src/adapters/             # Platform-specific adapters (instagram, twitter, linkedin, reddit, email)
+tests/                    # Test suite (pytest + pytest-asyncio)
+pyproject.toml            # Single source of truth for deps and config
+```
+
+## Ports and Adapters
+
+- All platform-specific logic MUST live in adapter packages outside `src/marketmenow/`.
+  The `core/`, `models/`, `ports/`, `normaliser.py`, and `registry.py` are
+  platform-agnostic and MUST NOT import any platform SDK or contain any
+  platform-specific branching.
+- Adapters implement `typing.Protocol` interfaces from `ports/`. Never subclass
+  an ABC — use structural subtyping.
+- Register adapters by constructing a `PlatformBundle` and calling
+  `AdapterRegistry.register(bundle)`.
+
+## Adding a New Platform
+
+1. Create a new package (e.g. `adapters/twitter/`).
+2. Implement `PlatformAdapter`, `ContentRenderer`, `Uploader` protocols.
+3. Optionally implement `AnalyticsCollector`.
+4. Bundle into `PlatformBundle` and register with `AdapterRegistry`.
+5. No changes needed in `core/`, `models/`, or `ports/`.
+
+## Adding a New Workflow
+
+1. Create a step in `src/marketmenow/steps/yourstep.py` implementing `WorkflowStep`
+   protocol: `name`, `description`, `async execute(ctx: WorkflowContext)`.
+2. Create `src/marketmenow/workflows/your_workflow.py` composing steps into a
+   `Workflow(name, description, steps, params)`.
+3. Add a `_try_register()` call in `core/workflow_registry.py`.
+4. No changes needed in `core/`, `models/`, `ports/`, or `cli.py`.
+
+## Adding a New Content Modality
+
+1. Add a new variant to `ContentModality` enum in `models/content.py`.
+2. Create the Pydantic model in `models/content.py` inheriting `BaseContent`.
+3. Add a `case` arm in `ContentNormaliser.normalise()`.
+4. Existing adapters gain support by updating their `supported_modalities()`.
+
+## Python Style
+
+- Python >= 3.12. Use `from __future__ import annotations` in every file.
+- All data models: Pydantic `BaseModel` with `frozen=True`.
+- All adapter interfaces: `typing.Protocol` with `@runtime_checkable`.
+- Full type annotations everywhere. Never use `Any`.
+- Async-first: adapter methods are `async def`.
+- Immutable data flow: never mutate models, use `model_copy(update=...)`.
+
+## Dependencies
+
+- `uv` is the package manager. Use `uv sync` / `uv add`.
+- `pyproject.toml` is the single source of truth for all dependencies.
+- Dev/test deps live under `[project.optional-dependencies] dev`.
+
+## Linting
+
+- Ruff is the linter and formatter. Config lives in `pyproject.toml`.
+- Lint: `uv run ruff check src/ tests/`
+- Format: `uv run ruff format src/ tests/`
+- Auto-fix safe issues: `uv run ruff check --fix src/ tests/`
+
+## Testing
+
+- Tests live in `tests/`, one `test_*.py` per module under test.
+- `conftest.py` provides mock adapters and content factory fixtures.
+- pytest-asyncio with `asyncio_mode = "auto"` — async tests need no decorator.
+- Tests must never call external APIs — mock all I/O.
+- `from __future__ import annotations` in every test file.
+- Run tests: `uv run --extra dev pytest`.

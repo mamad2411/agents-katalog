@@ -2,10 +2,9 @@
 ---
 name: salesforce-agentforce
 description: Salesforce Agentforce and Einstein AI integration patterns. Use when building AI agents that interact with Salesforce CRM via Agentforce skills, MuleSoft connectors, Data Cloud, or the Einstein Trust Layer.
-tags: [salesforce, crm, agentforce, einstein]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # Salesforce Agentforce Integration
 

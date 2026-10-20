@@ -1,0 +1,108 @@
+# Project: Multi-Agent System
+
+Hierarchical agent system. See `README.md` for layout, `config/policies.yaml` for autonomy rules, and [`docs/operator-contract.md`](docs/operator-contract.md) for the full set of operating rules.
+
+## Session-start protocol (read this first)
+
+Every conversation that asks for work reads two files in order:
+
+1. **`docs/goal.md` — the outcome layer.**  This is the **first** read.  The active goal here describes what success looks like as a concrete deliverable.  An empty work queue does **not** mean the goal is achieved; only the goal's "Done when" criteria do.  If the active goal is unmet, the agent's job this session is to advance it, not to drain the roadmap.  If a deliverable subgoal is unchecked, that is the work — even when `docs/roadmap.md` is empty.
+2. **`docs/roadmap.md` — the work queue.**  Read second.  The "Now" section is the day-level priority for the current goal.
+
+Why the split: 2026-05-15 → 2026-05-16 produced 11 commits of infrastructure with the roadmap reading 0 open items, while the actual outcome (a real CC short emerging from that infrastructure) was 0 produced.  `docs/roadmap.md` Done all ticked, goal not met.  The two layers exist so that mistake can't repeat — when goal.md says a deliverable subgoal is unchecked, "queue is empty" is never the right signal.
+
+- Do **not** use the README's "Status" checklist to pick work — it has no order, no dates, no priority signal.
+- Do **not** infer the next task from `git log` alone — the log shows what landed, not what was *being* worked on or what is *now* most important.
+- If `docs/goal.md` active goal is empty, ask the user before assuming a goal.  Do not invent goals.
+- If `docs/roadmap.md` "Now" is empty but goal subgoals are unmet, the next task is whatever advances the most-blocked subgoal.
+- If both goal subgoals and roadmap queues are clean, promote "Next" → "Now"; if both are empty, surface that state to the user rather than making up work.
+- After work lands, append a one-line entry to `docs/roadmap.md` "Done" with the commit hash and date; tick any goal subgoals the work cleared.
+- If `docs/audit/CURRENT-ALERT.md` exists, read it before picking up the goal — it means the last audit run flagged drift or a critical issue, which may bump priority above the goal queue.
+- If `docs/autonomous-decisions.md` has entries dated today or yesterday that the operator hasn't seen yet (session-resume pattern), scan them — they capture decisions the agent made unilaterally during overnight autonomous runs and inform what state the repo is in.  `scripts/morning-brief.sh` collapses this + audit + intervention trend + commit attribution into a single read.
+- Subagents (orchestrator, planner, resourcer, editor, qa, auditor) do **not** read `docs/goal.md` or `docs/roadmap.md`. Day-level decisions belong to the top-level conversation; subagents stay pure functions of the mission prompt (or, for `auditor`, the focus arg) they receive.
+
+## Operating rules
+
+The operating rules live in two files (both auto-loaded by Claude Code):
+
+- [`docs/operator-contract.md`](docs/operator-contract.md) — this project's hard rules (§1-13: agent does all the work, never-pause, money firewall, logic-changes-need-OK, git workflow, code/data separation, goal-and-roadmap, session-resume, shutdown, no-PII, inbound-message routing check) plus project-specific conventions (this repo's README structure, README maintenance cadence).
+- `~/.claude/CLAUDE.md` — operator-style preferences that travel across projects: dual-stack reporting (Korean briefing + English internals), terminal/shell format, batch execution, writing tone, idle-state signaling, scrum-master footer. Split out from the contract on 2026-05-22 so the same preferences apply unchanged in any future repo.
+
+Both files together replace what used to be a single 750-line contract. Agent memory in `~/.claude/projects/-Users-melons-ai/memory/` is the fast-access cache pointing back to either file.
+
+The four most-load-bearing project rules summarized inline:
+
+- **Agent does all the work** — user never touches the terminal. Claude installs, edits, configs, commits, pushes. User intervenes only on hard guardrails (single-click approval, never a multi-step recipe).
+- **Never pause unless told** — user is async; "or pause?" turns into hours of idle. When `docs/roadmap.md` Next has an item and Now finishes, promote it and continue in the same turn.
+- **Money firewall** — paid APIs, SaaS, cloud-resource creation require explicit user confirmation. Local resources (Ollama, FFmpeg, brew, whisper, yt-dlp) stay auto-approved.
+- **Logic changes need explicit OK** — editing `agents/*.md` or `.claude/agents/*.md` always pauses for user confirmation, regardless of autonomy mode.
+
+## Git workflow — auto-commit, auto-push
+
+- **Every code change** (anything under `agents/`, `.claude/agents/`, `config/`, `scripts/`, `docs/`, `CLAUDE.md`, `README.md`, `.env.example`, `.gitignore`) is committed and pushed to `origin/main` on completion.
+- Remote: `git@github.com:MelonS/MelonS-Agents.git` (public).
+- `records/` is **never** committed (gitignored). The history on GitHub reflects only how the agent system itself evolves, not its outputs.
+- Use `git commit` and `git push` as two separate Bash calls; never `&&`-compound (classifier blocks it; see operator-contract §7).
+- Commit message style: imperative subject ≤72 chars, optional body with bullets explaining *why*. Group changes by concern; don't bundle unrelated edits.
+
+## Core rules
+
+- **Code vs Data separation**: agent logic lives under `agents/` and `.claude/agents/` (git-tracked). All outputs go to `$RECORDS_DIR` (default `./records/`, gitignored).
+- **Know-how is committed, not memory-only** (hard rule): any reusable production know-how, pipeline improvement, tool, or hard-won learning MUST be captured in a committed `docs/` file (tooling → `scripts/`), so it travels to every session/repo that clones this repo. Agent memory (`~/.claude/.../memory/`) is a per-project cache/index, **not** the system of record — it does **not** transfer across project folders. The only things that stay uncommitted are secret *values* (API keys/tokens → `config/`, gitignored) and multi-GB local assets (models, ComfyUI). New-session bootstrap entry point: [`docs/shorts-production-handoff.md`](docs/shorts-production-handoff.md).
+- **Env-driven paths**: never hardcode `/opt/homebrew/...` or `~/...`. Read `$FFMPEG_BIN`, `$OLLAMA_HOST`, `$RECORDS_DIR`, etc. from `.env`.
+- **Autonomy policy**: respect `config/policies.yaml`.
+  - `AUTONOMY_MODE=false` (default): pause for user confirmation before logic changes, destructive FS ops, external publishes.
+  - `AUTONOMY_MODE=true`: overnight mode. Stay within `AUTONOMY_BUDGET_USD`. Never edit agent definitions unattended.
+
+## Subagents
+
+Defined in `.claude/agents/`. Orchestrator delegates via the Agent tool.
+
+| Agent | Role |
+|-------|------|
+| `planner` | Mission decomposition, strategy |
+| `resourcer` | Fetch assets, run external tools |
+| `editor` | Apply changes, write outputs |
+| `qa` | Validate outputs, regressions |
+| `auditor` | Out-of-band read-only audit, three trigger layers (L1 post-commit hook + L2 15-min poll + L3 daily 03:00 baseline via launchd) — `docs/audit/<date>-<focus>.md` + `CURRENT-ALERT.md` when non-CLEAN |
+
+## Records layout
+
+```
+records/
+├── missions/<ISO-date>/<mission-id>/
+│   ├── plan.md           # planner output
+│   ├── resources/        # resourcer artifacts
+│   ├── outputs/          # editor outputs
+│   └── qa-report.md      # qa output
+└── blockers/<ISO-date>/  # autonomous-mode halt logs
+```
+
+## Permanent autonomy contract (session-stable)
+
+This project's autonomy rules are persisted at three levels:
+
+1. **Per-project**: `.claude/settings.json` (committed, applies in this repo).
+2. **Per-user**: `~/.claude/settings.json` (mirrors the same allow/deny list, applies anywhere on this machine).
+3. **Per-memory**: agent memory in `~/.claude/projects/-Users-melons-ai/memory/` records the *why* and *how* of each rule.
+
+When a new session starts on this repo, Claude Code reads all three. The default operating mode is:
+
+- Auto-approve every local-resource action (brew, git, gh, ffmpeg, yt-dlp, whisper, ollama, jq, python, file ops).
+- Pause only for the **money firewall** (paid APIs/SaaS/cloud) and **OS-destructive** ops (sudo, rm at system roots, disk erase, force-push to main).
+- Treat multi-step shell work as a single batch — write a script, run it once, never one-off prompts.
+
+Re-establishing this contract should never require re-asking the user. If a prompt fires for something this contract already covers, that's a configuration drift; the fix is to update the allow list, not to ask.
+
+
+## 작업 방식
+
+- 작업 중간에 확인 질문으로 멈추지 말 것. 판단이 갈리는 지점은 합리적인 기본값을 스스로 정하고 계속 진행한 뒤, 어떤 가정을 했는지 최종 보고에 정리해서 알려줄 것.
+- 계획만 세우고 멈추지 말 것. 계획을 세웠으면 승인을 기다리지 말고 바로 실행할 것.
+- 여러 단계로 된 작업은 전체가 끝날 때까지 한 번에 진행할 것. 단계마다 보고하고 멈추지 말 것.
+- 다음 경우에만 멈추고 물어볼 것:
+  - 되돌릴 수 없는 파괴적 작업 (데이터 삭제, 프로덕션 배포, force push)
+  - 요청 범위를 명백히 벗어나는 판단이 필요할 때
+  - 필요한 정보가 없어서 진행 자체가 불가능할 때
+- 오류가 나면 보고하고 멈추지 말고, 원인을 찾아 수정한 뒤 계속 진행할 것.
+- 작업이 끝나면 테스트나 빌드로 스스로 검증한 뒤 결과를 보고할 것.

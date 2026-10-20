@@ -1,0 +1,379 @@
+---
+name: decompose
+description: Decompose a PRD into prioritized, dependency-mapped epics and user stories. Accepts pasted text, file path, or PDF.
+---
+
+# PRD Decomposition — From Document to Backlog
+
+## Purpose
+
+Break down a Product Requirements Document into structured, prioritized user stories with dependency mapping. Produces a persistent story map that feeds individual stories into the existing `/genai-invert` → `genai-layoutplan` pipeline.
+
+Use this when you receive a PRD, spec, or feature brief that is too large for a single `/genai-invert` analysis — typically anything with multiple workflows, feature areas, or delivery phases.
+
+## Input
+
+The user provides PRD content in one of three forms:
+- **Pasted text** directly in the conversation
+- **File path** to a markdown, text, or Word document
+- **PDF path** (use the Read tool's PDF capability — chunk into 20-page reads if needed)
+
+## Workflow
+
+### Step 1: Read & Validate Input
+
+**Actions:**
+1. If a file/PDF path is provided, read the content. For PDFs over 20 pages, read in sequential 20-page chunks (pages 1-20, 21-40, etc.) — the Read tool supports a `pages` parameter. Read ALL chunks before proceeding; do not start scanning until the full document is loaded. For very large PDFs (60+ pages), note the page count in the scope summary so the user knows the full document was read.
+2. If text is pasted, use it directly
+3. Verify the content looks like a PRD (has features, requirements, or workflows described)
+4. **If the input is NOT a PRD** — it's a raw requirement, problem statement, or brief description without structured sections (no acceptance criteria, no user stories, no feature list):
+   - If it's a clear, single-sentence requirement with an obvious project type: recommend `/assess` first: "This looks like a raw requirement, not a PRD. Run `/assess` to classify the project type and get architecture recommendations before decomposing."
+   - If it's vague or lacks detail: recommend `/discover` first: "This needs more detail before I can decompose it. Run `/discover` to elicit requirements through structured questions, which will generate a PRD."
+   - Do NOT proceed with decomposition on a raw requirement — the output quality will be poor without structured input
+5. If the content is ambiguous, ask the user what they want decomposed
+
+### Step 2: Scan Structure
+
+Do a lightweight scan of the PRD to identify:
+
+- **Workflows / feature areas** — distinct functional domains (e.g., "Document Ingestion", "Compliance Monitoring")
+- **Priority scheme** — MoSCoW, P0/P1/P2, phases, or none (you'll derive priorities if absent)
+- **Delivery phases** — timelines or release milestones if present
+- **Technical architecture** — stack, components, integrations mentioned
+- **Scope indicators** — count of distinct features, workflows, user types
+- **AI project indicators** — scan for keywords: AI, ML, model, LLM, GPT, inference, training, embeddings, RAG, vector, prompt, hallucination, confidence, fine-tuning, NLP, neural, agent, orchestration. If 3+ distinct indicators found, flag as AI project. List the specific AI components detected (e.g., "RAG pipeline, LLM generation, document parsing, embeddings, compliance mapping engine").
+- **User personas** — identify named personas or user roles with their key workflows
+- **Hard deadlines** — regulatory deadlines, contractual dates, market windows, launch dates that constrain story priority and sequencing
+- **Non-development sections** — identify sections that are NOT engineering deliverables: go-to-market strategy, pricing, sales channels, marketing campaigns, team hiring, competitive analysis, business metrics. These sections provide context but MUST NOT become user stories. Flag them so the agent skips them during decomposition.
+- **Out of scope / Won't Have** — if the PRD has an explicit "Won't Have", "Out of Scope", or "Exclusions" section, extract the items. Pass these to the agent as a blocklist: "Do NOT create stories for: [items]. These are explicitly out of scope per the PRD."
+
+### Step 3: Present Scope Summary & Confirm
+
+Present the user with a scope summary before proceeding:
+
+```
+PRD Scan Results:
+─────────────────
+Workflows detected:    [count] ([list])
+Priority scheme:       [MoSCoW / Phases / P0-P3 / None detected]
+Feature areas:         [count]
+Estimated epics:       [range]
+Estimated stories:     [range]
+Delivery phases:       [list if present]
+Technical stack:       [brief summary if present]
+User personas:         [count] ([names and roles])
+AI Project:           [Yes / No]
+
+[If AI Project = Yes:]
+AI components:         [list specific components: RAG pipeline, LLM generation, embeddings, etc.]
+
+This PRD describes an AI project. The chief-ai-po agent will produce AI-augmented stories
+with inverted failure modes, safety stories, and graceful degradation criteria.
+
+[If hard deadlines detected:]
+Hard deadlines:
+  • [date] — [what happens] (e.g., "Nov 2026 — IFR opens applications")
+  • [date] — [what happens] (e.g., "Feb 2027 — final submission deadline")
+These deadlines will be used to sequence story priority.
+
+[If non-development sections detected:]
+Skipping non-dev sections: [list — e.g., "Go-to-Market (§5.1-5.4), Pricing (§5.2), Sales Channels (§5.3)"]
+These provide context but will NOT become user stories.
+
+[If out-of-scope items detected:]
+Out of scope (per PRD): [list — e.g., "Financial fair play, UEFA licensing, player transfers"]
+No stories will be created for these items.
+
+Options:
+  1. chief-ai-po only — AI-augmented stories (recommended for AI-native projects)
+  2. genai-storymap only — standard stories (no AI-specific analysis)
+  3. Both — genai-storymap first, then chief-ai-po augments with AI layer
+
+[If AI Project = No:]
+The genai-storymap agent will run on a separate thread to decompose this PRD.
+
+Proceed?
+```
+
+Wait for user approval before continuing.
+
+### Step 4: Normalize & Persist PRD
+
+**Actions:**
+1. Create `.plans/` directory if it doesn't exist
+2. Generate a short kebab-case name from the PRD title or subject (e.g., `ifr-compliance-platform`, `user-onboarding-v2`)
+3. Write the PRD content to `.plans/PRD-<name>.md` with a header:
+
+```markdown
+# PRD: <name>
+
+**Ingested:** <date>
+**Source:** <file path or "pasted text">
+**Scope:** <one-line summary>
+**Priority Scheme:** <MoSCoW / Phases / P0-P3 / Derived>
+**AI Project:** <Yes (components: ...) / No>
+**Personas:** <list of names and roles>
+**Hard Deadlines:** <list of dates and events, or "None detected">
+**Non-Dev Sections:** <list of sections skipped, or "None">
+
+---
+
+<full PRD content>
+```
+
+This serves as the input file for the `genai-storymap` agent and as a permanent record.
+
+### Step 5: Spawn the Decomposition Agent
+
+Choose the agent based on AI project detection and the user's selection from Step 3.
+
+**Context to pass to every agent prompt** (append to the decomposition instruction):
+
+- If the PRD has an existing priority scheme, name it: "The PRD uses MoSCoW prioritization — respect it."
+- If hard deadlines were detected, list them: "Hard deadlines: [date — event]. Use these to sequence story priority — stories required before the earliest deadline are MUST."
+- If non-development sections were identified, list them: "Skip these sections — they are business/GTM context, not engineering deliverables: [section list]. Do NOT create stories for go-to-market, pricing, sales, marketing, or hiring activities."
+- If personas were identified, list them: "User personas: [names and roles]. Reference these in user stories."
+
+**Option 1 — chief-ai-po only (AI projects):**
+Spawn the `chief-ai-po` agent on a separate thread:
+
+> "Decompose `.plans/PRD-<name>.md` into AI-augmented epics and user stories. Write output to `.plans/STORIES-AI-<name>.md`. [Append context above.]"
+
+The agent will produce stories with inverted failure modes, 6 mandatory AI safety stories (SA.1-SA.6), human oversight checkpoints, and graceful degradation criteria on every AI-touching story.
+
+**Option 2 — genai-storymap only (non-AI projects, or user choice):**
+Spawn the `genai-storymap` agent on a separate thread:
+
+> "Decompose `.plans/PRD-<name>.md` into epics and user stories. Write output to `.plans/STORIES-<name>.md`. [Append context above.]"
+
+The agent will identify epics, decompose into user stories with acceptance criteria, map dependencies, assign priorities, estimate sizes, and flag invert candidates.
+
+**Option 3 — Both (genai-storymap then chief-ai-po):**
+Spawn `genai-storymap` first. After it completes and writes `.plans/STORIES-<name>.md`, spawn `chief-ai-po`:
+
+> "Augment `.plans/PRD-<name>.md` with AI-specific analysis. The base story map is at `.plans/STORIES-<name>.md`. Write output to `.plans/STORIES-AI-<name>.md`."
+
+The chief-ai-po agent will read both files and produce an AI-augmented version that cross-references existing stories rather than duplicating them.
+
+### Step 6: Present Results & Offer GitHub Issues
+
+**IMPORTANT:** This step runs on the main thread after the genai-storymap agent returns. You MUST complete this step — do not end the conversation after the agent summary.
+
+Once the agent completes:
+
+1. Read the output file (`.plans/STORIES-<name>.md` or `.plans/STORIES-AI-<name>.md`) and present a summary
+2. **Immediately ask** the user whether to create GitHub Issues
+
+Present this as a single message:
+
+```
+Story Map: <name>
+──────────────────
+Epics:    [count]
+Stories:  [count]
+  MUST:   [count] stories
+  SHOULD: [count] stories
+  COULD:  [count] stories
+
+Suggested starting stories (no dependencies):
+  • S1.1 — <title> [size] [invert candidate?]
+  • S2.1 — <title> [size] [invert candidate?]
+
+Full story map: .plans/STORIES-<name>.md
+```
+
+If chief-ai-po was used, add these lines to the summary:
+
+```
+AI Analysis:
+  Pre-mortem risks:              [count]
+  AI safety stories (SA.1-SA.6): 6
+  Human oversight checkpoints:   [count]
+  Graceful degradation coverage: [count]/[total] stories
+
+Full AI story map: .plans/STORIES-AI-<name>.md
+```
+
+Then ask:
+
+> "What would you like to do next?"
+>
+> 1. **Start the orchestration pipeline** — run `/orchestrate` to feed stories through the full agent pipeline (TRIAGE → DESIGN → PLAN → BUILD → HARDEN → DELIVER)
+> 2. **Create GitHub Issues** — generate a shell script to create issues for all stories
+> 3. **Pick a single story** — run `/ai-invert` on one story to start working immediately
+> 4. **Done** — review the story map first
+
+Wait for the user's choice.
+
+- If option 1: run `/orchestrate` with the story map path
+- If option 2: proceed to Step 7 (GitHub Issues)
+- If option 3: ask which story, then run `/ai-invert` with that story's description + acceptance criteria
+- If option 4: stop here
+
+### Step 7: Generate GitHub Issues Script
+
+**Pre-flight checks — run these before generating the script:**
+
+```bash
+# 1. Is gh CLI installed?
+gh --version
+
+# 2. Is gh authenticated?
+gh auth status
+
+# 3. Does this repo have a GitHub remote?
+gh repo view --json nameWithOwner -q '.nameWithOwner'
+```
+
+If any check fails, tell the user what's needed:
+- **gh not installed**: `brew install gh` (macOS) or see https://cli.github.com
+- **Not authenticated**: Run `gh auth login` — needs a GitHub token with `repo` scope (issues, labels, milestones)
+- **No GitHub remote**: The repo needs a GitHub remote to create issues against. Run `gh repo create` or add a remote.
+
+If all checks pass, proceed.
+
+Do NOT run `gh issue create` commands inline — a large PRD can produce 30-50 stories and running them one by one wastes context and is slow. Instead, generate a self-contained shell script the user runs outside Claude.
+
+**Generate `.plans/create-issues-<name>.sh`** with the following structure:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Generated by /decompose from .plans/STORIES-<name>.md
+# Run: chmod +x .plans/create-issues-<name>.sh && .plans/create-issues-<name>.sh
+#
+# Prerequisites:
+#   - gh CLI installed (brew install gh)
+#   - gh authenticated with repo scope (gh auth login)
+#   - Running from a git repo with a GitHub remote
+
+# ─── Pre-flight ───────────────────────────────────────────
+if ! command -v gh &> /dev/null; then
+  echo "Error: gh CLI not found. Install: brew install gh"
+  exit 1
+fi
+if ! gh auth status &> /dev/null; then
+  echo "Error: gh not authenticated. Run: gh auth login"
+  exit 1
+fi
+
+REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
+echo "Creating issues in $REPO..."
+echo ""
+
+# ─── Labels ───────────────────────────────────────────────
+echo "Creating labels..."
+gh label create "priority:must" --color "B60205" --description "Must have — MVP" --force 2>/dev/null || true
+gh label create "priority:should" --color "D93F0B" --description "Should have — Phase 2" --force 2>/dev/null || true
+gh label create "priority:could" --color "FBCA04" --description "Could have — Phase 3" --force 2>/dev/null || true
+gh label create "size:S" --color "C5DEF5" --force 2>/dev/null || true
+gh label create "size:M" --color "BFD4F2" --force 2>/dev/null || true
+gh label create "size:L" --color "A2C4E0" --force 2>/dev/null || true
+# Epic labels (one per epic, each with a distinct color)
+gh label create "epic:<epic-slug>" --color "<color>" --force 2>/dev/null || true
+# ...repeat for each epic
+
+# ─── Milestones ───────────────────────────────────────────
+echo "Creating milestones..."
+gh api repos/"$REPO"/milestones -f title="<phase name>" -f description="<description>" -f due_on="<YYYY-MM-DDT00:00:00Z>" 2>/dev/null || true
+# ...repeat for each phase
+
+# ─── Issues (dependency order) ────────────────────────────
+# Stories with no dependencies are created first.
+# Each issue captures its number in a variable so dependent stories can reference it.
+
+echo "Creating issues..."
+
+# --- S1.1: <title> (no dependencies) ---
+S1_1=$(gh issue create \
+  --title "[S1.1] <story title>" \
+  --label "priority:must,size:M,epic:<epic-slug>" \
+  --milestone "<phase name>" \
+  --body "$(cat <<'ISSUE_EOF'
+## User Story
+
+> As a <role>, I want <capability> so that <benefit>.
+
+## Acceptance Criteria
+
+- [ ] Criterion 1
+- [ ] Criterion 2
+
+## Technical Notes
+
+<notes>
+
+## Metadata
+
+- **Size:** M
+- **Invert Candidate:** Yes
+- **Story Map:** `.plans/STORIES-<name>.md`
+ISSUE_EOF
+)" | grep -o '[0-9]*$')
+echo "  Created #$S1_1 — [S1.1] <title>"
+
+# --- S1.2: <title> (depends on S1.1) ---
+S1_2=$(gh issue create \
+  --title "[S1.2] <story title>" \
+  --label "priority:must,size:S,epic:<epic-slug>" \
+  --milestone "<phase name>" \
+  --body "$(cat <<ISSUE_EOF
+## User Story
+
+> As a <role>, I want <capability> so that <benefit>.
+
+## Acceptance Criteria
+
+- [ ] Criterion 1
+
+## Dependencies
+
+Depends on #$S1_1 (S1.1 — <title>)
+
+## Metadata
+
+- **Size:** S
+- **Invert Candidate:** No
+- **Story Map:** \`.plans/STORIES-<name>.md\`
+ISSUE_EOF
+)" | grep -o '[0-9]*$')
+echo "  Created #$S1_2 — [S1.2] <title>"
+
+# ...repeat for ALL stories in dependency order
+
+# ─── Summary ─────────────────────────────────────────────
+echo ""
+echo "Done! Created <count> issues across <count> epics."
+echo "View: gh issue list --label 'epic:<epic-slug>'"
+```
+
+**Key rules for the generated script:**
+- **Dependency order**: Create dependency-free stories first. Capture each issue number in a shell variable (e.g., `S1_1`, `S3_2`) so dependent stories can reference `#$S1_1` in their body.
+- **Heredoc for bodies**: Use `cat <<'ISSUE_EOF'` (single-quoted delimiter) for stories with no dependencies. Use `cat <<ISSUE_EOF` (unquoted delimiter) for stories that need variable expansion (`#$S1_1`).
+- **Idempotent labels/milestones**: Use `--force` and `|| true` so the script can be re-run safely.
+- **Every story gets an issue**: Do not skip any stories — the full story map becomes the full backlog.
+- **Extract issue number**: Use `grep -o '[0-9]*$'` on `gh issue create` output to capture the issue number into a variable.
+
+After generating the script, tell the user:
+
+```
+GitHub Issues script generated: .plans/create-issues-<name>.sh
+  • <count> issues will be created across <count> epics
+  • <count> labels and <count> milestones will be set up
+  • Dependencies are wired via issue number references
+
+Review and run:
+  chmod +x .plans/create-issues-<name>.sh
+  .plans/create-issues-<name>.sh
+```
+
+## Notes
+
+- This skill is domain-agnostic — it works for any PRD regardless of industry or technology
+- The `genai-storymap` agent runs on a separate thread to keep main context clean for large PRDs
+- Stories are sized by **AI context budget (~300K tokens per story)**, not human effort. This budget covers the full session: codebase exploration, inversion analysis, planning, implementation, and testing. No story should be XL — those get split into sequential S/M stories.
+- If the PRD has no explicit priority scheme, the agent derives priorities from: dependency order (foundations first), user-facing value, and technical risk
+- GitHub Issues creation is always opt-in — generates a shell script the user reviews and runs, rather than executing 30-50 `gh` commands inline which would waste context
+- For very large PRDs (20+ epics), the agent may split output into per-epic files with the main file as an index
+- The `.plans/PRD-<name>.md` file preserves the original PRD for traceability — downstream artifacts reference it

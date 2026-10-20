@@ -1,0 +1,201 @@
+# AGENTS.md
+
+Context for AI coding tools (Claude Code, Cursor, OpenAI Codex CLI, GitHub Copilot Workspace, Aider, etc.) working in this repo. Human contributors should read [CONTRIBUTING.md](./CONTRIBUTING.md) instead. This file is dense on purpose.
+
+## Quick reference
+
+```bash
+uv sync                          # default dev/test environment, including native EtherNet/IP
+uv sync --extra all              # additionally select all extras defined in pyproject.toml
+uv sync --extra <name>           # install one optional package (daq, labjack, nidaq, mccdaq, i2c, aardvark)
+just check                       # all lints: python (ruff format, mypy, ruff lint) + Rust (rustfmt, clippy, lockfiles)
+just test                        # all tests: python + Rust; no hardware required
+just check-python / check-rust   # single-language lints (check-rust uses nightly fmt + locked clippy)
+just test-python / test-rust     # single-language tests
+just build-docs / serve-docs     # docs site (docs/, Sphinx): strict build / live preview; needs the `docs` group, Python >=3.12
+uv build --wheel --package <name> # build a wheel for a workspace package
+```
+
+`just check` and `just test` cover local linting and tests. [Build/test CI](./.github/workflows/build-check-test.yml) also checks `uv lock --check` and runs across supported OS/Python combinations. Separate workflows check [the docs build](./.github/workflows/docs-check.yml) (`just build-docs`, warnings as errors) and [PR titles](./.github/workflows/lint-pr-title.yml). A local pass does not guarantee a full CI pass. The [scheduled latest-dependencies workflow](./.github/workflows/latest-deps-test.yml) re-resolves dependencies and runs Python tests; it is not part of PR CI.
+
+The default `dev` group in [pyproject.toml](./pyproject.toml) includes the local maturin-built `instro-ethernetip` package, so fresh setup for Python checks/tests also needs Rust and a C/C++ compiler/linker. `just check` and `just test` additionally need CMake and LLVM/libclang for the OPC UA workspace crates. The [justfile](./justfile) uses a separate nightly rustfmt for `check-rust` and `fix-rust`; install it with `rustup toolchain install nightly --profile minimal --component rustfmt`. `test-rust` runs Rust tests with [`cargo-nextest`](https://nexte.st/) (plus `cargo test --doc` for doctests, which nextest skips); install it with `cargo install cargo-nextest --locked` or a prebuilt binary. See [Prerequisites](./CONTRIBUTING.md#prerequisites) for per-OS setup.
+
+## Codebase layout
+
+The `instro` repository is a shared `uv`/`cargo` workspace. The top-level Python package is `instro`, with additional pure-Python and mixed Rust/Python workspace members under `packages/`. [Cargo.toml](./Cargo.toml) includes pure-Rust crates under `crates/` and the mixed Rust/Python packages `packages/instro-ethernetip` and `packages/instro-opcua`.
+
+| Workspace | Path | What it is |
+|---|---|---|
+| Python/`uv` | `instro/<category>/` | Category code: HAL class (`InstroPSU`, `InstroDMM`, …), `types.py`, the base driver class (`PSUDriverBase`, etc.). Categories: `psu`, `dmm`, `eload`, `scope`, `awg`, `daq`, `i2c`, `modbus`. |
+| Python/`uv` | `instro/<category>/drivers/` | Concrete vendor drivers, one file per vendor/model family. Registered in `drivers/__init__.py`. |
+| Python/`uv` | `instro/lib/transports/` | Transport drivers (`VisaDriver`). Category bases are transport-agnostic; concrete drivers compose transports. |
+| Python/`uv` | `packages/instro-contrib/` | Community-contributed drivers. Mirrors core layout under `instro/contrib/`. |
+| Python/`uv` | `packages/instro-unstable/` | In-development categories and abstractions whose API isn't settled. |
+| Python/`uv` | `packages/instro-{daq-ni,daq-labjack,daq-mcc,i2c-aardvark}` | Vendor packages wrapping proprietary native SDKs. |
+| Python/`uv` | `tests/<category>/` | Per-category tests, predominantly mocked-transport unit tests. |
+| Rust/`cargo` | `crates/<category>` | Pure-Rust drivers/utilities (e.g. `instro-ethernetip`). Mixed Rust/Python crates with an entrypoint exposed by the `instro` python package should not live here. |
+
+## Conventions
+
+- **Every change has a tracking issue/ticket.** Branch off `main` and name the branch after the GitHub issue or ticket ID (e.g. `issue-142-siglent-spd-driver`, `instro-248-docstring-cleanup`). No untracked work. Open an issue first if one doesn't exist.
+- **Conventional Commits** for PR titles and commits: `<type>(<scope>): <imperative description>`. Types: `feat`, `fix`, `chore`, `docs`, `refactor`. Append `!` for breaking changes. Title under 72 chars, no trailing period.
+- **Driver migrations from `instro-contrib` or `instro-unstable` are not breaking changes**, including moves to core or another workspace package that change imports. Use a normal Conventional Commit title without `!` or a `BREAKING CHANGE` footer for the migration itself; no major-version release or release override is required solely for the move. Document the new import path in the PR and affected user docs. See [migration policy](./CONTRIBUTING.md#pull-request-titles).
+- **No comments unless the *why* is non-obvious.** Don't restate what the code does.
+- **Type hints required** on all public methods. `mypy` is enforced.
+- **`ruff format` and `ruff check` are enforced.** Run `just check` before pushing.
+- **Targeted unit tests.** Cover the invariant or edge case under test with the least necessary complexity. Prefer a few high-signal tests over redundant matrices, test-only abstractions, or rewrites that manufacture shared behavior. Don't add tests just to increase coverage numbers or case counts; every test needs a real reason to exist. Bug-fix PRs (`fix(...): ...`) need to add regression coverage or explain why no new test is needed.
+- **Scope discipline.** Keep PRs focused on the work at hand. If you find something unrelated, open a separate GitHub issue rather than expanding the PR.
+- **GitHub Actions are SHA-pinned.** Every `uses:` in `.github/workflows/` pins a full commit SHA with the release as a trailing comment (`@11d5960a... # v4.4.0`). Resolve SHAs from the upstream repo's releases — never trust an unverified suggestion. Dependabot bumps the pins weekly.
+- **README links are absolute.** Every README that ships as a package `readme` (root and `packages/*/`) renders on PyPI, where relative `./` paths are dead. Link to `https://github.com/nominal-io/instro/blob/main/...` and load images from `raw.githubusercontent.com`. Package metadata (`keywords`, `classifiers`, `[project.urls]` with Documentation and Changelog) lives in each `pyproject.toml`; keep the sub-packages' blocks in step with the root when you add one (#514).
+- **Docs ship with the code.** This repo contains its own docs (`README.md`, `CONTRIBUTING.md`, `docs/`, and this file). When a change is user-visible or alters conventions, update the relevant docs in the same PR: see [Documentation](#documentation) below.
+
+### Naming
+
+- **Category base classes**: `<Category>DriverBase`. Examples: `PSUDriverBase`, `DMMDriverBase`, `I2CDriverBase`. One per category.
+- **Concrete vendor drivers**: `<Vendor><Model>`. Examples: `BK9115`, `RigolDP800`, `Keithley2400`. File name is the snake_case form (`bk_9115.py`).
+- **Transport variants of one driver**: `<Vendor><Model><Transport>`, CapWords with no separator. Spell the transport token exactly as its transport class does: `VisaDriver` → `Visa`, `ModbusDriver` → `Modbus`. Examples: `EAPSB10000Visa`, `EAPSB10000Modbus`. Underscores in class names are not an option — PEP 8 reserves them for functions and variables, and `ruff`'s `N801` rejects them. Use the plain `<Vendor><Model>` form while a device has one transport implementation; suffix every variant as soon as a second exists, and if the plain name already shipped, keep it as a module-level alias until the next major version.
+
+## How to add a vendor driver
+
+Use `instro/psu/drivers/bk_9115.py` as the reference. The shape is:
+
+1. Create `instro/<category>/drivers/<vendor>_<model>.py`. Subclass the category base (`PSUDriverBase`, `DMMDriverBase`, …).
+2. Compose `VisaDriver` (or another transport) in `__init__`: don't subclass it. Accept `str | VisaConfig` so callers can customize.
+3. Implement `open`, `close`, and the category-required methods.
+4. Add per-driver `_write_checked` / `_check_errors` helpers if the device supports `SYST:ERR?`. Do **not** extract these to a shared mixin (see Patterns below).
+5. Register in `instro/<category>/drivers/__init__.py` (both the import and `__all__`), and in `instro/<category>/config.py`'s `<CAT>_VENDOR_REGISTRY` as a `DriverEntry` carrying the driver's `*IDN?` `IdnPattern`(s). The registry is the single identity table: JSON config resolves `driver.name` through it and `instro discover` matches against its patterns, and `tests/lib/test_registry.py` fails for a non-simulated entry without a pattern. `tests/lib/test_registry.py` also runs `check_registry()` per category so a pattern's `num_channels` matches what the category's driver config requires or forbids.
+6. Add targeted tests following the category's existing layout. The mocked-transport reference is [tests/psu/bk/test_bk_9115_software.py](./tests/psu/bk/test_bk_9115_software.py): patch the driver's `VisaDriver` reference with `autospec=True` and assert wire-level commands. PSU driver tests live under `tests/psu/<vendor>/`; `tests/psu/test_psu_drivers.py` covers the base contract and HAL composition. Avoid redundant matrices, coverage-count padding, or shared helpers that obscure the behavior under test.
+
+## How to add a community driver
+
+Same shape as above, but in `packages/instro-contrib/instro/contrib/<category>/drivers/<vendor>_<model>.py`. Register in the corresponding contrib `drivers/__init__.py`. The smoke test at `tests/contrib/test_contrib_smoke.py` picks it up automatically: it walks every module under `instro.contrib`.
+
+The contrib bar is in [CONTRIBUTING.md](./CONTRIBUTING.md#instro-contrib--community-contributed-drivers).
+
+Add the driver to the "Available drivers" section of [`docs/library/contrib.md`](./docs/library/contrib.md) in the same PR. That section is documented as the complete set of contrib drivers for the current release — a merged driver missing from it makes the doc wrong.
+
+## Documentation
+Docs live in this repo and ship in the same PR as the code change.
+
+### Overview
+There are several kinds of docs:
+* Docstrings, in the code. They generate the API reference; style below.
+* The docs site, `docs/`: one Sphinx site with the guides (MyST Markdown in `docs/`), the examples (generated from `examples/` at build time), and the API reference (`docs/sdk/`). Build with `just build-docs` (warnings fail it, as in PR CI), preview with `just serve-docs`. Structure, conventions, and tasks: [`docs/AGENTS.md`](./docs/AGENTS.md).
+
+### Doc-string style
+All new code should have docstrings using Google format. They should have:
+* A writing style that is concise and clear.
+* If you are unsure about an interpretation, do not guess. Just leave it without explanation, but add a TODO: add doc.
+* All args and returns should indicate types, as well as units if applicable.
+* For classes, the `__init__` should provide a full usage example.
+* Docstrings are reStructuredText, rendered by Sphinx: ``` ``code`` ``` for literals, and a single-backtick name (`` `Measurement` ``) or `` :class:`~instro.lib.types.Measurement` `` to link to other parts of the code, where relevant. Markdown links and mkdocstrings `[Name][path]` references don't render. In `Returns:` sections, continuation lines keep the first line's indent.
+
+### Changes 
+ When a change is user-visible or alters how contributors work, update the relevant files on the same branch:
+
+| Change type | Files to update |
+|---|---|
+| New vendor driver | `README.md` "Supported devices" table; a driver page and image in `docs/<category>/`, and the Vendor Drivers table in `docs/sdk/instruments/<category>.md` (see [`docs/AGENTS.md`](./docs/AGENTS.md#add-a-vendor-driver)) |
+| New contrib driver | "Available drivers" section of `docs/library/contrib.md` |
+| Public API change (HAL methods, signatures, return types, new category) | `docs/sdk/` (reference pages) and any affected guide pages in `docs/` |
+| New feature, behavior change, or new install extra | Guide pages in `docs/`; also `README.md` if it touches the quickstart, install instructions, or extras table |
+| New category or top-level module | All of the above plus the sidebar toctrees in `docs/index.md` (see [`docs/AGENTS.md`](./docs/AGENTS.md#add-an-instrument-category)) |
+| Contributor workflow, repo convention, or tooling change | `CONTRIBUTING.md` and this file (`AGENTS.md`) |
+| New or changed AI skill/subagent | Both toolchains' copies (Claude `.claude/`, Codex `.agents/` + `.codex/`) and the [Repo skills and subagents](#repo-skills-and-subagents) table |
+
+`CHANGELOG.md` is generated by release-please from Conventional Commits. Don't hand-edit it. [`docs/AGENTS.md`](./docs/AGENTS.md) carries the docs site's structure and style rules.
+
+## Release PRs
+
+release-please opens one `chore(main): release` PR for all packages; each package still gets its own version and tag. Do not add `separate-pull-requests` to `.github/release-please-config.json` (see #466).
+
+release-please authenticates with a short-lived GitHub App installation token minted inside the `release-please` job (`NOMBOT_APP_ID` / `NOMBOT_PRIVATE_KEY`), falling back to `NOMBOT_CLASSIC_PERSONAL_ACCESS_TOKEN` only if those secrets are absent. The app installation has its own API rate limit; the classic PAT shares nominal-bot's 5,000 requests/hour with Renovate and every other repo, which is how releases got rate-limited (#468). Mint the token in the job that uses it: GitHub scrubs app tokens at job boundaries, so one passed via `needs.*.outputs` or a reusable-workflow input arrives empty.
+
+To override the version release-please computes (e.g. a `!` commit that should not ship as a major), land a commit with a `Release-As: X.Y.Z` footer. Which components see it follows the same rules as any commit: a `packages/<pkg>` or `crates/<crate>` component only sees commits touching files under its path; the root `instro` component sees every commit except ones whose files all sit under its `exclude-paths` (see below); and a commit that touches no files at all is applied to every component (`CommitSplit` runs with `includeEmpty: true`). An override for a sub-package therefore also reaches root `instro`, and there is no way to scope it away. When several components need overrides, land one commit per component and merge the root override last, since the newest `Release-As` wins. Squash merges build the commit body from the branch's commit messages, and a bulleted `* Release-As:` line is body text that release-please ignores, so set the squash body explicitly: `gh pr merge --squash --body "Release-As: X.Y.Z"` replaces the generated body with the footer, which is what a dedicated override commit wants (the changelog entry comes from the PR title, not the body). #476 is the worked example.
+
+The root `instro` component has no `paths` restriction, so release-please hands it every commit in the repo and only `exclude-paths` narrows that. The root `exclude-paths` list in `.github/release-please-config.json` names every top-level directory that does not ship in the `instro` wheel or its PyPI page: the other workspace members (`packages`, `crates`), `tests`, `docs`, `examples`, `res`, and the CI/agent-tooling directories. A `feat`/`fix` commit whose files all sit under those paths does not bump `instro` or appear in its changelog (#477). Matching is directory-prefix only, so top-level files like `uv.lock` or `AGENTS.md` cannot be excluded; a `fix(ci)` that also edits `AGENTS.md` still reaches root. When you add a top-level directory that is not part of the `instro` package, add it to this list.
+
+## Rust crate releases
+
+Pure-Rust crates under `crates/` that are published to crates.io are independent release-please components with `release-type: rust`. Do not add them to the legacy top-level `groups` block; that block is unsupported release-please config and should not be extended.
+
+Use distinct release-please component names when a Rust crate would otherwise collide with a Python package tag lineage. The public Cargo crate is `instro-ethernetip`, but its release-please component is `instro-ethernetip-rs` so tags do not collide with the PyPI package's `instro-ethernetip-v...` tags. The OPC UA crate uses `instro-opcua-rs` for the same Rust-crate tag convention.
+
+When a Rust core crate backs a Python package, keep the wrapper dependency key identical to the core crate's `[package].name`. release-please's `cargo-workspace` plugin matches dependency table keys rather than resolved Cargo paths, so aliases such as `instro-ethernetip-rs = { package = "instro-ethernetip", ... }` break the automatic wrapper patch bump.
+
+For an initial stable release such as `0.1.0`, set `initial-version` in `.github/release-please-config.json` and let the generated release PR add the new path to `.github/release-please-manifest.json`. Pre-seeding the manifest with `0.1.0` tells release-please that `0.1.0` has already shipped.
+
+Crates are published from `.github/workflows/release-please-publish.yml` with crates.io Trusted Publishing (`rust-lang/crates-io-auth-action`), not a stored `CARGO_REGISTRY_TOKEN`. The crate must already exist on crates.io and have a trusted publisher configured for this repository and workflow file.
+
+## Patterns and constraints
+
+This repo prefers duplicated, explicit code over premature abstraction. The constraints below trace to specific cases where a shared helper, factory, or facade was attempted and walked back. Don't propose extracting a base / mixin / wrapper unless you can name two concrete drivers that share the *exact* behavior. Even then, duplication is often still the right call.
+
+- **`<Category>DriverBase` is a contract surface, not implementation.** Required methods are `@abc.abstractmethod`. Optional methods raise `NotImplementedError` by default, and drivers override the ones their instrument actually supports. `DMMDriverBase` is the clearest example, with 8 required (`open`, `close`, `set_measurement_function`, plus 5 primary measurements) and ~15 optional (per-function range/NPLC setters, `set_digits`, `measure_four_wire_resistance`) for capabilities that aren't universal across vendors. The base carries no shared helpers, lifecycle, or state. `DAQDriverBase` is the one exception: it has a default `__init__` that initializes the channel/timing dicts the driver is required to populate (see [DAQ driver state tracking](#daq-driver-state-tracking)).
+- **Each category can have drivers that use different transports.** `daq` already does this. `Keysight34980A` on VISA sits next to `NIDAQ`, `LabJackT7`, and `MCCDAQ` on vendor SDKs, all behind one `DAQDriverBase`. The base never picks a transport. The driver does.
+- **Drivers own their lifecycle (`__init__`, `open`, `close`).** Because transports vary per driver, the resource a driver holds varies in shape: a `VisaDriver` wrapper for SCPI, a bare `int` handle for vendor SDKs (LabJack), a lazily-imported module object (Aardvark). `open()` sometimes does real work: Aardvark defers `import pyaardvark` to keep the optional dep out of import time. No single `self._transport` protocol fits all of these.
+- **`_check_errors` is per-driver because SCPI error semantics vary.** Response prefix (`"0"` for B&K/Rigol, `"+0"` for Siglent), command form (`SYST:ERR?` vs `:SYST:ERR?`), and the vendor name in the raised message are all per-device. A configurable mixin would carry more code than the four duplicated lines.
+- **`_write_checked` is per-driver because some drivers can't use it.** The helper assumes `write + _check_errors` is one atomic step. Stateful drivers can't fit that shape: `BK9140` must hold the VISA lock across `INST <n>` channel-select + write + check, so it inlines the sequence. Keeping the helper driver-local lets stateless drivers stay terse and stateful ones write atomic sequences directly.
+- **`pkgutil.extend_path` in `drivers/__init__.py`** is required for any category whose drivers can come from workspace vendor packages (`daq`, `i2c` currently). Without it, vendor-package subpackages disappear at import time.
+- **Shared JSON-config blocks live in `instro/lib/config.py`.** `TimingConfig`, the publisher config models (`NominalCorePublisherConfig`, `FilePublisherConfig`, `PublisherConfigType`), `build_publisher`, and the generic `load_config(config, model_cls)` loader are identical across category configs, so category `config.py` modules (`instro/psu/config.py`, `instro/dmm/config.py`, `instro/eload/config.py`, `instro/awg/config.py`, `instro/scope/config.py`) import them from there instead of redefining them. Category-specific blocks (the vendor registry, the driver config, DMM's `measurement` block, Scope's `channels`/`acquisition`/`trigger` blocks) stay in the category's own `config.py`. Scope's tracked-state dataclasses are named `ScopeState`/`ChannelState`/`TriggerState` so the Pydantic config models keep the `<Category>Config` naming. Modbus and EtherNet/IP predate this and keep their own divergent `TimingConfig` variants in their own types modules.
+- **VISA drivers' `__init__` accepts `str | VisaConfig`.** `VisaConfig` is the canonical customization vehicle for `VisaDriver`. Don't propose dropping the union. Drivers on other transports take whatever their transport needs.
+- **No vendor-string factory in the direct Python construction API** (`Instrument.create(vendor="bk", ...)`). Construct concrete drivers explicitly and pass them in: `InstroPSU(name="x", driver=BK9115(...), num_channels=1)`. This doesn't extend to JSON/dict config loading (`InstroPSU(config=...)`): resolving a validated `driver.name` string to a class via `PSU_VENDOR_REGISTRY` is an implementation detail of that declarative config format's strict schema, not a public factory method — direct construction stays mandatory and unaffected.
+- **No driver-side facade or back-channel.** Drivers don't hold a reference back to the category HAL. Any vendor-specific state a driver needs across calls (e.g. an `nidaqmx.Task` handle, a `VisaDriver`, a cached sample rate) lives on the driver itself.
+- **Every concrete transport calls `super().__init__()` first.** `VisaDriver` and `ModbusTransport` (`ModbusTCPTransport`/`ModbusRTUTransport`) inherit `TransportBase` (`instro/lib/transports/transport_base.py`), the base every transport implements: `_open_session`, `_teardown_session`, and `is_open` are required, and the base itself owns the holder list, the reentrant lock, and the shared `open`/`close`/`__del__` lifecycle. A subclass `__init__` that skips `super().__init__()` leaves the holder list and lock uninitialized.
+- **A device serving more than one category is one class that owns the connection and vends one driver per category.** The device constructs its own transport from `str | VisaConfig`; connections are never injected by callers. It exposes each category's driver as a property: a bidirectional supply's device class offers `.source` (a `PSUDriverBase`) and `.sink` (an `ELoadDriverBase`). The device lives in the category that best describes the hardware, so a bidirectional supply belongs under `instro/psu/drivers/`, and it reaches the other category's view through a deferred import, which keeps the package dependency one-way; each view still registers in its own category's `drivers/__init__.py`. Its tests live with it, all under `tests/<primary-category>/<vendor>/`, for the same reason the modules do: one device, one place to look. Don't model this with multiple inheritance: colliding methods need two bodies (`get_current` is source-positive for PSU, sink-positive for ELoad), and Python gives a class one body per name.
+- **The device holds the transport; the device tracks its own views.** Ownership is two-level. `transport.open(device)` returns True only for the first owner, so a transport shared by several devices opens once; the device separately counts its views and runs its own one-time device setup when the first arrives. On the way out the device does its device-level teardown (releasing a remote lock, say) in its own release path while the session is still up, then calls `transport.close(device)`, which tears the connection down only when the last device leaves. There is no teardown callback on the transport: the driver that needs the instrument talked to before the connection goes is the driver that owns that step. An unrecognized holder closing while others still own the connection raises `UnknownHolderError`, since ignoring it would strand them and leave the connection open forever; once the last owner has left a repeat close is a no-op, so close stays idempotent. A single-category driver owns its transport outright and uses bare `open()`/`close()`, which skip the accounting.
+- **A device whose one-time setup raises after taking the transport must undo both before propagating.** Drop the view it just admitted, run its device-level teardown best-effort, and `close(self)` the transport. A device left holding the transport after a failed open reports not-first-owner on retry and skips the setup it needs to redo.
+- **Direction, not value type, picks `Command` vs. `Measurement`.** Data written to an instrument is a `Command`, whatever its value type (`float | str`), and always gets a `.cmd` channel. Data read from an instrument is a `Measurement`, whatever its value type (`channel_data: dict[str, list[float] | list[str]]`), and never gets a `.cmd` channel — a categorical read (a mode name, a status string) is a string-valued `Measurement`, not a `Command`. A given channel's values are always one type or the other, never mixed, though nothing currently enforces this at runtime; it's a documented convention, not a runtime guard. There is still no `_execute_query` or executor of any kind on `Instrument` shared *across* categories for categorical reads (see [instro#440](https://github.com/nominal-io/instro/issues/440)): `InstroScope`'s four categorical getters and `EspecGL`'s two keep their own inline lock/error-check/caching body, because neither category has a shared per-category helper to begin with. `InstroPSU`'s `get_operating_mode` and `InstroAWG`'s six categorical getters do delegate to their own category's already-existing, category-local `_execute_measurement` (the same helper their sibling numeric getters already used, made Enum-aware so it unwraps `.value` before packaging) — that's the established single-category pattern, not the rejected cross-category one.
+
+## DAQ driver state tracking
+
+`DAQDriverBase` is the single source of truth for configured channels and AI/AO/DI/DO timing config, held in **private** dicts/slots (`_ai_channels`, `_ao_channels`, `_di_channels`, `_do_channels`, `_relay_channels`, the four `_*_hw_timing_config` slots). The only sanctioned way to change this state is the `configure_*` / `define_*` path, which programs the device and *then* records the channel. State is exposed for introspection through read-only `@property` accessors that return **frozen snapshots** captured at call time (`types.MappingProxyType` over a shallow copy for the dicts; a `tuple` for the aggregate `channels`) — not live views. `InstroDAQ` does not hold its own copies: `daq.ai_channels`, `daq.relay_channels`, `daq.ai_hw_timing_config`, the aggregate `daq.channels`, and friends delegate straight to the driver's read-only accessors. The channel/timing dataclasses (`AnalogChannel`, `DigitalChannel`, `RelayChannel`, `HWTimingConfig`, …) are `frozen=True`, so a snapshot a user holds can't be mutated and won't change when later `configure_*` calls run.
+
+Driver authoring rules:
+
+1. **Call `super().__init__()`** at the top of every concrete driver's `__init__`. The base initializes `_ai_channels`, `_ao_channels`, `_di_channels`, `_do_channels`, `_relay_channels`, all four `_*_hw_timing_config` slots, and `points_in_buffer`. Don't reinitialize them in the subclass, and don't add public mutable copies.
+2. **Populate the private dicts inside `configure_*`.** Every implementation of `configure_ai_voltage_channel`, `configure_ao_voltage_channel`, `configure_di_line_channel`, `configure_do_line_channel`, `configure_di_port_channel`, `configure_do_port_channel` ends with `self._<dict>[channel.alias] = channel` after programming the device. `configure_ai_hw_timing` ends with `self._ai_hw_timing_config = hw_timing_config`. The default `DAQDriverBase.define_relay_channel` already records on `self._relay_channels`; overrides must too.
+3. **Read driver-owned state via the private `self._<dict>`.** Inside `read_analog`, `fetch_analog`, `start`, `write_analog_value`, etc., use `self._ai_channels`, `self._ai_hw_timing_config`, and so on — never the read-only `@property`, which allocates a fresh snapshot per access. End users (and `InstroDAQ`) see the same state through the read-only accessors.
+4. **No `InstroDAQ` reach-back.** Driver modules must not import `InstroDAQ`. There is no back-channel.
+
+See `instro/daq/drivers/keysight_34980a.py` for the reference shape. Tests for `InstroDAQ` use the `_make_mock_driver()` helper in `tests/daq/test_daq_drivers.py`: it returns a minimal concrete `DAQDriverBase` subclass whose `configure_*` record real frozen channels on the private dicts (so the read-only snapshot path behaves like a real driver) and whose action methods are `Mock`s for call assertions.
+
+## Codebase landmarks
+
+| Need | File |
+|---|---|
+| Driver shape | `instro/psu/drivers/bk_9115.py` |
+| Category HAL | `instro/psu/psu.py` |
+| Transport driver | `instro/lib/transports/visa.py` |
+| Test pattern (mocked transport) | `tests/psu/bk/test_bk_9115_software.py` |
+| Public API usage | `examples/<category>/`: runnable scripts showing what a user's code looks like |
+| Workspace vendor package | `packages/instro-daq-ni/` |
+| Community-driver layout | `packages/instro-contrib/instro/contrib/` |
+
+## Repo skills and subagents
+
+This repo ships reusable AI tooling, maintained in parallel for **Claude Code** and **OpenAI Codex CLI**. The two formats are kept in sync: edit both when you change one.
+
+| Tool | Skill (procedure) | Subagent (delegated worker) |
+|---|---|---|
+| Claude Code | `.claude/skills/<name>/SKILL.md` | `.claude/agents/<name>.md` (markdown + YAML frontmatter; `tools:` allowlist) |
+| Codex CLI | `.agents/skills/<name>/SKILL.md` | `.codex/agents/<name>.toml` (TOML; `developer_instructions`, `sandbox_mode`) |
+
+`SKILL.md` is the same format for both (YAML frontmatter `name` + `description`, markdown body) — only the directory differs. Subagents differ by format: Claude uses markdown with a `tools:` allowlist; Codex uses TOML and gates capability via `sandbox_mode` (`read-only` for read/fetch-only workers).
+
+**Skill = the procedure that runs inline; subagent = an isolated worker invoked for noisy/heavy subtasks.** A skill may delegate to a subagent.
+
+Available now:
+
+| Name | Kind | What it does |
+|---|---|---|
+| `add-instrument-driver` | skill | Scaffold a new vendor driver from a programming manual/API, wired in per this file's conventions (driver module, registration, mocked tests, doc updates). On completion, offers to hand off to `validate-driver-hardware`. |
+| `manual-spec-extractor` | subagent | Read-only worker that extracts a structured, wire-level command spec (per-method SCPI commands, error-query semantics, channel model) from a manual/PDF/URL so the heavy document tokens stay out of the main conversation. `add-instrument-driver` Step 1 delegates to it. |
+| `validate-driver-hardware` | skill | Write a standalone, self-contained (no publishers) hardware-validation script that exercises every method an authored driver implements, run it against the connected device, and iterate on the driver to fix real bugs the hardware surfaces. Lands a `@pytest.mark.hardware` test under `tests/<category>/<vendor>/`. |
+| `hardware-test-runner` | subagent | Run/read-only worker that executes the validation script against the instrument and returns a structured triage (per-step pass/fail, trimmed errors, driver-bug vs script-config vs hardware-wiring hypotheses) so noisy transport I/O stays out of the main conversation. `validate-driver-hardware` Step 4 delegates to it. |
+
+When you add or change a skill/subagent, update **both** toolchains' copies and this table. New skills/subagents are a "Contributor workflow, repo convention, or tooling change" in the [Documentation](#documentation) table.
+
+## Per-directory agent docs
+
+Some subdirectories have their own `AGENTS.md` with narrower instructions (e.g. `docs/AGENTS.md` for the docs site). When working inside one of those directories, that file's guidance takes precedence over this one.

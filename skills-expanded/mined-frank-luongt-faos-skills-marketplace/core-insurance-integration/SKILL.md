@@ -2,10 +2,9 @@
 ---
 name: core-insurance-integration
 description: Core insurance system integration patterns for AI agents connecting to Guidewire InsuranceSuite and Duck Creek Technologies. Use when building agents that interact with policy admin, claims, billing, or underwriting APIs.
-tags: [insurance, guidewire, duck-creek, policy, claims]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # Core Insurance System Integration
 

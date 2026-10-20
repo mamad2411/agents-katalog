@@ -1,0 +1,39 @@
+# Agent Instructions: GEO-INFER-API/src/geo_infer_api/endpoints
+
+## Scope
+
+- Owning module: `GEO-INFER-API`
+- Python package: `geo_infer_api`
+- Directory role: Endpoints workspace within `GEO-INFER-API`.
+
+## Capabilities
+
+- Maintains the tracked files and subdirectories listed below for this workspace.
+- Validates behavior with the command in the Validation section.
+- Integrates through `geo_infer_api` and the owning module's public contracts.
+
+## Working Rules
+
+- Keep changes scoped to this directory unless an import, test, or documented command requires a coordinated edit.
+- Prefer existing module patterns and public exports over new orchestration layers.
+- Do not add planned, fake, mock, stub, or placeholder behavior to user-facing docs.
+- If external services are involved, keep deterministic local validation available.
+
+## Local Contents
+
+- `__init__.py`
+- `algorithms_router.py`
+- `geojson_router.py`
+- `health_router.py`
+
+## Validation
+
+```bash
+uv run python GEO-INFER-TEST/run_unified_tests.py --module API
+```
+
+
+## Integration Notes
+
+- Update this AGENTS.md and the sibling README.md when commands, exports, dependencies, or generated outputs change.
+- Keep cross-module references anchored to real package imports and tracked files.

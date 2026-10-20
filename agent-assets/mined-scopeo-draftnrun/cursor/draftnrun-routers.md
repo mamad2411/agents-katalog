@@ -1,0 +1,56 @@
+---
+globs:
+  - ada_backend/routers/**
+---
+
+## Router Conventions
+
+- Every router uses `APIRouter(prefix=..., tags=[...])` and is registered in `main.py`.
+- Endpoints MUST use auth dependencies from `auth_router.py` — never manual token validation.
+- Input validation: manual checks, raise `HTTPException` with descriptive `detail`.
+- Pagination: use `page` (1-based) and `page_size` query params where applicable.
+- Domain/service errors should be raised as `ServiceError` subclasses in the service layer and handled globally in `main.py`.
+- Secrets/credentials: never return in API responses.
+- When adding a new router: register in `main.py`, add to `ada_backend/docs/api-reference.md`, update cursor rules if new patterns emerge.
+- Graph save APIs now have versioned routes; keep legacy and `/v2/...` behavior isolated with dedicated schemas to avoid breaking clients.
+- V2 graph endpoints: granular endpoints (`POST/PUT/DELETE .../components`, `PUT .../map`) for front/MCP. Git sync calls the same service functions internally (no HTTP endpoint). Both paths use the same building blocks (`create_or_update_component_instance`, `upsert_component_node`, `upsert_edge`, etc.).
+- Provider webhook endpoints that use raw-body signatures must verify the signature before parsing JSON.
+- Provider webhook signature, configuration, not-found, and queueing failures are `ServiceError` subclasses; let the global handler translate them instead of remapping them in the router.
+
+## WebSocket Router Pattern
+
+WebSocket endpoints (`run_stream_router.py`, `graph_display_stream_router.py`, `qa_stream_router.py`) follow a shared pattern:
+
+- Auth via `get_bearer_token_from_websocket()` from `ada_backend/utils/websocket_auth.py` (JWT from `Authorization` header or `?token=` query param). Browser WebSocket APIs don't support custom headers, so the frontend passes the JWT as a query parameter.
+- Redis Pub/Sub subscriber runs in a background `threading.Thread`; messages are bridged to an `asyncio.Queue` via `loop.call_soon_threadsafe()`.
+- Ping keepalive: send `{"type": "ping"}` every 25 seconds of inactivity.
+- Close codes: `4401` (unauthorized), `4403` (forbidden), `4404` (not found), `4510` (Redis unavailable).
+- Cleanup: `stop_event.set()` + `thread.join(timeout=2.0)` in the `finally` block.
+
+## Error Handling Pattern
+
+Routers should stay thin and avoid repetitive `try/except` blocks for domain errors.
+
+- Do not catch and re-map `ServiceError` subclasses in routers. Let `@app.exception_handler(ServiceError)` translate them to HTTP responses.
+- Do not add router-level `except Exception` boilerplate to return `"Internal server error"`. The global unhandled exception handler is responsible for that path.
+- Keep router-level exception handling only when transport-specific behavior is needed (for example, dynamic provider status from `LLMProviderError`/`NangoClientError`, or temporary `ValueError` fallback until migrated to typed `ServiceError`).
+- If a router still raises `HTTPException` directly, use a caller-facing message and never leak tracebacks/SQL details.
+- For expected client mistakes in router-level fallbacks, log with `LOGGER.warning(...)`; reserve `LOGGER.error(..., exc_info=True)` for infrastructure failures.
+
+```python
+# BAD: service exceptions are re-wrapped in router
+try:
+    return get_project_service(session, project_id)
+except ProjectNotFound as e:
+    raise HTTPException(status_code=404, detail=str(e)) from e
+
+# GOOD: service exception propagates to global ServiceError handler
+return get_project_service(session, project_id)
+
+# GOOD: temporary fallback for non-typed validation errors
+try:
+    return retry_run(...)
+except ValueError as e:
+    LOGGER.warning("Invalid retry request for run %s: %s", run_id, e)
+    raise HTTPException(status_code=400, detail="Invalid retry request") from e
+```

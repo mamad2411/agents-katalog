@@ -1,0 +1,25 @@
+After you finish work, commit with a conventional message. Only commit the files you edited.
+
+Always run checks before committing:
+```sh
+uv run ruff format --check src/ tests/
+uv run ruff check src/ tests/
+uv run pytest
+```
+
+If you fix anything from the checks, rerun and confirm they pass before committing.
+
+When using gh to edit or create PR descriptions, prefer `--body-file` to preserve newlines.
+Always include a "Manual testing" checklist section in PRs.
+
+## Project conventions
+
+- Python 3.12+, anyio for async, msgspec for JSONL parsing, structlog for logging
+- Engines: Claude Code, Codex, OpenCode, Pi (Gemini CLI and Amp: deprecated and no longer supported — still included, may be removed in a future release; Antigravity CLI ships in v0.36.1)
+- Australian English in user-facing text (realise, colour, behaviour, licence)
+- Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+- 80% test coverage threshold enforced
+- Runner 3-event contract: StartedEvent -> ActionEvent(s) -> CompletedEvent; Claude live sessions (#776) may add TurnEvent segments after it, never a second CompletedEvent
+- All Telegram writes go through TelegramOutbox (never call Bot API directly)
+- Use EventFactory for event construction, never construct dataclasses directly
+- Key commands: `/cancel`, `/agent`, `/model`, `/planmode`, `/usage`, `/stats`, `/auth`, `/export`, `/browse`, `/config`, `/steer`, `/queue`, `/verbose`, `/restart`

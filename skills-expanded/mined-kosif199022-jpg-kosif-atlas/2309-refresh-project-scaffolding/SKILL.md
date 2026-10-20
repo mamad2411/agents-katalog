@@ -1,0 +1,570 @@
+---
+name: refresh-project-scaffolding
+description: >-
+  Update a repository's existing scaffolding, CI, and linters to current
+  templates. Use for "refresh project scaffolding" or "audit my repo".
+---
+
+# Refresh Project Scaffolding
+
+Refresh the current repository's existing scaffolding against the latest templates and best practices from the agent-harness-plugins ecosystem. Detect which tools have been used, compare existing files against current standards, present a plan of what's out of date, confirm with the user, and apply targeted updates.
+
+This is the maintenance companion to `bootstrap-project`: bootstrap sets things up, this keeps them current.
+
+**Scope**: This skill audits tools already in use and updates their files to match current templates. For tools that are partially configured, it can restore missing expected files. It does not set up tools that were never used; for initial setup, use the bootstrap-project skill or the individual tool. The one exception is a missing Dependabot config, which step 2 explains.
+
+## Skill dependencies
+
+- **Required:** None
+- **Optional:** `add-community-files`, `add-goreleaser-homebrew`, `add-scrut-cli-tests`, `clean-up-agent-config`, `optimize-runner-usage`, `pin-everything`, `review-dependabot-config`, `scaffold-go-cli`, `scaffold-go-library`, `scaffold-new-repo`, `set-up-ci`, `set-up-installers`, `set-up-linters`, `set-up-review-config`, `set-up-secret-scanning`
+
+## Workflow
+
+### 1. Detect Project Type
+
+Scan for language and framework markers using Glob. Exclude `node_modules/`, `.yarn/`, `vendor/`, and other dependency directories from all searches.
+
+| Marker(s)                                        | Project type          |
+| ------------------------------------------------ | --------------------- |
+| `go.mod` + (`main.go` or `cmd/`)                 | Go CLI                |
+| `go.mod` without `main.go` or `cmd/`             | Go library            |
+| `package.json` + JS/TS source files              | JavaScript/TypeScript |
+| `pyproject.toml`, `setup.py`, `requirements.txt` | Python                |
+| `Cargo.toml`                                     | Rust                  |
+| `Gemfile`, `*.gemspec`                           | Ruby                  |
+| `Package.swift`                                  | Swift                 |
+| `*.sh`, `bin/*`, `scripts/*`                     | Shell                 |
+
+If multiple types are detected (monorepo), note all of them.
+
+### 2. Detect Which Tools Have Been Used
+
+For each tool in the ecosystem, check for its signature artifacts. Only tools whose artifacts are found will be audited.
+
+| Tool                      | Signature artifacts                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `scaffold-new-repo`       | `LICENSE` + `README.md` + `.gitignore`                                                                            |
+| `scaffold-go-cli`         | `go.mod` + `cmd/` + `.goreleaser.yml` + `.github/workflows/release.yml`                                           |
+| `scaffold-go-library`     | `go.mod` (no `cmd/`) + `.golangci.yml` + `.github/workflows/ci.yml`                                               |
+| `set-up-ci`               | `.github/workflows/ci.yml`                                                                                        |
+| `set-up-linters`          | `.editorconfig` or `.prettierrc.json` or `.golangci.yml`                                                          |
+| `set-up-secret-scanning`  | `.github/workflows/gitleaks.yml` or `.github/workflows/trufflehog.yml`                                            |
+| `add-goreleaser-homebrew` | `.goreleaser.yml` with `brews:` section + `.github/workflows/release.yml`                                         |
+| `add-community-files`     | `CONTRIBUTING.md` + `CODE_OF_CONDUCT.md`                                                                          |
+| `add-scrut-cli-tests`     | `tests/scrut/` directory                                                                                          |
+| `set-up-installers`       | `Formula/`                                                                                                        |
+| `optimize-runner-usage`   | `concurrency:` key in any `.github/workflows/*.yml`                                                               |
+| `clean-up-agent-config`   | `AGENTS.md` or (`CLAUDE.md` + `.claude/settings.json`)                                                            |
+| `pin-everything`          | `.github/dependabot.yml` or `.github/dependabot.yaml`                                                             |
+| `set-up-review-config`    | A `<!-- BEGIN set-up-review-config -->` line in `.github/skills/code-review/SKILL.md`, `AGENTS.md` or `REVIEW.md` |
+
+For each detected tool, record which artifacts were found and which expected artifacts are missing (for "Partially set up" status).
+
+**A missing Dependabot config is actionable even though no artifact detected the tool.** The workflows the scaffolding skills write pin every action to a commit SHA, and those pins stay current only while Dependabot proposes updates. So when the repository has any `.github/workflows/*.yml` or `*.yaml` file, a composite `action.yml` or `action.yaml` with an external `uses:` step, or a dependency manifest of any ecosystem Dependabot supports (the coverage table in [Reference: Dependabot Config Checks](#reference-dependabot-config-checks-pin-everything) lists the common ones), and has no Dependabot config, report `pin-everything` as `Needs update` with the issue "no Dependabot config (`.github/dependabot.yml` or `.yaml`)" rather than `Not detected`.
+
+### 3. Compare Against Latest Templates
+
+For each detected tool, run through its checklist from the Reference sections at the bottom of this file. Read the target repo's files and check for the specified patterns.
+
+For each failed check, record:
+
+- The file path
+- What's wrong (concise description)
+- The recommended fix
+
+Use Grep and Read to check file contents. Check action versions against the **Reference: Action Versions** table.
+
+For `set-up-review-config`, the reference section covers the structure of the installed config. Whether its checklists match the current style guides, and whether the repository has gained a file type since, is what its dry run reports, so its detection rules stay in one plugin: invoke the `set-up-review-config` skill with `--dry-run` and record any guide it would create, update or remove.
+
+### 4. Build and Present the Update Plan
+
+Present a table with all detected tools and their status:
+
+```text
+| # | Tool                    | Status         | Issues Found                                   | Action          |
+|---|-------------------------|----------------|-------------------------------------------------|-----------------|
+| 1 | set-up-ci               | Needs update   | actions/checkout@v4 (target: v6), no timeout    | Update workflow |
+| 2 | set-up-linters          | Up to date     |                                                 | None            |
+| 3 | set-up-secret-scanning  | Partially set  | TruffleHog workflow missing                     | Add workflow    |
+| 4 | add-community-files     | Needs update   | CoC is v2.1 (current: v3.0)                     | Update CoC      |
+| 5 | clean-up-agent-config   | Needs update   | CLAUDE.md is regular file, not symlink           | Convert to symlink |
+| 6 | optimize-runner-usage   | Up to date     |                                                 | None            |
+| 7 | scaffold-new-repo       | Needs update   | .gitignore missing .claude/settings.local.json   | Update file     |
+| 8 | add-goreleaser-homebrew | Up to date     |                                                 | None            |
+```
+
+Status values:
+
+| Status           | Meaning                                                             |
+| ---------------- | ------------------------------------------------------------------- |
+| Up to date       | All checks pass; nothing to do                                      |
+| Needs update     | Files exist but fail some checks                                    |
+| Partially set up | Some expected files from a detected tool are missing entirely       |
+| Not detected     | Tool was never used (run bootstrap-project or the individual skill) |
+| Not applicable   | Tool does not apply to this project type                            |
+
+Items with status "Not detected" and "Not applicable" are informational only and are not actionable in this command. The one exception is a missing Dependabot config, which step 2 reports as "Needs update" even though no file exists.
+
+### 5. User Confirmation
+
+Ask the user which items to update. Only items with status "Needs update" or "Partially set up" are actionable. Present them as a numbered list and let the user:
+
+- Confirm all actionable items
+- Select specific items by number
+- Skip specific items
+
+If no items need updating (everything is up to date), congratulate the user and stop.
+
+### 6. Execute Updates
+
+For each confirmed update item, choose a strategy based on scope:
+
+| Scenario                                                                                                        | Strategy                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Action version outdated                                                                                         | **Targeted**: find and replace the version string in the workflow file                                   |
+| Missing config entry (e.g., .gitignore line)                                                                    | **Targeted**: add the missing entry to the appropriate section                                           |
+| Missing workflow key (e.g., `timeout-minutes`)                                                                  | **Targeted**: add the key to each job in the workflow file                                               |
+| Missing `concurrency:` group                                                                                    | **Targeted**: add the concurrency block below the `on:` trigger block                                    |
+| Missing `permissions:` block                                                                                    | **Targeted**: add the permissions block at the workflow level                                            |
+| CLAUDE.md is regular file, not symlink                                                                          | **Full re-run**: invoke the `clean-up-agent-config` skill to reconcile CLAUDE.md and AGENTS.md           |
+| Community file outdated (e.g., CoC version)                                                                     | **Full re-run**: invoke the `add-community-files` skill                                                  |
+| Missing file from a detected tool                                                                               | **Full re-run**: invoke the original skill                                                               |
+| No Dependabot config                                                                                            | **Full re-run**: invoke the `pin-everything` skill with `--scope dependabot`                             |
+| Dependabot config fails a check (a missing ecosystem or directory, no `version: 2`, or both file names present) | **Delegate**: invoke the `review-dependabot-config` skill, which merges the fix into the existing config |
+| Review config drift (a changed checklist, a new file type, a missing managed file, or an unpinned link)         | **Full re-run**: invoke the `set-up-review-config` skill, which replaces only its managed content        |
+
+For full tool re-runs, all detected tools are skills. Invoke those skills. If one is not installed, record that update as "skipped: not installed" with the skill's installation command, report it apart from the applied updates, and continue with the rest. Relevant skills include `add-community-files`, `set-up-linters`, `set-up-ci`, `set-up-secret-scanning`, `add-goreleaser-homebrew`, `set-up-installers`, `add-scrut-cli-tests`, `set-up-review-config`, `scaffold-new-repo`, `pin-everything`, and `optimize-runner-usage`. Dependabot coverage gaps go to `review-dependabot-config` instead of a `pin-everything` re-run, because that skill reviews the existing config and merges into it rather than regenerating it.
+
+Process updates in this order (matching the bootstrap-project execution order):
+
+1. `scaffold-new-repo` (foundation files)
+1. `scaffold-go-cli` / `scaffold-go-library` (language scaffold)
+1. `set-up-ci` (CI workflow)
+1. `set-up-linters` (linter configs)
+1. `set-up-secret-scanning` (secret scanning)
+1. `add-goreleaser-homebrew` (release config)
+1. `add-community-files` (community files)
+1. `set-up-installers` (distribution)
+1. `add-scrut-cli-tests` (testing)
+1. `set-up-review-config` (review checklists, once the file types and CI checks above are final)
+1. `pin-everything` or `review-dependabot-config` (Dependabot config, once every workflow and manifest above is in place)
+1. `optimize-runner-usage` (CI optimization)
+1. `clean-up-agent-config` (agent config)
+
+After each update, verify the change was applied correctly. If an update fails, report the error and ask whether to continue with remaining items or stop.
+
+### 7. Summary
+
+Print a summary grouped by outcome:
+
+- **Updated**: list each change made, grouped by tool
+- **Skipped**: items the user chose not to update
+- **Already up to date**: tools that passed all checks
+- **Errors**: any issues encountered during updates
+
+Suggest next steps:
+
+- Run `/lint-and-fix` to check formatting of updated files
+- Commit the changes
+- Push and verify CI passes
+
+---
+
+## Reference: Action Versions
+
+The target versions for GitHub Actions that repositories should be updated to. When auditing workflow files, check `uses:` lines against this table. Actions not listed in this table are outside the scope of this audit and should be skipped without flagging.
+
+| Action                          | Target version |
+| ------------------------------- | -------------- |
+| `actions/checkout`              | `v6`           |
+| `actions/download-artifact`     | `v8`           |
+| `actions/setup-go`              | `v6`           |
+| `actions/setup-node`            | `v6`           |
+| `actions/upload-artifact`       | `v7`           |
+| `astral-sh/setup-uv`            | `v8`           |
+| `dtolnay/rust-toolchain`        | `stable`       |
+| `gitleaks/gitleaks-action`      | `v2`           |
+| `golangci/golangci-lint-action` | `v9`           |
+| `goreleaser/goreleaser-action`  | `v7`           |
+| `ludeeus/action-shellcheck`     | `2.0.0`        |
+| `mfinelli/setup-shfmt`          | `v4`           |
+| `oven-sh/setup-bun`             | `v2`           |
+| `ruby/setup-ruby`               | `v1`           |
+| `Swatinem/rust-cache`           | `v2`           |
+| `trufflesecurity/trufflehog`    | `v3`           |
+
+When auditing, treat SHA-pinned references (e.g., `actions/checkout@a5ac7e5...`) as compliant if the pinned commit corresponds to the listed version or newer. Do not downgrade SHA pins to mutable version tags.
+
+<!-- Maintenance: update this table when any command template changes its action versions. -->
+
+## Reference: CI Workflow Checks (set-up-ci)
+
+### Files
+
+- `.github/workflows/ci.yml`
+- `Makefile`
+
+### Checks for ci.yml
+
+- All `uses:` references match the Action Versions table above
+- Has a top-level `permissions:` block (typically `contents: read`)
+- Has a `concurrency:` block with `group: ${{ github.workflow }}-${{ github.ref }}` and `cancel-in-progress: true`
+- Every job has `timeout-minutes:` set (typically 15 for test/lint, 10 for format/vuln)
+- Has `paths-ignore:` on push and pull_request triggers with the standard list (see Reference: Standard paths-ignore)
+- Go projects: uses `go-version-file: go.mod` instead of a pinned Go version
+- Go libraries: has a multi-version test matrix (minimum + stable)
+- JS/TS projects: detects package manager from lockfile and uses the correct install command
+
+### Checks for Makefile
+
+- Has `.PHONY:` declarations
+- Has a `help` target
+- Go CLI targets: build, test, lint, vet, fmt, vuln, clean, cover, tidy
+- Go library targets: all, build, test, lint, vet, fmt, vuln, clean, coverage, tools
+- JS/TS targets: test, lint, fmt (or format)
+- Python targets: test, lint, fmt
+- Rust targets: test, lint, fmt, build, clean
+- Ruby targets: test, lint
+- Shell targets: lint, fmt
+
+## Reference: Secret Scanning Checks (set-up-secret-scanning)
+
+### Files
+
+- `.github/workflows/gitleaks.yml`
+- `.github/workflows/trufflehog.yml`
+- `.gitleaks.toml`
+
+### Checks for gitleaks.yml
+
+- Uses `cboone/gh-actions/.github/workflows/scan-for-secrets.yml` with a refreshed SHA-pinned ref and current version comment
+- Sets `tool: gitleaks`
+- Has `permissions:` block with `contents: read`
+- Has `concurrency:` group with `group: ${{ github.workflow }}-${{ github.ref }}` and `cancel-in-progress: true`
+- Triggers on `push: branches: [main]`
+- Has `pull_request:` trigger
+- Has `workflow_dispatch:` trigger
+- The reusable workflow handles checkout with `fetch-depth: 0` and tool installation internally
+
+### Checks for trufflehog.yml
+
+- Uses `cboone/gh-actions/.github/workflows/scan-for-secrets.yml` with a refreshed SHA-pinned ref and current version comment
+- Sets `tool: trufflehog`
+- Has `permissions:` block with `contents: read`
+- Triggers on `push: branches: [main]`
+- Has `pull_request:` trigger
+- Has `workflow_dispatch:` trigger
+- Has `concurrency:` group with `group: ${{ github.workflow }}-${{ github.ref }}` and `cancel-in-progress: true`
+- The reusable workflow handles checkout with `fetch-depth: 0`, TruffleHog version pinning, and tool execution internally
+
+### Checks for .gitleaks.toml
+
+- Has `[allowlist]` section
+- Includes lockfile patterns relevant to the detected project type (`go.sum` for Go, `package-lock.json` for JS, etc.)
+
+## Reference: Foundation File Checks (scaffold-new-repo)
+
+### Files
+
+- `LICENSE`
+- `README.md`
+- `CHANGELOG.md`
+- `.gitignore`
+- `AGENTS.md`
+- `CLAUDE.md`
+- `.claude/settings.json`
+- `.github/copilot-instructions.md`
+
+### Checks for LICENSE
+
+- Contains "MIT License" text
+- Copyright year includes the current year (or is a range ending in the current year)
+
+### Checks for .gitignore
+
+Must include these universal entries:
+
+```text
+.DS_Store
+.claude/settings.local.json
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+credentials.json
+token.json
+```
+
+Must include language-specific entries appropriate for the detected project type:
+
+- **Go**: `*.exe`, `*.test`, `*.out`, `coverage.*`, `go.work`, `go.work.sum`, `bin/`, `dist/`
+- **JavaScript**: `node_modules/`, `coverage/`, `dist/`, `*.log`
+- **Python**: `__pycache__/`, `*.pyc`, `.venv/`, `dist/`, `build/`
+- **Rust**: `target/`
+- **Ruby**: `*.gem`, `.bundle/`, `vendor/bundle`, `pkg/`
+
+### Checks for agent config
+
+- `CLAUDE.md` is a symlink pointing to `AGENTS.md` (run `readlink CLAUDE.md` to verify)
+- `.claude/settings.json` exists
+- `.github/copilot-instructions.md` exists and references `AGENTS.md`
+- `.claude/settings.local.json` is listed in `.gitignore`
+
+## Reference: Linter Config Checks (set-up-linters)
+
+### Files
+
+- `.editorconfig`
+- `.prettierrc.json`
+- `.prettierignore`
+- `.markdownlint-cli2.jsonc` (or `.markdownlint-cli2.yaml`, `.markdownlint.json`, `.markdownlint.jsonc`, `.markdownlint.yaml`)
+- Language-specific linter configs (`.golangci.yml`, `.shellcheckrc`, etc.)
+
+### Checks for .editorconfig
+
+- Has `root = true` at the top
+- Has base settings: `charset = utf-8`, `end_of_line = lf`, `insert_final_newline = true`, `trim_trailing_whitespace = true`
+- Go projects: has `[*.go]` section with `indent_style = tab`
+- Python/Rust projects: has language section with `indent_size = 4`
+- Has `[Makefile]` section with `indent_style = tab` (if Makefile exists)
+- Has `[*.md]` section with `trim_trailing_whitespace = false`
+- Shell projects: has shfmt properties (`binary_next_line`, `space_redirects`, `switch_case_indent`)
+
+### Checks for .prettierrc.json
+
+- Has `printWidth` set to `10000` (not the default 80)
+- Has `proseWrap` set to `"preserve"`
+- Has `tabWidth` set to `2`
+- JS projects: has `semi: false`, `singleQuote: true`, `trailingComma: "all"`
+
+### Checks for .prettierignore
+
+- Exists (if `.prettierrc.json` exists)
+- Includes `node_modules/` and build output directories
+
+### Checks for markdownlint config
+
+- Config file exists (any supported name)
+- `MD013` is set to `false` (Prettier handles line length)
+- `MD033` is set to `false` (allow inline HTML)
+- `MD034` is set to `false` (allow bare URLs)
+- Ignores list includes `CHANGELOG.md`
+- Scrut projects: `MD014` is set to `false` (allow dollar signs before commands)
+
+## Reference: Community File Checks (add-community-files)
+
+### Files
+
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `.github/SECURITY.md`
+- `.github/PULL_REQUEST_TEMPLATE.md`
+
+### Checks for CODE_OF_CONDUCT.md
+
+- Contains "Contributor Covenant" attribution
+- References version 3.0 (check for `version/3/0` in the URL or "version 3.0" in text)
+- If it references an older version (1.4, 2.0, 2.1), flag as outdated
+- Has 4-tier enforcement ladder (Warning, Temporarily Limited Activities, Temporary Suspension, Permanent Ban)
+
+### Checks for CONTRIBUTING.md
+
+- Has a Development Setup section with build/test/lint commands
+- Commands match the project's actual build system (check against Makefile targets or package.json scripts)
+- Has a Commit Messages section referencing Conventional Commits
+- Has a Pull Request Process section with branch naming conventions
+
+### Checks for .github/SECURITY.md
+
+- Instructs users to use GitHub private vulnerability reporting (not public issues)
+- Has response timeline (24h acknowledgment, 48h assessment)
+
+### Checks for .github/PULL_REQUEST_TEMPLATE.md
+
+- Exists
+- Has a checklist with at least: tests pass, style followed, documentation updated
+
+## Reference: GoReleaser Checks (add-goreleaser-homebrew)
+
+### Files
+
+- `.goreleaser.yml`
+- `.github/workflows/release.yml`
+
+### Checks for release.yml
+
+- Uses `cboone/gh-actions/.github/workflows/release-go-binaries.yml` with a refreshed SHA-pinned ref and current version comment
+- Go CLI releases pass `go-version-file: go.mod`
+- Triggers on `push: tags: ["v*"]`
+- Has `permissions: contents: write`
+- Has `concurrency:` group with `group: ${{ github.repository }}-${{ github.workflow }}` and `cancel-in-progress: false` (never interrupt releases)
+- The reusable workflow handles checkout with `fetch-depth: 0`, Go setup, GoReleaser installation, and release execution internally
+
+### Checks for .goreleaser.yml
+
+- Has `version: 2` (GoReleaser v2 config format)
+- Has `changelog:` section with `use: github` or grouped categories
+
+## Reference: Runner Optimization Checks (optimize-runner-usage)
+
+### Files
+
+- All `.github/workflows/*.yml` files
+
+### Checks for each workflow
+
+- Has `concurrency:` block (pattern depends on workflow type, see below)
+- Every job has `timeout-minutes:` set
+- CI workflows: has `paths-ignore:` on push/pull_request triggers
+
+### Concurrency patterns by workflow type
+
+| Workflow type           | Concurrency group pattern                         | cancel-in-progress |
+| ----------------------- | ------------------------------------------------- | ------------------ |
+| CI                      | `${{ github.workflow }}-${{ github.ref }}`        | `true`             |
+| Release                 | `${{ github.repository }}-${{ github.workflow }}` | `false`            |
+| Secret scanning         | `${{ github.workflow }}-${{ github.ref }}`        | `true`             |
+| Scheduled               | `${{ github.workflow }}-${{ github.ref }}`        | `true`             |
+| Mixed (branches + tags) | `${{ github.workflow }}-${{ github.ref }}`        | `false`            |
+
+### Timeout guidelines
+
+| Job type            | Recommended timeout |
+| ------------------- | ------------------- |
+| Release/publish     | 30 minutes          |
+| Rust builds         | 20 minutes          |
+| Test/lint (general) | 15 minutes          |
+| Format/vuln check   | 10 minutes          |
+
+### Do NOT apply paths-ignore to
+
+- Release workflows
+- Mixed-trigger workflows (branches + tags)
+- Scheduled workflows
+- Secret scanning workflows
+- Workflows with existing `paths:` positive filters
+- Reusable workflows
+
+## Reference: Dependabot Config Checks (pin-everything)
+
+### Files
+
+- `.github/dependabot.yml` or `.github/dependabot.yaml`
+
+### Checks
+
+- A config exists whenever the repository has `.github/workflows/*.yml` or `*.yaml` files, a manifest from the table below, or a manifest of another ecosystem Dependabot supports, such as `deno.json`, `pom.xml`, `build.gradle`, `*.csproj`, `pubspec.yaml`, `Chart.yaml`, `*.tf`, or `.pre-commit-config.yaml` (the [supported ecosystems page](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories) has the full list). Absent: `Needs update`, fixed by `pin-everything --scope dependabot`, which writes a block for every supported ecosystem the repository uses
+- Only one of the two file names exists
+- `version: 2` is set
+- Every ecosystem in the table below that the repository uses has an `updates` entry, and its manifest directory is covered by `directory` or `directories`. The table covers the common ecosystems only; the `review-dependabot-config` skill checks the full set:
+
+| Found                                                                                     | Expected `package-ecosystem`         |
+| ----------------------------------------------------------------------------------------- | ------------------------------------ |
+| `.github/workflows/*.yml` or `*.yaml`                                                     | `github-actions`                     |
+| `package.json` without `bun.lock` or `bun.lockb`                                          | `npm`                                |
+| `package.json` with `bun.lock`                                                            | `bun`                                |
+| `package.json` with only `bun.lockb`                                                      | none: report migrating to `bun.lock` |
+| `uv.lock`                                                                                 | `uv`                                 |
+| `pyproject.toml`, `setup.py`, or `requirements*.txt` without `uv.lock`                    | `pip`                                |
+| `go.mod` or `go.work`                                                                     | `gomod`                              |
+| `Cargo.toml`                                                                              | `cargo`                              |
+| `rust-toolchain.toml` or `rust-toolchain`                                                 | `rust-toolchain`                     |
+| `Gemfile`                                                                                 | `bundler`                            |
+| `composer.json`                                                                           | `composer`                           |
+| `Dockerfile`                                                                              | `docker`                             |
+| `docker-compose.yml` or `.yaml`, `compose.yml` or `.yaml`                                 | `docker-compose`                     |
+| `action.yml` or `action.yaml` outside `.github/workflows/`, with an external `uses:` step | `github-actions`                     |
+
+- A composite action outside `.github/workflows/` whose `action.yml` references other actions has its directory in the `github-actions` entry
+
+These checks only establish that the config exists and covers what is present. For anything deeper (validity, groups, labels, commit messages, and the repository settings Dependabot depends on), and for the fix itself when coverage is incomplete, invoke the `review-dependabot-config` skill.
+
+## Reference: Agent Config Checks (clean-up-agent-config)
+
+### Files
+
+- `AGENTS.md`
+- `CLAUDE.md`
+- `.claude/settings.json`
+- `.claude/settings.local.json`
+- `.claude/rules/*.md`
+- `.github/copilot-instructions.md`
+- `.github/instructions/**/*.instructions.md`
+
+### Checks
+
+- `AGENTS.md` exists and is the canonical instruction file (not a symlink)
+- `CLAUDE.md` is a symlink pointing to `AGENTS.md` (verify with `readlink`)
+- If `CLAUDE.md` is a regular file and `AGENTS.md` also exists, flag the duplication
+- `.claude/settings.json` exists and contains only team-shared settings (permissions, hooks, env vars for conventions)
+- `.claude/settings.local.json` is gitignored (check `.gitignore` for the entry)
+- `.github/copilot-instructions.md` cross-references `AGENTS.md`
+- `.github/instructions/**/*.instructions.md` files have `applyTo:` frontmatter
+
+## Reference: Review Config Checks (set-up-review-config)
+
+### Files
+
+- `.github/skills/code-review/SKILL.md`
+- `.github/skills/code-review/*.md`
+- `AGENTS.md`
+- `REVIEW.md`
+
+### Checks
+
+- `.github/skills/code-review/SKILL.md` and `REVIEW.md` each have exactly one `<!-- BEGIN set-up-review-config -->` line followed by one `<!-- END set-up-review-config -->` line
+- `.github/skills/code-review/SKILL.md` frontmatter has `name: code-review` and a non-empty `description`
+- Every checklist the entry skill routes to exists and starts with a `<!-- Managed by set-up-review-config` line, and every file with that line is routed
+- No installed checklist records `unpinned` in its first line
+- When `AGENTS.md` exists, it has one managed block under a `## Code Review Rules` heading, and only one such heading. A repository without `AGENTS.md` passes: the user declined creating one, and `set-up-review-config` reports Codex as unconfigured there
+- `set-up-review-config --dry-run` reports no guide to create, update or remove
+
+## Reference: Scrut Test Checks (add-scrut-cli-tests)
+
+### Files
+
+- `tests/scrut/` directory
+- `Makefile` (for scrut targets)
+- `.github/workflows/ci.yml` (for scrut CI job)
+
+### Checks
+
+- `tests/scrut/` directory exists and contains `.md` test files
+- `Makefile` has `test-scrut` and `test-scrut-update` targets
+- `Makefile` has `test-all` target that depends on both `test` and `test-scrut`
+- CI workflow has a job or step that installs and runs scrut
+- If markdownlint config exists: `MD014` is set to `false`
+
+## Reference: Installer Checks (set-up-installers)
+
+### Files
+
+- `Formula/*.rb`
+
+### Checks for Formula/\*.rb
+
+- Has `desc` field
+- Has `homepage` field
+- Has platform-specific blocks (`on_macos`/`on_linux` or `depends_on :macos`)
+
+## Reference: Standard paths-ignore
+
+The standard `paths-ignore` list for CI workflow push and pull_request triggers:
+
+```yaml
+paths-ignore:
+  - "*.md"
+  - "docs/**"
+  - "LICENSE"
+  - ".editorconfig"
+  - ".claude/**"
+  - "**/CLAUDE.md"
+  - "**/AGENTS.md"
+```
+
+Note: `tests/scrut/*.md` files are source code and should NOT be ignored. If the project uses scrut tests, verify that the paths-ignore pattern does not exclude nested `.md` files (the `"*.md"` pattern only matches root-level files).
+
+<!-- Maintenance: when any plugin template changes, update the corresponding Reference section above. -->

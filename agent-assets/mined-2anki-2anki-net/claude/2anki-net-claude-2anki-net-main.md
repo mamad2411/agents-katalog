@@ -1,0 +1,197 @@
+# CLAUDE.md
+
+Express/TypeScript server that converts Notion pages and uploaded files (HTML, markdown, xlsx, zip) into Anki `.apkg` decks. Frontend is the sibling workspace under `web/`.
+
+**Standing authorization, do not ask.** When asked to work, name the branch `<type>/<short-slug>`, commit, push it, and open a ready PR with `gh pr create` (not `--draft`), then run **`/ship <n>`** (review agent, gate, merge, deploy watch, prod verify). This overrides the Bash tool's default "commit or push only when the user asks." Reserve `--draft` for work that genuinely isn't reviewable yet: a `/spec-draft-pr` spec awaiting `/implement`, or a draft reason from `/ship` step 1 or step 4 (a value only Alexander holds, new spend awaiting his approval, a rail-path assumption, a run failure the branch cannot fix).
+
+## Repos — route work to the right one
+
+This checkout (`2anki/server`) is the backend + web app. The **native iOS app is a separate repo**: `Laer-Smart/2anki.app` (Swift/Xcode project at `/Users/a/src/github.com/Laer-Smart/2anki`, with its own `.claude/agents/` trio and an `AppStore/` metadata dir). Match the checkout to the surface:
+
+- **Native app / ASO / App Store listing / store metadata / StoreKit / Swift** → `2anki.app` repo and **its** agents (they have the app, the current listing, the screenshots, the feature set in front of them). Do NOT draft ASO or store copy from this server checkout — it's context-poor and the metadata PR lands over there.
+- **Backend, web app, conversion pipeline, Notion/Stripe/Claude integrations, funnel instrumentation** → here in `2anki/server`.
+- **Legacy sibling `2anki/csv-to-apkg`** (npm lib, local checkout at `../csv-to-apkg`): the server no longer uses it — CSV parses in-repo (`src/lib/parser/experimental/FallbackParser.ts`, `src/lib/csv/`) and apkg generation uses the vendored `create_deck/`. The standalone lib still reads this repo's `src/templates/` at runtime when used on its own.
+
+A strategy issue may be *filed* in `2anki/server` for tracking (e.g. #3582 ASO, #3688 native) while the *work* executes in `2anki.app` — create/mirror the actionable issue in `2anki.app` and cross-link (`2anki/server#NNNN`). Open app issues with `gh issue create --repo Laer-Smart/2anki.app`.
+
+## Goal
+
+Be the go-to place on the web to create beautiful Anki flashcards, fast and easy. Drop something in, get a clean deck back.
+That is the whole goal — no user-count target, no revenue target, no weekly allocation quota (all retired 2026-09-11).
+Every PR is checked against it: does this make creating flashcards on 2anki.net simpler, faster, or more beautiful? If it does none of the three, the PR body says why it still earns its place.
+
+## Memory & sensitive data
+
+- **Do not use the file-based memory system in this project.** The harness memory under `~/.claude/projects/.../memory/` is retired here. Persist durable facts in `CLAUDE.md`, `.claude/rules/*`, or the relevant `FEATURE.md` — anything worth remembering lives in the repo, versioned and reviewable, not in per-machine local memory. Do not write new memory files; if you find yourself wanting to, add a repo doc instead.
+- **Never store sensitive or live data.** Business metrics (MRR, ARPU, churn, sub counts), pricing, Stripe/prod settings, individual subscriber or reporter identifiers — retrieve these from production when needed (prod psql, Stripe dashboard/MCP, `/api/ops/*`, `/deploy-status`), never commit them to the repo or a local file. They go stale and they leak.
+
+## Design Context
+- **Register**: product
+- **Surface(s)**: `/ankify` (sync control panel) — first adopter of the locked DNA; widen as other surfaces follow
+- **Purpose**: let paid power users see at a glance that their Notion→Anki sync is healthy and manage where decks land
+- **Audience**: lifetime / Auto-Sync subscribers — serious med/law learners running a live 5-min sync
+- **Personality**: precise, trustworthy, technical
+- **DNA**: Swiss Panel — Swiss/International layout + a monospaced tabular data voice; signature move = the right-hand mono data column. See DESIGN.md.
+- **Color**: reuse `web/src/styles/base.css` tokens (5 themes), one blue accent + the status triad — no new ramp
+- **Constraints**: React, WCAG AA, the 5-theme token system, product restraint (one signature move exempt)
+
+## Entry points
+
+- Each layer under `src/` (routes → controllers → usecases → services → data_layer) has its own CLAUDE.md — read it before editing.
+- Hot path docs — read the matching one before touching that surface: `src/lib/parser/FEATURE.md`, `src/services/NotionService/FEATURE.md`, `src/services/observability/FEATURE.md`, `src/lib/ankify/FEATURE.md`
+- Copy and voice guide: `VOICE.md` — read before writing or changing any user-facing string
+- MCP server setup: `.claude/MCP_README.md`
+- Deeper context: `Documentation/`, `ROADMAP.md`.
+
+## Run it
+
+- Install: `pnpm install` (never `npm`/`yarn`).
+- **Fresh worktree? Run `scripts/worktree-setup.sh` (or `pnpm install && pnpm --filter 2anki-web install`) as the FIRST action — before any test/lint/format/commit.** A `git worktree add` / `EnterWorktree` checkout has NO `node_modules` and NO Oxc native binaries; `pnpm test`/`oxfmt`/`oxlint` all fail with `vitest: command not found` or `Cannot find native binding` until you install. See the worktree-readiness gotcha below; don't burn a dozen calls rediscovering this mid-task.
+- Dev: `pnpm dev` (server + web); server only: `pnpm dev:server`. Start it when you need it, kill it when you are done — a leaked dev server is what `scripts/reap-orphans.sh` exists for.
+- TypeScript scripts: `npx tsx <script>` — never `ts-node`.
+- Tests: `pnpm test <path>` to scope to one file. Filter by test name with `pnpm test <path> -t "name"`. **Do not add `--`**: `pnpm test -- <path> -t "name"` reaches vitest as `vitest run -- <path>`, which drops the path and runs the WHOLE suite. If output is truncated, rerun without coverage.
+- All-green gate: `/check` (parallel server tsc + `arch` + web typecheck + web vitest + web lint). It runs the whole web suite, so before an ordinary push run the smaller local set in `.claude/agents/engineer.md` step 9 and leave `/check` and the full server suite for diffs on the shared parser or exporter list; CI runs both full suites on every push.
+- **Budget for the suites, measured 2026-10-01: server vitest ~60s, server `tsc --noEmit` ~11s, web typecheck ~2s, oxlint ~1s, and the web vitest suite ~146s.** The web suite is over 90% of `/check`'s wall clock and exceeds the Bash tool's 120s default, so run it with a raised timeout or in the background — a default-timeout call bounces and costs a whole round trip for nothing. The cost is per-file environment setup, not assertions: `environment: 'jsdom'` plus `setupTests.ts` eagerly initialising i18n (every locale) runs for all 433 files, including pure-logic ones — `css: true` accounts for only ~4s of it. Trimming that per-file setup is a real saving and its own PR.
+- Migrations: create with `npx knex migrate:make <name> --knexfile ./src/KnexConfig.ts --migrations-directory ../migrations -x js`.
+- **kanel runs IN the migration PR, never after — this is a hard gate.** A migration PR is not ready until kanel (`pnpm kanel`) has regenerated `src/data_layer/public/` against the applied migration and those regenerated files are committed **in the same PR**. Hand-writing a generated type and deferring the kanel run to "later" is not an acceptable shipping state — the hand-written type drifts from the real schema and the deferral lands on Alexander. If a change adds/alters a table or column, the PR diff MUST include the matching `src/data_layer/public/*` regeneration.
+  - **Recipe** (apply the migration first — kanel reads the live schema; env overrides for the stale `.env` `POSTGRES_USER`; git-add only the files your migration changed): see the kanel bullet in `.claude/docs/local-dev.md`.
+  - **In a worktree that can't run kanel** (no local Postgres, no `POSTGRES_*`): do NOT hand-write and defer. Run `pnpm dlx kanel -c ./.kanelrc.js` from the **main checkout** (which has node_modules + the local DB) against the applied migration, then copy the regenerated `public/*` into the worktree branch before flipping the PR ready. Never edit `src/data_layer/public/` by hand.
+- Production deploys via the `deploy.2anki.net.yml` workflow; verify with `/deploy-status` after.
+
+## Rules (loaded from .claude/rules/)
+
+Always loaded — hot on most sessions:
+
+@.claude/rules/security.md
+@.claude/rules/testing.md
+@.claude/rules/code-quality.md
+@.claude/rules/dependencies.md
+@.claude/rules/support-confidentiality.md
+
+Load on demand — read these when the task touches the named surface (kept out of standing context to save tokens):
+
+- `.claude/docs/autonomous-shipping.md` — read before merging anything or touching `.claude/hooks/hard_rails.py`: the merge gate, the hard-rail classifier, `/ship`, decisions and manual steps.
+- `.claude/docs/browser-attestation.md` — read before merging any PR that touches `web/src/` (the merge hook enforces the attestation; this file explains both accepted forms).
+- `.claude/docs/first-time-fix.md` — read before touching any user-reported bug, before writing a line of diagnosis.
+- `.claude/docs/changelog.md` — read before adding a changelog entry or opening any `feat:`/`fix:` PR. The non-negotiable core: user-visible changes ship a changelog JSON in the same PR (merge hook enforces).
+- `.claude/docs/support-email.md` — read before drafting or sending any support reply or user-facing email (draft goes to a `.txt` in Downloads, salutation/pronoun rules, no dashes, sending goes through `himalaya` from `support@2anki.net`, never the Gmail MCP).
+- `.claude/docs/email-templates.md` — read before editing any template under `src/services/EmailService/templates/`.
+- `.claude/docs/parallel-pr-coordination.md` — read before kicking off a multi-PR batch (more than two PRs in flight) or running `/spec-draft-pr` more than once in a row.
+- `.claude/docs/local-dev.md` — read when running toolchain/migrations/checks locally on the maintainer's machine, working out of a git worktree, or diagnosing a pre-push/deploy-status oddity.
+- `.claude/docs/i18n.md` — read before adding or changing any user-facing string, adding a language, or fanning out translation work. The web app ships in 10 locales via a glob namespace loader; a string added in one locale but not the other 9 renders stale/wrong.
+- `.claude/docs/prod-ops.md` — read before changing a prod safety limit (heap, timeout, retry cap, pool size), swapping a model on a paid inference path, or diagnosing a failed deploy.
+- `.claude/docs/spec-lifecycle.md` — read before `/spec-draft-pr` or `/implement`.
+
+## Git
+
+- Conventional commit prefixes: `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:`, `perf:`, `ci:`, `build:`, `style:`, `revert:`. Keep the **subject ≤ 72 characters** — a commit-message hook rejects longer subjects; push the detail into the body, which must carry a real **why** (≥40 chars of non-trailer text).
+- **Commit-message mechanics — avoid the hook fighting you.** Use `git commit -m "<type>: subject" -m "<why body>"` (the hook reads *every* `-m`: subject = first, body = the rest), or `git commit -F <file>` where the file was written in a **separate** Bash call. **Never put a `cat <<EOF` heredoc in the same Bash call as `git commit`** — a *failed* commit-msg check reverts the working tree and deletes the untracked file you just wrote (e.g. a changelog). Two calls: (1) write files, (2) `git add <paths> && git commit …`. See `.claude/hooks/check-commit-message.py`.
+- Always rebase on `origin/main` before opening a PR.
+- One PR per feature. Never stack PRs — the deploy pipeline pulls a single branch.
+- Push pattern: `git push -u origin <branch>` — never bare `git push`, never to `main`. The `safety.py` hook blocks both.
+- **Open PRs with `gh pr create --repo 2anki/server --base main --head <branch>`.** Bare `gh pr create` resolves the base to the upstream fork parent and fails with `No commits between Laer-Smart:main and 2anki:<branch>`; the explicit `--repo`/`--base`/`--head` form is the reliable one. (The PR URL prints as `2anki/2anki.net` and pushes warn "This repository moved" — that's the canonical remote; same repo.) Same `--repo 2anki/server` for `gh pr view`/`merge`/`list`. **Exception: `gh issue list` with `--label` or `--search` goes through GitHub's search API, which does NOT follow the rename and silently returns 0 results under `2anki/server` — use `--repo 2anki/2anki.net` for those two flags** (2026-08-27: `/ship`'s digest lookup missed the day's issue and created a duplicate, #4264).
+- **Autonomous shipping. Assume nobody reviews the code.** Agents build, merge and deploy their own PRs on Alexander's command, hard-rail PRs included (auth, payments/Stripe, subscriptions, checkout, webhooks, migrations, deploy pipeline, hooks/settings, prod safety limits — classifier in `.claude/hooks/hard_rails.py`). No human reads the diff before or after, so the agent owns stability and safety: tests that prove the behavior, `/ship`'s rail verification before merge (migration-reviewer, migrate/rollback, `/security-review`, Stripe MCP reads), and a post-deploy read of logs, webhooks and prod state, with a revert on any regression. `/ship` is the only agent path to `gh pr merge`; `check-merge-status.py` denies anything else (missing review marker, red rollup). Never `CLAUDE_SKIP_SAFETY` from an agent. Details: `.claude/docs/autonomous-shipping.md`.
+- **SonarCloud is no longer a merge gate (removed 2026-10-01).** PR decoration still comments on every push and is worth reading, but nothing waits on it and nothing blocks on it. Do not add a Sonar step back into a ship flow without the measurement that justifies it — the one it replaced timed out on 8% of PRs while `main` carried 1,102 findings nobody actioned.
+- The merge gate (`check-merge-status.py`): every `statusCheckRollup` entry COMPLETED and non-FAILURE, every `test*` check actually RAN (a stale SKIPPED test check is how the markdown-it 15 bump took prod down on 2026-08-06), dependency changes need a SUCCESS test run, and a `ship-review` marker for the head SHA. A hard-rail path adds `/ship`'s rail verification; it does not block. `/ship` satisfies all of it in order; don't hand-roll the sequence.
+- **`gh pr ready` gets the same green gate as merge**: flip only when every `statusCheckRollup` entry is COMPLETED and non-FAILURE. A ready PR is a merge invitation — flipping with a check still IN_PROGRESS handed Alexander a "merge if ready" on a PR whose test shard then failed (#3908). Wait the ten minutes.
+- Implementing a GitHub issue? Put `Closes #NNNN` in the PR body so the merge auto-closes it — #3908 needed a manual `gh issue close` because the link was missing.
+- Run the browser-attestation `gh pr edit --body` (ticking the boxes) and the `gh pr merge` as **two separate Bash calls** — the merge hooks scan the whole command string for `gh pr merge`, so chaining `edit && merge` trips the gate before the edit lands.
+- First push of a new branch: if the `pre-push` hook blocks with a WIP/false-positive warning on an otherwise-clean branch, re-run with `git push -u origin <branch> --no-verify` (the hook false-positives on a new branch's first push; only bypass when the branch is genuinely clean).
+- Touching auth, payments, or external-API integration? Run `/security-review` before merge.
+- After merge, clean up local: `git checkout main && git pull --ff-only`, confirm the PR is `MERGED` via `gh pr view <branch> --json state`, then `git branch -D <branch>` (squash-merges leave the tip unreachable from main, so `-d` refuses). `git fetch --prune origin` drops stale remote-tracking refs; `git worktree list` then `git worktree remove <path>` (or `git worktree prune` if the dir is already gone) clears unused worktrees.
+- **When Alexander asks to check out a PR, just do it.** Run `gh pr checkout <n>` yourself. If `gh` complains the branch is `already used by worktree at .claude/worktrees/agent-*`, that's an agent worktree from a previous run — the PR is already on the remote, the agent's local copy is redundant. Unlock + remove it (`git worktree unlock <path> && git worktree remove <path>`), then re-run `gh pr checkout <n>`. Do not return a menu of options for Alexander to copy-paste — pick the right answer and execute it.
+- GitHub issues for follow-ups that need cross-cutting visibility, labels, or contributor pickup. Commit bodies for inline scope notes that travel with the change.
+
+## Working speed
+
+- **Default to inline. Reach for a subagent only for parallelism, isolation, or context hygiene — never for single-task speed.** For ONE sequential task, inline is *faster*: a subagent pays a tax inline doesn't — fresh-worktree `pnpm install` (both workspaces), cold context re-reading every file from scratch, and a branch reconcile at the end. Same coding work, more setup. Subagents earn their cost only when the work is genuinely parallel (N independent tasks at once — a trio, a multi-PR fan-out), when isolation is required (risky auth/payments/migration edits in a worktree), or when keeping the main context lean matters. If you already know the files and the change is a single edit-and-test loop, do it inline.
+- For research spanning 3+ queries (where is X defined, what touches Y), spawn `Agent(subagent_type=Explore)`. If the result isn't immediately needed, run it with `run_in_background: true` and keep editing.
+- **Multi-agent adversarial review (ultracode/Workflow) is for high-blast-radius surfaces only** — parser core, payments, auth, migrations — where execution-verified skeptics catch what CI can't (#3908: 22 confirmed findings, exactly 1 of which CI caught). Small fixes, copy, deps, ops buttons run lean: inline implement + single review. The review pass runs **before** `gh pr ready`, on the draft.
+- For risky changes (auth, payments, migrations, deploy pipeline), **must** use `EnterWorktree` — reverting a worktree is free. See `.claude/agents/engineer.md` for the enforced path list.
+- For "wait until X" (long builds, CI, deploys baking on prod), use `ScheduleWakeup` (270s if cache-warm matters, 1200s+ for genuine waits). Never busy-poll with sleep.
+- **After a multi-agent session, reap orphans and remove done worktrees — parallel agents cook the laptop.** Each agent running `/check` stacks `node`/`tsc`/`vitest` procs that outlive it, and `pnpm dev`/`vite preview`/golden-path servers reparent to init when their session exits (a 2026-07-18 run hit load average 40 with 23 stacked procs + a 3-day and an 11-day dev server). Diagnose a slow box with `uptime` + `ps aux -r | head`, run `scripts/reap-orphans.sh` (dry run) then `--force`, and `git worktree remove` finished agents' worktrees. Full playbook in `.claude/docs/local-dev.md` ("Orphaned process hygiene").
+- After deploys to 2anki.net, run `/deploy-status` to confirm the box is healthy.
+- If you keep approving the same read-only Bash commands, suggest `/fewer-permission-prompts`.
+- **Report tight.** State each outcome in one line; skip the "what I did / what changed / what's next" recap unless asked for status — Alexander reads the diff and PR body, don't re-narrate them. The exception is confirming a risky/destructive step first — that's safety, not chatter.
+- **Every PR/issue/run mention gets a full clickable URL** (`https://github.com/2anki/server/pull/NNNN`), never a bare `#NNNN`. Reports are read in a terminal and clicked through.
+
+## Process
+
+- **When Alexander asks for a change or a ship, the work ends done, not handed back.** No rule in this harness may stop a run and wait for him, except these four (the carve-outs every other harness doc cites). Everything else is fixed on the branch and the run continues, and no new cap or stop gets added. This does not override hook denials, the merge gate, or the never-skip-safety rules: a denial is fixed on the branch, never routed around.
+  - A value only he holds: a prod secret, a Google or Stripe dashboard login, a payment card, or whether to take a third-party bump that fails, has an open finding after `/security-review`, or is held in `.claude/rules/dependencies.md`, pinned under `pnpm.overrides` in `package.json`, or on the security-surface or install-time-build list in the dependabot worker (the fix lives upstream, not on the branch).
+  - Incurring new spend (a new paid service, plan, model, or paid batch run) needs his approval.
+  - A destructive, irreversible action. An unverified assumption on a rail path (auth, payments, migrations) counts, because a wrong guess there is not undone by a revert.
+  - A confirmed secret exposure or auth bypass found mid-run: halt and tell him.
+  - Why: 2026-10-15, a two-round review cap in `/ship` stopped a CI-green, security-clean PR with every finding fixed; he merged it by hand hours later while a paid campaign ran unattributed.
+
+- **A zero, a null, or a silence is not evidence until you have shown the sensor could have produced a non-zero reading.** Before claiming a metric proves something, state what a positive result would look like and confirm the query can return one. Three separate failures in one session were this shape: a funnel filter whose numerator matched zero rows by construction (so the zero proved nothing), a surface proposed for removal on entry-point numbers with no usage-event trend read, and a `total: 0` from an issues search run before the analysis it queries had landed.
+- **Name the table or event every number comes from, and what one row means.** A purchase is not a user; an entry-point impression is not an activation; a conversion recorded at an intermediate stage is not a card the user received. On 2026-10-01 an Apple in-app-purchase counter read as a user count nearly deleted a growing feature.
+- Pick the most likely reading, state the assumption in one line, and proceed. Ask only at the four halts in the bullet above; otherwise a question is a stall, and two in one session means the defaults need fixing, not the user.
+- **Execute, don't menu.** "Multiple interpretations" applies to *what* to do; it does not license menus of *how to do it*. When the answer is a sequence of mechanical sub-steps with one obvious right path (resolve a worktree conflict on `gh pr checkout`, drop two named stashes after a wave merges, run `pnpm install` before a dev server) — pick the right path and execute. A response that hands Alexander "option A vs option B" for mechanical glue is a failure mode. Reserve confirmation for destructive/irreversible steps (force-push, `branch -D` on unmerged work, destructive prod or DB changes). Standing exemption, confined to `/ship` step 1: `git push --force-with-lease` to this PR's own feature branch after a rebase on `origin/main` is a routine ship step, never `main`, never another author's branch; every other force-push keeps the confirmation. A rejected lease means someone else pushed: fetch, re-read the remote, push nothing until the state is re-verified, and never retry with plain `--force`.
+- **Harness improvement found via audit or incidental discovery (`.claude/`, `CLAUDE.md`, `.github/`): ship it as its own PR, never folded into feature work.** An agent never weakens or removes a gate, hook or check on its own initiative; that takes Alexander's explicit ask.
+- Every changed line should trace directly to the user's request. If a diff includes lines that don't connect back to what was asked, remove them before committing.
+- TDD by default: failing test → verify it fails for the right reason → simplest pass → refactor. If Alexander explicitly asks to skip tests, skip them and say so in the PR body; never skip unprompted. First rewrite a vague task into a verifiable goal — "fix the bug" → "write a test that reproduces it, then make it pass"; "add validation" → "test the invalid inputs, then make them pass". A strong success criterion lets you loop unattended; a weak one ("make it work") forces a round-trip.
+- Outside-in testing. Mock only external dependencies (HTTP, third-party APIs, email) — never internal services.
+- A passing suite is not proof of correctness — review affected user flows for regressions before committing.
+- Before declaring a task done, strip scaffolding, debug logs, and temporary code added during implementation.
+- When the user asks to test a PR locally, get the branch checked out in the **main repo** (`gh pr checkout <n>`) and stop — the user starts `pnpm dev` from their own terminal. Don't launch a dev server yourself.
+- When triaging a support `.eml`, extract and Read every image attachment before any code investigation — screenshots disambiguate which product surface the user means (e.g. the one-shot converter vs Ankify are different code paths). Treat "see attached" as a blocking read, not decoration.
+- When writing an agent brief, keep dictated PR/commit text and agent-behavior rules (don't merge, halt conditions) in **separate** paragraphs — a subagent pastes anything adjacent to "the body should say X" into the public PR body verbatim. After any agent opens a PR, skim the body before handing it over.
+- **Before dispatching work on a GitHub issue (yours or an agent's), check whether it's already fixed.** `git log -S` the relevant condition/gate, or check the referenced commit if one exists in the issue/PR history. 2026-07-23: a fully-scoped trio review was launched on issue #3758 before noticing a commit from two days earlier had already implemented and closed it (the auto-close link just hadn't fired) — caught only because the designer agent independently stumbled on the prior commit while reading the page component. Five minutes of `git log` up front is cheaper than a wasted trio dispatch.
+- When a spec or brief locks an enumerated set (marker syntax, block-type lists, candidate vocabularies, thresholds), the set is **closed**: an agent extending it must flag the extension as a decision in its report, never ship it silently. The #3908 MCQ wrong-answer bug was an unflagged one-character extension (`.` added to the locked `:` separator set) that turned quiz option labels into answers.
+- When writing an agent brief that says "mirror pattern X" (an existing route, use case, or feature), first find every layer X actually has — not just the layer the task names. A backend route mirrored from another backend route can still ship with no way to trigger it if the pattern's UI half goes unchecked (see the `code-quality.md` ops-command row). Grep for the sibling's full call chain, frontend included, before scoping the brief.
+- When browser verification isn't readily available in the environment (no Chrome channel, no dev-server access) and the change is a small, well-tested, exact mirror of an existing already-shipped pattern, say so plainly in the PR's browser-check section and move on — don't burn multiple tool calls hunting for an alternate browser binary or a workaround, especially after the user has already signaled urgency. State the honest limitation once; let the human verify if they'd rather do that than wait.
+
+## Gotchas
+
+- **A model swap on a paid inference path ships with a cost-envelope check, before and after — no exceptions.** Re-read every budget tuned to the old model (`max_tokens` ceilings, chunk sizes, retry loops that re-bill on truncation) before merge, and schedule day-1 + day-2 spend reads at merge time. The Sonnet 5 rollout history and the checklist: `.claude/docs/prod-ops.md`.
+- **Never lower or remove a production safety limit on an inference. Find the evidence that set it, in the runtime record, first.** `git log -S` the value **and** read pm2/GC logs and crash traces — a commit message says what was intended, only the logs say what production did, and one snapshot of current state is not history. When someone questions a limit you changed, re-open the runtime evidence. The 2026-07-29 heap-ceiling trap and the pm2 `node_args` / `NODE_OPTIONS` / `max_memory_restart` facts: `.claude/docs/prod-ops.md`.
+- **Oxc binding still missing after the worktree install** (see "Run it" for the install itself)? Re-run `pnpm install --force` or `pnpm rebuild` — never hand-fetch the native `.node` or `pnpm add -w @oxfmt/...`. Full incident detail and the why lives in `.claude/docs/parallel-pr-coordination.md` (first table row) — don't duplicate it here.
+- **Can't run `oxfmt` locally? Format defensively, don't push and let CI bounce you.** `oxfmt --check` (the `static` CI job's Format step) fails the whole job — and because it scans `src web/src` tree-wide, a single mis-wrapped line costs a full rebase + force-push + CI cycle (~3–5 min). When the formatter won't run in your environment, match the existing file's conventions exactly before pushing: single blank line between top-level blocks (never two), and wrap any string/call argument that pushes a line past the project width onto its own line (oxfmt breaks `expect(x).toHaveAttribute(...)` and `{ message: '<long string>' }` this way). Two real 2026-06-15 bounces — a double blank line before a new `describe` and an over-width `503` JSON message — were both this shape.
+- **A merged format failure poisons every subsequent PR — and a per-file `oxfmt` run is NOT the CI check.** CI's `static` job runs `pnpm format:check` = `oxfmt -c .oxfmtrc.json --check src web/src` tree-wide. An agent that runs `oxfmt` on only its changed files (or with a different config) reports "clean" while the tree-wide check fails; if that PR merges red, EVERY later PR's `static` fails, listing the drifted files (the whole-tree scan surfaces them all). Two hard rules: (1) run `pnpm format:check` — the exact CI command — before every push, not a per-file `oxfmt`; (2) **green-gate merges**: never merge while any `statusCheckRollup` entry is FAILURE — verify green explicitly, do NOT assume the merge hook caught it (a non-required `static` FAILURE merged through in a 2026-07-17 i18n batch and drifted 18 files onto `main`). If `main`'s `static` is red, fix the whole tree in one `style:` PR (`pnpm exec oxfmt -c .oxfmtrc.json --threads 1 src web/src`) and merge it before anything else.
+- A stale `claude-review` check is not a merge blocker; that workflow was removed 2026-07-22. On-demand review is the `@claude` mention workflow.
+- Per-machine `.git/hooks/pre-push` must not run `lint:fix` — it dirties unrelated files on every push. Detail in `.claude/docs/local-dev.md`.
+- **Never edit `src/data_layer/public/`** — Kanel-generated; rerun `pnpm dlx kanel -c ./.kanelrc.js` instead.
+- The Ankify feature is gated to users with `users.patreon = true` (lifetime), `users.ankify_access = true` (per-user comp grant), **or** an active `subscriptions` row whose `stripe_product_id` matches `AUTO_SYNC_PRODUCT_ID`. Use `hasAnkifyAccess` from `src/lib/ankify/access.ts` (single source of truth); don't reintroduce hard-coded emails.
+- **Two distinct paid gates — `isPaying` vs `hasAnkifyAccess` — don't conflate them.** `isPaying` (`src/lib/isPaying.ts`, read off `res.locals`) = ANY active paid subscription; it exempts the monthly card limit (100) and PDF print limit (1). `hasAnkifyAccess` (`src/lib/ankify/access.ts`) is the stricter Ankify/Auto-Sync gate (lifetime `patreon` OR `ankify_access` comp OR active Auto-Sync-product subscription). **Mindmaps are TIERED across both:** free `3` maps / `50` nodes → subscriber (`isPaying`) `25` / `250` → `hasAnkifyAccess` unlimited (`SUBSCRIBER_MAP_LIMIT`/`SUBSCRIBER_NODE_LIMIT` in the mindmap use cases; the `MindmapLimitError` carries the caller's actual applicable cap, and the client renders it via a `{{limit}}` i18n placeholder). When adding a paid perk, decide which gate it belongs to — a normal `$7.99/mo` subscriber has `isPaying` true but `hasAnkifyAccess` false.
+- **`STRIPE_SYNC_ON_STARTUP` is `false` on prod — nothing repairs a drifted `subscriptions` row.** A path that fails to deactivate a row on cancellation leaks paid access permanently (#3862). Prefer `users.ankify_access` over a synthetic `subscriptions` row for comps. What the sweep does when it is on: `.claude/docs/prod-ops.md`.
+- Notion webhook receiver in `routes/AnkifyWebhookRouter.ts` is mounted and fully implemented (HMAC-verified, access-gated, dispatches a `trigger: 'webhook'` sync) but unfed: Notion-side auto-registration is deferred, so no production webhooks reach it and polling at 5 min carries the story today. See `src/lib/ankify/FEATURE.md` for the secret/registration shape.
+- **The prod deploy build typechecks tests too.** `deploy.2anki.net.yml`'s build step is `tsc -p .`, which compiles `*.test.ts`. Add a method to an interface and any test mock typed as that interface (a `const repo: IFoo = { … }` literal missing the new method) becomes a **deploy failure**, not just a test failure — and the test check in CI can still pass (Vitest transpiles per file and does not typecheck), so the red deploy looks unrelated to the change. After any interface change, run `tsc -p . --noEmit` locally and grep `src/**/*.test.ts` for object literals typed as that interface. (2026-05-31: `loadIfExists` added to `ISettingsRepository` left a mock behind → red `main` deploy until the mock was fixed.)
+- **Local `tsc` can pass while CI's `static` job fails the same file.** The main checkout's `node_modules` drifts from the lockfile over a long-lived session, so a stale local type resolves clean while CI (fresh `--frozen-lockfile` install) fails on it. If CI `static` reports a type error you can't reproduce locally, reproduce in a clean-install worktree (`pnpm install` from a fresh `git worktree add`) before assuming it's a false positive — a red `static` may be a latent breakage already on `main`, not just your diff.
+- Netlify deploy previews 301 to prod (`netlify.toml` force-redirects `/*`); do visual review with `pnpm dev` on the branch.
+- The prod box checks out this repo at `/home/alemayhu/src/github.com/2anki/2anki.net` (legacy name).
+- **A failed blue-green deploy still poisons the disk under the live process** — the old color keeps serving from memory while the broken build sits on disk, and the next restart for any reason crashloops into a 502 (the 2026-08-06 outage). Since #4021 a failed gate restores last-good, but read the failed run's log to confirm the restore succeeded before restarting anything. Diagnosis tell and emergency recovery: `.claude/docs/prod-ops.md`.
+- **Bot reviews check code patterns, not runtime lifecycle.** The `@claude` review bot is good at finding correctness bugs, type mismatches, missing tests, and Sonar-class smells. It does NOT model external-resource lifecycles — signed URL expiry, OAuth refresh windows, cache TTLs, session token rotation. PR #3068 was a clear example: bot cleared the diff as correct, missed that the embedded Notion S3 URL would 403 within an hour. Always pair a bot review with manual runtime-thinking on anything that consumes an external URL or a time-bound credential.
+
+## The trio
+
+Three core sub-agents in `.claude/agents/` — `engineer`, `designer`, `pm` (their descriptions load from agent frontmatter):
+
+
+Default: `pm` produces a spec → `designer` validates UX (only if user-facing) → `engineer` implements and ships. For tiny fixes, skip to engineer.
+
+**Supporting cast** (specialists, invoke by name): conversion-funnel-analyst, seo-content, seo-specialist, prod-incident-responder, migration-reviewer, support-triage, a11y-reviewer, test-writer, dead-code-auditor. Each one's description and when-to-use lives in its `.claude/agents/*.md` frontmatter and loads into the session's agent list — don't duplicate them here.
+
+Trio conventions: be opinionated (one recommendation, not five options); specs fit on one page; say what *not* to build; reply to support email *as a draft for Alexander to send*, saved as a `.txt` file in Downloads (see Gotchas).
+
+## Trio review
+
+The trio is **opt-in**: run `/trio <task>` for pricing, payment, onboarding, signup, cancel-flow and new-surface work, or whenever a product question is real. It is three agents at five to eight minutes each, so it is not the default for a bug fix, copy tweak, instrumentation change or refactor — those go straight to the engineer. The synthesis format and the surface-lifecycle obligations live in `.claude/commands/trio.md`; the preview-route rule for visual disagreements lives in `.claude/agents/designer.md`.
+
+## Spec lifecycle
+
+Specs live in `Documentation/specs/` only while a feature is in flight: `/spec-draft-pr` opens a **draft** PR on a `<type>/spec-<slug>` branch (never `docs/spec-<slug>` — it can't graduate to `feat:`/`fix:`), `/implement` takes that same PR over, and the spec is `git rm`'d before the final push. Never open a separate implementation PR alongside a spec PR. Full workflow and how to recover a squash-merged spec's text: `.claude/docs/spec-lifecycle.md`.
+
+## Surface lifecycle
+
+A new `feat:` surface (a distinct user-facing capability — chat, mindmaps, photo-to-deck, transform, print, quizlet import, image occlusion, ankify) ships with two things in the same PR: a usage analytics event that fires when the surface is used, and a T+30d adoption-review GitHub issue created at merge with the review date in the title. At that review the verdict is binary — **keep or remove**. Silence is removal, not maintenance; an unused surface is a maintenance tax with no offsetting users. History: 8+ surfaces shipped in May 2026 with usage evidence for only 2-3, and one (quizlet import) went silent within days and nobody noticed.
+
+**A T+30 threshold is only as good as its denominator, and a wrong one does not fail loudly.** Before a keep/kill rule is written down, the review issue must state:
+
+- **The reachable population** — who could physically have used this surface, and the query that counts them. Not "conversions" unless the surface exists on every conversion. The 2026-09-29 conversion-report review was written against every conversion on the site for a surface that only exists on the Notion path: 93% of that denominator could never have opened it, and the rule as written read 1.7% and said remove, where the reachable denominator read 28.1% and said keep.
+- **A power check on any support- or email-volume condition.** A theme running below roughly 20 threads per window cannot show a 30% move; such a condition can be neither satisfied nor falsified and does not belong in the rule.
+- **Whether the usage event can see passive use.** An event that fires only on change cannot observe anyone relying on a saved non-default, so it undercounts by construction. A surface whose signal only sees deliberate changes needs a second, server-side one before its T+30 read means anything.
+
+Silence is removal, so a denominator that is too wide deletes working surfaces on the strength of a confident wrong number.
+
+One new surface in flight at a time. The next surface does not start until the previous one has a day-7 prod check and a usage signal. Six years of unmeasured parallel bets (Imba, Electron, KI, avatars, Gemini, Quizlet) is why this gate exists — breadth without evidence is how the backlog filled with surfaces no one uses.

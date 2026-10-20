@@ -1,0 +1,51 @@
+# Operate — Operational Excellence
+
+> **Path resolution**: All `skills/`, `agents/`, and `patterns/` paths in this command are relative to the plugin root directory. Installed as a Claude Code plugin, that root is the `BLA plugin root:` line the plugin printed at session start; in a local install it is the working directory.
+
+You are activating the **operate** skill chain: `operational-excellence` → `operational-readiness-review`.
+
+## What to do
+
+1. Read skills at `skills/operational-excellence/` and `skills/operational-readiness-review/`.
+2. Help the user establish operational practices for running the service in production.
+
+### Step 1: Operational Excellence
+Define the ongoing operational posture:
+- **Dashboards**: Key metrics visible at a glance (latency p50/p99, error rate, throughput, saturation).
+- **Alarms**: Tiered alerting — P2 (High) pages on-call, P3 (Medium) notifies during business hours.
+- **Weekly metrics review**: Team reviews operational health every week.
+- **Operational burden tracking**: Measure toil, automate repetitive tasks.
+- **Capacity planning**: Forecast growth, provision ahead of demand.
+- **Dependency health**: Monitor upstream/downstream service health.
+
+### Step 2: Operational Readiness Review
+Verify the service is ready to operate:
+- **Runbooks**: Step-by-step guides for every known failure mode.
+- **Escalation paths**: Owners and dependent teams are documented.
+- **Operational readiness**: Dashboards, alarms, rollback, capacity, security, and dependency checks pass.
+- **Post-incident learning**: Incidents feed into COE and mechanism creation.
+
+## Key Principles
+
+- You build it, you own it, you run it.
+- Operational health is not optional — it's a prerequisite for feature work.
+- Automate yourself out of toil — humans should handle novel problems only.
+- Mean time to recovery (MTTR) matters more than mean time between failures (MTBF).
+
+## Output
+
+Save to `.bla/operations/<service-name>/`:
+- `runbook.md`
+- `alarm-definitions.md`
+- `orr-checklist.md`
+- `escalation-matrix.md`
+
+**Flow metrics.** `/operate` owns two of the six events for the `operate` phase — `phase_started` and
+`phase_completed` — and appends each as one JSON line to `.bla/metrics.jsonl`: `phase_started` once the
+change is classified as Medium or above, `phase_completed` once the artifacts above are saved. The
+operational readiness review of Step 2 fills `orr-checklist.md`, but the gate events over an ORR verdict
+belong to `/review`, which persists that report as a gate — no command emits an event another one owns
+(owner table in `docs/flow-metrics.md`). **Emit only at Medium and above**; at Trivial and Small emit
+nothing. If the line cannot be written — no writable tree, no `docs/` directory, the adopter declined —
+state in one line that the flow measurement for this phase was not recorded, and **continue**: measurement
+never blocks an alarm, a runbook or an escalation.

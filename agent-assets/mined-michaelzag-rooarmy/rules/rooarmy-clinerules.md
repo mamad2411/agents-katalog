@@ -1,0 +1,28 @@
+# Project rules
+Focus on the exact tasks I assign. Do not wander off and start creating your own documentation or scripts. When you finish my task, report the results back and await further guidance. 
+
+
+# Roo-Commander design
+We are using setup-test.js to reassemble two large files. 
+system-prompt-commander and questions.json
+Do not write a singular system-prompt-commander file, utilize the components folder in roo-commander/.roo/component.
+Do not write a singular questions file, utilize the questions-comonent file in roo-commander/.roo/question-components
+
+# Handoff System Rules
+
+Create handoffs when context becomes stale and milestones when features complete. For implementation details, refer to handoffs/0-instructions/.
+
+## When to Create Documents
+
+1. **Create handoffs when:**
+   - Context becomes ~30% irrelevant to current task
+   - After completing significant project segments
+   - After 10+ conversation exchanges
+   - During debugging sessions exceeding 5 exchanges without resolution
+
+2. **Create milestones when:**
+   - Completing major features or components
+   - After 3-5 handoffs accumulate
+   - A significant project phase concludes
+
+A fresh LLM session with focused context often solves problems that an overloaded session cannot.

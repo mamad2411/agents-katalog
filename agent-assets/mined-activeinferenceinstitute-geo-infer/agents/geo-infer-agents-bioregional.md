@@ -1,0 +1,44 @@
+# Agent Instructions: GEO-INFER-ECON/src/geo_infer_econ/bioregional
+
+## Scope
+
+- Owning module: `GEO-INFER-ECON`
+- Python package: `geo_infer_econ`
+- Directory role: Bioregional workspace within `GEO-INFER-ECON`.
+
+## Capabilities
+
+- Maintains the tracked files and subdirectories listed below for this workspace.
+- Validates behavior with the command in the Validation section.
+- Integrates through `geo_infer_econ` and the owning module's public contracts.
+
+## Working Rules
+
+- Keep changes scoped to this directory unless an import, test, or documented command requires a coordinated edit.
+- Prefer existing module patterns and public exports over new orchestration layers.
+- Do not add planned, fake, mock, stub, or placeholder behavior to user-facing docs.
+- If external services are involved, keep deterministic local validation available.
+
+## Local Contents
+
+- `__init__.py`
+- `bioregional_governance.py`
+- `bioregional_markets.py`
+- `circular_economy.py`
+- `ecological_economics.py`
+- `ecosystem_services.py`
+- `natural_capital.py`
+- `spatial_ecology.py`
+- `sustainability_metrics.py`
+
+## Validation
+
+```bash
+uv run python GEO-INFER-TEST/run_unified_tests.py --module ECON
+```
+
+
+## Integration Notes
+
+- Update this AGENTS.md and the sibling README.md when commands, exports, dependencies, or generated outputs change.
+- Keep cross-module references anchored to real package imports and tracked files.

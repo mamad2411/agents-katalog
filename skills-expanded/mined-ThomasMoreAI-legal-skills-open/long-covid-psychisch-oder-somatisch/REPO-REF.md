@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/ThomasMoreAI/legal-skills-open (path: de/social-security/skills/long-covid-psychisch-oder-somatisch/SKILL.md, branch: main)
-- mined: 2026-10-15
-- desc: Für Long Covid Psychisch oder Somatisch: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Prüfprodukt mit Risiko und nächstem Schritt.'

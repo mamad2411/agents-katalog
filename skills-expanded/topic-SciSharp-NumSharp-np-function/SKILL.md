@@ -1,1 +1,0 @@
-../../../.claude/skills/np-function/SKILL.md

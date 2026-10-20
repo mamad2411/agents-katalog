@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/ThomasMoreAI/legal-skills-open (path: cross-jurisdiction/regulatory/skills/space-014-absturz-deutschland-bergung-eigentum-beweis/SKILL.md, branch: main)
-- mined: 2026-10-15
-- desc: Für Weltraumrecht: Absturz in Deutschland Bergung Eigentum Beweis und Staatshaftung: ordnet Norm, Beweislast und Gegenargument; Ergebnis: Beweislast- und Substantiierungsmatrix.'

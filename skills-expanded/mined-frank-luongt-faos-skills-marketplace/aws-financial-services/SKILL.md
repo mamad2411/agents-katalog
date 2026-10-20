@@ -2,10 +2,9 @@
 ---
 name: aws-financial-services
 description: AWS financial services AI patterns for fraud detection, document processing, and compliance. Use when building AI agents with Amazon Fraud Detector, Textract for KYC, Clean Rooms for data collaboration, or FinSpace for quantitative analytics.
-tags: [aws, fraud, textract, kyc, finspace, financial-services]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # AWS Financial Services AI
 

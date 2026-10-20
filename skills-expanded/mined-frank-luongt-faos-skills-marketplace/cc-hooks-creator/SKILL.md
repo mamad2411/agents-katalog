@@ -2,10 +2,9 @@
 ---
 name: cc-hooks-creator
 description: Create, configure, and debug Claude Code hooks -- shell commands that execute at lifecycle events (PreToolUse, PostToolUse, Stop, SessionStart, etc.). Use when building file protection, code formatting, notifications, context loading, or any automation triggered by Claude Code events. Covers inline commands, Python scripts, JSON output, state management, and security.
-tags: [claude-code, hooks, automation, lifecycle]
 ---
 
-> **Platform Note:** This skill was designed for multi-agent execution. Perplexity Computer handles orchestration automatically — treat sub-agent instructions as sequential steps to complete thoroughly.
+> **Platform Note:** This skill was designed for multi-agent execution. In Codex, treat sub-agent instructions as sequential steps to complete thoroughly within a single agent context.
 
 # Claude Code Hooks Creator
 

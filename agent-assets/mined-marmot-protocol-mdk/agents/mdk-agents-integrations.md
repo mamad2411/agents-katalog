@@ -1,0 +1,252 @@
+# AGENTS.md - integrations
+
+Top-level guidance for Marmot host integrations. Read `README.md` first, then
+the integration-specific `AGENTS.md` in the directory you touch.
+
+## Scope
+
+This directory contains host-runtime integrations that connect external agent
+systems to Marmot through `wn-agent`.
+
+- `hermes/marmot` - Hermes platform plugin.
+- `openclaw/marmot` - OpenClaw channel plugin.
+- `claude/marmot` - `wn-claude` Claude Code harness binary.
+- `codex/marmot` - `wn-codex` Codex harness binary.
+- `opencode/marmot` - `wn-opencode` OpenCode harness binary.
+- `pi/marmot` - `wn-pi` Pi harness binary.
+- `goose/marmot` - `wn-goose` Goose harness binary.
+- `terminal-harness` - shared terminal-harness control/runtime library
+  (`marmot-terminal-harness`).
+- `test_installer_systemd_service.sh` - shared systemd-service installer check
+  invoked by the Hermes and OpenClaw dev-script tests.
+
+Installer scripts live in `scripts/install-*-marmot.sh`; the five terminal
+harness installers are thin wrappers over `scripts/install-terminal-harness-marmot.sh`.
+
+The shared boundary is the `marmot.agent-control.v2` NDJSON protocol over a
+local Unix socket. `wn-agent` owns Marmot account state, MLS state, Nostr
+transport, relay interaction, QUIC preview records, durable encrypted sends,
+deletes, invite policy, and local storage.
+
+## Shared Invariants
+
+- Keep integrations control-plane only. Do not add MLS, Nostr relay, encryption,
+  storage-engine, or QUIC broker logic under `integrations/`; put that in
+  `wn-agent`, `marmot-app`, transport crates, or shared crates as appropriate.
+- Treat `MARMOT_HOME`, `MARMOT_AGENT_SOCKET`, `MARMOT_AGENT_AUTH_TOKEN_FILE`,
+  `MARMOT_AGENT_AUTH_TOKEN`, and `MARMOT_ACCOUNT_ID_HEX` as the common connector
+  vocabulary. Use integration-specific prefixes only for integration-specific
+  behavior, for example `WN_OPENCODE_*`, `WN_PI_*`, and `WN_GOOSE_*`.
+- Prefer explicit account ids in production configuration. Auto-select only the
+  sole local-signing account; fail closed when multiple local-signing accounts
+  are available.
+- Keep logging privacy-safe: no account ids, group ids, message ids, relay URLs,
+  pubkeys, payloads, prompts, model output, ciphertext, plaintext, key material,
+  or local sensitive paths.
+- Live-preview clients retain the v2 `stream_capability` returned by
+  `stream_begin` only for the life of that preview and present it on every later
+  stream operation. Reuse one stable envelope request id when retrying a
+  timed-out `stream_begin`. Never log capabilities or control bearer tokens.
+- Preserve host-runtime configuration outside the Marmot section. Installers and
+  setup scripts should patch only the Marmot plugin/channel entries they own.
+- Default Hermes, OpenClaw, and terminal-harness release installs use
+  connector-specific `wn-agent` homes, sockets, services, bootstrap labels, and
+  Marmot/Nostr identities. Shared-account deployments are opt-in and must be
+  documented alongside the required service/socket overrides.
+
+## Gateway Versus Harness
+
+Hermes and OpenClaw are gateway/channel integrations. They adapt a full agent
+runtime to Marmot and may own activation policy, message-tool routing, live
+preview adaptation, media staging policy, profile onboarding, and gateway
+session behavior.
+
+`wn-claude`, `wn-codex`, `wn-opencode`, `wn-pi`, and `wn-goose` are pure terminal harnesses. They subscribe to allowed
+Marmot prompts and invoke their respective binaries; they should stay narrower than the
+gateway integrations unless there is a concrete product reason to broaden it.
+
+Do not force every feature from Hermes/OpenClaw onto harnesses. Borrow shared
+hardening patterns where they fit: strict account selection, socket auth,
+allowlist handling, reconnect/resync behavior, bounded queues, chunking,
+idempotent sends, installer safety, and privacy-safe diagnostics.
+
+## Coexistence Model
+
+Multiple integrations can run on the same machine. The default Hermes,
+OpenClaw, and terminal-harness installers give each connector its own
+`wn-agent` process, local home, socket, service identity, and Marmot/Nostr
+identity, so their chats are isolated from each other.
+
+Multiple integrations may also be configured to connect to the same `wn-agent`
+socket. The socket supports multiple clients and `SubscribeInbound` streams.
+There is no global dispatch lease or "one integration claimed this message"
+mechanism.
+
+Each integration must make its own activation decision. If two integrations are
+eligible for the same inbound message, both may reply. Design activation
+defaults conservatively:
+
+- Hermes/OpenClaw default to mention-style activation in multi-party groups and
+  always reply in effective DMs.
+- Terminal harnesses currently support only always-on activation for explicitly
+  allowed senders.
+
+When changing activation or allowlist semantics, reason about both default
+isolated installs and explicit shared-account installs: Hermes, OpenClaw, and
+terminal harnesses may all be installed on the same host, and advanced operators
+can point them at the same account and group stream.
+
+## Allowlists
+
+The `wn-agent` welcomer allowlist is account-scoped. It is not scoped per
+integration. A connector that reconciles allowlists for a shared account can
+affect every other integration on that account.
+
+When adding or changing allowlist behavior:
+
+- Be explicit about whether the integration performs exact reconciliation or
+  add-only updates.
+- Avoid silent broadening of who can invite or prompt the agent.
+- Avoid silently removing entries owned by another integration unless the config
+  model clearly declares this integration as the source of truth.
+- Keep npub/hex normalization in one small helper and test invalid inputs.
+
+## Release Installers
+
+All production-shaped installers for these integrations should stay in the
+`wn-agent-v*` release family. Do not create a separate release track for a new
+integration unless the distribution model is intentionally different.
+
+Installer expectations:
+
+- Verify downloaded release assets with SHA256 files.
+- Use bounded curl/network timeouts.
+- Start same-user services where supported, with private service files and
+  owner-only connector state.
+- Use connector-specific default homes, sockets, service names, and bootstrap
+  labels unless a shared deployment is intentionally configured.
+- Preserve existing host-runtime config outside the Marmot section.
+- Do not restart Hermes or OpenClaw gateways automatically; print restart
+  guidance instead.
+- Make dry-runs useful enough to validate release-asset names and config intent.
+
+The default Hermes, OpenClaw, and terminal-harness service names are
+connector-specific
+(`wn-agent-hermes.service`, `wn-agent-openclaw.service`, `wn-agent-claude.service`,
+`wn-agent-codex.service`, `wn-agent-harnesses.service`, `wn-agent-pi.service`, `wn-agent-goose.service`,
+`org.marmot.wn-agent.hermes`, `org.marmot.wn-agent.openclaw`,
+`org.marmot.wn-agent.claude`, `org.marmot.wn-agent.codex`,
+`org.marmot.wn-agent.harnesses`, `org.marmot.wn-agent.pi`, and
+`org.marmot.wn-agent.goose`). Harness services are also connector-specific
+(`wn-claude`, `wn-codex`, `wn-opencode`, `wn-pi`, and `wn-goose`). If you add a new
+production installer, choose names that can coexist with the existing
+integrations on the same login.
+
+## Tests And Validation
+
+Use the local integration tests for the directory you touch, plus installer
+tests when changing release setup.
+
+```sh
+just hermes-dev-script-test
+just hermes-dev-e2e-deterministic
+just hermes-dev-e2e-connector
+
+just openclaw-dev-test
+just openclaw-dev-script-test
+just openclaw-dev-e2e-connector
+
+cargo test -p wn-claude
+just claude-dev-e2e-connector
+just claude-installer-test
+
+cargo test -p wn-codex
+just codex-dev-e2e-connector
+just codex-installer-test
+
+cargo test -p wn-opencode
+just opencode-dev-e2e-connector
+just opencode-installer-test
+
+cargo test -p marmot-terminal-harness
+
+cargo test -p wn-pi
+just pi-dev-e2e-connector
+just pi-installer-test
+
+cargo test -p wn-goose
+just goose-dev-e2e-connector
+just goose-installer-test
+```
+
+When editing install examples in any integration README, `integrations/README.md`,
+or `release.md`, also run the doc gates. They count `install_verified` calls per
+file, require download -> `.sha256` -> verify -> execute ordering and a
+"same shell" note before dependent fences. The quickstart defines the verified
+installer helper once; runtime READMEs link to it and pin the documented release.
+The optional latest-cohort lookup lives only in the quickstart and clears the
+selected URL on failure. Each install uses one immutable release for installer,
+checksum and assets.
+`release.md` and release notes retain their exact-version provenance. Do not
+replace these checks with a mutable download alias or mix release cohorts.
+Minimum runtime versions and pinned compatibility evidence are distinct from
+the documented install default.
+
+```sh
+just install-example-sha256-gate
+just agent-install-docs-gate
+just naming-gate
+```
+
+For release-workflow changes, run `just fast-ci` once before pushing. For
+shared connector changes, follow `crates/agent-connector/AGENTS.md`. GitHub CI
+runs the rest.
+
+## Adding A New Integration
+
+New integrations should follow the existing shape:
+
+- place code under `integrations/<runtime>/marmot`;
+- add a local human-facing `README.md` and an agent-facing `AGENTS.md`;
+- use `wn-agent` and `agent-control` instead of reimplementing Marmot protocol
+  behavior;
+- share installer/release conventions with the existing scripts;
+- document whether the integration is a gateway/channel plugin or a pure
+  harness;
+- document coexistence with Hermes, OpenClaw, Claude Code, Codex, OpenCode, Pi, and Goose before landing
+  production install support.
+
+## Installation policy
+
+Use answers already supplied in the installation prompt; ask only for missing
+choices. A supplied npub is public authorization information, not a secret
+identity import. Summarize the concrete setup plan for the prompt's approval
+step. Do not repeatedly ask for choices that have already been made.
+
+## Suggested agent chat instructions
+
+The following is a suggested instruction block to add to the selected agent's
+normal profile/project instructions. It is not installed automatically by the
+connector, and a terminal session's `/goal` alone cannot expose missing tools:
+
+Work in the current White Noise conversation. Keep its title a short,
+findable description of the accepted task, optionally with one project emoji.
+Rename only on a real topic change; keep the title during status questions,
+retries and completion. Read the current title first, preserve the current
+chat binding, and read back an update. Never put secrets or personal details
+in a title. After an uncertain write, inspect before retrying.
+
+Use real message reactions for progress: 👀 when an actionable request is
+accepted, ✅ after the requested result is completed and verified, ⏸️ when a
+real user decision is required, and ❌ on terminal failure. Replace your own
+earlier progress reaction rather than stacking it; do not send the emoji as
+a separate chat message. React to the triggering message in this chat. A
+planned change, queued build or draft is not a completed result. Emoji-only
+user messages are context, not blanket approval for a destructive action.
+
+Read the selected connector's setup and capability guide. Use only tools and
+file paths authorized for this deployment. Keep follow-up messages attached
+to the unfinished task unless the user changes it. Report the verified result
+concisely, with a link or delivered file when appropriate. If a required
+title, reaction or file tool is missing, explain that limitation rather than
+pretending the action worked.

@@ -1,0 +1,36 @@
+# GitHub Copilot 仓库指令
+
+- 本仓库主体内容以中文为主；`CrossFrame` 只是英文传播名与 skill id。
+- 实际可安装的 Codex skill 位于 `skills/crossframe/`。
+- 总调度 skill 位于 `skills/crossframe-suite/`；复杂任务先用它决定连续触发顺序。
+- `crossframe-suite` 是推荐默认入口。只要从总入口进入任何 CrossFrame 内容任务，默认先完成必要专项 skill，再追加 `crossframe-essay -> crossframe-review`，输出 `full-visible-v5-longform`：完整可见底稿 + 完整长文正文；只有用户明确说“只要/不要文章/短答/表格/清单/纯诊断/仅行动方案”时才关闭文章层。
+- 平行文章写作 skill 位于 `skills/crossframe-essay/`。
+- 其它平行专项 skill 位于 `skills/crossframe-review/`、`skills/crossframe-dialogue/`、`skills/crossframe-casebook/`、`skills/crossframe-history/`、`skills/crossframe-inquiry/`、`skills/crossframe-max/`、`skills/crossframe-promax/`、`skills/crossframe-public/`、`skills/crossframe-org/`、`skills/crossframe-teach/`、`skills/crossframe-debate/`、`skills/crossframe-notebook/`。
+- `README.md` 与 `skills/crossframe/SKILL.md` 是原始说明来源；新增适配优先薄封装，不要复制出多套漂移正文。
+- 结构诊断、推演、开放断言、反俘获审查或低条件行动任务请遵循 `AGENTS.md`。
+- 中文文章、长文、评论、思想文章、批判性洞察文章和结构洞察文章任务请遵循 `skills/crossframe-essay/SKILL.md`。
+- 评审、短答复、案例库、历史研究、公共议题、组织修复、概念教学、命题辩论、研究笔记任务请遵循对应 `skills/crossframe-*/SKILL.md`。
+- 多 skill 连续任务请先遵循 `skills/crossframe-suite/SKILL.md`，例如公共评论文章走 `crossframe -> crossframe-public -> crossframe-essay -> crossframe-review`，组织复盘文章走 `crossframe -> crossframe-org -> crossframe-essay -> crossframe-review`，历史研究走 `crossframe -> crossframe-history -> crossframe-essay -> crossframe-review`，完成后追问走 `crossframe -> crossframe-review(lite) -> crossframe-inquiry`；不要一次读取全部 skill。
+- 完整链路已经完成分析、成文和 review 后，下一轮用户未明确说“新任务 / 换主题 / 退出追问 / 不接着上文”，且不是“谢谢 / 好的 / 明白了 / 先这样”等纯致谢、确认收到或结束语时，默认进入 `crossframe-inquiry`；它可以定向检索 1-3 个相关 sibling skill 的必要材料，但不得把检索写成正式专项判断。
+- `crossframe-max` 是 named-only 独立模式；只有明确点名或要求最大算力、全尺度穷尽推演、不设字数限制完整解释时才读取 `skills/crossframe-max/SKILL.md`，不走 suite 的 `2+1` 选择器或普通文章类型选择器。
+- CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
+- 文章任务需要深度、概念上升、引经据典、理论参照或文学互文时，按需读取 `skills/crossframe-essay/protocols/concept-elevation-protocol.md` 与 `skills/crossframe-essay/references/reference-and-allusion-rules.md`。
+- 文章任务自动成文默认读取 `skills/crossframe-essay/protocols/editorial-comrade-voice-protocol.md` 与 `skills/crossframe-essay/references/editorial-voice-principles.md`；只有显式中性报告/备忘录/表格/纯诊断时关闭。
+- 概念解释或思想解释任务也应进入 CrossFrame，但先读 `skills/crossframe/protocols/concept-explanation-protocol.md`。
+- 强判断、高反身性、亲密关系、疗愈转移、公共制度、框架边界、生命周期、递进、势场解离、治理连续性、超大规模压力测试和长期演化任务必须按 `skills/crossframe/references/read-routing-map.md` 读取深水区模块。
+- 默认先展示简短推理提纲，再输出普通用户能读懂的判断。
+- 文章任务默认先输出完整可见 `结构洞察底稿`，再输出完整长文 `文章正文`。
+- 默认文章不得缩水成短答；正文需要标题、铺陈、概念上升、现实回落、边界段和余味结尾。
+- 直接引用必须可核验；不确定原句时只做意译或思想映射；经典/理论参照不能接管文章命题。
+- 现代编辑底色只负责前台表达：亲切但不和稀泥，果敢但不人格审判，不复古口号化。
+- 输出必须区分事实、解释、机制候选、判断档位和本次读取的概念。
+- 默认不展示内部 reasoning、工具调用参数、路径试错、错误栈或英文自我规划；需要审计时只展示台账摘要和风险点。
+- 高风险概念如承接/回流、开放断言、尺度转移、观测反身性、权力封闭、低条件行动、爱/开放行动、责任链、证据成本、机制候选、判断档位、退出转移、修复副产品，必须先读 `skills/crossframe/references/concept-cards/` 对应卡片。
+- 输出前优先用 `skills/crossframe/references/runtime-read-policy.md`、`skills/crossframe/references/read-routing-map.md` 和 `skills/crossframe/references/continuity-closure-map.md` 做轻量闭包检查，避免概念压缩、联读遗漏和源结构断裂。
+- 高责任、公共制度、亲密关系、长期演化、深度分析和文章输出，需要展开审计时，再读取 `skills/crossframe/references/continuity-bundles.md`，按需读取 `skills/crossframe/references/v5-source-spine.md`、`skills/crossframe/references/v5-section-digest-index.md` 和 `skills/crossframe/worksheets/source-continuity-check.md`，避免只读单概念卡导致 5.0 连续性失真。
+- 强判断不得绕开命题验证；高反身性不得无限递归；亲密关系不得把爱变成忍耐义务。
+- 框架边界不得把 CrossFrame 当专业替代品；生命周期不得写成命运；超大规模判断必须承认可判断边界。
+- 不要把结构诊断变成人格审判、命运预言、责任稀释或概念堆砌。
+- 修改仓库时，不要删除 `skills/crossframe/` 的可安装入口。
+- 修改仓库时，不要删除 `skills/crossframe-essay/` 的可安装入口，也不要把它的文章协议复制进薄适配层。
+- 修改仓库时，不要删除任何 `skills/crossframe-*/` 可安装入口；适配层只做分发说明，不复制专项协议。

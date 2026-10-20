@@ -1,0 +1,209 @@
+# engine/audio/ — MIDI I/O, audio capture, file playback
+
+Thin wrapper around RtMidi (MIDI in/out), RtAudio (input capture), and
+miniaudio (file playback). There is no synth — creations that need
+generated tones still produce them themselves or pipe MIDI to an external
+synth — but `.wav`/`.ogg` **playback** of SFX and music is built in (#1813).
+
+## Entry point
+
+`engine/audio/include/irreden/ir_audio.hpp` — exposes `IRAudio::` free
+functions:
+
+- `getAudioManager()`, `getMidiIn()`, `getMidiOut()`, `getAudio()`.
+- MIDI device enumeration: list ports, open by index or substring.
+- Audio device listing: `audioDevices()` — the devices the backend enumerated
+  at startup, sorted by name (no hot-plug refresh).
+- MIDI query: per-channel, per-frame CC/note-on/note-off queues.
+- MIDI send: `sendMidiMessage(message)` (default port) / `sendMidiMessage(portIndex,
+  message)` — raw RtMidi bytes. (There are no `sendNoteOn`/`sendNoteOff`/`sendCC`
+  helpers; build the `C_MidiMessage` and call `sendMidiMessage`.)
+- MIDI send observer: `setOutboundMidiObserver(cb)` / `clearOutboundMidiObserver()`
+  — see "Outbound MIDI observer" below.
+- Audio input: a capture stream with a float-sample callback, and an input
+  arm with a level meter (`armAudioInput`, `audioInputLevels`; see below).
+- File playback: `playSound` / `playMusic` / `playSoundAt`, `stopSound`,
+  `setSoundVolume`, `fadeInSound` / `fadeOutSound`, `setBusVolume`,
+  `setMasterVolume`, `setListenerPosition`. The Lua mirror is the `IRAudio`
+  table (`engine/script/include/irreden/script/lua_audio_bindings.hpp`,
+  bound by `bindLuaDrivenEcs()`).
+
+## AudioManager owns
+
+- **`MidiIn`** — one `RtMidiIn` per simultaneously-open input port, each
+  with its own callback-to-main-thread SPSC ring. `tick()` drains every port's
+  ring into a `MidiInputFrameBuffer` (cleared and refilled each frame) that
+  keeps both a merged all-ports per-channel view and a per-port view.
+- **`MidiOut`** — one `RtMidiOut` per open output port; fire-and-forget send
+  to the default (first-opened) port, or to a specific port by index, under
+  one mutex it shares with the `MidiClock` thread.
+- **`MidiClock`** — MIDI beat clock on one open output port (`midi_clock.hpp`).
+- **`Audio`** — `RtAudio` wrapper for microphone/line-in. Implements
+  `IAudioCaptureSource`; the recorder and the input arm share its stream.
+- **`SyntheticAudioCaptureSource`** — wall-clock-paced tone source used by
+  capture validation; its worker thread joins synchronously on stop.
+- **`AudioPlayback`** — miniaudio file playback (see below). `getAudioPlayback()`.
+
+## File playback model (`AudioPlayback`)
+
+`engine/audio/include/irreden/audio/audio_playback.hpp` — a pImpl wrapper
+over miniaudio's **high-level engine** (`ma_engine` / `ma_sound` /
+`ma_sound_group`). miniaudio is a private implementation detail: only
+`src/audio_playback.cpp` defines `MINIAUDIO_IMPLEMENTATION`, and the
+`ma_*` types never appear in any public header.
+
+- **Library decision — miniaudio, high-level `ma_engine` API.** Single-
+  header, public-domain, cross-platform (CoreAudio / WASAPI / ALSA) with
+  built-in decoding, mixing, **sound groups (= our buses)**, a **listener +
+  3D spatialization (= the #207 seam)**, per-sound volume/loop, and fades —
+  so the engine code is a thin wrapper, not a device/decoder build-out.
+  Vendored via `FetchContent` pinned to a tag (matches the RtMidi/RtAudio
+  pattern), compiled playback-only with `MA_NO_ENCODING`. macOS links the
+  CoreAudio frameworks; Linux pulls `pthread m dl` (ALSA is dlopen'd at
+  runtime, no `-lasound`); Windows needs nothing extra (WASAPI via system).
+  See `CMakeLists.txt`.
+- **Buses.** `AudioBus { CREATURE, ENVIRONMENT, ABILITY, UI, MUSIC, COUNT }`
+  (`ir_audio_types.hpp`) — one `ma_sound_group` each, parented under the
+  engine endpoint. The integer values double as the C++ group-array index
+  and the `IRAudio.Bus` Lua table; keep them contiguous from 0 with `COUNT`
+  last. `setBusVolume` scales a whole category; `setMasterVolume` scales the
+  engine.
+- **Handles + lifetime.** `playSound` (decode-into-memory one-shot) /
+  `playMusic` (streamed, loops by default) / `playSoundAt` (spatialized)
+  return a `SoundHandle` into a handle table of heap-owned `ma_sound`s;
+  `kInvalidSoundHandle` (0) on failure. A **finished one-shot is reaped on
+  the main thread** by `tickPlayback()` — wired into `World::input()` next
+  to `MidiIn::tick()` — never from miniaudio's audio callback. The reap rule
+  is "non-looping AND no longer playing", which also covers a faded-out
+  sound (`fadeOutSound` fades then stops). Looping sounds live until an
+  explicit `stopSound`.
+- **No device = silent, never a crash.** If `ma_engine_init` fails (no
+  playback device, e.g. a headless box) `AudioPlayback` stays uninitialised:
+  every `play*` returns `kInvalidSoundHandle` and the setters no-op.
+  **Every degrade path ships with a `test/audio/` arm** driving each public
+  method through the uninitialised state (`test/audio/audio_playback_test.cpp`
+  is the shape). On a dev box with a device the doctrine is unobservable, so
+  review and CI both read green — `MidiIn`/`MidiOut`'s degrade (#2559) landed
+  without one.
+- **Forward seams (depth is #207/#208, not built here).** `playSoundAt` +
+  `setListenerPosition` drive the one built-in `ma_engine` listener and a
+  sound's world position — #207 layers occlusion / biome ambience on this
+  existing positional source. A world-time scheduler / bus-gain automation
+  keyed on `IRSim::tick()` / `IRSim::cycleFraction` is the #208 seam (not
+  stubbed; build it there).
+
+The `creations/demos/audio_playback/` demo drives the whole surface from
+Lua (`scripts/audio_demo.lua`).
+
+## MIDI model
+
+- **`MidiChannel`** is the map key. Query `IRAudio::checkCCMessage(channel,
+  cc)` / `getMidiNotesOnThisFrame(channel)` for the **merged** all-ports
+  view, or the port-scoped `checkCCMessage(portIndex, channel, cc)` /
+  `getMidiNotesOnThisFrame(portIndex, channel)` to disambiguate same-channel
+  traffic across ports. `openPortMidiIn`/`openPortMidiOut` return the RtMidi
+  port index — the stable handle used as the source-port id, the
+  `sendMidiMessage(portIndex, …)` target, and the per-port query key.
+  `midiInOpenPorts()` / `midiOutOpenPorts()` enumerate the open handles.
+- `MidiIn::tick()` drains every open port's RtMidi callback queue directly
+  into the merged and per-port buffer views before the INPUT pipeline runs;
+  no prefab system is required and no inbound entities are minted. **Merged
+  CC collapses same-channel+cc traffic (last write wins)** — use the per-port
+  query when two devices share a channel.
+- The buffer is cleared at the start of every `MidiIn::tick()` — there is no
+  history. Systems must read during their tick or they miss the event, and a
+  reference held across frames is UB. The
+  deprecated entity route is listed in `engine/prefabs/irreden/audio/CLAUDE.md`
+  under `## Deprecated`.
+- Device names are substring-matched at `openPort()` time, with hardcoded
+  fallback patterns for common devices (UMC1820, Focusrite, MPKmini2,
+  OP-1). Edit `midi_in.cpp` / `midi_out.cpp` to add a new hardware match.
+  Opening an already-open port is a no-op that returns the existing handle.
+- **No device = silent, never a crash** (same doctrine as `AudioPlayback`).
+  If the RtMidi client can't be created (no MIDI server access), `MidiIn`/
+  `MidiOut` degrade to a no-MIDI state instead of throwing out of the
+  constructor: 0 ports, `openPort` warns and returns -1, `tick()`/queries/
+  `sendMidiMessage` no-op. One `IRE_LOG_WARN` names the RtMidi error at
+  degrade time.
+
+## Outbound MIDI observer (#1869)
+
+`IRAudio::sendMidiMessage` is the **outbound choke point** — every prefab
+path (`CONTACT_MIDI_TRIGGER`, `MIDI_SEQUENCE_OUT`,
+`PERIODIC_IDLE_MIDI_TRIGGER`, the `C_MidiNote::onDestroy` NOTE_OFF) routes
+through it; only `MidiClock` (last bullet) writes to `MidiOut` beside it. So
+the single observer registered there (`setOutboundMidiObserver`) sees every
+outbound message but the clock's pulses, including C++-emitted ones a Lua-only
+monitor would otherwise miss.
+
+- **Single observer, last-registration-wins** — matches the inbound
+  `AudioInputCallback` precedent; multiplex in the handler if you need fan-out.
+- **Fires unconditionally of an open port.** The observer runs even when no
+  hardware output port is open (headless monitor); the actual hardware send
+  no-ops below it. It fires *before* the hardware send.
+- **Main thread, synchronous.** `sendMidiMessage` runs on the UPDATE pipeline
+  (main thread), unlike the driver-thread inbound `MidiIn` callback. Don't move
+  the send to a worker thread.
+- **Storage + lifetime.** The callback is stored on `AudioManager`
+  (`m_outboundMidiObserver`), not a TU-local static. A captured `sol::function`
+  must outlive every send: `World` declares `m_audioManager` after `m_lua` so
+  it destructs first, dropping the function while the `sol::state` is still
+  alive. `clearOutboundMidiObserver()` is the explicit escape hatch.
+- **Lua surface.** `IRAudio.onMidiSent(fn)` registers `fn(status, channel,
+  data1, data2, portIndex)` (integers; `status` matches `IRAudio.MidiStatus.*`);
+  `IRAudio.clearMidiObserver()` detaches. A Lua handler error is logged and
+  swallowed so it can't abort the C++ send loop (bound by `bindLuaDrivenEcs()`
+  in `lua_audio_bindings.hpp`). A system message (`MidiStatus.START` / `STOP`
+  / ...) arrives as its whole status byte with `channel == -1`.
+- **`MidiClock` keeps the order and the thread rule.** START and STOP go to
+  the observer and then the port on the caller's thread, like any send; the
+  `TIMING_CLOCK` pulses go to the port alone, from the clock thread, where the
+  observer (it may run Lua) must never run.
+
+## Audio capture model
+
+- `startCapture` keeps the recorder on an input-only RtAudio stream. Optional
+  monitoring uses a second output-only stream and a bounded SPSC frame ring;
+  drift drops or zero-fills monitor samples and never edits recorder delivery.
+- **RtAudio 6 reports failure by return value, not by throwing.** Open, start,
+  and stop return `RtAudioErrorType`; `RTAUDIO_NO_ERROR` is the only success
+  (`RTAUDIO_WARNING`, a wrong-state call, is a failure). `Audio` reaches
+  RtAudio only through `detail::IAudioInputBackend`, so each status gates the
+  state flags in one place and `test/audio/audio_capture_test.cpp` fires every
+  failure with a fake backend. A failed stop keeps the stream reported as
+  running until `closeStreamIn()`.
+- **No backend call can hold the main thread.** Input and monitor output each
+  have one owning control thread. Both share one absolute arm / teardown
+  deadline; a stuck output is quarantined independently and input stays live.
+  Abandoned tasks hold no engine or caller-owned object and never log.
+- Unlisted requests use the nearest rate above 8 kHz; the backend rate wins.
+- `IAudioCaptureSource::getCaptureSampleRate()` reports that delivered-sample
+  rate while active and 0 otherwise; video recording carries it downstream.
+- Callback: `void(const float* samples, int frameCount, double streamTime,
+  bool overflow)`, 1024 frames by default, on RtAudio's audio thread — **do not
+  touch ECS or Lua state from inside it**; copy out, consume on the main thread.
+  `stopCapture`, a timeout, and `~Audio` close its gate: none in flight after.
+- Lua toggles the monitor gate without device calls; recorder sync uses only input latency.
+- The synthetic capture source follows the same callback contract and paces
+  against accumulated deadlines so scheduler jitter cannot shorten a take.
+
+## Input arm and level meter
+
+Unlike the audible monitor, `armInput` (Lua `IRAudio.armAudioInput`; exact
+device name, empty = default) opens the input only. It and `startCapture` are
+two holds on one stream (contract: `class Audio`); a switch is refused
+mid-take. The meter (`audio_input_meter.hpp`) publishes 100 ms per-channel
+windows from the driver thread before the recorder/monitor fan-out — no
+allocation, lock, or log there. `IRVideo::AudioLevelLog` logs what Lua reads.
+
+## Gotchas
+
+- **No hot-swap.** If a MIDI device is unplugged mid-run, the `RtMidiIn`
+  callback stops firing silently. There is no reconnection logic.
+- **Custom RtMidi/RtAudio patches.** Don't assume stock upstream behavior
+  — check `patches/` before debugging driver-level issues.
+- **Single-thread `tick()` assumption.** `MidiIn::tick()` has no mutex.
+  Call it only from the main loop.
+- **RtMidi input callback constraints.** It runs on the driver thread and
+  must not throw, log, or allocate. Copy each message into the port's SPSC
+  ring and handle diagnostics on the main-thread drain.

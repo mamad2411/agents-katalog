@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/full-stack-skills/tauri-skills/tauri-security/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: Guidance for Tauri v2 capabilities, scope configuration, and ACL-based permission control.

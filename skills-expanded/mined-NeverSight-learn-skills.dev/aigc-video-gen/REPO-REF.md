@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/teamwiseflow/xiaobei/aigc-video-gen/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: AIGC 视频片段生成（声画同出）。支持阿里云百炼 happyhorse / 火山方舟 Seedance / MiniMax Hailuo-H3 provider，支持 t2v / i2v / r2v 三种模式，每段 3–15 秒。MiniMax 还支持背景音乐生成（music 子命令）。

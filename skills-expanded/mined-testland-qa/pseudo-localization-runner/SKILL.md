@@ -1,0 +1,168 @@
+---
+name: pseudo-localization-runner
+description: "Configures pseudo-localization for the app (replaces translatable strings with accented variants like \"Submit\" → \"Şüƀɱîţ\" + 35% length expansion) - surfaces UI issues without needing actual translators: hardcoded strings, truncation, encoding, and bidi handling. Use when preparing an app for translation (i18n / internationalization), validating l10n infrastructure, or when the user mentions pseudo-localization or localization testing."
+---
+
+# pseudo-localization-runner
+
+## Overview
+
+Pseudo-localization swaps translatable strings for accented, length-expanded
+variants that stay readable to English QA:
+
+```
+"Submit" → "Şüƀɱîţ"             # accent / Latin-extended characters
+"Submit" → "[Şüƀɱîţ]"            # delimited markers (find unwrapped strings)
+"Submit" → "Şüƀɱîţ ↵↵↵"         # 35% length expansion (test truncation)
+```
+
+The output stays readable to English-speaking QA while surfacing the l10n
+issues catalogued in Step 4.
+
+## When to use
+
+- Pre-translation: validate the app's l10n infrastructure works
+  before paying for translation.
+- After major UI work: confirm new components handle l10n correctly.
+- Continuous: the team's "always-on" l10n smoke test.
+
+## Step 1 - Pick a pseudo-localization library
+
+Per stack:
+
+| Stack            | Library / approach                                  |
+|------------------|-----------------------------------------------------|
+| i18next (JS/TS)   | `i18next-pseudo` plugin                              |
+| FormatJS         | Manual middleware in the message extractor          |
+| Django           | `django-modeltranslation` + custom locale            |
+| Rails            | `i18n-pseudo`                                         |
+| Anything         | Build custom: walk the locale file; transform values |
+
+## Step 2 - Configure pseudo-locale
+
+```typescript
+// src/i18n.ts (i18next + i18next-pseudo)
+import Pseudo from 'i18next-pseudo';
+
+i18next
+  .use(Pseudo)
+  .init({
+    fallbackLng: 'en',
+    pseudo: {
+      enabled: process.env.NODE_ENV !== 'production',
+      letterMultiplier: 2,         // ~35% length expansion
+      languageToPseudo: 'en',       // wrap English strings
+      repeatedLetters: ['a', 'e', 'i', 'o', 'u'],
+    },
+  });
+```
+
+The `letterMultiplier: 2` doubles vowels (Şü → Şüü) - the 35%
+length-expansion convention.
+
+## Step 3 - Run the app under pseudo-locale
+
+```bash
+# Activate pseudo-locale by URL param / cookie
+APP_URL=http://localhost:3000?lng=en-XA   # or whatever the pseudo-locale code is
+```
+
+The app renders with pseudo-translated text. QA / engineers walk
+the UI looking for issues.
+
+**Verify the pseudo-locale is active** before walking the UI: confirm at least one
+visible label renders transformed (e.g. `Submit` shows as `Şüƀɱîţ`). If the page
+still shows plain English, the locale did not activate - fix the `lng` param or
+cookie and reload before continuing.
+
+## Step 4 - Issues to spot
+
+| Symptom                                       | Underlying issue                          |
+|-----------------------------------------------|-------------------------------------------|
+| Pure-English text on the page                  | String not wrapped in `t()` (untranslated) |
+| Truncation (`...`)                              | Container too narrow for translated text |
+| Layout broken (overlapping elements)           | CSS doesn't accommodate longer strings    |
+| Mojibake / garbled characters                  | Encoding misconfigured                     |
+| Missing characters / boxes (`□`)              | Font doesn't support extended Latin       |
+| Bidi text rendered wrong direction              | Mixing LTR/RTL without proper markers     |
+
+## Step 5 - Visual regression with pseudo-locale
+
+Combine with `playwright-snapshots` (in the qa-visual-regression plugin)
+for automated detection:
+
+```typescript
+// e2e/pseudo-loc.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.use({ extraHTTPHeaders: { 'Accept-Language': 'en-XA' } });
+
+test('checkout page renders correctly under pseudo-loc', async ({ page }) => {
+  await page.goto('/checkout');
+  await expect(page).toHaveScreenshot('checkout-pseudo.png');
+});
+```
+
+The screenshot baseline is established under pseudo-locale; future
+runs catch regressions in l10n-friendliness.
+
+## Step 6 - CI integration
+
+```yaml
+- name: Pseudo-localization smoke
+  run: |
+    npm run dev:pseudo &
+    sleep 5
+    npx playwright test e2e/pseudo-loc.spec.ts
+- uses: actions/upload-artifact@v4
+  if: failure()
+  with:
+    name: pseudo-loc-screenshots
+    path: test-results/
+```
+
+## Step 7 - Alternative: manual transformation
+
+If no pseudo-localization library exists for your stack, transform the source
+locale file locally with a one-time script - see
+[references/manual-transform.md](references/manual-transform.md).
+
+## Worked example
+
+A team enables `i18next-pseudo` with `letterMultiplier: 2` (Step 2) and loads
+`/checkout?lng=en-XA` (Step 3). "Submit" renders as `Şüƀɱîţ`, confirming the wrap
+works - but a promo badge still shows plain `Sale`, exposing an unwrapped string
+(Step 4). The "Place Order" button also truncates because its container is
+fixed-width and can't absorb the 35% length expansion.
+
+The developer wraps the badge in `t()` and lets the button widen. A Playwright
+screenshot baseline `checkout-pseudo.png` is established under the pseudo-locale
+(Step 5), so future PRs catch layout regressions automatically. The re-run is clean.
+
+## Anti-patterns
+
+| Anti-pattern                                                          | Why it fails                                                              | Fix |
+|-----------------------------------------------------------------------|---------------------------------------------------------------------------|-----|
+| Pseudo-loc in production                                              | Real users see garbled UI.                                                | Dev / staging only (Step 2). |
+| 0% length expansion                                                    | Misses truncation issues.                                                 | 30-50% expansion (Step 2). |
+| ASCII-only pseudo-loc                                                  | Misses encoding issues.                                                   | Use accented Latin (or non-Latin script for some chars). |
+| Pseudo-loc as substitute for real translation                          | Pseudo-loc verifies infrastructure; not translator quality.              | Use both: pseudo-loc continuously, real translation per release. |
+| Skipping screenshot baseline under pseudo-loc                          | Layout regressions visible only when locale activated.                   | Pseudo-loc + visual regression (Step 5). |
+
+## Limitations
+
+- **Doesn't replace real translation.** Pseudo-loc tests the
+  infrastructure; humans still need to translate for real users.
+- **Can't test pluralization rules.** ICU MessageFormat rules
+  don't auto-apply; pseudo-loc just transforms the surface text.
+- **Right-to-left support varies.** Some libraries also offer a
+  RTL pseudo-locale (`en-XB`) that mirrors text direction; valuable
+  but rare.
+
+## References
+
+- W3C i18n documentation at `w3.org/International/`.
+- `i18n-string-coverage` - static-scan complement.
+- `rtl-rendering-tester` - RTL-specific tests.
+- `playwright-snapshots` - visual regression for catching pseudo-loc regressions.
+- [references/manual-transform.md](references/manual-transform.md) - manual transform script.

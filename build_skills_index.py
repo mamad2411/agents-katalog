@@ -487,6 +487,31 @@ def main():
                         if sub2.is_dir() and (sub2 / "SKILL.md").exists():
                             add(sub2, "reference", parent=d.name)
 
+    # --- aset agent lintas tool: AGENTS.md, .cursor/rules/*.mdc, prompt, copilot ---
+    assets_dir = AGENTS / "agent-assets"
+    asset_count = 0
+    if assets_dir.exists():
+        for f in sorted(list(assets_dir.rglob("*.md")) + list(assets_dir.rglob("*.mdc"))):
+            try:
+                head = read_head(f)
+            except Exception:
+                continue
+            fm_name, desc, body = parse_frontmatter(head)
+            title = first_h1(body)
+            name = canonical(f.stem, fm_name or (slug(title) if title else ""))
+            if not name or name in entries:
+                stats["dup"] += 1
+                continue
+            if not desc:
+                desc = first_paragraph(body, title) or first_heading(body)
+            if not desc or len(desc) < 20:
+                continue
+            cat = role_fallback_text(f"{name} {desc}") or "agent-asset"
+            src = (gh_source(f.parent.name) or gh_source(f.parent.parent.name)
+                   or scrape_source(f.parent.name) or "")
+            entries[name] = (desc, "reference", cat, str(f), src)
+            asset_count += 1
+
     if DB_PATH.exists():
         DB_PATH.unlink()
     conn = sqlite3.connect(DB_PATH)

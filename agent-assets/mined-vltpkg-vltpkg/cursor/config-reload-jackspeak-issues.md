@@ -1,0 +1,48 @@
+---
+description: Config reload and JackSpeak caching issues
+globs: src/cli-sdk/src/reload-config.ts,src/cli-sdk/src/config/*,src/vlt-json/src/*
+alwaysApply: false
+---
+# Config Reload & JackSpeak Caching
+
+## Problem
+
+Config endpoints return stale values after updates due to multi-layer caching:
+1. JackSpeak parser retains internal state across instances — `setConfigValues()` can't override cached defaults
+2. `Config.#options` memoization persists
+3. `vlt-json` module has fs caches (`datas`, `mtimes`, `paths`, `lstatCache`)
+4. `Config.#loaded` static cache
+
+`Config.load(root, argv, true)` is NOT sufficient — JackSpeak parser retains state.
+
+## Solution: Hybrid Config Reading
+
+```typescript
+// 1. Clear vlt-json caches
+const { unload, load: vltLoad } = await import('@vltpkg/vlt-json')
+unload('user'); unload('project')
+
+// 2. Read fresh from vlt-json, fallback to Config system
+configSection = vltLoad('config', validator, 'project')
+if (configSection && key in configSection) return configSection[key]
+return await getConfigValue(this.config)
+```
+
+**For writes**: Create fresh Config instances per write. Use `addConfigToFile()`/`deleteConfigKeys()` directly.
+
+**Type safety**: Dynamic imports need type assertions:
+```typescript
+type VltJsonModule = {
+  unload: (which?: 'user' | 'project') => void
+  load: <T>(
+    field: string,
+    validator: (x: unknown, file: string) => asserts x is T,
+    which?: 'user' | 'project',
+  ) => T | undefined
+}
+const { unload, load } = await import('@vltpkg/vlt-json') as VltJsonModule
+```
+
+## Key Files
+
+`src/cli-sdk/src/reload-config.ts`, `src/cli-sdk/src/config/index.ts`, `src/vlt-json/src/index.ts`

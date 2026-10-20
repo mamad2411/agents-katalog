@@ -1,3 +1,0 @@
-# Stub
-
-Stub markdown file.

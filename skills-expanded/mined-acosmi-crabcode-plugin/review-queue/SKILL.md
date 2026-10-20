@@ -1,0 +1,63 @@
+---
+name: 律师复核队列
+short-description: 创建、列出、更新或查看 CrabLaw-CN 各项产出的律师复核队列条目
+description: 创建、列出、更新或查看 CrabLaw-CN 各项产出的律师复核队列条目。当用户提到复核队列/待复核/审核列表/待审项/复核进度/有哪些要审的,或需要登记某份产出待律师复核、查看复核状态时使用本技能(即使未明说"复核队列")。
+argument-hint: "<new | list | update | show> [matter id] [item id]"
+---
+
+# crablaw-cn:review-queue
+
+【AI 辅助草稿，需律师复核】
+
+Manage review queue records. Every substantive output from a domain plugin must create or reference a review item.
+
+## Commands
+
+- `new`: create a review item for an output.
+- `list`: list review items for a matter.
+- `show`: inspect one review item.
+- `update`: update review status after lawyer action.
+
+## Status Model
+
+- `draft`
+- `pending-review`
+- `returned`
+- `approved-internal`
+- `approved-external`
+- `sent`
+- `archived`
+
+## Rules
+
+1. New domain outputs default to `draft` or `pending-review`.
+2. A domain plugin cannot set `approved-internal`, `approved-external`, or `sent`.
+3. External delivery requires an explicit approved status and destination record.
+4. Returned items must keep the review comments and prior output path.
+5. Every status change must append to `audit-log.jsonl`.
+6. A queue status is not itself a release permission. After moving a deep-analysis item to
+   `approved-internal` / `approved-external`, the run-level effect is established only by
+   `matter-core/scripts/finalize_run.py record`, which binds the named reviewer's decision to the
+   run's current bytes. Any later edit to a document, source record or artifact ends that effect;
+   the item must be reviewed and recorded again.
+
+## Output
+
+Return a queue table with item id, source skill, status, reviewer, output path, and next action.
+
+## Schemas
+
+Validate each written record against the schema before treating the queue update as complete:
+
+- `matters/<matter-id>/review-queue.jsonl` (one JSON per line) → `matter-core/schemas/review-queue.schema.json`
+
+Validate each candidate record before appending it:
+
+```text
+python3 ${CRABCODE_PLUGIN_ROOT}/matter-core/scripts/validate_json.py \
+  --schema ${CRABCODE_PLUGIN_ROOT}/matter-core/schemas/review-queue.schema.json \
+  --file <record-file>
+```
+
+New items should add canonical `sourceCapability: crablaw-cn:<skill>` while retaining the legacy
+`sourcePlugin` board and `sourceSkill` basename for existing consumers.

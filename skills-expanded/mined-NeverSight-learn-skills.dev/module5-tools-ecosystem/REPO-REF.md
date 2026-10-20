@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/olorolor/fundamentals-with-ai/module5-tools-ecosystem/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: AI 개발/활용 도구 생태계(LangChain, LangGraph, CrewAI, 코딩 에이전트 등)를 비교하고 목적에 맞게 선택하는 모듈.

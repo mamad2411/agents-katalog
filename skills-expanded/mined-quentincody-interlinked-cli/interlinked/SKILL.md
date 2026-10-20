@@ -1,0 +1,195 @@
+---
+name: interlinked
+description: "Overview and router for the Interlinked CLI — a local guard, quality-enforcement, simplification-review, semantic-code-search, and observability layer for AI coding agents. Load this when working in a repo that has a `.interlinked/` directory, when you see any `[interlinked:*]` output or a `BLOCKED: … Suggestion: …` reason and are not sure which area it belongs to, or when you need to know what the `interlinked` command can do. This skill explains the mental model, the `.interlinked/` layout, the `[proven]`/`[heuristic]` tags, and routes you to the focused `interlinked-*` skill for setup, guard blocks, verify/checks, quality ratchets, simplification, local semantic indexing, supply-chain, spec-audit, observability, or coordination."
+---
+
+# interlinked — overview & skill router
+
+For repeated implementation advice (`repeated_implementation`), load
+**interlinked-verify**. This is an advisory AST comparison for Python and JS/TS,
+reported after a changeset and in the Stop/verification review. It is not a hard gate.
+
+
+Use **interlinked-verify** for `tests contracts import|inspect|run`: portable executable
+examples, expected-value provenance and retained previous expectations. Use
+**interlinked-spec-audit** for preparing explicit documentation examples. Contract
+review is advisory; configured acceptance is separate from agent-authored proposals.
+
+For provider edit normalization and Stop delivery, use **interlinked-harness**; for
+native qualification, use **interlinked-setup**; for re-entry/translation evidence,
+use **interlinked-observability**. Early test-readiness guidance is covered by
+**interlinked-verify**. Provider-specific capabilities remain available.
+
+Use **interlinked-verify** for `tests readiness` and bounded `tests review`, including Python
+test setup and the distinction between tools present, assertions executed, and requirements
+covered. Use **interlinked-simplification** for the advisory Python cleanup/forwarding family.
+
+**Interlinked is a local control plane for AI coding agents.** A local daemon ("the harness")
+hooks into Claude Code, Codex, Copilot CLI, Gemini CLI, Cursor, OpenCode, and
+Pi — and on every tool call the runner exposes to its hook surface it enforces deterministic
+policy (block/allow in milliseconds, no model in the decision path),
+fails closed on what causes incidents (destructive commands, secrets, unvetted deps), and writes
+a replayable local activity log. It is **offline-first** — no required cloud dependency or
+remote telemetry. Activity is recorded locally; an **optional authenticated server** provides
+multi-agent coordination and configured sync.
+
+Runner registration is not a claim of identical native APIs. OpenCode and Pi use managed
+plugin/extension bridges and lack dedicated native MCP, subagent, and worktree lifecycle hooks;
+load **interlinked-setup** for activation/trust and **interlinked-harness** for ask/Stop behavior.
+
+If you're an agent working in a repo with a `.interlinked/` directory, you are being guarded by
+it. This skill orients you and points to the right focused skill.
+
+## The three surfaces
+
+Jev semantic review is internal research only. The public Interlinked CLI has no
+`jev` command, and its harness never invokes Jev at Stop. Legacy `jev` guard
+settings do not enable it. Internal evaluation belongs to the source-checkout
+runner documented in `docs/internal/jev.md`; it is not a customer BYOK feature.
+
+| Surface | Role |
+|---|---|
+| **Interlinked CLI** (`interlinked …`) | Local hooks, guard, quality checks, activity capture, diagnostics. |
+| **Interlinked MCP Server** | Optional remote source of truth for tasks, messages, reservations, agent state. |
+| **Web UI** (`/chat`, `/map`) | Optional human oversight and coordination. |
+
+## The `.interlinked/` directory
+Everything is per-`cwd` under `<repo>/.interlinked/`. Key files:
+
+| File | Git | Purpose |
+|---|---|---|
+| `config.json` | committed | server URL, defaults, operational mode, feature flags |
+| `config.local.json` | gitignored | token, agent name, workspace, sync mode |
+| `guard-rules.json` / `.local.json` | team / local | guard rules, file reminders, per-edit coverage/mutation policy |
+| `check-policy.json` / `.local.json` | team / local | report-ratchet settings, including the mutation-score floor |
+| `lint-import.json`, `lint-baseline.json` | team | imported analyzer scopes/configuration digests and tighten-only existing-debt allowances |
+| `package-allowlist.json` | committed | approved dependencies (default-deny installs) |
+| `package-proposals/` | local | pending dependency requests; never approval grants |
+| `verify-suppressions.json` | committed | file/glob check suppressions |
+| `test-dependencies.json` | team | additive literal test-to-input dependency declarations |
+| `test-runs/` | local | durable pending requests, validated passing receipts, native reports and the last observed job |
+| `*-baseline.json`, `metric-caps.json` | mixed | ratchet water-lines (coverage/mutation/line-cap/caps); the daemon folds session evidence into three of them at SessionEnd, tighten-only — see **interlinked-quality-gates** |
+| `baseline-folds.jsonl` | local | audit row per SessionEnd water-line fold (what tightened, what was refused) |
+| `hook-coverage.json` | local | daemon-owned protected/reserved file observations, pending versions, manual reviews and automated check receipts; writer identity remains unknown |
+| `mutation-manifest.json` | mixed | stable per-mutant state for the live per-edit mutation ratchet |
+| `mutation-cloud-v3.local.json` | gitignored | experimental protocol-v3 endpoint, authority, key, runtime, and scheduler configuration |
+| `mutation-journal.sqlite` | local | authority-scoped durable mutation jobs, leases, authenticated evidence, manifest head, and outbox |
+| `mutation-findings.jsonl` | local | fsynced, deduplicated delivery records for durable background mutation findings |
+| `findings/corpus.jsonl` | committed-capable | common finding storage, including recorded simplification extensions |
+| `findings/simplification-runs.jsonl`, `debt/manual-marker-snapshots.jsonl` | local | explicit simplification-run and manual-marker snapshot receipts |
+| `semantic.json` / `.local.json` | team / local | optional local semantic-index policy / machine runtime topology |
+| `index/functions/` | local | generation-scoped function metadata and vectors; never synced |
+| `index/data/search.sqlite`, `data.config.json` | local | rebuildable JSONL/archives search projection and bounded maintenance settings |
+| `capture-receipts.jsonl`, `capture-capabilities.jsonl`, `capture/state/` | local | producer write/availability evidence and derived lifecycle state |
+| `activity.jsonl`, `collection.jsonl`, `timeline.jsonl` | local | captured agent activity (`enable` gitignores the first two) |
+| `hook-runtime.json` | local | payload-free proof that each provider executed its current hook definition |
+| `harness.sock` / `harness.pid` | — | the running daemon |
+
+## What warnings mean: `[proven]` vs `[heuristic]`
+Every message the harness sends you is tagged:
+- **`[proven]`** — a real compiler/linter/scanner/parser/test-runner produced it (tsc, biome,
+  gitleaks, semgrep, …). Authoritative — **fix it**.
+- **`[heuristic]`** — a regex/AST-shape match that could be a false positive. **Evaluate it.**
+- No tag — an unknown check id (never guessed).
+
+A **block reason is always surfaced.** Allow-time warnings are surfaced but easy to overlook
+(PreToolUse via `additionalContext`, PostToolUse via stderr) — read them.
+
+## Where things run (server / auth / offline)
+| Commands | Server needed | Works offline |
+|---|---|---|
+| `enable`, `disable`, `doctor`, `verify`, `harness …`, `caps`, `simplify …`, `debt …`, `impact`, `allowlist`, `logs`, `status` | no | yes |
+| `sync`, `watch` | yes | no |
+| `tasks`, `send`, `inbox`, `handoff`, `workspace` | yes (auth) | no |
+| `checkpoint`, `rewind`, `resume`, `guard` | no | yes |
+
+## Which skill to load for what
+
+Route `coverage check --lane e2e`, e2e evidence refusals and
+`coverage-e2e-baseline.json` to **interlinked-quality-gates**. Route
+`e2e scaffold` and `[interlinked:e2e-obligation]` (both confined to the
+Interlinked checkout itself — a host repository never sees them) to
+**interlinked-verify**.
+Route project e2e policy (`.interlinked/e2e-policy.json`), `tests e2e
+status|plan|run|check|qualify|scaffold`, the adoption workflow `tests e2e
+discover|surfaces|adopt|doctor`, the completion gates `tests e2e check
+--staged|--revision|--base|--gate`, `tests e2e gate install|status|uninstall`,
+`tests e2e ci`, `tests e2e policy replace`, `POLICY_WEAKENED`,
+`CI_RECEIPT_NOT_FRESH`, `tests e2e expectations …`,
+`[interlinked:e2e]` and `[interlinked:e2e-quality]` lines to **interlinked-verify**: a scenario obligation clears only through a
+supervised `tests e2e run` receipt for the current input generation, never
+through a unit run, a green console line or a copied report.
+Transport receipt diagnostics (`hook-transport.jsonl`) belong to
+**interlinked-harness**.
+
+For the experimental uploaded Cowork plugin, use **interlinked-cowork** and
+`interlinked cowork capabilities --json`. Cowork cloud hooks execute away from the
+host daemon. Native crash/timeout behavior can fail open; the coding-client claims
+above do not imply identical Cowork enforcement or Desktop Chat hooks.
+
+For hook parity and provider limitations, use `interlinked harness capabilities --json`
+and **interlinked-setup**. For `[interlinked:hook-coverage] NOT CHECKED` after an
+external write, use **interlinked-verify**. A declared hook, an installed entry, an
+observed invocation and native enforcement are separate evidence.
+
+| Situation | Load |
+|---|---|
+| Installing / enabling Interlinked, connecting a coding client/hook, daemon down or **zombie**, `doctor` fails, config/mode | **interlinked-setup** |
+| A Bash command or edit was **BLOCKED**; a sandbox/effect-residue warning; a `[interlinked:*]` warning; suppressions | **interlinked-harness** |
+| Running `interlinked verify`; a `pre_block` check blocked an edit; landing a cross-file refactor; scratch scripts | **interlinked-verify** |
+| Selecting tests, explaining invalidation/reuse, resuming deferred test work (`tests plan/run/status`), explicit TS/JS/Python/Rust/Go suites (`tests suite`) | **interlinked-verify**; incremental coverage contracts: **interlinked-quality-gates** |
+| `[interlinked:hook-coverage] NOT CHECKED`; verifying or reviewing pending file versions (`harness coverage`) | **interlinked-verify**; daemon/capability diagnostics: **interlinked-setup** |
+| Discovering/adopting lint configs, script aliases and CI/tasks (`lint scan`, `lint import`, `lint check`), native or declared SARIF adapters, isolated `--only-selected --config tool=file` profiles and hook/audit cadence | **interlinked-verify**; baseline integrity and retirement: **interlinked-quality-gates** |
+| Advisory **file size**, or blocked by a **function-token / coverage / complexity / CRAP / mutation** ratchet; configuring report, per-edit, or durable `mutation cloud` work; operating the mutation journal; "can't lower a baseline"; `adopt`; automatic obligation or manual marker debt; **dead code** (`deadcode` scan + `--categorize` deletion-safety buckets, per-edit `dead_code_action`) | **interlinked-quality-gates** |
+| Finding, reviewing, recording, or auditing opportunities to delete, replace, defer, or shrink code; `simplify …`; simplification coverage/evidence/deep handoff | **interlinked-simplification** |
+| `metrics score`, catalog/explain/compare/corpus, behavioral receipts, gate reach, incremental coverage, or syntax-token counter migrations | **interlinked-quality-gates** |
+| Dense expressions, callback depth, `metrics expressions`, `.interlinked/readability.json` | **interlinked-quality-gates**; formatter adoption and `lint import --gate errors --target …`: **interlinked-verify** |
+| Guard ownership changes, `guard-prediction-protocol`, predicted intent or reconciliation receipts | **interlinked-harness**; shared mode configuration: **interlinked-setup** |
+| `metrics jit`, commit-time `[interlinked:jit]` warnings, within-repo percentile ranks, complexity churn hotspots or directory spread | **interlinked-quality-gates** |
+| Installing a local embedding model; building, inspecting, searching, or repairing the optional function-vector index | **interlinked-semantic-index** |
+| An `npm/pip/cargo/…` install or manifest edit was blocked; the package **allowlist** | **interlinked-supply-chain** |
+| Spec/doc facts, drift, invariants, review **findings**, `doctest`; `[interlinked:spec-*]` | **interlinked-spec-audit** |
+| Explain earlier work, investigate failed/missed checks or file/session history, assess capture gaps, search JSONL/archives with **`data scan`**, compare storage engines with **`data lab`**, retain logs, inspect **`data` views**, **recurrence**, `viz`, chain `audit`, evidence-classed `impact`, `sync` | **interlinked-observability** |
+| Server-backed **tasks/messages/reservations/handoff**; local **checkpoints** (git-mutating!) | **interlinked-coordination** |
+| Distill AGENTS.md / CLAUDE.md guidance into enforced harness rules | **enforce** (`/enforce`) |
+
+## Quick orientation
+
+`metrics diagnostics --profile js-ts|python` provides separate verbosity/erosion censuses with overlap and
+absolute contributors. Route counting semantics and measurement gaps to **interlinked-quality-gates**;
+route `simplify review --diagnostics js-ts|python` and candidate review to **interlinked-simplification**.
+`metrics diagnostics compare` validates saved diagnostic scope and identity. These features add
+no hook gate or automatic scan cadence; Python uses an isolated, bounded stdlib parser.
+```bash
+interlinked                 # guided human first run (posture + hooks + skills + daemon)
+interlinked enable          # explicit/automation install primitive
+interlinked status          # dashboard: sessions, recent activity, health
+interlinked doctor          # is everything installed & the daemon answering?
+interlinked harness status  # liveness: answering / ZOMBIE / not running
+interlinked harness checks   # how many checks / rules are active
+interlinked data status --json # is retained evidence indexed through the relevant events?
+interlinked data health --json # what capture is observed, failed, or unmeasured?
+interlinked --help          # full command list
+```
+
+> `harness status` and `doctor` verify liveness by **round-trip, not PID**. A red `ZOMBIE`
+> (process alive, nothing answering) means the guard is off — `interlinked harness restart`.
+> For Codex, doctor also compares `.codex/hooks.json` with the last executed definition hash;
+> review changed hooks through `/hooks`, then run a hooked action.
+
+When prior evidence is relevant, load **interlinked-observability** and use its bundled
+investigation workflows. Check freshness, search a specific session/file/check, and verify
+supporting raw records. `data scan --raw` reads bounded JSONL/gzip without creating SQLite.
+Indexing is an explicit storage choice: import budgets are not disk limits. Both indexing and
+rotation automation default off and are independent. Enabled indexing runs at SessionEnd.
+Retain raw logs and archives indefinitely. Lossless rotation
+keeps history available through `data search`; ordinary live-tail readers have narrower scope.
+
+## Golden rules for an agent in a guarded repo
+1. **When blocked, read the `Suggestion:` and take the safe path** — don't rewrite to dodge the pattern.
+2. **Meet quality gates by improving code and behavioral evidence** — simplify logic or extract cohesive responsibilities, verify relevant behavior, and never lower a baseline. A lower complexity score alone does not prove a better solution.
+3. **`[proven]` findings are real** — fix them; triage `[heuristic]` ones.
+4. **Package installs are default-deny** — surface an unapproved dep to the human, don't `--force`.
+5. **Checkpoints/rewind mutate git** — never run them without explicit per-turn authorization.
+6. **Do not create worktrees** — use the current workspace; ask a human operator to provision
+   an approved worktree when isolation is required. Listing and cleanup remain allowed.

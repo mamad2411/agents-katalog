@@ -1,0 +1,179 @@
+---
+name: iac-report
+description: Lightweight report engine. Reads all skill results, deduplicates, prioritizes, and outputs findings as terminal table + CSV + HTML. No remediation.
+---
+
+# iac-report
+
+## CONSTRAINT — NO REMEDIATION
+
+Do NOT generate remediation advice, fix suggestions, code changes, or "how to fix" guidance. Report what is wrong and where — never how to fix it.
+
+## OBJECTIVE
+
+Read all `iac-scan/*-results.md` files. Deduplicate, prioritize, and output:
+
+1. **Terminal** — print a findings table to stdout
+2. **CSV** — write `iac-scan/findings.csv`
+3. **HTML** — write `iac-scan/report.html` (self-contained, single file)
+
+## INPUT
+
+Read these files from `iac-scan/` (skip any that don't exist):
+
+- `analysis.md`
+- `iam-results.md`
+- `network-results.md`
+- `storage-results.md`
+- `secrets-results.md`
+- `logging-monitoring-results.md`
+- `serverless-results.md`
+- `attack-chain-results.md`
+
+Extract every finding. Each finding must have: ID, title, severity, confidence, domain, file, line, risk summary.
+
+## DEDUPLICATION
+
+If two findings from different skills describe the same issue on the same resource, keep one:
+- Same resource + overlapping rule → merge, keep higher severity, combine evidence.
+- Same attack path described differently → merge.
+- Different aspects of the same resource (e.g., IAM overprivilege + missing logging) → keep both, mark as related.
+
+## PRIORITIZATION
+
+Sort findings by priority score:
+
+```
+score = severity_weight × 0.35 + exploitability_weight × 0.30 + blast_weight × 0.20 + confidence × 15
+```
+
+| Severity | Weight | Exploitability | Weight | Blast radius | Weight |
+|----------|--------|----------------|--------|--------------|--------|
+| Critical | 100    | direct         | 100    | account      | 100    |
+| High     | 75     | near           | 75     | service      | 70     |
+| Medium   | 50     | far            | 40     | resource_set | 40     |
+| Low      | 25     | theoretical    | 10     | single       | 15     |
+| Info     | 5      |                |        |              |        |
+
+Confidence (0.0–1.0) is multiplied by 15 and added directly. Low-confidence findings naturally rank lower.
+
+Assign priority tiers after scoring:
+- **P0** (≥85): fix immediately
+- **P1** (70–84): fix this sprint
+- **P2** (50–69): fix this quarter
+- **P3** (25–49): track and plan
+- **P4** (<25): accept or backlog
+
+## OUTPUT 1 — TERMINAL TABLE
+
+Print a summary table to stdout:
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  IaC Security Scan Results                                                     ║
+║  Repository: {path}  |  Date: {date}  |  Findings: {N}                         ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+
+  CRITICAL: {n}    HIGH: {n}    MEDIUM: {n}    LOW: {n}    INFO: {n}
+
+╔════╦══════════╦════════╦══════╦═══════════════════════════════╦═════════════════╗
+║ P  ║ Severity ║ Conf.  ║ Dom  ║ Title                         ║ Location        ║
+╠════╬══════════╬════════╬══════╬═══════════════════════════════╬═════════════════╣
+║ P0 ║ CRITICAL ║ 0.95   ║ IAM  ║ Admin wildcard on Lambda role ║ iam.tf:42       ║
+║ P0 ║ CRITICAL ║ 0.92   ║ NET  ║ RDS publicly accessible       ║ rds.tf:18       ║
+║ P1 ║ HIGH     ║ 0.88   ║ SEC  ║ AWS key in user data          ║ ec2.tf:95       ║
+║ ...║          ║        ║      ║                               ║                 ║
+╚════╩══════════╩════════╩══════╩═══════════════════════════════╩═════════════════╝
+
+  Full report: iac-scan/report.html
+  CSV export:  iac-scan/findings.csv
+```
+
+Domain abbreviations: IAM, NET, STR, SEC, LOG, SLS, CHN (attack chain), RPT (compound).
+
+## OUTPUT 2 — CSV
+
+Write `iac-scan/findings.csv` with these columns:
+
+```
+priority,severity,confidence,domain,id,title,resource,file,line,risk,environment,related_ids
+```
+
+- One row per finding, sorted by priority score descending.
+- Quote fields containing commas.
+- UTF-8 with BOM for Excel compatibility.
+
+## OUTPUT 3 — HTML REPORT
+
+Write `iac-scan/report.html` — a single self-contained HTML file. All CSS inline, no external dependencies.
+
+### Structure
+
+1. **Header** — repository name, scan date, total findings count
+2. **Severity bar** — colored horizontal bar showing Critical/High/Medium/Low/Info distribution
+3. **Findings table** — sortable by any column, filterable by severity/domain
+   - Priority tier (P0–P4)
+   - Severity (colored badge)
+   - Confidence (0.0–1.0)
+   - Domain
+   - Title
+   - File:line (clickable if relative path)
+   - Risk summary (1–2 sentences)
+   - Environment (prod/staging/dev/unknown)
+   - Related finding IDs
+4. **Cross-domain risks** — if attack chain results exist, list compound risks as cards:
+   - Chain title
+   - Severity
+   - Steps: `Resource A → Resource B → Resource C`
+   - Participating finding IDs
+5. **Positive controls** — bullet list of good practices detected
+6. **Footer** — "Generated by IaC Security Scanner. No remediation advice included."
+
+### Design requirements
+
+- Clean, professional, readable
+- Works in light and dark mode (use `prefers-color-scheme`)
+- Responsive — readable on mobile
+- Severity colors: Critical=#dc2626, High=#ea580c, Medium=#d97706, Low=#2563eb, Info=#6b7280
+- Sort/filter via vanilla JS (no frameworks)
+- Print-friendly: `@media print` rules for clean printout
+
+## COMPOUND FINDINGS
+
+When findings from different skills converge on the same resource, create a compound finding:
+
+- Title: combines the risk factors (e.g., "Internet-exposed Lambda with admin IAM and no logging")
+- Severity: highest among components
+- Evidence: combined from all component findings
+- Domain: RPT
+- Component finding IDs listed in `related_ids`
+
+Only create compound findings for these patterns:
+- Internet-exposed + overprivileged + unmonitored
+- Leaked credential + exposed workload + data access
+- Public API + no auth + dangerous IAM + no WAF
+
+## ARCHITECTURE DIAGRAM
+
+If `iac-scan/analysis.md` contains enough architecture data (VPCs, subnets, resources), generate `iac-scan/architecture-diagram.html`:
+
+- Self-contained HTML with inline SVG
+- Layered view: Internet → VPC → Subnets → Resources
+- Attack paths as red dashed lines
+- Findings as severity-colored dots on affected resources
+
+Confidence label in header:
+- **Architecture Diagram** — all resources visible in IaC
+- **Inferred Architecture Diagram** — some gaps from modules/remote state
+- **Estimated Architecture Diagram** — significant inference
+
+Subtitle: *"Generated from static IaC analysis. Runtime state may differ."*
+
+If the project has fewer than 5 resources, skip the diagram.
+
+## LIMITATIONS
+
+- Report quality depends on upstream skill outputs
+- Deduplication is heuristic — some duplicates may persist
+- No runtime correlation — IaC-only analysis
+- Architecture diagram is best-effort from static analysis

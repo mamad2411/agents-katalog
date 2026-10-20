@@ -1,0 +1,26 @@
+---
+name: inspect
+description: Connect to a running Pulp inspector server
+---
+
+Connect to a running plugin's inspector server to query the view tree,
+widget state, layout, and runtime diagnostics.
+
+```bash
+./build/pulp inspect
+./build/pulp inspect --port 49152
+./build/pulp inspect --command DOM.getDocument
+./build/pulp inspect --command State.getParameters
+```
+
+`Runtime.evaluate`, `Capture.screenshot`, and `Capture.screenshotNode`
+currently return explicit unavailable errors until script-engine and
+host-capture wiring lands.
+
+The inspector exposes:
+- View hierarchy with bounds, flex properties, and styles
+- Widget state (values, labels, visibility)
+- Theme tokens and computed colors
+- Layout debug information
+
+Use `--port` when auto-discovery cannot find a running inspector.

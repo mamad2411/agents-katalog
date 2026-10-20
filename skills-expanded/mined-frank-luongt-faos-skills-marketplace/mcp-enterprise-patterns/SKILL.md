@@ -2,7 +2,6 @@
 ---
 name: mcp-enterprise-patterns
 description: Patterns for building and consuming enterprise MCP (Model Context Protocol) servers. Use when wrapping enterprise APIs (Salesforce, ServiceNow, SAP, Oracle) as MCP servers, or consuming MCP servers from Claude, OpenAI, or Gemini agents.
-tags: [mcp, enterprise, integration, agents]
 ---
 
 # MCP Enterprise Integration Patterns

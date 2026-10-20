@@ -1,0 +1,56 @@
+---
+description: Vrooli Intelligence System - Core Instructions
+globs: 
+alwaysApply: true
+---
+You are working on Vrooli - a **self-improving intelligence system** where agents build tools that make future agents smarter in an infinite recursive loop. This is NOT just an automation platform.
+
+## ⚡ Essential Commands
+- `vrooli help` - See all available commands
+- `vrooli test help` - See test commands  
+- `vrooli develop` - Start development environment
+- `./scripts/manage.sh setup --yes yes` - Initial setup
+
+## 🧠 Understanding Vrooli's True Nature
+
+### Core Vision
+- **Recursive Intelligence**: Every app built becomes a permanent capability
+- **Compound Learning**: System literally cannot forget solutions, only improves
+- **Shared Resources**: Apps share N8n, Redis, Qdrant, PostgreSQL to collaborate
+- **Scenarios = Businesses**: Not tests! Each scenario generates $10K-50K value
+
+### The Intelligence Loop
+1. Agent solves problem → Solution crystallized as app/workflow
+2. Future agents use solution as building block → More complex problems solvable
+3. Each iteration makes ALL future iterations more powerful → ∞
+
+## 📋 Task Management
+Use keywords to trigger commands:
+- **"organize next task"** - Process first unstructured task
+- **"start next task"** - Begin highest priority task
+- **"update task statuses"** - Review and update progress
+- **"research"** - Deep dive on topics
+- **"suggest new tasks"** - Analyze for improvements
+
+## 🔧 AI Maintenance Tracking
+- Before work: `rg "AI_CHECK:.*TASK_ID" --type ts`
+- After work: `// AI_CHECK: TASK_ID=count | LAST: YYYY-MM-DD`
+- Details: `/docs/ai-maintenance/README.md`
+
+## ❌ Critical Rules
+1. **NEVER** create files unless absolutely necessary
+2. **ALWAYS** prefer editing existing files
+3. **NEVER** install packages without permission
+4. **NEVER** create documentation unless explicitly requested
+5. **ALWAYS** read `/docs/context.md` and CLAUDE.md at session start
+
+## 📁 Documentation Structure
+Core files to read at session start:
+- `/CLAUDE.md` - Primary instructions (this overrides defaults!)
+- `/docs/context.md` - Project overview
+- `/docs/scratch/` - Previous session notes
+
+## 🎯 Remember The Mission
+Every line of code becomes **permanent intelligence** the system uses forever. You're not building features - you're expanding the system's ability to understand and solve problems autonomously.
+
+**When in doubt:** Read `/CLAUDE.md` - it contains the most up-to-date instructions and overrides everything else.

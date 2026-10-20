@@ -2,7 +2,6 @@
 ---
 name: financial-compliance-ai
 description: Financial compliance AI patterns for KYC/AML, Basel III, Solvency II, and regulatory reporting. Use when building AI agents that assist with anti-money laundering, know-your-customer, sanctions screening, fraud detection, or regulatory compliance workflows.
-tags: [compliance, kyc, aml, fraud, regulatory, basel, solvency]
 ---
 
 # Financial Compliance AI

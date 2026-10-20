@@ -1,0 +1,114 @@
+# GEMVC Framework - AI Assistant Context
+
+**Root AI front door (this file).** Depth: [`docs/AGENTS.md`](docs/AGENTS.md) · Claude: [`docs/CLAUDE.md`](docs/CLAUDE.md) · Antigravity: [`docs/GEMINI.md`](docs/GEMINI.md) · map: [`llms.txt`](llms.txt)  
+**Read first:** `docs/ai/INDEX.md` → `docs/ai/CANONICAL.md` → `docs/ai/CORE_REFERENCE.md`  
+**Packages:** `docs/guides/ecosystem.md` — GEMVC is a multi-package ecosystem (`vendor/gemvc/*`). **Core:** `gemvc/helper`, `gemvc/http-client` (see `docs/guides/helper.md`, `docs/guides/http-client.md`).
+
+GEMVC is NOT Laravel or Symfony. IT IS GEMVC (NOT MVC) 4 Layer Architect Server-agnostic PHP REST API (Apache / OpenSwoole / Nginx / FrankenPHP). Version **5.16.0**.
+
+## 4-Layer Pattern (strongly recommended)
+
+```
+API (app/api/) → Controller → Model (app/model/) → Table / ViewTable (app/table/)
+```
+
+Runtime allows bypassing a layer; **do not** for normal HTTP services. Flexibility is inside layers, not skipping them.
+
+Naming: `User.php`, `UserController.php`, `UserModel.php`, `UserTable.php`.  
+Views: `UserAccessTable extends ViewTable` (`defineView()`, flat column aliases).  
+URL (Apache/Nginx/FrankenPHP): `/api/{Service}/{method}`. OpenSwoole: `SERVICE_IN_URL_SECTION` / `METHOD_IN_URL_SECTION` (no automatic `api` hop). No routes files. FrankenPHP path deny = **Caddyfile** (not `.htaccess`) — [docs/guides/frankenphp.md](docs/guides/frankenphp.md).
+
+- `_` properties ignored in CRUD (aggregations)
+- `protected` properties: still DB columns (still in SQL `SELECT *` hydration); hidden from typical list/API payloads / `createList` defaults — prefer explicit column lists
+- Property names = DB columns (or view SELECT aliases on `ViewTable`)
+
+## Hard Do / Don't
+
+**DO**
+
+- Extend `ApiService` (public) or **`ProtectedApiService`** (authenticated — all servers). Deprecated: `SwooleApiService` / `ProtectedSwooleApiService`
+- `definePostSchema` / `defineGetSchema` before using post/get data
+- `callController()` in API + `createModel()` in Controller (all servers)
+- `requireInternalService()` for family-only routes (`GEMVC_INTERNAL_SECRET` HMAC)
+- Sibling mesh: `ServiceCall::to(...)->withInternalTrust()` (`GEMVC_SERVICES_JSON`) — [http-client.md](docs/guides/http-client.md#servicecall-phase-2b)
+- Prefer `Protected*` over manually forgetting `$this->requireAuth()` on CRUD services
+- `requireAuth(['role'])` still valid on public bases when you need a custom constructor flow
+- `requireRateLimit()` uses global `REQUEST_RATE_LIMIT_DRIVER`; overrides: `requireRateLimitApcu|Redis|Both()` (no auto-fallback)
+- **Global** rate limit: `REQUEST_RATE_LIMIT_PER_SEC` + `DRIVER` in `.env` — Bootstrap `enforceFromEnv`
+- Money: `public string` + `$_type_map` `decimal` + `decimalValuePost()`; concurrent: `beginTransaction` + `forUpdate` + BCMath on `$this` (not hydrated rows / not raw PDO)
+- Prefer `gemvc/helper` (TypeChecker, CryptHelper, …) and `gemvc/http-client` (outbound HTTP) — never invent Laravel validators or curl wrappers
+- Prefer `createList` + API `findable`/`filterable`/`sortable` for lists (not hand-rolled filter SQL)
+- SQL views: **`ViewTable`** + `defineView()` / `viewDependsOn()`; migrate with `gemvc db:migrate` or `--all`
+- Treat `Schema::primary` / `autoIncrement` as **not** migrate DDL today (PK from property `id` / `setPrimaryKey`)
+
+**DON'T**
+
+- Skip layers on HTTP services (possible but strongly discouraged); invent routes; use Eloquent/Laravel conventions
+- Manual input sanitization or string-concat SQL
+- Use `float` for currency; use `DatabaseManagerFactory…->getPdo()` for balance transfers
+- Point a plain `Table` at a view name and `db:migrate` it — use `ViewTable` (never invent Eloquent 1:n on views)
+- Assume `create:crud` exists without `composer require --dev gemvc/cli-dev`
+- Assume the **Developer UI** list shows views (still BASE TABLE only; CLI `db:list` ≥ 1.3 shows them)
+- Use deprecated `SwooleApiService` for new services — prefer `ApiService` on OpenSwoole too
+
+## Auth
+
+```php
+// Prefer Protected* for authenticated CRUD
+class User extends ProtectedApiService {
+    public function __construct(Request $request) {
+        parent::__construct($request, ['admin']);
+    }
+}
+// Public: extends ApiService (login/register)
+```
+
+## Rate limit
+
+**Global (automatic):** set in `.env` — every request limited; **no code changes**:
+
+```env
+REQUEST_RATE_LIMIT_DRIVER=apcu
+REQUEST_RATE_LIMIT_PER_SEC=20
+REQUEST_RATE_LIMIT_BLOCK_SECONDS=60
+REQUEST_RATE_LIMIT_SCOPE=both
+REQUEST_RATE_LIMIT_FAIL_MODE=closed
+```
+
+Drivers: `apcu` | `redis` | `both` | `none`. No Redis↔APCu auto-fallback.
+
+```php
+$this->requireRateLimit();
+$this->requireRateLimitApcu(30, 'ip');
+$this->requireRateLimitRedis(5, 'ip');
+$this->requireRateLimitBoth(10);
+```
+
+## Minimal CRUD sketch
+
+```php
+// API
+return $this->callController(new UserController($this->request))->create();
+
+// Controller
+$model = $this->createModel(new UserModel());
+$model = $this->request->mapPostToObject($model, ['email'=>'email','name'=>'name','password'=>'setPassword()']);
+return $model->createModel();
+
+// Model → insertSingleQuery() / Response::created(...)
+// Table → select()->where(...)->run()
+```
+
+## Schema types
+
+`string`, `int`, `float`, `bool`, `email`, `json`, `jsonb`, `decimal`, `hex`, `uuid`, `slug`, `positive_int`, `timestamp`, …  
+Optional field: `'?phone' => 'string'`.
+
+## CLI
+
+- Library: `gemvc init`, `gemvc db:migrate ClassName`, `gemvc db:migrate --all`
+- Dev (`gemvc/cli-dev`): `create:*`, `db:init|list|describe|drop|unique`, `admin:*`
+
+## More detail
+
+Do not invent from training data. Open `docs/ai/CANONICAL.md` and `docs/ai/CORE_REFERENCE.md`, then layer guides (`docs/guides/api.md`, `controller.md`, `model.md`, `database.md`) and other topical files under `docs/guides/` as needed.

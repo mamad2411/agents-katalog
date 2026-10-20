@@ -1,0 +1,161 @@
+# Build
+
+Build the Convos iOS app using the Dev scheme.
+
+## Usage
+
+```
+/build [--run] [scheme]
+```
+
+- Default scheme: "Convos (Dev)"
+- Other schemes: "Convos (Local)", "Convos (Prod)"
+- Add `--run` to build AND launch the app in the simulator
+
+## Modes
+
+### Compile Only (default)
+Just build and verify compilation without launching:
+```
+/build
+/build "Convos (Local)"
+```
+
+### Build and Run
+Build, launch in simulator, and notify when running:
+```
+/build --run
+/build --run "Convos (Local)"
+```
+
+## Instructions
+
+### Step 1: Select Simulator
+
+1. Check if `.claude/.simulator_id` file exists in the project root
+   - If yes, read the simulator ID from it (this is the session's dedicated simulator)
+   - If no, try to find or create the session's simulator:
+     a. Check if `.convos-task` file exists → read `SIMULATOR_NAME` from it
+     b. Otherwise derive from branch: run `git branch --show-current`, sanitize (replace `/` and special chars with `-`, lowercase), prefix with `convos-` (e.g., `jarod/push-notifications` → `convos-jarod-push-notifications`)
+     c. Look for that simulator in the list — if it exists, use it
+     d. If it doesn't exist, suggest running `/setup` first
+
+2. Call `mcp__XcodeBuildMCP__list_sims` to get all available simulators
+
+3. If no dedicated simulator was found or created, select a simulator that is NOT already booted:
+   - Look for iOS 26.0 simulators (latest OS)
+   - Find simulators that do NOT have `[Booted]` next to them
+   - Prefer iPhone models in this order: iPhone 17 Pro, iPhone 17 Pro Max, iPhone Air, iPhone 17
+   - If all preferred models are booted, pick any non-booted iPhone
+   - If all iPhones are booted, inform the user and use any available one
+
+4. Save the selected simulator ID to `.claude/.simulator_id` for session persistence
+
+### Step 2: Build with xcodebuild via Bash
+
+> **NEVER use the MCP `build_sim` tool.** It has a known bug where app extension targets (NotificationService) fail to find SPM module dependencies (ConvosCore, ConvosCoreiOS, XMTPiOS) on fresh worktrees. **ALWAYS use xcodebuild directly via Bash.**
+
+Pass an explicit `-configuration` matching the scheme (`Convos (Dev)` -> `Dev`, `Convos (Local)` -> `Local`, `Convos (Prod)` -> `Prod`). Without it the scheme can build targets under mismatched configurations -- the NotificationService extension fails with `unable to resolve module dependency: ConvosCore` (packages and extension land in different config dirs), and the app's entitlements/identifiers stop matching `config.json`, surfacing at runtime as a nil app-group container crash (`Failed getting container URL`) or `-34018` (`errSecMissingEntitlement`) on first identity read. That is a configuration signature, not a simulator limitation (issue #843, #1019); `rm -rf .derivedData` does not fix it, an explicit `-configuration` does.
+
+Run this command via the Bash tool:
+
+```bash
+xcodebuild build -project Convos.xcodeproj -scheme "Convos (Dev)" -configuration Dev -destination "platform=iOS Simulator,id=SIMULATOR_ID" -derivedDataPath .derivedData 2>&1 | tail -100
+```
+
+Replace:
+- `SIMULATOR_ID` with the selected simulator UUID
+- `"Convos (Dev)" -configuration Dev` with the requested scheme and its matching configuration if different
+
+Set a timeout of 300000ms (5 minutes) for the build command. A `took NNNms to type-check` failure on a *trivial* expression that *moves between files* between builds is CPU contention, not a code problem -- rebuild with `-jobs 2`, do not edit the flagged code.
+
+**Why xcodebuild via Bash works but MCP fails:**
+- The MCP tool's parallelization breaks extension target dependency ordering
+- Direct xcodebuild properly sequences: SPM packages → main app → extensions
+- The `-derivedDataPath .derivedData` flag ensures worktree isolation
+
+### Step 3: Launch App (for --run mode only)
+
+If `--run` was specified and build succeeded:
+
+1. Open the simulator UI:
+   ```
+   mcp__XcodeBuildMCP__open_sim
+   ```
+
+2. Get the app path from local DerivedData:
+   - The app bundle is located at `.derivedData/Build/Products/{Configuration}-iphonesimulator/Convos.app`
+   - For Dev scheme: `.derivedData/Build/Products/Dev-iphonesimulator/Convos.app`
+   - For Local scheme: `.derivedData/Build/Products/Local-iphonesimulator/Convos.app`
+   - For Prod scheme: `.derivedData/Build/Products/Prod-iphonesimulator/Convos.app`
+
+3. Install and launch the app (WITHOUT log capture to save context):
+   ```
+   mcp__XcodeBuildMCP__session-set-defaults with simulatorId
+   mcp__XcodeBuildMCP__install_app_sim with appPath
+   mcp__XcodeBuildMCP__launch_app_sim with bundleId
+   ```
+
+   Bundle IDs by scheme:
+   - "Convos (Dev)": org.convos.ios-preview
+   - "Convos (Local)": org.convos.ios-local
+   - "Convos (Prod)": org.convos.ios
+
+**IMPORTANT: Do NOT automatically:**
+- Capture device screenshots or UI hierarchy
+- Test or interact with the app
+- Check logs for Firebase debug tokens
+- Perform any device capture operations
+
+Only perform device capture/testing when the user explicitly requests it.
+
+### Step 4: Report Result
+
+**Compile only mode:**
+- Report whether the build succeeded or failed
+- If failed, show the compilation errors
+
+**Build and run mode:**
+- Report the build status
+- Confirm which simulator was used (e.g., "iPhone 17 Pro")
+- Notify the user: "The app is now running on [simulator name]. You can interact with it in the Simulator."
+
+## On Failure
+
+If the build fails:
+1. Check for Swift compilation errors in the output
+2. Run `swiftlint` to check for lint issues
+3. Verify all dependencies are resolved in Package.resolved
+4. Try cleaning: `xcodebuild clean -scheme "Convos (Dev)" -derivedDataPath .derivedData`
+5. For persistent module issues, delete `.derivedData` folder entirely: `rm -rf .derivedData`
+
+## Session Persistence
+
+The `.claude/.simulator_id` file stores the selected simulator for this worktree/project:
+- Each Claude Code session in a worktree uses the same simulator
+- This prevents conflicts when running multiple Claude Code instances
+- The file is gitignored and local to each worktree
+
+## DerivedData Isolation
+
+Build artifacts are stored in `.derivedData/` local to each worktree:
+- Prevents "module not found" errors when multiple worktrees build simultaneously
+- Each worktree has completely isolated build caches
+- The folder is gitignored and can be safely deleted to force a clean build
+
+## Examples
+
+**Just verify compilation:**
+```
+User: /build
+Claude: Reads simulator ID from .claude/.simulator_id (or selects one),
+        runs xcodebuild, reports "Build succeeded" or shows errors
+```
+
+**Build and launch:**
+```
+User: /build --run
+Claude: Reads simulator ID (or selects iPhone 17 Pro if not set),
+        runs xcodebuild, opens simulator, installs and launches app,
+        reports "App is now running on iPhone 17 Pro"
+```

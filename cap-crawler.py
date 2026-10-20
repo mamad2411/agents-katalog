@@ -7,7 +7,13 @@ Sumber:
   B. gh search code per-tipe (prompts, agents, commands, hooks, rules, dst).
 
 Tipe aset: prompts, agents, subagents, commands, hooks, rules, style,
-plugins, mcp-config, memory, context, skills.
+plugins, mcp-config, memory, context, skills + 14 tipe pinter
+(memory-system, token-economy, context-engineering, compaction,
+reasoning, reflection, metacognition, few-shot, rag,
+knowledge-graph, anti-slop, rubrics, model-routing,
+prompt-optimization) + 10 tipe level-2 (planning, verification,
+debate, tool-use, orchestration, long-context, hallucination,
+constitutional, distillation, self-improve).
 
 Prinsip:
   * Metadata saja di katalog (+ bintang repo, biar bisa ranking "paling rame").
@@ -44,9 +50,12 @@ except Exception:
 TREND_QUERIES = [
     "claude skills", "agent skills", "claude code plugin", "awesome claude",
     "subagents", "prompt library", "cursor rules", "agent framework",
+    "multi-agent orchestration", "function calling agent", "agent verification",
+    "self-improvement agent",
 ]
 TREND_TOPICS = ["claude-skills", "agent-skills", "claude-code", "ai-agents",
-                "prompt-engineering", "cursor-rules", "subagents"]
+                "prompt-engineering", "cursor-rules", "subagents",
+                "multi-agent", "agent-orchestration", "tool-calling", "llm-eval"]
 
 # pola path -> tipe aset (untuk panen tree trending)
 def classify(path):
@@ -139,6 +148,27 @@ def classify(path):
         return "model-routing"
     if "/prompt-optim" in p or n in ("prompt-optimization.md", "optimize-prompt.md", "prompt-tuner.md"):
         return "prompt-optimization"
+    # --- tipe level-2: planning/verifikasi/orkestrasi/tool-use (2026-10-18) ---
+    if "/planning/" in p or n in ("task-planning.md", "task-decomposition.md", "plan-and-execute.md", "planner.md"):
+        return "planning"
+    if "/verification/" in p or n in ("self-check.md", "verify.md", "verification.md", "fact-check.md", "self-verify.md"):
+        return "verification"
+    if "/debate/" in p or n in ("multi-agent-debate.md", "debate.md", "critic.md", "adversarial.md"):
+        return "debate"
+    if "/tool-use/" in p or "/tool-calling/" in p or n in ("function-calling.md", "tool-calling.md", "tool-use.md", "function-calling-guide.md"):
+        return "tool-use"
+    if "/orchestration/" in p or n in ("orchestration.md", "swarm.md", "multi-agent.md", "multi-agent-orchestration.md", "coordinator.md"):
+        return "orchestration"
+    if "/long-context/" in p or n in ("long-context.md", "needle-haystack.md", "lost-in-middle.md"):
+        return "long-context"
+    if "/hallucination" in p or n in ("hallucination.md", "hallucination-mitigation.md", "grounding.md", "citation.md"):
+        return "hallucination"
+    if "/constitutional" in p or n in ("constitution.md", "constitutional-ai.md", "charter.md", "values.md"):
+        return "constitutional"
+    if "/distillation/" in p or n in ("distillation.md", "distill.md", "teacher-student.md"):
+        return "distillation"
+    if "/self-improve/" in p or n in ("self-improvement.md", "self-improve.md", "self-refine.md", "iterative-refinement.md"):
+        return "self-improve"
     if "style" in n and n.endswith(".md"):
         return "style"
     # --- fallback: taksonomi generated (20k+ tipe, berbasis data) ---
@@ -200,6 +230,17 @@ TYPE_QUERIES = {
     "rubrics":             ["path:rubrics", "filename:rubric.md", "filename:scoring.md"],
     "model-routing":       ["filename:routing.md", "path:model-routing", "filename:model-selection.md"],
     "prompt-optimization": ["filename:prompt-optimization.md", "path:prompt-optimization"],
+    # --- tipe level-2 (2026-10-18) ---
+    "planning":       ["path:planning extension:md", "filename:task-planning.md", "filename:task-decomposition.md"],
+    "verification":   ["path:verification extension:md", "filename:self-check.md", "filename:verify.md"],
+    "debate":         ["path:debate extension:md", "filename:multi-agent-debate.md", "filename:critic.md"],
+    "tool-use":       ["path:tool-use extension:md", "filename:function-calling.md", "filename:tool-calling.md"],
+    "orchestration":  ["path:orchestration extension:md", "filename:swarm.md", "filename:multi-agent.md"],
+    "long-context":   ["filename:long-context.md", "path:long-context extension:md"],
+    "hallucination":  ["filename:hallucination.md", "path:hallucination-mitigation", "filename:grounding.md"],
+    "constitutional": ["filename:constitution.md", "path:constitutional-ai", "filename:charter.md"],
+    "distillation":   ["path:distillation extension:md", "filename:distill.md"],
+    "self-improve":   ["filename:self-improvement.md", "path:self-improve extension:md", "filename:self-refine.md"],
 }
 
 

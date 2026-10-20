@@ -2,7 +2,6 @@
 ---
 name: iam-security
 description: AWS IAM and security patterns for AI agent deployments. Use when configuring least-privilege IAM policies for Bedrock agents, setting up VPC endpoints, managing secrets, or implementing guardrails for regulated workloads.
-tags: [aws, iam, security, compliance]
 ---
 
 # AWS IAM Security for AI Agents

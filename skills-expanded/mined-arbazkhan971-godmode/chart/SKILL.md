@@ -1,0 +1,304 @@
+---
+name: chart
+description: Data visualization. chart, graph, dashboard, visualize data, plot, analytics, D3.js, Chart.js, Recharts, Plotly.
+---
+
+# Chart — Data Visualization
+
+## Activate When
+- User invokes `/godmode:chart`
+- User says "create a chart", "visualize this data", "make a graph"
+- User says "build a dashboard", "display metrics", "plot this"
+- When building reporting pages or analytics dashboards
+- When `/godmode:plan` identifies data visualization tasks
+- When `/godmode:review` flags visualization accessibility or usability issues
+
+## Workflow
+
+### Step 1: Data & Intent Discovery
+Understand the data and what the visualization needs to communicate:
+
+```
+VISUALIZATION DISCOVERY:
+Project: <name and purpose>
+Data source: <API endpoint | database query | static JSON | CSV | real-time stream>
+Data shape: <rows x columns, field names, types>
+Audience: <executives | engineers | end-users | public>
+Goal: <compare | trend | distribute | correlate | compose | flow | geospatial>
+Interactivity: <static | hover tooltips | click-to-filter | drill-down | real-time>
+Environment: <React | Vue | Angular | vanilla JS | server-side PDF | Jupyter>
+Existing library: <D3.js | Chart.js | Recharts | Plotly | Nivo | Victory | none>
+Constraints: <bundle size limit | IE support | print-friendly | offline | color-blind safe>
+```
+If the user hasn't specified, ask: "What story should this visualization tell? Who is the audience?"
+
+### Step 2: Chart Type Selection
+Select the optimal chart type based on the data and communication goal:
+
+```
+CHART TYPE SELECTION:
+| Goal | Recommended Chart Types |
+|--|--|
+| Compare values | Bar (vertical/horizontal), Grouped bar, Lollipop |
+| Show trends | Line, Area, Sparkline, Step |
+| Show distribution | Histogram, Box plot, Violin, Density |
+| Show correlation | Scatter, Bubble, Heatmap (correlation matrix) |
+| Show composition | Stacked bar, Treemap, Sunburst, Waffle |
+| Show flow/process | Sankey, Alluvial, Chord diagram |
+| Show hierarchy | Treemap, Sunburst, Dendrogram, Circle packing |
+| Show geographic | Choropleth, Bubble map, Hex bin map |
+| Show part-to-whole | Donut, Stacked area, Marimekko |
+  ...
+```
+Rules:
+- Never use pie charts for more than 5 categories — use bar charts instead
+- Never use 3D charts — they distort perception and reduce accuracy
+- Use line charts only for continuous data (time series) — not categorical
+- Prefer horizontal bar charts when labels are long
+- Use small multiples over complex multi-series charts when series exceed 5
+
+### Step 3: Library Selection & Setup
+Choose the right visualization library for the project:
+
+```
+LIBRARY SELECTION:
+| Library | Best For | Bundle Size | Learning Curve |
+|--|--|--|--|
+| D3.js | Custom, complex, | ~90KB | Steep — full control |
+|  | unique visualizations |  | over every pixel |
+| Chart.js | Standard charts, | ~60KB | Low — declarative |
+|  | quick setup, canvas |  | config-based API |
+| Recharts | React dashboards, | ~120KB | Low — React-native |
+|  | composable charts |  | component API |
+| Plotly | Scientific/data | ~1MB | Medium — rich |
+|  | analysis, 3D plots |  | interactive charts |
+```
+### Step 4: Data Transformation
+Prepare data for the selected chart type:
+
+```
+DATA TRANSFORMATION:
+Source format: <raw data shape — e.g., array of objects, CSV rows, nested JSON>
+Target format: <what the chart library expects>
+
+Transformations needed:
+  1. <transformation — e.g., group by category, aggregate sum>
+  2. <transformation — e.g., pivot rows to columns>
+  3. <transformation — e.g., normalize to percentages>
+  4. <transformation — e.g., sort descending by value>
+  5. <transformation — e.g., compute rolling average>
+
+Missing data strategy: <omit | zero-fill | interpolate | show gap>
+  ...
+```
+Generate the transformation code:
+```typescript
+// Data transformation pipeline
+function transformData(raw: RawData[]): ChartData {
+  return raw
+    .filter(/* remove invalid entries */)
+    .map(/* reshape to chart format */)
+    .sort(/* order for readability */)
+```
+
+### Step 5: Chart Implementation
+Build the chart with full configuration:
+
+```
+CHART CONFIGURATION:
+| Property | Value |
+|--|--|
+| Type | <bar | line | scatter | heatmap | ...> |
+| Width | <responsive | fixed px> |
+| Height | <responsive | fixed px> |
+| Aspect ratio | <16:9 | 4:3 | 1:1 | custom> |
+| Margins | top=<N> right=<N> bottom=<N> left=<N> |
+| Colors | <palette name or hex values> |
+| Font family | <system | project font> |
+| Animation | <none | enter | update | transition> |
+| Legend | <position: top | right | bottom | none> |
+  ...
+```
+Use the selected library's standard patterns:
+- **D3.js**: SVG with margin convention, scales, axes, data joins
+- **Recharts**: `ResponsiveContainer` wrapper, declarative component composition
+- **Chart.js**: Canvas-based config object with datasets array
+- **Plotly**: Trace objects with layout configuration
+
+### Step 6: Responsive Design
+Mobile (<480px): stack legend below, reduce ticks, enlarge touch targets. Tablet (480-1024px): side legend,
+full interactivity. Desktop (>1024px): full layout, annotations, brush/zoom.
+### Step 7: Color & Accessibility
+Design accessible visualizations that work for everyone:
+
+```
+ACCESSIBILITY CHECKLIST:
+| Check | Status |
+|--|--|
+| Color contrast ratio >= 3:1 against background | PASS | FAIL |
+| Colorblind-safe palette (no red/green only) | PASS | FAIL |
+| Patterns/textures as secondary differentiator | PASS | FAIL |
+| aria-label on chart container (SVG role="img") | PASS | FAIL |
+| Data table alternative available | PASS | FAIL |
+| Keyboard navigable (focus on data points) | PASS | FAIL |
+| Screen reader descriptions for trends | PASS | FAIL |
+| Tooltip accessible via keyboard (not hover-only) | PASS | FAIL |
+| Text labels minimum 12px font size | PASS | FAIL |
+  ...
+```
+### Step 8: Dashboard Composition
+When building multi-chart dashboards, apply layout principles:
+
+```
+DASHBOARD DESIGN:
+Layout: <grid columns — e.g., 12-column grid>
+Sections:
+  1. <KPI row — number cards with sparklines>
+  2. <Primary chart — largest, most important visualization>
+  3. <Supporting charts — 2-3 smaller charts providing context>
+  4. <Detail table — filterable data table for drill-down>
+
+DASHBOARD PRINCIPLES:
+  1. Most important metric is top-left (F-pattern reading)
+  2. KPI cards first — give the executive summary before details
+  3. Max 7 ± 2 charts per dashboard (cognitive load limit)
+  ...
+```
+### Step 9: Performance Optimization
+Optimize chart rendering for large datasets:
+
+```
+PERFORMANCE STRATEGIES:
+| < 1,000 points | Render all — no optimization needed |
+|--|--|
+| 1K - 10K points | Canvas rendering (not SVG), debounce tooltips |
+| 10K - 100K points | Data aggregation, LTTB downsampling, WebGL |
+| > 100K points | Server-side aggregation, WebGL (deck.gl) |
+
+Key techniques: Canvas over SVG for > 1K points, LTTB downsampling for time series,
+IntersectionObserver for lazy-loading, useMemo for data transforms, Web Workers for heavy processing.
+```
+### Step 10: Validation & Delivery
+Validate the visualization and produce deliverables:
+
+```
+VISUALIZATION VALIDATION:
+| Check | Status |
+|--|--|
+| Chart type matches data and communication goal | PASS | FAIL |
+| Data transformations produce correct output | PASS | FAIL |
+| Responsive at mobile, tablet, desktop breakpoints | PASS | FAIL |
+| Accessibility checklist complete (all items pass) | PASS | FAIL |
+| Color palette is colorblind-safe | PASS | FAIL |
+| Performance acceptable at expected data volume | PASS | FAIL |
+| Tooltips show correct formatted values | PASS | FAIL |
+| Axis labels and titles are clear and formatted | PASS | FAIL |
+| Legend is present and correctly maps to data series | PASS | FAIL |
+  ...
+```
+Produce deliverables:
+
+```
+VISUALIZATION COMPLETE:
+
+Artifacts:
+- Chart component: src/components/charts/<ChartName>.tsx
+- Data transformer: src/utils/chart-data/<transformer>.ts
+- Dashboard layout: src/pages/<dashboard>.tsx (if dashboard)
+- Storybook story: src/components/charts/<ChartName>.stories.tsx
+- Tests: src/components/charts/__tests__/<ChartName>.test.tsx
+
+Validation: <PASS | NEEDS REVISION>
+Chart type: <type>
+Library: <library>
+  ...
+```
+Commit: `"chart: <component> — <chart type>, <library>, <N> data series, responsive + accessible"`
+
+## Key Behaviors
+
+```bash
+# Test chart rendering and accessibility
+npm run test:charts
+npx storybook build --ci
+npx chromatic --exit-zero-on-changes
+```
+1. **Data story first, chart second.** Communication goal first.
+2. **Accessibility not optional.** Data table + colorblind-safe + screen reader.
+3. **Responsive by default.** Works at 320px, 768px, 1440px.
+4. **Performance scales with data.** Canvas for > 1K points.
+5. **Consistent dashboards.** Same colors, typography, interactions.
+6. **No misleading visualizations.** Bar charts start at 0.
+7. **Color is not the only channel.** Patterns, labels, position too.
+On failure: revert with git reset --hard HEAD~1.
+
+
+## Flags & Options
+
+| Flag | Description |
+|--|--|
+| (none) | Full chart design and implementation workflow |
+| `--type <chart>` | Force chart type: `bar`, `line`, `scatter`, `heatmap`, `treemap`, `sankey`, `pie`, `area` |
+| `--lib <library>` | Force library: `d3`, `chartjs`, `recharts`, `plotly`, `nivo`, `victory` |
+
+## HARD RULES
+
+Never ask to continue. Loop autonomously until all charts render within targets and pass accessibility checks.
+
+1. **NEVER use pie charts for more than 5 categories.** No exceptions. Use bar charts instead.
+2. **NEVER use 3D charts.** They distort data and add no information.
+3. **NEVER ship without a data table alternative** for screen readers.
+4. **NEVER start bar chart y-axis above zero** unless explicitly documented with justification.
+5. **ALWAYS test at 320px, 768px, and 1440px** before marking responsive as done.
+6. **ALWAYS verify colorblind safety** with Chrome DevTools vision deficiency emulation.
+7. **git commit BEFORE verify** — commit the chart component, then run visual/a11y tests.
+8. **TSV logging** — log every chart creation:
+   ```
+   timestamp	chart_type	library	data_points	responsive	a11y_score	status
+   ```
+
+## Auto-Detection
+
+On activation, automatically detect project context without asking:
+
+```
+AUTO-DETECT:
+1. Framework:
+   ls package.json 2>/dev/null && grep -o '"react"\|"vue"\|"angular"\|"svelte"' package.json
+   # Determines component style and library compatibility
+
+2. Existing chart libraries:
+   grep -r "recharts\|chart.js\|d3\|plotly\|nivo\|victory" package.json 2>/dev/null
+   # Prefer existing library over introducing a new one
+
+3. Design system:
+   ls src/theme* src/styles/tokens* tailwind.config* 2>/dev/null
+   # Extract color palette, font family, spacing tokens
+  ...
+```
+## Output Format
+
+After each chart skill invocation, emit a structured report:
+
+```
+CHART BUILD REPORT:
+| Charts created | <N> |
+|--|--|
+| Charts updated | <N> |
+| Library used | <library name> |
+| Data points | <N> total across all charts |
+| Responsive | YES / NO |
+| A11y (data table) | YES / NO |
+| Colorblind-safe | YES / NO |
+| Bundle impact | +<N> KB (gzipped) |
+| Render time | <N> ms (largest chart) |
+| Verdict | PASS | NEEDS REVISION |
+```
+
+
+## Keep/Discard
+KEEP if: improvement verified. DISCARD if: regression or no change. Revert discards immediately.
+
+## Stop Conditions
+Stop when: target reached, budget exhausted, or >5 consecutive discards.
+

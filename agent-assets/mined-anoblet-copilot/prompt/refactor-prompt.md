@@ -1,0 +1,4 @@
+- Review the entire workspace
+- Review the .copilot/sessions directory
+- Identify and refactor any code or logic that could be simplified or improved
+- Changes should be incremental, though large refactors are acceptable if well-justified

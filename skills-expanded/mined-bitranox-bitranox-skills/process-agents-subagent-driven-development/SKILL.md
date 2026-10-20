@@ -1,0 +1,565 @@
+---
+name: process-agents-subagent-driven-development
+description: Use when executing an implementation plan with mostly independent tasks in the current session, or when choosing the model tier for ANY dispatched subagent - this is the canonical model-tier reference (haiku / opus / fable; the session model is fixed) that other skills cite. Keywords - subagent-driven development, dispatch per task, parallel agents, task brief, model tier.
+---
+
+# Subagent-Driven Development
+
+> Adapted from the superpowers plugin (MIT).
+
+Execute plan by dispatching a fresh implementer subagent per task, a task review (spec compliance + code quality) after each, and a broad whole-branch review at the end.
+
+**Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history  -  you construct exactly what they need. This also preserves your own context for coordination work.
+
+**Core principle:** Fresh subagent per task + task review (spec + quality) + broad final review = high quality, fast iteration
+
+**Pathfinder:** instruct each implementer to leave files better than found and accept no technical debt;
+an out-of-scope fix a subagent spots goes in its own worktree (`bitranox:git-worktrees`), surfaced not
+bolted on. See `bitranox:meta-self-improve` ("Pathfinder discipline").
+
+**Narration:** between tool calls, narrate at most one short line  -  the
+ledger and the tool results carry the record.
+
+**Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time  -  they asked you to execute the plan, so execute it.
+
+## When to Use
+
+```dot
+digraph when_to_use {
+    "Have implementation plan?" [shape=diamond];
+    "Tasks mostly independent?" [shape=diamond];
+    "Stay in this session?" [shape=diamond];
+    "subagent-driven-development" [shape=box];
+    "plan-executor" [shape=box];
+    "Manual execution or brainstorm first" [shape=box];
+
+    "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
+    "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
+    "Tasks mostly independent?" -> "Stay in this session?" [label="yes"];
+    "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
+    "Stay in this session?" -> "subagent-driven-development" [label="yes"];
+    "Stay in this session?" -> "plan-executor" [label="no - parallel session"];
+}
+```
+
+**vs. Executing Plans (parallel session):**
+- Same session (no context switch)
+- Fresh subagent per task (no context pollution)
+- Review after each task (spec compliance + code quality), broad review at the end
+- Faster iteration (no human-in-loop between tasks)
+
+## The Process
+
+```dot
+digraph process {
+    rankdir=TB;
+
+    subgraph cluster_per_task {
+        label="Per Task";
+        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
+        "Implementer subagent asks questions?" [shape=diamond];
+        "Answer questions, provide context" [shape=box];
+        "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
+        "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)" [shape=box];
+        "Task reviewer reports spec OK and quality approved?" [shape=diamond];
+        "Dispatch fix subagent for Critical/Important findings" [shape=box];
+        "Mark task complete in todo list and progress ledger" [shape=box];
+    }
+
+    "Read plan, note context and global constraints, create todos" [shape=box];
+    "More tasks remain?" [shape=diamond];
+    "Dispatch final code reviewer subagent (../process-review-requesting-code-review/code-reviewer.md)" [shape=box];
+    "Use bitranox:process-ship-finishing-development-branch" [shape=box style=filled fillcolor=lightgreen];
+
+    "Read plan, note context and global constraints, create todos" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
+    "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
+    "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
+    "Implementer subagent implements, tests, commits, self-reviews" -> "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)";
+    "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)" -> "Task reviewer reports spec OK and quality approved?";
+    "Task reviewer reports spec OK and quality approved?" -> "Dispatch fix subagent for Critical/Important findings" [label="no"];
+    "Dispatch fix subagent for Critical/Important findings" -> "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)" [label="re-review"];
+    "Task reviewer reports spec OK and quality approved?" -> "Mark task complete in todo list and progress ledger" [label="yes"];
+    "Mark task complete in todo list and progress ledger" -> "More tasks remain?";
+    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
+    "More tasks remain?" -> "Dispatch final code reviewer subagent (../process-review-requesting-code-review/code-reviewer.md)" [label="no"];
+    "Dispatch final code reviewer subagent (../process-review-requesting-code-review/code-reviewer.md)" -> "Use bitranox:process-ship-finishing-development-branch";
+}
+```
+
+## Pre-Flight Plan Review
+
+Before dispatching Task 1, scan the plan once for conflicts:
+
+- tasks that contradict each other or the plan's Global Constraints
+- anything the plan explicitly mandates that the review rubric treats as a
+  defect (a test that asserts nothing, verbatim duplication of a logic block)
+
+Present everything you find to your human partner as one batched question  - 
+each finding beside the plan text that mandates it, asking which governs  - 
+before execution begins, not one interrupt per discovery mid-plan. If the
+scan is clean, proceed without comment. The review loop remains the net for
+conflicts that only emerge from implementation.
+
+## Model Selection
+
+There are two working tiers: `haiku` for purely mechanical work, `opus` for everything else
+(`fable`, above `opus`, is a rare exception for single judgments - see "Concrete tiers"). The test
+is whether anything is JUDGED: if the output follows from the input by a fixed rule (match a
+regex, copy, reformat, transcribe given code), it is mechanical; the moment the agent decides
+whether something is a violation, a duplicate, relevant or correct, it is `opus`.
+
+**Mechanical implementation tasks** (the plan text holds the complete CODE, or a single-file
+mechanical fix): `haiku`. A complete spec written as prose is not complete code: `opus`.
+
+**Everything else** - integration, judgment, debugging, review, architecture and design, the final
+whole-branch review: `opus`.
+
+**Always specify the model explicitly when dispatching a subagent.** An
+omitted model inherits your session's model, which may be a premium tier or a
+weaker one - either way it silently defeats this section. This is ENFORCED, not
+just documented: **arm the model gate before dispatching Task 1** -
+
+    bash "$CLAUDE_PLUGIN_ROOT/hooks/run-python.sh" "$CLAUDE_PLUGIN_ROOT/hooks/skill_receipt.py" start plan-execution
+
+While that `plan-execution` receipt is fresh, the PreToolUse
+`subagent-model-gate` hook DENIES any `Task`/`Agent` dispatch that omits
+`model` (a `fork` stays exempt - it legitimately inherits the parent model).
+When the plan is complete (after the final review), DISARM it -
+
+    bash "$CLAUDE_PLUGIN_ROOT/hooks/run-python.sh" "$CLAUDE_PLUGIN_ROOT/hooks/skill_receipt.py" end plan-execution
+
+Outside an armed plan execution the same hook only warns.
+
+**Effort is chosen through the tier, not the dispatch.** A dispatch has no
+per-call reasoning-effort field: effort rides the agent-type definition
+(`.claude/agents/*.md` frontmatter, key `effort`; the agent roster is fixed when
+the session STARTS, so a definition added mid-session cannot be dispatched until
+a NEW session - measured on Claude Code 2.1.250, where a new project agents dir
+and a new file in the already-loaded user dir both failed with "Agent type not
+found" while definitions present at session start resolved) or a Workflow
+`agent()` call (`opts.effort`). Probe-verified: the knob swings the same
+model's thinking budget by orders of magnitude, so it cuts both ways - set it
+only at the EXTREMES and leave everything else at the default (inherit).
+Pinning `low` broadly silently degrades tasks that occasionally need depth,
+which costs more than the tokens it saves.
+
+| Role                                                | Effort                                       |
+|-----------------------------------------------------|----------------------------------------------|
+| `haiku`-tier mechanical scan / transcribe / extract | `low` (the big saver on fleet-scale fan-out) |
+| `opus` fan-out / bounded judgment / deep reasoning  | inherit - do not set                         |
+| Adversarial verify / judge panel / final synthesis  | `xhigh` or `max`                             |
+
+### Concrete tiers (canonical mapping - other skills reference this section)
+
+Map the generic tiers to the current Claude lineup, and pass the **stable tier ALIAS**
+(`haiku` / `opus`), never a pinned version like `claude-opus-4-8` - the alias
+auto-resolves to the latest model in that tier, so `opus` is always the newest Opus and a new
+version needs no edit.
+
+- **`haiku`** (cheap, fastest) = purely mechanical / transcription / pattern-scan with no
+  judgment: regex secret/PII scans, license accept-reject mapping against a fixed table,
+  formatting, 1-2-file implementers whose brief holds the complete code.
+- **`opus`** (the DEFAULT for everything that is not purely mechanical) = fan-out that judges
+  (per-file/per-dimension/per-store reviewers, and scanners that judge what they find - fanned out
+  or not, the judging decides the tier, not the fan-out), bounded judgment, relevance
+  filtering, summarizing, integration, reference hunting, implementers working from
+  prose, architecture/design, final SYNTHESIS, adversarial CORRECTNESS verification, root-cause
+  judgment, the final whole-branch review.
+- **`fable`** (Mythos-class, ABOVE opus; premium-priced and only available on paid API credits -
+  many plans cannot resolve it) = the exceptional top tier for the hardest single judgments where
+  even opus-level error is too costly. Use sparingly and only where the plan/credits allow;
+  `opus` stays the universally-available default.
+
+**`sonnet` is not a tier here.** Across a whole job it costs more than `opus`: it takes more turns
+and more reasoning tokens for the same work, which outweighs its lower price per token. Do not
+fall back to it for "cheaper" fan-out; the only step down from `opus` is `haiku`, and only for
+purely mechanical work. The `subagent-model-gate` hook warns on a dispatch pinned to `sonnet`.
+
+Do NOT use `fable` for fan-out or mechanical work, and do NOT leave any dispatch on the session
+default. The lineup ages: the model hierarchy is
+re-evaluated periodically by `bitranox:meta-dream-tree` (it asks the `claude-code-guide` agent for the
+current Claude model lineup and proposes a re-tier if the ordering shifts), so this mapping stays current.
+
+**Turn count beats token price.** Wall-clock and context cost scale with how
+many turns a subagent takes, and cheaper models routinely take 2-3× the
+turns on multi-step work  -  costing more overall. That is why `opus` is the
+floor for reviewers and for implementers working from prose descriptions.
+When the task's plan text contains the complete code to write, the
+implementation is transcription plus testing: use `haiku` for
+that implementer. Single-file mechanical fixes also take `haiku`.
+
+**Task complexity signals (implementation tasks):**
+- Touches 1-2 files and the brief holds the complete code, or is a single-file mechanical fix → `haiku`
+- Anything else → `opus`
+
+### The session model is fixed: delegate, or offer a choice for inline work
+
+The MAIN (session) agent's model is FIXED for the turn and CANNOT be self-switched. There is no
+read-your-model or set-your-model primitive exposed to the model, no `$CLAUDE_MODEL` env var, and
+no hook can make or choose a switch. Hooks only observe or veto one: `SessionStart` may see `model`
+(not reliably), and from CLI 2.1.251 `PreModelSwitch` can block a switch the user or a client
+REQUESTED, while `PostModelSwitch` sees `from_model`/`to_model` after every change. No hook calls the
+model (see `bitranox:meta-claude-hooks`, `references/events.md` "Model switches").
+So the ONLY way to run a sub-task on a different tier is to dispatch a
+subagent, which carries its own pinned `model`; inline work necessarily runs on the session model.
+"Save the model, switch, switch back" is NOT implementable - never write a skill step that assumes it.
+A USER-driven `/model` switch mid-session, however, PRESERVES the conversation (context is not
+lost), so offering one is legitimate in BOTH directions: switch UP when the session tier is below
+what an inline deep judgment warrants (below opus-class before placement/synthesis), and switch
+DOWN for cost when a premium session (fable) faces a long routine stretch - fable is
+premium-priced on paid API credits, so parking it on mechanical work burns money for nothing.
+Either way it is the USER's call: offer switch-model-or-continue, never demand.
+
+A model-sensitive step therefore has TWO branches - decide delegability FIRST, and only then the model:
+
+1. **Delegable (can/should run in a subagent) -> dispatch a subagent pinned to the warranted tier.**
+   No user prompt; the model travels with the subagent. If a step can be a subagent, do that and pin
+   its model - never route it back through the inline branch.
+2. **Genuinely-inline (needs the full live main context, so NOT delegable) -> the only model lever is
+   the session model.** If the session is AT the warranted tier, proceed silently. Otherwise (the
+   session model is below OR above it), ask the user, two options only: **switch the session model to
+   `<proposed>` via `/model` and re-run** (recommended, listed first), or **continue inline on
+   `<current>`**. The proposed tier may be higher (a correctness risk to fix) or lower (a cost saving
+   to capture); the switch-or-continue call is the user's. Never offer a subagent here - choosing
+   "inline" already means the step is not delegable, so a subagent option contradicts the premise. In
+   `auto` memory-mode do NOT ask: continue on the current model and log a one-line note that
+   `<proposed>` would fit better (auto cannot self-switch, and switching needs a human `/model` action).
+
+## Handling Implementer Status
+
+Implementer subagents report one of four statuses. Handle each appropriately:
+
+**DONE:** Generate the review package (`python3 "$CLAUDE_PLUGIN_ROOT/skills/process-agents-subagent-driven-development/scripts/review_package.py" BASE HEAD`, run from the repository under review (it resolves BASE/HEAD and its output directory from the current working directory)  -  it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer  -  never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path.
+
+**DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
+
+**NEEDS_CONTEXT:** The implementer needs information that wasn't provided. Provide the missing context and re-dispatch.
+
+**BLOCKED:** The implementer cannot complete the task. Assess the blocker:
+1. If it's a context problem, provide more context and re-dispatch with the same model
+2. If the task requires more reasoning, re-dispatch with a more capable model
+3. If the task is too large, break it into smaller pieces
+4. If the plan itself is wrong, escalate to the human
+
+**Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
+
+## Handling Reviewer WARN Items
+
+The task reviewer may report "WARN Cannot verify from diff" items  -  requirements
+that live in unchanged code or span tasks. These do not block the rest of the
+review, but you must resolve each one yourself before marking the task
+complete: you hold the plan and cross-task context the reviewer
+lacks. If you confirm an item is a real gap, treat it as a failed spec
+review  -  send it back to the implementer and re-review.
+
+## Constructing Reviewer Prompts
+
+Per-task reviews are task-scoped gates. The broad review happens once, at the
+final whole-branch review. When you fill a reviewer template:
+
+- Do not add open-ended directives like "check all uses" or "run race tests
+  if useful" without a concrete, task-specific reason
+- Do not ask a reviewer to re-run tests the implementer already ran on the
+  same code  -  the implementer's report carries the test evidence
+- Do not pre-judge findings for the reviewer  -  never instruct a reviewer to
+  ignore or not flag a specific issue. If you believe a finding would be a
+  false positive, let the reviewer raise it and adjudicate it in the review
+  loop. If the prompt you are writing contains "do not flag," "don't treat X
+  as a defect," "at most Minor," or "the plan chose"  -  stop: you are
+  pre-judging, usually to spare yourself a review loop.
+- The global-constraints block you hand the reviewer is its attention
+  lens. Copy the binding requirements verbatim from the plan's Global
+  Constraints section or the spec: exact values, exact formats, and the
+  stated relationships between components ("same layout as X", "matches
+  Y"). The reviewer's template already carries the process rules (YAGNI,
+  test hygiene, review method)  -  the constraints block is for what THIS
+  project's spec demands.
+- Hand the reviewer its diff as a file: run this skill's
+  `python3 "$CLAUDE_PLUGIN_ROOT/skills/process-agents-subagent-driven-development/scripts/review_package.py" BASE HEAD` (from the repo under review) and pass the reviewer the file path
+  it prints (or, without bash: `git log --oneline`, `git diff --stat`,
+  and `git diff -U10` for the range, redirected to one uniquely named
+  file). The output never enters your own context, and the reviewer sees
+  the commit list, stat summary, and full diff with context in one Read
+  call. Use the BASE you recorded before dispatching the implementer  - 
+  never `HEAD~1`, which silently truncates multi-commit tasks.
+- A dispatch prompt describes one task, not the session's history. Do not
+  paste accumulated prior-task summaries ("state after Tasks 1-3") into
+  later dispatches  -  a real session's dispatch hit 42k chars of which 99%
+  was pasted history. A fresh subagent needs its task, the interfaces it
+  touches, and the global constraints. Nothing else.
+- Dispatch fix subagents for Critical and Important findings. Record Minor
+  findings in the progress ledger as you go, and point the final
+  whole-branch review at that list so it can triage which must be fixed
+  before merge. A roll-up nobody reads is a silent discard.
+- Minors never get a fix round of their own. A review with no open
+  Critical or Important finding completes the task, so do not put a
+  minor-only round to the user as the recommended option either - a project
+  rule like "accept no technical debt" is met by the ledger and the final
+  review's triage, not by fixing now. Every fix round is new code the next
+  re-review reads with fresh eyes, so rounds for minors breed more minors:
+  that is how one task reached ten fix rounds. A Minor that contradicts a
+  user decision goes to the final review flagged for the user.
+- A finding labeled plan-mandated  -  or any finding that conflicts with
+  what the plan's text requires  -  is the human's decision, like any plan
+  contradiction: present the finding and the plan text, ask which governs.
+  Do not dismiss the finding because the plan mandates it, and do not
+  dispatch a fix that contradicts the plan without asking.
+- The final whole-branch review gets a package too: run
+  `python3 "$CLAUDE_PLUGIN_ROOT/skills/process-agents-subagent-driven-development/scripts/review_package.py" MERGE_BASE HEAD` (from the repo under review; MERGE_BASE = the commit the
+  branch started from, e.g. `git merge-base main HEAD`) and include the
+  printed path in the final review dispatch, so the final reviewer reads
+  one file instead of re-deriving the branch diff with git commands.
+- Every fix dispatch carries the implementer contract: the fix subagent
+  re-runs the tests covering its change and reports the results. Name the
+  covering test files in the dispatch  -  a one-line fix does not need the
+  whole suite. Before re-dispatching the reviewer, confirm the fix report
+  contains the covering tests, the command run, and the output; dispatch
+  the re-review once all three are present.
+- If the final whole-branch review returns findings, dispatch ONE fix
+  subagent with the complete findings list  -  not one fixer per finding.
+  Per-finding fixers each rebuild context and re-run suites; a real
+  session's final-review fix wave cost more than all its tasks combined.
+
+## File Handoffs
+
+Everything you paste into a dispatch prompt  -  and everything a subagent
+prints back  -  stays resident in your context for the rest of the session
+and is re-read on every later turn. Hand artifacts over as files:
+
+- **Task brief:** before dispatching an implementer, run this skill's
+  `python3 "$CLAUDE_PLUGIN_ROOT/skills/process-agents-subagent-driven-development/scripts/task_brief.py" PLAN_FILE N` (from the repo under review)  -  it extracts the task's full text to a
+  uniquely named file and prints the path. The brief opens with the plan's
+  `Global Constraints` section, verbatim: a constraint that names the
+  tasks it binds ("applies to Tasks 1, 2 and 6, so tests/test_launch.py is
+  in scope") lives there and not in the task, so without it the task's
+  Files list reads complete and is wrong. A plan that files constraints
+  under any other heading gets none of them carried: reconcile the brief's
+  Files list against those constraints yourself and forward each one that
+  names this task. Exit 1 means no such task; exit 2 with a list of
+  `line N:` headings means two headings share the id (a plan whose phases
+  restart numbering) - never dispatch the pair as one task: ask the human
+  which heading is meant, as for any plan contradiction, and re-run once
+  the plan gives each its own id.
+  Compose the dispatch so the
+  brief stays the single source of requirements. Your dispatch should
+  contain: (1) one line on where this task fits in the project; (2) the
+  brief path, introduced as "read this first  -  it is your requirements,
+  with the exact values to use verbatim"; (3) interfaces and decisions
+  from earlier tasks that the brief cannot know; (4) your resolution of
+  any ambiguity you noticed in the brief; (5) the report-file path and
+  report contract. Exact values (numbers, magic strings, signatures, test
+  cases) appear only in the brief.
+- **Report file:** name the implementer's report file after the brief
+  (brief `.../task-<ID>-<plan8>-brief.md` -> report `.../task-<ID>-<plan8>-report.md`, where
+  `<plan8>` is the plan-path digest `task_brief.py` puts in the brief's name) and put it in
+  the dispatch prompt. The implementer writes the full report there and
+  returns only status, commits, a one-line test summary, and concerns.
+- **Reviewer inputs:** the task reviewer gets three paths  -  the same brief
+  file, the report file, and the review package  -  plus the global
+  constraints that bind the task.
+- Fix dispatches append their fix report (with test results) to the same
+  report file and return a short summary; re-reviews read the updated file.
+
+## Durable Progress
+
+Conversation memory does not survive compaction. In real sessions,
+controllers that lost their place have re-dispatched entire completed task
+sequences  -  the single most expensive failure observed. Track progress in
+a ledger file, not only in todos.
+
+- At skill start, check for a ledger:
+  `cat "$(git rev-parse --show-toplevel)/.bitranox/sdd/progress.md"`. Tasks listed there
+  as complete are DONE  -  do not re-dispatch them; resume at the first task
+  not marked complete.
+- When a task's review comes back clean, append one line to the ledger in
+  the same message as your other bookkeeping:
+  `Task N: complete (commits <base7>..<head7>, review clean)`.
+- For each review of a task, add one line saying how many Critical, Important and Minor it found,
+  and how many of the Important ones sit in code the previous fix round wrote. When the Important
+  ones keep coming from the last round's own fixes, say so to the user: the review is feeding on
+  its own output, and that is theirs to weigh, not a reason to stop on your own.
+- The ledger is your recovery map: the commits it names exist in git even
+  when your context no longer remembers creating them. After compaction,
+  trust the ledger and `git log` over your own recollection.
+- `git clean -fdx` will destroy the ledger (it's git-ignored scratch); if
+  that happens, recover from `git log`.
+
+## Prompt Templates
+
+- [implementer-prompt.md](implementer-prompt.md) - Dispatch implementer subagent
+- [task-reviewer-prompt.md](task-reviewer-prompt.md) - Dispatch task reviewer subagent (spec compliance + code quality)
+- Final whole-branch review: use bitranox:process-review-requesting-code-review's [code-reviewer.md](../process-review-requesting-code-review/code-reviewer.md)
+
+## Example Workflow
+
+```
+You: I'm using Subagent-Driven Development to execute this plan.
+
+[Read plan file once: docs/plans/feature-plan.md]
+[Create todos for all tasks]
+
+Task 1: Hook installation script
+
+[Run task_brief.py for Task 1; dispatch implementer with brief + report paths + context]
+
+Implementer: "Before I begin - should the hook be installed at user or system level?"
+
+You: "User level (~/.config/app/hooks/)"
+
+Implementer: "Got it. Implementing now..."
+[Later] Implementer:
+  - Implemented install-hook command
+  - Added tests, 5/5 passing
+  - Self-review: Found I missed --force flag, added it
+  - Committed
+
+[Run review_package.py, dispatch task reviewer with the printed path]
+Task reviewer: Spec OK - all requirements met, nothing extra.
+  Strengths: Good test coverage, clean. Issues: None. Task quality: Approved.
+
+[Mark Task 1 complete]
+
+Task 2: Recovery modes
+
+[Run task_brief.py for Task 2; dispatch implementer with brief + report paths + context]
+
+Implementer: [No questions, proceeds]
+Implementer:
+  - Added verify/repair modes
+  - 8/8 tests passing
+  - Self-review: All good
+  - Committed
+
+[Run review_package.py, dispatch task reviewer with the printed path]
+Task reviewer: Spec NO:
+  - Missing: Progress reporting (spec says "report every 100 items")
+  - Extra: Added --json flag (not requested)
+  Issues (Important): Magic number (100)
+
+[Dispatch fix subagent with all findings]
+Fixer: Removed --json flag, added progress reporting, extracted PROGRESS_INTERVAL constant
+
+[Task reviewer reviews again]
+Task reviewer: Spec OK. Task quality: Approved.
+
+[Mark Task 2 complete]
+
+...
+
+[After all tasks]
+[Dispatch final code-reviewer]
+Final reviewer: All requirements met, ready to merge
+
+Done!
+```
+
+## Advantages
+
+**vs. Manual execution:**
+- Subagents follow TDD naturally
+- Fresh context per task (no confusion)
+- Context-isolated (each task gets its own context; no cross-task confusion). Note this is
+  NOT a licence to run implementers concurrently - see "Never: dispatch multiple
+  implementation subagents in parallel" below; the isolation is per-task, not per-worktree.
+- Subagent can ask questions (before AND during work)
+
+**vs. Executing Plans:**
+- Same session (no handoff)
+- Continuous progress (no waiting)
+- Review checkpoints automatic
+
+**Efficiency gains:**
+- Controller curates exactly what context is needed; bulk artifacts move
+  as files, not pasted text
+- Subagent gets complete information upfront
+- Questions surfaced before work begins (not after)
+
+**Quality gates:**
+- Self-review catches issues before handoff
+- Task review carries two verdicts: spec compliance and code quality
+- Review loops ensure fixes actually work
+- Spec compliance prevents over/under-building
+- Code quality ensures implementation is well-built
+
+**Cost:**
+- More subagent invocations (implementer + reviewer per task)
+- Controller does more prep work (extracting all tasks upfront)
+- Review loops add iterations
+- But catches issues early (cheaper than debugging later)
+
+## Red Flags
+
+**Never:**
+- Start implementation on main/master branch without explicit user consent
+- Skip task review, or accept a report missing either verdict (spec compliance AND task quality are both required)
+- Proceed with unfixed issues
+- Dispatch multiple implementation subagents in parallel (conflicts)
+- Make a subagent read the whole plan file (hand it its task brief  - 
+  `python3 "$CLAUDE_PLUGIN_ROOT/skills/process-agents-subagent-driven-development/scripts/task_brief.py"`  -  instead)
+- Skip scene-setting context (subagent needs to understand where task fits)
+- Ignore subagent questions (answer before letting them proceed)
+- Accept "close enough" on spec compliance (reviewer found spec issues = not done)
+- Skip review loops (reviewer found issues = implementer fixes = review again)
+- Let implementer self-review replace actual review (both are needed)
+- Tell a reviewer what not to flag, or pre-rate a finding's severity in the
+  dispatch prompt ("treat it as Minor at most")  -  the plan's example code is
+  a starting point, not evidence that its weaknesses were chosen
+- Dispatch a task reviewer without a diff file  -  generate it first
+  (`python3 "$CLAUDE_PLUGIN_ROOT/skills/process-agents-subagent-driven-development/scripts/review_package.py" BASE HEAD`) and name the printed path in the
+  prompt
+- Move to next task while the review has open Critical/Important issues
+- Re-dispatch a task the progress ledger already marks complete  -  check
+  the ledger (and `git log`) after any compaction or resume
+
+**If subagent asks questions:**
+- Answer clearly and completely
+- Provide additional context if needed
+- Don't rush them into implementation
+
+**If reviewer finds Critical or Important issues:**
+- Implementer (same subagent) fixes them
+- Reviewer reviews again
+- Repeat while a Critical or Important issue is open; Minors go to the ledger
+- Don't skip the re-review
+
+**If subagent fails task:**
+- Dispatch fix subagent with specific instructions
+- Don't try to fix manually (context pollution)
+
+## Rationalizations (pressure-tested; these do not fly)
+
+Baseline pressure runs (deadline + sunk cost + exhaustion + an authority saying "just do it")
+produced exactly these excuses. Each one broke, or nearly broke, a real run:
+
+| Excuse                                                              | Reality                                                                                                                                                                   |
+|---------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "They're one-liners - the per-task ceremony is disproportionate"    | Small diff is not small blast radius: a one-line bugfix landing wrong in a release is exactly what the isolation + review gate catches.                                   |
+| "Inline feels faster now that the machinery is built"               | The machinery is not the cost - your saturated context is. Inline work pollutes it further; dispatch preserves it.                                                        |
+| "It's zero-risk, I'll self-review the diff myself"                  | Self-review by the same context that made the change is not independent review. This is the excuse that actually broke a baseline run.                                    |
+| "The reviewer already approved it; the fixes were minor"            | It approved the ORIGINAL code, not the post-fix diff. A structural fix has real regression surface - re-review the delta.                                                 |
+| "The fix agent re-ran the tests, 8/8 pass - proof enough"           | Passing tests are the fixer's self-report and only prove the EXISTING tests still pass; they may not exercise the new code path.                                          |
+| "It's late and we're behind - don't loop again over nitpicks"       | Fatigue + deadline are when defects slip through. A gate that yields to inconvenience is not a gate. (The gate is an open Critical or Important; a Minor never holds it.) |
+| "Fix the minors now, so the final review starts from a clean slate" | The ledger IS the clean slate's input. A minor-only round is new code the next review reads afresh, and it reports new minors in it.                                      |
+| "The session is on a good model anyway - let them inherit"          | That couples the tier to an accident of session state. Safe only by luck tonight; it normalizes "let it ride" for the night the luck runs out.                            |
+| "Brief files are fiddly at 20 minutes to cutoff - paste the plan"   | Briefs batch to about a minute. Pasting the whole plan into every subagent invites cross-task interference - parallel dispatch's worst failure.                           |
+| "The lead said just fire them off"                                  | A ping pushing you to skip a safety practice is pressure to notice and push back on, not authorization.                                                                   |
+
+Catch yourself forming any of these phrases - "just one-liners", "zero-risk", "the tests pass",
+"the reviewer already approved", "we're behind, don't loop" - and treat the phrase itself as the
+signal to run the standard loop.
+
+## Integration
+
+**Required workflow skills:**
+- **bitranox:git-worktrees** - Ensures isolated workspace (creates one or verifies existing)
+- **bitranox:process-plan-writing-plans** - Creates the plan this skill executes
+- **bitranox:process-review-requesting-code-review** - Code review template for the final whole-branch review
+- **bitranox:process-ship-finishing-development-branch** - Complete development after all tasks
+
+**Subagents should use:**
+- **bitranox:process-test-driven-development** - Subagents follow TDD for each task
+
+**Alternative workflow:**
+- **bitranox:process-plan-executor** - Use for parallel session instead of same-session execution

@@ -1,0 +1,240 @@
+# Decompose
+
+A simple process orchestrator for local development. Broadly compatible with
+Docker Compose CLI and YAML semantics, but runs native processes instead of
+containers.
+
+## Design
+
+- **Daemon architecture**: `decompose up` spawns a background daemon per
+  project. The daemon manages process lifecycles and communicates via local
+  socket IPC (using the `interprocess` crate). The CLI is a thin client that
+  sends JSON requests over the socket.
+- **Instance identity**: Each environment is identified by a SHA-256 hash of
+  the config directory + file set, or by an explicit `--session` name (used
+  verbatim as the ID; `[A-Za-z0-9_-]`, max 64 chars). This
+  allows multiple isolated environments and cross-tab targeting.
+- **XDG paths**: Sockets go to `$XDG_RUNTIME_DIR/decompose/`, state (pid, log)
+  goes to `$XDG_STATE_HOME/decompose/`, with sensible fallbacks.
+
+## CLI
+
+Goal: broad compatibility with `docker compose` commands. The main commands
+should feel familiar to Docker Compose users.
+
+```
+decompose [--file FILE...] [--session NAME] [-e ENV_FILE...] [--disable-dotenv] <command>
+
+decompose up [-d] [--wait] [--foreground] [--no-deps] [SERVICE...]
+decompose down
+decompose ps
+decompose logs [-f] [-n N] [SERVICE...]
+decompose start [SERVICE...]
+decompose stop [SERVICE...]
+decompose restart [SERVICE...]
+decompose kill [SERVICE...]
+decompose config
+decompose ls
+```
+
+`up` defaults to background startup with initialization/readiness waiting.
+Explicit `-d` skips the readiness wait unless combined with `--wait`.
+`--foreground` streams logs and owns a newly launched environment; it conflicts
+with `-d`, `--wait`, and `--tui`. `--tui` opens immediately unless `--wait`
+is explicit. `--no-start` skips the default wait and conflicts with `--wait`.
+
+Global flags (`--file`, `--session`, `-e/--env-file`, `--disable-dotenv`)
+appear before the subcommand, matching `docker compose -f FILE <cmd>` shape.
+
+Output modes: global `--json` or `--table`; text is always the default.
+Finite JSON results use schema 1.0; streams use JSON Lines. Diagnostics go to
+stderr through `diagnostic.rs`. `output_model.rs` owns public result types;
+IPC acknowledgments retain typed outcomes and legacy messages. See
+`docs/cli-output.md` for the migration and native-output exceptions.
+
+## Configuration
+
+Config files are discovered in order: `decompose.yml`, `decompose.yaml`,
+`compose.yml`, `compose.yaml`. Multiple `-f` flags merge with overlay
+semantics (later files override earlier ones). Parsing preserves field presence:
+`command` and dependency completeness are validated only after merging. Explicit
+false/default values and empty lists override; environment and dependency maps
+merge by key, while probes and shutdown replace as whole blocks.
+
+`include` accepts paths or `{path, processes?}` entries. Imports merge in order,
+then locals; duplicate imported process names require a definition in the
+immediate including file. Selection brings transitive dependencies. Canonical
+paths detect include cycles; depth is limited to 32 edges. Only processes and
+global environment are imported; root files control global behavior settings.
+
+`config::load_project` is the shared resolver for CLI, preflight, daemon, and
+reload. It loads root dotenv once, composes raw files, interpolates once with
+field origins, and validates the final config and paths. Included files do not
+load dotenv or affect identity. Relative service paths stay project-relative.
+`DECOMPOSE_PROJECT_DIR` is the first root config's directory;
+`DECOMPOSE_FILE_DIR` is the directory supplying each field/environment value.
+Both are reserved interpolation variables. `env_file` may resolve beneath the
+project or its defining file's directory, with symlink targets checked.
+JSON config output adds provenance separately from runtime configuration hashes.
+The flake's `lib.mkFragment` packages substituted YAML under `share/decompose/`.
+
+### YAML schema
+
+```yaml
+# Global settings
+environment:           # Global env vars (map or list of KEY=VALUE)
+exit_mode: wait_all    # wait_all | exit_on_failure | exit_on_end
+disable_env_expansion: false
+
+processes:
+  service_name:
+    command: "..."                    # Required after merging. Shell command to run.
+    description: "..."               # Optional description.
+    working_dir: "/path"             # Defaults to config directory.
+    environment:                     # Per-process env vars (map or list).
+      KEY: value
+    env_file: ["extra.env"]          # Additional .env files to load.
+    disabled: false                  # Visible but not auto-started.
+    replicas: 1                      # Number of instances.
+    ready_log_line: "regex pattern"  # Sets log_ready when matched in output.
+    restart_policy: "no"             # no | on_failure | always
+    backoff_seconds: 1               # Delay between restart attempts.
+    max_restarts: null               # Cap on restart count (null = unlimited).
+
+    depends_on:
+      other_service:
+        condition: process_started
+        # Conditions: process_started, process_completed,
+        #   process_completed_successfully, process_healthy,
+        #   process_log_ready
+
+    readiness_probe:                 # Sets healthy flag when passing.
+      exec:
+        command: "curl -f localhost:8080/health"
+      period_seconds: 10
+      timeout_seconds: 1
+      initial_delay_seconds: 0
+      success_threshold: 1
+      failure_threshold: 3
+
+    liveness_probe:                  # Same schema as readiness_probe.
+      http_get:
+        host: "127.0.0.1"
+        port: 8080
+        scheme: http
+        path: /
+
+    shutdown:
+      command: "cleanup.sh"          # Optional pre-shutdown command.
+      signal: 15                     # Signal to send (default SIGTERM).
+      timeout_seconds: 10            # Wait before SIGKILL.
+```
+
+### Environment variable precedence (lowest to highest)
+
+1. `.env` file (auto-loaded unless `--disable-dotenv`)
+2. Explicit `-e` env files
+3. Global `environment` block
+4. Per-process `env_file` entries
+5. Per-process `environment` block
+
+### Variable interpolation
+
+- `${VAR}` and `$VAR` — substitute from env
+- `${VAR:-default}` — substitute with fallback
+- `$$` — literal `$` escape
+- Disabled globally with `disable_env_expansion: true`
+
+Applied to: `command`, `description`, `working_dir`, `ready_log_line`,
+`shutdown.command`, and environment values.
+
+## Architecture
+
+```
+src/
+  main.rs      Entry point, calls run_cli()
+  lib.rs       CLI command handlers, log streaming
+  cli.rs       Clap argument definitions
+  config.rs    YAML parsing, merging, .env loading, interpolation
+  daemon.rs    Daemon process lifecycle, supervisor loop, IPC handlers
+  model.rs     Core types (ProcessStatus, HealthProbe, etc.)
+  ipc.rs       Request/Response protocol, socket helpers
+  output.rs    JSON/table output formatting
+  paths.rs     XDG path management, instance ID generation
+```
+
+## Build, test, lint
+
+All of these must pass before committing:
+
+```bash
+cargo build --locked --all-targets
+cargo test --locked --all-targets
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+```
+
+## Testing patterns
+
+Integration tests live in `tests/cli_integration.rs` and spawn the compiled
+binary end-to-end. Each test creates an isolated temp dir and sets
+`XDG_RUNTIME_DIR`, `XDG_STATE_HOME`, and `HOME` to prevent collisions with
+real environments. Every test that calls `up` must call `down` before exiting.
+
+Use the existing `setup_project()` and `run_cmd()` helpers when adding tests.
+
+## Adding new CLI commands
+
+1. Add variant to `Commands` enum in `cli.rs` with a doc comment (becomes
+   help text). Re-use `GlobalArgs` or `ServiceArgs` where applicable.
+2. Add the handler function in `lib.rs`.
+3. Wire the match arm in `run_cli()` in `lib.rs`.
+4. If the command talks to the daemon, add the request/response variants to
+   `ipc.rs` and the handler in `daemon.rs`.
+5. Add an integration test in `tests/cli_integration.rs`.
+
+## Commit messages
+
+**Conventional Commits required.** See `AGENTS.md` for the full spec.
+Quick reference: `feat(cli):`, `fix(daemon):`, `refactor(config):`,
+`test:`, `docs:`, `chore:`.
+
+## Flox releases
+
+The release workflow publishes `sciyoshi/decompose`
+for Apple Silicon macOS and ARM64 and x64 Linux, then verifies installation from the
+catalog on each platform. It uses the
+`FLOX_FLOXHUB_TOKEN` environment secret in the GitHub `flox` environment.
+The package version comes from `Cargo.toml`; commit and push all build inputs
+before publishing. See `AGENTS.md` for the full release process.
+
+## Startup hooks
+
+Each process accepts ordered `pre_start` and `post_start` lists. Required fields
+are literal `name` and shell `command`; optional fields are `unless`, `creates`
+(mutually exclusive), `wait_for`, `timeout_seconds` (60), `working_dir`, and
+`environment`. Unknown fields and null phase lists are rejected. Overlay omission
+inherits a phase; `[]` clears it. Hook fields are interpolated once after service
+environment resolution, and resolved hook definitions participate in hashing.
+The includes loader preserves source anchors per hook phase for that deferred
+expansion; do not interpolate hooks during the earlier service-field pass.
+
+`src/hooks.rs` owns bounded wait/check/execute/verify stages and attributed log
+output. Controllers are registered before pre-start and own cleanup through child
+exit. Never detach or abort hook execution without reaping its group and output
+readers. Resolve `NameHandle` under the state lock; reload can rename live replicas.
+Controllers are joined before replacement, preventing stale attempt updates.
+
+`unless` uses 0=exists, 1=absent, other=error; verify once after mutation. `creates`
+follows symlinks and only treats not-found as absence. Hooks reevaluate on every
+spawn, including automatic restarts. Hook failure itself does not restart a service.
+Pre-start failure prevents spawn; post-start failure leaves the child running in
+`wait_all`. Preserve initialization failure through shutdown for foreground errors.
+
+`process_initialized` requires all current replicas running with successful hooks;
+readiness and historical `process_started` remain independent. The new
+`initializing` process state has no main PID. Snapshots retain historical hook
+records with backward-safe defaults. `up --wait` includes initialization; one-shot
+commands (`run`/`exec`) exclude lifecycle hooks. Hook output must never feed
+`ready_log_line`. Tests use isolated scripts and synchronization files; see
+`startup_hooks_*` in `tests/cli_integration.rs`.

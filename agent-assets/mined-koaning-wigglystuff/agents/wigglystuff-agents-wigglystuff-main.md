@@ -1,0 +1,168 @@
+# Setup
+
+This repo uses a `conductor.json` setup script (`make install`) that runs
+automatically when a Conductor workspace is created. It installs all
+dependencies so the environment is ready to use immediately.
+
+# Agents
+
+`wigglystuff` ships a small roster of AnyWidget "agents" that surface different
+input modalities (sliders, speech, paint, etc.) across notebook runtimes. This
+page is a quick lookup so you can see what exists and which traitlets each agent
+syncs back to Python.
+
+## Quick reference
+
+| Agent | Module/Class | Core traitlets | One-liner |
+| --- | --- | --- | --- |
+| AltairWidget | `wigglystuff.altair_widget.AltairWidget` | `spec`, `width`, `height` | Flicker-free Altair chart with smooth data updates |
+| ScatterLog | `wigglystuff.scatter_log.ScatterLog` | `spec`, `width`, `height` | Accumulate reactive values into a live, optionally multi-series scatter plot |
+| AnnotationWidget | `wigglystuff.annotation.AnnotationWidget` | `action`, `action_timestamp`, `note`, `listening`, `actions`, `keyboard_mapping`, `gamepad_mapping`, `debounce_ms`, `width` | Annotation input surface with buttons, keyboard, gamepad, and speech-to-text |
+| ApiDoc | `wigglystuff.api_doc.ApiDoc` | `doc`, `width`, `show_private` | Renders API docs for Python classes/functions |
+| Slider2D | `wigglystuff.slider2d.Slider2D` | `x`, `y`, `x_bounds`, `y_bounds`, `width`, `height` | 2D pointer for coupled parameters |
+| Knob | `wigglystuff.knob.Knob` | `value`, `min_value`, `max_value`, `step`, `start_angle`, `end_angle`, `ticks`, `steps`, `size`, `label`, `show_value`, `color`, `midi`, `midi_cc`, `midi_channel`, `midi_device`, `midi_key`, `midi_scope` | Audio-panel rotary knob with configurable sweep, detents, and Web MIDI learn |
+| Fader | `wigglystuff.fader.Fader` | `value`, `min_value`, `max_value`, `step`, `ticks`, `steps`, `orientation`, `length`, `label`, `show_value`, `color`, `midi`, `midi_cc`, `midi_channel`, `midi_device`, `midi_key`, `midi_scope` | Mixing-console fader with a configurable tick scale, detents, and Web MIDI learn |
+| MidiButton | `wigglystuff.midi_button.MidiButton` | `value`, `press_timestamp`, `velocity`, `label`, `icon`, `mode`, `size`, `color`, `midi`, `midi_note`, `midi_channel`, `midi_device`, `midi_key`, `midi_scope` | Momentary/toggle pad with icon or text faces and Web MIDI note learn |
+| Pip | `wigglystuff.pip.Pip` | `child`, `width`, `height`, `floating` | Wraps a widget and floats it in a picture-in-picture window above other windows |
+| FloatingPanel | `wigglystuff.floating_panel.FloatingPanel` | `child`, `corner`, `width`, `collapsed`, `title` (not an AnyWidget — a marimo display helper) | Pins any marimo content in a draggable in-page panel that stays visible while the notebook scrolls and minimizes to its header; portals to `document.body` to beat cell hover z-index; works in iframes/molab unlike Pip |
+| BezierCurve | `wigglystuff.bezier_curve.BezierCurve` | `points`, `samples`, `x`, `y`, `t`, `closed`, `playing`, `loop`, `interval_ms`, `duration_ms`, `sync_throttle_ms`, `show_axes`, `n_samples`, `x_bounds`, `y_bounds`, `width`, `height` | Arbitrary-degree Bezier curve editor with draggable control points, playback, and optional axis ticks |
+| CurveEditor | `wigglystuff.curve_editor.CurveEditor` | `points`, `samples`, `x`, `y`, `t`, `curve`, `closed`, `playing`, `loop`, `tension`, `alpha`, `selected_index`, `show_axes`, `n_samples`, `x_bounds`, `y_bounds`, `width`, `height` | Chart-space curve editor with D3 line interpolators, path progress, and optional axis ticks |
+| ChartPuck | `wigglystuff.chart_puck.ChartPuck` | `x`, `y`, `x_bounds`, `y_bounds`, `axes_pixel_bounds`, `width`, `height`, `chart_base64`, `puck_radius`, `puck_color`, `throttle` | Draggable puck overlay for matplotlib charts |
+| ChartMultiSelect | `wigglystuff.chart_multi_select.ChartMultiSelect` | `selections`, `active_class`, `n_classes`, `selected_index`, `mode`, `modes`, `x_bounds`, `y_bounds`, `axes_pixel_bounds`, `width`, `height`, `chart_base64`, `selection_opacity` | Multi-region class-labeled selection on matplotlib charts |
+| ChartSelect | `wigglystuff.chart_select.ChartSelect` | `mode`, `selection`, `has_selection`, `x_bounds`, `y_bounds`, `axes_pixel_bounds`, `width`, `height`, `chart_base64`, `selection_color`, `selection_opacity` | Box/lasso selection on matplotlib charts |
+| Matrix | `wigglystuff.matrix.Matrix` | `matrix`, `rows`, `cols`, `min_value`, `max_value`, `step`, `mirror` | Spreadsheet-like numeric editor |
+| TangleSlider | `wigglystuff.tangle.TangleSlider` | `amount`, `min_value`, `max_value`, `step`, `steps`, `pixels_per_step` | Inline slider ala Bret Victor |
+| TangleChoice | `wigglystuff.tangle.TangleChoice` | `choice`, `choices` | Inline toggle among labels |
+| TangleSelect | `wigglystuff.tangle.TangleSelect` | `choice`, `choices` | Dropdown version of the above |
+| TangleLatex | `wigglystuff.tangle_latex.TangleLatex` | `latex`, `parameters`, `values`, `display_mode`, `editor`, `reveal_all_on_drag`, `theme`, `error` | LaTeX formula with draggable `\tangle{name}` numbers/symbols |
+| TangleDistribution | `wigglystuff.tangle.TangleDistribution` | `distribution`, `params`, `live_params`, `dragging`, `bounds`, `steps`, `pixels_per_step`, `template`, `digits`, `sync_throttle_ms` | Inline tangle number holding a whole distribution: drag ↔/↕ for its two scipy-named parameters with a floating shape preview; 14 families (norm, lognorm, gamma, expon, weibull_min, uniform, laplace, logistic, beta, poisson, binom, nbinom, geom, randint); built-in `cdf`/`ppf`/`pdf`/`pmf`/`sample` (maths in `wigglystuff/_distributions.py`, no scipy) |
+| TangleFunction | `wigglystuff.tangle_function.TangleFunction` | `fn_name`, `parameters`, `param_order`, `values`, `theme`, `width`, `error` | Introspects a typed function into an editable call expression: drag numbers, click-cycle Literal/Enum/bool, edit strings; reads `annotated_types`/pydantic `Field` bounds; unbounded scrubbers by default; syncs `values` to splat into the function |
+| FormulaAnimation | `wigglystuff.formula_animation.FormulaAnimation` | `steps`, `title`, `spotlight`, `step`, `height`, `theme`, `error` | Step through a LaTeX derivation one line at a time (prev/next buttons, opt-in arrow keys, reactive `step`); KaTeX-rendered with an optional final spotlight frame |
+| SortableList | `wigglystuff.sortable_list.SortableList` | `value`, `addable`, `removable`, `editable`, `label` | Drag-and-drop ordering with optional CRUD |
+| CopyToClipboard | `wigglystuff.copy_to_clipboard.CopyToClipboard` | `text_to_copy` | Copies the payload into the OS clipboard |
+| ColorPicker | `wigglystuff.color_picker.ColorPicker` | `color` | Native color input with `rgb` helper |
+| EdgeDraw | `wigglystuff.edge_draw.EdgeDraw` | `names`, `links`, `directed`, `width`, `height` | Sketch node/link diagrams and query adjacency |
+| GridDraw | `wigglystuff.grid_draw.GridDraw` | `dots`, `lines`, `rows`, `cols`, `line_width`, `dot_radius`, `theme`, `width`, `height` | Draw dots on grid intersections and orthogonal line segments between them |
+| HeatmapSelect | `wigglystuff.heatmap_select.HeatmapSelect` | `pinned_cell`, `pinned_row`, `pinned_col`, `hover_cell`, `hover_row`, `hover_col`, `image_base64`, `n_rows`, `n_cols`, `x_range`, `y_range`, `cell_width`, `cell_height`, `row_color`, `col_color`, `throttle` | Bret Victor style parameter-space grid; pin a cell plus a whole row/column off either axis |
+| GraphWidget | `wigglystuff.graph_widget.GraphWidget` | `nodes`, `edges`, `directed`, `width`, `height`, `selected_nodes`, `selected_edges` | Programmatic force-directed graph visualization |
+| Paint | `wigglystuff.paint.Paint` | `base64`, `width`, `height`, `store_background`, `rainbow_brush`, `brush`, `marker`, `eraser`, `color_picker`, `color` | MS-Paint-style canvas with PIL helpers and a configurable toolbar |
+| Excalidraw | `wigglystuff.excalidraw.Excalidraw` | `scene`, `image_base64`, `theme`, `height`, `sync_throttle_ms` | Embedded Excalidraw whiteboard (loads from CDN); `get_pil`/`save`/`from_file` helpers (`save()` remembers the path) |
+| ParallelCoordinates | `wigglystuff.parallel_coords.ParallelCoordinates` | `data`, `color_by`, `height`, `filtered_indices`, `selected_indices`, `brush_extents`, `selections` | HiPlot-powered parallel coordinates with brush filtering and axis reordering |
+| ThreeWidget | `wigglystuff.three_widget.ThreeWidget` | `data`, `width`, `height`, `show_grid`, `show_axes`, `dark_mode`, `axis_labels`, `animate_updates`, `animation_duration_ms` | 3D scatter plot for point clouds |
+| WebcamCapture | `wigglystuff.webcam_capture.WebcamCapture` | `image_base64`, `capturing`, `interval_ms`, `facing_mode` | Webcam preview with snapshot capture |
+| GamepadWidget | `wigglystuff.gamepad.GamepadWidget` | `axes`, `current_button_press`, `dpad_*`, `current_timestamp` | Streams browser Gamepad API events |
+| HoverZoom | `wigglystuff.hover_zoom.HoverZoom` | `image`, `zoom_factor`, `width`, `height`, `_crop` | Image hover zoom with magnified side panel |
+| KeystrokeWidget | `wigglystuff.keystroke.KeystrokeWidget` | `last_key` | Captures the latest keypress w/ modifiers |
+| LiveEdit | `wigglystuff.live_edit.LiveEdit` | `code`, `trace`, `annotations`, `error`, `editable`, `theme`, `width`, `height`, `float_precision`, `visible_columns` | Source-linked loop trace for inspecting one Python function run; click numeric column headers to chart them |
+| ManimWeb | `wigglystuff.manim_web.ManimWeb` | `code`, `width`, `height`, `version`, `error` | Runs a manim-web (browser Manim) scene from a JS string, local file, or URL |
+| ObservablePlot | `wigglystuff.observable_plot.ObservablePlot` | `code`, `variables`, `width`, `height`, `version`, `error` | Runs Observable Plot JS from a string, local file, or URL, injecting Python variables by name |
+| EsmWidget | `wigglystuff.esm_widget.EsmWidget` | `code`, `css`, `data`, `width`, `height`, `error` | Renders an inline ES module (any CDN library, e.g. motion.dev or Observable Plot) with a two-way `data` bridge; `change:data` fires without re-running `render` |
+| AsyncFlow | `wigglystuff.async_flow.AsyncFlow` | `events`, `now_ms`, `running`, `width` | Live swimlane timeline of one async run (`await AsyncFlow.trace(main())`); one lane per task, running vs suspended-at-await, nested by parent; needs Python 3.12+ |
+| WebkitSpeechToTextWidget | `wigglystuff.talk.WebkitSpeechToTextWidget` | `transcript`, `listening`, `trigger_listen` | WebKit speech recognition bridge |
+| DriverTour | `wigglystuff.driver_tour.DriverTour` | `steps`, `auto_start`, `show_progress`, `active`, `current_step` | Guided product tours via Driver.js |
+| CellTour | `wigglystuff.cell_tour.CellTour` | `steps`, `auto_start`, `show_progress`, `active`, `current_step` | Simplified cell-based tours for marimo |
+| TextCompare | `wigglystuff.text_compare.TextCompare` | `text_a`, `text_b`, `matches`, `selected_match`, `min_match_words` | Side-by-side text diff with match highlighting |
+| EnvConfig | `wigglystuff.env_config.EnvConfig` | `variables`, `all_valid` | Environment variable config with validation |
+| ModuleTreeWidget | `wigglystuff.module_tree.ModuleTreeWidget` | `tree`, `initial_expand_depth` | Interactive tree viewer for PyTorch nn.Module |
+| Neo4jWidget | `wigglystuff.neo4j_widget.Neo4jWidget` | `nodes`, `relationships`, `schema`, `error`, `query_running`, `selected_nodes`, `selected_relationships`, `width`, `height` | Interactive Neo4j graph explorer with Cypher query input |
+| SplineDraw | `wigglystuff.spline_draw.SplineDraw` | `data`, `curve`, `curve_error`, `brushsize`, `n_classes`, `width`, `height` | Draw scatter points with Python-computed spline curve fitting |
+| ScatterWidget | re-exported from [`drawdata`](https://github.com/koaning/drawdata) | `data`, `brushsize`, `width`, `height`, `n_classes` | Paint multi-class 2D scatter data with brush |
+| PlaySlider | `wigglystuff.play_slider.PlaySlider` | `value`, `min_value`, `max_value`, `step`, `interval_ms`, `playing`, `loop`, `width` | Slider with play/pause button for auto-advancing values |
+| FramePlayer | `wigglystuff.frame_player.FramePlayer` | `frames`, `value`, `interval_ms`, `playing`, `loop`, `width`, `show_index` | Play a sequence of images (PIL/paths/URLs/figures) as an inline looping "video" |
+| CircularSlider | `wigglystuff.circular_slider.CircularSlider` | `value`, `start`, `stop`, `step`, `size`, `thickness`, `show_value`, `color`, `label` | Circular dial slider for picking a single value |
+| CircularRangeSlider | `wigglystuff.circular_slider.CircularRangeSlider` | `value` (`(low, high)`), `start`, `stop`, `step`, `size`, `thickness`, `show_value`, `color`, `label` | Circular dial slider for picking a span of values (wraps the seam) |
+| HoverSlider | `wigglystuff.hover_slider.HoverSlider` | `value`, `hover_value`, `hovering`, `start`, `stop`, `step`, `steps`, `sync_throttle_ms`, `show_value`, `label`, `color`, `width` | Slider that emits both the committed value and the live value under the pointer |
+| RidgelineChart | `wigglystuff.ridgeline_chart.RidgelineChart` | `data`, `x_values`, `width`, `height`, `overlap`, `stroke_width`, `fill_opacity`, `peak_scale`, `x_label`, `y_label`, `selected_index`, `selected_row` | Stacked waveform "Joy Division" visualization with clickable rows |
+| Treemap | `wigglystuff.treemap.Treemap` | `data`, `width`, `height`, `max_depth`, `value_col`, `selected_path`, `clicked_path`, `hovered_path` | Zoomable hierarchical treemap with breadcrumbs |
+| WidgetDAG | `wigglystuff.widget_dag.WidgetDAG` | `nodes`, `edges`, `layout` (not an AnyWidget — a marimo display helper) | Arrange live widgets/images as a DAG (columns by edge-depth) and draw the connecting arrows; `WidgetDAG.from_widgets([...])` derives the edges from marimo's dataflow graph (one node per cell) |
+| Hint | `wigglystuff.hint.Hint` | `target`, `note`, `side`, `color`, `gap` (not an AnyWidget — a marimo display helper) | Wrap a widget and curve an arrow from an explanatory note to its edge; the note is any marimo content, and hints compose into stacks, `WidgetDAG` nodes, and each other |
+
+## Patterns to remember
+
+### Visual approval comes before verification
+
+- For new widgets and visual or interaction changes, stop once the implementation
+  and demo are ready for inspection. Give the user a concrete way to open the
+  widget, then wait for explicit visual approval before running test suites,
+  requesting code review, updating galleries/docs, committing, pushing, or
+  starting branch-finishing workflows. The user may want another design pass.
+- During visual iteration, do not repeatedly run automated checks after CSS,
+  SVG, layout, or styling tweaks. Make the change and return it for inspection.
+- After visual approval, run the smallest focused checks once. Run the full
+  repository suite only when preparing to ship/merge or when shared
+  infrastructure changed.
+- Keep widget unit tests compact: cover each public behavior once, group
+  repetitive validation cases in one test, and avoid parameter matrices that
+  multiply test count without adding distinct behavioral coverage.
+
+- All agents inherit from `anywidget.AnyWidget`, so `widget.observe(handler)`
+  remains the standard way to react to state changes.
+- Constructors tend to validate bounds, lengths, or choice counts; let the
+  raised `ValueError/TraitError` guide you instead of duplicating the logic.
+- Several widgets expose helper methods (e.g., `Paint.get_pil()`,
+  `EdgeDraw.get_adjacency_matrix()`)—lean on those rather than re-implementing
+  conversions.
+- Check `wigglystuff/__init__.py` for the names that are re-exported at the
+  package root so you can keep imports consistent.
+- **numpy and pillow are optional dependencies.** They are listed under
+  `[project.optional-dependencies]` in `pyproject.toml`, not in the core
+  `dependencies`. Widgets that need numpy or pillow must import them inside
+  the method or function that uses them (never at module top-level). This
+  keeps `import wigglystuff` and widgets that don't need these libraries
+  working without them installed. Install with `pip install wigglystuff[all]`
+  to get both, or `wigglystuff[numpy]` / `wigglystuff[pillow]` individually.
+- The repo standardizes on [`uv`](https://github.com/astral-sh/uv) for Python
+  workflows (`uv pip install -e .` etc.) and the standard library's `pathlib`
+  for filesystem paths—mirror those choices in new agents to keep the codebase
+  consistent.
+- When styling widgets, support both light and dark themes by defining
+  component-specific CSS variables (see Matrix/SortableList). Scope your
+  defaults to the widget root, mark `color-scheme: light dark`, and provide
+  overrides that respond to `.dark`, `.dark-theme`, or `[data-theme="dark"]`
+  ancestors so notebook-level theme toggles work instantly.
+- When adding a new widget, remember to update the docs gallery
+  (`docs/index.md`), the README gallery (`readme.md`), the LLM context
+  file (`docs/llms.txt`), and the changelog (`CHANGELOG.md`). Add a
+  screenshot to `docs/assets/gallery/` and reference it from the gallery
+  locations to keep them in sync. Screenshots are stored as `.webp` —
+  if you only have a PNG, drop it in and run
+  `uv run python scripts/png_to_webp.py` to convert and clean up.
+- **Every link to MoLab (`molab.marimo.io`) must carry `?utm_source=wigglystuff`**
+  so outbound traffic is attributable in analytics. This applies to the gallery
+  links in `README.md` and `docs/index.md` and any MoLab reference in
+  `docs/llms.txt`. When adding a new widget, append the param to its `molab`
+  demo links (e.g. `.../demos/<name>.py/wasm?utm_source=wigglystuff`).
+- New or changed features that haven't been released yet go under the
+  `## [Unreleased]` section at the top of `CHANGELOG.md`. That section gets
+  renamed to a versioned heading (e.g., `## [0.2.37]`) only at release time.
+- **At release time, also bump the `wigglystuff==X.Y.Z` pin in the script
+  header of every demo notebook that exercises an unreleased feature.** The
+  `demos/*.py` files use PEP 723 `# /// script` blocks that pin a published
+  version — if a demo uses APIs only present in the new release, leaving the
+  old pin means `uv run demos/<name>.py` (and anyone who downloads the demo)
+  will get the old wigglystuff and the feature will be missing. After bumping
+  `pyproject.toml`, grep `demos/` for the previous version and update the
+  pins on any demo touched in the release.
+- Each widget has a demo marimo notebook in the `demos/` folder (e.g.,
+  `demos/colorpicker.py`). When adding a new widget, create a corresponding
+  demo notebook. Run demos with `marimo edit demos/<widget>.py`.
+- **After visual approval, smoke-test new or modified widget code** with
+  `uv run python -c "..."` to instantiate the widget, exercise traitlet changes,
+  and check edge cases (built-ins, empty inputs, toggles).
+- **After visual approval, run `uv run marimo check demos/<notebook>.py`** after editing a demo
+  notebook to verify it parses correctly and has no cell dependency issues.
+  which only validates structure.
+- Dumber is better. Prefer obvious, direct code over clever abstractions—someone
+  new to the project should be able to read the code top-to-bottom and grok it
+  without needing to look up framework magic or trace through indirection.
+- **Do not modify `package-lock.json`** unless intentionally updating JS
+  dependencies. If it shows up in `git diff`, revert it with
+  `git checkout package-lock.json`.
+- **Docs are built with [zensical](https://zensical.com/), not mkdocs.** The
+  config lives in `zensical.toml`; build with `make docs` and preview with
+  `make docs-serve` (which builds, then serves `site/` via
+  `python -m http.server`). Packages like `mkdocstrings` are zensical plugins —
+  their presence is not evidence that this is an mkdocs project.
+- When planning a new widget, always present the proposed Python API
+  (constructor, traitlets, helper methods) during plan review so the user
+  can sign off on the interface before implementation.

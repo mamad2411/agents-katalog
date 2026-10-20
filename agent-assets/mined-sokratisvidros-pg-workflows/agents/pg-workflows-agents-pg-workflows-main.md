@@ -1,0 +1,490 @@
+# AGENTS.md - pg-workflows
+
+This file is the single source of truth for AI coding agents (Claude Code, Codex, Gemini CLI, Cursor, etc.) working with the pg-workflows codebase. `CLAUDE.md` and `GEMINI.md` are symlinks to this file.
+
+## What is pg-workflows?
+
+pg-workflows is a TypeScript workflow engine that uses PostgreSQL for durable execution, event-driven orchestration, and automatic retries. It requires no extra infrastructure beyond PostgreSQL. Built on top of pg-boss for reliable job scheduling.
+
+- **Packages:** `pg-workflows` (engine), `@pg-workflows/otel` (OpenTelemetry plugin), and `@pg-workflows/ui` (React dashboard)
+- **Language:** TypeScript (ESM + CJS dual output)
+- **Runtime:** Node.js >= 18
+- **Database:** PostgreSQL >= 10
+- **License:** MIT
+- **Workspace:** Bun workspaces under `packages/*`, `apps/*`, and `examples/*`
+
+## Project Structure
+
+```
+packages/
+├── pg-workflows/           # npm: pg-workflows
+│   ├── src/
+│   │   ├── index.ts        # Public API re-exports
+│   │   ├── definition.ts   # workflow() factory function
+│   │   ├── engine.ts       # WorkflowEngine class (core orchestrator)
+│   │   ├── types.ts        # All public types, enums, interfaces
+│   │   ├── error.ts        # Error classes
+│   │   ├── ast-parser.ts   # Static analysis of workflow handlers
+│   │   ├── db/             # Database queries, migrations, types
+│   │   └── tests/          # Test utilities
+│   └── bunup.config.ts
+├── otel/                   # npm: @pg-workflows/otel (plugin built on workflow.use)
+└── ui/                     # npm: @pg-workflows/ui
+apps/
+└── docs/                   # pgworkflows.dev: Fumadocs (Next.js static export) on Cloudflare Workers Static Assets
+    └── content/docs/       # the docs pages (MDX), the single source of truth for docs
+skills/
+└── pg-workflows-install/   # public install skill, served at pgworkflows.dev/skill.md
+examples/
+├── node/                   # CLI examples
+└── dashboard/              # Next.js dashboard example
+```
+
+## Docs site
+
+- `apps/docs` builds to static files in `apps/docs/out/`. `apps/docs/wrangler.jsonc` serves them as Workers Static Assets (Worker `pg-workflows-docs`). `.github/workflows/docs.yml` runs `wrangler deploy` on pushes to `main` and `wrangler versions upload --preview-alias <branch>` on PRs. Run `bun run --filter pg-workflows-docs preview` to serve the build locally.
+- The prebuild step (`apps/docs/scripts/copy-skill.ts`) copies `skills/pg-workflows-install` into `public/`. It also fails the build if `README.md` stops containing `agentPrompt` from `apps/docs/lib/site.ts`, the prompt behind the home page's main call to action.
+- When engine, UI, or OTel behavior changes, update the matching page in `apps/docs/content/docs` **and** the install skill's references.
+
+## Commands
+
+- `bun run build` - Build engine, then the OTel plugin, then UI
+- `bun run dev` - Watch-mode engine build
+- `bun run dev:docs` - Docs site dev server
+- `bun run build:docs` - Build the docs site to `apps/docs/out`
+- `bun run test` - Run unit, OTel, UI, and integration tests
+- `bun run test:unit` - Engine unit tests (PGlite, no PostgreSQL needed)
+- `bun run test:otel` - OTel plugin tests (PGlite, no PostgreSQL needed)
+- `bun run test:ui` - UI package tests
+- `bun run test:integration` - Engine integration tests (requires real PostgreSQL)
+- `bun run lint` - Lint with Biome
+- `bun run lint:fix` - Auto-fix lint issues
+- `bun run format` - Format with Biome
+
+## Dependencies (npm)
+
+- **Always use the latest npm libraries.** When adding or updating dependencies, look up the current latest version on npm (e.g. npmjs.com or `npm view <pkg> version`) and use that. Prefer `^<latest>` or an explicit latest version in `package.json`. Do not pin to outdated major/minor versions unless the project explicitly requires it.
+
+## Code Conventions
+
+- **Linter/Formatter:** Biome (not ESLint/Prettier)
+- **Test framework:** Vitest
+- **Build tool:** bunup
+- **Module system:** ESM-first with CJS compatibility
+- **Validation:** Zod for input schemas
+- **IDs:** KSUID for workflow run IDs
+- **No semicolons in code** - follow the existing Biome config
+
+## Core API
+
+### `workflow(id, handler, options?)` - Define a workflow
+
+```typescript
+import { workflow } from 'pg-workflows';
+import { z } from 'zod';
+
+const myWorkflow = workflow(
+  'workflow-id',                              // unique string ID
+  async ({ step, input, runId, workflowId, timeline, logger, schedule }) => {
+    // workflow body with step calls
+    // `schedule` is populated only for runs triggered by a recurring schedule
+  },
+  {
+    inputSchema: z.object({ /* ... */ }),      // optional Zod schema
+    timeout: 60000,                            // optional, milliseconds
+    retries: 3,                                // optional, max retry count
+    priority: 'high',                          // optional default priority for every run
+    singleton: true,                           // optional, one pending/running run per workflow ID
+    schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
+    timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
+  }
+);
+```
+
+### Workflow priorities
+
+Runs can be prioritized in pg-boss's queue. `priority` accepts a named level
+(`'high'`, `'normal'`, `'low'`) or a raw integer — **higher runs first**, and
+`'normal'` is `0` (pg-boss's default). Named levels map to `high = 100`,
+`normal = 0`, `low = -100`; the numeric escape hatch is for fine-grained tuning.
+
+Priority can be set on the workflow definition (default for every run) and
+overridden per-run at `startWorkflow`:
+
+```typescript
+workflow('billing', handler, { priority: 'high' });   // every run defaults to high
+
+await engine.startWorkflow({
+  workflowId: 'billing',
+  priority: 'low',     // this run only; overrides the definition default
+});
+```
+
+**Resolution.** Effective priority is `startWorkflow.priority ?? definition.priority ?? 'normal'`,
+resolved to an integer once when the run row is created and **persisted on the
+run**. Every subsequent re-enqueue (resume after `waitFor`/`pause`, retries,
+poll/`waitUntil` continuations, scheduled fires) reuses the stored value, so a
+high-priority workflow stays high-priority across pauses.
+
+**Child workflows** inherit the parent run's priority by default; the child's
+own definition or call-site `priority` overrides it:
+`childCall.priority ?? childDefinition.priority ?? parentRun.priority`.
+
+### Recurring workflows
+
+Workflows can run on a recurring schedule. `schedule` accepts three forms — a
+cron expression, a duration string, or a `DurationObject`:
+
+```typescript
+workflow('cron-style',   handler, { schedule: '0 9 * * 1-5', timezone: 'America/New_York' });
+workflow('every-5-min',  handler, { schedule: '5m' });          // duration string
+workflow('every-hour',   handler, { schedule: '1 hour' });      // natural-language duration
+workflow('every-day',    handler, { schedule: { days: 1 } });   // DurationObject
+```
+
+**Detection rule.** A string that splits into 5 or 6 whitespace tokens of
+cron-charset (`0-9 * / , - ? L W #`) is treated as a cron expression and
+validated by `cron-parser`. Otherwise it's parsed as a duration via
+`parse-duration` and translated into a cron expression — but only if the
+interval divides cleanly (whole minutes that divide 60, whole hours that divide
+24, or 1 day). Non-divisible intervals (`'23m'`, `'7h'`) throw with a clear
+message; use an explicit cron expression for those.
+
+**Schedule context.** Schedule-triggered runs receive `ctx.schedule.timestamp`
+— the time the schedule fired. Manual runs from `engine.startWorkflow()` have
+`ctx.schedule === undefined`. Use that as the "this is a scheduled fire" flag.
+
+```typescript
+async ({ step, schedule, workflowId }) => {
+  // For cursor-style incremental syncs, fetch the previous run separately:
+  const lastRun = await engine.getWorkflowLastRun({ workflowId });
+  const since = lastRun?.completedAt ?? new Date(0);
+  // ... fetch data updated since `since`
+}
+```
+
+**Overlap policy.** Scheduled fires skip when the workflow is `singleton: true`
+and a previous run is still pending or running. Paused runs release the slot.
+Without `singleton`, overlapping scheduled runs can execute concurrently.
+
+### Singleton workflows
+
+Set `singleton: true` on a workflow definition to allow at most one pending or
+running run of that workflow ID at a time. A second `startWorkflow` throws
+`WorkflowRunInProgressError` until the current run pauses, completes, fails, or
+is cancelled. Resuming a paused run while another run occupies the slot also
+throws.
+
+```typescript
+workflow('nightly-sync', handler, { singleton: true });
+```
+
+`WorkflowClient` does not load definitions; pass `{ singleton: true }` on the
+ref (`workflow.ref('nightly-sync', { singleton: true })`) or on start options
+so the uniqueness constraint is applied.
+
+### `WorkflowEngine` - Main orchestrator
+
+```typescript
+import { WorkflowEngine } from 'pg-workflows';
+
+// Option 1: Connection string (simplest)
+const engine = new WorkflowEngine({
+  connectionString: 'postgresql://user:pass@localhost:5432/mydb',
+  workflows: [myWorkflow],                     // optional, register on init
+  logger: { log: console.log, error: console.error }, // optional
+});
+
+// Option 2: Existing pg.Pool
+import pg from 'pg';
+const pool = new pg.Pool({ connectionString: '...' });
+const engine = new WorkflowEngine({
+  pool,
+  workflows: [myWorkflow],
+});
+
+// Option 3: Bring your own PgBoss (advanced)
+import PgBoss from 'pg-boss';
+const engine = new WorkflowEngine({
+  pool,
+  boss: myPgBossInstance,                      // optional, uses your pg-boss config
+  workflows: [myWorkflow],
+});
+
+await engine.start();           // starts boss, runs migrations, creates workers
+await engine.stop();            // graceful shutdown (also closes pool if engine created it)
+```
+
+**Constructor options** (`WorkflowEngineOptions`):
+- `connectionString` or `pool` — exactly one required. If `connectionString` is used, the engine creates and owns the pool (closed on `stop()`).
+- `boss` — optional. When omitted, pg-boss is created internally with an isolated schema (`pgboss_v12_pgworkflow`) to avoid conflicts with other pg-boss installations.
+- `workflows` — optional array of workflow definitions to register on init.
+- `logger` — optional `{ log, error }` logger.
+
+**Dependencies**: `pg` is a peer dependency (you install it); `pg-boss` is a regular dependency (bundled, no install needed).
+
+### `otelPlugin(options?)` - OpenTelemetry tracing (`@pg-workflows/otel`)
+
+```typescript
+import { otelPlugin } from '@pg-workflows/otel';
+import { workflow } from 'pg-workflows';
+
+// Separate package: install `@pg-workflows/otel`, `@opentelemetry/api`, and an OTel SDK (e.g. NodeSDK).
+// The engine has no OTel dependency; plugins build on `workflow.use()` and the `wrap` hook.
+// One `pg_workflows.workflow.run` span per worker execution, with child spans
+// per step kind. Spans replayed from cache after a pause are suppressed.
+const tracedWorkflow = workflow.use(otelPlugin({
+  // tracer?: Tracer            // default: trace.getTracer('pg-workflows')
+  // spanNamePrefix?: string    // default: 'pg_workflows'
+  // attributes?: (ctx) => Record<string, AttributeValue>
+}));
+```
+
+### Step Types (available on `context.step`)
+
+#### `step.run(stepId, handler)` - Execute a durable step
+```typescript
+const result = await step.run('step-name', async () => {
+  // Runs exactly once; result is persisted in PostgreSQL
+  return { data: 'value' };
+});
+```
+
+#### `step.waitFor(stepId, { eventName, timeout?, schema? })` - Wait for external event
+```typescript
+const eventData = await step.waitFor('wait-step', {
+  eventName: 'payment-completed',    // event name to listen for
+  timeout: 5 * 60 * 1000,           // optional timeout in ms
+  schema: z.object({ /* ... */ }),   // optional Zod schema for event data
+});
+```
+
+#### `step.pause(stepId)` - Manually pause the workflow
+```typescript
+await step.pause('approval-gate');
+// Workflow pauses here until engine.resumeWorkflow() is called
+```
+
+#### `step.waitUntil(stepId, { date })` - Wait until a specific date
+```typescript
+await step.waitUntil('scheduled-step', { date: new Date('2025-01-01') });
+```
+
+### Engine Methods
+
+```typescript
+// Start a workflow run
+const run = await engine.startWorkflow({
+  workflowId: 'workflow-id',
+  resourceId: 'user-123',            // optional, for scoping/multi-tenancy
+  input: { email: 'user@example.com' },
+  idempotencyKey: 'unique-key-123',  // optional, for deduplication
+  options: { timeout, retries, expireInSeconds, priority }, // all optional
+});
+
+// Pause / Resume / Cancel
+await engine.pauseWorkflow({ runId: run.id, resourceId: 'user-123' });
+await engine.resumeWorkflow({ runId: run.id, resourceId: 'user-123' });
+await engine.cancelWorkflow({ runId: run.id, resourceId: 'user-123' });
+
+// Send event to a waiting workflow
+await engine.triggerEvent({
+  runId: run.id,
+  resourceId: 'user-123',
+  eventName: 'user-confirmed',
+  data: { confirmedAt: new Date() },  // optional
+});
+
+// Query runs
+const run = await engine.getRun({ runId, resourceId });
+const lastRun = await engine.getWorkflowLastRun({ workflowId, resourceId }); // null if none
+const progress = await engine.checkProgress({ runId, resourceId });
+const { items, nextCursor, hasMore } = await engine.getRuns({
+  resourceId: 'user-123',
+  statuses: [WorkflowStatus.RUNNING],
+  workflowId: 'workflow-id',
+  limit: 20,
+  startingAfter: cursor,
+});
+
+// Register/unregister workflows dynamically
+await engine.registerWorkflow(workflowDefinition);
+await engine.unregisterWorkflow('workflow-id');
+await engine.unregisterAllWorkflows();
+```
+
+## Key Types
+
+```typescript
+// Constructor options — pass pool OR connectionString (exactly one)
+type WorkflowEngineOptions = {
+  workflows?: WorkflowDefinition[];
+  logger?: WorkflowLogger;
+  boss?: PgBoss;
+} & (
+  | { pool: pg.Pool; connectionString?: never }
+  | { connectionString: string; pool?: never }
+);
+
+enum WorkflowStatus {
+  PENDING = 'pending',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled',
+}
+
+enum StepType {
+  PAUSE = 'pause',
+  RUN = 'run',
+  WAIT_FOR = 'waitFor',
+  WAIT_UNTIL = 'waitUntil',
+  DELAY = 'delay',
+  POLL = 'poll',
+}
+
+type WorkflowRun = {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  resourceId: string | null;
+  workflowId: string;
+  status: WorkflowStatus;
+  input: unknown;
+  output: unknown | null;
+  error: string | null;
+  currentStepId: string;
+  timeline: Record<string, unknown>;
+  pausedAt: Date | null;
+  resumedAt: Date | null;
+  completedAt: Date | null;
+  timeoutAt: Date | null;
+  retryCount: number;
+  maxRetries: number;
+  priority: number;
+  jobId: string | null;
+  idempotencyKey: string | null;
+  parentRunId: string | null;
+  parentStepId: string | null;
+  parentResourceId: string | null;
+  scheduledAt: Date | null;
+  singleton: boolean;
+};
+
+type WorkflowRunProgress = WorkflowRun & {
+  completionPercentage: number;
+  totalSteps: number;
+  completedSteps: number;
+};
+
+// Error classes
+class WorkflowEngineError extends Error {
+  workflowId?: string;
+  runId?: string;
+  cause?: Error;
+}
+class WorkflowRunNotFoundError extends WorkflowEngineError {}
+class WorkflowRunInProgressError extends WorkflowEngineError {}
+```
+
+## Environment Variables
+
+| Variable                          | Description                     | Default |
+|-----------------------------------|---------------------------------|---------|
+| `DATABASE_URL`                    | PostgreSQL connection string    | required |
+| `WORKFLOW_RUN_WORKERS`            | Number of worker processes      | `3`     |
+| `WORKFLOW_RUN_EXPIRE_IN_SECONDS`  | Job expiration time in seconds  | `300`   |
+
+## AI & Agent Workflow Patterns
+
+pg-workflows is well-suited for AI agents and LLM pipelines because LLM calls are slow, expensive, and unreliable - exactly the work that benefits most from durable execution.
+
+### Why durable execution matters for AI
+
+- **Cached step results** - If a process crashes after an expensive LLM call, the result is already persisted. On retry, it skips and resumes from the next step.
+- **Automatic retries** - LLM APIs return 429s and 500s. Built-in exponential backoff handles transient failures.
+- **Human-in-the-loop** - Pause with `step.waitFor()` to wait for human review/approval, consuming zero resources while waiting.
+- **Observable progress** - Track agent progress and inspect intermediate results via `checkProgress()`.
+- **Long-running agents** - Multi-step agents that run for minutes/hours persist state and resume without holding connections.
+
+### Multi-step AI agent pattern
+
+```typescript
+const agent = workflow('research-agent', async ({ step, input }) => {
+  const plan = await step.run('plan', async () => {
+    return await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: `Plan research for: ${input.topic}` }] });
+  });
+
+  const findings = [];
+  for (const task of plan.tasks) {
+    const result = await step.run(`research-${task.id}`, async () => {
+      return await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: task.description }] });
+    });
+    findings.push(result);
+  }
+
+  const report = await step.run('synthesize', async () => {
+    return await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: `Synthesize: ${JSON.stringify(findings)}` }] });
+  });
+
+  return { plan, findings, report };
+}, { retries: 3, timeout: 30 * 60 * 1000 });
+```
+
+### Human-in-the-loop AI pattern
+
+```typescript
+const pipeline = workflow('content-pipeline', async ({ step, input }) => {
+  const draft = await step.run('generate', async () => {
+    return await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: `Write about: ${input.topic}` }] });
+  });
+
+  // Pause for human review - zero cost while waiting
+  const review = await step.waitFor('human-review', {
+    eventName: 'content-reviewed',
+    timeout: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  if (review.approved) return { status: 'published', content: draft };
+
+  const revision = await step.run('revise', async () => {
+    return await llm.chat({ model: 'gpt-4o', messages: [{ role: 'user', content: `Revise: ${draft}\nFeedback: ${review.feedback}` }] });
+  });
+  return { status: 'revised', content: revision };
+}, { retries: 3 });
+
+// Trigger the review event from your API
+await engine.triggerEvent({ runId, eventName: 'content-reviewed', data: { approved: false, feedback: '...' } });
+```
+
+### RAG pipeline pattern
+
+```typescript
+const rag = workflow('rag-agent', async ({ step, input }) => {
+  const embedding = await step.run('embed', async () => {
+    return await openai.embeddings.create({ model: 'text-embedding-3-small', input: input.query });
+  });
+  const docs = await step.run('search', async () => {
+    return await vectorStore.search(embedding, { topK: 10 });
+  });
+  const answer = await step.run('generate', async () => {
+    return await llm.chat({ model: 'gpt-4o', messages: [
+      { role: 'system', content: `Context:\n${docs.map(d => d.text).join('\n')}` },
+      { role: 'user', content: input.query },
+    ]});
+  });
+  return { answer, sources: docs };
+}, { retries: 3, timeout: 5 * 60 * 1000 });
+```
+
+## Important Patterns
+
+1. **Step IDs must be unique within a workflow.** When using loops, use dynamic IDs: `step.run(\`process-${item.id}\`, ...)`
+2. **Step results are cached.** On retry, completed steps return their persisted result without re-executing.
+3. **`resourceId` is optional** but useful for multi-tenant scoping and querying runs by external entity.
+4. **Workflow handlers are statically analyzed** at registration time to extract step definitions (conditional, loop, dynamic).
+5. **Migrations run automatically** on `engine.start()` - no manual schema setup needed.
+6. **pg-boss is an internal dependency** — users don't need to install or configure it. The engine creates pg-boss with an isolated schema (`pgboss_v12_pgworkflow`) to avoid conflicts. Advanced users can pass their own `boss` instance.
+7. **The engine manages its own retry logic** with exponential backoff (`2^retryCount * 1000ms`), independent of pg-boss's retry settings.
+8. **`singleton: true` allows only one pending or running run per workflow ID.** Paused, completed, failed, and cancelled runs release the slot.

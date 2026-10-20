@@ -1,0 +1,137 @@
+---
+alwaysApply: true
+description: High-signal entrypoint summary for this Dioxus PWA repo
+---
+# Cursor Rules Summary
+
+## 📊 System Overview
+
+This directory is the **authoritative operating manual** for this repo: how the Dioxus PWA is structured, how components are organized, and what patterns must be preserved.
+
+**Total Rules**: Core rules + skills document
+**Structure**:
+- `core/`: Foundational project rules
+- `features/`: Feature-specific implementation rules
+- `templates/`: Reusable templates for AI generation
+- `skills.md`: Dioxus PWA development skills documentation
+
+## ✅ Current Project Situation
+
+- **Runtime**: Dioxus 0.7 web application compiled to WASM
+- **Architecture**: Client-side only PWA with localStorage persistence
+- **Framework**: Dioxus (React-like UI framework for Rust)
+- **Target**: Web (WASM) via `wasm32-unknown-unknown`
+- **Deployment**: GitHub Pages (static hosting)
+- **Design System**: Bell Crab theme with warm colors and soft corners
+- **Touch Targets**: 48px minimum (Lighthouse requirement - NOT 24px!)
+- **Accessibility**: Full ARIA labels, skip navigation, semantic HTML
+- **Performance**: Optimized animations with will-change, 60fps
+- **Responsive**: Mobile-first design with comprehensive breakpoints
+- **Non-negotiables**:
+  - **Component-based**: All UI built with Dioxus components
+  - **Signal-based state**: Use `use_signal()` for reactive state
+  - **LocalStorage**: Persist data in browser localStorage
+  - **PWA features**: Service worker, manifest, offline support
+  - **WASM target**: All builds target `wasm32-unknown-unknown`
+  - **Lighthouse 100%**: Must maintain 100% scores in all categories
+  - **Touch targets 48px**: All interactive elements ≥ 48x48px
+
+## 📁 Rule Index
+
+### Core Rules (`.cursor/rules/core/`)
+
+| Rule File | Purpose | Priority |
+|-----------|---------|----------|
+| `project-structure.mdc` | Directory layout & naming conventions | ⭐⭐⭐ |
+| `code-formatting.mdc` | Code style, formatting standards | ⭐⭐⭐ |
+| `rust-best-practices.mdc` | Rust code best practices & patterns | ⭐⭐⭐⭐ |
+| `lighthouse-100-standards.mdc` | Strict standards for 100% Lighthouse scores | ⭐⭐⭐⭐⭐ |
+| `code-standards-100.mdc` | Code standards enforcement for 100% scores | ⭐⭐⭐⭐⭐ |
+| `cursor-rules-summary.mdc` | This file - rule overview | ⭐⭐⭐ |
+
+### Feature Rules (`.cursor/rules/features/`)
+
+| Rule File | Purpose | Priority |
+|-----------|---------|----------|
+| `storage.mdc` | LocalStorage patterns & data persistence | ⭐⭐⭐⭐ |
+| `i18n.mdc` | Internationalization patterns (3 languages) | ⭐⭐⭐⭐ |
+| `media-caching.mdc` | Media caching & loading patterns (images/videos) | ⭐⭐⭐⭐ |
+| `page-templates.mdc` | Page template patterns (navbar + footer wrapper) | ⭐⭐⭐ |
+| `routing.mdc` | Routing patterns with locale-aware URLs | ⭐⭐⭐⭐ |
+| `pwa-development.mdc` | PWA development patterns | ⭐⭐⭐ |
+| `testing.mdc` | Testing patterns for Dioxus PWA | ⭐⭐⭐ |
+| `deployment.mdc` | Deployment patterns for GitHub Pages | ⭐⭐⭐ |
+| `error-handling.mdc` | Error handling patterns | ⭐⭐⭐⭐ |
+| `changelog-management.mdc` | Changelog and development plan management | ⭐⭐ |
+| `lighthouse-optimization.mdc` | Lighthouse optimization to achieve 95%+ scores | ⭐⭐⭐⭐⭐ |
+| `lighthouse-100-standards.mdc` | Strict standards for 100% Lighthouse scores | ⭐⭐⭐⭐⭐ |
+| `code-standards-100.mdc` | Code standards enforcement for 100% scores | ⭐⭐⭐⭐⭐ |
+| `ui-ux-design-system.mdc` | Bell Crab design system implementation | ⭐⭐⭐⭐⭐ |
+
+### Skills Document
+
+| Document | Purpose | Priority |
+|----------|---------|----------|
+| `skills.md` | **MASTER REFERENCE** - Dioxus PWA development skills | ⭐⭐⭐⭐⭐ |
+
+## 🛠️ Usage Quick Guide
+
+- **New component**: Read `skills.md` → Component Development section
+- **State management**: Read `skills.md` → State Management section
+- **LocalStorage**: Read `skills.md` → Local Storage Integration section + `features/storage.mdc`
+- **Internationalization**: Read `skills.md` → Internationalization (i18n) section + `features/i18n.mdc`
+  - Use `use_t("key.path")` for translations
+  - Add keys to all 3 language files: `en.json`, `zh-Hans.json`, `zh-Hant.json`
+  - Use `LanguageSwitcher` component for language switching
+- **Media Caching**: Read `skills.md` → Media Caching & Loading section + `features/media-caching.mdc`
+  - Wrap app with `MediaCacheProvider`
+  - Use `ManagedCachedImage`/`ManagedCachedVideo` for cached media
+  - Provides shimmer loading and error handling
+- **Routing**: Read `features/routing.mdc` for locale-aware routing patterns
+  - Use `get_initial_route()` to get route and locale from URL
+  - Use `update_url()` for navigation
+  - Routes include locale prefix (e.g., `/en/app`, `/zh-Hans/app`)
+- **PWA features**: Read `skills.md` → PWA Configuration section
+- **Build & deploy**: Check `DEPLOYMENT.md` and `.github/workflows/github-pages-deploy.yml`
+
+## 🎯 Key Patterns
+
+### Component Pattern
+```rust
+#[component]
+fn ComponentName() -> Element {
+    let mut state = use_signal(|| initial_value);
+    rsx! { /* JSX */ }
+}
+```
+
+### State Management Pattern
+```rust
+let mut reminders = use_signal(|| load_reminders());
+reminders.set(new_reminders);
+save_reminders(&reminders());
+```
+
+### Event Handler Pattern
+```rust
+onclick: move |_| {
+    // action
+}
+```
+
+## 📚 Project Structure
+
+- **Modular architecture**: Components split into `src/components/`, routing in `src/app.rs`
+- **Landing page components**: Split into 7 dedicated section components for maintainability:
+  - `hero_section.rs`, `features_section.rs`, `workflow_section.rs`, `testimonials_section.rs`, `pricing_section.rs`, `faq_section.rs`, `final_cta_section.rs`
+- **Modular CSS**: Split into 7 files in `assets/css/` for maintainability
+  - `base.css`, `components.css`, `app.css`, `landing.css`, `layout.css`, `utilities.css`, `responsive.css`
+- **Internationalization**: 3 languages supported (English, Simplified Chinese, Traditional Chinese)
+  - Translation files: `assets/i18n/en.json`, `zh-Hans.json`, `zh-Hant.json`
+  - Locale enum: `En`, `ZhHans`, `ZhHant`
+  - Use `use_t("key.path")` for translations
+- **PWA configuration**: Manifest and service worker in `assets/`
+- **Build output**: `docs/` directory for GitHub Pages
+- **Mobile responsive**: All landing sections properly constrained for mobile viewports
+
+**Last Updated**: 2026-01-15

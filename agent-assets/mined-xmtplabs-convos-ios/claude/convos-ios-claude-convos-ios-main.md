@@ -1,0 +1,1009 @@
+# Convos iOS - Codebase Best Practices
+
+This document contains project-specific conventions and best practices for the Convos iOS codebase.
+
+> **Designers**: If you're a designer using Claude Code, see [.claude/DESIGNER.md](.claude/DESIGNER.md) for simplified instructions and quality gates.
+
+## Architecture & Organization
+
+### Project Structure
+- **ConvosCore**: Swift Package containing app-specific business logic, models, services, repositories, writers, GRDB database, XMTP client, and the profile system (`Sources/ConvosCore/Profiles/` — AES-256-GCM image encryption, encrypted image loading, ProfileUpdate/ProfileSnapshot codecs)
+- **ConvosAppData**: Shared foundation package — protobuf types (ConversationCustomMetadata, ConversationProfile, EncryptedImageRef), serialization (Base64URL, DEFLATE), profile helpers
+- **ConvosInvites**: Reusable invite system package — cryptographic tokens, join request processing, invite tag storage (120 tests)
+- **ConvosCoreiOS**: iOS-specific implementations needed by ConvosCore (e.g., `UIImage` handling, push notification registration)
+- **Main App (Convos)**: Views and ViewModels only (SwiftUI with UIKit integration where needed)
+- **App Clips**: Separate target for lightweight experiences
+- **Notification Service**: Extension for push notification handling
+
+### Module Architecture
+- All business logic, models, and services go in `ConvosCore`
+- iOS-specific code that ConvosCore needs goes in `ConvosCoreiOS`
+- Views and ViewModels go in the main app target
+- Use protocols for dependency injection (e.g., `SessionManagerProtocol`)
+
+### ConvosCore Platform Independence
+
+**ConvosCore must compile on macOS** to enable fast test execution without the iOS Simulator. This means:
+
+- **Never import UIKit** in ConvosCore - use cross-platform alternatives
+- **Never use `#if canImport(UIKit)`** conditionals - they break macOS compilation
+- **Never use iOS-specific types** like `UIImage`, `UIColor`, `UIApplication`
+
+**Cross-platform type aliases** are defined in `ConvosCore/Sources/ConvosCore/Utilities/`:
+```swift
+// ImageType.swift
+#if canImport(AppKit)
+public typealias ImageType = NSImage  // macOS
+#else
+public typealias ImageType = UIImage  // iOS
+#endif
+```
+
+Use `ImageType` instead of `UIImage` throughout ConvosCore.
+
+### ConvosCoreiOS Bridge Package
+
+When ConvosCore needs iOS-specific functionality, use the **ConvosCoreiOS** package as a bridge:
+
+1. **Define a protocol in ConvosCore** that describes what you need
+2. **Implement the protocol in ConvosCoreiOS** using iOS-specific APIs
+3. **Inject the implementation** from the main app at runtime
+
+**Example - Push Notification Registration:**
+```swift
+// In ConvosCore - protocol definition
+public protocol PushNotificationRegistering {
+    func registerForRemoteNotifications() async throws -> Data
+}
+
+// In ConvosCoreiOS - iOS implementation
+public final class PushNotificationManager: PushNotificationRegistering {
+    public func registerForRemoteNotifications() async throws -> Data {
+        // Uses UIApplication.shared.registerForRemoteNotifications()
+    }
+}
+
+// In main app - injection
+let service = MyService(pushManager: PushNotificationManager())
+```
+
+**What goes where:**
+| Location | Content |
+|----------|---------|
+| ConvosCore | Protocols, business logic, cross-platform types |
+| ConvosCoreiOS | UIKit implementations, iOS system integrations |
+| Main App | SwiftUI views, dependency injection, app lifecycle |
+
+### XMTP SDK Abstraction Pattern
+To enable testability and avoid tight coupling to the XMTP iOS SDK, Convos uses protocol wrappers around XMTP types:
+
+- **`XMTPClientProvider`**: Protocol that mirrors the XMTP SDK's client interface
+- Allows dependency injection of mock XMTP clients in tests
+- Prevents direct usage of XMTP SDK types throughout the codebase
+- Enables testing without requiring live XMTP network connections
+
+**Pattern:**
+```swift
+// ✅ Good - Use the protocol wrapper
+func myFunction(client: any XMTPClientProvider) { }
+
+// ❌ Bad - Direct XMTP SDK usage
+func myFunction(client: XMTPiOS.Client) { }
+```
+
+This pattern applies to other XMTP types as well - prefer protocol wrappers for dependency injection and testability.
+
+## SwiftUI Conventions
+
+### State Management
+- **Modern Observation Framework**: Use `@Observable` with `@State` for new code
+  ```swift
+  @Observable
+  class MyViewModel {
+      var property: String = ""
+  }
+
+  // In views:
+  @State private var viewModel = MyViewModel()
+  ```
+- Legacy code may still use `ObservableObject` with `@StateObject`/@ObservedObject`
+
+### Button Pattern
+Always extract button actions to avoid closure compilation errors:
+```swift
+// ✅ Good
+let action = { /* action code */ }
+Button(action: action) {
+    // view content
+}
+
+// ❌ Bad - causes compilation issues
+Button(action: { /* action */ }) {
+    // view content
+}
+```
+
+### Preview Support
+Use `@Previewable` for preview state variables:
+```swift
+@Previewable @State var text: String = "Preview"
+```
+
+### View Modes for Multi-Entry-Point Surfaces
+
+When the same screen is shown from multiple entry points with subtly
+different behavior (e.g., a card with extra actions in some contexts), prefer
+parameterizing the view with a mode enum over duplicating the view per
+surface:
+
+```swift
+enum ContactCardMode {
+    case standalone
+    case scopedToConversation(...)
+}
+
+ContactCardView(mode: .standalone)
+ContactCardView(mode: .scopedToConversation(...))
+```
+
+Conventions:
+
+- Define the mode enum in its own file alongside the view (e.g.
+  `ContactCardMode.swift` next to `ContactCardView.swift`).
+- Add a module-overview comment block at the top of the view file
+  enumerating every entry point and the mode it uses. New engineers grep
+  for the view, find the file, and the first thing they see is the entry-
+  point map.
+- Cross-reference sibling mode enums in their doc comments (e.g.
+  `ContactCardMode` notes that it mirrors `ContactsPickerMode`'s pattern).
+- Keep view structure shared — only branch behavior on the mode where
+  necessary. If the structural difference is large enough to feel like two
+  views, that's a signal you may want a wrapper composition instead.
+
+Existing examples in the codebase:
+
+- `ContactCardMode` — `Convos/Contacts/ContactCardMode.swift`
+- `ContactsPickerMode` — `Convos/Contacts/ContactsPickerViewModel.swift`
+
+## Code Style & Formatting
+
+### SwiftFormat Configuration
+- Trim whitespace always
+- Use closure-only for stripping unused arguments
+- Braces follow K&R style, opening brace on the same line (not Allman)
+- Trailing commas in multi-line collections and parameter lists
+
+### SwiftLint Rules
+
+**IMPORTANT: Always follow these rules when writing Swift code to avoid lint errors.**
+
+**Critical Rules (errors):**
+- **No force unwrapping** (`!`) - Use `guard let`, `if let`, or optional chaining
+- **No implicitly unwrapped optionals** - Use regular optionals with safe unwrapping
+- **No assertions in non-test code** - Use Logger.error or Sentry instead of `assert`, `assertionFailure`, `precondition`, `preconditionFailure`
+
+**Required Patterns:**
+- `first(where:)` over `.filter { }.first` - More efficient
+- `last(where:)` over `.filter { }.last` - More efficient
+- `sorted().first` over `sorted()[0]` - Safer
+- `contains(where:)` over `.filter { }.isEmpty == false` - Cleaner
+- Implicit return in single-expression closures (not functions)
+- Trailing closure only for single parameter closures
+- Private over fileprivate unless file-level access needed
+
+**Formatting Rules:**
+- Sort imports alphabetically
+- Max line length: 200 characters
+- Max function body: 125 lines
+- Max type body: 625 lines
+- Max function parameters: 6
+- Vertical whitespace: no blank lines after opening braces or before closing braces
+- Operator usage whitespace required (e.g., `a + b` not `a+b`)
+
+**Modifier Order (strict):**
+```swift
+// Correct order:
+public override dynamic lazy final var property: Type
+private(set) public var property: Type
+```
+Order: `acl` → `setterACL` → `override` → `dynamic` → `mutators` → `lazy` → `final` → `required` → `convenience` → `typeMethods` → `owned`
+
+**Custom Rules:**
+- Name constants enums `Constant` (not `Constants`)
+- Use `enum Constant` (not `struct Constant`)
+- Put `private enum Constant` at the **bottom** of the scope, not top
+
+**File Headers:**
+- Do NOT include `// Created by...` headers - they're forbidden
+
+**Explicit Types:**
+- Required for class/struct properties, NOT for local variables:
+```swift
+// ✅ Good
+class MyClass {
+    var name: String = ""  // Explicit type required
+    func doSomething() {
+        let local = "value"  // Local can infer type
+    }
+}
+```
+
+**Comments:**
+- Do not use all-caps for emphasis (e.g., "NOT", "NEVER", "ALWAYS")
+- Use lowercase with appropriate context instead (e.g., "not" or "avoid")
+- Exception: Acronyms like "API", "URL", "JSON" remain uppercase
+
+### Guard Preference
+Prefer `guard` with early return over `if` with early return for validation and unwrapping:
+```swift
+// ✅ Good
+guard let value = optional else { return nil }
+return process(value)
+
+// ❌ Avoid
+if let value = optional {
+    return process(value)
+}
+return nil
+```
+
+### Naming Conventions
+- ViewModels: `ConversationViewModel`, `ProfileViewModel`
+- Views: `ConversationsView`, `MessageView`
+- Storage: `SceneURLStorage`, `DatabaseManager`
+- Repositories: `ConversationsCountRepository`
+- Use descriptive names over abbreviations
+
+### Comments & Documentation
+- **Only add comments when necessary** to explain something confusing or not apparent from the code
+- **Never use step counts** in comments (e.g., "Step 1:", "Step 2:") - they get out of date when code changes
+- **Never use all caps for emphasis** in comments (e.g., "BEFORE", "IMPORTANT") - use normal sentence case
+- **Never reference temporary planning artifacts in comments** - phase numbers (e.g., "Phase 2.5", "Phase 2.10"), ticket IDs, or PR numbers go stale once shipped. Comments should describe current behavior only. If historical context matters, put it in commit history or an ADR.
+- **Use ASCII characters in comments.** Avoid the section sign (`§`), em dashes (`—`), arrows (`→`), smart quotes, and other non-ASCII punctuation - they are inconsistent with the rest of the codebase and harder to grep. Use plain text equivalents (`-` for dashes, `->` for arrows, `"..."` for quotes, plain references like "see contacts PRD" instead of `§`).
+- Prefer self-documenting code with clear variable and function names over comments
+- If you find yourself writing many comments, consider refactoring the code to be clearer
+
+## Dependency Management
+
+### Swift Package Manager (SPM)
+All dependencies managed through SPM. See `ConvosCore/Package.swift` for current versions.
+
+### Environment Configuration
+- Use `ConfigManager` for environment-specific settings
+- Environments: Production, Development, Local
+- Firebase configuration per environment
+
+### Adding a secret / env key
+
+Secrets are a **generated, git-ignored `Secrets.swift`** (`Convos/Config/Secrets.swift`,
+with separate copies for `ConvosAppClip/` and `ShareExtension/`), regenerated on every
+build from root `.env`. Each target has its own build-phase generator:
+`Scripts/build-phases/copy-env-config-main-app.sh` for the app,
+`copy-env-config-share-extension.sh` for the extension. Non-secret per-environment runtime
+config lives in the bundled `config.{local,dev,pr,prod}.json` (read by `ConfigManager`);
+the `.xcconfig` files select which one and set bundle ids. There is **no Infisical here**
+(that's the convos-assistants stack) — this repo uses `.env` + 1Password + GitHub Actions
+secrets.
+
+To add a new key `NEW_KEY`:
+1. Add `NEW_KEY=` to root **`.env`** and document it in **`.env.example`**. **Only the
+   Local configuration auto-appends** arbitrary `.env` keys to `Secrets.swift`, so
+   `Secrets.NEW_KEY` is readable immediately in a Local build.
+2. **Every other build — Dev, CI, TestFlight, Prod — needs the key wired explicitly;** a
+   value in your local `.env` does nothing there. The Dev/CI path emits only its hard-coded
+   key list, so add `NEW_KEY` to `Scripts/generate-secrets-secure.sh` and add the matching
+   GitHub Actions repo secret/var (see the headers in `.github/workflows/testflight-dev.yml`
+   / `testflight-prod.yml`). Missing this is the classic "works in a Local build, empty
+   everywhere else" trap.
+3. If the **ShareExtension** (or App Clip) needs the key, wire it into that target's
+   generator too (`copy-env-config-share-extension.sh` currently emits only
+   `FIREBASE_APP_CHECK_DEBUG_TOKEN`) — the main-app generator does not cover it.
+4. Read it in Swift via `Secrets.NEW_KEY`. A URL/host override that should flow through
+   `ConfigManager` goes via `ConvosSecretOverrides`; other values are read directly.
+
+- **Footgun:** a fresh clone/worktree has **no `.env`** (git-ignored), so the app builds
+  with empty secrets and silently ships without an App Check token or backend override.
+  Copy `.env` from an existing checkout (or `.env.example` + `make secrets`) first.
+- App Check debug tokens are **per bundle id** and sourced from 1Password; sync/rotate via
+  the `/firebase-token` command. Code signing is fastlane `match` (repo
+  `convos-certificates`, `MATCH_PASSWORD`).
+
+## Deep Linking
+
+### URL Handling Architecture
+- `SceneURLStorage`: Coordinates URL handling between SceneDelegate and SwiftUI
+- `ConvosSceneDelegate`: Handles both Universal Links and custom URL schemes
+- `DeepLinkHandler`: Validates and processes deep links
+- Store pending URLs for cold launch scenarios
+
+## Logging & Debugging
+
+### Logger Configuration
+```swift
+Logger.configure(environment: environment)
+Logger.info("Message")
+Logger.error("Error message")
+```
+- Production vs development logging levels
+- Environment-specific configuration
+
+## Testing Conventions
+
+### Mock Data
+- Use `.mock` static methods for preview/test data
+- Example: `ConversationViewModel.mock`
+
+### Test Organization
+- Unit tests in `ConvosTests`
+- Core logic tests in `ConvosCoreTests` (stub/mock-based, no network)
+- Backend-dependent core tests in `ConvosCoreIntegrationTests` — suites that create real XMTP clients via `TestFixtures`; new suites that talk to an XMTP node belong here, and CI runs this target only in the integration job
+- UI tests in separate target
+
+## Security Best Practices
+
+- Never commit secrets or API keys
+- Use environment variables for sensitive configuration
+- Validate all deep links before processing
+- Use Firebase App Check for API protection
+
+## Performance Guidelines
+
+### Image Handling
+- Use `AvatarView` with built-in caching
+- Lazy load images where appropriate
+- Handle image state (loading, loaded, error)
+
+### SwiftUI Performance
+- Use `@MainActor` for UI-related classes
+- Minimize view body complexity
+- Extract complex views into separate components
+
+## Build Performance: Type-Check Time
+
+The project builds with `-warn-long-expression-type-checking 100` and `-warn-long-function-bodies 100`, with `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`. **Any expression or function body the type-checker spends more than 100ms on becomes a hard build failure.** Do not raise the thresholds. Write expressions the solver can resolve quickly.
+
+The two patterns that consume nearly all of these errors:
+1. Several ternaries stacked across many SwiftUI modifier arguments in one chain.
+2. Big `@ViewBuilder` `switch` statements where each case has its own modifier chain with conditional values.
+
+### Rules
+
+- **Annotate the type on any non-trivial `let`.** If the RHS uses ternaries, optionals, generics, or arithmetic across types, write the type. Type inference is what gives the solver too many candidates.
+- **Never stack ternaries inside SwiftUI modifier arguments.** Hoist each conditional to a typed `let` above the modifier chain.
+
+  ```swift
+  // ❌ — three ternaries × N chained modifiers blows up the solver
+  content
+      .scaleEffect(isPressed ? 1.03 : 1.0, anchor: isCurrentUser ? .trailing : .leading)
+      .opacity(isSourceBubble ? 0 : 1)
+      .offset(x: swipeOffset > 0 ? min(swipeOffset, maxOffset) : 0)
+
+  // ✅ — typed lets above, plain modifier chain below
+  let scale: CGFloat = isPressed ? 1.03 : 1.0
+  let anchor: UnitPoint = isCurrentUser ? .trailing : .leading
+  let bubbleOpacity: Double = isSourceBubble ? 0 : 1
+  let xOffset: CGFloat = swipeOffset > 0 ? min(swipeOffset, maxOffset) : 0
+  content
+      .scaleEffect(scale, anchor: anchor)
+      .opacity(bubbleOpacity)
+      .offset(x: xOffset)
+  ```
+
+- **No nested ternaries.** One ternary per expression. Two-deep is the cap; three-deep → use `switch` or extract a helper.
+- **Cap SwiftUI `body` / `body(content:)` at ~50 lines or ~10 modifiers.** Beyond that, extract subviews or `@ViewBuilder` computed properties.
+- **For `@ViewBuilder switch` statements:** if any case has more than 3 chained modifiers or a conditional argument, extract that case to its own `@ViewBuilder` helper.
+- **No `+` for string concatenation across optionals or non-`String` types.** Always use interpolation: `"\(a)\(b ?? "")"`.
+- **One numeric type per expression.** Don't mix `Int`, `Double`, `CGFloat` in a single `let` — cast at the boundary.
+- **Annotate parameter and return types in non-trivial `.map` / `.reduce` / `.sorted` closures.**
+
+  ```swift
+  array.map { (item: Item) -> Value in … }
+  ```
+
+- **Build arrays and dicts with `var` + `append`, not conditional `+` chains.**
+
+### Before you edit a SwiftUI view body
+
+The 100ms threshold is a cliff, not a slope — chains routinely sit at 80–95ms and a single new modifier tips them over. Treat appending to an existing body as the dangerous operation. Before you add a modifier, count what's already there. If **any** of these are true, extract first, then add:
+
+- The chain already has **≥ 4 `.onChange` modifiers**, or **≥ 6 chained modifiers total**.
+- The body uses **inline arithmetic, `max`/`min`, or method calls inside a modifier argument** (e.g. `maxSelectionCount: max(1, a - b.count)`). Hoist to a typed computed property of the exact return type the modifier expects.
+- A **`.sheet` / `.fullScreenCover` / `.alert` / `.popover` content closure** contains more than a single view constructor — anything with its own closures (`onImageCaptured:`, `onVideoCaptured:`) goes into a `@ViewBuilder` computed property.
+- An **`.onChange` closure body is more than 3 lines** or contains a `for`/`while`/`Task { ... }` block — extract to a `private func handleXChanged(...)` method and call it from the closure.
+- The body uses **`Task { for item in items { ... } }`** inline inside a modifier closure — extract the whole closure body.
+
+Counting takes a few seconds and is much cheaper than diagnosing a CI archive failure after the fact. The local simulator build often passes at 95ms; the CI archive trips at 107ms — you cannot rely on local builds to catch this.
+
+When extracting, name the helpers descriptively (`photoPickerMaxSelectionCount: Int`, `cameraPickerCover: some View`, `handleSelectedPhotosChanged(to:)`) so the call site at the modifier reads cleanly.
+
+### When you hit a type-check timeout
+
+Fix the expression. Do not bump the threshold and do not `// swiftlint:disable` past it.
+
+1. Find the line in the error message — it points at the exact offender.
+2. Hoist the most complex sub-expression(s) to typed `let` bindings above.
+3. Replace nested ternaries with `switch` or `if/else`.
+4. Extract subviews or `@ViewBuilder` helpers from oversized SwiftUI bodies.
+5. Rebuild.
+
+### If type-check timeouts are firing everywhere (including unchanged files)
+
+If `took N ms to type-check` warnings start hitting code you haven't touched — or even *trivially simple* functions like a six-line `togglePlayback()` — the file is probably not the culprit. The most common cause is an `lldb-rpc-server` memory leak.
+
+`lldb-rpc-server` is the out-of-process debugger backend Xcode spawns. Swift debugger support has long-standing leaks: every `po`, expression evaluation, and breakpoint inspection loads Swift type metadata for the debug target's modules and never frees it. The process grows monotonically across a debug session and frequently survives Xcode quit. Reports of it reaching 15–20 GB are common. When that much memory is in use, the system swaps continuously, the Swift module cache thrashes off disk for every type lookup, and even cheap type-checks blow the 100 ms budget.
+
+**Diagnose:** Activity Monitor → search `lldb-rpc-server`. If the memory column shows anything north of ~2 GB, that's your problem.
+
+**Fix:**
+
+```bash
+killall lldb-rpc-server
+```
+
+Or Force Quit it from Activity Monitor. The Memory Pressure bar should return to green within seconds. Re-time the offending file's type-check; trivial code that was tripping the budget should drop back below 50 ms.
+
+**Mitigate going forward:**
+
+- Quit Xcode periodically during heavy sessions; run `ps aux | grep lldb-rpc-server` after to confirm no orphan process survives, and `killall` any that did.
+- Stop debug sessions when not actively debugging — the leak grows with debugger use, not with mere attach time.
+- Watch `lldb-rpc-server`'s memory column during long sessions; once it crosses ~5 GB, `killall` it before it gets worse.
+- Heavy `po` / `expression` use during marathon sessions is leak fuel; each evaluation loads more Swift type metadata that's never released until the process exits.
+
+The leak has no permanent fix on Apple's end — `killall` is the workaround. If you find yourself doing it every couple of hours, alias it: `alias xclean='killall lldb-rpc-server'`.
+
+## End-to-End Local Testing
+
+Running this app against a locally-running backend works, but nearly every
+failure points somewhere other than its cause. The setup that works:
+
+```
+app ──► ngrok (https) ──► convos-backend :4000 ──► assistants worker ──► herald
+```
+
+The app only ever talks to the backend. The agent is what lives on Cloudflare,
+so "point the app at my local stack" means pointing it at a local *backend* and
+nothing else.
+
+Configure through `.env` at the repo root — not `Convos/Config/config.*.json`:
+
+```
+FIREBASE_APP_CHECK_DEBUG_TOKEN=<the token registered for this bundle id>
+CONVOS_API_BASE_URL=https://<ngrok-id>.ngrok.app/api
+XMTP_CUSTOM_HOST=USE_CONFIG
+GATEWAY_URL=USE_CONFIG
+```
+
+Then build **`Convos (Dev)`**. ngrok is what makes a physical device work on
+this scheme: it gives the backend an HTTPS URL, and `Info.Dev.plist` carries no
+ATS exception, so plain HTTP to a LAN IP is refused.
+
+`Convos (Local)` is the other route, and it needs no tunnel at all: its plist
+sets `NSAllowsLocalNetworking`, and a blank `CONVOS_API_BASE_URL` auto-detects
+the Mac's LAN IP — reachable from a simulator and from a device on the same
+network. It costs an App Check token registered for `org.convos.ios-local`,
+which is the trade-off against the scheme you already use.
+
+**Build the scheme whose App Check token you already have.** Debug tokens are
+registered per bundle id — `Convos (Dev)` is `org.convos.ios-preview`,
+`Convos (Local)` is `org.convos.ios-local`. Building a scheme you have never
+used produces a bundle Firebase does not recognise: the client never obtains a
+token, every authenticated call 401s, and the app shows a generic "Something
+went wrong" with no auth error anywhere. `ENVIRONMENTS.md` covers this; it is
+worth reading before concluding the backend is down.
+
+**A worktree has no `.env`.** It is gitignored, so a build from a fresh
+worktree silently ships without an App Check token or a backend override.
+Nothing warns — the build succeeds and the app fails at runtime. Copy `.env`
+from the canonical checkout first.
+
+The backend side needs `SIWE_DOMAIN=dev.convos.org`, `SIWE_URI=https://dev.convos.org`,
+`SIWE_ALLOWED_CHAIN_IDS=1` and a `NONCE_HMAC_SECRET`. The `.env.example`
+defaults are not these, and what they produce is `/auth/nonce` 200 followed by
+`/auth/token` 401 "Invalid nonce".
+
+Compiling is not installing. `xcodebuild` succeeding changes nothing on the
+device — install and launch, and target simulators by UDID rather than
+`booted` when several are running.
+
+## Build & Release
+
+### Build Commands
+```bash
+# Check for linting issues
+swiftlint
+
+# Auto-fix linting issues
+swiftlint --fix
+
+# Format code
+swiftformat .
+
+# Run tests (Local environment on iOS Simulator)
+xcodebuild test -scheme "Convos (Local)" -destination "platform=iOS Simulator,name=iPhone 17"
+
+# Build for device (Local environment)
+xcodebuild build -scheme "Convos (Local)" -configuration Local
+
+# Clean build folder
+xcodebuild clean -scheme "Convos (Local)" -configuration Local
+```
+
+### Scripted and Worktree Builds
+- Use `-configuration Dev` for xcodebuild - the Debug configuration breaks NotificationService module resolution (see issues #843 and #1019)
+- Use a concrete arm64 simulator destination (e.g. `platform=iOS Simulator,name=iPhone 17`), not `generic/platform=iOS Simulator` - libxmtp ships no x86_64 slice
+
+### Xcode Project Settings
+- Minimum iOS version: 26.0
+- Swift language mode: 5
+- Single project structure with local SPM packages
+
+## Migration Guidelines
+
+### ObservableObject to @Observable
+When migrating from `ObservableObject`:
+1. Remove `ObservableObject` conformance
+2. Add `@Observable` macro and `import Observation`
+3. Remove `@Published` property wrappers
+4. Change `@StateObject`/`@ObservedObject` to `@State` in views
+
+## Important Notes
+
+- **No trailing whitespace** on any lines
+- **Don't add comments** unless specifically requested
+- **Prefer editing existing files** over creating new ones
+- **Follow existing patterns** in neighboring code
+- **Check dependencies** before using any library
+- **Pre-commit and pre-push hooks run SwiftLint automatically** - blocks the commit on violations. Run `/lint` manually for a full-tree sweep. SwiftLint does not run during Xcode builds (for faster compilation).
+- **Run the full test suite before pushing** - Start Docker with `./dev/up` if needed, run `swift test --package-path ConvosCore`, and verify all tests pass. Never push without a passing test run against your final code.
+
+---
+
+## Claude Code Workflow
+
+This project is configured for Claude Code CLI with specialized subagents, slash commands, and MCP tools.
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/setup` | Initialize session for any branch (creates simulator, installs deps, sets MCP defaults) |
+| `/build` | Build the app (compile only) using "Convos (Dev)" scheme |
+| `/build --run` | Build and launch in an unused simulator |
+| `/test` | Run tests (ConvosCore by default) |
+| `/lint` | Check code with SwiftLint (run before committing) |
+| `/format` | Format code with SwiftFormat |
+| `/firebase-token` | Sync/rotate the shared Firebase App Check debug token (1Password source of truth, .env cache) |
+
+**Pre-commit workflow:** SwiftFormat auto-formats and SwiftLint blocks the commit on violations (both via `Scripts/hooks/pre-commit`). Pre-push lints the diff against `dev` again as a final gate before the push hits GitHub. SwiftLint does not run during Xcode builds (for faster compilation). A full-tree `/lint` runs in ~1-2 seconds with the current config.
+
+### Subagents
+
+Specialized agents for different tasks. Invoke explicitly or let Claude delegate automatically.
+
+| Agent | Purpose | When to Use |
+|-------|---------|-------------|
+| `swift-architect` | Architecture decisions, module design (read-only, uses Opus) | Planning new features, major refactors |
+| `code-simplifier` | Reduce complexity, improve readability | After writing code, cleanup |
+| `swiftui-specialist` | SwiftUI views, state management | Creating/modifying UI |
+| `test-writer` | Generate unit tests | After implementing features |
+| `code-reviewer` | Review changes, check quality | Before committing |
+
+**Example usage:**
+```
+Use the swift-architect agent to review the SessionManager design
+```
+
+### MCP Tools
+
+Six MCP servers are configured in `.mcp.json`:
+
+- **XcodeBuildMCP**: Build and test the Xcode project directly
+- **ios-simulator**: Interact with the iOS Simulator (launch, screenshot, etc.)
+- **xmtp-docs**: Search and access XMTP protocol documentation
+- **graphite**: Manage stacked PRs and branches (requires Graphite CLI v1.6.7+)
+- **notion**: Access Notion workspace for documentation and notes
+- **linear**: Access Linear issues, projects, and roadmap for task context
+
+### Worktree DerivedData Isolation
+
+The `/build` command automatically uses `-derivedDataPath .derivedData` to store build artifacts locally in each worktree. This prevents conflicts when multiple worktrees build the same project.
+
+**Why this matters:**
+- Prevents "module not found" errors when building extensions (e.g., NotificationService)
+- Isolates build caches between parallel worktrees
+- Each worktree can build independently without affecting others
+
+**Troubleshooting:**
+- If you get module errors, delete `.derivedData/` and rebuild: `rm -rf .derivedData`
+- The `.derivedData/` folder is gitignored
+
+### Reference Resources
+
+The `claude-code-resources/` folder is a gitignored directory for temporary reference code and resources. Engineers can paste example projects, code snippets, or other materials here for Claude Code to reference during implementation.
+
+**Usage:**
+- Paste example Swift files, sample projects, or reference implementations
+- Claude Code will look here when asked to reference examples or follow patterns
+- Contents are not committed to git - purely for local/session use
+- Clean up when no longer needed
+
+**Example workflow:**
+```bash
+# Copy an example project for reference
+cp -r ~/Downloads/SamplePhotoPickerApp claude-code-resources/
+
+# Then ask Claude Code to reference it
+"Look at the photo picker implementation in claude-code-resources/SamplePhotoPickerApp and follow that pattern"
+```
+
+### Testing
+
+**You must run the full test suite before pushing any changes.** Do not push, submit, or amend a PR without a passing test run against your final code. This applies to every push — initial commits, review feedback, and rebases.
+
+Use the `./dev/test` script for running tests. **Most tests require Docker** for the local XMTP node:
+
+```bash
+# Full test suite (starts Docker automatically, leaves the stack running)
+./dev/test
+
+# Start Docker manually if needed, then run tests
+./dev/up
+swift test --package-path ConvosCore
+
+# Run a single test
+swift test --filter "TestClassName" --package-path ConvosCore
+```
+
+**The Docker stack is shared.** Every checkout, worktree, and agent session on the machine uses the same compose project, so do not run `./dev/down` (or `./dev/test --down`) as routine cleanup — tearing the stack down kills any other session's in-flight integration tests, which then fail with `Connection refused 127.0.0.1:5556` or hang. Leave the stack running; only stop it when you know nothing else is using it.
+
+**Docker is required.** If Docker is not running, start it with `./dev/up` before running tests. If Docker fails to start (not installed, daemon not running, port conflicts), **do not skip the tests** — stop and notify the user that Docker cannot start and tests cannot run. Never push untested code.
+
+### PRD-Driven Development with Graphite Stacking
+
+Feature development follows a PRD workflow integrated with Graphite's PR stacking:
+
+**Starting a New Feature:**
+1. Run `convos-task new feature-name` to create a new worktree and Graphite branch
+2. Use `prd-writer` agent to draft the PRD at `docs/plans/[feature].md`
+3. Commit the PRD and create the first PR in the stack (this is always the plan PR)
+4. Use `swift-architect` agent to design detailed technical implementation
+5. Stack implementation PRs on top of the plan PR
+
+**PR Stacking Strategy:**
+- **First PR**: Always the plan/PRD document
+- **Subsequent PRs**: Implementation work stacked on top of the plan
+- **Checkpoints**: Create a new stacked PR when a chunk of work is "shippable" (compiles, tests pass, represents a logical unit)
+
+**What constitutes a checkpoint:**
+- A complete model or data layer change
+- A full view/screen implementation
+- A service or repository addition
+- Any logically complete, reviewable unit of work
+
+**Graphite Commands (Claude should use these):**
+```bash
+# Create a new branch stacked on current AND commit staged changes
+gt create branch-name
+
+# Amend the current branch's commit (automatically restacks descendants)
+gt modify
+
+# Create/update PRs for all branches from trunk to current
+gt submit
+
+# Navigate the stack
+gt checkout branch-name  # Switch to specific branch
+gt up                    # Move to child branch
+gt down                  # Move to parent branch
+gt top                   # Jump to tip of stack
+gt bottom                # Jump to base of stack
+
+# Sync with remote (cleans up merged branches, updates dependents)
+gt sync
+
+# View the current stack structure
+gt log
+gt log short             # Abridged version
+```
+
+**PRD Guidelines:**
+- PRDs focus on **what** and **why**, not detailed **how**
+- Avoid prescriptive code implementations in PRDs
+- Leave technical design specifics to `swift-architect` agent
+- Reference relevant ADRs for architectural context
+
+**Example Feature Workflow:**
+```
+main
+ └── feature-name-plan        # PR 1: PRD document
+      └── feature-name-models  # PR 2: Data models
+           └── feature-name-ui # PR 3: Views and ViewModels
+```
+
+### Pre-commit Hooks
+
+`Scripts/setup.sh` configures `git config core.hooksPath Scripts/hooks` so the tracked hook scripts run for every commit and push:
+
+- **`pre-commit`** auto-runs SwiftFormat on staged Swift files (writes back into the staged copy via `git add`), then SwiftLint `--strict --quiet` in a single batched invocation on the staged paths. Violations block the commit. Pass paths positionally (not `--use-stdin`) so file-path-dependent rules like `sorted_imports` actually fire.
+- **`pre-push`** re-lints every Swift file changed since the merge-base with `origin/dev`. Same batched-invocation shape. Last line of defense before the push reaches GitHub.
+
+A full-tree lint runs in ~1-2 seconds; the per-staged-file pre-commit lint is sub-second.
+
+If the hooks aren't installed (no `core.hooksPath` set), run `Scripts/setup.sh`.
+
+### Parallel Task Management
+
+The `convos-task` script (`.claude/scripts/convos-task`) automates working on multiple features simultaneously using git worktrees and Graphite.
+
+**Setup:**
+```bash
+# Add to PATH in ~/.zshrc or ~/.bashrc
+export PATH="$HOME/Code/convos-ios/.claude/scripts:$PATH"
+alias ct="convos-task"
+```
+
+**Why this matters for Claude Code:**
+- Each worktree is a **separate Claude Code session** with independent conversation history
+- Allows working on multiple features without losing context or switching branches
+- Integrates with Graphite's stacking workflow
+
+**Basic Usage:**
+```bash
+# Create new task (creates worktree + Graphite branch + launches Claude)
+ct new my-feature-name      # or: ct n my-feature-name
+
+# Or stack on specific parent
+ct new my-feature dev
+
+# List all active tasks
+ct list                     # or: ct l
+
+# Switch to existing task (opens Claude in new terminal)
+ct switch my-feature-name   # or: ct sw my-feature-name
+
+# Submit PR via Graphite
+ct submit my-feature-name   # or: ct sub my-feature-name
+
+# Sync with Graphite stack
+ct sync my-feature-name     # or: ct sy my-feature-name
+
+# Clean up when done (removes worktree + branch)
+ct cleanup my-feature-name  # or: ct c my-feature-name
+
+# Session management
+ct sessions my-feature      # or: ct ss my-feature
+ct context my-feature       # or: ct ctx my-feature
+
+# Launch TUI dashboard (convos-task-console)
+ct console                  # or: ct con
+```
+
+**Command Shortcuts:**
+| Command | Shortcuts |
+|---------|-----------|
+| `new` | `n` |
+| `list` | `l`, `ls` |
+| `switch` | `sw`, `o` |
+| `submit` | `sub`, `pr` |
+| `sync` | `sy` |
+| `cleanup` | `c`, `rm` |
+| `prune` | `p` |
+| `sessions` | `ss` |
+| `context` | `ctx` |
+| `console` | `con` |
+| `help` | `h` |
+
+**Workflow Example:**
+```bash
+# Main repo: working on retry-errors
+cd ~/Code/convos-ios
+
+# Start parallel task in new worktree
+convos-task new push-notifications
+# → Opens new terminal with Claude at ~/Code/convos-ios-push-notifications
+# → Branch stacked on current branch via Graphite
+
+# Continue working on retry-errors in original session
+# Work on push-notifications in new session
+# Both Claude sessions are completely independent
+```
+
+**Key Points:**
+- Each worktree has its own conversation history (no context sharing between sessions)
+- Worktrees share the same `.claude/` configuration, MCP tools, and hooks
+- Docker services (e.g., local XMTP node) are shared across worktrees
+- Graphite branches are automatically stacked on current branch unless parent specified
+- Use `ct` as shorthand for `convos-task`
+- **DerivedData isolation**: Each worktree uses `.derivedData/` locally to avoid build conflicts (see XcodeBuildMCP Worktree Configuration)
+- **Simulator auto-setup**: A dedicated simulator (`convos-<task-name>`) is created when the task starts
+
+### Task Dashboard (convos-task-console)
+
+The `convos-task console` command launches a TUI dashboard for managing all active tasks:
+
+```bash
+ct console   # Launch the dashboard
+```
+
+**Features:**
+- Visual overview of all convos-task worktrees
+- Status monitoring (waiting, running, idle, error)
+- Split-pane layout: sidebar for navigation, right pane for native Claude session
+- Quick actions: New, Delete, Prune, Submit, Sync, Build, Test
+- Keyboard-driven: Tab to switch focus, j/k navigation, single-key commands
+
+**Layout:**
+```
++---------------------------+----------------------------------------+
+|  CONVOS CONSOLE           |  Native Claude Code session            |
+|---------------------------|----------------------------------------|
+| > push-notifications  [W] |  $ claude                              |
+|   retry-errors        [R] |                                        |
+|   agent-deck         [I] |  Working on your request...            |
+|---------------------------|----------------------------------------|
+| [n]New [d]Del [s]Submit   |  Tab to switch focus                   |
++---------------------------+----------------------------------------+
+```
+
+The dashboard uses tmux for session persistence - sessions survive console restarts.
+
+### Simulator Setup (Per-Branch)
+
+**Every coding agent session should run `/setup` when starting work on a new branch or feature.** This creates a dedicated iOS Simulator for the branch, installs dependencies, and configures build defaults.
+
+`/setup` works in any context:
+- **convos-task worktrees**: Reads simulator name from `.convos-task` file
+- **Regular branches**: Derives simulator name from the git branch (e.g., `jarod/push-notifications` → `convos-jarod-push-notifications`)
+- **Main branch**: Uses `convos-main`
+
+**What `/setup` does:**
+1. Runs `Scripts/setup.sh` to install dependencies (SwiftLint, SwiftFormat, etc.)
+2. Creates a dedicated simulator by cloning an available iPhone simulator
+3. Sets XcodeBuildMCP session defaults (simulator, project, scheme)
+4. Saves the simulator ID to `.claude/.simulator_id` for `/build` to use
+
+**convos-task worktrees** additionally have a `.convos-task` file:
+```bash
+cat .convos-task
+# Returns: TASK_NAME=my-feature
+#          SIMULATOR_NAME=convos-my-feature
+```
+
+When Claude Code starts in a convos-task worktree, a SessionStart hook detects `.convos-task` and prompts Claude to run `/setup`.
+
+Set `CONVOS_BASE_SIMULATOR` env var to change the source simulator (auto-detected by default).
+
+### Git Rebase Conflict Resolution
+
+When resolving rebase conflicts, `git rebase --continue` opens an interactive editor (vim) which hangs in non-TTY environments. Use `GIT_EDITOR=true` to skip the editor and accept the default commit message:
+
+```bash
+# After resolving conflicts and staging with git add:
+GIT_EDITOR=true git rebase --continue
+```
+
+This accepts the existing commit message without opening an editor. Use this for all `git rebase --continue`, `git commit --amend`, or any git command that would open an editor.
+
+### Git and Branch Management with Graphite
+
+This project uses Graphite for PR management. A **Graphite MCP** is configured in `.mcp.json` that Claude must use for all `gt` commands.
+
+**IMPORTANT: Claude must use the Graphite MCP tool (`mcp__graphite__run_gt_cmd`) for all gt commands.** Do NOT use Bash to run gt commands directly - use the MCP tool instead.
+
+#### Workflow Overview
+
+There are two workflows depending on task size:
+
+**Small/Medium Tasks (single PR):**
+1. Work on the current branch created by `convos-task new`
+2. Commit changes normally with `git add` and `git commit`
+3. When ready to submit, use `gt submit` via the Graphite MCP to create/update the PR
+
+**Large Tasks (stacked PRs):**
+For larger features that benefit from reviewable chunks, create stacked PRs:
+1. Complete a reviewable chunk of work
+2. Use `gt create` to create a new stacked branch with your changes
+3. Continue working, creating new stacked branches at each checkpoint
+4. Use `gt submit --stack` to submit the entire stack
+
+#### Using the Graphite MCP
+
+The Graphite MCP provides the `run_gt_cmd` tool. Examples:
+
+```
+# Submit current branch as PR
+mcp__graphite__run_gt_cmd with args: ["submit", "--no-interactive"]
+
+# Create a new stacked branch with staged changes
+mcp__graphite__run_gt_cmd with args: ["create", "-am", "Add user profile feature"]
+
+# View stack structure
+mcp__graphite__run_gt_cmd with args: ["log", "short"]
+
+# Sync with remote
+mcp__graphite__run_gt_cmd with args: ["sync", "--no-interactive"]
+```
+
+#### Common Graphite Commands
+
+| Command | Purpose |
+|---------|---------|
+| `gt submit` | Create/update PR for current branch |
+| `gt submit --stack` | Submit entire stack of PRs |
+| `gt create -am "msg"` | Create new stacked branch with commit |
+| `gt modify -a` | Amend current commit (restacks descendants) |
+| `gt sync` | Sync with remote, restack on latest main |
+| `gt log short` | View stack structure |
+
+#### When to Stack PRs
+
+Create a new stacked PR when:
+- Code compiles successfully
+- Relevant tests pass
+- Changes represent a complete, reviewable unit
+- You're switching from one concern to another (e.g., models → views)
+
+For small bug fixes or simple features, a single PR is fine - just commit normally and use `gt submit`.
+
+#### Example: Large Feature with Stacked PRs
+
+```
+main
+ └── feature-plan        # PR 1: PRD document
+      └── feature-models  # PR 2: Data models
+           └── feature-ui # PR 3: Views and ViewModels
+```
+
+### Session Management (claude-code-tools)
+
+The `aichat` plugin provides session continuity across context limits and helps find past work.
+
+#### When Context Fills Up
+
+1. Type `>resume` in chat (copies session ID to clipboard)
+2. Run `aichat resume <id>` in terminal
+3. New session starts with lineage pointer to parent session
+
+The new session can request context from parent sessions on-demand without re-reading everything.
+
+#### Searching Past Sessions
+
+**CLI (in terminal):**
+```bash
+aichat search "GRDB migration"
+```
+
+**In-session (Claude can use):**
+Use `/session-search query` skill to search across all indexed sessions.
+
+#### Recovering Context After a Break
+
+Use `/recover-context` skill to extract from parent sessions:
+- Last task being worked on
+- Completion status
+- Pending items
+- Files modified
+
+#### Index Management
+
+```bash
+# Rebuild the search index (run periodically or after many sessions)
+aichat build-index
+
+# Check index statistics
+aichat index-stats
+
+# Export a session to markdown (for archiving)
+aichat export <session-id>
+```
+
+#### Task-Specific Session Search
+
+Sessions from all worktrees are indexed together since they share the same project hash. Use the worktree path to filter:
+```bash
+aichat search "error handling" | grep "convos-ios-push"
+```
+
+#### How Sessions Are Stored
+
+Sessions live at `~/.claude/projects/<project-hash>/sessions/*.jsonl`. The search index is at `~/.cctools/search-index/`.

@@ -2,6 +2,7 @@
  {
   "task": "query postgres lambat, perlu tuning index",
   "expect_any": [
+   "postgres-tuning",
    "postgres-patterns",
    "database-query-optimization",
    "postgresql-database-engineering",
@@ -12,6 +13,8 @@
  {
   "task": "bikin halaman vue dengan tabel dan chart",
   "expect_any": [
+   "shadcn-vue",
+   "tanstack-vue-table-skilld",
    "chart-designer",
    "frame-data-chart-nyt",
    "ui-to-vue",
@@ -62,6 +65,8 @@
  {
   "task": "debug pod kubernetes yang crashloop",
   "expect_any": [
+   "pod-crash-debug",
+   "k8s-troubleshooter",
    "k8s-debug",
    "kubernetes-ops",
    "kubernetes-deployment",
@@ -94,6 +99,7 @@
  {
   "task": "bangun pipeline rag dengan vector database",
   "expect_any": [
+   "rag-pipeline-checkup",
    "rag",
    "rag-pipeline-builder",
    "vector-database-management",
@@ -127,6 +133,7 @@
  {
   "task": "desain api rest yang konsisten",
   "expect_any": [
+   "api-design-framework",
    "api-design",
    "rest-api-design",
    "api-design-principles",
@@ -167,8 +174,11 @@
  },
  {
   "task": "reset password wordpress yang lupa",
-  "expect_none": true,
-  "note": "kasus negatif: tidak ada skill wordpress-password-reset; sistem harus TIDAK memaksa rekomendasi ngawur"
+  "expect_any": [
+   "wordpress-hacking",
+   "wp-rest-api-development"
+  ],
+  "note": "DULU negatif (2026-09), SEKARANG positif: wordpress-hacking dipromosikan ke curated 2026-10-18"
  },
  {
   "task": "kalibrasi sensor lidar drone pertanian",
@@ -193,6 +203,7 @@
  {
   "task": "riset mendalam kompetitor dengan sitasi sumber",
   "expect_any": [
+   "citation-and-ledger-format",
    "deep-research",
    "parallel-deep-research",
    "exa-search",
@@ -201,8 +212,11 @@
  },
  {
   "task": "ganti password admin wordpress yang lupa",
-  "expect_none": true,
-  "note": "Out-of-domain: skill wordpress password reset tidak ada — AI harus jujur 'tidak ada skill'"
+  "expect_any": [
+   "wordpress-hacking",
+   "wp-rest-api-development"
+  ],
+  "note": "DULU negatif, SEKARANG positif: wordpress-hacking curated 2026-10-18"
  },
  {
   "task": "cara ngopi yang benar agar nggak ngantuk",

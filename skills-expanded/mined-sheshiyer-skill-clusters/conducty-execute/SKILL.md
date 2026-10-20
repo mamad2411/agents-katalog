@@ -1,0 +1,209 @@
+---
+name: conducty-execute
+description: Dispatches Claude Code Task subagents to run prompts from a vault plan note. Tracer-first execution, time-budgeted work, calibrated review rigor. Use when the user says "execute the plan", "run group A", "dispatch", or is ready to run prompts from a `Plans/Plan YYYY-MM-DD HHmm` note in the vault.
+aliases:
+  - conducty-execute
+  - execute
+tags:
+  - conducty/skill
+  - conducty/execute
+cluster: conductor
+version: 1.0.0
+origin: "robertbarclayy/conducty (MIT), patched for the skill-clusters resolver"
+---
+
+# Conducty Execute — Tracer-First Subagent Execution
+
+Execute prompts from the active plan note (in the Obsidian vault — see [[conducty-obsidian]]) by dispatching fresh Claude Code subagents (via the Task tool) with context curation, time budgets, and review rigor that scales with risk. The first prompt in each group runs as a tracer to validate plan assumptions before the rest execute.
+
+## Core Concepts
+
+**Tracer-first:** The prompt marked `★ TRACER` in each group runs alone. If it succeeds, the plan's assumptions hold and the remaining prompts execute. If it fails, stop — the plan needs revision, not just a fix prompt. Tracers catch bad assumptions before they multiply across an entire group.
+
+**Time-budgeted:** Each prompt has a time budget from the plan. If a subagent exceeds it, that's a signal — either the prompt is underscoped, the complexity was misjudged, or the agent is stuck. Treat it as a circuit breaker, not a hard kill.
+
+**Calibrated review:** Not every prompt needs the same oversight. The plan assigns a review level based on complexity:
+
+| Review Level | When | What Happens After Implementation |
+|-------------|------|----------------------------------|
+| `verify-only` | Low complexity | Run verification command. Pass? Done. |
+| `spec-review` | Medium complexity | Run verification + dispatch spec reviewer. |
+| `full-review` | High complexity | Run verification + spec reviewer + quality reviewer. |
+
+**Context curation:** The orchestrator (you) constructs exactly what each subagent needs. Not your session history, not the entire project — precisely the prompt text, relevant context files, and scene-setting for where this work fits. This is the surgical team model: the surgeon thinks, the team executes with curated information.
+
+## The Process
+
+### Phase 1: Tracer Execution
+
+```
+1. Read the plan note from the vault, extract the tracer prompt for the target group
+2. Dispatch tracer as a single implementer subagent (Task tool)
+3. Handle the result:
+   - DONE → Run verification via [[conducty-verify]] → Pass? Proceed to Phase 2
+   - DONE → Verification fails → STOP. This is a plan problem, not a prompt problem.
+     Analyze: is the verification wrong, or is the plan's approach wrong?
+   - BLOCKED/NEEDS_CONTEXT → STOP. The plan's assumptions are wrong.
+     Don't execute the remaining prompts. Revise the plan.
+4. Report tracer result to user before proceeding
+```
+
+The tracer is your early warning system. Respect its signal.
+
+### Phase 2: Group Execution
+
+```
+For each remaining prompt in the group:
+  1. Dispatch implementer subagent (see [[implementer-prompt]])
+  2. Handle implementer status (see below)
+  3. Apply review level from the plan:
+     - verify-only → Run verification. Pass? Mark complete.
+     - spec-review → Run verification + dispatch spec reviewer ([[spec-reviewer-prompt]])
+     - full-review → Run verification + spec reviewer + quality reviewer ([[quality-reviewer-prompt]])
+  4. If review fails → implementer fixes → re-review (same level)
+  5. Mark prompt complete with evidence
+After all prompts → run [[conducty-checkpoint]] for the group
+Gate: user confirms before next group
+```
+
+### Resolve before dispatch (skill-clusters wiring)
+
+> **Integration patch** (skill-clusters — the rest of this skill is upstream conducty, MIT).
+> Stock conducty dispatches every prompt to a bare `general-purpose` subagent. Here each prompt
+> is first **resolved to a skill-cluster**, so the subagent runs loaded with the right capability
+> hub — the one organ conducty lacks. See `conductor-core` for the full contract.
+
+Once per group, resolve the plan's tasks to clusters:
+
+```bash
+node ~/.agents/skill-clusters/scripts/resolve-task.mjs <tasks.md> <plan.md> --json
+```
+
+Returns, per task: `{cluster, dispatch: <cluster>-orchestrator, tier, activate?, spokes[], confidence}`.
+Apply per prompt:
+
+1. **Classifier proposes, resolver validates.** *You* (the conductor) are the classifier: from each
+   prompt's intent, propose its cluster — and optionally a specific skill. Feed your proposals back
+   to the resolver, which **validates** them against `skill-index.json`:
+
+   ```bash
+   # proposals.json: { "T002": "rust", "T010": {"cluster":"supabase","skill":"supabase-postgres-best-practices"} }
+   node ~/.agents/skill-clusters/scripts/resolve-task.mjs <tasks.md> <plan.md> --propose proposals.json --json
+   # or inline:  --propose "T002=rust,T010=supabase"
+   ```
+
+   The resolver returns `source: "classifier"` when it accepts your proposal, `◇!`/`overrode` when
+   your pick beat the keyword guess, and — crucially — **rejects phantoms**: a proposed cluster or
+   skill not in the index is dropped (`phantoms`/`badSkills`) and the keyword result is kept. This
+   is PAI's Capability-Name audit applied to dispatch. `confidence < 0.34`, `cluster: null`, or a
+   rejected phantom with no keyword fallback → **escalate to the human**, do not guess-dispatch.
+2. **Activate deferred clusters** the wave touches, once:
+   `node ~/.agents/skill-clusters/scripts/tier.mjs --activate <cluster> --apply`.
+3. **Load the resolved hub into the subagent** — add `~/.agents/skill-clusters/skills/<cluster>-orchestrator/SKILL.md`
+   to the curated context (checklist item 1.5 below). The hub routes to its spoke on demand; you
+   never enumerate spokes — the subagent pulls the one it needs from the pointer.
+4. **Gate.** The PAI `SkillClusterResolver` hook denies any non-enumerated skill with resolution
+   guidance, so a mis-resolved dispatch fails closed rather than running the wrong capability.
+
+`subagent_type` stays `general-purpose` (or `Explore` for read-only review) — the *capability*
+comes from the loaded `<cluster>-orchestrator`, not the subagent type.
+
+### Dispatching Subagents
+
+Use Claude Code's Task tool. The default `subagent_type` is `general-purpose` (always available) — but in this repo the subagent runs **loaded with the resolved `<cluster>-orchestrator`** (see **Resolve before dispatch** above): the subagent type stays `general-purpose`, the capability comes from the loaded hub. If the harness exposes specialized subagents (e.g. `Explore` for read-only codebase analysis, `Plan` for architecture work), use them where their description fits — they don't replace the implementer model selection below.
+
+Choose **model** by the prompt's complexity:
+
+| Complexity | Model | Why |
+|------------|-------|-----|
+| **Low** (isolated function, clear spec, 1-2 files) | `haiku` | Fast and cheap; sufficient for narrow work |
+| **Medium** (multi-file, integration, pattern matching) | `sonnet` | Default for most implementation work |
+| **High** (design judgment, broad codebase understanding) | `opus` | Reserve for genuinely hard problems |
+
+For **read-only review subagents** (spec reviewer, quality reviewer, code-review lens subagents), use the `Explore` subagent type if available; otherwise `general-purpose`. Run them at `haiku` or `sonnet` — review is pattern matching, not generation.
+
+**Context curation checklist** — provide exactly:
+1. The full prompt text (pasted, not a file reference — subagents don't read plan files)
+1.5. The resolved `<cluster>-orchestrator` SKILL.md — the capability hub for this task (see **Resolve before dispatch**); the subagent runs loaded with it and pulls spokes on demand
+2. Scene-setting: which project, where this fits in the broader plan, what came before
+3. Relevant architecture from the project context file
+4. Dependencies on prior prompt outputs (if any)
+5. The no-go zones from the prompt
+6. The time budget
+
+**Do not provide:** Your session history, unrelated plan context, the entire project tree.
+
+## Handling Implementer Status
+
+**DONE:** Apply the prompt's review level.
+
+**DONE_WITH_CONCERNS:** Read the concerns. Correctness/scope concerns → address before review. Observational concerns (file getting large, questionable existing patterns) → note for future planning, proceed to review.
+
+**NEEDS_CONTEXT:** The prompt was underspecified. Provide the missing context and re-dispatch. Check the project context file first. If the context doesn't exist, this is a prompt quality issue — note it for [[conducty-improve]].
+
+**BLOCKED:** Assess the blocker:
+1. Context problem → provide more context, re-dispatch
+2. Task exceeds agent capability → re-dispatch with a more capable model (`opus`)
+3. Task too large → split into sub-prompts, dispatch sequentially
+4. Plan assumption is wrong → stop and revise the plan for this prompt
+
+Never force-retry without changing something. If the agent said it's stuck, something about the prompt, the context, or the model needs to change.
+
+## Time Budget Enforcement
+
+When a subagent has been running significantly longer than the prompt's time budget:
+
+1. Check if it's making progress (producing output, committing) or stuck (silent, looping)
+2. If stuck: interrupt and treat as BLOCKED
+3. If progressing but slow: let it finish, but flag the time overrun in checkpoint notes
+4. Either way: this means the complexity estimate was wrong. Note it for [[conducty-improve]] so future plans calibrate better.
+
+## Orchestrator Context Management
+
+Long plans burn the orchestrator's context window. Each subagent dispatch returns a result back into your session, plan-note reads accumulate, and verification output stacks up. Without management you run out of context mid-plan and lose conceptual integrity.
+
+The orchestrator is a stateful coordinator, but its session is *cache* — durable state lives in the vault (plan notes, checkpoint notes, `[[Prompt Log]]`). Treat `/compact` as a normal phase boundary, not a panic move.
+
+**When to `/compact`:**
+
+- **Between groups, never mid-group.** Group boundary is the safe point — all subagent dispatches for the group have returned, [[conducty-checkpoint]] has run, and the plan note records the group's state.
+- **Heuristic triggers:**
+  - 3+ groups remaining and the orchestrator session is already long (heavy tool output accumulated)
+  - Claude Code warns context is approaching the limit
+  - The just-finished group included large file reads, verbose code review output, or long verification logs
+  - The just-finished group ran at `full-review` (three subagents per prompt — implementer + spec reviewer + quality reviewer — accumulates fast)
+  - About to enter a group whose prompts will themselves return large outputs (codebase-wide refactors, multi-file generations)
+
+**Compact protocol:**
+
+1. **Before compact** — confirm durable state is written:
+   - Plan note marks the just-finished group's prompts complete with evidence
+   - Checkpoint note exists for the group
+   - `[[Prompt Log]]` has entries for each prompt in the group
+   - In-flight observations for [[conducty-improve]] are captured in the plan note's improvement-feedback section, not just in your head
+2. **Compact** — `/compact` summarizes the session
+3. **After compact** — restore cycle position before dispatching the next group:
+   - Re-read the active plan note from the vault
+   - Re-read the most recent checkpoint note
+   - Re-read the last few entries in `[[Prompt Log]]`
+   - Identify: which group is next, which prompt is its tracer, what no-go zones apply, what improvement experiments this plan is testing
+
+**Never compact mid-group.** A compact between the tracer and the rest of a group risks losing the tracer's signal — the evidence that justified proceeding. Finish the group, checkpoint, then compact.
+
+**Subagents are unaffected.** Each subagent dispatch is a fresh Task with a fresh window. Your `/compact` has no impact on already-dispatched or future subagents — they receive curated context per dispatch regardless.
+
+## Subagent Prompt Templates
+
+- [[implementer-prompt]] — Dispatch an implementer subagent
+- [[spec-reviewer-prompt]] — Dispatch spec compliance reviewer (for spec-review and full-review)
+- [[quality-reviewer-prompt]] — Dispatch code quality reviewer (for full-review only)
+
+## Principles
+
+- **Tracer result is a plan signal** — a tracer failure means "revise the plan," not "fix the prompt"
+- **Context is curated, not dumped** — give subagents exactly what they need, nothing more
+- **Review rigor matches risk** — ceremony for high-risk work, speed for low-risk work
+- **Time budgets are circuit breakers** — they surface misestimates, not punish slow agents
+- **Every completion claim needs evidence** — use [[conducty-verify]] before marking anything done
+- **Failures are learning data** — every BLOCKED, every NEEDS_CONTEXT, every time overrun feeds back to [[conducty-improve]]
+- **The orchestrator doesn't implement** — you coordinate, curate context, and maintain conceptual integrity. The subagents implement.

@@ -2,7 +2,6 @@
 ---
 name: gcp-aml-ai
 description: Google Cloud Anti Money Laundering AI for financial crime detection. Use when implementing AML transaction monitoring, risk scoring, SAR prioritization, or integrating Google's pre-trained AML models with existing compliance systems.
-tags: [gcp, aml, fraud, compliance, financial-crime]
 ---
 
 # Google Cloud AML AI

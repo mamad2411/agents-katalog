@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/glifxyz/glif-mcp-server (path: skills/continue-project/SKILL.md, branch: main)
-- mined: 2026-10-15
-- desc: ---

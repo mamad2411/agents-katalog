@@ -1,0 +1,140 @@
+---
+description: Multi-registry support and authentication system
+globs: src/registry-client/src/*,src/keychain/src/*,src/cli-sdk/src/commands/login.ts,src/cli-sdk/src/commands/logout.ts,src/cli-sdk/src/commands/token.ts
+alwaysApply: false
+---
+# Registries & Authentication
+
+## Registry Types
+
+1. **Default registry**: `--registry=<url>` — **no default value**; there
+   is no built-in registry URL (see bare-spec resolution below)
+2. **Named aliases**: `--registries=<name>=<url>` → use as `name:pkg@ver` in dependencies
+3. **Scope registries**: `--scoped-registries=@scope=<url>` → `@scope/*` auto-routes
+4. **Built-in aliases**: `jsr:` (jsr.io), `gh:` (GitHub packages). All are
+   user/service-overridable, only in their own map; cross-map or
+   built-in-protocol names → `ECONFIG` at config load (cli-sdk
+   `config/spec-aliases.ts`). `npm:` is **not** built-in — it has no baked
+   URL and must be configured (see below).
+
+## Bare specs & `--default-registry-alias`
+
+A bare spec (`vlt install foo`, `foo@latest`) or transitive dep with no
+explicit registry protocol resolves through, in order:
+`scoped-registries[scope]` > `--registry <url>` >
+`registries[<default-registry-alias>]`. `--default-registry-alias`
+defaults to `npm`.
+
+Because `npm` has no built-in URL, a **fresh/unconfigured** install
+(`vlt install`/`vlx`) does **not** "just work" — it errors with an
+actionable message pointing to https://www.vlt.io and `vlt setup`. This
+is the intended trade-off; a per-account vlt mirror URL isn't known ahead
+of time.
+
+## `vlt setup`
+
+Onboarding wizard (`src/cli-sdk/src/commands/setup.ts`). Authenticates
+against a vlt.io account (reusing `RegistryClient.login()` web auth) and
+writes the account's registry aliases to `vlt.json` via
+`conf.addConfigToFile`:
+
+- `registries.npm  = https://registry.vlt.io/<account>/npm/`
+- `registries.main = https://registry.vlt.io/<account>/main/`
+
+The account token must be in the keychain under **both** of those
+URLs (path-scoped keys do not match sibling registries). Login writes
+both; after the `vlt.json` write, setup also fills a missing one from
+the other (keychain only, never overwrites, never persists env tokens),
+including `--yes` / skipped auth.
+`logout` drops every key holding the revoked token, so there is
+nothing to copy back.
+
+It then loops to add optional custom aliases (partner/team registries).
+Runs unattended with `vlt setup <account> --yes` (+ `--registries name=url`).
+Writes user config by default; `--config=project` targets the project.
+
+## Lockfile reproducibility
+
+Lockfiles persist the resolved `registries` map (incl. `npm`/`main`) and
+a non-default `default-registry-alias` in `options`, so a lockfile is
+self-contained. `vlt install --frozen-lockfile` / `vlt ci` error on
+config drift (`graph.optionsChanged`). Persisting these is additive —
+`LOCKFILE_VERSION` is unchanged.
+
+## Registry Consistency
+
+Child deps inherit parent's registry by default. If `foo` comes from registry X, its dep `bar@1.x` also resolves from X — prevents accidental cross-registry resolution.
+
+## Config (`vlt.json`)
+
+```json
+{
+  "registries": {
+    "npm": "https://registry.vlt.io/my-account/npm/",
+    "main": "https://registry.vlt.io/my-account/main/",
+    "internal": "https://npm.internal.co/"
+  },
+  "default-registry-alias": "npm",
+  "scoped-registries": { "@myco": "https://npm.myco.com/" },
+  "jsr-registries": { "jsr": "https://npm.jsr.io/" }
+}
+```
+
+`registry` (scalar) may still be set to force a single registry, but the
+alias-based `registries` + `default-registry-alias` model is preferred.
+
+## Authentication
+
+### Interactive
+
+```bash
+vlt login                                    # default registry (npm web login)
+vlt login --registry=https://custom.reg/     # custom registry
+vlt logout                                   # remove + destroy token
+vlt token add                                # paste bearer token
+vlt token rm                                 # remove from local keychain only
+```
+
+### CI / Headless
+
+Env vars only (never in config files for security):
+- `VLT_TOKEN` — token for default registry
+- `VLT_TOKEN_https_my_registry_com` — registry URL, trailing `/` dropped, each run of non-alphanumerics → `_`; applies under configured registries (`registry`/`registries`/`scoped-registries`/`jsr-registries`) and keychain keys, never probed by request URL
+- `VLT_OTP` — one-time password for MFA
+
+### Identities
+
+Separate credential sets. Switch via `vlt config set identity=corp` or in `vlt.json`:
+```json
+{ "identity": "corp" }
+```
+
+Tokens stored in XDG data dir: `vlt/auth/${identity}/keychain.json`
+
+### Key Modules
+
+- `src/registry-client/` — HTTP client for registry API
+- `src/keychain/` — secure token storage (`@vltpkg/keychain`)
+
+## Packument Accept header (do not enable corgi)
+
+`PackageInfoClient.#fetchPackument` always sends
+`accept: application/json` (full packument). Do **not** switch to npm
+abbreviated/"corgi" packuments
+(`application/vnd.npm.install-v1+json`) as a perf shortcut.
+
+Corgi omits `license` (also `time`, `readme`, `maintainers`, `_rev`,
+`scripts`). The version entry becomes `node.manifest` and is persisted
+to the lockfile, so graph queries like `[license=MPL-2.0]` miss. This
+shipped in 1.0.0-rc.33 (#1692), caused false-positive license CI on
+#1704, and was reverted in #1707.
+
+The registry-client disk cache key is method + URL only (no `accept`,
+no `Vary`). Full and abbreviated responses for the same URL would
+collide. `:dist` / `:outdated` may use corgi via raw `fetch` because
+they never touch that cache and only read `dist-tags` / `versions`
+keys.
+
+To revisit: representation must be part of the disk-cache key **and**
+the in-flight coalescing key, and the SWR revalidate child must replay
+the same Accept.

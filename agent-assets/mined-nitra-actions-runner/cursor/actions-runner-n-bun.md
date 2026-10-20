@@ -1,0 +1,133 @@
+---
+description: Bun як єдиний package manager у монорепо
+globs: "**/package.json,**/bunfig.toml,**/bun.lock,**/bun.lockb"
+alwaysApply: false
+version: '2.1'
+---
+
+Проект використовує тільки Bun для керування залежностями та запуску скриптів.
+
+- `package.json`:
+
+```json
+{
+  "packageManager": "видали поле — Bun не потребує packageManager (bun.mdc)",
+  "dependencies": "кореневий package.json не повинен містити dependencies — додай у workspace-пакети (bun.mdc)"
+}
+```
+- `bunfig.toml`:
+
+```toml
+[install]
+linker = "hoisted"
+```
+
+## Rego-gate: відповідність bunfig.toml канонічному шаблону
+
+Rego-пакет: `bun.bunfig`
+
+Цільовий файл: `bunfig.toml` (корінь репо).
+
+Шаблон (leaf-значення, які gate порівнює): [bunfig.toml.snippet.toml](./template/bunfig.toml.snippet.toml)
+
+Gate порівнює кожен leaf-ключ у кожній секції шаблону з фактичним значенням у `bunfig.toml`. Зайві ключі та секції — ігноруються. Deny-повідомлення виникає, якщо:
+
+- секція відсутня або не є обʼєктом (`bunfig.toml: відсутня секція [install]`)
+- leaf-ключ має інше значення (`bunfig.toml: у секції [install] має бути linker = "hoisted"`)
+
+## Навіщо саме `linker = "hoisted"`
+
+Канонічна лінковка для кореневого `bunfig.toml` — **hoisted**: пласке `node_modules`,
+сумісне з інструментами, які не розуміють ізольований (isolated) layout Bun.
+
+## Структура lockfile та менеджер пакетів
+
+Проект використовує **тільки Bun** для керування залежностями та запуску скриптів.
+
+**Заборонені lockfile / директорії** (мають бути відсутні у репозиторії):
+
+- `package-lock.json`
+- `yarn.lock`
+- `pnpm-lock.yaml`
+- `.yarnrc.yml`
+- `.yarn/`
+
+Якщо якийсь із цих файлів чи директорій існує — **видали** його.
+
+**Обовʼязковий lockfile:** `bun.lock` (має бути присутній у корені).
+
+**Заборонені команди менеджерів пакетів:**
+
+- `npm install`, `yarn`, `pnpm` і їх відповідники lockfile (крім `bun.lock`)
+
+**Дозволені команди:**
+
+- `bun i`
+- `bun run <script>`
+- `bun add <pkg>`
+- `bun add -d <pkg>`
+- `bun remove <pkg>`
+- `bunx <tool>`
+- `npx <tool>` — якщо у проєкті вже використовується `npx` (не замінюй на `bunx`)
+
+**Одноразові CLI (`bunx` / `npx`):**
+
+- Якщо в проєкті вже використовується **`npx`** (скрипти, CI, Dockerfile) — **залишай `npx`**, не замінюй на `bunx`.
+- Якщо новий виклик CLI додається з нуля і в репозиторії прийнято лише Bun — можна `bunx <tool>`.
+
+**Не додавай** у `dependencies` / `devDependencies` пакети, які **використовуються лише як CLI** і їх достатньо викликати через **`bunx <pkg>`** (або **`npx`**, якщо в проєкті так прийнято): наприклад **oxlint**, **jscpd**, **eslint** у корені тощо. Виняток — пакет потрібен як **бібліотека** (імпорт у коді), peer для іншого пакета, або інструмент **не** покривається `bunx` у вашому CI.
+
+**Monorepo:**
+
+- Встановлювати залежності у відповідному пакеті, а не в корені без потреби.
+- Якщо залежність потрібна лише одному пакету, додавати її в директорії цього пакета.
+- У CI та локально запускати скрипти через `bun run`.
+
+**Dockerfile:**
+
+```dockerfile
+FROM oven/bun:alpine AS build-env
+```
+
+замість образу node.
+
+**GitHub Actions:** не вставляй у workflow окремі кроки **`actions/setup-node`**, **`oven-sh/setup-bun`**, **`actions/cache`** та **`bun install`** — їх **заборонено** дублювати в кожному job; завжди використовуй **локальний composite** (деталі й заборона дублювання — **ga.mdc**). Під капотом composite уже містить Node **24**, Bun, кеш і **`bun install --frozen-lockfile`**.
+
+Після **`actions/checkout@v6`** (`persist-credentials: false`):
+
+```yaml
+- uses: ./.github/actions/setup-bun-deps
+```
+
+Якщо в репозиторії action збережено під **`./npm/github-actions/setup-bun-deps`**, у `uses:` вкажи цей шлях замість `.github/actions/…` (**ga.mdc**).
+
+## Лінт через n-rules, не package.json-скрипти
+
+Лінт запускається через CLI **`n-rules`** (локально) / **`npx @7n/rules`** (без локальної інсталяції),
+**не** через `package.json`-скрипти:
+
+- **`npx @7n/rules lint --full`** — весь репо (CI-режим);
+- **`npx @7n/rules lint`** — дельта vs origin (лише змінені файли, типовий задачний прогін);
+- **`n-rules lint <rule…>`** — конкретні правила, напр. **`n-rules lint ga`**.
+
+У кореневому `package.json` **не повинно бути** `lint`/`lint-*` скриптів — єдина точка лінту — CLI
+`n-rules` (пакет `@7n/rules`). Цей запис механічно перевіряється Rego-gate'ом
+[`bun.package_json`](../package_json/package_json.mdc) (deny на `scripts.lint` / `scripts.lint-*`) —
+тут лишається лише пояснення *чому* так (єдина точка входу для лінту), без дублювання самого чеку.
+
+## Rego-gate: заборонені поля та devDependencies у кореневому package.json
+
+Rego-пакет: `bun.package_json`
+
+Цільовий файл: кореневий `package.json`.
+
+Список заборонених top-level полів (template-driven): [package.json.deny.json](./template/package.json.deny.json)
+
+Gate виносить два класи deny:
+
+1. **Заборонені top-level поля** — будь-яке поле з `package.json.deny.json` присутнє у файлі (навіть із порожнім значенням `{}`).
+2. **devDependencies не з білого списку** — дозволені лише `@nitra/*`/`@7n/*` та root-only тестові peer/tools (`vitest`, `@vitest/coverage-v8`, `@vitest/browser`, `@stryker-mutator/vitest-runner`, `@stryker-mutator/core`, `@playwright/test`, `playwright`, `@storybook/addon-vitest`, `@7n/test`). Будь-який інший пакет → deny. CLI-тули, які `n-rules lint` спавнить через `bunx` (oxlint, jscpd, v8r, github-actionlint тощо), у root не пінуються — вони приїжджають як `dependencies` пакета `@7n/rules` (npm-module.mdc).
+
+`@vitest/browser`/`playwright`/`@storybook/addon-vitest` — додані для named vitest project "storybook" (канон Storybook, кластер 5: browser-mode, лише chromium) — той самий root vitest.config, що й `unit`-проект; `@storybook/addon-vitest` постачає `storybookTest`-плагін для цього vitest-конфіга (канонічний template правила `storybook`). **Межа з `npm-module.mdc`**: Storybook-специфічні identity-пакети (`storybook`, `@storybook/vue3-vite`, `@storybook/vue3`, `msw`, `msw-storybook-addon`) у цей allowlist **не** додаються — вони живуть у `npm/package.json` консюмер-пакета (канон Storybook, кластер 7 Governance), бо `isStorybookRoot()` у `@7n/test` детектує Storybook-скоуп саме за тим файлом, не кореневим. `@storybook/addon-vitest` — виняток із цієї межі: він test-tooling (vitest-плагін), а не identity-маркер, тож root, як і решта vitest-peer'ів.
+
+Перевірки, що потребують FS або cross-file контексту (наприклад наявність `yarn.lock`), лишаються у JS-шарі.

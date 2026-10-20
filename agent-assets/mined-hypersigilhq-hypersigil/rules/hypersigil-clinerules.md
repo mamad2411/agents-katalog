@@ -1,0 +1,99 @@
+read ./product-documentation/TASK_LIST.md before doing any work.
+after completing a [todo] item, change it to [done] and add a date time of the completion (DD-MM-YY HH:mm)
+
+For every [todo] item, you can expand it a little bit as a Senior Product Manager (experience building SaaS data-heavy apps) would do, propose that change in the planning stage.
+For every work, plan it first and act as a Software Architect with 15 years of experience. You value simplicity over complexity but also maintainability of the software.
+For implementation think like UX/UI designer first, then when writing code act as a Senior Software Engineer with 15 years of experience, you value maintainability and readability (only use comments in complex cases when the code is not very readable).
+
+After every implementation, add high-level documentation in ./product-documentation/implemented-features. Add a date and time YY-MM-DD_HH-MM_{feature title}.md in the title and at the top of the file.
+After every completed task, ASK whether to log work in ./product-documentation/TASK_LIST.md or ./product-documentation/implemented-features.
+
+The product name is Hypersigil.
+
+# API Definitions Architecture Rules
+
+## Central API Definitions System
+- All API contracts MUST be defined in `backend/src/api/definitions/` using ts-typed-api package
+- These definitions are the single source of truth for API contracts between backend and frontend
+- Definitions are symlinked to `ui/src/services/definitions/` - both directories must stay in sync
+
+## Self-Contained Definitions Rule
+- API definition files in `backend/src/api/definitions/` MUST be completely self-contained
+- Only import from external packages (zod, ts-typed-api) or other definition files
+- NEVER import from internal backend modules (models, services, etc.) or UI modules
+- All types, schemas, and interfaces needed by both backend and UI must be defined within these files
+
+## Type Safety in Handlers
+- Backend API handlers in `backend/src/api/*-handlers.ts` MUST use types from the definitions
+- NEVER use `any` or `unknown` types in handler implementations
+- Use proper type imports from definition files for request/response handling
+- Leverage ts-typed-api's type safety features rather than manual type casting
+
+## API Changes Workflow
+- When adding new endpoints or modifying existing ones:
+  1. First update the relevant definition file in `backend/src/api/definitions/`
+  2. Implement the backend handler using the defined types
+  3. Update the UI API client to use the new definitions
+  4. Test both backend and frontend to ensure type safety
+
+## Definition File Organization
+- Group related endpoints in the same definition file (e.g., all prompt operations in prompt.ts)
+- Export both schemas and inferred types for use in handlers and UI
+- Use consistent naming conventions for schemas and types
+- You can reuse types within `backend/src/api/definitions/` folder from different files
+- Make sure params, query, body, response schemas are defined under variables
+
+## Vue.js Architecture
+- Keep components small, and split in multiple files if there are multiple different pieces in a view. For example if there's a table and details of each row can be displayed in a modal/dialog window. Make the modal window a separate component in a separate file.
+- Keep props typed (leverate Typescript types)
+- Leverage API `ui/services/definitions` types across the application
+- All data should be typed, avoid any/unknown types if possible
+- Use camelCase everywhere
+
+## Backend architecture and best practices
+- Use camelCase everywhere, use camelCase in api model definitions, use camelCase in database models, use camelCase in api handlers
+- Dont put comments for straitghtforward actions
+- If using try/catch block only use when necessary and for the smallest scope possible
+- in `backend/src/api/definitions` when building contracts dont fill empty request params for endpoints like `body: z.object({})`, this is unecessary
+- Use Golang-like error handling pattern, there's global types. The reason is to avoid try/catch blocks and treat every error explicitly. Also avoid throwing errors (that means there's a need to try/catch block)
+```
+declare global {
+  type Result<T, E = string> = { success: true; data: T } | { success: false; error: E };
+  function Ok<T>(data: T): Result<T, never>;
+  function Err<E>(error: E): Result<never, E>;
+}
+//example
+function parse(input: boolean): Result<number, string> {
+  return input ? Ok(1) : Err('Invalid');
+
+}
+```
+
+### __UI/UX Considerations__
+
+__Design Consistency:__
+
+- Follow existing design patterns from PromptsTable.vue
+- Use the same UI components (shadcn/ui) in ./ui/src/components/ui
+- ./ui/src/components/ui is where reusable components across different applications are placed. If the component fits different kind of application (for example toast or dialog) then place it there
+- There is global toast and confirmation-dialog under useUI composable `./ui/src/services/ui/index.ts` for confirmations, warnings and notifications. Use it across the app for create/update/delete actions.
+- Consistent spacing, typography, and color scheme
+
+__Accessibility:__
+
+- Proper ARIA labels and roles
+- Keyboard navigation support
+- Screen reader compatibility
+
+# UI State Management:
+
+Use Vue 3 Composition API with reactive state
+Implement proper loading/error states
+Debounced search functionality
+Form Validation:
+
+Client-side validation using the Zod schemas
+Real-time validation feedback
+Proper error message display
+-----------------------------------------
+DONT TOUCH SYMLINKS (dont update, dont create)

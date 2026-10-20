@@ -1,0 +1,71 @@
+---
+name: docs-generate-schematics
+description: Use when a document, paper, poster, or README needs a scientific schematic, flowchart, block diagram, or architecture figure GENERATED as an image from a text description via an AI image model - CONSORT participant flows, neural-network architectures, pipeline diagrams - using OpenRouter (OPENROUTER_API_KEY) with an automated quality-review loop. Not for converting existing documents (bitranox:docs-convert-markitdown) or code-rendered graphs (graphviz/matplotlib).
+---
+
+# Generating scientific schematics with an AI image model
+
+> Adapted from the MarkItDown skill in K-Dense-AI/claude-scientific-skills (MIT). See THIRD_PARTY_NOTICES.md.
+
+Generate publication-style schematic images (flowcharts, block diagrams, architecture
+figures) from a text description. The AI variant runs an iterative quality loop: generate,
+have a vision model critique the result against the document type, regenerate until the
+quality threshold or the iteration cap is hit.
+
+## Requirements
+
+- `OPENROUTER_API_KEY` in the environment (both scripts talk to OpenRouter).
+- `httpx2` for the AI script: run it with `uv run`, which reads the script's PEP 723 block
+  and fetches the dependency. Plain `python3` only works if httpx2 is already installed. The
+  wrapper script imports only stdlib, but it re-launches the AI script with the SAME
+  interpreter (`sys.executable`), so it needs `httpx2` just as much - run it under
+  `uv run --with httpx2` too, or the child exits 2 (could not run) on its first import.
+
+## Usage
+
+```bash
+# AI generation with quality-review loop
+uv run scripts/generate_schematic_ai.py "CONSORT participant flow for a two-arm RCT" -o flow.png
+uv run scripts/generate_schematic_ai.py "Neural network architecture diagram" -o arch.png --iterations 2
+uv run scripts/generate_schematic_ai.py "Simple block diagram" -o diagram.png --doc-type poster
+
+# Wrapper: same quality-review loop, with the iteration cap clamped to 2
+uv run --with httpx2 scripts/generate_schematic.py "Data pipeline overview" -o pipeline.png
+```
+
+`--doc-type` tunes the acceptance threshold (a poster tolerates less detail than a paper
+figure); `--iterations` caps the regenerate loop.
+
+The default models are `google/gemini-3.1-flash-image-preview` (generates) and
+`google/gemini-3.1-pro-preview` (reviews), both present in the OpenRouter catalogue on 2026-09-27.
+Preview IDs get renamed and retired without notice, so when a run fails with
+`API request failed (HTTP ...)`, list the current IDs (the endpoint needs no key) and pass the
+replacement with `--image-model` / `--review-model` (both scripts accept them):
+
+```bash
+curl -s https://openrouter.ai/api/v1/models | python3 -c \
+  "import json,sys; [print(m['id']) for m in json.load(sys.stdin)['data']]"
+```
+
+Exit status of `generate_schematic_ai.py`: 0 the kept image met the `--doc-type` threshold; 1 the
+best image is still below the threshold; 2 the quality question could not be answered - no image
+at all, an image whose review failed with no earlier reviewed image to fall back on, no API key,
+`httpx2` missing, an unexpected error, or a usage error. The image is written in the exit-1 case
+and in the failed-review case, so check the exit code, not just the file. `generate_schematic.py`
+passes the AI script's code through unchanged, and exits 2 itself when the key is missing or the
+AI script cannot be found or launched. The image kept is the best-scoring REVIEWED one: a retry
+whose review failed never displaces it. The threshold is numeric, so a kept image scoring at or
+above it exits 0 even when the reviewer's verdict said NEEDS_IMPROVEMENT; that verdict is printed
+as a `[WARN]` on stderr. The review is scored by its TOTAL (`SCORE: n/10`), never by a
+per-criterion score such as `2/2`.
+
+## Common mistakes
+
+- Expecting deterministic output - image models vary run to run; keep the prompt specific
+  (name the boxes, arrows, and labels you need) and review the result yourself.
+- Using this for graphs that should be code-rendered - reproducible plots and graphs belong
+  in graphviz/matplotlib, not an image model; this skill is for illustrative schematics.
+- Committing the generated image without checking the labels - vision-model review catches
+  layout problems, not domain wording.
+- Running without `OPENROUTER_API_KEY` - both scripts fail fast; set it in the environment,
+  never on the command line.

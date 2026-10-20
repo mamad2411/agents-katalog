@@ -1,0 +1,165 @@
+---
+name: splunk-observability-cisco-intersight-integration
+description: "Use when the user asks to send Cisco Intersight, UCS, HyperFlex, or UCS-X compute metrics to Splunk
+  Observability Cloud, configure the cisco_intersight OTel receiver, or render UCS chassis health
+  dashboards and detectors. This is independent of Cisco AI Pod and complements the Splunk Platform TA
+  skill cisco-intersight-setup. Render and validate Cisco Intersight (UCS management plane) metrics into
+  Splunk Observability Cloud through the Intersight OTel integration. Emits the namespace, Secret stub,
+  Deployment, endpoint ConfigMap, Splunk OTel pipeline overlay, dashboards, detectors, and handoff scripts
+  without reading key material."
+compatibility: "No direct Splunk Platform runtime dependency. This workflow can be used alongside Splunk Cloud Platform 10.5.2605 through its documented external APIs or handoffs."
+metadata:
+  splunk_enterprise_10_6: "not-applicable"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "not-applicable"
+  compatibility_verified: "2026-08-20"
+---
+
+# Splunk Observability Cisco Intersight Integration
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash and Python 3 | Run bundled setup and validation helpers | `bash --version && python3 --version` |
+| Required product/platform access | Inspect or configure the selected target | Complete the documented preflight |
+| Credential files for live modes | Keep secrets out of chat | Verify paths only |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌───────────────┐   ┌───────────────┐   ┌─────────────────┐
+│ Preflight │ → │ Render/review │ → │ Apply/handoff │ → │ Validate evidence │
+└───────────┘   └───────────────┘   └───────────────┘   └─────────────────┘
+```
+
+## When to Activate
+
+- Send Cisco Intersight, UCS, HyperFlex, or UCS-X compute metrics to Splunk Observability Cloud, configure the
+  cisco_intersight OTel receiver, or render UCS chassis health dashboards and detectors. This is independent of
+  Cisco AI Pod and.
+- Preview and review the splunk observability cisco intersight integration workflow before any live apply phase.
+- Diagnose failed prerequisites, generated assets, configuration, or validation evidence.
+
+## Scope
+
+Follow the documented read-only or render-first path whenever it is available.
+This skill does not imply permission to mutate live systems. Require explicit
+apply flags, protected credentials, and operator review for state changes.
+
+## Examples
+
+Inspect the supported setup modes before selecting one:
+
+```bash
+bash skills/splunk-observability-cisco-intersight-integration/scripts/setup.sh --help
+```
+
+Expected output: usage, supported modes, and required arguments are displayed
+without changing the target environment.
+
+Inspect validation modes before running completion checks:
+
+```bash
+bash skills/splunk-observability-cisco-intersight-integration/scripts/validate.sh --help
+```
+
+Expected output: offline, live, and completion options are displayed when the
+skill supports them; help exits without mutation.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Preflight fails | A required tool or access path is missing | Resolve it before rendering or applying |
+| Rendered assets are incomplete | Required non-secret inputs are absent | Complete intake and render again |
+| Apply is blocked | Review, credentials, or explicit acceptance is missing | Use the documented handoff |
+| Validation is incomplete | Live evidence is unavailable | Record the gap and keep completion open |
+
+This is a **standalone reusable skill** for Cisco Intersight (UCS management plane) metrics in Splunk Observability Cloud. It is **independent of the AI Pod** umbrella — useful for any UCS deployment. The AI Pod skill composes this skill via subprocess + yq deep-merge.
+
+The Splunk Platform TA path (`Splunk_TA_Cisco_Intersight`) lives in [cisco-intersight-setup](../cisco-intersight-setup/SKILL.md). That's a different layer (Splunk Platform side); this skill is the O11y side.
+
+## What it renders
+
+- `intersight-integration/intersight-otel-deployment.yaml` — Deployment in a separate `intersight-otel` namespace, points at `http://<release>-splunk-otel-collector-agent.<ns>.svc.cluster.local:4317` (configurable).
+- `intersight-integration/intersight-credentials-secret.yaml` — K8s Secret manifest stub for `intersight-key-id` and `intersight-key` (placeholders only; renderer never reads the key files).
+- `intersight-integration/intersight-otel-config.yaml` — ConfigMap for `intersight-otel.toml` (lets the user override the OTLP collector endpoint when their collector ns/release differs).
+- `intersight-integration/intersight-otel-namespace.yaml` — Namespace manifest.
+- `splunk-otel-overlay/intersight-pipeline.yaml` — pipeline addition that admits Intersight OTLP traffic on the agent.
+- `dashboards/intersight-overview.signalflow.yaml` — UCS power/thermal, fan speed, network throughput, alarms, advisories, VM inventory.
+- `detectors/<name>.yaml` — alarm count delta, security advisory delta, host temp ceiling, host power floor.
+- `scripts/setup.sh`, `render_assets.py`, `validate.sh`, `handoff-base-collector.sh`, `handoff-dashboards.sh`, `handoff-detectors.sh`, `apply-intersight-manifests.sh`.
+- `metadata.json`.
+
+## Safety Rules
+
+- Never ask for the Intersight API key ID or private key in conversation.
+- Use `--intersight-key-id-file` (chmod 600 enforced) for the key ID and `--intersight-key-file` (chmod 600 enforced) for the private key. The renderer never reads either file; the K8s Secret is created out-of-band.
+- Reject `--intersight-key-id`, `--intersight-key`, `--api-key`, `--client-secret`.
+- O11y token via `--o11y-token-file` (passed through to base collector). Reject `--o11y-token`, `--access-token`, `--token`, `--bearer-token`, `--api-token`, `--sf-token`.
+
+## Primary Workflow
+
+1. Generate or locate your Intersight API key (Account Settings -> API Keys in the Intersight UI). Save the key ID and private key to chmod-600 files.
+
+2. Render:
+
+   ```bash
+   bash skills/splunk-observability-cisco-intersight-integration/scripts/setup.sh \
+     --render --validate \
+     --realm us0 \
+     --cluster-name lab-cluster \
+     --collector-release splunk-otel-collector \
+     --collector-namespace splunk-otel \
+     --output-dir splunk-observability-cisco-intersight-rendered
+   ```
+
+3. Create the Intersight credentials Secret out-of-band:
+
+   ```bash
+   kubectl create namespace intersight-otel
+   kubectl create secret generic intersight-api-credentials -n intersight-otel \
+     --from-file=intersight-key-id=/tmp/intersight_key_id \
+     --from-file=intersight-key=/tmp/intersight_private_key.pem
+   ```
+
+4. Apply the manifests + handoffs:
+
+   ```bash
+   # Direct one-shot apply via the skill (recommended). Refuses without
+   # --accept-k8s-apply, prints the active kube-context first, and runs the
+   # rendered apply-intersight-manifests.sh helper.
+   bash skills/splunk-observability-cisco-intersight-integration/scripts/setup.sh \
+     --apply --accept-k8s-apply
+
+   # Equivalent manual flow (helpful for review or CI staging):
+   bash splunk-observability-cisco-intersight-rendered/scripts/apply-intersight-manifests.sh
+   bash splunk-observability-cisco-intersight-rendered/scripts/handoff-base-collector.sh
+   bash splunk-observability-cisco-intersight-rendered/scripts/handoff-dashboards.sh
+   bash splunk-observability-cisco-intersight-rendered/scripts/handoff-detectors.sh
+   ```
+
+   `--apply --accept-k8s-apply --dry-run` performs a server-side dry-run via
+   `kubectl --dry-run=server` without mutating the cluster. The Secret created
+   in step 3 is never auto-applied — the apply helper aborts if it is missing.
+
+## Hand-offs
+
+- Splunk OTel Collector base install: [splunk-observability-otel-collector-setup](../splunk-observability-otel-collector-setup/SKILL.md).
+- Dashboards: [splunk-observability-dashboard-builder](../splunk-observability-dashboard-builder/SKILL.md).
+- Detectors: [splunk-observability-native-ops](../splunk-observability-native-ops/SKILL.md).
+
+## Out of scope (companion skill)
+
+- Splunk Platform TA path (`Splunk_TA_Cisco_Intersight`): [cisco-intersight-setup](../cisco-intersight-setup/SKILL.md).
+
+## Validation
+
+```bash
+bash skills/splunk-observability-cisco-intersight-integration/scripts/validate.sh
+```
+
+Static checks: manifest validity, no inline credentials, OTLP endpoint shape. With `--live`: prefers `oc` and falls back to `kubectl`, probes the `intersight-otel` namespace, checks the live OTLP target service/config, and fails if the pod logs show OTLP metrics export errors such as `unknown service opentelemetry.proto.collector.metrics.v1.MetricsService`.
+
+See `reference.md` and `references/intersight-deployment.md`, `intersight-secrets.md`, `dashboards-catalog.md`, `troubleshooting.md` for details.

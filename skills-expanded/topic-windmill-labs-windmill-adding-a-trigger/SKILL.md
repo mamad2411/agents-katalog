@@ -1,1 +1,0 @@
-../../../.agents/skills/adding-a-trigger/SKILL.md

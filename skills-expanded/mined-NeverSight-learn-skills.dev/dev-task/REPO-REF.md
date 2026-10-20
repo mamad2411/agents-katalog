@@ -1,4 +1,0 @@
-# Repo Ref
-- source: https://github.com/NeverSight/learn-skills.dev (path: data/skills-md/bentz/dev-tasks-skills/dev-task/SKILL.md, branch: main)
-- mined: 2026-10-14
-- desc: 该技能用于指导“复杂需求的开发流程”，强调抽象步骤与可复用的落地方式，而不是针对某个具体需求的复盘总结。它帮助在多轮对话中澄清目标、在执行阶段组织任务与 todos、在收尾阶段补齐测试与边界处理。"

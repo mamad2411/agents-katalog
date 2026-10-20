@@ -1,0 +1,267 @@
+---
+name: cisco-security-cloud-setup
+description: Use when configuring Cisco Security Cloud API inputs, product flows, indexes, or dashboards in Splunk.
+compatibility: >-
+  Splunk Cloud Platform 10.5.2605: conditional. Follow documented package,
+  entitlement, topology, and customer-managed runtime guardrails; self-managed
+  paths use the separate Enterprise 10.6 compatibility contract.
+metadata:
+  splunk_enterprise_10_6: "supported"
+  enterprise_compatibility_verified: "2026-10-05"
+  splunk_cloud_10_5: "conditional"
+  compatibility_verified: "2026-08-20"
+---
+
+# Cisco Security Cloud Setup
+
+## Prerequisites
+
+| Tool or access | Purpose | Verify |
+|---|---|---|
+| Bash, `curl`, and `jq` | Run package, product, and input helpers | `command -v bash curl jq` |
+| Splunk administrative access | Install app ID 7404 and configure inputs | Confirm search-tier REST access |
+| Product credentials | Authorize API/eStreamer | Store secrets in protected files |
+
+## Workflow Overview
+
+```text
+┌───────────┐   ┌─────────────────┐   ┌──────────────────┐   ┌───────────────┐
+│ Preflight │ → │ Select product  │ → │ Configure inputs │ → │ Validate data │
+└───────────┘   └─────────────────┘   └──────────────────┘   └───────────────┘
+```
+
+## When to Activate
+
+- Configure Cisco Duo, XDR, Secure Endpoint, Secure Firewall, or another supported flow.
+- Install or validate the `CiscoSecurityCloud` app and its product-specific inputs.
+- Diagnose missing events, wrong source types, or empty app dashboards.
+
+## Scope
+
+This skill covers product flows documented by the app. It does not route ASA
+or FTD syslog through API inputs, invent unsupported endpoints, or expose
+credentials in chat. Use `cisco-asa-ta-setup` for ASA/FTD syslog.
+
+## Examples
+
+Install the Cisco Security Cloud app:
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/setup.sh --install
+```
+
+Expected output: the package and prerequisite plan is applied or a topology-
+specific manual handoff is emitted.
+
+Run strict validation for configured product flows:
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/validate.sh --completion
+```
+
+Expected output: package, product, input, index, source type, event, and
+dashboard evidence report `[PASS]`; incomplete flows exit nonzero.
+
+## Troubleshooting
+
+| Issue | Cause | Resolution |
+|---|---|---|
+| Unsupported product | Flow is absent | Render a handoff; do not invent an API |
+| Authentication fails | Credential type/scope is wrong | Verify the protected file |
+| Events use ASA source typing | Syslog was routed to the wrong workflow | Hand off to `cisco-asa-ta-setup` |
+| Dashboards are empty | Product input, index, or macro is incomplete | Validate events first, then app content |
+
+## TA Completion Gate
+
+For every TA/add-on or dashboard companion run, satisfy the shared
+[TA completion gate](../shared/ta_completion_gate.md): configure and enable the
+data ingest path owned by this skill or its required companion, validate events
+or metrics in the target indexes/source types, and verify any
+pre-built/package-shipped dashboards are visible, macro-aligned, and returning
+data. If the package ships no dashboards, record that evidence explicitly and
+hand off dashboard use to the consuming app, ES/ITSI/ARI content, or readiness
+doctor.
+
+Automates installation and input configuration of **Cisco Security Cloud**
+(`CiscoSecurityCloud`).
+
+## Package Model
+
+**Pull from Splunkbase first, fall back to `splunk-ta/`.**
+Use the setup script with `--install` to install app ID `7404`. The script uses
+the shared installer, which defaults to the verified package, and falls back
+to the local package `cisco-security-cloud_*.tar.gz` when needed.
+
+The repo-verified `3.6.10` release is also the current public release, advertises
+`10.5`, and is Cloud-compatible, so the default install path needs no review
+override. Do not select `3.6.7` on a `10.5` stack: that release advertises
+versions only through `10.4`, and the `3.6.x` line re-advertises `10.5` from
+`3.6.8` onward. Before any
+post-install REST mutation it reads the actual installed version and refuses
+an unverified selection unless `--accept-unsupported-platform` is backed by
+documented vendor approval for the exact package and stack; the override is
+not compatibility certification. Status-only runs remain read-only and report
+the compatibility warning without refusing.
+
+This package is a multi-input Cisco Security app. It supports many product
+integrations through app-managed custom REST handlers rather than simple flat
+conf-file edits.
+
+## Agent Behavior — Credentials
+
+**The agent must NEVER ask for passwords, API keys, client secrets, refresh
+tokens, certificates, or other secrets in chat.**
+
+Splunk credentials are read from the project-root `credentials` file (falls
+back to `~/.splunk/credentials`). If neither exists, guide the user to create
+it:
+
+```bash
+bash skills/shared/scripts/setup_credentials.sh
+```
+
+For product secrets, instruct the user to write them to temporary files:
+
+```bash
+bash skills/shared/scripts/write_secret_file.sh /tmp/secret.txt
+```
+
+Then pass those files with `--secret-file FIELD /tmp/secret.txt` to the
+configuration script.
+
+## Environment
+
+This app supports standalone, distributed, and search head clustering
+deployments. It can be installed on Splunk Enterprise or Splunk Cloud.
+
+| Item | Value |
+|------|-------|
+| Search-tier API | `SPLUNK_SEARCH_API_URI` env var (legacy alias: `SPLUNK_URI`) |
+| Cloud stack | `SPLUNK_CLOUD_STACK` for Cloud installs |
+| App name | `CiscoSecurityCloud` |
+| Splunkbase ID | `7404` |
+| Credentials | Project-root `credentials` file (falls back to `~/.splunk/credentials`) |
+| Skill scripts | `skills/cisco-security-cloud-setup/scripts/` |
+
+## Setup Workflow
+
+### Step 1: Install The App
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/setup.sh --install
+```
+
+### Step 2: Optionally Set Logging
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/setup.sh --set-log-level INFO
+```
+
+### Step 3: Configure One Product Flow
+
+Use `configure_product.sh` for the user-facing flow. It maps a product name to
+the correct `CiscoSecurityCloud_*` handler, fills in product defaults, and then
+delegates to the shared input engine.
+
+List the supported product keys:
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/configure_product.sh --list-products
+```
+
+Example: Cisco XDR
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/configure_product.sh \
+  --product xdr \
+  --set region us \
+  --set auth_method client_id \
+  --set client_id example-client-id \
+  --set xdr_import_time_range "7 days ago" \
+  --secret-file refresh_token /tmp/xdr_refresh_token
+```
+
+Example: Cisco Secure Endpoint
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/configure_product.sh \
+  --product secure_endpoint \
+  --set api_host api.amp.cisco.com \
+  --set client_id example-client-id \
+  --set se_import_time_range "7 days ago" \
+  --set event_types "event,group" \
+  --set groups "group-guid" \
+  --secret-file api_key /tmp/secure_endpoint_api_key
+```
+
+The wrapper applies product defaults such as index, interval, and sourcetype
+when the package exposes them. Use `configure_input.sh` only for advanced or
+unsupported edge cases.
+
+### Step 4: Validate
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/validate.sh --completion
+```
+
+To validate one specific product flow:
+
+```bash
+bash skills/cisco-security-cloud-setup/scripts/validate.sh \
+  --completion \
+  --product xdr \
+  --name XDR_Default
+```
+
+## Supported Product Flows
+
+The product-specific wrapper currently covers all packaged Cisco Security Cloud
+integrations:
+
+- `duo`
+- `secure_malware_analytics`
+- `xdr`
+- `secure_firewall_syslog`
+- `secure_firewall_asa_syslog`
+- `secure_firewall_estreamer`
+- `secure_firewall_api`
+- `multicloud_defense`
+- `email_threat_defense`
+- `secure_network_analytics`
+- `secure_endpoint`
+- `vulnerability_intelligence`
+- `cii_webhook`
+- `cii_aws_s3`
+- `ai_defense`
+- `isovalent`
+- `isovalent_edge_processor`
+- `secure_client_nvm`
+- `secure_workload`
+
+See [reference.md](reference.md) for the product matrix with defaults, required
+fields, and secret fields. Use [template.example](template.example) to collect
+non-secret values before running the configuration script.
+
+## Key Learnings / Known Issues
+
+1. **Custom handler model**: This app uses app-specific admin handlers rather
+   than simple manual conf edits for most inputs.
+2. **Many integrations, one app**: Use the product-specific wrapper and only
+   configure the Cisco product inputs the user actually needs.
+3. **Secrets belong in temp files**: API keys, passwords, tokens, and certs
+   should be passed through `--secret-file`, never pasted into chat.
+4. **Index choice is per input**: Most integrations have product-specific
+   default indexes, but you can override them when appropriate.
+
+## Additional Resources
+
+- [reference.md](reference.md) — product matrix and endpoint details
+- [products.json](products.json) — product-to-handler metadata used by the wrapper
+- [template.example](template.example) — non-secret intake worksheet
+
+## Validation Modes
+
+Run `scripts/validate.sh` for diagnostics. Use `--completion` (alias `--strict`)
+to require the selected/configured input, nonzero event flow in an event-capable
+default index, and visible shipped views. Strict mode rejects
+`--skip-data-flow`.

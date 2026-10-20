@@ -1,0 +1,539 @@
+# FiestaBoard — Claude Code Context
+
+## Single-Container Architecture
+
+This project uses a **unified single container** for all environments (production, development, and CI). The container runs the Python API, the React Router v7 + Vite web UI, and nginx reverse proxy together. All traffic goes through port 4420 on the host, mapped to nginx on port 3000 inside the container.
+
+### Architecture Overview
+
+- **Single Dockerfile** (`Dockerfile`): Multi-stage build producing one image with API + UI + nginx
+- **Production** (`docker-compose.yml`): Single container, no volume mounts
+- **Development** (`docker-compose.dev.yml`): Same container with volume mounts for Python hot-reload, uses `start-dev.sh` (uvicorn `--reload`)
+- **CI** (`.github/workflows/ci.yml`): Tests run directly on the GitHub Actions host (not in Docker) for speed; Docker image build is verified separately
+
+### Core Rules
+
+1. **NEVER run the API server (`src/api_server.py` or `python -m src.api_server`) directly on the host machine**
+   - Always use Docker containers via `docker compose` commands
+
+2. **NEVER run the web UI (`npm run dev` in `web/` directory) directly on the host machine**
+   - Always use Docker containers via `docker compose` commands
+
+3. **NEVER install Python dependencies locally or suggest running `pip install`**
+   - All Python dependencies are managed within Docker containers
+
+4. **NEVER install Node.js dependencies locally or suggest running `npm install` in the web/ directory**
+   - All Node.js dependencies are managed within Docker containers
+
+### Development Workflow
+
+- **Starting the dev container**: Use `/start` command or `docker compose -f docker-compose.dev.yml up`
+- **Stopping**: Use `/stop` command or `docker compose -f docker-compose.dev.yml down`
+- **Restarting**: Use `/restart` command (stops, rebuilds with --no-cache, restarts)
+- **Building**: `docker compose -f docker-compose.dev.yml build` to rebuild images without restarting
+- **Running tests**: `docker compose -f docker-compose.dev.yml exec fiestaboard pytest` (API) or `docker compose -f docker-compose.dev.yml --profile test run --rm web sh -c "npm ci --legacy-peer-deps && npm test"` (web)
+- **Debugging**: Use `docker compose logs -f` or `docker compose exec` for interactive debugging
+- **Checking status**: Use `docker compose ps` to see container status
+- **Code changes**: Edit code on host machine; Python changes auto-reload via volume mounts. UI changes require a container rebuild.
+- **Installing dependencies**:
+  - For Python: Update `requirements.txt` and rebuild the container
+  - For Node.js: Update `web/package.json` and rebuild the container
+
+### Testing Guidelines
+
+- **Local development**: Tests run inside the Docker container
+  - Use `docker compose -f docker-compose.dev.yml exec fiestaboard pytest` for Python tests
+  - Use `docker compose -f docker-compose.dev.yml --profile test run --rm web sh -c "npm ci --legacy-peer-deps && npm test"` for web tests
+- **CI**: Tests run directly on the GitHub Actions host for speed (Python and Node.js installed natively)
+- Re-testing after changes should also be done in the container
+
+### Test quality bar
+
+Coverage is not proof. A test that still passes when you revert the production
+change it covers is testing nothing.
+
+- Write the test first and watch it fail. Confirm it fails for the reason you
+  expect, not from a typo, a missing import, or an unmocked request.
+- If a test was written after the code it covers, prove it is not vacuous:
+  break that specific behavior in the production code, confirm the test fails,
+  then restore it. Put the observed failure output in the PR description.
+- One behavior per test, named for the behavior.
+- Never weaken an assertion to make a test pass. Fix the code, or establish
+  that the test encoded the wrong contract and say which.
+- A green CI run is not evidence a new test works. It is only evidence that
+  nothing already covered broke.
+
+### Exceptions
+
+The only code that may run locally:
+- Utility scripts explicitly marked for local execution
+
+### Available Commands
+
+- `/start` - Start the dev container
+- `/stop` - Stop the dev container
+- `/restart` - Stop, rebuild with --no-cache, and restart the container
+- `/qa-a11y` - Audit the running web UI for WCAG 2.2 AA accessibility issues
+- `/qa-a11y-docs` - Audit markdown docs for accessibility issues
+- `/fix-a11y` - Fix accessibility findings on a feature branch and open a PR
+
+### When Suggesting Commands
+
+Always suggest Docker-based commands:
+- ✅ Use `/start`, `/stop`, `/restart` to control the container
+- ✅ `docker compose -f docker-compose.dev.yml up`
+- ✅ `docker compose -f docker-compose.dev.yml exec fiestaboard pytest`
+- ✅ `docker compose -f docker-compose.dev.yml --profile test run --rm web sh -c "npm ci --legacy-peer-deps && npm test"`
+- ❌ `python src/api_server.py`
+- ❌ `cd web && npm run dev`
+- ❌ `pip install -r requirements.txt`
+
+## Design System (@fiestaboard/ui)
+
+The UI primitives (buttons, dialogs, selects, tokens, etc.) live in a separate package: [`@fiestaboard/ui`](https://www.npmjs.com/package/@fiestaboard/ui), developed in the sibling repo `../FiestaUI` and published to **registry.npmjs.org**.
+
+### Registry authentication
+
+None. `@fiestaboard/ui` installs anonymously from the public npm registry — `npm install` works on a fresh clone with no token, no `.npmrc`, and no BuildKit secret.
+
+It was previously on the GitHub Packages npm registry, which requires authentication for every read even when the package is public. That is what made a fresh clone fail with `401 Unauthorized` (Fiestaboard/FiestaBoard#1524); moving to npmjs removed the requirement rather than documenting a workaround.
+
+### Rules
+
+- **Import primitives from `@fiestaboard/ui`**, never re-create them in `web/src/components/ui/` (ESLint enforces this via `no-restricted-imports`)
+- `web/src/components/ui/` holds only app-coupled composites (`sonner.tsx`, `time-picker.tsx`, `timezone-picker.tsx`) — components that need app hooks (theme, i18n) stay here
+- `cn` is re-exported from `@/lib/utils` for compatibility; both import paths are fine
+- Design tokens come from `@fiestaboard/ui/theme.css`, imported at the top of `web/app/globals.css` together with the mandatory `@source "../node_modules/@fiestaboard/ui/dist"` line (Tailwind v4 does not scan node_modules — removing that line silently drops all component styles)
+- Do NOT add `@base-ui/react`, `clsx`, `tailwind-merge`, `class-variance-authority`, or `ogl` back to `web/package.json` — they are transitive dependencies of `@fiestaboard/ui`
+- **App chrome is also in the package**: `Sidebar` (presentational shell), `BoardSelector`, `MainContent`, `PageHeader`/`PageLayout`/`PageToolbar`, `FiestaLogo`/`FiestaIcon` (embedded pixel-taco brand mark), `ThemeToggle`/`LanguageSelector`/`SkipToContent`, and `WizardShell`/`WizardProgress` (the setup-wizard frame, with `BoardBackdrop` as its opt-in backdrop). @fiestaboard/ui 4.0.0 retired the seasonal theming system (`SEASONS`, `useActiveSeason`, `fireSeasonBurst`, the `Sidebar` `season` prop) along with `Aurora` and `DecryptedText`; the app's Festive Months feature was removed with them and is not coming back in that form. App files like `navigation-sidebar.tsx` are thin wiring wrappers (router, i18n, contexts, feature flags) — presentation changes go in FiestaUI, wiring changes here
+
+### Changing the design system
+
+1. Make the change in the `FiestaUI` repo (components + stories + a11y tests)
+2. Release a new version (Actions → Release workflow in FiestaUI)
+3. Bump `@fiestaboard/ui` in `web/package.json` here and update the lockfile in the container
+4. Visual changes to primitives are visible app-wide — treat token/class changes as breaking unless verified
+
+## Plugin Architecture
+
+This project uses a **plugin-based architecture** for data source integrations. Each plugin is self-contained with its own code, configuration, tests, and documentation.
+
+### Plugin vs Platform Code
+
+- **Plugins** (`plugins/`): Self-contained data source integrations (weather, transit, stocks, etc.)
+- **Platform** (`src/`): Core FiestaBoard infrastructure (API server, template engine, board client)
+
+### Key Plugin Concepts
+
+- Plugins live in `plugins/<plugin_id>/` directories
+- Each plugin has a `manifest.json` defining metadata, settings schema, and variables
+- Plugins implement the `PluginBase` class from `src/plugins/base.py`
+- Plugin IDs must be unique and match the directory name
+- All plugins require tests with >80% coverage
+
+## Documentation Requirements
+
+### Plugin Documentation
+
+When creating or modifying a plugin:
+- **NEW plugins MUST be added** to the main `README.md` "Available Plugins" list (alphabetically)
+- **Modifying existing plugins** does NOT require updating main README.md
+- Plugin documentation goes in the plugin's own directory:
+  - `plugins/PLUGIN_NAME/README.md` - Developer documentation (canonical format, see below)
+  - `plugins/PLUGIN_NAME/docs/SETUP.md` - User-facing setup guide (canonical format, see below)
+  - `plugins/PLUGIN_NAME/docs/board-display.png` - Primary screenshot (required for published plugins)
+  - `plugins/PLUGIN_NAME/manifest.json` - Configuration schema, env vars, and screenshots
+
+### Plugin Documentation Formats
+
+**README.md** must follow this section order:
+1. `# {Plugin Name} Plugin` — title
+2. One-sentence description
+3. `![{Name} Display](./docs/board-display.png)` — hero image (always `board-display.png`)
+4. `**→ [Setup Guide](./docs/SETUP.md)**` — setup link
+5. `## Overview` — 2-3 sentence description
+6. `## Template Variables` — grouped to match manifest `variables.groups`
+7. `## Example Templates` — code blocks with template content
+8. `## Configuration` — table mirroring `settings_schema`
+9. `## Features` — bullet list of capabilities
+10. `## Author` — author name
+
+**docs/SETUP.md** must follow this section order:
+1. `# {Plugin Name} Setup Guide` — title
+2. One-sentence description
+3. `## Overview` — What it does + Prerequisites
+4. `## Quick Setup` — numbered steps (Enable, Configure, Template, View)
+5. `## Template Variables` — variable table
+6. `## Configuration Reference` — full settings table + env vars
+7. `## Troubleshooting` — common issues
+
+### Plugin Image Conventions
+
+All plugin images live in `plugins/PLUGIN_NAME/docs/` with standardized names:
+- `board-display.png` — **Required.** Primary hero image showing board output
+- `configuration.png` — Optional. Config dialog screenshot
+- `integrations.png` — Optional. Plugin card on Integrations page
+- Additional images use descriptive kebab-case names (e.g., `color-rules.png`)
+
+All images referenced in the manifest `screenshots` array must exist in `plugins/PLUGIN_NAME/docs/`.
+
+### User-Facing Setup Guides
+
+For user-facing setup instructions (API key registration, configuration):
+- Create `plugins/PLUGIN_NAME/docs/SETUP.md` inside the plugin directory
+- Include screenshots in the plugin's `docs/` directory
+- Use relative path format: `![Description](./screenshot.png)`
+
+### Platform Documentation
+
+When modifying platform/core functionality:
+- Update `README.md` for significant platform changes
+- Update `docs/internal/development/PLUGIN_DEVELOPMENT.md` for plugin system changes
+- Document new platform features in the appropriate docs tree: `docs/` is the
+  **published** documentation (synced to the separate site repo and rendered
+  on fiestaboard.app — see "Published Docs Site" below); `docs/internal/` is
+  internal engineering documentation that is never published
+
+### Published Docs Site
+
+The documentation website (fiestaboard.app) does NOT live in this repo. The
+published docs source lives in `docs/` here (excluding `docs/internal/`) and
+is synced one-way to the separate site repo,
+[Fiestaboard/fiestaboard.github.io](https://github.com/Fiestaboard/fiestaboard.github.io),
+which builds and deploys fiestaboard.app from its `main` branch via its own
+GitHub Actions.
+
+- `.github/workflows/publish-docs.yml` (via `scripts/publish-docs.sh`) runs
+  the sync on every push to `main` touching `docs/**`,
+  `plugin-registry.json`, `plugin-previews.json`, or `assets/branding/**`.
+- On release, `release.yml` sends a `repository_dispatch` (type `release`)
+  to the site repo, which snapshots and deploys the versioned docs.
+- Never edit site code (Docusaurus config, theme, components) here — that
+  all belongs to the site repo. Edit only the markdown under `docs/`.
+- Docs merge-to-live SLA: a docs change merged to `main` here is live on
+  fiestaboard.app after the sync + site build (measured at cutover: ~4 min).
+
+### Environment Variables
+
+- **For plugins**: Document in `manifest.json` under `env_vars` array
+- **For platform**: Document in `env.example` with clear descriptions
+
+### Information Security and Privacy
+
+**CRITICAL: Never use real personal information in code, documentation, or examples.**
+
+**Exception: Plugin authorship information is allowed:**
+- ✅ **Plugin author name and email** in `manifest.json` `author` field is permitted
+- ✅ Plugin creators may use their real name and contact email for attribution
+
+When creating examples, documentation, or test data:
+- ❌ **NEVER use real addresses, coordinates, or locations** (home, work, etc.)
+- ❌ **NEVER use real API keys, tokens, or credentials** (even if expired)
+- ❌ **NEVER use real phone numbers, emails, or personal identifiers** (except plugin author attribution)
+- ❌ **NEVER use real names or personal data** in examples (except plugin author attribution)
+
+**Always use:**
+- ✅ **Random/fake coordinates**: Use well-known public landmarks (e.g., `40.7128, -74.0060` for NYC) or clearly fake values
+- ✅ **Generic example values**: `example@example.com`, `555-0100`, `123 Main St, Anytown, ST 12345`
+- ✅ **Test API keys**: Clearly marked as `test_` or `example_` prefixed
+- ✅ **Placeholder data**: `your-api-key-here`, `your-username`, etc.
+
+**For coordinates specifically:**
+- Use well-known public landmarks (NYC: `40.7128, -74.0060`, London: `51.5074, -0.1278`)
+- Or use clearly fake round numbers (e.g., `40.0000, -74.0000`)
+- Never use coordinates that could identify a personal residence
+
+**Before committing:**
+1. Review all examples and documentation for personal information
+2. Replace any real addresses, coordinates, or personal data with generic examples
+3. Verify no API keys or credentials are hardcoded (even in comments)
+
+## Development Artifacts
+
+### No Temporary Markdown Files
+
+**NEVER leave temporary markdown files in the repository root after completing a feature or task.**
+
+Examples of files that should NOT be committed or left behind:
+- ❌ Implementation notes (e.g., `FEATURE_IMPLEMENTATION.md`, `BAYWHEELS_UI_UPDATE.md`)
+- ❌ Testing notes (e.g., `MANUAL_TESTING_*.md`, `TESTING_*.md`)
+- ❌ Review summaries (e.g., `REVIEW_SUMMARY.md`, `IMPLEMENTATION_SUMMARY.md`)
+- ❌ Edge case documentation (e.g., `EDGE_CASES.md`, `STATE_TRACKING.md`)
+- ❌ Performance test notes (e.g., `PERFORMANCE_TEST.md`)
+- ❌ Fix documentation (e.g., `DOCKER_PUBLISHING_FIX.md`)
+
+### Proper Documentation Locations
+
+Instead, put documentation in the appropriate place:
+
+**For permanent documentation:**
+- **Plugin developer docs**: `plugins/PLUGIN_NAME/README.md` - How the plugin works
+- **Plugin setup guides**: `plugins/PLUGIN_NAME/docs/SETUP.md` - User-facing setup instructions
+- **Plugin development**: `docs/internal/development/PLUGIN_DEVELOPMENT.md` - How to create plugins
+- **Deployment**: `docs/deployment/*.md` - Deployment and infrastructure docs
+- **Reference**: `docs/internal/reference/*.md` - Technical reference material
+- **Setup**: `docs/internal/setup/*.md` - Development environment setup
+- **Architecture**: Add to `README.md` or create `docs/internal/reference/ARCHITECTURE.md`
+- **Web UI features**: `web/src/components/README.md` or component-specific docs in `web/`
+
+**For temporary notes during development:**
+- Keep notes in your local environment (not in git)
+- Use comments in code for implementation details
+- Use PR descriptions for change summaries
+- Delete any temporary `.md` files before committing
+
+### Cleanup Rule
+
+Before completing any feature or task:
+1. Review the repository root for any `*.md` files that aren't `README.md`
+2. Move any valuable information to the proper location in `docs/`
+3. Delete all temporary implementation/testing markdown files
+4. Ensure all critical information is preserved in proper documentation
+
+## Commit Attribution
+
+Git history is public and feeds the repo's GitHub Insights graph. Attribution
+must be consistent so that one contributor reads as one contributor.
+
+### Claude co-author trailer
+
+End Claude-assisted commit messages with **exactly** this line, and nothing else
+resembling it:
+
+```
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+- No model name, version, or context-window suffix — not `Claude Opus 5`, not
+  `Claude Sonnet 4.6 (1M context)`, not `Claude Fable 5`
+- Use this capitalization (`Co-Authored-By`) so trailers group cleanly
+- One trailer per commit — never repeat it
+
+Model-specific trailers fragment Claude into a separate Insights contributor per
+model per capitalization (history already carries 12 such variants), and they
+leak model-selection history into permanent public metadata for no benefit.
+
+### Other agents
+
+Do not add `Co-authored-by:` or `Made-with:` trailers for other coding agents
+(Cursor, Copilot, etc.). If an agent's tooling adds one automatically, strip it
+before committing, or edit it out of the squash-merge body at merge time.
+
+### Automation identity
+
+Workflows that commit must set an identity matching what actually authored the
+change:
+
+- **Mechanical commits** (version bumps, docs snapshots, stats refreshes, state
+  bookkeeping) → `FiestaBoard CI <ci@fiestaboard.app>`
+- **Claude-authored content** → left to `claude[bot]`, which the Claude action
+  sets itself
+
+The Claude action rewrites global git config while it runs, so any shell step
+that commits *after* it inherits `claude[bot]`. Bookkeeping commits in those
+jobs must pin their identity inline rather than rely on an earlier
+`git config`:
+
+```bash
+git -c user.name="FiestaBoard CI" -c user.email="ci@fiestaboard.app" \
+  commit -m "chore(scope): advance sweep state [skip ci]"
+```
+
+## Plugin Development Rules
+
+### Creating a New Plugin
+
+**IMPORTANT: All plugin development MUST be done in a feature branch, never directly on `main`.**
+
+When creating a new plugin:
+1. **Create a feature branch**: `git checkout -b feat-plugin-name` (e.g., `feat-lastfm`, `feat-weather`)
+2. Copy the template: `cp -r plugins/_template plugins/my_plugin`
+3. Update `manifest.json` with unique ID matching directory name
+4. Add `screenshots` array to `manifest.json` with at least one `primary: true` entry
+5. Implement `PluginBase` class in `__init__.py`
+6. Create tests in `tests/` directory with >80% coverage
+7. Write `README.md` following the canonical section order (see Plugin Documentation Formats)
+8. Write `docs/SETUP.md` following the canonical section order
+9. Add `docs/board-display.png` screenshot (required for published plugins)
+10. **Add plugin to project README.md** under "Available Plugins" section (alphabetically ordered)
+11. Push branch and create a pull request for review
+
+### Plugins That Sign In (OAuth)
+
+A plugin that needs the user to sign in to an account never implements OAuth
+itself. The platform does it; the plugin declares and asks.
+
+- Declare an `oauth` block in `manifest.json` and call `self.get_oauth_token()`
+  on every fetch. `None` means not signed in: return
+  `PluginResult(available=False, ...)` and make no request.
+- **NEVER** write an OAuth flow, store a token, or put a client secret in a
+  manifest, code, tests, docs, or a commit. If a user pastes a secret, do not
+  use it, and tell them to rotate it.
+- Set `"fiestaboard_version": ">=9.5.0"` and pin the plugin's CI to match.
+- Guide: `docs/development/plugin-oauth.md` (published). AI recipe:
+  `.claude/skills/new-plugin/references/oauth.md`. Platform internals and what
+  must not change: `docs/internal/reference/OAUTH.md`. Reference
+  implementation: `Fiestaboard/fiestaboard-plugin--spotify`.
+- Test sign-in end to end with `scripts/mock_oauth_provider.py`, not a real
+  account.
+
+### Required Plugin Files
+
+Every plugin MUST have:
+- `__init__.py` - Plugin implementation (PluginBase subclass)
+- `manifest.json` - Plugin metadata, settings schema, variables, screenshots
+- `README.md` - Plugin documentation (canonical format with `./docs/board-display.png` hero image)
+- `tests/` - Test directory with test files
+- `docs/SETUP.md` - User-facing setup guide (canonical format)
+- `docs/board-display.png` - Primary screenshot (required for published plugins)
+
+### Plugin Documentation Checklist
+
+When a new plugin is complete, verify:
+- [ ] `README.md` follows canonical section order with hero image `./docs/board-display.png`
+- [ ] `docs/SETUP.md` follows canonical section order
+- [ ] `docs/board-display.png` exists (primary screenshot)
+- [ ] `manifest.json` includes `screenshots` array with `primary: true` entry
+- [ ] Plugin is added to main `README.md` "Available Plugins" list (alphabetically)
+- [ ] Tests pass with >80% coverage
+
+### Plugin Manifest Requirements
+
+The `manifest.json` MUST include:
+- `id` - Unique identifier matching directory name (lowercase, underscores)
+- `name` - Human-readable display name
+- `version` - Semantic version (X.Y.Z)
+- `settings_schema` - JSON Schema for configuration
+- `variables` - Template variables exposed by plugin
+- `teaser` - One line of literal board text, max 15 tiles (data plugins only)
+- `previews` - Literal board rows per device shape (data plugins only)
+
+### Board Previews (`teaser` / `previews`)
+
+Docs render plugins as live split-flap boards from manifest metadata — never
+from screenshots. Both fields hold **literal** board text (no `{{variables}}`).
+
+- Widths count **tiles, not characters**: `{66}` is one flap; `{/green}` is zero
+- `teaser` max 15 tiles (the Note width, so it fits every board)
+- Provide at least `flagship` (22×6) and `note` (15×3) previews
+- Rows may be shorter than the board (padded), never longer
+- Transition plugins (`plugin_type: "transition"`) must NOT declare either field
+- Validate with `python scripts/validate_plugins.py --verbose`
+
+Absence is a warning, not an error — plugins predating the contract must keep
+loading. `--strict` escalates it for the registry lane.
+
+Optional but recommended:
+- `icon` - Lucide icon name for UI display
+- `category` - Category for grouping (MUST use an existing category - see below)
+- `description` - Brief description
+- `author` - Plugin author/maintainer
+- `screenshots` - Array of screenshot entries with `src`, `alt`, and `primary` flag
+
+### Plugin Categories
+
+**IMPORTANT: Always use an existing category. Do NOT create new categories.**
+
+Before assigning a category, check existing plugins to see what categories are in use:
+```bash
+grep -r '"category"' plugins/*/manifest.json | grep -v _template
+```
+
+**Current valid categories:**
+- `art` - Display art and visual displays (sun art, visual clock)
+- `data` - Data feeds (stocks, sports scores, aircraft tracking)
+- `entertainment` - Fun/media content (music, quotes)
+- `home` - Home automation (Home Assistant)
+- `transit` - Transportation (Muni, traffic, bike sharing)
+- `utility` - General utilities (date/time, WiFi credentials)
+- `weather` - Weather-related (weather, air quality, surf)
+
+When in doubt, use `utility` as the default category.
+
+### Plugin Testing Requirements
+
+- All plugins MUST have tests in `tests/` directory
+- Minimum coverage requirement: **80%**
+- CI will fail if coverage is below threshold
+- Run tests with: `python scripts/run_plugin_tests.py --plugin=my_plugin`
+- **No dead code**: Remove unreachable code paths identified by coverage reports
+  - If coverage shows unreachable lines (e.g., `elif` branches that can never execute), remove them
+  - Dead code reduces code clarity and can confuse future maintainers
+  - Use coverage reports to identify and eliminate dead code before completing a plugin
+
+### Plugin Validation
+
+CI automatically validates:
+- All plugin IDs are unique (no duplicates allowed)
+- Plugin ID matches directory name
+- Manifest has required fields
+- Manifest JSON is valid
+
+### When Modifying Plugins
+
+**IMPORTANT: Plugin modifications should also be done in feature branches, not directly on `main`.**
+
+- ✅ Create a feature branch: `git checkout -b fix-plugin-name` or `feat-plugin-name-feature`
+- ✅ Edit plugin files in `plugins/PLUGIN_NAME/`
+- ✅ Update plugin's own `README.md`
+- ✅ Update plugin's `manifest.json` for config changes
+- ✅ Add/update tests in plugin's `tests/` directory
+- ✅ Push branch and create pull request for review
+- ❌ Do NOT add plugin-specific code to `src/` (platform code)
+- ❌ Do NOT document individual plugins in main `README.md` (unless it's a new plugin)
+- ❌ Do NOT commit directly to `main` branch
+
+## Page Schema Versioning
+
+> Applies to: `src/pages/**/*.py`
+
+`pages.json` uses a `schema_version` integer for ordered migrations.
+When changing the stored format of pages (adding/removing/renaming fields,
+changing how data is encoded), you MUST use this system instead of ad-hoc
+detection.
+
+### How It Works
+
+- `src/pages/storage.py` has `CURRENT_SCHEMA_VERSION` and a `MIGRATIONS` list
+- Each migration is a `(target_version, function)` tuple
+- On startup `_load()` reads `schema_version` (default 0), runs pending
+  migrations in order, bumps the version, and resaves once
+
+### Adding a New Migration
+
+1. Write a migration function in `storage.py`:
+
+```python
+def _migrate_v1_to_v2(pages_data: List[dict]) -> int:
+    """Migration 1 -> 2: describe what changes."""
+    migrated = 0
+    for page_data in pages_data:
+        # mutate page_data in place
+        migrated += 1
+    return migrated
+```
+
+2. Append to `MIGRATIONS`:
+
+```python
+MIGRATIONS: List[Tuple[int, Callable[[List[dict]], int]]] = [
+    (1, _migrate_v0_to_v1),
+    (2, _migrate_v1_to_v2),  # NEW
+]
+```
+
+3. Bump `CURRENT_SCHEMA_VERSION`:
+
+```python
+CURRENT_SCHEMA_VERSION = 2  # was 1
+```
+
+### Rules
+
+- NEVER use heuristic detection (key presence, string length, etc.) to
+  decide if a page needs migrating — use schema_version
+- NEVER modify the stored format without adding a migration
+- Migrations MUST be idempotent and safe to re-run
+- Migrations operate on raw dicts (before Pydantic validation)
+- Always log how many pages were affected
+- A backup is created automatically before the first migration runs

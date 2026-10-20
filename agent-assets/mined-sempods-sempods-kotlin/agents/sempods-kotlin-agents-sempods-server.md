@@ -1,0 +1,65 @@
+# AGENTS.md — sempods-server
+
+Scope: applies to `sempods-server/**`.
+
+## What this module is
+
+`sempods-server` is the pod server — the **reference implementation** of the sempods standard,
+not one particular hosting: RDF4J store, contexts, grants, OAuth, the SPARQL sandbox, media, the
+AI layer and the per-pod MCP surface. It composes from `org.sempods.commons.guice.BaseModule`
+over the `sempods-commons` family and takes **no application-framework** dependency; its configuration is
+`SempodsConfig` and its collections are on the raw MongoDB driver.
+
+What a deployment may replace is expressed as a **seam** — an interface with a
+deployment-selected binding. Before adding an abstraction, read
+[`../docs/concepts/modularity.md`](../docs/concepts/modularity.md): it lists the seams that exist,
+their current constraints, and the invariants that are not selectable at all.
+
+## The project-level authority is not this file
+
+[`../AGENTS.md`](../AGENTS.md) holds the mission, the terminology (pod, context, grant,
+scope), the documentation rules and the AI documentation map for the whole of sempods.
+**Read it before changing behaviour here** — this file does not repeat it.
+
+## Documentation
+
+- [Pod OAuth](docs/auth/README.md) — service and user flows, identity trust and operating limits.
+- [Host provisioning](docs/host-provisioning.md) — operator API and current code placement.
+- [Collections](docs/collections.md) — persistence and startup maintenance.
+- [Shared auth overview](../docs/auth/README.md) — module responsibilities and client entry points.
+
+## Non-negotiable invariants
+
+They bind every change to this module, and they are not listed here:
+[`../CONTRIBUTING.md`](../CONTRIBUTING.md) §"What this project will not change" is the list, for
+this module as for a contributor. This is the module where most of them are actually enforced — the
+context on every statement, the read and write sandbox, the explicit write context, pod isolation —
+so read it before changing behaviour on those paths.
+
+## Security stance
+
+- Enforce sandboxing **server-side** — do not trust client-supplied `FROM` / `FROM NAMED`.
+- Forbid or strictly gate risky SPARQL features (e.g. `SERVICE` / federated queries) unless
+  explicitly supported. `SparqlQueryService` rejects every Update form and refuses `SERVICE`
+  anywhere in the algebra.
+- Always return deterministic HTTP errors (401 / 403 / 400 / 429 / 500).
+
+## Working rules
+
+- Any behaviour change must come with tests — prefer HTTP-level conformance tests.
+- Keep implementation documentation current and respect the specification boundary. Public technical
+  plans use [issue planning](../docs/agents/documentation-strategy.md#issue-planning).
+- Be conservative with backward-incompatible changes.
+- Naming: [`../docs/naming.md`](../docs/naming.md) is the authority. Before
+  renaming anything that already reads `sempods`, check its §3 "Frozen" — the `SEMPODS_*`
+  variables, the `sempods.*` collections, `urn:sempods:` and the vocabulary IRIs are contracts,
+  not spellings. Gradle module names are explicitly *not* frozen.
+
+## Deeper scopes
+
+Two subtrees add rules of their own and take precedence where they conflict:
+
+- [`src/main/kotlin/org/sempods/pods/AGENTS.md`](src/main/kotlin/org/sempods/pods/AGENTS.md) —
+  the pod store, the write path and its sinks
+- [`src/main/kotlin/org/sempods/ai/AGENTS.md`](src/main/kotlin/org/sempods/ai/AGENTS.md) —
+  the AI layer and retrieval

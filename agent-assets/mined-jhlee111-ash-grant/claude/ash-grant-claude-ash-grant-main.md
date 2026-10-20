@@ -1,0 +1,203 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+AshGrant is a permission-based authorization extension for Ash Framework. It provides an Apache Shiro-inspired permission system with deny-wins semantics, supporting both RBAC and resource-instance permissions.
+
+## Language Policy
+
+**All repository content must be written in English**, including:
+- README.md, CHANGELOG.md, and all documentation
+- Code comments and docstrings (@moduledoc, @doc)
+- Commit messages and PR descriptions
+- CLAUDE.md instructions
+
+## Toolchain
+
+`.tool-versions` pins **Elixir 1.20.4 / OTP 28** (asdf). 1.20's type checker reports
+dead and unreachable clauses as compiler warnings, which is why the pin is ahead of
+CI: `mix compile --warnings-as-errors` must pass on 1.20, and per-PR CI (`ci.yml`,
+Elixir 1.18.4 / OTP 27) cannot see a clause that only 1.20 can. The weekly
+`Compatibility` workflow runs 1.20 in its Latest Deps matrix, so a dead clause is
+caught eventually — but weekly, against unlocked deps, and after merge. Develop on
+the pin; treat 1.18.4 as the supported floor, not as the reference build.
+
+## Common Commands
+
+```bash
+# Run tests (auto-creates and migrates test DB)
+mix test
+
+# Run a single test file
+mix test test/ash_grant/permission_test.exs
+
+# Run a specific test by line number
+mix test test/ash_grant/permission_test.exs:42
+
+# Linting
+mix credo
+
+# Type checking
+mix dialyzer
+
+# Generate documentation
+mix docs
+
+# Database management (test only)
+mix ecto.setup    # Create and migrate
+mix ecto.reset    # Drop, create, and migrate
+
+# Policy configuration testing (NOT mix test)
+mix ash_grant.verify test/support/policy_test_fixtures.ex
+mix ash_grant.verify priv/policy_tests/           # Run all YAML tests
+mix ash_grant.verify path/to/test.yaml --verbose  # Verbose output
+
+# Check stored permission strings against the app's resources (exit 1 on any :error)
+mix ash_grant.check_permissions path/to/permissions.json --otp-app my_app
+```
+
+## Architecture
+
+### Core Modules
+
+- **`AshGrant`** (`lib/ash_grant.ex`) - Main extension module, exports `check/1` and `filter_check/1`
+- **`AshGrant.Dsl`** (`lib/ash_grant/dsl.ex`) - Spark DSL definition for the `ash_grant` block
+- **`AshGrant.Permission`** (`lib/ash_grant/permission.ex`) - Parses and matches permission strings (`resource:instance_id:action:scope`). Also exposes `diagnostics/1`, which reports deprecated/dead grant syntax for offline auditing (never affects authorization)
+- **`AshGrant.Evaluator`** (`lib/ash_grant/evaluator.ex`) - Implements deny-wins evaluation logic
+
+### Policy Checks
+
+- **`AshGrant.Check`** (`lib/ash_grant/checks/check.ex`) - SimpleCheck for write actions (returns true/false)
+- **`AshGrant.FilterCheck`** (`lib/ash_grant/checks/filter_check.ex`) - FilterCheck for read actions (returns filter expression)
+- **`AshGrant.PermissionValidation`** (`lib/ash_grant/permission_validation.ex`) - Validates resolved permissions and signals invalid deny+field_group combinations per the `field_group_permissions` mode (`:off`/`:warn`/`:strict`); never changes the authorization outcome
+  - Also the **static checker** (#162): `check/2` / `check_all/2` compare a stored permission string against the application's resources and return issues (`:unknown_resource`, `:unknown_action`, `:undeclared_scope`, `:scope_missing_on`, `:unverifiable_scope`, `:unknown_field_group`, `:field_group_missing_on`, `:deny_with_field_group`, `:parse_error`, plus `diagnostics/1`'s codes). Metadata comes from `AshGrant.PermissionValidation.ResourceIndex`, which also reads `action:`/`resource:` check overrides out of each resource's policies. **Pinned to the runtime by a property test** (`permission_check_test.exs`): the real `FilterCheck`/`Check` must raise the undeclared-scope error on exactly the resources a scope error names — so the builtin-scope set (`always`/`all`/`global`) has to change here whenever it changes in the checks
+- **`AshGrant.Validations.PermissionStrings`** (`lib/ash_grant/validations/permission_strings.ex`) - Ash validation wrapping `check_all/2` for the attribute that stores grants; one field error per bad string, only when the attribute is being changed
+- **`AshGrant.IndeterminateMatch`** (`lib/ash_grant/indeterminate_match.ex`) - Signals when an `Evaluator` entry point returns a value that couldn't actually be determined: a type wildcard evaluated with no `action_type` is silently skipped, so the answer may be wrong (#126, layer 2). Wraps every nil-defaulting entry point (`has_access?`, `get_scope`, `get_all_scopes`, `get_write_scopes`, `get_field_group`, `get_all_field_groups`, `find_matching`, `field_group_grants`). Mode `:off`/`:warn`/`:strict` via `config :ash_grant, indeterminate_type_wildcard:`; never changes the outcome. **Sound by construction**: `guard/6` recomputes the result with the skipped wildcards forced to match and signals only if it differs — so a scope-less/group-less wildcard or a concrete-deny-settled query stays silent (no false positives, which would break `:strict`). `get_matching_instance_ids` is unguarded on purpose (it sees only instance perms, where type wildcards are dead per `diagnostics/1`, not indeterminate)
+- **`AshGrant.FieldFilterCheck`** (`lib/ash_grant/checks/field_filter_check.ex`) - FilterCheck for **per-record** field-group visibility; generated into `field_policies` by `AddFieldPolicies`. Builds a per-row predicate from `Evaluator.field_group_grants/5` (a field is visible on some records, `%Ash.ForbiddenField{}` on others)
+- **`AshGrant.FieldCheck`** (`lib/ash_grant/checks/field_check.ex`) - legacy action-wide SimpleCheck for field groups (superseded by `FieldFilterCheck` in generation; still present)
+
+### Calculations
+
+- **`AshGrant.Calculation.CanPerform`** (`lib/ash_grant/calculations/can_perform.ex`) - Per-record boolean calculation for UI visibility (mirrors FilterCheck logic, compiles to SQL)
+
+### Argument-Based Scope Support
+
+- **`AshGrant.ArgumentAnalyzer`** (`lib/ash_grant/argument_analyzer.ex`) - Compile-time AST walker that maps `%{arg_name => [scopes_using_it]}` for a resource's scopes
+- **`AshGrant.Changes.ResolveArgument`** (`lib/ash_grant/changes/resolve_argument.ex`) - Runtime change that lazily loads a relationship path and sets an action argument, but only when an in-play permission uses a scope that references the argument
+
+### Behaviours
+
+- **`AshGrant.PermissionResolver`** - Behaviour for fetching actor permissions
+- **`AshGrant.ScopeResolver`** - Legacy behaviour for custom scope resolution
+
+### Domain-Level Extension
+
+- **`AshGrant.Domain`** (`lib/ash_grant/domain.ex`) - Domain extension for shared resolver/scope inheritance
+- **`AshGrant.Domain.Dsl`** (`lib/ash_grant/domain/dsl.ex`) - Domain DSL section (resolver + scope entities)
+- **`AshGrant.Domain.Info`** (`lib/ash_grant/domain/info.ex`) - Domain introspection helpers
+
+### Transformers
+
+- **`AshGrant.Transformers.MergeDomainConfig`** - Merges domain-level resolver/scopes into resources (runs first)
+- **`AshGrant.Transformers.ValidateResolverPresent`** - Validates resolver exists after domain merge
+- **`AshGrant.Transformers.AddDefaultPolicies`** - Auto-generates policies when `default_policies: true`
+- **`AshGrant.Transformers.AddCanPerformCalculations`** - Generates CanPerform calculations from `can_perform` entities and `can_perform_actions` option
+- **`AshGrant.Transformers.AddArgumentResolvers`** - For each `resolve_argument` declaration: validates path, checks at least one scope references the arg, injects `argument :name` + `change AshGrant.Changes.ResolveArgument` on every targeted write action
+- **`AshGrant.Transformers.ValidateScopeThroughs`** - Validates scope_through entities reference valid belongs_to relationships
+
+## Permission Format
+
+```
+[!]resource:instance_id:action:scope
+```
+
+- `!` prefix = deny rule
+- `instance_id` = `*` for RBAC, specific ID for instance permissions
+- Deny rules always override allow rules
+- `instance_key` option: changes which field instance IDs match against (default `:id`)
+- `scope_through` entity: propagates parent instance permissions to child resources via FK
+- `action` = exact name, `*` (any action), or a **type wildcard** matching by Ash action
+  type: `@read` / `@create` / `@update` / `@destroy` / `@action`. A type wildcard never
+  reads the action name. The older `read*` spelling means the same thing but is
+  deprecated (removal at v1.0.0) — it looks like a prefix glob and never was one.
+  A type wildcard can only be evaluated when an `action_type` is supplied; calling
+  `Evaluator` directly without one silently skips it and may return a wrong answer
+  (`AshGrant.IndeterminateMatch` signals this — see #126, layer 2). Framework checks
+  always pass the type; prefer `Introspect.can?/4` (takes the resource module) in your
+  own code.
+- Permission strings are **runtime data** from the `PermissionResolver` (roles table,
+  seeds), not DSL — so there is no compile-time site to validate them. Deprecated/dead
+  syntax is reported offline instead, via `AshGrant.Permission.diagnostics/1` and
+  `mix ash_grant.verify`. Whether a string names things that *exist* (resource, action,
+  scope, field group) is checked the same way: `AshGrant.PermissionValidation.check/2`,
+  `AshGrant.Validations.PermissionStrings`, `mix ash_grant.check_permissions` (#162).
+
+## Key Patterns
+
+### Scope DSL
+
+Scopes are defined inline with `expr()` expressions:
+
+```elixir
+ash_grant do
+  scope :always, true
+  scope :own, expr(author_id == ^actor(:id))
+  scope :own_draft, [:own], expr(status == :draft)  # Inherits from :own
+end
+```
+
+### Multi-tenancy
+
+Use `^tenant()` in scope expressions:
+
+```elixir
+scope :same_tenant, expr(tenant_id == ^tenant())
+```
+
+## Test Structure
+
+- **Unit tests**: `test/ash_grant/permission_test.exs`, `evaluator_test.exs`
+- **Property tests**: `permission_property_test.exs`, `evaluator_property_test.exs`
+- **DB integration**: `db_integration_test.exs` (requires PostgreSQL)
+- **Business scenarios**: `business_scenarios_test.exs` (8 authorization patterns)
+- **Support files**: `test/support/` contains test resources, domain, repo, and generators
+
+Tests require PostgreSQL. The test alias auto-runs `ecto.create` and `ecto.migrate`.
+
+## Dependencies
+
+- **Runtime**: `ash ~> 3.33 and >= 3.33.4`, `spark ~> 2.0` (the Ash floor is a security floor — everything below 3.33.4 has published advisories; see the v0.21.0 CHANGELOG entry for the precedent. 3.33.4 is the first release with the fix for CVE-2026-86338, which the field policies AshGrant generates were exposed to). `mix hex.audit` is the only command that reports advisories in the committed lock — `mix deps.get` stays silent
+- **Test only**: `ash_postgres`, `postgrex`, `simple_sat`
+
+## Git Workflow
+
+All changes must go through Pull Requests (no direct push to main).
+
+### Branch Naming Convention
+
+| Type | Branch Name | Example |
+|------|-------------|---------|
+| Feature | `feat/<description>` | `feat/sat-solver-callbacks` |
+| Bug Fix | `fix/<description>` | `fix/in-operator-fallback` |
+| Documentation | `docs/<description>` | `docs/update-readme` |
+| Refactoring | `refactor/<description>` | `refactor/evaluator-cleanup` |
+| Release | `release/v<version>` | `release/v0.4.1` |
+
+### Commit Message Convention
+
+```
+<type>: <description>
+
+Types: feat, fix, docs, refactor, test, release
+```
+
+### Slash Commands
+
+Use these instead of manual steps:
+
+- **`/pr <description>`** — Full PR workflow: code verification → doc gate → branch → commit → push → create PR
+- **`/release <version>`** — Full release workflow: change analysis → docs + CHANGELOG → version bump → verify → PR → merge → tag
+
+Both commands include a **documentation gate** that checks README, CHANGELOG, @moduledoc, and CLAUDE.md before proceeding.

@@ -1,0 +1,93 @@
+# AGENTS.md — intutic (Open-Core Developer Sandbox)
+
+This file is the **machine-readable** entry point for AI coding agents working in this repository. Humans should start at [`README.md`](README.md). Agents: read this top-to-bottom **before touching code**.
+
+## Read these first
+
+1. [`CLAUDE.md`](CLAUDE.md) — active governance SOPs and rules for this workspace.
+2. [`README.md`](README.md) — project overview, quick start, tech stack.
+3. [`apps/docs/`](apps/docs/) — Developer Portal & API documentation source.
+
+## Layout (quick mental model)
+
+| Path | What lives there |
+|------|-------------------|
+| [`packages/shared-types/`](packages/shared-types/) | TypeScript types, interfaces, enums shared across packages |
+| [`packages/logger/`](packages/logger/) | Structured logging with trace context |
+| [`packages/id/`](packages/id/) | `newId(prefix)`, `newIso()` — never use raw UUIDs or Date.now() |
+| [`packages/theme/`](packages/theme/) | Central design system tokens, fonts, and assets |
+| [`packages/proxy/`](packages/proxy/) | Rust governance proxy, WASM filters, and protocol normalization |
+| [`packages/clawde-sdk/`](packages/clawde-sdk/) | TypeScript SDK for Claude agent integration |
+| [`packages/intutic-clawde/`](packages/intutic-clawde/) | Python SDK for Claude agent integration |
+| [`packages/gate-js/`](packages/gate-js/) | In-process TypeScript tool-call gates (`@intutic/gate`) for SDK-gated frameworks |
+| [`packages/mcp-proxy/`](packages/mcp-proxy/) | Model Context Protocol governance proxy |
+| [`packages/wasm-sdk/`](packages/wasm-sdk/) | AssemblyScript WASM rules SDK (built with `asc`) for custom proxy policy filters |
+| [`services/sync-daemon/`](services/sync-daemon/) | Bidirectional config sync daemon (SOPs → harness) |
+| [`tools/cli/`](tools/cli/) | Developer CLI tool (`@intutic/cli`) |
+| [`apps/docs/`](apps/docs/) | Developer Portal — VitePress docs site (docs.intutic.ai) |
+| [`apps/docs/reference/sdk/`](apps/docs/reference/sdk/) | SDK API reference, generated from the SDKs' source by `pnpm gen:sdk-reference`; never edit by hand |
+
+## Commands cheat sheet
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start local dev stack (Valkey cache)
+docker compose up -d
+
+# Build all packages
+pnpm run build
+
+# Run unit tests
+pnpm test
+
+# Run Rust proxy tests
+cargo test --package intutic-proxy
+
+# Quality checks
+pnpm run lint
+pnpm run typecheck
+
+# Regenerate the SDK API reference (apps/docs/reference/sdk/) after changing an
+# SDK export or its doc comment; the Python half needs packages/intutic-clawde's
+# Poetry environment (poetry install --with dev)
+pnpm gen:sdk-reference
+
+# Serve the docs site locally
+pnpm --filter @intutic/docs dev
+```
+
+## House rules (don't relearn the hard way)
+
+- **Shared types:** All types used by 2+ packages go in `@intutic/shared-types`. Never duplicate.
+- **API Contracts:** Always update Zod schemas and TypeScript type definitions in `@intutic/shared-types` when modifying payload schemas or query filters.
+- **IDs:** Always use `newId(prefix)` from `@intutic/id`. Never use raw UUIDs or `Date.now()`.
+- **Timestamps:** Always use `newIso()` from `@intutic/id`. Never use `Date.now()` directly.
+- **Testing:** Zero `vi.mock` in core library unit tests where possible.
+- **Design System Compliance:** All styling must strictly utilize CSS custom variables from `@intutic/theme` (`packages/theme/src/tokens.ts`, emitted as `@intutic/theme/css`). Hardcoded hex codes and color functions are prohibited inside component CSS files.
+- **Docker Compose Decoupling:** `docker-compose.yml` in this open-core repository must remain Valkey-only (`valkey:8` on port 6379).
+- **This repo is the source of truth for everything in it.** Changes land here first. Do not treat a divergence as something to be fixed by copying inward, and do not assume an edit made elsewhere will arrive; make it here.
+
+## High-value `rg` patterns
+
+```bash
+# Find all CLI command definitions
+rg "\.command\(" tools/cli/src -n
+
+# Find proxy plugin implementations
+rg "impl IntuticPlugin for" packages/proxy/src -n
+
+# Find WASM filter exports
+rg "export function evaluate" packages/wasm-sdk -n
+
+# Find ID generation
+rg "newId\(|newIso\(\)" -n
+```
+
+## Open-Core Contribution & Pull Requests
+
+Community contributions, bug fixes, and improvements are welcome! Please ensure:
+1. All TypeScript packages compile cleanly (`pnpm typecheck`).
+2. Rust unit tests pass cleanly (`cargo test --package intutic-proxy`).
+3. New features include corresponding unit tests under `__tests__` or Rust `tests/`.
