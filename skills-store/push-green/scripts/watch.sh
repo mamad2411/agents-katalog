@@ -19,14 +19,21 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "· bukan git repo
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 sha=$(git rev-parse HEAD 2>/dev/null)
+json=""
 
-json=$(gh run list --branch "$branch" --limit 1 \
-        --json databaseId,status,conclusion,workflowName,url,headSha 2>/dev/null)
-
-if [ -z "$json" ] || [ "$json" = "[]" ]; then
-  echo "· tidak ada workflow CI di branch '$branch' — tidak ada yang dipantau"
-  exit 0
-fi
+# run untuk commit ini bisa muncul beberapa detik setelah push — tunggu sampai 60 s
+wait_start=$(date +%s)
+while :; do
+  json=$(gh run list --commit "$sha" --limit 1 \
+          --json databaseId,status,conclusion,workflowName,url,headSha 2>/dev/null)
+  if [ -n "$json" ] && [ "$json" != "[]" ]; then break; fi
+  if [ $(( $(date +%s) - wait_start )) -ge 60 ]; then
+    echo "· tidak ada workflow CI untuk commit ${sha:0:7} di branch '$branch'"
+    echo "  (sudah ditunggu 60 s — bukan hijau, hanya tidak ada CI)"
+    exit 0
+  fi
+  sleep 5
+done
 
 get() { printf '%s' "$json" | python3 -c "import json,sys;d=json.load(sys.stdin)[0];print(d.get('$1') or '')" 2>/dev/null; }
 id=$(get databaseId); wf=$(get workflowName); url=$(get url); hsha=$(get headSha)
@@ -40,7 +47,7 @@ printf 'memantau: %s (branch %s)\n' "${wf:-workflow}" "$branch"
 
 start=$(date +%s)
 while :; do
-  json=$(gh run list --branch "$branch" --limit 1 \
+  json=$(gh run list --commit "$sha" --limit 1 \
           --json databaseId,status,conclusion,workflowName,url,headSha 2>/dev/null)
   st=$(get status); cc=$(get conclusion); url=$(get url); id=$(get databaseId)
   printf '  %s  %-12s %s\n' "$(date +%H:%M:%S)" "${st:-?}" "${cc:-…}"
