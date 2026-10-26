@@ -306,6 +306,7 @@ agent-consensus-coordinator
 agent-dev-backend-api
 agent-effect-operations
 agent-evaluation-framework
+agent-experience
 agent-friendly-commands
 agent-functional-programming-v2
 agent-goal-planner

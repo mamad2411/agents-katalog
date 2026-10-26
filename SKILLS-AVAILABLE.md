@@ -1,65 +1,66 @@
-# SKILLS AVAILABLE — katalog CURATED (3195 ditampilkan dari 3195 · cap 55/kategori)
+# SKILLS AVAILABLE — katalog CURATED (3271 ditampilkan dari 3271 · cap 55/kategori)
 
 > **Untuk AI: JANGAN baca file ini utuh (123 KB = boros). Baca `TOKEN-SAVER.md` (2 KB) dulu.**
 > Kalau ada skill yang cocok, pakai skill itu dulu — jangan mengarang dari nol.
 > Cari cepat: `~/.agents/skill-search.sh "<kata kunci>"` atau tool MCP `skill_search`.
 
-> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (250123 entri scraping)
+> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (249869 entri scraping)
 > **tidak** ditampilkan karena tidak terawat — cari lewat `skill-search.sh` bila perlu.
 > Ini memperbaiki bug lama yang mencampur curated+reference sebagai "curated".
 
-Sumber: `3195` skill curated (dari `263916` entri total di index). Katalog penuh: `skills-index.db`.
+Sumber: `3271` skill curated (dari `264892` entri total di index). Katalog penuh: `skills-index.db`.
 Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKILLS-CATEGORIES.md` (4 KB).
 
 ## Peta cepat kategori
 
 | Kategori | Curated | Reference (cari manual) |
 |---|---|---|
-| backend-developer | 857 | 68428 |
-| designer | 506 | 32944 |
-| frontend-developer | 316 | 21255 |
-| game-developer | 301 | 19998 |
-| devops-engineer | 297 | 19161 |
-| creative-producer | 268 | 20449 |
-| productivity-automator | 125 | 1463 |
-| qa-engineer | 115 | 15270 |
-| mobile-developer | 108 | 7596 |
-| data-scientist | 81 | 8452 |
-| security-specialist | 63 | 8051 |
-| ai-engineer | 50 | 4267 |
-| tech-writer | 24 | 3250 |
-| data-engineer | 23 | 2951 |
-| devtools-engineer | 18 | 3281 |
-| product-manager | 16 | 3022 |
-| fullstack-generalist | 8 | 1313 |
-| agent-orchestrator | 6 | 375 |
-| agent-ux | 5 | 458 |
-| architect | 4 | 596 |
-| agent-memory | 1 | 347 |
-| analyst | 1 | 1270 |
-| blockchain-developer | 1 | 899 |
+| backend-developer | 856 | 67744 |
+| designer | 568 | 33081 |
+| frontend-developer | 338 | 21034 |
+| game-developer | 306 | 19878 |
+| creative-producer | 286 | 20395 |
+| devops-engineer | 276 | 19612 |
+| qa-engineer | 119 | 15639 |
+| productivity-automator | 116 | 1420 |
+| mobile-developer | 108 | 7486 |
+| data-scientist | 77 | 8505 |
+| security-specialist | 61 | 8008 |
+| ai-engineer | 47 | 4260 |
+| tech-writer | 28 | 3268 |
+| data-engineer | 23 | 2971 |
+| devtools-engineer | 18 | 3302 |
+| product-manager | 17 | 3074 |
+| fullstack-generalist | 8 | 1295 |
+| agent-orchestrator | 5 | 378 |
+| agent-ux | 5 | 444 |
+| architect | 4 | 605 |
+| blockchain-developer | 2 | 878 |
+| agent-memory | 1 | 351 |
+| analyst | 1 | 1240 |
 | (tanpa kategori) | 1 | 0 |
 
 ---
 
-## backend-developer (857 curated)
+## backend-developer (856 curated)
 
-- **absolute-audit** — Vulnerability and security scan (defensive, your own repo): dependency CVEs plus risky c
+- **abp-dapr** — ABP Framework v10.x (10.4–10.6) Dapr integration: Volo.Abp.Dapr packages, service invoca
 - **accelerated-computing-cudf** — Official NVIDIA-authored guidance for NVIDIA cuDF GPU DataFrames, pandas acceleration, d
 - **access-control-rbac** — Implement Role-Based Access Control (RBAC), permissions management, and authorization po
 - **ad-campaign-analyzer** — Use this skill when the user shares ad campaign performance data and asks what to cut, s
 - **add-model-price** — Use when editing worker/src/constants/default-model-prices.json, packages/shared/src/ser
-- **adding-analytics** — Add PostHog analytics to a web application, including event tracking, page views, featur
 - **adding-auth** — Add authentication to a web application using NextAuth.js (Auth.js), including OAuth pro
 - **adding-e2e-tests** — Set up Playwright end-to-end testing in a project, including test configuration, example
 - **adding-error-tracking** — Add Sentry error tracking, performance monitoring, and source maps to a web application.
 - **adding-stripe** — Integrate Stripe payments into a web application, including checkout sessions, webhooks,
 - **adf-ml-analytics** — ADF + Azure ML and analytics integrations. PROACTIVELY activate for: (1) Azure ML batch 
 - **ado-windows-git-bash-compatibility** — Windows and Git Bash compatibility for Azure Pipelines. PROACTIVELY activate for: (1) pi
+- **advanced-array-patterns** — Advanced bash array patterns including indexed and associative arrays, mapfile/readarray
 - **aeo** — Answer Engine Optimization (AEO) skill — optimize content to be cited by AI language mod
 - **agent-governance** — Patterns and techniques for adding governance, safety, and trust controls to AI agent sy
 - **agent-introspection-debugging** — Structured self-debugging workflow for AI agent failures using capture, diagnosis, conta
 - **agent-payment-x402** — Add x402 payment execution to AI agents with per-task budgets, spending controls, and no
+- **agent-platform-deploy** — Deploy open models or custom weights from Model Garden to Agent Platform endpoints, chec
 - **agent-platform-endpoint-management** — Manages Agent Platform serving endpoints. Use when you need to create, list, describe, u
 - **agent-platform-eval-flywheel** — Measures and improves the quality of AI models and agents on Google Cloud using the Eval
 - **agent-platform-migrate-from-ai-studio** — Guides agents and users through migrating from Gemini API in Google AI Studio to Gemini 
@@ -71,20 +72,15 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **agent-skill-stack** — Find, evaluate, and assemble the smallest compatible set of AI Agent Skills for an end-t
 - **agent-sort** — Build an evidence-backed ECC install plan for a specific repo by sorting skills, command
 - **agentic-os** — Build persistent multi-agent operating systems on Claude Code. Covers kernel architectur
-- **agentix-ceo** — Manage your team — create roles, assign tasks, spawn workers, and monitor progress
 - **ai-agent-builder** — Build AI agents with tools, memory, and multi-step reasoning - ChatGPT, Claude, Gemini i
-- **ai-coding-agent-guardrails** — Secure AI coding agents (Claude Code, Cursor, Codex, Copilot) with permission boundaries
 - **ai-pipeline-orchestration** — Orchestrate AI/ML pipelines for data ingestion, model training, batch inference, and RAG
 - **ai-regression-testing** — Regression testing strategies for AI-assisted development. Sandbox-mode API testing with
-- **ai-security-hardening** — Harden AI/LLM deployments against prompt injection, data exfiltration, model theft, and 
 - **ai-sre-incident-response** — Build AI-focused SRE incident response practices for LLM outages, degraded quality, runa
 - **ai-team-orchestration** — Bootstrap and run a lightweight multi-agent development team. Use when starting or adopt
-- **aibijia-price-comparison** — AI token price comparison platform that scrapes and aggregates prices across multiple pl
 - **airflow-dag-patterns** — Build production Apache Airflow DAGs with best practices for operators, sensors, testing
 - **airflow-hitl** — Builds human-in-the-loop (HITL) Airflow workflows - approval gates, form input, and huma
 - **airtable-automation** — Airtable database automation - views, automations, integrations, and workflow triggers
 - **airunway-aks-setup** — Set up AI Runway on AKS — from bare cluster to running model. Covers cluster verificatio
-- **alembic** — Comprehensive Alembic database migration management for customer support systems
 - **alert-management** — Implement comprehensive alert management with PagerDuty, escalation policies, and incide
 - **alerting-oncall** — Set up alerting rules, configure on-call rotations, and manage incident response workflo
 - **alloydb-basics** — Manages clusters, instances, and backups for AlloyDB for PostgreSQL, and integrates with
@@ -94,14 +90,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **analyze-cloud-costs** — Analyze Langfuse Cloud infrastructure cost structure using Metabase cost marts. Use when
 - **anomaly-detection** — Identify unusual patterns, outliers, and anomalies in data using statistical methods, is
 - **anti-hallucination-gates** — Use before claiming done/fixed/passing — or before asserting something is absent: not in
-- **antigravity-manager** — AI coding agent skill for Antigravity Manager — a Tauri v2 + Rust desktop app and Docker
 - **anything-analyzer-cdp** — Electron desktop app that captures web traffic via Chrome DevTools Protocol and uses AI 
-- **api-authentication** — Implement secure API authentication with JWT, OAuth 2.0, API keys, and session managemen
+- **aod-kickstart** — POC kickstart skill that transforms a project idea into a sequenced consumer guide with 
+- **aod-project-plan** — Validates architecture documentation completeness by checking for technology stack, API 
+- **aod-run** — Full lifecycle orchestrator that chains all 6 AOD stages (Discover, Define, Plan, Build,
 - **api-changelog-versioning** — Document API changes, breaking changes, migration guides, and version history for APIs. 
 - **api-connector-builder** — Build a new API connector or provider by matching the target repo's existing integration
 - **api-contract-testing** — Verify API contracts between services to ensure compatibility and prevent breaking chang
 - **api-filtering-sorting** — Implement advanced filtering and sorting capabilities for APIs with query parsing, field
-- **api-gateway-patterns** — Comprehensive API gateway patterns skill covering Kong, routing, rate limiting, authenti
 - **api-pagination** — Implement efficient pagination strategies for large datasets using offset/limit, cursor-
 - **api-rate-limiting** — Implement API rate limiting strategies using token bucket, sliding window, and fixed win
 - **api-reference-documentation** — Create comprehensive API reference documentation with OpenAPI/Swagger specs, REST endpoi
@@ -109,17 +105,16 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **api-security-hardening** — Secure REST APIs with authentication, rate limiting, CORS, input validation, and securit
 - **api-smoke-testing** — Start the dev server, discover API routes from the codebase, hit every endpoint, and rep
 - **api-test-suite-builder** — Use when the user asks to generate API tests, create integration test suites, test REST 
-- **api-versioning** — API versioning strategies for ASP.NET Core. Covers Asp.Versioning library, URL segment, 
 - **api-versioning-deprecation-planner** — Plans safe API evolution with versioning strategies, client migration guides, deprecatio
 - **api-versioning-strategy** — Implement API versioning strategies including URL versioning, header versioning, backwar
 - **apify-generate-output-schema** — Generate output schemas (dataset_schema.json, output_schema.json, key_value_store_schema
 - **appinsights-instrumentation** — Guidance for instrumenting webapps with Azure Application Insights. Provides telemetry p
 - **arch-check** — Architecture conformance check: verifies an existing codebase against its declared archi
 - **architecture-decision-records** — Write and maintain Architecture Decision Records (ADRs) following best practices for tec
+- **aristotle-workflow** — This skill should be used when the user asks to "prove a theorem", "formalize to Lean", 
 - **arize-ai-provider-integration** — Creates, reads, updates, and deletes Arize AI integrations that store LLM provider crede
 - **arize-annotation** — Creates and manages annotation configs (categorical, continuous, freeform label schemas)
 - **arize-link** — Generates deep links to the Arize UI for traces, spans, sessions, datasets, labeling que
-- **aspire** — Aspire skill covering the Aspire CLI, AppHost orchestration, service discovery, integrat
 - **aspnet-core** — Build, review, refactor, or architect ASP.NET Core web applications using current offici
 - **aspnet-minimal-api-openapi** — Create ASP.NET Minimal API endpoints with proper OpenAPI documentation
 - **async-patterns** — Master asynchronous programming in Node.js with Promises, async/await, streams, and even
@@ -127,14 +122,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **at-dispatch-v2** — Convert PyTorch AT_DISPATCH macros to AT_DISPATCH_V2 format in ATen C++ code. Use when p
 - **audit-logging** — Implement centralized audit logging and SIEM integration. Configure log retention and se
 - **auth-module-builder** — Implements secure authentication patterns including login/registration, session manageme
-- **auth-security-reviewer** — Reviews authentication and authorization implementation for session management, CSRF, co
 - **authentication** — Authentication and authorization for ASP.NET Core. Covers JWT bearer tokens, OpenID Conn
 - **authoring-language-sdk-tasks** — The language-neutral foundation for Airflow language SDKs — implement task logic in a no
 - **autonomous-agent-harness** — Transform Claude Code into a fully autonomous agent system with persistent memory, sched
 - **autonomous-loops** — Patterns and architectures for autonomous Claude Code loops — from simple sequential pip
 - **autoresearch** — Autonomous iterative experimentation loop for any programming task. Guides the user thro
 - **autoresearchclaw-autonomous-research** — Fully autonomous research pipeline that turns a topic idea into a complete academic pape
-- **autoteam-f-chatgpt-team-rotation** — AutoTeam-F is a ChatGPT Team account rotation and authentication sync tool with batch fr
+- **avinyc-warp-bootstrap** — Bootstrap Warp terminal configuration for Rails projects. Creates launch configurations 
 - **awesome-free-llm-apis** — Reference guide for permanent free-tier LLM APIs with rate limits, model lists, and Open
 - **aws-cloudtrail** — Configure AWS CloudTrail for audit logging. Set up organization trails and event analysi
 - **aws-cloudwatch-investigation** — Reusable investigation patterns for AWS CloudWatch: Logs Insights query templates, alarm
@@ -149,10 +143,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **aws-sdk-java-v2-messaging** — Provides AWS messaging patterns using AWS SDK for Java 2.x for SQS queues and SNS topics
 - **aws-sdk-java-v2-rds** — Provides AWS RDS (Relational Database Service) management patterns using AWS SDK for Jav
 - **aws-sdk-java-v2-secrets-manager** — Provides AWS Secrets Manager patterns for AWS SDK for Java 2.x, including secret retriev
-- **aws-secrets-manager** — Store and rotate secrets in AWS Secrets Manager. Configure automatic rotation, access po
 - **aws-well-architected-review** — Perform an AWS Well-Architected Framework review of the current workload IaC and archite
 - **axum-web-framework** — Complete guide for Axum web framework including routing, extractors, middleware, state m
-- **azure-aigateway** — Configure Azure API Management as an AI Gateway for AI models, MCP tools, and agents. WH
 - **azure-compliance** — Run Azure compliance and security audits with azqr plus Key Vault expiration checks. Cov
 - **azure-container-registry-cli** — Manage Azure Container Registry via the az acr CLI including registries, images, cloud b
 - **azure-cost** — Azure cost management: query costs, forecast spending, optimize to reduce waste. WHEN: \
@@ -169,19 +161,25 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **backend-dev-guidelines** — Build or review Langfuse backend code. Use for tRPC routers, public REST APIs, BullMQ pr
 - **backend-patterns** — Backend architecture patterns, API design, database optimization, and server-side best p
 - **background-job-processing** — Implement background job processing systems with task queues, workers, scheduling, and r
-- **backup-disaster-recovery** — Implement backup strategies, disaster recovery plans, and data restoration procedures fo
 - **backup-restore-runbook-generator** — Creates comprehensive disaster recovery procedures with automated backup scripts, restor
 - **bash-53-features** — Bash 5.3 new features and modern patterns (2025). PROACTIVELY activate for: (1) Bash 5.3
-- **bash-master** — Expert bash/shell scripting across environments where Bash is available (Linux, macOS, G
 - **bash-script-validator** — Validate, lint, audit, or fix bash/shell/.sh scripts via ShellCheck.
 - **batch-convert** — Batch convert documents between multiple formats using a unified pipeline
 - **batch-processing-jobs** — Implement robust batch processing systems with job queues, schedulers, background tasks,
+- **beanie-odm** — This skill should be used when the user asks to "create MongoDB model", "define Beanie d
 - **benchmark** — Use this skill to measure performance baselines, detect regressions before/after PRs, an
 - **bigquery-basics** — Manages datasets, tables, and jobs in BigQuery. Use when you need to interact with BigQu
 - **bigquery-bigframes** — Generates Python code using BigQuery DataFrames (BigFrames), the pandas/scikit-learn-sty
 - **bigquery-pipeline-audit** — Audits Python + BigQuery pipelines for cost safety, idempotency, and production readines
 - **binance-futures-signal-bot** — Professional automated trading bot for Binance, Bybit, and OKX Futures with multi-strate
+- **biz-breakeven** — \"Perform break-even analysis to determine the sales volume or revenue needed to cover a
+- **biz-dupont** — \"Apply DuPont Analysis to decompose Return on Equity (ROE) into profitability, efficien
+- **biz-pestel** — \"Apply PESTEL framework to scan the macro-environment across Political, Economic, Socia
+- **biz-porters-five-forces** — \"Apply Porter's Five Forces framework to assess industry competitive dynamics and attra
+- **biz-swot** — \"Conduct SWOT analysis with TOWS matrix for strategic planning. Use this skill when the
+- **biz-value-chain** — \"Apply Porter's Value Chain Analysis to identify competitive advantage sources within a
 - **board-deck-builder** — Assembles comprehensive board and investor update decks by pulling perspectives from all
+- **brag-sheet** — Turn vague 'what did I do?' into evidence-backed impact statements for performance revie
 - **brainstorming** — Transform rough ideas into fully-formed designs through structured questioning and alter
 - **building-skills-from-patterns** — When the same multi-step workflow repeats in Cursor (user corrections or agent redos), c
 - **bun-runtime** — Bun as runtime, package manager, bundler, and test runner. When to choose Bun vs Node, m
@@ -190,7 +188,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **caching-strategist** — Defines caching strategies with cache keys, TTL values, invalidation triggers, consisten
 - **caching-strategy** — Implement efficient caching strategies using Redis, Memcached, CDN, and cache invalidati
 - **caching-strategy-optimizer** — Optimizes CI/CD pipeline speed by implementing effective caching for dependencies, Docke
-- **caio-review** — /cs:caio-review <plan> — Eval-demanding Chief AI Officer interrogation of any plan that 
 - **campaign-analytics** — Analyzes campaign performance with multi-touch attribution, funnel conversion analysis, 
 - **capacity-planning-helper** — Estimates infrastructure needs based on traffic forecasts, workload analysis, and perfor
 - **career-ops-job-search** — AI-powered job search pipeline built on Claude Code with 14 skill modes, Go dashboard, P
@@ -198,23 +195,20 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **cc-gateway-ai-proxy** — Deploy and configure CC Gateway, a reverse proxy that normalizes Claude Code device fing
 - **cco-review** — /cs:cco-review <plan> — Retention-obsessed Chief Customer Officer interrogation of any p
 - **cdo-review** — /cs:cdo-review <plan> — Decision-driven Chief Data Officer interrogation of any plan tha
+- **chainlink-integration-patterns** — Auto-loaded by oracle-auditor agent during Phase 2 when Chainlink is detected. Provides 
 - **changelog-automation** — Automate changelog generation from commits, PRs, and releases following Keep a Changelog
 - **changelog-maintenance** — Maintain comprehensive changelogs and release notes following Keep a Changelog format. U
-- **chief-ai-officer-advisor** — Chief AI Officer advisory for startups: model build-vs-buy decisions (API vs fine-tune v
 - **chief-data-officer-advisor** — Chief Data Officer advisory for startups: AI training data rights and consent provenance
 - **chunking-strategy** — Provides chunking strategies for RAG systems. Generates chunk size recommendations (256-
 - **ci-cd-pipeline-builder** — Generate pragmatic CI/CD pipelines from detected project stack signals — fast baseline g
-- **ci-cd-pipeline-patterns** — Comprehensive CI/CD pipeline patterns skill covering GitHub Actions, workflows, automati
 - **ci-metrics** — Query PyTorch CI, GitHub Actions, HUD, Grafana, and infrastructure metrics. Use when use
 - **circleci** — Configure CircleCI workflows and orbs for continuous integration and deployment. Create 
 - **circuit-breaker-pattern** — Implement circuit breaker patterns for fault tolerance, automatic failure detection, and
 - **cis-benchmarks** — Audit and remediate CIS benchmark violations. Use automated tools to assess compliance a
 - **citation-and-ledger-format** — Make source support auditable across markdown, spreadsheets, documents, and slide output
 - **ck** — Persistent per-project memory for Claude Code. Auto-loads project context on session sta
-- **claude-api** — Reference for the Claude API / Anthropic SDK — model ids, pricing, params, streaming, to
 - **claude-hud-statusline** — A Claude Code plugin that displays a real-time HUD showing context usage, active tools, 
 - **claude-peers-mcp** — Enable multiple Claude Code instances to discover each other and exchange messages in re
-- **clawgod-claude-code-patch** — Runtime patch for Claude Code that unlocks hidden features, removes restrictions, and en
 - **clerk** — Clerk authentication router. Use when user asks about Clerk CLI operations,
 - **click-path-audit** — Trace every user-facing button/touchpoint through its full state change sequence to find
 - **clickhouse-best-practices** — MUST USE when reviewing ClickHouse schemas, queries, or configurations. Contains 28 rule
@@ -231,12 +225,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **codehealth-mcp** — Real-time structural Code Health via CodeScene MCP — review before edits, verify score d
 - **codex** — Provides Codex CLI delegation workflows for complex code generation and development task
 - **codex-oauth-automation-extension** — Chrome extension for automating OpenAI OAuth registration flows with captcha retrieval, 
-- **codex-plusplus-tweak-system** — Expert knowledge for using codex-plusplus to inject tweaks, patch Codex desktop app, and
 - **codex-session-patcher** — Clean AI refusal responses from Codex CLI, Claude Code, and OpenCode session files, and 
+- **college-research** — 生成"大学生院级科研立项申请书"docx。覆盖 16 栏目表格体模板 + 9 项案例驱动强化章节（国家政策引用规范 3+ 文件、科学挑战 1-2 段、国内外研究现状综述 10+
 - **comment-code-generate-a-tutorial** — Transform this Python script into a polished, beginner-friendly project by refactoring t
 - **commit-message-storyteller** — Analyzes git diffs or staged changes and generates narrative commit messages that explai
 - **competitive-platform-analysis** — Use when scoping a competitive landscape — identifying, categorising, and score-filterin
-- **compose-patterns-2025** — Docker Compose production patterns for 2025 (multi-environment, health checks, modern fe
 - **concurrency-patterns** — Implement thread-safe code, mutexes, semaphores, async/await patterns, and concurrent da
 - **config-gc** — Garbage collection for your Claude Code configuration. Periodically scans ~/.claude (ski
 - **configure-ecc** — Guide ECC installation, update, or reconfiguration from inside Claude Code, Codex, or Ki
@@ -246,6 +239,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **containerize-aspnetcore** — Containerize an ASP.NET Core project by creating Dockerfile and .dockerfile files custom
 - **content-engine** — Create platform-native content systems for X, LinkedIn, TikTok, YouTube, newsletters, an
 - **context-budget** — Audits Claude Code context window consumption across agents, skills, MCP servers, and ru
+- **context-compilation-with-cclsp** — LSP-powered context extraction using cclsp MCP tools, Solargraph, and Sorbet for type-sa
 - **context-engine** — Loads and manages company context for all C-suite advisor skills. Reads ~/.claude/compan
 - **context-master** — Universal context management and planning system. PROACTIVELY activate for: (1) ANY comp
 - **continuous-testing** — Integrate automated testing into CI/CD pipelines for continuous quality feedback. Use fo
@@ -255,6 +249,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **convert-plaintext-to-md** — Convert a text-based document to markdown following instructions from prompt, or if a do
 - **copilot-cli** — Provides GitHub Copilot CLI task delegation in non-interactive mode with multi-model sup
 - **copilot-usage-metrics** — Retrieve and display GitHub Copilot usage metrics for organizations and enterprises usin
+- **core-concepts-protocols** — This skill should be used when the user asks about Kachina smart contract protocol, Zswa
 - **core-web-vitals-tuner** — Systematically improves Largest Contentful Paint (LCP), Interaction to Next Paint (INP),
 - **cost-aware-llm-pipeline** — Cost optimization patterns for LLM API usage — model routing by task complexity, budget 
 - **cost-tracking** — Track and report Claude Code token usage, spending, and budgets from the local ECC cost-
@@ -290,7 +285,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **cupynumeric-migration-readiness** — Pre-migration readiness assessor for porting NumPy to cuPyNumeric. Use BEFORE substantia
 - **customer-billing-ops** — Operate customer billing workflows such as subscriptions, refunds, churn triage, billing
 - **dag-factory** — Authors Apache Airflow DAGs declaratively from dag-factory YAML configs. Use when buildi
-- **daily-stock-analysis** — LLM-powered A/H/US stock intelligent analysis system with multi-source data, real-time n
 - **dali-dynamic-mode** — DALI imperative dynamic mode (`nvidia.dali.experimental.dynamic`, ndd): use when working
 - **dart-add-unit-test** — Write and organize unit tests for functions, methods, and classes using `package:test`. 
 - **dart-generate-test-mocks** — Define and generate mock objects for external dependencies using `package:mockito` and `
@@ -340,19 +334,18 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **diagnose** — Perform a systematic diagnostic scan of an AI workflow across 5 quality dimensions — pro
 - **distributed-triage** — Sub-triages issues in the oncall:distributed queue by assigning distributed module label
 - **django-application** — Develop production-grade Django applications with models, views, ORM queries, authentica
-- **django-security** — Django security best practices, authentication, authorization, CSRF protection, SQL inje
-- **django-tdd** — Django testing strategies with pytest-django, TDD methodology, factory_boy, mocking, cov
-- **django-verification** — Verification loop for Django projects: migrations, linting, tests with coverage, securit
 - **dmux-workflows** — Multi-agent orchestration using dmux (tmux pane manager for AI agents). Patterns for par
 - **doc** — Read, create, and edit .docx documents with formatting and layout fidelity via OpenAI's 
 - **doc-coauthoring** — Guide users through a structured workflow for co-authoring documentation. Use when user 
 - **doc-pipeline** — Chain document operations into reusable pipelines
 - **doca-aes-gcm** — Use this skill when the user is doing hands-on DOCA AES-GCM work on a BlueField DPU or C
+- **doca-argp** — Use this skill for hands-on DOCA Arg Parser CLI work on a shipped sample or new DOCA-usi
 - **doca-bare-metal-deployment** — Use this skill for launching, supervising, debugging, OR platform lifecycle on a BlueFie
+- **doca-bench-extension** — Use this skill when the operator is authoring, building, loading, or debugging a custom 
 - **doca-bf3-deployment** — Use this skill for BlueField-3 (BF3) day-1 platform bring-up via the classic RShim/BFB p
+- **doca-caps** — Use this skill when the user wants to invoke the read-only doca_caps CLI to ask what DOC
+- **doca-comch** — Use this skill when the user is doing hands-on DOCA Comch work on a host + BlueField pai
 - **docker-2025-features** — Latest Docker features (2025-2026) including Docker AI, Enhanced Container Isolation, Bu
-- **docker-patterns** — Docker and Docker Compose patterns for local development, hardened CLI installer harness
-- **docker-security-guide** — Comprehensive Docker security guidelines and threat mitigation. PROACTIVELY activate for
 - **docker-watch-mode-2025** — Docker Compose Watch mode for hot reload during local development (2025 GA). PROACTIVELY
 - **dockerfile-validator** — Validate, lint, audit, or scan a Dockerfile for security and best practices.
 - **docs-sync-audit** — Run a read-only documentation drift audit for a feature, PR, branch, release, API, confi
@@ -367,6 +360,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **dt-alerting** — End-to-end Dynatrace alerting lifecycle — anomaly detector setup and model selection (st
 - **dt-js-runtime** — Dynatrace server-side JS runtime — function contract, runtime limits, Web APIs, Node.js 
 - **dt-obs-azure** — Azure cloud resources including VMs, VMSS, SQL Database, Storage, AKS, App Service, Func
+- **dt-obs-compliance-assistant** — Monitor and investigate EU DORA compliance posture using Dynatrace Compliance Assistant.
 - **e2e-testing** — Playwright E2E testing patterns, Page Object Model, configuration, CI/CD integration, ar
 - **ecc-guide** — Guide users through ECC's current agents, skills, commands, hooks, rules, install profil
 - **ecc-recipes** — Map a described workflow to the right ECC command-GROUP with run-order and stop conditio
@@ -381,21 +375,15 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **everything-claude-code-harness** — Agent harness performance system for Claude Code and other AI coding agents — skills, in
 - **evm-token-decimals** — Prevent silent decimal mismatch bugs across EVM chains. Covers runtime decimal lookup, c
 - **excalidraw-ai** — Create professional Excalidraw diagrams by generating JSON directly. This skill provides
-- **excel-automation** — This skill enables advanced Excel automation using xlwings - a library that can interact
+- **excel-automation** — This skill enables advanced Excel automation using **xlwings** - a library that can inte
 - **execution-plan-analysis** — This skill should be used when the user asks to analyze SQL Server execution plans, .sql
 - **express-microservices-architecture** — Complete guide for building scalable microservices with Express.js including middleware 
 - **express-rest-api** — Build production-ready RESTful APIs with Express.js including routing, middleware, valid
 - **extension-to-functions-codebase** — Skill for converting an installed Firebase Extension (or extension source) into a standa
-- **fabro-workflow-factory** — Skill for using Fabro, the open source AI coding workflow orchestrator that lets you def
 - **facebook-meta-ads** — Automate Facebook and Instagram advertising campaigns, audience targeting, and performan
 - **fal-image-to-image** — Complete fal.ai image-to-image system. PROACTIVELY activate for: (1) FLUX image-to-image
 - **fal-restore** — Restore and fix image quality — deblur, denoise, fix faces, and restore old documents us
-- **fastapi-customer-support-tech-enablement** — Comprehensive FastAPI skill for building modern Python web APIs with focus on customer s
-- **fastapi-development** — Modern Python API development with FastAPI covering async patterns, Pydantic validation,
-- **fastapi-microservices-development** — Comprehensive guide for building production-ready microservices with FastAPI including R
-- **fastapi-patterns** — FastAPI best practices covering project structure, Pydantic v2 schemas, dependency injec
 - **fastapi-templates** — Create production-ready FastAPI projects with async patterns, dependency injection, and 
-- **feature-flags** — Implement feature flags for progressive feature rollout using LaunchDarkly, Unleash, or 
 - **fieldtheory-cli-bookmarks** — Sync, search, classify, and query X/Twitter bookmarks locally using the Field Theory CLI
 - **finance-billing-ops** — Evidence-first revenue, pricing, refunds, team-billing, and billing-model truth workflow
 - **firebase-ai-logic-basics** — Official skill for integrating Firebase AI Logic (Gemini API) into web applications. Cov
@@ -403,6 +391,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **firewall-config** — Configure iptables, nftables, and cloud firewalls. Implement network segmentation and tr
 - **fixing-broken-links** — Crawl all links in a file or project, test each for a valid HTTP response, report broken
 - **flashkda-delta-attention** — High-performance Kimi Delta Attention CUDA kernels built on CUTLASS for efficient recurr
+- **flow-orchestrator-2025** — Salesforce Flow Orchestrator for multi-user, multi-step business processes (2025). PROAC
 - **flowstudio-power-automate-build** — Build, scaffold, and deploy Power Automate cloud flows using the FlowStudio MCP server. 
 - **flowstudio-power-automate-governance** — Govern Power Automate flows and Power Apps at scale using the FlowStudio MCP cached stor
 - **flowstudio-power-automate-mcp** — Foundation skill for Power Automate via FlowStudio MCP — auth setup, the reusable MCP he
@@ -412,15 +401,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **form-validation** — Implement form validation using React Hook Form, Formik, Vee-Validate, and custom valida
 - **form-wizard-builder** — Builds multi-step forms with validation schemas (Zod/Yup), step components, shared state
 - **foundry-agent-sync** — Create and synchronize prompt-based AI agents directly within Azure AI Foundry via REST 
-- **free-code-claude-cli** — Build and use free-code, the open-source fork of Claude Code CLI with telemetry removed,
 - **freecad-scripts** — Expert skill for writing FreeCAD Python scripts, macros, and automation. Use when asked 
-- **freecodecamp-curriculum** — Comprehensive guide for contributing to and working with freeCodeCamp's open-source code
 - **freellmapi-proxy** — OpenAI-compatible proxy aggregating 14 free-tier LLM providers with automatic failover a
 - **freeze** — /cs:freeze <decision> <days> — Lock a strategic decision for a cooldown period to preven
 - **from-the-other-side-quinn** — Collaboration profile for Quinn: curious, energetic, and implementation-focused partners
 - **from-the-other-side-vega** — Patterns and lived experience from Vega, an AI partner in a deep long-term partnership. 
 - **fsharp-testing** — F# testing patterns with xUnit, FsUnit, Unquote, FsCheck property-based testing, integra
-- **future-agi-platform** — Expert skill for using Future AGI — the open-source end-to-end platform for evaluating, 
 - **gap-analysis** — Identify differences between current state and desired future state. Analyze gaps in cap
 - **gateguard** — Fact-forcing gate that blocks Edit/Write/Bash (including MultiEdit) and demands concrete
 - **gcp-audit-logs** — Configure GCP Cloud Audit Logs for compliance. Set up log routing and BigQuery analysis.
@@ -430,6 +416,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **geoflow-content-automation** — GEOFlow open-source GEO/SEO content production system with AI generation, review workflo
 - **gget** — gget CLI and Python workflow for quick genomic database queries, sequence lookup, BLAST-
 - **gh-address-comments** — Help address review/issue comments on the open GitHub PR for the current branch using gh
+- **ghscan-gotd-botapi** — Correct, idiomatic, high-performance JSON encoding and decoding with github.com/go-faste
 - **git-2-49-features** — Git 2.49 specific features and performance improvements. PROACTIVELY activate for: (1) g
 - **git-2025-features** — Git 2.49+ features and modern Git workflows (2025-2026). PROACTIVELY activate for: (1) G
 - **git-hooks-setup** — Use when setting up git hooks (pre-commit, commit-msg, pre-push) with husky or native ho
@@ -449,23 +436,33 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **google-ads-api-mcp-setup** — Guides developers through downloading, configuring, and installing the official open-sou
 - **google-ads-api-quickstart** — Guides developers through Google Ads API quickstart: credential setup, choosing from 6 c
 - **google-ads-manager** — Google Ads campaign management - campaign setup, keyword research, bid optimization, and
-- **google-agents-cli-adk-code** — This skill should be used when the user wants to "write agent code", "build an agent wit
-- **google-agents-cli-eval** — This skill should be used when the user wants to "run an evaluation", "evaluate my agent
-- **google-agents-cli-observability** — This skill should be used when the user wants to "set up tracing", "monitor my agent", "
-- **google-agents-cli-publish** — This skill should be used when the user wants to "publish an agent", "publish my ADK age
-- **gpt-pp-team-protocol-replay** — End-to-end protocol replay toolkit for ChatGPT Team subscription with hCaptcha solver an
-- **gpt2api-openai-gateway** — OpenAI-compatible SaaS gateway that reverse-engineers chatgpt.com to provide GPT Image 2
+- **google-agents-cli-adk-code** — This skill should be used when the user wants to 'write agent code', 'build an agent wit
+- **google-agents-cli-eval** — This skill should be used when the user wants to 'run an evaluation', 'evaluate my agent
+- **google-agents-cli-observability** — This skill should be used when the user wants to 'set up tracing', 'monitor my agent', '
+- **google-agents-cli-publish** — This skill should be used when the user wants to 'publish an agent', 'publish my ADK age
 - **gpu-server-management** — Set up and manage NVIDIA GPU servers for AI workloads — driver installation, CUDA toolki
 - **graalvm-native-image** — Provides expert guidance for building GraalVM Native Image executables from Java applica
+- **grad-ant** — \"Apply Actor-Network Theory (Latour, Callon) to trace how human and non-human actors (a
+- **grad-emh** — \"Apply the Efficient Market Hypothesis (Fama, 1970) to evaluate information incorporati
+- **grad-fama-french** — \"Apply the Fama-French three-factor model to decompose asset returns into market, size,
+- **grad-field-theory** — \"Apply Bourdieu's field theory to analyze power relations through the interplay of fiel
+- **grad-governance** — \"Apply governance theory to analyze multi-level, network, and collaborative governance 
+- **grad-is-success** — \"Apply the DeLone and McLean Information Systems Success Model to evaluate IS effective
+- **grad-mm-theorem** — \"Apply the Modigliani-Miller theorem to analyze capital structure decisions and identif
+- **grad-paradigms** — \"Apply Kuhn's paradigm theory to analyze scientific progress through the cycle of norma
+- **grad-pecking-order** — \"Apply pecking order theory (Myers and Majluf, 1984) to analyze how information asymmet
+- **grad-real-options** — \"Apply real options analysis to value managerial flexibility embedded in investment dec
+- **grad-sensemaking** — \"Apply Weick's sensemaking theory to analyze how individuals and organizations construc
+- **grad-signaling** — \"Apply signaling theory (Spence, 1973) to analyze how agents communicate private inform
+- **grad-spiral-of-silence** — \"Apply spiral of silence theory (Noelle-Neumann) to analyze how perceived opinion clima
+- **grad-strat-upper-echelons** — \"Apply Upper Echelons Theory (Hambrick and Mason, 1984) to analyze how top management t
+- **grad-structuration** — \"Apply Giddens' structuration theory to analyze the duality of structure — how social s
 - **graphql** — Build GraphQL APIs with Node.js using Apollo Server, type definitions, resolvers, and re
 - **gtm-board-and-investor-communication** — Board meeting preparation, investor updates, and executive communication. Use when prepa
 - **gtm-enterprise-onboarding** — Four-phase framework for onboarding enterprise customers from contract to value realizat
 - **gtm-partnership-architecture** — Build and scale partner ecosystems that drive revenue and platform adoption. Use when bu
-- **guardrails-safety-filter-builder** — Implements content safety filters with PII redaction, policy constraints, prompt injecti
 - **hads** — Use when writing technical documentation that needs to be readable by both humans and AI
 - **harness-engineering** — Adopt repository-level harness engineering for coding agents. Use when a user wants to p
-- **hashicorp-vault** — Manage secrets and PKI with HashiCorp Vault. Configure secret engines, authentication me
-- **hasura-graphql-engine** — Complete guide for Hasura GraphQL Engine including instant GraphQL APIs, permissions, au
 - **health-check** — Multi-dimensional health assessment for .NET projects with letter grades (A-F) using Ros
 - **healthcare-cdss-patterns** — Clinical Decision Support System (CDSS) development patterns. Drug interaction checking,
 - **hermes-tweet** — Install and operate Hermes Tweet, a Hermes Agent plugin for X/Twitter research, timeline
@@ -475,11 +472,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **hookify-rules** — This skill should be used when the user asks to create a hookify rule, write a hook rule
 - **housekeeping** — Triage an engineer's work queue across Linear, Pylon, and GitHub. Use for assigned, urge
 - **hr-automation** — HR workflow automation - recruiting, onboarding, employee management, and offboarding pr
-- **httpclient-factory** — IHttpClientFactory and typed HTTP clients for .NET 10 applications. Covers named/typed/k
+- **hum-source-criticism** — \"Evaluate source credibility using primary/secondary classification, internal/external 
 - **hve-artifact-authoring** — Create and validate HVE Core agents, prompts, instructions, and skills with current fron
 - **hybrid-cloud-networking** — Configure secure, high-performance connectivity between on-premises infrastructure and c
 - **idempotency-handling** — Implement idempotency keys and handling to ensure operations can be safely retried witho
 - **image-manipulation-image-magick** — Process and manipulate images using ImageMagick. Supports resizing, format conversion, b
+- **implementation-safety** — Production-ready safety checklists for Rails implementation. Covers nil safety, ActiveRe
 - **incident-commander** — Comprehensive incident response framework from detection through resolution and post-inc
 - **incident-management** — Implement incident management processes and escalation procedures. Configure on-call sch
 - **incident-response** — Handle production incidents — triage, mitigate, communicate, and write postmortems.
@@ -489,7 +487,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **input-validation-sanitization-auditor** — Identifies and fixes XSS, SQL injection, and command injection vulnerabilities with vali
 - **insforge-integrations** — Use when wiring an external auth provider (Clerk, Auth0, WorkOS, Kinde, Stytch, Better A
 - **integrate-context-matic** — Discovers and integrates third-party APIs using the context-matic MCP server. Uses `fetc
-- **integration-test-builder** — Creates integration tests for API endpoints with database flows, including test harness 
 - **internal-comms** — A set of resources to help me write all kinds of internal communications, using the form
 - **internationalization-i18n** — Implement internationalization (i18n) and localization including message extraction, tra
 - **iso27001-compliance** — Implement ISO 27001 Information Security Management System. Configure ISMS controls and 
@@ -505,13 +502,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **jenkinsfile-validator** — Validate, lint, audit, or check Jenkinsfiles and shared libraries.
 - **jest-testing** — Test Node.js applications with Jest including unit tests, integration tests, mocking, co
 - **jira-integration** — Use this skill when retrieving Jira tickets, analyzing requirements, updating ticket sta
-- **jwt-authentication** — Implement secure JWT (JSON Web Token) authentication in Node.js applications with access
 - **kordoc-korean-document-parser** — Parse HWP, HWPX, and PDF Korean documents to Markdown using kordoc — supports CLI, progr
 - **kotlin-ktor-patterns** — Ktor server patterns including routing DSL, plugins, authentication, Koin DI, kotlinx.se
 - **kotlin-tooling-gradle-to-kotlin-toolchain-plugin** — Load when porting, converting, or reimplementing a single Gradle plugin as a Kotlin Tool
 - **kotlin-tooling-gradle-to-kotlin-toolchain-project** — Load when migrating or converting an entire Gradle Kotlin project (build.gradle(.kts), w
 - **kotlin-tooling-immutable-collections-0-5-x-migration** — Migrate Kotlin (and Java) code from kotlinx.collections.immutable 0.3.x / 0.4.x to the l
-- **kotlin-tooling-java-to-kotlin** — Use when converting Java source files to idiomatic Kotlin, when user mentions "java to k
+- **kotlin-tooling-java-to-kotlin** — Use when converting Java source files to idiomatic Kotlin, when user mentions 'java to k
 - **kotlin-tooling-kotlin-toolchain** — Load when building, running, testing, packaging, linting, or configuring a Kotlin/Java p
 - **kwcode-local-coding-agent** — KWCode (天工开物) — a CLI coding agent optimized for local open-source models (8B-30B), feat
 - **langchain-fundamentals** — Create LangChain agents with create_agent, define tools, and use middleware for human-in
@@ -530,6 +526,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **legalize-es-spanish-legislation** — Query, browse, and analyze Spanish legislation stored as Markdown files with full Git hi
 - **linjector-luau-script-ide** — Open-source Luau/Lua script IDE and executor built as a Windows Forms C# application wit
 - **linkedin-post-formatter** — Format and draft compelling LinkedIn posts using Unicode bold/italic styling, visual sep
+- **linksee-memory** — The bridge to the agent's 'past self'. Before any new task, file edit, decision, or righ
 - **linux-administration** — System administration for Linux servers. Manage packages, services, and system configura
 - **linux-hardening** — Apply CIS benchmarks and secure Linux servers. Configure SSH, manage users, implement fi
 - **living-docs-governance** — Keep a long-lived project's documentation from rotting by assigning existing project doc
@@ -537,8 +534,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **llm-cost-optimization** — Reduce LLM API and infrastructure costs through model selection, prompt caching, batchin
 - **llm-debugger** — Diagnoses LLM output failures including hallucinations, constraint violations, format er
 - **llm-evaluation** — Implement comprehensive evaluation strategies for LLM applications using automated metri
-- **llm-gateway** — Deploy an API gateway for LLM traffic with load balancing, rate limiting, key management
-- **llm-security** — Security guidelines for LLM applications based on OWASP Top 10 for LLM 2025. Use when bu
 - **llm-trading-agent-security** — Security patterns for autonomous trading agents with wallet or transaction authority. Co
 - **load-balancer-setup** — Configure and deploy load balancers (HAProxy, AWS ELB/ALB/NLB) for distributing traffic,
 - **load-balancing** — Configure load balancers and traffic distribution. Implement health checks and SSL termi
@@ -560,21 +555,40 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **mcp-cli** — Interface for MCP (Model Context Protocol) servers via CLI. Use when you need to interac
 - **mcp-create-declarative-agent** — Buat declarative agent Microsoft 365 Copilot yang mengintegrasikan MCP server (auth, too
 - **mcp-hub** — Access 1200+ AI Agent tools via Model Context Protocol (MCP)
+- **mcp-implementation-security-review** — Review the implementation source code of MCP (Model Context Protocol) servers, clients, 
 - **mcp-release-qa** — Verify an MCP server before release by exercising a real protocol session, comparing run
 - **md-preview-app-macos** — Native macOS Markdown viewer app with Quick Look extension, Mermaid diagrams, KaTeX math
+- **med-news-reporter** — \"Use when the user wants to turn raw material — transcripts, interviews, event notes, d
 - **memory-md-management** — Provides comprehensive memory file management capabilities including auditing, quality a
 - **memory-optimization** — Profile and optimize application memory usage. Identify memory leaks, reduce memory foot
 - **messaging** — Asynchronous messaging patterns for .NET applications. Covers Wolverine and MassTransit,
 - **meta-harness-optimization** — Framework for automated search over task-specific model harnesses — the code around a fi
+- **mfg-oee-analysis** — \"Calculate and diagnose Overall Equipment Effectiveness (OEE) by decomposing into Avail
 - **microsoft-code-reference** — Look up Microsoft API references, find working code samples, and verify SDK code is corr
 - **microsoft-docs** — Query official Microsoft documentation to find concepts, tutorials, and code examples ac
 - **microsoft-foundry** — Build, deploy, evaluate, optimize, fine-tune, and manage Microsoft Foundry agents, model
 - **microsoft-skill-creator** — Create agent skills for Microsoft technologies using Learn MCP tools. Use when users wan
 - **microsoft-teams-automation** — Automate Microsoft Teams messaging, meetings, channels, and workflow integrations
+- **midnight-cq-dapp-connector-testing** — This skill should be used when the user asks to test DApp Connector API integration, tes
+- **midnight-dapp-dev-midnight-sdk** — This skill should be used when the user asks about the Midnight.js SDK, midnight-js pack
+- **midnight-expert-add-to-ecosystem** — This skill should be used when the user asks to add their project to the Midnight ecosys
+- **midnight-indexer-indexer-architecture** — This skill covers indexer architecture, components, chain-indexer, wallet-indexer, index
+- **midnight-indexer-indexer-data-model** — This skill should be used when the user asks about the indexer data model, what the inde
+- **midnight-indexer-indexer-graphql-api** — This skill should be used when the user asks about indexer GraphQL, indexer queries, ind
+- **midnight-indexer-indexer-operations** — This skill should be used when the user asks about running, monitoring, or troubleshooti
+- **midnight-node-node-architecture** — Midnight node architecture, Substrate runtime, Polkadot SDK, pallets, consensus, AURA, G
+- **midnight-node-node-governance** — Midnight governance, federated authority, Council, TechnicalCommittee, Technical Committ
+- **midnight-node-node-rpc-api** — Midnight node RPC API, WebSocket, port 9944, midnight_contractState, midnight_zswapState
+- **midnight-tooling-devnet-health** — This skill should be used when the user asks to check the status or health of the local 
+- **midnight-tooling-proof-server** — This skill should be used when the user asks about the Midnight proof server in any cont
+- **midnight-verify-verify-by-devnet** — Verification by running E2E scripts against a local Midnight devnet. Writes SDK test scr
+- **midnight-verify-verify-by-zkir-checker** — Verification by running the full ZK proof pipeline: compile Compact without --skip-zk to
+- **midnight-verify-zkir-regression** — Run a curated set of verification claims against the current toolchain to detect behavio
 - **migrating-oracle-to-postgres-data-access-code** — Migrates .NET/C# data access code from Oracle to PostgreSQL (Npgsql). Replaces Oracle Nu
 - **migrating-oracle-to-postgres-stored-procedures** — Migrates Oracle PL/SQL stored procedures to PostgreSQL PL/pgSQL. Translates Oracle-speci
 - **minecraftconsoles-lce** — Expert skill for building, running, and extending MinecraftConsoles (Minecraft Legacy Co
 - **minimal-api** — .NET 10 minimal APIs — the default for building HTTP endpoints. Covers MapGroup, endpoin
+- **mkt-ad-optimization** — \"Optimize digital advertising campaigns across Google Ads, Meta Ads, and LINE LAP inclu
 - **ml-adoption-playbook** — End-to-end methodology for AI agents and software engineers to add machine learning algo
 - **ml-experimentation** — Machine learning experimentation reference for model-experimentation conventions, experi
 - **ml-pipeline-automation** — Build end-to-end ML pipelines with automated data processing, training, validation, and 
@@ -582,7 +596,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **mocking-assistant** — Creates stable mocks for APIs, services, and UI components using MSW (Mock Service Worke
 - **model-deployment** — Deploy machine learning models to production using Flask, FastAPI, Docker, cloud platfor
 - **model-monitoring** — Monitor model performance, detect data drift, concept drift, and anomalies in production
-- **model-registry-governance** — Establish model registry standards, governance controls, metadata schemas, approvals, an
 - **modern-csharp** — Modern C# language features for .NET 10 and C# 14. Covers primary constructors, collecti
 - **monday.com-automation** — Automate Monday.com workflows, board management, team collaboration, and cross-board int
 - **mongodb** — Administer MongoDB databases. Configure replica sets, sharding, and backups. Use when ma
@@ -597,30 +610,27 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **neon-postgres-branches** — Choose and create the right Neon branch type for testing and development. Use when users
 - **neon-postgres-egress-optimizer** — Diagnose and fix excessive Postgres egress (network data transfer) in a codebase. Use wh
 - **nestjs** — Provides comprehensive NestJS framework patterns with Drizzle ORM integration for buildi
-- **new-relic** — Configure New Relic observability platform for infrastructure and application monitoring
 - **nfs-storage** — Configure NFS servers and clients. Implement network file sharing for Linux systems. Use
 - **nginx-configuration** — Configure Nginx web server for high-performance reverse proxy, load balancing, SSL/TLS, 
+- **nk-images-search** — Search 1+ million free high-quality AI stock photos. Generate up to 240 free AI images d
 - **nothing-ever-happens-polymarket-bot** — Async Python bot for Polymarket that buys "No" on all standalone non-sports yes/no marke
-- **notion-api** — This skill provides comprehensive instructions for interacting with the Notion API via R
 - **notion-automation** — Notion database automation - sync, templates, workflows, and cross-platform integrations
 - **ntwarden-windows-analysis-toolkit** — NtWarden is a Windows Analysis and Research Toolkit providing GUI-based inspection of pr
 - **nuget-manager** — Manage NuGet packages in .NET projects/solutions. Use this skill when adding, removing, 
-- **oauth2-authentication** — Comprehensive OAuth2 authentication skill covering authorization flows, token management
 - **od-next-media-inputs** — Prepare required media inputs within an existing OD Next plan. Reuse capability evidence
 - **offer-letter-generator** — Create formal employment offer letters with compensation and terms
-- **office-to-md** — This skill enables conversion from various Office formats to Markdown using markitdown -
+- **office-to-md** — This skill enables conversion from various Office formats to Markdown using **markitdown
 - **on-call-handoff-patterns** — Master on-call shift handoffs with context transfer, escalation procedures, and document
 - **onboard** — /cs:onboard — Founder interview that populates ~/.claude/company-context.md using the ca
 - **onboard-context-matic** — Interactive onboarding tour for the context-matic MCP server. Walks the user through wha
 - **open-agent-sdk** — Build and deploy autonomous AI agents in-process using Open Agent SDK, an open-source al
 - **openai-privacy-filter** — OpenAI Privacy Filter — bidirectional token-classification model for PII detection and m
-- **openapi** — Built-in OpenAPI support for .NET 10 applications. Covers document generation, transform
 - **openapi-to-application-code** — Generate a complete, production-ready application from an OpenAPI specification
-- **opencli-rs-web-scraper** — Blazing fast Rust CLI tool to fetch information from 55+ websites (Twitter, Reddit, YouT
 - **openduck-distributed-duckdb** — OpenDuck — open-source distributed DuckDB with differential storage, hybrid dual executi
 - **opensource-pipeline** — Open-source pipeline: fork, sanitize, and package private projects for safe public relea
-- **openviking-context-database** — Expert skill for using OpenViking, the open-source context database for AI Agents that m
+- **ops-leadership-styles** — \"Leadership-style decision framework combining transformational, transactional, servant
 - **optimize-simplicite-logs** — capability to parse Simplicité logs from a raw `.txt` file, filter fields to reduce nois
+- **oracle-adk-expert** — Build production agentic applications on OCI using Oracle Agent Development Kit with mul
 - **orch-pipeline** — Shared orchestration engine for the orch-* skill family. Defines the gated Research-Plan
 - **orch-refine-code** — Orchestrate a behavior-preserving refactor — confirm tests are green, restructure withou
 - **org-health-diagnostic** — Cross-functional organizational health check combining signals from all C-suite roles. S
@@ -643,6 +653,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **performance-regression-debugging** — Identify and debug performance regressions from code changes. Use comparison and profili
 - **performance-tuning** — Optimize Linux system performance. Configure kernel parameters, analyze bottlenecks, and
 - **perl-security** — Comprehensive Perl security covering taint mode, input validation, safe process executio
+- **perplexity-wrapped** — Search the web with AI-powered answers via Perplexity API. Supports three modes - Search
 - **pester-migration** — Pester migration skill for upgrading PowerShell Pester test suites across major versions
 - **pgmicro-postgres-sqlite** — Use pgmicro — an in-process PostgreSQL reimplementation backed by SQLite-compatible stor
 - **pgque-postgres-queue** — Expert skill for PgQue – a zero-bloat, snapshot-based Postgres queue using pure PL/pgSQL
@@ -653,7 +664,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **planetscale** — Operate MySQL-compatible databases on PlanetScale with branching workflows, safe migrati
 - **plankton-code-quality** — Write-time code quality enforcement using Plankton — auto-formatting, linting, and Claud
 - **planning-oracle-to-postgres-migration-integration-testing** — Creates an integration testing plan for .NET data access artifacts during Oracle-to-Post
-- **platform-engineering** — Build internal developer platforms (IDPs) with self-service infrastructure, golden paths
 - **playwright-automation-fill-in-form** — Automate filling in a form using Playwright MCP
 - **playwright-dev** — Explains how to develop Playwright - add APIs, MCP tools, CLI commands, and vendor depen
 - **playwright-triage** — Triage a Playwright bug report by reproducing it from the information in the issue. Use 
@@ -664,7 +674,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **post-mortem** — /cs:post-mortem <decision> — Honest retrospective on an executed decision, scored agains
 - **postgres** — PostgreSQL best practices, query optimization, connection troubleshooting, and performan
 - **postgres-tuning** — PostgreSQL 17/18+ performance tuning and optimization. Covers async I/O configuration, q
-- **postgresql** — Administer PostgreSQL databases. Configure replication, backups, and performance tuning.
 - **postgresql-database-engineering** — Comprehensive PostgreSQL database engineering skill covering indexing strategies, query 
 - **postgresql-optimization** — PostgreSQL-specific development assistant focusing on unique PostgreSQL features, advanc
 - **power-apps-code-app-scaffold** — Scaffold a complete Power Apps Code App project with PAC CLI setup, SDK integration, and
@@ -675,13 +684,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **powershell-2025-changes** — Critical PowerShell changes, deprecations, and migrations for 2025. PROACTIVELY activate
 - **powershell-7.5-features** — PowerShell 7.5/7.6 features and enhancements. PROACTIVELY activate for: (1) PowerShell 7
 - **powershell-master** — Complete PowerShell expertise system across ALL platforms (Windows/Linux/macOS). PROACTI
+- **pp-nse-india** — Every NSE equity data point in a single Go binary — live quotes, order book, filings, an
 - **prisma-cli** — Prisma ORM CLI commands reference covering init, generate, migrate, db, dev, complete, s
 - **prisma-client-api** — Prisma Client API reference covering model queries, filters, operators, and client metho
 - **prisma-database-setup** — Guides for configuring Prisma with different database providers (PostgreSQL, MySQL, SQLi
 - **prisma-driver-adapter-implementation** — Required reference for Prisma ORM 7 SQL driver adapter work. Use when implementing or mo
 - **prisma-mongodb-upgrade** — Decision and migration guide for Prisma ORM MongoDB projects on v6, which have no upgrad
-- **prisma-postgres** — Prisma Postgres setup and operations guidance across Console, create-db CLI, Management 
-- **prisma-postgres-setup** — Set up a new Prisma Postgres database and connect it to a local project using the Manage
 - **prisma-upgrade-v7** — Complete migration guide from Prisma ORM v6 to v7 covering all breaking changes. Use whe
 - **privacy-parser-pii-extraction** — Extract structured PII spans from text using the OpenAI Privacy Filter 1.5B model revers
 - **production-scheduling** — Codified expertise for production scheduling, job sequencing, line balancing, changeover
@@ -693,16 +701,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **prompt-engineer-toolkit** — Turns marketing prompts into tested, versioned production assets: A/B prompt evaluation 
 - **prompt-optimizer** — Analyze raw prompts, identify intent and gaps, match ECC components (skills/commands/age
 - **promql-validator** — Validate, lint, audit, or fix PromQL queries and alerting rules; detects anti-patterns.
+- **proof-server-proof-server-architecture** — This skill covers proof server internals and how the proof server works. Use it when the
 - **pt2-bug-basher** — Debug PyTorch 2 compiler stack failures including Dynamo graph breaks, Inductor codegen 
 - **pubmed-database** — Direct PubMed and NCBI E-utilities search workflows for biomedical literature, MeSH quer
-- **pydantic** — Comprehensive Pydantic data validation skill for customer support tech enablement - cove
 - **pyrefly-type-coverage** — Migrate a file to use stricter Pyrefly type checking with annotations required for all f
-- **pytest** — Advanced Python unit testing framework for customer support tech enablement, covering Fa
 - **python-asyncio** — Complete Python asyncio system. PROACTIVELY activate for: (1) async/await syntax, (2) as
 - **python-fastapi** — Complete FastAPI production system. PROACTIVELY activate for: (1) Project structure (sca
 - **python-fundamentals-313** — Complete Python 3.13+ fundamentals system. PROACTIVELY activate for: (1) Python 3.13 fre
 - **python-github-actions** — Complete Python GitHub Actions system. PROACTIVELY activate for: (1) uv-based CI workflo
-- **python-package-management** — Complete Python package management system. PROACTIVELY activate for: (1) uv package mana
 - **python-testing** — Complete Python testing system. PROACTIVELY activate for: (1) pytest fundamentals, (2) F
 - **python-type-hints** — Complete Python type hints system. PROACTIVELY activate for: (1) Built-in generics (list
 - **pytorch-patterns** — PyTorch deep learning patterns and best practices for building robust, efficient, and re
@@ -710,7 +716,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **qdrant-clients-sdk** — Qdrant provides client SDKs for various programming languages, allowing easy integration
 - **qdrant-performance-optimization** — Different techniques to optimize the performance of Qdrant, including indexing strategie
 - **quality-nonconformance** — Codified expertise for quality control, non-conformance investigation, root cause analys
-- **quality-playbook** — Run a complete quality engineering audit on any codebase. Derives behavioral requirement
 - **quarkus-security** — Quarkus Security best practices for authentication, authorization, JWT/OIDC, RBAC, input
 - **quarkus-tdd** — Test-driven development for Quarkus 3.x LTS using JUnit 5, Mockito, REST Assured, Camel 
 - **query-caching-strategies** — Implement query caching strategies to improve performance. Use when setting up caching l
@@ -719,6 +724,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **rag-implementation** — Build Retrieval-Augmented Generation (RAG) systems for LLM applications with vector data
 - **rag-infrastructure** — Build and operate Retrieval-Augmented Generation (RAG) infrastructure with vector stores
 - **rag-pipeline-checkup** — Verify a RAG pipeline end-to-end, chunking, embeddings, retrieval quality, reranking, gr
+- **rails-context-verification** — Systematic verification of codebase context before code generation to prevent assumption
 - **rails-patterns** — Ruby on Rails framework patterns for Rails 7.1+ and 8.x apps. Covers the directory contr
 - **ralphinho-rfc-pipeline** — RFC-driven multi-agent DAG execution pattern with quality gates, merge queues, and work 
 - **rate-limiting-abuse-protection** — Implements rate limiting and abuse prevention with per-route policies, IP/user-based lim
@@ -734,7 +740,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **refactor-legacy-code** — Modernize and improve legacy codebases while maintaining functionality. Use when you nee
 - **reliability-strategy-builder** — Implements reliability patterns including circuit breakers, retries, fallbacks, bulkhead
 - **remember-interactive-programming** — A micro-prompt that reminds the agent that it is an interactive programmer. Works great 
-- **replatform** — Routes RePlatform source-to-Wix migrations to the next workflow step by inspecting migra
 - **repo-scan** — Bootstrap pointer that installs the external repo-scan skill from a pinned, reviewable c
 - **repo-standardizer** — Polish any GitHub repository's surface — labels (emoji rating tiers, P0–P3 priority, imp
 - **resilience** — Resilience patterns for .NET 10 applications using Polly v8. Covers retry, circuit break
@@ -743,18 +748,17 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **reviewing-oracle-to-postgres-migration** — Identifies Oracle-to-PostgreSQL migration risks by cross-referencing code against known 
 - **rhino3d-scripts** — Authoring and debugging scripts for Rhinoceros 3D (Rhino 8 and later). Use when asked to
 - **rivet-dynamic-apps** — Dynamic Apps: Deploy an AI-generated backend for every user.
+- **rocm-vllm-deployment** — Production-ready vLLM deployment on AMD ROCm GPUs. Combines environment auto-check, mode
 - **roslyn-analyzers** — Build, review, debug, package, and test Roslyn diagnostic analyzers, code fix providers,
 - **rust-systems-programming** — Complete guide for Rust systems programming including ownership, borrowing, concurrency,
 - **rust-testing** — Rust testing patterns including unit tests, integration tests, async testing, property-b
 - **safety-guard** — Use this skill to prevent destructive operations when working on production systems or r
 - **salesforce-apex-quality** — Apex code quality guardrails for Salesforce development. Enforces bulk-safety rules (no 
-- **sast-scanning** — Perform static application security testing with tools like Semgrep, CodeQL, and SonarQu
 - **scaffold** — Architecture-aware feature scaffolding for .NET 10 projects. Detects the project's archi
 - **scalability-playbook** — Identifies performance bottlenecks and provides ordered scaling strategies with triggers
 - **scalar** — Scalar API documentation UI for .NET 10 applications. Covers setup, themes, authenticati
 - **schema-consistency-checker** — Audits database schemas for naming conventions, type consistency, nullability patterns, 
 - **schema-markup** — When the user wants to implement, audit, or validate structured data (schema markup) on 
-- **secret-scanning** — Guide for configuring and managing GitHub secret scanning, push protection, custom patte
 - **secrets-management** — Implement secure secrets management for CI/CD pipelines using Vault, AWS Secrets Manager
 - **secure-headers-csp-builder** — Implements security headers and Content Security Policy with safe rollout strategy (repo
 - **security-automation** — Automate security workflows and remediation. Build security pipelines, automate complian
@@ -763,15 +767,15 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **security-monitoring** — Automate security monitoring, threat detection, incident response, and compliance workfl
 - **security-scan** — Scan your Claude Code configuration (.claude/ directory) for security vulnerabilities, m
 - **self-eval** — Honestly evaluate AI work quality using a two-axis scoring system. Use after completing 
+- **self-improving-proactive-agent** — Self-reflection + Self-criticism + Self-learning + Self-organizing memory. Agent evaluat
 - **semantic-versioning** — Automate versioning and changelog generation using semantic versioning principles. Confi
-- **sentry** — Use when the user asks to inspect Sentry issues or events, summarize recent production e
 - **sentry-instrumentation** — Decide whether and how errors report to Sentry. Use when touching capture or error-handl
 - **seo** — Audit, plan, and implement SEO improvements across technical SEO, on-page optimization, 
 - **service-layer-extractor** — Refactors route handlers into service layer with clean boundaries, dependency injection,
-- **service-mesh** — Implement Istio and Linkerd service meshes. Configure mTLS, traffic management, and obse
 - **setting-up-ci** — Set up a GitHub Actions CI/CD pipeline with linting, testing, type-checking, and deploym
 - **shannon-ai-pentester** — Autonomous white-box AI pentester for web applications and APIs using source code analys
 - **shell-testing-framework** — Shell script testing expertise using bash test framework patterns from unix-goto, coveri
+- **shep-kit-commit-pr** — Use when ready to commit, push, and create a PR with CI verification. Triggers include "
 - **shopify-custom-data** — MUST be used first when prompts mention Metafields or Metaobjects. Use Metafields and Me
 - **shopify-customer** — The Customer Account API allows customers to access their own data including orders, pay
 - **shopify-dev** — Search Shopify developer documentation across all APIs. Use only when no API-specific sk
@@ -791,6 +795,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **slack-workflows** — Slack automation and workflow builder - notifications, standup bots, approval flows, and
 - **slo-implementation** — Define and implement Service Level Indicators (SLIs) and Service Level Objectives (SLOs)
 - **snapshot-test-refactorer** — Refactors brittle snapshot tests into resilient, focused assertions. Provides strategies
+- **soc-policy-analysis** — \"Conduct structured policy analysis including problem definition, alternative evaluatio
 - **social-media-analyzer** — Social media campaign analysis and performance tracking. Calculates engagement rates, RO
 - **social-publisher** — Agent-driven scheduling and publishing of social media posts across 13 platforms via Soc
 - **social-publishing** — Schedule and publish social media posts across 13 platforms (X, LinkedIn, Instagram, Fac
@@ -800,7 +805,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **spring-boot-actuator** — Provides patterns to configure Spring Boot Actuator for production-grade monitoring, hea
 - **spring-boot-development** — Comprehensive Spring Boot development skill covering auto-configuration, dependency inje
 - **spring-boot-openapi-documentation** — Provides patterns to generate comprehensive REST API documentation using SpringDoc OpenA
-- **spring-boot-project-creator** — Creates and scaffolds a new Spring Boot project (3.x or 4.x) by downloading from Spring 
 - **spring-boot-saga-pattern** — Provides distributed transaction patterns using the Saga Pattern for Spring Boot microse
 - **spring-boot-security-jwt** — Provides JWT authentication and authorization patterns for Spring Boot 3.5.x covering to
 - **spring-boot-test-patterns** — Provides comprehensive testing patterns for Spring Boot applications covering unit, inte
@@ -811,12 +815,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **sql-database-assistant** — Use when the user asks to write SQL queries, optimize database performance, generate mig
 - **sql-optimization** — Universal SQL performance optimization assistant for comprehensive query tuning, indexin
 - **sql-query-optimizer** — Analyzes and optimizes SQL queries using EXPLAIN plans, index recommendations, query rew
-- **sqlalchemy-orm-expert** — Comprehensive SQLAlchemy skill for customer support tech enablement, covering ORM patter
 - **ssh-configuration** — Configure SSH servers and clients securely. Manage keys, tunnels, and config files. Use 
 - **ssl-tls-management** — Manage SSL/TLS certificates with Let's Encrypt and internal PKI. Configure secure HTTPS,
 - **ssma-console** — Use when: SSMA console operations — create project, generate assessment report, convert 
 - **startup-metrics-framework** — Track, calculate, and optimize key performance metrics for SaaS, marketplace, consumer, 
-- **stash-ai-memory** — Persistent memory layer for AI agents using Postgres/pgvector with MCP server support
 - **strategic-alignment** — Cascades strategy from boardroom to individual contributor. Detects and fixes misalignme
 - **stride-analysis-patterns** — Apply STRIDE methodology to systematically identify threats. Use when analyzing system s
 - **string-manipulation-mastery** — Advanced bash string manipulation including parameter expansion, pattern matching, regex
@@ -832,7 +834,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **tech-debt-tracker** — Scan codebases for technical debt, score severity, track trends, and generate prioritize
 - **template-engine** — Auto-fill document templates with data - mail merge for any format
 - **temporal-python-testing** — Test Temporal workflows with pytest, time-skipping, and mocking strategies. Covers unit 
-- **terragrunt-validator** — Validate, lint, audit, or check Terragrunt .hcl/terragrunt.hcl files, stacks, modules, c
 - **test-gap-audit** — Run a read-only audit for missing, weak, stale, or mis-scoped test coverage. If the user
 - **tg-ws-proxy-telegram-socks5** — Local SOCKS5 proxy server that accelerates Telegram Desktop by routing traffic through W
 - **threat-model-generator** — Creates comprehensive threat models using STRIDE methodology with asset identification, 
@@ -842,8 +843,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **todoist-api** — This skill provides instructions for interacting with Todoist using the td CLI tool. It 
 - **token-dashboard-claude-analytics** — Local token cost analytics dashboard for Claude Code sessions — reads JSONL transcripts 
 - **toon-format** — Expert skill for Token-Oriented Object Notation (TOON) — compact, schema-aware JSON enco
+- **topic-adambbhe-tdx-finance-mcp-plugin-v3-tdx-lhbxwfg** — 用于龙虎榜席位风格、资金行为、游资研究与短线交易分析，聚焦营业部席位买卖明细、净额、席位标签和短线博弈结构。适用于回答"这只票龙虎榜怎么看""哪些席位在主导""更像接力还是兑现
+- **topic-kaelio-ktx-sl** — ktx's semantic layer - a structured catalog of sources (tables/views), measures, joins, 
 - **translate-book-parallel** — Translate entire books (PDF/DOCX/EPUB) into any language using Claude Code parallel suba
-- **triggering-reliability** — Catalog of common mistakes that break Claude Code agent and skill triggering, plus marke
+- **tw-ecom-payment-newebpay** — \"Integrate NewebPay (藍新金流) for Taiwan e-commerce via mcp-newebpay. Use when accepting c
 - **ty-skills** — Python type checking expertise using ty - the extremely fast type checker by Astral. Use
 - **typespec-api-operations** — Add GET, POST, PATCH, and DELETE operations to a TypeSpec API plugin with proper routing
 - **typespec-create-api-plugin** — Generate a TypeSpec API plugin with REST operations, authentication, and Adaptive Cards 
@@ -861,18 +864,16 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **update-llms** — Update the llms.txt file in the root folder to reflect changes in documentation or speci
 - **updating-npm-package** — Safely update an npm package by checking npmjs.com for the latest version, reading relea
 - **upstash-redis-kv** — Read and write to Upstash Redis-compatible key-value store via REST API. Use when there 
-- **uspto-database** — USPTO patent and trademark data workflow for official record lookup, PatentSearch querie
 - **ux-artifacts** — Produce evidence-labelled UX needs, journey, structure, inclusion, and engineering-hando
+- **v3-cli-modernization** — CLI modernization and hooks system enhancement for claude-flow v3. Implements interactiv
+- **v3-mcp-optimization** — MCP server optimization and transport layer enhancement for claude-flow v3. Implements c
+- **v3-performance-optimization** — Achieve aggressive v3 performance targets: 2.49x-7.47x Flash Attention speedup, 150x-12,
 - **vector-database-management** — Comprehensive guide for managing vector databases including Pinecone, Weaviate, and Chro
-- **vector-database-ops** — Deploy, manage, and optimize vector databases for AI applications. Covers Qdrant, Weavia
 - **vercel-labs-emulate** — Local drop-in API emulation for Vercel, GitHub, and Google services in CI and no-network
-- **vercel-xhttp-relay** — Deploy an XHTTP relay on Vercel Edge Functions to proxy Xray/V2Ray traffic and hide your
 - **verification-before-completion** — Use when about to claim work is complete, fixed, or passing, before committing or creati
 - **verification-loop** — A comprehensive verification system for Claude Code sessions. Use when verifying a Claud
 - **verify-agent-action** — Review a proposed AI-agent action or human-approval packet before execution. Use when an
-- **vertical-slice** — Vertical Slice Architecture (VSA) for .NET applications — one of several supported archi
 - **vllm-server** — Deploy and manage vLLM for high-throughput LLM inference. Configure continuous batching,
-- **vpn-setup** — Configure WireGuard, OpenVPN, and cloud VPNs. Implement secure remote access and site-to
 - **vulnerability-scanning** — Scan systems and dependencies for CVEs and security vulnerabilities. Use tools like Ness
 - **webhook-automation** — Build and manage webhook-based integrations for real-time event processing and API conne
 - **webhook-receiver-hardener** — Secures webhook receivers with signature verification, retry handling, deduplication, id
@@ -888,13 +889,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **windows-hardening** — Harden Windows servers per security baselines and CIS benchmarks. Configure Group Policy
 - **windows-server** — Administer Windows Server systems. Manage IIS, Active Directory, and PowerShell automati
 - **winui3-migration-guide** — UWP-to-WinUI 3 migration reference. Maps legacy UWP APIs to correct Windows App SDK equi
-- **witr-process-inspector** — CLI and TUI tool that explains why processes, services, and ports are running by tracing
-- **wix-auth** — Authenticate with Wix to obtain an access token for calling Wix APIs. Use when an agent 
 - **wix-replatform** — Routes RePlatform source-to-Wix migrations to the next required workflow module by inspe
+- **wordpress-hacking** — Activate this skill whenever the user mentions WordPress, WP, WooCommerce, WP plugin, WP
 - **workflow-mastery** — Claude Code workflow mastery for .NET developers. Covers parallel execution with git wor
 - **workiq-copilot** — Guides the Copilot CLI on how to use the WorkIQ CLI/MCP server to query Microsoft 365 Co
 - **workspace-surface-audit** — Audit the active repo, MCP servers, plugins, connectors, env surfaces, and harness setup
-- **worldmonitor-intelligence-dashboard** — Real-time global intelligence dashboard with AI-powered news aggregation, geopolitical m
 - **wp-phpstan-review** — WordPress PHPStan review for Codex. Use when reviewing phpstan config, baseline strategy
 - **wp-test-strategy** — WordPress test strategy guidance for Codex. Use when deciding what to test, how deeply t
 - **wrap-up** — Owns the session handoff lifecycle: the end-of-session ritual that captures completed wo
@@ -902,7 +901,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **x-api** — X/Twitter API integration for posting tweets, threads, reading timelines, search, and an
 - **x-twitter-growth** — X/Twitter growth engine for building audience, crafting viral content, and analyzing eng
 
-## designer (506 curated)
+## designer (568 curated)
 
 - **3dsvg-interactive-react** — Turn SVGs into interactive React 3D components using the 3dsvg library and visual editor
 - **8-bit-orbit-video-template** — Hyperframes-based video template for retro pixel deck motion design. Use when users want
@@ -918,6 +917,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **adr-writer** — Creates Architecture Decision Records documenting key technical decisions with context, 
 - **advanced-features-2025** — Advanced Claude Code plugin features for hooks, MCP integration, team distribution, and 
 - **agency-agents-ai-specialists** — A collection of specialized AI agent personalities for Claude Code, Cursor, Aider, Winds
+- **agent-compliance-security-assessment** — Comprehensive compliance and security self-assessment for AI agents. 14-check framework 
 - **agent-designer** — Use when the user asks to design a multi-agent system, pick an orchestration pattern (su
 - **agent-development** — Canonical guide to authoring Claude Code agent frontmatter and system prompts. PROACTIVE
 - **agent-flow-visualization** — VS Code extension for real-time visualization of Claude Code agent orchestration as inte
@@ -930,6 +930,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **agentic-workflows** — Route gh-aw workflow design/create/debug/upgrade requests to the right prompts.
 - **ai-image-generation** — Generate and edit images on RunComfy via the `runcomfy` CLI — a smart router across the 
 - **ai-music-album** — Full-lifecycle AI music album production — concept, lyric drafting, track sequencing, an
+- **ai-productivity-audit** — Audit a user's current AI tool stack. Score each tool by ROI, identify redundancies, gap
+- **ai-stack-builder** — Build a personalized AI tool stack based on role, goals, and budget. Recommends specific
+- **am-agent-messenger** — This skill should be used when the user or agent wants to \"send a message to another ag
 - **analysis-authoring** — Authoring conventions for exploratory data analysis notebooks and analytical dashboards,
 - **angular-module-design** — Design Angular modules using feature modules, lazy loading, and dependency injection. Us
 - **animation-micro-interaction-pack** — Provides reusable interaction patterns and motion presets that make UI feel polished. In
@@ -954,12 +957,21 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **azure-kusto-irql-graph** — Apply IRQL graph functions to KQL or IRQL query results for Kusto Explorer visualization
 - **azure-networking** — Configure Azure VNets, NSGs, and Azure Firewall. Implement hub-spoke topology and privat
 - **azure-resource-visualizer** — Analyze Azure resource groups and generate detailed Mermaid architecture diagrams showin
-- **azure-role-selector** — When user is asking for guidance for which role to assign to an identity given desired p
 - **azure-smart-city-iot-solution-builder** — Design and plan end-to-end Azure IoT and Smart City solutions: requirements, architectur
 - **azure-well-architected-framework** — Azure Well-Architected Framework (WAF) for cloud architecture review. PROACTIVELY activa
 - **background-jobs-designer** — Designs background job processing systems with queue integration (BullMQ/Celery), job de
 - **backup-recovery** — Implement backup and recovery strategies. Configure rsync, Restic, and cloud backups. Us
 - **benchmark-methodology** — Use after competitive-platform-analysis has produced a tiered competitor set. Scores eac
+- **biz-4p-7p** — \"Apply the Marketing Mix (4P/7P) framework to design tactical marketing decisions acros
+- **biz-blue-ocean** — \"Apply Blue Ocean Strategy to create uncontested market space through value innovation.
+- **biz-brand-positioning** — \"Develop brand positioning strategy including positioning statements, perceptual maps, 
+- **biz-corporate-governance** — \"Corporate-governance practice playbook: board composition, three lines of defense, aud
+- **biz-crm-strategy** — \"Customer relationship management strategy — integrated framework with six pillars: cus
+- **biz-erm** — \"Enterprise risk management (ERM) framework layer — integrates COSO ERM 2017 (five comp
+- **biz-innovation-management** — \"Corporate innovation-governance toolkit integrating Stage-Gate process, 3 Horizons mod
+- **biz-management-accounting** — \"Management accounting toolkit for internal decision support: ABC costing, variance ana
+- **biz-pricing-strategy** — \"Analyze and design pricing strategies including cost-plus, value-based, competitive, p
+- **biz-sme-management** — \"SME and family-business management for Taiwan's industrial structure (98% SME, 70%+ fa
 - **brand-discovery** — Use when a brand needs to discover or articulate its identity through structured multi-s
 - **brand-extract** — Extract a complete Brand Kit from a live website by driving the in-app browser. Use when
 - **brand-guidelines** — Applies Anthropic's official brand colors and typography to any sort of artifact that ma
@@ -983,7 +995,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **claude-skill-app-onboarding-questionnaire** — Claude Code skill that designs and builds high-converting questionnaire-style app onboar
 - **clean-architecture** — Provides implementation patterns for Clean Architecture, Hexagonal Architecture (Ports &
 - **cloud-design-patterns** — Cloud design patterns for distributed systems architecture covering 42 industry-standard
-- **cloudbase** — Use this skill when you develop, design, build, deploy, debug, migrate, or troubleshoot 
 - **cmo-advisor** — Marketing leadership for scaling companies. Brand positioning, growth model design, mark
 - **cmux-architecture** — cmux package architecture, refactor layering, dependency inversion, file organization, D
 - **cmux-cua** — Use only after the user explicitly asks for Computer Use: drive real macOS apps from a c
@@ -991,31 +1002,37 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **code-tour** — Create CodeTour `.tour` files — persona-targeted, step-by-step walkthroughs with real fi
 - **codeburn-claude-cost-dashboard** — Interactive TUI dashboard for visualizing Claude Code token usage, costs, and task break
 - **color-accessibility** — Design color palettes that are accessible to all users including those with color blindn
+- **combinatorial-chemistry** — Combinatorial Chemistry Library Design - Design combinatorial library: validate core SMI
+- **commitment-discount-strategist** — Cross-cloud commitment portfolio specialist. Designs and maintains Reserved Instances, S
+- **compact-core-compact-ledger** — This skill should be used when the user asks about Compact ledger declarations, ledger m
+- **compact-core-compact-privacy-disclosure** — This skill should be used when the user asks about Midnight's privacy model, the disclos
 - **company-os** — The meta-framework for how a company runs — the connective tissue between all C-suite ro
 - **comparing-branches-visually** — Check out two branches in separate worktrees, start both dev servers on different ports,
 - **content-creator** — Deprecated redirect skill that routes legacy 'content creator' requests to the correct s
 - **coo-advisor** — Operations leadership for scaling companies. Process design, OKR execution, operational 
+- **coot-inline-graphs** — Create interactive inline Chart.js graphs directly in the chat from live Coot data. Use 
 - **copilot-pr-autopilot** — Copilot left 14 review comments on your PR — half are nits. Hours of fix → reply → resol
 - **cosmosdb-datamodeling** — Step-by-step guide for capturing key application requirements for NoSQL use-case and pro
 - **cover-letter** — This skill helps you write personalized, compelling cover letters that effectively commu
 - **cpo-advisor** — Product leadership for scaling companies. Product vision, portfolio strategy, product-ma
+- **crabcode** — Guides the user through creating a brand-new CrabCode plugin from scratch via conversati
 - **create-canvas-extension** — Create or register a canvas extension in the awesome-copilot repository. Use when asked 
 - **create-repo-agent** — Design, implement, review, or harden Langfuse repo-owned autonomous agents. Use for LLM-
 - **cro-advisor** — Revenue leadership for B2B SaaS companies. Revenue forecasting, sales model design, pric
 - **crucix-intelligence-dashboard** — Personal intelligence agent that aggregates 27 OSINT data sources into a self-hosted Jar
+- **cs-notification-strategy** — \"Design push notification and messaging strategies including channel selection, timing 
 - **culture-architect** — Build, measure, and evolve company culture as operational behavior — not wall posters. C
-- **customer-card-render** — Generate customer-card PowerPoint content YAML from Design Thinking canonical artifacts 
 - **d3-visualization** — Teaches the agent to produce D3 charts and interactive data visualizations. A comprehens
 - **d365-solution-blueprint** — Authors a Dynamics 365 Finance and Supply Chain Management Solution Blueprint from scrat
 - **daily-focus-board** — Spin up a personal, motivating daily focus board that renders in a browser canvas and th
 - **dark-mode-implementer** — Implements complete dark/light mode theming systems using CSS variables, Tailwind dark m
 - **dark-mode-testing** — Toggle between light and dark mode in Cursor's browser, screenshot both states, and flag
 - **data-cloud-2025** — Salesforce Data Cloud integration patterns and architecture (2025). PROACTIVELY activate
+- **data-dashboard-design** — \"Design effective data dashboards with proper KPI hierarchy, chart type selection, and 
 - **data-designer** — Use when the user wants to create a dataset, generate synthetic data, or build a data ge
 - **data-report** — Turns CSV, Excel, or JSON data into a polished visual report page.
 - **data-storytelling** — Transform data into compelling narratives using visualization, context, and persuasive s
 - **data-visualization** — Create effective visualizations using matplotlib and seaborn for exploratory analysis, p
-- **database-backups** — Implement database backup strategies. Configure automated backups, retention, and recove
 - **database-design** — Design database schemas — tables, relationships, indexes, constraints, and ORM setup. Co
 - **database-designer** — Use when the user asks to design database schemas, plan data migrations, optimize querie
 - **database-indexing-strategy** — Design and implement database indexing strategies. Use when creating indexes, choosing i
@@ -1031,8 +1048,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **demo-setup** — Repeatable HVE Core demo setup that simulates DT Coach sessions with a customer persona 
 - **dependency-injection** — Dependency injection patterns for .NET 10. Covers service lifetimes, keyed services, the
 - **deployment-pipeline-design** — Design multi-stage CI/CD pipelines with approval gates, security checks, and deployment 
+- **derive** — Use Derive as the default handoff for substantial planning, product, design, research, r
 - **design-brief** — Parse a structured design brief written in I-Lang protocol format into a concrete design
 - **design-consultation** — Build a complete design system from scratch with creative risks and realistic product mo
+- **design-creator** — 接收一份已审批的内容简报(content brief),端到端执行一场营销战役:排布发布 日历、逐渠道撰写文案、为每个视觉素材写出精确的设计简报(尺寸、版式、文字叠加、 品牌色
 - **design-flow** — Run the full design-to-build workflow as a guided sequence. Orchestrates all designer sk
 - **design-handoff** — Prepare designs for development handoff. Document specifications, interactions, and asse
 - **design-md** — Create and manage DESIGN.md files. Useful for capturing design direction, tokens, and vi
@@ -1040,6 +1059,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **design-patterns-implementation** — Apply appropriate design patterns (Singleton, Factory, Observer, Strategy, etc.) to solv
 - **design-review** — Designer Who Codes: visual audit then fixes with atomic commits and before/after screens
 - **design-system** — Use this skill to generate or audit design systems, check visual consistency, and review
+- **design-system-conflict-checker** — Verifies proposed UI elements (icons, components, color tokens, badge types, modal patte
 - **design-system-creation** — Build comprehensive design systems with components, patterns, and guidelines. Enable con
 - **design-taste-frontend** — Anti-slop frontend skill for landing pages, portfolios, and redesigns. The agent reads t
 - **design-taste-frontend-v1** — The original v1 taste-skill, preserved for projects depending on its exact behavior. The
@@ -1048,14 +1068,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **designlang-design-extract** — Extract complete design systems from any website — colors, typography, spacing, shadows,
 - **desk-open** — Create and open a new desk in the workshop. Sets up the folder structure, initial journa
 - **dev-team** — Simulate a collaborative dev team session where multiple role-based personas (PM, Archit
-- **diagram-design-editorial** — Generate editorial-quality HTML+SVG diagrams (13 types) for blog posts and documentation
 - **dimensionality-reduction** — Reduce feature dimensionality using PCA, t-SNE, and feature selection for feature reduct
 - **django-celery** — Django + Celery async task patterns — configuration, task design, beat scheduling, retri
 - **django-patterns** — Django architecture patterns, REST API design with DRF, ORM best practices, caching, sig
 - **doc-and-modernize** — Two related workflows for a locally-cloned codebase, in one skill. Documentation mode pr
 - **doc-diagnostic** — This skill should be used when deciding whether a doc should exist, where it belongs, wh
 - **doc-kami-parchment** — Warm parchment canvas (#f5f4ed), monochrome ink-blue accent (#1B365D), one serif family,
-- **doca-comm-channel-admin** — Use this skill to enumerate host↔DPU DOCA comch (formerly Comm Channel) servers and conn
 - **domain-model-boundaries-mapper** — Identifies domain modules, ownership boundaries, dependencies, and interfaces using Doma
 - **dotnet-design-pattern-review** — Review the C#/.NET code for design pattern implementation and suggest improvements.
 - **dt-app-dashboards** — Work with Dynatrace dashboards - create, modify, query, and analyze dashboard JSON inclu
@@ -1068,6 +1086,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **dynamodb-toolbox-patterns** — Provides TypeScript patterns for DynamoDB-Toolbox v2 including schema/table/entity model
 - **e2e-test-builder** — Builds end-to-end browser tests for critical user flows using Playwright or Cypress. Inc
 - **eas-observe** — EAS service (paid). Use for anything related to EAS Observe - adding `expo-observe` to a
+- **ecom-rfm-analysis** — \"Perform RFM (Recency, Frequency, Monetary) customer segmentation from transaction data
+- **econ-behavioral** — \"Apply behavioral economics concepts including bounded rationality, prospect theory, me
 - **efcore-d2-db-diagram** — Generate D2 database diagrams from Entity Framework Core models. USE FOR: EF Core databa
 - **elk-stack** — Deploy and manage the ELK Stack (Elasticsearch, Logstash, Kibana) for log aggregation an
 - **email-drafter** — Draft and review professional emails that match your personal writing style. Analyzes yo
@@ -1077,7 +1097,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **enterprise-architecture-patterns** — Complete guide for enterprise architecture patterns including domain-driven design, even
 - **entra-agent-id** — Provision Microsoft Entra Agent Identity Blueprints, BlueprintPrincipals, and per-instan
 - **entra-agent-user** — Create Agent Users in Microsoft Entra ID from Agent Identities, enabling AI agents to ac
-- **epic-design** — Build immersive, cinematic 2.5D interactive websites using scroll storytelling, parallax
 - **etl-pipeline** — Design and automate Extract, Transform, Load data pipelines for data integration and ana
 - **etl-sync-job-builder** — Designs reliable ETL and data synchronization jobs with incremental updates, idempotency
 - **eval-engineering** — Inspect an agent repository and optional traces, interview the user, write reviewed Task
@@ -1096,7 +1115,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **fal-train** — Train custom AI models (LoRA) on fal.ai for personalized image generation tailored to a 
 - **fal-vision** — Analyze images — segment objects, detect, run OCR, describe, and answer visual questions
 - **feasibility** — Author and validate durable data and ML feasibility studies using the Feasibility Study 
-- **field-notes-editorial-template** — Editorial "Field Notes" report template with soft paper background, serif hero typograph
+- **field-notes-editorial-template** — Editorial 'Field Notes' report template with soft paper background, serif hero typograph
 - **figma** — Use the Figma MCP server to fetch design context, screenshots, variables, and assets fro
 - **figma-code-connect-components** — Connect Figma design components to code components using Code Connect so design-system u
 - **figma-create-design-system-rules** — Generate project-specific design system rules for Figma-to-code workflows. Useful for ca
@@ -1106,9 +1125,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **figma-generate-library** — Build or update a professional-grade design system library in Figma from a codebase. Use
 - **figma-implement-design** — Translate Figma designs into production-ready code with 1:1 visual fidelity. Useful for 
 - **figma-use** — Run Figma Plugin API scripts for canvas writes, inspections, variables, and design-syste
+- **fin-m-and-a** — \"M&A integration playbook covering eight modules: strategic rationale, target screening
 - **firebase-data-connect** — Builds and deploys Firebase SQL Connect (aka Firebase Data Connect) backends with Postgr
 - **firestore-rules-creation** — Designs, authors, refactors, and hardens production-grade Cloud Firestore Security Rules
-- **flow-orchestrator-2025** — Salesforce Flow Orchestrator for multi-user, multi-step business processes (2025). PROAC
 - **fluentui-blazor** — Guide for using the Microsoft Fluent UI Blazor component library (Microsoft.FluentUI.Asp
 - **flutter-add-widget-preview** — Adds interactive widget previews to the project using the previews.dart system. Use when
 - **flutter-animating-apps** — Implement animated effects, transitions, and motion in Flutter apps. Useful for native i
@@ -1120,6 +1139,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **frame-data-chart-nyt** — NYT-newsroom typography, staggered reveal animation, and editorial-grade charts (line, b
 - **frame-logo-outro** — Segmented logo assembly, glow bloom, and tagline reveal for video outros or brand closin
 - **framer-motion-animator** — Creates smooth animations and micro-interactions using Framer Motion including page tran
+- **framer-reference** — Ambil referensi UI/UX nyata dari site Framer (atau site apa pun) untuk dipakai AI saat m
 - **free-tool-strategy** — When the user wants to build a free tool for marketing — lead generation, SEO value, or 
 - **freeimg-z-image** — Generate AI images from text prompts via the free z-image-turbo model (Gitee AI serverle
 - **frontend-architecture** — Component architecture, design patterns, state management strategies, module systems, bu
@@ -1132,7 +1152,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **gcp-cloud-architect** — Design GCP architectures for startups and enterprises. Use when asked to design Google C
 - **gcp-networking** — Configure VPCs, firewall rules, and Cloud NAT. Implement shared VPC and private service 
 - **gdpr-compliance** — Implement GDPR data protection requirements. Configure consent management, data subject 
-- **gdpr-compliant** — Apply GDPR-compliant engineering practices across your codebase. Use this skill whenever
 - **gdpr-data-handling** — Implement GDPR-compliant data handling with consent management, data subject rights, and
 - **generate-image** — Generate images using AI. Use when asked to generate, create, or make images, textures, 
 - **generating-images** — Generate or edit images using the OpenAI Image API (gpt-image-2). Use when the user asks
@@ -1143,6 +1162,37 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **gpt-image-2** — Generate and edit images with OpenAI GPT Image 2 (ChatGPT Images 2.0) on RunComfy. Docum
 - **gpt-image-edit** — Edit images with OpenAI GPT Image 2 (the `/edit` endpoint of ChatGPT Images 2.0) on RunC
 - **gpt-taste** — Elite UX/UI & Advanced GSAP Motion Engineer. Enforces Python-driven true randomization f
+- **grad-action-research** — \"Apply action research through Plan-Act-Observe-Reflect cycles and Participatory Action
+- **grad-affordance** — \"Apply Affordance Theory (Gibson, 1979; Norman, 1988) to analyze the action possibiliti
+- **grad-agenda-setting** — \"Apply agenda-setting theory (McCombs & Shaw) to analyze how media salience transfers t
+- **grad-ai-ethics** — \"Apply AI ethics frameworks (fairness, accountability, transparency, privacy) to evalua
+- **grad-ambidexterity** — \"Apply organizational ambidexterity theory to balance exploration and exploitation acti
+- **grad-blooms** — \"Apply Bloom's revised taxonomy to classify learning objectives and design assessments 
+- **grad-born-global** — \"Apply the Born Global framework to analyze firms that internationalize rapidly from in
+- **grad-brand-equity** — \"Apply brand equity frameworks (Aaker, 1991; Keller, 1993) to assess and build customer
+- **grad-cas** — \"Apply Complex Adaptive Systems theory to analyze phenomena exhibiting emergence, self-
+- **grad-case-study** — \"Apply case study research design (Yin) to investigate how and why questions within rea
+- **grad-constructivism** — \"Apply constructivist learning theory to design instruction based on active knowledge c
+- **grad-coopetition** — \"Apply the Co-opetition Value Net framework (Brandenburger and Nalebuff, 1996) to map c
+- **grad-critical-realism** — \"Apply Bhaskar's critical realism to analyze phenomena through three ontological domain
+- **grad-disruptive-innovation** — \"Apply Christensen's Disruptive Innovation theory to assess low-end and new-market thre
+- **grad-dual-process** — \"Apply dual-process theory to diagnose whether judgments arise from fast intuitive (Sys
+- **grad-elm** — \"Apply the Elaboration Likelihood Model to design persuasion strategies by matching mes
+- **grad-ethnography** — \"Apply ethnographic methods including prolonged engagement, participant observation, th
+- **grad-flow** — \"Apply flow theory to diagnose optimal experience conditions and design environments th
+- **grad-framing** — \"Apply framing theory to analyze how selection, emphasis, and exclusion shape interpret
+- **grad-mixed-methods** — \"Design and conduct mixed methods research using convergent, explanatory sequential, or
+- **grad-paradox-theory** — \"Apply Smith and Lewis's paradox theory to identify and manage organizational tensions 
+- **grad-platform-economics** — \"Apply platform economics to analyze network effects, solve chicken-and-egg problems, a
+- **grad-sd-logic** — \"Apply Service-Dominant Logic (Vargo and Lusch, 2004) and value co-creation principles 
+- **grad-sdt** — \"Apply Self-Determination Theory to analyze motivation quality along the autonomy conti
+- **grad-social-identity** — \"Apply Social Identity Theory to analyze how group categorization, identification, and 
+- **grad-sociotechnical** — \"Apply Sociotechnical Systems Theory to analyze and design work systems through joint o
+- **grad-survey-design** — \"Apply rigorous survey design principles including construct operationalization, Likert
+- **grad-sustainability** — \"Apply sustainability frameworks (triple bottom line, SDGs, ESG, circular economy) to e
+- **grad-tam-utaut** — \"Apply the Technology Acceptance Model (Davis, 1989) and Unified Theory of Acceptance a
+- **grad-tpack** — \"Apply the TPACK framework to evaluate and design technology-integrated instruction at 
+- **grad-tpb** — \"Apply the Theory of Planned Behavior to predict behavioral intentions from attitudes, 
 - **grafana-dashboard** — Create professional Grafana dashboards with visualizations, templating, and alerts. Use 
 - **grafana-dashboards** — Create and manage production Grafana dashboards for real-time visualization of system an
 - **graphql-api-development** — Comprehensive guide for building GraphQL APIs including schema design, queries, mutation
@@ -1191,14 +1241,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **library-curator** — Search the OD Library (the global asset registry) and apply matching assets into the cur
 - **lightning-2025-features** — Salesforce Lightning Web Components and platform features (Winter '26 / 2025). PROACTIVE
 - **liquid-glass-design** — iOS 26 Liquid Glass design system — dynamic glass material with blur, reflection, and in
-- **llm-wiki-skill** — Build and maintain a personal knowledge base using Karpathy's llm-wiki methodology acros
 - **loop-design-check** — Design a goal-oriented agent loop, and review it for the ways loops go wrong — spinning 
 - **loop-library** — Discover, find, compare, audit, repair, adapt, and design repeatable AI-agent loops with
+- **lybic-cloud-computer-skill** — Lybic Sandbox is a cloud sandbox built for agents and automation workflows. Think of it 
 - **make-interfaces-feel-better** — Apply concrete design-engineering details that make interfaces feel polished. Use when r
-- **managed-deep-agents** — INVOKE THIS SKILL when building, testing, or deploying Managed Deep Agents in LangSmith 
 - **markdown-style** — This skill should be used to review, lint, or fix Markdown formatting in READMEs, ADRs, 
 - **marketing-context** — Create and maintain the marketing context document that all marketing skills read before
 - **marketing-psychology** — Apply psychological principles and behavioral science to copy and design. Useful for tig
+- **master-agent-playbook** — Philosophy, decision-making framework, and technical skills for delivering visual, inter
 - **mcp-create-adaptive-cards** — Buat Adaptive Card response templates untuk MCP API plugin agar data tampil visual di Mi
 - **mdv-markdown-visualization** — MDV — Markdown superset for documents, dashboards, and slides with embedded charts, KPI 
 - **mermaid-diagram-generator** — Creates Mermaid diagrams for flowcharts, sequence diagrams, ERDs, and architecture visua
@@ -1214,7 +1264,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **mockup-device-3d** — Static iPhone and MacBook 3D-style showcase with real HTML embedded on screens, glass-le
 - **mongoose-mongodb** — Work with MongoDB in Node.js using Mongoose ODM for schema design, CRUD operations, rela
 - **monorepo-navigator** — Navigate, manage, and optimize monorepos. Covers Turborepo, Nx, pnpm workspaces, and Ler
-- **msgraph-sdk** — Integrate Microsoft Graph SDK into any project — .NET, TypeScript/JavaScript, or Python.
 - **multi-cloud-architecture** — Design multi-cloud architectures using a decision framework to select and integrate serv
 - **multi-cloud-strategy** — Design and implement multi-cloud strategies spanning AWS, Azure, and GCP with vendor loc
 - **multi-tenant-llm-hosting** — Design secure, multi-tenant LLM hosting platforms with tenant isolation, quotas, billing
@@ -1235,6 +1284,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **openclaw-persona-forge** — 为 OpenClaw AI Agent 锻造完整的龙虾灵魂方案。根据用户偏好或随机抽卡， 输出身份定位、灵魂描述(SOUL.md)、角色化底线规则、名字和头像生图提示词。 如当
 - **openclaw-rl-training** — OpenClaw-RL framework for training personalized AI agents via reinforcement learning fro
 - **openhanako-personal-ai-agent** — Build and configure personal AI agents with memory, personality, and autonomy using Open
+- **ops-digital-transformation** — \"Digital-transformation execution playbook: maturity assessment, transformation roadmap
+- **ops-okr-planning** — \"Design and implement OKR (Objectives and Key Results) for goal-setting and strategic a
+- **ops-org-behavior** — \"Integrated organizational-behavior diagnostic toolkit across three layers: individual 
+- **ops-talent-strategy** — \"Strategic talent-management toolkit integrating 9-box grid (performance × potential), 
+- **oracle-agent-spec-expert** — Design framework-agnostic AI agents using Oracle's Open Agent Specification for portable
 - **orch-add-feature** — Orchestrate building a brand-new feature end to end — research, plan, TDD implementation
 - **orch-build-mvp** — Orchestrate bootstrapping a working MVP from a design or spec document — ingest the doc,
 - **paywall-upgrade-cro** — Design and optimize upgrade screens, paywalls, and upsell modals. Useful for SaaS conver
@@ -1251,7 +1305,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **persona-researcher** — Organize research — manage references, notes, and collaboration.
 - **persona-sales-ops** — Manage sales workflows — track deals, schedule calls, client comms.
 - **persona-team-lead** — Lead a team — run standups, coordinate tasks, and communicate.
-- **phantom-ai-coworker** — AI co-worker agent with its own computer, persistent memory, self-evolution, MCP server,
 - **pixelbin-media** — Generate and edit images and videos with an 85+ API portfolio and build visually appeali
 - **plan** — Enter plan mode for .NET projects with architecture awareness. Analyzes tasks through th
 - **plan-canvas** — Open plans and HTML artifacts in a local browser canvas where the human annotates elemen
@@ -1272,8 +1325,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **ppt-visual** — Design presentation visuals and slide layouts. Create visual concepts, suggest graphics,
 - **pptx-html-fidelity-audit** — Audit a python-pptx export against its source HTML deck, identify layout/content drift (
 - **premium-frontend-ui** — A comprehensive guide for GitHub Copilot to craft immersive, high-performance web experi
+- **prfaq-parser** — Normalizes an arbitrary Mattermost PRFAQ markdown file (T3-aware) into a structured, for
 - **pricing-strategy** — Design, optimize, and communicate SaaS pricing — tier structure, value metrics, pricing 
-- **prisma-patterns** — Prisma ORM patterns for TypeScript backends — schema design, query optimization, transac
 - **process-mapping** — Visualize and document current and future business processes. Identify inefficiencies, d
 - **project-estimation** — Estimate project scope, timeline, and resource requirements using multiple estimation te
 - **prometheus-grafana** — Set up metrics collection and visualization with Prometheus and Grafana. Configure scrap
@@ -1290,7 +1343,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **redesign-existing-projects** — Upgrades existing websites and apps to premium quality. Audits current design, identifie
 - **redis-patterns** — Redis data structure patterns, caching strategies, distributed locks, rate limiting, pub
 - **refactor** — Surgical code refactoring to improve maintainability without changing behavior. Covers e
-- **reference-design-contract** — Turn vague taste, screenshots, URLs, product notes, or "make it feel like this" referenc
+- **reference-design-contract** — Turn vague taste, screenshots, URLs, product notes, or 'make it feel like this' referenc
 - **referral-program** — When the user wants to design, launch, or optimize a referral or affiliate program. Use 
 - **relight** — Relight a still image — change the lighting setup, color temperature, direction, or mood
 - **remotion** — Programmatic video creation with React. Useful for branded explainers, social cuts, dash
@@ -1307,7 +1360,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **rfc-generator** — Generates Request for Comments documents for technical proposals including problem state
 - **roundup** — Generate personalized status briefings on demand. Pulls from your configured data source
 - **roundup-setup** — Interactive onboarding that learns your communication style, audiences, and data sources
-- **runcomfy-cli** — Run any model on RunComfy from the command line. The `runcomfy` CLI is one binary, one a
+- **ruby-oop-patterns** — Comprehensive guide to Object-Oriented Programming in Ruby and Rails covering classes, m
 - **saga-orchestration** — Implement saga patterns for distributed transactions and cross-aggregate workflows. Use 
 - **salesforce-component-standards** — Quality standards for Salesforce Lightning Web Components (LWC), Aura components, and Vi
 - **salesforce-flow-design** — Salesforce Flow architecture decisions, flow type selection, bulk safety validation, and
@@ -1317,17 +1370,22 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **security-ownership-map** — Analyze git repositories to build a security ownership topology (people-to-file), comput
 - **security-threat-model** — Repository-grounded threat modeling that enumerates trust boundaries, assets, attacker c
 - **seedance-2-5-reference-to-video** — Generate reference-guided 1080p video with ByteDance Seedance 2.5 Reference to Video on 
+- **self-determination-theory-for-developer-motivation** — Apply Deci & Ryan's Self-Determination Theory to design intrinsic motivation into A-Code
+- **senior-engineer-coding** — Apply senior software engineering standards when writing, editing, or refactoring any co
 - **service-mesh-observability** — Implement comprehensive observability for service meshes including distributed tracing, 
+- **service-object-patterns** — Complete guide to implementing Service Objects in Ruby on Rails applications. Use this s
 - **setup-my-iq** — Create, set up, or update the personal context portfolio: structured markdown files desc
 - **shadcn-ui** — Build UI components with shadcn/ui. Pairs with the Stitch design loop to ship structured
 - **shader-dev** — GLSL shader techniques for ray marching, fluid simulation, particle systems, and procedu
 - **shopify-admin** — Write or explain **Admin GraphQL** queries and mutations for apps and integrations that 
 - **shopify-use-shopify-cli** — Choose when the user needs **Shopify CLI** to run or fix something now: validate app or 
+- **sidekiq-async-patterns** — Complete guide to background job processing with Sidekiq in Ruby on Rails. Use this skil
 - **site-architecture** — When the user wants to audit, redesign, or plan their website's structure, URL hierarchy
 - **skill-comply** — Visualize whether skills, rules, and agent definitions are actually followed — auto-gene
 - **skill-development** — Canonical guide to authoring SKILL.md files for Claude Code plugin skills. PROACTIVELY a
 - **skill-writer** — Guide users through creating Agent Skills for Claude Code. Use when the user wants to cr
 - **slides** — Create and edit .pptx presentation decks with PptxGenJS. Useful for sales decks, kickoff
+- **soc-cialdini** — \"Apply Cialdini's six principles of persuasion — Reciprocity, Commitment/Consistency, S
 - **social-spotify-card** — Spotify Now Playing-style card with album art, progress bar, and playback controls, suit
 - **spring-boot-dependency-injection** — Provides dependency injection patterns for Spring Boot projects, including constructor-f
 - **spring-boot-rest-api-standards** — Provides REST API design standards and best practices for Spring Boot projects. Use when
@@ -1349,6 +1407,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **swiss-creative-mode-template** — Swiss-inspired creative-mode presentation template skill with bold editorial typography,
 - **swiss-user-research-video-template** — Swiss-style user-research narrative template in warm-paper editorial aesthetics. Use whe
 - **system-design-generator** — Produces comprehensive system architecture plans for features and products including com
+- **tailadmin-ui-patterns** — TailAdmin dashboard UI framework patterns and Tailwind CSS classes. ALWAYS use this skil
 - **tailwind-css** — Utility-first CSS framework for rapid UI development with responsive design, component p
 - **tailwind-css-patterns** — Provides comprehensive Tailwind CSS utility-first styling patterns including responsive 
 - **tailwind-design-system** — Build scalable design systems with Tailwind CSS v4, design tokens, component libraries, 
@@ -1364,9 +1423,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **taste** — A creative-direction (taste) layer for music videos and short-form edits in the angelcor
 - **taste-design** — Semantic Design System Skill for Google Stitch. Generates agent-friendly DESIGN.md files
 - **team-composition-analysis** — Design optimal team structures, hiring plans, compensation strategies, and equity alloca
+- **tech-api-integration** — \"Guide REST API integration including HTTP methods, authentication, error handling, and
+- **tech-data-pipeline** — \"Design data pipelines covering ETL vs ELT architectures, data source integration, sche
 - **tech-doc-style-chinese** — Writing skill for Chinese technical documentation and product copy — enforces clarity, c
 - **technology-stack-blueprint-generator** — Comprehensive technology stack blueprint generator that analyzes codebases to create det
-- **threat-modeling** — Conduct threat modeling using STRIDE methodology. Identify threats, assess risks, and de
 - **tool-function-schema-designer** — Designs robust function/tool calling schemas for LLMs with JSON schemas, validation stra
 - **ui-design-patterns** — Common interface patterns, navigation patterns, form patterns, data display patterns, fe
 - **ui-to-vue** — Use when the user has UI screenshots or design exports that need batch conversion into V
@@ -1374,10 +1434,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **ui-ux-pro-max-skill** — AI design intelligence skill for building professional UI/UX across multiple platforms w
 - **understand-anything-knowledge-graph** — Turn any codebase into an interactive knowledge graph using Claude Code skills — explore
 - **update-implementation-plan** — Update an existing implementation plan file with new or update requirements to provide n
+- **user-experience-design** — Comprehensive UX design patterns for Rails applications including responsive design, ani
 - **using-ui-stack** — Enforce a configuration-driven design system when generating UI. Ensures consistent spac
 - **ux-coaching** — Coach a UX practitioner through problem framing, running a design critique, or making an
 - **ux-principles** — User research, usability heuristics, user psychology, accessibility, inclusive design, u
 - **uzi-skill-stock-analyzer** — AI-powered deep stock analysis engine for A-share/HK/US markets with 51 investor persona
+- **v3-ddd-architecture** — Domain-Driven Design architecture for claude-flow v3. Implements modular, bounded contex
 - **vardoger-analyze** — Use when the user asks to personalize the GitHub Copilot CLI assistant, adapt Copilot to
 - **vcpkg** — Guide for setting up vcpkg in C++ projects, managing dependency versions, and cross-comp
 - **venice-image-edit** — Image edits, upscaling, and background removal via the Venice.ai API.
@@ -1398,7 +1460,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **weread-year-in-review-video-template** — WeRead-inspired HyperFrames video template for vertical annual reading reports, personal
 - **winui-app** — Bootstrap, develop, and design modern WinUI 3 desktop applications with C# and the Windo
 - **wireframing** — Low/high fidelity wireframes, user flows, information architecture, prototyping techniqu
-- **wix-base44-connector** — Build on and manage the connected Wix site from a Base44 app: discover and call any Wix 
 - **wix-design-system** — Wix Design System component reference. Use when building UI with @wix/design-system, cho
 - **wix-headless** — Connect Wix business services (Stores, Bookings, CMS, Blog, Events, Forms, and more) to 
 - **wix-headless-fast** — Build a Wix Headless site fast by wiring SHIPPED, verified @wix/sdk code instead of auth
@@ -1411,7 +1472,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **zero-trust** — Implement zero-trust network architecture. Configure identity-based access, micro-segmen
 - **zod-validation-utilities** — Creates reusable Zod v4 schemas, validates API payloads, forms, and configuration input,
 
-## frontend-developer (316 curated)
+## frontend-developer (338 curated)
 
 - **absolute-deflake** — Flaky test fixes: detect nondeterministic tests empirically (repeat/shuffle/parallel run
 - **accessibility** — Consolidated accessibility skill entrypoint for WCAG 2.2, ARIA Authoring Practices, cogn
@@ -1419,15 +1480,15 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **accessibility-compliance** — Implement WCAG 2.1/2.2 accessibility standards, screen reader compatibility, keyboard na
 - **acquire-codebase-knowledge** — Use this skill when the user explicitly asks to map, document, or onboard into an existi
 - **acreadiness-generate-instructions** — Generate tailored AI agent instruction files via AgentRC instructions command. Produces 
+- **actions-cli** — Invoke the Actions SDK from the shell - query assets/chains, derive an EOA address from 
 - **ado-pipeline-best-practices** — Azure DevOps pipeline best practices, patterns, and industry standards. PROACTIVELY acti
 - **ads-copywriter** — Multi-platform ad copy generation for Google Ads, Meta/Facebook, TikTok, LinkedIn with A
-- **advanced-array-patterns** — Advanced bash array patterns including indexed and associative arrays, mapfile/readarray
 - **advanced-patterns** — Advanced T-SQL patterns and techniques for SQL Server and Azure SQL. PROACTIVELY activat
 - **adversarial-reviewer** — Adversarial code review that breaks the self-review monoculture. Use when you want a gen
+- **agb-agent-browser** — Automates browser interactions for web testing, form filling, screenshots, and data extr
 - **agent-browser** — Browser automation CLI for AI agents. Use when the user needs to inspect, test, or autom
 - **agent-browser-automation** — Headless browser automation CLI for AI agents using native Rust binary with Chrome DevTo
 - **ai-ready** — Make any repo AI-ready — analyzes your codebase and generates AGENTS.md, copilot-instruc
-- **ai-security** — Use when assessing AI/ML systems for prompt injection, jailbreak vulnerabilities, model 
 - **airflow** — Queries, manages, and troubleshoots Apache Airflow using the `af` CLI. Use when working 
 - **airflow-plugins** — Builds Airflow 3.1+ plugins that embed FastAPI apps, custom UI pages, React components, 
 - **airflow-state-store** — Persists task and asset state across retries and DAG runs using Airflow 3.3's AIP-103 ke
@@ -1435,9 +1496,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **angular-architect** — Generates Angular 17+ standalone components, configures advanced routing with lazy loadi
 - **angular-development** — Comprehensive Angular framework development covering components, directives, services, d
 - **angular-migration** — Migrate from AngularJS to Angular using hybrid mode, incremental component rewriting, an
+- **antibody-target-analysis** — Antibody-Target Analysis - Analyze an antibody target: UniProt protein info, InterPro do
+- **aod-deliver** — Structured delivery retrospective for the AOD Lifecycle's Deliver stage. Validates Defin
 - **api-contract-normalizer** — Unifies API response patterns across endpoints including pagination format, error struct
-- **apify-actor-development** — Develop, debug, and deploy Apify Actors - serverless cloud programs for web scraping, au
-- **apify-actorization** — Convert existing projects into Apify Actors - serverless cloud programs. Actorize JavaSc
 - **app-store-screenshots-generator** — Generate production-ready App Store screenshots for iOS apps using AI agents, Next.js, a
 - **article-magazine** — Huashu / huashu-md-html-inspired magazine article layout for turning Markdown or notes i
 - **artifacts-builder** — Suite of tools for creating elaborate, multi-component claude.ai HTML artifacts using mo
@@ -1471,6 +1532,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **bundle-size-optimization** — Reduce JavaScript and CSS bundle sizes through code splitting, tree shaking, and optimiz
 - **bux-claude-agent** — Deploy a 24/7 Claude Code agent with persistent Chromium browser on any Ubuntu VPS, cont
 - **causal-inference** — Determine cause-and-effect relationships using propensity scoring, instrumental variable
+- **chatlift-ai-conversation-exporter-archive** — Import, search, and archive AI conversations from ChatGPT, Claude, and Gemini. Clean ind
 - **chrome-cdp-live-browser** — Give AI agents access to your live Chrome session via CDP — interact with open tabs, log
 - **chrome-devtools** — Expert-level browser automation, debugging, and performance analysis using Chrome DevToo
 - **claude-code-source-recovery** — Skill for exploring and understanding the recovered Claude Code 2.1.88 TypeScript source
@@ -1479,13 +1541,16 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **cloudflare-pages** — Deploy static sites and full-stack apps on Cloudflare Pages with previews, functions, an
 - **cmux-backend** — Backend TypeScript and Cloud VM development rules for cmux. Use when editing web/app/api
 - **cmux-browser** — End-user browser automation with cmux. Use when you need to open sites, inspect or inter
-- **cmux-cloud-vm** — Route work to cmux Cloud machines from the plain `cmux vm` CLI (alias `cmux cloud`): rou
 - **cmux-customization** — Customize cmux for an end user. Use when changing cmux.json actions, custom commands, wo
 - **cmux-diagnostics** — Run end-user cmux diagnostics. Use when cmux hooks, notifications, session restore, sett
 - **cmux-keyboard-shortcuts** — Guide and apply cmux keyboard shortcut customization. Use when the user asks to customiz
 - **cmux-settings** — View and edit cmux settings in ~/.config/cmux/cmux.json. Use when the user wants to chan
 - **cmux-terminal-multiplexer** — AI-native terminal multiplexer with programmable socket API, full Playwright-equivalent 
 - **color-expert** — Color science expert skill with 286K words of reference material covering OKLCH/OKLAB, p
+- **compact-core-compact-circuit-costs** — This skill should be used when the user asks about Compact circuit costs, ZK proof gener
+- **compact-core-compact-debugging** — This skill should be used when a user needs help debugging Compact smart contract errors
+- **compact-core-compact-witness-ts** — This skill should be used when the user asks about implementing Compact witness function
+- **compromise-nlp** — Write correct code with the `compromise` JavaScript NLP library (the npm package `compro
 - **configuration-management** — Manage application configuration including environment variables, settings management, c
 - **container-apps-gpu-2025** — Azure Container Apps with GPU support, serverless capabilities, and Foundry Models. PROA
 - **container-publish** — Dockerfile-less containerization using the .NET 10 SDK container publishing feature. Cov
@@ -1495,24 +1560,20 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **convex-backend** — Build reactive backends with Convex functions, schema validation, auth integration, and 
 - **correlation-analysis** — Measure relationships between variables using correlation coefficients, correlation matr
 - **cosmos-dbt-core** — Turns a dbt Core project into an Airflow DAG/TaskGroup using Astronomer Cosmos. Use turn
-- **cosmos-dbt-fusion** — Run a dbt Fusion project with Astronomer Cosmos. Use when running a dbt Fusion project w
 - **creationix-rx-data-store** — Expert skill for using RX, an embedded data store for JSON-shaped data with random-acces
 - **css-architecture** — Organize CSS using BEM, SMACSS, and CSS-in-JS patterns. Use when building scalable, main
 - **cupynumeric-parallel-data-load** — Load a sharded, on-disk dataset (sharded .npy, Parquet/Arrow, raw binary, sharded HDF5, 
 - **daily-prep** — Prepare for tomorrow''s meetings and tasks. Pulls calendar from Outlook via WorkIQ, cros
 - **dart-write-documentation** — Rules and formatting guidelines for writing Dart /// API documentation and doc comments.
-- **data-extractor** — This skill enables extraction of structured data from any document format using unstruct
+- **data-extractor** — This skill enables extraction of structured data from any document format using **unstru
 - **datanalysis-credit-risk** — Credit risk data cleaning and variable screening pipeline for pre-loan modeling. Use whe
-- **dbx-database-client** — Open-source lightweight cross-platform database management tool built with Tauri, Vue 3,
 - **debugging-troubleshooting-2025** — Comprehensive bash script debugging and troubleshooting techniques for 2025. PROACTIVELY
 - **deepagents-typescript-quickstart** — Scaffold a minimal local Deep Agent in TypeScript by following the official quickstart, 
 - **dependency-auditor** — Audit and manage dependencies across multi-language projects. Identifies vulnerabilities
-- **dev-environment-bootstrapper** — Standardizes development environment setup across machines by generating tool version co
 - **dflash-mlx-speculative-decoding** — Lossless DFlash speculative decoding for MLX on Apple Silicon — 1.7–4x faster LLM infere
 - **diagram-creator** — Create professional diagrams using Mermaid, PlantUML, and other text-based diagram tools
 - **disaster-recovery-testing** — Execute comprehensive disaster recovery tests, validate recovery procedures, and documen
 - **dnshe-freedomains** — Use DNSHE to register, manage, and automate free subdomains (us.ci, cc.cd, de5.net, ccwu
-- **doca-argp** — Use this skill for hands-on DOCA Arg Parser CLI work on a shipped sample or new DOCA-usi
 - **docker-platform-guide** — Platform-specific Docker considerations for Windows, Linux, and macOS. PROACTIVELY activ
 - **documentation-site-setup** — Set up documentation websites using Docusaurus, MkDocs, VitePress, GitBook, or static si
 - **domain-name-brainstormer** — Generate creative domain name ideas and check availability across multiple TLDs includin
@@ -1521,9 +1582,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **e2e-cucumber-playwright** — Use when writing, changing, or reviewing Cucumber and Playwright tests under `e2e/`, inc
 - **e2e-testing-automation** — Build end-to-end automated tests that simulate real user interactions across the full ap
 - **eas-app-stores** — EAS service (paid). Build and submit iOS and Android apps with EAS to TestFlight, the Ap
-- **email-template-builder** — Build complete transactional email systems: React Email templates, provider integration 
 - **embedding-strategies** — Select and optimize embedding models for semantic search and RAG applications. Use when 
-- **emdash-cms** — AI coding agent skill for building with EmDash, the full-stack TypeScript CMS built on A
 - **engineering-skills** — Index of the engineering-team skills bundle for Claude Code, Codex, Gemini CLI, Cursor, 
 - **esign-field-placement** — Deterministic method for placing signature, date, and text fields in a web e-signature c
 - **everything-claude-code** — Development conventions and patterns for everything-claude-code. JavaScript project with
@@ -1548,11 +1607,20 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **gcp-cloud-functions** — Deploy serverless functions on Google Cloud Functions. Configure triggers and manage dep
 - **gcp-cloud-run** — Deploy containerized applications on Google Cloud Run with automatic scaling, traffic ma
 - **gemma-gem-browser-ai** — Build and extend Gemma Gem, an on-device AI browser assistant Chrome extension running G
-- **google-agents-cli-scaffold** — This skill should be used when the user wants to "create an agent project", "start a new
+- **ghidra-idareverseengineeringskill** — Ghidra and IDA Pro workflows for binary analysis: headless analysis, decompiler output, 
+- **google-agents-cli-scaffold** — This skill should be used when the user wants to 'create an agent project', 'start a new
 - **google-analytics-data-api-basics** — Manages Google Analytics reporting data, enables the Analytics Data API via the Cloud CL
 - **gooserelayvpn-socks5-tunnel** — Expert knowledge for building, configuring, and operating GooseRelayVPN — a SOCKS5 VPN t
 - **gova-declarative-gui** — Build native desktop apps in Go using Gova's declarative, component-based GUI framework 
 - **gpt-image-playground** — AI coding agent skill for GPT Image Playground — a React/TypeScript web app for OpenAI i
+- **grad-business-ecosystems** — \"Apply Moore's business ecosystem framework to analyze how firms co-evolve through four
+- **grad-diamond** — \"Apply Porter's Diamond Model to analyze national competitive advantage for a specific 
+- **grad-did** — \"Apply Difference-in-Differences (DID) to estimate causal treatment effects by comparin
+- **grad-habitual-domain** — \"Habitual Domain (HD) theory by Taiwanese scholar P.L. Yu (游伯龍, 1977) — integrates four
+- **grad-hlm** — \"Apply Hierarchical Linear Modeling (HLM) to analyze nested data structures with random
+- **grad-org-ecology** — \"Apply organizational ecology (Hannan and Freeman) to analyze population-level dynamics
+- **grad-sem** — \"Apply Structural Equation Modeling (SEM) to test hypothesized causal structures by com
+- **grit** — Build full-stack applications with the Grit framework (Go + Gin + GORM backend, Next.js 
 - **gsap-core** — Official GSAP skill for the core API — gsap.to(), from(), fromTo(), easing, duration, st
 - **gsap-frameworks** — Official GSAP skill for Vue, Svelte, and other non-React frameworks — lifecycle, scoping
 - **gsap-performance** — Official GSAP skill for performance — prefer transforms, avoid layout thrashing, will-ch
@@ -1566,8 +1634,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **hand-drawn-diagrams** — Generate hand-drawn Excalidraw diagrams from a prompt — animated SVG, hosted edit link, 
 - **healthcare-emr-patterns** — EMR/EHR development patterns for healthcare applications. Clinical safety, encounter wor
 - **holyclaude-ai-workstation** — Deploy a full AI coding workstation with Claude Code, web UI, headless browser, and 5 AI
-- **hyperliquid-grid-trading-bot** — Configure and run an automated grid trading bot on Hyperliquid DEX with TypeScript/Node.
-- **hyperliquid-trading-bot** — Configurable grid trading bot for Hyperliquid DEX with TypeScript/Node.js primary implem
 - **image-optimization** — Optimize images for web to reduce file size without sacrificing quality. Use compression
 - **incident-postmortem** — Use when an outage, production incident, or significant service degradation has occurred
 - **insforge-cli** — Use this skill whenever someone needs a backend, or a task touches InsForge backend or c
@@ -1578,15 +1644,26 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **jest-react-testing** — Comprehensive React component testing with Jest and React Testing Library covering confi
 - **langchain-typescript-quickstart** — Scaffold a minimal local LangChain agent in TypeScript by following the official quickst
 - **langgraph-typescript-quickstart** — Scaffold a minimal local LangGraph agent in TypeScript by following the official quickst
-- **latchshot-page-capture** — Use this skill when a user needs a screenshot, website thumbnail, full-page capture, or 
 - **lightpanda-browser** — Expert skill for Lightpanda — the headless browser built in Zig for AI agents and automa
 - **linear-dev-accelerator** — Accelerate software development with Linear project management and MCP server integratio
-- **mailtrap-email-integration** — Guides agents through integrating transactional email sending via Mailtrap's Email API, 
 - **managing-astro-local-env** — Manage local Airflow environment with Astro CLI (Docker and standalone modes). Use when 
 - **masterhttprelayvpn-proxy** — Domain-fronted HTTP/SOCKS5 proxy tunneling traffic through Google Apps Script with MITM 
 - **md-to-docx** — Convert Markdown files to professionally formatted Word (.docx) documents with embedded 
 - **memory-merger** — Merges mature lessons from a domain memory file into its instruction file. Syntax: `/mem
 - **mhr-cfw-domain-fronting-relay** — Expert skill for setting up and using MHR-CFW, a domain-fronting relay that routes traff
+- **midnight-cq-compact-testing** — This skill should be used when the user asks to write Compact contract tests, test a con
+- **midnight-cq-dapp-testing** — This skill should be used when the user asks to test my dapp, write e2e tests, test wall
+- **midnight-cq-quality-init** — This skill should be used when the user asks to set up linting, add code quality tooling
+- **midnight-dapp-dev-dapp-connector** — This skill should be used when the user asks about connecting a browser-based DApp to a 
+- **midnight-fact-check-fact-check-classification** — This skill should be used when classifying fact-check claims into verification domains (
+- **midnight-fact-check-fact-check-reporting** — This skill should be used when generating fact-check reports, formatting terminal summar
+- **midnight-node-node-configuration** — This skill should be used when the user asks about configuring a Midnight node, includin
+- **midnight-node-node-validator** — This skill should be used when the user asks about running a Midnight validator end-to-e
+- **midnight-verify-verify-by-ledger-source** — Verification by source code inspection of the Midnight ledger Rust codebase. Searches an
+- **midnight-verify-verify-by-type-check** — Verification by TypeScript compilation. Writes TypeScript test files that exercise SDK t
+- **midnight-verify-verify-by-wallet-source** — Verification by source code inspection of the Midnight Wallet SDK repositories. Searches
+- **midnight-verify-verify-by-witness** — Cross-domain witness verification pipeline. Compiles the Compact contract, type-checks t
+- **mkt-content-calendar** — \"Build and manage content calendars for multi-platform content marketing including edit
 - **model-hyperparameter-tuning** — Optimize hyperparameters using grid search, random search, Bayesian optimization, and au
 - **momentic-test** — Create, run, and maintain Momentic browser E2E tests and modules stored as *.test.yaml a
 - **motion-advanced** — Advanced motion patterns for React / Next.js — drag & drop, gestures, text animations, S
@@ -1594,15 +1671,17 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **msstore-cli** — Microsoft Store Developer CLI (msstore) for publishing Windows applications to the Micro
 - **mysql** — Administer MySQL/MariaDB databases. Configure replication and optimize performance. Use 
 - **namecheap** — Manage DNS records for domains registered with Namecheap via their API. List domains, vi
+- **native-agent-surface** — Discover and use the host software an agent runs in or through — local session transport
 - **neon** — Overview of Neon, a complete set of cloud backend primitives for apps and agents, spanni
 - **neon-postgres** — Guides and best practices for working with Lakebase Postgres, the database behind Neon. 
-- **nestjs-patterns** — NestJS architecture patterns for modules, controllers, providers, DTO validation, guards
 - **netmiko-ssh-automation** — Safe Python Netmiko patterns for read-only collection, bounded batch SSH, TextFSM parsin
 - **next-intl-add-language** — Add new language to a Next.js + next-intl application
 - **nextjs-app-router-patterns** — Master Next.js 14+ App Router with Server Components, streaming, parallel routes, and ad
+- **nextjs-auth0** — Add authentication to Next.js applications using @auth0/nextjs-auth0 v4 (App Router + Pa
 - **nextjs-authentication** — Provides authentication implementation patterns for Next.js 15+ App Router using Auth.js
 - **nextjs-deployment** — Provides comprehensive patterns for deploying Next.js applications to production. Use wh
 - **nextjs-development** — Comprehensive Next.js development skill covering App Router, Server Components, data fet
+- **nextjs-middleware** — Complete Next.js Middleware system (Next.js 15.5/16). PROACTIVELY activate for: (1) Crea
 - **nextjs-routing-advanced** — Complete Next.js advanced routing system. PROACTIVELY activate for: (1) Dynamic routes w
 - **nextjs-server-actions** — Complete Next.js Server Actions system (Next.js 15.5/16). PROACTIVELY activate for: (1) 
 - **nextjs-turbopack** — Next.js 16+ and Turbopack — incremental bundling, FS caching, dev speed, and when to use
@@ -1624,16 +1703,17 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **postmortem-writing** — Write effective blameless postmortems with root cause analysis, timelines, and action it
 - **powershell-shell-detection** — PowerShell vs Git Bash/MSYS2 shell detection and cross-shell compatibility on Windows. P
 - **pretext-text-measurement** — Fast, accurate, DOM-free text measurement and layout library for JavaScript/TypeScript s
-- **prisma-compute** — Prisma Compute deployment and hosting guide. Use whenever the user mentions Prisma Compu
 - **product-capability** — Translate PRD intent, roadmap asks, or product discussions into an implementation-ready 
 - **profiling-performance** — Profile a running web application's CPU performance using Cursor's built-in browser prof
 - **prompt-template-builder** — Creates reusable prompt templates with strict output contracts, style rules, few-shot ex
+- **proof-server-proof-server-configuration** — This skill covers proof server CLI flags, environment variables, and tuning guidance. Us
 - **pump-analyzer-solana** — Real-time monitoring and analytics platform for Pump.fun tokens on Solana using WebSocke
 - **pyre-code-ml-practice** — Self-hosted ML coding practice platform with 68 problems covering Transformers, diffusio
 - **python-cloudflare** — Complete Python Cloudflare deployment system. PROACTIVELY activate for: (1) Python Worke
 - **python-gotchas** — Complete Python gotchas reference. PROACTIVELY activate for: (1) Mutable default argumen
 - **python-modal** — Modern Python patterns for Modal.com serverless platform. PROACTIVELY activate for: (1) 
 - **quien-whois-lookup** — Use quien for interactive TUI and CLI/JSON domain, IP, DNS, mail, SSL/TLS, and tech stac
+- **quote-to-close-tracking** — The quote-to-close handoff chain — a Pax8/Sherweb/Kaseya Quote Manager quote or SalesBui
 - **react-audit-grep-patterns** — Provides the complete, verified grep scan command library for auditing React codebases b
 - **react-component-cleaner** — Use this skill to clean up a React component. Only use this skill when instructed to do 
 - **react-component-guidelines** — Guidelines for writing React components. Use this when creating a new react component.
@@ -1658,16 +1738,18 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **react19-concurrent-patterns** — Preserve React 18 concurrent patterns and adopt React 19 APIs (useTransition, useDeferre
 - **react19-source-patterns** — Reference for React 19 source-file migration patterns, including API changes, ref handli
 - **react19-test-patterns** — Provides before/after patterns for migrating test files to React 19 compatibility, inclu
+- **reactree-agent-coordination-patterns** — Hierarchical task decomposition with control flow nodes and dual memory systems from ReA
 - **recording-browser-flow-as-test** — Execute a user flow step-by-step in Cursor's built-in browser while documenting each act
 - **refactor-react-effects** — Refactor avoidable React useEffect usage in Langfuse frontend code. Use when adding, rev
 - **release-notes-one-pager** — Release notes one-page HTML with highlights, Added, Fixed, Breaking changes, Known issue
 - **remember** — Transforms lessons learned into domain-organized memory instructions (global or workspac
 - **responsive-testing** — Open the app in Cursor's browser at multiple viewport sizes, screenshot each, and report
 - **retrospective-facilitation** — Facilitate effective retrospectives to capture lessons learned, celebrate successes, and
+- **sandbox-composer** — Target-profile-driven component composition. Enumerates the active playground's real com
 - **sandbox-npm-install** — Install npm packages in a Docker sandbox environment. Use this skill whenever you need t
 - **santa-method** — Multi-agent adversarial verification with convergence loop. Two independent review agent
 - **scenario-war-room** — Cross-functional what-if modeling for cascading multi-variable scenarios. Unlike single-
-- **secrets-env-manager** — Validates environment variables in CI, prevents secret leaks, enforces masking, and prov
+- **scrapling-web-scraping** — Zero-bot-detection web scraping for OpenClaw. Bypass Cloudflare, handle JavaScript-heavy
 - **seeker-connect** — Connect a web dapp to the Seeker device's built-in wallet with Seeker Connect. Use when 
 - **seeker-domains** — Resolve and display .skr domain names in Solana mobile apps, in both directions between 
 - **seo-auditing** — Audit technical SEO — meta tags, structured data, Open Graph, sitemaps, robots.txt, perf
@@ -1679,22 +1761,21 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **slack-gif-creator** — Create animated GIFs optimized for Slack with validators for size constraints and compos
 - **solana-mobile** — Scaffold, configure, and troubleshoot Solana Mobile apps for Android using the solana-mo
 - **solana-mobile-wallet** — Connect Solana wallets and sign or send transactions in React Native Expo apps using Mob
+- **spamtitan-lists** — SpamTitan sender allowlists and blocklists: the add/remove/list action parameter, entry 
 - **spring-boot-crud-patterns** — Provides and generates complete CRUD workflows for Spring Boot 3 services. Creates featu
 - **spring-boot-event-driven-patterns** — Provides Event-Driven Architecture (EDA) patterns for Spring Boot — creates domain event
 - **spring-data-neo4j** — Provides Spring Data Neo4j integration patterns for Spring Boot applications. Use when y
-- **storybook** — Use when writing or reviewing Storybook stories (`.stories.tsx`) for React components.
 - **suggest-awesome-github-copilot-instructions** — Suggest relevant GitHub Copilot instruction files from the awesome-copilot repository ba
 - **suggesting-cursor-rules** — When the user repeats the same correction or convention multiple times, suggest a Cursor
 - **superlevels-chrome-extension** — Open-source Chrome extension replacing 12+ browser extensions with privacy-respecting to
 - **svelte-development** — Comprehensive Svelte development skill covering reactivity runes, components, stores, li
-- **table-extractor** — This skill enables precise extraction of tables from PDF documents using camelot - the g
+- **table-extractor** — This skill enables precise extraction of tables from PDF documents using **camelot** - t
 - **tailwindcss-accessibility** — Tailwind CSS accessibility patterns including WCAG 2.2 compliance, touch targets, focus 
 - **tailwindcss-advanced-layouts** — Tailwind CSS advanced layout techniques including CSS Grid and Flexbox patterns. PROACTI
 - **tailwindcss-debugging** — Tailwind CSS debugging and troubleshooting common issues. PROACTIVELY activate for: (1) 
 - **tailwindcss-performance** — Tailwind CSS performance optimization including v4 improvements. PROACTIVELY activate fo
 - **taiwan-md-knowledge-base** — AI-native open knowledge base about Taiwan built with Astro v5, featuring bilingual cont
 - **tanstack-vue-table-skilld** — Headless UI for building powerful tables & datagrids for Vue. ALWAYS use when writing co
-- **tavily-key-generator-proxy** — Auto batch-register Tavily API keys via browser automation and pool them behind a unifie
 - **threejs** — Three.js skills for creating 3D elements and interactive experiences in the browser — sc
 - **troubleshooting-astro-deployments** — Troubleshoot Astronomer production deployments with Astro CLI. Use when investigating de
 - **turboquant-pytorch** — PyTorch implementation of TurboQuant for LLM KV cache compression using two-stage vector
@@ -1705,19 +1786,21 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **unit-test-mapper-converter** — Provides patterns for unit testing mappers, converters, and bean mappings. Validates ent
 - **unit-test-vue-pinia** — Write and review unit tests for Vue 3 + TypeScript + Vitest + Pinia codebases. Use when 
 - **upstash-redis** — Use Redis over HTTP from serverless and edge runtimes with @upstash/redis, and add rate 
-- **use-railway** — Operate Railway infrastructure: sign up for or sign in to a Railway account, create proj
+- **v3-core-implementation** — Core module implementation for claude-flow v3. Implements DDD domains, clean architectur
+- **v3-swarm-coordination** — 15-agent hierarchical mesh coordination for v3 implementation. Orchestrates parallel exe
+- **venetech-news** — Usa este skill siempre que el usuario pida noticias, actualizaciones, resúmenes o briefi
 - **vercel-deployments** — Deploy frontend and full-stack apps on Vercel with previews, edge functions, environment
 - **vercel-microfrontends** — Guide for building, configuring, and deploying microfrontends on Vercel. Use this skill 
 - **vinext-vite-nextjs** — Vite plugin that reimplements the Next.js API surface for deploying anywhere, including 
 - **vitess** — Vitess best practices, query optimization, and connection troubleshooting for PlanetScal
 - **vitest-3-features** — Vitest 3 features and migration from Vitest 2 (2025). PROACTIVELY activate for: (1) Vite
 - **vue-best-practices** — MUST be used for Vue.js tasks. Strongly recommends Composition API with `<script setup>`
-- **vue-jsx-best-practices** — JSX syntax in Vue (e.g., class vs className, JSX plugin config).
 - **vue-options-api-best-practices** — Vue 3 Options API style (data(), methods, this context). Each reference shows Options AP
 - **vue-pinia-best-practices** — Pinia stores, state management patterns, store setup, and reactivity with stores.
 - **vue-router-best-practices** — Vue Router 4 patterns, navigation guards, route params, and route-component lifecycle in
 - **vue-testing-best-practices** — Use for Vue.js testing. Covers Vitest, Vue Test Utils, component testing, mocking, testi
 - **vuejs-development** — Comprehensive Vue.js development skill covering Composition API, reactivity system, comp
+- **walkthrough-builder** — Builds a stakeholder guided-tour over live sandbox prototypes — rail, plain-language cop
 - **warehouse-init** — Initialize warehouse schema discovery. Generates .astro/warehouse.md with all table meta
 - **web-access-claude-skill** — Give Claude Code full internet access with three-layer channel dispatch, CDP browser aut
 - **web-artifacts-builder** — Suite of tools for creating elaborate, multi-component claude.ai HTML artifacts using mo
@@ -1730,32 +1813,32 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **xlsx** — Use this skill any time a spreadsheet file is the primary input or output. This means an
 - **yourvpndead-vpn-detection** — Android app that detects VPN/proxy servers (VLESS/xray/sing-box) via local SOCKS5 vulner
 
-## game-developer (301 curated)
+## game-developer (306 curated)
 
 - **academy-guide** — Stop and check this skill before finishing any reply to a question about how to use Clau
 - **accessibility-auditor** — Audits and implements web accessibility (a11y) following WCAG 2.1 guidelines with ARIA p
+- **add-hf-model** — Add support for a HuggingFace model in XTuner so it can be trained with the full set of 
 - **adding-api-docs** — Generate OpenAPI/Swagger documentation for an API, including endpoint schemas, request/r
-- **adding-feature-flags** — Add feature flags to an application for gradual rollouts, A/B testing, and kill switches
 - **adf-validation-rules** — ADF activity nesting rules, limits, and validation gotchas. PROACTIVELY activate for: (1
-- **adr-backfill** — This skill should be used to retroactively record an architectural decision that was mad
 - **adr-discovery** — This skill should be used before drafting an ADR when context, components, relationships
 - **agent-observability** — Instrument AI agents with tracing, token metrics, latency, and cost visibility. Use for 
 - **agent-owasp-compliance** — Check any AI agent codebase against the OWASP Agentic Security Initiative (ASI) Top 10 r
-- **agent-platform-deploy** — Deploy open models or custom weights from Model Garden to Agent Platform endpoints, chec
 - **agent-platform-inference** — Connects to and performs inference with Google Cloud Agent Platform GenAI models, includ
 - **agent-supply-chain** — Verify supply chain integrity for AI agent plugins, tools, and dependencies. Use this sk
 - **ai-agent-orchestrator** — Orchestrates multi-agent AI systems with task delegation, agent communication, shared me
 - **aiq-deploy** — Use when asked to install, deploy, run, validate, troubleshoot, or stop NVIDIA AI-Q Blue
-- **aiq-research** — Use when asked to run deep research or AI-Q research through a reachable NVIDIA AI-Q Blu
 - **amazon-seller** — Automate Amazon seller operations including inventory, orders, pricing, and advertising 
 - **analyzing-data** — Queries the data warehouse with SQL and answers business questions about data. Use when 
 - **angular-developer** — Generates Angular code and provides architectural guidance. Trigger when creating projec
+- **aod-blueprint** — Unified project setup and story generation skill that auto-detects new vs existing proje
+- **aod-discover** — Unified discovery skill with 4 entry points: /aod.discover (full flow: capture + score +
 - **api-docs-generator** — Generates API documentation using OpenAPI/Swagger specifications with interactive docume
 - **api-endpoint-generator** — Generates CRUD REST API endpoints with request validation, TypeScript types, consistent 
 - **api-gateway-configuration** — Configure API gateways for routing, authentication, rate limiting, and request/response 
 - **api-mock-server** — Creates mock API servers for testing and development with MSW, json-server, or custom ha
 - **api-security-hardener** — Hardens API security with rate limiting, input validation, authentication, and protectio
 - **api-test-suite-generator** — Generates comprehensive API test suites using Jest, Vitest, or Supertest from Express, N
+- **app-tagline-backfill** — Give apps built on this instance a share-card `tagline` when their `app.yaml` has none. 
 - **architecture-advisor** — Architecture selection advisor for .NET applications. Asks structured questions about do
 - **arquiteto-de-empresa** — Company Architect: builds a business from scratch as an OKF (Open Knowledge Format) bund
 - **asset-inventory** — Maintain IT asset inventory and configuration management database. Track hardware, softw
@@ -1773,12 +1856,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **backend-latency-profiler-helper** — Identifies API latency hotspots and bottlenecks with profiling tools, slow endpoint dete
 - **benchmark-optimization-loop** — Use when the user asks to make something faster, try many variants, run recursive optimi
 - **bigquery-ai-ml** — Leverages BigQuery's built-in machine learning and GenAI capabilities for advanced data 
+- **biz-net-zero-transition** — \"Net-zero transition playbook: GHG inventory (ISO 14064-1, GHG Protocol Scope 1/2/3), s
+- **blast-protein-analysis** — BLAST & Protein Analysis Pipeline - BLAST search followed by comprehensive protein analy
 - **blue-green-deploy** — Configure zero-downtime deployment strategies including blue-green, canary, and rolling 
 - **blue-green-deployment** — Implement blue-green deployment strategies for zero-downtime releases with instant rollb
 - **blueprint** — Turn a one-line objective into a step-by-step construction plan for multi-session, multi
-- **brag-sheet** — Turn vague "what did I do?" into evidence-backed impact statements for performance revie
 - **brief** — /cs:brief <topic> — Generate a one-page strategy brief from an office-hours intake. Firs
-- **bruno-collection-generator** — Generates Bruno collection files (.bru) from Express, Next.js, Fastify, or other API rou
 - **c-level-agents** — Founder-mode executive team. 13 cs-* C-suite agents (CFO, CMO, CRO, CPO, COO, CHRO, CISO
 - **c-level-skills** — Index and router for the C-level advisory bundle: 33 skills covering 14 C-suite roles, o
 - **canary-deployment** — Implement canary deployment strategies to gradually roll out new versions to subset of u
@@ -1788,8 +1871,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **checkpoint** — Mid-session save point: create a descriptive git commit and a brief handoff note, then k
 - **choose-your-parallel-api** — Choose the right Parallel API and configuration for cost, latency, and answer quality. U
 - **classification-modeling** — Build binary and multiclass classification models using logistic regression, decision tr
-- **claw-code-harness** — Better Harness Tools for Claude Code — a Python (and in-progress Rust) rewrite of the Cl
-- **clerk-backend-api** — Clerk Backend REST API explorer and executor. Browse tags, inspect endpoint schemas, and
 - **cmux-custom-sidebar** — Build a custom cmux sidebar from a plain-language request. Use when the user asks for a 
 - **code-exemplars-blueprint-generator** — Technology-agnostic prompt generator that creates customizable AI prompts for scanning c
 - **code-formatter-installer** — Installs and configures Prettier, ESLint, EditorConfig, and other code quality tools to 
@@ -1803,13 +1884,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **continuous-learning** — [DEPRECATED - use continuous-learning-v2] Legacy v1 stop-hook skill extractor. v2 is a s
 - **convert-excel-to-md** — Converts Excel (.xlsx) workbooks into Markdown so their contents can be accurately analy
 - **convert-word-to-md** — Converts Word (.docx) documents into Markdown so their contents can be accurately analyz
-- **copilot-cli-quickstart** — Use this skill when someone wants to learn GitHub Copilot CLI from scratch. Offers inter
 - **copilot-instructions-blueprint-generator** — Technology-agnostic blueprint generator for creating comprehensive copilot-instructions.
 - **copilot-spaces** — Use Copilot Spaces to provide project-specific context to conversations. Use this skill 
 - **correlation-tracing** — Implement distributed tracing with correlation IDs, trace propagation, and span tracking
 - **cors-configuration** — Configures Cross-Origin Resource Sharing with proper headers, preflight handling, and se
 - **cost-latency-optimizer** — Reduces LLM costs and improves response times through caching, model selection, batching
-- **crabtrap-llm-proxy** — LLM-as-a-judge HTTP/HTTPS proxy that secures AI agents by intercepting and evaluating ou
 - **create-github-issue-feature-from-specification** — Create GitHub Issue for feature request from specification file using feature_request.ym
 - **create-github-issues-feature-from-implementation-plan** — Create GitHub Issues from implementation plan phases using feature_request.yml or chore_
 - **create-github-issues-for-unmet-specification-requirements** — Create GitHub Issues for unimplemented requirements from specification files using featu
@@ -1824,6 +1903,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **data-migration-scripts** — Create safe, reversible database migration scripts with rollback capabilities, data vali
 - **database-migration-management** — Manage database migrations and schema versioning. Use when planning migrations, version 
 - **database-migrations** — Database migration best practices for schema changes, data migrations, rollbacks, and ze
+- **db-resiliency-setup** — Add database resiliency to any stack - retry on transient failures with backoff, command
 - **debugging-dags** — Comprehensive DAG failure diagnosis and root-cause analysis with structured investigatio
 - **dependabot** — Comprehensive guide for configuring and managing GitHub Dependabot. Use this skill when 
 - **dependency-doctor** — Audits project dependencies for outdated packages, duplicates, heavy/problematic librari
@@ -1834,8 +1914,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **discord-bot** — Discord bot development - community management, moderation, notifications, and AI integr
 - **distributed-tracing** — Implement distributed tracing with Jaeger and Tempo to track requests across microservic
 - **doca-bench** — Run `doca_bench` (DOCA 2.7.0 or newer) to measure throughput, bulk latency, precision la
-- **doca-bench-extension** — Use this skill when the operator is authoring, building, loading, or debugging a custom 
 - **doca-bf4-deployment** — WARNING: guides potentially IRREVERSIBLE BlueField-4 hardware operations (PLDM firmware 
+- **doca-comm-channel-admin** — Use this skill to enumerate host↔DPU DOCA comch (formerly Comm Channel) servers and conn
 - **dockerfile-optimizer** — Optimizes Dockerfiles for smaller images, faster builds, better caching, and security ha
 - **docs-starter-kit** — Generates comprehensive documentation templates for open-source and internal projects in
 - **docs-updater** — Provides automated documentation updates by analyzing git changes between the current br
@@ -1845,8 +1925,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **dt-obs-analytics** — Analyze dashboards and notebooks using Davis analyzers — anomaly detection, novelty scor
 - **dt-obs-aws** — AWS cloud resource monitoring including EC2, RDS, Lambda, ECS/EKS, VPC networking, load 
 - **eas-hosting** — EAS service (paid). Deploy Expo websites and Expo Router API routes to EAS Hosting - exp
+- **ecom-inventory-health** — \"Analyze inventory health using turnover ratios, ABC classification, safety stock calcu
 - **embedding-pipeline-builder** — Builds document embedding pipelines with text chunking, embedding generation, indexing, 
-- **env-secrets-manager** — Manages environment variables and secrets securely with encryption, rotation, and provid
 - **eslint-prettier-config** — Configures ESLint and Prettier for consistent code quality with TypeScript, React, and m
 - **exam-ready** — Activate this skill when a student provides study material (PDF or pasted notes) and a s
 - **expense-report** — This skill helps you organize business expenses into clear, categorized reports suitable
@@ -1859,6 +1939,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **flask-api-development** — Develop lightweight Flask APIs with routing, blueprints, database integration, authentic
 - **flowstudio-power-automate-debug** — Debug failing Power Automate cloud flows using the FlowStudio MCP server. The Graph API 
 - **flowstudio-power-automate-monitoring** — Pro+ subscription required. Tenant-wide Power Automate monitoring using the FlowStudio M
+- **fluidcad-from-drawing** — Turning a 2D engineering drawing into a parametric FluidCAD model. Use this skill whenev
 - **flutter-use-http-package** — Use the `http` package to execute GET, POST, PUT, or DELETE requests. Use when you need 
 - **form-builder** — Build interactive document forms and questionnaires using docassemble
 - **form-cro** — When the user wants to optimize any form that is NOT signup/registration — including lea
@@ -1873,17 +1954,19 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **github-issue-workflow** — Provides a structured 8-phase workflow for resolving GitHub issues in Claude Code. Cover
 - **github-issues** — Create, update, and manage GitHub issues using MCP tools. Use this skill when users want
 - **golang-patterns** — Idiomatic Go patterns, best practices, and conventions for building robust, efficient, a
-- **google-agents-cli-deploy** — This skill should be used when the user wants to "deploy an agent", "deploy my ADK agent
+- **google-agents-cli-deploy** — This skill should be used when the user wants to 'deploy an agent', 'deploy my ADK agent
 - **google-mobile-ads-banner** — Provides instructions to implement, integrate, or configure Google Mobile Ads (GMA) bann
 - **google-mobile-ads-get-started** — Provides instructions for integrating the Google Mobile Ads (GMA) SDK. Use this skill wh
 - **google-mobile-ads-interstitial** — Provides instructions for implementing, integrating, or configuring Google Mobile Ads (G
 - **google-mobile-ads-rewarded** — Provides instructions for implementing, integrating, or configuring Google Mobile Ads (G
 - **google-mobile-ads-validate** — Validates a project's Google Mobile Ads (GMA) SDK integration for iOS, Android, or Unity
 - **graceful-shutdown** — Implement graceful shutdown procedures to handle SIGTERM signals, drain connections, com
+- **grad-social-capital** — \"Apply social capital theory (Putnam, Coleman, Bourdieu, Burt) to analyze how network s
 - **homelab-network-setup** — Practical home and homelab network planning for gateways, switches, access points, IP ra
 - **homelab-vlan-segmentation** — Segmenting home networks into VLANs for IoT, guest, trusted, and server traffic using Un
 - **hot-reload-optimizer** — Optimizes hot module replacement and fast refresh for development speed with Vite, Next.
 - **how-to-write-component** — Use when implementing or refactoring React/TypeScript components and the task requires d
+- **hum-critical-thinking** — \"Apply structured critical thinking — identifying claims, evidence, reasoning chains, h
 - **i18n-frontend-implementer** — Adds internationalization (i18n) infrastructure with translation plumbing, scalable key 
 - **incident-runbook-generator** — Creates step-by-step incident response runbooks for common outages with actions, owners,
 - **industrial-brutalist-ui** — Raw mechanical interfaces fusing Swiss typographic print with military terminal aestheti
@@ -1891,26 +1974,27 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **intent-driven-development** — Turn ambiguous or high-impact product and engineering changes into scoped, verifiable ac
 - **inventory-demand-planning** — Codified expertise for demand forecasting, safety stock optimization, replenishment plan
 - **investor-materials** — Create and update pitch decks, one-pagers, investor memos, accelerator applications, fin
-- **ito-baskets** — Read-only Itô basket and prediction-market data skill. Index the live basket catalog, co
 - **ito-compute** — Query live GPU inventory, submit an authenticated Itô fixed-rate RFQ, inspect RFQ or pro
 - **jsdoc-typescript-docs** — Documents TypeScript code with JSDoc comments, generates API documentation, and creates 
+- **jwt-auth-setup** — Set up JWT authentication in any stack - token issuing, validation, refresh tokens, and 
 - **karpathytalk-community** — Run and interact with KarpathyTalk, an open markdown-based developer social network with
 - **kotlin-patterns** — Idiomatic Kotlin patterns, best practices, and conventions for building robust, efficien
 - **langchain-dependencies** — INVOKE THIS SKILL when setting up a new project or when asked about package versions, in
 - **langchain-workflow-builder** — Builds LLM applications with LangChain including chains, agents, memory, tools, and RAG 
-- **linear-work-rhythm** — Answer "what should I do today" for a Langfuse maintainer, from the tracker rather than 
+- **license-true-up** — Three-way seat reconciliation per client per SKU: seats provisioned in a cloud marketpla
+- **linear-work-rhythm** — Answer 'what should I do today' for a Langfuse maintainer, from the tracker rather than 
 - **littlesnitch-linux** — Open source eBPF-based network monitoring and blocking components for Little Snitch on L
 - **llm-caching** — Implement multi-layer LLM caching with exact match, semantic similarity, and provider-si
 - **llmops-platform-engineering** — Build production LLMOps platforms with CI/CD, model promotion workflows, evaluation gate
 - **load-test-builder** — Creates load and performance tests with k6, Artillery, or autocannon to validate system 
 - **lorem-ipsum** — Generate lorem ipsum placeholder text. This skill should be used when users ask to gener
+- **lqf-machine-learning-expert-guide** — LQF Machine Learning Expert Guide - Routed skill for ML/Statistical Modeling with Critic
 - **maante-game-automation** — MaaNTE is a MAA-based automation assistant for the game Neverness to Everness, powered b
 - **make-repo-contribution** — All changes to code must follow the guidance documented in the repository. Before any is
 - **managing-astro-deployments** — Manage Astronomer production deployments with Astro CLI. Use when the user wants to auth
 - **market-sizing-analysis** — Calculate TAM/SAM/SOM for market opportunities using top-down, bottom-up, and value theo
-- **mcp-implementation-security-review** — Review the implementation source code of MCP (Model Context Protocol) servers, clients, 
-- **mcp-security-audit** — Audit MCP (Model Context Protocol) server configurations for security issues. Use this s
 - **metal-kernel** — Write Metal/MPS kernels for PyTorch operators. Use when adding MPS device support to ope
+- **midnight-cq-wallet-testing** — This skill should be used when the user asks to write wallet tests, test my wallet varia
 - **migrate** — Guided, safe migration workflow covering EF Core schema migrations, .NET version upgrade
 - **migrating-ai-sdk-to-common-ai** — Migrates Airflow projects from airflow-ai-sdk to apache-airflow-providers-common-ai 0.4.
 - **migrating-airflow-2-to-3** — Guide for migrating Apache Airflow 2.x projects to Airflow 3.x. Use when the user mentio
@@ -1932,10 +2016,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **network-config-validation** — Pre-deployment checks for router and switch configuration, including dangerous commands,
 - **network-debugging** — Debug network issues using browser tools and network analysis. Diagnose connection probl
 - **network-interface-health** — Diagnose interface errors, drops, CRCs, duplex mismatches, flapping, speed negotiation i
-- **network-request-auditing** — After navigating and interacting in Cursor's built-in browser, use browser_network_reque
+- **newt-blueprint-generator** — Generate and validate Pangolin Newt blueprint configurations in YAML or Docker Labels fo
 - **nextjs-caching** — Complete Next.js caching system with 'use cache' directive (Next.js 16). PROACTIVELY act
 - **nextjs-code-review** — Provides comprehensive code review capability for Next.js applications, validates Server
-- **nextjs-middleware** — Complete Next.js Middleware system (Next.js 15.5/16). PROACTIVELY activate for: (1) Crea
 - **nginx-config-optimizer** — Optimizes Nginx configurations for performance, security, caching, and load balancing wi
 - **nodejs-express-server** — Build production-ready Express.js servers with middleware, authentication, routing, and 
 - **nuxt4-patterns** — Nuxt 4 app patterns for hydration safety, performance, route rules, lazy loading, and SS
@@ -1943,14 +2026,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **office-hours** — /cs:office-hours <topic> — YC-style 6-question founder interrogation before any advice. 
 - **openai-docs** — Use when the user asks how to build with OpenAI products or APIs, asks about Codex itsel
 - **openapi-generator** — Generates OpenAPI 3.0/3.1 specifications from Express, Next.js, Fastify, Hono, or NestJS
-- **openclaw-security-hardening** — Harden OpenClaw self-hosted environments with baseline host controls, auth tightening, s
 - **opengame-agentic-game-creation** — OpenGame is an open-source agentic framework for end-to-end web game creation from a sin
+- **opentelemetry-setup** — Add or fix OpenTelemetry observability (traces, metrics, logs) in a service written in a
+- **outsystems-tenant-architecture** — [Beta] Generate an interactive HTML graph of an OutSystems Developer Cloud tenant's asse
 - **parallel-deep-research** — ONLY use when user explicitly says 'deep research', 'exhaustive', 'comprehensive report'
 - **parallel-monitor** — Continuously track the web for changes on a recurring cadence. Use when the user asks to
 - **parallel-web-search** — DEFAULT for all research and web queries. Use for any lookup, research, investigation, o
 - **playwright-test-results** — Query Playwright CI test results from the aggregated DuckDB database. Answers questions 
 - **polymarket-arbitrage-bot** — TypeScript bot implementing dump-and-hedge arbitrage strategy on Polymarket 15-minute Up
-- **posthog-instrumentation** — Product analytics with posthog. Use when adding a meaningful user action or feature in `
 - **postman-collection-generator** — Generates Postman collection JSON files from Express, Next.js, Fastify, Hono, or other A
 - **pr-dashboard** — Open a GitHub PR dashboard in the browser. Use when the user asks to see their pull requ
 - **pr-feedback-quality-gate** — Safely track pull request feedback, resolve review comments or merge conflicts, validate
@@ -1962,12 +2045,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **prediction-market-risk-review** — Review prediction-market, basket, oracle, and trading-agent workflows for compliance, sa
 - **preview-environments-builder** — Creates ephemeral preview deployments for each pull request with automatic deployment, u
 - **prisma-migration-assistant** — Plans and executes safe Prisma schema migrations with data backfills, rollback strategie
-- **production-audit** — Local-evidence production readiness audit for shipped apps, pre-launch reviews, post-mer
 - **project-flow-ops** — Operate execution flow across GitHub and Linear by triaging issues and pull requests, li
 - **project-scaffolder** — Generates complete starter repositories for various tech stacks (Next.js, Vite, Nest, Fa
 - **project-workflow-analysis-blueprint-generator** — Comprehensive technology-agnostic prompt generator for documenting end-to-end applicatio
 - **promptify** — Transform user requests into detailed, precise prompts for AI models. Use when users say
+- **proof-server-proof-server-api** — This skill covers the proof server REST API and HTTP interface. Use it when the user ask
 - **pull-request-automation** — Automate pull request workflows with templates, checklists, auto-merge rules, and review
+- **push-green** — WAJIB OTOMATIS dipakai tanpa slash setiap kali akan git push, buka PR, atau merge ke Git
 - **python-patterns** — Pythonic idioms, PEP 8 standards, type hints, and best practices for building robust, ef
 - **qdrant-deployment-options** — Guides Qdrant deployment selection. Use when someone asks 'how to deploy Qdrant', 'Docke
 - **qdrant-model-migration** — Guides embedding model migration in Qdrant without downtime. Use when someone asks 'how 
@@ -1986,11 +2070,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **rollback-workflow-builder** — Creates safe rollback procedures for deployments with automated workflows, rollback runb
 - **runbook-generator** — Generate operational runbooks from a service name — deployment, incident response, maint
 - **rust-patterns** — Idiomatic Rust patterns, ownership, error handling, traits, concurrency, and best practi
+- **sandbox-scaffolder** — Target-profile-driven scaffolding for a multi-scene, multi-option prototype into the act
 - **scaffolding-oracle-to-postgres-migration-test-project** — Scaffolds an xUnit integration test project targeting Oracle in .NET solutions. Creates 
+- **scene-mapper** — Turns a PRFAQ extract into a ranked screen/scene inventory, a set of genuine option-dive
 - **scoutqa-test** — This skill should be used when the user asks to "test this website", "run exploratory te
 - **screen-recording** — Create annotated animated GIF demos and screen recordings for pull requests and document
 - **scrub-issue** — Fetch, analyze, reproduce, and minimize GitHub issue reproductions. Use only when the us
 - **security-best-practices** — Perform language and framework specific security best-practice reviews and suggest impro
+- **sentinelone-inventory** — SentinelOne's unified asset inventory across four surface types — agent-managed endpoint
 - **serilog** — Structured logging with Serilog for .NET 10 applications. Covers two-stage bootstrap, ap
 - **shopify-app-pricing** — Merchant product subscriptions such as selling plans and subscription contracts use Admi
 - **shopify-automation** — Shopify e-commerce automation - inventory management, order processing, customer workflo
@@ -2012,6 +2099,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **testing-dags** — Complex DAG testing workflows with debugging and fixing cycles. Use for multi-step testi
 - **threat-model-analyst** — Full STRIDE-A threat model analysis and incremental update skill for repositories and sy
 - **triaging-issues** — Triages GitHub issues by routing to oncall teams, applying labels, and closing questions
+- **tw-ecom-dtc-shopline** — \"Integrate and operate Shopline in Taiwan e-commerce context via mcp-shopline. Use when
+- **typed-config-generator** — Generate strongly-typed, validated-at-startup configuration in any stack - the Options p
 - **typescript-strict-migrator** — Migrates TypeScript projects to strict mode incrementally with type guards, utility type
 - **unit-test-controller-layer** — Provides patterns for unit testing REST controllers using MockMvc and @WebMvcTest. Gener
 - **unit-test-wiremock-rest-api** — Provides patterns for unit testing external REST APIs using WireMock. Stubs API response
@@ -2020,7 +2109,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **vendor-management** — Implement vendor risk management programs. Assess third-party security and maintain vend
 - **vercel-deploy** — Deploy applications and websites to Vercel. Use when the user requests deployment action
 - **vite-patterns** — Vite build tool patterns including config, plugins, HMR, env variables, proxy setup, SSR
-- **vscode-rest-client-generator** — Generates .http files for the VS Code REST Client extension from Express, Next.js, Fasti
+- **voidex-arena** — Voidex Arena — galactic trading game for AI agents. Buy goods cheap, fly between real st
 - **vscode-workspace-setup** — Configures VS Code workspaces with optimal settings, extensions, tasks, and debugging fo
 - **vue-debug-guides** — Vue 3 debugging and error handling for runtime errors, warnings, async failures, and SSR
 - **vue-patterns** — Vue.js 3 Composition API patterns, component architecture, reactivity best practices, Pi
@@ -2030,311 +2119,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **wildworld-dataset** — WildWorld large-scale action-conditioned world modeling dataset with 108M+ frames from a
 - **wix-docs** — Look up the Wix API/SDK documentation to confirm an exact endpoint, HTTP method, request
 - **woocommerce-automation** — Automate WooCommerce e-commerce operations including orders, inventory, customers, and m
-- **wordpress-hacking** — Activate this skill whenever the user mentions WordPress, WP, WooCommerce, WP plugin, WP
 - **yeet** — Use only when the user explicitly asks to stage, commit, push, and open a GitHub pull re
 - **zustand-state-builder** — Implements lightweight state management using Zustand with TypeScript, persistence, devt
 
-## devops-engineer (297 curated)
-
-- **acreadiness-policy** — Help the user pick, write, or apply an AgentRC policy. Policies customise readiness scor
-- **add-uint-support** — Add unsigned integer (uint) type support to PyTorch operators by updating AT_DISPATCH ma
-- **adding-docker** — Dockerize an application with a production-ready Dockerfile, docker-compose setup, and .
-- **adr-critique** — This skill should be used to audit an existing or legacy ADR, especially one imported, L
-- **agent-evals** — Build automated evaluation suites for AI agents using golden datasets, rubrics, and regr
-- **agent-platform-alert-configuration** — Configures best-practice alerting policies for AI agents using OpenTelemetry (OTel) metr
-- **agile-sprint-planning** — Plan and execute effective sprints using Agile methodologies. Define sprint goals, estim
-- **ai-agent-security** — Secure AI agents against prompt injection, tool abuse, and data exfiltration with defens
-- **ai-inference-service-mesh** — Use service mesh patterns for AI inference traffic management, mTLS, canary releases, po
-- **ai-scanner-garak** — AI model safety scanner built on NVIDIA garak for testing LLMs against 179 security prob
-- **aks-automatic-2025** — Azure Kubernetes Service (AKS) Automatic mode and 2025 platform features. PROACTIVELY ac
-- **anki-connect** — This skill is for interacting with Anki through AnkiConnect, and should be used whenever
-- **annotating-task-lineage** — Annotate Airflow tasks with data lineage using inlets and outlets. Use when the user wan
-- **ansible-automation** — Infrastructure automation and configuration management using Ansible playbooks, roles, a
-- **ansible-generator** — Generate, create, or scaffold Ansible playbooks, roles, tasks, handlers, inventory, vars
-- **ansible-validator** — Validate, lint, audit, or debug Ansible playbooks, roles, inventories, FQCN, tasks.
-- **apache-airflow-orchestration** — Complete guide for Apache Airflow orchestration including DAGs, operators, sensors, XCom
-- **application-design-center-design-deploy** — Processes GCP infrastructure design and deployment workflows within Application Design C
-- **application-logging** — Implement structured logging across applications with log aggregation and centralized an
-- **aracli-deploy-management** — Guide to deploying and managing OpenClaw-compatible AI agent systems across cloud, bare 
-- **arch-linux-triage** — Triage and resolve Arch Linux issues with pacman, systemd, and rolling-release best prac
-- **argocd-gitops** — Implement GitOps with ArgoCD for declarative Kubernetes deployments. Configure applicati
-- **arize-evaluator** — Handles LLM-as-judge evaluation workflows on Arize including creating/updating evaluator
-- **arize-instrumentation** — Adds Arize AX tracing to an LLM application for the first time. Follows a two-phase agen
-- **arm-templates** — Deploy Azure resources with ARM templates and Bicep. Create modular deployments and mana
-- **artifact-management** — Manage build artifacts, Docker images, and package registries. Configure artifact reposi
-- **autoresearch-genealogy** — Structured prompts, vault templates, and autonomous research workflows for AI-assisted g
-- **autoscaling-configuration** — Configure autoscaling for Kubernetes, VMs, and serverless workloads based on metrics, sc
-- **aws-cdk-python-setup** — Setup and initialization guide for developing AWS CDK (Cloud Development Kit) applicatio
-- **aws-cloud-services** — Comprehensive AWS cloud services skill covering S3, Lambda, DynamoDB, EC2, RDS, IAM, Clo
-- **aws-cost-optimize** — Analyze AWS resources used in the app (IaC files and/or resources in a target account/re
-- **aws-ec2** — Manage EC2 instances, AMIs, and auto-scaling groups. Configure security groups, key pair
-- **aws-ecs-fargate** — Deploy containers on ECS and Fargate. Configure task definitions, services, and load bal
-- **aws-iam** — Manage IAM users, roles, and policies. Implement least-privilege access and security bes
-- **aws-resource-health-diagnose** — Analyze AWS resource health, diagnose issues from CloudWatch logs and metrics, and creat
-- **aws-s3** — Configure S3 buckets, policies, and lifecycle rules. Implement versioning, replication, 
-- **aws-s3-management** — Manage S3 buckets with versioning, encryption, access control, lifecycle policies, and r
-- **aws-solution-architect** — Design AWS architectures for startups using serverless patterns and IaC templates. Use w
-- **az-cost-optimize** — Analyze Azure resources used in the app (IaC files and/or resources in a target rg) and 
-- **azure-aks** — Deploy and manage Azure Kubernetes Service clusters. Configure node pools, networking, a
-- **azure-app-onboard** — End-to-end orchestrator: from a business idea, app idea, or existing app to running Azur
-- **azure-app-service** — Deploy and manage web apps using Azure App Service with auto-scaling, deployment slots, 
-- **azure-cloud-migrate** — Assess and migrate cross-cloud workloads to Azure with reports and code conversion. Supp
-- **azure-deploy** — Execute Azure deployments for ALREADY-PREPARED applications that have existing .azure/de
-- **azure-developer-cli** — Design, create, review, migrate, or troubleshoot Azure Developer CLI (azd) projects usin
-- **azure-emulators-2025** — Azure service emulators for local development in Docker (2025). PROACTIVELY activate for
-- **azure-enterprise-infra-planner** — Architect and provision enterprise Azure infrastructure from workload descriptions. For 
-- **azure-keyvault** — Manage secrets and certificates in Azure Key Vault. Configure access policies, integrate
-- **azure-kubernetes** — Plan, create, and configure production-ready Azure Kubernetes Service (AKS) clusters. Co
-- **azure-ml-foundry-workspace** — Azure Machine Learning Workspace and Azure AI Foundry deep dive. PROACTIVELY activate fo
-- **azure-monitor-audit** — Configure Azure Monitor and Activity Log for auditing. Set up diagnostic settings and lo
-- **azure-prepare** — Prepare azd-based Azure projects for deployment: generates azure.yaml, infrastructure (B
-- **azure-resource-health-diagnose** — Analyze Azure resource health, diagnose issues from logs and telemetry, and create a rem
-- **azure-validate** — Pre-deployment validation for Azure readiness. Run deep checks on configuration, infrast
-- **azure-vms** — Manage Azure Virtual Machines and scale sets. Configure availability sets and managed di
-- **block-storage** — Manage block storage volumes and LVM. Configure cloud block storage and local disks. Use
-- **breakdown-feature-prd** — Prompt for creating Product Requirements Documents (PRDs) for new features, based on an 
-- **brreg** — Search and retrieve Norwegian company data from Brønnøysundregistrene (the Norwegian Bus
-- **bug-receipt** — Close defects and incidents with a BUG RECEIPT and VERIFIED, PARTIAL, or BLOCKED status 
-- **cabinet-ai-knowledge-base** — AI-first knowledge base and startup OS with file-based storage, AI agents, scheduled job
-- **cairn-ai-pentest** — AI-automated penetration testing and general problem-solving system that achieved unique
-- **capacity-planning** — Analyze team capacity, plan resource allocation, and balance workload across projects. F
-- **card-xiaohongshu** — Xiaohongshu-style knowledge cards, arranged as a swipeable multi-card carousel.
-- **cdn-setup** — Configure CDNs for content delivery. Set up CloudFront, Cloudflare, and Fastly. Use when
-- **changelog-writing** — Shared workflow for writing Langfuse changelog entries after a feature is complete. Use 
-- **chaos-engineering** — Use when planning, running, or learning from chaos engineering experiments. Triggers on 
-- **ci-cd** — CI/CD pipelines for .NET applications. Covers GitHub Actions and Azure DevOps YAML pipel
-- **ciso-review** — /cs:ciso-review <plan> — Risk-paranoid interrogation of any plan that touches data, comp
-- **claude-devfleet** — Orchestrate multi-agent coding tasks via Claude DevFleet — plan projects, dispatch paral
-- **cloud-cost-management** — Optimize and manage cloud costs across AWS, Azure, and GCP using reserved instances, spo
-- **cloud-security-configuration** — Implement comprehensive cloud security across AWS, Azure, and GCP with IAM, encryption, 
-- **cloud-storage-optimization** — Optimize cloud storage across AWS S3, Azure Blob, and GCP Cloud Storage with compression
-- **cloudflare-r2** — Manage Cloudflare R2 buckets, lifecycle, and signed URLs. Use for low-egress object stor
-- **cloudflare-zero-trust** — Protect internal apps with Cloudflare Access, device posture, and Zero Trust policies.
-- **cloudformation** — Deploy AWS resources with CloudFormation templates. Create stacks, use nested stacks, an
-- **cmux** — End-user control of cmux topology and routing (windows, workspaces, panes/surfaces, focu
-- **code-review-graph** — Build a persistent knowledge graph of your codebase so Claude reads only what matters — 
-- **code-security** — Security guidelines for writing secure code. Use when writing code, reviewing code for v
-- **codesight-ai-context** — Universal AI context generator that compiles codebase maps, wiki knowledge bases, and MC
-- **coding-standards** — Baseline cross-project coding conventions for naming, readability, immutability, and cod
-- **commit-message** — Analyze git changes and generate conventional commit messages. Supports batch commits fo
-- **competitive-intel** — Systematic competitor tracking that feeds CMO positioning, CRO battlecards, and CPO road
-- **container-debugging** — Debug Docker containers and containerized applications. Diagnose deployment issues, cont
-- **container-hardening** — Secure Docker images and container runtime configurations. Implement non-root users, rea
-- **container-registry-management** — Manage container registries (Docker Hub, ECR, GCR) with image scanning, retention polici
-- **container-scanning** — Scan container images for vulnerabilities using Trivy, Grype, and cloud-native tools. Id
-- **content-research-writer** — Research topics and write content like blog posts, articles, and copy
-- **content-strategy** — When the user wants to plan a content strategy, decide what content to create, or figure
-- **contract-template** — This skill enables creation of smart contract templates using Accord Project - an open-s
-- **convention-learner** — Detects and enforces project-specific coding conventions by analyzing existing codebase 
-- **conventional-branch** — Create Git branches following the Conventional Branch specification (feature/, bugfix/, 
-- **cost-optimization** — Optimize cloud costs across AWS, Azure, GCP, and OCI through resource rightsizing, taggi
-- **cpp-coding-standards** — C++ coding standards based on the C++ Core Guidelines (isocpp.github.io). Use when writi
-- **create-simulated-aeronautics-mod** — Expertise in the Create Simulated Project — a NeoForge Minecraft mod suite adding physic
-- **creating-openlineage-extractors** — Create custom OpenLineage extractors for Airflow operators. Use when the user needs line
-- **cs-onboard** — Founder onboarding interview that captures company context across 7 dimensions. Invoke w
-- **cuopt-multi-objective-exploration** — Trace, complete, and interpret the Pareto frontier across competing objectives using rep
-- **customer-success** — Customer success management - onboarding, health scoring, QBRs, expansion playbooks, and
-- **data-scraper-agent** — Build a fully automated AI-powered data collection agent for any public source — job boa
-- **debug-issue-with-datadog** — Establish root cause by combining Datadog telemetry with the Langfuse repo. Use when inv
-- **decide** — /cs:decide <memo> — Log a decision to two-layer memory via decision-logger. Approved mem
-- **decision-logger** — Two-layer memory architecture for board meeting decisions. Manages raw transcripts (Laye
-- **define-goal** — Help the user define a concrete, measurable goal before starting work, especially when t
-- **dependency-management** — Manage project dependencies across languages including npm install, package versioning, 
-- **deploying-airflow** — Deploys Airflow DAGs and projects. Use when deploying Airflow or answering anything abou
-- **deploying-go-sdk-bundles** — Builds, packs, and deploys compiled Airflow Go SDK bundles so the ExecutableCoordinator 
-- **deploying-java-sdk-bundles** — Builds and deploys compiled Airflow Java SDK bundles so workers can run them. Use when t
-- **deployment-automation** — Automate deployments across environments using Helm, Terraform, and ArgoCD. Implement bl
-- **deployment-checklist-generator** — Creates comprehensive deployment checklists with pre-deployment checks, smoke tests, ver
-- **devcontainers-nix** — Create reproducible development environments with Dev Containers, Nix flakes, and Devbox
-- **devops-automation** — DevOps and IT Ops automation - CI/CD, monitoring, incident management, and infrastructur
-- **dns-management** — Configure DNS zones and records. Manage Route53, Cloud DNS, and self-hosted DNS. Use whe
-- **doc-to-vector-dataset-generator** — Converts documents into clean, chunked datasets suitable for embeddings and vector searc
-- **doca-argus** — Use this skill when the user is deploying or operating the DOCA Argus Service — the pack
-- **docker** — Docker containerization for .NET 10 applications. Covers multi-stage builds, .NET contai
-- **docker-best-practices** — Comprehensive Docker best practices for images, containers, and production deployments. 
-- **docker-build-deploy** — Use when containerizing a Node.js app and setting up GitHub Actions CI/CD to build, push
-- **docker-compose** — Define and run multi-container Docker applications using Docker Compose. Create compose 
-- **docker-compose-orchestration** — Container orchestration with Docker Compose for multi-container applications, networking
-- **docker-containerization** — Create optimized Docker containers with multi-stage builds, security best practices, and
-- **docker-deployment** — Containerize and deploy Node.js applications with Docker including multi-stage builds, D
-- **docker-development** — Use when working with ANY Docker task: writing Dockerfiles, configuring docker-compose/c
-- **docker-git-bash-guide** — Docker on Windows with Git Bash / MINGW path conversion. PROACTIVELY activate for: (1) D
-- **docker-management** — Build, optimize, and troubleshoot Docker containers and images. Create efficient Dockerf
-- **docker-via-wsl** — Use when YOU (the AI agent) are running on Windows OUTSIDE WSL (Git Bash/MSYS/PowerShell
-- **dockerfile-generator** — Create, generate, or write Dockerfiles and multi-stage Docker images. Containerize apps.
-- **ebpf-observability** — Use eBPF for deep kernel-level observability — trace syscalls, network flows, and applic
-- **ecosystem-primer** — INVOKE FIRST for any LangChain / LangGraph / Deep Agents agent building project before c
-- **em-dash** — Expert on the history, origin, and correct use of the em dash. Use when writing or revie
-- **enterprise-agent-ops** — Operate long-lived agent workloads with observability, security boundaries, and lifecycl
-- **execute** — /cs:execute <decision> — Generate a 90-day execution plan with weekly milestones, DRIs, 
-- **fedramp-compliance** — Implement FedRAMP requirements for federal cloud services. Configure NIST 800-53 control
-- **focused-fix** — Use when the user asks to fix, debug, or make a specific feature/module/area work end-to
-- **gcp-compute** — Manage Compute Engine instances and instance templates. Configure managed instance group
-- **gcp-gke** — Deploy and manage Google Kubernetes Engine clusters. Configure node pools, networking, a
-- **gcp-secret-manager** — Secure secrets in Google Cloud Secret Manager. Configure IAM policies, integrate with GK
-- **gem-devops-guidelines** — Design or review infrastructure, deployment, CI/CD, Docker, Kubernetes, health checks, r
-- **gh-fix-ci** — Use when a user asks to debug or fix failing GitHub PR checks that run in GitHub Actions
-- **gitbackup-github-desktop** — Desktop application to back up all GitHub repositories locally and optionally to AWS S3 
-- **github-actions-2025** — GitHub Actions 2025-2026 features and modernization. PROACTIVELY activate for: (1) 1 vCP
-- **github-actions-efficiency** — Audit GitHub Actions workflow efficiency and recommend fixes to reduce CI minutes and co
-- **github-actions-runtime-upgrade-conventions** — Upgrade GitHub Actions to supported runtimes by selecting safe action versions, preservi
-- **github-actions-templates** — Create production-ready GitHub Actions workflows for automated testing, building, and de
-- **github-actions-workflow** — Build comprehensive GitHub Actions workflows for CI/CD, testing, security, and deploymen
-- **github-ai-features-2025** — GitHub AI-powered security and automation features (2025-2026). PROACTIVELY activate for
-- **github-codespaces-efficiency** — Audit and improve GitHub Codespaces efficiency. Use this skill when a user wants faster 
-- **github-copilot-starter** — Set up complete GitHub Copilot configuration for a new project based on technology stack
-- **github-figure-bed** — Upload images to any GitHub repo as a figure bed and get CDN/markdown links (jsdelivr/js
-- **github-ops** — GitHub repository operations, automation, and management. Issue triage, PR management, C
-- **gitops-workflow** — Implement GitOps workflows with ArgoCD and Flux for automated, declarative Kubernetes de
-- **golang-testing** — Go testing patterns including table-driven tests, subtests, benchmarks, fuzzing, and tes
-- **google-agents-cli-workflow** — This skill should be used when the user wants to "develop an agent", "build an agent usi
-- **gpu-kubernetes-operations** — Operate GPU-backed Kubernetes clusters for AI inference and training with scheduling, au
-- **grimmory-self-hosted-library** — Expert knowledge for setting up, configuring, and extending Grimmory — a self-hosted boo
-- **grounded-vault** — Use when maintaining a durable Markdown knowledge store that agents compile from sources
-- **growth-log** — Use after a complex task, failure, or when reviewing what was learned. Teaches how to wr
-- **gtm-0-to-1-launch** — Launch new products from idea to first customers. Use when launching products, finding e
-- **health-check-endpoints** — Implement comprehensive health check endpoints for liveness, readiness, and dependency m
-- **helm-chart-scaffolding** — Design, organize, and manage Helm charts for templating and packaging Kubernetes applica
-- **helm-charts** — Create, manage, and deploy Helm charts for Kubernetes package management. Build reusable
-- **helm-generator** — Create, scaffold, or generate Helm charts, Chart.yaml, values.yaml, templates, helpers.
-- **helm-validator** — Validate, lint, audit, check Helm charts — Chart.yaml, templates, values.yaml, CRDs, sch
-- **hermes-imports** — Convert local Hermes operator workflows into sanitized ECC skills and release-pack artif
-- **hermes-labyrinth-observability** — Read-only observability dashboard plugin for Hermes Agent — journeys, crossings, guidepo
-- **import-infrastructure-as-code** — Import existing Azure resources into Terraform using Azure CLI discovery and Azure Verif
-- **incident-alert-tickets** — Read and record root causes in the Linear `incident-alert` knowledge base. Use before an
-- **infra-scaling** — Tune and review Langfuse autoscaling for web, web-iso, and web-ingestion. Use for Terraf
-- **infrastructure-cost-optimization** — Optimize cloud infrastructure costs through resource rightsizing, reserved instances, sp
-- **insforge** — Use this skill when writing app code with InsForge or @insforge/sdk: database CRUD, auth
-- **intermittent-issue-debugging** — Debug issues that occur sporadically and are hard to reproduce. Use monitoring and syste
-- **istio-traffic-management** — Configure Istio traffic management including routing, load balancing, circuit breakers, 
-- **k8s-debug** — Diagnose and fix Kubernetes pods, CrashLoopBackOff, Pending, DNS, networking, storage, a
-- **k8s-manifest-generator** — Create production-ready Kubernetes manifests for Deployments, Services, ConfigMaps, and 
-- **k8s-security-policies** — Implement Kubernetes security policies including NetworkPolicy, PodSecurityPolicy, and R
-- **k8s-troubleshooter** — Systematic Kubernetes troubleshooting and incident response. Use this skill whenever the
-- **k8s-yaml-generator** — Generate/create/scaffold Kubernetes YAML — Deployment, Service, ConfigMap, Ingress, RBAC
-- **k8s-yaml-validator** — Validate, lint, audit, or dry-run Kubernetes manifests (Deployment, Service, ConfigMap, 
-- **knowledge-ops** — Knowledge base management, ingestion, sync, and retrieval across multiple storage layers
-- **kotlin-testing** — Kotlin testing patterns with Kotest, MockK, coroutine testing, property-based testing, a
-- **kubernetes-deploying** — Deploy applications to Kubernetes — Deployments, Services, Ingress, ConfigMaps, Secrets,
-- **kubernetes-deployment** — Deploy, manage, and scale containerized applications on Kubernetes clusters with best pr
-- **kubernetes-hardening** — Implement Kubernetes security contexts, Pod Security Standards, and network policies. Se
-- **kubernetes-manifest-generator** — Generates Kubernetes manifests including Deployments, Services, ConfigMaps, Secrets, Ing
-- **kubernetes-operator** — Use when building a Kubernetes Operator — custom controllers that reconcile CRD state. T
-- **kubernetes-ops** — Deploy, scale, and manage Kubernetes workloads. Create deployments, services, and config
-- **kubernetes-orchestration** — Comprehensive guide to Kubernetes container orchestration, covering workloads, networkin
-- **kubernetes-patterns** — Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/
-- **kubernetes-skill** — Prevent Kubernetes hallucinations by diagnosing and fixing failure modes: insecure workl
-- **kustomize** — Customize Kubernetes manifests without templating using Kustomize. Create base configura
-- **landing-page-conversion-audit** — Audit a landing page, sales page or checkout page for conversion leaks and return a fix 
-- **langfuse-codebase-navigator** — Navigate Langfuse repositories, code areas, and agent skills. Use to locate code, choose
-- **langgraph-cli** — INVOKE THIS SKILL when using the langgraph CLI to scaffold, develop, build, or deploy La
-- **langsmith-online-eval-engineering** — Iteratively inspect traces, interview the user, and create LangSmith online evaluators o
-- **laravel-verification** — Verification loop for Laravel projects: env checks, linting, static analysis, tests with
-- **launch-strategy** — When the user wants to plan a product launch, feature announcement, or release strategy.
-- **learn** — Provides autonomous project pattern learning by analyzing the codebase to discover devel
-- **learn-docker-k8s-game** — Interactive AI-driven game for learning Docker, Linux, networking, and Kubernetes throug
-- **linkerd-patterns** — Implement Linkerd service mesh patterns for lightweight, security-focused service mesh d
-- **llm-inference-scaling** — Auto-scale LLM inference clusters on Kubernetes using KEDA, custom GPU metrics, and hori
-- **log-aggregation** — Implement centralized logging with ELK Stack, Loki, or Splunk for log collection, parsin
-- **log-analysis** — Analyze application and system logs to identify errors, patterns, and root causes. Use l
-- **logging-best-practices** — Implement structured logging with JSON formats, log levels (DEBUG, INFO, WARN, ERROR), c
-- **loki-logging** — Configure Grafana Loki for log aggregation and analysis. Set up Promtail for log collect
-- **marketing-ops** — Central router for the marketing skill ecosystem. Use when unsure which marketing skill 
-- **marketing-skills** — Directory and router for the marketing skills library. Use when you need to find the rig
-- **marketing-strategy-pmm** — Product marketing skill for positioning, GTM strategy, competitive intelligence, and pro
-- **mcp-deploy-manage-agents** — Deploy & kelola MCP declarative agent di Microsoft 365 admin center (assignment, distrib
-- **memory-leak-detection** — Detect and fix memory leaks using heap snapshots, memory profiling, and leak detection t
-- **mentoring-juniors** — Socratic mentoring for junior developers and AI newcomers. Guides through questions, nev
-- **metaclaw-evolving-agent** — Deploy and configure MetaClaw — an agent that meta-learns and evolves from live conversa
-- **microsoft-guide** — Microsoft .NET Microservices Architecture Guide reference. PROACTIVELY activate for: (1)
-- **microsoft-rust-training** — Comprehensive Rust training curriculum from Microsoft covering beginner to expert levels
-- **mini-context-graph** — A persistent, compounding knowledge base combining Karpathy's LLM Wiki pattern with a st
-- **ministack-aws-emulator** — MiniStack is a free, open-source local AWS emulator (LocalStack replacement) that emulat
-- **mlops-workflows** — Comprehensive MLOps workflows for the complete ML lifecycle - experiment tracking, model
-- **model-serving-kubernetes** — Deploy ML models on Kubernetes with KServe (formerly KFServing) and NVIDIA Triton Infere
-- **modern-automation-patterns** — Modern DevOps and CI/CD bash automation patterns with containers and cloud (2025). PROAC
-- **ms365-tenant-manager** — Microsoft 365 tenant administration for Global Administrators. Automate M365 tenant setu
-- **mtls-configuration** — Configure mutual TLS (mTLS) for zero-trust service-to-service communication. Use when im
-- **multi-stage-dockerfile** — Create optimized multi-stage Dockerfiles for any language or framework
-- **my-brain-is-full-crew** — A team of 10 AI agents that manage your Obsidian vault for knowledge, nutrition, and men
-- **nasiko-control-plane** — Use the experimental Nasiko CLI lifecycle bridge for pinned installation, read-only stat
-- **netlify-deploy** — Deploy web projects to Netlify using the Netlify CLI (`npx netlify`). Use when the user 
-- **noob-mode** — Plain-English translation layer for non-technical Copilot CLI users. Translates every ap
-- **notion-knowledge-capture** — Capture conversations and decisions into structured Notion pages; use when turning chats
-- **notion-spec-to-implementation** — Turn Notion specs into implementation plans, tasks, and progress tracking; use when impl
-- **object-storage** — Configure object storage with S3, GCS, and MinIO. Implement lifecycle policies and acces
-- **observability-setup** — Implements comprehensive observability with OpenTelemetry tracing, Prometheus metrics, a
-- **ollama-stack** — Run local LLM workloads with Ollama, Open WebUI, and GPU-aware tuning for private develo
-- **openclaw-deployment-hardening** — Secure OpenClaw deployments with preflight hardening checks, CI/CD guardrails, container
-- **openshift** — Manage Red Hat OpenShift clusters and deployments. Configure projects, routes, builds, a
-- **opentelemetry** — Instrument applications and infrastructure with OpenTelemetry for unified traces, metric
-- **opentofu-guide** — OpenTofu (Terraform open-source fork) guide and migration. PROACTIVELY activate for: (1)
-- **opentofu-migration** — Migrate from Terraform to OpenTofu with state compatibility, provider registry setup, an
-- **parallel-ci-triage** — When GitHub Actions fails, fetch failing job logs and assign each failing job to a separ
-- **perl-testing** — Perl testing patterns using Test2::V0, Test::More, prove runner, mocking, coverage with 
-- **phoenix-tracing** — OpenInference semantic conventions and instrumentation for Phoenix AI observability. Use
-- **picoclaw-ai-assistant** — Ultra-lightweight AI assistant in Go that runs on $10 hardware with <10MB RAM, supportin
-- **playwright-devops** — DevOps workflows for Playwright - CI failure analysis, workflow debugging, and release o
-- **pnpm-upgrade-package** — Upgrade pnpm workspace dependencies to target/latest versions: direct/transitive bumps, 
-- **policy-as-code** — Implement policy as code with OPA, Sentinel, and Kyverno. Automate policy enforcement in
-- **polymarket-arbitrage-trading-bot** — Automated dump-and-hedge arbitrage trading bot for Polymarket's 15-minute crypto Up/Down
-- **prometheus-configuration** — Set up Prometheus for comprehensive metric collection, storage, and monitoring of infras
-- **prompt-regression-tester** — Compares old vs new prompts across test cases with diff summaries, stability metrics, br
-- **promql-generator** — Generate/create/write PromQL queries, metric expressions, alerting rules, recording rule
-- **python-appservice-deploy** — Deploy Python (Flask/Django/FastAPI) code to Azure App Service Linux. WHEN: \"Flask App 
-- **python-azure-iot-edge-modules** — Build and operate Python Azure IoT Edge modules with robust messaging, deployment manife
-- **quarkus-verification** — Verification loop for Quarkus projects: build, static analysis, tests with coverage, sec
-- **quasi-coder** — Expert 10x engineer skill for interpreting and implementing code from shorthand, quasi-c
-- **quip-node-manager** — Desktop GUI and CLI app for running and monitoring Quip Network nodes, built with Tauri 
-- **rag-observability-evals** — Monitor and evaluate RAG systems with retrieval quality metrics, groundedness checks, ha
-- **refactor-plan** — Create a concrete plan before starting a multi-file refactor. Use when the user asks to 
-- **regex-vs-llm-structured-text** — Decision framework for choosing between regex and LLM when parsing structured text — sta
-- **release-automation-builder** — Automates releases and package publishing with changesets or semantic-release. Handles v
-- **resume-tailor** — I help you customize your resume for specific job applications. Instead of sending the s
-- **reverse-proxy** — Configure nginx and Traefik as reverse proxies. Implement SSL termination and routing. U
-- **rules-distill** — Scan skills to extract cross-cutting principles and distill them into rules — append, re
-- **runbook-creation** — Create operational runbooks and standard operating procedures. Document troubleshooting 
-- **saving-workspace-context** — Automatically persist useful context — research, decisions, learnings, templates — to wo
-- **sbom-supply-chain** — Generate, sign, and verify SBOMs and provenance attestations to secure the software supp
-- **secrets-scanner** — Detects leaked API keys, tokens, passwords, and credentials in code with pre-commit hook
-- **secrets-vault-manager** — Use when the user asks to set up secret management infrastructure, integrate HashiCorp V
-- **semgrep** — Run Semgrep static analysis scans and create custom detection rules. Use when asked to s
-- **setting-up-terraform** — Set up Terraform infrastructure-as-code for cloud resources, including provider configur
-- **shellcheck-cicd-2025** — ShellCheck validation as a non-negotiable 2025 workflow practice. PROACTIVELY activate f
-- **shopify-pos-ui** — Build retail point-of-sale applications using Shopify's POS UI components. These compone
-- **slo-architect** — Use when defining, reviewing, or operating SLOs/SLIs/error budgets. Triggers on "define 
-- **social-graph-ranker** — Weighted social-graph ranking for warm intro discovery, bridge scoring, and network gap 
-- **sops-encryption** — Encrypt files and configs with Mozilla SOPS. Integrate with AWS KMS, GCP KMS, or PGP for
-- **springboot-tdd** — Test-driven development for Spring Boot using JUnit 5, Mockito, MockMvc, Testcontainers,
-- **springboot-verification** — Verification loop for Spring Boot projects: build, static analysis, tests with coverage,
-- **startup-it-troubleshooting** — Practical IT troubleshooting playbooks for small teams without dedicated IT staff.
-- **structured-autonomy-implement** — Implementasi plan secaraStrict tanpa deviasi (hanya perubahan yang ada di plan). Use whe
-- **tdd** — Guided test-driven development workflow for .NET 10 using xUnit v3, WebApplicationFactor
-- **tech-debt-prioritizer** — Scores and prioritizes technical debt by impact, risk, and effort. Provides ranked backl
-- **terraform-aws** — Provision AWS infrastructure with Terraform. Create modules, manage state, and implement
-- **terraform-azure** — Provision Azure infrastructure with Terraform. Configure providers, manage state, and de
-- **terraform-azurerm-set-diff-analyzer** — Analyze Terraform plan JSON output for AzureRM Provider to distinguish between false-pos
-- **terraform-gcp** — Provision GCP infrastructure with Terraform. Configure providers and deploy Google Cloud
-- **terraform-generator** — Create, generate, write, or scaffold Terraform .tf HCL — resources, modules, providers, 
-- **terraform-infrastructure** — Comprehensive Terraform infrastructure-as-code skill covering providers, resources, modu
-- **terraform-infrastructure-as-code** — Comprehensive Terraform Infrastructure as Code skill covering resources, modules, state 
-- **terraform-module-builder** — Creates reusable Terraform modules with proper structure, variables, outputs, and state 
-- **terraform-module-library** — Build reusable Terraform modules for AWS, Azure, GCP, and OCI infrastructure following i
-- **terraform-tasks** — Terraform task patterns — common workflows and pipeline steps. PROACTIVELY activate for:
-- **terraform-validator** — Validate, lint, audit, or plan Terraform/.tf/HCL files; runs tflint, checkov, terraform 
-- **trace-to-training-data** — Convert evaluation traces and production logs into SFT examples and preference pairs. Us
-- **ui-skills** — Opinionated, evolving constraints to guide agents when building interfaces. Useful for k
-- **uncloud** — Use when managing an Uncloud cluster — deploying services, configuring Caddy ingress, ad
-- **unified-memory** — Share durable, inspectable context and handoffs between Claude, Codex, Hermes, Cursor, O
-- **unit-test-parameterized** — Provides parameterized testing patterns with JUnit 5, generates data-driven unit tests u
-- **update-avm-modules-in-bicep** — Update Azure Verified Modules (AVM) to latest versions in Bicep files.
-- **waf-setup** — Deploy and tune Web Application Firewalls. Configure rules for OWASP Top 10 protection. 
-- **weather-automation** — Automate weather-based workflows, forecasts, alerts, and location-aware notifications
-- **weekly-production-review** — Prepare Langfuse weekly production reviews covering failures, fixes, open issues, and tr
-- **x-mentor-skill-nuwa** — AI-powered X (Twitter) content strategy skill that distills methodologies from 6 top cre
-- **xata-postgres-platform** — Expert skill for Xata open-source cloud-native Postgres platform with copy-on-write bran
-
-## creative-producer (268 curated)
+## creative-producer (286 curated)
 
 - **absolute-debt** — Lint and typecheck debt paydown: clear pre-existing repo-wide lint/type violations and s
 - **absolute-prune** — Dead code and dependency cleanup, repo-wide: unused deps, unreferenced exports, unreacha
@@ -2344,7 +2132,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **acreadiness-assess** — Run the AgentRC readiness assessment on the current repository and produce a static HTML
 - **after-hours-editorial-template** — Luxury dark-editorial HyperFrames template for three-page cinematic storyboards, inspire
 - **agent-architecture-audit** — Full-stack diagnostic for agent and LLM applications. Audits the 12-layer agent stack fo
+- **agentic-payments-protocol-ap2-open-agent-commerce** — Apply Google's Agent Payments Protocol (AP2) and the broader agentic payment ecosystem (
 - **ai-avatar-video** — Create AI avatar, talking-head, and lip-sync videos on RunComfy via the `runcomfy` CLI. 
+- **ai-core-tool-calling** — Isomorphic tool system: toolDefinition() with Zod schemas, .server() and .client() imple
+- **ai-income-agent** — Transform your OpenClaw agent into an autonomous income-generating system. Covers three 
 - **ai-music** — Generate AI music on RunComfy via the `runcomfy` CLI — a smart router across the music-m
 - **ai-sdk** — Answer questions about the AI SDK and help build AI-powered features. Use when developer
 - **ai-slides** — Generate complete presentations with AI - from outline to polished slides
@@ -2380,6 +2171,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **codebase-onboarding** — Launch multiple explore subagents in parallel to investigate architecture, data models, 
 - **codex-pet** — Codex Pet generator on RunComfy. Build a Codex-compatible Codex Pet spritesheet.webp + p
 - **cold-email** — When the user wants to write, improve, or build a sequence of B2B cold outreach emails t
+- **compact-core-compact-language-ref** — This skill should be used when the user asks about Compact language mechanics, syntax re
 - **connections-optimizer** — Reorganize the user's X and LinkedIn network with review-first pruning, add/follow recom
 - **content-production** — Full content production pipeline — takes a topic from blank page to published-ready piec
 - **context7** — Retrieve up-to-date documentation for software libraries, frameworks, and components via
@@ -2387,11 +2179,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **convert-pdf-to-md** — Converts PDF (.pdf) documents into Markdown so their contents can be accurately analyzed
 - **copilot-sdk** — Build agentic applications with GitHub Copilot SDK. Use when embedding AI agents in apps
 - **council** — Convene a four-voice council for ambiguous decisions, tradeoffs, and go/no-go calls. Use
-- **council-multi-model** — Add one optional external Codex critique after the existing council has produced a decis
 - **create-adaptable-composable** — Create a library-grade Vue composable that accepts maybe-reactive inputs (MaybeRef / May
 - **creative-director** — AI creative director with recursive self-assessment: 20+ methodologies (SIT, TRIZ, Bisoc
+- **cross-vendor-billing-reconciliation** — Reconciling cloud marketplace subscriptions (Pax8) against accounting invoices (Xero, Qu
 - **cursor-agents-workflow** — Human handoff, Linear branch names, reviewable (non-draft) PRs, the `cursor` GitHub labe
-- **cv-builder** — This skill enables creation of professional CVs/resumes from structured YAML using rende
+- **cv-builder** — This skill enables creation of professional CVs/resumes from structured YAML using **ren
 - **dart-build-cli-app** — Architectural patterns, entrypoint structure, exit codes, stream routing, and subprocess
 - **data-catalog** — Create and enrich durable data catalogs using the native DS_CATALOG_V1 Markdown contract
 - **dataset-curation** — Prepare, format, and validate datasets for supervised fine-tuning and preference trainin
@@ -2402,15 +2194,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **deepstream-sop** — Use this skill when building, deploying, evaluating, debugging, or measuring latency for
 - **delegating-to-otto** — Drives Astronomer's Otto agent (`astro otto`) as a delegated sub-agent for Airflow, dbt,
 - **demo-video** — Assemble ordered frames or clips with narration into a narrated MP4 via FFmpeg
-- **dev-slides** — This skill enables creation of developer-focused presentations using Slidev - a Vue-powe
+- **dev-slides** — This skill enables creation of developer-focused presentations using **Slidev** - a Vue-
 - **developing-with-streamlit** — Use for ALL Streamlit tasks: creating, editing, debugging, beautifying, styling, theming
 - **digital-health-clinical-asr-build** — Stage 2 of the Clinical ASR Flywheel. Use when curating clinical terms, tagging IPA, and
 - **digital-health-clinical-asr-setup** — Stage 1 of Clinical ASR Flywheel. Use when bootstrapping a cycle: NVCF+MW disclosure, NV
 - **digits-fintech-swiss-template** — Swiss-grid fintech deck template in black / warm paper / neon-lime contrast. Use when us
 - **discernment-nudge** — After you give a substantive answer or draft that the user may act on — advice or recomm
-- **doca-caps** — Use this skill when the user wants to invoke the read-only doca_caps CLI to ask what DOC
 - **doca-collectx-deployment** — Use this skill to deploy and operate a CollectX (clx) based DOCA telemetry collector on 
-- **doca-comch** — Use this skill when the user is doing hands-on DOCA Comch work on a host + BlueField pai
 - **dotnet-mcp-builder** — Build Model Context Protocol (MCP) servers in C#/.NET against the current ModelContextPr
 - **drawio-logical-diagrams** — Creates professional logical flow diagrams and logical system architecture diagrams usin
 - **dt-obs-ext-monitors** — 3rd-party test and monitor result ingestion into Dynatrace Grail via the platform events
@@ -2420,6 +2210,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **elevenlabs-music-generation** — Generate full songs and instrumental tracks with ElevenLabs Music on RunComfy via the `r
 - **expo-skill-eval** — Evaluate Expo skills in this repo end-to-end - trigger accuracy, generated code quality,
 - **exporting-to-png** — Export code, terminal output, diagrams, or UI components to PNG images using headless br
+- **facturas** — Emití facturas electrónicas, notas de crédito y notas de débito con ARCA (ex AFIP) desde
 - **fal-ai-media** — Unified media generation via fal.ai MCP — image, video, and audio. Covers text-to-image 
 - **fal-api-reference** — Complete fal.ai API reference system. PROACTIVELY activate for: (1) @fal-ai/client JavaS
 - **fal-audio** — Complete fal.ai audio system. PROACTIVELY activate for: (1) Whisper speech-to-text, (2) 
@@ -2435,12 +2226,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **fal-video-edit** — Edit existing videos using AI — remix style, upscale, remove background, and add audio v
 - **fal-video-to-video** — Complete fal.ai video-to-video system. PROACTIVELY activate for: (1) Kling O1 video edit
 - **filmkit-fujifilm-camera** — Browser-based preset manager and RAW converter for Fujifilm X-series cameras using WebUS
+- **fin-earnings-summary** — \"Summarize and analyze earnings calls (法說會) including financial highlights, management 
 - **finnish-humanizer** — Detect and remove AI-generated markers from Finnish text, making it sound like a native 
 - **firebase-app-hosting-basics** — Deploys and manages full-stack web applications (Next.js, Angular) with Server-Side Rend
 - **flash-moe-inference** — Run 397B parameter Mixture-of-Experts LLMs on a MacBook using pure C/Metal with SSD stre
 - **flutter-add-widget-test** — Implement a component-level test using `WidgetTester` to verify UI rendering and user in
 - **flutter-fix-layout-issues** — Fixes Flutter layout errors (overflows, unbounded constraints) using Dart and Flutter MC
-- **foundation-models-on-device** — Apple FoundationModels framework for on-device LLM — text generation, guided generation 
 - **foundry-hosted-agent-copilotkit** — Ongoing development guidance for agentic web apps that pair a CopilotKit frontend with M
 - **frame-glitch-title** — Digital glitch, chromatic offset, and data-corruption title frame for video transitions 
 - **frame-light-leak-cinema** — Film light leaks, grain, 16:9 letterbox, and large serif type for cinematic openings or 
@@ -2458,6 +2249,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **gh-attach** — Uploads a local file (screenshot, image, PDF, zip, video) to GitHub user-attachments, do
 - **ghostling-libghostty-terminal** — Build minimal terminal emulators using the libghostty-vt C API with Raylib for windowing
 - **google-analytics-admin-api-basics** — Manages Google Analytics account and property settings, enables the Analytics Admin API 
+- **grad-cultivation** — \"Apply cultivation theory (Gerbner) to analyze how long-term media exposure shapes worl
+- **grad-meta-analysis** — \"Apply meta-analysis to synthesize effect sizes across multiple studies, assess heterog
+- **grad-policy-streams** — \"Apply Kingdon's multiple streams framework to analyze how problems, policies, and poli
 - **grpc-microservices** — Comprehensive gRPC microservices skill covering protobuf schemas, service definitions, s
 - **grpc-service-development** — Build high-performance gRPC services with Protocol Buffers, bidirectional streaming, and
 - **gtm-positioning-strategy** — Find and own a defensible market position. Use when messaging sounds like competitors, c
@@ -2465,8 +2259,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **html-ppt** — HTML PPT Studio — author professional static HTML presentations in many styles, layouts,
 - **html-ppt-retro-quarterly-review** — Retro Quarterly Review presentation template in a bold blue + orange editorial language.
 - **html-ppt-skill** — Build professional HTML presentations with 36 themes, 31 layouts, 47 animations — pure s
-- **html-slides** — This skill enables creation of stunning HTML-based presentations using reveal.js - the w
+- **html-slides** — This skill enables creation of stunning HTML-based presentations using **reveal.js** - t
 - **html-to-ppt** — Convert HTML/Markdown to PowerPoint presentations using Marp
+- **hum-ethics** — \"Apply ethical frameworks — deontology, utilitarianism, virtue ethics, and justice theo
 - **hy-world-2-0-3d-world-model** — Expert skill for using HY-World 2.0, Tencent's multi-modal world model for reconstructin
 - **ima-dai-sdk** — Integrates the Google Interactive Media Ads (IMA) Dynamic Ad Insertion (DAI) SDK into we
 - **ima-sdk-client-side** — Supports Interactive Media Ads (IMA) SDK. Use this skill for client-side ad insertion wh
@@ -2475,15 +2270,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **impediment-prioritization** — Ranks any list of impediments and their countermeasures using a value-stream scoring mod
 - **inherit-legacy-style** — Legacy-project style inheritance skill. Use when the user types /inherit-legacy-style, o
 - **internal-narrative** — Build and maintain one coherent company story across all audiences — employees, investor
+- **internet-asset-fetcher** — Fetch any internet asset to local files — images, text/articles, documents (PDF/DOCX/XLS
 - **invoice-automation** — Automate invoice generation, sending, tracking, and payment reconciliation across accoun
 - **invoice-generator** — Create professional invoices with proper formatting for freelancers and small businesses
 - **invoice-organizer** — Organize, categorize, and track invoices and receipts
 - **invoice-template** — Generate professional PDF invoices from templates
 - **java-coding-standards** — Java coding standards for Spring Boot and Quarkus services: naming, immutability, Option
-- **jkvideo-bilibili-react-native** — Expert skill for building and extending JKVideo, a React Native Bilibili-like client wit
 - **json-render-generative-ui** — Generative UI framework that renders AI-generated JSON specs into type-safe UI component
 - **kafka-stream-processing** — Complete guide for Apache Kafka stream processing including producers, consumers, Kafka 
-- **langfuse-previews** — Use Langfuse's disposable per-PR previews at pr-N.preview.langfuse.com (synthetic data o
 - **langgraph-fundamentals** — INVOKE THIS SKILL when writing ANY LangGraph code. Covers StateGraph, state schemas, nod
 - **latency-critical-systems** — Use for latency-sensitive systems such as realtime dashboards, market data, streaming ag
 - **lead-intelligence** — AI-native lead intelligence and outreach pipeline. Replaces Apollo, Clay, and ZoomInfo w
@@ -2492,19 +2286,27 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **lipsync** — Lip-sync a face to a specific audio track on RunComfy via the `runcomfy` CLI. Routes acr
 - **logql-generator** — Generate LogQL queries, log stream selectors, metric queries, and alerting rules for Gra
 - **manim-video** — Build reusable Manim explainers for technical concepts, graphs, system diagrams, and pro
+- **margin-analysis** — Per-client and per-service-line margin computation for an MSP: revenue from PSA billing 
 - **markdown-converter** — Convert documents and files to Markdown using markitdown. Use when converting PDF, Word 
 - **markdown-to-html** — Convert Markdown files to HTML similar to `marked.js`, `pandoc`, `gomarkdown/markdown`, 
 - **marketing-campaign** — End-to-end marketing campaign planning and execution. Covers audience research, position
 - **markstream-install** — Install and configure Markstream streaming Markdown renderers for Vue, React, Svelte, An
 - **mcp-copilot-studio-server-generator** — Generate a complete MCP server implementation optimized for Copilot Studio integration w
-- **md-slides** — This skill enables creation of presentations from pure Markdown using Marp. Write slides
-- **md-to-office** — This skill enables conversion from Markdown to various Office formats using Pandoc - the
+- **md-slides** — This skill enables creation of presentations from pure Markdown using **Marp**. Write sl
+- **md-to-office** — This skill enables conversion from Markdown to various Office formats using **Pandoc** -
+- **med-business** — \"Use when writing financial news — earnings, IPO/M&A, regulatory changes, industry tren
+- **med-culture** — \"Use when the user wants to write a culture-and-arts news piece — exhibition coverage, 
+- **med-entertainment** — \"Use when writing entertainment news — reviews, box office analysis, streaming reports,
+- **med-health** — \"Use when writing a medical or health news story — clinical research breakthroughs, pub
+- **med-international** — \"Use when writing an international news piece — foreign affairs, diplomatic coverage, c
+- **med-political** — \"Use when the user wants to write a political news piece — election coverage, legislati
+- **med-sports** — \"Use when the user wants to write a sports news piece — game recaps, athlete profiles, 
+- **midnight-cq-ledger-testing** — This skill should be used when the user asks to write ledger tests, test transaction con
 - **migrate-ai-sdk-v6-to-v7** — Migrate applications from AI SDK 6.x to AI SDK 7.0. Use when upgrading Vercel AI SDK pac
 - **migrate-to-parallel** — Migrate Exa, Tavily, Perplexity, or Firecrawl web-data integrations completely to the ap
 - **modal-drawer-system** — Implements accessible modals and drawers with focus trap, ESC to close, scroll lock, por
 - **moss-tts-nano-speech** — Expert skill for using MOSS-TTS-Nano, a 0.1B parameter multilingual real-time TTS model 
 - **nano-world-model** — Minimalist batteries-included repository for training, evaluating, and deploying diffusi
-- **neon-functions** — Long-running, serverless Node.js HTTP functions deployed onto your Neon branch, with DAT
 - **news-monitor** — Set up news monitoring strategies, analyze news coverage, and synthesize current events.
 - **nextjs-app-router** — Complete Next.js App Router fundamentals system (Next.js 15.5/16). PROACTIVELY activate 
 - **nextjs-data-fetching** — Complete Next.js data fetching system (Next.js 15.5/16). PROACTIVELY activate for: (1) S
@@ -2513,22 +2315,20 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **nightingale-karaoke** — ML-powered Karaoke app in Rust using Bevy, WhisperX, and Demucs for stem separation, lyr
 - **nodejs-development** — Comprehensive Node.js development skill covering event loop, async patterns, streams, fi
 - **notebooklm** — Enables interaction with Google NotebookLM for advanced RAG (Retrieval-Augmented Generat
+- **notion-drift** — Check markdown files already synced to Notion for drift by reading each item's stored No
 - **notion-research-documentation** — Research across Notion and synthesize into structured documentation; use when gathering 
 - **nutrient-document-processing** — Process, convert, OCR, extract, redact, sign, and fill documents using the Nutrient DWS 
 - **office-mcp** — MCP server with 39 tools for Word, Excel, PowerPoint, PDF, OCR operations
 - **openless-voice-input** — OpenLess open-source voice input for macOS & Windows — press a hotkey, speak, get AI-pol
 - **openmaic-classroom** — OpenMAIC — Open Multi-Agent Interactive Classroom platform for generating immersive AI-p
-- **paperclip-ai-orchestration** — Skill for using Paperclip — open-source orchestration platform for running autonomous AI
+- **ops-pitch-deck** — \"Structure and write investor pitch decks covering problem, solution, market, business 
 - **parallel-code-review** — Run four parallel read-only subagents that each review the same diff from a different le
 - **parallel-memory** — Recall past Parallel Task, Monitor, and FindAll runs when they may help; evict runs or c
-- **parlor-on-device-ai** — On-device, real-time multimodal AI voice and vision assistant powered by Gemma 4 E2B and
 - **performance-budget-setter** — Defines measurable performance budgets for bundle size, API latency, database queries, a
 - **performance-review-writer** — Draft performance reviews, self-assessments, peer reviews, and upward feedback in your o
 - **pester-should-migration** — Experimental (preview) Pester skill for migrating classic Should -Be (v5) assertion synt
 - **podcast-automation** — Automate podcast production workflows including recording, editing, publishing, and dist
 - **posterskill-academic-posters** — AI-assisted academic conference poster generation from Overleaf source using Claude Code
-- **powerpoint** — PowerPoint slide deck generation and management using python-pptx with YAML-driven conte
-- **powershell-security** — Modern PowerShell security practices for 2025 — SecretManagement, JEA, WDAC, credential 
 - **ppt-keynote** — Apple Keynote-quality slides, one card per screen, with keyboard left/right navigation.
 - **pptx** — Use this skill any time a .pptx or .potx file is involved in any way — as input, output,
 - **pptx-generator** — Create and edit PowerPoint presentations from scratch with PptxGenJS — MiniMax's product
@@ -2545,13 +2345,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **react-testing** — Complete React testing system. PROACTIVELY activate for: (1) Vitest/Jest setup and confi
 - **reactive-programming** — Implement reactive programming patterns using RxJS, streams, observables, and backpressu
 - **remotion-video-creation** — Best practices for Remotion - Video creation in React. 29 domain-specific rules covering
-- **render-deploy** — Deploy applications to Render by analyzing codebases, generating render.yaml Blueprints,
 - **replicate** — Discover, compare, and run AI models using Replicate's API. Strong fit for image, audio,
+- **runcomfy-cli** — Run any model on RunComfy from the command line. The `runcomfy` CLI is one binary, one a
 - **seed-test-data** — Seed reproducible local Langfuse data in ClickHouse and Postgres. Use for complex traces
 - **seedance-2-5-image-to-video** — Animate a single still image into a 4-30 second 720p cinematic clip with optional synchr
 - **seedance-v2** — Generate cinematic short-form video with ByteDance Seedance 2.0 Pro on RunComfy. Documen
 - **serve-sim-apple-simulator** — Host Apple iOS Simulators in the browser with MJPEG streaming, touch/gesture control, an
-- **shopify-storefront-graphql** — Use for custom storefronts requiring direct GraphQL queries/mutations for data fetching 
+- **sherweb-billing** — Sherweb distributor billing: explicit billing date ranges, Setup/Recurring/Usage charge 
 - **site-md** — Analyze a project description or site requirements and synthesize a project constitution
 - **slug-font-rendering** — Reference HLSL shader implementations for the Slug font rendering algorithm, enabling hi
 - **social-reddit-card** — Realistic Reddit post card with vote rail and comment count, suited to video overlays or
@@ -2561,6 +2361,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **speech** — Generate spoken audio from text using OpenAI's API with built-in voices. Useful for narr
 - **spotify-automation** — Automate Spotify music playback, playlist management, and audio analysis workflows
 - **sprint-254-features** — Azure DevOps Sprint 254-262 new features and enhancements (2025). PROACTIVELY activate f
+- **staking-protocol-patterns** — Auto-loaded by defi-auditor agent during Phase 2 when analyzing staking mechanisms. Prov
 - **streams** — Master Node.js streams for memory-efficient processing of large datasets, real-time data
 - **swiftui-patterns** — SwiftUI architecture patterns, state management with @Observable, view composition, navi
 - **table-builder** — Creates data table patterns with filtering, sorting, pagination, row actions, column con
@@ -2576,9 +2377,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **transcription-automation** — Automate audio/video transcription, meeting notes, subtitle generation, and content proc
 - **transloadit-media-processing** — Process media files (video, audio, images, documents) using Transloadit. Use when asked 
 - **tribev2-brain-encoding** — Use TRIBE v2, Meta's multimodal foundation model for predicting fMRI brain responses to 
+- **tw-ecom-invoice-ezpay** — \"Issue and manage Taiwan e-invoices via ezPay (加值服務中心) through mcp-ezpay-einvoice. Use 
+- **tw-einvoice-guide** — \"Implement Taiwan's e-invoice (電子發票) system including platform integration, B2B vs B2C 
 - **twilio-sms-automation** — Automate SMS communications, two-way messaging, notifications, and voice workflows with 
 - **type4me-macos-voice-input** — MacOS voice input tool with local/cloud ASR engines, LLM text optimization, and fully lo
 - **ui-demo** — Record polished UI demo videos using Playwright. Use when the user asks to create a demo
+- **update-models** — Audit AI model providers in sources.js against live provider APIs. Detects deprecated, n
 - **venice-audio-music** — Music generation queueing, retrieval, and completion endpoints via Venice.ai. Suited for
 - **venice-audio-speech** — Text-to-speech models, voices, formats, and streaming via Venice.ai. Useful for narratio
 - **venice-image-generate** — Image generation endpoints and available styles via the Venice.ai API.
@@ -2588,6 +2392,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **video-downloader** — Download videos from YouTube and other platforms for offline viewing, editing, or archiv
 - **video-editing** — AI-assisted video editing workflows for cutting, structuring, and augmenting real footag
 - **video-hyperframes** — Hyperframes / Remotion-compatible continuous frame animation with autoplay support.
+- **viewcomponents-specialist** — Specialist in ViewComponent implementation, component architecture, slots, previews, and
 - **viral-video-hooks-retention** — Master hook creation and audience retention for viral video success. PROACTIVELY activat
 - **viral-video-platform-algorithms** — Deep understanding of TikTok, YouTube, Instagram, and Facebook algorithms for 2025-2026.
 - **viral-video-short-form** — Complete short-form video optimization for TikTok, Instagram Reels, YouTube Shorts, and 
@@ -2598,19 +2403,421 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **wan-3-0-prime-reference-to-video** — Build video clips from reference images, reference videos, and reference audio with Wan-
 - **whatsapp-automation** — WhatsApp Business automation - customer support, notifications, chatbots, and broadcast 
 - **winmd-api-search** — Find and explore Windows desktop APIs. Use when building features that need platform cap
-- **writing-guidelines** — Review docs/prose for Writing Guidelines compliance. Use when asked to "review my docs",
+- **writing-guidelines** — Review docs/prose for Writing Guidelines compliance. Use when asked to 'review my docs',
 - **wterm-web-terminal** — Web terminal emulator with Zig/WASM core, DOM rendering, and React/vanilla JS bindings
+- **x-algo-tweet-writer** — Use this skill whenever the user asks to write, draft, or create a tweet, X post, thread
 - **youtube-automation** — Automate YouTube content workflows including video management, analytics, scheduling, an
 - **youtube-clipper** — YouTube clip generation and editing with automated workflows — pull source video, slice 
 - **youtube-full** — Use when the user needs YouTube transcripts, video search, channel browsing, playlist ex
 - **youtube-transcript** — Extract transcripts from YouTube videos. Use when the user asks for a transcript, subtit
 
-## productivity-automator (125 curated)
+## devops-engineer (276 curated)
+
+- **acreadiness-policy** — Help the user pick, write, or apply an AgentRC policy. Policies customise readiness scor
+- **add-uint-support** — Add unsigned integer (uint) type support to PyTorch operators by updating AT_DISPATCH ma
+- **adr-critique** — This skill should be used to audit an existing or legacy ADR, especially one imported, L
+- **agent-platform-alert-configuration** — Configures best-practice alerting policies for AI agents using OpenTelemetry (OTel) metr
+- **agile-sprint-planning** — Plan and execute effective sprints using Agile methodologies. Define sprint goals, estim
+- **ai-inference-service-mesh** — Use service mesh patterns for AI inference traffic management, mTLS, canary releases, po
+- **aks-automatic-2025** — Azure Kubernetes Service (AKS) Automatic mode and 2025 platform features. PROACTIVELY ac
+- **anki-connect** — This skill is for interacting with Anki through AnkiConnect, and should be used whenever
+- **annotating-task-lineage** — Annotate Airflow tasks with data lineage using inlets and outlets. Use when the user wan
+- **ansible-automation** — Infrastructure automation and configuration management using Ansible playbooks, roles, a
+- **ansible-generator** — Generate, create, or scaffold Ansible playbooks, roles, tasks, handlers, inventory, vars
+- **ansible-validator** — Validate, lint, audit, or debug Ansible playbooks, roles, inventories, FQCN, tasks.
+- **aod-build** — Generate standardized checkpoint reports for multi-phase implementation projects. Use th
+- **application-design-center-design-deploy** — Processes GCP infrastructure design and deployment workflows within Application Design C
+- **application-logging** — Implement structured logging across applications with log aggregation and centralized an
+- **aracli-deploy-management** — Guide to deploying and managing OpenClaw-compatible AI agent systems across cloud, bare 
+- **arch-linux-triage** — Triage and resolve Arch Linux issues with pacman, systemd, and rolling-release best prac
+- **argocd-gitops** — Implement GitOps with ArgoCD for declarative Kubernetes deployments. Configure applicati
+- **arize-evaluator** — Handles LLM-as-judge evaluation workflows on Arize including creating/updating evaluator
+- **arize-instrumentation** — Adds Arize AX tracing to an LLM application for the first time. Follows a two-phase agen
+- **arm-templates** — Deploy Azure resources with ARM templates and Bicep. Create modular deployments and mana
+- **artifact-management** — Manage build artifacts, Docker images, and package registries. Configure artifact reposi
+- **autoresearch-genealogy** — Structured prompts, vault templates, and autonomous research workflows for AI-assisted g
+- **autoscaling-configuration** — Configure autoscaling for Kubernetes, VMs, and serverless workloads based on metrics, sc
+- **aws-cdk-python-setup** — Setup and initialization guide for developing AWS CDK (Cloud Development Kit) applicatio
+- **aws-cost-optimize** — Analyze AWS resources used in the app (IaC files and/or resources in a target account/re
+- **aws-ec2** — Manage EC2 instances, AMIs, and auto-scaling groups. Configure security groups, key pair
+- **aws-ecs-fargate** — Deploy containers on ECS and Fargate. Configure task definitions, services, and load bal
+- **aws-iam** — Manage IAM users, roles, and policies. Implement least-privilege access and security bes
+- **aws-resource-health-diagnose** — Analyze AWS resource health, diagnose issues from CloudWatch logs and metrics, and creat
+- **aws-s3** — Configure S3 buckets, policies, and lifecycle rules. Implement versioning, replication, 
+- **aws-s3-management** — Manage S3 buckets with versioning, encryption, access control, lifecycle policies, and r
+- **aws-solution-architect** — Design AWS architectures for startups using serverless patterns and IaC templates. Use w
+- **az-cost-optimize** — Analyze Azure resources used in the app (IaC files and/or resources in a target rg) and 
+- **azure-aks** — Deploy and manage Azure Kubernetes Service clusters. Configure node pools, networking, a
+- **azure-app-onboard** — End-to-end orchestrator: from a business idea, app idea, or existing app to running Azur
+- **azure-app-service** — Deploy and manage web apps using Azure App Service with auto-scaling, deployment slots, 
+- **azure-cloud-migrate** — Assess and migrate cross-cloud workloads to Azure with reports and code conversion. Supp
+- **azure-deploy** — Execute Azure deployments for ALREADY-PREPARED applications that have existing .azure/de
+- **azure-developer-cli** — Design, create, review, migrate, or troubleshoot Azure Developer CLI (azd) projects usin
+- **azure-enterprise-infra-planner** — Architect and provision enterprise Azure infrastructure from workload descriptions. For 
+- **azure-keyvault** — Manage secrets and certificates in Azure Key Vault. Configure access policies, integrate
+- **azure-kubernetes** — Plan, create, and configure production-ready Azure Kubernetes Service (AKS) clusters. Co
+- **azure-ml-foundry-workspace** — Azure Machine Learning Workspace and Azure AI Foundry deep dive. PROACTIVELY activate fo
+- **azure-monitor-audit** — Configure Azure Monitor and Activity Log for auditing. Set up diagnostic settings and lo
+- **azure-prepare** — Prepare azd-based Azure projects for deployment: generates azure.yaml, infrastructure (B
+- **azure-resource-health-diagnose** — Analyze Azure resource health, diagnose issues from logs and telemetry, and create a rem
+- **azure-validate** — Pre-deployment validation for Azure readiness. Run deep checks on configuration, infrast
+- **azure-vms** — Manage Azure Virtual Machines and scale sets. Configure availability sets and managed di
+- **bash-master** — Expert bash/shell scripting across environments where Bash is available (Linux, macOS, G
+- **biz-ansoff** — \"Apply Ansoff Matrix to evaluate growth strategy options across market and product dime
+- **biz-bcg-matrix** — \"Apply BCG Growth-Share Matrix to analyze a product or business unit portfolio for reso
+- **biz-bsc** — \"Apply the Balanced Scorecard (BSC) framework to translate strategy into measurable obj
+- **biz-customer-journey** — \"Map and analyze the customer journey across Awareness, Consideration, Decision, Usage,
+- **block-storage** — Manage block storage volumes and LVM. Configure cloud block storage and local disks. Use
+- **breakdown-feature-prd** — Prompt for creating Product Requirements Documents (PRDs) for new features, based on an 
+- **brreg** — Search and retrieve Norwegian company data from Brønnøysundregistrene (the Norwegian Bus
+- **bug-receipt** — Close defects and incidents with a BUG RECEIPT and VERIFIED, PARTIAL, or BLOCKED status 
+- **cabinet-ai-knowledge-base** — AI-first knowledge base and startup OS with file-based storage, AI agents, scheduled job
+- **cairn-ai-pentest** — AI-automated penetration testing and general problem-solving system that achieved unique
+- **capacity-planning** — Analyze team capacity, plan resource allocation, and balance workload across projects. F
+- **card-xiaohongshu** — Xiaohongshu-style knowledge cards, arranged as a swipeable multi-card carousel.
+- **cdn-setup** — Configure CDNs for content delivery. Set up CloudFront, Cloudflare, and Fastly. Use when
+- **changelog-writing** — Shared workflow for writing Langfuse changelog entries after a feature is complete. Use 
+- **chaos-engineering** — Use when planning, running, or learning from chaos engineering experiments. Triggers on 
+- **ciso-review** — /cs:ciso-review <plan> — Risk-paranoid interrogation of any plan that touches data, comp
+- **claude-devfleet** — Orchestrate multi-agent coding tasks via Claude DevFleet — plan projects, dispatch paral
+- **cloud-cost-management** — Optimize and manage cloud costs across AWS, Azure, and GCP using reserved instances, spo
+- **cloud-security-configuration** — Implement comprehensive cloud security across AWS, Azure, and GCP with IAM, encryption, 
+- **cloud-storage-optimization** — Optimize cloud storage across AWS S3, Azure Blob, and GCP Cloud Storage with compression
+- **cloudflare-r2** — Manage Cloudflare R2 buckets, lifecycle, and signed URLs. Use for low-egress object stor
+- **cloudflare-zero-trust** — Protect internal apps with Cloudflare Access, device posture, and Zero Trust policies.
+- **cloudformation** — Deploy AWS resources with CloudFormation templates. Create stacks, use nested stacks, an
+- **cmux** — End-user control of cmux topology and routing (windows, workspaces, panes/surfaces, focu
+- **code-security** — Security guidelines for writing secure code. Use when writing code, reviewing code for v
+- **codesight-ai-context** — Universal AI context generator that compiles codebase maps, wiki knowledge bases, and MC
+- **coding-standards** — Baseline cross-project coding conventions for naming, readability, immutability, and cod
+- **compact-core-basic-start** — This skill should be used when the user asks to "build my first Midnight DApp", "getting
+- **competitive-intel** — Systematic competitor tracking that feeds CMO positioning, CRO battlecards, and CPO road
+- **container-debugging** — Debug Docker containers and containerized applications. Diagnose deployment issues, cont
+- **container-hardening** — Secure Docker images and container runtime configurations. Implement non-root users, rea
+- **container-registry-management** — Manage container registries (Docker Hub, ECR, GCR) with image scanning, retention polici
+- **content-research-writer** — Research topics and write content like blog posts, articles, and copy
+- **content-strategy** — When the user wants to plan a content strategy, decide what content to create, or figure
+- **contract-template** — This skill enables creation of smart contract templates using **Accord Project** - an op
+- **convention-learner** — Detects and enforces project-specific coding conventions by analyzing existing codebase 
+- **conventional-branch** — Create Git branches following the Conventional Branch specification (feature/, bugfix/, 
+- **cost-optimization** — Optimize cloud costs across AWS, Azure, GCP, and OCI through resource rightsizing, taggi
+- **cpp-coding-standards** — C++ coding standards based on the C++ Core Guidelines (isocpp.github.io). Use when writi
+- **create-simulated-aeronautics-mod** — Expertise in the Create Simulated Project — a NeoForge Minecraft mod suite adding physic
+- **creating-openlineage-extractors** — Create custom OpenLineage extractors for Airflow operators. Use when the user needs line
+- **cs-onboard** — Founder onboarding interview that captures company context across 7 dimensions. Invoke w
+- **cuopt-multi-objective-exploration** — Trace, complete, and interpret the Pareto frontier across competing objectives using rep
+- **customer-success** — Customer success management - onboarding, health scoring, QBRs, expansion playbooks, and
+- **data-scraper-agent** — Build a fully automated AI-powered data collection agent for any public source — job boa
+- **debug-issue-with-datadog** — Establish root cause by combining Datadog telemetry with the Langfuse repo. Use when inv
+- **decide** — /cs:decide <memo> — Log a decision to two-layer memory via decision-logger. Approved mem
+- **decision-logger** — Two-layer memory architecture for board meeting decisions. Manages raw transcripts (Laye
+- **define-goal** — Help the user define a concrete, measurable goal before starting work, especially when t
+- **dependency-management** — Manage project dependencies across languages including npm install, package versioning, 
+- **deploying-go-sdk-bundles** — Builds, packs, and deploys compiled Airflow Go SDK bundles so the ExecutableCoordinator 
+- **deploying-java-sdk-bundles** — Builds and deploys compiled Airflow Java SDK bundles so workers can run them. Use when t
+- **deployment-automation** — Automate deployments across environments using Helm, Terraform, and ArgoCD. Implement bl
+- **deployment-checklist-generator** — Creates comprehensive deployment checklists with pre-deployment checks, smoke tests, ver
+- **devops-automation** — DevOps and IT Ops automation - CI/CD, monitoring, incident management, and infrastructur
+- **dns-management** — Configure DNS zones and records. Manage Route53, Cloud DNS, and self-hosted DNS. Use whe
+- **doc-to-vector-dataset-generator** — Converts documents into clean, chunked datasets suitable for embeddings and vector searc
+- **doca-argus** — Use this skill when the user is deploying or operating the DOCA Argus Service — the pack
+- **docker-best-practices** — Comprehensive Docker best practices for images, containers, and production deployments. 
+- **docker-build-deploy** — Use when containerizing a Node.js app and setting up GitHub Actions CI/CD to build, push
+- **docker-containerization** — Create optimized Docker containers with multi-stage builds, security best practices, and
+- **docker-development** — Use when working with ANY Docker task: writing Dockerfiles, configuring docker-compose/c
+- **docker-security-guide** — Comprehensive Docker security guidelines and threat mitigation. PROACTIVELY activate for
+- **docker-via-wsl** — Use when YOU (the AI agent) are running on Windows OUTSIDE WSL (Git Bash/MSYS/PowerShell
+- **dockerfile-generator** — Create, generate, or write Dockerfiles and multi-stage Docker images. Containerize apps.
+- **ebpf-observability** — Use eBPF for deep kernel-level observability — trace syscalls, network flows, and applic
+- **ecosystem-primer** — INVOKE FIRST for any LangChain / LangGraph / Deep Agents agent building project before c
+- **em-dash** — Expert on the history, origin, and correct use of the em dash. Use when writing or revie
+- **enterprise-agent-ops** — Operate long-lived agent workloads with observability, security boundaries, and lifecycl
+- **execute** — /cs:execute <decision> — Generate a 90-day execution plan with weekly milestones, DRIs, 
+- **fedramp-compliance** — Implement FedRAMP requirements for federal cloud services. Configure NIST 800-53 control
+- **focused-fix** — Use when the user asks to fix, debug, or make a specific feature/module/area work end-to
+- **gcp-compute** — Manage Compute Engine instances and instance templates. Configure managed instance group
+- **gcp-gke** — Deploy and manage Google Kubernetes Engine clusters. Configure node pools, networking, a
+- **gem-devops-guidelines** — Design or review infrastructure, deployment, CI/CD, Docker, Kubernetes, health checks, r
+- **gh-fix-ci** — Use when a user asks to debug or fix failing GitHub PR checks that run in GitHub Actions
+- **gitbackup-github-desktop** — Desktop application to back up all GitHub repositories locally and optionally to AWS S3 
+- **github-actions-2025** — GitHub Actions 2025-2026 features and modernization. PROACTIVELY activate for: (1) 1 vCP
+- **github-actions-efficiency** — Audit GitHub Actions workflow efficiency and recommend fixes to reduce CI minutes and co
+- **github-actions-runtime-upgrade-conventions** — Upgrade GitHub Actions to supported runtimes by selecting safe action versions, preservi
+- **github-actions-templates** — Create production-ready GitHub Actions workflows for automated testing, building, and de
+- **github-actions-workflow** — Build comprehensive GitHub Actions workflows for CI/CD, testing, security, and deploymen
+- **github-ai-features-2025** — GitHub AI-powered security and automation features (2025-2026). PROACTIVELY activate for
+- **github-codespaces-efficiency** — Audit and improve GitHub Codespaces efficiency. Use this skill when a user wants faster 
+- **github-copilot-starter** — Set up complete GitHub Copilot configuration for a new project based on technology stack
+- **github-figure-bed** — Upload images to any GitHub repo as a figure bed and get CDN/markdown links (jsdelivr/js
+- **gitops-workflow** — Implement GitOps workflows with ArgoCD and Flux for automated, declarative Kubernetes de
+- **golang-testing** — Go testing patterns including table-driven tests, subtests, benchmarks, fuzzing, and tes
+- **google-agents-cli-workflow** — This skill should be used when the user wants to 'develop an agent', 'build an agent usi
+- **gpu-kubernetes-operations** — Operate GPU-backed Kubernetes clusters for AI inference and training with scheduling, au
+- **grad-cognitive-load** — \"Apply Cognitive Load Theory to optimize instructional design by managing intrinsic, ex
+- **grad-pragmatism** — \"Apply pragmatist philosophy (Peirce, James, Dewey) to frame knowledge as instrumental 
+- **grimmory-self-hosted-library** — Expert knowledge for setting up, configuring, and extending Grimmory — a self-hosted boo
+- **grounded-vault** — Use when maintaining a durable Markdown knowledge store that agents compile from sources
+- **growth-log** — Use after a complex task, failure, or when reviewing what was learned. Teaches how to wr
+- **gtm-0-to-1-launch** — Launch new products from idea to first customers. Use when launching products, finding e
+- **health-check-endpoints** — Implement comprehensive health check endpoints for liveness, readiness, and dependency m
+- **helm-chart-scaffolding** — Design, organize, and manage Helm charts for templating and packaging Kubernetes applica
+- **helm-charts** — Create, manage, and deploy Helm charts for Kubernetes package management. Build reusable
+- **helm-generator** — Create, scaffold, or generate Helm charts, Chart.yaml, values.yaml, templates, helpers.
+- **hermes-labyrinth-observability** — Read-only observability dashboard plugin for Hermes Agent — journeys, crossings, guidepo
+- **hfmpse** — Use this skill when building full-stack web applications with haskell-flake + Project:M3
+- **import-infrastructure-as-code** — Import existing Azure resources into Terraform using Azure CLI discovery and Azure Verif
+- **incident-alert-tickets** — Read and record root causes in the Linear `incident-alert` knowledge base. Use before an
+- **infra-scaling** — Tune and review Langfuse autoscaling for web, web-iso, and web-ingestion. Use for Terraf
+- **infrastructure-cost-optimization** — Optimize cloud infrastructure costs through resource rightsizing, reserved instances, sp
+- **insforge** — Use this skill when writing app code with InsForge or @insforge/sdk: database CRUD, auth
+- **intent-based-composition** — Resolve high-level intents into ordered plugin composition plans using greedy set cover 
+- **intermittent-issue-debugging** — Debug issues that occur sporadically and are hard to reproduce. Use monitoring and syste
+- **istio-traffic-management** — Configure Istio traffic management including routing, load balancing, circuit breakers, 
+- **k8s-debug** — Diagnose and fix Kubernetes pods, CrashLoopBackOff, Pending, DNS, networking, storage, a
+- **k8s-manifest-generator** — Create production-ready Kubernetes manifests for Deployments, Services, ConfigMaps, and 
+- **k8s-pods** — Debug and troubleshoot pod issues including crashes, failures, networking, and resource 
+- **k8s-security-policies** — Implement Kubernetes security policies including NetworkPolicy, PodSecurityPolicy, and R
+- **k8s-troubleshooter** — Systematic Kubernetes troubleshooting and incident response. Use this skill whenever the
+- **k8s-yaml-generator** — Generate/create/scaffold Kubernetes YAML — Deployment, Service, ConfigMap, Ingress, RBAC
+- **k8s-yaml-validator** — Validate, lint, audit, or dry-run Kubernetes manifests (Deployment, Service, ConfigMap, 
+- **knowledge-ops** — Knowledge base management, ingestion, sync, and retrieval across multiple storage layers
+- **kotlin-testing** — Kotlin testing patterns with Kotest, MockK, coroutine testing, property-based testing, a
+- **kubernetes-deploying** — Deploy applications to Kubernetes — Deployments, Services, Ingress, ConfigMaps, Secrets,
+- **kubernetes-deployment** — Deploy, manage, and scale containerized applications on Kubernetes clusters with best pr
+- **kubernetes-hardening** — Implement Kubernetes security contexts, Pod Security Standards, and network policies. Se
+- **kubernetes-operator** — Use when building a Kubernetes Operator — custom controllers that reconcile CRD state. T
+- **kubernetes-ops** — Deploy, scale, and manage Kubernetes workloads. Create deployments, services, and config
+- **kubernetes-patterns** — Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/
+- **kustomize** — Customize Kubernetes manifests without templating using Kustomize. Create base configura
+- **landing-page-conversion-audit** — Audit a landing page, sales page or checkout page for conversion leaks and return a fix 
+- **langfuse-codebase-navigator** — Navigate Langfuse repositories, code areas, and agent skills. Use to locate code, choose
+- **langgraph-cli** — INVOKE THIS SKILL when using the langgraph CLI to scaffold, develop, build, or deploy La
+- **langsmith-online-eval-engineering** — Iteratively inspect traces, interview the user, and create LangSmith online evaluators o
+- **laravel-verification** — Verification loop for Laravel projects: env checks, linting, static analysis, tests with
+- **launch-strategy** — When the user wants to plan a product launch, feature announcement, or release strategy.
+- **learn** — Provides autonomous project pattern learning by analyzing the codebase to discover devel
+- **llm-inference-scaling** — Auto-scale LLM inference clusters on Kubernetes using KEDA, custom GPU metrics, and hori
+- **log-aggregation** — Implement centralized logging with ELK Stack, Loki, or Splunk for log collection, parsin
+- **log-analysis** — Analyze application and system logs to identify errors, patterns, and root causes. Use l
+- **logging-best-practices** — Implement structured logging with JSON formats, log levels (DEBUG, INFO, WARN, ERROR), c
+- **loki-logging** — Configure Grafana Loki for log aggregation and analysis. Set up Promtail for log collect
+- **longtask-system** — 长程任务执行管理系统 | Long-running Task Execution Management System 通过状态文件驱动，将长任务拆分为子任务，由守护进程按顺序触
+- **marketing-ops** — Central router for the marketing skill ecosystem. Use when unsure which marketing skill 
+- **marketing-skills** — Directory and router for the marketing skills library. Use when you need to find the rig
+- **marketing-strategy-pmm** — Product marketing skill for positioning, GTM strategy, competitive intelligence, and pro
+- **mcp-deploy-manage-agents** — Deploy & kelola MCP declarative agent di Microsoft 365 admin center (assignment, distrib
+- **memory-leak-detection** — Detect and fix memory leaks using heap snapshots, memory profiling, and leak detection t
+- **mentoring-juniors** — Socratic mentoring for junior developers and AI newcomers. Guides through questions, nev
+- **meta-structured-problem** — \"Apply structured problem-solving using MECE principle, issue trees, hypothesis-driven 
+- **metaclaw-evolving-agent** — Deploy and configure MetaClaw — an agent that meta-learns and evolves from live conversa
+- **microsoft-guide** — Microsoft .NET Microservices Architecture Guide reference. PROACTIVELY activate for: (1)
+- **midnight-verify-verify-by-source** — Verification by source code inspection. Searches and reads the actual compiler, ledger, 
+- **mini-context-graph** — A persistent, compounding knowledge base combining Karpathy's LLM Wiki pattern with a st
+- **ministack-aws-emulator** — MiniStack is a free, open-source local AWS emulator (LocalStack replacement) that emulat
+- **mlops-workflows** — Comprehensive MLOps workflows for the complete ML lifecycle - experiment tracking, model
+- **model-serving-kubernetes** — Deploy ML models on Kubernetes with KServe (formerly KFServing) and NVIDIA Triton Infere
+- **modern-automation-patterns** — Modern DevOps and CI/CD bash automation patterns with containers and cloud (2025). PROAC
+- **ms365-tenant-manager** — Microsoft 365 tenant administration for Global Administrators. Automate M365 tenant setu
+- **mtls-configuration** — Configure mutual TLS (mTLS) for zero-trust service-to-service communication. Use when im
+- **multi-stage-dockerfile** — Create optimized multi-stage Dockerfiles for any language or framework
+- **my-brain-is-full-crew** — A team of 10 AI agents that manage your Obsidian vault for knowledge, nutrition, and men
+- **nasiko-control-plane** — Use the experimental Nasiko CLI lifecycle bridge for pinned installation, read-only stat
+- **netlify-deploy** — Deploy web projects to Netlify using the Netlify CLI (`npx netlify`). Use when the user 
+- **noob-mode** — Plain-English translation layer for non-technical Copilot CLI users. Translates every ap
+- **notion-knowledge-capture** — Capture conversations and decisions into structured Notion pages; use when turning chats
+- **notion-spec-to-implementation** — Turn Notion specs into implementation plans, tasks, and progress tracking; use when impl
+- **object-storage** — Configure object storage with S3, GCS, and MinIO. Implement lifecycle policies and acces
+- **observability-setup** — Implements comprehensive observability with OpenTelemetry tracing, Prometheus metrics, a
+- **openclaw-deployment-hardening** — Secure OpenClaw deployments with preflight hardening checks, CI/CD guardrails, container
+- **opentelemetry** — Instrument applications and infrastructure with OpenTelemetry for unified traces, metric
+- **opentofu-migration** — Migrate from Terraform to OpenTofu with state compatibility, provider registry setup, an
+- **parallel-ci-triage** — When GitHub Actions fails, fetch failing job logs and assign each failing job to a separ
+- **perl-testing** — Perl testing patterns using Test2::V0, Test::More, prove runner, mocking, coverage with 
+- **phoenix-tracing** — OpenInference semantic conventions and instrumentation for Phoenix AI observability. Use
+- **picoclaw-ai-assistant** — Ultra-lightweight AI assistant in Go that runs on $10 hardware with <10MB RAM, supportin
+- **pnpm-upgrade-package** — Upgrade pnpm workspace dependencies to target/latest versions: direct/transitive bumps, 
+- **policy-as-code** — Implement policy as code with OPA, Sentinel, and Kyverno. Automate policy enforcement in
+- **polymarket-arbitrage-trading-bot** — Automated dump-and-hedge arbitrage trading bot for Polymarket's 15-minute crypto Up/Down
+- **prometheus-configuration** — Set up Prometheus for comprehensive metric collection, storage, and monitoring of infras
+- **prompt-regression-tester** — Compares old vs new prompts across test cases with diff summaries, stability metrics, br
+- **promql-generator** — Generate/create/write PromQL queries, metric expressions, alerting rules, recording rule
+- **proof-server-proof-server-operations** — This skill covers monitoring, troubleshooting, and capacity planning for the proof serve
+- **python-appservice-deploy** — Deploy Python (Flask/Django/FastAPI) code to Azure App Service Linux. WHEN: \"Flask App 
+- **python-azure-iot-edge-modules** — Build and operate Python Azure IoT Edge modules with robust messaging, deployment manife
+- **quarkus-verification** — Verification loop for Quarkus projects: build, static analysis, tests with coverage, sec
+- **quasi-coder** — Expert 10x engineer skill for interpreting and implementing code from shorthand, quasi-c
+- **rag-observability-evals** — Monitor and evaluate RAG systems with retrieval quality metrics, groundedness checks, ha
+- **refactor-plan** — Create a concrete plan before starting a multi-file refactor. Use when the user asks to 
+- **regex-vs-llm-structured-text** — Decision framework for choosing between regex and LLM when parsing structured text — sta
+- **release-automation-builder** — Automates releases and package publishing with changesets or semantic-release. Handles v
+- **resume-tailor** — I help you customize your resume for specific job applications. Instead of sending the s
+- **reverse-proxy** — Configure nginx and Traefik as reverse proxies. Implement SSL termination and routing. U
+- **rules-distill** — Scan skills to extract cross-cutting principles and distill them into rules — append, re
+- **runbook-creation** — Create operational runbooks and standard operating procedures. Document troubleshooting 
+- **saving-workspace-context** — Automatically persist useful context — research, decisions, learnings, templates — to wo
+- **semgrep** — Run Semgrep static analysis scans and create custom detection rules. Use when asked to s
+- **setting-up-terraform** — Set up Terraform infrastructure-as-code for cloud resources, including provider configur
+- **shellcheck-cicd-2025** — ShellCheck validation as a non-negotiable 2025 workflow practice. PROACTIVELY activate f
+- **shopify-pos-ui** — Build retail point-of-sale applications using Shopify's POS UI components. These compone
+- **slo-architect** — Use when defining, reviewing, or operating SLOs/SLIs/error budgets. Triggers on "define 
+- **social-graph-ranker** — Weighted social-graph ranking for warm intro discovery, bridge scoring, and network gap 
+- **sops-encryption** — Encrypt files and configs with Mozilla SOPS. Integrate with AWS KMS, GCP KMS, or PGP for
+- **springboot-tdd** — Test-driven development for Spring Boot using JUnit 5, Mockito, MockMvc, Testcontainers,
+- **startup-it-troubleshooting** — Practical IT troubleshooting playbooks for small teams without dedicated IT staff.
+- **structured-autonomy-implement** — Implementasi plan secaraStrict tanpa deviasi (hanya perubahan yang ada di plan). Use whe
+- **tdd** — Guided test-driven development workflow for .NET 10 using xUnit v3, WebApplicationFactor
+- **tech-debt-prioritizer** — Scores and prioritizes technical debt by impact, risk, and effort. Provides ranked backl
+- **technical-debt-patterns** — Expert guide to detecting, categorizing, and prioritizing technical debt in Rails applic
+- **terraform-aws** — Provision AWS infrastructure with Terraform. Create modules, manage state, and implement
+- **terraform-azure** — Provision Azure infrastructure with Terraform. Configure providers, manage state, and de
+- **terraform-azurerm-set-diff-analyzer** — Analyze Terraform plan JSON output for AzureRM Provider to distinguish between false-pos
+- **terraform-gcp** — Provision GCP infrastructure with Terraform. Configure providers and deploy Google Cloud
+- **terraform-generator** — Create, generate, write, or scaffold Terraform .tf HCL — resources, modules, providers, 
+- **terraform-infrastructure** — Comprehensive Terraform infrastructure-as-code skill covering providers, resources, modu
+- **terraform-infrastructure-as-code** — Comprehensive Terraform Infrastructure as Code skill covering resources, modules, state 
+- **terraform-module-builder** — Creates reusable Terraform modules with proper structure, variables, outputs, and state 
+- **terraform-module-library** — Build reusable Terraform modules for AWS, Azure, GCP, and OCI infrastructure following i
+- **terraform-tasks** — Terraform task patterns — common workflows and pipeline steps. PROACTIVELY activate for:
+- **terraform-validator** — Validate, lint, audit, or plan Terraform/.tf/HCL files; runs tflint, checkov, terraform 
+- **trace-to-training-data** — Convert evaluation traces and production logs into SFT examples and preference pairs. Us
+- **triggering-reliability** — Catalog of common mistakes that break Claude Code agent and skill triggering, plus marke
+- **ui-skills** — Opinionated, evolving constraints to guide agents when building interfaces. Useful for k
+- **unified-memory** — Share durable, inspectable context and handoffs between Claude, Codex, Hermes, Cursor, O
+- **unit-test-parameterized** — Provides parameterized testing patterns with JUnit 5, generates data-driven unit tests u
+- **update-avm-modules-in-bicep** — Update Azure Verified Modules (AVM) to latest versions in Bicep files.
+- **waf-setup** — Deploy and tune Web Application Firewalls. Configure rules for OWASP Top 10 protection. 
+- **weather-automation** — Automate weather-based workflows, forecasts, alerts, and location-aware notifications
+- **weekly-production-review** — Prepare Langfuse weekly production reviews covering failures, fixes, open issues, and tr
+- **x-mentor-skill-nuwa** — AI-powered X (Twitter) content strategy skill that distills methodologies from 6 top cre
+
+## qa-engineer (119 curated)
+
+- **absolute-init** — One-time setup for absolute: interview how you want it to behave (output style, autonomy
+- **absolute-simplify** — Use when the user wants to simplify, clean up, refactor, tidy, or refine code — their st
+- **access-review** — Conduct periodic access reviews and certifications. Implement access governance and rece
+- **adr-backfill** — This skill should be used to retroactively record an architectural decision that was mad
+- **ai-first-engineering** — Engineering operating model for teams where AI agents generate a large share of implemen
+- **aod-bugfix** — One-shot governed bug fix loop: diagnose → plan → implement → verify → document. TRIGGER
+- **aod-spec** — Validates specification completeness and quality by checking for mandatory sections, [NE
+- **aoti-debug** — Debug AOTInductor (AOTI) errors and crashes. Use when encountering AOTI segfaults, devic
+- **apple-appstore-reviewer** — Serves as a reviewer of the codebase with instructions on looking for Apple App Store op
+- **before-you-build** — Pre-build product and feature risk review for founders, product managers, and AI-assiste
+- **biz-dcf** — \"Build Discounted Cash Flow (DCF) valuation models to estimate intrinsic value. Use thi
+- **biz-stp** — \"Apply STP (Segmentation, Targeting, Positioning) framework for market strategy. Use th
+- **bluehammer-vulnerability-poc** — Skill for working with the BlueHammer vulnerability proof-of-concept repository, coverin
+- **breakdown-plan** — Issue Planning and Automation prompt that generates comprehensive project plans with Epi
+- **breakdown-test** — Test Planning and Quality Assurance prompt that generates comprehensive test strategies,
+- **business-continuity** — Develop business continuity plans and impact analysis. Implement BCP testing and communi
+- **clustering-analysis** — Identify groups and patterns in data using k-means, hierarchical clustering, and DBSCAN 
+- **cmo-review** — /cs:cmo-review <plan> — Narrative-first interrogation of positioning, ICP, message house
+- **code-review** — Review Langfuse code changes for correctness, regressions, and best practices.
+- **code-reviewer** — Code review automation for TypeScript, JavaScript, Python, Go, Swift, Kotlin, C#, .NET, 
+- **codex-plugin-cc** — Use OpenAI Codex from inside Claude Code for code reviews and delegated background tasks
+- **content-hash-cache-pattern** — Cache expensive file processing results using SHA-256 content hashes — path-independent,
+- **continuous-agent-loop** — Patterns for continuous autonomous agent loops with quality gates, evals, and recovery c
+- **contract-review** — Analyze contracts for risks, check completeness, and provide actionable recommendations.
+- **copyfail-go-lpe** — Go implementation of CVE-2026-31431 (CopyFail), a Linux local privilege escalation explo
+- **coverage-strategist** — Defines ROI-based coverage targets with critical path identification, layer-specific tar
+- **cpo-review** — /cs:cpo-review <plan> — JTBD-driven interrogation of product roadmap, PMF signal, and po
+- **cpp-testing** — Use only when writing/updating/fixing C++ tests, configuring GoogleTest/CTest, diagnosin
+- **cross-eval** — /cs:cross-eval <memo> — Multi-model consensus on a board memo or strategy brief. Claude 
+- **cto-review** — /cs:cto-review <plan> — Architecture and scaling interrogation. Tech debt, scaling cliff
+- **cve-2026-31431-copy-fail** — Detector and proof-of-concept LPE toolkit for CVE-2026-31431 ("Copy Fail"), a Linux kern
+- **dart-collect-coverage** — Collect coverage using the coverage packge and create an LCOV report
+- **dart-run-static-analysis** — Execute `dart analyze` to identify warnings and errors, and use `dart fix --apply` to au
+- **deepsec-vulnerability-scanner** — AI agent skill for using deepsec, the agent-powered security vulnerability scanner for l
+- **dependency-audit** — Use when auditing project dependencies for security vulnerabilities, outdated packages, 
+- **dependency-upgrade** — Manage major dependency version upgrades with compatibility analysis, staged rollout, an
+- **detect-hallucinations** — Use this to detect when an LLM is making things up, so you can flag or block confident-b
+- **disaster-recovery** — Implement disaster recovery strategies and runbooks. Configure RPO/RTO targets and failo
+- **ecc-tools-cost-audit** — Evidence-first ECC Tools burn and billing audit workflow. Use when investigating runaway
+- **einja-phase-review** — フェーズ単位包括レビュー。Outcome Manifest全件検証 + Weighted Scorecard判定。Phase末尾タスクグループからphase-reviewer 
+- **email-marketing** — Email marketing automation - campaign creation, sequence building, A/B testing, delivera
+- **eval-driven-dev** — Improve AI application with evaluation-driven development. Define eval criteria, instrum
+- **evaluation-harness** — Builds repeatable evaluation systems with golden datasets, scoring rubrics, pass/fail th
+- **file-upload-handling** — Implement secure file upload handling with validation, virus scanning, storage managemen
+- **generating-python-installer** — Commercial-grade Python installer expert for Windows: Nuitka extreme compilation, dist s
+- **grad-grounded-theory** — \"Apply Grounded Theory (Glaser and Strauss) to build theory inductively from qualitativ
+- **grad-innovation-diffusion-bass** — \"Apply the Bass Diffusion Model (1969) to forecast innovation adoption using innovation
+- **grinding-until-pass** — Keep iterating on code changes until the tests pass, the build succeeds, or linting is c
+- **gtm-product-led-growth** — Build self-serve acquisition and expansion motions. Use when deciding PLG vs sales-led, 
+- **inkos-multi-agent-novel-writing** — Multi-agent CLI system for autonomous novel writing, auditing, and revision with human r
+- **java-junit** — Get best practices for JUnit 5 unit testing, including data-driven tests
+- **keep-codex-fast-maintenance** — Backup-first skill for inspecting, archiving, and maintaining local Codex state to keep 
+- **kimodo-motion-diffusion** — Generate high-quality 3D human and humanoid robot motions using Kimodo, a kinematic moti
+- **linear-bug-triage** — Use this skill after a bug or regression candidate has measured evidence to document the
+- **linting** — Python linting with Ruff - an extremely fast linter written in Rust. Use when: (1) Stand
+- **literature-review** — Systematic literature-review workflow for academic, biomedical, technical, and scientifi
+- **llmlint** — A Chinese-prose rule library with two entry points. Before writing, emit the rules as wr
+- **lora-qlora-recipes** — Configure LoRA and QLoRA supervised fine-tuning with current best-practice hyperparamete
+- **mapcv** — Build remote-sensing training datasets with mapcv from a region, imagery and labels, as 
+- **messages-ops** — Evidence-first live messaging workflow for ECC. Use when the user wants to read texts or
+- **mgrep-code-search** — Semantic code search using mgrep for efficient codebase exploration. This skill should b
+- **microsoft-agent-framework** — Create, update, refactor, explain, or review Microsoft Agent Framework solutions using s
+- **midnight-plugin-utils-find-claude-plugin-root** — This skill should be used when the user needs to locate a plugin's installation path, fi
+- **midnight-verify-verify-by-cli-execution** — Verification by running Compact CLI commands and observing output. Checks CLI availabili
+- **midnight-verify-verify-by-execution** — Verification by compilation and execution. Translates a Compact claim into a minimal tes
+- **midnight-verify-verify-by-zkir-inspection** — Verification by compiling Compact to ZKIR and analyzing the compiled circuit structure. 
+- **ml-model-training** — Build and train machine learning models using scikit-learn, PyTorch, and TensorFlow for 
+- **mocking-stubbing** — Create and manage mocks, stubs, spies, and test doubles for isolating unit tests from ex
+- **model-supply-chain-security** — Secure the AI model supply chain with artifact signing, provenance attestation, SBOM wor
+- **monorepo-management** — Manage monorepo architectures using Lerna, Turborepo, and Nx. Configure workspaces, depe
+- **mutation-testing** — Evaluate test suite quality by introducing code mutations and verifying tests catch them
+- **network-bgp-diagnostics** — Diagnostics-only BGP troubleshooting patterns for neighbor state, route exchange, prefix
+- **oransim-causal-marketing-twin** — Causal digital twin for marketing simulation — predict campaign ROI, run counterfactual 
+- **orch-change-feature** — Orchestrate altering an existing, working feature to new desired behavior — update its t
+- **orch-fix-defect** — Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, revi
+- **orchestrate-ci** — Add comprehensive CI workflows to a target repo - lint, test, build, security scanning, 
+- **paper2code-arxiv-implementation** — Agent skill to convert any arxiv paper into a citation-anchored, working Python implemen
+- **parallel-test-fixing** — When multiple tests fail, assign each failing test file to a separate subagent that fixe
+- **pdf-compress** — Reduce PDF file size while maintaining acceptable quality
+- **pdf-ocr-extraction** — Extract text from scanned PDFs using optical character recognition
+- **perl-patterns** — Modern Perl 5.36+ idioms, best practices, and conventions for building robust, maintaina
+- **playwright-explore-website** — Website exploration for testing using Playwright MCP
+- **playwright-generate-test** — Generate a Playwright test based on a scenario using Playwright MCP
+- **plugin-creator** — Create and scaffold plugin directories for Codex with a required `.codex-plugin/plugin.j
+- **pr-review** — Review PyTorch pull requests for code quality, test coverage, security, and backward com
+- **preference-optimization** — Align a fine-tuned model with preference data using DPO, ORPO, KTO, or SimPO. Use when p
+- **profiling-tables** — Deep-dive data profiling for a specific table. Use when the user asks to profile a table
+- **pytest-coverage** — Run pytest tests with coverage, discover lines missing coverage, and increase coverage t
+- **pytest-patterns** — Python testing with pytest covering fixtures, parametrization, mocking, and test organiz
+- **python-foundational** — Foundational Python best practices, idioms, and code quality fundamentals
+- **python-tdd-with-uv** — Test-driven development in Python using uv as the package manager. Covers the red-green-
+- **qdrant-search-quality** — Diagnoses and improves Qdrant search relevance. Use when someone reports 'search results
+- **quality-gates-enforcer** — Enforces minimum quality thresholds in CI including code coverage, linting, type checkin
+- **ray-so-code-snippet** — Generate beautiful code snippet images using ray.so. This skill should be used when the 
+- **review-and-refactor** — Review and refactor code in your project according to defined instructions
+- **ruff-recursive-fix** — Run Ruff checks with optional scope and rule overrides, apply safe and unsafe autofixes 
+- **sast-configuration** — Configure Static Application Security Testing (SAST) tools for automated vulnerability d
+- **scholar-evaluation** — Structured scholarly-work evaluation for papers, proposals, literature reviews, methods 
+- **security-pr-checklist-skill** — Creates repeatable security review checklist for PRs with required checks, common pitfal
+- **security-requirement-extraction** — Derive security requirements from threat models and business context. Use when translati
+- **security-review** — Review Langfuse changes for SSRF, tenant isolation, secret handling, unsafe redirects or
+- **semantic-kernel** — Create, update, refactor, explain, or review Semantic Kernel solutions using shared guid
+- **seo-audit** — When the user wants to audit, review, or diagnose SEO issues on their site. Also use whe
+- **seo-optimizer** — SEO strategy and optimization - keyword research, on-page SEO, technical audits, content
+- **skill-stocktake** — Use when auditing Claude skills and commands for quality. Supports Quick Scan (changed s
+- **skillspector** — Security scanner for AI agent skills. Use BEFORE installing/running any Claude Code, Cod
+- **smart-ocr** — This skill enables intelligent text extraction from images and scanned documents using *
+- **snowflake-semanticview** — Create, alter, and validate Snowflake semantic views using Snowflake CLI (snow). Use whe
+- **spec-driven-workflow** — Use when the user asks to write specs before code, define acceptance criteria, plan feat
+- **systematic-debugging** — Structured debugging methodology — reproduce, isolate, hypothesize, verify. Covers git b
+- **terminal-ops** — Evidence-first repo execution workflow for ECC. Use when the user wants a command run, a
+- **test-data-factory-builder** — Creates factories and builders for generating consistent, composable test data with real
+- **test-reporting-triage-skill** — Automatically categorizes test failures, suggests responsible owners, and provides commo
+- **testing** — Testing strategy for .NET 10 applications. Covers xUnit v3, WebApplicationFactory for in
+- **trump-code-market-signals** — AI-powered analysis of Trump's social media posts to predict stock market movements usin
+- **ui-screenshots** — Capture screenshots of web apps during development using Playwright and PIL. Supports fu
+- **verify-quality-gates** — Run the project's quality gates, map results to spec acceptance criteria, and produce ve
+- **whatcable-macos-usb-inspector** — macOS menu bar app that identifies USB-C cable capabilities and charging diagnostics usi
+- **writing-tests** — Analyze existing code and write comprehensive unit and integration tests for it. Detects
+
+## productivity-automator (116 curated)
 
 - **agent-platform-rag-engine-management** — Manage and query Agent Platform RAG Engine Corpora and retrieve grounded contexts using 
 - **calendar-automation** — Google Calendar and Outlook automation - scheduling optimization, meeting workflows, tim
 - **cc-connect-ai-bridge** — Bridge local AI coding agents (Claude Code, Cursor, Gemini CLI, Codex) to messaging plat
-- **copaw-ai-assistant** — Personal AI assistant framework supporting multiple chat channels (DingTalk, Feishu, QQ,
+- **encrypted-docs** — End-to-end encrypted .md documents for agents & humans to collaborate. This is a multipl
 - **flowdriver-covert-transport** — Tunnel SOCKS5 traffic through Google Drive API requests to bypass restrictive networks a
 - **gmail-workflows** — Automate Gmail with intelligent workflows - attachment management, email organization, a
 - **gog-cli** — Use this skill whenever the user wants to operate Google Workspace from the command line
@@ -2641,7 +2848,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **gws-keep** — Manage Google Keep notes.
 - **gws-meet** — Manage Google Meet conferences.
 - **gws-modelarmor** — Google Model Armor: Filter user-generated content for safety.
-- **gws-modelarmor-create-template** — Google Model Armor: Create a new Model Armor template.
 - **gws-modelarmor-sanitize-prompt** — Google Model Armor: Sanitize a user prompt through a Model Armor template.
 - **gws-modelarmor-sanitize-response** — Google Model Armor: Sanitize a model response through a Model Armor template.
 - **gws-people** — Google People: Manage contacts and profiles.
@@ -2662,30 +2868,22 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **identity-access-management** — Set up and manage SSO, SCIM provisioning, and MFA for startup teams using Google Workspa
 - **lark-approval** — 飞书审批：查询和处理审批待办/已办/实例，搜索可发起审批定义、查看定义详情并发起原生审批实例。当用户要处理审批任务、查看审批实例、搜索或发起审批时使用。审批待办不是飞书任务；非
 - **lark-apps** — 妙搭（Spark/Miaoda）应用开发与托管：应用创建、本地全栈开发、云端生成迭代、创意设计（UI mockup / 可交互原型 / 线框图 / 落地页 / 仪表盘 / 幻灯
-- **lark-attendance** — 飞书考勤打卡：查询自己的考勤打卡记录
+- **lark-attendance** — Query your own Lark (Feishu) attendance clock-in records via lark-cli. Use when the user
 - **lark-base** — 飞书多维表格（Base）操作：建表、字段、记录、视图、统计、公式/lookup、表单、仪表盘、应用模式（BaseApp/AppMode 页面与组件）、Workspace 目录、
 - **lark-calendar** — 飞书日历：管理日历日程和会议室。查看/搜索日程、创建/更新日程、管理参会人、查询忙闲和推荐时段、预定会议室。当用户需要查看日程安排、创建/修改会议、查询/预定会议室时使用。不负
 - **lark-contact** — 飞书 / Lark 通讯录:按姓名 / 邮箱解析成 open_id,或按 open_id 反查姓名 / 部门 / 邮箱 / 联系方式 / 个人状态 / 签名,以及按关键词搜索当
 - **lark-doc** — 飞书云文档（Docx / Wiki）内容操作：读取、创建、编辑文档，插入或下载图片附件，以及操作思维笔记。用户提供文档 URL/token（包括 doubao.com 的 /d
-- **lark-drive** — 飞书云空间（云盘/云存储）：管理 Drive 文件和文件夹，包含上传/下载、创建文件夹、复制/移动/删除、查看元数据、查询权限设置、评论/权限/订阅、标题、版本、飞书文档密级标
 - **lark-event** — Lark/Feishu real-time event listening / subscribing / consuming: stream events as NDJSON
 - **lark-im** — 飞书即时通讯：收发消息和管理群聊。发送和回复消息、搜索聊天记录、管理群聊成员、上传下载图片和文件、管理表情回复、发送应用内/短信/电话加急、发送和处理交互卡片（Interact
-- **lark-mail** — 飞书邮箱：Use when user mentions 起草邮件、写邮件、草稿、发送/回复/转发邮件、查阅邮件、看邮件、搜索邮件、邮件文件夹、邮件标签、邮件联系人、监听新邮件、
 - **lark-markdown** — 飞书 Markdown：查看、创建、上传、编辑和比较飞书中的原生 Markdown 文件。当用户要操作飞书 Markdown 文件，或比较其远端版本及本地草稿时使用。纯本地 M
 - **lark-meeting** — 飞书视频会议：查询会议记录与会议产物(纪要/逐字稿/妙记)、妙记搜索/上传/下载/编辑、机器人参与会议；查询进行中的会议、实时会议内容(发言/聊天/共享文档)问答(会上/会里)
-- **lark-minutes** — 仅当用户或上游配置显式指定 lark-minutes 时使用，相关请求统一交由 lark-meeting 技能处理。
-- **lark-note** — 仅当用户或上游配置显式指定 lark-note 时使用，相关请求统一交由 lark-meeting 技能处理。
 - **lark-okr** — 飞书 OKR：管理目标与关键结果。查看和编辑 OKR 周期、目标、关键结果、对齐关系、量化指标和进展记录。当用户需要查看或创建 OKR、管理目标和关键结果、查看对齐关系时使用。
 - **lark-openapi-explorer** — 飞书/Lark 原生 OpenAPI 探索：从官方文档库中挖掘未经 CLI 封装的原生 OpenAPI 接口。当用户的需求无法被现有 lark-* skill 或 lark-c
 - **lark-shared** — Use for lark-cli setup/auth tasks: auth login/status/logout, user vs bot identity, busin
 - **lark-sheets** — 飞书电子表格：创建和操作电子表格。支持工作表与行列结构（增删/合并/尺寸/隐藏/冻结/分组）、单元格读写（值/公式/样式/批注/单元格图片）、区域复制移动排序填充、查找替换、批
 - **lark-skill-maker** — 创建 lark-cli 的自定义 Skill。当用户需要把飞书 API 操作封装成可复用的 Skill（包装原子 API 或编排多步流程）时使用。
-- **lark-slides** — 飞书幻灯片：创建和编辑幻灯片。创建演示文稿、读取幻灯片内容、管理幻灯片页面（创建、删除、读取、局部替换）。当用户需要创建或编辑幻灯片、读取或修改单个页面时使用。当用户给出 do
 - **lark-task** — 飞书任务：管理任务、清单和任务智能体。创建待办任务、查看和更新任务状态、拆分子任务、组织任务清单、分配协作成员、上传任务附件、注册或注销任务智能体、更新任务智能体的主页数据、写
-- **lark-vc** — 仅当用户或上游配置显式指定 lark-vc 时使用，相关请求统一交由 lark-meeting 技能处理。
-- **lark-vc-agent** — 仅当用户或上游配置显式指定 lark-vc-agent 时使用，相关请求统一交由 lark-meeting 技能处理。
 - **lark-whiteboard** — 飞书画板：查询和编辑飞书云文档中的画板。支持导出画板为预览图片、导出原始节点结构、使用多种格式更新画板内容。 当用户需要查看画板内容、导出画板图片、编辑画板时使用此 skill
-- **lark-wiki** — 飞书知识库：管理知识空间、空间成员和文档节点。创建和查询知识空间、查看和管理空间成员、管理节点层级结构、在知识库中组织文档和快捷方式。当用户需要在知识库中查找或创建文档、浏览知
 - **lark-workflow-meeting-summary** — 会议纪要整理工作流：汇总指定时间范围内的会议纪要并生成结构化报告。当用户需要整理会议纪要、生成会议周报、回顾一段时间内的会议内容时使用。
 - **lark-workflow-standup-report** — 日程待办摘要：编排 calendar +agenda 和 task +get-my-tasks，生成指定日期的日程与未完成任务摘要。适用于了解今天/明天/本周的安排。
 - **meeting-notes** — This skill transforms raw meeting notes, transcripts, or audio summaries into clear, str
@@ -2733,124 +2931,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **tong-jincheng-interpersonal-skill** — 童锦程视角 Skill — 用深情祖师爷的思维框架分析人际关系、恋爱问题与人性洞察
 - **tong-jincheng-relationship-skill** — 童锦程视角 Skill — 用深情祖师爷的思维框架分析人际关系、恋爱问题与人性洞察
 
-## qa-engineer (115 curated)
-
-- **absolute-docs** — Diátaxis-driven documentation for AI coding agents: write, improve, or audit tutorials, 
-- **absolute-init** — One-time setup for absolute: interview how you want it to behave (output style, autonomy
-- **absolute-simplify** — Use when the user wants to simplify, clean up, refactor, tidy, or refine code — their st
-- **access-review** — Conduct periodic access reviews and certifications. Implement access governance and rece
-- **ai-first-engineering** — Engineering operating model for teams where AI agents generate a large share of implemen
-- **aoti-debug** — Debug AOTInductor (AOTI) errors and crashes. Use when encountering AOTI segfaults, devic
-- **apple-appstore-reviewer** — Serves as a reviewer of the codebase with instructions on looking for Apple App Store op
-- **before-you-build** — Pre-build product and feature risk review for founders, product managers, and AI-assiste
-- **bluehammer-vulnerability-poc** — Skill for working with the BlueHammer vulnerability proof-of-concept repository, coverin
-- **breakdown-plan** — Issue Planning and Automation prompt that generates comprehensive project plans with Epi
-- **breakdown-test** — Test Planning and Quality Assurance prompt that generates comprehensive test strategies,
-- **business-continuity** — Develop business continuity plans and impact analysis. Implement BCP testing and communi
-- **clustering-analysis** — Identify groups and patterns in data using k-means, hierarchical clustering, and DBSCAN 
-- **cmo-review** — /cs:cmo-review <plan> — Narrative-first interrogation of positioning, ICP, message house
-- **code-review** — Review Langfuse code changes for correctness, regressions, and best practices.
-- **code-reviewer** — Code review automation for TypeScript, JavaScript, Python, Go, Swift, Kotlin, C#, .NET, 
-- **codeql** — Comprehensive guide for setting up and configuring CodeQL code scanning via GitHub Actio
-- **codex-plugin-cc** — Use OpenAI Codex from inside Claude Code for code reviews and delegated background tasks
-- **content-hash-cache-pattern** — Cache expensive file processing results using SHA-256 content hashes — path-independent,
-- **continuous-agent-loop** — Patterns for continuous autonomous agent loops with quality gates, evals, and recovery c
-- **contract-review** — Analyze contracts for risks, check completeness, and provide actionable recommendations.
-- **copyfail-go-lpe** — Go implementation of CVE-2026-31431 (CopyFail), a Linux local privilege escalation explo
-- **coverage-strategist** — Defines ROI-based coverage targets with critical path identification, layer-specific tar
-- **cpo-review** — /cs:cpo-review <plan> — JTBD-driven interrogation of product roadmap, PMF signal, and po
-- **cpp-testing** — Use only when writing/updating/fixing C++ tests, configuring GoogleTest/CTest, diagnosin
-- **cross-eval** — /cs:cross-eval <memo> — Multi-model consensus on a board memo or strategy brief. Claude 
-- **cto-review** — /cs:cto-review <plan> — Architecture and scaling interrogation. Tech debt, scaling cliff
-- **cve-2026-31431-copy-fail** — Detector and proof-of-concept LPE toolkit for CVE-2026-31431 ("Copy Fail"), a Linux kern
-- **dart-collect-coverage** — Collect coverage using the coverage packge and create an LCOV report
-- **dart-run-static-analysis** — Execute `dart analyze` to identify warnings and errors, and use `dart fix --apply` to au
-- **deepsec-vulnerability-scanner** — AI agent skill for using deepsec, the agent-powered security vulnerability scanner for l
-- **defi-amm-security** — Security checklist for Solidity AMM contracts, liquidity pools, and swap flows. Covers r
-- **dependency-audit** — Use when auditing project dependencies for security vulnerabilities, outdated packages, 
-- **dependency-scanning** — Scan package dependencies for known vulnerabilities using Snyk, Dependabot, and OWASP De
-- **dependency-upgrade** — Manage major dependency version upgrades with compatibility analysis, staged rollout, an
-- **detect-hallucinations** — Use this to detect when an LLM is making things up, so you can flag or block confident-b
-- **dev-onboarding-builder** — Creates comprehensive developer onboarding documentation and materials including step-by
-- **disaster-recovery** — Implement disaster recovery strategies and runbooks. Configure RPO/RTO targets and failo
-- **ecc-tools-cost-audit** — Evidence-first ECC Tools burn and billing audit workflow. Use when investigating runaway
-- **email-marketing** — Email marketing automation - campaign creation, sequence building, A/B testing, delivera
-- **eval-driven-dev** — Improve AI application with evaluation-driven development. Define eval criteria, instrum
-- **evaluation-harness** — Builds repeatable evaluation systems with golden datasets, scoring rubrics, pass/fail th
-- **file-upload-handling** — Implement secure file upload handling with validation, virus scanning, storage managemen
-- **generating-python-installer** — Commercial-grade Python installer expert for Windows: Nuitka extreme compilation, dist s
-- **grinding-until-pass** — Keep iterating on code changes until the tests pass, the build succeeds, or linting is c
-- **gtm-product-led-growth** — Build self-serve acquisition and expansion motions. Use when deciding PLG vs sales-led, 
-- **inkos-multi-agent-novel-writing** — Multi-agent CLI system for autonomous novel writing, auditing, and revision with human r
-- **java-junit** — Get best practices for JUnit 5 unit testing, including data-driven tests
-- **keep-codex-fast-maintenance** — Backup-first skill for inspecting, archiving, and maintaining local Codex state to keep 
-- **kimodo-motion-diffusion** — Generate high-quality 3D human and humanoid robot motions using Kimodo, a kinematic moti
-- **linear-bug-triage** — Use this skill after a bug or regression candidate has measured evidence to document the
-- **linting** — Python linting with Ruff - an extremely fast linter written in Rust. Use when: (1) Stand
-- **literature-review** — Systematic literature-review workflow for academic, biomedical, technical, and scientifi
-- **lora-qlora-recipes** — Configure LoRA and QLoRA supervised fine-tuning with current best-practice hyperparamete
-- **messages-ops** — Evidence-first live messaging workflow for ECC. Use when the user wants to read texts or
-- **metatron-pentest-assistant** — AI-powered penetration testing assistant using local LLM (metatron-qwen via Ollama) on P
-- **mgrep-code-search** — Semantic code search using mgrep for efficient codebase exploration. This skill should b
-- **microsoft-agent-framework** — Create, update, refactor, explain, or review Microsoft Agent Framework solutions using s
-- **ml-model-training** — Build and train machine learning models using scikit-learn, PyTorch, and TensorFlow for 
-- **mocking-stubbing** — Create and manage mocks, stubs, spies, and test doubles for isolating unit tests from ex
-- **model-supply-chain-security** — Secure the AI model supply chain with artifact signing, provenance attestation, SBOM wor
-- **momentic-maintain** — Diagnose, classify, triage, and repair failing Momentic tests with MCP run
-- **momentic-result-classification** — Classify or explain Momentic test run results using Momentic MCP tools.
-- **monorepo-management** — Manage monorepo architectures using Lerna, Turborepo, and Nx. Configure workspaces, depe
-- **mutation-testing** — Evaluate test suite quality by introducing code mutations and verifying tests catch them
-- **network-bgp-diagnostics** — Diagnostics-only BGP troubleshooting patterns for neighbor state, route exchange, prefix
-- **oransim-causal-marketing-twin** — Causal digital twin for marketing simulation — predict campaign ROI, run counterfactual 
-- **orch-change-feature** — Orchestrate altering an existing, working feature to new desired behavior — update its t
-- **orch-fix-defect** — Orchestrate fixing a bug — reproduce it as a failing regression test, fix to green, revi
-- **paper2code-arxiv-implementation** — Agent skill to convert any arxiv paper into a citation-anchored, working Python implemen
-- **parallel-test-fixing** — When multiple tests fail, assign each failing test file to a separate subagent that fixe
-- **pdf-compress** — Reduce PDF file size while maintaining acceptable quality
-- **pdf-ocr-extraction** — Extract text from scanned PDFs using optical character recognition
-- **perl-patterns** — Modern Perl 5.36+ idioms, best practices, and conventions for building robust, maintaina
-- **playwright-explore-website** — Website exploration for testing using Playwright MCP
-- **playwright-generate-test** — Generate a Playwright test based on a scenario using Playwright MCP
-- **plugin-creator** — Create and scaffold plugin directories for Codex with a required `.codex-plugin/plugin.j
-- **pr-review** — Review PyTorch pull requests for code quality, test coverage, security, and backward com
-- **preference-optimization** — Align a fine-tuned model with preference data using DPO, ORPO, KTO, or SimPO. Use when p
-- **profiling-tables** — Deep-dive data profiling for a specific table. Use when the user asks to profile a table
-- **pytest-coverage** — Run pytest tests with coverage, discover lines missing coverage, and increase coverage t
-- **pytest-patterns** — Python testing with pytest covering fixtures, parametrization, mocking, and test organiz
-- **python-foundational** — Foundational Python best practices, idioms, and code quality fundamentals
-- **python-tdd-with-uv** — Test-driven development in Python using uv as the package manager. Covers the red-green-
-- **qdrant-search-quality** — Diagnoses and improves Qdrant search relevance. Use when someone reports 'search results
-- **quality-gates-enforcer** — Enforces minimum quality thresholds in CI including code coverage, linting, type checkin
-- **ray-so-code-snippet** — Generate beautiful code snippet images using ray.so. This skill should be used when the 
-- **review-and-refactor** — Review and refactor code in your project according to defined instructions
-- **ruff-recursive-fix** — Run Ruff checks with optional scope and rule overrides, apply safe and unsafe autofixes 
-- **sast-configuration** — Configure Static Application Security Testing (SAST) tools for automated vulnerability d
-- **scholar-evaluation** — Structured scholarly-work evaluation for papers, proposals, literature reviews, methods 
-- **security-pr-checklist-skill** — Creates repeatable security review checklist for PRs with required checks, common pitfal
-- **security-requirement-extraction** — Derive security requirements from threat models and business context. Use when translati
-- **security-review** — Review Langfuse changes for SSRF, tenant isolation, secret handling, unsafe redirects or
-- **semantic-kernel** — Create, update, refactor, explain, or review Semantic Kernel solutions using shared guid
-- **seo-audit** — When the user wants to audit, review, or diagnose SEO issues on their site. Also use whe
-- **seo-optimizer** — SEO strategy and optimization - keyword research, on-page SEO, technical audits, content
-- **skill-security-auditor** — Security audit and vulnerability scanner for AI agent skills before installation. Use wh
-- **skill-stocktake** — Use when auditing Claude skills and commands for quality. Supports Quick Scan (changed s
-- **skillspector** — Security scanner for AI agent skills. Use BEFORE installing/running any Claude Code, Cod
-- **smart-ocr** — This skill enables intelligent text extraction from images and scanned documents using P
-- **snowflake-semanticview** — Create, alter, and validate Snowflake semantic views using Snowflake CLI (snow). Use whe
-- **spec-driven-workflow** — Use when the user asks to write specs before code, define acceptance criteria, plan feat
-- **systematic-debugging** — Structured debugging methodology — reproduce, isolate, hypothesize, verify. Covers git b
-- **tdd-workflow** — Use this skill when writing new features, fixing bugs, or refactoring code. Enforces tes
-- **template-skill** — Replace with description of the skill and when Claude should use it.
-- **terminal-ops** — Evidence-first repo execution workflow for ECC. Use when the user wants a command run, a
-- **test-data-factory-builder** — Creates factories and builders for generating consistent, composable test data with real
-- **test-reporting-triage-skill** — Automatically categorizes test failures, suggests responsible owners, and provides commo
-- **testing** — Testing strategy for .NET 10 applications. Covers xUnit v3, WebApplicationFactory for in
-- **trump-code-market-signals** — AI-powered analysis of Trump's social media posts to predict stock market movements usin
-- **ui-screenshots** — Capture screenshots of web apps during development using Playwright and PIL. Supports fu
-- **verify-quality-gates** — Run the project's quality gates, map results to spec acceptance criteria, and produce ve
-- **whatcable-macos-usb-inspector** — macOS menu bar app that identifies USB-C cable capabilities and charging diagnostics usi
-- **writing-tests** — Analyze existing code and write comprehensive unit and integration tests for it. Detects
-
 ## mobile-developer (108 curated)
 
 - **adf-master** — Azure Data Factory (ADF) CI/CD, deployment, and pipeline development. PROACTIVELY activa
@@ -2864,7 +2944,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **arize-dataset** — Creates, manages, and queries Arize datasets and examples. Covers dataset CRUD, appendin
 - **arize-experiment** — Creates, runs, and analyzes Arize experiments for evaluating and comparing model perform
 - **arize-trace** — Downloads, exports, and inspects existing Arize traces and spans to understand what an L
-- **auditing-security** — Perform a systematic security audit of a codebase, checking for OWASP Top 10 vulnerabili
 - **aws-sdk-java-v2-s3** — Provides Amazon S3 patterns and examples using AWS SDK for Java 2.x. Use when working wi
 - **azure-kusto-graph** — Build and query Kusto graphs from natural language. Covers transient graphs (make-graph)
 - **baca-gambar** — WAJIB OTOMATIS dipakai tanpa slash saat user kirim/lampir gambar, PDF, screenshot, foto 
@@ -2877,6 +2956,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **cmux-dev-workflow** — Contributor workflow rules for cmux setup, Xcode project normalization, tagged sidebar E
 - **cmux-shared-behavior** — Shared behavior and mutation-path rules for cmux. Use when a behavior is exposed through
 - **cmux-testing** — cmux testing rules for Swift Testing, test target compilation, test wiring, and package/
+- **compact-core-compact-structure** — This skill should be used when the user asks to write, structure, or scaffold a Compact 
 - **compose-multiplatform-patterns** — Compose Multiplatform and Jetpack Compose patterns for KMP projects — state management, 
 - **content-management-systems** — Workflow for building and modifying content management systems across WordPress, Shopify
 - **copilot-otel-metrics** — Set up GitHub Copilot OpenTelemetry capture: configure the VS Code export settings, gene
@@ -2889,14 +2969,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **device-cool** — WAJIB OTOMATIS dipakai tanpa slash saat user bilang panas, lemot, ngelag, kipas, RAM pen
 - **digital-health-clinical-asr-eval** — Stage 3 of Clinical ASR Flywheel. Score a NeMo manifest, produce the five-section KER le
 - **dt-migration** — Migrate Dynatrace classic and Gen2 entity-based DQL to Smartscape equivalents. Covers th
-- **dt-obs-compliance-assistant** — Monitor and investigate EU DORA compliance posture using Dynatrace Compliance Assistant.
 - **ecommerce-image-workflow** — Reference-product ecommerce image workflow for generating a compact set of product-faith
 - **embedded-iot-mentor** — Mentor for embedded and IoT hardware projects. Helps select MCUs, dev boards, and toolch
-- **entra-app-registration** — Guides Microsoft Entra ID app registration, OAuth 2.0 authentication, and MSAL integrati
 - **firebase-crashlytics** — Comprehensive guide for Firebase Crashlytics, including provisioning and SDK usage. Use 
 - **firebase-firestore** — Sets up, manages, queries, and configures Cloud Firestore databases (Standard/Enterprise
 - **firebase-remote-config-basics** — Manages Firebase Remote Config templates, feature flags, loading strategies, and SDKs (A
 - **firebase-security-rules-auditor** — Audits Firebase (Firestore, Cloud Storage) security rules for vulnerabilities, privilege
+- **fluidcad-assembly** — Building multi-part models in FluidCAD: assemblies, part files, inserting and mating par
 - **flutter-add-integration-test** — Configures Flutter Driver for app interaction and converts MCP actions into permanent in
 - **flutter-apply-architecture-best-practices** — Architects a Flutter application using the recommended layered approach (UI, Logic, Data
 - **flutter-implement-json-serialization** — Create model classes with `fromJson` and `toJson` methods using `dart:convert`. Use when
@@ -2905,15 +2984,18 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **gc-review** — /cs:gc-review <plan> — General Counsel interrogation of contracts, IP, regulatory, term 
 - **genzys-fleetops-docs** — Generate, verify, and keep consistent the GenZys FleetOps FMS documentation set (PRD/FRD
 - **geofeed-tuner** — Use this skill whenever the user mentions IP geolocation feeds, RFC 8805, geofeeds, or w
-- **git-security-2025** — Git security best practices for 2025-2026 (signed commits, zero-trust, secret scanning).
 - **google-ads-api-account-diagnostics** — Diagnoses Google Ads account performance issues such as conversion loss (value or volume
 - **google-mobile-ads-android-migrate-to-next-gen** — Migrates Android applications from the old, legacy Google Mobile
+- **grad-capm** — \"Apply the Capital Asset Pricing Model (CAPM) to estimate expected returns and assess r
+- **grad-oli** — \"Apply Dunning's OLI Paradigm (Eclectic Theory) to evaluate foreign direct investment d
+- **grad-uppsala** — \"Apply the Uppsala Internationalization Model to analyze gradual foreign market entry b
 - **healthcare-eval-harness** — Patient safety evaluation harness for healthcare application deployments. Automated test
 - **hipaa-compliance** — Implement HIPAA security and privacy rules. Configure PHI protections and BAA requiremen
 - **homelab-wireguard-vpn** — WireGuard VPN server setup, peer configuration, key generation, split tunneling vs full 
 - **hyperforce-2025** — Salesforce Hyperforce public cloud infrastructure and architecture (2025). PROACTIVELY a
 - **instinct-system** — Unified learning-and-memory system: confidence-scored instincts (observe-hypothesize-con
 - **integration-privy** — Add Privy authentication to a Solana Expo Android app on top of Mobile Wallet Adapter, u
+- **internationalization-patterns** — Internationalization (i18n) and localization (l10n) patterns using GetX Translations for
 - **ios-icon-gen** — Generate iOS app icons as PNG imagesets for Xcode asset catalogs from SF Symbols (5000+ 
 - **kotlin-coroutines-flows** — Kotlin Coroutines and Flow patterns for Android and KMP — structured concurrency, Flow o
 - **kotlin-exposed-patterns** — JetBrains Exposed ORM patterns including DSL queries, DAO pattern, transactions, HikariC
@@ -2930,14 +3012,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **mobile-app-testing** — Comprehensive mobile app testing strategies for iOS and Android. Covers unit tests, UI t
 - **mobile-offline-support** — Implement offline-first mobile apps with local storage, sync strategies, and conflict re
 - **momentic-mobile-test** — Create, run, and maintain Momentic mobile E2E tests and modules for Android and iOS. Use
-- **mural** — Mural workspace, room, mural, and widget workflows via the Mural REST API exposed throug
 - **oauth-implementation** — Implement secure OAuth 2.0, OpenID Connect (OIDC), JWT authentication, and SSO integrati
-- **observability-monitoring** — Comprehensive observability and monitoring skill covering Prometheus, Grafana, metrics c
 - **open-autoglm-phone-agent** — Expert skill for Open-AutoGLM, an AI phone agent framework that controls Android/Harmony
 - **puremac-macos-cleaner** — Free open-source macOS cleaner built with SwiftUI — CleanMyMac alternative with zero tel
 - **push-notification-setup** — Implement push notifications for iOS and Android. Covers Firebase Cloud Messaging, Apple
 - **quantized-export** — Export a promoted fine-tuned model in the right deployment format — merged safetensors, 
-- **raindrop-api** — This skill provides comprehensive instructions for interacting with the Raindrop.io book
+- **rails-error-prevention** — Comprehensive checklist and prevention strategies for common Ruby on Rails errors. Use t
 - **resume-modern** — Modern minimal resume, single A4 page, ready for print or PDF export.
 - **seeker-genesis-token** — Verify Seeker device ownership by checking for the Seeker Genesis Token (SGT) with Sign-
 - **server-side-conversion-tracking** — Set up server-side conversion tracking so purchases are reported accurately to Facebook,
@@ -2962,7 +3042,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **x-twitter-scraper** — Build GitHub Copilot workflows with Xquik X API SDKs, REST endpoints, hosted Apify Actor
 - **xcode-project-setup** — Safely modifies Xcode projects (.pbxproj) to add Swift Packages and link files. Use this
 
-## data-scientist (81 curated)
+## data-scientist (77 curated)
 
 - **adr-drafting** — Creates new Architecture Decision Record (ADR) documents for significant architectural c
 - **agent-eval** — Head-to-head comparison of coding agents (Claude Code, Aider, Codex, etc.) on custom tas
@@ -2978,7 +3058,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **competitive-analysis** — Analyze competitors systematically. Compare products, features, pricing, positioning, an
 - **computer-vision** — Implement computer vision tasks including image classification, object detection, segmen
 - **context-map** — Generate a map of all files relevant to a task before making changes
-- **corridorkey-green-screen** — AI-powered green screen keyer that unmixes foreground colors and generates clean linear 
 - **create-agentsmd** — Prompt for generating an AGENTS.md file for a repository
 - **create-architectural-decision-record** — Create an Architectural Decision Record (ADR) document for AI-optimized decision documen
 - **create-specification** — Create a new specification file for the solution, optimized for Generative AI consumptio
@@ -2989,12 +3068,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **dicom-metadata-extract** — Used for extracting selected metadata from one DICOM file and flagging standard-tag PHI 
 - **dicom-series-preflight** — Used for header-only preflight of one DICOM series folder before conversion or inference
 - **digital-health-clinical-asr-finetune** — Stage 4 of the Clinical ASR Flywheel. Use when priority KER is above 0.3 to run stock Ne
-- **editorconfig** — Generates a comprehensive and best-practice-oriented .editorconfig file based on project
 - **email-sequence** — When the user wants to create or optimize an email sequence, drip campaign, automated em
 - **exa-search** — Neural search via Exa MCP for web, code, and company research. Use when the user needs w
 - **expense-tracker** — Automate expense tracking, receipt processing, approval workflows, and reimbursement man
 - **eyeball** — Document analysis with inline source screenshots. When you ask Copilot to analyze a docu
 - **file-organizer** — Organize and rename files based on content analysis
+- **fin-modeling** — \"Build three-statement financial models (Income Statement, Balance Sheet, Cash Flow) wi
 - **finetuning-method-selection** — Decide whether to fine-tune at all, and route to the right method (SFT, DPO/ORPO/KTO, GR
 - **fix-issue** — Fix bugs reported in PyTorch GitHub issues by reproducing, root-causing, and implementin
 - **funnel-analysis** — Analyze user conversion funnels, identify drop-off points, and optimize conversion rates
@@ -3006,7 +3085,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **langchain-orchestration** — Comprehensive guide for building production-grade LLM applications using LangChain's cha
 - **langchain-rag** — INVOKE THIS SKILL when building ANY retrieval-augmented generation (RAG) system. Covers 
 - **linkedin-automation** — Automate LinkedIn marketing, lead generation, content publishing, and professional netwo
-- **llmfit-hardware-model-matcher** — Terminal tool that detects your hardware and recommends which LLM models will actually r
 - **mac-code-local-ai-agent** — Run a free 35B AI coding agent on Apple Silicon Macs using local LLMs via llama.cpp or M
 - **mailchimp-automation** — Automate Mailchimp email marketing campaigns, audience management, automations, and anal
 - **makefile-generator** — Create, generate, or scaffold Makefiles with .PHONY targets and build automation.
@@ -3014,14 +3092,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **meeting-minutes** — Generate concise, actionable meeting minutes for internal meetings. Includes metadata, a
 - **memory-lancedb-pro-openclaw** — Expert skill for memory-lancedb-pro — a production-grade LanceDB-backed long-term memory
 - **mkdocs-translations** — Generate a language translation for a mkdocs documentation stack.
-- **mole-mac-cleaner** — Deep clean and optimize your Mac using the Mole CLI tool
 - **momentic-spec** — Improve code correctness using Momentic specs in the feature development process
 - **nano-banana-pro-openrouter** — Generate or edit images via OpenRouter with the Gemini 3 Pro Image model. Use for prompt
 - **nanobanana-ppt** — AI-powered PPT generation with document analysis and styled images via the NanoBanana st
-- **nanochat-llm-training** — Train your own GPT-2 level LLM for under $100 using nanochat, Karpathy's minimal hackabl
 - **obliteratus-abliteration** — One-click model liberation toolkit for removing refusal behaviors from LLMs via surgical
 - **obsidian-llm-bridge** — WAJIB OTOMATIS dipakai tanpa slash saat user butuh baca/tulis/query Obsidian vault dari 
-- **pandas** — Expert data analysis and manipulation for customer support operations using pandas
 - **parallel-data-enrichment** — Bulk data enrichment. Adds web-sourced fields (CEO names, funding, contact info) to list
 - **parallel-execution-optimizer** — Use when the user wants a task done much faster through parallel work, concurrent agents
 - **pdf-extraction** — Extract text, tables, and metadata from PDFs using pdfplumber
@@ -3042,20 +3117,18 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **technical-job-search** — Use this skill when a software engineer asks for help with job search tasks: parsing or 
 - **terragrunt-generator** — Generate/create/scaffold Terragrunt HCL files — root.hcl, terragrunt.hcl, child modules,
 - **tilekernels-gpu-kernels** — Expert skill for using TileKernels, a library of optimized GPU kernels for LLM operation
+- **tw-startup-legal** — \"Guide Taiwan company registration and legal setup including business entity selection,
 - **typespec-create-agent** — Generate a complete TypeSpec declarative agent with instructions, capabilities, and conv
 - **unit-3-hyprland-nier-rice** — NieR:Automata themed Hyprland + Quickshell + Waybar rice for Arch Linux with QML widgets
 - **zendesk-automation** — Automate customer support workflows with Zendesk ticket management, routing, and analyti
 
-## security-specialist (63 curated)
+## security-specialist (61 curated)
 
 - **724-office-ai-agent** — Self-evolving AI agent system with 26 tools, three-layer memory, MCP plugins, and 24/7 s
 - **ad-creative** — Generate and iterate ad creative including headlines, descriptions, and primary text. Us
 - **agentic-engineering** — Operate as an agentic engineer using eval-first execution, decomposition, and cost-aware
-- **aglais-xqvm-quantum-vm** — Expertise in Aglais XQVM, a hardware-agnostic Rust quantum virtual machine for QUBO/Isin
 - **ai-elements** — Build AI chat interfaces using ai-elements components — conversations, messages, tool di
-- **ai-red-teaming** — Run structured AI red team exercises for jailbreak resistance, data exfiltration risk, h
 - **applicant-screening** — Screen job applications against requirements and score candidates
-- **artifact-sbom-publisher** — Produces build artifacts with Software Bill of Materials (SBOM) and supply chain metadat
 - **awawausb-webusb-firefox** — WebUSB extension for Firefox using native messaging to enable USB device access from web
 - **batch-processor** — Process multiple documents in bulk with parallel execution
 - **breakdown-epic-arch** — Prompt for creating the high-level technical architecture for an Epic, based on a Produc
@@ -3072,16 +3145,17 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **crypto-report** — Analyze cryptocurrency projects with tokenomics, on-chain metrics, and market analysis. 
 - **cudaq-importing** — Use when porting circuits from another framework (e.g. Qiskit) into CUDA-Q kernels while
 - **cupynumeric-install** — Install and verify cuPyNumeric for Python — requirements, commands, verification. Source
+- **econ-supply-demand** — \"Apply supply and demand analysis to explain price determination, market equilibrium, a
 - **email-classifier** — Automatically categorize emails by type, priority, and required action
 - **email-ops** — Evidence-first mailbox triage, drafting, send verification, and sent-mail-safe follow-up
 - **employment-contract-templates** — Create employment contracts, offer letters, and HR policy documents following legal best
 - **eval-harness-first** — Build the evaluation harness that gates every fine-tuning run — golden sets, per-failure
 - **fal-tryon** — Virtual try-on — see how clothes look on a person via fal.ai's hosted try-on models. Use
 - **first-ask** — Interactive, input-tool powered, task refinement workflow: interrogates scope, deliverab
-- **fl-studio-patcher-malware-warning** — WARNING - This project is malicious software disguised as an FL Studio crack/patcher
 - **full-output-enforcement** — Overrides default LLM truncation behavior. Enforces complete code generation, bans place
 - **git-workflow-strategy** — Master Git workflows including GitFlow, GitHub Flow, Trunk-Based Development. Configure 
 - **gpt-image-1-5** — Generate and edit images using OpenAI's GPT Image 1.5 model. Use when the user asks to g
+- **grad-embeddedness** — \"Apply Granovetter's embeddedness theory to analyze how economic behavior is embedded i
 - **here-be-git** — Initialise a git repository with optional agent commit instructions and .gitignore. Use 
 - **intl-expansion** — International market expansion strategy. Market selection, entry modes, localization, re
 - **jira-automation** — Automate Jira project management workflows, sprint planning, issue tracking, and reporti
@@ -3090,12 +3164,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **modly-image-to-3d** — Desktop app that generates 3D models from images using local AI running entirely on your
 - **nda-generator** — I help you create professional Non-Disclosure Agreements (NDAs) for various business sit
 - **network-security-groups** — Configure network security groups and firewall rules to control inbound/outbound traffic
-- **nvidia-nemoclaw** — NVIDIA NemoClaw plugin for secure sandboxed installation and orchestration of OpenClaw a
 - **onboarding-cro** — When the user wants to optimize post-signup onboarding, user activation, first-run exper
 - **openclaw-config** — Manage OpenClaw bot configuration - channels, agents, security, and autopilot settings
 - **openclaw-control-center** — Local-first, security-first control center for OpenClaw agents — visibility dashboard wi
 - **operator-approval-loop** — Operator approval contract with internal filing notices for agent-drafted outbound messa
-- **prompt-injection-defense** — Defend AI systems against prompt injection and indirect prompt attacks using input contr
 - **requirements-gathering** — Systematically collect, document, and validate requirements from stakeholders. Ensure cl
 - **research-ops** — Evidence-first current-state research workflow for ECC. Use when the user wants fresh fa
 - **search-first** — Research-before-coding workflow. Search for existing tools, libraries, and patterns befo
@@ -3107,25 +3179,26 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **threat-mitigation-mapping** — Map identified threats to appropriate security controls and mitigations. Use when priori
 - **tiny-stepping** — Incremental development workflow that makes the smallest meaningful change per step and 
 - **torchcode-pytorch-interview-practice** — LeetCode-style PyTorch interview practice environment with auto-grading for implementing
+- **traceability-checker** — Generates PRD-to-spec traceability matrix, identifying requirements gaps and scope creep
 - **tugboat** — Anxiety-aware, evidence-driven collaboration for stalled or high-stakes work when a user
 - **twitter-x-automation** — Automate Twitter/X social media workflows including posting, engagement, analytics, and 
 - **update-specification** — Update an existing specification file for the solution, optimized for Generative AI cons
 - **workshop-create** — Create a new workshop or use an existing directory as one. Handles two paths: (A) use an
+- **x-mcp-guide** — ALWAYS read this when a user connects the X plugin or any X MCP, before using any X conn
 
-## ai-engineer (50 curated)
+## ai-engineer (47 curated)
 
 - **add-educational-comments** — Add educational comments to the file specified, or prompt asking for file to comment if 
 - **agent-platform-prompt-management** — Manages and orchestrates prompts in Agent Platform. Use when you need to create, list, r
 - **agents-md** — Creates and maintains concise AGENTS.md and CLAUDE.md project instruction files. Use whe
 - **ai-prompt-engineering-safety-review** — Comprehensive AI prompt engineering safety review and improvement prompt. Analyzes promp
 - **arize-prompt-optimization** — Optimizes, improves, and debugs LLM prompts using production trace data, evaluations, an
+- **avant-garde-frontend-architect** — Expert frontend design and UI implementation with a focus on bespoke, visually striking,
 - **boost-prompt** — Interactive prompt refinement workflow: interrogates scope, deliverables, constraints; c
 - **breakdown-feature-implementation** — Prompt for creating detailed feature implementation plans, following Epoch monorepo stru
 - **cfo-advisor** — Financial leadership for startups and scaling companies. Financial modeling, unit econom
 - **claude-code-source-study** — Deep dive into Claude Code source code to learn production-grade AI agent architecture p
-- **cubesandbox-ai-sandbox** — CubeSandbox — instant, hardware-isolated, E2B-compatible sandbox service for AI agents b
 - **deepseek-ocr** — Expert skill for using DeepSeek-OCR, a vision-language model for optical character recog
-- **dingtalk-workspace-cli** — Use DingTalk Workspace CLI (dws) to manage DingTalk contacts, calendar, todos, attendanc
 - **enhance-prompt** — Improve prompts with design specs and UI/UX vocabulary. Useful for design-to-code workfl
 - **fact-check-before-trust** — Triggers a secondary verification pass for any agent output containing factual claims, n
 - **finalize-agent-prompt** — Finalize prompt file using the role of an AI agent to polish the prompt for the end user
@@ -3139,7 +3212,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **killerpdf-portable-editor** — KillerPDF is a portable, single-EXE Windows PDF editor built with C#/WPF and PDFium — su
 - **kotlin-mcp-server-generator** — Generate a complete Kotlin MCP server project with proper structure, dependencies, and i
 - **langchain-python-quickstart** — Scaffold a minimal local LangChain agent in Python by following the official quickstart.
-- **langchain4j-mcp-server-patterns** — Provides LangChain4j patterns for implementing MCP (Model Context Protocol) servers, cre
 - **linear-automation** — Automate Linear issue tracking, cycle planning, roadmap management, and engineering work
 - **mcp-server-builder** — Design and ship production-ready MCP (Model Context Protocol) servers from OpenAPI contr
 - **mcp-server-patterns** — Build MCP servers with Node/TypeScript SDK — tools, resources, prompts, Zod validation, 
@@ -3147,9 +3219,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **migrate-to-codex** — Migrate supported instruction files, skills, agents, and MCP config into Codex project a
 - **openai-symphony-autonomous-agents** — Symphony turns project work into isolated, autonomous implementation runs, allowing team
 - **php-mcp-server-generator** — Generate a complete PHP Model Context Protocol server project with tools, resources, pro
-- **prompt-booster** — WAJIB OTOMATIS dipakai untuk SETIAP pesan user tanpa kecuali dan tanpa perlu perintah sl
 - **prompt-engineering** — Write effective prompts for LLMs — structure, few-shot examples, chain-of-thought, syste
-- **prompt-engineering-patterns** — This skill should be used when the user asks to "optimize a prompt", "improve prompt per
+- **prompt-engineering-patterns** — This skill should be used when the user asks to 'optimize a prompt', 'improve prompt per
 - **python-mcp-server-generator** — Generate a complete MCP server project in Python with tools, resources, and proper confi
 - **rivet-agentos** — agentOS: A computer for every agent.
 - **ruby-mcp-server-generator** — Generate a complete Model Context Protocol server project in Ruby using the official MCP
@@ -3158,14 +3229,14 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **suggest-awesome-github-copilot-agents** — Suggest relevant GitHub Copilot Custom Agents files from the awesome-copilot repository 
 - **swift-mcp-server-generator** — Generate a complete Model Context Protocol server project in Swift using the official MC
 - **team-builder** — Interactive agent picker for composing and dispatching parallel teams. Use when composin
+- **tech-mcp-server-dev** — \"Build MCP (Model Context Protocol) servers including tool definition, schema design, a
 - **tiangolo-library-skills** — Install and manage AI agent skills from Python/JS libraries so agents always use up-to-d
 - **typescript-mcp-server-generator** — Generate a complete MCP server project in TypeScript using the MCP TypeScript SDK v2 (@m
 - **ultrathink** — Display colorful ANSI art of the word "ultrathink". Use when the user says "ultrathink" 
 - **wanman-agent-matrix** — Expert skill for using wanman, the open-source local agent matrix runtime that coordinat
-- **weclaw-wechat-ai-bridge** — Connect WeChat to AI agents (Claude, Codex, Gemini, Kimi, etc.) using the WeClaw bridge 
 - **zeroboot-vm-sandbox** — Sub-millisecond VM sandboxes for AI agents using copy-on-write KVM forking via Zeroboot
 
-## tech-writer (24 curated)
+## tech-writer (28 curated)
 
 - **asana-automation** — Automate Asana project management workflows, task tracking, team collaboration, and repo
 - **avoid-ai-writing** — Audit and rewrite prose so it stops reading as machine-generated. Use this skill when as
@@ -3182,18 +3253,23 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **docx-manipulation** — Create, edit, and manipulate Word documents programmatically using python-docx
 - **java-docs** — Ensure that Java types are documented with Javadoc comments and follow best practices fo
 - **java-refactoring-remove-parameter** — Refactoring using Remove Parameter in Java Language
-- **layout-analyzer** — This skill enables document layout analysis using surya - an advanced document understan
+- **layout-analyzer** — This skill enables document layout analysis using **surya** - an advanced document under
+- **major-transfer** — 生成"转专业申请书"docx。转专业是大一/大二学生申请转入其他专业，正文约 1000~1500 字，书信体格式。必写五段：个人基本情况、现专业学习情况、转专业原因、目标专业认
+- **military-enlistment** — 生成"大学生应征入伍"申请书 docx。覆盖在校生入伍与毕业生入伍两类人群、5 段结构（个人基本情况 + 入伍动机 + 个人素质 + 部队适应能力 + 家人态度）、4 维度入伍
 - **n8n-workflow** — Automate document workflows with n8n - 7800+ workflow templates
 - **oh-story-claudecode-writing** — 网文写作 skill 包，覆盖长篇与短篇网络小说的扫榜、拆文、写作、去AI味全流程
+- **paper-claw** — Fetch, classify, and summarize papers from multiple sources (arXiv, etc.) with AI-powere
 - **pdf-to-docx** — Convert PDF files to editable Word documents using pdf2docx
 - **sheets-terminal-spreadsheet** — Terminal-based spreadsheet TUI tool written in Go for editing CSV files in the terminal 
 - **visa-doc-translate** — Translate visa application documents (images) to English and create a bilingual PDF with
 - **vscode-ext-commands** — Guidelines for contributing commands in VS Code extensions. Indicates naming convention,
 - **vscode-ext-localization** — Guidelines for proper localization of VS Code extensions, following VS Code extension de
 - **writing-commit-messages** — Write clear, conventional commit messages with proper type prefixes, scopes, and body co
+- **youth-league-application** — 生成"入团申请书"docx。中学/大学未入团青年申请加入共青团专用，书信体 4 段结构（开篇志愿表达 / 对团的认识 / 个人情况与成长经历 / 入团态度与今后努力方向）。必含
 
 ## data-engineer (23 curated)
 
+- **aod-plan** — Plan stage orchestrator that runs all three Plan sub-steps (spec → project-plan → tasks)
 - **clawd-code-python-port** — Python port of Claude Code agent harness — tools, commands, task orchestration, and CLI 
 - **company-research** — Conduct comprehensive company research and due diligence. Analyze business model, compet
 - **competitive-ads-extractor** — Extract and analyze competitors' ads from ad libraries to understand messaging and creat
@@ -3201,9 +3277,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **dart-fix-runtime-errors** — Uses get_runtime_errors and lsp to fetch an active stack trace, locate the failing line,
 - **deep-research** — Multi-source deep research using firecrawl and exa MCPs. Searches the web, synthesizes f
 - **deepagents-python-quickstart** — Scaffold a minimal local Deep Agent in Python by following the official quickstart, usin
-- **doc-parser** — This skill enables advanced document parsing using docling - IBM's state-of-the-art docu
+- **doc-parser** — This skill enables advanced document parsing using **docling** - IBM's state-of-the-art 
 - **github-sandbox-file-downloader** — Download files into a GitHub repository by writing special commit messages that trigger 
-- **internet-asset-fetcher** — Fetch any internet asset to local files — images, text/articles, documents (PDF/DOCX/XLS
 - **java-refactoring-extract-method** — Refactoring using Extract Methods in Java Language
 - **keyid-agent-kit-mcp** — Give AI agents (Claude, Cursor) a real email address with 27 MCP tools for inbox, send, 
 - **lead-routing** — Intelligent lead assignment and routing - AI-powered scoring, territory mapping, round-r
@@ -3239,7 +3314,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **trello-automation** — Automate Trello board management, card workflows, power-ups, and team collaboration
 - **user-management** — Manage users, groups, and permissions on Linux systems. Configure sudo and access contro
 
-## product-manager (16 curated)
+## product-manager (17 curated)
 
 - **bench-read** — Read artifacts from the shared bench — the workspace where desks leave findings, verdict
 - **clickup-automation** — Automate ClickUp workspace management, task workflows, time tracking, and team productiv
@@ -3253,6 +3328,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **prd** — Generate high-quality Product Requirements Documents (PRDs) for software systems and AI-
 - **saas-metrics** — SaaS business metrics analysis - MRR, ARR, Churn, LTV, CAC, cohort analysis, and investo
 - **spec** — Turn a vague feature or product idea into an agreed, persisted specification through rel
+- **squad-creator-pro-thiago-finch** — Activate Thiago Finch (thiago_finch) - Business Strategy & Marketing Architect. Activate
 - **strategic-compact** — Suggests manual context compaction at logical intervals to preserve context through task
 - **token-budget-advisor** — Offers the user an informed choice about how much response depth to consume before answe
 - **weekly-report** — This skill helps you create consistent, well-structured weekly status reports that commu
@@ -3269,10 +3345,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **webphysics-avbd-engine** — WebGPU rigid-body/soft-body physics engine based on the AVBD (Augmented Vertex Block Des
 - **xlsx-manipulation** — Create, edit, and manipulate Excel spreadsheets programmatically using openpyxl
 
-## agent-orchestrator (6 curated)
+## agent-orchestrator (5 curated)
 
 - **langgraph-human-in-the-loop** — INVOKE THIS SKILL when implementing human-in-the-loop patterns, pausing for approval, or
-- **langgraph-persistence** — INVOKE THIS SKILL when your LangGraph needs to persist state, remember conversations, tr
 - **langgraph-python-quickstart** — Scaffold a minimal local LangGraph agent in Python by following the official quickstart.
 - **linear-context-handover** — Use Linear as the org's memory: reconstruct a feature's history before touching it, and 
 - **structured-autonomy-plan** — Riset & susun development plan (plans/<feature>/plan.md) tanpa menulis kode. Use when us
@@ -3293,6 +3368,11 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **fedora-linux-triage** — Triage and resolve Fedora issues with dnf, systemd, and SELinux-aware guidance.
 - **financial-modeling** — Build integrated financial models with 3-statement projections. Create income statement,
 
+## blockchain-developer (2 curated)
+
+- **deck-swiss-international** — 16-column grid, one saturated accent, and 22 locked layouts (Klein Blue, Lemon, Mint, Sa
+- **oracle-ai-architect** — Extended reference material for Oracle AI architecture with deep technical implementatio
+
 ## agent-memory (1 curated)
 
 - **linkedin-obsidian-memory-graph** — WAJIB OTOMATIS dipakai tanpa perintah slash. Setiap user menyebut ingat, simpan, catat, 
@@ -3300,10 +3380,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 ## analyst (1 curated)
 
 - **lead-qualification** — Score and qualify leads based on criteria and fit
-
-## blockchain-developer (1 curated)
-
-- **deck-swiss-international** — 16-column grid, one saturated accent, and 22 locked layouts (Klein Blue, Lemon, Mint, Sa
 
 ## (tanpa kategori) (0 curated)
 

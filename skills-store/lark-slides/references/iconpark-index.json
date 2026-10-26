@@ -1,5 +1,5 @@
-# IconPark 图标索引（兼容入口）
-
-本文档已迁移至 [`xml/iconpark-index.json`](xml/iconpark-index.json)。
-
-此文件仅保留旧路径兼容性；后续引用请使用新路径。
+{
+  "deprecated": true,
+  "moved_to": "xml/iconpark-index.json",
+  "note": "Stub kompatibilitas untuk path lama. Index sebenarnya ada di xml/iconpark-index.json. Versi sebelumnya berupa catatan markdown dengan ekstensi .json sehingga gagal di-parse."
+}

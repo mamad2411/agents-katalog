@@ -1,3 +1,8 @@
+---
+name: azure-app-onboard-prepare
+description: Rencanakan arsitektur aplikasi Azure dan estimasi biaya sebelum provisioning.
+---
+
 # Prepare — Architecture Planning & Cost Estimation
 
 ## Quick Reference

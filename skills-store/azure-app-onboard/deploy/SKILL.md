@@ -1,3 +1,8 @@
+---
+name: azure-app-onboard-deploy
+description: Jalankan IaC deployment aplikasi Azure lalu verifikasi health check setelah rilis.
+---
+
 # Deploy — IaC Execution & Health Verification
 
 ## Quick Reference

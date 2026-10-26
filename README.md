@@ -1,5 +1,7 @@
 # ~/.agents — Katalog Skill & Konfigurasi Agen (entry point)
 
+[![CI](https://github.com/mamad2411/agents-katalog/actions/workflows/ci.yml/badge.svg)](https://github.com/mamad2411/agents-katalog/actions/workflows/ci.yml)
+
 Satu tempat untuk katalog skill, indeks, dan utilitas lintas-agen.
 **Baca `AGENTS.md` di folder ini dulu** kalau kamu agen AI.
 
