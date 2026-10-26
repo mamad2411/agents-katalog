@@ -1,6 +1,6 @@
 ---
 name: scalar
-description: >
+description: "Scalar API documentation UI for .NET 10 applications. Covers setup, themes, authentication prefill, multiple documents, layout options, and security. A modern replacement for Swagger UI. Load this skill when setting up API documentation UI, or when the user mentions 'Scalar', 'MapScalarApiReference', 'API reference', 'Swagger UI replacement', 'API documentation UI', 'Scalar theme', 'interactive API docs', or 'Try It'."
   Scalar API documentation UI for .NET 10 applications. Covers setup, themes,
   authentication prefill, multiple documents, layout options, and security.
   A modern replacement for Swagger UI.

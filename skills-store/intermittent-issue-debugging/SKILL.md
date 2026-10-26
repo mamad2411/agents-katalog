@@ -1,6 +1,6 @@
 ---
 name: intermittent-issue-debugging
-description: >
+description: "Debug issues that occur sporadically and are hard to reproduce. Use monitoring and systematic investigation to identify root causes of flaky behavior."
   Debug issues that occur sporadically and are hard to reproduce. Use monitoring
   and systematic investigation to identify root causes of flaky behavior.
 ---

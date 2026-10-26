@@ -1,6 +1,6 @@
 ---
 name: gap-analysis
-description: >
+description: "Identify differences between current state and desired future state. Analyze gaps in capabilities, processes, skills, and technology to plan improvements and investments."
   Identify differences between current state and desired future state. Analyze
   gaps in capabilities, processes, skills, and technology to plan improvements
   and investments.

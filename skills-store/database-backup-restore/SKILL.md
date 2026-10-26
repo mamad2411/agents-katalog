@@ -1,6 +1,6 @@
 ---
 name: database-backup-restore
-description: >
+description: "Implement backup and restore strategies for disaster recovery. Use when creating backup plans, testing restore procedures, or setting up automated backups."
   Implement backup and restore strategies for disaster recovery. Use when
   creating backup plans, testing restore procedures, or setting up automated
   backups.

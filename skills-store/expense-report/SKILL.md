@@ -5,7 +5,7 @@
 
 # Basic Information
 name: expense-report
-description: ">"
+description: "This skill helps you organize business expenses into clear, categorized reports suitable for reimbursement requests, accounting, and tax preparation."
 version: "1.0.0"
 author: Claude Office Skills Contributors
 license: MIT

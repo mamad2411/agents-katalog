@@ -1,6 +1,6 @@
 ---
 name: email-service-integration
-description: >
+description: "Integrate email services with backends using SMTP, third-party providers, templates, and asynchronous sending. Use when implementing email functionality, sending transactional emails, and managing email workflows."
   Integrate email services with backends using SMTP, third-party providers,
   templates, and asynchronous sending. Use when implementing email
   functionality, sending transactional emails, and managing email workflows.

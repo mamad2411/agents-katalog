@@ -1,6 +1,6 @@
 ---
 name: canary-deployment
-description: >
+description: "Implement canary deployment strategies to gradually roll out new versions to subset of users with automatic rollback based on metrics."
   Implement canary deployment strategies to gradually roll out new versions to
   subset of users with automatic rollback based on metrics.
 ---

@@ -1,6 +1,6 @@
 ---
 name: neon-ai-gateway
-description: >-
+description: "One API and one credential for frontier and open-source LLMs, built into your Neon branch and powered by Databricks. Use when a user wants to call an LLM, add AI/chat/an agent to their app, route between model providers (OpenAI, Anthropic, Google/Gemini, Meta, Alibaba, and more), or avoid juggling separate provider API keys and accounts — especially when they already use Neon and want AI requests to branch with their project. Works with the OpenAI SDK, Anthropic SDK, google-genai, the Vercel AI SDK, and Mastra by changing only the base URL. Triggers include 'call an LLM', 'add AI to my app', '"
   One API and one credential for frontier and open-source LLMs, built into your
   Neon branch and powered by Databricks. Use when a user wants to call an LLM,
   add AI/chat/an agent to their app, route between model providers (OpenAI,

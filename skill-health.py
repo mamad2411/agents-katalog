@@ -6,7 +6,7 @@ Cek: symlink rusak · jumlah skill Cline · skill alur hilang · tes routing · 
 Hasil: ~/.agents/skill-health-report.md + notifikasi macOS bila ada masalah.
   --fix   hapus symlink rusak (hanya yang menunjuk ke ~/.agents)
 """
-import json, os, subprocess, sys, time
+import json, os, shutil, subprocess, sys, time
 
 H = os.path.expanduser("~")
 A = H + "/.agents"
@@ -24,8 +24,9 @@ def run(cmd, inp=None, t=30):
 
 
 # 1. symlink rusak
-tools = [A + "/skills"] + [f"{H}/{d}/skills" for d in os.listdir(H) if d.startswith(".") and d != ".agents"
-                           and os.path.isdir(f"{H}/{d}/skills") and not os.path.islink(f"{H}/{d}/skills")]
+tools = [t for t in ([A + "/skills"] + [f"{H}/{d}/skills" for d in os.listdir(H) if d.startswith(".") and d != ".agents"
+                      and os.path.isdir(f"{H}/{d}/skills") and not os.path.islink(f"{H}/{d}/skills")])
+         if os.path.isdir(t)]
 broken = []
 for t in tools:
     for e in os.scandir(t):
@@ -36,8 +37,12 @@ for t in tools:
 (bad if broken and not FIX else ok).append("symlink rusak: %d%s" % (len(broken), " (dihapus)" if FIX and broken else ""))
 
 # 2. Cline tetap ringan
-n = len(os.listdir(A + "/skills"))
-(ok if n <= CLINE_MAX else bad).append("skill Cline (~/.agents/skills): %d (batas %d)" % (n, CLINE_MAX))
+cl = A + "/skills"
+if not os.path.isdir(cl):
+    ok.append("skill Cline (~/.agents/skills): dimatikan (0 token)")
+else:
+    n = len(os.listdir(cl))
+    (ok if n <= CLINE_MAX else bad).append("skill Cline (~/.agents/skills): %d (batas %d)" % (n, CLINE_MAX))
 
 # 3. skill alur + tes routing
 rc, out = run(["python3", A + "/skill-flow.py", "--check"])
@@ -52,7 +57,16 @@ rc, out = run(["python3", A + "/skill-mcp.py"], req, 15)
 (ok if '"id": 2' in out and "Rekomendasi" in out else bad).append("MCP skill-catalog: " + ("merespons" if "Rekomendasi" in out else "TIDAK merespons"))
 
 
-# 5. hook terpasang
+# 5. skill 0 token (pengganti hook skill-inject yang sudah dipensiunkan)
+sk_ok = os.path.exists(H + "/.local/bin/sk") or shutil.which("sk") is not None
+idx_ok = os.path.exists(A + "/skillq.py") and os.path.exists(A + "/skills-index.db")
+if sk_ok and idx_ok:
+    ok.append("skill 0 token: sk + index siap")
+else:
+    bad.append("skill 0 token: " + ", ".join(x for x, v in
+               [("sk tidak di PATH", not sk_ok), ("skillq/index hilang", not idx_ok)] if v))
+
+# 6. MCP terdaftar
 def has(path, needle):
     try:
         return needle in open(os.path.expanduser(path)).read()
@@ -60,14 +74,6 @@ def has(path, needle):
         return False
 
 
-hooks = {"Claude Code": has("~/.claude/settings.json", "skill-inject.sh"),
-         "Codex": has("~/.codex/hooks.json", "skill-inject.sh"),
-         "Gemini": has("~/.gemini/settings.json", "skill-inject-gemini.py"),
-         "Cline": os.path.exists(H + "/.cline/hooks/UserPromptSubmit.py")}
-miss = [k for k, v in hooks.items() if not v]
-(bad if miss else ok).append("hook: " + ("semua terpasang" if not miss else "hilang di " + ", ".join(miss)))
-
-# 6. MCP terdaftar
 cfgs = ["~/.claude.json", "~/.gemini/settings.json", "~/.cursor/mcp.json", "~/.cline/mcp.json", "~/.continue/mcp.json",
         "~/.kiro/mcp.json", "~/.codeium/mcp.json", "~/.config/opencode/opencode.json", "~/.qwen/settings.json",
         "~/.codebuddy/mcp.json", "~/.codex/config.toml"]

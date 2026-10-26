@@ -5,7 +5,7 @@
 
 # Basic Information
 name: data-extractor
-description: ">"
+description: "This skill enables extraction of structured data from any document format using **unstructured** - a unified library for processing PDFs, Word docs, emails, HTML, and more. Get consistent, structured output regardless of input format."
 version: "1.0"
 author: claude-office-skills
 license: MIT

@@ -1,6 +1,6 @@
 ---
 name: refactor-react-effects
-description: |
+description: "Refactor avoidable React useEffect usage in Langfuse frontend code. Use when adding, reviewing, or removing effects; initializing forms or local UI state from query data; synchronizing client and server state; moving mutations or async workflows out of components; cleaning every effect from a frontend submodule; or reviewing whether an effect has a valid external-system owner."
   Refactor avoidable React useEffect usage in Langfuse frontend code. Use when
   adding, reviewing, or removing effects; initializing forms or local UI state
   from query data; synchronizing client and server state; moving mutations or

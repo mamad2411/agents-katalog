@@ -1,6 +1,6 @@
 ---
 name: instinct-system
-description: >
+description: "Unified learning-and-memory system: confidence-scored instincts (observe-hypothesize-confirm, stored in .claude/instincts.md), user corrections captured as permanent rules in MEMORY.md, and organic discoveries logged to .claude/learning-log.md. Includes status, export, and import modes. Load this skill when you notice a recurring pattern, a user corrects your output, or you discover something non-obvious. Triggers: 'show instincts', 'what have you learned', 'list instincts', 'export instincts', 'share instincts', 'import instincts', 'load instincts from', 'learn this', 'I think they always', '"
   Unified learning-and-memory system: confidence-scored instincts
   (observe-hypothesize-confirm, stored in .claude/instincts.md), user
   corrections captured as permanent rules in MEMORY.md, and organic

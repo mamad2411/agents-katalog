@@ -2,7 +2,7 @@
 name: agent-platform-model-registry
 metadata:
   category: AiAndMachineLearning
-description: >-
+description: "Agent Platform Model Registry Management. Use when you need to upload, list, describe, update, or delete machine learning models (and their versions) in the Agent Platform Model Registry. Don't use for model training, model deployment to endpoints, or managing non-Agent Platform models."
   Agent Platform Model Registry Management. Use when you need to upload, list,
   describe, update, or delete machine learning models (and their versions)
   in the Agent Platform Model Registry. Don't use for model training, model

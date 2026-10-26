@@ -1,6 +1,6 @@
 ---
 name: memory-optimization
-description: >
+description: "Profile and optimize application memory usage. Identify memory leaks, reduce memory footprint, and improve efficiency for better performance and reliability."
   Profile and optimize application memory usage. Identify memory leaks, reduce
   memory footprint, and improve efficiency for better performance and
   reliability.

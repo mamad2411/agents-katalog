@@ -1,6 +1,6 @@
 ---
 name: adr-backfill
-description: |
+description: "This skill should be used to retroactively record an architectural decision that was made in the past but never written up as an ADR — typically surfaced by a doc audit or by a user realising a long-ago shipped change should have been documented. PROACTIVELY activate on 'backfill ADR', 'retroactive ADR', 'post-hoc ADR', 'reconstruct an ADR from history', 'write up a past decision', 'we never documented this decision', 'decision was made but no ADR exists', 'we decided years ago', 'back when', 'before my time', or 'the audit surfaced a backfill candidate.' Tense rule: `adr-drafting` claims 'we "
   This skill should be used to retroactively record an architectural decision that was made in the past but never written up as an ADR — typically surfaced by a doc audit or by a user realising a long-ago shipped change should have been documented.
   PROACTIVELY activate on "backfill ADR", "retroactive ADR", "post-hoc ADR", "reconstruct an ADR from history", "write up a past decision", "we never documented this decision", "decision was made but no ADR exists", "we decided years ago", "back when", "before my time", or "the audit surfaced a backfill candidate."
   Tense rule: `adr-drafting` claims "we decided / we're deciding"; `adr-backfill` claims "we decided years ago / back when / before my time / never wrote it down." Refuses when reconstruction confidence is `low` -- routes to `open-questions.md`. Requires evidence in two independent locations and a verbatim honesty clause in the record.

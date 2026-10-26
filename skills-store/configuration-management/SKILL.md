@@ -1,6 +1,6 @@
 ---
 name: configuration-management
-description: >
+description: "Manage application configuration including environment variables, settings management, configuration hierarchies, secret management, feature flags, and 12-factor app principles. Use for config, environment setup, or settings management."
   Manage application configuration including environment variables, settings
   management, configuration hierarchies, secret management, feature flags, and
   12-factor app principles. Use for config, environment setup, or settings

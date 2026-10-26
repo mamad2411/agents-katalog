@@ -1,6 +1,6 @@
 ---
 name: google-agents-cli-eval
-description: >
+description: "This skill should be used when the user wants to 'run an evaluation', 'evaluate my agent', 'evaluate my ADK agent', 'write an eval dataset', 'analyze eval failures', 'compare eval results', 'optimize agent', or needs guidance on the Agent Platform eval methodology and the Quality Flywheel. Covers eval metrics, dataset schema, LLM-as-judge scoring, and common failure causes. Applies to any agents-cli project, whatever framework the agent is written in. Do NOT use for agent API code patterns (ADK: use google-agents-cli-adk-code), deployment (use google-agents-cli-deploy), or project scaffolding "
   This skill should be used when the user wants to "run an evaluation",
   "evaluate my agent", "evaluate my ADK agent", "write an eval dataset",
   "analyze eval failures", "compare eval results", "optimize agent", or needs

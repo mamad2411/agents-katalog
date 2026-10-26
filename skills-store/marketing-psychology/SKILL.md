@@ -1,6 +1,6 @@
 ---
 name: marketing-psychology
-description: |
+description: "Apply psychological principles and behavioral science to copy and design. Useful for tightening hooks, framing, and pricing presentation."
   Apply psychological principles and behavioral science to copy and design. Useful for tightening hooks, framing, and pricing presentation.
 triggers:
   - "marketing psychology"

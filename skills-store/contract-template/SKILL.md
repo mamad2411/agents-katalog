@@ -5,7 +5,7 @@
 
 # Basic Information
 name: contract-template
-description: ">"
+description: "This skill enables creation of smart contract templates using **Accord Project** - an open-source framework for legally enforceable, machine-readable contracts. Create templates with embedded logic that can automate contract execution."
 version: "1.0"
 author: claude-office-skills
 license: MIT

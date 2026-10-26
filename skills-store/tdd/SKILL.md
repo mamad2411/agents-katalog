@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: >
+description: "Guided test-driven development workflow for .NET 10 using xUnit v3, WebApplicationFactory, Testcontainers, and Verify snapshots. Follows the strict red-green-refactor cycle. Use when: 'TDD', 'test-driven', 'let's TDD this', 'red green refactor', 'write the test first', or when building a feature with clear acceptance criteria."
   Guided test-driven development workflow for .NET 10 using xUnit v3,
   WebApplicationFactory, Testcontainers, and Verify snapshots. Follows the
   strict red-green-refactor cycle. Use when: "TDD", "test-driven", "let's TDD

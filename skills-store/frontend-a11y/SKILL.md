@@ -1,6 +1,6 @@
 ---
 name: frontend-a11y
-description: >
+description: "Accessibility patterns for React and Next.js — semantic HTML, ARIA attributes, form labeling, keyboard navigation, focus management, and screen reader support. Use when building any interactive UI component or form."
   Accessibility patterns for React and Next.js — semantic HTML, ARIA attributes,
   form labeling, keyboard navigation, focus management, and screen reader support.
   Use when building any interactive UI component or form.

@@ -1,6 +1,6 @@
 ---
 name: mobile-first-design
-description: >
+description: "Design for mobile devices first, then scale up to larger screens. Create responsive interfaces that work seamlessly across all device sizes."
   Design for mobile devices first, then scale up to larger screens. Create
   responsive interfaces that work seamlessly across all device sizes.
 ---

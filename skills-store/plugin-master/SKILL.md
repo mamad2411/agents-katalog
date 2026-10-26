@@ -1,6 +1,6 @@
 ---
 name: plugin-master
-description: |
+description: "Complete guide to Claude Code plugin development, architecture, directory layout, components, and marketplace publishing. PROACTIVELY activate for: (1) creating a plugin from scratch, (2) building or scaffolding a plugin, (3) writing plugin.json, (4) adding commands/agents/skills/hooks/MCP servers, (5) packaging code as a plugin, (6) publishing to a marketplace, (7) validating plugin structure, (8) marketplace.json registration, (9) cross-platform compatibility, (10) version and metadata sync. Provides: plugin schema, layouts, workflows, and publishing steps."
   Complete guide to Claude Code plugin development, architecture, directory layout, components, and marketplace publishing.
   PROACTIVELY activate for: (1) creating a plugin from scratch, (2) building or scaffolding a plugin, (3) writing plugin.json, (4) adding commands/agents/skills/hooks/MCP servers, (5) packaging code as a plugin, (6) publishing to a marketplace, (7) validating plugin structure, (8) marketplace.json registration, (9) cross-platform compatibility, (10) version and metadata sync.
   Provides: plugin schema, layouts, workflows, and publishing steps.

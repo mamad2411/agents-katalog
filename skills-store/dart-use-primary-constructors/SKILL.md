@@ -1,6 +1,6 @@
 ---
 name: dart-use-primary-constructors
-description: >
+description: "Help users write syntactically and semantically correct primary constructors in Dart, and migrate/use the new constructor syntax, empty-body semicolon syntax, in-body initializer list syntax, and abbreviated concise constructor syntax."
   Help users write syntactically and semantically correct primary constructors in Dart, and migrate/use the new constructor syntax, empty-body semicolon syntax, in-body initializer list syntax, and abbreviated concise constructor syntax.
 metadata:
   model: models/gemini-3.1-pro-preview

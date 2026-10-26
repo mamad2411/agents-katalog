@@ -1,6 +1,6 @@
 ---
 name: bash-master
-description: |
+description: "Expert bash/shell scripting across environments where Bash is available (Linux, macOS, Git Bash on Windows, WSL, containers). This is a Bash-focused skill - it does not provide PowerShell parity; on Windows the target is the Bash interpreter (Git Bash / WSL), not native PowerShell. PROACTIVELY activate for: (1) ANY bash/shell script task, (2) System automation, (3) DevOps/CI/CD scripts, (4) Build/deployment automation, (5) Script review/debugging, (6) Converting commands to scripts. Provides: Google Shell Style Guide compliance, ShellCheck validation, Bash portability across Linux/macOS/WSL/Gi"
   Expert bash/shell scripting across environments where Bash is available
   (Linux, macOS, Git Bash on Windows, WSL, containers). This is a Bash-focused
   skill - it does not provide PowerShell parity; on Windows the target is the

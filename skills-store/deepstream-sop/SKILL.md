@@ -1,6 +1,6 @@
 ---
 name: "deepstream-sop"
-description: >
+description: "Use this skill when building, deploying, evaluating, debugging, or measuring latency for the DeepStream SOP Inference Microservice — a GPU-accelerated FastAPI service that detects whether operators perform assembly-line steps in order via event boundary detection (GEBD) plus VLM classification. Trigger even if the user does not name it: verify operator step sequence, detect missing or out-of-order SOP steps, score factory/work-cell video for procedure compliance, run VLM-based SOP checking on industrial cameras, or call /v1/chat/completions with a file, RTSP, or Basler camera. Also trigger for"
   Use this skill when building, deploying, evaluating, debugging, or measuring
   latency for the DeepStream SOP Inference Microservice — a GPU-accelerated
   FastAPI service that detects whether operators perform assembly-line steps in

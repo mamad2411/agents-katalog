@@ -1,6 +1,6 @@
 ---
 name: cpu-profiling
-description: >
+description: "Profile CPU usage to identify hot spots and bottlenecks. Optimize code paths consuming most CPU time for better performance and resource efficiency."
   Profile CPU usage to identify hot spots and bottlenecks. Optimize code paths
   consuming most CPU time for better performance and resource efficiency.
 ---

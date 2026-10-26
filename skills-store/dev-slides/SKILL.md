@@ -5,7 +5,7 @@
 
 # Basic Information
 name: dev-slides
-description: ">"
+description: "This skill enables creation of developer-focused presentations using **Slidev** - a Vue-powered presentation framework. Write slides in Markdown with live code demos, diagrams, and components."
 version: "1.0"
 author: claude-office-skills
 license: MIT

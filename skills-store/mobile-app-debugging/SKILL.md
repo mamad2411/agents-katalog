@@ -1,6 +1,6 @@
 ---
 name: mobile-app-debugging
-description: >
+description: "Debug issues specific to mobile applications including platform-specific problems, device constraints, and connectivity issues."
   Debug issues specific to mobile applications including platform-specific
   problems, device constraints, and connectivity issues.
 ---

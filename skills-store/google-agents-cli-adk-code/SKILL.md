@@ -1,6 +1,6 @@
 ---
 name: google-agents-cli-adk-code
-description: >
+description: "This skill should be used when the user wants to 'write agent code', 'build an agent with ADK', 'add a tool', 'create a callback', 'define an agent', 'use state management', or needs ADK (Agent Development Kit) Python API patterns and code examples. Part of the Google ADK skills suite. It provides a quick reference for agent types, tool definitions, orchestration patterns, callbacks, state management, and reference recipes to study. Do NOT use for scaffolding (use google-agents-cli-scaffold) or deployment (use google-agents-cli-deploy)."
   This skill should be used when the user wants to "write agent code",
   "build an agent with ADK", "add a tool", "create a callback", "define an agent",
   "use state management", or needs ADK (Agent Development Kit) Python API patterns

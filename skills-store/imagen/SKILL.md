@@ -1,6 +1,6 @@
 ---
 name: imagen
-description: |
+description: "Generate images using Google Gemini's image generation API for UI mockups, icons, illustrations, and visual assets."
   Generate images using Google Gemini's image generation API for UI mockups, icons, illustrations, and visual assets.
 triggers:
   - "gemini image"

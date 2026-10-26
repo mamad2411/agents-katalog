@@ -1,6 +1,6 @@
 ---
 name: fal-upscale
-description: |
+description: "Upscale and enhance image and video resolution using AI super-resolution models hosted on fal.ai."
   Upscale and enhance image and video resolution using AI super-resolution models hosted on fal.ai.
 triggers:
   - "fal upscale"

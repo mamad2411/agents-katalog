@@ -1,6 +1,6 @@
 ---
 name: cloud-storage-optimization
-description: >
+description: "Optimize cloud storage across AWS S3, Azure Blob, and GCP Cloud Storage with compression, partitioning, lifecycle policies, and cost management."
   Optimize cloud storage across AWS S3, Azure Blob, and GCP Cloud Storage with
   compression, partitioning, lifecycle policies, and cost management.
 ---

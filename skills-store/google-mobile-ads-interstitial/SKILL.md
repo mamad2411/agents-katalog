@@ -1,6 +1,6 @@
 ---
 name: google-mobile-ads-interstitial
-description: >-
+description: "Provides instructions for implementing, integrating, or configuring Google Mobile Ads (GMA) SDK interstitial ads in Android, iOS, or Unity mobile applications. Use when the task involves setting up interstitial ads. Don't use for 'rewarded interstitial' ads."
   Provides instructions for implementing, integrating, or configuring Google
   Mobile Ads (GMA) SDK interstitial ads in Android, iOS, or Unity mobile
   applications. Use when the task involves setting up interstitial ads. Don't

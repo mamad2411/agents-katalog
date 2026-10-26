@@ -1,6 +1,6 @@
 ---
 name: performance-regression-debugging
-description: >
+description: "Identify and debug performance regressions from code changes. Use comparison and profiling to locate what degraded performance and restore baseline metrics."
   Identify and debug performance regressions from code changes. Use comparison
   and profiling to locate what degraded performance and restore baseline
   metrics.

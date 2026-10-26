@@ -1,7 +1,7 @@
 ---
 name: absolute-debt
 version: 0.5.0
-description: >
+description: "Lint and typecheck debt paydown: clear pre-existing repo-wide lint/type violations and suppressions (@ts-ignore, # type: ignore) one rule per wave, fixing causes not symptoms. Runs on green main. For diff-scoped quality use absolute-simplify. Triggers on 'absolute debt', 'fix our lint warnings', 'clear the type errors', 'get to strict mode', 'burn down suppressions'."
   Lint and typecheck debt paydown: clear pre-existing repo-wide lint/type violations and suppressions (@ts-ignore, # type: ignore) one rule per wave, fixing causes not symptoms. Runs on green main. For diff-scoped quality use absolute-simplify.
   Triggers on "absolute debt", "fix our lint warnings", "clear the type errors", "get to strict mode", "burn down suppressions".
 category: workflow

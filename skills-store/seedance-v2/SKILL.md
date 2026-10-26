@@ -1,7 +1,7 @@
 ---
 name: seedance-v2
 displayName: "Seedance 2.0 Pro — Pro Pack on RunComfy"
-description: >
+description: "Generate cinematic short-form video with ByteDance Seedance 2.0 Pro on RunComfy. Documents Seedance 2.0 Pro's strengths (multi-modal references — up to 9 images, 3 videos, 3 audio — synchronized in-pass audio with natural lip-sync, cinematic motion refinement), the 4–15s duration schema, and when to route to HappyHorse 1.0 / Wan 2.7 / Kling instead. Calls `runcomfy run bytedance/seedance-v2/pro` through the local RunComfy CLI. Triggers on 'seedance', 'seedance 2', 'seedance v2', 'seedance pro', 'bytedance video', or any explicit ask to generate video with this model."
   Generate cinematic short-form video with ByteDance Seedance 2.0 Pro
   on RunComfy. Documents Seedance 2.0 Pro's strengths (multi-modal references
   — up to 9 images, 3 videos, 3 audio — synchronized in-pass audio with

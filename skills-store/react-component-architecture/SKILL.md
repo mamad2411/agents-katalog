@@ -1,6 +1,6 @@
 ---
 name: react-component-architecture
-description: >
+description: "Design scalable React components using functional components, hooks, composition patterns, and TypeScript. Use when building reusable component libraries and maintainable UI systems."
   Design scalable React components using functional components, hooks,
   composition patterns, and TypeScript. Use when building reusable component
   libraries and maintainable UI systems.

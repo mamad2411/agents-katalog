@@ -1,6 +1,6 @@
 ---
 name: plan-design-review
-description: |
+description: "Senior Designer review: rates each design dimension 0-10, explains what a 10 looks like, and flags AI Slop signals. Useful as a gate before merging UI work."
   Senior Designer review: rates each design dimension 0-10, explains what a 10 looks like, and flags AI Slop signals. Useful as a gate before merging UI work.
 triggers:
   - "plan design review"

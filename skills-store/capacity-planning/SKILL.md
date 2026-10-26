@@ -1,6 +1,6 @@
 ---
 name: capacity-planning
-description: >
+description: "Analyze team capacity, plan resource allocation, and balance workload across projects. Forecast staffing needs and optimize team utilization while maintaining sustainable pace."
   Analyze team capacity, plan resource allocation, and balance workload across
   projects. Forecast staffing needs and optimize team utilization while
   maintaining sustainable pace.

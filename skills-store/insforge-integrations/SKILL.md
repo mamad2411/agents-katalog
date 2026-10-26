@@ -1,6 +1,6 @@
 ---
 name: insforge-integrations
-description: >-
+description: "Use when wiring an external auth provider (Clerk, Auth0, WorkOS, Kinde, Stytch, Better Auth) into InsForge for JWT-based RLS, or when adding the OKX x402 payment facilitator for onchain pay-per-use billing."
   Use when wiring an external auth provider (Clerk, Auth0, WorkOS, Kinde,
   Stytch, Better Auth) into InsForge for JWT-based RLS, or when adding the
   OKX x402 payment facilitator for onchain pay-per-use billing.

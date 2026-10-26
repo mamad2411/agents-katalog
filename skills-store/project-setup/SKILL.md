@@ -1,6 +1,6 @@
 ---
 name: project-setup
-description: >
+description: "Tech-stack selection advisor for .NET projects: recommended defaults for database, auth, caching, messaging, observability, and resilience, with the rationale behind each default. Load when choosing or reviewing a project's tech stack, or when the user says 'tech stack', 'which database', 'pick a stack', 'recommended defaults', or 'what should I use for'. For project initialization use dotnet-init, for codebase assessment use health-check, for upgrades and schema changes use migrate."
   Tech-stack selection advisor for .NET projects: recommended defaults for
   database, auth, caching, messaging, observability, and resilience, with the
   rationale behind each default. Load when choosing or reviewing a project's

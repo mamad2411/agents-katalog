@@ -1,6 +1,6 @@
 ---
 name: skill-development
-description: |
+description: "Canonical guide to authoring SKILL.md files for Claude Code plugin skills. PROACTIVELY activate for: (1) creating a new skill, (2) adding a skill to a plugin, (3) writing SKILL.md frontmatter, (4) fixing skills that never trigger, (5) organizing core vs references vs examples, (6) improving weak skill descriptions, (7) progressive disclosure design, (8) splitting oversized SKILL.md files, (9) imperative body style, (10) zero-frontmatter SKILL.md files, (11) removing boilerplate from YAML descriptions. Provides: skill template, trigger checklist, size rules, and validation process."
   Canonical guide to authoring SKILL.md files for Claude Code plugin skills.
   PROACTIVELY activate for: (1) creating a new skill, (2) adding a skill to a plugin, (3) writing SKILL.md frontmatter, (4) fixing skills that never trigger, (5) organizing core vs references vs examples, (6) improving weak skill descriptions, (7) progressive disclosure design, (8) splitting oversized SKILL.md files, (9) imperative body style, (10) zero-frontmatter SKILL.md files, (11) removing boilerplate from YAML descriptions.
   Provides: skill template, trigger checklist, size rules, and validation process.

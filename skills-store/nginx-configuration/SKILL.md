@@ -1,6 +1,6 @@
 ---
 name: nginx-configuration
-description: >
+description: "Configure Nginx web server for high-performance reverse proxy, load balancing, SSL/TLS, caching, and API gateway functionality."
   Configure Nginx web server for high-performance reverse proxy, load balancing,
   SSL/TLS, caching, and API gateway functionality.
 ---

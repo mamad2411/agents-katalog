@@ -1,6 +1,6 @@
 ---
 name: alert-management
-description: >
+description: "Implement comprehensive alert management with PagerDuty, escalation policies, and incident coordination. Use when setting up alerting systems, managing on-call schedules, or coordinating incident response."
   Implement comprehensive alert management with PagerDuty, escalation policies,
   and incident coordination. Use when setting up alerting systems, managing
   on-call schedules, or coordinating incident response.

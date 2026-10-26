@@ -5,7 +5,7 @@
 
 # Basic Information
 name: cv-builder
-description: ">"
+description: "This skill enables creation of professional CVs/resumes from structured YAML using **rendercv**. Define your experience once, generate beautiful PDFs in multiple themes."
 version: "1.0"
 author: claude-office-skills
 license: MIT

@@ -132,7 +132,7 @@ check_action_versions() {
                 action=$(echo "$action" | tr -d '"' | tr -d "'" | xargs)
 
                 # Check if this action is in our version database
-                if [[ -v ACTION_VERSIONS["$action"] ]]; then
+                if [[ -n "${{ACTION_VERSIONS["$action"]+x}}" ]]; then
                     local version_info="${ACTION_VERSIONS[$action]}"
                     local current_version="${version_info%%:*}"
                     local minimum_version="${version_info##*:}"

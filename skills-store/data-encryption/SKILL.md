@@ -1,6 +1,6 @@
 ---
 name: data-encryption
-description: >
+description: "Implement strong encryption using AES, RSA, TLS, and proper key management. Use when securing data at rest, in transit, or implementing end-to-end encryption."
   Implement strong encryption using AES, RSA, TLS, and proper key management.
   Use when securing data at rest, in transit, or implementing end-to-end
   encryption.

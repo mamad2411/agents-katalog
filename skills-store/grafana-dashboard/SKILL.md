@@ -1,6 +1,6 @@
 ---
 name: grafana-dashboard
-description: >
+description: "Create professional Grafana dashboards with visualizations, templating, and alerts. Use when building monitoring dashboards, creating data visualizations, or setting up operational insights."
   Create professional Grafana dashboards with visualizations, templating, and
   alerts. Use when building monitoring dashboards, creating data visualizations,
   or setting up operational insights.

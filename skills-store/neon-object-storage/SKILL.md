@@ -1,6 +1,6 @@
 ---
 name: neon-object-storage
-description: >-
+description: "S3-compatible object storage that branches with your Neon project, so files and the database stay in sync across every branch. Use when a user wants object storage, a bucket, blob/file storage, or somewhere to put uploads, images, documents, avatars, or user-generated files for their app or agent — especially when they already use (or are setting up) Lakebase Postgres and don't want to add a separate storage provider like AWS S3, Cloudflare R2, or Supabase Storage. Triggers include 'object storage', 'bucket', 'blob storage', 'file storage', 'store uploads/images/files', 'S3-compatible storage'"
   S3-compatible object storage that branches with your Neon project, so files
   and the database stay in sync across every branch. Use when a user wants
   object storage, a bucket, blob/file storage, or somewhere to put uploads,

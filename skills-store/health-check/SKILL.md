@@ -1,6 +1,6 @@
 ---
 name: health-check
-description: >
+description: "Multi-dimensional health assessment for .NET projects with letter grades (A-F) using Roslyn MCP tools. Evaluates 8 dimensions: build health, code quality, architecture, test coverage, dead code, API surface, security posture, and documentation. Produces a structured report card with actionable recommendations. Load this skill when: 'health check', 'how healthy is this', 'project health', 'code quality report', 'grade this project', 'assess codebase', 'quality audit', 'technical assessment', 'codebase review', 'report card'."
   Multi-dimensional health assessment for .NET projects with letter grades (A-F)
   using Roslyn MCP tools. Evaluates 8 dimensions: build health, code quality,
   architecture, test coverage, dead code, API surface, security posture, and

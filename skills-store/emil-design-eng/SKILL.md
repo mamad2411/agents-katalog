@@ -1,6 +1,6 @@
 ---
 name: emil-design-eng
-description: |
+description: "This skill encodes Emil Kowalski's philosophy on UI polish, component design, animation decisions, and the invisible details that make software feel great."
   This skill encodes Emil Kowalski's philosophy on UI polish, component design, animation decisions, and the invisible details that make software feel great.
 triggers:
   - "emil kowalski"

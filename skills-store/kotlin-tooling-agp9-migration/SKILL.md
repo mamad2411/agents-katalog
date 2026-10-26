@@ -1,6 +1,6 @@
 ---
 name: kotlin-tooling-agp9-migration
-description: >
+description: "Migrates Kotlin Multiplatform (KMP) projects to Android Gradle Plugin 9.0+. Handles plugin replacement (com.android.kotlin.multiplatform.library), module splitting, DSL migration, and the new default project structure. Use when upgrading AGP, when build fails due to KMP+AGP incompatibility, or when the user mentions AGP 9.0, android multiplatform plugin, KMP migration, or com.android.kotlin.multiplatform.library."
   Migrates Kotlin Multiplatform (KMP) projects to Android Gradle Plugin 9.0+.
   Handles plugin replacement (com.android.kotlin.multiplatform.library), module
   splitting, DSL migration, and the new default project structure. Use when

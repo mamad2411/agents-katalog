@@ -1,6 +1,6 @@
 ---
 name: feature-flag-system
-description: >
+description: "Implement feature flags (toggles) for controlled feature rollouts, A/B testing, canary deployments, and kill switches. Use when deploying new features gradually, testing in production, or managing feature lifecycles."
   Implement feature flags (toggles) for controlled feature rollouts, A/B
   testing, canary deployments, and kill switches. Use when deploying new
   features gradually, testing in production, or managing feature lifecycles.

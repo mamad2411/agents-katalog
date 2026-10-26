@@ -1,0 +1,60 @@
+---
+description: aturan global AI
+alwaysApply: true
+---
+
+
+
+# RULES — aturan global semua AI (kanonik)
+
+Digenerate dari file ini oleh `python3 ~/.agents/sync-rules.py`. Jangan edit file hasil;
+edit `~/.agents/RULES.md` (kanonik) atau `~/.agents/rules/<tool>.md` (tambahan per tool).
+
+## Skill: 0 token
+Katalog **263.916 skill** di `~/.agents/skills-index.db`. Cari lewat shell, bukan MCP:
+`python3 ~/.agents/skillq.py "<tugas>" -n 5` → `python3 ~/.agents/skillq.py -l <nama>`.
+Maks 1-2 skill per tugas; skill punya `scripts/` → jalankan, jangan tulis ulang.
+Tidak ada yang cocok → kerja dari nol. Skill native & MCP `skill-catalog` DIMATIKAN —
+kalau script tidak dipanggil kamu tidak punya skill, jangan ngarang nama skill.
+
+## Ekonomi token
+- Ringkas output tool ≤800 char; jangan dump mentah.
+- Jangan baca ulang file; paralelkan call yang bebas; `grep -n` dulu, baca 40 baris sekitar hit.
+- Jangan baca penuh: `vendor/`, `node_modules/`, `dist/`, `*.min.js`, `skills-expanded/`.
+- Jangan tempel gambar di sesi panjang (base64 ikut terkirim tiap request).
+- Konteks >40% → sarankan `/clear` atau `/compact`; sesi >200 pesan → tutup + catat handoff.
+- Tugas remeh → model murah; arsitektur/debug berat → model flagship.
+- Ukur: `python3 ~/.agents/ai-context-audit.py`.
+
+## Rencana + output
+- Rencana muncul tiap tugas: 3-7 langkah satu baris, lalu "Gas eksekusi?" — tanpa esai, tanpa tool.
+- Jawaban ≤15 baris. Tanpa pembuka, penutup, atau ringkasan ulang.
+- Laporan selesai 4 baris: ✅ Selesai / 📁 File / 🧪 Uji / ⚠️ Catatan.
+- Kode: blok kode + 1 kalimat. Jangan jelaskan per baris.
+- Pengecualian: user minta "jelaskan detail"/"tutorial" → boleh panjang.
+- Alur: pahami → cari skill → rencana → eksekusi → verifikasi → poles → lapor jujur.
+
+## Verifikasi & kejujuran
+- Tanpa bukti (exit code / output) = belum selesai. Jangan bilang "berhasil" tanpa uji.
+- Fail loud: laporkan error persis. Jangan fallback diam-diam, jangan workaround tanpa izin.
+- Baca file sebelum mengubah; pastikan API/import benar-benar ada.
+
+## MCP & aset on-demand
+- Jangan nyalakan semua MCP: `mamat-mcp list` → hidupkan hanya yang dipakai saat itu.
+- Setelah toggle MCP: `mamat-mcp restart`, lalu buka ulang app (config dibaca saat start).
+- Aset komunitas (prompt/agent/rule): `mcp-router` → `retrieve(query, k)` → `cap_get(id)`.
+- Detail panjang dibaca hanya kalau perlu: `~/.agents/SKILL-FLOW.md`, `~/.agents/AGENTS.md`.
+
+## Anti-429
+`429 quota_balance_exhausted` = kuota habis, retry tidak menolong.
+1. Ganti model yang masih ada kuota. 2. Tutup sesi berat, buka sesi baru, jangan `--resume`.
+3. Hemat token per request. 4. Semua habis → tunggu reset, jangan spam retry.
+
+## Cursor — tambahan
+
+Aturan detail (animation workflow, tabel spesialis) ada di
+`~/.agents/rules/cursor-full.md` — baca hanya kalau tugasnya animasi atau butuh
+agent domain. Selain itu ikuti RULES di atas apa adanya.
+
+---
+_Sumber: `~/.agents/RULES.md` + `~/.agents/rules/cursor.md`. Jangan edit file ini langsung — edit sumbernya lalu jalankan `python3 ~/.agents/sync-rules.py`._

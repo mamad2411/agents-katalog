@@ -1,6 +1,6 @@
 ---
 name: swarm
-description: >-
+description: "Dispatches many independent items in parallel: create a table, fan out to subagents, aggregate results. One row = one unit of work."
   Dispatches many independent items in parallel: create a table, fan out to
   subagents, aggregate results. One row = one unit of work.
 compatibility: >-

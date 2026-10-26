@@ -1,6 +1,6 @@
 ---
 name: css-architecture
-description: >
+description: "Organize CSS using BEM, SMACSS, and CSS-in-JS patterns. Use when building scalable, maintainable styling systems with proper naming conventions."
   Organize CSS using BEM, SMACSS, and CSS-in-JS patterns. Use when building
   scalable, maintainable styling systems with proper naming conventions.
 ---

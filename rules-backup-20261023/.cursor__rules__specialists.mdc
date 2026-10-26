@@ -1,0 +1,23 @@
+---
+description: 8 specialist sub-agents (security, database, network, devops, AI agent, RAG, MLOps, data)
+globs: []
+alwaysApply: true
+---
+
+<!-- specialists:start -->
+## Spesialis (8) — pakai sesuai domain
+
+| Domain | Agent | Definisi |
+|---|---|---|
+| security, audit, secrets, supply chain | sentinel | `~/.claude/agents/sentinel.md` |
+| database, index, migrasi, query tuning | dbmaster | `~/.claude/agents/dbmaster.md` |
+| jaringan, DNS, TLS, firewall, latency | netwatch | `~/.claude/agents/netwatch.md` |
+| CI/CD, Kubernetes, IaC, observability | deployer | `~/.claude/agents/deployer.md` |
+| desain agent, MCP, tool, memori, guardrail | agentor | `~/.claude/agents/agentor.md` |
+| RAG, chunking, hybrid, rerank, eval | retriever | `~/.claude/agents/retriever.md` |
+| fine-tuning, quant, serving, eval model | trainer | `~/.claude/agents/trainer.md` |
+| ingestion, modeling, orchestration, data quality | pipeliner | `~/.claude/agents/pipeliner.md` |
+
+Sebelum kerja di domain itu: baca file agent-nya, lalu ambil skill yang cocok
+`python3 ~/.agents/retrieve.py "<topik>" -k 5`. Jangan mengarang metode.
+<!-- specialists:end -->

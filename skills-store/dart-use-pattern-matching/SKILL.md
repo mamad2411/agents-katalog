@@ -1,6 +1,6 @@
 ---
 name: dart-use-pattern-matching
-description: >-
+description: "Applies Dart 3 pattern matching, switch expressions, and destructuring idiomatically to validate data schemas, handle algebraic data types, and decompose control flow. Use when refactoring complex if-else chains, parsing polymorphic JSON or API responses, destructuring Records or Maps, or enforcing exhaustiveness on sealed classes. Don't use for simple boolean conditions, single-variable type promotion (use `is`), or basic collection filtering."
   Applies Dart 3 pattern matching, switch expressions, and destructuring
   idiomatically to validate data schemas, handle algebraic data types, and
   decompose control flow. Use when refactoring complex if-else chains,

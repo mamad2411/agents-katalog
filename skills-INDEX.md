@@ -1,13 +1,13 @@
-# Skills INDEX — 2026-10-19 10:27
+# Skills INDEX — 2026-10-23 19:46
 
 Ringkasan katalog `~/.agents`. **Jangan edit file ini** — hasil generate `python3 ~/.agents/skills-index-md.py`.
 
 ## Angka pokok
 
-- Total entri: **192599**
-- `reference`: **188288** — hasil scraping, punya deskripsi (cari dulu sebelum pakai)
-- `curated`: **3194** — skill terpilih — sudah dirawat, layak di-invoke
-- `junk`: **1117** — BUKAN skill (API doc/HTML/license/terlalu pendek) — jangan di-link
+- Total entri: **264846**
+- `reference`: **249825** — hasil scraping, punya deskripsi (cari dulu sebelum pakai)
+- `junk`: **11751** — BUKAN skill (API doc/HTML/license/terlalu pendek) — jangan di-link
+- `curated`: **3270** — skill terpilih — sudah dirawat, layak di-invoke
 
 > **Baca angka dengan benar:** hanya `curated` yang boleh muncul sebagai kandidat
 > otomatis (hook/MCP). `reference` = bahan tambang — **wajib** dicek isinya dulu.
@@ -37,35 +37,35 @@ python3 ~/.agents/build_skills_index.py     # rebuild index (head 4 KB, cepat)
 
 | Kategori | Jumlah | Contoh |
 |---|---|---|
-| backend-developer | 54674 | `absolute-audit`, `accelerated-computing-cudf`, `access-control-rbac`, `ad-campaign-analyzer` |
-| designer | 24693 | `3dsvg-interactive-react`, `8-bit-orbit-video-template`, `a-b-test-analysis`, `ab-test-setup` |
-| creative-producer | 16740 | `absolute-debt`, `absolute-prune`, `absolute-upgrade`, `academic-search` |
-| frontend-developer | 15718 | `absolute-deflake`, `accessibility`, `accessibility-auditing`, `accessibility-compliance` |
-| game-developer | 15356 | `academy-guide`, `accessibility-auditor`, `adding-api-docs`, `adding-feature-flags` |
-| devops-engineer | 13714 | `acreadiness-policy`, `add-uint-support`, `adding-docker`, `adr-critique` |
-| qa-engineer | 11236 | `absolute-docs`, `absolute-init`, `absolute-simplify`, `access-review` |
-| data-scientist | 6376 | `adr-drafting`, `agent-eval`, `agent-self-evaluation`, `agent-setup-maintenance` |
-| mobile-developer | 5887 | `adf-master`, `android-clean-architecture`, `android-kotlin-development`, `anubis-android-app-manager` |
-| security-specialist | 5800 | `724-office-ai-agent`, `ad-creative`, `agentic-engineering`, `aglais-xqvm-quantum-vm` |
-| (kosong) | 3698 | `humanize-korean-ai-text` |
-| ai-engineer | 3247 | `add-educational-comments`, `agent-platform-prompt-management`, `agents-md`, `ai-prompt-engineering-safety-review` |
-| devtools-engineer | 2509 | `aube-package-manager`, `best-of-n-solving`, `configuration`, `conventional-commits` |
-| tech-writer | 2467 | `asana-automation`, `avoid-ai-writing`, `cmux-ghostty`, `content-humanizer` |
-| data-engineer | 2365 | `clawd-code-python-port`, `company-research`, `competitive-ads-extractor`, `create-technical-spike` |
-| product-manager | 2197 | `bench-read`, `clickup-automation`, `cohort-analysis`, `competitor-analysis` |
-| productivity-automator | 1419 | `agent-platform-rag-engine-management`, `calendar-automation`, `cc-connect-ai-bridge`, `copaw-ai-assistant` |
-| analyst | 1145 | `lead-qualification` |
-| fullstack-generalist | 885 | `create-implementation-plan`, `create-spring-boot-java-project`, `create-spring-boot-kotlin-project`, `java-springboot` |
-| blockchain-developer | 662 | `deck-swiss-international` |
-| architect | 441 | `debian-linux-triage`, `ef-core`, `fedora-linux-triage`, `financial-modeling` |
-| agent-ux | 426 | `mcp-builder`, `openclaw-local-mac-mini`, `parallel-exploring`, `skill-creator` |
-| uncategorized | 307 | — |
-| agent-orchestrator | 278 | `langgraph-human-in-the-loop`, `langgraph-persistence`, `langgraph-python-quickstart`, `linear-context-handover` |
-| agent-memory | 277 | `linkedin-obsidian-memory-graph` |
+| backend-developer | 71283 | `abp-dapr`, `accelerated-computing-cudf`, `access-control-rbac`, `ad-campaign-analyzer` |
+| designer | 35236 | `3dsvg-interactive-react`, `8-bit-orbit-video-template`, `a-b-test-analysis`, `ab-test-setup` |
+| frontend-developer | 22501 | `absolute-deflake`, `accessibility`, `accessibility-auditing`, `accessibility-compliance` |
+| creative-producer | 21480 | `absolute-debt`, `absolute-prune`, `absolute-upgrade`, `academic-search` |
+| game-developer | 21071 | `academy-guide`, `accessibility-auditor`, `add-hf-model`, `adding-api-docs` |
+| devops-engineer | 20986 | `acreadiness-policy`, `add-uint-support`, `adr-critique`, `agent-platform-alert-configuration` |
+| qa-engineer | 16396 | `absolute-init`, `absolute-simplify`, `access-review`, `adr-backfill` |
+| data-scientist | 8949 | `adr-drafting`, `agent-eval`, `agent-self-evaluation`, `agent-setup-maintenance` |
+| security-specialist | 8492 | `724-office-ai-agent`, `ad-creative`, `agentic-engineering`, `ai-elements` |
+| mobile-developer | 7949 | `adf-master`, `android-clean-architecture`, `android-kotlin-development`, `anubis-android-app-manager` |
+| (kosong) | 4783 | `humanize-korean-ai-text` |
+| ai-engineer | 4454 | `add-educational-comments`, `agent-platform-prompt-management`, `agents-md`, `ai-prompt-engineering-safety-review` |
+| tech-writer | 3655 | `asana-automation`, `avoid-ai-writing`, `cmux-ghostty`, `content-humanizer` |
+| devtools-engineer | 3501 | `aube-package-manager`, `best-of-n-solving`, `configuration`, `conventional-commits` |
+| product-manager | 3263 | `bench-read`, `clickup-automation`, `cohort-analysis`, `competitor-analysis` |
+| data-engineer | 3109 | `aod-plan`, `clawd-code-python-port`, `company-research`, `competitive-ads-extractor` |
+| productivity-automator | 1565 | `agent-platform-rag-engine-management`, `calendar-automation`, `cc-connect-ai-bridge`, `encrypted-docs` |
+| fullstack-generalist | 1394 | `create-implementation-plan`, `create-spring-boot-java-project`, `create-spring-boot-kotlin-project`, `java-springboot` |
+| analyst | 1304 | `lead-qualification` |
+| blockchain-developer | 948 | `deck-swiss-international`, `oracle-ai-architect` |
+| architect | 657 | `debian-linux-triage`, `ef-core`, `fedora-linux-triage`, `financial-modeling` |
+| agent-ux | 463 | `mcp-builder`, `openclaw-local-mac-mini`, `parallel-exploring`, `skill-creator` |
+| agent-orchestrator | 407 | `langgraph-human-in-the-loop`, `langgraph-python-quickstart`, `linear-context-handover`, `structured-autonomy-plan` |
+| agent-memory | 362 | `linkedin-obsidian-memory-graph` |
+| uncategorized | 304 | — |
 
 ## Kontaminan yang dipisah ke tier `docs`
 
-- Jumlah: **1117** entri → daftar di `skills-junk.txt` (bahan pembersihan P1).
+- Jumlah: **11751** entri → daftar di `skills-junk.txt` (bahan pembersihan P1).
 - Disaring karena: tanpa `description` di frontmatter, atau nama dokumentasi teknis (mis. `Util`, `Pool`, `Client`).
 
 ## Maintenance

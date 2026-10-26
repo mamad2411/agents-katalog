@@ -1,6 +1,6 @@
 ---
 name: checkpoint
-description: >
+description: "Mid-session save point: create a descriptive git commit and a brief handoff note, then keep working. Use before a risky change or refactor, when switching tasks, or to bank progress without ending the session. Triggers on: /checkpoint, 'checkpoint', 'save progress', 'commit and handoff', 'save state', 'pause here', 'before a risky change'. For the full end-of-session ritual with learning extraction, use /wrap-up instead."
   Mid-session save point: create a descriptive git commit and a brief handoff
   note, then keep working. Use before a risky change or refactor, when
   switching tasks, or to bank progress without ending the session. Triggers

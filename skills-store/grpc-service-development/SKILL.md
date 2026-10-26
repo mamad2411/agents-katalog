@@ -1,6 +1,6 @@
 ---
 name: grpc-service-development
-description: >
+description: "Build high-performance gRPC services with Protocol Buffers, bidirectional streaming, and microservice communication. Use when building gRPC servers, defining service contracts, or implementing inter-service communication."
   Build high-performance gRPC services with Protocol Buffers, bidirectional
   streaming, and microservice communication. Use when building gRPC servers,
   defining service contracts, or implementing inter-service communication.

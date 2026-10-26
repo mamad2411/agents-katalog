@@ -1,6 +1,6 @@
 ---
 name: linting
-description: >
+description: "Python linting with Ruff - an extremely fast linter written in Rust. Use when: (1) Standardizing code quality, (2) Fixing style warnings, (3) Enforcing rules in CI, (4) Replacing flake8/isort/pyupgrade/autoflake, (5) Configuring lint rules and suppressions."
   Python linting with Ruff - an extremely fast linter written in Rust. Use when:
   (1) Standardizing code quality, (2) Fixing style warnings, (3) Enforcing rules in CI,
   (4) Replacing flake8/isort/pyupgrade/autoflake, (5) Configuring lint rules and suppressions.

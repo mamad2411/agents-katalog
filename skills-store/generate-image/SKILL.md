@@ -1,6 +1,6 @@
 ---
 name: generate-image
-description: >-
+description: "Generate images using AI. Use when asked to generate, create, or make images, textures, icons, sprites, artwork, visual assets, or mockups. Supports OpenAI (gpt-image-2) and Google Gemini (Nano Banana). Requires an API key for the chosen provider."
   Generate images using AI. Use when asked to generate, create, or make images, textures,
   icons, sprites, artwork, visual assets, or mockups. Supports OpenAI (gpt-image-2) and
   Google Gemini (Nano Banana). Requires an API key for the chosen provider.

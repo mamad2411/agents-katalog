@@ -5,7 +5,7 @@
 
 # Basic Information
 name: weekly-report
-description: ">"
+description: "This skill helps you create consistent, well-structured weekly status reports that communicate progress, blockers, and plans effectively to your team, manager, or stakeholders."
 version: "1.0.0"
 author: Claude Office Skills Contributors
 license: MIT

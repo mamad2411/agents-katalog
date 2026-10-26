@@ -1,6 +1,6 @@
 ---
 name: monologue-notes-api
-description: >
+description: "Use this skill when the user wants to read or search their Monologue notes through the Monologue Notes REST API. It covers authentication with the MONOLOGUE_API_KEY environment variable, safe token handling, listing notes, fetching a single note, pagination, filters, and error handling. The API is read-only and should be accessed with direct HTTP requests such as curl or any equivalent REST client."
   Use this skill when the user wants to read or search their Monologue notes through the
   Monologue Notes REST API. It covers authentication with the MONOLOGUE_API_KEY environment
   variable, safe token handling, listing notes, fetching a single note, pagination, filters,

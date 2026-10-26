@@ -1,6 +1,6 @@
 ---
 name: competitor-analysis
-description: >
+description: "Analyze competitive landscape to identify strengths, weaknesses, opportunities, and threats. Inform product strategy and positioning based on market insights."
   Analyze competitive landscape to identify strengths, weaknesses,
   opportunities, and threats. Inform product strategy and positioning based on
   market insights.

@@ -2,7 +2,7 @@
 name: image-outpainting
 allowed-tools: Bash(runcomfy *)
 displayName: "Image Outpainting"
-description: >
+description: "Image outpainting on RunComfy via the `runcomfy` CLI — extend a still beyond its original canvas, fill in what the camera didn't capture, change aspect ratio (square → 16:9, portrait → landscape) while preserving the original content. Routes across Nano Banana 2 Edit (default, spatial-language driven), GPT Image 2 Edit (multi-ref with reference-style matching), FLUX Kontext Pro (single-shot maximum-preservation), and the brand edit endpoints (Seedream / Dreamina / Qwen / FLUX 2). Picks the right route based on whether the outpaint is prose-driven, reference-driven, or brand-locked. Triggers on"
   Image outpainting on RunComfy via the `runcomfy` CLI — extend a
   still beyond its original canvas, fill in what the camera didn't
   capture, change aspect ratio (square → 16:9, portrait → landscape)

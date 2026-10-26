@@ -1,6 +1,6 @@
 ---
 name: ios-swift-development
-description: >
+description: "Develop native iOS apps with Swift. Covers MVVM architecture, SwiftUI, URLSession for networking, Combine for reactive programming, and Core Data persistence."
   Develop native iOS apps with Swift. Covers MVVM architecture, SwiftUI,
   URLSession for networking, Combine for reactive programming, and Core Data
   persistence.

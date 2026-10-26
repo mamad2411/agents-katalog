@@ -76,19 +76,27 @@ def save_state(s):
 
 
 def gen_queries(n):
-    """n variasi query. TANPA stars/created (kombinasi itu balik 0 hasil) —
-    cukup path-hints varied untuk menembus batas 1.000 hasil/query."""
-    qs = []
-    for i in range(n):
-        p = PATH_HINTS[i % len(PATH_HINTS)]
-        qs.append(f"filename:SKILL.md path:{p}")
-    # tambah variasiname file (skill.md, Skill.md) tanpa path untukcakupan lain
-    extra = ["filename:SKILL.md", "filename:skill.md", "filename:Skill.md",
-             "filename:SKILL.md path:.", "filename:SKILL.md org:anthropics",
-             "filename:SKILL.md language:Markdown stars:>50"]
-    for q in extra:
-        if len(qs) < n:
+    """n query UNIK. Kombinasi path-hint × bucket stars/language supaya setiap
+    query menghasilkan set hasil berbeda (batas 1.000 hasil/query)."""
+    buckets = ["", "stars:1..5", "stars:6..20", "stars:21..100", "stars:101..500",
+               "stars:>500", "language:Markdown", "language:TypeScript",
+               "language:Python", "language:JavaScript"]
+    qs, seen = [], set()
+
+    def add(q):
+        if q not in seen:
+            seen.add(q)
             qs.append(q)
+
+    add("filename:SKILL.md")
+    add("filename:skill.md")
+    add("filename:Skill.md")
+    for p in PATH_HINTS:
+        add(f"filename:SKILL.md path:{p}")
+        for b in buckets[1:]:
+            add(f"filename:SKILL.md path:{p} {b}")
+    for b in buckets:
+        add(f"filename:SKILL.md {b}".strip())
     return qs[:n]
 
 
@@ -97,6 +105,8 @@ def enumerate_repos(plan, state):
     todo = [q for q in all_q if q not in state["queries_done"]][:plan]
     known = set(state["repos"])
     found = []
+    files = state.setdefault("files", [])
+    seen_files = {(f["repo"], f["path"]) for f in files}
     for i, q in enumerate(todo, 1):
         try:
             d = code_search(q)
@@ -108,54 +118,78 @@ def enumerate_repos(plan, state):
             continue
         for it in d.get("items", []):
             full = it["repository"]["full_name"]
+            path = it.get("path") or "SKILL.md"
+            if (full, path) not in seen_files:
+                seen_files.add((full, path))
+                files.append({"repo": full, "path": path})
             if full not in known:
                 known.add(full); found.append(full)
         state["queries_done"].append(q)
         if i % 10 == 0 or i == len(todo):
             state["repos"] = sorted(known); save_state(state)
-            print(f"  [{i}/{len(todo)}] query ok · repo unik: {len(known)}", flush=True)
+            print(f"  [{i}/{len(todo)}] query ok · repo unik: {len(known)} · file: {len(files)}", flush=True)
         time.sleep(6.5)
     state["repos"] = sorted(known); save_state(state)
     return found
 
 
-def raw_get(owner, repo, branch):
-    """download SKILL.md via curl (no rate limit). Return bytes or None."""
+def raw_get(owner, repo, branch, path="SKILL.md"):
+    """download file via curl (no rate limit). Return bytes or None."""
     import subprocess
-    url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/SKILL.md"
+    url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
     r = subprocess.run(["curl", "-s", "-f", "--max-time", "15", url],
                        capture_output=True)
     return r.stdout if r.returncode == 0 and r.stdout else None
 
 
+def fetch_one(item):
+    """Ambil 1 kandidat (dipakai paralel)."""
+    full, path = item["repo"], item["path"]
+    owner, repo = full.split("/", 1)
+    body = None
+    for br in ("HEAD", "main", "master"):
+        body = raw_get(owner, repo, br, path)
+        if body is not None:
+            break
+    return item, body
+
+
 def fetch_skills(repos, state):
+    from concurrent.futures import ThreadPoolExecutor
     conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     existing = {r[0] for r in conn.execute("SELECT name FROM skills")}
     conn.close()
+    files = state.get("files") or []
     done = set(state.get("done_repos", []))
-    todo = [r for r in repos if r not in done]
-    for i, full in enumerate(todo, 1):
-        owner, repo = full.split("/", 1)
-        body, found = None, False
-        for br in ("HEAD", "main", "master"):
-            body = raw_get(owner, repo, br)
+    todo = [f for f in files if f"{f['repo']}::{f['path']}" not in done]
+    print(f"  fetch paralel: {len(todo)} file", flush=True)
+    lock_existing = existing
+    i = 0
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        for item, body in ex.map(fetch_one, todo, chunksize=4):
+            i += 1
+            state["fetched"] += 1
+            full, path = item["repo"], item["path"]
             if body is not None:
-                found = True; break
-        state["fetched"] += 1
-        if found:
-            m = FM.search(body.decode("utf-8", "ignore"))
-            name = re.sub(r"-{2,}", "-", (m.group(1) if m else repo).lower()).strip("-")
-            if name in existing:
-                state["exists"] += 1
-            else:
-                d = os.path.join(DEST, f"ghscan-{owner}-{repo}")
-                os.makedirs(d, exist_ok=True)
-                open(os.path.join(d, "SKILL.md"), "wb").write(body)
-                existing.add(name); state["new"] += 1
-        done.add(full)
-        if i % 25 == 0:
-            state["done_repos"] = sorted(done); save_state(state)
-            print(f"  [fetch {i}/{len(todo)}] new={state['new']} exists={state['exists']}", flush=True)
+                m = FM.search(body.decode("utf-8", "ignore"))
+                fallback = os.path.splitext(os.path.basename(path))[0] if "/" in path else full.split("/")[1]
+                name = re.sub(r"-{2,}", "-", (m.group(1) if m else fallback).lower()).strip("-")
+                if name in lock_existing:
+                    state["exists"] += 1
+                else:
+                    owner, repo = full.split("/", 1)
+                    slug = re.sub(r"[^a-z0-9-]+", "-", f"ghscan-{owner}-{repo}-{name}")[:90].strip("-")
+                    d = os.path.join(DEST, slug)
+                    try:
+                        os.makedirs(d, exist_ok=True)
+                        open(os.path.join(d, "SKILL.md"), "wb").write(body)
+                        lock_existing.add(name); state["new"] += 1
+                    except OSError:
+                        state["err"] += 1
+            done.add(f"{full}::{path}")
+            if i % 200 == 0 or i == len(todo):
+                state["done_repos"] = sorted(done); save_state(state)
+                print(f"  [fetch {i}/{len(todo)}] new={state['new']} exists={state['exists']}", flush=True)
     state["done_repos"] = sorted(done); save_state(state)
 
 
@@ -200,8 +234,8 @@ def main():
     print(f"=== enumerasi {a.plan} query ===", flush=True)
     repos = enumerate_repos(a.plan, st)
     print(f"=== repo baru: {len(repos)} ===", flush=True)
-    if not a.no_fetch and repos:
-        print(f"=== ambil SKILL.md dari {len(repos)} repo ===", flush=True)
+    if not a.no_fetch and (repos or st.get("files")):
+        print(f"=== ambil SKILL.md ({len(st.get('files') or [])} file kandidat) ===", flush=True)
         fetch_skills(repos, st)
     status(); return 0
 

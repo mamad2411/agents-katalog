@@ -1,7 +1,7 @@
 ---
 name: absolute-spec
 version: 0.5.0
-description: >
+description: "Lightweight standalone design spec for AI coding agents: codebase scan → bounded clarify pass (3–5 questions, not a grill) → reviewed design doc written to docs/plans/ → independent scored review → stop. No task board, no build. Use when you want a spec to discuss, hand off, or review before committing to implementation. Chains into absolute-work when ready to build. Triggers on 'absolute spec', 'write a spec', 'spec out this feature', 'draft a design doc', 'I want a spec to hand off / review, don't build it yet'."
   Lightweight standalone design spec for AI coding agents: codebase scan → bounded
   clarify pass (3–5 questions, not a grill) → reviewed design doc written to
   docs/plans/ → independent scored review → stop. No task board, no build.

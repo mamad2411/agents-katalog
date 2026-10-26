@@ -1,6 +1,6 @@
 ---
 name: python-backend
-description: >
+description: "Python backend development expertise for FastAPI, security patterns, database operations, Upstash integrations, and code quality. Use when: (1) Building REST APIs with FastAPI, (2) Implementing JWT/OAuth2 authentication, (3) Setting up SQLAlchemy/async databases, (4) Integrating Redis/Upstash caching, (5) Refactoring AI-generated Python code (deslopification), (6) Designing API patterns, or (7) Optimizing backend performance."
   Python backend development expertise for FastAPI, security patterns, database operations,
   Upstash integrations, and code quality. Use when: (1) Building REST APIs with FastAPI,
   (2) Implementing JWT/OAuth2 authentication, (3) Setting up SQLAlchemy/async databases,

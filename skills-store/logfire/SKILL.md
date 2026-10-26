@@ -1,6 +1,6 @@
 ---
 name: logfire
-description: >
+description: "Structured observability with Pydantic Logfire and OpenTelemetry. Use when: (1) Adding traces/logs to Python APIs, (2) Instrumenting FastAPI, HTTPX, SQLAlchemy, or LLMs, (3) Setting up service metadata, (4) Configuring sampling or scrubbing sensitive data, (5) Testing observability code."
   Structured observability with Pydantic Logfire and OpenTelemetry. Use when: (1) Adding traces/logs to Python APIs,
   (2) Instrumenting FastAPI, HTTPX, SQLAlchemy, or LLMs, (3) Setting up service metadata,
   (4) Configuring sampling or scrubbing sensitive data, (5) Testing observability code.

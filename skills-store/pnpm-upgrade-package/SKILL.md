@@ -1,6 +1,6 @@
 ---
 name: pnpm-upgrade-package
-description: >-
+description: "Upgrade pnpm workspace dependencies to target/latest versions: direct/transitive bumps, release-age checks, temporary overrides, minimumReleaseAgeExclude, lockfile/dedupe verification."
   Upgrade pnpm workspace dependencies to target/latest versions:
   direct/transitive bumps, release-age checks, temporary overrides,
   minimumReleaseAgeExclude, lockfile/dedupe verification.

@@ -28,6 +28,10 @@ try:
     import subprocess
     subprocess.run(["python3", os.path.expanduser("~/.agents/mcp-lifecycle.py"), "--gc-if-due", "14"],
                    capture_output=True, timeout=10)  # murah: skip kalau baru jalan <14 hari
+    r = subprocess.run(["python3", os.path.expanduser("~/.agents/mcp-guard.py")],
+                       capture_output=True, text=True, timeout=10)
+    for line in (r.stdout or "").splitlines()[:2]:
+        print(line)
 except Exception:
     pass
 PY

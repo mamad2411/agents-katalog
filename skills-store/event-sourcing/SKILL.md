@@ -1,6 +1,6 @@
 ---
 name: event-sourcing
-description: >
+description: "Implement event sourcing and CQRS patterns using event stores, aggregates, and projections. Use when building audit trails, temporal queries, or systems requiring full history."
   Implement event sourcing and CQRS patterns using event stores, aggregates, and
   projections. Use when building audit trails, temporal queries, or systems
   requiring full history.

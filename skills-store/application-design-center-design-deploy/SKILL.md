@@ -1,6 +1,6 @@
 ---
 name: application-design-center-design-deploy
-description: >-
+description: "Processes GCP infrastructure design and deployment workflows within Application Design Center (ADC). Use when: - Designing GCP infrastructure with Terraform. - Validating local HCL. - Performing best-practice plan scans. - Importing templates to Application Design Center (ADC). - Deploying templates. - Troubleshooting deployment failures. Boundaries: - Only use for GCP-specific cloud infrastructure. - Only use for Terraform coding within the ADC context."
   Processes GCP infrastructure design and deployment workflows within Application Design Center (ADC).
   Use when:
   - Designing GCP infrastructure with Terraform.

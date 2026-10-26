@@ -2,7 +2,7 @@
 name: ai-video-generation
 displayName: "AI Video Generation"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Generate AI videos on RunComfy via the `runcomfy` CLI — a smart router across the full video-model catalog: HappyHorse 1.0 (Arena #1, native in-pass audio), Wan-AI Wan 2-7 (open weights, audio-driven lip-sync), ByteDance Seedance v2 / 1-5 / 1-0 (multi-modal cinematic), Kling 3.0 / 2-6, Google Veo 3-1, MiniMax Hailuo 2-3, ByteDance Dreamina 3-0. Covers text-to-video (t2v), image-to-video (i2v), and Veo's video-extend endpoint. The skill picks the right model for the user's intent (Arena-#1 quality, multi-shot character identity, in-pass audio, cinematic motion, fastest path, sub-15s clip, longe"
   Generate AI videos on RunComfy via the `runcomfy` CLI — a smart router
   across the full video-model catalog: HappyHorse 1.0 (Arena #1, native
   in-pass audio), Wan-AI Wan 2-7 (open weights, audio-driven lip-sync),

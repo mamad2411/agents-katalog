@@ -1,6 +1,6 @@
 ---
 name: sentry-instrumentation
-description: |
+description: "Decide whether and how errors report to Sentry. Use when touching capture or error-handling paths in `web/**`, triaging Sentry noise, or changing Sentry settings."
   Decide whether and how errors report to Sentry. Use when touching capture or
   error-handling paths in `web/**`, triaging Sentry noise, or changing Sentry settings.
 ---

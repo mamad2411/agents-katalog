@@ -1,6 +1,6 @@
 ---
 name: project-estimation
-description: >
+description: "Estimate project scope, timeline, and resource requirements using multiple estimation techniques including bottom-up, top-down, and analogous estimation methods for accurate project planning."
   Estimate project scope, timeline, and resource requirements using multiple
   estimation techniques including bottom-up, top-down, and analogous estimation
   methods for accurate project planning.

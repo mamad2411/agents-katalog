@@ -1,6 +1,6 @@
 ---
 name: agile-sprint-planning
-description: >
+description: "Plan and execute effective sprints using Agile methodologies. Define sprint goals, estimate user stories, manage sprint backlog, and facilitate daily standups to maximize team productivity and deliver value incrementally."
   Plan and execute effective sprints using Agile methodologies. Define sprint
   goals, estimate user stories, manage sprint backlog, and facilitate daily
   standups to maximize team productivity and deliver value incrementally.

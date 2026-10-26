@@ -1,6 +1,6 @@
 ---
 name: dt-obs-analytics
-description: >-
+description: "Analyze dashboards and notebooks using Davis analyzers — anomaly detection, novelty scoring, and correlation. Use when the user references a specific Dynatrace dashboard or notebook (by URL, UUID, or name) and asks what it shows, which DQL queries it runs, whether a tile looks off, or wants to find anomalies, score novelty, or correlate its metrics. The trigger is a dashboard or notebook as the data source, not a general DQL question. This skill extracts timeseries queries efficiently without reading the full raw document JSON, then optionally runs Davis analyzers on the extracted metrics. Tri"
   Analyze dashboards and notebooks using Davis analyzers — anomaly detection, novelty scoring,
   and correlation. Use when the user references a specific Dynatrace dashboard or notebook
   (by URL, UUID, or name) and asks what it shows, which DQL queries it runs, whether a tile

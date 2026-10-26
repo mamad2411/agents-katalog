@@ -1,6 +1,6 @@
 ---
 name: container-debugging
-description: >
+description: "Debug Docker containers and containerized applications. Diagnose deployment issues, container lifecycle problems, and resource constraints."
   Debug Docker containers and containerized applications. Diagnose deployment
   issues, container lifecycle problems, and resource constraints.
 ---

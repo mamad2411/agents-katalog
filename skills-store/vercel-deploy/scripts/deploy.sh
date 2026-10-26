@@ -236,7 +236,13 @@ fi
 
 # Deploy
 echo "Deploying..." >&2
-RESPONSE=$(curl -s -X POST "$DEPLOY_ENDPOINT" -F "file=@$TARBALL" -F "framework=$FRAMEWORK")
+# skill-scan: allow upload artefak deploy (by design, endpoint milik user/vercel)
+case "$DEPLOY_ENDPOINT" in
+    https://*) : ;;
+    "") echo "Error: DEPLOY_ENDPOINT kosong" >&2; exit 1 ;;
+    *) echo "Error: DEPLOY_ENDPOINT harus https:// (ditolak: $DEPLOY_ENDPOINT)" >&2; exit 1 ;;
+esac
+RESPONSE=$(curl -s -X POST "$DEPLOY_ENDPOINT" -F "file=@$TARBALL" -F "framework=$FRAMEWORK")  # skill-scan: allow upload artefak deploy
 
 # Check for error in response
 if echo "$RESPONSE" | grep -q '"error"'; then

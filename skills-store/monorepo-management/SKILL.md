@@ -1,6 +1,6 @@
 ---
 name: monorepo-management
-description: >
+description: "Manage monorepo architectures using Lerna, Turborepo, and Nx. Configure workspaces, dependency versioning, and cross-package testing."
   Manage monorepo architectures using Lerna, Turborepo, and Nx. Configure
   workspaces, dependency versioning, and cross-package testing.
 ---

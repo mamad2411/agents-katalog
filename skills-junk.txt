@@ -9,8 +9,16 @@
 3d-vision
 4-domain-deep-dive
 402pilot-buyer-side-payment-decision
+5-ai-prompts-that-will-transform-your-writing-fore-222d9418
 5-styleguide-generation
+50-ai-templates-to-save-time-and-improve-productiv-545d62aa
+50-viral-gemini-ai-prompts-ready-to-copy-paste-for-335a199b
+50-viral-gemini-ai-prompts-ready-to-copy-paste-for-4ac228ab
+50-viral-gemini-ai-prompts-ready-to-copy-paste-for-aefb3d26
+50-viral-gemini-ai-prompts-ready-to-copy-paste-for-e41bb853
+50-viral-gemini-ai-prompts-ready-to-copy-paste-for-e7b5d316
 6-build-instructions
+6657
 799-vercel-edge-function-d4c0d18a
 8-bit-pixel-art-patterns
 8bit-docs-patterns
@@ -41,6 +49,8 @@ a2-3-evaluating-what-you-built
 a2-4-evaluating-the-agents-behaviour
 a2-5-what-you-have-built
 a2a-agents
+a2ui-renderer
+aaaaaaa
 aacr-bench-evaluating-automatic-code
 aas-agent-coordination-artifact-integration-completeness-reconciliation
 aas-agent-coordination-artifact-integration-scenario-sensitivity-matrix
@@ -91,7 +101,12 @@ aas-agent-quality-trigger-collision-recovery-readiness-drill
 aas-agent-quality-trigger-collision-scenario-sensitivity-matrix
 aas-agent-quality-trigger-collision-source-provenance-ledger
 aas-agent-quality-trigger-collision-threshold-rule-check
+aav-vector-design-agent
 aave
+aavegotchi-baazaar
+aavegotchi-gbm-skill
+aavegotchi-gotchiverse
+ab-test-designer
 abaqus-docs
 abbreviated-git-status
 ability-generator
@@ -131,12 +146,17 @@ access-to-documents
 accessibility lead
 accessibility regression detector
 accessibility statement generator
+accessibility-diff
 accessibility-games
+accessibility-inspect
+accessibility-scan
 accessibility-test
 accessibility-tester
+accessibility-wcag-audit
 accesslint-audit
 accesslint-diff
 accesslint-scan
+accord
 account-based-marketing
 account-health-management
 account-security-validation
@@ -171,9 +191,11 @@ adam-analyst
 adapt
 adaptbpe-general-purpose-specialized
 adapter-pattern-typescript
+adapting-transfer-learning-models
 adaptive
 adaptive daily reflection & planner
 adaptive-strategy-hot-swap
+adaptive-teaching
 adaptive-temporal-analysis-integration
 adareasoner-dynamic-tool-orchestration
 add a browser review checkpoint before risky agent actions with agentclick
@@ -191,7 +213,9 @@ add-context-to-devin-global-skills
 add-expert
 add-fitness-tests
 add-function-agent
+add-function-examples
 add-game
+add-javadoc
 add-mcp
 add-new-configuration
 add-note
@@ -209,7 +233,6 @@ adding-todos
 address github pr review comments from the current branch with gh-address-comments
 address-ci-failures
 address-github-pr-review-comments-from-the-current-branch-wi
-address-review-pr
 address-review-precommit
 adherence-coach
 adhoc-flow
@@ -217,6 +240,7 @@ adhoc-sprint
 adjudicating-dependency-cve-reachability
 adlc
 ado-sync-judge
+adobe
 adobe-express-dev
 adobe-xd
 adocp-routing-protocol
@@ -224,26 +248,31 @@ adr-microservices-blueprint
 adr-tombstone
 advance gitops app manifests to newer container tags with argo cd image updater
 advanced-api-security-patterns
+advanced-frontend-uiux
 advanced-http-smuggling-cache
 advanced-rbac
 advanced-visual-design
 advanced_tools
 adventure-planner
+adversarial-code-reviewer
 adversarial-ml
 advertising-compliance
 advisory-communication
 advogado-criminal
 advogado-criminal-v2
 aegis-architect
-aegis-governance-integrity-security
 aegis-protocol-ratification
 aerc extensible terminal email client with imap jmap and notmuch
 aerospike-py-fastapi
+aether
 aether-temporal-collective
 aetherius-solo-agent-api-marketplace
 affective-computing
 affective-computing-basics
 affordable-housing
+afrexai-n8n-mastery
+afrexai-presentation-mastery
+afrexai-react-production
 ag-avaliar-ux-design-library
 ag-frontend-design
 ag-remotion
@@ -258,41 +287,65 @@ agency-strategy
 agent configuration architect
 agent governance reviewer
 agent-activation
+agent-agent
+agent-agentic-payments
+agent-app-store
 agent-architecture-mining
+agent-attestation
 agent-authentication
 agent-authorization
 agent-base-template-generator
 agent-bricks
 agent-business-planning
+agent-challenges
 agent-cli-detection-path
 agent-code-goal-planner
+agent-collective-intelligence-coordinator
 agent-conduct
+agent-consensus-coordinator
+agent-dev-backend-api
 agent-effect-operations
 agent-evaluation-framework
 agent-friendly-commands
 agent-functional-programming-v2
+agent-goal-planner
+agent-group
 agent-harness-optimizer
 agent-instructions-audit
 agent-kpis
 agent-log-analysis
+agent-matrix-optimizer
 agent-memory-design
 agent-microservice-architect
 agent-native-digital-product-playbook
+agent-neural-network
 agent-observability-build-eval-from-annotations
 agent-observability-eval-pipeline
 agent-observability-experiment-py-bootstrap
 agent-observability-trace-rca
+agent-only-skill
 agent-ops-improvement-discovery
 agent-organizer
+agent-pagerank-analyzer
 agent-payment-record-gap
+agent-payments
+agent-performance-optimizer
 agent-primitives-reusable-latent
+agent-queen-coordinator
 agent-ready-go
 agent-resource-control
 agent-run
 agent-run-supervision
+agent-safla-neural
+agent-sandbox
 agent-scan-guard
+agent-scout-explorer
+agent-self-reflection
+agent-session-trace-audit
 agent-settlement-protocol-asp-2026
+agent-skill-security-scanner-v2
 agent-stress-test
+agent-swarm-memory-manager
 agent-tars
 agent-task-conductor
 agent-task-delegator
@@ -306,33 +359,55 @@ agent-telemetry-replay-fixture-completeness-reconciliation
 agent-telemetry-replay-fixture-scenario-sensitivity-matrix
 agent-tool-mcp-builder
 agent-tool-orchestration
+agent-trading-predictor
+agent-user-tools
+agent-wallet-policy
+agent-worker-specialist
+agentcall — phone numbers for ai agents
 agentcgroup-understanding-controlling-os
+agentcontextextras
 agentcpm-report-interleaving-drafting-deepening
+agentd-drug-discovery
+agentd-global-orchestrator
 agentdrive-open-benchmark-dataset
+agentic
 agentic coding
+agentic-actions-auditor
 agentic-ai-healthcare-medicine
 agentic-cli-logging
 agentic-identity
 agentic-mcp-client-config
 agentic-oss-maintainer-funding-crisis-pattern
+agentic-powered-memecoin-trader
 agentic-secrets-handling
 agentic-skill-authoring-standard
 agentic-token-efficiency-master-rule
 agentic-verification-observability-loop
 agenticscr-an-autonomous-agentic
 agenticsimlaw-juvenile-courtroom-multi-agent
+agentizer
+agentlog
+agentmail-email-infra
+agentmail-to-inbox-ops
+agentphone-voice-sms-agents
+agentpress
 agentprivacy-environmental-commons
 agentprivacy-narrative-compression
 agentprivacy-network-topology
 agentql natural language web query sdk for extraction and automation
 agents-pro
-agentscale
+agents-supabase
 agentstepper-interactive-debugging-software
+agentsystembehaviour
+agentsystemmcp_tools
+agentsystemprojectsinactive
+agentsystemtools
 agenttrace-structured-logging-framework
 agentuity-cli-auth-login
 agentuity-cli-auth-logout
 agentv-dev
 agentxray-white-boxing-agentic-systems
+aggregating-performance-metrics
 agi / artificial general intelligence
 agmsg
 agora-code
@@ -359,6 +434,7 @@ ai-compliance-officer-high-risk-classification
 ai-compliance-officer-post-market-monitoring
 ai-computer-vision-security
 ai-data-remediation-engineer
+ai-disruption-moat-analyzer
 ai-domain-manufacturing-quality-intelligence-skill-2026
 ai-engineer
 ai-engineering-curriculum
@@ -366,6 +442,7 @@ ai-engineering-maturity
 ai-eval-suite-builder
 ai-feature-integration
 ai-generated-ad-pretesting-effectiveness
+ai-generated-code-auditor
 ai-image-prompting
 ai-llm-app-attack
 ai-managed-etf-alpha-question
@@ -377,11 +454,11 @@ ai-model-nodejs
 ai-model-web
 ai-model-wechat
 ai-multi-agent-system
+ai-native-cli-design
 ai-newsletter-revenue
 ai-organizational-governance-risk-and-compliance
 ai-real-time-analytics
 ai-regulatory-mapper
-ai-release-hunter
 ai-sdk-5
 ai-shaped-readiness-advisor
 ai-skill-formation-interaction-patterns
@@ -391,6 +468,7 @@ ai-subagent-scope-narrowing
 ai-team-dev
 ai-team-producer
 ai-team-qa
+ai-tech-lead
 ai-text-to-image-app
 ai-video-direction
 ai-voice-stt-tts-security
@@ -400,10 +478,16 @@ aibugs
 aiclean
 aicommit
 aidev-studying-ai-coding
+aidp-migrate-catalog
+aidp-netsuite
+aidp-sql-ddl
 aif-explore
 aifollowup
+aigohotel-mcp
 ailogic
 aimbot-calc
+aimm-commands
+aimm-writing-team
 aims-vs-objectives
 aio-html-interactive
 aio-patch-anchor
@@ -418,6 +502,8 @@ aiox-ux-design-expert
 aippt
 airbnb-engineer
 airtag
+akbun-analysis-adversarial-review
+akbun-analysis-token-credential
 akka-analyze
 akka-build
 akka-checklist
@@ -434,8 +520,11 @@ alert-prioritization
 alert-rules
 alexa
 algebraic-topology
+algolia-docsearch-mcp
+algorithm-first-discipline
 alibaba-b2b-marketplace-marketing-and-traffic-strategy
 alice-activation
+alicloud-compute-fc-agentrun
 alignagent-adaptive-learner-intelligence
 aligncoder-aligning-retrieval-target
 alipay
@@ -445,27 +534,43 @@ all-github-repo
 all-this-patterns
 all-workspace
 allava-harnessing-gpt4v-synthesized-data-for-a-lite-vision-l
+alloydb-omni-access-control
+alloydb-omni-data
+alloydb-omni-health
+alloydb-omni-monitor
+alloydb-omni-optimize
+alloydb-omni-performance
+alloydb-omni-replication
+alloydb-postgres-access-management
+alloydb-postgres-admin
+alloydb-postgres-data
+alloydb-postgres-health
+alloydb-postgres-monitor
+alloydb-postgres-optimize
+alloydb-postgres-replication
 alpha-core:database-advisor
 alpha-core:security-advisor
 alphafold-skill
 alt-text-headings
+alterlab-qiime2-amplicon
 alternative
 altitude-horizon-framework
 amazon-cloudwatch-for-ai-agent-observability
 amazon-engineer
 amazon-s3-operations-for-ai-agents
-amazon-ses-email
 ambient-calm-zero-ui
+ambient-folder
 amd-engineer
 amem4rec-leveraging-cross-user-similarity
 amernet-ai-saas
-aml-sanctions-ai-agent-payments-cheat-sheet
 amplitude experiment implementation
 amsterdam
 an-empirical-study-of-training-self-supervised-vision-transf
 analog-circuits
 analysis-phase
+analysis-qa-validator
 analysis-workflow
+analytics-tracking-setup
 analyticsgpt-workflow-scientometric-question
 analyze memory images for processes, modules, and malware indicators with volatility 3
 analyze videos with frame extraction and audio context in claude code
@@ -482,35 +587,46 @@ analyze-memory-images-for-processes-modules-and-malware-indi
 analyze-root-cause-analysis
 analyze-stacktrace
 analyze-threats
+analyzing-capacity-planning
 analyzing-code-security
+analyzing-database-indexes
+analyzing-logs
 analyzing-malware-with-ghidra
+analyzing-network-latency
+analyzing-query-performance
+analyzing-system-throughput
+analyzing-text-sentiment
+analyzing-text-with-nlp
 andorra
-android
 android studio
 android-app-testing
 android-ble-hardware
 android-developer
 android-telemetry-pipeline
 angel-investor
+angularjs-to-angular-migration
 animation-design-engineering
 animations
+animejs-web-animation
 announcement-banners
 anofox-visualization-statistics-plots
-anonymization-enhanced-privacy-protection-mobile-g
 ansible-pro
 answer anthropic documentation questions from a versioned local archive
 ant-amp-kya-interoperability
 antfu
+antfu-design
 anthill-client-web-ui-parity
 anthro-claude-api
 anthropic-chat
 anthropic-skills-index
+anthropics-official-pack
 anti-debugging-techniques
-anti-duplication
 anti-hallucination-guard
 anti-reversing-techniques
 anti-sycophancy
+antibody-design-agent
 antigravity-awesome-skills
+anvil
 anw-minbestg-pillar2-konzernbesteuerung
 anxiety (tracker, trigger map, coping planner)
 anyres-plug-and-play-dynamic-resolution-for-vision-language
@@ -519,6 +635,7 @@ anywidget-generator
 aob-scan
 aorchestra-automating-sub-agent-creation
 apache-kafka-docs
+apache-kafka-expert
 apex
 apex-crypto-intelligence
 apex-design-patterns
@@ -526,7 +643,6 @@ apex-methodology
 apex-security-patterns
 api-aqa-flow
 api-auth-and-jwt-abuse
-api-authorization-and-bola
 api-contract-modeling
 api-credentials-hygiene
 api-data-fetching-tanstack
@@ -545,7 +661,6 @@ api-learn
 api-lifecycle-engineer
 api-openapi-docs
 api-playbook
-api-recon-and-docs
 api-reference
 api-reference-creator
 api-reference-docs
@@ -554,15 +669,19 @@ api-reference-generation
 api-reference-tutorial-craft
 api-rest-endpoint-design
 api-scaffold
+api-security-best-practices
 api-security-top10
+api-skill
 api-specialist
 api-style-guide
 api-surface-documenter
 apideck-best-practices
+apify-multi-platform-scraper
 apigateway-5xx-troubleshooter
 apigateway-rest-deployer
 apigateway-throttle-optimizer
 apis-and-services
+apollo-lead-enrichment
 apollo-prospect
 app-dependency-discovery
 app-onboarding-questionnaire
@@ -1094,6 +1213,7 @@ arabic-zero-trust
 arabic-zipkin
 arabic-ztna
 arbor
+arboreto-grn-inference
 arch-contract
 arch-core
 arch-diagram
@@ -1103,11 +1223,13 @@ architect-review
 architectural-amendment-protocol
 architectural-proposals
 architecture-basics
+architecture-governance-orchestrator
 architecture-map-answer
 architecture-uplift
 archive
 archive online videos and metadata to the internet archive with tubeup
 archive-a-completed-project
+archiving-databases
 arduino
 are-more-llm-calls-all-you-need-towards-scaling-laws-for-com
 arena
@@ -1164,8 +1286,26 @@ argo-cd-pro
 argparse-subcommand-validator-chain
 arm-migration-agent
 armenia-ses-conditioned-energy-nudge-heterogeneity
+armored-cart-design-agent
 arrange
 arrange-workspace-flow
+ars-3w
+ars-abstract
+ars-cache-invalidate
+ars-citation-check
+ars-disclosure
+ars-format-convert
+ars-full
+ars-lit-review
+ars-mark-read
+ars-outline
+ars-plan
+ars-rebuttal-audit
+ars-reviewer
+ars-revision
+ars-revision-coach
+ars-unmark-read
+arscontexta
 art-bible
 art-of-mac-malware-detection
 art-of-unit-testing
@@ -1173,6 +1313,7 @@ artemis-android-testing
 article-summarizer
 artifact-diagramming
 artifact-workflow
+artisan
 ash-postgres
 asi / artificial super intelligence
 ask-a-coworker-for-help
@@ -1188,10 +1329,12 @@ ask-project-requirement
 ask-security-assessment
 ask-someone-for-a-recommendation-letter
 ask-to-po-shuri
+asked-chatgpt-to-turn-me-and-itself-into-animals-t-aedd4d88
 aso-appstore-screenshots
 assemble minimal oci images from declarative package configs with apko
 assemble-project-expert-team
 assess-product-viability
+assessment-builder
 asset-lifecycle
 asset-review
 asshole
@@ -1201,6 +1344,7 @@ assign-to-workforce
 assignation-refere-communication-associe-selim-brihi
 assignment-compliance-check
 assist-sg-update
+assisting-with-soc2-audit-preparation
 assure-product-trust
 astro-7
 astro-actions
@@ -1217,12 +1361,14 @@ astro-starlight
 astro-styling
 astrometry-basics
 astronomy
+astronomy-data-toolkit
 astrophysics-cosmology
 async-concurrency-correctness
 async-messaging-events
 async-service-development
 async-ui-patterns
 asyncio-python
+atelier
 athena-query-optimizer
 atlassian-engineer
 atmospheric-chemistry-basics
@@ -1231,6 +1377,9 @@ atomic-information-flow-network
 atomic-origin-whitelist-hot-swap
 attachment-intake
 attack-surface-recon
+attest
+attestation-chain-auditor
+attestation-root-diversity-analyzer
 attorney-ai-regulatory-mapper
 attorney-client-communication
 attorney-legal-practice
@@ -1240,6 +1389,7 @@ audio-dsp
 audio-engineering-principles
 audio-pro
 audio-signal-processing
+audio-to-markdown-transcriber
 audioflux audio and music analysis feature extraction library
 audiowaveform audio waveform data generator and image renderer
 audit and normalize spdx license headers before releasing or open-sourcing a repository
@@ -1256,10 +1406,14 @@ audit python dependency sets for known vulnerabilities before release or environ
 audit python environments and requirements files for known vulnerabilities with pip-audit
 audit ssh servers and clients for weak algorithms and risky config drift with ssh-audit
 audit-accessibility-wcag
+audit-badge-demo
 audit-change-data-capture-pattern
 audit-context-building-v2
 audit-docs
+audit-env-variables
+audit-fix
 audit-license-compliance
+audit-mcp
 audit-orchestrator
 audit-plugin-trust
 audit-security-requirements
@@ -1273,8 +1427,6 @@ auditing-admission-control-policy-gaps
 auditing-ai-agent-permissions
 auditing-android-component-exposure
 auditing-android-intent-redirection-and-pendingintent
-auditing-ansible-become-and-vault-trust
-auditing-api-key-and-token-lifecycle
 auditing-ble-and-gatt-authorization
 auditing-break-glass-account-trust
 auditing-browser-extension-trust
@@ -1327,17 +1479,14 @@ auditing-network-policy-segmentation-gaps
 auditing-oauth-token-audience-and-scope-trust
 auditing-observability-pipeline-collector-trust
 auditing-open-redirect-and-forced-navigation
-auditing-ota-and-firmware-update-channel-trust
 auditing-payment-callback-and-amount-integrity
 auditing-payment-state-machine-and-idempotency
 auditing-presigned-url-scope-abuse
-auditing-randomness-and-nonce-quality
 auditing-s3-object-ownership-trust
 auditing-saml-and-oidc-federation-trust
 auditing-saml-and-oidc-flows
 auditing-scim-provisioning-trust
 auditing-secure-boot-and-firmware-signing
-auditing-security-logging-completeness
 auditing-serverless-event-source-trust
 auditing-service-account-key-lifecycle
 auditing-service-mesh-mtls-and-authz-trust
@@ -1348,26 +1497,24 @@ auditing-ssh-trust-and-agent-forwarding
 auditing-sso-logout-and-session-revocation
 auditing-terraform-state-and-backend-trust
 auditing-third-party-script-and-sri-trust
-auditing-tls-and-certificate-validation
 auditing-webauthn-and-passkey-flows
 auditing-websocket-connection-trust
 auditing-windows-named-pipe-and-rpc-exposure
 auditing-windows-token-and-privilege-abuse
 auditing-windows-uac-and-integrity-boundaries
 auditing-workflow-conventions
+audition
 augmax-adversarial-composition-of-random-augmentations-for-r
 austin
 australia
 austria
 auth-audit
-auth-http-api-cloudbase
-auth-jwt-session
 auth-nodejs-cloudbase
 auth-protocols-mfa
 auth-session-pentest
 auth-tool-cloudbase
 auth-web-cloudbase
-authn-authz
+auth-wechat-miniprogram
 authn-authz-implementation
 authn-identity
 authnz-review
@@ -1384,6 +1531,8 @@ auto-refine
 auto-review-loop-llm
 auto-review-loop-minimax
 auto-routing
+autobahn
+autodesk
 autofix common nix anti-patterns before style drift spreads with statix
 autogen-guide
 automaker-bridge
@@ -1392,12 +1541,15 @@ automate grounded notebooklm research and artifact export with notebooklm-py
 automate lark and feishu docs, sheets, mail, calendar, meetings, and chat tasks from agents with lark cli
 automate notebooklm studio generation and cited research batches with notebooklm-mcp
 automate repository triage and recurring repo maintenance with guarded github agent workflows
+automate-whatsapp
 automated-customization-enterprise-code
 automated-database-backups
 automated-documentation-generation
 automated-rubrics-reliable-evaluation
 automatically rerun flaky pytest cases with bounded retry rules before intermittent failures block merges with pytest-rerunfailures
 automating-api-testing
+automating-database-backups
+automating-mobile-app-testing
 automation-builder
 automation-flows
 automation-strategy
@@ -1408,7 +1560,9 @@ automotive-knowledge
 automotive-kubernetes
 automotive-monitoring
 autonomous-business-system-neuro-symbolic
+autonomous-feature-planner
 autonomous-multi-agent-ai-high-throughput
+autonomous-oncology-agent
 autonomous-optimization
 autonomous-optimization-architect
 autonomy
@@ -1421,6 +1575,7 @@ avro-event-with-change-flags
 avro-gradle-kafka-schema-pipeline
 awareness-stage-mapper
 aws-appconfig
+aws-cdk-patterns
 aws-common
 aws-cost-ops
 aws-financial-services-ai
@@ -1435,7 +1590,6 @@ aws-secrets-manager-integration
 aws-storage
 ax-cli
 ax-config
-ax-host
 ax-ipc
 ax-logging-errors
 ax-onboarding
@@ -1443,7 +1597,6 @@ ax-persistence
 ax-prompt-builder
 ax-provider-audit
 ax-provider-channel
-ax-provider-credentials
 ax-provider-database
 ax-provider-development
 ax-provider-eventbus
@@ -1455,7 +1608,6 @@ ax-provider-storage
 ax-provider-system
 ax-provider-web
 ax-runners
-ax-testing
 ax-utils
 ax-web-proxy
 axe-core accessibility testing engine for automated web ui auditing
@@ -1466,11 +1618,8 @@ axiom-camera-capture-ref
 axiom-code-signing-ref
 axiom-contacts-ref
 axiom-core-location-ref
-axiom-cryptokit-ref
 axiom-energy-diag
-axiom-energy-ref
 axiom-eventkit-ref
-axiom-extensions-widgets-ref
 axiom-foundation-models-ref
 axiom-keychain-ref
 axiom-mapkit-diag
@@ -1496,8 +1645,6 @@ azure policy analyzer
 azure terraform iac implementation specialist
 azure-ad
 azure-bootstrap-primitives
-azure-bootstrap-subpackages
-azure-bootstrap-typescript
 azure-iac-exporter
 azure-iac-generator
 azure-openai-guide
@@ -1505,6 +1652,7 @@ azure-openai-to-responses
 azure-postgresql-flexible-server-18-backup-restore-review
 azure-pro
 azure-rbac
+azure-realtime-voice-ai
 azure-service-bus-spring-boot
 azure-services-catalog
 azure-spec-audit
@@ -1563,7 +1711,9 @@ back up github, gitlab, bitbucket, and forgejo repositories with gitbackup
 back-into-a-parking-space
 backboard
 backend-api-change
+backend-api-contract
 backend-architect
+backend-architecture-patterns
 backend-development-feature-development
 backend-security-coder
 backend-spec
@@ -1572,10 +1722,12 @@ background-jobs-scheduling
 backlog-sync
 backup-and-restore
 backup-compliance-automator
+backup-helper
 backup-restore-dr
 backup-vault-operator
 bad-skill
 bad_name
+badass-revival
 bahn
 baichuan-guide
 baidu
@@ -1597,6 +1749,7 @@ base64-pro
 baseline and review repository secret findings with detect-secrets
 baseten-guide
 bash-pro
+basic
 basic-skill
 basketball
 basque
@@ -1606,12 +1759,15 @@ batch-api-job-processing
 batch-optimization
 batch-runner
 batcoder-self-supervised-bidirectional-code-docume
+bats-shell-testing
 battery-materials
 bayesflow-probability-inference-framework
 bayesian-deep-learning
 bayesian-machine-learning
+bayesian-optimizer
 bayesian-statistics
 bcg-consultant
+bdbe_cellanno
 be-specific-instead-of-vague
 beauty
 beck-tdd
@@ -1642,7 +1798,9 @@ benchmarking-zero-shot-few-shot-phishing
 benefits-fraud
 benefits-processing
 bengali
+bento
 berlin
+best-practices-for-prompt-engineering-with-the-ope-f26e9557
 best-practices-reviewer
 better auth authentication framework for typescript applications
 better-as-generators-than
@@ -1657,13 +1815,39 @@ bff-service-coreframework-guidelines
 bgee-skill
 bi-dashboard-building
 biasscope-automated-detection-bias
+bigcommerce-api
 bigquery-ai-for-gemini-powered-analytics
 billing
+billing-automation-systems
 binary-mobile-reversing
 bindingdb-skill
+bio-alignment-files-bam-statistics
+bio-crispr-screens-bagel-essentiality
+bio-crispr-screens-base-editing-analysis
+bio-crispr-screens-combinatorial-screens
+bio-crispr-screens-copy-number-correction
+bio-crispr-screens-drugz-chemogenomic
+bio-crispr-screens-in-vivo-screens
+bio-crispr-screens-perturb-seq-analysis
+bio-crispr-screens-prime-editing-screens
+bio-data-visualization-genome-browser-tracks
+bio-data-visualization-specialized-omics-plots
+bio-data-visualization-volcano-customization
+bio-machine-learning-survival-analysis
+bio-pathway-enrichment-foundations
+bio-phasing-imputation-foundations
+bio-primer-design-primer-specificity
+bio-read-qc-rnaseq-qc
 bio-research-scvi-tools
 bio-research-start
+bio-research-tools-biomarker-signature-studio
+bio-sequence-similarity
+bio-structural-biology-interface-analysis
+bio-tcr-bcr-analysis-specificity-annotation
+bio-temporal-genomics-differential-rhythmicity
+bio-workflows-crispr-screen-pipeline
 biobankjapan-phewas-skill
+biodiversity-corridor-calculator
 bioinformatics-planning
 bioinformatics-pro
 biological-model-validation
@@ -1673,6 +1857,7 @@ biome high-performance javascript typescript formatter and linter
 biome-powerbi-query
 biomedclip-a-multimodal-biomedical-foundation-model-pretrain
 biophysics
+biopython-molecular-biology
 biorxiv-skill
 biosketch-craft
 biostatistics
@@ -1699,7 +1884,7 @@ block unsafe agent actions and scan newly added skills with agentguard
 blockchain-contract-attack
 blockchain-cryptocurrency
 blockchain-developer
-blog-social
+blockchain-web3-developer
 blue-green-deployment-strategy
 blue-teamer
 bluetooth
@@ -1739,6 +1924,7 @@ bootstrap an openapi spec from captured api traffic before client or test automa
 borkdude
 boston
 botany
+botlearn-certify
 box-optimization
 boyfriend
 brain-computer-interfaces
@@ -1754,14 +1940,15 @@ brand-positioning-statement
 brand-rollout
 brand-systems-brand-voice-codification
 brand-verbal-identity
+brand-writing-team
 brandkit-generator
 brave browser
 brazil
-breach-patterns
 break large coding jobs into focused subagent missions with ab method
 break-complex-projects-into-milestones
 breaking-changes
 breaking-static-graph-context-aware
+breakout-trade-planner
 brew-french-press-coffee
 brew-iced-tea
 brew-pour-over-coffee
@@ -1780,10 +1967,11 @@ broken-skill
 broker api credentials to ai agents without exposing raw keys using onecli
 brown-butter
 brownfield-dotnet
+browse
 browse search and cost-audit local coding-agent histories before resuming or standardizing workflows with agentsview
 browser-agent-verify
 browser-assisted-hunting
-browser-auth-testing
+browser-automation-builder
 browser-brave-history
 browser-brave-shield
 browser-brave-wallet
@@ -1813,11 +2001,9 @@ browser-pilot
 browser-storage
 browser-task
 browser-use-to-stagehand
+browserstack-cross-browser-test
 browsertrix crawler high-fidelity web archiving and qa crawler
-brunson-brunson-advisor
 brunson-brunson-chief
-brunson-brunson-copy
-brunson-brunson-email
 brunson-brunson-expert
 brunson-brunson-funnels
 brunson-brunson-hooks
@@ -1836,16 +2022,17 @@ bs:graphify
 bs:plan
 bs:predict
 bs:scenario
-bs:security
 bs:show-off
 bs:tech-graph
 btc15-autonomous-market
+btc15-prediction-market
 bucharest
 budapest
 budget
 budget-allocation
 budget-governance
 budget-justification
+budget-variance-review
 buenos aires
 bug-bounty-hunter
 bug-bounty-validation
@@ -1880,7 +2067,6 @@ build, test, and package postgresql extensions in rust with pgrx
 build-a-balanced-plate
 build-a-prospect-list
 build-agent
-build-audit-logging
 build-cdc-streaming-pipeline
 build-cli-tool
 build-distribution
@@ -1889,18 +2075,24 @@ build-etl-pipeline
 build-form-validation
 build-iphone-apps
 build-macos-apps
-build-native-mobile-ui
+build-models
 build-office-docs
 build-offline-first-sync
 build-parallelism
 build-perf-diagnostics
 build-playability-review
 build-realtime-channel
+build-setup
 build-spreadsheet
 build-toolchain-alignment
 build-vector-search
 build-your-ai-common-sense-habit
+building-api-authentication
 building-chatgpt-apps
+building-classification-models
+building-gitops-workflows
+building-neural-networks
+building-secure-contracts
 bulgaria
 bulgarian
 bulk import and reconcile large photo archives into immich without manual re-upload loops using immich-go
@@ -1909,6 +2101,7 @@ bulk-rna-seq
 bull-bear
 bullet-point-summary-first
 bullmq redis-based message queue and job processor for node.js
+bullmq-job-queue
 bun-llms
 bun-pro
 bundle and validate openapi files into one publishable spec with swagger-cli
@@ -1925,8 +2118,8 @@ business-growth-bundle
 business-guide
 business-health-diagnostic
 business-intelligence-report
-business-logic-vulnerabilities
 business-plan-writer
+business-process-mapper
 business-pulse
 business-viability-stakeholder-testing
 busybox-on-windows
@@ -1937,9 +2130,13 @@ buy-flowers-for-an-occasion
 buy-groceries
 buy-medicine-at-a-pharmacy
 buy-stamps
+buyer-persona-builder
+buzz-bd
+byethrow
 byte-aware-sms-truncation-with-ellipsis
 byteconf-knowledge
 c-calendar
+c-cpp-security-review
 c-email
 c-github
 c-jira
@@ -1971,9 +2168,12 @@ c2-7-supply-chain
 c2-8-dynamic-exploitation-dast
 c2-9-exploit-chaining
 c2rope-causal-continuous-rotary-positional
+c4-architecture-docs
+c4-final-skill-summary
 cache-report
 cache-variance-ttl-jitter
 cached-tool-permission-grants
+cacheforge
 caching-strategy-redis
 caddy-pro
 calculate routes, etas, and place lookups inside agent planning workflows with tomtom mcp
@@ -2001,10 +2201,16 @@ can-reasoning-be-trusted
 can-we-classify-flaky
 canada
 canal-denuncias-informantes
+canon
 canonical-event-emitter
 canonical-intermediate-representation-llm-based
+canva-campaign-creator
 canva-creator
+canvas-diagram-editor-patterns
 canvas-threejs-basics
+canvascli
+canvs
+capability-composition-analyzer
 capability-graph-mapper
 capability-primitive-search
 capability-scope-expansion-watcher
@@ -2030,13 +2236,14 @@ capture simulate and diff http dependencies before flaky integration tests hit r
 capture youtube transcripts without browser automation using youtube transcript api
 capture, search, and optionally sync local coding-agent session history across claude code, codex, cursor cli, and gemini with specstory
 capture-aha-moment
+capture-api-response-test-fixture
+capture-chat
 capture-flags-family-based-evaluation
 capturing-meeting-intelligence
 car
 car rental
 caramelize-onions
 caramelize-sugar
-cardano
 cardiology
 care-burnout-audit
 care-plan-optimizer
@@ -2045,13 +2252,20 @@ career-coach
 career-pivot-planner
 caregiver-coordination
 carrier-disaster-recovery-and-bcp
+carta-agm-deck-builder
+carta-compensation-rolematcher
+carta-conversion-calculator
+carta-discover-commands
+carta-round-history
 carve-a-roast
 casb-pro
 case-outcome-predictor
 cash-session-management
 catalan
+catalog
 catalog-full
 catalysis-basics
+catalyst-zoho-mcp
 catastrophe-modeling
 catch agent-era ci/cd and permission misconfigurations before shipping with ship safe
 catch benchmark regressions in pull requests before slowdowns ship with codspeed
@@ -2062,6 +2276,7 @@ category-theory
 causalt5k-diagnosing-informing-refusal
 cavecrew
 caveman-commit
+caveman-compressed-mode
 caveman-discover
 caveman-explore
 caveman-init
@@ -2086,6 +2301,8 @@ cell-signaling
 cellxgene-skill
 ceo-daily-brief
 cerebras-guide
+cfn-task-planning
+cfn-transparency-middleware
 cgo / chief growth officer
 challenge-my-thinking
 challenge-response-auth-redis-ttl
@@ -2099,12 +2316,14 @@ change-the-email-on-an-account
 change-without-verification
 changedetection.io self-hosted website change monitoring platform
 changelog-comms
+changelog-generate
 changelog-md-workmanship
 changelog-narrator
 changelog-scan
 changelog-sync
 channel-sales
 chaos-engineer
+chaos-engineering-runner
 character-animation-3d
 character-designer
 character-pipeline-2d
@@ -2118,10 +2337,13 @@ chartbrew open source reporting platform for api and database dashboards
 chartqa-a-benchmark-for-question-answering-about-charts-with
 chase-an-overdue-invoice
 chat rooom
+chat-n-build
+chat-summarizer
 chatbot-marketer
 chatexport-need-miner
 chatglm-guide
 chatgpt-ads-conversational-intent
+chatgpt-ignores-custom-instructions-and-won-t-stop-61b988af
 chatwoot open source customer engagement and omnichannel support platform
 che-merge-resolver
 chebi-skill
@@ -2143,8 +2365,6 @@ check-permissions
 check-refactor
 check-reference
 check-screenshots-dir
-check-secrets
-check-secrets-report-inventory
 check-secrets-secrets-leak
 check-security-review
 check-shell-profile
@@ -2156,6 +2376,8 @@ check-uncommit
 check-unpush
 check-vanta
 check-your-engine-oil
+checking-hipaa-compliance
+checking-owasp-compliance
 checklist
 checklists
 cheerio html and xml parsing library for node.js extraction workflows
@@ -2163,8 +2385,8 @@ chef-puppet-saltstack-legacy-config-management
 chembl-skill
 chemistry-model-validation
 chemistry-pro
+chen-yun-demo
 chief business officer
-chief information security officer
 chile
 china
 chinese
@@ -2173,10 +2395,11 @@ chipbench-next-step-benchmark-evaluating
 choose-architecture
 chrome devtools mcp browser debugging and performance analysis
 chrome mcp server extension-based browser automation for ai agents
+chrome-devtools-cli
 chrome-extension-developer
+chrome-extension-mv3
 chunked-resource-id-batch-fetch
 ci accessibility
-ci-cd-supply-chain-attack
 ci-fixer
 ci-health
 ci-pipeline-authoring
@@ -2188,6 +2411,127 @@ cicd-pipeline-automator
 cilium
 circleci-pro
 circuit-and-signal-analysis
+cirq-quantum-circuits
+cis-aws-compute-10.2
+cis-aws-compute-11.1
+cis-aws-compute-12.10
+cis-aws-compute-12.11
+cis-aws-compute-12.12
+cis-aws-compute-12.3
+cis-aws-compute-12.7
+cis-aws-compute-12.9
+cis-aws-compute-16.1
+cis-aws-compute-2.1.1
+cis-aws-compute-2.6
+cis-aws-compute-2.8
+cis-aws-compute-3.1
+cis-aws-compute-3.14
+cis-aws-compute-3.2
+cis-aws-compute-3.3
+cis-aws-compute-3.4
+cis-aws-compute-3.5
+cis-aws-compute-3.6
+cis-aws-compute-3.8
+cis-aws-compute-5.11
+cis-aws-compute-5.12
+cis-aws-compute-5.2
+cis-aws-compute-5.3
+cis-aws-compute-5.4
+cis-aws-compute-5.5
+cis-aws-compute-5.6
+cis-aws-compute-5.7
+cis-aws-compute-5.8
+cis-aws-compute-5.9
+cis-aws-compute-6.1
+cis-aws-compute-8.1
+cis-aws-compute-8.2
+cis-aws-database-10.4
+cis-aws-database-10.7
+cis-aws-database-10.9
+cis-aws-database-11.1
+cis-aws-database-11.5
+cis-aws-database-2.8
+cis-aws-database-3.1
+cis-aws-database-3.11
+cis-aws-database-3.2
+cis-aws-database-3.7
+cis-aws-database-4.1
+cis-aws-database-4.6
+cis-aws-database-5.12
+cis-aws-database-6.3
+cis-aws-database-6.5
+cis-aws-database-7.12
+cis-aws-database-7.5
+cis-aws-database-7.9
+cis-aws-database-8.4
+cis-aws-database-9.11
+cis-aws-database-9.4
+cis-aws-database-9.6
+cis-aws-database-9.8
+cis-aws-database-9.9
+cis-aws-euc-2.10
+cis-aws-euc-2.11
+cis-aws-euc-2.12
+cis-aws-euc-2.14
+cis-aws-euc-2.15
+cis-aws-euc-2.16
+cis-aws-euc-2.17
+cis-aws-euc-2.18
+cis-aws-euc-2.4
+cis-aws-euc-2.5
+cis-aws-euc-2.8
+cis-aws-euc-4.1
+cis-aws-euc-4.3
+cis-aws-euc-4.5
+cis-aws-euc-4.6
+cis-aws-euc-4.7
+cis-aws-euc-4.8
+cis-aws-euc-5.1
+cis-aws-euc-5.3
+cis-aws-euc-5.4
+cis-aws-euc-5.5
+cis-aws-euc-5.6
+cis-aws-euc-5.7
+cis-aws-foundations-2.1.2
+cis-aws-foundations-2.1.6
+cis-aws-foundations-2.10
+cis-aws-foundations-2.17
+cis-aws-foundations-2.18
+cis-aws-foundations-2.19
+cis-aws-foundations-2.21
+cis-aws-foundations-2.7
+cis-aws-foundations-2.8
+cis-aws-foundations-3.1.3
+cis-aws-foundations-3.1.4
+cis-aws-foundations-3.2.2
+cis-aws-foundations-3.2.4
+cis-aws-foundations-4.10
+cis-aws-foundations-4.4
+cis-aws-foundations-4.6
+cis-aws-foundations-4.8
+cis-aws-foundations-4.9
+cis-aws-foundations-5.11
+cis-aws-foundations-5.6
+cis-aws-foundations-5.7
+cis-aws-foundations-6.1.2
+cis-aws-foundations-6.2
+cis-aws-foundations-6.3
+cis-aws-foundations-6.4
+cis-aws-foundations-6.5
+cis-aws-storage-2.12
+cis-aws-storage-2.5
+cis-aws-storage-2.6
+cis-aws-storage-3.12
+cis-aws-storage-3.4
+cis-aws-storage-3.7
+cis-aws-storage-6.1
+cis-aws-storage-6.10
+cis-aws-storage-6.3
+cis-aws-storage-6.4
+cis-aws-storage-6.5
+cis-aws-storage-6.6
+cis-aws-storage-6.7
+cis-aws-storage-6.9
 cis-eks-v160-3.1.1
 cis-eks-v160-3.1.2
 cis-eks-v160-3.1.3
@@ -2296,6 +2640,92 @@ cis-eks-v180-5.1.3
 cis-eks-v180-5.1.4
 cis-eks-v180-5.2.1
 cis-eks-v180-5.3.1
+cis-gcp-cos-1.3.1
+cis-gcp-cos-3.3.1.2
+cis-gcp-cos-3.3.1.3
+cis-gcp-cos-3.3.1.4
+cis-gcp-cos-3.3.2.3
+cis-gcp-cos-5.1.2
+cis-gcp-cos-5.1.3
+cis-gcp-cos-5.3.1.5
+cis-gcp-cos-6.2.10
+cis-gcp-foundations-1.1
+cis-gcp-foundations-1.10
+cis-gcp-foundations-1.11
+cis-gcp-foundations-1.12
+cis-gcp-foundations-1.13
+cis-gcp-foundations-1.14
+cis-gcp-foundations-1.16
+cis-gcp-foundations-1.17
+cis-gcp-foundations-1.2
+cis-gcp-foundations-1.3
+cis-gcp-foundations-1.4
+cis-gcp-foundations-1.5
+cis-gcp-foundations-1.6
+cis-gcp-foundations-1.7
+cis-gcp-foundations-1.8
+cis-gcp-foundations-1.9
+cis-gcp-foundations-2.1
+cis-gcp-foundations-2.10
+cis-gcp-foundations-2.11
+cis-gcp-foundations-2.12
+cis-gcp-foundations-2.16
+cis-gcp-foundations-2.2
+cis-gcp-foundations-2.3
+cis-gcp-foundations-2.4
+cis-gcp-foundations-2.5
+cis-gcp-foundations-2.6
+cis-gcp-foundations-2.7
+cis-gcp-foundations-2.8
+cis-gcp-foundations-2.9
+cis-gcp-foundations-3.1
+cis-gcp-foundations-3.10
+cis-gcp-foundations-3.2
+cis-gcp-foundations-3.4
+cis-gcp-foundations-3.5
+cis-gcp-foundations-3.6
+cis-gcp-foundations-3.7
+cis-gcp-foundations-3.8
+cis-gcp-foundations-3.9
+cis-gcp-foundations-4.1
+cis-gcp-foundations-4.10
+cis-gcp-foundations-4.11
+cis-gcp-foundations-4.12
+cis-gcp-foundations-4.2
+cis-gcp-foundations-4.3
+cis-gcp-foundations-4.5
+cis-gcp-foundations-4.6
+cis-gcp-foundations-4.7
+cis-gcp-foundations-4.8
+cis-gcp-foundations-4.9
+cis-gcp-foundations-5.1
+cis-gcp-foundations-5.2
+cis-gcp-foundations-6.1.1
+cis-gcp-foundations-6.1.2
+cis-gcp-foundations-6.1.3
+cis-gcp-foundations-6.2.1
+cis-gcp-foundations-6.2.2
+cis-gcp-foundations-6.2.3
+cis-gcp-foundations-6.2.4
+cis-gcp-foundations-6.2.5
+cis-gcp-foundations-6.2.6
+cis-gcp-foundations-6.2.7
+cis-gcp-foundations-6.2.8
+cis-gcp-foundations-6.3.1
+cis-gcp-foundations-6.3.2
+cis-gcp-foundations-6.3.3
+cis-gcp-foundations-6.3.4
+cis-gcp-foundations-6.3.5
+cis-gcp-foundations-6.3.6
+cis-gcp-foundations-6.3.7
+cis-gcp-foundations-6.4
+cis-gcp-foundations-6.5
+cis-gcp-foundations-6.6
+cis-gcp-foundations-6.7
+cis-gcp-foundations-7.1
+cis-gcp-foundations-7.2
+cis-gcp-foundations-7.3
+cis-gcp-foundations-8.1
 cisco-cx-agentic-ai-customer-experience-transformation
 civic-skill
 claims-workflow
@@ -2305,6 +2735,7 @@ classes
 claude
 claude engineer — autonomous engineering system
 claude-agent-billing-audit
+claude-api
 claude-cli-from-jvm-via-node-wrapper
 claude-code-101
 claude-code-artifacts
@@ -2318,39 +2749,79 @@ claude-code-mastery-mcp-integrator
 claude-code-mastery-project-integrator
 claude-code-mastery-roadmap-sentinel
 claude-code-mastery-skill-craftsman
+claude-code-settings-auditor
 claude-code-stream-json-driver
 claude-config-manager
+claude-content-pack
+claude-design-pack
+claude-dev-pack
 claude-fields
 claude-handoff
 claude-memory
 claude-model-router
+claude-native-algorithmic-art
+claude-native-canvas-design
+claude-office-pack
 claude-prompt-chaining
 claude-seo-image-gen
 claude-thinking-partner
+claude-tmux
+clause
+claw-employer
+claw-trader-lite
+claw-worker
+clawcamera
+clawculator
+clawd
+clawdraw
 clb-to-alb-migration-operator
 clean-architecture-node
 clean-as-you-cook
 clean-code-in-python
 clean-code-reusability
+clean-craft-code-review
 clean-empty-dirs
 clean-run-state
 clean-your-cars-interior
 cleanup-artifact
 cleanup-branches-merged
 cleanup-docker
-cleanup-files-in-computer
 cleanup-files-in-project
 cleanup-git-branch
 cleanup-github-issue
 cleanup-sprint
 cleanup-worktree
 clevr-a-diagnostic-dataset-for-compositional-language-and-el
+cli-a2a
+cli-backup-sync
+cli-batches
+cli-chat
+cli-compression
+cli-contexts
+cli-cost-usage
+cli-eval
+cli-health
+cli-keys
+cli-mcp
+cli-models
+cli-plugins-skills
+cli-policy-audit
+cli-providers
+cli-resilience
+cli-routing
+cli-serve
 cli-serve-blocking-exit
+cli-setup
+cli-skill-collector
 cli-tool
+cli-tooling-expert
+cli-tunnel
 clickbait-engine
 clickhouse query agent
 clickhouse-pro
+client success & revenue expansion — the complete retention operating system
 client-compatibility
+client-license-validation-bypass
 client-side-exploitation
 climate-data-analysis
 climate-model-downscaling
@@ -2360,12 +2831,14 @@ clinical-notes-nlp
 clinical-risk-scores
 clinical-safety-checking
 clinical-trial-design
+clinical-trial-finder
 clinical-trials
 clinicaltrials-skill
 clinvar-variation-skill
 clip-benchmark-a-benchmark-suite-for-evaluation-of-vision-la
 clo / chief legal officer
 cloak
+cloc
 clojure interactive programming
 clone and refresh whole github orgs for audit or migration with ghorg
 clone-drift-tracker
@@ -2433,6 +2906,22 @@ cloud-security-data-protect
 cloud-security-patterns
 cloud-security-pentest
 cloud-serverless-harden
+cloud-sql-mysql-admin
+cloud-sql-mysql-data
+cloud-sql-mysql-lifecycle
+cloud-sql-mysql-monitor
+cloud-sql-postgres-admin
+cloud-sql-postgres-data
+cloud-sql-postgres-health
+cloud-sql-postgres-lifecycle
+cloud-sql-postgres-monitor
+cloud-sql-postgres-replication
+cloud-sql-postgres-vectorassist
+cloud-sql-postgres-view-config
+cloud-sql-sqlserver-admin
+cloud-sql-sqlserver-data
+cloud-sql-sqlserver-lifecycle
+cloud-sql-sqlserver-monitor
 cloud-trail
 cloud-zerotrust-beyondcorpmodel
 cloud-zerotrust-cisamaturity
@@ -2446,9 +2935,13 @@ cloud-zerotrust-prisma
 cloud-zerotrust-saas
 cloud-zerotrust-zscaler
 cloud-zerotrust-ztna-monitor
+cloudbase auth
+cloudbypass
 cloudflare mcp servers for workers, security, and observability
 cloudflare-pro
 cloudflare-sandbox-sdk
+cloudflare-tunnel
+cloudflare-workers-edge
 cloudflare-workers-expert
 cloudformation-best-practices
 cloudformation-stack-troubleshooter
@@ -2456,10 +2949,13 @@ cloudformation-to-pulumi
 cloudfront-cache-troubleshooter
 cloudfront-distribution-deployer
 cloudfront-response-headers-deployer
+cloudphone
 cloudtrail-gap-troubleshooter
 cloudwatch-dashboards-operator
 cloudwatch-metrics-troubleshooter
 cloudwatch-synthetics-troubleshooter
+clueless-blindspots
+clueless-help
 cmd
 cmd-a11y-audit
 cmd-audit
@@ -2485,7 +2981,9 @@ cncf-china-mobile-cloud-cloud-native-applicat-3728c2b4-reviewer
 co-author structured docs with staged context gathering and reader testing
 co-marketing
 coach
+cobol-modernization
 coca-contrastive-captioners-are-image-text-foundation-models
+cochesnet-cli
 cockpit cms headless content platform with rest and graphql apis
 coco-captions-constructing-a-large-scale-dataset-for-image-d
 code-analysis-flow
@@ -2494,9 +2992,11 @@ code-architecture-mapping
 code-comment-writer
 code-complexity-metrics
 code-developer
+code-docs-generator
 code-docs-quality
 code-efficiency
 code-first-deep-risk-analysis-v2-0
+code-implementor
 code-inject
 code-llama-guide
 code-mapping-specialist
@@ -2505,11 +3005,13 @@ code-moment-codex-switch
 code-motion-film
 code-obfuscation-deobfuscation
 code-quality-audit
+code-review-preferences
 code-review-standard
 code-simplifier
 code-smell
 code-smell-diagnosis
 code-to-design
+code-to-music
 code-translator
 code2world-gui-world-renderable
 codebase-graph-build
@@ -2528,6 +3030,9 @@ coder-agent-relay-regulated-deployment
 codereview roasted
 codestral-guide
 codesys
+codetour-authoring
+codetour-walkthrough-builder
+codex-app-threads
 codex-prompt
 codex-record-replay
 coding
@@ -2548,11 +3053,14 @@ cognee-search
 cognitive-design-layer-video-learning
 cognitive-friction-reduction
 cognitive-heuristic-review
+cognitive-mirror
+cognitive-operations
 cognitive-os-benchmark
 cognitive-os-init
 cognitive-os-status
 cognitive-os-test
 cognitive-platform-engineering-autonomous
+cognitive-stack-code
 cognitive-task-analysis
 cognitively-diverse-multiple-choice-question
 cohere-embed
@@ -2569,6 +3077,7 @@ collaborate
 collect tiktok and douyin data through a self-hosted mcp server
 collect unix-like incident-response artifacts into one portable evidence bundle with uac
 collect-interview-feedback
+collecting-infrastructure-metrics
 collection-routing-by-period
 collections-best-practices
 colombia
@@ -2580,11 +3089,13 @@ combinatorics
 combine-human-speed-with-ai-scale
 comfyui-binding-audit
 comic-artist
+command-management
 command-parsing-dispatch
 commcp-multi-agent-coordination-llm-based
 comment-lie-detector
 commenting
 commerce-and-marketplaces
+commerce-b2b-open-code-components-integrate
 commercial-lease-assignment-consent-framework
 commercial-lease-expert
 commercial-real-estate-analyst
@@ -2604,6 +3115,7 @@ comms-audit
 community-manager
 community-manager-community-health-monitoring
 community-manager-moderation-audit-trail
+community-publish
 community-pulse
 comp-sheet
 compact-dir-listing
@@ -2612,14 +3124,17 @@ compact-prepare
 compact-resume
 compactrag-reducing-calls-token
 companion
+company-tear-sheet
 compar-ia-french-governments
 comparable-sales-adjustment-methodology
 compare coding-agent answers side by side with claude council
 compare dbt models and warehouse relations before trusting migration parity with dbt-audit-helper
 compare recurring csv, tsv, or json exports and emit row-level change sets before syncs
 compare-competitors
+compare-models
 compare-two-products-fairly
 comparing-ai-coding-agents
+comparing-database-schemas
 compartmental-models
 compass-contrastive-learning-automated
 compat-test
@@ -2632,6 +3147,7 @@ compilation-error-triage
 compile deterministic python lock files from requirements inputs with pip-tools
 compile-task-context
 compiler-design
+compiler-expert
 complete-ai-agent-stack-deployment-cloud-managed-from-scratch
 complete-ai-agent-stack-deployment-self-hosted-from-scratch
 complete-cicd-pipeline-deployment-for-kubernetes-from-scratch
@@ -2642,6 +3158,7 @@ complete-devsecops-pipeline-for-serverless-from-scratch
 complete-kubernetes-deployment-on-prem-with-kubeadm-from-scratch
 complete-mlops-platform-deployment-self-hosted-k8s-from-scratch
 completing-missing-annotation-multi-agent
+completion-contract
 compliance
 compliance-cis-cloud
 compliance-cloud-nerc
@@ -2689,7 +3206,10 @@ conditional-feature-flag-rollout
 conditional-simplification-strategy
 conduct-a-job-interview
 conduct-a-reference-check
+conducting-browser-compatibility-tests
+conducting-chaos-engineering
 conducty-tdd
+config-codex-cli
 config-helper
 config-omegaconf
 config-surface-documenter
@@ -2701,6 +3221,8 @@ configure supervised multi-provider agent workspaces with craft agents
 configure-bundler-build
 configure-dns-tls
 configure-reverse-proxy-lb
+configuring-load-balancers
+configuring-service-meshes
 confluence-best-practices
 confluence-publish
 confluence-pull
@@ -2714,6 +3236,7 @@ connect mcp agents to zendesk ticket and help center workflows
 connect-recommend
 connect-required-verification-information
 connectedhomeip-skill
+connector-bridge
 consent-to-assignment-expert
 consent-to-sublease-expert
 consistency-meets-verification-enhancing
@@ -2733,18 +3256,27 @@ contact-center-web
 contact-tracing-analytics
 container-image-build
 containment
+content-calendar-sms
 content-designer
+content-governance-orchestrator
 content-marketer
+content-parser
 content-performance
 content-repurposing-service
 content-security-policy-csp
 content-strategist
+content-strategy-sms
 contestacion-demanda-ca
 context architect
 context-architecture
 context-augmented-code-generation-programming-know
+context-budget-audit
 context-engineering-advisor
 context-engineering-skills-map-2026
+context-manager
+context-mgr
+context-restore
+context-save
 context-thrift
 context7-mcp
 contextevolve-multi-agent-context-compression
@@ -2768,6 +3300,8 @@ control-product-change
 controlling-management-report
 controlling-variance-analyzer
 convention-extractor
+conversation-consolidation-system
+conversation-ip-extractor
 conversion-optimizer
 convert-esm
 convert-files-format
@@ -2807,6 +3341,7 @@ convex-test
 convex-verify
 convexbench-recognize-convex-functions
 convnext-v2-co-designing-and-scaling-convnets-with-masked-au
+coo-operations-advisor
 cook-a-burger
 cook-a-steak
 cook-bacon
@@ -2823,7 +3358,6 @@ cook-salmon
 cook-shrimp
 cooking
 coolify-databases-backups
-coolify-operations
 coordinating-implementation-across-teams
 coordination-commit
 coordination-status
@@ -2866,6 +3400,7 @@ corp-sec
 corrosion-science
 cors-check
 cors-cross-origin-misconfiguration
+cortex-pause-resume-autonomy-kill-switch
 cos-install-operations
 cos-maintainer-operations
 cos-status
@@ -2891,6 +3426,9 @@ cpu-design
 cql-patterns
 cqrs-pattern-implementation
 crack-keygen
+craft-do
+craft-finish
+craft-restore
 crafting-user-stories
 crawl-sites
 create-a-project-in-a-tracker
@@ -2903,7 +3441,7 @@ create-cloudflare-deploy-button
 create-conceptmap
 create-devin-global-mcp
 create-files-in-os-temp
-create-git-branch
+create-git-worktree
 create-github
 create-github-repo
 create-gsd-extension
@@ -2912,6 +3450,7 @@ create-k8s
 create-mcp-servers
 create-mermaid-diagram
 create-meta-prompts
+create-micro-skill
 create-missing-tests-in-pr
 create-new-project-in-drive-d
 create-plan-in-dot-devin
@@ -2929,9 +3468,12 @@ create-sp-business-logic-traceability
 create-story-about-people-interaction
 create-story-about-person
 create-subagents
+create-svg-from-prompt
 create-task-spec
 create-video-story
 create-video-with-slidev
+creating-data-visualizations
+creating-github-issues-from-web-research
 creating-godot-procedural-audio
 creating-production-vpc-multi-az
 creative-scenarios
@@ -2954,6 +3496,7 @@ crm-specialist
 croatian
 cron-job-planner
 cron-monitoring
+cron-pipeline
 crop-yield
 cropland-out-of-production-agreements
 cross-border-ecommerce-product-analysis
@@ -2987,7 +3530,6 @@ crypto-tls-sslkeylog
 crypto-tools-hashcat-crack
 crypto-transparency-certificates-verify
 cryptographic-eng
-cryptographic-engineer
 cryptography-security
 crystallography-basics
 cs-agile-product-owner
@@ -3009,22 +3551,21 @@ cs-ux-researcher
 cs-workspace-admin
 csa-basic-threshold-differences
 csa-cloud-security
-csf-mapping
 csharp-pro
 cso / chief strategy officer
-csrf-cross-site-request-forgery
 csrf-protection-strategies
 css-at-property
+css-colors
 css-grid-vs-flexbox
 csv-pro
 ct-monitor-skill
 ctf-crypto-classic
-ctf-crypto-modern
 ctf-pwn-basics
 ctf-pwn-heap
 ctf-pwn-rop
 cua-skill-develop-skills-computer
 cubase
+cue
 cultivating-personas
 cultivating-skills
 cuopt-test-coverage
@@ -3040,6 +3581,7 @@ cursor-skill-sdlc-release-notes
 cursor-skill-sdlc-threat-model
 cursor-skill-sdlc-traceability
 custom-actuator-command-whitelist
+custom-code-reviewer
 custom-react-hook-creation
 customer-ideation
 customer-implementation
@@ -3056,7 +3598,6 @@ cut-a-pineapple
 cut-a-watermelon
 cut-an-onion
 cutmix-regularization-strategy-to-train-strong-classifiers-w
-cutting-gordian-knot-detecting
 cv
 cve-nvd-epss-vulnerability-prioritization-guide
 cve-report
@@ -3083,23 +3624,31 @@ d1-6-high-concurrency-detection-engineering
 d1-7-triaging-the-non-deterministic-swarm
 d1-8-defensive-deception-and-threshold
 d1-9-machine-speed-containment-and-fleet
+d3js-data-viz
 d4-improving-llm-pretraining-via-document-de-duplication-and
+d4-world-boss
 da-pre-employment-prior-test-exception
 da-sap-program-implementation
 dab-rest-and-graphql
 daemon-claimed-task-poll-loop
+dagster-expert
 dali-short-address-commissioner
 dall-e-2-hierarchical-text-conditional-image-generation-with
 damage-prediction
 dan-martell-executive-ai-prompts-and-productivity-workflows
 dancing-chains-strategic-persuasion
 dangerous-actions
-dangling-markup-injection
 danish
 dart-models
+dartway-checkup
+dartway-commit
+dartway-documentation
+dartway-on-device
+darwin
 darwin-dynamic-agentically-rewriting
 dashboard-data-ui
 dast-application-testing
+data-analyzer
 data-and-analytics
 data-breach-officer
 data-cache
@@ -3116,6 +3665,7 @@ data-modeler
 data-modeling-plantuml
 data-privacy-sensitive
 data-quality-validation
+data-question-analyzer
 data-reconciliation-exceptions
 data-science-advanced-math
 data-scientist
@@ -3126,12 +3676,15 @@ database-access-and-migrations
 database-admin
 database-architect
 database-architect-agent
+database-design-advisor
 database-locking-strategies
+database-migration-strategies
 database-multitenancy
 database-nosql
 database-optimizer
 database-performance-and-schema
 database-production
+database-query
 database-review
 database-schema-migration
 databricks-apx-application
@@ -3147,10 +3700,13 @@ datadog-expert
 datadog-pro
 dataproc-skills
 dataset-cartography-mapping-and-diagnosing-datasets-with-tra
+dataset-profiler
+datasources-provisioning
 datasync-task-operator
 datetime-timezone-correctness
 datetime-zoneinfo-python
 davinci-dev-agent-native-mid-training-software
+davinciresolve-export-youtube
 dawn
 dawn-raid-advisor
 db-cassandra-auth
@@ -3189,19 +3745,21 @@ db2
 dba-database-administrator
 dba-rds-slow-query
 dbt-fusion-engine
+dcf-valuation-model
 dcg
 ddd-aggregates
 ddd-contexts
 ddd-discover
 ddd-model-review
+ddd-strategic-design
 ddd-subdomains
 ddd-tactical
+ddinter-drug-interactions
 dead-code-duplication
 deadlock-avoidance
 deal-with-a-car-that-wont-start
 debone-a-chicken-thigh
 debt-optimizer
-debug-ci-pipeline-failure
 debug-core
 debug-flaky-tests
 debug-frontend-browser
@@ -3213,8 +3771,10 @@ debugging-and-observability
 debugging-strategist
 debugging-toolkit-smart-debug
 decision-engineer
+decision-log-recorder
 decision-mapping
 decision-triage
+decisions-open-design
 declarative agents architect
 declinatoria
 decline-a-job-offer-gracefully
@@ -3225,8 +3785,11 @@ dedicated-agent-profiles
 dedupe-crm-contacts
 deep research
 deep-analyze-report-analysis
+deep-comprehension-assessment
 deep-dive-sp-analysis-for-stories
+deep-field
 deep-fry-safely-at-home
+deep-mirror
 deep-optimize
 deep-probe
 deep-research-api-references
@@ -3250,13 +3813,17 @@ deepplanning-benchmarking-long-horizon-agentic
 deepseek-coder
 deepseek-guide
 deepwork_jobs.implement
+default-skill
 default-tools
 defect-detection
 defect-triage
 defense-budget
 defense-maintenance
 defense-supply-chain
+defensive-malware-analyst
 defi
+defi-natural-language-agent
+defi-protocol-templates
 define-pvr-completeness
 defog-a-windshield
 defrost-frozen-food
@@ -3273,33 +3840,37 @@ delete-project-temp
 delete-projects
 delete-worktree
 delight
-deliver-webhooks
 deliverable-memo
 delivery-documentation
 demand-forecasting
 demo-evidence-package
 demo-validate
+demo-video-generator
 denmark
 dennis-advisor
+deno-bun-expert
 deno-pro
 dep-map
 dep-search-learning-dependency-aware-reasoning
 dep-upgrade
-dep-vuln
 dependency-analysis
 dependency-and-critical-path-planning
 dependency-injection-pattern
 dependency-injection-principles
+dependency-lifecycle-orchestrator
 dependency-update-audit
 dependency-upgrade-auditor
 dependency-vulnerabilities
 deploy-profiles
 deploy-to-cloudflare
 deploy-to-railway
+deploying-machine-learning-models
+deploying-monitoring-stacks
 deployment-checklist
 deployment-claims-audit
 deployment-engineer
 deployment-verification-smoke
+depmap-cancer-dependency
 deprecated-access-control-cheatsheet
 deprecated-tls-cipher-string-cheat-sheet
 deprecated-transport-layer-protection-cheat-sheet
@@ -3357,9 +3928,11 @@ design-setup
 design-shotgun
 design-simplify
 design-sophia-prater
+design-spells-microinteractions
 design-state-machine
 design-stephanie-walter
 design-system-auditor
+design-system-hotels-by-hilton
 design-taste-website
 design-token-extractor
 design-token-system
@@ -3375,11 +3948,13 @@ designing-retro-arcade-sound-kits
 desktop-app-packaging
 desktop-mouse
 desktop-packaging
+deslop
 detail
 detect-patterns
 detecting-correcting-hallucinations-llm-generated
 detecting-golden-ticket-attacks
-detecting-secrets
+detecting-infrastructure-drift
+detecting-performance-regressions
 detecting-xss-vulnerabilities-in-web-apps
 detection-purple-detection-rule-lifecycle-sentinel
 detection-rule-deployability
@@ -3402,6 +3977,7 @@ dev-js-ts-developer
 dev-spec
 dev-system-design
 devbox-checkpoint
+devcontainer-claude-setup
 devein-shrimp
 devel-jb-algorithmic-art
 devel-jb-antfu
@@ -3429,19 +4005,21 @@ devel-jb-postgres-best-practices
 devel-jb-react-best-practices
 devel-jb-vueuse-functions
 devel-jb-yeet
+develop-ai-functions-example
 develop-script-with-inplace-submodule-symlinks
+develop-userscripts
 developer-experience-flow-state
+developer-experience-optimizer
 developing-langgraph-js-agents
 developing-with-bigquery
 developmental
 devex-accountability-layer-dev-barometer-q3-2026
+devex-expert
 devex-metrics-compass-120-metric-navigation
 devex-review
 deviate
 deviation
-device-revocation-reset-flow
 devil
-devils advocate
 devin-local-migration
 devin-scripts-toolkit
 devin-templates-toolkit
@@ -3464,6 +4042,7 @@ diagnostic-test-accuracy
 diagram
 diagram-import
 diagram-validated
+dial
 dial-summer-structured-evaluation-framework
 dialogs-confirmations
 dialogue-audio-authority
@@ -3476,15 +4055,14 @@ dietitian
 diff-checker
 diff-file-history
 diff-table-parity
+diffdock-blind-docking
 differential-diagnosis-framework
 differential-equations
 diffusers
 diffusion-pretrained-dense-contextual-embeddings
-dify-docker-architecture
 digest-emails
 digital marketing
 digital-logic
-digitalocean-app-platform-docr-deploy
 dilbert
 dino-emerging-properties-in-self-supervised-vision-transform
 dio
@@ -3494,10 +4072,10 @@ director-readiness-advisor
 disability-services
 disassembly
 disaster-prediction
+disclawd
 discord-pro
 discourse-sweep
 discoverllm-executing-intents-discovering
-discovery
 discovery-interview-prep
 discovery-process
 discrete-math
@@ -3511,11 +4089,13 @@ distributed-locks-leases
 distributed-mesh
 distributed-races
 distributed-transactions-sagas
+distro-kit
 dive-into-design-patterns
 dive-into-refactoring
 diverge
 diverge-diversity-enhanced-rag-open-ended
 diy-home
+django-async-pro
 django-forge
 django-pro
 dllm-agent-see-farther
@@ -3532,9 +4112,11 @@ dobovizki-csharp-concurrency
 doc-crafter
 doc-quality-analyzer
 doc-review-personas
+doc-to-math-spec
 doc2spec-synthesizing-formal-programming
 docker-compose-service-inventory-files
 docker-compose-v1-v2-auto-detect
+docker-container-optimizer
 docker-multistage-go-alpine
 docker-practical
 dockerfile-production
@@ -3545,6 +4127,7 @@ docs-execution-audit
 docs-for-developers
 docs-grill
 docs-package
+docs-page-generator
 docs-to-context
 document
 document accessibility wizard
@@ -3554,7 +4137,7 @@ document-translator
 documentar-proyecto
 documentation-agent
 documentation-api-reference
-documentation-designer
+documentation-audit
 documentation-templates
 docx-pro
 dogecoin
@@ -3583,6 +4166,7 @@ doordash-engineer
 dornelas-fiis
 dos-verify-done-claims
 dose-response-analysis
+dot
 dot-ai
 dot-ai-users
 dot-ai-version
@@ -3615,6 +4199,7 @@ draw-tldraw
 drawing
 drawing-to-spec
 drift-detection-automator
+drill
 drive-safely-in-heavy-rain
 drive-through-a-roundabout
 driver-comm
@@ -3653,6 +4238,7 @@ ds-how
 ds-humanize
 ds-interaction-mode
 ds-java-review
+ds-notebook-strict-code
 ds-onboarding
 ds-osv
 ds-perf-plan
@@ -3663,10 +4249,10 @@ ds-quality-gate
 ds-reflect
 ds-retro
 ds-roadmap
-ds-security-review
 ds-semgrep
 ds-step-mode
 ds-tdd-mode
+ds-teaching-assistant
 ds-test-mode
 ds-test-quality-review
 ds-tiger-style-mode
@@ -3677,6 +4263,7 @@ ds-verify-this
 ds-zig-review
 ds-zoom-out
 dsct-reconfiguration-reengagement-study
+dsh-marker-reader
 dspy-programming
 dt-daily-standup
 dt-health-check
@@ -3684,11 +4271,15 @@ dt-incident-response
 dt-investigate-error
 dual-jre-docker-oz-report
 dubai
+duckdb-docs
 duckdb-temporal-versioning
 duke-leto-test
 durable-vague
 dutch
+dx-code-analyzer-custom-rule-create
 dx-optimizer
+dx-org-manage
+dx-org-switch
 dynamic-gridfs-template-multi-tenant
 dynamic-pricing
 dynamics-nav
@@ -3729,14 +4320,17 @@ e5-3-post-incident-change-surface
 e5-4-validating-the-fix
 e5-5-proposing-the-policy-change
 e5-6-the-regulatory-clock
+ea
 early-exit-evaluation
 earnings-flash
 earnings-prep
 earthly
 easement-valuation-methods
 eating-basics
+eatsth-by
 ec2-instance-recovery-operator
 ec2-reserved-capacity-optimizer
+ecc-remotion-video-creation
 ecco-evidence-driven-causal-reasoning
 echo-open-research-platform
 echoes-loop-diagnosing-risks
@@ -3747,25 +4341,29 @@ economics
 economy-mode
 ecs-genai
 ecs-soci
+ed
 edge-ai
 edge-case-data-catalog
 edge-to-edge
 edit-article
-edit-manual
 edit-only
 edit-relative
 edit-video-with-remotion
 edit-with-use-scripts
+editor
+editorial-desk
 edr-evasion-endpoint-security
 edr-pro
 edtech-privacy-assessment
 education-suite
+eeat-content-quality-auditor
 eeg-signal-processing
 effective-email
 effgen-enabling-small-language
 efo-ontology-skill
 eft-cot-multi-agent-chain-of-thought-framework
 ehr-data-analysis
+eigenthinking
 einja-md-export
 einja-migration-fix
 einja-practice-extractor
@@ -3784,13 +4382,14 @@ elasticsearch-xpack-ssl-transport
 elb-cost-optimizer
 elder-care-ops
 electric guitar
+element14
 elevenlabs-core-workflow-b
 eli-lilly
 elisa-assay-design
+elite-code-reviewer
 elixir-pro
 em
 email management
-email-and-password-best-practices
 email-artifact-forensics
 email-forensics-outlook
 email-forensics-phishing
@@ -3802,12 +4401,13 @@ email-phishing-proofpoint
 email-phishing-simulation
 email-phishing-spearphish
 email-pro
-email-security-deep
 email-validation-and-verification-cheat-sheet
 embedded-automotive-industrial
+embedded-expert
 embedded-firmware-engineer
 embedded-no-std-development
 embodied-task-planning-graph-informed
+emdb-cryoem-database
 emergency-resource
 emotional-arc-designer
 empirical-mcts-continuous-agent-evolution
@@ -3816,16 +4416,24 @@ employee
 employer-matching
 enable-async-tenant-aware
 enable-two-factor-authentication
+enact-hello-go
+enact-hello-python
+enact-hello-ruby
+enact-hello-rust
+enact-hello-simple
 encode-skill
 encrypt-detect
 encrypt-sensitive-data
 encrypted-pii-decrypt-before-send
+encrypting-and-decrypting-data
 energy-compliance
 energy-efficiency
 engage-sdk-integration
 engineering-architecture
 engineering-bundle
+engineering-features-for-machine-learning
 engineering-incident-response
+engineering-nba-data
 engineering-team-bundle
 eni-api-assurance-lane
 eni-burp-mcp
@@ -3835,19 +4443,21 @@ eni-kali
 eni-supply-chain-assurance-lane
 eni-universal-workflow
 enrich-a-contact-record
+enrich-prompt
 ensembl-skill
 ent-foundation
 enterprise
-enterprise-controls
+enterprise-project-manager
 enterprise-rag-test-coverage
 enterprise-search
 enterprise-search-search
 enterprise-vibe-coding
+entity-compliance-tracker
 entity-list
+entity-research-dossier
 entra-id-auth
 entrevista-requerimientos
 entworld-holistic-environment-benchmark
-enum-api-surface
 enum-cors-csp
 enum-graphql
 enum-grpc
@@ -3857,10 +4467,10 @@ enum-tls-security
 enum-waf-tech
 enum-web-content
 enumerating-cloud-with-cloudfox
-enumerating-snmp-exposure
 env-only
 environment-prerequisites-check
 environment-secrets-config
+environment-secrets-exfiltrator
 environmental-compliance
 eol-resistor-calculator
 epic-breakdown-advisor
@@ -3876,12 +4486,15 @@ equipe-agil-arquiteto-app-knowledge
 equipe-agil-arquiteto-sis-knowledge
 equipe-agil-arquitetura-base
 equipe-agil-engineering-coach-knowledge
+equity-earnings-update-report
 equity-tax-lot-and-exit-management
+er
 erebus-cyber-defence
 erol
 error-analyzer
 error-boundary-designer
 error-detective
+error-diagnostics-orchestrator
 error-diagnostics-smart-debug
 error-handling-contract
 error-handling-express
@@ -3889,6 +4502,7 @@ error-handling-overview
 error-message
 error-message-leakage
 error-tracking-setup
+error-triage
 es-memeval-benchmarking-conversational-agents
 escalate-a-support-ticket
 escalation-handling
@@ -3918,6 +4532,7 @@ eval-performance
 eval-repo
 evaluate-plan
 evaluating-gameplay-balance
+evaluating-machine-learning-models
 evaluating-they-not-know
 evaluation-oncotimia-system-supporting
 evasion
@@ -3935,11 +4550,13 @@ everyday-math
 eviction-risk
 evidence-and-verification
 evidence-collector
+evidence-screenshot
 evidencia-reproduccion
 evocodebench-human-performance-benchmark-self-evol
 evoconfig-self-evolving-multi-agent-systems
 evolution-drift-detector
 evolve-evolutionary-search-llm-based
+exa-cli
 exact-name-fast-path-skip-interactive-prompt
 exact-scan
 exam
@@ -3949,14 +4566,17 @@ excel-pro
 excel-xlsx
 excelchop
 exec-hook
+executive-adversarial-mentor
 executive-coach
 executive-onboarding-playbook
+exercise-designer
 exhaustive-prompt
 exoplanet-detection
 expansion-modeling
 expat-strategist
 expenses
 experience-driven-multi-agent-systems-training-fre
+experience-lwc-generate
 experimental
 experimental-design-psych
 experimental-planning
@@ -3983,6 +4603,9 @@ explore-github-trending
 exploring-data-catalog
 exploring-reasoning-reward-agents
 expo-api-routes
+expo-dom
+expo-go-development
+expo-router-native-ui
 expo-ui-jetpack-compose
 expo-ui-swift-ui
 expo-upgrade
@@ -4000,11 +4623,14 @@ expropriation-timeline-expert
 extension-efectos-ca
 extensions-and-marketplace-apps
 external-comms
+external-diagram-mermaid-generate
 extincion-contrato-trabajador
+extract-codify-patterns
 extract-features
 extract-pattern
 extract-stored-procedure-logic
 extract-template
+extract-video-frames
 extracting-recurring-vulnerabilities-black-box
 extraction-optimization
 extranjeria-intake
@@ -4065,11 +4691,25 @@ facilitating-ai-workshops
 facilities-energy
 fact-writer
 factcheck-docs
+factor-of-safety-failure-margin
 factory-jira
 factual-discovery
 fadada-document-sign
 failure-first
 fair-data
+fake-ansi
+fake-c2ip
+fake-campaign
+fake-crypto
+fake-exfil
+fake-formatter
+fake-gatekeeper
+fake-persistence
+fake-pickle
+fake-staged
+fake-svgmalware
+fake-timebomb
+fake-typosquat
 falcon
 falcon-guide
 falkordb-skills
@@ -4079,6 +4719,7 @@ farm-field-aware-resolution-intelligent
 fashion
 fastapi-pro
 fastapi-security
+fastify-best-practices
 fasting tracker
 fastmail api
 fauna
@@ -4096,14 +4737,18 @@ featurebench-benchmarking-agentic-coding
 feed-envelope-frame
 feeds
 feel-pass
+feishu-fallback
 ferment-sauerkraut
 ferret-refer-and-ground-anything-anywhere-at-any-granularity
+fetch-url
 fetch-violations
 ffmpeg-pro
 fido2
 fifty-quick-ideas-tests
 figma-expert
 figma-mcp
+figma-pilot
+figma-this-repo
 figure-captions
 filament-optimizer
 file-a-car-insurance-claim
@@ -4117,6 +4762,7 @@ file-tools
 file-upload-and-ssrf
 file-upload-object-storage
 file-uploads-media
+file-validator
 files
 fill-a-propane-tank
 fillet-a-fish
@@ -4128,6 +4774,7 @@ finance-based-pricing-advisor
 finance-bookkeeping
 finance-bundle
 finance-cash-flow
+finance-document-review
 finance-financial-report-writer
 finance-fire
 finance-metrics-quickref
@@ -4142,10 +4789,13 @@ financial-compliance-ai
 financial-mathematics
 financial-modeler
 financial-officer
+financial-records-reconciliation
 financial-transaction-processing
 find
 find-a-reliable-tradesperson
+find-models
 finding-crypto-misuse
+finding-security-misconfigurations
 finding-triage
 finish-your-turn
 finland
@@ -4153,13 +4803,17 @@ finngen-phewas-skill
 finnish
 finops-engineer
 fintech-launch
+finviz-screener-builder
+firebase-backend
 firebase-security
 firecracker
+firecrawl-web-scraper
 firestore-data
 firewall-and-dns-configuration
 firewall-check
 firewall-pro
 first-aid-basics
+first-principles-assumption-auditor
 fis-experiment-deployer
 fishing
 fitness-programmer
@@ -4195,6 +4849,7 @@ fleet-ux-contribution-protocol
 flex-grid-recipes
 flickr30k-entities-collecting-region-to-phrase-correspondenc
 flight
+flock
 florence-2-advancing-a-unified-representation-for-a-variety
 florida
 flow-cytometry
@@ -4202,6 +4857,7 @@ flow-launcher
 flow-style
 fluid-dynamics
 fluids
+fluidsim-cfd-simulation
 flujos-mesa
 flutter-deploy
 flutter-l10n
@@ -4366,7 +5022,6 @@ follow-lib-ioredis-optimize pool
 follow-lib-ioredis-setup-ioredis
 follow-lib-jose
 follow-lib-jose-setup-jose
-follow-lib-line-liff
 follow-lib-markdown-it
 follow-lib-mcp-sdk
 follow-lib-mswjs
@@ -4389,13 +5044,11 @@ follow-lib-orpc-serve-openapi
 follow-lib-orpc-setup-orpc
 follow-lib-orpc-use-middleware
 follow-lib-otplib
-follow-lib-otplib-setup-otplib
 follow-lib-oxc-parser
 follow-lib-pdfkit
 follow-lib-pinia
 follow-lib-pinia-setup-pinia
 follow-lib-postgres
-follow-lib-postgres-setup-postgres
 follow-lib-qrcode
 follow-lib-react
 follow-lib-react-optimize render
@@ -4450,7 +5103,6 @@ follow-lib-zod-integrate-forms
 follow-lib-zod-migrate-zod-v4
 follow-lib-zod-setup-zod
 follow-math-concepts
-follow-monorepo
 follow-monorepo-config-workspaces
 follow-monorepo-migrate-to-monorepo
 follow-my-persona
@@ -4478,7 +5130,6 @@ follow-service-cloudflare-use-storage
 follow-service-instantdb
 follow-service-instantdb-config-instantdb
 follow-service-instantdb-setup-instantdb
-follow-service-resend
 follow-service-run-on
 follow-service-run-on-config-run-on
 follow-service-run-on-setup-run-on
@@ -4505,7 +5156,6 @@ follow-test
 follow-test-config-test-env
 follow-tool-act
 follow-tool-archify
-follow-tool-argos
 follow-tool-auto-it
 follow-tool-biome
 follow-tool-biome-migrate-from-eslint-prettier
@@ -4531,14 +5181,12 @@ follow-tool-e2e
 follow-tool-eslint
 follow-tool-eslint-config-flat
 follow-tool-eslint-migrate-to-oxlint
-follow-tool-fnox
 follow-tool-formatter
 follow-tool-git
 follow-tool-github-actions
 follow-tool-github-actions-optimize ci
 follow-tool-github-actions-setup-workflows
 follow-tool-github-project
-follow-tool-gitleaks
 follow-tool-hk
 follow-tool-hurl
 follow-tool-jscpd
@@ -4627,12 +5275,15 @@ forms-specialist
 formula-setter
 fortify-change-review
 fortify-create-app
+fortuna
+fossil
 fowler-refactoring
 fox news monitor
 fp-compose
 fp-fundamentals
 fp-react
 fp-ts-react
+fp-ts-refactor
 fpga-programming
 framer
 framework-criterion
@@ -4641,15 +5292,32 @@ framework-grpc
 framework-react
 framework-reference-lookup
 framework-soap
-framework-spring
 framework-testing-javascript
 frameworks-libraries
 france
 franchise-benchmarking
 franchise-inventory
 franchise-marketer
+frappe-backend
+frappe-bench
+frappe-crm
+frappe-customization
+frappe-doctype-design
+frappe-drive
+frappe-erpnext
+frappe-frontend
+frappe-fullstack
+frappe-gameplan
+frappe-helpdesk
+frappe-hrms
+frappe-insights
+frappe-lms
+frappe-payments
+frappe-search
+frappe-sql
 fraudshield-knowledge-graph-empowered
 free-keys
+free-tool-marketing-strategy
 freelance
 freelance-guide
 freemarker-two-phase-expression-subst
@@ -4669,6 +5337,8 @@ from-prompt-response-goal-directed-systems
 from-sparse-decisions-dense
 frontend-beautiful-ui
 frontend-data-tables
+frontend-design-system-orchestrator
+frontend-design-ui-ux
 frontend-developer
 frontend-error-monitoring
 frontend-forms-ux
@@ -4712,12 +5382,15 @@ functional-programming
 functional-programming-foundations
 functional-programming-patterns
 functional-validation
+functionality-audit
 fundamental truth - statistical mechanics & diffusion
 funding-allocation
+funding-round-digest
 fundraising-optimizer
 funprm-function-as-step-process-reward
 fuse-browser-usage
 fusecore
+fusion-engine
 fuzz-dynamic-security-test
 fuzzing-apis
 fx-workflow-authoring
@@ -4776,12 +5449,18 @@ gateway-security
 gateway-testing
 gateway-tools
 gateway-typescript
+gator-cli
+gauntlet
 gay-mcp
+gcp-managed-airflow-migrations
+gcp-managed-airflow-recommendations
 gcp-pipeline-resource-provisioning
 gdb-for-debugging
 gdcnet-generative-discrepancy-comparison
 gdpr-compliance-reference
+gdpr-data-handler
 gdscript-expert
+gears-broadcast
 gee-api-routes
 gee-auth
 gee-export
@@ -4799,6 +5478,7 @@ gem-reviewer
 gem-skill-creator
 gemini-cli-migration
 gemini-deep-think
+gemini-search
 gemma-guide
 gen-catalog
 genai-code-suggestion-micro-interruption-eye-tracking
@@ -4814,19 +5494,31 @@ generate-mcp-app-ui
 generate-okd-ci-operator-configs
 generate-requirements
 generate-social-media-captions
+generate-sparkle-appcast
 generate-speakmanai-code
 generate-speakmanai-skill-workflow
 generate-test-plan
 generate-ux-design
+generating-compliance-reports
+generating-end-to-end-tests
+generating-infrastructure-as-code
 generating-kb-articles
+generating-orm-code
+generating-security-audit-reports
+generating-stored-procedures
+generating-test-doubles
+generating-test-reports
 generative-ai
 generative-ontology-structured-knowledge
 generic-approval
 genie-tcb-auth-integrator
+geniml-genomic-interval-ml
 genomic-epidemiology
+genomic-file-toolkit
 genomics-pro
 genosdb
 geo
+geo-authority-architect
 geo-orientation
 geochat-grounded-large-vision-language-model-for-remote-sens
 geochemical-analysis
@@ -4834,6 +5526,7 @@ geography
 geology
 geomorphology-fieldwork
 geospatial-mapmaking
+gerador-de-skill
 gerador-docker
 gerador-terraform
 gerador-workflow
@@ -4856,6 +5549,18 @@ gh-workflows
 gha-security-review
 ghidra
 ghost-bits-cast-attack
+ghscan-4-euro-ab-eek-rain-save
+ghscan-aascer39-ard-ollection-anager-string
+ghscan-adrianco-retort-atdd
+ghscan-antoniocascais-claude-code-toolkit-myskill
+ghscan-danielcamposramos-nowledge3-llm
+ghscan-glittercowboy-taches-cc-resources-heal
+ghscan-hanlovana-ona-androidskill
+ghscan-mohsen1-llm-debugger-vscode-extension-agent
+ghscan-robotocore-robotocore-20260319-053000-pr-review
+ghscan-ryanwww20-gent-claude
+ghscan-u-orawit-eedback-1-prompt11
+ghscan-zernie-paperlint-skill-md-spec
 gifs
 gift-idea-finder
 girlfriend
@@ -4871,14 +5576,15 @@ git-pr-review
 git-pr-workflows
 git-pro
 git-safe-commit-qg-aware-wrapper
-git-status-tui
 git-workflow-architect
 git-workflow-multirepo
 gitea-issue-management
 github-branch-protection-rulesets
 github-cli-automation
 github-commit-list
+github-copilot-sdk
 github-debugger
+github-elements-tracking
 github-file-read
 github-hmac-webhook-verify
 github-india-agentic-oss-growth
@@ -4900,10 +5606,13 @@ give-a-short-presentation
 give-difficult-feedback-to-a-report
 give-examples-first
 gke-compute-classes
+gl-subledger-reconciler
 glab-version
+glassmorphism-ui-design
 global-state-management-redux
 global-ui
 glovo
+gmail-triage
 gnomad-graphql-skill
 go-api
 go-arch
@@ -4911,6 +5620,7 @@ go-code
 go-core-idioms
 go-db
 go-fsm
+go-functional-options
 go-messaging
 go-middleware-context-injection
 go-nolint-audit
@@ -4967,6 +5677,7 @@ gpg
 gpg-expert
 gpt
 gpt-5-5-agentic-setup
+gpt-researcher
 gpu-architecture
 gpu-sandbox
 gqa-a-new-dataset-for-real-world-visual-reasoning-and-compos
@@ -4985,18 +5696,18 @@ grant-writer
 graph-anchored-knowledge-indexing-retrieval-augmen
 graph-augmented-context
 graph-relationship-mapping
-graph-stores
 graph-theory-math
 graphagents-knowledge-graph-guided-agentic
+graphify
 graphify-setup
 graphql-and-hidden-parameters
 graphql-api-designer
 graphql-architect
+graphql-federation
 graphql-mcp
 graphql-pro
 grault-skill
 gravitational-physics
-grayswan-arena-ipi
 grc-analyst
 great-tables
 greece
@@ -5008,6 +5719,7 @@ grid-optimizer
 grill-my-taste
 grill-the-schema
 grill-with-docs-codex
+grill-with-prototype
 grilling
 grocery
 groq-guide
@@ -5147,6 +5859,8 @@ guardrail-validation
 guardrails-ai
 guidance-tracker
 guide
+guided-statistical-analysis
+guild-brainstorm
 gwas-catalog-skill
 gym
 ha
@@ -5156,6 +5870,7 @@ hacktivist
 haif-human-ai-integration-framework
 haip-protocol-profile
 haip-security
+hairy-utils
 hallucination-guardrails-6
 hallusionbench-an-advanced-diagnostic-suite-for-entangled-la
 halluverse-m3-multitask-multilingual-benchmark-hal
@@ -5175,6 +5890,7 @@ hardware-architecture-analysis
 hardware-in-the-loop-testing
 harmoni-multimodal-personalization-multi-user
 harmonyos-stdx-dependency
+harness-prd
 harnesses
 harnessing-precision-querying-retrieval-augmented
 harvest-adaptive
@@ -5186,29 +5902,37 @@ has-selector
 hash-generator
 hashicorp
 haskell-pro
+haul
 haystack-agents
 hci
 headline-psychologist
 headscale
 health insurance
 health-event-automator
+health-goal-analyzer
 healthcare-api
 healthcare-audit
 healthcare-compliance
 healthcare-ops
 healthtech-standards-security
-hearth
 hebrew
 hedera
 helios-hierarchical-graph-abstraction
 hello-skill
+hello-skillset
 helm-pro
 help-flow
+helpful-utility
 helsinki
 her
+hermes-a2a-setup
 hermes-dashboard-ops
+hermes-dojo
 hermes-legal-watchdog
 hermes-nightly-watchdog
+hermes-skin-authoring
+hermes-soul-authoring
+hermes-version-summary
 hexagonal-architecture-layers-java
 heygen-best-practices
 hf-mem
@@ -5224,6 +5948,7 @@ hf-mem-version-compatibility
 hibernate-multi-dialect-swap
 hidden-licensing-risks-llmware
 hidden-rx-memory-reconstruction
+hierarchical-agent-memory
 hierarchical-group-entity-mongo
 high-availability
 high-performance-computing
@@ -5274,6 +5999,7 @@ hlr-53-zero-knowledge-proofs
 hlr-54-accessibility
 hlr-55-certificate-transparency
 hmac-verify
+hmdb-metabolome-database
 hmdb-skill
 hohpe-eip
 hold-a-project-retrospective
@@ -5285,11 +6011,13 @@ home-task-manager
 homelab
 homepod
 homomorphic-encryption
+hone
 hong kong
+hook
 hook-timing
 hooks-and-guardrails
+hooks-management
 hops-app-db
-hops-data-sources
 hormozi-hormozi-ads
 hormozi-hormozi-advisor
 hormozi-hormozi-audit
@@ -5306,6 +6034,7 @@ hormozi-hormozi-retention
 hormozi-hormozi-scale
 hormozi-hormozi-workshop
 hosted-scraping-api
+hot-take-forge
 hotp
 house
 housing
@@ -5321,40 +6050,35 @@ hr-and-workforce
 hr-operations
 hr-ops
 hr-pro
+html-dashboard-builder
+html-to-react-conversion
 htmx-spa-conventions
 http-api-cloudbase
 httpx-python
 huawei-engineer
 hud-first
 huggingface-inference
+huggingface-mem
 huggingface-pro
 human-behavior-atlas-omnisapiens
 human-optimized-frontend
 human-protein-atlas-skill
+humaniseur-fr
+humanize-chinese-text
 humor
 hungarian
-hunt-aspnet
-hunt-auth-bypass
-hunt-business-logic
 hunt-cache-poison
 hunt-captcha-bypass
 hunt-clickjacking
 hunt-exceptional-conditions
 hunt-fintech-graphql
-hunt-forgot-password
 hunt-graphql
 hunt-html-injection
 hunt-http-smuggling
-hunt-idor
 hunt-jwt-crypto
-hunt-misc
 hunt-ntlm-info
-hunt-oauth
-hunt-race-condition
 hunt-rag-vector
-hunt-sharepoint
 hunt-sqli
-hunt-ssrf
 hunt-subdomain
 hunting-active-directory-acl-abuse-paths
 hunting-adcs-certificate-template-abuse
@@ -5378,7 +6102,6 @@ hunting-formula-injection-in-exports
 hunting-helm-template-and-values-injection
 hunting-host-header-and-url-parsing-trust
 hunting-http-request-smuggling-and-desync
-hunting-hybrid-app-bundle-and-config-exposure
 hunting-iam-privilege-escalation-paths
 hunting-java-deserialization-gadget-chains
 hunting-kerberos-and-ad-delegation-abuse
@@ -5389,7 +6112,6 @@ hunting-mobile-secret-and-storage-exposure
 hunting-mobile-tapjacking-and-overlay-abuse
 hunting-mobile-tls-pinning-and-trust-gaps
 hunting-mutual-tls-and-service-identity-gaps
-hunting-non-human-identity-and-secret-reachability
 hunting-ntlm-coercion-and-relay
 hunting-orm-and-query-builder-injection
 hunting-os-command-injection
@@ -5407,7 +6129,6 @@ hunting-server-side-rendering-and-svg-image-abuse
 hunting-server-side-template-injection
 hunting-setuid-and-capability-escalation
 hunting-signature-replay-and-eip712-domain-trust
-hunting-smart-contract-reentrancy
 hunting-subdomain-takeover-and-dangling-dns
 hunting-supply-chain-risks
 hunting-tenant-onboarding-and-discovery-abuse
@@ -5421,6 +6142,7 @@ hunting-xpath-and-xml-query-injection
 hunting-xxe-and-xml-parser-trust
 hybrid-apps
 hybrid-cloud-architect
+hybrid-search-retrieval
 hybrid-supervised-llm-pipeline-actionable-suggesti
 hydrological-modeling
 hylo-ghl
@@ -5439,6 +6161,7 @@ hyperresearch-6-cross-locus-reconcile
 hypervisor-introspection
 hypothesis-python
 i18n accessibility
+i18n-localization-patterns
 i18n-localization-setup
 iac-deployability-verification
 iac-provisioner
@@ -5454,6 +6177,7 @@ iam-pro
 iast-interactive-testing
 iat-rebuild
 ib-deck
+ib-deck-quality-check
 ibiza
 ibm-engineer
 ic-eo-interpretable-code-based-assistant
@@ -5464,6 +6188,7 @@ icn-preflight
 icon-designer
 iconography-imagery
 icons
+iconsax-icon-library
 ics-access-remote-configure
 ics-architecture-iec-62443-conduit-configure
 ics-architecture-iec-62443-zones-design
@@ -5489,6 +6214,7 @@ ics-vuln-patch-manage
 ide-bench-evaluating-as-ide
 idea-to-done
 idea-to-prd
+ideal-client-generator
 idempotency-concurrency-safety
 idempotent
 idempotent-retry-safety
@@ -5542,11 +6268,20 @@ identity-saml-okta-verify
 identity-serviceaccount-saaudit
 identity-serviceaccount-service
 identity-threat-insider
-idor-broken-object-authorization
 idor-detection-recall
 ids-ips-pro
 iem
 ignored
+ijfw-commit
+ijfw-compress
+ijfw-critique
+ijfw-cross-audit
+ijfw-debug
+ijfw-handoff
+ijfw-memory-audit
+ijfw-plan-check
+ijfw-recall
+ijfw-update
 im8
 image-pro
 image-prompt-engineering
@@ -5561,16 +6296,19 @@ immutable-action-event-log
 impact-measurement
 impact-org
 impag
+impeccable-frontend-design
 impermanent-loss
 implement-from-design
-implement-push-notifications
+implement-it
 implement-spec
+implement-spec-with-goal
 implementation-handoff
 implementation-intentions-action-design
 implementation-plan-executor
 implementing-email-security-with-dmarc-dkim-spf
 implementing-mfa-enforcement
 implementing-osquery-for-endpoint-monitoring
+implementing-real-user-monitoring
 implementing-threat-intelligence-platform
 import-analyze
 improving-multimodal-learning-with-multi-loss-gradient-modul
@@ -5594,6 +6332,7 @@ income-approach-expert
 incremental-build
 indemnity-expert
 independent-review
+indesign
 indexing
 india
 indie hacker
@@ -5611,12 +6350,12 @@ influx
 information-systems-security-officer-classified-specialist
 infra-azure
 infra-gcp
-infra-harden
 infra-release-readiness
 infrastructure-reconstruction-guide
 ingest-webhook-secure
 inillucent-troubleshoot
 init-deadline-guard
+init-dev-project
 init-mode
 init-workspace-context
 init-workspace-discovery
@@ -5642,6 +6381,8 @@ inspect
 inspect-a-used-car-before-buying
 inspector2-coverage-operator
 inspiration
+instagram-cli
+install-adr-gatekeeper
 install-baseline
 install-futu-opend
 install-hook
@@ -5657,7 +6398,9 @@ insurance-agent-client-retention
 insurance-agent-insurance-analysis
 insurance-claims
 insurance-strategist
-integrate-oauth-oidc
+integrating-secrets-managers
+integration-connectivity-connected-app-configure
+integration-connectivity-generate
 integration-landscape
 integration-test
 integrity-failures
@@ -5685,7 +6428,6 @@ interface-craft
 interface-designer
 interface-kit
 interface-redesign
-interface-segregation-principle
 interfaces-blog-goldilocks-beehive-ecoreset-may-2026
 interfaces-blog-when-the-sun-spoke
 interfaces-commons-chef
@@ -5718,7 +6460,6 @@ interfaces-press-release-synthobs-chipless-datacenterless-june-2026
 interfaces-press-releases
 interfaces-questfest-2026-frontier-guide
 interfaces-questfest-bridge
-interfaces-sing13-edge-onboarding
 interfaces-that-feel
 interfaces-valetpru-agent-mode
 interfaces-vibelandia-questfest
@@ -5869,6 +6610,7 @@ interpreting-culture-index
 interrupted
 intomd
 introduce-yourself-professionally
+introduction
 invalid-fixture
 invalid-frontmatter
 invalid-name
@@ -5888,6 +6630,7 @@ investigation-mode
 investigation-replan-trace
 investing-plain
 investor-ready
+invoice-expense-review
 invoices
 ios-app
 ios-clean
@@ -5900,7 +6643,9 @@ ipados
 ipd-skill
 iphone
 ireland
+ireport
 irish
+irreplaceable-edge
 isar-expert
 isc2-cissp-csslp-standards
 isd-agent-bench-comprehensive-benchmark-evaluating
@@ -5917,9 +6662,30 @@ it-security-plan
 it-service-manager
 italian
 italy
+item-type-skill
 iterate-review
 iteration-complete
 jacoco-sonar-shared-exclusion-list
+jade-recipe-1.5-1.6-arrays-copyof
+jade-recipe-1.5-1.6-arrays-copyof-full
+jade-recipe-1.5-1.6-string-isempty
+jade-recipe-1.7-1.8-build-doclint-strict
+jade-recipe-1.7-1.8-jdbc-odbc-bridge
+jade-recipe-1.7-1.8-lambda-conversion
+jade-recipe-1.7-diamond-operator
+jade-recipe-1.7-try-with-resources
+jade-recipe-11-17-applet-api-removal
+jade-recipe-11-17-multicast-group-api
+jade-recipe-11-17-rmic-task-removal
+jade-recipe-11-17-threadgroup-destroy
+jade-recipe-11-17-wrapper-valueof
+jade-recipe-17-21-file-io-charset
+jade-recipe-17-21-finalize-removal
+jade-recipe-17-21-threaddeath-removal
+jade-recipe-8-11-cldr-locale-data
+jade-recipe-8-11-tls-anon-cipher
+jade-recipe-dummy
+jant-site
 japan
 japanese
 jargon
@@ -5975,6 +6741,7 @@ k8s-cluster-ops
 k8s-debug-workload
 k8s-hardening-and-render
 k8s-health-via-getnodelist
+k8s-jvm
 k8s-manifest-review
 k8s-pod-health-investigator
 kafka-avro-topic-auto-create-config
@@ -5996,7 +6763,6 @@ keep-instructions-direct
 keep-instructions-friendly-and-clear
 keep-sensitive-financials-private
 kennedy-kennedy-advisor
-kennedy-kennedy-affluent
 kennedy-kennedy-audit
 kennedy-kennedy-brand
 kennedy-kennedy-business
@@ -6009,6 +6775,9 @@ kennedy-kennedy-offers
 kennedy-kennedy-persuasion
 kennedy-kennedy-referrals
 kennedy-kennedy-sales-letter
+kent-dogfooding
+kent-tasks
+kent-workflows
 kerberos
 kernel
 kernel-callbacks
@@ -6031,17 +6800,16 @@ kitt-create-plans
 kitt-create-subagents
 knead-bread-dough
 knowledge-activation-atomic-knowledge-units
+knowledge-base-architect
 knowledge-base-sync
 knowledge-catalog-discovery
 knowledge-save
 knowledge-services
-koe-koe-advisor
 koe-koe-arquiteto
 koe-koe-brand
 koe-koe-chief
 koe-koe-coletor
 koe-koe-distribuidor
-koe-koe-mindset
 koe-koe-offers
 koe-koe-sintetizador
 kong-ingress-controller
@@ -6051,6 +6819,7 @@ kosmos-2-grounding-multimodal-large-language-models-to-the-w
 kql-expert
 krci-testbed
 krustlet
+ksmbd-syzkaller-fuzzing
 kubernetes resource ui patterns
 kubernetes-architect
 kubernetes-month-of-lunches
@@ -6080,7 +6849,6 @@ lang-c
 lang-cpp
 lang-java
 lang-markdown
-lang-powershell
 langchain-basics
 langsmith-llm-observability-platform
 language-method
@@ -6100,12 +6868,14 @@ laravel-telescope
 laravel-upgrade-v13
 laravel-vector-search
 laravel-vite
+large-report-editor
 large-scale-multidimensional-knowledge-profiling
 large-workspace-handling
 las vegas
 latch
 late-api
 latency
+latent-cartographer
 latte-templates
 latvian
 launch-kit
@@ -6121,9 +6891,12 @@ layoutlmv3-pre-training-for-document-ai-with-unified-text-an
 ldap
 lead-nurture-sequence-design
 lead-orchestration
+leaderize-storytelling-framework
 lean-code
 lean-ux-canvas
+leanback-to-compose-tv-migration
 learn-new-skills-ten-times-faster
+learning-checkpoint
 learning-compose-cross-domain-agentic
 learning-development-lead
 learning-irrecoverable-error-localized-policy
@@ -6226,19 +6999,25 @@ legal-compliance-lgpd
 legal-contract-lifecycle
 legal-contract-review
 legal-discovery
+legal-document-comparison
+legal-due-diligence-review
 legal-governance
 legal-hybrid-skill
 legal-logic-analysis
+legal-matter-chronology
 legal-risk-analyzer
+legal-risk-assessment-zacharie-laik
 legalmalr-multi-agent-query-understanding
 lego-rl-harness-native-coding-agent
 less-noise-more-voice
 lesson-generator
+letsping
 lettactl
 leveraging-data-say-no
 leveraging-turkish-skill-extraction
 levy
 lfg
+li-gong-demo
 license
 license-and-ip-review
 lie-groups
@@ -6249,7 +7028,14 @@ lighthouse-bridge
 lightning-architecture-review
 lightning-channel-factories
 lightning-factory-explainer
+lime-design
 linear-algebra
+linear-issues-read
+linear-issues-write
+linear-milestones-read
+linear-milestones-write
+linear-projects-read
+linear-projects-write
 lingo.dev localization (i18n) agent
 lingui
 linguistic-en-us
@@ -6349,11 +7135,12 @@ lisa-maestro-mcp-setup
 lisa-review-local
 lisa-setup-aws
 lisbon
-listen
+listenhub
 litecoin
 literature
 lithuanian
 litigation-predictor
+live-docs
 live-evo-online-evolution-agentic
 live-region-controller
 livemedbench-contamination-free-medical-benchmark
@@ -6370,6 +7157,8 @@ llm-assisted-logic-rule-learning
 llm-based-sql-generation-prompting
 llm-in-sandbox-elicits-general-agentic
 llm-json-extraction
+llm-obs-experiment-py-bootstrap
+llm-obs-trace-rca
 llm-personalized-nudge-friction-boundary
 llm-status
 llms
@@ -6395,7 +7184,6 @@ log-a-mileage-expense
 log-a-sales-call
 log-a-sick-day
 log-in
-log-injection-detector
 log-parser-debugger
 logger-configuration-winston
 logging-failures
@@ -6415,26 +7203,36 @@ lsp-engineering
 ltb-application-hearing-procedures
 ltspice
 ltx-video
+lure
 lynk
+lyric
 m-and-a-strategist
 macau
+macclaw copilot cli
 maccy
 macos automator
 macos-accessibility
 macos-metal
 macos-rca
+macos-sandbox-app-data
 macpowertools
 madeira
 madrid
+maestro-flow
 magellan-autonomous-discovery-compiler
+magi
 magic-compact
 magic-value-genealogist
 magpie-alignment-data-synthesis-from-scratch-by-prompting-al
 mail
 mail-a-letter
+mail-bridge
 main
+mainframe-planning
+mainframe-removal
 maintainable-react
 maintenance-scheduling
+major-version-mode
 make-a-baked-egg
 make-a-cheese-board
 make-a-cheese-sauce
@@ -6449,6 +7247,7 @@ make-a-marinade
 make-check-verification-loop
 make-pdf
 make-scenarios
+making-commits
 malay
 malformed-skill
 malware-dev
@@ -6456,13 +7255,21 @@ mampe-industrial-core
 manage-client-server-state
 manage-interface
 manage-providers
+manage-repo-licensing
 manage-your-subscriptions
 managed-airflow-dag-troubleshooting
 managed-airflow-migrations
 managed-toml-block-idempotent
 management-consultant-client-deliverables
 management-consultant-strategic-analysis
+managing-autonomous-development
+managing-database-testing
 managing-ff-pipeline
+managing-network-policies
+managing-project-rules
+managing-snapshot-tests
+managing-ssltls-certificates
+managing-test-environments
 managing-workflow-secrets
 manimce-best-practices
 manual-test-plan
@@ -6473,9 +7280,11 @@ map-privacy-data-gdpr
 map-systems
 mapping-pod-to-cloud-credential-reach
 mapping-service-account-impersonation-chains
+marimo-pair
 marine-biology
 mark-a-deal-won-or-lost
 markdown-csv-reporter
+market structure algorithm
 marketing-bundle
 marketing-competitive-brief
 marketing-email-sequence
@@ -6497,6 +7306,10 @@ mathematics-category-theory-programming-bridge-skill-2026
 mathematics-combinatorial-optimization-design-skill-2026
 mathliblemma-folklore-lemma-generation
 mathvista-evaluating-mathematical-reasoning-of-foundation-mo
+matlab-assess-toolbox
+matlab-install-products
+matlab-write-help
+mattpocock-skills
 maven-search
 maximizing-game-feel
 maxtac-core-subagents
@@ -6505,11 +7318,16 @@ mba
 mckinsey-enterprise-ai-agents-automation-playbook
 mcp-atlas-large-scale-benchmark-tool-use
 mcp-capability-negotiated-initialize
+mcp-duckgo
 mcp-enterprise-auth
 mcp-enterprise-integration-patterns
+mcp-prompts-guide
 mcp-protocol-migration
+mcp-resources-guide
 mcp-runtime-prompt-refresh
 mcp-server-development-guide
+mcp-tool-creation
+mcp-transport-guide
 md-callout
 mdl-unified-multi-distribution-learner
 mdoc-core-capabilities
@@ -6524,17 +7342,22 @@ mechanics
 medbeads-agent-native-immutable-data
 media-engineer
 media-lifecycle
+media3-cast-integration
 mediabunny
 mediate-a-conflict-between-coworkers
 medical-billing
+medical-billing-document-review
 medical-coding
 medical-imaging
+medical-record-review
+medical-record-timeline
 medication-adherence
 medicine
 medidas-cautelares-ca
 medium-strategy
 medspeak-knowledge-graph-aided-asr
 meeting-management
+meeting-nuggets
 meeting-sdk
 meeting-sdk-android
 meeting-sdk-electron
@@ -6549,6 +7372,7 @@ meeting-sdk-web-component-view
 meeting-sdk-windows
 meetings
 memcast-memory-driven-time-series
+memoclaw
 memory-and-concurrency-verification
 memory-breakpoint
 memory-compression
@@ -6570,6 +7394,7 @@ message
 message-queue-implementation
 messageguard
 meta agentic project scaffold
+meta-ads-manager
 meta-engineer
 meta-using-bitranox-skills
 metabolights-skill
@@ -6577,7 +7402,6 @@ metadata-list
 metagen-self-evolving-roles-topologies
 metaverse
 method-decomposition-refactoring
-methodical
 methodology-framework-mapping
 methodology-review
 methodology-reviewer
@@ -6586,6 +7410,7 @@ meticulous-use-session-data
 metric-modeling
 metrics
 metrics-calibrator
+metronome
 metzgar-dotnet-core
 mexico
 mfa-memoryrouter-isolation
@@ -6595,20 +7420,23 @@ mhdash-online-platform-benchmarking
 miami
 microservice-communication
 microservice-iteration-handoff
-microsoft-azure-webjobs-extensions-authentication-events-dotnet
 microsoft-copilot-studio
 microsoft-dynamics-365-integration
 middleware-engineer
+midgard-design
 migrate-architecture
 migrate-bootstrap
 migrate-to-promptscript
+migrate-xml-views-to-jetpack-compose
 migration-apprunner-to-ecs-express
 migration-azure-to-aws
 migration-engineer
 migration-gcp-to-aws
 migration-hub-strategy-deployer
 migration-limbo-detector
+migration-mapping
 migration-safety-inspector
+migration-scoring
 migration-test-writer
 migration-verify
 migration-zero-downtime
@@ -6683,9 +7511,12 @@ minimal-plugin-skill
 minimax
 mining-maintenance
 mining-safety
+minions
 miniprogram-implement
 minizinc
+mint
 mintlify
+mira-survey
 mirage
 mirror-multi-agent-framework-iterative
 misc-any-x-vibe
@@ -6717,6 +7548,7 @@ mk:qa-manual
 mk:session-continuation
 mk:skill-template-secure
 ml-engineer
+ml-kit-genai-prompt-api
 ml-pipeline-engineering
 ml-research-experimentation
 mlops-engineer
@@ -6779,6 +7611,7 @@ model-optimizer
 model-recommender
 model-resilience-audit
 model-tier-routing
+modeling-nosql-data
 modeling-science
 modern-cryptography
 modularize
@@ -6788,6 +7621,9 @@ module-federation-expose-wrapper
 module-federation-setup
 module-scaffolding
 modules
+mojo-gpu-fundamentals
+mojo-python-interop
+mojo-syntax
 molecule
 molmo-and-pixmo-open-weights-and-open-data-for-state-of-the
 monday-brief
@@ -6821,6 +7657,7 @@ motion-assets
 motion-method
 motion-render
 motion-review
+motion-web-site-builder
 move-a-deal-to-the-next-stage
 movie
 mpib-benchmark-medical-prompt
@@ -6831,12 +7668,14 @@ mqtt
 mrag-benchmarking-retrieval-augmented-generation
 msf
 msr-vtt-a-large-video-description-dataset-for-bridging-video
+muller-brockmann-grid
 multi-agent-systems-architect
 multi-agent-teams-hold-experts
 multi-channel-funnels
 multi-cli
 multi-engine web search
 multi-layer-network-pivoting
+multi-model-debate-live
 multi-model-triangulation
 multi-platform-desktop-release-workflow-github-actions
 multi-platform-dev
@@ -6845,12 +7684,13 @@ multi-script
 multi-tenant-saas
 multi-tenant-scheduler-iteration
 multi-turn-conversation-design
+multimedia-production-orchestrator
 multimodal-c4-an-open-billion-scale-corpus-of-images-interle
 multimodal-learning
 multiplayer-review
 multivis-agent-multi-agent-framework-logic
-mulvul-retrieval-augmented-multi-agent-code
 mumbai
+music-to-video
 mutation-fuzzing-testing
 mvp-spec
 my-cool-skill
@@ -6860,6 +7700,7 @@ my-pull-requests
 mybatis-plus-generator
 mysql-query
 n-plus-one-hunter
+n8n workflow mastery — complete automation engineering system
 n8n-workflow-automation
 nacionalidad-otras-vias
 name-wuge
@@ -6867,6 +7708,7 @@ names-technology
 naming-helper
 narrative-design
 nas
+nasa-power-of-ten-python
 nation-state
 native-apps
 native-code-patterns
@@ -6874,6 +7716,7 @@ navbar-and-routing
 navigating-the-initiative-funnel
 navigation-adapter-cross-platform
 navigation-and-page-structure
+navigation-event
 nbconvert
 ncbi-blast-skill
 ncbi-clinicaltables-skill
@@ -6890,6 +7733,24 @@ negotiate-a-job-offer
 negotiate-a-used-car-price
 negotiate-with-a-vendor
 negotiation-basics
+nemoclaw-user-configure-inference
+nemoclaw-user-configure-security
+nemoclaw-user-deploy-remote
+nemoclaw-user-manage-policy
+nemoclaw-user-monitor-sandbox
+nemoclaw-user-overview
+neo4j-cypher-skill
+neo4j-driver-dotnet-skill
+neo4j-driver-go-skill
+neo4j-driver-java-skill
+neo4j-gds-skill
+neo4j-genai-plugin-skill
+neo4j-modeling-skill
+neo4j-nvl-skill
+neo4j-query-tuning-skill
+neo4j-security-skill
+neo4j-snowflake-graph-analytics-skill
+neo4j-vector-index-skill
 neobem (`nbem`)
 neon-branching
 ness-design
@@ -6929,7 +7790,6 @@ neurology
 neuromarketing-two-categories-forward-prediction
 neuromorphic-computing
 neurophysiological-consumer-meta-analysis
-never-paste-private-passwords
 new york (state)
 new york city
 new zealand
@@ -6948,6 +7808,7 @@ nextjs-stack
 nextjs-tanstack-form
 nextjs-tanstack-query
 nextjs-zustand
+nexwave-gateway
 ngamux
 ngs-chip-cutrun-peaks-qc
 nibabel
@@ -6961,10 +7822,10 @@ no-description
 no-explicit-any
 no-frontmatter
 no-ls-bash-listing
+no-sql
 no-unchecked-indexed-access
 node-production-practices
 node-tests
-node-transfer
 nodejs-nestjs
 nodejs-standards
 nodejs-streams
@@ -6978,13 +7839,15 @@ normalize
 norway
 norwegian
 nosi
+not-an-assembler
 notification-routing
 notifications-delivery
+notify-format
 notion api integration
 notion calendar
 notion-cli-agent
+notion-intelligence-orchestrator
 novartis-engineer
-npm-harden
 nrf24-bitbang-spi
 nsai-init
 nuclear
@@ -7001,6 +7864,7 @@ nursing-theory-matcher
 nutrition-strategist
 nutritionist
 nuxt
+nuxt-swiftsearch
 nvidia-cuda-q-cudaq-guide
 nvidia-model-optimizer-evaluation
 nvidia-nemo-evaluator-launcher-nel-assistant
@@ -7018,7 +7882,11 @@ nvidia-nixl
 nvidia-video-search-and-summarization-video-summarization
 nvidia-video-search-and-summarization-vios
 nw-discuss
+nx-import
+nx-plugins
+nx-run-tasks
 nxv-design
+o-computer-personalization
 o-segredo
 oathkeeper
 oauth-oidc-misconfiguration
@@ -7028,10 +7896,14 @@ object-detection
 objection-preemptor
 objects365-a-large-scale-high-quality-dataset-for-object-det
 obligation-mapping
+obra-superpowers-pack
 observability-alert-noise-analyzer
 observability-engineer
 observability-instrument
+observability-review
 observability-slo
+oc-1
+oc-hs
 oceanbase-knowledge
 octave-mythology
 octocat
@@ -7047,14 +7919,9 @@ office-suite
 official_docs
 offline-first-mobile-architecture
 offline-sync-readiness
-oid4vci-authorization
+oh-my-hermes
 oid4vci-batch-issuance
-oid4vci-credential-endpoint
-oid4vci-deferred-notification
-oid4vci-issuer-metadata
 oid4vci-issuer-reviewer
-oid4vci-overview
-oid4vci-security
 oid4vp-authorization-request
 oid4vp-dc-api
 oid4vp-dcql
@@ -7065,7 +7932,6 @@ oid4vp-metadata
 oid4vp-overview
 oid4vp-request-uri-jar
 oid4vp-response
-oid4vp-security
 oid4vp-security-auditor
 oidc
 ok-vqa-a-visual-question-answering-benchmark-requiring-exter
@@ -7074,9 +7940,22 @@ okta-workflows-field-guide
 okta-workflows-hooks-streaming
 ollama-specialist
 ollama-testing
+omc-plan
 omen
+omh-deep-interview
+omh-deep-research
+omh-ralph-driver
+omnistudio-callable-apex-generate
+omnistudio-datamapper-generate
+omnistudio-datapacks-deploy
+omnistudio-dependencies-analyze
+omnistudio-epc-catalog-generate
+omnistudio-flexcard-generate
+omnistudio-integration-procedure-generate
+omnistudio-omniscript-generate
 omniverse-realtime-viewer
 omp-provider-rerouting-diagnosis
+on-demand-cluster
 on-device-ai-engineer
 on-impact-agentsmd-files
 on-uncertainty-model-based-multi-agent
@@ -7100,6 +7979,7 @@ oncokb-writing-for-agents
 oncology
 one-command-setup-flow
 one-sentence-elevator-pitch
+onefilellm
 onekgpd
 ontario-expropriations-act-statutory-interpretation
 ontology-to-tools-compilation-executable-semantic
@@ -7107,6 +7987,7 @@ open-clip
 open-gstack-browser
 open-kritt
 open-source-context
+open-source-expert
 open-webui-valkey-websocket
 open-weight-role-drift-governance-artifacts
 openai-agents-sdk
@@ -7115,6 +7996,10 @@ openai-chat
 openai-yeet
 openapi-fastapi
 openapi-to-mcp-tag-grouping
+openclaw skill: fdv.lol (cli / headless memecoin auto trader)
+openclaw-accounting
+openclaw-agent-network
+openclaw-media-gen
 opencode-model-router
 opencode-pentester
 openguandan-large-scale-imperfect-information
@@ -7147,7 +8032,6 @@ ops-flow
 ops-inspector
 ops-learn
 ops-pentest-report
-ops-swarm
 optics
 optimal-nudging-resource-rational-framework
 optimistic-mutation-pattern
@@ -7168,6 +8052,7 @@ orchardcore-custom-indexing-azureai
 orchardcore-custom-indexing-elasticsearch
 orchardcore-deferred-tasks
 orchestra-research-skills
+orchestrate
 orchestrate-agent-department
 orchestrate-agent-workflow
 orchestrating-adversarial-reviews
@@ -7178,8 +8063,6 @@ order-salads
 org-scoped-kafka-topic-bootstrap
 organization-best-practices
 organizational-policy-and-performance
-organized-crime
-organizing-projects
 orgscript-engineer
 originpro
 orlando
@@ -7203,6 +8086,7 @@ outcome-first
 outer-loop-harness-framework
 outline-before-writing
 output-final-draft-only
+output-policy
 output-style-engineering
 outreach-batch
 overdrive
@@ -7216,7 +8100,11 @@ owasp-www-chapter-dkte-soc-textile-and-engineering-institute
 owasp-www-chapter-indian-institute-of-information-technology-kottayam
 owasp-www-chapter-indraprastha-institute-of-information-technology
 owasp-www-old-chapter-pimpri-chinchwad-college-of-engineering
+p10
 p5
+p7
+p9
+package-usage
 packed-so-elf-rebuild
 packet-replay
 pactos-contrato-trabajo
@@ -7226,6 +8114,7 @@ pagerduty incident responder
 pagerduty-alert
 pagination-implementation
 pai
+pair-agent
 paired-flag-multi-instance-registration
 paladin-vault-list
 paleontology
@@ -7234,8 +8123,10 @@ panama
 panda-70m-captioning-70m-videos-with-multiple-cross-modality
 pandas-datareader
 pandas-python
+paper-illustration
 papermill
 papersearchqa-learning-search-reason
+paradigm-collision-engine
 paraguay
 paralegal-legal-research
 paralegal-legal-writing
@@ -7250,6 +8141,7 @@ paramus-chemistry
 paranoia-profiler
 parapet-ingress-controller
 parasitology
+paraview
 parenting
 parenting-strategist
 paris
@@ -7261,6 +8153,7 @@ part-1-research-pipeline-logic
 partial-differential-equations
 partnership-evaluation
 parts-inventory
+paseo
 passkey
 patch-apply
 patch-prioritization
@@ -7272,6 +8165,7 @@ patient-engagement
 pattern-audit
 pattern-grouper
 pattern-scanner
+pay-via-agent-wallet
 payment-gateways
 payment-patterns-skill-renamed-from-stripe-patterns
 payments-and-finance
@@ -7285,6 +8179,7 @@ pdf ocr using gemini llm
 pdf remediator
 pdf-accessibility
 pdf-annotate
+pdf-documents
 pdf-fill-form
 pdf-open
 pdf-scan-config
@@ -7297,6 +8192,7 @@ pediatrics
 peer-card
 peer-notebook-delivery-guard
 peer-review-ops
+pellicule
 pentab-engine
 pentest
 pentest-cloud-aws-azure-gcp
@@ -7317,6 +8213,13 @@ performance accessibility
 performance-engineer
 performance-investigation
 performance-optimization-dotnet
+performance-optimization-orchestrator
+performing-regression-analysis
+performing-security-audits
+performing-security-testing
+perigon-agent
+perigon-angular
+perigon-backend
 period tracker
 period-mode-enum-config
 permission-chain
@@ -7331,6 +8234,7 @@ perspective-taking-eeg-advertising
 pestel-analysis
 petroleum-engineering
 pfizer-scientist
+pge planner
 pharma-compliance
 pharma-quality-control
 pharmgkb-skill
@@ -7342,7 +8246,12 @@ phone
 photographer-photography-business
 photographer-visual-storytelling
 photography
+photonforge-gui-automation
+photonforge-live-viewer
+photonforge-pcell-authoring
+photonforge-yield-analysis
 photonics
+photoshop
 php-coding-standards
 php-core
 php-doc
@@ -7357,15 +8266,18 @@ phxstack-learn
 physics
 physics-informed-neural-networks
 physics-model-specification
+pi
 pick-up-a-package-from-the-post-office
 pii-schema-classifier
 pilates (session planner, form coach, progress tracker)
 pin-toolchain-versions
 ping-host
+pino-logging-setup
 pipecat-deploy
 pipecat-init
 pipecat-talk
 pipedream-workflows
+pipeline-add
 pipeline-overview
 pitch-an-idea-to-your-boss
 pitch-psychologist
@@ -7373,12 +8285,73 @@ pitch-review
 pitchfork-best-tracks
 pix2struct-screenshot-parsing-as-pretraining-for-visual-lang
 pixart-alpha-fast-training-of-diffusion-transformer-for-phot
+pixel
+pixijs-accessibility
+pixijs-application
+pixijs-assets
+pixijs-blend-modes
+pixijs-color
+pixijs-core-concepts
+pixijs-create
+pixijs-custom-rendering
+pixijs-environments
+pixijs-events
+pixijs-filters
+pixijs-html-source
+pixijs-math
+pixijs-migration-v8
+pixijs-performance
+pixijs-scene-container
+pixijs-scene-core-concepts
+pixijs-scene-dom-container
+pixijs-scene-gif
+pixijs-scene-graphics
+pixijs-scene-mesh
+pixijs-scene-particle-container
+pixijs-scene-sprite
+pixijs-scene-text
+pixijs-ticker
+pk-build
+pk-dec
+pk-dec-find
+pk-discuss
+pk-doctor
+pk-explain-routing
+pk-groom
+pk-lint
+pk-model-refresh
+pk-model-setup
+pk-note
+pk-note-promote
+pk-note-review
+pk-observe
+pk-owner-bootstrap
+pk-publish
+pk-reconcile
+pk-release
+pk-release-audit
+pk-repo-reconcile
+pk-research
+pk-resume
+pk-retro
+pk-review
+pk-route
+pk-skill-audit
+pk-skill-new
+pk-standup
+pk-status
+pk-supply-chain
+pk-test
+pk-work
+pk-wrapup
 plaid-finance
+plain-language-letters
 plan-apply
 plan-archive
 plan-auto
 plan-board
 plan-bug
+plan-c
 plan-ceo-review
 plan-checkpoint
 plan-chore
@@ -7390,6 +8363,7 @@ plan-eng-review
 plan-frame
 plan-goal
 plan-handoff
+plan-i
 plan-interrogator
 plan-orchestrating
 plan-product-delivery
@@ -7409,9 +8383,18 @@ planner-auditor-twin-agentic-discharge
 planning-poker
 plant identifier
 plants
+plasma
 plasma-physics
+platform-agentexchange-partner-offers-configure
+platform-apex-logs-debug
+platform-apex-test-run
 platform-bridge-core-provider
+platform-custom-object-generate
 platform-environment-templates
+platform-flexipage-generate
+platform-permission-set-generate
+platform-strategy-sms
+platform-value-set-generate
 play-billing-library-version-upgrade
 play-devils-advocate
 play-policy-insights
@@ -7425,15 +8408,20 @@ playwright-inspector-codegen
 playwright-java-dockerfile
 playwright-java-spring-lifecycle
 playwright-mcp-setup
+playwright-test-diagnosis
 playwright-test-healer
 playwright-test-planner
+plea
 pluggable-sender-factory-pattern
+plugin-dev-agent-creator
 plugin-resource-provider-architecture
 plugin-versioning
 pluralization
+pm-pricing-strategy
 pm-sprint-planner
 pmf-analysis
 pnpm
+podcastindex
 podcasts
 pointer-chain
 pointllm-empowering-large-language-models-to-understand-poin
@@ -7445,6 +8433,8 @@ politics-history
 polkadot
 poltergeist
 polyfile
+polyglot
+polyglot-language-coach
 polymarket-skill
 polymorphic-assignee-rendering
 polymorphic-command-entities
@@ -7505,6 +8495,7 @@ predictive-coding-information-bottleneck
 predictive-maintenance
 predictive-neuromarketing-bayesian-framework
 pregnancy (tracker, journal, triage, visit prep)
+premiere
 preparacion-recurso-casacion-ca
 prepare-for-a-performance-review
 prepare-production-readiness
@@ -7512,8 +8503,10 @@ presale-one-pass-orchestrator
 presale-regulation-auditor
 presale-service-bootstrap
 prescribing-defensive-payloads
+presentation mastery — complete slide design & delivery system
 presentation-designer
 preserved-wip-cleanup
+press-release-writer
 prevent-sql-injection
 preview
 preview-tour
@@ -7531,6 +8524,8 @@ primitive-usage-map
 principal-architect-role
 principal-create
 principal-engineer
+printable-cards
+prior-authorization-document-review
 prioritization-advisor
 prioritization-frameworks
 prioritize-a-backlog
@@ -7547,6 +8542,7 @@ pro-legal-strategist-v2
 pro-tools
 pro-zh-summary
 proactivity
+probe
 probe-sdk
 probing-knowledge-boundary-interactive
 problem-framing-canvas
@@ -7556,12 +8552,14 @@ process-a-purchase-order
 process-an-online-order
 process-pdf
 processing-s3-uploads-with-step-functions
+processize
 procurement-analysis
 procurement-review
 product-and-deploy-doc-sync
 product-answer
 product-bundle
 product-management-competitive-brief
+product-naming
 product-persona
 product-positioning-and-messaging
 product-sense-interview-answer
@@ -7572,7 +8570,9 @@ production-incident
 production-optimizer
 productivity-spec
 products-for-children
+professional
 professional-email-composer
+professional-senior-chrome-extension-architect-developer
 professional-web-design
 profile-dataset
 profile-picker
@@ -7600,16 +8600,21 @@ programming-tailwind-design-system-engineering-skill-2026
 programming-tutor
 progressive-disclosure-agent-skills-evidence
 progressive-web-apps
+project-brief
+project-builder
 project-coordinator
 project-docs-orchestrator
+project-domain
 project-execution
 project-handbook
+project-idea-validator
 project-identifier
 project-management-bundle
 project-review-skills
 project-reviewer
 project-shepherding
 project-style
+project-testing
 prometheus
 prompt-cache-control
 prompt-engineering-basics
@@ -7664,13 +8669,13 @@ public-resource-allocation
 public-sector
 public-services-audit
 publicist-germany-wireservice
-publish
-publish passwords
 publish-a-blog-post
 publish-and-summary
-publish-package-registry
+publish-article
+publish-models
 pull-request-msg-with-gh
 pulmonology
+pulumi-migrate-from-discovered-stack
 push-notifications-setup
 pwa-implementation
 py-sdk
@@ -7680,6 +8685,7 @@ pyodide-workers
 pypi-harden
 pyportfolioopt
 pyrefly-typecheck
+pytest-expert
 pytest-hypothesis
 pytest-python
 python notebook sample builder
@@ -7724,12 +8730,16 @@ qa-structure
 qa-trace
 qa-vector
 qa-verify-console
+qb
+qd
 qdrant-relevance-feedback
+qf
 qfc-order
 qimpag
 qr
 qrs-rule-synthesizing-neuro-symbolic-triad
 qruiq-update
+qt-cmake-project
 qualify-a-lead
 quality-convergence
 quality-convergence-engine
@@ -7751,6 +8761,7 @@ querydsl-q-class-exclusion-pattern
 questioning
 queue-drain
 quick-stats
+quickdup
 quickgo-skill
 quieter
 quit-a-job-gracefully
@@ -7760,6 +8771,8 @@ quote-automation
 quux-skill
 qux-skill
 qwen
+qwen-mm-plugins-blender
+qwen-mm-plugins-freecad
 qwen-vl-a-frontier-large-vision-language-model-with-versatil
 qwen-vl-a-versatile-vision-language-model-for-understanding
 qwen2-vl-enhancing-vision-language-models-perception-of-the
@@ -7778,18 +8791,21 @@ r8-analyzer
 ra-qm-team-bundle
 radar-update
 radon-ai
+rag engineering — complete retrieval-augmented generation system
 rag-system-architecture
 ragas-integration
 ragturk-best-practices-retrieval
 raicl-retrieval-augmented-in-context-learning
 ral-bench-benchmarking-application-level-functiona
 rally
+ralph-opencode-free-loop
 ralph-task-executor
 ralph-tasks
 ramp-complete-expenses
 ramp-payment-lookup
 rancher-logging-exit
 randaugment-practical-automated-data-augmentation-with-a-red
+rank
 ranker
 rasp-runtime-protection
 rate-limit-shape-analyzer
@@ -7804,6 +8820,7 @@ rds-instance-auditor
 rds-snapshot-operator
 rds-upgrade-operator
 re-performing-windows-artifact-analysis-with-eric-zimmerman
+re-rtos
 reach
 react-component-optimization
 react-context-vs-zustand
@@ -7821,8 +8838,8 @@ reactor-subscription-router-backpressure
 reactree agent coordination patterns
 read-all-adrs
 read-arxiv-paper
-read-as-human-compressing
 read-dispatch
+read-file
 read-sql-files-with-encoding-issues
 readiness-check
 reading
@@ -7854,7 +8871,6 @@ recommendation-canvas
 recon-favicon-fingerprint
 recon-js-analysis
 recon-js-endpoints
-recon-js-secrets
 recon-screenshot-map
 recon-web-surface
 reconcile-a-bank-statement
@@ -7891,7 +8907,7 @@ redis-set
 redteam-harness
 redteam-mindset
 redteam-opsec
-redteam-report-template
+reduce
 reducing-costs-proof-synthesis
 reengineering-legacy-software
 refactor-cleanup
@@ -7913,6 +8929,7 @@ regex-build
 reggie-vp
 regiongpt-towards-region-understanding-vision-language-model
 register-as-an-organ-donor
+register-project
 registry-audit
 registry-royalty-mandate-2026
 registry-sync
@@ -7923,6 +8940,7 @@ regulatory-compliance-mapping
 regulatory-submissions
 rehab-scheduling
 rehab-therapy
+reinforcement-learning-engineer
 reject-a-candidate-gracefully
 relational
 relational-database-mcp-cloudbase
@@ -7941,6 +8959,7 @@ remember-ai-cutoff-dates
 reminding-skill-usage
 remix-agent-publish
 remote-jobs-finder
+remote-offload
 remotion-best-practices
 remotion-best-practices-2
 remotion-captions
@@ -7949,8 +8968,10 @@ remotion-docs
 remotion-markup
 remotion-multimedia
 remotion-saas
+remotion-studio
 remove-baseline
 remove-deadcode
+remove-git-worktree
 renderful-generation
 renew-a-library-book
 renew-your-car-registration
@@ -7977,6 +8998,8 @@ report-executive
 report-findings
 report-quality
 report-technical
+reporting-issues
+reporting-sprints
 repository-health
 repository-intelligence
 representation-theory
@@ -8006,8 +9029,13 @@ research-primary-sources
 research-problem-framer
 research-product-opportunity
 research-protocol
+research-refine
 research-router-skill
 research-task
+researcher
+researcher-comparison-table
+researcher-deep-dive
+researcher-paper-digest
 reserved-slugs-coordinated-list
 reset-2fa-when-you-lose-your-phone
 reset-context-contamination
@@ -8028,6 +9056,7 @@ resource-governor
 respond-to-a-customer-review
 respond-to-a-negative-review
 respond-to-a-recruiter
+responding-to-security-incidents
 responsabilidad-patrimonial-ca
 responses-api
 responsive
@@ -8043,6 +9072,7 @@ resume-basics
 resume-career-coach
 resume-interview-3party-optimizer
 resume-tasks
+retain
 retained-skill
 retire-product
 retirement-optimizer
@@ -8054,6 +9084,8 @@ returns-optimization
 reusable-components
 reuse-saved-prompt-templates
 revenue-management
+revenuecat
+revenuecat-customer-center
 reverse-engineer-anything
 reverse-proxies
 review-account-security
@@ -8070,7 +9102,6 @@ reviewer-mindset
 reviewer-protocol
 reviewing-content-security-policy
 reviewing-detection-rules-for-evasion
-reviewing-rate-limiting-and-abuse-controls
 reviewing-secrets-manager-access-policy-trust
 reviewing-security-architecture
 reviews-comments
@@ -8080,8 +9111,10 @@ revit-test
 revit-wpf-mvvm
 revit-xaml-styles
 revoke-and-rotate-certificate
-rewrite-git-history
+rewardkit
+reweave
 rewrite-tests-pest
+rg-budget-search
 rhea-skill
 right-of-way-expert
 rights-explainer
@@ -8103,6 +9136,7 @@ rl-protect-interpret
 rl-protect-run-report
 rl-protect-scan
 rlhf-v-towards-trustworthy-mllms-via-behavior-alignment-from
+rmcp-quickstart
 rnacentral-skill
 road-subtract
 roadmap
@@ -8131,6 +9165,7 @@ roleplay-an-expert
 romania
 romanian
 rome
+roofing knowledge mentor
 root-cause
 ropa-drafter
 rosetta
@@ -8162,6 +9197,8 @@ run-quality-gates
 run-query
 run-services
 run-skill-generator
+run-task
+run-work
 runbook
 runbook-automator
 runbook-enterprise-feature
@@ -8170,6 +9207,8 @@ runbook-marketing-campaign
 runbook-startup-mvp
 running-a-proof-of-concept
 running-an-architectural-assessment
+running-integration-tests
+running-smoke-tests
 running-work-transitions
 runtime-health
 runtime-honesty
@@ -8201,8 +9240,11 @@ saas-economics-efficiency-metrics
 saas-health
 saas-revenue-growth-metrics
 safari browser control
+safe-calculator
+safe-file-reader
 safety-compliance
 safety-training
+sage
 sage-context-catalog
 sagemaker-model-registry-operator
 sales-account-research
@@ -8234,14 +9276,12 @@ sandbox-try
 sap-gui
 sast-audit
 sast-audit-level
-sast-code-review
 sast-firewall
 sast-help
 sast-java-spring-boot
 sast-mode
 sast-model-pass
 sast-rules
-sast-sca-security-analyzer
 sast-semgrep-hunting
 sast-status
 sat
@@ -8261,13 +9301,16 @@ scale-audit
 scaling-autoregressive-multi-modal-models-pretraining-and-in
 scaling-up-visual-and-vision-language-representation-learnin
 scaling-up-visual-and-vision-language-representation-learnin-a82749
+scan
 scan-csharp-legacy-codebase
 scan-fase-16
-scan-fase-21
 scanner
 scanner-bridge
 scannet-richly-annotated-3d-reconstructions-of-indoor-scenes
+scanning-database-security
 scanning-for-accessibility-issues
+scanning-for-data-privacy-issues
+scanning-input-validation-practices
 scarcity-urgency-psychologist
 schedule-a-meeting
 schedule-a-meeting-across-time-zones
@@ -8286,6 +9329,7 @@ science-intuition
 scienceclaw-aesthetics
 scienceqa-learn-to-explain-multimodal-reasoning-via-thought
 scientific paper research
+scientific-literature-researcher
 scientific-ml
 scikit-learn-python
 scipy-python
@@ -8296,6 +9340,7 @@ scout-router
 scratcheval-multimodal-evaluation-framework
 screen reader lab
 screen-a-resume
+scribe-mcp-usage
 script-kiddie
 script-to-package
 scripted-formatting-delegation
@@ -8316,12 +9361,16 @@ sdd-compound
 sdd-continue
 sdk-marker-protocol
 sdk-semver-governance
+sdkconfig-audit
 sdlc-control-placement
 sdlc-feature
 sdr-cir-semantic-debias-retrieval
 search engine
 search realtime information
 search-and-filtering
+search-boost
+search-companies
+search-fundraisings
 search-realtime-information
 search-specialist
 search-symbol
@@ -8331,13 +9380,11 @@ secondmind
 secops
 secops-incident-responder
 secops-intelligence-engineer
-secpriv-unified-security-and-privacy-code-review-skill
 secret-audit
 secret-lifecycle-auditor
 secrets-and-iam-management
 secrets-management-azure-key-vault
 section-author
-secure-cicd
 secure-code-generation-via
 secure-env-var-handling
 secure-hipaa
@@ -8345,6 +9392,7 @@ securing-s3-buckets
 security-architect-sabsa
 security-assessment-health
 security-assessor
+security-audit-orchestrator
 security-auditing
 security-auditor
 security-auditor-agent
@@ -8353,11 +9401,11 @@ security-checks
 security-comms
 security-compliance-mapping-soc2-iso-pci-nist
 security-flow
+security-governance-orchestrator
 security-grc-compliance
 security-http-headers-spring-boot
 security-manager-samm
 security-monitoring-and-detection
-security-principles
 security-response-incident-response
 security-response-red-purple-team
 security-scanning-security-hardening
@@ -8378,8 +9426,9 @@ seedance-fight-scenes
 seedance-product-360
 seedance-real-estate
 seedance-social-hook
+seek
 seguridad-social-contingencia
-self discipline
+seismic-picker-selection
 self-criticism
 self-direction
 self-evolving
@@ -8759,6 +9808,7 @@ servicenow-docs
 servicenow-engineer
 servicenow-now-assist-integration
 ses
+session
 session-backlog
 session-control
 session-management-best-practices
@@ -8766,7 +9816,6 @@ session-pending-brief
 session-pending-close
 session-read
 session-report-executive
-session-state-anomaly
 set-a-deal-reminder
 set-a-meeting-agenda
 set-a-project-milestone
@@ -8784,10 +9833,12 @@ set-up-an-email-newsletter
 set-up-passkeys
 set-up-recurring-billing
 setback-predictor
+setting-up-synthetic-monitoring
+setup
 setup-agent-code-style-deno
 setup-agent-code-style-strict
+setup-agent-guard
 setup-browser-cookies
-setup-cdn-edge-waf
 setup-cfsa
 setup-codex-precheck
 setup-deploy
@@ -8797,12 +9848,22 @@ setup-gbrain
 setup-lint-format-precommit
 setup-monorepo-tooling
 setup-provision-skills
+setup-shell
 setup-target
 setup-verify
 setup-workspace-data
 severance-damages-quantification
 seville
-sh-kb-secrets
+sf-ai-agentforce-observability
+sf-ai-agentforce-testing
+sf-connected-apps
+sf-flex-estimator
+sf-industry-cme-epc-model
+sf-industry-commoncore-callable-apex
+sf-industry-commoncore-datamapper
+sf-industry-commoncore-flexcard
+sf-industry-commoncore-integration-procedure
+sf-industry-commoncore-omniscript
 shadcn-detection
 shadcn-migration
 shadcn-registries
@@ -8816,7 +9877,7 @@ shared-skill
 shared-user
 sharegpt4v-improving-large-multi-modal-models-with-better-ca
 sharegpt4video-improving-video-understanding-and-generation
-sharex
+shark-clean
 shein shopping
 shell-block
 shell-script-robust
@@ -8826,10 +9887,13 @@ sherpa
 shikra-unleashing-multimodal-llms-referential-dialogue-magic
 ship
 ship-artifact
+ship-cli
 ship-mobile-app-store-release
 shipping-artifacts
 shipping-changes
 shipping-cost
+shippo-support-ticket
+shipz
 short
 shortform-editing
 shottr
@@ -8837,9 +9901,11 @@ show-me
 show-security-assessment
 shows
 side-hustle-builder
+siege
 siemens-tia-portal
 sigil
 siglip-2-multilingual-vision-language-encoders-with-improved
+sil-wheel-agent-usage-skill
 silent-background-task-execution
 silkie-preference-distillation-for-large-visual-language-mod
 simple-understanding-quiz
@@ -8863,6 +9929,8 @@ skill-cli-command-wiring
 skill-creator-meta
 skill-decay-audit
 skill-defense-evasion
+skill-dependency-chain-auditor
+skill-evals
 skill-example
 skill-execution
 skill-gap
@@ -8876,8 +9944,11 @@ skill-pre-engagement
 skill-recon
 skill-report
 skill-resource-dev
+skill-share
 skill-stack
 skill-suggester
+skill.md
+skillify
 skillopt-sleep
 skills-init
 skills-list
@@ -8895,6 +9966,7 @@ slack-engineer
 slack-find-discussions
 slack-summarize-channel
 slashbot-news
+sleek
 sleep-optimizer
 slideops
 slimpajama-a-627b-token-cleaned-and-deduplicated-version-of
@@ -8914,7 +9986,7 @@ small-beautiful-practical-log
 small-business-content-strategy
 small-business-lead-triage
 smart patch (ida pro)
-smart-contract-vulnerabilities
+smart-accounts-kit
 smart-git-automation
 smartest-project-addition
 smartoracle-agentic-approach
@@ -8936,11 +10008,13 @@ social-activity
 social-content-strategy
 social-context
 social-learning-ecology-diffusion
+social-media-context-sms
 social-media-manager-platform-native-voice
 social-media-manager-social-analytics
 social-media-manager-social-content-creation
 social-media-manager-visual-design-brief
 social-media-warning-labels-youth
+social-monitor
 social-platform-strategy
 social-proof-architect
 social-trust-manipulation-detector
@@ -8950,7 +10024,9 @@ socratic-vs-unrestricted-brain-sensing-2026
 soft-delete-implementation
 soft-skill
 softgirlnocode-ai-video
+software-architecture-analysis
 software-defined-networking
+software-dev-factory
 software-development-best-practices-grady-booch
 software-engineering-eng-agile
 software-engineering-eng-api
@@ -8964,10 +10040,8 @@ software-engineering-eng-devops
 software-engineering-eng-distributed
 software-engineering-eng-perf
 software-engineering-eng-refactor
-software-engineering-eng-security
 software-engineering-eng-tdd
 software-supply-chain-security
-sogptspotter-detecting-chatgpt-generated-answers
 solicitud-diligencias-instruccion-catalogo
 solid-astro
 solid-csharp
@@ -8985,6 +10059,7 @@ solid-state-physics
 solid-swift
 solid-tanstack-start
 solidity-smart-contract-engineer
+solofactory
 solr-extending
 solr-query
 solr-schema
@@ -9014,14 +10089,13 @@ spbrowseros-edualc
 spbrowseros-gemini
 spdedev-edualc
 spdedev-gemini
-speak
 spec-quality-bottleneck-agentic-delivery
-specialized-attack-playbooks
 specification-by-example
 specify-high-precision-needs
 specify-preferred-writing-style
 specify-the-audience
 speckit-converge
+specs-creator
 spectroscopy
 speculation-rules
 speculative-decoding-prompting
@@ -9029,9 +10103,9 @@ speech-synthesis
 speechbrain
 spell-synthesis-programmatic-edits
 spending-behavior
+spiral-html
 split-an-invoice-into-milestones
 splunk-observability-cloud-integration-setup
-splunk-observability-k8s-frontend-rum-setup
 spotify-engineer
 spreadsheet-formulas
 spring-actuator-health-collector
@@ -9057,13 +10131,13 @@ squad-creator-pro-pedro-valerio
 squad-creator-pro-thiago_finch
 squad-creator-squad-chief
 squad-manager
-square-engineer
 sre-ec2-health-check
 sre-k8s-node-health
 sre-k8s-pod-health
 sre-k8s-resource-quota
 sre-k8s-rollback-investigator
 sre-site-reliability-engineer
+ss
 ssm-association-troubleshooter
 ssrf-detector
 stable-diffusion-high-resolution-image-synthesis-with-latent
@@ -9077,11 +10151,13 @@ staff-scheduling
 stakeholder-map
 stakeholder-translator
 stalled-biased-confused-uncovering-reasoning
+standup-formatter
 start-auth
 start-building-for-startups
 start-deployment
 start-execution-model
 start-fresh-chat-new-topics
+start-issue
 start-middleware
 start-product
 start-routing-data
@@ -9089,6 +10165,7 @@ start-server-functions
 start-server-routes
 startup-analyst
 stash-quarantine
+stata
 state-machines-workflows
 state-your-goal-not-just-command
 static-analysis-linting
@@ -9108,6 +10185,7 @@ stellaris-validate
 stem-cell-donation-dropout-nudge
 step-by-step-book-authoring-and-publishing-architecture
 stepfunctions-execution-troubleshooter
+stim
 stitch-bridge
 stitch-compare
 stitch-explore
@@ -9127,6 +10205,8 @@ strangler-migration-planning
 strategic-situation-analyzer
 strategy-red-team
 strategy-spi-list-to-map-autoinject
+stratum
+stream
 streamlit-expert
 streams-vs-loops
 stress-basics
@@ -9142,6 +10222,7 @@ stripe-charge-list
 stripe-customer-create
 stripe-directory
 stripe-price-list
+stripe-projects
 stripe-refund-list
 structural-engineering
 structure-weekly-to-do-list
@@ -9177,12 +10258,10 @@ sunlight-analysis
 suno
 supabase-docs
 supabase-self-hosting
-supply-chain-cicd
 supply-chain-dependencies
 supply-chain-git-platforms
 supply-chain-risk
 supply-chain-sbom-provenance
-supply-chain-secrets
 support-intake-and-faq
 surgery
 sustainability-metrics
@@ -9197,7 +10276,10 @@ swe-fe
 sweden
 swedish
 swg-casb
+swift-concurrency-pro
 swift-core
+swiftdata-pro
+swiftui-design-principles
 swiftui-pro
 switching
 switzerland
@@ -9222,13 +10304,13 @@ system-check
 system-design-interview-prep
 system-diagramming
 system-helper
+system-inventory
 system-prompt-minifier
 systemd-service-management
 systemic-leverage
 systemmonitor
 systems-platforms-master
 t-sql-upserts-merge
-t3-code-patterns
 t5-exploring-the-limits-of-transfer-learning-with-a-unified
 table patterns
 tables-data-specialist
@@ -9252,7 +10334,9 @@ tailwindcss-transforms
 tailwindcss-typography
 tailwindcss-utilities
 tailwindcss-utility-classes
+taishan-rk3566
 taiwan
+taiyi-skill-skill-v30
 take-a-dog-for-a-walk
 take-a-pet-to-the-vet
 take-clear-meeting-minutes
@@ -9260,10 +10344,12 @@ talk
 talk-like-to-a-smart-ten-year-old
 tam-sam-som-calculator
 tamper-evident-log-check
-tapo camera
+tanstack-ranger
+tao-finetune-huggingface-model
 target-guard
 targeted-line-range-edits
 task-creation
+task-creator
 task-load
 task-verify
 task-writer
@@ -9275,6 +10361,9 @@ tasks
 taste-soft
 tattoo
 taught-create-a-background-removed-portrait-for-a-requested-person-and-send-it-in-telegram-cd861a
+tauri-app-autostart
+tauri-app-barcode-scanner
+tauri-app-biometric
 tax-compliance
 tax-season-organizer
 taxi
@@ -9291,6 +10380,7 @@ tdd-workflows-tdd-refactor
 teach
 teach-impeccable
 teacher-workload
+teaching-block-synthesized
 teaching-workspace
 team-audio
 team-combat
@@ -9305,10 +10395,12 @@ teams-monitor
 tech-debt-narrator
 tech-debt-sprint
 tech-docs-generator
+tech-earnings-deepdive
 tech-specs
 tech-stack-advisor
 technical-content-and-seo
 technical-debt-detection
+technical-decision-record
 technical-docs-and-adr
 technical-program-manager-security-cvd
 technical-writing-coach
@@ -9323,6 +10415,7 @@ tell-ai-when-in-a-rush
 tell-ai-your-time-budget
 temperature-zero-determinism
 templ
+templates-ack
 temporal-continuity
 temporal-python-pro
 temu
@@ -9336,14 +10429,17 @@ tencent-yuanbao-gaokao-regional-passing-scores
 tencent-yuanbao-gaokao-score-to-rank-lookup
 tenerife
 terminacion-anticipada
+terminal-commands
 terminology-value-sets
 terraform-advanced
 terraform-aws-modules
 terraform-specialist
 terratest module testing
+test
 test-automation-workflow
 test-automator
 test-bootstrap
+test-build-error
 test-case-design-techniques
 test-contract-repair
 test-copilot
@@ -9352,11 +10448,14 @@ test-data-factories
 test-design-reviewer
 test-discipline
 test-drive-a-car
+test-echo-tool
 test-execution
+test-failing-test
 test-harness-and-fixtures
 test-honesty-auditor
 test-like-human
 test-mocking-rules
+test-ops
 test-plan-authoring
 test-scaffold
 test-skill
@@ -9373,18 +10472,23 @@ testing-guardian
 testing-handbook
 testing-handbook-skills
 testing-llm-insecure-output-handling
+testing-load-balancers
 testing-rag-and-memory-poisoning
 testing-smtp-smuggling-and-email-spoofing
 testing-web-cache-deception
 testsprite-onboard
 testsprite-verify
+testtest
 texas
 text quality reviewer
 text-expansion
 text_to_lora
 textcraftor-your-text-classifier-is-a-prompt-generator-for-i
+textual-api-reference
 tf-best-practices
 tf-psa-crypto-skill
+tg-canvas
+tg-voice-whisper
 thai
 thailand
 the-80-percent-problem
@@ -9410,7 +10514,7 @@ third-party-trust
 thoughtbox:decision
 thoughtbox:research
 thread-pool-config-tenant-aware
-threat-model-stride
+threat-modeling
 threat-triage
 three-match
 tia-expert
@@ -9426,12 +10530,16 @@ time-reset
 time-series-forecasting
 timeless
 tinder
+tinyvue-develop-spec
 tip-a-delivery-driver
+titan
 title-expert
 tls-config-drift
 to-prd
+to-spec
 todo-home-focus-ui
 together-infer
+token-activity-graph
 token-aware-chunking
 token-bounded-summaries
 token-budget-allocator
@@ -9442,7 +10550,6 @@ token-status-list-core
 token-status-list-usage
 token-status-list-verification-details
 token-tools-setup
-token-usage-monitoring-hook
 tokenflow-unified-image-tokenizer-for-multimodal-understandi
 tokyo
 tome
@@ -9466,16 +10573,20 @@ track-b-finops
 track-c-kubernetes
 track-pto-balances
 tracking-mlflow
+tracking-regression-tests
 tracking-wandb
 tracy-debugging
 traditional chinese
+trail
 train-evaluate-ml-model
 train-template
 training-data-services
 training-path
 training-principles
+transcript-to-content-pipeline
 transcriptomics
 transit-station-site-acquisition-strategy
+translate
 translate-jargon-to-plain-english
 translation-craft
 transloco
@@ -9489,11 +10600,16 @@ treat-ai-answers-as-first-drafts
 treatment-outcome
 tree-sitter-scope-extractor
 trellis-before-dev
+trello-pipeline
+trend-analyst
 trending now
+tres-export-3rd-party-contacts
 triage-a-support-ticket
 triage-security-assessment
 triage-work-item
 tribe-v2-brain-social-bridge
+trigger-overlap
+trigger-runner
 trip-planning
 triple-env-file-split-loader
 triple-review
@@ -9501,6 +10617,7 @@ trivialaugment-tuning-free-yet-state-of-the-art-data-augment
 tron
 trust-audit
 trust-calibrator
+trust-system
 trust-velocity-calculator
 truth-sync
 ts-config
@@ -9513,6 +10630,7 @@ ts-sdk
 ts-testing
 tsundere
 tsv-driven-permission-bootstrap
+tuner
 turkey
 turkish
 turn-complaints-into-polite-replies
@@ -9526,26 +10644,17 @@ twilio-call-recordings
 twilio-compliance-onboarding
 twilio-content-template-builder
 twilio-customer-memory
-twilio-customer-support-architect
 twilio-debugging-observability
 twilio-iam-auth-setup
-twilio-identity-verification-advisor
 twilio-isv-sms-best-practices
-twilio-marketing-promotions-advisor
 twilio-messaging-channel-advisor
 twilio-messaging-webhooks
-twilio-notifications-alerts-advisor
 twilio-numbers-senders
 twilio-organizations-setup
 twilio-rcs-messaging
 twilio-reliability-patterns
-twilio-security-api-auth
 twilio-security-compliance-hipaa
-twilio-security-hardening
-twilio-sendgrid-account-setup
-twilio-sendgrid-deliverability-advisor
 twilio-sms-send-message
-twilio-verify-send-otp
 twilio-voice-call
 twilio-voice-outbound-calls
 twilio-voice-twiml
@@ -9553,13 +10662,10 @@ twilio-webhook-architecture
 twilio-whatsapp-send-message
 twingate-api
 twingate-architect
-twingate-connectors
 twingate-dns-security
 twingate-identity
-twingate-idfw
 twingate-kubernetes
 twingate-pulumi
-twingate-terraform
 twingate-troubleshoot
 twitter-marketing
 two-factor-authentication-best-practices
@@ -9602,20 +10708,28 @@ uber-engineer
 ufw
 ugc-factory
 ui
+ui-appshell
 ui-aqa-flow
 ui-component-library
 ui-context
 ui-craft
+ui-desktop
+ui-ext
+ui-feedback
+ui-mini
 ui-motion-design
+ui-quality-audit
 ui-quality-review
+ui-theme-qa
 ui-toolkit
 ui-toolkit-web
 ui-ux-designer
+ui-ux-governance
 ui-visual-validator
+uiux-ops
 uiux-product-orchestrator
 ukb-topmed-phewas-skill
 ukrainian
-ultimate transparent thinking beast mode
 ultracode-effort
 umap
 uml-diagram-generation
@@ -9638,6 +10752,8 @@ united states
 units-and-dimension-checking
 unity-developer
 unity-scaffold
+universal-ai-config
+universal-ai-setup
 universal-fixture
 university
 unix
@@ -9684,24 +10800,34 @@ use-a-self-checkout
 use-a-self-service-car-wash
 use-a-tire-pump
 use-a-vending-machine
+use-agent-wallet
 use-an-atm
+use-arc
 use-better-auth
 use-bolding-and-bullet-formatting
 use-checklist-format
+use-circle-wallets
+use-developer-controlled-wallets
 use-dom
 use-fast-models-for-quick-checks
+use-gateway
 use-good-answers-as-templates
+use-gunshi-cli
 use-memory-mechanism
 use-of-color
 use-plain-text-over-pdfs
 use-simple-analogies
+use-smart-contract-platform
 use-tanstack
+use-usdc
 use-voice-typing-for-fast-prompts
 user-file-ops
 user-only-skill
 user-story
 user-story-mapping-workshop
 user-story-splitting
+using-aegis
+using-bgs-modding-superpowers
 using-forge
 using-galyarder-framework
 using-kitchen-sink
@@ -9714,6 +10840,7 @@ using-superpowers
 using-ultraship
 using-wakita
 usmle
+utility-helper
 utrecht
 ux-architecture
 ux-clarity-usability
@@ -9729,9 +10856,12 @@ validate-config
 validate-data-quality
 validate-product-discovery
 validate-release
+validating-api-contracts
+validating-authentication-implementations
 validation-and-enforcement
 validation-gates
 validator-correlated-judgment
+value
 vancouver
 variant-explorer
 vary-scaling-up-the-vision-vocabulary-for-large-vision-langu
@@ -9751,7 +10881,6 @@ verify-baseline
 verify-coverage
 verify-delegated-edits
 verify-names-and-locations
-verify-prove
 verify-readiness
 verify-requirements
 verify-test
@@ -9763,13 +10892,17 @@ vertical-slicing
 veterinary
 vetting-skills-before-install
 vexa
+vibe
 vibe clawing
 vibe marketing
 vibe-check
 vibe-coding-architecture-at-scale
+vibe-industrial-design
+vibe-uiflow
 vibe-upgrade
 vibe-work-onboarding
 video-chatgpt-towards-detailed-video-understanding-via-large
+video-content-orchestrator
 video-editing-with-openshot
 video-llama-an-instruction-tuned-audio-visual-language-model
 video-report
@@ -9781,6 +10914,8 @@ video-sdk-macos
 video-sdk-react-native
 video-sdk-unity
 video-sdk-windows
+video-sdk/windows
+videocut
 videocut:剪口播
 videocut:字幕
 videocut:自进化
@@ -9803,12 +10938,15 @@ virtual-agent-android
 virtual-agent-ios
 virtual-agent-web
 visados-denegacion
+vision-exploration
 vision-test
+vista
 visual-emotion-engineer
 visual-genome-connecting-language-and-vision-using-crowdsour
 visual-hierarchy-composition
 visual-proof
 visual-regression
+vita
 vitepress
 vitest
 vizwiz-grand-challenge-answering-visual-questions-from-blind
@@ -9816,19 +10954,22 @@ vllm-nginx-tls-single-port-routing
 vlmo-unified-vision-language-pre-training-with-mixture-of-mo
 vlsi-design
 voice-ai-integration-engineer
+voice-crm-pipeline
 voice-inbox
+voice-profile-trainer
+void
 void-an-invoice
 vokenization-improving-language-understanding-with-contextua
 volunteer-coordination
-vp-cpo-readiness-advisor
+voyager
 vps
 vpsmaxxing
 vr
 vs code insiders accessibility tracker
+vss-summarize-video
 vue-i18n
 vuejs-frontend
 vuln-cache-deception
-vuln-nosql
 vuln-open-redirect
 vuln-remediation-flow
 vuln-sensitive-exposure
@@ -9840,7 +10981,6 @@ w3c-dc-api-coordinator
 w3c-dc-api-core
 w3c-dc-api-interface
 w3c-dc-api-privacy
-w3c-dc-api-privacy-risks
 w3c-dc-api-security
 w3c-vcdm-data-model-concepts
 w3c-vcdm-ecosystem-graphs
@@ -9851,7 +10991,6 @@ w3c-vcdm-intro
 w3c-vcdm-issuer
 w3c-vcdm-names-descriptions
 w3c-vcdm-presentations
-w3c-vcdm-privacy-correlation
 w3c-vcdm-privacy-minimization
 w3c-vcdm-privacy-minimization-continued
 w3c-vcdm-privacy-threats
@@ -9864,15 +11003,20 @@ w3c-vcdm-trust-extensibility
 w3c-vcdm-types
 w3c-vcdm-validity-period
 w3c-vcdm-zkp-advanced
+wachai
 wait-what
 waiver-agreement-expert
+wandb-primary
+wang-lao-shi-demo
 wardrobe
 warehouse-flow
 warehouse-ops
 wash-a-car-by-hand
-water tracker
 wave-planning
 wayfinder
+wbs-exec
+wbs-prd
+wbs-toolkit
 wc-product-search-select
 wcag 3.0 preview
 wealth-management-advisor
@@ -9880,12 +11024,13 @@ wear-compose-m3
 web component specialist
 web development
 web-accessibility-wizard
+web-ai-prompt-api
 web-application-attack-surface-mapping
-web-application-penetration-testing-methodology
 web-attack-methods
 web-build-design
 web-csv-reporter
 web-dast-functional-walk
+web-dev-explainer
 web-frontend-wasm
 web-game
 web-issue-fixer
@@ -9896,31 +11041,39 @@ web-vuln-cache-poisoning
 web-vuln-ssti
 web-workers
 web3-case-study-role-misconfig
+web3-signing-workflow-compromise
 web3d-scene-runtime
-webauthx
 webdav
 webgpt-browser-assisted-question-answering-with-human-feedba
 webgpu-webgl
 webhook-handler-builder
 webhook-promo-scheduler
 webhooks-implementation
+webperf-expert
+websockets-expert
 wedding planner
 weibo-hot-trend
 wellspent-customizable-screen-time-rct
 welsh
+wg
 wg code alchemist
 wg code sentinel
 what-makes-for-good-visual-tokenizers-for-large-language-mod
 what-to-do-after-a-minor-car-accident
 wheel-reinvention-detector
+wheels-router
 whimsy-design
 whitebox-path-reachability
 wide-column
 wide-column-stores
 wifi
+wifi-sta-setup
+wiki-dedup
 wiki-health-check
 wiki-log
 wildvision-evaluating-vision-language-models-in-the-wild-wit
+wind-find-finance-skill
+wind-mcp-skill
 windows-compatibility
 windows-dev-environment
 windows-env-path-semantics
@@ -9950,7 +11103,6 @@ workflow-conductor
 workflow-debate
 workflow-doctor
 workflow-fix
-workflow-graph-authoring
 workflow-ideation
 workflow-judger
 workflow-reflection
@@ -9959,6 +11111,7 @@ workflow-reviewer
 workflow-revision
 workflow-runtime
 workflow-skill-design
+workflow-stop-design
 workflow-tournament
 working-effectively-legacy-code
 working-memory-protocol
@@ -10029,11 +11182,10 @@ write-script-rlang
 write-script-rust
 write-script-snowflake
 write-workflow-as-code
+write_a_prd
 writeups-by-01cyberwarehouse
 writeups-by-09unknown09
 writeups-by-0awawa0
-writeups-by-0dayhunter
-writeups-by-0ops
 writeups-by-0ssigeno
 writeups-by-0vercl0k
 writeups-by-0x1memo
@@ -10043,7 +11195,6 @@ writeups-by-0x4d5a-ctf
 writeups-by-0x52sec
 writeups-by-0xabdoulaye
 writeups-by-0xbu
-writeups-by-0xcybery
 writeups-by-0xd4y
 writeups-by-0xdrkroot
 writeups-by-0xe10c
@@ -10071,7 +11222,6 @@ writeups-by-4n0nym0u53
 writeups-by-4ykutg
 writeups-by-5h3r10ck
 writeups-by-5kbb
-writeups-by-6vr
 writeups-by-7rixx
 writeups-by-a-dhanush
 writeups-by-a-y-u-s-h-y-a
@@ -10098,7 +11248,6 @@ writeups-by-adhu637
 writeups-by-adi52303
 writeups-by-adithyahe22
 writeups-by-aditya9973
-writeups-by-adityabhatt3010
 writeups-by-advaith-s-dev
 writeups-by-aenoshrajora
 writeups-by-affix
@@ -10106,7 +11255,6 @@ writeups-by-afklex
 writeups-by-aftab700
 writeups-by-agomezsittima
 writeups-by-ahmeadsamy
-writeups-by-ahmedheltaher
 writeups-by-ahmedmamdouh159753-rgb
 writeups-by-ahnaf-ashique-adi
 writeups-by-ahuoad
@@ -10119,11 +11267,8 @@ writeups-by-alaabzh20
 writeups-by-albertsavill
 writeups-by-aleks-dotcom
 writeups-by-alemateracci
-writeups-by-alexbieber
 writeups-by-alexjshim
-writeups-by-aliev-ibra
 writeups-by-alihassankhan76
-writeups-by-alihussainzada
 writeups-by-alikesk222
 writeups-by-alpha-redteam
 writeups-by-alphamystic
@@ -10140,7 +11285,6 @@ writeups-by-amitelazari
 writeups-by-an0th3rhuman
 writeups-by-andreafioraldi
 writeups-by-andrewaeva
-writeups-by-andrewsferreira
 writeups-by-andysitoop
 writeups-by-aniruddhha
 writeups-by-anitasanap17
@@ -10158,13 +11302,11 @@ writeups-by-appsecco
 writeups-by-aptrs
 writeups-by-aradhyakatiyar
 writeups-by-aravazhimdr
-writeups-by-arbctf
 writeups-by-archang31
 writeups-by-arielpoghon
 writeups-by-arkadiyt
 writeups-by-armpit-symphony
 writeups-by-arpitgarg07
-writeups-by-arvindshima
 writeups-by-aryan-mrrobot
 writeups-by-aryanguenthner
 writeups-by-asdlikes
@@ -10176,7 +11318,6 @@ writeups-by-asherdmckoy
 writeups-by-ashiqur-rahaman
 writeups-by-ashiquremon
 writeups-by-ashu1665
-writeups-by-ashutosh1206
 writeups-by-aszx87410
 writeups-by-athanasius-gadosey
 writeups-by-atharimran728
@@ -10202,7 +11343,6 @@ writeups-by-babakizo420
 writeups-by-babyj723
 writeups-by-bayegaspard
 writeups-by-bcansan
-writeups-by-beerpwn
 writeups-by-beike2020
 writeups-by-benjaminhays
 writeups-by-berwalker
@@ -10210,7 +11350,6 @@ writeups-by-bgutowski
 writeups-by-bhanukahr
 writeups-by-bhuvanalaahiri
 writeups-by-bilgehanertan
-writeups-by-binbashburns
 writeups-by-binoshj
 writeups-by-birdsoup
 writeups-by-bitsbywill
@@ -10222,11 +11361,8 @@ writeups-by-brahmanggi
 writeups-by-brandon-everhart
 writeups-by-brandonsdevlife
 writeups-by-brianiix
-writeups-by-brunohalltari
 writeups-by-buddhi21
 writeups-by-buildacyberlab
-writeups-by-burlingpwn
-writeups-by-bx-r0
 writeups-by-byu-itc-210
 writeups-by-c-shehara
 writeups-by-c0dejump
@@ -10242,7 +11378,6 @@ writeups-by-caverav
 writeups-by-cb-1992
 writeups-by-cdf123
 writeups-by-ceisma
-writeups-by-cerc-undip
 writeups-by-cfi-ul
 writeups-by-cgvwzq
 writeups-by-ch4os1
@@ -10254,7 +11389,6 @@ writeups-by-chao-0
 writeups-by-charanvoonna
 writeups-by-che03
 writeups-by-chinkhuseltsolmonbaatar
-writeups-by-chivay
 writeups-by-chksum0
 writeups-by-chrispyroberts
 writeups-by-chrysh
@@ -10262,7 +11396,6 @@ writeups-by-chunqiugame
 writeups-by-cipher7
 writeups-by-clemdc40
 writeups-by-cltempleton1127
-writeups-by-clubby789
 writeups-by-coded-roger
 writeups-by-codeengn
 writeups-by-codingcreatively
@@ -10271,9 +11404,7 @@ writeups-by-coelhino
 writeups-by-coinstudent2048
 writeups-by-combustiblelemonsctf
 writeups-by-conan2023
-writeups-by-cookiengineer
 writeups-by-coolman6942o
-writeups-by-corrupted-brain
 writeups-by-coseus
 writeups-by-cparnin
 writeups-by-cr0sz
@@ -10291,7 +11422,6 @@ writeups-by-ctf-x
 writeups-by-ctfhacker
 writeups-by-cuato21
 writeups-by-cyber-pradhan
-writeups-by-cybercellviit
 writeups-by-cybereagle2001
 writeups-by-cyberherors
 writeups-by-cyberkittenattacksquad
@@ -10304,8 +11434,6 @@ writeups-by-d-i-e
 writeups-by-d1lie
 writeups-by-d3vrandom
 writeups-by-d4n1-kc
-writeups-by-d4rktt
-writeups-by-d4rkvaibhav
 writeups-by-d4rwinb0ts
 writeups-by-daem0nc0re
 writeups-by-dahamt98
@@ -10327,7 +11455,6 @@ writeups-by-darksh3llgr
 writeups-by-darl14
 writeups-by-dauntlessdev
 writeups-by-david942j
-writeups-by-daviddelille
 writeups-by-davidjacobson
 writeups-by-davidmah
 writeups-by-dazds
@@ -10342,7 +11469,6 @@ writeups-by-denuwanjayasekara
 writeups-by-derdelean
 writeups-by-desdeveloeprs
 writeups-by-dev52003
-writeups-by-devanshbatham
 writeups-by-devanshubajaj07
 writeups-by-developerorangetechnolab-alt
 writeups-by-devploit
@@ -10458,13 +11584,10 @@ writeups-by-gabrents
 writeups-by-gajur0304
 writeups-by-galitz
 writeups-by-garciazn015
-writeups-by-garzon
 writeups-by-gatewaydiscord
 writeups-by-gautham-anil
-writeups-by-gbiagomba
 writeups-by-ge0rg3
 writeups-by-gh0st0ne
-writeups-by-ghafri
 writeups-by-ghooost411
 writeups-by-giangvinhloc610
 writeups-by-gijsh
@@ -10525,18 +11648,22 @@ writeups-by-hczdmr
 writeups-by-henriknero
 writeups-by-herrfeder
 writeups-by-het-desai
-writeups-by-hexpresso
 writeups-by-hexwyrm
 writeups-by-heykelog
 writeups-by-himangshucyber
 writing-beats
+writing-bots
 writing-disclosures
 writing-fragments
 writing-great-skills
+writing-modpack-changelog
+writing-modpack-devlog
 writing-security-reports
 writing-shape
+writing-team
 wt-switch-create
 wukong-a-100-million-large-scale-chinese-cross-modal-pre-tra
+wx
 x-virality
 x402-demand-reality-check-2026
 x402-discovery-bottleneck-2026
@@ -10546,8 +11673,10 @@ x509-pkix
 xamarin
 xarray-python
 xlim
+xlsx-workbooks
 xlwrite
 xml
+xo
 xr-interface
 xref-trace
 xrefs
@@ -10558,10 +11687,16 @@ yahoo
 yara-rule-review
 yield-prediction
 yoga
+youtube-skills
 youtube-strategy
 yq
+yt
+yuv-brand-orchestrator
 zapper
+zeelin academic paper
 zeelin liberal arts paper
+zeelin song generator
+zen
 zero-cat-bash-prevention
 zero-day-discovery
 zero-explanation-refactoring
@@ -10569,17 +11704,28 @@ zero-trust-mcp
 zhihu-marketing
 zhihu-post-skill
 zigbee
+zine
 zipline-reloaded
-zkp-engineer
 zog
 zoom-engineer
 zoom-mcp
 zoom-mcp-whiteboard
 zoom-plugin-start
+zoom-video-sdk-linux
+zoom-video-sdk-windows
 zot
 zustand-5
 zxwn-activation
 {setup-skill-name}
+{{cap}}
+жкх ассистент
+налог ип и самозанятого
+объяснятор договоров
+переводчик с чиновничьего
+претензия и жалоба
+расшифровка анализов
+русский пак — 6 скиллов для жизни
+会议纪要
 创作者风格采集
 周五经营简报
 多平台内容适配
@@ -10591,8 +11737,15 @@ zxwn-activation
 小微企业工作台入门
 月度结账
 月末现金预警
+每日推荐 daily recommendation
 源程序鉴别材料制作
+组合套餐文案
 软著在线填报指导
 软著申请包生成
+配置优化 config optimization
 销售行动简报
+项目开发和维护规范
 高考 (gaokao)
+📱 system override: autonomous mobile builder > [!caution] > **mandatory
+🛡️ brand reputation defender — monitor, respond & protect your image 24/7
+🤖 ai cold email machine — automated outreach sequences for agencies &

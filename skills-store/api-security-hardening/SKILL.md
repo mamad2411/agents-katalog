@@ -1,6 +1,6 @@
 ---
 name: api-security-hardening
-description: >
+description: "Secure REST APIs with authentication, rate limiting, CORS, input validation, and security middleware. Use when building or hardening API endpoints against common attacks."
   Secure REST APIs with authentication, rate limiting, CORS, input validation,
   and security middleware. Use when building or hardening API endpoints against
   common attacks.

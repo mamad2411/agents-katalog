@@ -22,6 +22,9 @@ from pathlib import Path
 
 AGENTS = Path.home() / ".agents"
 SKILLS = AGENTS / "skills"
+if not SKILLS.is_dir():
+    # katalog yang benar sejak 2026-09: skills-store (skills/ cuma folder symlink flow)
+    SKILLS = AGENTS / "skills-store"
 STAMP = datetime.now().strftime("%Y%m%d")
 
 NAME_RE = re.compile(r"^([ \t]*name[ \t]*:[ \t]*)(.*?)([ \t]*)$")

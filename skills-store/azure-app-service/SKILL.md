@@ -1,6 +1,6 @@
 ---
 name: azure-app-service
-description: >
+description: "Deploy and manage web apps using Azure App Service with auto-scaling, deployment slots, SSL/TLS, and monitoring. Use for hosting web applications on Azure."
   Deploy and manage web apps using Azure App Service with auto-scaling,
   deployment slots, SSL/TLS, and monitoring. Use for hosting web applications on
   Azure.

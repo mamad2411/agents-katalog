@@ -1,7 +1,7 @@
 ---
 name: absolute-work
 version: 0.5.0
-description: >
+description: "End-to-end, phase-gated SDLC for AI coding agents: relentless design interview → reviewed spec → dependency-graphed task board → safe-wave TDD execution → verification → converge. Handles features, bugs, refactors, greenfield projects, planning breakdowns, and migrations. Triggers on 'absolute work', 'build this end-to-end', 'plan and build', 'break this into tasks', 'grill me on this plan', 'pick up this ticket', 'run this migration'."
   End-to-end, phase-gated SDLC for AI coding agents: relentless design interview →
   reviewed spec → dependency-graphed task board → safe-wave TDD execution →
   verification → converge. Handles features, bugs, refactors, greenfield projects,

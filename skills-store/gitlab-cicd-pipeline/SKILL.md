@@ -1,6 +1,6 @@
 ---
 name: gitlab-cicd-pipeline
-description: >
+description: "Design and implement GitLab CI/CD pipelines with stages, jobs, artifacts, and caching. Configure runners, Docker integration, and deployment strategies."
   Design and implement GitLab CI/CD pipelines with stages, jobs, artifacts, and
   caching. Configure runners, Docker integration, and deployment strategies.
 ---

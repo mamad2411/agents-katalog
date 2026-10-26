@@ -1,6 +1,6 @@
 ---
 name: wrap-up
-description: >
+description: "Owns the session handoff lifecycle: the end-of-session ritual that captures completed work, pending tasks, and learnings into .claude/handoff.md, and the session-start protocol that loads it back. Triggers on: /wrap-up, 'wrap up', 'done for today', 'that's all', 'end session', 'signing off', 'handoff' — and at session start: 'start session', 'session start', 'load handoff', 'pick up where we left off', 'what were we working on'."
   Owns the session handoff lifecycle: the end-of-session ritual that captures
   completed work, pending tasks, and learnings into .claude/handoff.md, and the
   session-start protocol that loads it back. Triggers on: /wrap-up, "wrap up",

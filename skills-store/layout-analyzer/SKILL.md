@@ -5,7 +5,7 @@
 
 # Basic Information
 name: layout-analyzer
-description: ">"
+description: "This skill enables document layout analysis using **surya** - an advanced document understanding system. Detect text blocks, tables, figures, headings, and determine reading order in complex documents."
 version: "1.0"
 author: claude-office-skills
 license: MIT

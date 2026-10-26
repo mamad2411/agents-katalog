@@ -1,6 +1,6 @@
 ---
 name: google-agents-cli-deploy
-description: >
+description: "This skill should be used when the user wants to 'deploy an agent', 'deploy my ADK agent', 'set up CI/CD', 'configure secrets', 'troubleshoot a deployment', or needs guidance on Agent Runtime, Cloud Run, or GKE deployment targets, or binding an agent to an Agent Gateway. Covers deployment workflows, service accounts, rollback, and production infrastructure. Applies to any framework agents-cli deploys (ADK, LangChain, ...). Part of the agents-cli skills suite. Do NOT use for agent API code patterns (ADK: use google-agents-cli-adk-code), evaluation (use google-agents-cli-eval), or project scaffo"
   This skill should be used when the user wants to "deploy an agent",
   "deploy my ADK agent", "set up CI/CD", "configure secrets",
   "troubleshoot a deployment", or needs guidance on Agent Runtime,

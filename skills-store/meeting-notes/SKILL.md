@@ -5,7 +5,7 @@
 
 # Basic Information
 name: meeting-notes
-description: ">"
+description: "This skill transforms raw meeting notes, transcripts, or audio summaries into clear, structured documentation with action items, decisions, and key takeaways."
 version: "1.0.0"
 author: Claude Office Skills Contributors
 license: MIT

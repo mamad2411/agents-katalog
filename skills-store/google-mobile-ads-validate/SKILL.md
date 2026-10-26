@@ -1,6 +1,6 @@
 ---
 name: google-mobile-ads-validate
-description: >-
+description: "Validates a project's Google Mobile Ads (GMA) SDK integration for iOS, Android, or Unity projects. Use when conducting a full pre-launch audit of an app that integrates GMA SDK or when validating any individual GMA SDK integration checks, such as when validating ad unit IDs and ad formats, SKAdNetwork IDs, mediation adapter SDK version compatibility, or ad preloading."
   Validates a project's Google Mobile Ads (GMA) SDK integration for iOS,
   Android, or Unity projects. Use when conducting a full pre-launch audit of an
   app that integrates GMA SDK or when validating any individual GMA SDK

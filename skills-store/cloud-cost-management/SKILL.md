@@ -1,6 +1,6 @@
 ---
 name: cloud-cost-management
-description: >
+description: "Optimize and manage cloud costs across AWS, Azure, and GCP using reserved instances, spot pricing, and cost monitoring tools."
   Optimize and manage cloud costs across AWS, Azure, and GCP using reserved
   instances, spot pricing, and cost monitoring tools.
 ---

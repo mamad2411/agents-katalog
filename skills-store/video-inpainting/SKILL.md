@@ -2,7 +2,7 @@
 name: video-inpainting
 allowed-tools: Bash(runcomfy *)
 displayName: "Video Inpainting"
-description: >
+description: "Region edits across video frames on RunComfy via the `runcomfy` CLI — remove an object that appears across many frames, clean up wires or watermarks, replace a region with matching motion. Routes across Wan 2-7 edit-video (default, prompt-driven region edits with spatial language), Lucy Edit Restyle (identity-stable region-aware restyle), and Seedream 4-0 edit-sequential (when treating the clip as a frame stack). Picks the right route based on whether the change is prose-driven, identity-locked, or needs frame-by-frame still inpaint chained into a video. Triggers on 'video inpaint', 'video inp"
   Region edits across video frames on RunComfy via the `runcomfy`
   CLI — remove an object that appears across many frames, clean
   up wires or watermarks, replace a region with matching motion.

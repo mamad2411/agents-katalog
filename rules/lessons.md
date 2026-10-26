@@ -1,0 +1,1 @@
+- 2026-10-23 — kalau ubah plugin TUI, wajib cek dengan capture pty — jangan percaya render di kepala

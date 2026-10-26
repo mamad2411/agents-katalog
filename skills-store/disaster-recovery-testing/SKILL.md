@@ -1,6 +1,6 @@
 ---
 name: disaster-recovery-testing
-description: >
+description: "Execute comprehensive disaster recovery tests, validate recovery procedures, and document lessons learned from DR exercises."
   Execute comprehensive disaster recovery tests, validate recovery procedures,
   and document lessons learned from DR exercises.
 ---

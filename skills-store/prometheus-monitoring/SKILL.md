@@ -1,6 +1,6 @@
 ---
 name: prometheus-monitoring
-description: >
+description: "Set up Prometheus monitoring for applications with custom metrics, scraping configurations, and service discovery. Use when implementing time-series metrics collection, monitoring applications, or building observability infrastructure."
   Set up Prometheus monitoring for applications with custom metrics, scraping
   configurations, and service discovery. Use when implementing time-series
   metrics collection, monitoring applications, or building observability

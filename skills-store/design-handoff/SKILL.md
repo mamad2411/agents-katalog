@@ -1,6 +1,6 @@
 ---
 name: design-handoff
-description: >
+description: "Prepare designs for development handoff. Document specifications, interactions, and assets to enable efficient development and maintain design quality."
   Prepare designs for development handoff. Document specifications,
   interactions, and assets to enable efficient development and maintain design
   quality.

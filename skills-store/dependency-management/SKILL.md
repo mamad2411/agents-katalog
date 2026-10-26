@@ -1,6 +1,6 @@
 ---
 name: dependency-management
-description: >
+description: "Manage project dependencies across languages including npm install, package versioning, dependency conflicts, security scanning, and lock files. Use when dealing with dependencies, version pinning, semantic versioning, or resolving conflicts."
   Manage project dependencies across languages including npm install, package
   versioning, dependency conflicts, security scanning, and lock files. Use when
   dealing with dependencies, version pinning, semantic versioning, or resolving

@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-collectx-deployment
-description: >
+description: "Use this skill to deploy and operate a CollectX (clx) based DOCA telemetry collector on a host or BlueField — wiring providers / counters into the collector, running the collection daemon, and shaping its exporters (Prometheus pull, Fluent Bit push, NetFlow, file / IPC) so the metrics actually leave the box. Trigger even when the user never says CollectX or clx — implicit phrasings: {collector emits nothing downstream}, {add a provider to the clx collector}, {turn on the Prometheus endpoint}, {ship counters to Fluent Bit from the DPU}, {daemon starts but no schema rows appear}. This skill owns"
   Use this skill to deploy and operate a CollectX (clx) based
   DOCA telemetry collector on a host or BlueField — wiring
   providers / counters into the collector, running the

@@ -1,6 +1,6 @@
 ---
 name: form-validation
-description: >
+description: "Implement form validation using React Hook Form, Formik, Vee-Validate, and custom validators. Use when building robust form handling with real-time validation."
   Implement form validation using React Hook Form, Formik, Vee-Validate, and
   custom validators. Use when building robust form handling with real-time
   validation.

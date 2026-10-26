@@ -1,6 +1,6 @@
 ---
 name: kotlin-backend-jpa-entity-mapping
-description: >
+description: "Model Kotlin persistence code correctly for Spring Data JPA and Hibernate. Covers entity design, identity and equality, uniqueness constraints, relationships, fetch plans, and common ORM (Object-Relational Mapping) traps specific to Kotlin. Use when creating or reviewing JPA (Java Persistence API) entities, diagnosing N+1 or LazyInitializationException, placing indexes and uniqueness rules, or preventing Kotlin-specific bugs such as data class entities and broken equals/hashCode."
   Model Kotlin persistence code correctly for Spring Data JPA and Hibernate.
   Covers entity design, identity and equality, uniqueness constraints,
   relationships, fetch plans, and common ORM (Object-Relational Mapping) traps 

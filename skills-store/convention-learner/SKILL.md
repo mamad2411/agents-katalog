@@ -1,6 +1,6 @@
 ---
 name: convention-learner
-description: >
+description: "Detects and enforces project-specific coding conventions by analyzing existing codebase patterns. Learns naming conventions, folder structure, test organization, and coding style from the existing code. Load when: 'conventions', 'coding standards', 'project patterns', 'enforce style', 'detect patterns', 'learn conventions', 'code consistency'."
   Detects and enforces project-specific coding conventions by analyzing
   existing codebase patterns. Learns naming conventions, folder structure,
   test organization, and coding style from the existing code.

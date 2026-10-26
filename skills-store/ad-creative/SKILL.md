@@ -1,6 +1,6 @@
 ---
 name: ad-creative
-description: |
+description: "Generate and iterate ad creative including headlines, descriptions, and primary text. Useful for paid social and search ad iteration."
   Generate and iterate ad creative including headlines, descriptions, and primary text. Useful for paid social and search ad iteration.
 triggers:
   - "ad creative"

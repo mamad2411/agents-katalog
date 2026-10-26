@@ -1,6 +1,6 @@
 ---
 name: interaction-design
-description: >
+description: "Design meaningful interactions and microinteractions. Create delightful user experiences through thoughtful animation, feedback, and responsive interface design."
   Design meaningful interactions and microinteractions. Create delightful user
   experiences through thoughtful animation, feedback, and responsive interface
   design.

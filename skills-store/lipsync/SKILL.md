@@ -2,7 +2,7 @@
 name: lipsync
 allowed-tools: Bash(runcomfy *)
 displayName: "Lipsync"
-description: >
+description: "Lip-sync a face to a specific audio track on RunComfy via the `runcomfy` CLI. Routes across ByteDance OmniHuman (audio-driven full-body avatar from a portrait + audio), Sync Labs sync v2 / Pro (state-of-the-art mouth sync onto a video), Kling lipsync (audio-to- video and text-to-video with synced speech), and Creatify lipsync. The skill picks the right endpoint for the user's actual intent — portrait still + audio (avatar-style), source video + audio (mouth- swap on existing footage), or generate-and-sync from a script. Triggers on 'lip sync', 'lipsync', 'make this video speak', 'match audio t"
   Lip-sync a face to a specific audio track on RunComfy via the
   `runcomfy` CLI. Routes across ByteDance OmniHuman (audio-driven
   full-body avatar from a portrait + audio), Sync Labs sync v2 / Pro

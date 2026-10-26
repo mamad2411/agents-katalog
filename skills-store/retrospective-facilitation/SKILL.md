@@ -1,6 +1,6 @@
 ---
 name: retrospective-facilitation
-description: >
+description: "Facilitate effective retrospectives to capture lessons learned, celebrate successes, and identify actionable improvements for future iterations."
   Facilitate effective retrospectives to capture lessons learned, celebrate
   successes, and identify actionable improvements for future iterations.
 ---

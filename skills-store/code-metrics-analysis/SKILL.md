@@ -1,6 +1,6 @@
 ---
 name: code-metrics-analysis
-description: >
+description: "Analyze code complexity, cyclomatic complexity, maintainability index, and code churn using metrics tools. Use when assessing code quality, identifying refactoring candidates, or monitoring technical debt."
   Analyze code complexity, cyclomatic complexity, maintainability index, and
   code churn using metrics tools. Use when assessing code quality, identifying
   refactoring candidates, or monitoring technical debt.

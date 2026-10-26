@@ -1,7 +1,7 @@
 ---
 name: lark-attendance
 version: 1.0.0
-description: "飞书考勤打卡：查询自己的考勤打卡记录"
+description: "Query your own Lark (Feishu) attendance clock-in records via lark-cli. Use when the user asks about 考勤/attendance/clock-in history, late or missing punches, or monthly attendance reports."
 metadata:
   requires:
     bins: ["lark-cli"]

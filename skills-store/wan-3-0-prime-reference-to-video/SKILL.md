@@ -2,7 +2,7 @@
 name: wan-3-0-prime-reference-to-video
 allowed-tools: Bash(runcomfy *)
 displayName: "Wan 3.0 Prime Reference to Video"
-description: >
+description: "Build video clips from reference images, reference videos, and reference audio with Wan-AI Wan 3.0 Prime Reference to Video on RunComfy. Up to 10 reference images, 5 reference videos and 5 reference audio clips are bound to a prompt that names them as 'Image 1', 'Video 1', 'Audio 1', giving character, product and scene consistency across a 2-30 second shot at 480p, 720p or 1080p with a synchronized audio track. Documents the full input schema, the counted-second pricing model (reference videos are billed as duration, images and audio are not), and when to route to Wan 3.0 Prime text-to-video /"
   Build video clips from reference images, reference videos, and
   reference audio with Wan-AI Wan 3.0 Prime Reference to Video on
   RunComfy. Up to 10 reference images, 5 reference videos and 5

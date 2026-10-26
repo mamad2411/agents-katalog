@@ -1,6 +1,6 @@
 ---
 name: dt-obs-aws
-description: >-
+description: "AWS cloud resource monitoring including EC2, RDS, Lambda, ECS/EKS, VPC networking, load balancers, S3, DynamoDB, SQS/SNS, and cost optimization. Use when analyzing AWS infrastructure, resource inventory, security compliance, capacity planning, or cost savings. Trigger: 'show EC2 instances', 'find RDS databases', 'VPC resources', 'AWS cost optimization', 'Lambda functions', 'ECS services', 'security groups', 'unattached EBS volumes', 'AWS load balancer topology', 'publicly accessible databases', 'AWS dashboards'. Do NOT use for explaining existing queries, product documentation questions, gener"
   AWS cloud resource monitoring including EC2, RDS, Lambda, ECS/EKS, VPC networking, load balancers,
   S3, DynamoDB, SQS/SNS, and cost optimization. Use when analyzing AWS infrastructure, resource
   inventory, security compliance, capacity planning, or cost savings.

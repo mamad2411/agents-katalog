@@ -5,7 +5,7 @@
 
 # Basic Information
 name: office-to-md
-description: ">"
+description: "This skill enables conversion from various Office formats to Markdown using **markitdown** - Microsoft's open-source tool for converting documents to Markdown. Perfect for making Office content searchable, version-controllable, and AI-friendly."
 version: "1.0"
 author: claude-office-skills
 license: MIT

@@ -1,6 +1,6 @@
 ---
 name: kotlin-tooling-kotlin-toolchain-plugin-authoring
-description: >
+description: "Load when authoring, writing, or designing a Kotlin Toolchain local plugin to extend the declarative build with code generation, build-time processing, custom verification, or packaging that module.yaml cannot express, or when referencing @TaskAction, @Configurable, plugin.yaml, or jvm/amper-plugin. Skip for porting an existing Gradle plugin."
   Load when authoring, writing, or designing a Kotlin Toolchain local plugin to
   extend the declarative build with code generation, build-time processing,
   custom verification, or packaging that module.yaml cannot express, or when

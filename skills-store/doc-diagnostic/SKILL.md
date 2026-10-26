@@ -1,6 +1,6 @@
 ---
 name: doc-diagnostic
-description: |
+description: "This skill should be used when deciding whether a doc should exist, where it belongs, whether something is really an ADR, or whether an architectural decision is missing from the record. PROACTIVELY activate on 'should this be an ADR?', 'where should I document X?', 'is this architecturally significant?', 'ADR vs RFC vs design doc vs runbook', 'Diátaxis', 'audit docs folder', 'clean up the decision log', 'doc drift', 'doc governance', 'ADR template selection', 'Nygard vs MADR vs Y-statement', 'missing ADR', 'missing decision record', 'undocumented architecture', 'implicit decision', 'historica"
   This skill should be used when deciding whether a doc should exist, where it belongs, whether something is really an ADR, or whether an architectural decision is missing from the record.
   PROACTIVELY activate on "should this be an ADR?", "where should I document X?", "is this architecturally significant?", "ADR vs RFC vs design doc vs runbook", "Diátaxis", "audit docs folder", "clean up the decision log", "doc drift", "doc governance", "ADR template selection", "Nygard vs MADR vs Y-statement", "missing ADR", "missing decision record", "undocumented architecture", "implicit decision", "historical documentation clutter", "inherited repo", "large legacy repo", "architecture archaeology", "code archaeology", "scan for decision records", "find decisions not captured in ADRs."
   Provides: doc placement diagnostic, alternatives catalog, ADR canon, folder audit procedure, and BACKFILL-ADR candidate detection.

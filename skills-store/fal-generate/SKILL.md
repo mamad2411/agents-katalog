@@ -1,6 +1,6 @@
 ---
 name: fal-generate
-description: |
+description: "Generate images and videos using fal.ai AI models. Production-grade catalogue covering Flux, SDXL, ideogram, and other community-hosted endpoints."
   Generate images and videos using fal.ai AI models. Production-grade catalogue covering Flux, SDXL, ideogram, and other community-hosted endpoints.
 triggers:
   - "fal generate"

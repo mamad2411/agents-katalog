@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-comm-channel-admin
-description: >
+description: "Use this skill to enumerate host↔DPU DOCA comch (formerly Comm Channel) servers and connections via the shipped doca_comm_channel_admin binary — listing comch-capable devices and decoding the per-device server / connection table (server name, PID, in-use / max, PCIe address). The shipped binary is a SINGLE-SHOT SCAN-AND-PRINT tool with no registered arguments — NO list / inspect / drain / restart subcommands; one inventory pass over every comch-capable doca_dev on this side. Channel reset / drain / restart go to doca-comch (program side), doca-setup / doca-hardware-safety (driver reload), or B"
   Use this skill to enumerate host↔DPU DOCA comch (formerly
   Comm Channel) servers and connections via the shipped
   doca_comm_channel_admin binary — listing comch-capable

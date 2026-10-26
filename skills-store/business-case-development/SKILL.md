@@ -1,6 +1,6 @@
 ---
 name: business-case-development
-description: >
+description: "Build compelling business cases to justify investments and secure funding. Quantify benefits, assess costs, manage risks, and present compelling ROI arguments to leadership."
   Build compelling business cases to justify investments and secure funding.
   Quantify benefits, assess costs, manage risks, and present compelling ROI
   arguments to leadership.

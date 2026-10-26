@@ -1,6 +1,6 @@
 ---
 name: git-workflow
-description: |
+description: "Langfuse repo Git, GitHub, commit, branch, pull request, issue search, release, and production-promotion workflow. Use when staging, committing, pushing, opening PRs, choosing a Linear git branch name, handling Claude, Greptile, or Codex review comments, searching GitHub issues, or changing release/promotion behavior."
   Langfuse repo Git, GitHub, commit, branch, pull request, issue search,
   release, and production-promotion workflow. Use when staging, committing,
   pushing, opening PRs, choosing a Linear git branch name, handling Claude,

@@ -1,6 +1,6 @@
 ---
 name: dt-obs-ext-monitors
-description: >-
+description: "3rd-party test and monitor result ingestion into Dynatrace Grail via the platform events ingest API (platform/ingest/custom/events/). Use when sending external synthetic test outcomes, CI monitor data, or third-party check results to Dynatrace. Covers token scope, full event schema for external_test_run and external_test_step (including dt.security_context, ci.*, trace correlation, and pipeline-added fields), curl and Java DTO examples, and DQL verification. Triggers: 'ingest test results', 'send monitor results', 'third party monitor', 'external test ingestion', 'send synthetic results to Gra"
   3rd-party test and monitor result ingestion into Dynatrace Grail via the platform events
   ingest API (platform/ingest/custom/events/). Use when sending external synthetic test outcomes,
   CI monitor data, or third-party check results to Dynatrace. Covers token scope, full event

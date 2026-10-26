@@ -1,6 +1,6 @@
 ---
 name: datadog-query-recipes
-description: |
+description: "Research Langfuse production telemetry with reusable Datadog queries. Use for tenant or project activity, API usage, queue behavior, spans, logs, metrics, or ad hoc measurements across production regions; pair with debug-issue-with-datadog for root-cause analysis."
   Research Langfuse production telemetry with reusable Datadog queries. Use for
   tenant or project activity, API usage, queue behavior, spans, logs, metrics,
   or ad hoc measurements across production regions; pair with

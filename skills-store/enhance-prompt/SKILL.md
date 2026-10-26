@@ -1,6 +1,6 @@
 ---
 name: enhance-prompt
-description: |
+description: "Improve prompts with design specs and UI/UX vocabulary. Useful for design-to-code workflows and clarifying requests for visual output."
   Improve prompts with design specs and UI/UX vocabulary. Useful for design-to-code workflows and clarifying requests for visual output.
 triggers:
   - "enhance prompt"

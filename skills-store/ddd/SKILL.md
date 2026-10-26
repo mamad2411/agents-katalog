@@ -1,6 +1,6 @@
 ---
 name: ddd
-description: >
+description: "Domain-Driven Design tactical patterns for .NET applications. Covers aggregates, aggregate roots, value objects, domain events, domain services, strongly-typed IDs, and repository patterns for aggregate persistence. Load this skill when implementing DDD, working with aggregates, value objects, domain events, bounded contexts, or when the architecture-advisor recommends DDD + Clean Architecture. Pair with the clean-architecture skill."
   Domain-Driven Design tactical patterns for .NET applications. Covers aggregates,
   aggregate roots, value objects, domain events, domain services, strongly-typed IDs,
   and repository patterns for aggregate persistence.

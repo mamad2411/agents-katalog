@@ -1,6 +1,6 @@
 ---
 name: dependency-tracking
-description: >
+description: "Map, track, and manage project dependencies across teams, systems, and organizations. Identify critical path items and prevent blocking issues through proactive dependency management."
   Map, track, and manage project dependencies across teams, systems, and
   organizations. Identify critical path items and prevent blocking issues
   through proactive dependency management.

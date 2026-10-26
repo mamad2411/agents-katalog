@@ -1,6 +1,6 @@
 ---
 name: workflow-mastery
-description: >
+description: "Claude Code workflow mastery for .NET developers. Covers parallel execution with git worktrees, plan mode strategy, verification loops, auto-formatting hooks, permission setup for dotnet CLI, prompting techniques, subagent patterns, and context discipline — token budget management, MCP-first navigation, lazy loading, and subagent isolation — all adapted for the .NET ecosystem. Load this skill when setting up Claude Code for a .NET project, optimizing workflows, running parallel sessions, when context is running low or sessions feel sluggish, when exploring a large codebase efficiently, or when"
   Claude Code workflow mastery for .NET developers. Covers parallel execution
   with git worktrees, plan mode strategy, verification loops, auto-formatting
   hooks, permission setup for dotnet CLI, prompting techniques, subagent

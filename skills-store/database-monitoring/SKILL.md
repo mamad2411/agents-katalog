@@ -1,6 +1,6 @@
 ---
 name: database-monitoring
-description: >
+description: "Monitor database performance and health. Use when setting up monitoring, analyzing metrics, or troubleshooting database issues."
   Monitor database performance and health. Use when setting up monitoring,
   analyzing metrics, or troubleshooting database issues.
 ---

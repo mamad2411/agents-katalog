@@ -1,6 +1,6 @@
 ---
 name: frontend-routing
-description: >
+description: "Implement client-side routing using React Router, Vue Router, and Angular Router. Use when building multi-page applications with navigation and route protection."
   Implement client-side routing using React Router, Vue Router, and Angular
   Router. Use when building multi-page applications with navigation and route
   protection.

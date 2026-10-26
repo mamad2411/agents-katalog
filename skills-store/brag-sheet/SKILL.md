@@ -1,6 +1,6 @@
 ---
 name: brag-sheet
-description: >
+description: "Turn vague 'what did I do?' into evidence-backed impact statements for performance reviews, self-reviews, promotion packets, and weekly updates. Uniquely mines Copilot CLI session logs to reconstruct forgotten work, plus git commits and GitHub PRs. Enforces a 3-part impact contract (action → result → evidence). Works standalone with zero dependencies. Trigger for: 'brag', 'log work', 'what did I do', 'backfill my work history', 'performance review', 'self-review', 'self assessment', 'write impact statement', 'review prep', 'promo packet', 'promotion case', 'weekly update', 'status report', 'ac"
   Turn vague "what did I do?" into evidence-backed impact statements for performance
   reviews, self-reviews, promotion packets, and weekly updates. Uniquely mines Copilot
   CLI session logs to reconstruct forgotten work, plus git commits and GitHub PRs.

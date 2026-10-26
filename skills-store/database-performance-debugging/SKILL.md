@@ -1,6 +1,6 @@
 ---
 name: database-performance-debugging
-description: >
+description: "Debug database performance issues through query analysis, index optimization, and execution plan review. Identify and fix slow queries."
   Debug database performance issues through query analysis, index optimization,
   and execution plan review. Identify and fix slow queries.
 ---

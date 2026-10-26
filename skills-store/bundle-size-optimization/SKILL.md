@@ -1,6 +1,6 @@
 ---
 name: bundle-size-optimization
-description: >
+description: "Reduce JavaScript and CSS bundle sizes through code splitting, tree shaking, and optimization techniques. Improve load times and overall application performance."
   Reduce JavaScript and CSS bundle sizes through code splitting, tree shaking,
   and optimization techniques. Improve load times and overall application
   performance.

@@ -1,7 +1,7 @@
 ---
 name: absolute-ui
 version: 0.5.0
-description: >
+description: "Build polished, intentional UIs with concrete CSS/Tailwind values — typography, color, layout, spacing, dark mode, accessibility, animations, components. Encodes specific, opinionated rules with exact values, not vague advice. Covers buttons, cards, forms, tables, navigation, dashboards, landing pages, onboarding, and more. Triggers on 'absolute ui', 'design a UI', 'style this component', 'make this less like AI slop', 'fix the spacing/typography/color', 'dark mode', 'design a pricing page', 'make this look better'."
   Build polished, intentional UIs with concrete CSS/Tailwind values — typography,
   color, layout, spacing, dark mode, accessibility, animations, components. Encodes
   specific, opinionated rules with exact values, not vague advice. Covers buttons,

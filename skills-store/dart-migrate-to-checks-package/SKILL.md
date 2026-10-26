@@ -1,6 +1,6 @@
 ---
 name: dart-migrate-to-checks-package
-description: |-
+description: "Replace the usage of `expect` and similar functions from `package:matcher` to `package:checks` equivalents."
   Replace the usage of `expect` and similar functions from `package:matcher`
   to `package:checks` equivalents.
 metadata:

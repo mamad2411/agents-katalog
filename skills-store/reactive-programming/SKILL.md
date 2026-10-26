@@ -1,6 +1,6 @@
 ---
 name: reactive-programming
-description: >
+description: "Implement reactive programming patterns using RxJS, streams, observables, and backpressure handling. Use when building event-driven UIs, handling async data streams, or managing complex data flows."
   Implement reactive programming patterns using RxJS, streams, observables, and
   backpressure handling. Use when building event-driven UIs, handling async data
   streams, or managing complex data flows.

@@ -1,6 +1,6 @@
 ---
 name: google-agents-cli-workflow
-description: >
+description: "This skill should be used when the user wants to 'develop an agent', 'build an agent using ADK', 'run the agent locally', 'debug agent code', 'test an agent', 'deploy an agent', 'publish an agent', 'monitor an agent', or needs the ADK (Agent Development Kit) development lifecycle and coding guidelines. Entrypoint for building ADK agents. Always active — provides the full workflow (scaffold, build, evaluate, deploy, publish, observe), code preservation rules, model selection guidance, and troubleshooting steps for ADK or any agent development."
   This skill should be used when the user wants to "develop an agent",
   "build an agent using ADK", "run the agent locally", "debug agent code",
   "test an agent", "deploy an agent", "publish an agent", "monitor an agent",

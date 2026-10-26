@@ -1,6 +1,6 @@
 ---
 name: linear-work-rhythm
-description: |
+description: "Answer 'what should I do today' for a Langfuse maintainer, from the tracker rather than from memory: which projects you lead, which owe an update before the Monday engineering weekly, what shipped but is not finished, what waits on your decision, and what colleagues are working on that overlaps. Use on 'what should I do today', 'what's on my plate', 'what should I work on next', 'prep my Monday update', 'what did I say last week', 'who else is working on this', 'who should review this', and whenever someone hands over a bare link — a ticket, a pull request, a Slack permalink — and expects you "
   Answer "what should I do today" for a Langfuse maintainer, from the tracker
   rather than from memory: which projects you lead, which owe an update before
   the Monday engineering weekly, what shipped but is not finished, what waits

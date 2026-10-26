@@ -1,6 +1,6 @@
 ---
 name: documentation-site-setup
-description: >
+description: "Set up documentation websites using Docusaurus, MkDocs, VitePress, GitBook, or static site generators. Use when creating docs sites, setting up documentation portals, or building static documentation."
   Set up documentation websites using Docusaurus, MkDocs, VitePress, GitBook, or
   static site generators. Use when creating docs sites, setting up documentation
   portals, or building static documentation.

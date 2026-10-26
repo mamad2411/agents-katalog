@@ -1,6 +1,6 @@
 ---
 name: de-sloppify
-description: >
+description: "Systematic code cleanup pipeline for .NET projects. Runs 7 ordered steps: formatting, unused usings, analyzer warnings, dead code removal, TODO resolution, sealed class audit, and CancellationToken propagation. Each step is verified independently with tests between phases. Load this skill when: 'clean up', 'de-sloppify', 'tidy up', 'remove dead code', 'code cleanup', 'housekeeping', 'tech debt', 'fix warnings', 'seal classes', 'add CancellationToken', 'unused usings', 'format code'."
   Systematic code cleanup pipeline for .NET projects. Runs 7 ordered steps:
   formatting, unused usings, analyzer warnings, dead code removal, TODO resolution,
   sealed class audit, and CancellationToken propagation. Each step is verified

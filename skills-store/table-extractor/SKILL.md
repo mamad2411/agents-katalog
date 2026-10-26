@@ -5,7 +5,7 @@
 
 # Basic Information
 name: table-extractor
-description: ">"
+description: "This skill enables precise extraction of tables from PDF documents using **camelot** - the gold standard for PDF table extraction. Handle complex tables with merged cells, borderless tables, and multi-page layouts with high accuracy."
 version: "1.0"
 author: claude-office-skills
 license: MIT

@@ -2,7 +2,7 @@
 name: agent-platform-deploy
 metadata:
   category: AiAndMachineLearning
-description: >-
+description: "Deploy open models or custom weights from Model Garden to Agent Platform endpoints, check the status of an in-progress deployment operation, or clean up resources by undeploying models and deleting endpoints. Use when asked to actively deploy a model, list the Model Garden CATALOG of available models, check if a specific model is deployable (`gcloud ai model-garden models list-deployment-config`), query deployment cost, troubleshoot deployment errors (like quota limits), or undeploy/clean up endpoints. Also use when copying and deploying a 1P Tuned Model. Don't use for pure listing/discovery q"
   Deploy open models or custom weights from Model Garden to Agent Platform
   endpoints, check the status of an in-progress deployment operation, or clean
   up resources by undeploying models and deleting endpoints. Use when asked to

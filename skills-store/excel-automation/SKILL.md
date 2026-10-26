@@ -5,7 +5,7 @@
 
 # Basic Information
 name: excel-automation
-description: ">"
+description: "This skill enables advanced Excel automation using **xlwings** - a library that can interact with live Excel instances. Unlike openpyxl (file-only), xlwings can control Excel in real-time, execute VBA, update dashboards, and automate complex workflows."
 version: "1.0"
 author: claude-office-skills
 license: MIT

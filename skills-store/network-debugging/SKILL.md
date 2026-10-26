@@ -1,6 +1,6 @@
 ---
 name: network-debugging
-description: >
+description: "Debug network issues using browser tools and network analysis. Diagnose connection problems, latency, and data transmission issues."
   Debug network issues using browser tools and network analysis. Diagnose
   connection problems, latency, and data transmission issues.
 ---

@@ -1,6 +1,6 @@
 ---
 name: rate-limiting-implementation
-description: >
+description: "Implement rate limiting, throttling, API quotas, and backpressure mechanisms to protect services from abuse and ensure fair resource usage. Use when building APIs, preventing DOS attacks, or managing system load."
   Implement rate limiting, throttling, API quotas, and backpressure mechanisms
   to protect services from abuse and ensure fair resource usage. Use when
   building APIs, preventing DOS attacks, or managing system load.

@@ -1,6 +1,6 @@
 ---
 name: database-indexing-strategy
-description: >
+description: "Design and implement database indexing strategies. Use when creating indexes, choosing index types, or optimizing index performance in PostgreSQL and MySQL."
   Design and implement database indexing strategies. Use when creating indexes,
   choosing index types, or optimizing index performance in PostgreSQL and MySQL.
 ---

@@ -1,7 +1,7 @@
 ---
 name: flux-kontext
 displayName: "Flux Kontext Pro — Pro Pack on RunComfy"
-description: >
+description: "Edit images with Flux 1 Kontext Pro (Black Forest Labs' precise local image-edit model) on RunComfy — bundled with the model's documented prompting patterns so the skill gets sharper output than naive prompting against the same model. Documents Flux Kontext's strengths (single-reference precise local edits, strong prompt control, consistent high-fidelity outputs), the schema (single image + prompt), and when to route to Nano Banana Edit / GPT Image 2 edit / Flux 2 Klein instead. Calls `runcomfy run blackforestlabs/flux-1-kontext/pro/edit` through the local RunComfy CLI. Triggers on 'flux konte"
   Edit images with Flux 1 Kontext Pro (Black Forest Labs' precise local
   image-edit model) on RunComfy — bundled with the model's documented
   prompting patterns so the skill gets sharper output than naive

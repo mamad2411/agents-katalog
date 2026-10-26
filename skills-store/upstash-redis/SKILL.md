@@ -1,6 +1,6 @@
 ---
 name: upstash-redis
-description: >
+description: "Use Redis over HTTP from serverless and edge runtimes with @upstash/redis, and add rate limiting with @upstash/ratelimit. Use when the user mentions Upstash Redis, needs Redis from a Next.js route handler or middleware, Vercel, Cloudflare Workers, Deno, or Bun without TCP connection pooling, or wants cache-aside with TTLs, a session store, counters, or a 429 rate limiter using fixed window, sliding window, or token bucket. DO NOT use for self-hosted or TCP Redis clients (ioredis, node-redis), Redis Cluster administration, or vector similarity search."
   Use Redis over HTTP from serverless and edge runtimes with @upstash/redis, and
   add rate limiting with @upstash/ratelimit. Use when the user mentions Upstash
   Redis, needs Redis from a Next.js route handler or middleware, Vercel,

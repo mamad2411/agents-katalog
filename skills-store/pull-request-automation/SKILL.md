@@ -1,6 +1,6 @@
 ---
 name: pull-request-automation
-description: >
+description: "Automate pull request workflows with templates, checklists, auto-merge rules, and review assignments. Reduce manual overhead and improve consistency."
   Automate pull request workflows with templates, checklists, auto-merge rules,
   and review assignments. Reduce manual overhead and improve consistency.
 ---

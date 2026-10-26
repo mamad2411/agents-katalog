@@ -1,6 +1,6 @@
 ---
 name: google-agents-cli-publish
-description: >
+description: "This skill should be used when the user wants to 'publish an agent', 'publish my ADK agent', 'register an agent with Gemini Enterprise', 'publish to Gemini Enterprise', or needs guidance on the agents-cli publish gemini-enterprise command. Also use when the user wants to 'manage agents in Agent Registry', 'list/update/delete registered agents', or 'register an MCP server'. Covers ADK vs A2A registration modes, programmatic and interactive usage, flag reference, auto-detection from deployment metadata, Agent Registry fleet management, and troubleshooting. Part of the agents-cli skills suite. Do"
   This skill should be used when the user wants to "publish an agent",
   "publish my ADK agent", "register an agent with Gemini Enterprise",
   "publish to Gemini Enterprise", or needs guidance on the agents-cli

@@ -1,6 +1,6 @@
 ---
 name: excalidraw-ai
-description: >
+description: "Create professional Excalidraw diagrams by generating JSON directly. This skill provides the Excalidraw JSON schema reference and professional icon libraries for AI agents to autonomously create diagrams without templates."
   Create professional Excalidraw diagrams by generating JSON directly.
   This skill provides the Excalidraw JSON schema reference and professional icon libraries
   for AI agents to autonomously create diagrams without templates.

@@ -1,6 +1,6 @@
 ---
 name: django-application
-description: >
+description: "Develop production-grade Django applications with models, views, ORM queries, authentication, and admin interfaces. Use when building web applications, managing databases with Django ORM, and implementing authentication systems."
   Develop production-grade Django applications with models, views, ORM queries,
   authentication, and admin interfaces. Use when building web applications,
   managing databases with Django ORM, and implementing authentication systems.

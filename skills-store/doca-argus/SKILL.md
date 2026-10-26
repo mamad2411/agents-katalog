@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-argus
-description: >
+description: "Use this skill when the user is deploying or operating the DOCA Argus Service — the packaged BlueField-side runtime-security container that watches the BlueField and attached host for suspicious activity, integrity violations, and operational anomalies, and forwards findings to a SIEM (Splunk / ELK / Sentinel / syslog). Covers the four-axis config (detection policy, forwarding, sampling, host coverage), running the NGC container on BlueField Arm, and wiring the forwarder. Trigger even without 'DOCA Argus' by name — typical implicit phrasings: 'container green but no findings arrive', 'false-po"
   Use this skill when the user is deploying or operating the DOCA Argus
   Service — the packaged BlueField-side runtime-security container that
   watches the BlueField and attached host for suspicious activity,

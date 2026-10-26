@@ -1,7 +1,7 @@
 ---
 name: video-edit
 displayName: "Video Edit — Pro Pack on RunComfy"
-description: >
+description: "Edit existing video on RunComfy — this skill is a smart router that matches the user's intent to the right edit model in the RunComfy catalog. Picks Wan 2.7 Edit-Video (general restyle / background swap / packaging swap, identity + motion preservation), Kling 2.6 Pro Motion Control (transfer precise motion from a reference video to a target character), or Lucy Edit Restyle (lightweight identity-stable restyle / outfit swap). Bundles each model's documented prompting patterns so the skill gets sharper edits without burning iterations on the wrong model. Calls `runcomfy run <vendor>/<model>/<end"
   Edit existing video on RunComfy — this skill is a smart router that
   matches the user's intent to the right edit model in the RunComfy
   catalog. Picks Wan 2.7 Edit-Video (general restyle / background swap

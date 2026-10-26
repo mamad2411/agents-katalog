@@ -1,6 +1,6 @@
 ---
 name: oauth-implementation
-description: >
+description: "Implement secure OAuth 2.0, OpenID Connect (OIDC), JWT authentication, and SSO integration. Use when building secure authentication systems for web and mobile applications."
   Implement secure OAuth 2.0, OpenID Connect (OIDC), JWT authentication, and SSO
   integration. Use when building secure authentication systems for web and
   mobile applications.

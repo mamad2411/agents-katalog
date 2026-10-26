@@ -1,7 +1,7 @@
 ---
 name: absolute-prune
 version: 0.5.0
-description: >
+description: "Dead code and dependency cleanup, repo-wide: unused deps, unreferenced exports, unreachable code, orphaned files — removed only with tool evidence, in reversible waves. Runs on green main. For diff-scoped cleanup use absolute-simplify. Triggers on 'absolute prune', 'remove dead code', 'find unused deps/exports', 'what can we delete', 'clean up orphaned files'."
   Dead code and dependency cleanup, repo-wide: unused deps, unreferenced exports, unreachable code, orphaned files — removed only with tool evidence, in reversible waves. Runs on green main. For diff-scoped cleanup use absolute-simplify.
   Triggers on "absolute prune", "remove dead code", "find unused deps/exports", "what can we delete", "clean up orphaned files".
 category: workflow

@@ -1,6 +1,6 @@
 ---
 name: cloud-security-configuration
-description: >
+description: "Implement comprehensive cloud security across AWS, Azure, and GCP with IAM, encryption, network security, compliance, and threat detection."
   Implement comprehensive cloud security across AWS, Azure, and GCP with IAM,
   encryption, network security, compliance, and threat detection.
 ---

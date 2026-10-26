@@ -1,6 +1,6 @@
 ---
 name: microservices-architecture
-description: >
+description: "Design and implement microservices architecture including service boundaries, communication patterns, API gateways, service mesh, service discovery, and distributed system patterns. Use when building microservices, distributed systems, or service-oriented architectures."
   Design and implement microservices architecture including service boundaries,
   communication patterns, API gateways, service mesh, service discovery, and
   distributed system patterns. Use when building microservices, distributed

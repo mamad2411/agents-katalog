@@ -1,6 +1,6 @@
 ---
 name: dotnet-init
-description: >
+description: "Interactive project initialization. Detects project type, asks architecture questions, and generates a customized CLAUDE.md — no manual template copying. Use when: 'init project', 'setup project', 'initialize', 'new project setup', 'generate CLAUDE.md', 'configure for dotnet-claude-kit', or starting Claude Code on a fresh or existing .NET codebase."
   Interactive project initialization. Detects project type, asks architecture
   questions, and generates a customized CLAUDE.md — no manual template copying.
   Use when: "init project", "setup project", "initialize", "new project setup",

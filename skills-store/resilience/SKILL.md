@@ -1,6 +1,6 @@
 ---
 name: resilience
-description: >
+description: "Resilience patterns for .NET 10 applications using Polly v8. Covers retry, circuit breaker, timeout, fallback, rate limiter, hedging, and composing resilience pipelines. Load this skill when implementing retry logic, circuit breakers, handling transient failures, or when the user mentions 'Polly', 'resilience', 'retry', 'circuit breaker', 'timeout', 'fallback', 'rate limit', 'hedging', 'transient fault', 'HttpClient resilience', or 'resilience pipeline'."
   Resilience patterns for .NET 10 applications using Polly v8.
   Covers retry, circuit breaker, timeout, fallback, rate limiter, hedging,
   and composing resilience pipelines.

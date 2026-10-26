@@ -1,6 +1,6 @@
 ---
 name: access-control-rbac
-description: >
+description: "Implement Role-Based Access Control (RBAC), permissions management, and authorization policies. Use when building secure access control systems with fine-grained permissions."
   Implement Role-Based Access Control (RBAC), permissions management, and
   authorization policies. Use when building secure access control systems with
   fine-grained permissions.

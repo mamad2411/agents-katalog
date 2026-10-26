@@ -1,6 +1,6 @@
 ---
 name: app-store-deployment
-description: >
+description: "Deploy iOS and Android apps to App Store and Google Play. Covers signing, versioning, build configuration, submission process, and release management."
   Deploy iOS and Android apps to App Store and Google Play. Covers signing,
   versioning, build configuration, submission process, and release management.
 ---

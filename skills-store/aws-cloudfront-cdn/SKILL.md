@@ -1,6 +1,6 @@
 ---
 name: aws-cloudfront-cdn
-description: >
+description: "Distribute content globally using CloudFront with caching, security headers, WAF integration, and origin configuration. Use for low-latency content delivery."
   Distribute content globally using CloudFront with caching, security headers,
   WAF integration, and origin configuration. Use for low-latency content
   delivery.

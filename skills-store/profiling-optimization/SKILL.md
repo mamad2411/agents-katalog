@@ -1,6 +1,6 @@
 ---
 name: profiling-optimization
-description: >
+description: "Profile application performance, identify bottlenecks, and optimize hot paths using CPU profiling, flame graphs, and benchmarking. Use when investigating performance issues or optimizing critical code paths."
   Profile application performance, identify bottlenecks, and optimize hot paths
   using CPU profiling, flame graphs, and benchmarking. Use when investigating
   performance issues or optimizing critical code paths.

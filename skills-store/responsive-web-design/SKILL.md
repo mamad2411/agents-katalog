@@ -1,6 +1,6 @@
 ---
 name: responsive-web-design
-description: >
+description: "Create responsive layouts using CSS Grid, Flexbox, media queries, and mobile-first design. Use when building adaptive interfaces that work across all devices."
   Create responsive layouts using CSS Grid, Flexbox, media queries, and
   mobile-first design. Use when building adaptive interfaces that work across
   all devices.

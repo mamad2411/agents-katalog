@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-bare-metal-deployment
-description: >
+description: "Use this skill for launching, supervising, debugging, OR platform lifecycle on a BlueField — BFB install, RShim/TMFIFO, host PF rebind, post-BFB recovery — taking a DOCA-linked binary to a healthy run directly on hardware (host x86 + BlueField NIC over PCIe, or BlueField Arm bare-metal). No container, no kubelet. Covers launch mode (direct, tmux, systemd), PCI/NUMA/ CPU/IRQ binding, co-tenant isolation (cgroup-v2/netns/numactl), a seven-layer error taxonomy, and a six-state BlueField lifecycle classifier. Trigger even when user does not say 'bare-metal' — implicit phrasings include 'binary exi"
   Use this skill for launching, supervising, debugging, OR
   platform lifecycle on a BlueField — BFB install, RShim/TMFIFO,
   host PF rebind, post-BFB recovery — taking a DOCA-linked binary

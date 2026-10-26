@@ -1,6 +1,6 @@
 ---
 name: architecture-advisor
-description: >
+description: "Architecture selection advisor for .NET applications. Asks structured questions about domain complexity, team size, system lifetime, compliance, and integration needs, then recommends the best-fit architecture: Vertical Slice, Clean Architecture, DDD + Clean Architecture, or Modular Monolith. Load this skill when the user asks 'which architecture', 'choose architecture', 'set up project', 'new project', 'architecture decision', 'restructure', or 'how should I organize'. Always load BEFORE any architecture-specific skill."
   Architecture selection advisor for .NET applications. Asks structured questions
   about domain complexity, team size, system lifetime, compliance, and integration
   needs, then recommends the best-fit architecture: Vertical Slice, Clean Architecture,

@@ -1,6 +1,6 @@
 ---
 name: cursor-agents-workflow
-description: |
+description: "Human handoff, Linear branch names, reviewable (non-draft) PRs, the `cursor` GitHub label, Claude, Greptile, and Codex review comments, preview test steps, proof of work posted on the GitHub PR, and review-doubt notes for Cursor agents. Use when a Cursor Cloud or Cursor desktop agent implements a Linear issue, opens a GitHub PR, asks a human to test, posts screenshots or videos, or handles Claude, Greptile, or Codex code-review comments."
   Human handoff, Linear branch names, reviewable (non-draft) PRs, the
   `cursor` GitHub label, Claude, Greptile, and Codex review comments,
   preview test steps, proof of work posted on the GitHub PR, and

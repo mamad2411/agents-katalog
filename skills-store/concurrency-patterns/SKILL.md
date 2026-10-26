@@ -1,6 +1,6 @@
 ---
 name: concurrency-patterns
-description: >
+description: "Implement thread-safe code, mutexes, semaphores, async/await patterns, and concurrent data structures. Use when handling parallel operations, race conditions, or building high-performance concurrent systems."
   Implement thread-safe code, mutexes, semaphores, async/await patterns, and
   concurrent data structures. Use when handling parallel operations, race
   conditions, or building high-performance concurrent systems.

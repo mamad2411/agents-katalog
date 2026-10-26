@@ -1,6 +1,6 @@
 ---
 name: analyze-cloud-costs
-description: |
+description: "Analyze Langfuse Cloud infrastructure cost structure using Metabase cost marts. Use when asked about cloud spend, AWS versus ClickHouse cost splits, cost drivers by provider/service/usage type/account, daily cost per tracing event, infra cost dashboards, or cost regressions visible in Metabase."
   Analyze Langfuse Cloud infrastructure cost structure using Metabase cost
   marts. Use when asked about cloud spend, AWS versus ClickHouse cost splits,
   cost drivers by provider/service/usage type/account, daily cost per tracing

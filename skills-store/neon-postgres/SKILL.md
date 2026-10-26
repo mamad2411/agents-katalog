@@ -1,6 +1,6 @@
 ---
 name: neon-postgres
-description: >-
+description: "Guides and best practices for working with Lakebase Postgres, the database behind Neon. Covers setup, connection methods and drivers, pooled vs direct connections, branching, schema migrations, autoscaling, scale-to-zero, instant restore, read replicas, connection pooling, IP allow lists, and logical replication. Also covers Lakebase Search: semantic vector search, full-text search with BM25 ranking, and hybrid search. Use when users ask about 'Lakebase Postgres', 'Neon setup', 'connect to Neon', 'Neon project', 'DATABASE_URL', 'serverless Postgres', 'Neon CLI', 'neon', 'Neon MCP', 'Neon Auth'"
   Guides and best practices for working with Lakebase Postgres, the database
   behind Neon. Covers setup, connection methods and drivers, pooled vs direct
   connections, branching, schema migrations, autoscaling, scale-to-zero, instant

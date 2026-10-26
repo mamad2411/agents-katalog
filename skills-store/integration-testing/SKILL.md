@@ -1,6 +1,6 @@
 ---
 name: integration-testing
-description: >
+description: "Design and implement integration tests that verify component interactions, API endpoints, database operations, and external service communication. Use for integration test, API test, end-to-end component testing, and service layer validation."
   Design and implement integration tests that verify component interactions, API
   endpoints, database operations, and external service communication. Use for
   integration test, API test, end-to-end component testing, and service layer

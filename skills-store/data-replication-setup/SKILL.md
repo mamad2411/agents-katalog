@@ -1,6 +1,6 @@
 ---
 name: data-replication-setup
-description: >
+description: "Set up database replication for high availability and disaster recovery. Use when configuring master-slave replication, multi-master setups, or replication monitoring."
   Set up database replication for high availability and disaster recovery. Use
   when configuring master-slave replication, multi-master setups, or replication
   monitoring.

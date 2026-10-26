@@ -5,7 +5,7 @@
 
 # Basic Information
 name: smart-ocr
-description: ">"
+description: "This skill enables intelligent text extraction from images and scanned documents using **PaddleOCR** - a leading OCR engine supporting 100+ languages. Extract text from photos, screenshots, scanned PDFs, and handwritten documents with high accuracy."
 version: "1.0"
 author: claude-office-skills
 license: MIT

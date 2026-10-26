@@ -1,7 +1,7 @@
 ---
 name: nano-banana-2
 displayName: "Nano Banana 2 — Pro Pack on RunComfy"
-description: >
+description: "Generate images with Google Nano Banana 2 (Gemini-family flash-tier text-to-image) on RunComfy — bundled with the model's documented prompting patterns so the skill gets sharper output than naive prompting against the same model. Documents Nano Banana 2's strengths (rapid iteration, in-image typography rendering, predictable framing, optional web-grounded context), the resolution-tier pricing, the safety-tolerance dial, and when to route to Nano Banana Pro / GPT Image 2 / Flux 2 / Seedream instead. Calls `runcomfy run google/nano-banana-2/text-to-image` through the local RunComfy CLI. Triggers"
   Generate images with Google Nano Banana 2 (Gemini-family flash-tier
   text-to-image) on RunComfy — bundled with the model's documented
   prompting patterns so the skill gets sharper output than naive

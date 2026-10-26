@@ -1,6 +1,6 @@
 ---
 name: api-gateway-configuration
-description: >
+description: "Configure API gateways for routing, authentication, rate limiting, and request/response transformation. Use when deploying microservices, setting up reverse proxies, or managing API traffic."
   Configure API gateways for routing, authentication, rate limiting, and
   request/response transformation. Use when deploying microservices, setting up
   reverse proxies, or managing API traffic.

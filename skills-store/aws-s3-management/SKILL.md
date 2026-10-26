@@ -1,6 +1,6 @@
 ---
 name: aws-s3-management
-description: >
+description: "Manage S3 buckets with versioning, encryption, access control, lifecycle policies, and replication. Use for object storage, static sites, and data lakes."
   Manage S3 buckets with versioning, encryption, access control, lifecycle
   policies, and replication. Use for object storage, static sites, and data
   lakes.

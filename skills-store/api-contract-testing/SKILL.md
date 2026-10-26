@@ -1,6 +1,6 @@
 ---
 name: api-contract-testing
-description: >
+description: "Verify API contracts between services to ensure compatibility and prevent breaking changes. Use for contract testing, Pact, API contract validation, schema validation, and consumer-driven contracts."
   Verify API contracts between services to ensure compatibility and prevent
   breaking changes. Use for contract testing, Pact, API contract validation,
   schema validation, and consumer-driven contracts.

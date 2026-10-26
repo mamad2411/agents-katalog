@@ -2,7 +2,7 @@
 name: relight
 allowed-tools: Bash(runcomfy *)
 displayName: "Relight"
-description: >
+description: "Relight a still image — change the lighting setup, color temperature, direction, or mood — on RunComfy via the `runcomfy` CLI. Routes to Qwen Edit 2509's dedicated `relight` LoRA endpoint for purpose-built relighting, with fallback to identity-preserving edit endpoints (Nano Banana 2 Edit, GPT Image 2 Edit, FLUX Kontext Pro) when prose lighting language is enough. Use for product relighting (studio softbox → window light), portrait mood shift (overcast → golden hour), or color-grade change. Triggers on 'relight', 'relighting', 'change the lighting', 'make it golden hour', 'studio lighting', 'r"
   Relight a still image — change the lighting setup, color
   temperature, direction, or mood — on RunComfy via the `runcomfy`
   CLI. Routes to Qwen Edit 2509's dedicated `relight` LoRA endpoint

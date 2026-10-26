@@ -343,7 +343,7 @@ check_variable_usage() {
         # Check for undefined variables being used
         if echo "$line" | grep -qE '\$[a-zA-Z_][a-zA-Z0-9_]*' && ! echo "$line" | grep -qE '(def|String|params\.|env\.)'; then
             local var=$(echo "$line" | grep -oE '\$[a-zA-Z_][a-zA-Z0-9_]*' | sed 's/\$//' | head -1)
-            if [[ ! -v defined_vars["$var"] ]] && [[ "$var" != "WORKSPACE" ]] && [[ "$var" != "BUILD_NUMBER" ]] && [[ "$var" != "JOB_NAME" ]]; then
+            if [[ -z "${{defined_vars["$var"]+x}}" ]] && [[ "$var" != "WORKSPACE" ]] && [[ "$var" != "BUILD_NUMBER" ]] && [[ "$var" != "JOB_NAME" ]]; then
                 log_info "$line_num" "Variable '\$$var' used but not explicitly defined - ensure it's set by environment"
             fi
         fi

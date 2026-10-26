@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-comch
-description: >
+description: "Use this skill when the user is doing hands-on DOCA Comch work on a host + BlueField pair — bringing up host ↔ DPU PCIe control-plane messaging, picking server (DPU) vs client (host) roles, choosing slow-path send-task / recv-callback vs fast-path producer / consumer, querying max-msg-size or max-clients capabilities, registering connection callbacks, or debugging DOCA_ERROR_* returns from the Comch API. Trigger even when the user does not explicitly mention 'DOCA Comch' or 'Comm Channel' (renamed in DOCA 2.5) — typical implicit phrasings include 'send a control message from host to BlueField "
   Use this skill when the user is doing hands-on DOCA Comch work
   on a host + BlueField pair — bringing up host ↔ DPU PCIe
   control-plane messaging, picking server (DPU) vs client (host)

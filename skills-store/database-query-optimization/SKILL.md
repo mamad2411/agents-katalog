@@ -1,6 +1,6 @@
 ---
 name: database-query-optimization
-description: >
+description: "Improve database query performance through indexing, query optimization, and execution plan analysis. Reduce response times and database load."
   Improve database query performance through indexing, query optimization, and
   execution plan analysis. Reduce response times and database load.
 ---

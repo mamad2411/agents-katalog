@@ -1,6 +1,6 @@
 ---
 name: health-check-endpoints
-description: >
+description: "Implement comprehensive health check endpoints for liveness, readiness, and dependency monitoring. Use when deploying to Kubernetes, implementing load balancer health checks, or monitoring service availability."
   Implement comprehensive health check endpoints for liveness, readiness, and
   dependency monitoring. Use when deploying to Kubernetes, implementing load
   balancer health checks, or monitoring service availability.

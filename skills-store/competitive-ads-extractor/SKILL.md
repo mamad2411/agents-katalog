@@ -1,6 +1,6 @@
 ---
 name: competitive-ads-extractor
-description: |
+description: "Extract and analyze competitors' ads from ad libraries to understand messaging and creative approaches that resonate."
   Extract and analyze competitors' ads from ad libraries to understand messaging and creative approaches that resonate.
 triggers:
   - "competitive ads"

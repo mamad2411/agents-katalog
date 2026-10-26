@@ -1,6 +1,6 @@
 ---
 name: dt-obs-compliance-assistant
-description: >-
+description: "Monitor and investigate EU DORA compliance posture using Dynatrace Compliance Assistant. Covers compliance score, CIF health, incident lifecycle, and ICT risk inputs (vulnerabilities, security detection findings, misconfigurations). Trigger: 'DORA compliance', 'Digital Operational Resilience Act', 'compliance score', 'compliance snapshot', 'score tier', 'Critical or Important Functions', 'CIF', 'CIF health', 'unclassified problems', 'potential major incident', 'classified major incident', 'incident classification under DORA', 'compliance.incident bizevent', 'DQL for classified incidents', 'set"
   Monitor and investigate EU DORA compliance posture using Dynatrace Compliance Assistant.
   Covers compliance score, CIF health, incident lifecycle, and ICT risk inputs
   (vulnerabilities, security detection findings, misconfigurations).

@@ -2,7 +2,7 @@
 name: agent-platform-eval-flywheel
 metadata:
   category: AiAndMachineLearning
-description: >-
+description: "Measures and improves the quality of AI models and agents on Google Cloud using the Eval Quality Flywheel methodology. Use when evaluating an agent or model, building an eval dataset, picking or writing evaluation metrics, analyzing failures, comparing results before and after a fix, or when guidance is needed on Agent Platform eval methodology — including dataset schema, LLM-as-judge scoring, and common failure causes. For fine-tuning, use agent-platform-tuning. For general production deployment, use agent-platform-deploy."
   Measures and improves the quality of AI models and agents on Google Cloud
   using the Eval Quality Flywheel methodology. Use when evaluating an agent or
   model, building an eval dataset, picking or writing evaluation metrics,

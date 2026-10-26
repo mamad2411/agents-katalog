@@ -1,6 +1,6 @@
 ---
 name: correlation-tracing
-description: >
+description: "Implement distributed tracing with correlation IDs, trace propagation, and span tracking across microservices. Use when debugging distributed systems, monitoring request flows, or implementing observability."
   Implement distributed tracing with correlation IDs, trace propagation, and
   span tracking across microservices. Use when debugging distributed systems,
   monitoring request flows, or implementing observability.

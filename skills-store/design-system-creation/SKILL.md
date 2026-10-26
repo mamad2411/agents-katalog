@@ -1,6 +1,6 @@
 ---
 name: design-system-creation
-description: >
+description: "Build comprehensive design systems with components, patterns, and guidelines. Enable consistent design, faster development, and better collaboration across teams."
   Build comprehensive design systems with components, patterns, and guidelines.
   Enable consistent design, faster development, and better collaboration across
   teams.

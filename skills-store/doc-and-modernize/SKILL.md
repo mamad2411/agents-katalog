@@ -1,6 +1,6 @@
 ---
 name: doc-and-modernize
-description: >-
+description: "Two related workflows for a locally-cloned codebase, in one skill. Documentation mode produces a single, comprehensive, verifiable architecture document primarily by reading files on disk (local-first) — use it whenever the user wants to understand, map, document, research, or onboard onto a codebase ('research this repo', 'write up the architecture', 'do an architecture deep dive', 'document how this codebase works', 'map the system design', 'create an onboarding doc'). Modernization mode generates a phased plan to modernize, migrate, upgrade, or rewrite a legacy system ('modernize this', 'pl"
   Two related workflows for a locally-cloned codebase, in one skill.
   Documentation mode produces a single, comprehensive, verifiable architecture
   document primarily by reading files on disk (local-first) — use it whenever the user wants to

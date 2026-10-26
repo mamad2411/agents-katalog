@@ -1,6 +1,6 @@
 ---
 name: changelog-writing
-description: |
+description: "Shared workflow for writing Langfuse changelog entries after a feature is complete. Use when a branch is ready for merge and a changelog entry or changelog draft is needed."
   Shared workflow for writing Langfuse changelog entries after a feature is complete.
   Use when a branch is ready for merge and a changelog entry or changelog draft is needed.
 ---

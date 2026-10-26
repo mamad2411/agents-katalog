@@ -1,6 +1,6 @@
 ---
 name: nosql-database-design
-description: >
+description: "Design NoSQL database schemas for MongoDB and DynamoDB. Use when modeling document structures, designing collections, or planning NoSQL data architectures."
   Design NoSQL database schemas for MongoDB and DynamoDB. Use when modeling
   document structures, designing collections, or planning NoSQL data
   architectures.

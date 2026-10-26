@@ -1,6 +1,6 @@
 ---
 name: adr-critique
-description: |
+description: "This skill should be used to audit an existing or legacy ADR, especially one imported, LLM-generated, stale, or never self-critiqued. PROACTIVELY activate on 'review this ADR', 'critique this ADR', 'audit our decision log', 'is this ADR any good?', 'fix this old ADR', 'rewrite this legacy ADR', 'ADR cleanup', 'ADR quality sweep', 'tighten this ADR', 'score these ADRs', or 'this ADR is too long.' Provides: line-by-line ADR critique, filler/hedging/drift detection, and per-line approval workflow."
   This skill should be used to audit an existing or legacy ADR, especially one imported, LLM-generated, stale, or never self-critiqued.
   PROACTIVELY activate on "review this ADR", "critique this ADR", "audit our decision log", "is this ADR any good?", "fix this old ADR", "rewrite this legacy ADR", "ADR cleanup", "ADR quality sweep", "tighten this ADR", "score these ADRs", or "this ADR is too long."
   Provides: line-by-line ADR critique, filler/hedging/drift detection, and per-line approval workflow.

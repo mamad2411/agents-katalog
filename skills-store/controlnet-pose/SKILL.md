@@ -2,7 +2,7 @@
 name: controlnet-pose
 allowed-tools: Bash(runcomfy *)
 displayName: "ControlNet Pose"
-description: >
+description: "Pose-conditioned generation on RunComfy via the `runcomfy` CLI. Routes across Kling 2-6 Motion Control Pro / Standard (transfer the motion / blocking of a reference video onto a target character), community Wan 2-2 Animate (audio-driven character animation with pose conditioning), and Z-Image Turbo ControlNet LoRA (pose-conditioned image generation from an OpenPose / DWPose / canny / depth control image). Picks the right route based on video vs still and stylized vs photoreal. Triggers on 'controlnet', 'control net', 'pose control', 'openpose', 'DWPose', 'transfer pose', 'motion control', 'pos"
   Pose-conditioned generation on RunComfy via the `runcomfy` CLI.
   Routes across Kling 2-6 Motion Control Pro / Standard (transfer
   the motion / blocking of a reference video onto a target character),

@@ -1,6 +1,6 @@
 ---
 name: aiq-deploy
-description: |
+description: "Use when asked to install, deploy, run, validate, troubleshoot, or stop NVIDIA AI-Q Blueprint infrastructure."
   Use when asked to install, deploy, run, validate, troubleshoot, or stop NVIDIA AI-Q Blueprint infrastructure.
 license: Apache-2.0
 compatibility: |

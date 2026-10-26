@@ -1,6 +1,6 @@
 ---
 name: autoscaling-configuration
-description: >
+description: "Configure autoscaling for Kubernetes, VMs, and serverless workloads based on metrics, schedules, and custom indicators."
   Configure autoscaling for Kubernetes, VMs, and serverless workloads based on
   metrics, schedules, and custom indicators.
 ---

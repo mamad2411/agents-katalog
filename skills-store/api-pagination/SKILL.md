@@ -1,6 +1,6 @@
 ---
 name: api-pagination
-description: >
+description: "Implement efficient pagination strategies for large datasets using offset/limit, cursor-based, and keyset pagination. Use when returning collections, managing large result sets, or optimizing query performance."
   Implement efficient pagination strategies for large datasets using
   offset/limit, cursor-based, and keyset pagination. Use when returning
   collections, managing large result sets, or optimizing query performance.

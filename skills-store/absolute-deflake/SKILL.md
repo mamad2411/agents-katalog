@@ -1,7 +1,7 @@
 ---
 name: absolute-deflake
 version: 0.5.0
-description: >
+description: "Flaky test fixes: detect nondeterministic tests empirically (repeat/shuffle/parallel runs), diagnose the root cause, fix it — never retry/skip/sleep — and verify across many randomized runs. Triggers on 'absolute deflake', 'fix flaky tests', 'CI is flaky', 'this test fails randomly/intermittently'."
   Flaky test fixes: detect nondeterministic tests empirically (repeat/shuffle/parallel runs), diagnose the root cause, fix it — never retry/skip/sleep — and verify across many randomized runs.
   Triggers on "absolute deflake", "fix flaky tests", "CI is flaky", "this test fails randomly/intermittently".
 category: workflow

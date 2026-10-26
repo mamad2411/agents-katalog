@@ -1,6 +1,6 @@
 ---
 name: database-migration-management
-description: >
+description: "Manage database migrations and schema versioning. Use when planning migrations, version control, rollback strategies, or data transformations in PostgreSQL and MySQL."
   Manage database migrations and schema versioning. Use when planning
   migrations, version control, rollback strategies, or data transformations in
   PostgreSQL and MySQL.

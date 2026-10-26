@@ -1,6 +1,6 @@
 ---
 name: seed-test-data
-description: |
+description: "Seed reproducible local Langfuse data in ClickHouse and Postgres. Use for complex traces, long sessions, v3/v4 events, bulk list data, or frontend rendering and performance tests; never use ad hoc scripts or raw inserts."
   Seed reproducible local Langfuse data in ClickHouse and Postgres. Use for
   complex traces, long sessions, v3/v4 events, bulk list data, or frontend
   rendering and performance tests; never use ad hoc scripts or raw inserts.

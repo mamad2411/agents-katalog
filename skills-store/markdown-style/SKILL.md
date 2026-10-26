@@ -1,6 +1,6 @@
 ---
 name: markdown-style
-description: |
+description: "This skill should be used to review, lint, or fix Markdown formatting in READMEs, ADRs, runbooks, how-tos, design docs, or any `.md` file. PROACTIVELY activate on 'review this markdown', 'lint this doc', 'lint this README', 'style-check this doc', 'fix the formatting', 'review my README', 'is this markdown valid?', 'fix the headings', 'fix the list indentation', 'ATX vs setext', 'should I use a TOC?', 'markdown style guide', or 'Markdown linter.' Provides: two-pass syntax/style review with line-referenced findings."
   This skill should be used to review, lint, or fix Markdown formatting in READMEs, ADRs, runbooks, how-tos, design docs, or any `.md` file.
   PROACTIVELY activate on "review this markdown", "lint this doc", "lint this README", "style-check this doc", "fix the formatting", "review my README", "is this markdown valid?", "fix the headings", "fix the list indentation", "ATX vs setext", "should I use a TOC?", "markdown style guide", or "Markdown linter."
   Provides: two-pass syntax/style review with line-referenced findings.

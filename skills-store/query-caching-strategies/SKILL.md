@@ -1,6 +1,6 @@
 ---
 name: query-caching-strategies
-description: >
+description: "Implement query caching strategies to improve performance. Use when setting up caching layers, configuring Redis, or optimizing database query response times."
   Implement query caching strategies to improve performance. Use when setting up
   caching layers, configuring Redis, or optimizing database query response
   times.

@@ -1,6 +1,6 @@
 ---
 name: idempotency-handling
-description: >
+description: "Implement idempotency keys and handling to ensure operations can be safely retried without duplicate effects. Use when building payment systems, APIs with retries, or distributed transactions."
   Implement idempotency keys and handling to ensure operations can be safely
   retried without duplicate effects. Use when building payment systems, APIs
   with retries, or distributed transactions.

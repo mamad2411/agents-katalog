@@ -1,6 +1,6 @@
 ---
 name: fal-image-edit
-description: |
+description: "AI-powered image editing with style transfer, background removal, object removal, and inpainting via fal.ai hosted models."
   AI-powered image editing with style transfer, background removal, object removal, and inpainting via fal.ai hosted models.
 triggers:
   - "fal image edit"

@@ -1,6 +1,6 @@
 ---
 name: messaging
-description: >
+description: "Asynchronous messaging patterns for .NET applications. Covers Wolverine and MassTransit, outbox pattern, saga and choreography, and broker configuration for RabbitMQ and Azure Service Bus. Load this skill when implementing event-driven communication, background processing, module-to-module messaging, or when the user mentions 'Wolverine', 'MassTransit', 'message bus', 'RabbitMQ', 'Azure Service Bus', 'event', 'publish', 'consumer', 'outbox', 'saga', 'integration event', 'queue', or 'pub/sub'."
   Asynchronous messaging patterns for .NET applications. Covers Wolverine and
   MassTransit, outbox pattern, saga and choreography, and broker configuration
   for RabbitMQ and Azure Service Bus.

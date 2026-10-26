@@ -5,7 +5,7 @@
 
 # Basic Information
 name: md-slides
-description: ">"
+description: "This skill enables creation of presentations from pure Markdown using **Marp**. Write slides in familiar Markdown syntax and export to PDF, PPTX, or HTML with professional themes."
 version: "1.0"
 author: claude-office-skills
 license: MIT

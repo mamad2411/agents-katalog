@@ -1,6 +1,6 @@
 ---
 name: frontend-browser-review
-description: |
+description: "Shared workflow for browser-based review of user-visible frontend changes in Langfuse. Use when a change affects UI behavior, layout, styling, navigation, or browser-visible regressions and should be checked with available browser automation before signoff."
   Shared workflow for browser-based review of user-visible frontend changes in Langfuse.
   Use when a change affects UI behavior, layout, styling, navigation, or browser-visible
   regressions and should be checked with available browser automation before signoff.

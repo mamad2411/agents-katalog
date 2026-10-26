@@ -1,6 +1,6 @@
 ---
 name: api-response-optimization
-description: >
+description: "Optimize API response times through caching, compression, and efficient payloads. Improve backend performance and reduce network traffic."
   Optimize API response times through caching, compression, and efficient
   payloads. Improve backend performance and reduce network traffic.
 ---

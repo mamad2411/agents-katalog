@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-bf3-deployment
-description: >
+description: "Use this skill for BlueField-3 (BF3) day-1 platform bring-up via the classic RShim/BFB path: pushing a BlueField bundle (BFB) to the DPU over RShim with bfb-install from the host, the host-to-DPU TMFIFO management channel (tmfifo_net0, the 192.168.100.x convention), RShim daemon state and console-over-rshim, DPU mode selection (DPU/embedded-function vs separated-host/NIC mode) via mlxconfig, post-BFB recovery, a six-state BlueField-state classifier, and verifying the install (cat /etc/mlnx-release plus version checks). Trigger even when the user does not say 'BF3' — typical phrasings include {"
   Use this skill for BlueField-3 (BF3) day-1 platform bring-up via
   the classic RShim/BFB path: pushing a BlueField bundle (BFB) to
   the DPU over RShim with bfb-install from the host, the host-to-DPU

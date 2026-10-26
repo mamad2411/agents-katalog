@@ -1,0 +1,1796 @@
+[
+ {
+  "slug": "biz-corporate-governance",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-corporate-governance",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-innovation-management",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-innovation-management",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ops-digital-transformation",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ops-digital-transformation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-net-zero-transition",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-net-zero-transition",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-erm",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-erm",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tailadmin-ui-patterns",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/tailadmin-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-deliver",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-deliver",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-discover",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-discover",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "lqf-machine-learning-expert-guide",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-foryourhealth111-pixel-Vibe-Skills/lqf-machine-learning-expert-guide",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "senior-engineer-coding",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-EliasOulkadi-shokunin/senior-engineer",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "outsystems-tenant-architecture",
+  "score": 90,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--ut-ystems-outsystems-mcp-outsystems-tenant-architecture",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "coot-inline-graphs",
+  "score": 89,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-pemsley-coot-coot-inline-graphs",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-blueprint",
+  "score": 88,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-blueprint",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ops-talent-strategy",
+  "score": 87,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ops-talent-strategy",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-sme-management",
+  "score": 86,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-sme-management",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ops-org-behavior",
+  "score": 86,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ops-org-behavior",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-run",
+  "score": 86,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-run",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-kickstart",
+  "score": 86,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-kickstart",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grit",
+  "score": 86,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan---coder-grit-grit",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ghscan-gotd-botapi",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-gotd-botapi",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "nextjs-auth0",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-auth0-nextjs-auth0-nextjs-auth0",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "linksee-memory",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-michielinksee-linksee-memory-linksee-memory",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-crm-strategy",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-crm-strategy",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "sidekiq-async-patterns",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/sidekiq-async-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "viewcomponents-specialist",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/viewcomponents-specialist",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "user-experience-design",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/user-experience-design",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "hfmpse",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-yuidvg-nix-darwin-hfmpse",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-bugfix",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-bugfix",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-dapp-dev-midnight-sdk",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/midnight-sdk",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-dapp-dev-dapp-connector",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/dapp-connector",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "add-hf-model",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-InternLM-xtuner-add-hf-model",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "x-mcp-guide",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-sanjeevafk-agent-skills/x-api-mcp-guide",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "agent-compliance-security-assessment",
+  "score": 85,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-alvordhouse-wake-workspace/agent-self-assessment",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ai-core-tool-calling",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-TanStack-ai",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "abp-dapr",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-burakdmir-abp-skills-abp-dapr",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-entertainment",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-entertainment",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "fin-m-and-a",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/fin-m-and-a",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-habitual-domain",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-habitual-domain",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-international",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-international",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "context-compilation-with-cclsp",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/context-compilation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-execution",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-execution",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-type-check",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-type-check",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "lybic-cloud-computer-skill",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/lybic-cloud-computer",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ai-income-agent",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/ai-income-agent",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aristotle-workflow",
+  "score": 84,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-afhverjuekki-claude-code-aristotle-plugin-aristotle-workflow",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-political",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-political",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-business",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-business",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-health",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-health",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-sports",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-sports",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-news-reporter",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-news-reporter",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "rails-error-prevention",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/rails-error-prevention",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-build",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-build",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "x-algo-tweet-writer",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-buildfastwithai-gen-ai-experiments-x-algo-tweet-writer",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "proof-server-proof-server-api",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/proof-server-api",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "avant-garde-frontend-architect",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic2-aegntic-cldcde-avant-garde-frontend-architect",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "encrypted-docs",
+  "score": 83,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/encrypted-docs",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "med-culture",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/med-culture",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "opentelemetry-setup",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--tefan-he-ode---for--evelopers-opentelemetry-setup",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "service-object-patterns",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/service-object-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "technical-debt-patterns",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/technical-debt-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-debugging",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-debugging",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-node-node-validator",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/node-validator",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-expert-add-to-ecosystem",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/add-to-ecosystem",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-zkir-checker",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-zkir-checker",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "mapcv",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-tahamukhtar20-mapcv-mapcv",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ai-stack-builder",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/ai-stack-builder",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "design-creator",
+  "score": 82,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-acosmi-crabcode-plugin/design-creator",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-4p-7p",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-4p-7p",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-swot",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-swot",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "prfaq-parser",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/prfaq-parser",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-project-plan",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-project-plan",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "margin-analysis",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/margin-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "license-true-up",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/license-true-up",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-plugin-utils-find-claude-plugin-root",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/find-claude-plugin-root",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "agb-agent-browser",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/agb",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "facturas",
+  "score": 81,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--a-yme-facturas-facturas",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "jwt-auth-setup",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--tefan-he-ode---for--evelopers-jwt-auth-setup",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-pricing-strategy",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-pricing-strategy",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-brand-positioning",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-brand-positioning",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-bsc",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-bsc",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-pestel",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-pestel",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-porters-five-forces",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-porters-five-forces",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-blue-ocean",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-blue-ocean",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-value-chain",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-value-chain",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "sandbox-scaffolder",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/sandbox-scaffolder",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-spec",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-spec",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "einja-phase-review",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-einja-inc-einja-management-template/einja-phase-review",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "typed-config-generator",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--tefan-he-ode---for--evelopers-typed-config-generator",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "llmlint",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-notnotype-neuro-book-llmlint",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-wallet-source",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-wallet-source",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-cq-compact-testing",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-testing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-indexer-indexer-graphql-api",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/indexer-graphql-api",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "proof-server-proof-server-operations",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/proof-server-operations",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-ledger-source",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-ledger-source",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-cq-dapp-testing",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/dapp-testing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "v3-mcp-optimization",
+  "score": 80,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-ruvnet-RuView/v3-mcp-optimization",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "squad-creator-pro-thiago-finch",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-rodrigo-altissimo-qiartificial/thiago-finch",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-elm",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-elm",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-flow",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-flow",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-bcg-matrix",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-bcg-matrix",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-sd-logic",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-sd-logic",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-social-identity",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-social-identity",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-org-ecology",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-org-ecology",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-mixed-methods",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-mixed-methods",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-customer-journey",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-customer-journey",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-cognitive-load",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-cognitive-load",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-case-study",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-case-study",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-sociotechnical",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-sociotechnical",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "sandbox-composer",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/sandbox-composer",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "db-resiliency-setup",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--tefan-he-ode---for--evelopers-db-resiliency-setup",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "sherweb-billing",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/sherweb-billing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-node-node-rpc-api",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/node-rpc-api",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-devnet",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-devnet",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "shep-kit-commit-pr",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-shep-ai-shep-shep-kit-commit-pr",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "crabcode",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-acosmi-crabcode-plugin/create-crabcode-plugin",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "intent-based-composition",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-thelobbi-claude/intent-based-composition",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "beanie-odm",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-thelobbi-claude/beanie-odm",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "v3-cli-modernization",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-ruvnet-RuView/v3-cli-modernization",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "v3-core-implementation",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-ruvnet-RuView/v3-core-implementation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "v3-performance-optimization",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-ruvnet-RuView/v3-performance-optimization",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "self-improving-proactive-agent",
+  "score": 79,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-alvordhouse-wake-workspace/self-improving-1-2-16",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "agentic-payments-protocol-ap2-open-agent-commerce",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-hamishfromatech-my-personal-skills-library/agentic-payments-protocol-ap2",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-dual-process",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-dual-process",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-policy-streams",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-policy-streams",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-real-options",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-real-options",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-sem",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-sem",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-mm-theorem",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-mm-theorem",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-tpb",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-tpb",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-pragmatism",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-pragmatism",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-cultivation",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-cultivation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-social-capital",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-social-capital",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-did",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-did",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-sdt",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-sdt",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-business-ecosystems",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-business-ecosystems",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-field-theory",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-field-theory",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-hlm",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-hlm",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-pecking-order",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-pecking-order",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-tam-utaut",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-tam-utaut",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-survey-design",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-survey-design",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-ant",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-ant",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-emh",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-emh",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-cas",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-cas",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-tpack",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-tpack",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-spiral-of-silence",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-spiral-of-silence",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-paradox-theory",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-paradox-theory",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-constructivism",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-constructivism",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-affordance",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-affordance",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-embeddedness",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-embeddedness",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-sensemaking",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-sensemaking",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-framing",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-framing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-ai-ethics",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-ai-ethics",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-governance",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-governance",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-signaling",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-signaling",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-ethnography",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-ethnography",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ops-leadership-styles",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ops-leadership-styles",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-action-research",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-action-research",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-meta-analysis",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-meta-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-critical-realism",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-critical-realism",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-structuration",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-structuration",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-sustainability",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-sustainability",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-is-success",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-is-success",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-grounded-theory",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-grounded-theory",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-paradigms",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-paradigms",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "reactree-agent-coordination-patterns",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/reactree-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "v3-ddd-architecture",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-ruvnet-ruflo/v3-ddd-architecture",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "fluidcad-assembly",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--luid----luid--fluidcad-assembly",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "update-models",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-vava-nessa-free-coding-models-update-models",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-cq-dapp-connector-testing",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/dapp-connector-testing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-witness",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-witness",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-cli-execution",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-cli-execution",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-language-ref",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-language-ref",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-tooling-devnet-health",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/devnet-health",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-node-node-architecture",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/node-architecture",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "derive",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-derive-to-derive-derive",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "topic-Kaelio-ktx-sl",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-Kaelio-ktx-sl",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "youth-league-application",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-cuic19053-hue-awesome-student-ai-skills-youth-league-application",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "venetech-news",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/venetech-news",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "chatlift-ai-conversation-exporter-archive",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/chatlift-ai-conversation-exporter",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "v3-swarm-coordination",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-ruvnet-RuView/v3-swarm-coordination",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "major-transfer",
+  "score": 78,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-cuic19053-hue-awesome-student-ai-skills-major-transfer",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "self-determination-theory-for-developer-motivation",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-hamishfromatech-my-personal-skills-library/self-determination-theory-developer-motivation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-innovation-diffusion-bass",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-innovation-diffusion-bass",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-capm",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-capm",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-uppsala",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-uppsala",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-breakeven",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-breakeven",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-oli",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-oli",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-fama-french",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-fama-french",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-blooms",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-blooms",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-dupont",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-dupont",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-agenda-setting",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-agenda-setting",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-ansoff",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-ansoff",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-management-accounting",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-management-accounting",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ruby-oop-patterns",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/ruby-oop-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "military-enlistment",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-cuic19053-hue-awesome-student-ai-skills-military-enlistment",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "sentinelone-inventory",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/sentinelone-inventory",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-indexer-indexer-operations",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/indexer-operations",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-indexer-indexer-architecture",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/indexer-architecture",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-fact-check-fact-check-reporting",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/fact-check-reporting",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-privacy-disclosure",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-privacy-disclosure",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "proof-server-proof-server-configuration",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/proof-server-configuration",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-tooling-proof-server",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/proof-server",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-zkir-regression",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/zkir-regression",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-cq-ledger-testing",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/ledger-testing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "oracle-agent-spec-expert",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-oci-ai-architects-claude-code-oci-ai-architect-skills/oracle-agent-spec",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "oracle-adk-expert",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-oci-ai-architects-claude-code-oci-ai-architect-skills/oracle-adk",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "scrapling-web-scraping",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-marcoamu-openclaw-workspace/scrapling-web-scraper",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "voidex-arena",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/voidex-arena",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "perplexity-wrapped",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/perplexity-wrapped",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "nk-images-search",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/nk-images-search",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "longtask-system",
+  "score": 77,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/longtask-system",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "blast-protein-analysis",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-SpectrAI-Initiative-InnoClaw-blast-protein-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "combinatorial-chemistry",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-SpectrAI-Initiative-InnoClaw-combinatorial-chemistry",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-stp",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-stp",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "biz-dcf",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/biz-dcf",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tech-mcp-server-dev",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tech-mcp-server-dev",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "internationalization-patterns",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/internationalization-patterns",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "implementation-safety",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/implementation-safety",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "newt-blueprint-generator",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-rknall-claude-skills/newt-blueprint-generator",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "scene-mapper",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/scene-mapper",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "design-system-conflict-checker",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/design-system-conflict-checker",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "orchestrate-ci",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-rossoctl-rossoctl/orchestrate-ci",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "chainlink-integration-patterns",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-BitterSecurity-Vigilo-chainlink",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "avinyc-warp-bootstrap",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-aviflombaum-claude-code-in-avinyc/avinyc",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "college-research",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-cuic19053-hue-awesome-student-ai-skills-college-research",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "quote-to-close-tracking",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/quote-to-close-tracking",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-witness-ts",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-witness-ts",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-cq-wallet-testing",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/wallet-testing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "proof-server-proof-server-architecture",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/proof-server-architecture",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-circuit-costs",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-circuit-costs",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-source",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-source",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-node-node-governance",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/node-governance",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-basic-start",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/basic-start",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-structure",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-structure",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-indexer-indexer-data-model",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/indexer-data-model",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "notion-drift",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-davidjwhenry-productownertoolkit-notion-drift",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "master-agent-playbook",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-CopilotKit-OpenGenerativeUI-master-playbook",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "app-tagline-backfill",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-rome-os-rome-app-tagline-backfill",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "am-agent-messenger",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/am",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "paper-claw",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/paper-claw",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "rocm-vllm-deployment",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/rocm-vllm-deployment",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ghidra-idareverseengineeringskill",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-bedkillerspacex-boop-codex-skill-library/ghidra-idareverseengineeringskill",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "native-agent-surface",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-albrand-ai-config-kit-native-agent-surface",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "staking-protocol-patterns",
+  "score": 76,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-BitterSecurity-Vigilo-staking",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compromise-nlp",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-spencermountain-compromise-compromise-nlp",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "commitment-discount-strategist",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-Cletrics-finops-agents-commitment-discount-strategist",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tw-ecom-dtc-shopline",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tw-ecom-dtc-shopline",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tw-einvoice-guide",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tw-einvoice-guide",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-brand-equity",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-brand-equity",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-born-global",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-born-global",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-diamond",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-diamond",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-disruptive-innovation",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-disruptive-innovation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-ambidexterity",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-ambidexterity",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "fin-modeling",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/fin-modeling",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "aod-plan",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-davidmatousek-agentic-oriented-development-kit/aod-plan",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "antibody-target-analysis",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-SpectrAI-Initiative-InnoClaw-antibody-target-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "compact-core-compact-ledger",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/compact-ledger",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-verify-verify-by-zkir-inspection",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/verify-by-zkir-inspection",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-cq-quality-init",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/quality-init",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "core-concepts-protocols",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/protocols",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "fluidcad-from-drawing",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan--luid----luid--fluidcad-from-drawing",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-lhbxwfg",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/topic-adambbhe-TDX-finance-mcp-plugin-v3-tdx-lhbxwfg",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "actions-cli",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/ghscan-ethereum-optimism-actions-actions-cli",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "pp-nse-india",
+  "score": 75,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mvanhorn-printing-press-library/pp-nse-india",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "econ-supply-demand",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/econ-supply-demand",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-coopetition",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-coopetition",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "mkt-content-calendar",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/mkt-content-calendar",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "data-dashboard-design",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/data-dashboard-design",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "meta-structured-problem",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/meta-structured-problem",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tw-startup-legal",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tw-startup-legal",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-strat-upper-echelons",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-strat-upper-echelons",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "grad-platform-economics",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/grad-platform-economics",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "mkt-ad-optimization",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/mkt-ad-optimization",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ecom-rfm-analysis",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ecom-rfm-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "mfg-oee-analysis",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/mfg-oee-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tech-api-integration",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tech-api-integration",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ops-okr-planning",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ops-okr-planning",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tw-ecom-payment-newebpay",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tw-ecom-payment-newebpay",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "econ-behavioral",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/econ-behavioral",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "hum-critical-thinking",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/hum-critical-thinking",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tech-data-pipeline",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tech-data-pipeline",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "cs-notification-strategy",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/cs-notification-strategy",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "hum-source-criticism",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/hum-source-criticism",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ops-pitch-deck",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ops-pitch-deck",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "soc-cialdini",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/soc-cialdini",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "tw-ecom-invoice-ezpay",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/tw-ecom-invoice-ezpay",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "hum-ethics",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/hum-ethics",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "soc-policy-analysis",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/soc-policy-analysis",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ecom-inventory-health",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/ecom-inventory-health",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "fin-earnings-summary",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-charlieviettq-awesome-agent-skill/fin-earnings-summary",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "rails-context-verification",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-kaakati-rails-enterprise-dev/rails-context-verification",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "traceability-checker",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/traceability-checker",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "walkthrough-builder",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-mattermost-mattermost-ai-marketplace/walkthrough-builder",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "k8s-pods",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-rossoctl-rossoctl/k8s-pods",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "spamtitan-lists",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/spamtitan-lists",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "cross-vendor-billing-reconciliation",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-WYRE-AI-msp-claude-plugins/cross-vendor-billing-reconciliation",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-fact-check-fact-check-classification",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/fact-check-classification",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "midnight-node-node-configuration",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-midnightntwrk-midnight-expert/node-configuration",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "oracle-ai-architect",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-oci-ai-architects-claude-code-oci-ai-architect-skills/oracle-ai-architect",
+  "at": "2026-10-23T17:58:27"
+ },
+ {
+  "slug": "ai-productivity-audit",
+  "score": 74,
+  "from": "/Users/chaali0324/.agents/skills-expanded/mined-dvcrn-openclaw-skills-marketplace/ai-productivity-audit",
+  "at": "2026-10-23T17:58:27"
+ }
+]

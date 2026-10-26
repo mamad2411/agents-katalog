@@ -1,6 +1,6 @@
 ---
 name: property-based-testing
-description: >
+description: "Design property-based tests that verify code properties hold for all inputs using automatic test case generation. Use for property-based, QuickCheck, hypothesis testing, generative testing, and invariant verification."
   Design property-based tests that verify code properties hold for all inputs
   using automatic test case generation. Use for property-based, QuickCheck,
   hypothesis testing, generative testing, and invariant verification.

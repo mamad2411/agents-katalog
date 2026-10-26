@@ -1,0 +1,73 @@
+<!-- skill-first:start -->
+## Auto-Skill (MANDIRI — tanpa harus diminta user)
+
+Katalog **3.177 skill curated** di `~/.agents/` — termasuk skill lokal `/Users/chaali0324/.cline/skills` (81 core symlink ke `~/.agents/skills-store/`, sisanya via MCP biar cepat & hemat RAM) + MCP `skill-catalog` (tools: `skill_for_task`, `skill_search`, `skill_load`, `agent_context`).
+Cara kerja default-mu — JANGAN tunggu disuruh:
+
+1. **Sebelum kerja apa pun** → `skill_for_task("<tugas>")`. Ada yang cocok → `skill_load` dan ikuti. Skill mined punya `REPO-REF.md` (repo + path + branch sumber) — telusuri kalau butuh workflow/struktur lebih dalam.
+2. **Gaya jawaban default: hemat token** → ikuti `caveman-token-optimizer` / `token-budget-advisor` (ringkas, tanpa basa-basi, tanpa mengulang konteks user). Butuh varian lain (kompres konteks, budget khusus, dsb) → daftar lengkap SEMUA skill hemat token: `~/.agents/STYLE-TOKEN-SAVER.md` (108 skill + path, JANGAN hanya 2 bintang itu).
+3. **Apa pun keluaran UI/design** → self-check `anti-ui-slop` + `de-sloppify` sebelum dikirim; ada gejala slop → perbaiki dulu, jangan dikirim mentah. Butuh reviewer/pendekatan lain → daftar lengkap SEMUA skill anti-slop & design taste: `~/.agents/STYLE-DESIGN-QUALITY.md` (44 skill + path, JANGAN hanya 2 itu).
+4. Tidak ada skill cocok → baru kerja dari nol; kalau polanya bakal berulang, usulkan SKILL.md baru.
+<!-- skill-first:end -->
+
+<!-- skill-contract:start -->
+## ⚡ WAJIB: CARI & MUAT SKILL SEBELUM BEKERJA
+
+Katalog **3.177 skill curated** di `~/.agents/` + MCP `skill-catalog`
+(`skill_for_task`, `skill_search`, `skill_load`, `agent_context`).
+
+**LANGKAH WAJIB sebelum menulis kode / menjawab / menjalankan perintah:**
+
+1. **Cari skill** — pilih salah satu:
+   - MCP: `skill_for_task(task="<deskripsi tugas>")`  ← paling cepat
+   - Shell: `~/.agents/skill-search.sh "<kata kunci>"`
+2. **Kalau ada yang cocok** → `skill_load("<nama>")` (atau baca
+   `~/.agents/skills-store/<nama>/SKILL.md`) lalu **IKUTI** isi SKILL.md itu.
+   Skill punya `scripts/` — jalankan scriptnya, jangan tulis ulang dari nol.
+3. **Kalau tidak ada** → kerja dari nol; kalau polanya bakal berulang,
+   usulkan SKILL.md baru (jangan mengarang skill yang sudah ada).
+4. **Hanya muat 1-2 skill yang relevan.** JANGAN muat daftar/katalog lengkap.
+
+**Alur kerja:** pahami → pilih skill → rujuk sumber asli → rencana → eksekusi →
+verifikasi → poles (UI: `anti-ui-slop` + `de-sloppify`) → lapor jujur.
+
+**Selalu:** `caveman-token-optimizer` (jawaban ringkas, tanpa basa-basi) +
+`verification-loop` (uji sebelum menyatakan selesai).
+
+**Anti-ngarang (WAJIB — sumber kegagalan #1):**
+- Skor cocok rendah / tidak ada skill cocok → bilang JUJUR "tidak ada skill untuk ini", JANGAN paksakan rekomendasi ngawur.
+- Output ada angka/tanggal/nama → `fact-check-before-trust` + `citation-and-ledger-format`.
+- Mau klaim selesai/fixed/lolos → `verification-before-completion` + bukti, bukan perasaan.
+- Ragu AI ngarang → `detect-hallucinations` / `anti-hallucination-gates`.
+
+Detail lengkap (baca on-demand, bukan sekarang): `~/.agents/SKILL-FLOW.md`
+Aturan katalog: `~/.agents/AGENTS.md`
+<!-- skill-contract:end -->
+
+<!-- context-guard:start -->
+## ⛔ Hemat konteks (WAJIB — inilah penyebab limit cepat habis)
+
+Terukur di mesin ini: riwayat sesi dikirim ulang pada SETIAP request, sehingga
+satu sesi panjang menghabiskan ratusan juta token (±0,5 juta token per pesan).
+
+- **Satu sesi = satu tugas.** >200 pesan atau transcript >10 MB → tutup sesi,
+  buka baru dengan catatan handoff singkat. Jangan `--resume` sesi raksasa.
+- **Jangan tempel gambar di sesi panjang.** Base64 menempel di riwayat dan ikut
+  terkirim selamanya (terukur: 50 gambar = 22 MB ≈ ±7,5 jt token diulang tiap
+  request). Simpan gambar ke file, rujuk path-nya, lalu tutup sesinya.
+- **DILARANG baca penuh**: `vendor/`, `node_modules/`, `dist/`, `build/`,
+  `*.min.js`, `public/template/`, `skills-expanded/`. Butuh 1 baris →
+  `grep -n` / `sed -n`, jangan baca file utuh.
+- **Muat skill secara ringan**: `bash ~/.agents/skill-load-lite.sh <nama>`
+  (≤80 baris / ≤2 KB), BUKAN SKILL.md penuh (~9 KB). Jangan muat ulang skill
+  yang sudah dimuat di sesi yang sama.
+- **Output tool diringkas** ±800 karakter; jangan dump mentah; jangan baca ulang
+  file yang sudah dibaca; paralelkan call yang saling bebas.
+- **MCP cukup** `skill-catalog` + `mcp-router`. Server lain diparkir di
+  `~/.agents/mcp-parked.json` → hidupkan on-demand:
+  `python3 ~/.agents/mcp-lifecycle.py --on <nama>`.
+- **Teams/spawn**: tiap agen punya konteks sendiri (pengali token) — pakai hanya
+  kalau benar-benar perlu parallel.
+- **Ukur, jangan tebak**: `python3 ~/.agents/ai-context-audit.py` (semua tool),
+  `python3 ~/.agents/usage-audit.py` (Claude), `python3 ~/.agents/audit-cline.py`.
+<!-- context-guard:end -->

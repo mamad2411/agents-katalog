@@ -1,6 +1,6 @@
 ---
 name: context-master
-description: |
+description: "Universal context management and planning system. PROACTIVELY activate for: (1) ANY complex task requiring planning, (2) Multi-file projects/websites/apps, (3) Architecture decisions, (4) Research tasks, (5) Refactoring, (6) Long coding sessions, (7) Tasks with 3+ sequential steps. Provides: optimal file creation order, context-efficient workflows, extended-thinking delegation (~23x context efficiency), passive deep-analysis architecture, progressive task decomposition. Environment-agnostic — works for Web, API, and Claude Code CLI."
   Universal context management and planning system. PROACTIVELY activate for: (1) ANY complex task requiring planning, (2) Multi-file projects/websites/apps, (3) Architecture decisions, (4) Research tasks, (5) Refactoring, (6) Long coding sessions, (7) Tasks with 3+ sequential steps. Provides: optimal file creation order, context-efficient workflows, extended-thinking delegation (~23x context efficiency), passive deep-analysis architecture, progressive task decomposition. Environment-agnostic — works for Web, API, and Claude Code CLI.
 ---
 

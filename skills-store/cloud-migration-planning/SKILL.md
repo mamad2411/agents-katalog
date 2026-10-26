@@ -1,6 +1,6 @@
 ---
 name: cloud-migration-planning
-description: >
+description: "Plan and execute cloud migrations with assessment, database migration, application refactoring, and cutover strategies across AWS, Azure, and GCP."
   Plan and execute cloud migrations with assessment, database migration,
   application refactoring, and cutover strategies across AWS, Azure, and GCP.
 ---

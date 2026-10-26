@@ -1,0 +1,31 @@
+---
+description: Router aset on-demand (MCP + prompt/agent/rule)
+alwaysApply: true
+---
+
+<!-- cap-router:start -->
+## Router aset (MCP + prompt/agent/rule) — ON-DEMAND, jangan nyalakan semua
+
+Satu meta-server `mcp-router` tahu **semua** aset: MCP (`mcp-catalog.json`) +
+aset komunitas (`cap-catalog.json`: prompts, agents, rules, hooks, plugins,
+memory, dst) + **indeks retrieval** (`retrieve.db`, skill+MCP+prompt ~147k aset).
+
+- Butuh aset → **`retrieve(query, k[, kind])`** (BM25) → balikin top-k + id.
+  **PAKAI INI DULU** sebelum memuat banyak aset — hemat token.
+- Ambil isi 1 aset → `cap_get(id)`. Butuh MCP → `mcp_search` lalu `mcp_use(name, tool, arguments)`.
+  MCP nyala **cuma saat dipakai**; idle 300s **auto-mati** (anti-overheat).
+- **Sebelum kirim jawaban final → `self_check(text)`** (anti-slop + struktur +
+  boros). Perbaiki dulu kalau skor < 85.
+- **Jangan** nyalakan semua MCP. Cek `mcp_status` untuk yang sedang hidup.
+- Butuh kapabilitas baru? Cari dulu di router sebelum bilang "tidak bisa".
+
+## Otomatis — tanpa perlu user ketik /perintah
+- **Retrieve dulu**; jangan dump semua konteks.
+- **Self-check** tiap jawaban final; poles sebelum kirim (anti-slop).
+- **Compact proaktif** saat konteks >40% (jangan tunggu disuruh).
+- **Hemat token**: ringkas output tool ≤800 char, jangan baca ulang file yang
+  sama, batch panggilan yang saling bebas.
+- **Model routing**: tugas remeh → model murah/cepat; tugas sulit (arsitektur,
+  debug rumit, review kritis) → flagship.
+- Ukur pemborosan: `python3 ~/.agents/token-telemetry.py`.
+<!-- cap-router:end -->

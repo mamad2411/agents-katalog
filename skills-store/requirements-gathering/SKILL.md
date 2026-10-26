@@ -1,6 +1,6 @@
 ---
 name: requirements-gathering
-description: >
+description: "Systematically collect, document, and validate requirements from stakeholders. Ensure clarity, completeness, and agreement before development begins to reduce scope creep and rework."
   Systematically collect, document, and validate requirements from stakeholders.
   Ensure clarity, completeness, and agreement before development begins to
   reduce scope creep and rework.

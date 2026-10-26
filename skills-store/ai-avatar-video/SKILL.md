@@ -2,7 +2,7 @@
 name: ai-avatar-video
 displayName: "AI Avatar & Talking Head Video"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Create AI avatar, talking-head, and lip-sync videos on RunComfy via the `runcomfy` CLI. Routes across ByteDance OmniHuman (audio-driven full-body avatar), Wan-AI Wan 2-7 (audio-driven mouth sync via `audio_url` on a portrait), HappyHorse 1.0 (Arena #1 t2v / i2v with in-pass audio), and Seedance v2 Pro (multi-modal cinematic with reference audio + reference subject). Picks the right model for the user's actual intent — UGC voiceover, virtual presenter, dubbed product demo, lip-synced character, dialog scene — and ships each model's documented prompting patterns plus the minimal `runcomfy run` i"
   Create AI avatar, talking-head, and lip-sync videos on RunComfy via
   the `runcomfy` CLI. Routes across ByteDance OmniHuman (audio-driven
   full-body avatar), Wan-AI Wan 2-7 (audio-driven mouth sync via

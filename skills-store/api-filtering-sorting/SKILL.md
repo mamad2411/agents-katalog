@@ -1,6 +1,6 @@
 ---
 name: api-filtering-sorting
-description: >
+description: "Implement advanced filtering and sorting capabilities for APIs with query parsing, field validation, and optimization. Use when building search features, complex queries, or flexible data retrieval endpoints."
   Implement advanced filtering and sorting capabilities for APIs with query
   parsing, field validation, and optimization. Use when building search
   features, complex queries, or flexible data retrieval endpoints.

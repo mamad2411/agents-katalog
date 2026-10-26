@@ -2,7 +2,7 @@
 name: od-next-media-inputs
 en_name: "OD Next Media Inputs"
 zh_name: "OD Next 素材输入"
-description: |
+description: "Prepare required media inputs within an existing OD Next plan. Reuse capability evidence, acquire and measure assets efficiently, and resolve asynchronous jobs without removing required content or weakening quality standards."
   Prepare required media inputs within an existing OD Next plan. Reuse capability
   evidence, acquire and measure assets efficiently, and resolve asynchronous
   jobs without removing required content or weakening quality standards.

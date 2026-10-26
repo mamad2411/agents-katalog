@@ -2,7 +2,7 @@
 name: agent-platform-prompt-management
 metadata:
   category: AiAndMachineLearning
-description: >-
+description: "Manages and orchestrates prompts in Agent Platform. Use when you need to create, list, retrieve, version, or delete managed prompts in Agent Platform. Don't use for model training, model deployment to endpoints, or managing non-Agent Platform prompts."
   Manages and orchestrates prompts in Agent Platform. Use when you need to create,
   list, retrieve, version, or delete managed prompts in Agent Platform. Don't use
   for model training, model deployment to endpoints, or managing non-Agent Platform

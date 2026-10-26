@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.agents.legakan</string>
+	<key>Nice</key>
+	<integer>19</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/chaali0324/.agents/skills-store/device-cool/scripts/legakan.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/legakan.err</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/legakan.log</string>
+	<key>StartInterval</key>
+	<integer>21600</integer>
+</dict>
+</plist>

@@ -1,6 +1,6 @@
 ---
 name: plan
-description: >
+description: "Enter plan mode for .NET projects with architecture awareness. Analyzes tasks through the lens of supported architectures (VSA, Clean Architecture, DDD, Modular Monolith) and produces structured implementation plans before any code is written. Use when: 'plan', 'let's plan', 'think through', 'design this', 'how should I implement', or any non-trivial task requiring 3+ steps."
   Enter plan mode for .NET projects with architecture awareness. Analyzes tasks
   through the lens of supported architectures (VSA, Clean Architecture, DDD,
   Modular Monolith) and produces structured implementation plans before any code

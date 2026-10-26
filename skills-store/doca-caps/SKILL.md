@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-caps
-description: >
+description: "Use this skill when the user wants to invoke the read-only doca_caps CLI to ask what DOCA sees on this host — listing DOCA devices and PCIe addresses, listing representor devices, asking which DOCA libraries are available on the current OS, checking per-device per-library capabilities, scoping output to a specific PCIe address, or capturing a side-effect-free capability snapshot for a debug session or install smoke-test. Trigger even when the user does not explicitly mention 'doca_caps' or 'capabilities print tool' — typical implicit phrasings include 'what does DOCA actually see on this box',"
   Use this skill when the user wants to invoke the read-only
   doca_caps CLI to ask what DOCA sees on this host — listing
   DOCA devices and PCIe addresses, listing representor devices,

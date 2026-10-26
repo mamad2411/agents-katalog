@@ -1,6 +1,6 @@
 ---
 name: real-time-features
-description: >
+description: "Implement real-time functionality using WebSockets, Server-Sent Events (SSE), or long polling. Use when building chat applications, live dashboards, collaborative editing, notifications, or any feature requiring instant updates."
   Implement real-time functionality using WebSockets, Server-Sent Events (SSE),
   or long polling. Use when building chat applications, live dashboards,
   collaborative editing, notifications, or any feature requiring instant

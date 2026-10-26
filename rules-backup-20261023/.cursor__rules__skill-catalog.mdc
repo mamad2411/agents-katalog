@@ -1,0 +1,40 @@
+---
+description: Skill catalog
+alwaysApply: true
+---
+
+## Skill Catalog (63k+ skill, tanpa symlink)
+**WAJIB, sebelum melakukan apa pun (termasuk sebelum membaca file atau menjawab)**: cari skill yang cocok dulu — MCP `skill-catalog` (`skill_for_task` → `skill_load`), atau shell `~/.agents/skill-search.sh "<kata kunci>"`. Muat hanya 1–2 skill yang relevan; jangan memuat daftar skill lengkap.
+
+## Gaya WAJIB (semua tugas)
+WAJIB sebelum apa pun: baca & ikuti `~/.agents/SKILL-FLOW.md` (alur 8 langkah + 35 kategori → skill).
+Ringkas: pahami → pilih skill (kategori + `skill_for_task`) → rujuk sumber asli → rencana → eksekusi → verifikasi → poles (UI: anti-ui-slop+de-sloppify; tulisan: avoid-ai-writing+content-humanizer) → lapor jujur.
+Selalu: `caveman-token-optimizer` + `verification-loop`. Muat lewat MCP `skill_load` atau baca `~/.agents/skills-store/<nama>/SKILL.md`. Hanya muat yang sesuai tugas.
+
+<!-- skill-contract:start -->
+## ⚡ WAJIB: CARI & MUAT SKILL SEBELUM BEKERJA
+
+Katalog **3.176 skill curated** di `~/.agents/` + MCP `skill-catalog`
+(`skill_for_task`, `skill_search`, `skill_load`, `agent_context`).
+
+**LANGKAH WAJIB sebelum menulis kode / menjawab / menjalankan perintah:**
+
+1. **Cari skill** — pilih salah satu:
+   - MCP: `skill_for_task(task="<deskripsi tugas>")`  ← paling cepat
+   - Shell: `~/.agents/skill-search.sh "<kata kunci>"`
+2. **Kalau ada yang cocok** → `skill_load("<nama>")` (atau baca
+   `~/.agents/skills-store/<nama>/SKILL.md`) lalu **IKUTI** isi SKILL.md itu.
+   Skill punya `scripts/` — jalankan scriptnya, jangan tulis ulang dari nol.
+3. **Kalau tidak ada** → kerja dari nol; kalau polanya bakal berulang,
+   usulkan SKILL.md baru (jangan mengarang skill yang sudah ada).
+4. **Hanya muat 1-2 skill yang relevan.** JANGAN muat daftar/katalog lengkap.
+
+**Alur kerja:** pahami → pilih skill → rujuk sumber asli → rencana → eksekusi →
+verifikasi → poles (UI: `anti-ui-slop` + `de-sloppify`) → lapor jujur.
+
+**Selalu:** `caveman-token-optimizer` (jawaban ringkas, tanpa basa-basi) +
+`verification-loop` (uji sebelum menyatakan selesai).
+
+Detail lengkap (baca on-demand, bukan sekarang): `~/.agents/SKILL-FLOW.md`
+Aturan katalog: `~/.agents/AGENTS.md`
+<!-- skill-contract:end -->

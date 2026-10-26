@@ -1,6 +1,6 @@
 ---
 name: markdown-documentation
-description: >
+description: "Master markdown formatting, GitHub Flavored Markdown, README files, and documentation formatting. Use when writing markdown docs, READMEs, or formatting documentation."
   Master markdown formatting, GitHub Flavored Markdown, README files, and
   documentation formatting. Use when writing markdown docs, READMEs, or
   formatting documentation.

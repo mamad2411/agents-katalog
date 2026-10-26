@@ -1,6 +1,6 @@
 ---
 name: frontend-accessibility
-description: >
+description: "Implement WCAG compliance using semantic HTML, ARIA, keyboard navigation, and screen reader support. Use when building inclusive applications for all users."
   Implement WCAG compliance using semantic HTML, ARIA, keyboard navigation, and
   screen reader support. Use when building inclusive applications for all users.
 ---

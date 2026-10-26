@@ -2,7 +2,7 @@
 name: runcomfy-cli
 displayName: "RunComfy CLI"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Run any model on RunComfy from the command line. The `runcomfy` CLI is one binary, one auth, hundreds of model endpoints — image generation, image edit, video generation, image-to-video, lip-sync, face swap, video edit, inpainting, outpainting, extend, ControlNet, relight, upscale, LoRA training and more. Submit a request, poll for status, download the output. This skill teaches the agent how to install, authenticate, discover model schemas, invoke models, stream / poll / no-wait, script in JSON output mode, and handle errors. Triggers on 'runcomfy cli', 'install runcomfy', 'runcomfy login', '"
   Run any model on RunComfy from the command line. The `runcomfy` CLI is
   one binary, one auth, hundreds of model endpoints — image generation,
   image edit, video generation, image-to-video, lip-sync, face swap,

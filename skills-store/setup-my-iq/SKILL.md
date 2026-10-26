@@ -1,6 +1,6 @@
 ---
 name: setup-my-iq
-description: |
+description: "Create, set up, or update the personal context portfolio: structured markdown files describing who you are, how you work, your teams, and your tool/ADO configuration. Runs the interview workflow for first-time setup and targeted edits for updates. Trigger this skill when the user asks to: set up their context, create or update their context portfolio, 'create my IQ', 'set up my IQ', edit their profile, add/remove a stakeholder, update ADO config, change team info, update pillars, or set up any plugin configuration. Trigger when another skill fails to find context (missing files or TODO markers"
   Create, set up, or update the personal context portfolio: structured markdown files describing
   who you are, how you work, your teams, and your tool/ADO configuration. Runs the interview
   workflow for first-time setup and targeted edits for updates.

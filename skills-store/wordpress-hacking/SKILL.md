@@ -1,6 +1,6 @@
 ---
 name: wordpress-hacking
-description: |
+description: "Activate this skill whenever the user mentions WordPress, WP, WooCommerce, WP plugin, WP theme, wp-admin, wp-content, wp-login, wp-json, wp-includes, xmlrpc, XML-RPC, wp-cron, admin-ajax, wp-config, wpscan, WordPress vulnerability, WordPress exploit, WordPress enumeration, WordPress brute force, WordPress RCE, WordPress shell upload, WordPress backdoor, WordPress privilege escalation, WordPress authentication bypass, WordPress REST API, WordPress nonce, WordPress application password, plugin vulnerability, theme vulnerability, WooCommerce exploit, WooCommerce injection, Wordfence, Sucuri, iThe"
   Activate this skill whenever the user mentions WordPress, WP, WooCommerce, WP plugin,
   WP theme, wp-admin, wp-content, wp-login, wp-json, wp-includes, xmlrpc, XML-RPC,
   wp-cron, admin-ajax, wp-config, wpscan, WordPress vulnerability, WordPress exploit,

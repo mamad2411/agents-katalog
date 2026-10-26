@@ -1,6 +1,6 @@
 ---
 name: color-accessibility
-description: >
+description: "Design color palettes that are accessible to all users including those with color blindness. Ensure sufficient contrast, meaningful use of color, and inclusive design."
   Design color palettes that are accessible to all users including those with
   color blindness. Ensure sufficient contrast, meaningful use of color, and
   inclusive design.

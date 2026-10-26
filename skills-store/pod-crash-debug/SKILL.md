@@ -1,6 +1,6 @@
 ---
 name: pod-crash-debug
-description: >-
+description: "Diagnose pod crash failures (CrashLoopBackOff, OOMKilled, Error, RunContainerError). Checks pod status, events, and previous logs to identify root cause."
   Diagnose pod crash failures (CrashLoopBackOff, OOMKilled, Error, RunContainerError).
   Checks pod status, events, and previous logs to identify root cause.
 ---

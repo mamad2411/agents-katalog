@@ -1,6 +1,6 @@
 ---
 name: artifact-management
-description: >
+description: "Manage build artifacts, Docker images, and package registries. Configure artifact repositories, versioning, and distribution strategies."
   Manage build artifacts, Docker images, and package registries. Configure
   artifact repositories, versioning, and distribution strategies.
 ---

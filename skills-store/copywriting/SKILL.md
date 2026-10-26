@@ -1,6 +1,6 @@
 ---
 name: copywriting
-description: |
+description: "Write and rewrite marketing copy for landing pages, homepages, and ads. Useful as a copy chief partner during launches."
   Write and rewrite marketing copy for landing pages, homepages, and ads. Useful as a copy chief partner during launches.
 triggers:
   - "copywriting"

@@ -1,6 +1,6 @@
 ---
 name: database-sharding
-description: >
+description: "Implement database sharding for horizontal scalability. Use when scaling large databases, distributing data across multiple servers, or designing sharded architectures."
   Implement database sharding for horizontal scalability. Use when scaling large
   databases, distributing data across multiple servers, or designing sharded
   architectures.

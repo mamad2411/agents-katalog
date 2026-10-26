@@ -2,7 +2,7 @@
 name: video-extend
 displayName: "Video Extend"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Extend or continue an existing video clip on RunComfy via the `runcomfy` CLI. Routes to Google Veo 3-1's `extend-video` and `fast/extend-video` endpoints — pick the source video plus a prompt describing what should happen next, and the model produces a clip that continues the original with consistent motion, lighting, and subject identity. Use when the user has a short Veo clip and wants it longer, or wants a chained narrative built shot-by-shot from a single seed clip. Triggers on 'extend video', 'continue video', 'longer video', 'video extend', 'make this clip longer', 'Veo extend', 'chain v"
   Extend or continue an existing video clip on RunComfy via the
   `runcomfy` CLI. Routes to Google Veo 3-1's `extend-video` and
   `fast/extend-video` endpoints — pick the source video plus a prompt

@@ -1,6 +1,6 @@
 ---
 name: fabric-onelake-2025
-description: |
+description: "ADF + Microsoft Fabric / OneLake 2025 integration. PROACTIVELY activate for: (1) Fabric Lakehouse connector in ADF, (2) Fabric Warehouse connector in ADF, (3) OneLake shortcuts and cross-workspace data, (4) Invoke Pipeline activity for cross-platform orchestration (ADF -> Fabric, Fabric -> ADF), (5) copying data between ADF and Microsoft Fabric workspaces, (6) authenticating with Fabric workspace identity, (7) cross-platform parameter passing, (8) hybrid ADF + Fabric pipeline patterns. Provides: Fabric connector setup, Invoke Pipeline templates, OneLake shortcut patterns, and ADF-to-Fabric mig"
   ADF + Microsoft Fabric / OneLake 2025 integration.
   PROACTIVELY activate for: (1) Fabric Lakehouse connector in ADF, (2) Fabric Warehouse connector in ADF, (3) OneLake shortcuts and cross-workspace data, (4) Invoke Pipeline activity for cross-platform orchestration (ADF -> Fabric, Fabric -> ADF), (5) copying data between ADF and Microsoft Fabric workspaces, (6) authenticating with Fabric workspace identity, (7) cross-platform parameter passing, (8) hybrid ADF + Fabric pipeline patterns.
   Provides: Fabric connector setup, Invoke Pipeline templates, OneLake shortcut patterns, and ADF-to-Fabric migration guidance.

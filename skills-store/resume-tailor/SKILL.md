@@ -5,7 +5,7 @@
 
 # Basic Information
 name: resume-tailor
-description: ">"
+description: "I help you customize your resume for specific job applications. Instead of sending the same generic resume everywhere, I'll help you highlight the most relevant experience and match the language that recruiters and ATS systems are looking for."
 version: "1.0.0"
 author: claude-office-skills
 license: MIT

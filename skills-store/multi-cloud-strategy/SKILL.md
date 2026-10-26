@@ -1,6 +1,6 @@
 ---
 name: multi-cloud-strategy
-description: >
+description: "Design and implement multi-cloud strategies spanning AWS, Azure, and GCP with vendor lock-in avoidance, hybrid deployments, and federation."
   Design and implement multi-cloud strategies spanning AWS, Azure, and GCP with
   vendor lock-in avoidance, hybrid deployments, and federation.
 ---

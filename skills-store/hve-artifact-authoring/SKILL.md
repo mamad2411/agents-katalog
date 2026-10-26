@@ -1,6 +1,6 @@
 ---
 name: hve-artifact-authoring
-description: >
+description: "Create and validate HVE Core agents, prompts, instructions, and skills with current frontmatter, package membership, delegation, tracking, documentation, and validation conventions. Use when authoring a GitHub Copilot customization artifact in this repository."
   Create and validate HVE Core agents, prompts, instructions, and skills with current frontmatter,
   package membership, delegation, tracking, documentation, and validation conventions. Use when
   authoring a GitHub Copilot customization artifact in this repository.

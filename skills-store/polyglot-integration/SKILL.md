@@ -1,6 +1,6 @@
 ---
 name: polyglot-integration
-description: >
+description: "Integrate multiple programming languages using FFI, native bindings, gRPC, or language bridges. Use when combining strengths of different languages or integrating legacy systems."
   Integrate multiple programming languages using FFI, native bindings, gRPC, or
   language bridges. Use when combining strengths of different languages or
   integrating legacy systems.

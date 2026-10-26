@@ -1,7 +1,7 @@
 ---
 name: absolute-simplify
 version: 0.6.0
-description: >
+description: "Use when the user wants to simplify, clean up, refactor, tidy, or refine code — their staged/unstaged git changes or a target file/path. Reduces complexity, flattens nesting, removes redundancy and dead code, scores each change by value (holding low-value churn), then runs tests to prove nothing broke. Invoke on: 'simplify', 'simplify this', 'simplify my code/changes', 'clean up', 'clean this up', 'clean up my changes', 'refactor this', 'make this cleaner', 'tidy this up', 'reduce complexity', 'flatten this', 'remove dead code', 'make it more readable', 'polish before commit', or 'absolute sim"
   Use when the user wants to simplify, clean up, refactor, tidy, or refine code —
   their staged/unstaged git changes or a target file/path. Reduces complexity,
   flattens nesting, removes redundancy and dead code, scores each change by value

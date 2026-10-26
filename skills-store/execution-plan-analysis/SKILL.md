@@ -1,6 +1,6 @@
 ---
 name: execution-plan-analysis
-description: |
+description: "This skill should be used when the user asks to analyze SQL Server execution plans, .sqlplan files, ShowPlan XML, actual vs estimated plans, plan warnings, or operator costs. PROACTIVELY activate for: .sqlplan triage, ShowPlan XML inspection, high-cost operator ranking, scan vs seek review, residual predicate analysis, CONVERT_IMPLICIT warnings, bad row estimates, cardinality-estimation warnings, partition elimination verification, missing-index suggestions, unused-index warnings, spills, key lookups, sorts, hash joins, and plan-regression evidence gathering. Provides: plan triage workflow, op"
   This skill should be used when the user asks to analyze SQL Server execution plans, .sqlplan files, ShowPlan XML, actual vs estimated plans, plan warnings, or operator costs. PROACTIVELY activate for: .sqlplan triage, ShowPlan XML inspection, high-cost operator ranking, scan vs seek review, residual predicate analysis, CONVERT_IMPLICIT warnings, bad row estimates, cardinality-estimation warnings, partition elimination verification, missing-index suggestions, unused-index warnings, spills, key lookups, sorts, hash joins, and plan-regression evidence gathering.
   Provides: plan triage workflow, operator-cost ranking heuristics, warning interpretation rubric, and rewrite/index recommendation gating.
 ---

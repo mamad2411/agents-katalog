@@ -1,6 +1,6 @@
 ---
 name: log-aggregation
-description: >
+description: "Implement centralized logging with ELK Stack, Loki, or Splunk for log collection, parsing, storage, and analysis across infrastructure."
   Implement centralized logging with ELK Stack, Loki, or Splunk for log
   collection, parsing, storage, and analysis across infrastructure.
 ---

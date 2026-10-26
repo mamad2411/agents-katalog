@@ -1,6 +1,6 @@
 ---
 name: outdated
-description: >
+description: "Dependency health report for .NET solutions: outdated NuGet packages, vulnerable versions, and commercial-license traps (MediatR, MassTransit, FluentAssertions, AutoMapper) — powered by the get_nuget_packages MCP tool. Invoke when: 'outdated packages', 'check dependencies', 'stale packages', 'package audit', 'dependency health', 'are my packages up to date', 'license check', 'vulnerable packages', 'nuget audit'."
   Dependency health report for .NET solutions: outdated NuGet packages,
   vulnerable versions, and commercial-license traps (MediatR, MassTransit,
   FluentAssertions, AutoMapper) — powered by the get_nuget_packages MCP tool.

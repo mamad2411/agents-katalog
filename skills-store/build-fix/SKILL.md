@@ -1,6 +1,6 @@
 ---
 name: build-fix
-description: >
+description: "Autonomous iteration loops for .NET: drive a broken build or failing test suite to green with bounded iterations, progress detection, and fail-safe guards that prevent infinite retries and wasted tokens. The build-fix loop (dotnet build, parse, categorize, fix, rebuild) is the primary flow; the test-fix loop is a first-class variant. Invoke when the build is broken, after a major refactor or dependency update, or when the user says 'fix the build', 'build is broken', 'make it compile', 'make the tests pass', 'fix failing tests', 'keep going until it works', 'autonomous', 'loop', 'auto-fix', or"
   Autonomous iteration loops for .NET: drive a broken build or failing test
   suite to green with bounded iterations, progress detection, and fail-safe
   guards that prevent infinite retries and wasted tokens. The build-fix loop

@@ -1,6 +1,6 @@
 ---
 name: api-rate-limiting
-description: >
+description: "Implement API rate limiting strategies using token bucket, sliding window, and fixed window algorithms. Use when protecting APIs from abuse, managing traffic, or implementing tiered rate limits."
   Implement API rate limiting strategies using token bucket, sliding window, and
   fixed window algorithms. Use when protecting APIs from abuse, managing
   traffic, or implementing tiered rate limits.

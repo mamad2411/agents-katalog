@@ -1,6 +1,6 @@
 ---
 name: mocking-stubbing
-description: >
+description: "Create and manage mocks, stubs, spies, and test doubles for isolating unit tests from external dependencies. Use for mock, stub, spy, test double, Mockito, Jest mocks, and dependency isolation."
   Create and manage mocks, stubs, spies, and test doubles for isolating unit
   tests from external dependencies. Use for mock, stub, spy, test double,
   Mockito, Jest mocks, and dependency isolation.

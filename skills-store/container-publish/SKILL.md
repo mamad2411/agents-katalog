@@ -1,6 +1,6 @@
 ---
 name: container-publish
-description: >
+description: "Dockerfile-less containerization using the .NET 10 SDK container publishing feature. Covers MSBuild properties, chiseled images, multi-arch builds, and registry publishing — all without writing a Dockerfile. Load this skill when the user wants to containerize without a Dockerfile, or mentions 'dotnet publish container', 'PublishContainer', 'ContainerRepository', 'ContainerFamily', 'chiseled', 'distroless', 'container publish', 'SDK container', 'no Dockerfile', or 'containerize without Docker'."
   Dockerfile-less containerization using the .NET 10 SDK container publishing
   feature. Covers MSBuild properties, chiseled images, multi-arch builds, and
   registry publishing — all without writing a Dockerfile.

@@ -1,6 +1,6 @@
 ---
 name: cicd-pipeline-setup
-description: >
+description: "Design and implement CI/CD pipelines with GitHub Actions, GitLab CI, Jenkins, or CircleCI. Use for automated testing, building, and deployment workflows."
   Design and implement CI/CD pipelines with GitHub Actions, GitLab CI, Jenkins,
   or CircleCI. Use for automated testing, building, and deployment workflows.
 ---

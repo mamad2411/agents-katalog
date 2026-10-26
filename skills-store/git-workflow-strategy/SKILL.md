@@ -1,6 +1,6 @@
 ---
 name: git-workflow-strategy
-description: >
+description: "Master Git workflows including GitFlow, GitHub Flow, Trunk-Based Development. Configure branches, merge strategies, and collaboration patterns for team environments."
   Master Git workflows including GitFlow, GitHub Flow, Trunk-Based Development.
   Configure branches, merge strategies, and collaboration patterns for team
   environments.

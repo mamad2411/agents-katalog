@@ -1,6 +1,6 @@
 ---
 name: mutation-testing
-description: >
+description: "Evaluate test suite quality by introducing code mutations and verifying tests catch them. Use for mutation testing, test quality, mutant detection, Stryker, PITest, and test effectiveness analysis."
   Evaluate test suite quality by introducing code mutations and verifying tests
   catch them. Use for mutation testing, test quality, mutant detection, Stryker,
   PITest, and test effectiveness analysis.

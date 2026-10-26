@@ -1,6 +1,6 @@
 ---
 name: linear-agent-writes
-description: |
+description: "The org policy for what an agent may write to Linear, and how it must be marked. Read this before creating a ticket, editing a description, or commenting on a ticket as an agent — 'file this in Linear', 'comment on the ticket', 'create a subticket', 'write the handover'. Default those writes to a short human description; expand with research only when asked. Also covers the required Linear connection and what to do when there isn't one."
   The org policy for what an agent may write to Linear, and how it must be
   marked. Read this before creating a ticket, editing a description, or
   commenting on a ticket as an agent — "file this in Linear", "comment on the

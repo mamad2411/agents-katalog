@@ -1,6 +1,6 @@
 ---
 name: spec
-description: >
+description: "Turn a vague feature or product idea into an agreed, persisted specification through relentless structured questioning. Never assumes — every gap, ambiguity, or 'probably' becomes a question to the developer, and the spec cannot be approved while open questions remain. Produces docs/specs/<NNN>-<slug>.md with acceptance criteria that /plan, /scaffold, and /tdd consume. Use when: 'spec', 'write a spec', 'spec this out', 'requirements', 'PRD', 'acceptance criteria', 'define the feature', 'user stories', 'what should we build', or before planning any feature too big to describe in one sentence."
   Turn a vague feature or product idea into an agreed, persisted specification
   through relentless structured questioning. Never assumes — every gap,
   ambiguity, or "probably" becomes a question to the developer, and the spec

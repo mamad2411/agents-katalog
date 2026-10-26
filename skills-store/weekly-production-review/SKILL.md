@@ -1,6 +1,6 @@
 ---
 name: weekly-production-review
-description: |
+description: "Prepare Langfuse weekly production reviews covering failures, fixes, open issues, and tracking gaps. Use for 'what broke last week,' production bugs, Datadog alerts or error patterns, incident.io activity, or pager load."
   Prepare Langfuse weekly production reviews covering failures, fixes, open
   issues, and tracking gaps. Use for "what broke last week," production bugs,
   Datadog alerts or error patterns, incident.io activity, or pager load.

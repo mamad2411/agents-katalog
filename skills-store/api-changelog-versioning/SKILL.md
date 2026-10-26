@@ -1,6 +1,6 @@
 ---
 name: api-changelog-versioning
-description: >
+description: "Document API changes, breaking changes, migration guides, and version history for APIs. Use when documenting API versioning, breaking changes, or creating API migration guides."
   Document API changes, breaking changes, migration guides, and version history
   for APIs. Use when documenting API versioning, breaking changes, or creating
   API migration guides.

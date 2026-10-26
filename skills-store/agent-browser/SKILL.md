@@ -1,6 +1,6 @@
 ---
 name: agent-browser
-description: |
+description: "Browser automation CLI for AI agents. Use when the user needs to inspect, test, or automate browser behavior: navigating pages, filling forms, clicking buttons, taking screenshots, extracting page data, reading selected OpenDesign browser-tab context, testing web apps, dogfooding OpenDesign previews, QA, bug hunts, or reviewing app quality. Prefer local OpenDesign preview URLs unless the user explicitly asks for external browsing."
   Browser automation CLI for AI agents. Use when the user needs to inspect,
   test, or automate browser behavior: navigating pages, filling forms,
   clicking buttons, taking screenshots, extracting page data, reading selected

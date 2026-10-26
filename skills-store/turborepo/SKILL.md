@@ -1,6 +1,6 @@
 ---
 name: turborepo
-description: |
+description: "Configure and troubleshoot Turborepo monorepos. Use for turbo.json, task pipelines, dependsOn, caching, filters, affected packages, CI optimization, environment variables, package boundaries, or shared internal packages."
   Configure and troubleshoot Turborepo monorepos. Use for turbo.json, task
   pipelines, dependsOn, caching, filters, affected packages, CI optimization,
   environment variables, package boundaries, or shared internal packages.

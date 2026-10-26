@@ -1,6 +1,6 @@
 ---
 name: linear-context-handover
-description: |
+description: "Use Linear as the org's memory: reconstruct a feature's history before touching it, and leave the reasoning behind finished work in the ticket description so the next agent inherits it. Use when starting work on an existing feature, when splitting a large change, and always when wrapping up — 'what happened to this screen before', 'write the handover', 'why is this code like this'."
   Use Linear as the org's memory: reconstruct a feature's history before
   touching it, and leave the reasoning behind finished work in the ticket
   description so the next agent inherits it. Use when starting work on an

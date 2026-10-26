@@ -1,6 +1,6 @@
 ---
 name: html-ppt-retro-quarterly-review
-description: |
+description: "Retro Quarterly Review presentation template in a bold blue + orange editorial language. Use when users ask for a high-impact quarterly review / roadmap deck with heavyweight slab headlines, clean cream paper sections, structured grids, and fast premium motion pacing (3 slides, each hold under 3s in video mode)."
   Retro Quarterly Review presentation template in a bold blue + orange editorial
   language. Use when users ask for a high-impact quarterly review / roadmap deck
   with heavyweight slab headlines, clean cream paper sections, structured grids,

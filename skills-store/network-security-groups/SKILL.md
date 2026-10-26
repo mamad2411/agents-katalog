@@ -1,6 +1,6 @@
 ---
 name: network-security-groups
-description: >
+description: "Configure network security groups and firewall rules to control inbound/outbound traffic and implement network segmentation."
   Configure network security groups and firewall rules to control
   inbound/outbound traffic and implement network segmentation.
 ---

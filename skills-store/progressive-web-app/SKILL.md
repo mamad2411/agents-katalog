@@ -1,6 +1,6 @@
 ---
 name: progressive-web-app
-description: >
+description: "Build progressive web apps using service workers, web manifest, offline support, and installability. Use when creating app-like web experiences."
   Build progressive web apps using service workers, web manifest, offline
   support, and installability. Use when creating app-like web experiences.
 ---

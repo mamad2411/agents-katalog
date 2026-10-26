@@ -1,6 +1,6 @@
 ---
 name: push-notification-setup
-description: >
+description: "Implement push notifications for iOS and Android. Covers Firebase Cloud Messaging, Apple Push Notification service, handling notifications, and backend integration."
   Implement push notifications for iOS and Android. Covers Firebase Cloud
   Messaging, Apple Push Notification service, handling notifications, and
   backend integration.

@@ -1,6 +1,6 @@
 ---
 name: frontend-state-management
-description: >
+description: "Manage application state using Redux, MobX, Zustand, and Context API. Use when centralizing state for complex applications with multiple components."
   Manage application state using Redux, MobX, Zustand, and Context API. Use when
   centralizing state for complex applications with multiple components.
 ---

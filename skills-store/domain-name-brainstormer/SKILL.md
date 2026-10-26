@@ -1,6 +1,6 @@
 ---
 name: domain-name-brainstormer
-description: |
+description: "Generate creative domain name ideas and check availability across multiple TLDs including .com, .io, .dev, and .ai."
   Generate creative domain name ideas and check availability across multiple TLDs including .com, .io, .dev, and .ai.
 triggers:
   - "domain name"

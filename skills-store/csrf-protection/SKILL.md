@@ -1,6 +1,6 @@
 ---
 name: csrf-protection
-description: >
+description: "Implement Cross-Site Request Forgery (CSRF) protection using tokens, SameSite cookies, and origin validation. Use when building forms and state-changing operations."
   Implement Cross-Site Request Forgery (CSRF) protection using tokens, SameSite
   cookies, and origin validation. Use when building forms and state-changing
   operations.

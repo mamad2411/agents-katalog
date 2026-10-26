@@ -1,6 +1,6 @@
 ---
 name: deployment-automation
-description: >
+description: "Automate deployments across environments using Helm, Terraform, and ArgoCD. Implement blue-green deployments, canary releases, and rollback strategies."
   Automate deployments across environments using Helm, Terraform, and ArgoCD.
   Implement blue-green deployments, canary releases, and rollback strategies.
 ---

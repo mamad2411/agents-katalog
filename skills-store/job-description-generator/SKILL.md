@@ -5,7 +5,7 @@
 
 # Basic Information
 name: job-description-generator
-description: ">"
+description: "Generate professional, inclusive job descriptions that attract qualified candidates."
 version: "1.0"
 author: claude-office-skills
 license: MIT

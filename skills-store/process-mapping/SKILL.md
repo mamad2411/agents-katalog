@@ -1,6 +1,6 @@
 ---
 name: process-mapping
-description: >
+description: "Visualize and document current and future business processes. Identify inefficiencies, dependencies, and improvement opportunities through detailed process mapping and analysis."
   Visualize and document current and future business processes. Identify
   inefficiencies, dependencies, and improvement opportunities through detailed
   process mapping and analysis.

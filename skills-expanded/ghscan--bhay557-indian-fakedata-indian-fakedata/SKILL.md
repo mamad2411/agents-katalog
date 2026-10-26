@@ -1,0 +1,328 @@
+# SKILL: Indian Fake Data Generator (indian-fakedata)
+
+Teaches AI agents how to correctly use the `indian-fakedata` library to generate
+realistic, statistically consistent synthetic Indian demographic data.
+
+Two native implementations, same features, same CLI flags:
+
+| Runtime | Package | Registry |
+|---|---|---|
+| Node.js / TypeScript | `@abhay557/indian-fakedata` | npm |
+| Python | `indian-fakedata` | PyPI |
+
+Current version: **2.1.0** (both). Zero runtime dependencies.
+
+---
+
+## 1. Install
+
+```bash
+# TypeScript / Node (requires Node >= 18)
+npm install @abhay557/indian-fakedata
+
+# Python (requires Python 3.8+)
+pip install indian-fakedata
+```
+
+## 2. CLI (identical in both runtimes)
+
+```bash
+# Node
+npx @abhay557/indian-fakedata [options]
+
+# Python (or globally installed Node package)
+indian-fakedata [options]
+```
+
+### Core options
+
+| Flag | Alias | Description | Default |
+|------|-------|-------------|---------|
+| `--count <n>` | `-c` | Number of profiles | `100` |
+| `--output <path>` | `-o` | Output file | stdout |
+| `--format <fmt>` | `-f` | `json`, `jsonl`, `csv` | `json` |
+| `--seed <value>` | `-s` | Seed (number **or string**, e.g. `011`) | random |
+| `--no-metrics` | | Exclude probability metrics | included |
+| `--family` | | Full household from one seed (json/jsonl only) | off |
+
+### Constraints (any combination)
+
+`--religion` (Hindu, Muslim, Christian, Sikh, Buddhist, Jain), `--state`,
+`--gender` (male/female/other), `--caste`, `--socialCategory` (SC/ST/OBC/General),
+`--areaType` (urban/rural), `--minAge`/`--maxAge` (0–100), `--education`,
+`--occupation`, `--maritalStatus`.
+
+### Enrichment layers
+
+`--enrich` (all), `--outcomes` (credit/health/employment), `--bias <0-1>`
+(default `0.3`), `--narrative <type>` (loan_application, medical_consultation,
+school_enrollment, ration_card_application, hinglish_conversation, resume,
+customer_support_chat, all), `--persona` (LLM agent persona),
+`--persona-lang <english|hindi|hinglish>` (default `english`).
+
+### Output shaping
+
+`--fields <a,b,c>` (repeatable, dot paths allowed), `--stats` (stderr
+distribution summary).
+
+### Most useful invocations
+
+```bash
+indian-fakedata -c 1000 -f csv -o profiles.csv
+indian-fakedata --family --seed 011 -f jsonl
+indian-fakedata -c 50000 -f jsonl -o tn.jsonl --state "Tamil Nadu" --religion Hindu
+```
+
+## 3. Programmatic API matrix
+
+| TS | Python |
+|---|---|
+| `generate({ count, seed, constraints, includeProbabilityMetrics })` | `generate(count=..., seed=..., constraints=..., include_probability_metrics=...)` |
+| `generateStream(...)` | `generate_stream(...)` |
+| `generateEnriched(...)` | `generate_enriched(...)` |
+| `generateEnrichedStream(...)` | `generate_enriched_stream(...)` |
+| `generateUser({ seed, highlyEducated, gender, maritalStatus, constraints })` | `generate_user(seed=..., highly_educated=..., gender=..., marital_status=..., constraints=...)` |
+| `generateUsers({ count, seed, ... })` | `generate_users(count=..., seed=..., ...)` |
+| `generateFamily({ seed, constraints })` | `generate_family(seed=..., constraints=...)` |
+| `generatePersona({ seed, ... })` | `generate_persona(seed=...)` → `{ "user": ..., "persona": ... }` |
+| `simulateOutcomes(profile, options)` | `simulate_outcomes(profile, options)` |
+| `generateNarrative(profile, type)` | `generate_narrative(profile, type)` |
+| `generateAgentPersona(profile)` | `generate_agent_persona(profile)` |
+| `saveProfilesToFile(dataset, path, format)` | `save_profiles(dataset, path, format)` |
+| `loadDatabase(dataDir?)` | `load_database(data_dir?)` |
+
+## 4. Seed semantics (important)
+
+- Seeds may be numbers **or strings** (`7`, `"011"`). Strings are hashed with
+  FNV-1a internally.
+- **Reproducibility is per-runtime**: the same seed always reproduces the same
+  person/family *within one implementation* (TS or Python). The two runtimes
+  draw RNG streams differently, so a seed does NOT produce identical output
+  across Python and Node. Do not claim cross-runtime equivalence.
+- `generateUser({ seed: 7 })` reproduces the README "Output Sample" profile
+  (Pushpa Sharma, Maharashtra, Kolhapur) in the Python implementation.
+
+## 5. Data & truthfulness rules
+
+- Data is **synthetic mock data** — no real individuals, IDs are fabricated.
+- Backed by Census 2011 + NFHS-5 + survey distributions, **hand-calibrated
+  approximations**, not raw census microdata.
+- **No file I/O at runtime.** The Excel files in `data/` (build-time only) are
+  not read by the package. The npm tarball ships only `dist/`, README, LICENSE.
+- Custom data (optional): `loadDatabase(dataDir)` merges JSON files named
+  `states.json`, `religions.json`, `casteMap.json`, `firstNames.json`,
+  `surnames.json`, `districts.json` from a directory.
+- All fields are correlated: religion ↔ names ↔ state ↔ caste ↔ language ↔
+  education ↔ income. Impossible combos (Sikh named Mohammed Sharma from
+  Mizoram) are avoided by design.
+- **Acceptable use:** testing, research, education, simulation only — never
+  fake IDs/KYC evasion, bot personas interacting with real humans,
+  disinformation, or presenting output as real-people data (see Acceptable Use
+  section in README).
+
+## 6. Output shape
+
+Each profile (`DemographicProfile`) includes: identity (`id`, name, father/mother/
+spouse name), demographics (gender, age, DOB), biometrics (blood group, height,
+weight, BMI), appearance (face shape, skin tone, nose, eyes, hair, build),
+identifiers (Aadhaar, PAN, voter ID, phone, email), geography
+(state, district, area type, address, PIN), socioeconomics (religion, caste,
+social category, mother tongue, education, occupation, income, expenditure),
+household (children count, assets), lifestyle (diet, habits, interests), and
+psychology (Big Five, cognitive profile, political leaning), work history
+(`employmentTimeline`: chronological job spells with title, sector, tenure,
+wages), skills (`skills`: technical/soft lists, certifications, per-language
+speaking/reading/writing levels), native script (`nativeScript`: names,
+district, address transliterated into the mother-tongue script),
+location point (`geo`: approximate latitude/longitude, state-clamped),
+life events (`lifeEvents`: dated birth/marriage/children/migration/job/
+retirement events, cross-checked with the profile),
+household economy (`householdEconomy`: budget split, loans with EMI,
+banded credit history),
+festivals (derived on demand via `profileFestivals(profile)` — never
+stored on the profile — feeding persona memory seeds and Hinglish chats).
+`probabilityMetrics`shows the chain of probabilities for each draw.
+
+v2.0.3 added three fields to every profile:
+- `educationTimeline`: chronological school/college stages (`level`,
+  `stageName`, `institutionName`, `boardOrUniversity`, `startYear`, `endYear`,
+  `status`: completed / in_progress / dropped_out, `score`) — institutions are
+  drawn from large realistic pools (118 private schools, 43 colleges) and boards
+  match the state (CBSE/ICSE for private schools, state boards for government).
+- `personalityTraits`: descriptive traits derived deterministically from the Big
+  Five scores — `summary`, `traitLabels` (5), `strengths`, `weaknesses`,
+  `communicationStyle`, `decisionStyle`, `socialBehavior`. No RNG draws.
+- `moviePreferences`: `genres` (2-4 weighted), `favoriteLanguages` (state's
+  regional cinema first), `anime` + `animePreferences` + `favoriteAnimeTitles`
+  (only present when the person is an anime fan), `primaryPlatform`,
+  `watchFrequency`.
+
+v2.0.4 was a data-pool expansion release. Pools that grew: surnames
+(211 → 471 across all community keys), districts (369 → 760, full current
+maps — UP now has all 75, Tamil Nadu all 38), first names for Jain (was empty,
+now real Jain naming), Buddhist/navayana, Muslim and Christian communities,
+anime titles (18 → 130+), anime genres (8 → 21), movie genres (11 → 25),
+state cinema languages (23 → 34 states covered) and address localities
+(urban 45 → 120, rural 20 → 60). Because pools changed size, a given seed can
+resolve to different people than in <= 2.0.3 — reproducibility within one
+version is guaranteed; across versions it is not.
+
+v2.0.5 fixes a crash: `generate_enriched` / `generate_enriched_stream`
+(Python) raised a TypeError with string seeds like `"011"`; they now accept
+number and string seeds like every other function.
+
+v2.0.6 adds provenance markers to every profile: `"synthetic": true` and
+`"generator": "indian-fakedata@<version>"`. Every export (JSON, JSONL, CSV)
+self-labels its data as fake — this is intentional and must not be removed.
+
+v2.0.7 is a correctness release:
+- **Python RNG bias fixed** — the JS→Python port of mulberry32 used signed
+  shifts, so `rng.next()` never returned >= 0.5 and every weighted choice in
+  Python was skewed toward table-head options. Now a proper unsigned port;
+  all Python distributions (states, religions, castes, scores) are correct.
+  All seeds produce different output than <= 2.0.6 in Python.
+- **DOB/age drift fixed** (both runtimes) — dateOfBirth could land after
+  today's date within the birth year, making the real calendar age off by
+  one from `age` for ~1/3 of profiles. `age` now always matches exactly.
+
+v2.0.8 adds an `appearance` attribute to every profile — a nested object with
+`heightCm`, `build`, `faceShape`, `skinTone`, `noseType`, `eyeColor`,
+`eyeShape`, `hairColor`, `hairTexture`, `hairLength`, `facialHair`. Adult
+`heightCm` is now shifted by broad geographic region (North-West tallest,
+South and North-East shorter). Skin tone uses named buckets: `fair`,
+`wheatish`, `brown`, `deep_brown`, `dark`. Agent personas automatically
+include a physical description in the system prompt. The `appearance` block is
+drawn AFTER all other fields, so every other field for a given seed stays
+stable; `heightCm` changed because of the regional offset.
+
+v2.0.9 adds `employmentTimeline` to every profile — chronological job spells
+(`jobTitle`, `sector`, `occupation`, `employerType`, `startYear`, `endYear`,
+`status`: completed / current, `monthlyWageINR`, `location`). Titles come from
+sector pools (government, private, self-employed, informal, ...); wages climb
+towards the current income. Empty for students, the unemployed and children;
+completed-only for retirees. Attached AFTER profile assembly, so `id` and all
+<= 2.0.8 fields for a given seed are byte-identical.
+
+v2.0.9 also adds `skills` to every profile — `technical` and `soft` lists,
+`certifications`, and `languages` with speaking/reading/writing levels
+(`basic` / `intermediate` / `fluent` / `native`). Same isolated-stream
+guarantee: drawn from a per-profile stream AFTER assembly.
+
+v2.0.9 Layer 3 adds two narrative types: `resume` (CV built from the
+education timeline, `employmentTimeline` and `skills`) and
+`customer_support_chat` (Hinglish bank helpline dialogue, masked phone).
+`generateAllNarratives` appends them at the end; existing order unchanged.
+
+v2.0.9 Layer 4 personas take a language: `generateAgentPersona(profile,
+{ language: 'hindi' })` (Python: `generate_agent_persona(profile,
+'hindi')`), `generateEnriched({ ..., agentPersonaLanguage: 'hinglish' })`,
+`generatePersona({ ..., personaLanguage: 'hindi' })`, or CLI
+`--persona --persona-lang hindi`. Hindi = Devanagari prompt + Hindi headers;
+Hinglish = roman mix + English headers. Default english is byte-identical to
+<= 2.0.8.
+
+v2.0.9 CLI adds `--fields` (comma-separated, repeatable, dot paths allowed:
+`--fields firstName,state,appearance.skinTone`, works for json/jsonl/csv)
+and `--stats` (stderr distribution summary over religion, state, gender,
+areaType, education, occupation). `--strip-pii` (+ `--mask-names`) sanitizes
+CLI output; `--validate` exits non-zero on invalid profiles. Validation runs
+on full records before any shaping.
+
+v2.0.9 validation: `validateProfile(profile)` → `{ valid, errors }`
+(Python: `validate_profile(profile)` → `{"valid", "errors"}`) checks
+required fields, enum values and provenance markers; `getProfileSchema()` /
+`get_profile_schema()` exports the versioned JSON Schema. Zero dependencies.
+The canonical file ships at `schema/profile-2.0.9.json` (both test suites
+assert it matches the function output).
+
+v2.0.9 sharing: `stripPII(profile)` (Python: `strip_pii(profile)`) empties
+Aadhaar/PAN/voter/phone/email/bank-account/UPI/street-address, keeps shape
+and provenance, adds `piiStripped: true`. `maskNames: true`
+(`mask_names=True`) reduces names to initials. Validate before stripping.
+
+CLI: `--strip-pii` sanitizes profile fields in CLI output (not
+narrative/persona text); `--mask-names` reduces names to initials.
+
+v2.1.0 fixes the employment timeline: stages follow the profile's own
+`occupation` for titles and labels (a cultivator gets farm titles, never
+shop titles); only `non_worker` histories use a sampled past sector.
+`sector` still mirrors `employmentSector`. The key sits right below
+`occupation` in the profile, not at the end. Since the same fix, the
+current job title follows `educationDetails.fieldOfStudy` (engineering
+graduates get engineer titles, B.Ed graduates teach, doctor titles need a
+professional degree), and all sector title pools are bigger.
+
+v2.1.0 occupation follows education (breaking): `occupation` weights are
+conditioned on `education`, so graduates skew white-collar and the
+unschooled toward farm work. Occupation-driven fields resolve differently
+than 2.0.9 for the same seed; explicit `occupation` constraints still win.
+
+v2.1.0 native script: every profile carries `nativeScript` (`script`,
+`language`, transliterated `firstName`, `lastName`, `district`,
+`addressLine`) in the mother-tongue script, Latin passthrough otherwise.
+`transliterate(text, script)` (Python: `transliterate(text, script)`) and
+`scriptForLanguage(motherTongue)` (Python: `script_for_language(...)`)
+work on any string, including persona prompts. Pure mapping, no RNG.
+
+v2.1.0 SFT pairs: `buildSFTPairs(profile, narratives?)` (Python:
+`build_sft_pairs(profile, narratives?)`) returns grounded
+instruction/response pairs (5 persona pairs plus one per narrative),
+`{ instruction, input, output, source }`; `sftPairsToJsonl()` (Python:
+`sft_pairs_to_jsonl()`) serializes to JSONL. Pure functions, no RNG.
+
+v2.1.0 grounded QA: `buildQAPairs(profile)` (Python:
+`build_qa_pairs(profile)`) returns question/answer pairs with `citations`,
+the exact profile field paths each answer was built from. Pure, no RNG.
+
+v2.1.0 eval harness: `evaluateDataset(profiles)` (Python:
+`evaluate_dataset(profiles)`) returns one quality score plus drift,
+validity and consistency breakdowns; `checkConsistency(profile)` reuses
+the per-profile checks; `--eval file.jsonl` scores a file from the CLI.
+
+The v2.0.3 generators consume RNG draws appended AFTER all existing draws,
+so they never disturbed pre-existing fields when introduced.
+
+`generateFamily` returns: `{ head, spouse?, parents: { father?, mother? },
+children: [...], siblings: [...] }` — all members share the head's surname,
+caste, religion, and state; ages are logically ordered.
+
+`generatePersona` returns `{ "user": <profile>, "persona": <agent persona with
+systemPrompt, fullPrompt, beliefs, memorySeeds, behaviorRules> }`. `fullPrompt`
+is a complete self-contained roleplay prompt (identity, appearance, education
+timeline, personality traits, movie/anime preferences, habits, beliefs, memory
+seeds, behaviour rules) designed to make an LLM act as this person.
+
+## 7. Verification (run before declaring success)
+
+```python
+from indian_fakedata import generate, generate_user, generate_family
+
+# 1. Basic generation + constraint
+profiles = generate(count=5, constraints={"state": "Punjab", "religion": "Sikh"})
+assert all(p["state"] == "Punjab" for p in profiles)
+
+# 2. Seed reproducibility
+assert generate_user(seed=7)["firstName"] == "Pushpa Sharma".split()[0]
+
+# 3. Family consistency
+fam = generate_family(seed="011")
+members = [fam["head"]] + [fam["spouse"]] if fam["spouse"] else []
+assert len({m["lastName"] for m in members}) == 1  # same surname
+
+# 4. v2.0.7 enrichment fields
+p = generate_user(seed=7)
+assert "personalityTraits" in p and "educationTimeline" in p and "moviePreferences" in p
+out = generate_persona(seed="011")
+assert "fullPrompt" in out["persona"]
+```
+
+TypeScript equivalents: `generate`, `generateUser`, `generateFamily` (assert on
+`.state`, `.firstName`, `.lastName`).
+
+## 8. Common mistakes
+
+- ❌ Using `seed` as a float (`7.5`) — use ints or strings.
+- ❌ Expecting identical output between TS and Python for the same seed.
+- ❌ Assuming the package reads Excel/CSV at runtime — it does not.
+- ❌ Passing `--family` with `-f csv` — rejected; use json/jsonl.
+- ❌ Forgetting `include_probability_metrics=False` when compact output is wanted.

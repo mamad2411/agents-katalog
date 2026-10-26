@@ -1,6 +1,6 @@
 ---
 name: flask-api-development
-description: >
+description: "Develop lightweight Flask APIs with routing, blueprints, database integration, authentication, and request/response handling. Use when building RESTful APIs, microservices, or lightweight web services with Flask."
   Develop lightweight Flask APIs with routing, blueprints, database integration,
   authentication, and request/response handling. Use when building RESTful APIs,
   microservices, or lightweight web services with Flask.

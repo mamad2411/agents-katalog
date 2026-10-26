@@ -1,6 +1,6 @@
 ---
 name: aws-lambda-functions
-description: >
+description: "Create and deploy serverless functions using AWS Lambda with event sources, permissions, layers, and environment configuration. Use for event-driven computing without managing servers."
   Create and deploy serverless functions using AWS Lambda with event sources,
   permissions, layers, and environment configuration. Use for event-driven
   computing without managing servers.

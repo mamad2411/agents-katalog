@@ -1,6 +1,6 @@
 ---
 name: deployment-documentation
-description: >
+description: "Document deployment processes, infrastructure setup, CI/CD pipelines, and configuration management. Use when creating deployment guides, infrastructure docs, or CI/CD documentation."
   Document deployment processes, infrastructure setup, CI/CD pipelines, and
   configuration management. Use when creating deployment guides, infrastructure
   docs, or CI/CD documentation.

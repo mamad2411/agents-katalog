@@ -1,6 +1,6 @@
 ---
 name: adr-discovery
-description: |
+description: "This skill should be used before drafting an ADR when context, components, relationships, deciders, or prior decisions are unclear. PROACTIVELY activate on 'I want to write an ADR for X', 'gather context for a decision', 'discovery for an ADR', 'ADR intake', 'ADR pre-flight', 'prep work before an ADR', 'what's the current architecture?', or 'set up a decision log.' Provides: zero-hallucination Q&A, human-confirmed discovery brief, open-questions register, and five required confirmations before drafting."
   This skill should be used before drafting an ADR when context, components, relationships, deciders, or prior decisions are unclear.
   PROACTIVELY activate on "I want to write an ADR for X", "gather context for a decision", "discovery for an ADR", "ADR intake", "ADR pre-flight", "prep work before an ADR", "what's the current architecture?", or "set up a decision log."
   Provides: zero-hallucination Q&A, human-confirmed discovery brief, open-questions register, and five required confirmations before drafting.

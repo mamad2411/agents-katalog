@@ -1,6 +1,6 @@
 ---
 name: web-design-guidelines
-description: |
+description: "Review UI code for Web Interface Guidelines compliance by the Vercel engineering team. Covers layout, typography, color, motion, and accessibility for product UI."
   Review UI code for Web Interface Guidelines compliance by the Vercel engineering team. Covers layout, typography, color, motion, and accessibility for product UI.
 triggers:
   - "web design guidelines"

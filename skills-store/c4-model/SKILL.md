@@ -1,6 +1,6 @@
 ---
 name: c4-model
-description: |
+description: "This skill should be used to create or update a C4 architecture diagram alongside an ADR, especially in LikeC4. PROACTIVELY activate on 'add a C4 diagram', 'create a context diagram', 'container view', 'LikeC4 model', 'draw the architecture', 'diagram this decision', 'architecture diagram for the ADR', 'visualize the components', 'C4 view', or 'Simon Brown C4.' Provides: canonical-C4 Context and Container views from confirmed elements, relationship descriptions, and strict refusal of non-canonical diagram types."
   This skill should be used to create or update a C4 architecture diagram alongside an ADR, especially in LikeC4.
   PROACTIVELY activate on "add a C4 diagram", "create a context diagram", "container view", "LikeC4 model", "draw the architecture", "diagram this decision", "architecture diagram for the ADR", "visualize the components", "C4 view", or "Simon Brown C4."
   Provides: canonical-C4 Context and Container views from confirmed elements, relationship descriptions, and strict refusal of non-canonical diagram types.

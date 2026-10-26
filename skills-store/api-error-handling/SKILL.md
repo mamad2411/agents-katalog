@@ -1,6 +1,6 @@
 ---
 name: api-error-handling
-description: >
+description: "Implement comprehensive API error handling with standardized error responses, logging, monitoring, retry logic, and validation patterns. Use when building resilient APIs, debugging issues, improving error reporting, implementing retry logic, handling HTTP error codes, managing API timeouts, designing error response handling, or adding circuit breaker patterns."
   Implement comprehensive API error handling with standardized error responses,
   logging, monitoring, retry logic, and validation patterns. Use when building
   resilient APIs, debugging issues, improving error reporting, implementing

@@ -1,6 +1,6 @@
 ---
 name: file-upload-handling
-description: >
+description: "Implement secure file upload handling with validation, virus scanning, storage management, and serving files efficiently. Use when building file upload features, managing file storage, and implementing file download systems."
   Implement secure file upload handling with validation, virus scanning, storage
   management, and serving files efficiently. Use when building file upload
   features, managing file storage, and implementing file download systems.

@@ -1,6 +1,6 @@
 ---
 name: database-schema-documentation
-description: >
+description: "Document database schemas, ERD diagrams, table relationships, indexes, and constraints. Use when documenting database schema, creating ERD diagrams, or writing table documentation."
   Document database schemas, ERD diagrams, table relationships, indexes, and
   constraints. Use when documenting database schema, creating ERD diagrams, or
   writing table documentation.

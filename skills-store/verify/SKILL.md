@@ -1,6 +1,6 @@
 ---
 name: verify
-description: >
+description: "Run a comprehensive 7-phase verification pipeline for .NET projects: build, analyzers, antipattern detection, tests, security, formatting, and diff review. Each phase produces PASS/FAIL with actionable output and the pipeline short-circuits on critical failures. Also the authority on verification strategy: which phases to run for a given change, quality gates, and fix-and-retry loops. Use when: 'verify', 'check everything', 'is this ready', 'pre-PR check', 'run all checks', 'quality gate', 'verification strategy', 'which checks should run', or after completing a feature or refactor."
   Run a comprehensive 7-phase verification pipeline for .NET projects: build,
   analyzers, antipattern detection, tests, security, formatting, and diff
   review. Each phase produces PASS/FAIL with actionable output and the pipeline

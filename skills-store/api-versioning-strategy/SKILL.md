@@ -1,6 +1,6 @@
 ---
 name: api-versioning-strategy
-description: >
+description: "Implement API versioning strategies including URL versioning, header versioning, backward compatibility, deprecation strategies, and migration guides. Use when dealing with API versions, deprecating endpoints, or managing breaking changes."
   Implement API versioning strategies including URL versioning, header
   versioning, backward compatibility, deprecation strategies, and migration
   guides. Use when dealing with API versions, deprecating endpoints, or managing

@@ -2,7 +2,7 @@
 name: agent-platform-skill-registry
 metadata:
   category: AiAndMachineLearning
-description: >
+description: "Interact with the Gemini Enterprise Agent Platform Skill Registry to create and search for available skills. Use this skill to enable agents to register functionality or discover new capabilities."
   Interact with the Gemini Enterprise Agent Platform Skill Registry to create
   and search for available skills. Use this skill to enable agents to register
   functionality or discover new capabilities.

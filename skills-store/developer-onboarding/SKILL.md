@@ -1,6 +1,6 @@
 ---
 name: developer-onboarding
-description: >
+description: "Create comprehensive developer onboarding documentation including setup guides, README files, contributing guidelines, and getting started tutorials. Use when onboarding new developers or creating setup documentation."
   Create comprehensive developer onboarding documentation including setup
   guides, README files, contributing guidelines, and getting started tutorials.
   Use when onboarding new developers or creating setup documentation.

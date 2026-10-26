@@ -1,6 +1,6 @@
 ---
 name: migrate
-description: >
+description: "Guided, safe migration workflow covering EF Core schema migrations, .NET version upgrades, and NuGet dependency updates — each with rollback strategies and verification steps. Invoke when: 'add migration', 'update database', 'create migration', 'schema change', 'new table', 'rename column', 'upgrade nuget', 'update packages', 'dependency update', 'version upgrade', '.NET upgrade'."
   Guided, safe migration workflow covering EF Core schema migrations, .NET
   version upgrades, and NuGet dependency updates — each with rollback
   strategies and verification steps. Invoke when: "add migration",

@@ -1,6 +1,6 @@
 ---
 name: design-patterns-implementation
-description: >
+description: "Apply appropriate design patterns (Singleton, Factory, Observer, Strategy, etc.) to solve architectural problems. Use when refactoring code architecture, implementing extensible systems, or following SOLID principles."
   Apply appropriate design patterns (Singleton, Factory, Observer, Strategy,
   etc.) to solve architectural problems. Use when refactoring code architecture,
   implementing extensible systems, or following SOLID principles.

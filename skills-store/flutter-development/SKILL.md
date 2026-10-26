@@ -1,6 +1,6 @@
 ---
 name: flutter-development
-description: >
+description: "Build beautiful cross-platform mobile apps with Flutter and Dart. Covers widgets, state management with Provider/BLoC, navigation, API integration, and material design."
   Build beautiful cross-platform mobile apps with Flutter and Dart. Covers
   widgets, state management with Provider/BLoC, navigation, API integration, and
   material design.

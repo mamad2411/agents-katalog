@@ -5,7 +5,7 @@
 
 # Basic Information
 name: pptx-manipulation
-description: ">"
+description: "This skill enables programmatic creation, editing, and manipulation of Microsoft PowerPoint (.pptx) presentations using the **python-pptx** library. Create professional slides with text, shapes, images, charts, and tables without manual editing."
 version: "1.0"
 author: claude-office-skills
 license: MIT

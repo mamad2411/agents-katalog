@@ -1,6 +1,6 @@
 ---
 name: application-logging
-description: >
+description: "Implement structured logging across applications with log aggregation and centralized analysis. Use when setting up application logging, implementing ELK stack, or analyzing application behavior."
   Implement structured logging across applications with log aggregation and
   centralized analysis. Use when setting up application logging, implementing
   ELK stack, or analyzing application behavior.

@@ -1,7 +1,7 @@
 ---
 name: seedance-2-5-image-to-video
 displayName: "Seedance 2.5 Image to Video"
-description: >
+description: "Animate a single still image into a 4-30 second 720p cinematic clip with optional synchronized native audio using ByteDance Seedance 2.5 Image to Video on RunComfy. Documents the four-field schema (prompt, image, duration, generate_audio), the $0.35/s pricing, the fact that output aspect ratio follows the input image, and when to route to the Seedance 2.5 480p, text-to-video, reference-to-video or first-last-frame pages instead. Calls `runcomfy run bytedance/seedance-2.5/image-to-video/720p` through the local RunComfy CLI. Triggers on 'seedance 2.5 image to video', 'seedance image to video', '"
   Animate a single still image into a 4-30 second 720p cinematic clip with
   optional synchronized native audio using ByteDance Seedance 2.5 Image to
   Video on RunComfy. Documents the four-field schema (prompt, image,

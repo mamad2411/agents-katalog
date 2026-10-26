@@ -1,6 +1,6 @@
 ---
 name: wix-replatform
-description: >-
+description: "Routes RePlatform source-to-Wix migrations to the next required workflow module by inspecting authoritative migration artifacts. Use when starting, resuming, or recovering a migration run."
   Routes RePlatform source-to-Wix migrations to the next required workflow module by
   inspecting authoritative migration artifacts. Use when starting, resuming, or recovering
   a migration run.

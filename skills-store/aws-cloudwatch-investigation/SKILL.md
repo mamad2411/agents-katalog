@@ -1,6 +1,6 @@
 ---
 name: aws-cloudwatch-investigation
-description: >
+description: "Reusable investigation patterns for AWS CloudWatch: Logs Insights query templates, alarm-to-deployment correlation, blast-radius narrowing decision tree, and PromQL-style metric query patterns for structured incident triage."
   Reusable investigation patterns for AWS CloudWatch: Logs Insights query templates,
   alarm-to-deployment correlation, blast-radius narrowing decision tree, and
   PromQL-style metric query patterns for structured incident triage.

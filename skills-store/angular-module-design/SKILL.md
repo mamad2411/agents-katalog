@@ -1,6 +1,6 @@
 ---
 name: angular-module-design
-description: >
+description: "Design Angular modules using feature modules, lazy loading, and dependency injection. Use when organizing large Angular applications with proper separation of concerns."
   Design Angular modules using feature modules, lazy loading, and dependency
   injection. Use when organizing large Angular applications with proper
   separation of concerns.

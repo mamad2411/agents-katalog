@@ -1,6 +1,6 @@
 ---
 name: payment-gateway-integration
-description: >
+description: "Integrate payment gateways like Stripe, PayPal, and Square with backends for payment processing, subscription management, and webhook handling. Use when building e-commerce platforms, implementing billing systems, and handling payments securely."
   Integrate payment gateways like Stripe, PayPal, and Square with backends for
   payment processing, subscription management, and webhook handling. Use when
   building e-commerce platforms, implementing billing systems, and handling

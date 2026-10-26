@@ -1,6 +1,6 @@
 ---
 name: docker-containerization
-description: >
+description: "Create optimized Docker containers with multi-stage builds, security best practices, and minimal image sizes. Use when containerizing applications, creating Dockerfiles, optimizing container images, or setting up Docker Compose services."
   Create optimized Docker containers with multi-stage builds, security best
   practices, and minimal image sizes. Use when containerizing applications,
   creating Dockerfiles, optimizing container images, or setting up Docker

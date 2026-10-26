@@ -1,6 +1,6 @@
 ---
 name: kotlin-tooling-java-to-kotlin
-description: >
+description: "Use when converting Java source files to idiomatic Kotlin, when user mentions 'java to kotlin', 'j2k', 'convert java', 'migrate java to kotlin', or when working with .java files that need to become .kt files. Handles framework-aware conversion for Spring, Lombok, Hibernate, Jackson, Micronaut, Quarkus, Dagger/Hilt, RxJava, JUnit, Guice, Retrofit, and Mockito."
   Use when converting Java source files to idiomatic Kotlin, when user mentions
   "java to kotlin", "j2k", "convert java", "migrate java to kotlin", or when
   working with .java files that need to become .kt files. Handles framework-aware

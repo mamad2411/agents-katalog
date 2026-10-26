@@ -1,6 +1,6 @@
 ---
 name: code-review-analysis
-description: >
+description: "Perform comprehensive code reviews with best practices, security checks, and constructive feedback. Use when reviewing pull requests, analyzing code quality, checking for security vulnerabilities, or providing code improvement suggestions."
   Perform comprehensive code reviews with best practices, security checks, and
   constructive feedback. Use when reviewing pull requests, analyzing code
   quality, checking for security vulnerabilities, or providing code improvement

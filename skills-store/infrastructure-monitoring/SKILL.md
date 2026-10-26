@@ -1,6 +1,6 @@
 ---
 name: infrastructure-monitoring
-description: >
+description: "Set up comprehensive infrastructure monitoring with Prometheus, Grafana, and alerting systems for metrics, health checks, and performance tracking."
   Set up comprehensive infrastructure monitoring with Prometheus, Grafana, and
   alerting systems for metrics, health checks, and performance tracking.
 ---

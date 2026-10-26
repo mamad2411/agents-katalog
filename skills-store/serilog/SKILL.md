@@ -1,6 +1,6 @@
 ---
 name: serilog
-description: >
+description: "Structured logging with Serilog for .NET 10 applications. Covers two-stage bootstrap, appsettings configuration, enrichers, sinks, request logging, destructuring, and Serilog.Expressions. Load this skill when setting up Serilog, configuring log sinks, enrichers, or structured logging, or when the user mentions 'Serilog', 'structured logging', 'log enrichment', 'Seq', 'LogContext', 'UseSerilog', 'WriteTo', 'message template', 'Serilog.Expressions', 'request logging', 'log sink', 'rolling file', or 'audit log'."
   Structured logging with Serilog for .NET 10 applications. Covers two-stage
   bootstrap, appsettings configuration, enrichers, sinks, request logging,
   destructuring, and Serilog.Expressions.

@@ -1,7 +1,7 @@
 ---
 name: absolute-upgrade
 version: 0.5.0
-description: >
+description: "Dependency upgrades: outdated/vulnerable deps planned into semver waves (patch/minor batched, majors gated and changelog-read), applied incrementally with lockfiles regenerated and tests green after each. Runs on green main. Triggers on 'absolute upgrade', 'upgrade our dependencies', 'bump deps', 'update packages', 'move off the deprecated X', 'clear the Dependabot backlog'."
   Dependency upgrades: outdated/vulnerable deps planned into semver waves (patch/minor batched, majors gated and changelog-read), applied incrementally with lockfiles regenerated and tests green after each. Runs on green main.
   Triggers on "absolute upgrade", "upgrade our dependencies", "bump deps", "update packages", "move off the deprecated X", "clear the Dependabot backlog".
 category: workflow

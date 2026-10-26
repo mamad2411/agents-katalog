@@ -2,7 +2,7 @@
 name: ace-step
 displayName: "ACE Step — Pro Pack on RunComfy"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Generate, inpaint, and outpaint music with ACE Step on RunComfy via the `runcomfy` CLI. ACE Step is StepFun-AI's open-weights music foundation model — tag-driven composition (genre, mood, instruments), multilingual lyrics with section markers, 5 s to 4 min stereo output, $0.0002–0.0003 per second (≈ 27× cheaper than ElevenLabs Music). Four endpoints: ACE Step text-to-audio (the default), ACE Step 1.5 text-to-audio (50+ language lyrics, refined structured-lyric handling), ACE Step audio-inpaint (regenerate a time range inside an existing track), ACE Step audio-outpaint (extend an existing track"
   Generate, inpaint, and outpaint music with ACE Step on RunComfy via
   the `runcomfy` CLI. ACE Step is StepFun-AI's open-weights music
   foundation model — tag-driven composition (genre, mood, instruments),

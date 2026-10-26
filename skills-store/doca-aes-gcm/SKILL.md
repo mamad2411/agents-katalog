@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-aes-gcm
-description: >
+description: "Use this skill when the user is doing hands-on DOCA AES-GCM work on a BlueField DPU or ConnectX NIC — configuring `doca_aes_gcm_task_encrypt` / `_task_decrypt`, querying `doca_aes_gcm_cap_*` for per-key-type (only `DOCA_AES_GCM_KEY_128` / `_256` — AES-192 not supported) and per-task support, sizing plaintext against the max-buf cap, setting source / destination mmap permissions, validating with a NIST GCMVS or RFC 5288 vector, or debugging DOCA_ERROR_* including the security-critical tag-verification-failed outcome on decrypt. Trigger even when the user does not explicitly mention 'DOCA AES-GC"
   Use this skill when the user is doing hands-on DOCA AES-GCM
   work on a BlueField DPU or ConnectX NIC — configuring
   `doca_aes_gcm_task_encrypt` / `_task_decrypt`, querying

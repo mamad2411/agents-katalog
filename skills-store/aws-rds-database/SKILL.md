@@ -1,6 +1,6 @@
 ---
 name: aws-rds-database
-description: >
+description: "Deploy and manage relational databases using RDS with Multi-AZ, read replicas, backups, and encryption. Use for PostgreSQL, MySQL, MariaDB, and Oracle."
   Deploy and manage relational databases using RDS with Multi-AZ, read replicas,
   backups, and encryption. Use for PostgreSQL, MySQL, MariaDB, and Oracle.
 ---

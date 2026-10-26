@@ -1,6 +1,6 @@
 ---
 name: linear-bug-triage
-description: |
+description: "Use this skill after a bug or regression candidate has measured evidence to document them within linear."
   Use this skill after a bug or regression candidate has measured evidence to document
   them within linear.
 ---

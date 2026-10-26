@@ -1,6 +1,6 @@
 ---
 name: kotlin-tooling-gradle-to-kotlin-toolchain-plugin
-description: >
+description: "Load when porting, converting, or reimplementing a single Gradle plugin as a Kotlin Toolchain local plugin, or when mapping Gradle plugin concepts (Task, Extension, project.version, dependsOn, -P properties, afterEvaluate) to Toolchain analogs. Skip for migrating a whole Gradle project or authoring a plugin from scratch."
   Load when porting, converting, or reimplementing a single Gradle plugin as a
   Kotlin Toolchain local plugin, or when mapping Gradle plugin concepts (Task,
   Extension, project.version, dependsOn, -P properties, afterEvaluate) to

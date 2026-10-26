@@ -1,6 +1,6 @@
 ---
 name: review-animations
-description: |
+description: "Reviews animation and motion code against a high craft bar derived from Emil Kowalski's design engineering philosophy. Default to flagging; approval is earned."
   Reviews animation and motion code against a high craft bar derived from Emil Kowalski's design engineering philosophy. Default to flagging; approval is earned.
 triggers:
   - "review animations"

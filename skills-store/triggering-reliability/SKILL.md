@@ -1,6 +1,6 @@
 ---
 name: triggering-reliability
-description: |
+description: "Catalog of common mistakes that break Claude Code agent and skill triggering, plus marketplace validation rules. PROACTIVELY activate for: (1) plugins installed but never trigger, (2) agents failing to route, (3) skills not appearing in discovery, (4) pre-release triggering audit, (5) migrating deprecated agent true flag, (6) zero-frontmatter SKILL.md files, (7) boilerplate in YAML descriptions, (8) abstract descriptions, (9) missing example blocks on fat agents above 2,500 words, (10) missing PROACTIVELY or Provides sections, (11) running validate_plugins.py, (12) auditing a plugin without co"
   Catalog of common mistakes that break Claude Code agent and skill triggering, plus marketplace validation rules.
   PROACTIVELY activate for: (1) plugins installed but never trigger, (2) agents failing to route, (3) skills not appearing in discovery, (4) pre-release triggering audit, (5) migrating deprecated agent true flag, (6) zero-frontmatter SKILL.md files, (7) boilerplate in YAML descriptions, (8) abstract descriptions, (9) missing example blocks on fat agents above 2,500 words, (10) missing PROACTIVELY or Provides sections, (11) running validate_plugins.py, (12) auditing a plugin without contradicting earlier intentional refactors.
   Provides: anti-patterns, fixes, before/after examples, audit checklist, and validator rule index.

@@ -1,7 +1,7 @@
 ---
 name: image-edit
 displayName: "Image Edit — Pro Pack on RunComfy"
-description: >
+description: "Edit images on RunComfy — this skill is a smart router that matches the user's intent to the right edit model in the RunComfy catalog. Picks Nano Banana Edit (batch up to 20, identity-preserving default), OpenAI GPT Image 2 Edit (multilingual in-image text rewrite, multi-ref composition, layout precision), Flux Kontext Pro (single-ref high-fidelity local edit), or Z-Image Turbo Inpaint (mask-driven precise region edit). Bundles each model's documented prompting patterns so the skill gets sharper edits without burning iterations on the wrong model. Calls `runcomfy run <vendor>/<model>/edit` thr"
   Edit images on RunComfy — this skill is a smart router that matches
   the user's intent to the right edit model in the RunComfy catalog.
   Picks Nano Banana Edit (batch up to 20, identity-preserving default),

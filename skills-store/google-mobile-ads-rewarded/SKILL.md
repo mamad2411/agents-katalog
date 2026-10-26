@@ -1,6 +1,6 @@
 ---
 name: google-mobile-ads-rewarded
-description: >-
+description: "Provides instructions for implementing, integrating, or configuring Google Mobile Ads (GMA) SDK rewarded ads in Android, iOS, or Unity mobile applications. Use when the task involves setting up rewarded ads. Don't use for 'rewarded interstitial' ads."
   Provides instructions for implementing, integrating, or configuring Google
   Mobile Ads (GMA) SDK rewarded ads in Android, iOS, or Unity mobile
   applications. Use when the task involves setting up rewarded ads. Don't use

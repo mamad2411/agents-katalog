@@ -1,6 +1,6 @@
 ---
 name: infrastructure-cost-optimization
-description: >
+description: "Optimize cloud infrastructure costs through resource rightsizing, reserved instances, spot instances, and waste reduction strategies."
   Optimize cloud infrastructure costs through resource rightsizing, reserved
   instances, spot instances, and waste reduction strategies.
 ---

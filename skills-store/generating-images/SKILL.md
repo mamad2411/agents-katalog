@@ -1,6 +1,6 @@
 ---
 name: generating-images
-description: >-
+description: "Generate or edit images using the OpenAI Image API (gpt-image-2). Use when the user asks to generate, create, draw, render, illustrate, mock up, or edit an image, icon, logo, mockup, illustration, OG image, blog hero, marketing asset, or similar visual. Also use when the user supplies a reference image and asks to modify, restyle, or remix it. Triggers on: 'generate an image', 'create an image', 'make a picture of', 'edit this image', 'restyle this', 'make a mockup of', 'draw a', 'render a', 'illustration of'."
   Generate or edit images using the OpenAI Image API (gpt-image-2). Use when
   the user asks to generate, create, draw, render, illustrate, mock up, or edit
   an image, icon, logo, mockup, illustration, OG image, blog hero, marketing

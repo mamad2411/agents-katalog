@@ -1,6 +1,6 @@
 ---
 name: viral-video-platform-algorithms
-description: |
+description: "Deep understanding of TikTok, YouTube, Instagram, and Facebook algorithms for 2025-2026. PROACTIVELY activate for: (1) Algorithm optimization, (2) Platform-specific strategy, (3) Content distribution understanding, (4) Engagement signal optimization, (5) Cold start strategies, (6) Trending and discovery, (7) Hashtag and SEO strategy, (8) Posting time optimization, (9) Cross-platform differences. Provides: Algorithm signal breakdowns, platform comparisons, optimization strategies, posting schedules, hashtag strategies, and discovery mechanisms."
   Deep understanding of TikTok, YouTube, Instagram, and Facebook algorithms for 2025-2026.
   PROACTIVELY activate for: (1) Algorithm optimization, (2) Platform-specific strategy, (3) Content distribution understanding, (4) Engagement signal optimization, (5) Cold start strategies, (6) Trending and discovery, (7) Hashtag and SEO strategy, (8) Posting time optimization, (9) Cross-platform differences.
   Provides: Algorithm signal breakdowns, platform comparisons, optimization strategies, posting schedules, hashtag strategies, and discovery mechanisms.

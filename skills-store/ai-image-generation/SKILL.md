@@ -2,7 +2,7 @@
 name: ai-image-generation
 displayName: "AI Image Generation"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Generate and edit images on RunComfy via the `runcomfy` CLI — a smart router across the full image-model catalog: FLUX 2 (Klein 9B/4B, Pro, Dev, Flash, Turbo, Max), Google Nano Banana 2 / Pro, OpenAI GPT Image 2, ByteDance Seedream 5 / 4-5 / 4-0 and Dreamina 4-0, Alibaba Qwen Image and Z-Image Turbo, Wan 2-7. Covers both text-to-image (t2i) and image-to-image / edit (i2i) endpoints — the skill picks the right model for the user's actual intent (typography precision, photoreal portraits, sub-second iteration, multi-reference brand styling, open-weights workflow) and ships each model's documente"
   Generate and edit images on RunComfy via the `runcomfy` CLI — a smart
   router across the full image-model catalog: FLUX 2 (Klein 9B/4B, Pro,
   Dev, Flash, Turbo, Max), Google Nano Banana 2 / Pro, OpenAI GPT Image 2,

@@ -1,6 +1,6 @@
 ---
 name: blue-green-deployment
-description: >
+description: "Implement blue-green deployment strategies for zero-downtime releases with instant rollback capability and traffic switching between environments."
   Implement blue-green deployment strategies for zero-downtime releases with
   instant rollback capability and traffic switching between environments.
 ---

@@ -1,6 +1,6 @@
 ---
 name: python-testing
-description: |
+description: "Complete Python testing system. PROACTIVELY activate for: (1) pytest fundamentals, (2) Fixtures and scopes, (3) Parameterized tests, (4) Mocking with pytest-mock, (5) Async testing with pytest-asyncio, (6) Coverage configuration, (7) FastAPI testing with httpx, (8) Property-based testing with hypothesis, (9) Snapshot testing. Provides: pytest patterns, fixture examples, mock setup, coverage config. Ensures comprehensive test coverage with best practices."
   Complete Python testing system.
   PROACTIVELY activate for: (1) pytest fundamentals, (2) Fixtures and scopes, (3) Parameterized tests, (4) Mocking with pytest-mock, (5) Async testing with pytest-asyncio, (6) Coverage configuration, (7) FastAPI testing with httpx, (8) Property-based testing with hypothesis, (9) Snapshot testing.
   Provides: pytest patterns, fixture examples, mock setup, coverage config.

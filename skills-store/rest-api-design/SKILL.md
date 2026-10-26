@@ -1,6 +1,6 @@
 ---
 name: rest-api-design
-description: >
+description: "Design RESTful APIs following best practices for resource modeling, HTTP methods, status codes, versioning, and documentation. Use when creating new APIs, designing endpoints, or improving existing API architecture."
   Design RESTful APIs following best practices for resource modeling, HTTP
   methods, status codes, versioning, and documentation. Use when creating new
   APIs, designing endpoints, or improving existing API architecture.

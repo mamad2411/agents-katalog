@@ -5,7 +5,7 @@
 
 # Basic Information
 name: html-slides
-description: ">"
+description: "This skill enables creation of stunning HTML-based presentations using **reveal.js** - the web's most popular presentation framework. Create interactive, responsive slides with animations, code highlighting, speaker notes, and more."
 version: "1.0"
 author: claude-office-skills
 license: MIT

@@ -5,7 +5,7 @@
 
 # Basic Information
 name: doc-parser
-description: ">"
+description: "This skill enables advanced document parsing using **docling** - IBM's state-of-the-art document understanding library. Parse complex PDFs, Word documents, and images while preserving structure, extracting tables, figures, and handling multi-column layouts."
 version: "1.0"
 author: claude-office-skills
 license: MIT

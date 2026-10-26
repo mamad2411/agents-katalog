@@ -2,7 +2,7 @@
 name: face-swap
 displayName: "Face Swap"
 allowed-tools: Bash(runcomfy *)
-description: >
+description: "Swap a face / character into video or images on RunComfy via the `runcomfy` CLI. Routes across community Wan 2-2 Animate (audio-driven character animation + identity swap), GPT Image 2 Edit (single-shot precise face swap on still images via reference composition), Nano Banana Edit (batch identity-preserving swap), Flux Kontext (single-ref high-fidelity local face edit), and Kling 2-6 Motion Control Pro (transfer motion from one performance onto a target character). Picks the right model for the user's actual intent — single still vs video, full character vs face only, dialog scene vs silent mo"
   Swap a face / character into video or images on RunComfy via the
   `runcomfy` CLI. Routes across community Wan 2-2 Animate (audio-driven
   character animation + identity swap), GPT Image 2 Edit (single-shot

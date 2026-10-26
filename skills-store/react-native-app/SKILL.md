@@ -1,6 +1,6 @@
 ---
 name: react-native-app
-description: >
+description: "Build cross-platform mobile apps with React Native. Covers navigation with React Navigation, state management with Redux/Context API, API integration, and platform-specific features."
   Build cross-platform mobile apps with React Native. Covers navigation with
   React Navigation, state management with Redux/Context API, API integration,
   and platform-specific features.

@@ -5,7 +5,7 @@
 
 # Basic Information
 name: md-to-office
-description: ">"
+description: "This skill enables conversion from Markdown to various Office formats using **Pandoc** - the universal document converter. Convert your Markdown files to professional Word documents, PowerPoint presentations, PDFs, and more while preserving formatting and structure."
 version: "1.0"
 author: claude-office-skills
 license: MIT

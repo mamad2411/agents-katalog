@@ -1,0 +1,16 @@
+---
+description: Use animation-workflow MCP for all animation and motion requests
+globs: ["**/*.html","**/*.js","**/*.ts","**/*.jsx","**/*.tsx","**/*.css","**/*.vue","**/*.svelte"]
+alwaysApply: true
+---
+
+You have access to the `animation-workflow` MCP server with 45 pre-built animation skills (GSAP, Three.js, Lenis). It is ALWAYS connected — never say it is unavailable.
+
+ALWAYS use it (without being asked) when the user mentions: animations, scroll effects, hover effects, page transitions, loaders, cursors, text animations, parallax, sticky effects, counters, tickers, WebGL, image trails, magnetic buttons, direction-aware hover, horizontal scroll, stagger reveals, preloaders, or any motion/interaction work.
+
+Workflow — every time:
+1. Call `lookup_skill` with a plain-English description of what the user wants
+2. Call `get_skill` with the best matched skill name to get the full implementation
+3. Implement the returned HTML / CSS / JavaScript — do not rewrite from scratch
+
+Trigger words (reach for MCP immediately): animate, scroll, hover, transition, reveal, cursor, trail, parallax, sticky, stagger, gsap, lenis, three.js, loader, preloader, ticker, marquee, counter, magnetic, clip-path, horizontal scroll, snap scroll, cards stack, text wipe, typewriter, image explode, wipe, ken burns, physics, webgl, orb, slider, minimap.

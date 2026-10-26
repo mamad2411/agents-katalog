@@ -2,7 +2,7 @@
 name: seedance-2-5-reference-to-video
 allowed-tools: Bash(runcomfy *)
 displayName: "Seedance 2.5 Reference to Video"
-description: >
+description: "Generate reference-guided 1080p video with ByteDance Seedance 2.5 Reference to Video on RunComfy via the `runcomfy` CLI. Feed up to 9 reference images, 1-3 reference video clips, and 3 reference audio files into one call and get a 4-30 second 1080p clip with native synchronized audio, identity and style locked to your references. Documents the full input schema (images / videos / audios / aspect_ratio / duration / generate_audio), the counted-seconds billing model ($0.53 per second of reference video duration plus output duration), the 480p draft-then-deliver workflow, and when to route to See"
   Generate reference-guided 1080p video with ByteDance Seedance 2.5
   Reference to Video on RunComfy via the `runcomfy` CLI. Feed up to 9
   reference images, 1-3 reference video clips, and 3 reference audio

@@ -1,6 +1,6 @@
 ---
 name: insforge-debug
-description: >-
+description: "Use when diagnosing problems in an InsForge project — reactive failures (SDK error object, HTTP 4xx/5xx, gateway timeout 502/503/504, edge function failure or timeout, login/OAuth/auth errors, RLS denial, realtime channel issues, slow query on one endpoint, edge function or Vercel deploy failure), proactive audits (security/RLS review, performance/index review, system health check, pre-launch readiness), or when the user has an error but doesn't know where to start."
   Use when diagnosing problems in an InsForge project — reactive failures (SDK
   error object, HTTP 4xx/5xx, gateway timeout 502/503/504, edge function failure
   or timeout, login/OAuth/auth errors, RLS denial, realtime channel issues,

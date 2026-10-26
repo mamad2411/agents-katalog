@@ -1,6 +1,6 @@
 ---
 name: batch-processing-jobs
-description: >
+description: "Implement robust batch processing systems with job queues, schedulers, background tasks, and distributed workers. Use when processing large datasets, scheduled tasks, async operations, or resource-intensive computations."
   Implement robust batch processing systems with job queues, schedulers,
   background tasks, and distributed workers. Use when processing large datasets,
   scheduled tasks, async operations, or resource-intensive computations.

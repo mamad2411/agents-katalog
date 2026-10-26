@@ -1,6 +1,6 @@
 ---
 name: browser-debugging
-description: >
+description: "Debug client-side issues using browser developer tools. Identify JavaScript errors, styling issues, and performance problems in the browser."
   Debug client-side issues using browser developer tools. Identify JavaScript
   errors, styling issues, and performance problems in the browser.
 ---

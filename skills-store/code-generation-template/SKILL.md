@@ -1,6 +1,6 @@
 ---
 name: code-generation-template
-description: >
+description: "Generate code from templates and patterns including scaffolding, boilerplate generation, AST-based code generation, and template engines. Use when generating code, scaffolding projects, creating boilerplate, or using templates."
   Generate code from templates and patterns including scaffolding, boilerplate
   generation, AST-based code generation, and template engines. Use when
   generating code, scaffolding projects, creating boilerplate, or using

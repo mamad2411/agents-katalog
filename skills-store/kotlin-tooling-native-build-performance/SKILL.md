@@ -1,6 +1,6 @@
 ---
 name: kotlin-tooling-native-build-performance
-description: >
+description: "Diagnoses and fixes slow Kotlin/Native compilation and linking in Kotlin Multiplatform projects that target iOS. Use when the user reports slow iOS or shared-framework builds, long linkDebug*/linkRelease* or XCFramework tasks, cold CI builds that re-download the Kotlin/Native toolchain, KSP or other generated code on the native path, transitiveExport usage, or asks for a local-development versus CI build performance plan."
   Diagnoses and fixes slow Kotlin/Native compilation and linking in Kotlin
   Multiplatform projects that target iOS. Use when the user reports slow iOS or
   shared-framework builds, long linkDebug*/linkRelease* or XCFramework tasks,

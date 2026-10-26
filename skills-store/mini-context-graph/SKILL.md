@@ -1,6 +1,6 @@
 ---
 name: mini-context-graph
-description: |
+description: "A persistent, compounding knowledge base combining Karpathy's LLM Wiki pattern with a structured knowledge graph. Ingest documents once — the LLM writes wiki pages, extracts entities/relations into the graph, and stores raw content for evidence retrieval. Knowledge accumulates and cross-references; it is never re-derived from scratch."
   A persistent, compounding knowledge base combining Karpathy's LLM Wiki pattern
   with a structured knowledge graph. Ingest documents once — the LLM writes wiki
   pages, extracts entities/relations into the graph, and stores raw content for

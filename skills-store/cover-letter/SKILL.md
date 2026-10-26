@@ -5,7 +5,7 @@
 
 # Basic Information
 name: cover-letter
-description: ">"
+description: "This skill helps you write personalized, compelling cover letters that effectively communicate your value to potential employers and increase your chances of landing interviews."
 version: "1.0.0"
 author: Claude Office Skills Contributors
 license: MIT

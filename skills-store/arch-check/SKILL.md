@@ -1,6 +1,6 @@
 ---
 name: arch-check
-description: >
+description: "Architecture conformance check: verifies an existing codebase against its declared architecture (VSA, Clean Architecture, DDD, Modular Monolith) — dependency direction, layer violations, module boundary leaks, and cycles — using token-cheap Roslyn MCP analysis. Invoke when: 'check architecture', 'architecture violations', 'layer violations', 'dependency direction', 'module boundaries', 'arch check', 'is my architecture clean', 'enforce architecture', 'conformance check'. For CHOOSING an architecture, use architecture-advisor instead."
   Architecture conformance check: verifies an existing codebase against its
   declared architecture (VSA, Clean Architecture, DDD, Modular Monolith) —
   dependency direction, layer violations, module boundary leaks, and cycles —

@@ -2,7 +2,7 @@
 name: bigquery-ai-ml
 metadata:
   category: AiAndMachineLearning
-description: >-
+description: "Leverages BigQuery's built-in machine learning and GenAI capabilities for advanced data analytics. Use when you need to write SQL queries that perform time-series forecasting, predict values, detect outliers or anomalies, find key drivers, perform semantic search or vector search, classify text, calculate similarity, summarize content, translate language, evaluate models, filter by semantic conditions, or leverage generative AI capabilities in BigQuery. Do not use for general BigQuery dataset, table, or job management requests."
   Leverages BigQuery's built-in machine learning and GenAI capabilities
   for advanced data analytics. Use when you need to write SQL queries
   that perform time-series forecasting, predict values, detect outliers or anomalies, find key drivers,

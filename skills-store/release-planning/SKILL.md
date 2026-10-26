@@ -1,6 +1,6 @@
 ---
 name: release-planning
-description: >
+description: "Plan, coordinate, and execute software releases across environments. Manage versioning, rollout strategies, rollback procedures, and stakeholder communication for smooth deployments."
   Plan, coordinate, and execute software releases across environments. Manage
   versioning, rollout strategies, rollback procedures, and stakeholder
   communication for smooth deployments.

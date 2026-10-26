@@ -1,6 +1,6 @@
 ---
 name: debug-issue-with-datadog
-description: |
+description: "Establish root cause by combining Datadog telemetry with the Langfuse repo. Use when investigating or triaging a user report, Linear or GitHub issue, incident, or pasted production error."
   Establish root cause by combining Datadog telemetry with the Langfuse repo.
   Use when investigating or triaging a user report, Linear or GitHub issue,
   incident, or pasted production error.

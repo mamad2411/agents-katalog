@@ -1,6 +1,6 @@
 ---
 name: caching-strategy
-description: >
+description: "Implement efficient caching strategies using Redis, Memcached, CDN, and cache invalidation patterns. Use when optimizing application performance, reducing database load, or improving response times."
   Implement efficient caching strategies using Redis, Memcached, CDN, and cache
   invalidation patterns. Use when optimizing application performance, reducing
   database load, or improving response times.

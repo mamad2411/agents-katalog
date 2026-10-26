@@ -1,6 +1,6 @@
 ---
 name: image-optimization
-description: >
+description: "Optimize images for web to reduce file size without sacrificing quality. Use compression, modern formats, and responsive techniques for faster loading."
   Optimize images for web to reduce file size without sacrificing quality. Use
   compression, modern formats, and responsive techniques for faster loading.
 ---

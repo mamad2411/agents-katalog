@@ -1,6 +1,6 @@
 ---
 name: log-analysis
-description: >
+description: "Analyze application and system logs to identify errors, patterns, and root causes. Use log aggregation tools and structured logging for effective debugging."
   Analyze application and system logs to identify errors, patterns, and root
   causes. Use log aggregation tools and structured logging for effective
   debugging.

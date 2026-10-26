@@ -5,7 +5,7 @@
 
 # Basic Information
 name: nda-generator
-description: ">"
+description: "I help you create professional Non-Disclosure Agreements (NDAs) for various business situations. Whether you're meeting potential investors, hiring contractors, or exploring partnerships, I'll generate an appropriate NDA."
 version: "1.0.0"
 author: claude-office-skills
 license: MIT

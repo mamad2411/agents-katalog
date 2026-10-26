@@ -1,6 +1,6 @@
 ---
 name: google-mobile-ads-get-started
-description: >-
+description: "Provides instructions for integrating the Google Mobile Ads (GMA) SDK. Use this skill when the user wants to get started with, install, integrate, set up, or configure the SDK for AdMob or Ad Manager, GMA Next-Gen SDK or mobile ads framework in an Android, iOS, or Unity application."
   Provides instructions for integrating the Google Mobile Ads (GMA)
   SDK. Use this skill when the user wants to get started with, install,
   integrate, set up, or configure the SDK for AdMob or Ad Manager, GMA Next-Gen

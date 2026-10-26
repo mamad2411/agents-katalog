@@ -1,6 +1,6 @@
 ---
 name: scaffold
-description: >
+description: "Architecture-aware feature scaffolding for .NET 10 projects. Detects the project's architecture (VSA, Clean Architecture, DDD, Modular Monolith) and generates complete feature slices with all required layers: endpoint, handler, validator, DTOs, EF configuration, and integration tests — with the completeness checklist and per-architecture code templates every generated feature must satisfy. Use when: 'scaffold', 'create feature', 'add feature', 'new endpoint', 'generate', 'add entity', 'scaffold a module', 'add module', or when customizing generation templates or defining what a complete featur"
   Architecture-aware feature scaffolding for .NET 10 projects. Detects the
   project's architecture (VSA, Clean Architecture, DDD, Modular Monolith) and
   generates complete feature slices with all required layers: endpoint,

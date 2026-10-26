@@ -17,8 +17,6 @@ Agent langsung: cek -> bersih aman -> lapor singkat. Jangan ceramah.
 ## Scripts
 
 - scripts/check.sh : suhu + RAM + CPU + top 10 proses + ukuran cache.
-- scripts/clean.sh : hapus cache aman (user, browser sisa, xcode sisa,
-  node, python). TIDAK hapus data vault, TIDAK hapus password/login.
 - scripts/plugin_audit.sh : daftar plugin Obsidian + tandai yang berat,
   matikan yang berat otomatis (default OFF: excalidraw, git).
 

@@ -1,6 +1,6 @@
 ---
 name: ima-sdk-client-side
-description: >-
+description: "Supports Interactive Media Ads (IMA) SDK. Use this skill for client-side ad insertion when you are requesting video ads for websites, apps, TVs or other platforms using VAST or VMAP. Do not use for Dynamic Ad Insertion (DAI), SSAI, or SGAI."
   Supports Interactive Media Ads (IMA) SDK.
   Use this skill for client-side ad insertion when you are requesting video ads
   for websites, apps, TVs or other platforms using VAST or VMAP.

@@ -1,6 +1,6 @@
 ---
 name: cross-platform-compatibility
-description: >
+description: "Handle cross-platform compatibility including file paths, environment detection, platform-specific dependencies, and testing across Windows, macOS, and Linux. Use when dealing with platform-specific code or OS compatibility."
   Handle cross-platform compatibility including file paths, environment
   detection, platform-specific dependencies, and testing across Windows, macOS,
   and Linux. Use when dealing with platform-specific code or OS compatibility.

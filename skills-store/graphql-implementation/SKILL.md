@@ -1,6 +1,6 @@
 ---
 name: graphql-implementation
-description: >
+description: "Design and implement GraphQL APIs with schema design, resolvers, queries, mutations, subscriptions, and best practices. Use when building GraphQL servers, designing schemas, or migrating from REST to GraphQL."
   Design and implement GraphQL APIs with schema design, resolvers, queries,
   mutations, subscriptions, and best practices. Use when building GraphQL
   servers, designing schemas, or migrating from REST to GraphQL.

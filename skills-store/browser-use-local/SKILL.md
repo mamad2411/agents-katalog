@@ -5,9 +5,33 @@ version: 1.0.0
 tags: [browser, playwright, gratis, headless]
 ---
 
-# Browser-Use Lokal (simple, tanpa batas)
+# Browser Lokal (Playwright headless)
 
-Buka web apa aja via Playwright headless. Gratis, tanpa API key.
+Buka halaman yang butuh JavaScript (SPA, dashboard, docs dinamis) tanpa API key.
 
-Pakai: scripts/browse.py "URL" — keluar TITLE + URL + isi halaman.
-Contoh: scripts/browse.py "https://github.com/x/y"
+## Pakai
+
+```bash
+python3 ~/.agents/skills-store/browser-use-local/scripts/browse.py "https://example.com"
+```
+
+Keluaran: `TITLE`, `URL` final (setelah redirect), dan isi halaman dalam teks.
+
+## Kapan dipakai
+
+- Halaman yang `curl`/webfetch hasilnya kosong karena render via JS
+- Butuh teks setelah login-less interaksi (tab, "load more")
+- Screenshot untuk referensi visual
+
+## Alur kerja AI
+
+1. Coba `webfetch` dulu (lebih murah). Gagal/kosong → skrip ini.
+2. Jangan menebak isi halaman: tempel hasil atau bilang gagal.
+3. Butuh screenshot/klik kompleks → pakai MCP playwright on-demand
+   (`mamat-mcp on playwright` → pakai → `mamat-mcp off playwright`).
+
+## Batasan
+
+- Headless sering diblok Cloudflare → laporkan, jangan akali.
+- Halaman butuh login: cookie tidak dibawa skrip ini.
+- Butuh Chromium Playwright terpasang (`playwright install chromium`).

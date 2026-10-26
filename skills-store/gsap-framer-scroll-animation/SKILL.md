@@ -1,6 +1,6 @@
 ---
 name: gsap-framer-scroll-animation
-description: >-
+description: "Use this skill whenever the user wants to build scroll animations, scroll effects, parallax, scroll-triggered reveals, pinned sections, horizontal scroll, text animations, or any motion tied to scroll position — in vanilla JS, React, or Next.js. Covers GSAP ScrollTrigger (pinning, scrubbing, snapping, timelines, horizontal scroll, ScrollSmoother, matchMedia) and Framer Motion / Motion v12 (useScroll, useTransform, useSpring, whileInView, variants). Use this skill even if the user just says 'animate on scroll', 'fade in as I scroll', 'make it scroll like Apple', 'parallax effect', 'sticky secti"
   Use this skill whenever the user wants to build scroll animations, scroll effects,
   parallax, scroll-triggered reveals, pinned sections, horizontal scroll, text animations,
   or any motion tied to scroll position — in vanilla JS, React, or Next.js.

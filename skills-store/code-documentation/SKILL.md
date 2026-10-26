@@ -1,6 +1,6 @@
 ---
 name: code-documentation
-description: >
+description: "Write comprehensive code documentation including JSDoc, Python docstrings, inline comments, function documentation, and API comments. Use when documenting code, writing docstrings, or creating inline documentation."
   Write comprehensive code documentation including JSDoc, Python docstrings,
   inline comments, function documentation, and API comments. Use when
   documenting code, writing docstrings, or creating inline documentation.

@@ -1,6 +1,6 @@
 ---
 name: brand-extract
-description: |
+description: "Extract a complete Brand Kit from a live website by driving the in-app browser. Use when a brand-extraction project opens with a site in the Browser tab, or when the user asks to 'extract a brand', 'pull the brand from <url>', 'get the colors/fonts/logo from this site', or build a brand/design system from a reference website. Pairs with the agent-browser tool for measurement and pauses for the user when an anti-bot wall blocks the page."
   Extract a complete Brand Kit from a live website by driving the in-app
   browser. Use when a brand-extraction project opens with a site in the Browser
   tab, or when the user asks to "extract a brand", "pull the brand from <url>",

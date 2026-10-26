@@ -1,7 +1,7 @@
 ---
 license: Apache-2.0
 name: doca-bf4-deployment
-description: >
+description: "WARNING: guides potentially IRREVERSIBLE BlueField-4 hardware operations (PLDM firmware burns, ISO reflashes, power cycles, BMC factory resets) that can brick firmware, corrupt boot media, or cause outages — a maintenance window and rollback plan are required, and every mutating step is governed by doca-hardware-safety, loaded alongside. Use this skill for BlueField-4 (BF4) day-1 platform bring-up from the BMC: installing the BlueField/DOCA bundle ISO onto the DPU (Grace, the Arm complex) over UEFI HTTP Boot, PXE, or Redfish Virtual Media; the PLDM firmware-update flow (BMC, NIC firmware, SBIO"
   WARNING: guides potentially IRREVERSIBLE BlueField-4 hardware
   operations (PLDM firmware burns, ISO reflashes, power cycles, BMC
   factory resets) that can brick firmware, corrupt boot media, or

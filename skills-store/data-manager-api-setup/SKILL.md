@@ -1,6 +1,6 @@
 ---
 name: data-manager-api-setup
-description: >-
+description: "Guides developers through client library installation and authentication setup steps for the Data Manager API. Use this skill when a user is getting started with the Data Manager API and needs to setup their local environment, install the client library, or setup access to the API. Don't use for implementing audience or event ingestion logic (use the data-manager-api-audience-ingestion or data-manager-api-event-ingestion skills instead)."
   Guides developers through client library installation and authentication setup
   steps for the Data Manager API. Use this skill when a user is getting started
   with the Data Manager API and needs to setup their local environment, install

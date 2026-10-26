@@ -1,6 +1,6 @@
 ---
 name: memory-leak-detection
-description: >
+description: "Detect and fix memory leaks using heap snapshots, memory profiling, and leak detection tools. Use when investigating memory growth, OOM errors, or optimizing memory usage."
   Detect and fix memory leaks using heap snapshots, memory profiling, and leak
   detection tools. Use when investigating memory growth, OOM errors, or
   optimizing memory usage.

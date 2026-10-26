@@ -1,6 +1,6 @@
 ---
 name: data-migration-scripts
-description: >
+description: "Create safe, reversible database migration scripts with rollback capabilities, data validation, and zero-downtime deployments. Use when changing database schemas, migrating data between systems, or performing large-scale data transformations."
   Create safe, reversible database migration scripts with rollback capabilities,
   data validation, and zero-downtime deployments. Use when changing database
   schemas, migrating data between systems, or performing large-scale data

@@ -1,6 +1,6 @@
 ---
 name: logging
-description: >
+description: "Observability overview and glue for .NET 10: how the pieces fit together, plus the cross-cutting parts owned here — ASP.NET health check endpoints (/health), correlation IDs, and log-level strategy. For deep Serilog setup load `serilog`; for traces and metrics load `opentelemetry`. Load this skill when setting up observability from scratch, wiring health check endpoints or correlation IDs, or when the user says 'logging', 'observability', 'monitoring setup', 'liveness', 'readiness', or 'ILogger'."
   Observability overview and glue for .NET 10: how the pieces fit together,
   plus the cross-cutting parts owned here — ASP.NET health check endpoints
   (/health), correlation IDs, and log-level strategy. For deep Serilog setup

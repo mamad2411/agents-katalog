@@ -1,6 +1,6 @@
 ---
 name: research-decision-room
-description: |
+description: "Turn messy user research notes, interviews, support tickets, surveys, and product context into an evidence-backed decision room: a single HTML artifact with an evidence ledger, theme map, confidence heatmap, opportunity matrix, decision memo, and experiment queue. Use when teams need to move from qualitative signals to product or design decisions without fabricating certainty."
   Turn messy user research notes, interviews, support tickets, surveys, and product
   context into an evidence-backed decision room: a single HTML artifact with an
   evidence ledger, theme map, confidence heatmap, opportunity matrix, decision

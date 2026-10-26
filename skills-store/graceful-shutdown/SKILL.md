@@ -1,6 +1,6 @@
 ---
 name: graceful-shutdown
-description: >
+description: "Implement graceful shutdown procedures to handle SIGTERM signals, drain connections, complete in-flight requests, and clean up resources properly. Use when deploying containerized applications, handling server restarts, or ensuring zero-downtime deployments."
   Implement graceful shutdown procedures to handle SIGTERM signals, drain
   connections, complete in-flight requests, and clean up resources properly. Use
   when deploying containerized applications, handling server restarts, or

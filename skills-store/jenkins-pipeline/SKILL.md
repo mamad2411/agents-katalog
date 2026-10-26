@@ -1,6 +1,6 @@
 ---
 name: jenkins-pipeline
-description: >
+description: "Build Jenkins declarative and scripted pipelines with stages, agents, parameters, and plugins. Implement multi-branch pipelines and deployment automation."
   Build Jenkins declarative and scripted pipelines with stages, agents,
   parameters, and plugins. Implement multi-branch pipelines and deployment
   automation.

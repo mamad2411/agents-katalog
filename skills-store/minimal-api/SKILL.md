@@ -1,6 +1,6 @@
 ---
 name: minimal-api
-description: >
+description: ".NET 10 minimal APIs — the default for building HTTP endpoints. Covers MapGroup, endpoint filters, TypedResults, OpenAPI metadata, parameter binding, and route conventions. Load this skill when creating API endpoints, configuring routing, setting up OpenAPI documentation, or when the user mentions 'endpoint', 'MapGet', 'MapPost', 'MapGroup', 'TypedResults', 'route', 'minimal API', 'OpenAPI', 'swagger', 'rate limiting', or 'output caching'."
   .NET 10 minimal APIs — the default for building HTTP endpoints. Covers MapGroup,
   endpoint filters, TypedResults, OpenAPI metadata, parameter binding, and route
   conventions.

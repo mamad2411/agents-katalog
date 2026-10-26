@@ -1,6 +1,6 @@
 ---
 name: pinecone-rag
-description: >
+description: "Build production RAG pipelines and persistent agent memory using Pinecone as the vector database backend. ALWAYS USE THIS SKILL when the user mentions Pinecone, wants to index documents for semantic search, build a retrieval-augmented generation system, store agent memory across sessions, implement hybrid search, or connect an LLM to a searchable knowledge base — even if they don't say 'Pinecone' explicitly. Also use when the user asks about vector databases for RAG, namespace isolation for multi-tenant agents, embedding pipelines, or scaling a knowledge base beyond what local storage can hand"
   Build production RAG pipelines and persistent agent memory using Pinecone as
   the vector database backend. ALWAYS USE THIS SKILL when the user mentions
   Pinecone, wants to index documents for semantic search, build a

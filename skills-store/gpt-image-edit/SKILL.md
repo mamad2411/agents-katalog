@@ -1,7 +1,7 @@
 ---
 name: gpt-image-edit
 displayName: "GPT Image Edit — Pro Pack on RunComfy"
-description: >
+description: "Edit images with OpenAI GPT Image 2 (the `/edit` endpoint of ChatGPT Images 2.0) on RunComfy — bundled with the model's documented prompting patterns so the skill gets sharper output than naive prompting against the same model. Documents GPT Image Edit's strengths (preservation language, multilingual in-image text editing, multi-reference up to 10 images, layout / typography precision), the schema, and when to route to Nano Banana Edit / Flux Kontext / GPT Image 2 t2i instead. Calls `runcomfy run openai/gpt-image-2/edit` through the local RunComfy CLI. Triggers on 'gpt image edit', 'gpt-image-"
   Edit images with OpenAI GPT Image 2 (the `/edit` endpoint of ChatGPT
   Images 2.0) on RunComfy — bundled with the model's documented
   prompting patterns so the skill gets sharper output than naive

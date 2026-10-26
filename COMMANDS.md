@@ -189,7 +189,7 @@ python3 ~/.agents/build_skills_index.py   # rebuild DB (FTS5, 3-tier, provenance
 python3 ~/.agents/skills-router.py        # regen SKILLS-AVAILABLE.md + skills-index.json
 python3 ~/.agents/skills-index-md.py      # regen skills-INDEX.md (ringkasan manusiawi)
 python3 ~/.agents/_categorize_roles.py    # pemetaan role -> skill (role-skill-map.json)
-python3 ~/.agents/skill-graph-api.py      # API graf skill+memory (port 27126, optional)
+python3 ~/.agents/skill-graph-api.py      # API graf skill+memory (port 27125, optional, launchd: disabled)
 ```
 
 ## MCP — AUDIT / KURASI / SIKLUS HIDUP / DOKTER

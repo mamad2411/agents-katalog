@@ -1,6 +1,6 @@
 ---
 name: load-balancer-setup
-description: >
+description: "Configure and deploy load balancers (HAProxy, AWS ELB/ALB/NLB) for distributing traffic, session management, and high availability."
   Configure and deploy load balancers (HAProxy, AWS ELB/ALB/NLB) for
   distributing traffic, session management, and high availability.
 ---

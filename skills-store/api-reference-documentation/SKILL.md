@@ -1,6 +1,6 @@
 ---
 name: api-reference-documentation
-description: >
+description: "Create comprehensive API reference documentation with OpenAPI/Swagger specs, REST endpoints, authentication, examples, and SDKs. Use when documenting REST APIs, GraphQL APIs, endpoint documentation, or OpenAPI specifications."
   Create comprehensive API reference documentation with OpenAPI/Swagger specs,
   REST endpoints, authentication, examples, and SDKs. Use when documenting REST
   APIs, GraphQL APIs, endpoint documentation, or OpenAPI specifications.
