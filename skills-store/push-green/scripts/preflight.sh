@@ -31,11 +31,12 @@ else
   ok "tidak ada file berubah"
 fi
 
-# 2. whitespace error
-if git diff --check >/tmp/pg_diffcheck 2>&1; then
+# 2. whitespace error (file katalog generated dikecualikan — memang ada trailing space)
+if git diff --check -- . ':(exclude)SKILLS-*.md' ':(exclude)skills-INDEX.md' \
+     ':(exclude)skills-expanded/**' ':(exclude)*.log' >/tmp/pg_diffcheck 2>&1; then
   ok "git diff --check bersih"
 else
-  bad "git diff --check: $(head -3 /tmp/pg_diffcheck | tr '\n' ' ')"
+  bad "git diff --check: $(/usr/bin/head -2 /tmp/pg_diffcheck | /usr/bin/tr '\n' ' ')"
 fi
 
 # 3. lint / typecheck / test / build (mode penuh — CI menjalankan semua ini)
