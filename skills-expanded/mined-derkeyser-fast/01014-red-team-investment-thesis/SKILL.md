@@ -1,0 +1,32 @@
+---
+name: red-team-investment-thesis
+description: "Wenn es um Red Team der Investment Thesis in Private Equity Praxis geht: zerlegt Ergebnis, Frist, Zuständigkeit, Beweislast und Gegenposition; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# Red Team der Investment Thesis
+
+## Fachkern: Red Team der Investment Thesis
+- **Normen-/Quellenanker:** GmbHG, AktG, UmwG, GWB/FKVO, AWG/AWV, KAGB/AIFM-Bezug, LMA-Finanzierung, InsO/StaRUG, Steuer- und Managementbeteiligungsfragen.
+- **Entscheidende Weiche:** Bestimme Dealphase, Fondsrolle, Target-Risiko, Finanzierungsstruktur, Consent/CP, Exit-Auswirkung und Konflikt zwischen Sponsor, Management, Lender und Co-Investor.
+
+## Wofür dieser Arbeitsgang da ist
+
+Der Skill ist für IC-Vorbereitung und Partner-Review gedacht.
+
+## Rechts- und Praxisanker
+
+Keine einzelne Norm, sondern Qualitätsgate: Belege, Annahmen, Worst Case, Exit-Downside.
+
+## Workflow
+
+1. Rolle, Parteiperspektive, Deal-Phase und Zeitdruck klären.
+2. Vorliegende Unterlagen benennen und fehlende Dokumente als konkrete Nachforderungsliste erfassen.
+3. Rechtsrahmen, wirtschaftlichen Hebel und Entscheidungspunkt trennen.
+4. Risikopunkte nach Deal Value, Closing-Fähigkeit, Haftung und Verhandlungshebel priorisieren.
+5. Verwertbaren Output erzeugen und offene Annahmen sichtbar markieren.
+
+## Qualitätsgate
+
+- Keine Blindzitate: Rechtsprechung, Behördenpraxis und Schwellenwerte vor tragender Aussage live anhand amtlicher oder frei zugänglicher Quellen prüfen.
+- Keine LMA-, Banken- oder Fondsformularsprache nacherzählen: Nutzer soll das aktuelle Dokument hochladen; der Skill arbeitet dann am konkreten Text.
+- Jede Annahme sichtbar markieren, insbesondere Zahlen, Fristen, regulatorische Rollen, Genehmigungsstand und Parteiperspektive.

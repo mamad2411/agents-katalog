@@ -1,0 +1,63 @@
+---
+name: erwerbsminderungsrente-belegfuehrung
+description: "Wenn es um Erwerbsminderungsrente Belegfuehrung in selbstvertreter-sozialgericht geht: ordnet Akteninhalt, Belege, Lücken und Nachforderungen; liefert ein direkt nutzbares Arbeitsprodukt mit Prüfpunkten, Risiken und nächstem Schritt."
+---
+
+# Erwerbsminderungsrente Belegfuehrung
+
+## Fachlicher Anker
+
+- **Normen:** § 7, § 7a, §§ 20.
+- **Entscheidungs-/Quellenanker:** Tragende Rechtsprechung nur mit Gericht, Datum, Aktenzeichen und frei prüfbarer Quelle einsetzen; keine Entscheidung aus Modellwissen erzwingen.
+- **Quellenhygiene:** `references/quellenhygiene.md` und `references/zitierweise.md` beachten.
+
+## Bedeutung
+
+EM-Rente steht und faellt mit der medizinischen Beweisfuehrung. Selbstvertreter müssen Belege aktiv sammeln und ordnen.
+
+## Belegtypen
+
+### Hausarztberichte
+- Laufende Befunde.
+- Diagnoseliste mit ICD-10.
+- Medikation.
+
+### Facharztberichte
+- Orthopaedie Neurologie Psychiatrie Innere.
+- Aktuelle Befunde.
+
+### Klinikentlassungsberichte
+- Stationaere Aufenthalte.
+- Diagnose und Therapieverlauf.
+
+### Reha-Entlassungsbericht
+- "Leistungsbild" am Ende.
+- Stunden taeglich Erwerbsfaehigkeit.
+- Letzte Änderung Leistungsbild als zentrales Dokument.
+
+### Privatgutachten
+- Optional bei Streit.
+- Kosten 800-2500 Euro.
+- Bei Erfolg Erstattung selten.
+
+### Pflegegrad-Bescheid
+- Indizwirkung für EM-Rente — nicht zwingend.
+
+### MD-Stellungnahme
+- Bei Anhörungen Akteneinsicht beantragen.
+
+## Strategie
+
+1. **Chronologische Sortierung**: Alle Belege nach Datum.
+2. **Diagnose-Cluster**: Welche Diagnose ist für EM relevant?
+3. **Tagesablauf-Tagebuch**: 14 Tage konkret dokumentieren.
+4. **Schweigepflichtentbindung** an behandelnde Aerzte.
+5. **Selbstauskunft** strukturiert.
+
+## Prüfraster
+
+1. Alle Behandler erfasst?
+2. Belege chronologisch?
+3. Diagnose-Cluster klar?
+4. Leistungsbild aus Reha-Bericht?
+5. Pflegegrad-Bezug?

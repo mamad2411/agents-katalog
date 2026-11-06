@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: aussenwirtschaft-zoll-sanktionen/skills/aussenwirtschaft-embargo-nordkorea/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Embargo Nordkorea: Umfassendes Sanktionsregime und Proliferationskontrolle in Außenwirtschaft, Sanktionen, Zoll und CBAM geht: zerlegt Ergebnis, Frist, Zuständigkeit, Beweislast und Gegenpo

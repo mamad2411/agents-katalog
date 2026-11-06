@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: fachanwalt-sozialrecht/skills/long-covid-gutachten-red-team/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Long Covid Gutachten Red Team in Fachanwalt Sozialrecht geht: zerlegt Ergebnis, Frist, Zuständigkeit, Beweislast und Gegenposition; liefert eine Fristen- und Risikoampel mit Sofortschritten

@@ -1,0 +1,36 @@
+{
+  "url": "https://linear.app",
+  "threshold": 0.3,
+  "viewports": {
+    "desktop": {
+      "status": "same",
+      "changedPercent": 0.016,
+      "noisePercent": 0.147,
+      "effectivePercent": 0.0,
+      "bbox": [
+        80,
+        3011,
+        242,
+        3188
+      ],
+      "heightBase": 9960,
+      "heightLast": 9960,
+      "diff": "/Users/chaali0324/.agents/refs/linear.app/visual/diff-desktop.png"
+    },
+    "mobile": {
+      "status": "same",
+      "changedPercent": 0.008,
+      "noisePercent": 0.0,
+      "effectivePercent": 0.008,
+      "bbox": [
+        299,
+        1312,
+        365,
+        3926
+      ],
+      "heightBase": 11752,
+      "heightLast": 11752,
+      "diff": "/Users/chaali0324/.agents/refs/linear.app/visual/diff-mobile.png"
+    }
+  }
+}

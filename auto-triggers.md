@@ -56,6 +56,7 @@ Codex/Gemini/Cursor/CodeBuddy menjalankan langkahnya langsung.
 | ingat, catat, lupa, memori | `linkedin-obsidian-memory-graph/scripts/{save,recall}.sh` |
 | vault obsidian | `obsidian-llm-bridge` scripts |
 | referensi UI sebelum koding | `framer-reference/scripts/framer-ref.sh <url>` |
+| UI/UX profesional, layout, design system | baca `~/.agents/DESIGN-PLAYBOOK.md` + `sk --design` |
 | prompt berantakan | `prompt-booster/scripts/tidy.sh` |
 
 ## Cara pakai tabel ini

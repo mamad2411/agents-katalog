@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if page.title and page.title != site.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
+<meta name="description" content="{{ site.description }}">
+<meta property="og:title" content="{{ page.title | default: site.title }}">
+<meta property="og:description" content="{{ site.description }}">
+<meta property="og:image" content="https://raw.githubusercontent.com/kajisho5/ffmpeg-skill/main/assets/social-preview.png">
+<link rel="icon" href="{{ '/brand/app-icon.png' | relative_url }}">
+<style>
+:root {
+  --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --line: #d1d9e0;
+  --link: #0969da; --code-bg: #f6f8fa; --nav-bg: #f6f8fa;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d;
+    --link: #4493f8; --code-bg: #151b23; --nav-bg: #151b23;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+nav {
+  position: sticky; top: 0; z-index: 1; background: var(--nav-bg);
+  border-bottom: 1px solid var(--line);
+}
+nav .in {
+  max-width: 980px; margin: 0 auto; padding: 10px 16px;
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+}
+nav .brand { font-weight: 600; color: var(--fg); margin-right: auto; }
+main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; overflow-wrap: anywhere; }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 .6em; }
+h1, h2 { padding-bottom: .3em; border-bottom: 1px solid var(--line); }
+img { max-width: 100%; }
+img:not([height]) { height: auto; }
+code, pre { font: 85%/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+code { background: var(--code-bg); padding: .15em .35em; border-radius: 6px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 6px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; vertical-align: top; }
+blockquote { margin: 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+hr { border: 0; border-top: 1px solid var(--line); }
+footer { max-width: 980px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<nav><div class="in">
+  <a class="brand" href="{{ '/' | relative_url }}">ffmpeg-skill</a>
+  <a href="{{ '/docs/demos.html' | relative_url }}">Demos</a>
+  <a href="{{ '/docs/contract.html' | relative_url }}">Contract</a>
+  <a href="{{ '/docs/design-decisions.html' | relative_url }}">Design decisions</a>
+  <a href="{{ '/CHANGELOG.html' | relative_url }}">Changelog</a>
+  <a href="https://github.com/kajisho5/ffmpeg-skill">GitHub</a>
+</div></nav>
+<main>
+{{ content }}
+</main>
+<footer>Generated from the repository's own Markdown by <code>.github/scripts/build_pages.py</code>. Source: <a href="https://github.com/kajisho5/ffmpeg-skill">kajisho5/ffmpeg-skill</a> · MIT</footer>
+</body>
+</html>

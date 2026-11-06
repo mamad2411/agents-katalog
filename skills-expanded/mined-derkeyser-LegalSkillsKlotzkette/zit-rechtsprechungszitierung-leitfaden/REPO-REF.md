@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: zitierweise-deutsches-recht/skills/zit-rechtsprechungszitierung-leitfaden/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Zit: Rechtsprechungszitierung in Zitierweise deutsches Recht geht: ordnet Akteninhalt, Belege, Lücken und Nachforderungen; liefert eine Schnittstellenkarte mit Kollisions-, Zuständigkeits- 

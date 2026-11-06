@@ -20,18 +20,23 @@ Q = os.path.expanduser("~/.agents/quarantine")
 
 # (nama, bobot, regex)
 SIG = [
-    ("override", 3, re.compile(r"(ignore|disregard|forget|override)\s+(all\s+|any\s+)?(of\s+)?(your\s+|the\s+|my\s+)?(previous|prior|above|earlier|system|safety)?\s*(instructions?|prompts?|rules?|constraints?|guidelines?|directives?)", re.I)),
+    ("override", 3, re.compile(r"(ignore|disregard|forget|override)\s+((all|any|of|your|the|my|previous|prior|above|earlier|system|safety)\s+)+(instructions?|prompts?|rules?|constraints?|guidelines?|directives?)|(ignore|disregard|forget)\s+(instructions?|prompts?)\b", re.I)),
     ("system-spoof", 3, re.compile(r"(new\s+system\s+prompt|<\s*/?\s*system\s*>|###\s*(new\s+)?system\s+prompt|^\s*system\s*:\s*you\s+are)", re.I | re.M)),
     ("jailbreak", 3, re.compile(r"\b(jailbreak|DAN\s+mode|god\s+mode|unrestricted\s+mode|no\s+restrictions|without\s+any\s+restrictions|bypass\s+(your\s+)?(safety|guardrails?|filters?))\b", re.I)),
     ("covert", 3, re.compile(r"(do\s+not|don'?t|never)\s+(tell|inform|mention|reveal|alert)\s+(the\s+)?(user|human|operator)s?\s*(about|what|anything\s+about)\b|(do\s+not|don'?t|never)\s+(tell|inform|mention|reveal)\s+(the\s+)?(user|human|operator)s?\s*[.!]?\s*$|without\s+(telling|informing|alerting)\s+(the\s+)?(user|human)|secretly\s+(send|upload|post|install|modify|run|execute|add|write|delete)|hide\s+(this|it)\s+from\s+(the\s+)?(user|human|operator)", re.I)),
-    ("exfil", 4, re.compile(r"(exfiltrate|leak)\b[^\n]{0,60}https?://|(send|upload|post|transmit)\s+(the\s+|your\s+|all\s+)?(data|files?|contents?|output|results?|keys?|tokens?|passwords?|secrets?|credentials?|\.env|\.ssh|logs?)\b[^\n]{0,40}(to|at)\s*https?://|(send|upload|post|transmit|exfiltrate|leak)\s+(the\s+|your\s+|all\s+|my\s+|any\s+)?(api[\s_-]?key|access\s+token|secret|credentials?|passwords?|\.env|\.ssh)", re.I)),
-    ("persist", 3, re.compile(r"(append|add|write)\b[^\n]{0,40}(to|into)\b[^\n]{0,30}(AGENTS\.md|CLAUDE\.md|\.cursorrules|\.bashrc|\.zshrc|settings\.json)", re.I)),
+    ("exfil", 4, re.compile(r"(exfiltrate|leak)\s+(the\s+|all\s+|your\s+|my\s+)?(data|files?|contents?|output|results?|keys?|tokens?|passwords?|secrets?|credentials?|\.env|\.ssh|logs?)\b[^\n]{0,60}https?://|(send|upload|post|transmit)\s+(the\s+|your\s+|all\s+)?(data|files?|contents?|output|results?|keys?|tokens?|passwords?|secrets?|credentials?|\.env|\.ssh|logs?)\b[^\n]{0,40}(to|at)\s*https?://|(send|upload|post|transmit|exfiltrate|leak)\s+(the\s+|your\s+|all\s+|my\s+|any\s+)?(api[\s_-]?key|access\s+token|secret|credentials?|passwords?|\.env|\.ssh)", re.I)),
+    ("persist", 1, re.compile(r"(append|add|write)\b[^\n]{0,40}(to|into)\b[^\n]{0,30}(AGENTS\.md|CLAUDE\.md|\.cursorrules|\.bashrc|\.zshrc|settings\.json)", re.I)),
     ("override-id", 3, re.compile(r"\b(abaikan|lupakan|jangan\s+hiraukan|lupakanlah)\b\s+(semua\s+)?(aturan|instruksi|perintah|petunjuk|prompt)\s*(sebelumnya|di\s+atas|tadi|yang\s+ada)?", re.I)),
     ("covert-id", 4, re.compile(r"jangan\s+(beri\s*tahu|beritahu|bilang|sebut|ungkap)\s*(ke\s+)?(user|pengguna|manusia)|tanpa\s+sepengetahuan\s+(user|pengguna)", re.I)),
 ]
 PERSONA = re.compile(r"(you\s+are\s+now\s+[A-Z\"']|kamu\s+sekarang\s+(adalah|jadi|berperan)|mulai\s+sekarang\s+kamu\s+adalah)", re.I)
 LOCK = re.compile(r"(no\s+exit\s+command|never\s+break\s+character|stay\s+in\s+character|this\s+is\s+permanent|you\s+cannot\s+stop|no\s+way\s+to\s+(stop|exit)|do\s+not\s+acknowledge|tidak\s+ada\s+(perintah\s+)?(keluar|exit)|ini\s+permanen|tidak\s+bisa\s+berhenti)", re.I)
 INVIS = re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u202a-\u202e]")
+# heading yang isinya justru membahas/melarang pola injeksi — di situ "ignore rules"
+# adalah objek pembicaraan, bukan perintah. (lihat audit 2026-10-27)
+HEAD_DEF = re.compile(r"^\s{0,3}#{1,6}\s.*(anti-?pattern|mistake|kesalahan|jangan|avoid|security|safety|boundar|threat|risk|deteksi|detect|pencegahan|hardening|larangan)", re.I)
+# negasi tepat sebelum frasa = "jangan lakukan X", bukan "lakukan X"
+NEG_BEFORE = re.compile(r"\b(never|not|don'?t|do\s+not|avoid|jangan|tanpa|no)\b", re.I)
 # konteks yang menandakan "cuma menyebut", bukan memerintah
 MENTION = re.compile(r"(example|e\.g\.|such\s+as|for\s+instance|detect|detector|scanner|scan\s+for|threat|attack|injection\s+pattern|prompt\s+injection|regex|pattern|test\s+case|sample|payload|mitigat|prevent|block|guard|do\s+not\s+follow|never\s+follow|avoid|red\s*-?\s*team|ioc|indicator|(not|never|n't)\s+\w*\s*(process|store|transmit|send|upload|leak|follow))", re.I)
 
@@ -67,6 +72,7 @@ def scan_text(txt):
     """kembalikan list temuan: (line_no, kategori, bobot, potongan)"""
     out = []
     fence = False
+    defensive = False
     persona = bool(PERSONA.search(txt))
     lock = bool(LOCK.search(txt))
     for i, line in enumerate(txt.split("\n"), 1):
@@ -75,10 +81,20 @@ def scan_text(txt):
             continue
         if fence:
             continue
+        if line.lstrip().startswith("#"):
+            defensive = bool(HEAD_DEF.search(line))
         for name, w, rx in SIG:
-            if not rx.search(line):
+            m = rx.search(line)
+            if not m:
                 continue
-            if is_mention(line, m.start() if (m := rx.search(line)) else 0):
+            if is_mention(line, m.start()):
+                continue
+            # bagian keamanan/anti-pattern: pola cuma disebut, bukan diperintahkan
+            if defensive and name in ("override", "override-id", "jailbreak", "system-spoof", "exfil"):
+                continue
+            # "never ignore ...", "jangan abaikan ..." = justru melarang.
+            # covert TIDAK ikut: "jangan bilang ke user" justru sinyal utamanya.
+            if name in ("override", "override-id", "exfil", "jailbreak") and NEG_BEFORE.search(line[:m.start()]):
                 continue
             out.append((i, name, w, line.strip()[:110]))
         if persona and lock and PERSONA.search(line) and not is_mention(line, PERSONA.search(line).start()):
@@ -116,6 +132,16 @@ def dedupe(hits):
 
 def score_of(hits):
     return min(6, sum(w for _, _, w, _ in hits if w))
+
+
+REF_DOCS = {"REPO-REF.md"}
+
+
+def score_for(path, hits):
+    """REPO-REF.md = ringkasan referensi hasil generate, tidak pernah di-load
+    sebagai instruksi; kutipan marketing di dalamnya bukan perintah."""
+    s = score_of(hits)
+    return min(s, 1) if os.path.basename(path) in REF_DOCS else s
 
 
 def scan_file(p):
@@ -158,7 +184,7 @@ def cmd_scan(paths, as_json=False, check=False):
         hits = scan_file(f)
         if not hits:
             continue
-        score = score_of(hits)
+        score = score_for(f, hits)
         rows.append({"file": f, "score": score, "verdict": verdict(score), "hits": [{"line": h[0], "kind": h[1], "text": h[3]} for h in hits]})
     rows.sort(key=lambda r: -r["score"])
     if as_json:

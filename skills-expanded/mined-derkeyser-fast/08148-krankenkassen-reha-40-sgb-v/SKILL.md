@@ -1,0 +1,57 @@
+---
+name: krankenkassen-reha-40-sgb-v
+description: "Wenn es um Krankenkassen Reha 40 Sgb V in selbstvertreter-sozialgericht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# Krankenkassen Reha 40 Sgb V
+
+## Fachlicher Anker
+
+- **Normen:** § 7, § 7a, §§ 20.
+- **Entscheidungs-/Quellenanker:** Tragende Rechtsprechung nur mit Gericht, Datum, Aktenzeichen und frei prüfbarer Quelle einsetzen; keine Entscheidung aus Modellwissen erzwingen.
+- **Quellenhygiene:** `references/quellenhygiene.md` und `references/zitierweise.md` beachten.
+
+## Anspruch
+
+§ 40 Abs. 1 SGB V: Reha ambulant stationaer als Leistung der Krankenkasse, wenn ambulante Behandlung nicht ausreicht.
+
+## Voraussetzungen
+
+- Erkrankung mit Reha-Bedarf.
+- Aerztliche Verordnung.
+- Krankenkasse pruet Geeignetheit.
+
+## Formen
+
+### Ambulante Reha
+- 4-6 Stunden tgl. über 3 Wochen.
+- Wohnortnah.
+
+### Stationaere Reha
+- Klinikaufenthalt.
+- 3 Wochen, Verlaengerung möglich.
+
+### Mutter-Vater-Kind-Kur § 41 SGB V
+- 3 Wochen Klinikaufenthalt mit Kindbetreuung.
+
+### Anschlussheilbehandlung (AHB)
+- Nach Krankenhausaufenthalt.
+- Direkter Uebergang in Reha.
+
+## Abgrenzung zur DRV-Reha
+
+- Krankenkasse: bei akuter Erkrankungsfolge.
+- Rentenversicherung: bei drohender Erwerbsminderung (Pflicht der DRV § 11 SGB VI).
+- "Reha vor Rente" — DRV prüft Reha vor EM-Rente.
+
+## Wahlrecht § 8 SGB IX
+
+- Wunsch- und Wahlrecht hinsichtlich Klinik.
+
+## Prüfraster
+
+1. Aerztliche Verordnung (Muster 61)?
+2. Reha-Bedarf belegbar?
+3. Welcher Traeger zuständig?
+4. Wahlrecht beachtet?
+5. AHB-Anschluss möglich?

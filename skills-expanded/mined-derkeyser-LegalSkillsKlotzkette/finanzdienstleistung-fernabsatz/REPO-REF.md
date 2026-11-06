@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: verbraucherschutzrecht-pruefer/skills/finanzdienstleistung-fernabsatz/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Finanzdienstleistung Fernabsatz in Verbraucherschutzrecht Prüfer geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschri

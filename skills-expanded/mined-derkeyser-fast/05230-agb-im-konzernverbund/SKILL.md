@@ -1,0 +1,44 @@
+---
+name: agb-im-konzernverbund
+description: "Wenn es um Agb Im Konzernverbund in AGB-Recht-Prüfer geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# Agb Im Konzernverbund
+
+## Fachkern: Agb Im Konzernverbund
+
+- **Klauselproblem (Agb Im Konzernverbund):** Cash-Pooling Cross-Cluster-Services Konzernverrechnungspreise und § 307 BGB. Liefert Prüfraster.
+- **AGB-Weiche:** Einbeziehung (§ 305 BGB), überraschende Klausel (§ 305c BGB), Transparenz (§ 307 Abs. 1 S. 2 BGB), Inhaltskontrolle (§§ 307-309 BGB), Rechtsfolge (§ 306 BGB) und Prozess-/Verbandsrisiko sauber trennen.
+- **Beleglogik:** Originalklausel, Vertragsumfeld, Verwendungsnachweis, Verhandlungsspuren, Kundengruppe, Marktstandard und wirtschaftliche Wirkung als Matrix erfassen.
+- **Arbeitsprodukt:** Klauselampel, Redline, Ersatzformulierung, Verhandlungsposition und gerichtsfeste Kurzbegründung mit Live-Check amtlicher Normenquellen.
+
+## Norm
+
+- § 305 Abs. 1 BGB: AGB-Eigenschaft setzt Stellung für "Vielzahl von Vertraegen" voraus.
+- In Konzernvertraegen oft vorformuliert, aber individuell ausgehandelt.
+- § 310 Abs. 1 BGB: B2B-Wertungen.
+
+## Typische Konzernklauseln
+
+### Service-Level-Agreements (SLA)
+- Standardisierte Leistungsbeschreibungen mit Sanktionen bei Nichterfuellung.
+- AGB-rechtliche Prüfung der Haftungsbegrenzung.
+
+### Cash-Pooling-Vereinbarungen
+- BGH II ZR 102/07 zu Cash-Pool-Risiken.
+- Haftungsausschluesse müssen § 307 BGB standhalten.
+
+### Konzernverrechnungspreise
+- Steuerlich Transferpreise nach OECD-RL.
+- AGB-rechtlich Transparenzgebot.
+
+### Cross-Cluster-Services
+- Verträge zwischen verschiedenen Konzernteilen über gemeinsame Dienstleistungen (IT, HR, Finance).
+- Standardisierung typisch — § 305 BGB greift.
+
+## Prüfraster
+
+1. Vorformulierung für Vielzahl von Vertraegen?
+2. Individuell ausgehandelt?
+3. § 307 BGB-Risiko?
+4. Steuerliche und kartellrechtliche Wechselwirkung?

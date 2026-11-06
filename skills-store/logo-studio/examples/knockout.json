@@ -1,0 +1,16 @@
+{
+  "name": "knockout",
+  "size": [1000, 1000],
+  "palette": { "ink": "#0a1420", "paper": "#f2f0ea" },
+  "shapes": [
+    { "id": "disc", "circle": [500, 500, 460], "fill": "ink" },
+    {
+      "id": "letter",
+      "glyph": { "text": "K", "font": "Avenir Next", "style": "Heavy", "height": 470 },
+      "center": [500, 500],
+      "fill": "ink"
+    }
+  ],
+  "ops": [{ "op": "subtract", "a": "disc", "b": "letter", "out": "cut" }],
+  "draw": ["cut"]
+}

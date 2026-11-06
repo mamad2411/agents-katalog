@@ -1,18 +1,17 @@
 # Laporan belajar skill
 
-Dibuat: 2026-10-26 09:00 · jendela 30 hari · ambang naik kelas: 3 pemakaian
+Dibuat: 2026-11-02 09:33 · jendela 30 hari · ambang naik kelas: 3 pemakaian
 
 ## Paling sering dipakai
 
-- `prd` — 1×
 - `frontend-design` — 1×
+- `prd` — 1×
 - `data-retention-archiving-planner` — 1×
 - `postgresql-optimization` — 1×
+- `avoid-ai-writing` — 1×
 - `anti-ui-slop` — 1×
 - `de-sloppify` — 1×
 - `docx` — 1×
-- `avoid-ai-writing` — 1×
-- `table-builder` — 1×
 - `postgres-patterns` — 1×
 - `golang-patterns` — 1×
 

@@ -1,0 +1,50 @@
+… berhenti di 3000 file (pakai INJ_MAX=<n> atau inj <folder-spesifik>)
+⚠ 22 file kena
+
+curiga   3  skills-store/postgresql-database-engineering/REPO-REF.md
+        35: [jailbreak] When you install these plugins, you aren't just adding tools. You are unlocking **God Mode** for specific doma
+
+curiga   3  skills-store/jest-react-testing/REPO-REF.md
+        35: [jailbreak] When you install these plugins, you aren't just adding tools. You are unlocking **God Mode** for specific doma
+
+curiga   3  skills-store/helm-generator/REPO-REF.md
+        86: [persist] Add this to project-level `.claude/settings.json`:
+
+curiga   3  skills-store/linting/references/error_suppression.md
+        15: [override] Ignore rules across the entire project:
+        27: [override (+)] Ignore rules for specific files or directories:
+
+curiga   3  skills-store/linting/references/rule_selection.md
+        344: [override] Override rules for specific files or directories:
+
+curiga   3  skills-store/mobile-design/REPO-REF.md
+        35: [jailbreak] When you install these plugins, you aren't just adding tools. You are unlocking **God Mode** for specific doma
+
+curiga   3  skills-store/responsive-design/REPO-REF.md
+        35: [jailbreak] When you install these plugins, you aren't just adding tools. You are unlocking **God Mode** for specific doma
+
+curiga   3  skills-store/terraform-validator/REPO-REF.md
+        86: [persist] Add this to project-level `.claude/settings.json`:
+
+curiga   3  skills-store/requirements-gathering/SKILL.md
+        99: [override] - Ignore constraints and dependencies
+
+curiga   3  skills-store/delivery-gate/SKILL.md
+        42: [persist] Add to `~/.claude/settings.json`:
+
+curiga   3  skills-store/delivery-gate/hooks/quality-gate.py
+        8: [persist] Configure: Add to settings.json hooks.Stop
+
+curiga   3  skills-store/arize-trace/references/ax-profiles.md
+        88: [persist] **macOS/Linux** — add to `~/.zshrc` or `~/.bashrc`:
+
+curiga   3  skills-store/svelte-development/REPO-REF.md
+        35: [jailbreak] When you install these plugins, you aren't just adding tools. You are unlocking **God Mode** for specific doma
+
+curiga   3  skills-store/ansible-generator/REPO-REF.md
+        86: [persist] Add this to project-level `.claude/settings.json`:
+
+curiga   3  skills-store/dt-methods/references/method-03-deep.md
+        205: [jailbreak] * Safety insights often emerge indirectly: workarounds that bypass safety steps reveal design friction rather 
+
+… 7 file lain disembunyikan

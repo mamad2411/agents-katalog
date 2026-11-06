@@ -1,44 +1,44 @@
-# SKILLS AVAILABLE — katalog CURATED (3271 ditampilkan dari 3271 · cap 55/kategori)
+# SKILLS AVAILABLE — katalog CURATED (3385 ditampilkan dari 3385 · cap 55/kategori)
 
 > **Untuk AI: JANGAN baca file ini utuh (123 KB = boros). Baca `TOKEN-SAVER.md` (2 KB) dulu.**
 > Kalau ada skill yang cocok, pakai skill itu dulu — jangan mengarang dari nol.
 > Cari cepat: `~/.agents/skill-search.sh "<kata kunci>"` atau tool MCP `skill_search`.
 
-> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (249869 entri scraping)
+> ⚠️ Katalog ini **hanya tier `curated`**. Tier `reference` (282199 entri scraping)
 > **tidak** ditampilkan karena tidak terawat — cari lewat `skill-search.sh` bila perlu.
 > Ini memperbaiki bug lama yang mencampur curated+reference sebagai "curated".
 
-Sumber: `3271` skill curated (dari `264892` entri total di index). Katalog penuh: `skills-index.db`.
+Sumber: `3385` skill curated (dari `303441` entri total di index). Katalog penuh: `skills-index.db`.
 Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKILLS-CATEGORIES.md` (4 KB).
 
 ## Peta cepat kategori
 
 | Kategori | Curated | Reference (cari manual) |
 |---|---|---|
-| backend-developer | 856 | 67744 |
-| designer | 568 | 33081 |
-| frontend-developer | 338 | 21034 |
-| game-developer | 306 | 19878 |
-| creative-producer | 286 | 20395 |
-| devops-engineer | 276 | 19612 |
-| qa-engineer | 119 | 15639 |
-| productivity-automator | 116 | 1420 |
-| mobile-developer | 108 | 7486 |
-| data-scientist | 77 | 8505 |
-| security-specialist | 61 | 8008 |
-| ai-engineer | 47 | 4260 |
-| tech-writer | 28 | 3268 |
-| data-engineer | 23 | 2971 |
-| devtools-engineer | 18 | 3302 |
-| product-manager | 17 | 3074 |
-| fullstack-generalist | 8 | 1295 |
-| agent-orchestrator | 5 | 378 |
+| backend-developer | 856 | 76308 |
+| designer | 605 | 37327 |
+| creative-producer | 354 | 21563 |
+| frontend-developer | 344 | 23918 |
+| game-developer | 306 | 20850 |
+| devops-engineer | 276 | 33268 |
+| qa-engineer | 119 | 15646 |
+| productivity-automator | 117 | 1423 |
+| mobile-developer | 108 | 7866 |
+| data-scientist | 77 | 8597 |
+| security-specialist | 61 | 8126 |
+| ai-engineer | 48 | 4382 |
+| tech-writer | 28 | 3270 |
+| data-engineer | 23 | 3050 |
+| devtools-engineer | 18 | 3301 |
+| product-manager | 17 | 3076 |
+| fullstack-generalist | 8 | 1297 |
+| agent-orchestrator | 5 | 379 |
 | agent-ux | 5 | 444 |
-| architect | 4 | 605 |
+| architect | 4 | 606 |
 | blockchain-developer | 2 | 878 |
 | agent-memory | 1 | 351 |
-| analyst | 1 | 1240 |
-| (tanpa kategori) | 1 | 0 |
+| analyst | 1 | 1241 |
+| (tanpa kategori) | 2 | 0 |
 
 ---
 
@@ -901,7 +901,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **x-api** — X/Twitter API integration for posting tweets, threads, reading timelines, search, and an
 - **x-twitter-growth** — X/Twitter growth engine for building audience, crafting viral content, and analyzing eng
 
-## designer (568 curated)
+## designer (605 curated)
 
 - **3dsvg-interactive-react** — Turn SVGs into interactive React 3D components using the 3dsvg library and visual editor
 - **8-bit-orbit-video-template** — Hyperframes-based video template for retro pixel deck motion design. Use when users want
@@ -916,6 +916,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **adobe-illustrator-scripting** — Write, debug, and optimize Adobe Illustrator automation scripts using ExtendScript (Java
 - **adr-writer** — Creates Architecture Decision Records documenting key technical decisions with context, 
 - **advanced-features-2025** — Advanced Claude Code plugin features for hooks, MCP integration, team distribution, and 
+- **after-effects-scripting** — Drive a running After Effects instance directly from the shell to build, edit and render
 - **agency-agents-ai-specialists** — A collection of specialized AI agent personalities for Claude Code, Cursor, Aider, Winds
 - **agent-compliance-security-assessment** — Comprehensive compliance and security self-assessment for AI agents. 14-check framework 
 - **agent-designer** — Use when the user asks to design a multi-agent system, pick an orchestration pattern (su
@@ -937,6 +938,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **angular-module-design** — Design Angular modules using feature modules, lazy loading, and dependency injection. Us
 - **animation-micro-interaction-pack** — Provides reusable interaction patterns and motion presets that make UI feel polished. In
 - **anti-ui-slop** — Stop coding agents from shipping generic UI. Use UIZZE''s 800,000+ real web and iOS scre
+- **anygen-storyboard** — Create storyboard-style visuals with AnyGen for narratives and slides. Supporting Nano B
 - **api-design** — REST API design patterns including resource naming, status codes, pagination, filtering,
 - **api-design-framework** — Use this skill when designing REST, GraphQL, or gRPC APIs. Provides comprehensive API de
 - **api-design-principles** — Master REST and GraphQL API design principles to build intuitive, scalable, and maintain
@@ -980,6 +982,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **brandkit** — Premium brand-kit image generation skill for creating high-end brand-guidelines boards, 
 - **brief-to-tasks** — Break a design brief into an ordered checklist of independently buildable tasks using ve
 - **browser-qa** — Use this skill to automate visual testing and UI interaction verification using browser 
+- **browser-video** — Records demo and verification videos of web pages using playwright-cli's screencast, and
 - **business-name-fit** — Suggest, pick, or vet a business, startup, or product name that stays true to the founde
 - **c4-model** — This skill should be used to create or update a C4 architecture diagram alongside an ADR
 - **caching-cdn-strategy-planner** — Designs multi-layer caching strategy with edge CDN, server-side caching, cache invalidat
@@ -992,6 +995,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **chro-advisor** — People leadership for scaling companies. Hiring strategy, compensation design, org struc
 - **churn-prevention** — Reduce voluntary and involuntary churn through cancel flow design, save offers, exit sur
 - **cicd-pipeline-setup** — Design and implement CI/CD pipelines with GitHub Actions, GitLab CI, Jenkins, or CircleC
+- **cinematic-ui** — Design and build film-inspired visual work — websites AND PowerPoint presentations (.ppt
+- **cinematography** — Design cinematic image and video prompts for genmedia. Use this for shot language, camer
 - **claude-skill-app-onboarding-questionnaire** — Claude Code skill that designs and builds high-converting questionnaire-style app onboar
 - **clean-architecture** — Provides implementation patterns for Clean Architecture, Hexagonal Architecture (Ports &
 - **cloud-design-patterns** — Cloud design patterns for distributed systems architecture covering 42 industry-standard
@@ -1065,6 +1070,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **design-taste-frontend-v1** — The original v1 taste-skill, preserved for projects depending on its exact behavior. The
 - **design-to-component-translator** — Converts Figma/design specifications into production-ready UI components with accurate s
 - **design-tokens** — Generate a design tokens file (CSS variables or Tailwind config) based on a chosen aesth
+- **designcraft** — DesignCraft is the ArtCraft team's clean-room, open-source InDesign-class page-layout ap
 - **designlang-design-extract** — Extract complete design systems from any website — colors, typography, spacing, shadows,
 - **desk-open** — Create and open a new desk in the workshop. Sets up the folder structure, initial journa
 - **dev-team** — Simulate a collaborative dev team session where multiple role-based personas (PM, Archit
@@ -1089,6 +1095,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **ecom-rfm-analysis** — \"Perform RFM (Recency, Frequency, Monetary) customer segmentation from transaction data
 - **econ-behavioral** — \"Apply behavioral economics concepts including bounded rationality, prospect theory, me
 - **efcore-d2-db-diagram** — Generate D2 database diagrams from Entity Framework Core models. USE FOR: EF Core databa
+- **effectcraft** — EffectCraft is an open-source, pure-Rust motion-graphics, compositing and VFX app for ma
 - **elk-stack** — Deploy and manage the ELK Stack (Elasticsearch, Logstash, Kibana) for log aggregation an
 - **email-drafter** — Draft and review professional emails that match your personal writing style. Analyzes yo
 - **emil-design-eng** — This skill encodes Emil Kowalski's philosophy on UI polish, component design, animation 
@@ -1104,6 +1111,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **event-driven-architect** — Designs event-driven architectures with event sourcing, CQRS, pub/sub patterns, and doma
 - **event-store-design** — Design and implement event stores for event-sourced systems. Use when building event sou
 - **excalidraw-diagram-generator** — Generate Excalidraw diagrams from natural language descriptions. Use when asked to "crea
+- **explainer-video-guide** — Explainer video production guide: scripting, voiceover, visuals, and assembly. Covers sc
 - **explaining-code** — Explains code with visual diagrams and analogies. Use when explaining how code works, te
 - **exploratory-data-analysis** — Discover patterns, distributions, and relationships in data through visualization, summa
 - **fabric-lakehouse** — Use this skill to get context about Fabric Lakehouse and its features for software syste
@@ -1115,7 +1123,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **fal-train** — Train custom AI models (LoRA) on fal.ai for personalized image generation tailored to a 
 - **fal-vision** — Analyze images — segment objects, detect, run OCR, describe, and answer visual questions
 - **feasibility** — Author and validate durable data and ML feasibility studies using the Feasibility Study 
+- **ffmpeg-video-editor** — A complete FFmpeg-powered video editing agent. Use this skill whenever the user wants to
 - **field-notes-editorial-template** — Editorial 'Field Notes' report template with soft paper background, serif hero typograph
+- **figcraft** — FigCraft is an open-source, pure-Rust, offline interface-design, prototyping and whitebo
 - **figma** — Use the Figma MCP server to fetch design context, screenshots, variables, and assets fro
 - **figma-code-connect-components** — Connect Figma design components to code components using Code Connect so design-system u
 - **figma-create-design-system-rules** — Generate project-specific design system rules for Figma-to-code workflows. Useful for ca
@@ -1125,6 +1135,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **figma-generate-library** — Build or update a professional-grade design system library in Figma from a codebase. Use
 - **figma-implement-design** — Translate Figma designs into production-ready code with 1:1 visual fidelity. Useful for 
 - **figma-use** — Run Figma Plugin API scripts for canvas writes, inspections, variables, and design-syste
+- **film-storyboard-skill** — Use when creating storyboards from scripts, generating visual prompts for beat boards or
 - **fin-m-and-a** — \"M&A integration playbook covering eight modules: strategic rationale, target screening
 - **firebase-data-connect** — Builds and deploys Firebase SQL Connect (aka Firebase Data Connect) backends with Postgr
 - **firestore-rules-creation** — Designs, authors, refactors, and hardens production-grade Cloud Firestore Security Rules
@@ -1207,8 +1218,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **hatch-pet** — Create, repair, validate, preview, and package Codex-compatible animated pet spritesheet
 - **healthcare-phi-compliance** — Protected Health Information (PHI) and Personally Identifiable Information (PII) complia
 - **hexagonal-architecture** — Design, implement, and refactor Ports & Adapters systems with clear domain boundaries, d
+- **higgsfield-vibe-motion** — Use when the user asks about Vibe Motion, motion graphics, kinetic typography, animated 
 - **high-end-visual-design** — Teaches the AI to design like a high-end agency. Defines the exact fonts, spacing, shado
 - **huashu-design-html-native** — HTML-native design skill for AI coding agents — high-fidelity prototypes, slides, animat
+- **hve-spielberg** — End-to-end video production pipeline with design thinking. 6-phase orchestrator: Discove
+- **hyperframes** — Create video compositions, animations, title cards, overlays, captions, voiceovers, audi
+- **hyperframes-video-beats** — Plan, write, time, style, and validate motion-graphic beats for long-form talking-head H
 - **image-annotations** — Annotate screenshots, diagrams, and images with callout rectangles, arrows, labels, and 
 - **image-edit** — Edit images on RunComfy — this skill is a smart router that matches the user's intent to
 - **image-inpainting** — Mask-driven image inpainting on RunComfy via the `runcomfy` CLI. Routes to Tongyi MAI Z-
@@ -1232,6 +1247,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **kami-document-design** — Design system and AI skill for generating beautiful warm-parchment documents (resumes, s
 - **karpathy-jobs-bls-visualizer** — Research tool for visually exploring BLS Occupational Outlook Handbook data with an inte
 - **keychron-keyboards-hardware-design** — Work with Keychron's source-available CAD hardware design files (STEP/DXF/PDF) for keybo
+- **kinetic-multicam** — Use when the user drops or points at a local talking-head video and wants the kinetic su
 - **kling-3-0** — Kling 3.0 video generation on RunComfy. Kling 3.0 (also called Kling V3.0) is Kuaishou T
 - **kotlin-backend-jpa-entity-mapping** — Model Kotlin persistence code correctly for Spring Data JPA and Hibernate. Covers entity
 - **kotlin-tooling-kotlin-toolchain-plugin-authoring** — Load when authoring, writing, or designing a Kotlin Toolchain local plugin to extend the
@@ -1243,7 +1259,10 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **liquid-glass-design** — iOS 26 Liquid Glass design system — dynamic glass material with blur, reflection, and in
 - **loop-design-check** — Design a goal-oriented agent loop, and review it for the ways loops go wrong — spinning 
 - **loop-library** — Discover, find, compare, audit, repair, adapt, and design repeatable AI-agent loops with
+- **lottie-animations** — After Effects animation rendering for web and React applications. Use this skill when im
+- **lottie-animator** — Generates professional Lottie animations from static SVGs. Replaces After Effects for mo
 - **lybic-cloud-computer-skill** — Lybic Sandbox is a cloud sandbox built for agents and automation workflows. Think of it 
+- **make-a-video** — Beginner-friendly end-to-end video creator for HyperFrames. Use when the user says "make
 - **make-interfaces-feel-better** — Apply concrete design-engineering details that make interfaces feel polished. Use when r
 - **markdown-style** — This skill should be used to review, lint, or fix Markdown formatting in READMEs, ADRs, 
 - **marketing-context** — Create and maintain the marketing context document that all marketing skills read before
@@ -1264,6 +1283,8 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **mockup-device-3d** — Static iPhone and MacBook 3D-style showcase with real HTML embedded on screens, glass-le
 - **mongoose-mongodb** — Work with MongoDB in Node.js using Mongoose ODM for schema design, CRUD operations, rela
 - **monorepo-navigator** — Navigate, manage, and optimize monorepos. Covers Turborepo, Nx, pnpm workspaces, and Ler
+- **motion-designer** — Advanced motion designer with decades of After Effects and motion graphics experience, s
+- **motion-showreel** — Design and build a 10-30 second motion-design showreel or brand reel in the style of Nat
 - **multi-cloud-architecture** — Design multi-cloud architectures using a decision framework to select and integrate serv
 - **multi-cloud-strategy** — Design and implement multi-cloud strategies spanning AWS, Azure, and GCP with vendor loc
 - **multi-tenant-llm-hosting** — Design secure, multi-tenant LLM hosting platforms with tenant isolation, quotas, billing
@@ -1273,11 +1294,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **nano-banana-edit** — Edit images with Google Nano Banana 2 (image-to-image edit endpoint) on RunComfy. Docume
 - **napkin** — Visual whiteboard collaboration for Copilot CLI. Creates an interactive whiteboard that 
 - **nestjs-best-practices** — Provides comprehensive NestJS best practices including modular architecture, dependency 
+- **net-new-video-editor** — Turn newly recorded talking-head footage into review-ready vertical video drafts with an
 - **network-analysis** — Analyze network structures, identify communities, measure centrality, and visualize rela
 - **neural-network-design** — Design and architect neural networks with various architectures including CNNs, RNNs, Tr
 - **nosql-database-design** — Design NoSQL database schemas for MongoDB and DynamoDB. Use when modeling document struc
 - **observability-designer** — Design production-ready observability strategies combining metrics, logs, and traces. In
 - **od-contribute** — One-click contribution flow for OpenDesign (nexu-io/open-design) — even for non-coders. 
+- **oma-video** — Short-form, explainer, and demo video generation via a key-optional 3-tier router. Compo
 - **omnivoice-tts** — Expert skill for OmniVoice, a massively multilingual zero-shot TTS model supporting 600+
 - **open-pencil-design-editor** — AI-native open-source Figma alternative with CLI, MCP server, and Vue SDK for reading/wr
 - **openapi-spec-generation** — Generate and maintain OpenAPI 3.1 specifications from code, design-first specs, and vali
@@ -1314,6 +1337,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **playwright-visual-testing** — Browser automation, visual testing, and screenshot validation using Playwright MCP serve
 - **poka-yoke** — Mistake-proof code so misuse cannot be expressed, rather than warning against it. Use wh
 - **poster-hero** — Vertical poster or Moments-style share image with strong visual impact.
+- **postfx-effects** — Post-processing visual effects including chromatic aberration, vignette, depth of field,
 - **postgres-patterns** — PostgreSQL database patterns for query optimization, schema design, indexing, and securi
 - **postgresql-code-review** — PostgreSQL-specific code review assistant focusing on PostgreSQL best practices, anti-pa
 - **postgresql-database-administration** — Comprehensive PostgreSQL database administration skill for customer support tech enablem
@@ -1364,6 +1388,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **saga-orchestration** — Implement saga patterns for distributed transactions and cross-aggregate workflows. Use 
 - **salesforce-component-standards** — Quality standards for Salesforce Lightning Web Components (LWC), Aura components, and Vi
 - **salesforce-flow-design** — Salesforce Flow architecture decisions, flow type selection, bulk safety validation, and
+- **screenplay** — Screenplay and teleplay writing — scripts for film, television, animation, short drama, 
 - **screenshot** — Capture desktop, app windows, or pixel regions across OS platforms. Useful for marketing
 - **screenshots-marketing** — Generate marketing screenshots with Playwright. Useful for landing-page hero shots, App 
 - **screenshotting-changelog** — Generate a visual changelog or PR description by taking before/after screenshots of UI c
@@ -1386,6 +1411,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **skill-writer** — Guide users through creating Agent Skills for Claude Code. Use when the user wants to cr
 - **slides** — Create and edit .pptx presentation decks with PptxGenJS. Useful for sales decks, kickoff
 - **soc-cialdini** — \"Apply Cialdini's six principles of persuasion — Reciprocity, Commitment/Consistency, S
+- **social-cinematic-composition** — Composição cinematográfica para fotos e vídeos sociais — regras de enquadramento, color 
 - **social-spotify-card** — Spotify Now Playing-style card with album art, progress bar, and playback controls, suit
 - **spring-boot-dependency-injection** — Provides dependency injection patterns for Spring Boot projects, including constructor-f
 - **spring-boot-rest-api-standards** — Provides REST API design standards and best practices for Spring Boot projects. Use when
@@ -1426,12 +1452,15 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **tech-api-integration** — \"Guide REST API integration including HTTP methods, authentication, error handling, and
 - **tech-data-pipeline** — \"Design data pipelines covering ETL vs ELT architectures, data source integration, sche
 - **tech-doc-style-chinese** — Writing skill for Chinese technical documentation and product copy — enforces clarity, c
+- **technical-video-script** — Writes or reviews a shooting-ready script for a technical video or screencast - a two-co
 - **technology-stack-blueprint-generator** — Comprehensive technology stack blueprint generator that analyzes codebases to create det
+- **text-to-lottie** — Create, edit, or fix Lottie/Bodymovin JSON animations for the local Skia Skottie player.
 - **tool-function-schema-designer** — Designs robust function/tool calling schemas for LLMs with JSON schemas, validation stra
 - **ui-design-patterns** — Common interface patterns, navigation patterns, form patterns, data display patterns, fe
 - **ui-to-vue** — Use when the user has UI screenshots or design exports that need batch conversion into V
 - **ui-ux-pro-max** — Catalog-only UI/UX Pro Max entry. The full upstream templates, data, and search workflow
 - **ui-ux-pro-max-skill** — AI design intelligence skill for building professional UI/UX across multiple platforms w
+- **ultimate-video-editor** — Transforms any AI code editor into a god-level video editor with 50+ years of craft. Cov
 - **understand-anything-knowledge-graph** — Turn any codebase into an interactive knowledge graph using Claude Code skills — explore
 - **update-implementation-plan** — Update an existing implementation plan file with new or update requirements to provide n
 - **user-experience-design** — Comprehensive UX design patterns for Rails applications including responsive design, ani
@@ -1442,22 +1471,29 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **v3-ddd-architecture** — Domain-Driven Design architecture for claude-flow v3. Implements modular, bounded contex
 - **vardoger-analyze** — Use when the user asks to personalize the GitHub Copilot CLI assistant, adapt Copilot to
 - **vcpkg** — Guide for setting up vcpkg in C++ projects, managing dependency versions, and cross-comp
+- **vectorcraft** — VectorCraft is a free, open-source, pure-Rust vector illustration app — a clean-room rei
 - **venice-image-edit** — Image edits, upscaling, and background removal via the Venice.ai API.
 - **verifying-markdown-formatting** — Verify that a Markdown file has correct formatting — headings, lists, links, code blocks
+- **vid-sizzle-reel** — Generates a high-energy sizzle reel or hype video (MP4) from brand assets and key messag
 - **video-edit** — Edit existing video on RunComfy — this skill is a smart router that matches the user's i
 - **video-extend** — Extend or continue an existing video clip on RunComfy via the `runcomfy` CLI. Routes to 
 - **video-inpainting** — Region edits across video frames on RunComfy via the `runcomfy` CLI — remove an object t
 - **video-outpainting** — Video outpainting on RunComfy via the `runcomfy` CLI — extend the spatial canvas of a vi
+- **video-podcast-maker-lite** — Minimal personal narrated-video pipeline — a topic becomes a talking-head-free explainer
+- **video-podcast-maker-nano** — Smallest personal narrated-explainer-video pipeline (spoken narration over visuals, not 
+- **video-storytelling** — Design and build the visual layer of a long-form talking-head video as one persistent wo
 - **videodb** — See, Understand, Act on video and audio. See- ingest from local files, URLs, RTSP/live f
 - **viral-video-long-form** — Complete YouTube long-form video optimization for maximum watch time, SEO, and viral pot
 - **vision-sft** — Fine-tune vision-language models (VLMs) with supervised learning on image+text data. Use
 - **visual-qa-testing** — Visually QA a web application by launching it in Cursor's built-in browser, taking scree
 - **visual-regression-tester** — Implements visual regression testing with screenshot comparison, diff detection, and CI 
+- **vox-style-animation** — Use when the user wants a Vox-style / editorial motion-graphics look — the "printed, not
 - **vpe-advisor** — VP of Engineering advisory for startups: delivery throughput (DORA 4 metrics + bottlenec
 - **web-clone** — 网站复刻 / 克隆方法论。USE WHEN 用户说 复刻网站、克隆网站、clone website、抄个站、仿站、 照着这个站做一个、reproduce site、还原某个网页
 - **web-design-guidelines** — Review UI code for Web Interface Guidelines compliance by the Vercel engineering team. C
 - **web-design-reviewer** — This skill enables visual inspection of websites running locally or remotely to identify
 - **weread-year-in-review-video-template** — WeRead-inspired HyperFrames video template for vertical annual reading reports, personal
+- **wiggle** — Create animated logo files (Lottie JSON, GIF, MP4) from static logo images. This skill s
 - **winui-app** — Bootstrap, develop, and design modern WinUI 3 desktop applications with C# and the Windo
 - **wireframing** — Low/high fidelity wireframes, user flows, information architecture, prototyping techniqu
 - **wix-design-system** — Wix Design System component reference. Use when building UI with @wix/design-system, cho
@@ -1465,6 +1501,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **wix-headless-fast** — Build a Wix Headless site fast by wiring SHIPPED, verified @wix/sdk code instead of auth
 - **wix-headless-replatform** — Clone, rebuild, migrate, or reverse-engineer a public website home page into a Wix Headl
 - **wix-vibe-headless** — Client-only, dependency-free REST scaffolds for connecting an already-built front end (a
+- **wordcraft** — WordCraft is an open-source, clean-room reimplementation of Microsoft Word in Rust (alph
 - **workflow-orchestration-patterns** — Design durable workflows with Temporal for distributed systems. Covers workflow vs activ
 - **wp-rest-api-development** — WordPress REST API review for Codex. Use when reviewing custom routes, permission callba
 - **wpds** — WordPress Design System. Apply WordPress's official design tokens, typography, and compo
@@ -1472,7 +1509,364 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **zero-trust** — Implement zero-trust network architecture. Configure identity-based access, micro-segmen
 - **zod-validation-utilities** — Creates reusable Zod v4 schemas, validates API payloads, forms, and configuration input,
 
-## frontend-developer (338 curated)
+## creative-producer (354 curated)
+
+- **absolute-debt** — Lint and typecheck debt paydown: clear pre-existing repo-wide lint/type violations and s
+- **absolute-prune** — Dead code and dependency cleanup, repo-wide: unused deps, unreferenced exports, unreacha
+- **absolute-upgrade** — Dependency upgrades: outdated/vulnerable deps planned into semver waves (patch/minor bat
+- **academic-search** — Search and analyze academic literature. Find papers, understand research methodologies, 
+- **ace-step** — Generate, inpaint, and outpaint music with ACE Step on RunComfy via the `runcomfy` CLI. 
+- **acreadiness-assess** — Run the AgentRC readiness assessment on the current repository and produce a static HTML
+- **after-effects** — Automate Adobe After Effects workflows. Use when a user asks to script After Effects wit
+- **after-hours-editorial-template** — Luxury dark-editorial HyperFrames template for three-page cinematic storyboards, inspire
+- **agent-architecture-audit** — Full-stack diagnostic for agent and LLM applications. Audits the 12-layer agent stack fo
+- **agentic-payments-protocol-ap2-open-agent-commerce** — Apply Google's Agent Payments Protocol (AP2) and the broader agentic payment ecosystem (
+- **ai-avatar-video** — Create AI avatar, talking-head, and lip-sync videos on RunComfy via the `runcomfy` CLI. 
+- **ai-colorist** — AI调色师，专精为Seedance 2.0生成内容设计色彩方案并确保跨镜头色彩一致性。涵盖LUT风格设计、色彩情感调度、Seedance色调Prompt规范和后期DaVinci
+- **ai-core-tool-calling** — Isomorphic tool system: toolDefinition() with Zod schemas, .server() and .client() imple
+- **ai-income-agent** — Transform your OpenClaw agent into an autonomous income-generating system. Covers three 
+- **ai-music** — Generate AI music on RunComfy via the `runcomfy` CLI — a smart router across the music-m
+- **ai-sdk** — Answer questions about the AI SDK and help build AI-powered features. Use when developer
+- **ai-slides** — Generate complete presentations with AI - from outline to polished slides
+- **ai-video-cinematography** — AI视频创作 cinematography 完整指南，包含运镜技巧、情绪表达、皮肤真实感提示词和实战案例。Use when: (1) Generating AI videos 
+- **ai-video-editor** — Use this skill immediately and proactively when the user mentions video editing, clippin
+- **ai-video-gen** — Generate AI videos from text prompts using multiple provider gateways. Use when: (1) Gen
+- **ai-video-generation** — Generate AI videos on RunComfy via the `runcomfy` CLI — a smart router across the full v
+- **ai-video-prompting** — Générez des prompts optimisés pour chaque modèle de génération vidéo IA (Veo 3, Runway G
+- **alayarenderer-generative-world** — AI coding agent skill for AlayaRenderer — a generative world rendering framework with in
+- **algorithmic-art** — Creating algorithmic art using p5.js with seeded randomness and interactive parameter ex
+- **amc-run-rtsp-calibration** — Calibrate a new dataset from live RTSP camera streams via the AutoMagicCalib REST API. U
+- **amc-run-video-calibration** — Calibrates pre-recorded `cam_*.mp4` datasets through the AutoMagicCalib REST API. Use fo
+- **apache-spark-data-processing** — Complete guide for Apache Spark data processing including RDDs, DataFrames, Spark SQL, s
+- **app-demo-agent** — Use this skill to turn screen recordings into polished app demo videos with AI voiceover
+- **auctra-screenplay-pattern-research** — Use when analyzing, grouping, auditing, or adapting collections of Chinese screenplay, s
+- **auditing-performance** — Audit and optimize application performance, including bundle size, rendering, database q
+- **authoring-dags** — Workflow and best practices for writing Apache Airflow DAGs. Use when creating a new DAG
+- **auto-loom** — Record a narrated product demo video without a screen recorder — an agent drives the bro
+- **auto-subtitle-generator-online** — The auto-subtitle-generator-online skill transcribes and embeds accurate subtitles into 
+- **automate-this** — Analyze a screen recording of a manual process and produce targeted, working automation 
+- **av-studio** — Audio/video studio production — multi-track editing, color grading, motion graphics, com
+- **aws-cdk** — Provides AWS CDK TypeScript patterns for defining, validating, and deploying AWS infrast
+- **aws-sdk-java-v2-bedrock** — Provides Amazon Bedrock patterns using AWS SDK for Java 2.x. Invokes foundation models (
+- **azure-ai** — Use for Azure AI: Search, Speech, OpenAI, Document Intelligence. Helps with search, vect
+- **azure-diagnostics** — Debug Azure production issues on Azure using AppLens, Azure Monitor, resource health, an
+- **azure-openai-2025** — Azure OpenAI Service and Azure AI Foundry models (2025-2026). PROACTIVELY activate for: 
+- **baguette-ios-simulator** — Headless iOS Simulator manager with host-side HID input injection, 60fps streaming, and 
+- **beat-sync-reel** — Generates Instagram Reels where product image cuts are synced to audio beats. Accepts au
+- **beat-sync-video-editing** — This skill should be used when the user asks to "edit a video to music", "create a beat-
+- **beautiful-mermaid** — Render Mermaid diagrams as SVG and PNG using the Beautiful Mermaid library. Use when the
+- **blender-motion-state-inspection** — Use this skill when inspecting Blender characters, rigs, poses, animation retargeting, g
+- **board-meeting** — Multi-agent board meeting protocol for strategic decisions. Runs a structured 6-phase de
+- **boardroom** — /cs:boardroom <brief> — 6-phase multi-role deliberation across the C-suite with Phase 2 
+- **book-screenplay** — Screenplay craft reference: format, three-act and sequence structure, scene construction
+- **build-evidence-map** — Build an auditable evidence map for a contested technical choice, research synthesis, pr
+- **canary-watch** — Use this skill to monitor and verify a deployed URL after releases — checks HTTP endpoin
+- **caption-animation** — This skill should be used when the user asks to "add animated captions", "make TikTok ca
+- **caption-convert** — Convert subtitle/caption files between .srt, .vtt, and .ass using the caption-convert CL
+- **ceo-advisor** — Executive leadership guidance for strategic decision-making, organizational development,
+- **cfo-review** — /cs:cfo-review <plan> — Numerate-skeptic interrogation of any plan that touches money. U
+- **changelog-generator** — Produce consistent, auditable release notes from Conventional Commits. Separates commit 
+- **chat-motion-overlay** — Generate configurable chat motion overlays from a transcript or screenshot, including pl
+- **chief-of-staff** — C-suite orchestration layer. Routes founder questions to the right advisor role(s), trig
+- **cinematic-video-prompt-engineer** — Use when the user provides a plot summary, scene idea, character relationship, emotional
+- **claude-sdk-integration-patterns** — Expert integration patterns for Claude API and TypeScript SDK covering Messages API, str
+- **clui-cc-claude-overlay** — Command Line User Interface for Claude Code — a floating macOS desktop overlay with mult
+- **cmux-markdown** — Open markdown files in a formatted viewer panel with live reload. Use when you need to d
+- **codebase-onboarding** — Launch multiple explore subagents in parallel to investigate architecture, data models, 
+- **codex-pet** — Codex Pet generator on RunComfy. Build a Codex-compatible Codex Pet spritesheet.webp + p
+- **codex-storyboard-video-production** — Create and manage AI video storyboard projects with automated asset generation through C
+- **cold-email** — When the user wants to write, improve, or build a sequence of B2B cold outreach emails t
+- **compact-core-compact-language-ref** — This skill should be used when the user asks about Compact language mechanics, syntax re
+- **connections-optimizer** — Reorganize the user's X and LinkedIn network with review-first pruning, add/follow recom
+- **content-production** — Full content production pipeline — takes a topic from blank page to published-ready piec
+- **context7** — Retrieve up-to-date documentation for software libraries, frameworks, and components via
+- **controlnet-pose** — Pose-conditioned generation on RunComfy via the `runcomfy` CLI. Routes across Kling 2-6 
+- **convert-pdf-to-md** — Converts PDF (.pdf) documents into Markdown so their contents can be accurately analyzed
+- **copilot-sdk** — Build agentic applications with GitHub Copilot SDK. Use when embedding AI agents in apps
+- **council** — Convene a four-voice council for ambiguous decisions, tradeoffs, and go/no-go calls. Use
+- **crazyrouter-video-gen** — AI video generation via Crazyrouter API. Supports Sora 2, Kling V2, Veo 3, Seedance, Pik
+- **create-adaptable-composable** — Create a library-grade Vue composable that accepts maybe-reactive inputs (MaybeRef / May
+- **creative-director** — AI creative director with recursive self-assessment: 20+ methodologies (SIT, TRIZ, Bisoc
+- **cross-vendor-billing-reconciliation** — Reconciling cloud marketplace subscriptions (Pax8) against accounting invoices (Xero, Qu
+- **cursor-agents-workflow** — Human handoff, Linear branch names, reviewable (non-draft) PRs, the `cursor` GitHub labe
+- **cut-mistakes** — Agent 2 of the video editing pipeline. Finds and removes spoken mistakes — stutters, rep
+- **cut-silences** — Agent 1 of the video editing pipeline. Removes silences and dead air from a talking-head
+- **cv-builder** — This skill enables creation of professional CVs/resumes from structured YAML using **ren
+- **dart-build-cli-app** — Architectural patterns, entrypoint structure, exit codes, stream routing, and subprocess
+- **data-catalog** — Create and enrich durable data catalogs using the native DS_CATALOG_V1 Markdown contract
+- **dataset-curation** — Prepare, format, and validate datasets for supervised fine-tuning and preference trainin
+- **deckcraft** — DeckCraft is the ArtCraft open-source, clean-room PowerPoint-compatible presentation app
+- **deepstream-dev** — NVIDIA DeepStream SDK development with Python pyservicemaker API. Use when building vide
+- **deepstream-generate-pipeline** — Build DeepStream GStreamer pipelines interactively. Use when the user asks about pipelin
+- **deepstream-import-vision-model** — Use this skill to bring a supported object-detection vision model from HuggingFace or NV
+- **deepstream-profile-pipeline** — Profile a DeepStream pipeline with Nsight Systems and derive its configs from the measur
+- **deepstream-sop** — Use this skill when building, deploying, evaluating, debugging, or measuring latency for
+- **delegating-to-otto** — Drives Astronomer's Otto agent (`astro otto`) as a delegated sub-agent for Airflow, dbt,
+- **demo-video** — Assemble ordered frames or clips with narration into a narrated MP4 via FFmpeg
+- **dev-slides** — This skill enables creation of developer-focused presentations using **Slidev** - a Vue-
+- **developing-with-streamlit** — Use for ALL Streamlit tasks: creating, editing, debugging, beautifying, styling, theming
+- **digital-health-clinical-asr-build** — Stage 2 of the Clinical ASR Flywheel. Use when curating clinical terms, tagging IPA, and
+- **digital-health-clinical-asr-setup** — Stage 1 of Clinical ASR Flywheel. Use when bootstrapping a cycle: NVCF+MW disclosure, NV
+- **digits-fintech-swiss-template** — Swiss-grid fintech deck template in black / warm paper / neon-lime contrast. Use when us
+- **discernment-nudge** — After you give a substantive answer or draft that the user may act on — advice or recomm
+- **doca-collectx-deployment** — Use this skill to deploy and operate a CollectX (clx) based DOCA telemetry collector on 
+- **dotnet-mcp-builder** — Build Model Context Protocol (MCP) servers in C#/.NET against the current ModelContextPr
+- **drawio-logical-diagrams** — Creates professional logical flow diagrams and logical system architecture diagrams usin
+- **dt-obs-ext-monitors** — 3rd-party test and monitor result ingestion into Dynatrace Grail via the platform events
+- **dt-obs-frontends** — Real User Monitoring (RUM) on Dynatrace — web and mobile frontends. Core Web Vitals, use
+- **eas-simulator** — EAS service (paid). Run and control a user's app on a remote iOS/Android simulator hoste
+- **editorial-burgundy-principles-template** — Editorial studio deck template in burgundy / blush / muted-gold palette. Use when users 
+- **elevenlabs-music-generation** — Generate full songs and instrumental tracks with ElevenLabs Music on RunComfy via the `r
+- **evolink-media** — AI video, image & music generation. 60+ models — Sora, Veo 3, Kling, Seedance, GPT Image
+- **expo-skill-eval** — Evaluate Expo skills in this repo end-to-end - trigger accuracy, generated code quality,
+- **exporting-to-png** — Export code, terminal output, diagrams, or UI components to PNG images using headless br
+- **facturas** — Emití facturas electrónicas, notas de crédito y notas de débito con ARCA (ex AFIP) desde
+- **fal-ai-media** — Unified media generation via fal.ai MCP — image, video, and audio. Covers text-to-image 
+- **fal-api-reference** — Complete fal.ai API reference system. PROACTIVELY activate for: (1) @fal-ai/client JavaS
+- **fal-audio** — Complete fal.ai audio system. PROACTIVELY activate for: (1) Whisper speech-to-text, (2) 
+- **fal-generate** — Generate images and videos using fal.ai AI models. Production-grade catalogue covering F
+- **fal-image-to-video** — Complete fal.ai image-to-video system. PROACTIVELY activate for: (1) Kling 2.5/2.6 Pro i
+- **fal-kling-o3** — Generate images and videos with Kling O3 — Kling's most powerful model family — via fal.
+- **fal-lip-sync** — Create talking head videos and lip sync audio to video via fal.ai. Useful for explainer 
+- **fal-model-guide** — Complete fal.ai model selection system. PROACTIVELY activate for: (1) Choosing image gen
+- **fal-optimization** — Complete fal.ai optimization system. PROACTIVELY activate for: (1) Queue vs run performa
+- **fal-realtime** — Real-time and streaming AI image generation via fal.ai. Suited for moodboard exploration
+- **fal-text-to-video** — Complete fal.ai text-to-video system. PROACTIVELY activate for: (1) Kling 2.0/2.5/2.6 Pr
+- **fal-upscale** — Upscale and enhance image and video resolution using AI super-resolution models hosted o
+- **fal-video-edit** — Edit existing videos using AI — remix style, upscale, remove background, and add audio v
+- **fal-video-to-video** — Complete fal.ai video-to-video system. PROACTIVELY activate for: (1) Kling O1 video edit
+- **ffmpeg-webcli-browser-video-editor** — A browser-based video editor powered by ffmpeg.wasm for client-side video processing wit
+- **film-director-producer** — Senior film director/producer with 15+ years in feature films, documentaries, and commer
+- **filmcraft** — FilmCraft is an open-source, professional non-linear video editor (editing, multicam, co
+- **filmkit-fujifilm-camera** — Browser-based preset manager and RAW converter for Fujifilm X-series cameras using WebUS
+- **fin-earnings-summary** — \"Summarize and analyze earnings calls (法說會) including financial highlights, management 
+- **finnish-humanizer** — Detect and remove AI-generated markers from Finnish text, making it sound like a native 
+- **firebase-app-hosting-basics** — Deploys and manages full-stack web applications (Next.js, Angular) with Server-Side Rend
+- **flash-moe-inference** — Run 397B parameter Mixture-of-Experts LLMs on a MacBook using pure C/Metal with SSD stre
+- **flutter-add-widget-test** — Implement a component-level test using `WidgetTester` to verify UI rendering and user in
+- **flutter-fix-layout-issues** — Fixes Flutter layout errors (overflows, unbounded constraints) using Dart and Flutter MC
+- **foundry-hosted-agent-copilotkit** — Ongoing development guidance for agentic web apps that pair a CopilotKit frontend with M
+- **frame-glitch-title** — Digital glitch, chromatic offset, and data-corruption title frame for video transitions 
+- **frame-light-leak-cinema** — Film light leaks, grain, 16:9 letterbox, and large serif type for cinematic openings or 
+- **frame-liquid-bg-hero** — WebGL-style fluid displacement background with a quote overlay, suited to video intros, 
+- **frame-macos-notification** — Realistic macOS notification banner with app icon, title, and body, suited to video over
+- **free-auto-subtitle-generator** — The free-auto-subtitle-generator skill on ClawHub detects speech in your video and burns
+- **freeimg-hunyuan** — Generate AI images (text-to-image and image-to-image with reference) via Tencent Hunyuan
+- **from-the-other-side-wiggins** — Narrative and synthesis profile for Wiggins: framing, explanation, and audience-aware co
+- **frontend-dev** — Full-stack frontend with cinematic animations, AI-generated media via MiniMax API, and g
+- **frontend-large-feature-architecture** — Architect large or state-heavy Langfuse frontend features. Use for virtualized lists, la
+- **frontend-patterns** — Frontend development patterns for React, Next.js, state management, performance optimiza
+- **gemini-api-dev** — Use this skill when writing code that calls the Gemini API for text generation, multi-tu
+- **gemini-live-api-dev** — Use this skill when building real-time, bidirectional streaming applications with the Ge
+- **gemini-omni-flash-api** — Use this skill for generative video editing, text-to-video, image-referenced video gener
+- **gemma-tuner-multimodal** — Fine-tune Gemma 4 and 3n models with audio, images, and text on Apple Silicon using PyTo
+- **gh-attach** — Uploads a local file (screenshot, image, PDF, zip, video) to GitHub user-attachments, do
+- **ghostling-libghostty-terminal** — Build minimal terminal emulators using the libghostty-vt C API with Raylib for windowing
+- **google-analytics-admin-api-basics** — Manages Google Analytics account and property settings, enables the Analytics Admin API 
+- **google-veo** — Generate videos with Google Veo models via inference.sh CLI. Models: Veo 3.1, Veo 3.1 Fa
+- **grad-cultivation** — \"Apply cultivation theory (Gerbner) to analyze how long-term media exposure shapes worl
+- **grad-meta-analysis** — \"Apply meta-analysis to synthesize effect sizes across multiple studies, assess heterog
+- **grad-policy-streams** — \"Apply Kingdon's multiple streams framework to analyze how problems, policies, and poli
+- **grpc-microservices** — Comprehensive gRPC microservices skill covering protobuf schemas, service definitions, s
+- **grpc-service-development** — Build high-performance gRPC services with Protocol Buffers, bidirectional streaming, and
+- **gtm-positioning-strategy** — Find and own a defensible market position. Use when messaging sounds like competitors, c
+- **h3-storyboard** — Turn a script into MiniMax H3 shot lists with working emotional performance — beat table
+- **happy-video-gen** — Universal AI video generation supporting OpenAI Sora, Google Veo 2/3, Runway Gen-3/Gen-4
+- **happyhorse-1-0** — Generate text-to-video with HappyHorse 1.0 on RunComfy. Documents HappyHorse 1.0's stren
+- **html-ppt** — HTML PPT Studio — author professional static HTML presentations in many styles, layouts,
+- **html-ppt-retro-quarterly-review** — Retro Quarterly Review presentation template in a bold blue + orange editorial language.
+- **html-ppt-skill** — Build professional HTML presentations with 36 themes, 31 layouts, 47 animations — pure s
+- **html-slides** — This skill enables creation of stunning HTML-based presentations using **reveal.js** - t
+- **html-to-ppt** — Convert HTML/Markdown to PowerPoint presentations using Marp
+- **hum-ethics** — \"Apply ethical frameworks — deontology, utilitarianism, virtue ethics, and justice theo
+- **hy-world-2-0-3d-world-model** — Expert skill for using HY-World 2.0, Tencent's multi-modal world model for reconstructin
+- **hyperframes-cli** — HyperFrames CLI tool — hyperframes init, lint, preview, render, transcribe, tts, doctor,
+- **ima-dai-sdk** — Integrates the Google Interactive Media Ads (IMA) Dynamic Ad Insertion (DAI) SDK into we
+- **ima-sdk-client-side** — Supports Interactive Media Ads (IMA) SDK. Use this skill for client-side ad insertion wh
+- **image-enhancer** — Improve image and screenshot quality by enhancing resolution, sharpness, and clarity for
+- **image-generation** — Create effective AI image generation prompts for DALL-E, Midjourney, and Stable Diffusio
+- **impediment-prioritization** — Ranks any list of impediments and their countermeasures using a value-stream scoring mod
+- **inherit-legacy-style** — Legacy-project style inheritance skill. Use when the user types /inherit-legacy-style, o
+- **internal-narrative** — Build and maintain one coherent company story across all audiences — employees, investor
+- **internet-asset-fetcher** — Fetch any internet asset to local files — images, text/articles, documents (PDF/DOCX/XLS
+- **invoice-automation** — Automate invoice generation, sending, tracking, and payment reconciliation across accoun
+- **invoice-generator** — Create professional invoices with proper formatting for freelancers and small businesses
+- **invoice-organizer** — Organize, categorize, and track invoices and receipts
+- **invoice-template** — Generate professional PDF invoices from templates
+- **java-coding-standards** — Java coding standards for Spring Boot and Quarkus services: naming, immutability, Option
+- **json-render-generative-ui** — Generative UI framework that renders AI-generated JSON specs into type-safe UI component
+- **kafka-stream-processing** — Complete guide for Apache Kafka stream processing including producers, consumers, Kafka 
+- **kling-ai** — Write and improve prompts for Kling AI video generation, and pick the right Kling model 
+- **krillinai-subtitle** — Use when generating subtitles with KrillinAI CLI from a YouTube link, Bilibili/local vid
+- **langgraph-fundamentals** — INVOKE THIS SKILL when writing ANY LangGraph code. Covers StateGraph, state schemas, nod
+- **latency-critical-systems** — Use for latency-sensitive systems such as realtime dashboards, market data, streaming ag
+- **lead-intelligence** — AI-native lead intelligence and outreach pipeline. Replaces Apollo, Clay, and ZoomInfo w
+- **lightcraft** — LightCraft is a native photo library and non-destructive raw developer — an open-source,
+- **linear-agent-writes** — The org policy for what an agent may write to Linear, and how it must be marked. Read th
+- **lingbot-map-3d-reconstruction** — Feed-forward 3D foundation model for streaming scene reconstruction using Geometric Cont
+- **lipsync** — Lip-sync a face to a specific audio track on RunComfy via the `runcomfy` CLI. Routes acr
+- **logql-generator** — Generate LogQL queries, log stream selectors, metric queries, and alerting rules for Gra
+- **manim-video** — Build reusable Manim explainers for technical concepts, graphs, system diagrams, and pro
+- **margin-analysis** — Per-client and per-service-line margin computation for an MSP: revenue from PSA billing 
+- **markdown-converter** — Convert documents and files to Markdown using markitdown. Use when converting PDF, Word 
+- **markdown-to-html** — Convert Markdown files to HTML similar to `marked.js`, `pandoc`, `gomarkdown/markdown`, 
+- **marketing-campaign** — End-to-end marketing campaign planning and execution. Covers audience research, position
+- **markstream-install** — Install and configure Markstream streaming Markdown renderers for Vue, React, Svelte, An
+- **mcp-copilot-studio-server-generator** — Generate a complete MCP server implementation optimized for Copilot Studio integration w
+- **md-slides** — This skill enables creation of presentations from pure Markdown using **Marp**. Write sl
+- **md-to-office** — This skill enables conversion from Markdown to various Office formats using **Pandoc** -
+- **med-business** — \"Use when writing financial news — earnings, IPO/M&A, regulatory changes, industry tren
+- **med-culture** — \"Use when the user wants to write a culture-and-arts news piece — exhibition coverage, 
+- **med-entertainment** — \"Use when writing entertainment news — reviews, box office analysis, streaming reports,
+- **med-health** — \"Use when writing a medical or health news story — clinical research breakthroughs, pub
+- **med-international** — \"Use when writing an international news piece — foreign affairs, diplomatic coverage, c
+- **med-political** — \"Use when the user wants to write a political news piece — election coverage, legislati
+- **med-sports** — \"Use when the user wants to write a sports news piece — game recaps, athlete profiles, 
+- **midnight-cq-ledger-testing** — This skill should be used when the user asks to write ledger tests, test transaction con
+- **migrate-ai-sdk-v6-to-v7** — Migrate applications from AI SDK 6.x to AI SDK 7.0. Use when upgrading Vercel AI SDK pac
+- **migrate-to-parallel** — Migrate Exa, Tavily, Perplexity, or Firecrawl web-data integrations completely to the ap
+- **modal-drawer-system** — Implements accessible modals and drawers with focus trap, ESC to close, scroll lock, por
+- **moss-tts-nano-speech** — Expert skill for using MOSS-TTS-Nano, a 0.1B parameter multilingual real-time TTS model 
+- **multimodal-llm** — Vision, audio, video generation, and multimodal LLM integration patterns. Use when proce
+- **nano-world-model** — Minimalist batteries-included repository for training, evaluating, and deploying diffusi
+- **news-monitor** — Set up news monitoring strategies, analyze news coverage, and synthesize current events.
+- **nextjs-app-router** — Complete Next.js App Router fundamentals system (Next.js 15.5/16). PROACTIVELY activate 
+- **nextjs-data-fetching** — Complete Next.js data fetching system (Next.js 15.5/16). PROACTIVELY activate for: (1) S
+- **nextjs-modal-integration** — Modal.com integration patterns for Next.js applications. PROACTIVELY activate for: (1) N
+- **nextjs-performance** — Expert Next.js performance optimization skill covering Core Web Vitals, image/font optim
+- **nightingale-karaoke** — ML-powered Karaoke app in Rust using Bevy, WhisperX, and Demucs for stem separation, lyr
+- **nodejs-development** — Comprehensive Node.js development skill covering event loop, async patterns, streams, fi
+- **notebooklm** — Enables interaction with Google NotebookLM for advanced RAG (Retrieval-Augmented Generat
+- **notion-drift** — Check markdown files already synced to Notion for drift by reading each item's stored No
+- **notion-research-documentation** — Research across Notion and synthesize into structured documentation; use when gathering 
+- **nutrient-document-processing** — Process, convert, OCR, extract, redact, sign, and fill documents using the Nutrient DWS 
+- **office-mcp** — MCP server with 39 tools for Word, Excel, PowerPoint, PDF, OCR operations
+- **openless-voice-input** — OpenLess open-source voice input for macOS & Windows — press a hotkey, speak, get AI-pol
+- **openmaic-classroom** — OpenMAIC — Open Multi-Agent Interactive Classroom platform for generating immersive AI-p
+- **ops-pitch-deck** — \"Structure and write investor pitch decks covering problem, solution, market, business 
+- **palmier-pro** — Drive Palmier Pro, an open source AI-native macOS video editor (Swift, SwiftUI/AppKit, A
+- **parallel-code-review** — Run four parallel read-only subagents that each review the same diff from a different le
+- **parallel-memory** — Recall past Parallel Task, Monitor, and FindAll runs when they may help; evict runs or c
+- **pdfcraft** — PdfCraft is the ArtCraft PDF workbench, a clean-room Acrobat Pro reimplementation for ma
+- **performance-budget-setter** — Defines measurable performance budgets for bundle size, API latency, database queries, a
+- **performance-review-writer** — Draft performance reviews, self-assessments, peer reviews, and upward feedback in your o
+- **pester-should-migration** — Experimental (preview) Pester skill for migrating classic Should -Be (v5) assertion synt
+- **podcast-automation** — Automate podcast production workflows including recording, editing, publishing, and dist
+- **posterskill-academic-posters** — AI-assisted academic conference poster generation from Overleaf source using Claude Code
+- **ppt-keynote** — Apple Keynote-quality slides, one card per screen, with keyboard left/right navigation.
+- **pptx** — Use this skill any time a .pptx or .potx file is involved in any way — as input, output,
+- **pptx-generator** — Create and edit PowerPoint presentations from scratch with PptxGenJS — MiniMax's product
+- **pptx-manipulation** — This skill enables programmatic creation, editing, and manipulation of Microsoft PowerPo
+- **process-substitution-fifos** — Process substitution, named pipes (FIFOs), and advanced IPC patterns for efficient bash 
+- **product-lens** — Use this skill to validate the "why" before building, run product diagnostics, and press
+- **progressive-blur-header-swiftui** — Drop-in SwiftUI sticky header component with progressive blur effect matching Apple Musi
+- **projection-patterns** — Build read models and projections from event streams. Use when implementing CQRS read si
+- **python-ffmpeg** — Expert guide to FFmpeg from Python for video/audio processing, encoding, streaming, and 
+- **python-opencv** — Complete OpenCV computer vision system for Python. PROACTIVELY activate for: (1) Image l
+- **python-video-pipeline** — Expert guide to end-to-end Python video pipelines combining FFmpeg, OpenCV, PyAV, ffmpeg
+- **react-container-presentation-component** — Create a React component using the Container/Presentation pattern in src/components by a
+- **react-performance** — React and Next.js performance optimization patterns adapted from Vercel Engineering's Re
+- **react-testing** — Complete React testing system. PROACTIVELY activate for: (1) Vitest/Jest setup and confi
+- **reactive-programming** — Implement reactive programming patterns using RxJS, streams, observables, and backpressu
+- **remotion-product-demo** — Build a product demo video in Remotion from a real screen recording or screenshots: a Sa
+- **remotion-video-creation** — Best practices for Remotion - Video creation in React. 29 domain-specific rules covering
+- **replicate** — Discover, compare, and run AI models using Replicate's API. Strong fit for image, audio,
+- **runcomfy-cli** — Run any model on RunComfy from the command line. The `runcomfy` CLI is one binary, one a
+- **scenario-seedance-music-video** — Use when turning a song, track, or audio master into a finished music video with Scenari
+- **screencli** — Record AI-driven browser demos with screencli. One command creates a polished screen rec
+- **screenplay-formatting** — Format screenplays to industry standard using Fountain markup for professional presentat
+- **seed-test-data** — Seed reproducible local Langfuse data in ClickHouse and Postgres. Use for complex traces
+- **seedance-2-5-image-to-video** — Animate a single still image into a 4-30 second 720p cinematic clip with optional synchr
+- **seedance-cinematic** — Generate cinematic film-style video prompts for Seedance 2.0 on Higgsfield. Use whenever
+- **seedance-v2** — Generate cinematic short-form video with ByteDance Seedance 2.0 Pro on RunComfy. Documen
+- **serve-sim-apple-simulator** — Host Apple iOS Simulators in the browser with MJPEG streaming, touch/gesture control, an
+- **sherweb-billing** — Sherweb distributor billing: explicit billing date ranges, Setup/Recurring/Usage charge 
+- **short-form-edit** — Turn talking-head footage into a finished reel, YouTube Short, or short advertisement wi
+- **short-form-video** — Maintain the existing May Shorts teaching compositions using their legacy face-mode, sce
+- **site-md** — Analyze a project description or site requirements and synthesize a project constitution
+- **slug-font-rendering** — Reference HLSL shader implementations for the Slug font rendering algorithm, enabling hi
+- **social-reddit-card** — Realistic Reddit post card with vote rail and comment count, suited to video overlays or
+- **social-x-post-card** — Realistic X post card with engagement metrics (likes, reposts, views), suited to video o
+- **sora** — Generate, remix, and manage short video clips via OpenAI's Sora API. Useful for cinemati
+- **soundcraft** — SoundCraft is an open-source, pure-Rust digital audio workstation (a clean-room Pro Tool
+- **spark-video-director** — Translate a screenplay (one scene at a time) into a provider-agnostic storyboard fragmen
+- **speak-summary** — Convert text, markdown, or a summary produced by another skill into a listenable MP3 usi
+- **speech** — Generate spoken audio from text using OpenAI's API with built-in voices. Useful for narr
+- **spotify-automation** — Automate Spotify music playback, playlist management, and audio analysis workflows
+- **sprint-254-features** — Azure DevOps Sprint 254-262 new features and enhancements (2025). PROACTIVELY activate f
+- **srt-enhancer** — 必须触发：当用户说"优化字幕"、"增强字幕"、"优化这个字幕"、"增强这个字幕"等以"优化"或"增强"开头且包含"字幕"的请求。也用于处理 .srt 字幕，执行去口癖、校准AS
+- **srt-title-generator** — Generate engaging, viral-potential video titles from SRT subtitle files
+- **staking-protocol-patterns** — Auto-loaded by defi-auditor agent during Phase 2 when analyzing staking mechanisms. Prov
+- **storyboard-shot-breakdown** — Break down each shot and turn the analysis into a storyboard reference. Use when the use
+- **streams** — Master Node.js streams for memory-efficient processing of large datasets, real-time data
+- **stylized-color-grading** — 风格化调色：将经典调色风格转化为AI视频提示词。 触发词：「调色」「风格化调色」「Teal-Orange」「Film-Noir」「Cyberpunk」「Bleach-Bypas
+- **subtitle-converter** — 字幕格式转换工具，支持 VTT、SRT、ASS、LRC 四种格式互转，以及时间轴偏移和双语字幕合并。当用户需要转换字幕格式（如 VTT 转 SRT 用于剪映）、调整字幕时间、合
+- **subtitle-refine** — 中文 SRT 字幕上线发布专业级精修与校验。用于把基于 ASR 的原始字幕清洗为可上线版本，只做字幕级清洗和纠错，不做书面化改写、总结或扩写；同时保持与原音频严格同步，必要时仅
+- **subtitle-translate** — 字幕翻译 / 双语字幕：把已有字幕（SRT/VTT/ASS）翻译成目标语言，生成双语（原文+译文）或纯译文字幕，并可软挂载 / 硬烧录进视频。当用户说 字幕翻译、翻译字幕、双语
+- **subtitle-translator** — Translate SRT subtitle files using LLM APIs with OpenAI-compatible format. Supports both
+- **svg-motion-playground** — Generate a standalone no-build HTML playground that turns an input SVG into a live liqui
+- **swiftui-patterns** — SwiftUI architecture patterns, state management with @Observable, view composition, navi
+- **table-builder** — Creates data table patterns with filtering, sorting, pagination, row actions, column con
+- **tailing-build-output** — Monitor a build process (webpack, turbo, docker) for warnings and errors as they stream.
+- **takeone** — Record polished Screen Studio style videos of web apps (smooth cursor, click ripples, ea
+- **taste-application** — Generate new video against a distilled style pack and cut it into a finished piece - pla
+- **taste-distillation** — Measure a set of reference videos into a reusable style pack - colour grade as a 3D LUT,
+- **tasteforge-video** — Use for file-driven multimodal image, video, and 3D-asset discovery; taste interviews; d
+- **theme-factory** — Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reporti
+- **tiktok-marketing** — TikTok content strategy, video creation workflows, posting optimization, and analytics. 
+- **tracing-downstream-lineage** — Trace downstream data lineage and impact analysis. Use when the user asks what depends o
+- **tracing-upstream-lineage** — Trace upstream data lineage. Use when the user asks where data comes from, what feeds a 
+- **transcribe** — Transcribe audio files to text with optional diarization and known-speaker hints. Use wh
+- **transcription-automation** — Automate audio/video transcription, meeting notes, subtitle generation, and content proc
+- **transloadit-media-processing** — Process media files (video, audio, images, documents) using Transloadit. Use when asked 
+- **tribev2-brain-encoding** — Use TRIBE v2, Meta's multimodal foundation model for predicting fMRI brain responses to 
+- **tw-ecom-invoice-ezpay** — \"Issue and manage Taiwan e-invoices via ezPay (加值服務中心) through mcp-ezpay-einvoice. Use 
+- **tw-einvoice-guide** — \"Implement Taiwan's e-invoice (電子發票) system including platform integration, B2B vs B2C 
+- **twilio-sms-automation** — Automate SMS communications, two-way messaging, notifications, and voice workflows with 
+- **type4me-macos-voice-input** — MacOS voice input tool with local/cloud ASR engines, LLM text optimization, and fully lo
+- **ui-demo** — Record polished UI demo videos using Playwright. Use when the user asks to create a demo
+- **update-models** — Audit AI model providers in sources.js against live provider APIs. Detects deprecated, n
+- **venice-audio-music** — Music generation queueing, retrieval, and completion endpoints via Venice.ai. Suited for
+- **venice-audio-speech** — Text-to-speech models, voices, formats, and streaming via Venice.ai. Useful for narratio
+- **venice-image-generate** — Image generation endpoints and available styles via the Venice.ai API.
+- **venice-video** — Video generation and transcription workflows via the Venice.ai API.
+- **verifying-in-browser** — After making code changes, start the dev server, open the app in Cursor's built-in brows
+- **vfx-text-cursor** — Cursor light trail, chromatic rays, and directional flares for word-by-word quote reveal
+- **video-ai-master** — Master hub for AI video creation (2026). Generate, edit, and ship video end-to-end — tex
+- **video-color-grading** — Apply professional color grading and correction to videos using each::sense AI. Create c
+- **video-demo** — Films a web app as narrated, zooming, cursor-driven demo videos with retina screenshots,
+- **video-downloader** — Download videos from YouTube and other platforms for offline viewing, editing, or archiv
+- **video-editing** — AI-assisted video editing workflows for cutting, structuring, and augmenting real footag
+- **video-editor** — Expert guidance for video editing with ffmpeg, encoding best practices, and quality opti
+- **video-editor-ai** — A powerful AI video editor that transforms how you edit videos — just describe what you 
+- **video-hyperframes** — Hyperframes / Remotion-compatible continuous frame animation with autoplay support.
+- **video-integration-specialist** — Skill para integrar geracao e manipulacao de video em aplicacoes. Use quando o app preci
+- **video-polish** — Takes an existing screen recording or demo video and adds professional zoom/pan effects 
+- **video-prompting-guide** — Best practices and techniques for writing effective AI video generation prompts. Covers:
+- **video-storyboard** — Generate storyboard image boards and matching video-generation prompt scripts for specif
+- **viewcomponents-specialist** — Specialist in ViewComponent implementation, component architecture, slots, previews, and
+- **viral-video-hooks-retention** — Master hook creation and audience retention for viral video success. PROACTIVELY activat
+- **viral-video-platform-algorithms** — Deep understanding of TikTok, YouTube, Instagram, and Facebook algorithms for 2025-2026.
+- **viral-video-short-form** — Complete short-form video optimization for TikTok, Instagram Reels, YouTube Shorts, and 
+- **voicebox-voice-synthesis** — Expert skill for Voicebox — the open-source local voice cloning and TTS studio built wit
+- **voralens-api-conventions** — Use when developing voralens-v2 (Go Gin backend + Vue 3 + Postgres): struktur folder, na
+- **vpe-review** — /cs:vpe-review <plan> — Throughput-first VP of Engineering interrogation of any plan tha
+- **wan-2-7** — Generate text-to-video with Wan 2.7 (Wan-AI's flagship motion model) on RunComfy. Docume
+- **wan-3-0-prime-reference-to-video** — Build video clips from reference images, reference videos, and reference audio with Wan-
+- **website-to-hyperframes** — Capture a website and create a HyperFrames video from it. Use when: (1) a user provides 
+- **whatsapp-automation** — WhatsApp Business automation - customer support, notifications, chatbots, and broadcast 
+- **winmd-api-search** — Find and explore Windows desktop APIs. Use when building features that need platform cap
+- **writing-guidelines** — Review docs/prose for Writing Guidelines compliance. Use when asked to 'review my docs',
+- **wterm-web-terminal** — Web terminal emulator with Zig/WASM core, DOM rendering, and React/vanilla JS bindings
+- **x-algo-tweet-writer** — Use this skill whenever the user asks to write, draft, or create a tweet, X post, thread
+- **yichen-asr** — 逸尘自用的统一音视频转写入口，在 StepFun Step ASR 与火山引擎豆包 ASR 之间按输出需求、安全边界和可用状态路由。用于本地音频或视频的纯文本转写、时间戳、SR
+- **youtube-automation** — Automate YouTube content workflows including video management, analytics, scheduling, an
+- **youtube-clipper** — YouTube clip generation and editing with automated workflows — pull source video, slice 
+- **youtube-full** — Use when the user needs YouTube transcripts, video search, channel browsing, playlist ex
+- **youtube-transcript** — Extract transcripts from YouTube videos. Use when the user asks for a transcript, subtit
+- **youtube-transcript-english** — Use when fetching YouTube transcripts that must come back in English. Wraps the locally 
+
+## frontend-developer (344 curated)
 
 - **absolute-deflake** — Flaky test fixes: detect nondeterministic tests empirically (repeat/shuffle/parallel run
 - **accessibility** — Consolidated accessibility skill entrypoint for WCAG 2.2, ARIA Authoring Practices, cogn
@@ -1531,6 +1925,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **build-fix** — Autonomous iteration loops for .NET: drive a broken build or failing test suite to green
 - **bundle-size-optimization** — Reduce JavaScript and CSS bundle sizes through code splitting, tree shaking, and optimiz
 - **bux-claude-agent** — Deploy a 24/7 Claude Code agent with persistent Chromium browser on any Ubuntu VPS, cont
+- **cadcraft** — CADCraft is an open-source, clean-room AutoCAD-style 2D CAD and drafting app (pure Rust,
 - **causal-inference** — Determine cause-and-effect relationships using propensity scoring, instrumental variable
 - **chatlift-ai-conversation-exporter-archive** — Import, search, and archive AI conversations from ChatGPT, Claude, and Gemini. Clean ind
 - **chrome-cdp-live-browser** — Give AI agents access to your live Chrome session via CDP — interact with open tabs, log
@@ -1620,7 +2015,9 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **grad-hlm** — \"Apply Hierarchical Linear Modeling (HLM) to analyze nested data structures with random
 - **grad-org-ecology** — \"Apply organizational ecology (Hannan and Freeman) to analyze population-level dynamics
 - **grad-sem** — \"Apply Structural Equation Modeling (SEM) to test hypothesized causal structures by com
+- **gridcraft** — GridCraft is an open-source, clean-room Rust reimplementation of Microsoft Excel: a spre
 - **grit** — Build full-stack applications with the Grit framework (Go + Gin + GORM backend, Next.js 
+- **gsap** — GSAP animation reference for HyperFrames. Covers gsap.to(), from(), fromTo(), easing, st
 - **gsap-core** — Official GSAP skill for the core API — gsap.to(), from(), fromTo(), easing, duration, st
 - **gsap-frameworks** — Official GSAP skill for Vue, Svelte, and other non-React frameworks — lifecycle, scoping
 - **gsap-performance** — Official GSAP skill for performance — prefer transforms, avoid layout thrashing, will-ch
@@ -1634,6 +2031,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **hand-drawn-diagrams** — Generate hand-drawn Excalidraw diagrams from a prompt — animated SVG, hosted edit link, 
 - **healthcare-emr-patterns** — EMR/EHR development patterns for healthcare applications. Clinical safety, encounter wor
 - **holyclaude-ai-workstation** — Deploy a full AI coding workstation with Claude Code, web UI, headless browser, and 5 AI
+- **hyperframes-registry** — Install and wire registry blocks and components into HyperFrames compositions. Use when 
 - **image-optimization** — Optimize images for web to reduce file size without sacrificing quality. Use compression
 - **incident-postmortem** — Use when an outage, production incident, or significant service degradation has occurred
 - **insforge-cli** — Use this skill whenever someone needs a backend, or a task touches InsForge backend or c
@@ -1646,6 +2044,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **langgraph-typescript-quickstart** — Scaffold a minimal local LangGraph agent in TypeScript by following the official quickst
 - **lightpanda-browser** — Expert skill for Lightpanda — the headless browser built in Zig for AI agents and automa
 - **linear-dev-accelerator** — Accelerate software development with Linear project management and MCP server integratio
+- **lottie-animation** — This skill should be used when the user asks to "add a Lottie animation", "play a .lotti
 - **managing-astro-local-env** — Manage local Airflow environment with Astro CLI (Docker and standalone modes). Use when 
 - **masterhttprelayvpn-proxy** — Domain-fronted HTTP/SOCKS5 proxy tunneling traffic through Google Apps Script with MITM 
 - **md-to-docx** — Convert Markdown files to professionally formatted Word (.docx) documents with embedded 
@@ -1692,6 +2091,7 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **opencli-web-automation** — Turn any website into a CLI using browser session reuse and AI-powered command discovery
 - **parallel-web-extract** — URL content extraction. Use for fetching any URL - webpages, articles, PDFs, JavaScript-
 - **permiso-accessibility-permissions** — Permission dialog UI for macOS accessibility and privacy settings, replicating the Codex
+- **photocraft** — PhotoCraft is the ArtCraft clean-room, pure-Rust reimplementation of Adobe Photoshop — l
 - **pi-computer-use** — Control macOS applications with Pi agents using semantic Accessibility API targets and o
 - **plantuml-ascii** — Generate ASCII art diagrams using PlantUML text mode. Use when user asks to create ASCII
 - **playwright** — Use when the task requires automating a real browser from the terminal (navigation, form
@@ -2122,295 +2522,6 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **yeet** — Use only when the user explicitly asks to stage, commit, push, and open a GitHub pull re
 - **zustand-state-builder** — Implements lightweight state management using Zustand with TypeScript, persistence, devt
 
-## creative-producer (286 curated)
-
-- **absolute-debt** — Lint and typecheck debt paydown: clear pre-existing repo-wide lint/type violations and s
-- **absolute-prune** — Dead code and dependency cleanup, repo-wide: unused deps, unreferenced exports, unreacha
-- **absolute-upgrade** — Dependency upgrades: outdated/vulnerable deps planned into semver waves (patch/minor bat
-- **academic-search** — Search and analyze academic literature. Find papers, understand research methodologies, 
-- **ace-step** — Generate, inpaint, and outpaint music with ACE Step on RunComfy via the `runcomfy` CLI. 
-- **acreadiness-assess** — Run the AgentRC readiness assessment on the current repository and produce a static HTML
-- **after-hours-editorial-template** — Luxury dark-editorial HyperFrames template for three-page cinematic storyboards, inspire
-- **agent-architecture-audit** — Full-stack diagnostic for agent and LLM applications. Audits the 12-layer agent stack fo
-- **agentic-payments-protocol-ap2-open-agent-commerce** — Apply Google's Agent Payments Protocol (AP2) and the broader agentic payment ecosystem (
-- **ai-avatar-video** — Create AI avatar, talking-head, and lip-sync videos on RunComfy via the `runcomfy` CLI. 
-- **ai-core-tool-calling** — Isomorphic tool system: toolDefinition() with Zod schemas, .server() and .client() imple
-- **ai-income-agent** — Transform your OpenClaw agent into an autonomous income-generating system. Covers three 
-- **ai-music** — Generate AI music on RunComfy via the `runcomfy` CLI — a smart router across the music-m
-- **ai-sdk** — Answer questions about the AI SDK and help build AI-powered features. Use when developer
-- **ai-slides** — Generate complete presentations with AI - from outline to polished slides
-- **ai-video-generation** — Generate AI videos on RunComfy via the `runcomfy` CLI — a smart router across the full v
-- **alayarenderer-generative-world** — AI coding agent skill for AlayaRenderer — a generative world rendering framework with in
-- **algorithmic-art** — Creating algorithmic art using p5.js with seeded randomness and interactive parameter ex
-- **amc-run-rtsp-calibration** — Calibrate a new dataset from live RTSP camera streams via the AutoMagicCalib REST API. U
-- **amc-run-video-calibration** — Calibrates pre-recorded `cam_*.mp4` datasets through the AutoMagicCalib REST API. Use fo
-- **apache-spark-data-processing** — Complete guide for Apache Spark data processing including RDDs, DataFrames, Spark SQL, s
-- **auditing-performance** — Audit and optimize application performance, including bundle size, rendering, database q
-- **authoring-dags** — Workflow and best practices for writing Apache Airflow DAGs. Use when creating a new DAG
-- **automate-this** — Analyze a screen recording of a manual process and produce targeted, working automation 
-- **aws-cdk** — Provides AWS CDK TypeScript patterns for defining, validating, and deploying AWS infrast
-- **aws-sdk-java-v2-bedrock** — Provides Amazon Bedrock patterns using AWS SDK for Java 2.x. Invokes foundation models (
-- **azure-ai** — Use for Azure AI: Search, Speech, OpenAI, Document Intelligence. Helps with search, vect
-- **azure-diagnostics** — Debug Azure production issues on Azure using AppLens, Azure Monitor, resource health, an
-- **azure-openai-2025** — Azure OpenAI Service and Azure AI Foundry models (2025-2026). PROACTIVELY activate for: 
-- **baguette-ios-simulator** — Headless iOS Simulator manager with host-side HID input injection, 60fps streaming, and 
-- **beautiful-mermaid** — Render Mermaid diagrams as SVG and PNG using the Beautiful Mermaid library. Use when the
-- **blender-motion-state-inspection** — Use this skill when inspecting Blender characters, rigs, poses, animation retargeting, g
-- **board-meeting** — Multi-agent board meeting protocol for strategic decisions. Runs a structured 6-phase de
-- **boardroom** — /cs:boardroom <brief> — 6-phase multi-role deliberation across the C-suite with Phase 2 
-- **build-evidence-map** — Build an auditable evidence map for a contested technical choice, research synthesis, pr
-- **canary-watch** — Use this skill to monitor and verify a deployed URL after releases — checks HTTP endpoin
-- **ceo-advisor** — Executive leadership guidance for strategic decision-making, organizational development,
-- **cfo-review** — /cs:cfo-review <plan> — Numerate-skeptic interrogation of any plan that touches money. U
-- **changelog-generator** — Produce consistent, auditable release notes from Conventional Commits. Separates commit 
-- **chat-motion-overlay** — Generate configurable chat motion overlays from a transcript or screenshot, including pl
-- **chief-of-staff** — C-suite orchestration layer. Routes founder questions to the right advisor role(s), trig
-- **claude-sdk-integration-patterns** — Expert integration patterns for Claude API and TypeScript SDK covering Messages API, str
-- **clui-cc-claude-overlay** — Command Line User Interface for Claude Code — a floating macOS desktop overlay with mult
-- **cmux-markdown** — Open markdown files in a formatted viewer panel with live reload. Use when you need to d
-- **codebase-onboarding** — Launch multiple explore subagents in parallel to investigate architecture, data models, 
-- **codex-pet** — Codex Pet generator on RunComfy. Build a Codex-compatible Codex Pet spritesheet.webp + p
-- **cold-email** — When the user wants to write, improve, or build a sequence of B2B cold outreach emails t
-- **compact-core-compact-language-ref** — This skill should be used when the user asks about Compact language mechanics, syntax re
-- **connections-optimizer** — Reorganize the user's X and LinkedIn network with review-first pruning, add/follow recom
-- **content-production** — Full content production pipeline — takes a topic from blank page to published-ready piec
-- **context7** — Retrieve up-to-date documentation for software libraries, frameworks, and components via
-- **controlnet-pose** — Pose-conditioned generation on RunComfy via the `runcomfy` CLI. Routes across Kling 2-6 
-- **convert-pdf-to-md** — Converts PDF (.pdf) documents into Markdown so their contents can be accurately analyzed
-- **copilot-sdk** — Build agentic applications with GitHub Copilot SDK. Use when embedding AI agents in apps
-- **council** — Convene a four-voice council for ambiguous decisions, tradeoffs, and go/no-go calls. Use
-- **create-adaptable-composable** — Create a library-grade Vue composable that accepts maybe-reactive inputs (MaybeRef / May
-- **creative-director** — AI creative director with recursive self-assessment: 20+ methodologies (SIT, TRIZ, Bisoc
-- **cross-vendor-billing-reconciliation** — Reconciling cloud marketplace subscriptions (Pax8) against accounting invoices (Xero, Qu
-- **cursor-agents-workflow** — Human handoff, Linear branch names, reviewable (non-draft) PRs, the `cursor` GitHub labe
-- **cv-builder** — This skill enables creation of professional CVs/resumes from structured YAML using **ren
-- **dart-build-cli-app** — Architectural patterns, entrypoint structure, exit codes, stream routing, and subprocess
-- **data-catalog** — Create and enrich durable data catalogs using the native DS_CATALOG_V1 Markdown contract
-- **dataset-curation** — Prepare, format, and validate datasets for supervised fine-tuning and preference trainin
-- **deepstream-dev** — NVIDIA DeepStream SDK development with Python pyservicemaker API. Use when building vide
-- **deepstream-generate-pipeline** — Build DeepStream GStreamer pipelines interactively. Use when the user asks about pipelin
-- **deepstream-import-vision-model** — Use this skill to bring a supported object-detection vision model from HuggingFace or NV
-- **deepstream-profile-pipeline** — Profile a DeepStream pipeline with Nsight Systems and derive its configs from the measur
-- **deepstream-sop** — Use this skill when building, deploying, evaluating, debugging, or measuring latency for
-- **delegating-to-otto** — Drives Astronomer's Otto agent (`astro otto`) as a delegated sub-agent for Airflow, dbt,
-- **demo-video** — Assemble ordered frames or clips with narration into a narrated MP4 via FFmpeg
-- **dev-slides** — This skill enables creation of developer-focused presentations using **Slidev** - a Vue-
-- **developing-with-streamlit** — Use for ALL Streamlit tasks: creating, editing, debugging, beautifying, styling, theming
-- **digital-health-clinical-asr-build** — Stage 2 of the Clinical ASR Flywheel. Use when curating clinical terms, tagging IPA, and
-- **digital-health-clinical-asr-setup** — Stage 1 of Clinical ASR Flywheel. Use when bootstrapping a cycle: NVCF+MW disclosure, NV
-- **digits-fintech-swiss-template** — Swiss-grid fintech deck template in black / warm paper / neon-lime contrast. Use when us
-- **discernment-nudge** — After you give a substantive answer or draft that the user may act on — advice or recomm
-- **doca-collectx-deployment** — Use this skill to deploy and operate a CollectX (clx) based DOCA telemetry collector on 
-- **dotnet-mcp-builder** — Build Model Context Protocol (MCP) servers in C#/.NET against the current ModelContextPr
-- **drawio-logical-diagrams** — Creates professional logical flow diagrams and logical system architecture diagrams usin
-- **dt-obs-ext-monitors** — 3rd-party test and monitor result ingestion into Dynatrace Grail via the platform events
-- **dt-obs-frontends** — Real User Monitoring (RUM) on Dynatrace — web and mobile frontends. Core Web Vitals, use
-- **eas-simulator** — EAS service (paid). Run and control a user's app on a remote iOS/Android simulator hoste
-- **editorial-burgundy-principles-template** — Editorial studio deck template in burgundy / blush / muted-gold palette. Use when users 
-- **elevenlabs-music-generation** — Generate full songs and instrumental tracks with ElevenLabs Music on RunComfy via the `r
-- **expo-skill-eval** — Evaluate Expo skills in this repo end-to-end - trigger accuracy, generated code quality,
-- **exporting-to-png** — Export code, terminal output, diagrams, or UI components to PNG images using headless br
-- **facturas** — Emití facturas electrónicas, notas de crédito y notas de débito con ARCA (ex AFIP) desde
-- **fal-ai-media** — Unified media generation via fal.ai MCP — image, video, and audio. Covers text-to-image 
-- **fal-api-reference** — Complete fal.ai API reference system. PROACTIVELY activate for: (1) @fal-ai/client JavaS
-- **fal-audio** — Complete fal.ai audio system. PROACTIVELY activate for: (1) Whisper speech-to-text, (2) 
-- **fal-generate** — Generate images and videos using fal.ai AI models. Production-grade catalogue covering F
-- **fal-image-to-video** — Complete fal.ai image-to-video system. PROACTIVELY activate for: (1) Kling 2.5/2.6 Pro i
-- **fal-kling-o3** — Generate images and videos with Kling O3 — Kling's most powerful model family — via fal.
-- **fal-lip-sync** — Create talking head videos and lip sync audio to video via fal.ai. Useful for explainer 
-- **fal-model-guide** — Complete fal.ai model selection system. PROACTIVELY activate for: (1) Choosing image gen
-- **fal-optimization** — Complete fal.ai optimization system. PROACTIVELY activate for: (1) Queue vs run performa
-- **fal-realtime** — Real-time and streaming AI image generation via fal.ai. Suited for moodboard exploration
-- **fal-text-to-video** — Complete fal.ai text-to-video system. PROACTIVELY activate for: (1) Kling 2.0/2.5/2.6 Pr
-- **fal-upscale** — Upscale and enhance image and video resolution using AI super-resolution models hosted o
-- **fal-video-edit** — Edit existing videos using AI — remix style, upscale, remove background, and add audio v
-- **fal-video-to-video** — Complete fal.ai video-to-video system. PROACTIVELY activate for: (1) Kling O1 video edit
-- **filmkit-fujifilm-camera** — Browser-based preset manager and RAW converter for Fujifilm X-series cameras using WebUS
-- **fin-earnings-summary** — \"Summarize and analyze earnings calls (法說會) including financial highlights, management 
-- **finnish-humanizer** — Detect and remove AI-generated markers from Finnish text, making it sound like a native 
-- **firebase-app-hosting-basics** — Deploys and manages full-stack web applications (Next.js, Angular) with Server-Side Rend
-- **flash-moe-inference** — Run 397B parameter Mixture-of-Experts LLMs on a MacBook using pure C/Metal with SSD stre
-- **flutter-add-widget-test** — Implement a component-level test using `WidgetTester` to verify UI rendering and user in
-- **flutter-fix-layout-issues** — Fixes Flutter layout errors (overflows, unbounded constraints) using Dart and Flutter MC
-- **foundry-hosted-agent-copilotkit** — Ongoing development guidance for agentic web apps that pair a CopilotKit frontend with M
-- **frame-glitch-title** — Digital glitch, chromatic offset, and data-corruption title frame for video transitions 
-- **frame-light-leak-cinema** — Film light leaks, grain, 16:9 letterbox, and large serif type for cinematic openings or 
-- **frame-liquid-bg-hero** — WebGL-style fluid displacement background with a quote overlay, suited to video intros, 
-- **frame-macos-notification** — Realistic macOS notification banner with app icon, title, and body, suited to video over
-- **freeimg-hunyuan** — Generate AI images (text-to-image and image-to-image with reference) via Tencent Hunyuan
-- **from-the-other-side-wiggins** — Narrative and synthesis profile for Wiggins: framing, explanation, and audience-aware co
-- **frontend-dev** — Full-stack frontend with cinematic animations, AI-generated media via MiniMax API, and g
-- **frontend-large-feature-architecture** — Architect large or state-heavy Langfuse frontend features. Use for virtualized lists, la
-- **frontend-patterns** — Frontend development patterns for React, Next.js, state management, performance optimiza
-- **gemini-api-dev** — Use this skill when writing code that calls the Gemini API for text generation, multi-tu
-- **gemini-live-api-dev** — Use this skill when building real-time, bidirectional streaming applications with the Ge
-- **gemini-omni-flash-api** — Use this skill for generative video editing, text-to-video, image-referenced video gener
-- **gemma-tuner-multimodal** — Fine-tune Gemma 4 and 3n models with audio, images, and text on Apple Silicon using PyTo
-- **gh-attach** — Uploads a local file (screenshot, image, PDF, zip, video) to GitHub user-attachments, do
-- **ghostling-libghostty-terminal** — Build minimal terminal emulators using the libghostty-vt C API with Raylib for windowing
-- **google-analytics-admin-api-basics** — Manages Google Analytics account and property settings, enables the Analytics Admin API 
-- **grad-cultivation** — \"Apply cultivation theory (Gerbner) to analyze how long-term media exposure shapes worl
-- **grad-meta-analysis** — \"Apply meta-analysis to synthesize effect sizes across multiple studies, assess heterog
-- **grad-policy-streams** — \"Apply Kingdon's multiple streams framework to analyze how problems, policies, and poli
-- **grpc-microservices** — Comprehensive gRPC microservices skill covering protobuf schemas, service definitions, s
-- **grpc-service-development** — Build high-performance gRPC services with Protocol Buffers, bidirectional streaming, and
-- **gtm-positioning-strategy** — Find and own a defensible market position. Use when messaging sounds like competitors, c
-- **happyhorse-1-0** — Generate text-to-video with HappyHorse 1.0 on RunComfy. Documents HappyHorse 1.0's stren
-- **html-ppt** — HTML PPT Studio — author professional static HTML presentations in many styles, layouts,
-- **html-ppt-retro-quarterly-review** — Retro Quarterly Review presentation template in a bold blue + orange editorial language.
-- **html-ppt-skill** — Build professional HTML presentations with 36 themes, 31 layouts, 47 animations — pure s
-- **html-slides** — This skill enables creation of stunning HTML-based presentations using **reveal.js** - t
-- **html-to-ppt** — Convert HTML/Markdown to PowerPoint presentations using Marp
-- **hum-ethics** — \"Apply ethical frameworks — deontology, utilitarianism, virtue ethics, and justice theo
-- **hy-world-2-0-3d-world-model** — Expert skill for using HY-World 2.0, Tencent's multi-modal world model for reconstructin
-- **ima-dai-sdk** — Integrates the Google Interactive Media Ads (IMA) Dynamic Ad Insertion (DAI) SDK into we
-- **ima-sdk-client-side** — Supports Interactive Media Ads (IMA) SDK. Use this skill for client-side ad insertion wh
-- **image-enhancer** — Improve image and screenshot quality by enhancing resolution, sharpness, and clarity for
-- **image-generation** — Create effective AI image generation prompts for DALL-E, Midjourney, and Stable Diffusio
-- **impediment-prioritization** — Ranks any list of impediments and their countermeasures using a value-stream scoring mod
-- **inherit-legacy-style** — Legacy-project style inheritance skill. Use when the user types /inherit-legacy-style, o
-- **internal-narrative** — Build and maintain one coherent company story across all audiences — employees, investor
-- **internet-asset-fetcher** — Fetch any internet asset to local files — images, text/articles, documents (PDF/DOCX/XLS
-- **invoice-automation** — Automate invoice generation, sending, tracking, and payment reconciliation across accoun
-- **invoice-generator** — Create professional invoices with proper formatting for freelancers and small businesses
-- **invoice-organizer** — Organize, categorize, and track invoices and receipts
-- **invoice-template** — Generate professional PDF invoices from templates
-- **java-coding-standards** — Java coding standards for Spring Boot and Quarkus services: naming, immutability, Option
-- **json-render-generative-ui** — Generative UI framework that renders AI-generated JSON specs into type-safe UI component
-- **kafka-stream-processing** — Complete guide for Apache Kafka stream processing including producers, consumers, Kafka 
-- **langgraph-fundamentals** — INVOKE THIS SKILL when writing ANY LangGraph code. Covers StateGraph, state schemas, nod
-- **latency-critical-systems** — Use for latency-sensitive systems such as realtime dashboards, market data, streaming ag
-- **lead-intelligence** — AI-native lead intelligence and outreach pipeline. Replaces Apollo, Clay, and ZoomInfo w
-- **linear-agent-writes** — The org policy for what an agent may write to Linear, and how it must be marked. Read th
-- **lingbot-map-3d-reconstruction** — Feed-forward 3D foundation model for streaming scene reconstruction using Geometric Cont
-- **lipsync** — Lip-sync a face to a specific audio track on RunComfy via the `runcomfy` CLI. Routes acr
-- **logql-generator** — Generate LogQL queries, log stream selectors, metric queries, and alerting rules for Gra
-- **manim-video** — Build reusable Manim explainers for technical concepts, graphs, system diagrams, and pro
-- **margin-analysis** — Per-client and per-service-line margin computation for an MSP: revenue from PSA billing 
-- **markdown-converter** — Convert documents and files to Markdown using markitdown. Use when converting PDF, Word 
-- **markdown-to-html** — Convert Markdown files to HTML similar to `marked.js`, `pandoc`, `gomarkdown/markdown`, 
-- **marketing-campaign** — End-to-end marketing campaign planning and execution. Covers audience research, position
-- **markstream-install** — Install and configure Markstream streaming Markdown renderers for Vue, React, Svelte, An
-- **mcp-copilot-studio-server-generator** — Generate a complete MCP server implementation optimized for Copilot Studio integration w
-- **md-slides** — This skill enables creation of presentations from pure Markdown using **Marp**. Write sl
-- **md-to-office** — This skill enables conversion from Markdown to various Office formats using **Pandoc** -
-- **med-business** — \"Use when writing financial news — earnings, IPO/M&A, regulatory changes, industry tren
-- **med-culture** — \"Use when the user wants to write a culture-and-arts news piece — exhibition coverage, 
-- **med-entertainment** — \"Use when writing entertainment news — reviews, box office analysis, streaming reports,
-- **med-health** — \"Use when writing a medical or health news story — clinical research breakthroughs, pub
-- **med-international** — \"Use when writing an international news piece — foreign affairs, diplomatic coverage, c
-- **med-political** — \"Use when the user wants to write a political news piece — election coverage, legislati
-- **med-sports** — \"Use when the user wants to write a sports news piece — game recaps, athlete profiles, 
-- **midnight-cq-ledger-testing** — This skill should be used when the user asks to write ledger tests, test transaction con
-- **migrate-ai-sdk-v6-to-v7** — Migrate applications from AI SDK 6.x to AI SDK 7.0. Use when upgrading Vercel AI SDK pac
-- **migrate-to-parallel** — Migrate Exa, Tavily, Perplexity, or Firecrawl web-data integrations completely to the ap
-- **modal-drawer-system** — Implements accessible modals and drawers with focus trap, ESC to close, scroll lock, por
-- **moss-tts-nano-speech** — Expert skill for using MOSS-TTS-Nano, a 0.1B parameter multilingual real-time TTS model 
-- **nano-world-model** — Minimalist batteries-included repository for training, evaluating, and deploying diffusi
-- **news-monitor** — Set up news monitoring strategies, analyze news coverage, and synthesize current events.
-- **nextjs-app-router** — Complete Next.js App Router fundamentals system (Next.js 15.5/16). PROACTIVELY activate 
-- **nextjs-data-fetching** — Complete Next.js data fetching system (Next.js 15.5/16). PROACTIVELY activate for: (1) S
-- **nextjs-modal-integration** — Modal.com integration patterns for Next.js applications. PROACTIVELY activate for: (1) N
-- **nextjs-performance** — Expert Next.js performance optimization skill covering Core Web Vitals, image/font optim
-- **nightingale-karaoke** — ML-powered Karaoke app in Rust using Bevy, WhisperX, and Demucs for stem separation, lyr
-- **nodejs-development** — Comprehensive Node.js development skill covering event loop, async patterns, streams, fi
-- **notebooklm** — Enables interaction with Google NotebookLM for advanced RAG (Retrieval-Augmented Generat
-- **notion-drift** — Check markdown files already synced to Notion for drift by reading each item's stored No
-- **notion-research-documentation** — Research across Notion and synthesize into structured documentation; use when gathering 
-- **nutrient-document-processing** — Process, convert, OCR, extract, redact, sign, and fill documents using the Nutrient DWS 
-- **office-mcp** — MCP server with 39 tools for Word, Excel, PowerPoint, PDF, OCR operations
-- **openless-voice-input** — OpenLess open-source voice input for macOS & Windows — press a hotkey, speak, get AI-pol
-- **openmaic-classroom** — OpenMAIC — Open Multi-Agent Interactive Classroom platform for generating immersive AI-p
-- **ops-pitch-deck** — \"Structure and write investor pitch decks covering problem, solution, market, business 
-- **parallel-code-review** — Run four parallel read-only subagents that each review the same diff from a different le
-- **parallel-memory** — Recall past Parallel Task, Monitor, and FindAll runs when they may help; evict runs or c
-- **performance-budget-setter** — Defines measurable performance budgets for bundle size, API latency, database queries, a
-- **performance-review-writer** — Draft performance reviews, self-assessments, peer reviews, and upward feedback in your o
-- **pester-should-migration** — Experimental (preview) Pester skill for migrating classic Should -Be (v5) assertion synt
-- **podcast-automation** — Automate podcast production workflows including recording, editing, publishing, and dist
-- **posterskill-academic-posters** — AI-assisted academic conference poster generation from Overleaf source using Claude Code
-- **ppt-keynote** — Apple Keynote-quality slides, one card per screen, with keyboard left/right navigation.
-- **pptx** — Use this skill any time a .pptx or .potx file is involved in any way — as input, output,
-- **pptx-generator** — Create and edit PowerPoint presentations from scratch with PptxGenJS — MiniMax's product
-- **pptx-manipulation** — This skill enables programmatic creation, editing, and manipulation of Microsoft PowerPo
-- **process-substitution-fifos** — Process substitution, named pipes (FIFOs), and advanced IPC patterns for efficient bash 
-- **product-lens** — Use this skill to validate the "why" before building, run product diagnostics, and press
-- **progressive-blur-header-swiftui** — Drop-in SwiftUI sticky header component with progressive blur effect matching Apple Musi
-- **projection-patterns** — Build read models and projections from event streams. Use when implementing CQRS read si
-- **python-ffmpeg** — Expert guide to FFmpeg from Python for video/audio processing, encoding, streaming, and 
-- **python-opencv** — Complete OpenCV computer vision system for Python. PROACTIVELY activate for: (1) Image l
-- **python-video-pipeline** — Expert guide to end-to-end Python video pipelines combining FFmpeg, OpenCV, PyAV, ffmpeg
-- **react-container-presentation-component** — Create a React component using the Container/Presentation pattern in src/components by a
-- **react-performance** — React and Next.js performance optimization patterns adapted from Vercel Engineering's Re
-- **react-testing** — Complete React testing system. PROACTIVELY activate for: (1) Vitest/Jest setup and confi
-- **reactive-programming** — Implement reactive programming patterns using RxJS, streams, observables, and backpressu
-- **remotion-video-creation** — Best practices for Remotion - Video creation in React. 29 domain-specific rules covering
-- **replicate** — Discover, compare, and run AI models using Replicate's API. Strong fit for image, audio,
-- **runcomfy-cli** — Run any model on RunComfy from the command line. The `runcomfy` CLI is one binary, one a
-- **seed-test-data** — Seed reproducible local Langfuse data in ClickHouse and Postgres. Use for complex traces
-- **seedance-2-5-image-to-video** — Animate a single still image into a 4-30 second 720p cinematic clip with optional synchr
-- **seedance-v2** — Generate cinematic short-form video with ByteDance Seedance 2.0 Pro on RunComfy. Documen
-- **serve-sim-apple-simulator** — Host Apple iOS Simulators in the browser with MJPEG streaming, touch/gesture control, an
-- **sherweb-billing** — Sherweb distributor billing: explicit billing date ranges, Setup/Recurring/Usage charge 
-- **site-md** — Analyze a project description or site requirements and synthesize a project constitution
-- **slug-font-rendering** — Reference HLSL shader implementations for the Slug font rendering algorithm, enabling hi
-- **social-reddit-card** — Realistic Reddit post card with vote rail and comment count, suited to video overlays or
-- **social-x-post-card** — Realistic X post card with engagement metrics (likes, reposts, views), suited to video o
-- **sora** — Generate, remix, and manage short video clips via OpenAI's Sora API. Useful for cinemati
-- **speak-summary** — Convert text, markdown, or a summary produced by another skill into a listenable MP3 usi
-- **speech** — Generate spoken audio from text using OpenAI's API with built-in voices. Useful for narr
-- **spotify-automation** — Automate Spotify music playback, playlist management, and audio analysis workflows
-- **sprint-254-features** — Azure DevOps Sprint 254-262 new features and enhancements (2025). PROACTIVELY activate f
-- **staking-protocol-patterns** — Auto-loaded by defi-auditor agent during Phase 2 when analyzing staking mechanisms. Prov
-- **streams** — Master Node.js streams for memory-efficient processing of large datasets, real-time data
-- **swiftui-patterns** — SwiftUI architecture patterns, state management with @Observable, view composition, navi
-- **table-builder** — Creates data table patterns with filtering, sorting, pagination, row actions, column con
-- **tailing-build-output** — Monitor a build process (webpack, turbo, docker) for warnings and errors as they stream.
-- **taste-application** — Generate new video against a distilled style pack and cut it into a finished piece - pla
-- **taste-distillation** — Measure a set of reference videos into a reusable style pack - colour grade as a 3D LUT,
-- **tasteforge-video** — Use for file-driven multimodal image, video, and 3D-asset discovery; taste interviews; d
-- **theme-factory** — Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reporti
-- **tiktok-marketing** — TikTok content strategy, video creation workflows, posting optimization, and analytics. 
-- **tracing-downstream-lineage** — Trace downstream data lineage and impact analysis. Use when the user asks what depends o
-- **tracing-upstream-lineage** — Trace upstream data lineage. Use when the user asks where data comes from, what feeds a 
-- **transcribe** — Transcribe audio files to text with optional diarization and known-speaker hints. Use wh
-- **transcription-automation** — Automate audio/video transcription, meeting notes, subtitle generation, and content proc
-- **transloadit-media-processing** — Process media files (video, audio, images, documents) using Transloadit. Use when asked 
-- **tribev2-brain-encoding** — Use TRIBE v2, Meta's multimodal foundation model for predicting fMRI brain responses to 
-- **tw-ecom-invoice-ezpay** — \"Issue and manage Taiwan e-invoices via ezPay (加值服務中心) through mcp-ezpay-einvoice. Use 
-- **tw-einvoice-guide** — \"Implement Taiwan's e-invoice (電子發票) system including platform integration, B2B vs B2C 
-- **twilio-sms-automation** — Automate SMS communications, two-way messaging, notifications, and voice workflows with 
-- **type4me-macos-voice-input** — MacOS voice input tool with local/cloud ASR engines, LLM text optimization, and fully lo
-- **ui-demo** — Record polished UI demo videos using Playwright. Use when the user asks to create a demo
-- **update-models** — Audit AI model providers in sources.js against live provider APIs. Detects deprecated, n
-- **venice-audio-music** — Music generation queueing, retrieval, and completion endpoints via Venice.ai. Suited for
-- **venice-audio-speech** — Text-to-speech models, voices, formats, and streaming via Venice.ai. Useful for narratio
-- **venice-image-generate** — Image generation endpoints and available styles via the Venice.ai API.
-- **venice-video** — Video generation and transcription workflows via the Venice.ai API.
-- **verifying-in-browser** — After making code changes, start the dev server, open the app in Cursor's built-in brows
-- **vfx-text-cursor** — Cursor light trail, chromatic rays, and directional flares for word-by-word quote reveal
-- **video-downloader** — Download videos from YouTube and other platforms for offline viewing, editing, or archiv
-- **video-editing** — AI-assisted video editing workflows for cutting, structuring, and augmenting real footag
-- **video-hyperframes** — Hyperframes / Remotion-compatible continuous frame animation with autoplay support.
-- **viewcomponents-specialist** — Specialist in ViewComponent implementation, component architecture, slots, previews, and
-- **viral-video-hooks-retention** — Master hook creation and audience retention for viral video success. PROACTIVELY activat
-- **viral-video-platform-algorithms** — Deep understanding of TikTok, YouTube, Instagram, and Facebook algorithms for 2025-2026.
-- **viral-video-short-form** — Complete short-form video optimization for TikTok, Instagram Reels, YouTube Shorts, and 
-- **voicebox-voice-synthesis** — Expert skill for Voicebox — the open-source local voice cloning and TTS studio built wit
-- **voralens-api-conventions** — Use when developing voralens-v2 (Go Gin backend + Vue 3 + Postgres): struktur folder, na
-- **vpe-review** — /cs:vpe-review <plan> — Throughput-first VP of Engineering interrogation of any plan tha
-- **wan-2-7** — Generate text-to-video with Wan 2.7 (Wan-AI's flagship motion model) on RunComfy. Docume
-- **wan-3-0-prime-reference-to-video** — Build video clips from reference images, reference videos, and reference audio with Wan-
-- **whatsapp-automation** — WhatsApp Business automation - customer support, notifications, chatbots, and broadcast 
-- **winmd-api-search** — Find and explore Windows desktop APIs. Use when building features that need platform cap
-- **writing-guidelines** — Review docs/prose for Writing Guidelines compliance. Use when asked to 'review my docs',
-- **wterm-web-terminal** — Web terminal emulator with Zig/WASM core, DOM rendering, and React/vanilla JS bindings
-- **x-algo-tweet-writer** — Use this skill whenever the user asks to write, draft, or create a tweet, X post, thread
-- **youtube-automation** — Automate YouTube content workflows including video management, analytics, scheduling, an
-- **youtube-clipper** — YouTube clip generation and editing with automated workflows — pull source video, slice 
-- **youtube-full** — Use when the user needs YouTube transcripts, video search, channel browsing, playlist ex
-- **youtube-transcript** — Extract transcripts from YouTube videos. Use when the user asks for a transcript, subtit
-
 ## devops-engineer (276 curated)
 
 - **acreadiness-policy** — Help the user pick, write, or apply an AgentRC policy. Policies customise readiness scor
@@ -2812,11 +2923,12 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **whatcable-macos-usb-inspector** — macOS menu bar app that identifies USB-C cable capabilities and charging diagnostics usi
 - **writing-tests** — Analyze existing code and write comprehensive unit and integration tests for it. Detects
 
-## productivity-automator (116 curated)
+## productivity-automator (117 curated)
 
 - **agent-platform-rag-engine-management** — Manage and query Agent Platform RAG Engine Corpora and retrieve grounded contexts using 
 - **calendar-automation** — Google Calendar and Outlook automation - scheduling optimization, meeting workflows, tim
 - **cc-connect-ai-bridge** — Bridge local AI coding agents (Claude Code, Cursor, Gemini CLI, Codex) to messaging plat
+- **cinematic-script-writer** — Create professional cinematic scripts for AI video generation with character consistency
 - **encrypted-docs** — End-to-end encrypted .md documents for agents & humans to collaborate. This is a multipl
 - **flowdriver-covert-transport** — Tunnel SOCKS5 traffic through Google Drive API requests to bypass restrictive networks a
 - **gmail-workflows** — Automate Gmail with intelligent workflows - attachment management, email organization, a
@@ -3186,12 +3298,13 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 - **workshop-create** — Create a new workshop or use an existing directory as one. Handles two paths: (A) use an
 - **x-mcp-guide** — ALWAYS read this when a user connects the X plugin or any X MCP, before using any X conn
 
-## ai-engineer (47 curated)
+## ai-engineer (48 curated)
 
 - **add-educational-comments** — Add educational comments to the file specified, or prompt asking for file to comment if 
 - **agent-platform-prompt-management** — Manages and orchestrates prompts in Agent Platform. Use when you need to create, list, r
 - **agents-md** — Creates and maintains concise AGENTS.md and CLAUDE.md project instruction files. Use whe
 - **ai-prompt-engineering-safety-review** — Comprehensive AI prompt engineering safety review and improvement prompt. Analyzes promp
+- **ai-storyboard-artist** — AI分镜师，专精将剧本/故事大纲转化为Seedance 2.0可直接执行的逐镜分镜脚本。擅长景别设计、镜头语言、叙事节奏、多镜头序列规划和参考图管理。Use when: 分镜脚
 - **arize-prompt-optimization** — Optimizes, improves, and debugs LLM prompts using production trace data, evaluations, an
 - **avant-garde-frontend-architect** — Expert frontend design and UI implementation with a focus on bespoke, visually striking,
 - **boost-prompt** — Interactive prompt refinement workflow: interrogates scope, deliverables, constraints; c
@@ -3384,4 +3497,5 @@ Kategori: **24** · maks 0 skill/kategori ditampilkan di sini. Peta hemat: `SKIL
 ## (tanpa kategori) (0 curated)
 
 - **humanize-korean-ai-text** — AI가 쓴 한글 글을 사람이 쓴 것처럼 윤문해주는 Claude Code 스킬 — 번역투·관용구·구조적 AI 패턴 40+ 서브 패턴 탐지 및 수술적 수정
+- **yichen-volc-asr** — 火山引擎音视频转写 + 口播自动粗剪 skill。用于语音转文字、视频转文字、音频识别、生成时间戳/SRT 字幕，也用于帮我剪口播、自动粗剪、删重复、删停顿、删口误、生成粗剪 
 

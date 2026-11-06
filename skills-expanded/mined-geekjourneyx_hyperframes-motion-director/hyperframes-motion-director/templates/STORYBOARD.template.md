@@ -1,0 +1,276 @@
+# Storyboard
+
+## Writing Standard
+- Language: plain Chinese for screen copy and user-facing notes unless the user asks otherwise
+- Sentence style: short, direct, project-specific
+- Avoid: repeated contrast phrasing, self-talk, generic praise, sales slogans, unrelated commentary, and long process narration
+- Keep: on-screen copy, timing, layout contract, motion, asset usage, snapshot risk
+
+## Global Timing
+- Language: Simplified Chinese promotional copy by default
+- Duration: 10-15s by default
+- FPS:
+- Aspect ratio: 9:16 by default
+- Pixel size: 1080x1920 by default
+- Audio source:
+- Beat map:
+- Chosen structure: center symbol / huge title / person anchor / huge number
+- Visual metaphor:
+
+## Beat 1 - Hook
+
+- Timing:
+- Screen text / visual:
+- Text role: title / support / proof / CTA / subtitle
+- Chinese line break:
+- First eye target:
+- Center-impact decision:
+- Hero text zone: center / upper-center / side / lower-safe / split
+- Why this zone owns attention:
+- If lower-safe, what occupies center:
+- Hero frame timestamp:
+- Metaphor role:
+- Source phrase:
+- Visual translation:
+- Component family:
+- Big text box replacement:
+- Product proof role:
+- Background / main visual state:
+- Primary visual object:
+- Functional visual marks:
+- Connector / line anchor:
+- Support assets active:
+- Support asset motion purpose:
+- Visual components active:
+- Component interaction:
+- Object removal test:
+- Text-safe zone:
+- Layout contract:
+- Title size tier:
+- Attention target:
+- Readable hold:
+- Text transition: entry / lock / emphasis / exit / bridge
+- Text transition device: mask / scan / split / compression / assembly / handoff / deliberate stillness
+- Kinetic relay: old word exit / new word entry / action object / direction / relay handoff
+- Connector fallback if the line floats:
+- Directional transition: left push / right push / up push / down press / wipe / scan / type-on / compression / expansion / hard cut
+- Transition midpoint frame:
+- Kinetic relay score note:
+- What changes if this motion is removed:
+- Choreography: camera / background / symbol / text / SVG-CSS layer / transition bridge / audio hit
+- Motion bounds:
+- Transition midpoint snapshot:
+- Quality risk:
+- Anti-PPT risk:
+- Hold-frame verdict:
+
+## Beat 2 - Reveal
+
+- Timing:
+- Screen text / visual:
+- Text role: title / support / proof / CTA / subtitle
+- Chinese line break:
+- First eye target:
+- Center-impact decision:
+- Hero text zone: center / upper-center / side / lower-safe / split
+- Why this zone owns attention:
+- If lower-safe, what occupies center:
+- Hero frame timestamp:
+- Metaphor role:
+- Source phrase:
+- Visual translation:
+- Component family:
+- Big text box replacement:
+- Product proof role:
+- Background / main visual state:
+- Primary visual object:
+- Functional visual marks:
+- Connector / line anchor:
+- Support assets active:
+- Support asset motion purpose:
+- Visual components active:
+- Component interaction:
+- Object removal test:
+- Text-safe zone:
+- Layout contract:
+- Title size tier:
+- Attention target:
+- Readable hold:
+- Text transition: entry / lock / emphasis / exit / bridge
+- Text transition device: mask / scan / split / compression / assembly / handoff / deliberate stillness
+- Kinetic relay: old word exit / new word entry / action object / direction / relay handoff
+- Connector fallback if the line floats:
+- Directional transition: left push / right push / up push / down press / wipe / scan / type-on / compression / expansion / hard cut
+- Transition midpoint frame:
+- Kinetic relay score note:
+- What changes if this motion is removed:
+- Choreography: camera / background / symbol / text / SVG-CSS layer / transition bridge / audio hit
+- Motion bounds:
+- Transition midpoint snapshot:
+- Quality risk:
+- Anti-PPT risk:
+- Hold-frame verdict:
+
+## Beat 3 - Proof
+
+- Timing:
+- Screen text / visual:
+- Text role: title / support / proof / CTA / subtitle
+- Chinese line break:
+- First eye target:
+- Center-impact decision:
+- Hero text zone: center / upper-center / side / lower-safe / split
+- Why this zone owns attention:
+- If lower-safe, what occupies center:
+- Hero frame timestamp:
+- Metaphor role:
+- Source phrase:
+- Visual translation:
+- Component family:
+- Big text box replacement:
+- Product proof role:
+- Background / main visual state:
+- Primary visual object:
+- Functional visual marks:
+- Connector / line anchor:
+- Support assets active:
+- Support asset motion purpose:
+- Visual components active:
+- Component interaction:
+- Object removal test:
+- Text-safe zone:
+- Layout contract:
+- Title size tier:
+- Attention target:
+- Readable hold:
+- Text transition: entry / lock / emphasis / exit / bridge
+- Text transition device: mask / scan / split / compression / assembly / handoff / deliberate stillness
+- Kinetic relay: old word exit / new word entry / action object / direction / relay handoff
+- Connector fallback if the line floats:
+- Directional transition: left push / right push / up push / down press / wipe / scan / type-on / compression / expansion / hard cut
+- Transition midpoint frame:
+- Kinetic relay score note:
+- What changes if this motion is removed:
+- Choreography: camera / background / symbol / text / SVG-CSS layer / transition bridge / audio hit
+- Motion bounds:
+- Transition midpoint snapshot:
+- Quality risk:
+- Anti-PPT risk:
+- Hold-frame verdict:
+
+## Beat 4 - CTA
+
+- Timing:
+- Screen text / visual:
+- Text role: title / support / proof / CTA / subtitle
+- Chinese line break:
+- First eye target:
+- Center-impact decision:
+- Hero text zone: center / upper-center / side / lower-safe / split
+- Why this zone owns attention:
+- If lower-safe, what occupies center:
+- Hero frame timestamp:
+- Metaphor role:
+- Source phrase:
+- Visual translation:
+- Component family:
+- Big text box replacement:
+- Product proof role:
+- Background / main visual state:
+- Primary visual object:
+- Functional visual marks:
+- Connector / line anchor:
+- Support assets active:
+- Support asset motion purpose:
+- Visual components active:
+- Component interaction:
+- Object removal test:
+- Text-safe zone:
+- Layout contract:
+- Title size tier:
+- Attention target:
+- Readable hold:
+- Text transition: entry / lock / emphasis / exit / bridge
+- Text transition device: mask / scan / split / compression / assembly / handoff / deliberate stillness
+- Kinetic relay: old word exit / new word entry / action object / direction / relay handoff
+- Connector fallback if the line floats:
+- Directional transition: left push / right push / up push / down press / wipe / scan / type-on / compression / expansion / hard cut
+- Transition midpoint frame:
+- Kinetic relay score note:
+- What changes if this motion is removed:
+- Choreography: camera / background / symbol / text / SVG-CSS layer / transition bridge / audio hit
+- Motion bounds:
+- Transition midpoint snapshot:
+- Quality risk:
+- Anti-PPT risk:
+- Hold-frame verdict:
+
+## Visual Asset Breakdown
+- Visual asset floor verdict:
+- Pure-code exception approved by user: yes / no / not applicable
+- Why snapshots will not reduce to black background plus title/cards:
+- Source phrases visualized:
+- Text-to-component map:
+- Big text boxes replaced by:
+- Generic visual assets rejected:
+- Asset manifest path:
+- Distinct visual worlds / source beats:
+- Background count decision / reason:
+- Generated background inventory / roles / sizes / layout contracts / local paths:
+- Component inventory / count decision / reason:
+- Component sheet strategy / count reason:
+- Separate hero object generations:
+- Generated texture / atmosphere:
+- Primary visual object system:
+- Functional mark types:
+- Mandatory visual component library:
+- Component roles / source / local paths:
+- Component source phrase mapping:
+- Component state-change actions:
+- Component snapshot timestamps:
+- Component sheet source / crop boxes / accepted local paths:
+- Component sheet style system:
+- Transparent outer-edge / matte-spill verdict:
+- Dark / light contact sheet paths:
+- Asset plan revisions after approval:
+- Static components rejected:
+- Icon library:
+- Decorative element library:
+- Product proof inventory:
+- Product proof gaps:
+- Support asset plan:
+- Support asset roles / source / local paths:
+- Support asset style lock:
+- Support asset safe zones:
+- Support asset deletion triggers:
+- Object restraint rules:
+- Kinetic relay keyword chain:
+- Kinetic relay action object chain:
+- Direction map:
+- Relay continuity rules:
+- Connector anchoring rules:
+- Component-attached signal fallbacks:
+- Kinetic relay score target:
+- Background stage:
+- Layout contracts:
+- HyperFrames-only elements:
+- Exact local asset paths:
+- Exact style source inspected:
+- Observed reference grammar:
+- Narrative boundary:
+- Forbidden style drift:
+- Narrative anchor components:
+- Product proof components:
+- Transition carrier components:
+- Combination test 1 / scene / timestamp / deletion test:
+- Combination test 2 / scene / timestamp / deletion test:
+- Composite owner groups:
+- Transparent assets using visible alpha bounds:
+- Narrow text containers using exported font measurement:
+
+## Snapshot Plan
+| Timestamp | Beat | Phase | Browser snapshot | Final MP4 frame | Expected visible text | Expected dominant visual | Risk being checked |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+|  |  | entry / hold / exit |  |  |  |  |  |
+
+Capture hero frames, readable holds, transition midpoints, and entry / hold / exit frames for layered or text-rich scenes. Final delivery evidence must come from the rendered MP4. Each checkpoint must prove readable hierarchy, background/text relationship, composite ownership, visible-alpha-bound placement, exported text fit, motion continuity, and metaphor clarity.

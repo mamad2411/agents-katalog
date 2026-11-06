@@ -11,6 +11,12 @@ two places inside the binary:
 Only the string payload is rewritten, so every length and offset stays intact
 and the bytecode never needs relocating.
 
+The branded binary is written back to the official install path
+(~/.opencode/bin/opencode). Keeping it there is what lets OpenCode's built-in
+updater detect the install method: it compares realpath(process.execPath) with
+realpath(~/.opencode/bin/opencode). A copy in another directory made that check
+fail with "Could not detect the installation method".
+
 Run after `opencode upgrade` to re-apply the branding:
 
     python3 ~/.agents/mamat-reforge.py
@@ -22,7 +28,9 @@ import subprocess
 import sys
 
 SRC = os.path.expanduser("~/.opencode/bin/opencode")
-DST = os.path.expanduser("~/.local/share/mamat/bin/mamat-core")
+BACKUP = os.path.expanduser("~/.local/share/mamat/bin/opencode.pristine")
+WORK = os.path.expanduser("~/.local/share/mamat/bin/mamat-core.work")
+MARKER = os.path.expanduser("~/.local/share/mamat/bin/branded-version")
 
 OLD = [
     "                   ",
@@ -98,6 +106,21 @@ def parse_table(d, anchor):
     return out
 
 
+def binary_version(path):
+    try:
+        r = subprocess.run([path, "--version"], capture_output=True, text=True)
+    except OSError:
+        return ""
+    text = (r.stdout or r.stderr).strip()
+    return text.split()[-1] if text else ""
+
+
+def write_marker(version):
+    os.makedirs(os.path.dirname(MARKER), exist_ok=True)
+    with open(MARKER, "w", encoding="utf-8") as f:
+        f.write(version + "\n")
+
+
 def main():
     if not os.path.exists(SRC):
         sys.exit(f"core tidak ada: {SRC}")
@@ -106,9 +129,19 @@ def main():
     for s in NEW:
         assert len(s) == 19, (s, len(s))
 
-    os.makedirs(os.path.dirname(DST), exist_ok=True)
-    shutil.copyfile(SRC, DST)
-    d = bytearray(open(DST, "rb").read())
+    d = bytearray(open(SRC, "rb").read())
+
+    # Already branded (e.g. auto-heal ran twice): nothing to patch.
+    if NEW[1].encode("utf-16-le") in d:
+        write_marker(binary_version(SRC))
+        print(f"reforge sudah aktif -> {SRC}")
+        return
+
+    # Keep a pristine copy of the official release for rollback/debugging.
+    if OLD[1].encode("utf-16-le") in d:
+        os.makedirs(os.path.dirname(BACKUP), exist_ok=True)
+        with open(BACKUP, "wb") as f:
+            f.write(d)
 
     anchor = d.find(OLD[1].encode("utf-16-le"))
     if anchor < 0:
@@ -137,18 +170,35 @@ def main():
         if pad >= 0:
             d[sm : em + 1] = new + b" " * pad
 
-    open(DST, "wb").write(d)
-    os.chmod(DST, 0o755)
+    # Build next to the official path, verify, then swap in atomically. Writing
+    # directly to SRC would fail when the running executable is SRC.
+    os.makedirs(os.path.dirname(WORK), exist_ok=True)
+    with open(WORK, "wb") as f:
+        f.write(d)
+    os.chmod(WORK, 0o755)
 
     subprocess.run(
-        ["codesign", "--force", "--sign", "-", DST],
+        ["codesign", "--force", "--sign", "-", WORK],
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    r = subprocess.run([DST, "--version"], capture_output=True, text=True)
-    print(f"reforge ok -> {DST}")
-    print((r.stdout or r.stderr).strip()[:80])
+    if not binary_version(WORK):
+        sys.exit("binary hasil patch tidak bisa dijalankan — patch dibatalkan")
+
+    shutil.move(WORK, SRC)
+    os.chmod(SRC, 0o755)
+    subprocess.run(
+        ["codesign", "--force", "--sign", "-", SRC],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    version = binary_version(SRC)
+    write_marker(version)
+    print(f"reforge ok -> {SRC}")
+    print(version)
 
 
 if __name__ == "__main__":

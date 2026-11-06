@@ -1,0 +1,15 @@
+{
+  "name": "ffmpeg-skill",
+  "description": "ffmpeg-skill as a Claude Code plugin: local FFmpeg video and audio editing with a machine-readable contract.",
+  "owner": {
+    "name": "kajisho5",
+    "url": "https://github.com/kajisho5"
+  },
+  "plugins": [
+    {
+      "name": "ffmpeg-skill",
+      "source": "./",
+      "description": "Local FFmpeg video/audio editing for coding agents: a machine-readable contract, an MCP server and a probe-first / verify-last workflow."
+    }
+  ]
+}

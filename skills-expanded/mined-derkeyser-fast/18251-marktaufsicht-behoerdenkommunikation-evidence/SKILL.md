@@ -1,0 +1,38 @@
+---
+name: marktaufsicht-behoerdenkommunikation-evidence
+description: "Wenn es um Marktaufsicht: Evidence Room in europäischem Technikregulierungsrecht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten. Auswahlstichwort: Marktaufsicht Behoerdenkommunikation Evidence; Arbeitsfeld: europäischem Technikregulierungsrecht."
+---
+
+# Marktaufsicht: Evidence Room
+
+## Ziel
+
+Wenn eine Behörde Unterlagen verlangt, muss das Unternehmen schnell, geordnet und begrenzt liefern. Dieser Skill baut einen Evidence Room, der vollständig genug ist, aber keine unnötigen Risiken produziert.
+
+## Evidence-Kategorien
+
+- Systembeschreibung und Zweckbestimmung.
+- Rollen- und Lieferkettenmatrix.
+- Art.-3- und Art.-6-Vermerke.
+- Risikomanagement, Datenqualität, Logging, Human Oversight.
+- Konformitätsbewertung und EU-Konformitätserklärung.
+- GPAI-Informationen und Urheberrechtspolitik.
+- Post-Market-Monitoring und Incident-Logs.
+- Nutzerinformationen und Art.-50-Hinweise.
+- Vendor-Verträge und technische Anhänge.
+
+## Kommunikationsregeln
+
+1. Frist prüfen.
+2. Zuständigkeit prüfen.
+3. Geheimnisse markieren.
+4. Unklare Fragen präzisieren lassen.
+5. Keine Spekulationen liefern.
+6. Nachreichungen sauber versionieren.
+
+## Powersprint-Vertiefung
+
+- **AI-Act-Pfad:** Bei `Marktaufsicht: Evidence Room` Art. 3 KI-VO, Zweckbestimmung, Anbieter-/Betreiberrolle, Art. 6 Abs. 2 mit Anhang III, Transparenzpflichten und Sanktionen getrennt prüfen.
+- **Dokumentationslogik:** Schreibe nicht nur ein Ergebnis, sondern eine auditfähige Begründung mit Systembeschreibung, Datenfluss, Risiko, Governance, menschlicher Aufsicht und Restunsicherheit.
+- **Quellenbremse:** Normtext, Leitlinien, harmonisierte Normen und Behördenpraxis nur mit Datum/Quelle; ISO-/DIN-Bezüge als Prüfauftrag kennzeichnen, wenn nicht im Mandat belegt.
+- **Output:** KI-System-Check, Hochrisiko-Matrix, Grundrechte-/Transparenznotiz oder Behördenkommunikation.

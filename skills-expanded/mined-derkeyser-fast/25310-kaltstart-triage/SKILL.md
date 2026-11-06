@@ -1,0 +1,78 @@
+---
+name: kaltstart-triage
+description: "Wenn es um Kaltstart Softwarerecht in Softwarerecht Deutschland/EU/International/USA geht: klärt Rolle, Ziel, Frist, Unterlagen und den passenden nächsten Fachskill; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# Kaltstart Softwarerecht
+
+## Direktstart: lesen, entscheiden, liefern
+
+Beginne nicht mit einem Fragenkatalog. Wenn Material vorliegt, lies es zuerst und starte mit einer verwertbaren Arbeitshypothese:
+
+- Frist oder Sofortrisiko.
+- erkannte Rolle, Zielrichtung und Verfahrensstand.
+- tragende Tatsachen aus dem Material.
+- bester nächster Arbeitsschritt mit direkt nutzbarem Output.
+
+Frage höchstens zwei Punkte nach, und nur wenn ohne diese Antwort der nächste Schritt falsch oder riskant würde. Fehlt Material vollständig, verlange nicht allgemein alle Unterlagen, sondern nenne die drei wichtigsten Dokumente und arbeite mit sichtbaren Annahmen weiter.
+
+Starte mit einem Arbeitsprodukt, nicht mit einer Inventarliste: Kurzvermerk, Fristenblatt, Prüfmatrix, Entwurf, Fragenliste oder Entscheidungsvorschlag. Routing ist nur Mittel zum Zweck. Wenn ein Fachskill eindeutig passt, arbeite unmittelbar in dessen Richtung weiter.
+
+Arbeitsmodus: Liefere zuerst einen nutzbaren Zwischenstand in höchstens sieben Sätzen und dann den nächsten konkreten Schritt. Frage nur nach, wenn Frist, Zuständigkeit, Beweis, Betrag oder Rechtsfolge sonst nicht belastbar bestimmbar sind. Tabellen nur für Fristen, Belege, Beträge, Varianten oder Streitstoff.
+
+## Normenanker
+
+Vor einer rechtlichen Schlussfolgerung diese Anker am aktuellen Normtext prüfen; Spezial- und Landesrecht nur hinzunehmen, wenn es den konkreten Auftrag traegt:
+
+- `§ 69a UrhG` — Computerprogramme.
+- `§ 69b UrhG` — Arbeitnehmerprogramme.
+- `§ 69c UrhG` — ausschliessliche Rechte.
+- `§ 69d UrhG` — bestimmungsgemaesse Benutzung.
+- `§ 69e UrhG` — Dekompilierung.
+- `§ 31 UrhG` — Einraeumung von Nutzungsrechten.
+- `§ 32 UrhG` — angemessene Vergütung.
+- `§ 305 BGB` — AGB-Einbeziehung.
+- `§ 307 Abs. 1 BGB` — AGB-Inhaltskontrolle.
+- `Art. 5 Abs. 1 DSGVO` — Datenschutz bei Softwarebetrieb.
+
+Rechtsprechung nur ergänzen, wenn Gericht, Datum, Aktenzeichen und eine frei prüfbare Quelle vorliegen; keine BeckRS-/juris-Blindzitate verwenden.
+
+## Rechts- und Quellenanker
+
+- UrhG §§ 69a-69g
+- BGB Vertragsrecht
+- Directive 2009/24/EC
+- 17 U.S.C. §§ 101/201
+- 35 U.S.C. § 101
+
+Aktuelle Fassungen, Behördenhinweise, Formulare, Guidance und Rechtsprechung vor konkreter Verwendung live prüfen. Keine Modellzitate als Beleg verwenden.
+
+## Intake-Fragen
+
+- Was ist das Produkt: Individualsoftware, SaaS, Embedded, App, API, KI-Modell, Open-Source-Komponente oder Plattform?
+- Wer entwickelt: Arbeitnehmer, Freelancer, US contractor, Agentur, Nearshore-Team oder Erwerber im M&A-Kontext?
+- Geht es um Rechtekette, Lizenzvertrag, Vertrieb, Haftung, Datenschutz, Patent, Export oder Streit?
+- Welche Rechtsordnung, Sprache, Gerichtsstand und zwingenden EU-/US-Regeln sind betroffen?
+
+## Workflow
+
+1. Sachverhalt in Rollen, Dokumente, Zeitachse und tatsächliche Durchführung zerlegen.
+2. Rechtsanker und zwingende Vorfragen live prüfen.
+3. Pro- und Contra-Indizien gewichten, nicht nur sammeln.
+4. Output als Memo, Matrix, Redline, Antragspaket oder Counsel-Briefing liefern.
+
+## Tiefencheck für die Akte
+
+- Was ist das Produkt: Individualsoftware, SaaS, Embedded, App, API, KI-Modell, Open-Source-Komponente oder Plattform?
+- Wer entwickelt: Arbeitnehmer, Freelancer, US contractor, Agentur, Nearshore-Team oder Erwerber im M&A-Kontext?
+- Geht es um Rechtekette, Lizenzvertrag, Vertrieb, Haftung, Datenschutz, Patent, Export oder Streit?
+- Welche Rechtsordnung, Sprache, Gerichtsstand und zwingenden EU-/US-Regeln sind betroffen?
+
+**Mindest-Output:** Routing-Memo mit Rechtsgebieten, Rollen, Dokumentenlücken, Risikobändern und nächstem Vertrags- oder Prüfpfad.
+
+## Qualitäts- und Risikofilter
+
+- Keine US-, EU- oder deutsche Spezialaussage ohne aktuellen Quellencheck über offizielle Quellen oder verifizierte Nutzerquelle.
+- Rechtekette, tatsächliche technische Architektur und Vertragstext immer gemeinsam prüfen; eines allein reicht bei Software fast nie.
+- Open Source, AI-Code, Freelancer und Drittland-/US-Bezug immer aktiv suchen, auch wenn die Anfrage nur nach Lizenzvertrag klingt.
+- Rechtsprechung nur mit Gericht, Datum, Aktenzeichen/Docket und frei prüfbarer Quelle nennen; keine BeckRS-/Juris-/Kommentar-Blindzitate.

@@ -1,0 +1,20 @@
+{
+  "name": "genzys",
+  "size": [1000, 1000],
+  "palette": {
+    "ink": "#0a1420",
+    "gold": "#fdcc3f",
+    "route": "#2f7fd8"
+  },
+  "shapes": [
+    { "id": "plate", "rect": [0, 0, 1000, 850], "fill": "gold" },
+    { "id": "lane", "rect": [0, 850, 1000, 150], "fill": "route" },
+    {
+      "id": "g",
+      "glyph": { "text": "G", "font": "DIN Alternate", "style": "Bold", "height": 480 },
+      "center": [500, 425],
+      "fill": "ink"
+    }
+  ],
+  "draw": ["plate", "lane", "g"]
+}

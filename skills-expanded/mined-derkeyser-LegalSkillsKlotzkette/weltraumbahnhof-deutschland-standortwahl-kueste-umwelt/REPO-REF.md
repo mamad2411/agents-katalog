@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: weltraumrecht/skills/weltraumbahnhof-deutschland-standortwahl-kueste-umwelt/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Weltraumrecht: Weltraumbahnhof Deutschland: Standortwahl, Küste, Umwelt und Sicherheit in Weltraumrecht geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine F

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: gewerblicher-rechtsschutz/skills/spezial-operate-verhandlung-vergleich-und-eskalation/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Operate: Verhandlung, Vergleich und Eskalation in Plugin: Gewerblicher Rechtsschutz geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoam

@@ -1,0 +1,78 @@
+---
+name: aussenwirtschaft-awv-bundesbank
+description: "Wenn es um AWV-Bundesbank-Meldungen: Z-Formulare und Kapitalverkehrspflichten in Außenwirtschaft, Sanktionen, Zoll und CBAM geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten."
+---
+
+# AWV-Bundesbank-Meldungen: Z-Formulare und Kapitalverkehrspflichten
+
+## Arbeitsweg
+
+- Rolle, Ziel und gewünschtes Arbeitsprodukt klären: Wer handelt, welche Entscheidung steht an, welche Frist läuft und welcher Output wird gebraucht?
+- Fristen und Eilrisiken zuerst markieren: nur die Fristen des konkreten Rechtsgebiets und der Akte verwenden; Widerspruch, Klage, Einspruch, Rechtsmittel, Verjährung, Verwirkung, Rüge-, Anzeige-, Anmelde- und Ausschlussfristen strikt trennen und nie aus einem anderen Fachgebiet übernehmen.
+- Tragende Normen verifizieren: AWG, AWV, EU-Dual-Use-VO 2021/821, EU-Sanktionsverordnungen, ZollkodexUnion, IranEmbargoVO, RusslandSanktionenVO — Fundstellen über gesetze-im-internet.de, dejure.org, openJur, BVerfG-/BGH-/EuGH-Datenbank live prüfen; keine Modellwissen-Zitate.
+- Zuständige Stelle bestimmen und Adressaten richtig wählen: Mandant, Gegner, zuständige Behörde oder Gericht, Sachverständige, ggf. EU-/internationale Stelle (siehe Skill-Detail).
+- Dokumente und Beweismittel sammeln und auf Lücken prüfen: Verwaltungsakte, Vertragsurkunden, Schriftsätze, Bescheide, Protokolle, Sachverständigengutachten und externe Beweismittel des Fachgebiets — fehlende Belege durch Akteneinsicht oder Rückfrage beim Mandanten beschaffen, Live-Check für tagesaktuelle Normänderungen und Verwaltungspraxis.
+
+## Mandantenfall
+
+- Unternehmen erhalt Zahlungen aus dem Ausland über 12.500 EUR und weiss nicht, ob Z4-Meldung noetig.
+- Bank fragt nach korrektem Formular für Wertpapierkaeufe eines Kunden aus Drittstaaten.
+- Exporteur zahlungsabwicklung über Auslandsbank; interessen Compliancepruefung aller Meldepflichten.
+
+## Erste Schritte
+
+1. Art der Transaktion bestimmen: Zahlung, Wertpapiergeschaeft, Direktinvestition oder Kapitalverkehr.
+2. Schwellenwert prüfen: >= 12.500 EUR loest in vielen Faellen Meldepflicht aus (§ 67 AWV).
+3. Zustaendiges Z-Formular auswaehlen (Z1 allg. Zahlung, Z4 Direktinvestitionen, Z10 Wertpapiere etc.).
+4. Fristen beachten: in der Regel 7. Werktag des Folgemonats.
+5. Formulare digital über Bundesbank ExtraNet einreichen.
+6. Archivierung der Meldungsbestaetigung.
+
+## Rechtsrahmen
+
+- **AWV §§ 67-71**: Zahlungsmeldepflichten gegenueber Bundesbank.
+- **§ 67 AWV**: 12.500-EUR-Schwellenwert und Meldepflicht.
+- **AWG §§ 13-14**: Auskunfts- und Aufzeichnungspflichten.
+- **§ 24 AWV**: Aufbewahrungspflichten für Meldungsbelege.
+- **EU-Kapitalverkehrsfreiheit (Art. 63-66 AEUV)**: Rahmenbedingungen für Kapitalverkehr.
+
+## Prüf-Raster
+
+- [ ] Transaktion >= 12.500 EUR und meldepflichtig?
+- [ ] Richtiges Z-Formular ausgewaehlt?
+- [ ] Fristen (7. Werktag Folgemonat) eingehalten?
+- [ ] Meldung digital über Bundesbank ExtraNet eingereicht?
+- [ ] Archivierungsbeleg gesichert?
+- [ ] Jaehrliche Bestandsmeldungen separat geprueft?
+
+## Typische Fallstricke
+
+- Meldepflicht gilt auch bei Zahlungen über ausländische Banken (wenn Inlaender zahlender Teil).
+- Formular-Auswahl abhaengig von Transaktionsart; falsches Formular fuehrt zu Nachbearbeitungsauflage.
+- Direktinvestitions-Transaktionen fallen unter eigene Z4/Z5-Meldepflicht; nicht vergessen.
+- Netting und Verrechnungskonten können Meldeschwelle kuenstlich unterschreiten; Aggregationsregel beachten.
+
+## Schnittstellen zu anderen Skills
+
+Dieser Skill kann mit thematisch benachbarten Skills kombiniert werden, insbesondere:
+- Sanktionsscreening und Listenpruefung: `aussenwirtschaft-sanktionsscreening-fuzzy-match`
+- Exportkontrollklassifizierung: `aussenwirtschaft-gueterlisten-klassifizierung`
+- Freiwillige Offenlegung gegenueber BAFA oder Hauptzollamt: `aussenwirtschaft-freiwillige-offenlegung-bafa-zoll`
+- Interne Compliance-Programme: `aussenwirtschaft-icp-kontrollsystem`
+
+## Qualitaetsanforderungen
+
+- Sachverhalt vollstaendig: Alle Beteiligten inklusive UBO/Eigentum/Kontrolle erfasst?
+- Normverweise konkret: Artikel und Absatz zitiert, nicht nur Verordnungsnummer?
+- Quellenstand datiert: Sanktionslisten, TARIC, Gueltigkeitsdaten dokumentiert?
+- Sofortmassnahmen klar: Stop-Ship, Hold, Eskalation explizit benannt wenn Risiko rot?
+- Audit-Trail vollstaendig: Entscheidung, Begruendung, Verantwortlicher, Frist?
+- Output mandantentauglich: Kein Fachwort ohne Erläuterung für Compliance und Business?
+- Vertraulichkeit: Mandatsgeheimnisse nicht in ungesicherte externe Systeme eingeben.
+
+## Quellen
+
+- [AWV auf gesetze-im-internet.de](https://www.gesetze-im-internet.de/awv_2013/index.html)
+- [AWG auf gesetze-im-internet.de](https://www.gesetze-im-internet.de/awg_2013/index.html)
+- [Bundesbank AWV-Formulare](https://www.bundesbank.de/de/aufgaben/aussenwirtschaft/meldepflichten)
+- [AEUV Art. 63 auf EUR-Lex](https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:12016E063)

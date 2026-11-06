@@ -1,0 +1,2104 @@
+{
+".Aqua Kana": {
+"Regular": [
+"/System/Library/Fonts/AquaKana.ttc",
+0
+]
+},
+".CJK Symbols Fallback HK": {
+"Regular": [
+"/System/Library/Fonts/CJKSymbolsFallback.ttc",
+0
+]
+},
+".DecoType Nastaleeq Urdu UI": {
+"Regular": [
+"/System/Library/Fonts/DecoTypeNastaleeqUrdu.ttc",
+0
+]
+},
+".Keyboard": {
+"Regular": [
+"/System/Library/Fonts/Keyboard.ttf",
+0
+]
+},
+".LastResort": {
+"Regular": [
+"/System/Library/Fonts/LastResort.otf",
+0
+]
+},
+".New York": {
+"Regular": [
+"/System/Library/Fonts/NewYork.ttf",
+0
+],
+"Regular Italic": [
+"/System/Library/Fonts/NewYorkItalic.ttf",
+0
+]
+},
+".SF Arabic": {
+"Regular": [
+"/System/Library/Fonts/SFArabic.ttf",
+0
+]
+},
+".SF Arabic Rounded": {
+"Regular": [
+"/System/Library/Fonts/SFArabicRounded.ttf",
+0
+]
+},
+".SF Armenian": {
+"Regular": [
+"/System/Library/Fonts/SFArmenian.ttf",
+0
+]
+},
+".SF Armenian Rounded": {
+"Regular": [
+"/System/Library/Fonts/SFArmenianRounded.ttf",
+0
+]
+},
+".SF Bangla": {
+"Regular": [
+"/System/Library/Fonts/SFIndia.ttc",
+0
+]
+},
+".SF Camera": {
+"Regular": [
+"/System/Library/Fonts/SFCamera.ttf",
+0
+]
+},
+".SF Compact": {
+"Black": [
+"/System/Library/Fonts/SFCompact.ttf",
+0
+],
+"Black Italic": [
+"/System/Library/Fonts/SFCompactItalic.ttf",
+0
+]
+},
+".SF Compact Rounded": {
+"Regular": [
+"/System/Library/Fonts/SFCompactRounded.ttf",
+0
+]
+},
+".SF Georgian": {
+"Regular": [
+"/System/Library/Fonts/SFGeorgian.ttf",
+0
+]
+},
+".SF Georgian Rounded": {
+"Regular": [
+"/System/Library/Fonts/SFGeorgianRounded.ttf",
+0
+]
+},
+".SF Hebrew": {
+"Regular": [
+"/System/Library/Fonts/SFHebrew.ttf",
+0
+]
+},
+".SF Hebrew Rounded": {
+"Regular": [
+"/System/Library/Fonts/SFHebrewRounded.ttf",
+0
+]
+},
+".SF NS Mono": {
+"Light": [
+"/System/Library/Fonts/SFNSMono.ttf",
+0
+],
+"Light Italic": [
+"/System/Library/Fonts/SFNSMonoItalic.ttf",
+0
+]
+},
+".SF NS Rounded": {
+"Regular": [
+"/System/Library/Fonts/SFNSRounded.ttf",
+0
+]
+},
+".SF Numeric": {
+"Regular": [
+"/System/Library/Fonts/ADTNumeric.ttc",
+0
+]
+},
+".ThonburiUI": {
+"Regular": [
+"/System/Library/Fonts/ThonburiUI.ttc",
+0
+]
+},
+"Academy Engraved LET": {
+"Plain": [
+"/System/Library/Fonts/Supplemental/Academy Engraved LET Fonts.ttf",
+0
+]
+},
+"Al Bayan": {
+"Plain": [
+"/System/Library/Fonts/Supplemental/AlBayan.ttc",
+0
+]
+},
+"Al Nile": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Al Nile.ttc",
+0
+]
+},
+"Al Tarikh": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Al Tarikh.ttc",
+0
+]
+},
+"American Typewriter": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/AmericanTypewriter.ttc",
+0
+]
+},
+"Andale Mono": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Andale Mono.ttf",
+0
+]
+},
+"Apple Braille": {
+"Outline 6 Dot": [
+"/System/Library/Fonts/Apple Braille Outline 6 Dot.ttf",
+0
+],
+"Outline 8 Dot": [
+"/System/Library/Fonts/Apple Braille Outline 8 Dot.ttf",
+0
+],
+"Pinpoint 6 Dot": [
+"/System/Library/Fonts/Apple Braille Pinpoint 6 Dot.ttf",
+0
+],
+"Pinpoint 8 Dot": [
+"/System/Library/Fonts/Apple Braille Pinpoint 8 Dot.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Apple Braille.ttf",
+0
+]
+},
+"Apple Chancery": {
+"Chancery": [
+"/System/Library/Fonts/Supplemental/Apple Chancery.ttf",
+0
+]
+},
+"Apple Color Emoji": {
+"Regular": [
+"/System/Library/Fonts/Apple Color Emoji.ttc",
+0
+]
+},
+"Apple SD Gothic Neo": {
+"Regular": [
+"/System/Library/Fonts/AppleSDGothicNeo.ttc",
+0
+]
+},
+"Apple Symbols": {
+"Regular": [
+"/System/Library/Fonts/Apple Symbols.ttf",
+0
+]
+},
+"AppleGothic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+0
+]
+},
+"AppleMyungjo": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/AppleMyungjo.ttf",
+0
+]
+},
+"Arial": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Arial Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Arial.ttf",
+0
+]
+},
+"Arial Black": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Arial Black.ttf",
+0
+]
+},
+"Arial Hebrew": {
+"Regular": [
+"/System/Library/Fonts/ArialHB.ttc",
+0
+]
+},
+"Arial Narrow": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Arial Narrow Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Arial Narrow Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Arial Narrow.ttf",
+0
+]
+},
+"Arial Rounded MT Bold": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Arial Rounded Bold.ttf",
+0
+]
+},
+"Arial Unicode MS": {
+"Regular": [
+"/Library/Fonts/Arial Unicode.ttf",
+0
+]
+},
+"Athelas": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Athelas.ttc",
+0
+]
+},
+"Avenir": {
+"Book": [
+"/System/Library/Fonts/Avenir.ttc",
+0
+]
+},
+"Avenir Next": {
+"Bold": [
+"/System/Library/Fonts/Avenir Next.ttc",
+0
+]
+},
+"Avenir Next Condensed": {
+"Bold": [
+"/System/Library/Fonts/Avenir Next Condensed.ttc",
+0
+]
+},
+"Ayuthaya": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Ayuthaya.ttf",
+0
+]
+},
+"Baghdad": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Baghdad.ttc",
+0
+]
+},
+"Bangla MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Bangla MN.ttc",
+0
+]
+},
+"Bangla Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Bangla Sangam MN.ttc",
+0
+]
+},
+"Baskerville": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Baskerville.ttc",
+0
+]
+},
+"Beirut": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Beirut.ttc",
+0
+]
+},
+"Big Caslon": {
+"Medium": [
+"/System/Library/Fonts/Supplemental/BigCaslon.ttf",
+0
+]
+},
+"Bodoni 72": {
+"Book": [
+"/System/Library/Fonts/Supplemental/Bodoni 72.ttc",
+0
+]
+},
+"Bodoni 72 Oldstyle": {
+"Book": [
+"/System/Library/Fonts/Supplemental/Bodoni 72 OS.ttc",
+0
+]
+},
+"Bodoni 72 Smallcaps": {
+"Book": [
+"/System/Library/Fonts/Supplemental/Bodoni 72 Smallcaps Book.ttf",
+0
+]
+},
+"Bodoni Ornaments": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Bodoni Ornaments.ttf",
+0
+]
+},
+"Bradley Hand": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Bradley Hand Bold.ttf",
+0
+]
+},
+"Brush Script MT": {
+"Italic": [
+"/System/Library/Fonts/Supplemental/Brush Script.ttf",
+0
+]
+},
+"Chalkboard": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Chalkboard.ttc",
+0
+]
+},
+"Chalkboard SE": {
+"Light": [
+"/System/Library/Fonts/Supplemental/ChalkboardSE.ttc",
+0
+]
+},
+"Chalkduster": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Chalkduster.ttf",
+0
+]
+},
+"Charter": {
+"Roman": [
+"/System/Library/Fonts/Supplemental/Charter.ttc",
+0
+]
+},
+"Cochin": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Cochin.ttc",
+0
+]
+},
+"Comic Sans MS": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Comic Sans MS Bold.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Comic Sans MS.ttf",
+0
+]
+},
+"Copperplate": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Copperplate.ttc",
+0
+]
+},
+"Corsiva Hebrew": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Corsiva.ttc",
+0
+]
+},
+"Courier": {
+"Regular": [
+"/System/Library/Fonts/Courier.ttc",
+0
+]
+},
+"Courier New": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Courier New Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Courier New Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Courier New Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Courier New.ttf",
+0
+]
+},
+"DIN Alternate": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/DIN Alternate Bold.ttf",
+0
+]
+},
+"DIN Condensed": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf",
+0
+]
+},
+"Damascus": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Damascus.ttc",
+0
+]
+},
+"DecoType Naskh": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/DecoTypeNaskh.ttc",
+0
+]
+},
+"Devanagari MT": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/DevanagariMT.ttc",
+0
+]
+},
+"Devanagari Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc",
+0
+]
+},
+"Didot": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Didot.ttc",
+0
+]
+},
+"Diwan Kufi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Diwan Kufi.ttc",
+0
+]
+},
+"Diwan Thuluth": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Diwan Thuluth.ttf",
+0
+]
+},
+"Euphemia UCAS": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/EuphemiaCAS.ttc",
+0
+]
+},
+"Farah": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Farah.ttc",
+0
+]
+},
+"Farisi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Farisi.ttf",
+0
+]
+},
+"Futura": {
+"Medium": [
+"/System/Library/Fonts/Supplemental/Futura.ttc",
+0
+]
+},
+"GB18030 Bitmap": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NISC18030.ttf",
+0
+]
+},
+"Galvji": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Galvji.ttc",
+0
+]
+},
+"Geeza Pro": {
+"Regular": [
+"/System/Library/Fonts/GeezaPro.ttc",
+0
+]
+},
+"Geneva": {
+"Regular": [
+"/System/Library/Fonts/Geneva.ttf",
+0
+]
+},
+"Georgia": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Georgia Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Georgia.ttf",
+0
+]
+},
+"Gill Sans": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/GillSans.ttc",
+0
+]
+},
+"Gujarati MT": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/GujaratiMT.ttc",
+0
+]
+},
+"Gujarati Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Gujarati Sangam MN.ttc",
+0
+]
+},
+"Gurmukhi MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Gurmukhi MN.ttc",
+0
+]
+},
+"Gurmukhi MT": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Gurmukhi.ttf",
+0
+]
+},
+"Gurmukhi Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Gurmukhi Sangam MN.ttc",
+0
+]
+},
+"Heiti TC": {
+"Light": [
+"/System/Library/Fonts/STHeiti Light.ttc",
+0
+],
+"Medium": [
+"/System/Library/Fonts/STHeiti Medium.ttc",
+0
+]
+},
+"Helvetica": {
+"Regular": [
+"/System/Library/Fonts/Helvetica.ttc",
+0
+]
+},
+"Helvetica Neue": {
+"Regular": [
+"/System/Library/Fonts/HelveticaNeue.ttc",
+0
+]
+},
+"Herculanum": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Herculanum.ttf",
+0
+]
+},
+"Hiragino Maru Gothic Pro": {
+"W4": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u4e38\u30b3\u3099 ProN W4.ttc",
+0
+]
+},
+"Hiragino Mincho ProN": {
+"W3": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u660e\u671d ProN.ttc",
+0
+]
+},
+"Hiragino Sans": {
+"W0": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W0.ttc",
+0
+],
+"W1": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W1.ttc",
+0
+],
+"W2": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W2.ttc",
+0
+],
+"W3": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W3.ttc",
+0
+],
+"W4": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W4.ttc",
+0
+],
+"W5": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W5.ttc",
+0
+],
+"W6": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W6.ttc",
+0
+],
+"W7": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W7.ttc",
+0
+],
+"W8": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W8.ttc",
+0
+],
+"W9": [
+"/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W9.ttc",
+0
+]
+},
+"Hiragino Sans GB": {
+"W3": [
+"/System/Library/Fonts/Hiragino Sans GB.ttc",
+0
+]
+},
+"Hoefler Text": {
+"Ornaments": [
+"/System/Library/Fonts/Supplemental/Hoefler Text Ornaments.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Hoefler Text.ttc",
+0
+]
+},
+"ITF Devanagari": {
+"Book": [
+"/System/Library/Fonts/Supplemental/ITFDevanagari.ttc",
+0
+]
+},
+"Impact": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Impact.ttf",
+0
+]
+},
+"InaiMathi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/InaiMathi-MN.ttc",
+0
+]
+},
+"Iowan Old Style": {
+"Roman": [
+"/System/Library/Fonts/Supplemental/Iowan Old Style.ttc",
+0
+]
+},
+"Kailasa": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Kailasa.ttc",
+0
+]
+},
+"Kannada MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Kannada MN.ttc",
+0
+]
+},
+"Kannada Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Kannada Sangam MN.ttc",
+0
+]
+},
+"Kefa III": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/KefaIII.ttf",
+0
+]
+},
+"Khmer MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Khmer MN.ttc",
+0
+]
+},
+"Khmer Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Khmer Sangam MN.ttf",
+0
+]
+},
+"Kohinoor Bangla": {
+"Regular": [
+"/System/Library/Fonts/KohinoorBangla.ttc",
+0
+]
+},
+"Kohinoor Devanagari": {
+"Regular": [
+"/System/Library/Fonts/Kohinoor.ttc",
+0
+]
+},
+"Kohinoor Gujarati": {
+"Bold": [
+"/System/Library/Fonts/KohinoorGujarati.ttc",
+0
+]
+},
+"Kohinoor Telugu": {
+"Regular": [
+"/System/Library/Fonts/KohinoorTelugu.ttc",
+0
+]
+},
+"Kokonor": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Kokonor.ttf",
+0
+]
+},
+"Krungthep": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Krungthep.ttf",
+0
+]
+},
+"KufiStandardGK": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/KufiStandardGK.ttc",
+0
+]
+},
+"Lao MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Lao MN.ttc",
+0
+]
+},
+"Lao Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Lao Sangam MN.ttf",
+0
+]
+},
+"Lucida Grande": {
+"Regular": [
+"/System/Library/Fonts/LucidaGrande.ttc",
+0
+]
+},
+"Luminari": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Luminari.ttf",
+0
+]
+},
+"Malayalam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Malayalam MN.ttc",
+0
+]
+},
+"Malayalam Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Malayalam Sangam MN.ttc",
+0
+]
+},
+"Marion": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Marion.ttc",
+0
+]
+},
+"Marker Felt": {
+"Thin": [
+"/System/Library/Fonts/MarkerFelt.ttc",
+0
+]
+},
+"Menlo": {
+"Regular": [
+"/System/Library/Fonts/Menlo.ttc",
+0
+]
+},
+"Microsoft Sans Serif": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Microsoft Sans Serif.ttf",
+0
+]
+},
+"Mishafi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Mishafi.ttf",
+0
+]
+},
+"Mishafi Gold": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Mishafi Gold.ttf",
+0
+]
+},
+"Monaco": {
+"Regular": [
+"/System/Library/Fonts/Monaco.ttf",
+0
+]
+},
+"Mshtakan": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Mshtakan.ttc",
+0
+]
+},
+"Mukta Mahee": {
+"Regular": [
+"/System/Library/Fonts/MuktaMahee.ttc",
+0
+]
+},
+"Muna": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Muna.ttc",
+0
+]
+},
+"Myanmar MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Myanmar MN.ttc",
+0
+]
+},
+"Myanmar Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Myanmar Sangam MN.ttc",
+0
+]
+},
+"Nadeem": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Nadeem.ttc",
+0
+]
+},
+"New Peninim MT": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NewPeninimMT.ttc",
+0
+]
+},
+"Noteworthy": {
+"Light": [
+"/System/Library/Fonts/Noteworthy.ttc",
+0
+]
+},
+"Noto Nastaliq Urdu": {
+"Regular": [
+"/System/Library/Fonts/NotoNastaliq.ttc",
+0
+]
+},
+"Noto Sans Adlam": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansAdlam-Regular.ttf",
+0
+]
+},
+"Noto Sans Armenian": {
+"Black": [
+"/System/Library/Fonts/NotoSansArmenian.ttc",
+0
+]
+},
+"Noto Sans Avestan": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansAvestan-Regular.ttf",
+0
+]
+},
+"Noto Sans Bamum": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBamum-Regular.ttf",
+0
+]
+},
+"Noto Sans Bassa Vah": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBassaVah-Regular.ttf",
+0
+]
+},
+"Noto Sans Batak": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBatak-Regular.ttf",
+0
+]
+},
+"Noto Sans Bhaiksuki": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBhaiksuki-Regular.ttf",
+0
+]
+},
+"Noto Sans Brahmi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBrahmi-Regular.ttf",
+0
+]
+},
+"Noto Sans Buginese": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBuginese-Regular.ttf",
+0
+]
+},
+"Noto Sans Buhid": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansBuhid-Regular.ttf",
+0
+]
+},
+"Noto Sans Canadian Aboriginal": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCanadianAboriginal-Regular.otf",
+0
+]
+},
+"Noto Sans Carian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCarian-Regular.ttf",
+0
+]
+},
+"Noto Sans Caucasian Albanian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCaucasianAlbanian-Regular.ttf",
+0
+]
+},
+"Noto Sans Chakma": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansChakma-Regular.ttf",
+0
+]
+},
+"Noto Sans Cham": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCham-Regular.ttf",
+0
+]
+},
+"Noto Sans Coptic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCoptic-Regular.ttf",
+0
+]
+},
+"Noto Sans Cuneiform": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCuneiform-Regular.ttf",
+0
+]
+},
+"Noto Sans Cypriot": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansCypriot-Regular.ttf",
+0
+]
+},
+"Noto Sans Duployan": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansDuployan-Regular.ttf",
+0
+]
+},
+"Noto Sans Egyptian Hieroglyphs": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansEgyptianHieroglyphs-Regular.ttf",
+0
+]
+},
+"Noto Sans Elbasan": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansElbasan-Regular.ttf",
+0
+]
+},
+"Noto Sans Glagolitic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansGlagolitic-Regular.ttf",
+0
+]
+},
+"Noto Sans Gothic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
+0
+]
+},
+"Noto Sans Gunjala Gondi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansGunjalaGondi-Regular.otf",
+0
+]
+},
+"Noto Sans Hanifi Rohingya": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansHanifiRohingya-Regular.ttf",
+0
+]
+},
+"Noto Sans Hanunoo": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansHanunoo-Regular.ttf",
+0
+]
+},
+"Noto Sans Hatran": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansHatran-Regular.ttf",
+0
+]
+},
+"Noto Sans Imperial Aramaic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansImperialAramaic-Regular.ttf",
+0
+]
+},
+"Noto Sans Inscriptional Pahlavi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansInscriptionalPahlavi-Regular.ttf",
+0
+]
+},
+"Noto Sans Inscriptional Parthian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansInscriptionalParthian-Regular.ttf",
+0
+]
+},
+"Noto Sans Javanese": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansJavanese-Regular.otf",
+0
+]
+},
+"Noto Sans Kaithi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansKaithi-Regular.ttf",
+0
+]
+},
+"Noto Sans Kannada": {
+"Thin": [
+"/System/Library/Fonts/NotoSansKannada.ttc",
+0
+]
+},
+"Noto Sans Kayah Li": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansKayahLi-Regular.ttf",
+0
+]
+},
+"Noto Sans Kharoshthi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansKharoshthi-Regular.ttf",
+0
+]
+},
+"Noto Sans Khojki": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansKhojki-Regular.ttf",
+0
+]
+},
+"Noto Sans Khudawadi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansKhudawadi-Regular.ttf",
+0
+]
+},
+"Noto Sans Lepcha": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLepcha-Regular.ttf",
+0
+]
+},
+"Noto Sans Limbu": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLimbu-Regular.ttf",
+0
+]
+},
+"Noto Sans Linear A": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLinearA-Regular.ttf",
+0
+]
+},
+"Noto Sans Linear B": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLinearB-Regular.ttf",
+0
+]
+},
+"Noto Sans Lisu": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLisu-Regular.ttf",
+0
+]
+},
+"Noto Sans Lycian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLycian-Regular.ttf",
+0
+]
+},
+"Noto Sans Lydian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansLydian-Regular.ttf",
+0
+]
+},
+"Noto Sans Mahajani": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMahajani-Regular.ttf",
+0
+]
+},
+"Noto Sans Mandaic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMandaic-Regular.ttf",
+0
+]
+},
+"Noto Sans Manichaean": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansManichaean-Regular.ttf",
+0
+]
+},
+"Noto Sans Marchen": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMarchen-Regular.ttf",
+0
+]
+},
+"Noto Sans Masaram Gondi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMasaramGondi-Regular.otf",
+0
+]
+},
+"Noto Sans Meetei Mayek": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMeeteiMayek-Regular.ttf",
+0
+]
+},
+"Noto Sans Mende Kikakui": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMendeKikakui-Regular.ttf",
+0
+]
+},
+"Noto Sans Meroitic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMeroitic-Regular.ttf",
+0
+]
+},
+"Noto Sans Miao": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMiao-Regular.ttf",
+0
+]
+},
+"Noto Sans Modi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansModi-Regular.ttf",
+0
+]
+},
+"Noto Sans Mongolian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMongolian-Regular.ttf",
+0
+]
+},
+"Noto Sans Mro": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMro-Regular.ttf",
+0
+]
+},
+"Noto Sans Multani": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansMultani-Regular.ttf",
+0
+]
+},
+"Noto Sans Myanmar": {
+"Black": [
+"/System/Library/Fonts/NotoSansMyanmar.ttc",
+0
+]
+},
+"Noto Sans NKo": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansNKo-Regular.ttf",
+0
+]
+},
+"Noto Sans Nabataean": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansNabataean-Regular.ttf",
+0
+]
+},
+"Noto Sans Nag Mundari": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansNagMundari-Regular.ttf",
+0
+]
+},
+"Noto Sans New Tai Lue": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansNewTaiLue-Regular.ttf",
+0
+]
+},
+"Noto Sans Newa": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansNewa-Regular.ttf",
+0
+]
+},
+"Noto Sans Ol Chiki": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOlChiki-Regular.ttf",
+0
+]
+},
+"Noto Sans Old Hungarian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldHungarian-Regular.ttf",
+0
+]
+},
+"Noto Sans Old Italic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldItalic-Regular.ttf",
+0
+]
+},
+"Noto Sans Old North Arabian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldNorthArabian-Regular.ttf",
+0
+]
+},
+"Noto Sans Old Permic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldPermic-Regular.ttf",
+0
+]
+},
+"Noto Sans Old Persian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldPersian-Regular.ttf",
+0
+]
+},
+"Noto Sans Old South Arabian": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldSouthArabian-Regular.ttf",
+0
+]
+},
+"Noto Sans Old Turkic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOldTurkic-Regular.ttf",
+0
+]
+},
+"Noto Sans Oriya": {
+"Regular": [
+"/System/Library/Fonts/NotoSansOriya.ttc",
+0
+]
+},
+"Noto Sans Osage": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOsage-Regular.ttf",
+0
+]
+},
+"Noto Sans Osmanya": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansOsmanya-Regular.ttf",
+0
+]
+},
+"Noto Sans Pahawh Hmong": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansPahawhHmong-Regular.ttf",
+0
+]
+},
+"Noto Sans Palmyrene": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansPalmyrene-Regular.ttf",
+0
+]
+},
+"Noto Sans Pau Cin Hau": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansPauCinHau-Regular.ttf",
+0
+]
+},
+"Noto Sans PhagsPa": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansPhagsPa-Regular.ttf",
+0
+]
+},
+"Noto Sans Phoenician": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansPhoenician-Regular.ttf",
+0
+]
+},
+"Noto Sans Psalter Pahlavi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansPsalterPahlavi-Regular.ttf",
+0
+]
+},
+"Noto Sans Rejang": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansRejang-Regular.ttf",
+0
+]
+},
+"Noto Sans Samaritan": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSamaritan-Regular.ttf",
+0
+]
+},
+"Noto Sans Saurashtra": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSaurashtra-Regular.ttf",
+0
+]
+},
+"Noto Sans Sharada": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSharada-Regular.ttf",
+0
+]
+},
+"Noto Sans Siddham": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSiddham-Regular.otf",
+0
+]
+},
+"Noto Sans Sora Sompeng": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSoraSompeng-Regular.ttf",
+0
+]
+},
+"Noto Sans Sundanese": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSundanese-Regular.ttf",
+0
+]
+},
+"Noto Sans Syloti Nagri": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSylotiNagri-Regular.ttf",
+0
+]
+},
+"Noto Sans Syriac": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansSyriac-Regular.ttf",
+0
+]
+},
+"Noto Sans Tagalog": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTagalog-Regular.ttf",
+0
+]
+},
+"Noto Sans Tagbanwa": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTagbanwa-Regular.ttf",
+0
+]
+},
+"Noto Sans Tai Le": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTaiLe-Regular.ttf",
+0
+]
+},
+"Noto Sans Tai Tham": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTaiTham-Regular.ttf",
+0
+]
+},
+"Noto Sans Tai Viet": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTaiViet-Regular.ttf",
+0
+]
+},
+"Noto Sans Takri": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTakri-Regular.ttf",
+0
+]
+},
+"Noto Sans Thaana": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansThaana-Regular.ttf",
+0
+]
+},
+"Noto Sans Tifinagh": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTifinagh-Regular.otf",
+0
+]
+},
+"Noto Sans Tirhuta": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansTirhuta-Regular.ttf",
+0
+]
+},
+"Noto Sans Ugaritic": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansUgaritic-Regular.ttf",
+0
+]
+},
+"Noto Sans Vai": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansVai-Regular.ttf",
+0
+]
+},
+"Noto Sans Wancho": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansWancho-Regular.ttf",
+0
+]
+},
+"Noto Sans Warang Citi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansWarangCiti-Regular.ttf",
+0
+]
+},
+"Noto Sans Yi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSansYi-Regular.ttf",
+0
+]
+},
+"Noto Serif Ahom": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSerifAhom-Regular.ttf",
+0
+]
+},
+"Noto Serif Balinese": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSerifBalinese-Regular.ttf",
+0
+]
+},
+"Noto Serif Hmong Nyiakeng": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSerifNyiakengPuachueHmong-Regular.ttf",
+0
+]
+},
+"Noto Serif Myanmar": {
+"Black": [
+"/System/Library/Fonts/NotoSerifMyanmar.ttc",
+0
+]
+},
+"Noto Serif Yezidi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/NotoSerifYezidi-Regular.otf",
+0
+]
+},
+"Optima": {
+"Regular": [
+"/System/Library/Fonts/Optima.ttc",
+0
+]
+},
+"Oriya MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Oriya MN.ttc",
+0
+]
+},
+"Oriya Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Oriya Sangam MN.ttc",
+0
+]
+},
+"PT Mono": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/PTMono.ttc",
+0
+]
+},
+"PT Sans": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/PTSans.ttc",
+0
+]
+},
+"PT Serif": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/PTSerif.ttc",
+0
+]
+},
+"PT Serif Caption": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/PTSerifCaption.ttc",
+0
+]
+},
+"Palatino": {
+"Regular": [
+"/System/Library/Fonts/Palatino.ttc",
+0
+]
+},
+"Papyrus": {
+"Condensed": [
+"/System/Library/Fonts/Supplemental/Papyrus.ttc",
+0
+]
+},
+"Party LET": {
+"Plain": [
+"/System/Library/Fonts/Supplemental/PartyLET-plain.ttf",
+0
+]
+},
+"Phosphate": {
+"Inline": [
+"/System/Library/Fonts/Supplemental/Phosphate.ttc",
+0
+]
+},
+"Plantagenet Cherokee": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/PlantagenetCherokee.ttf",
+0
+]
+},
+"Raanana": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Raanana.ttc",
+0
+]
+},
+"Rockwell": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Rockwell.ttc",
+0
+]
+},
+"STIX Two Math": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXTwoMath.otf",
+0
+]
+},
+"STIX Two Text": {
+"Italic": [
+"/System/Library/Fonts/Supplemental/STIXTwoText-Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXTwoText.ttf",
+0
+]
+},
+"STIXGeneral": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXGeneralBol.otf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/STIXGeneralBolIta.otf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/STIXGeneralItalic.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXGeneral.otf",
+0
+]
+},
+"STIXIntegralsD": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXIntDBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXIntDReg.otf",
+0
+]
+},
+"STIXIntegralsSm": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXIntSmBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXIntSmReg.otf",
+0
+]
+},
+"STIXIntegralsUp": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXIntUpBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXIntUpReg.otf",
+0
+]
+},
+"STIXIntegralsUpD": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXIntUpDBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXIntUpDReg.otf",
+0
+]
+},
+"STIXIntegralsUpSm": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXIntUpSmBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXIntUpSmReg.otf",
+0
+]
+},
+"STIXNonUnicode": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXNonUniBol.otf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/STIXNonUniBolIta.otf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/STIXNonUniIta.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXNonUni.otf",
+0
+]
+},
+"STIXSizeFiveSym": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXSizFiveSymReg.otf",
+0
+]
+},
+"STIXSizeFourSym": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXSizFourSymBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXSizFourSymReg.otf",
+0
+]
+},
+"STIXSizeOneSym": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXSizOneSymBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXSizOneSymReg.otf",
+0
+]
+},
+"STIXSizeThreeSym": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXSizThreeSymBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXSizThreeSymReg.otf",
+0
+]
+},
+"STIXSizeTwoSym": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXSizTwoSymBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXSizTwoSymReg.otf",
+0
+]
+},
+"STIXVariants": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/STIXVarBol.otf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/STIXVar.otf",
+0
+]
+},
+"Sana": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Sana.ttc",
+0
+]
+},
+"Sathu": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Sathu.ttf",
+0
+]
+},
+"Savoye LET": {
+"Plain": [
+"/System/Library/Fonts/Supplemental/Savoye LET.ttc",
+0
+]
+},
+"Seravek": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Seravek.ttc",
+0
+]
+},
+"Shree Devanagari 714": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Shree714.ttc",
+0
+]
+},
+"SignPainter": {
+"HouseScript": [
+"/System/Library/Fonts/Supplemental/SignPainter.ttc",
+0
+]
+},
+"Silom": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Silom.ttf",
+0
+]
+},
+"Sinhala MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Sinhala MN.ttc",
+0
+]
+},
+"Sinhala Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Sinhala Sangam MN.ttc",
+0
+]
+},
+"Skia": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Skia.ttf",
+0
+]
+},
+"Snell Roundhand": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/SnellRoundhand.ttc",
+0
+]
+},
+"Songti SC": {
+"Black": [
+"/System/Library/Fonts/Supplemental/Songti.ttc",
+0
+]
+},
+"Sukhumvit Set": {
+"Thin": [
+"/System/Library/Fonts/Supplemental/SukhumvitSet.ttc",
+0
+]
+},
+"Superclarendon": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/SuperClarendon.ttc",
+0
+]
+},
+"Symbol": {
+"Regular": [
+"/System/Library/Fonts/Symbol.ttf",
+0
+]
+},
+"System Font": {
+"Regular": [
+"/System/Library/Fonts/SFNS.ttf",
+0
+],
+"Regular Italic": [
+"/System/Library/Fonts/SFNSItalic.ttf",
+0
+]
+},
+"Tahoma": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Tahoma Bold.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Tahoma.ttf",
+0
+]
+},
+"Tamil MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Tamil MN.ttc",
+0
+]
+},
+"Tamil Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Tamil Sangam MN.ttc",
+0
+]
+},
+"Telugu MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Telugu MN.ttc",
+0
+]
+},
+"Telugu Sangam MN": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Telugu Sangam MN.ttc",
+0
+]
+},
+"Thonburi": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Thonburi.ttc",
+0
+]
+},
+"Times": {
+"Regular": [
+"/System/Library/Fonts/Times.ttc",
+0
+]
+},
+"Times New Roman": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+0
+]
+},
+"Trattatello": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Trattatello.ttf",
+0
+]
+},
+"Trebuchet MS": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Trebuchet MS Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Trebuchet MS Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Trebuchet MS Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Trebuchet MS.ttf",
+0
+]
+},
+"Verdana": {
+"Bold": [
+"/System/Library/Fonts/Supplemental/Verdana Bold.ttf",
+0
+],
+"Bold Italic": [
+"/System/Library/Fonts/Supplemental/Verdana Bold Italic.ttf",
+0
+],
+"Italic": [
+"/System/Library/Fonts/Supplemental/Verdana Italic.ttf",
+0
+],
+"Regular": [
+"/System/Library/Fonts/Supplemental/Verdana.ttf",
+0
+]
+},
+"Waseem": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Waseem.ttc",
+0
+]
+},
+"Webdings": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Webdings.ttf",
+0
+]
+},
+"Wingdings": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Wingdings.ttf",
+0
+]
+},
+"Wingdings 2": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Wingdings 2.ttf",
+0
+]
+},
+"Wingdings 3": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Wingdings 3.ttf",
+0
+]
+},
+"Zapf Dingbats": {
+"Regular": [
+"/System/Library/Fonts/ZapfDingbats.ttf",
+0
+]
+},
+"Zapfino": {
+"Regular": [
+"/System/Library/Fonts/Supplemental/Zapfino.ttf",
+0
+]
+}
+}

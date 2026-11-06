@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/derkeyser/LegalSkillsKlotzkette (path: festlandchina-wirtschaftsverkehr/skills/chn-070-taiwan-risk-scenario/SKILL.md, branch: main)
+- mined: 2026-10-27
+- desc: Wenn es um Taiwan Risk Scenario in China-Wirtschaftsverkehr geht: prüft Frist, Form, Zuständigkeit, Rechtsweg und Sofortmaßnahmen; liefert eine Fristen- und Risikoampel mit Sofortschritten."
