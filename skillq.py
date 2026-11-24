@@ -445,19 +445,27 @@ def main():
                 " OR skills.description LIKE 'Für %' THEN 3.0 ELSE 0 END)")
     # Penalti bahasa: query id/en tidak boleh dimenangkan skill Jerman/Spanyol/
     # Portugis/Prancis/Cina yang namanya kebetulan mirip ("foto-*", "analisis-*").
-    qlang = query_lang(q)
-    params["qlang"] = qlang
-    if qlang in ("en", "id"):
-        # Penalti besar: boost nama bisa mencapai -100, jadi skill asing harus
-        # benar-benar jauh lebih cocok untuk menangi query Indonesia/Inggris.
-        order += (" + (CASE WHEN sklang.lang IN ('de','es','pt','fr','tr','it','nl','pl','cs','uk','vi','th','ja','ko') THEN 35.0"
-                    " WHEN sklang.lang = 'zh' THEN 20.0 ELSE 0 END)")
-        if qlang == "id":
-            # Query Indonesia: skill berbahasa Indonesia menang tipis — deskripsi
-            # lokal ("STNK", "zakat") memang tidak mungkin cocok di skill Inggris.
-            order += " + (CASE WHEN sklang.lang = 'id' THEN -4.0 ELSE 0 END)"
-    elif qlang == "zh":
-        order += (" + (CASE WHEN sklang.lang NOT IN ('zh','??') THEN 20.0 ELSE 0 END)")
+    # Tabel sklang opsional (fixture CI / DB lama tidak punya) — tanpa itu
+    # query tetap jalan, hanya tanpa penalti bahasa.
+    try:
+        has_sklang = c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sklang'").fetchone() is not None
+    except Exception:
+        has_sklang = False
+    if has_sklang:
+        qlang = query_lang(q)
+        params["qlang"] = qlang
+        if qlang in ("en", "id"):
+            # Penalti besar: boost nama bisa mencapai -100, jadi skill asing harus
+            # benar-benar jauh lebih cocok untuk menangi query Indonesia/Inggris.
+            order += (" + (CASE WHEN sklang.lang IN ('de','es','pt','fr','tr','it','nl','pl','cs','uk','vi','th','ja','ko') THEN 35.0"
+                        " WHEN sklang.lang = 'zh' THEN 20.0 ELSE 0 END)")
+            if qlang == "id":
+                # Query Indonesia: skill berbahasa Indonesia menang tipis — deskripsi
+                # lokal ("STNK", "zakat") memang tidak mungkin cocok di skill Inggris.
+                order += " + (CASE WHEN sklang.lang = 'id' THEN -4.0 ELSE 0 END)"
+        elif qlang == "zh":
+            order += (" + (CASE WHEN sklang.lang NOT IN ('zh','??') THEN 20.0 ELSE 0 END)")
     # Feedback loop: skill yang sering di-load (`sk -l`) naik tipis — maks -4.8.
     # COALESCE wajib: tanpa itu NULL meracuni total skor baris tanpa pemakaian.
     order += (" + COALESCE((SELECT -0.4 * MIN(u.cnt, 12) FROM skusage u"
@@ -474,17 +482,28 @@ def main():
         # Quote tiap term: token berisi '-'/'/' ("fine-tune", "ci/cd") bikin
         # FTS5 MATCH syntax error -> query gagal total -> fallback LIKE kosong.
         params["fts"] = " OR ".join('"' + t.replace('"', "") + '"' for t in q_terms)
+        join = "LEFT JOIN sklang ON sklang.name = skills.name " if has_sklang else ""
         rows = c.execute(
             "SELECT skills.name, COALESCE(skills.category,''), COALESCE(skills.description,''), skills.path FROM skills "
-            "LEFT JOIN sklang ON sklang.name = skills.name "
+            f"{join}"
             f"WHERE skills MATCH :fts{junk} ORDER BY {order} LIMIT :n", params).fetchall()
     except Exception:
         rows = []
     if not rows:
-        like = f"%{q}%"
-        rows = c.execute(
-            "SELECT name, COALESCE(category,''), COALESCE(description,''), path FROM skills "
-            "WHERE name LIKE ? OR description LIKE ? LIMIT ?", (like, like, n)).fetchall()
+        # Fallback LIKE per-token (bukan frasa utuh): "uji cek push hijau"
+        # harus tetap menemukan baris yang memuat sebagian kata.
+        toks = [t for t in re.split(r"[^a-z0-9]+", q.lower()) if len(t) > 2] or [q.lower()]
+        conds = " OR ".join(["name LIKE ? OR description LIKE ?"] * len(toks))
+        args = []
+        for t in toks:
+            args += [f"%{t}%", f"%{t}%"]
+        args.append(n)
+        try:
+            rows = c.execute(
+                "SELECT name, COALESCE(category,''), COALESCE(description,''), path FROM skills "
+                f"WHERE {conds} LIMIT ?", args).fetchall()
+        except Exception:
+            rows = []
     if not rows:
         print("tidak ada hasil")
         return
