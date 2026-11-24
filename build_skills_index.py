@@ -28,6 +28,35 @@ ROLE_FILE = AGENTS / "role-skill-map.json"
 JUNK_FILE = AGENTS / "skills-junk.txt"
 
 HEAD_BYTES = 4096
+
+# Deteksi bahasa deskripsi skill — untuk penalti mismatch di skillq.py.
+_LANG_SIG = {
+    "de": set("der die das und ist ein eine für mit auf von zu den dem des im am an als auch nicht wie aber oder wenn wird werden kann mehr sehr nur noch über unter zwischen durch gegen ohne um vor nach seit bei aus".split()),
+    "es": set("el la los las de del en y es un una para con por como más pero sus le lo al se su o este esta esto esos esas sin sobre entre hasta desde durante mediante".split()),
+    "pt": set("o a os as de do da em e é um uma para com por como mais mas seu sua ao à se ou este esta isso esses esas sem sobre entre até desde durante mediante você não".split()),
+    "fr": set("le la les de des du en et est un une pour avec par comme plus mais son sa ses au aux se ou ce cette ces sans sur entre jusqu depuis pendant".split()),
+    "id": set("yang dan di ke dari untuk dengan pada dalam adalah ini itu atau tidak ada akan juga bisa perlu harus cara agar supaya telah sudah hanya lebih paling".split()),
+    "en": set("the and for with that this from are was were will would can could should not but have has had you your our their its into about over under between through during before after without within".split()),
+}
+
+
+def _lang_of(desc):
+    d = (desc or "")[:400].lower()
+    if re.search(r"[一-鿿぀-ヿ가-힯]", d):
+        return "zh"
+    words = re.findall(r"[a-zà-ÿ]{2,}", d)
+    if not words:
+        return "??"
+    best, bs = "??", 0
+    for k, sig in _LANG_SIG.items():
+        s = sum(1 for w in words if w in sig)
+        if s > bs:
+            best, bs = k, s
+    if bs >= 3:
+        return best
+    return "en" if bs == 0 else "??"
+
+
 FM_RE = re.compile(r"^---\s*\n(.*?)\n---", re.S)
 NAME_RE = re.compile(r"^name:\s*[\"']?([^\"'\n]+)", re.M)
 DESC_RE = re.compile(r"^description:\s*[\"']?(.*?)[\"']?\s*(?:\n\S|$)", re.S | re.M)
@@ -512,6 +541,21 @@ def main():
             entries[name] = (desc, "reference", cat, str(f), src)
             asset_count += 1
 
+    # Junk permanen: (a) stub "archived copy" = konten mati di hulu,
+    # (b) daftar manual ~/.agents/skills-junk-manual.txt (1 fragmen path per baris)
+    # — supaya rebuild tidak menghidupkan kembali skill yang sudah dihukum.
+    manual = set()
+    mf = AGENTS / "skills-junk-manual.txt"
+    if mf.exists():
+        manual = {l.strip() for l in mf.read_text().splitlines() if l.strip() and not l.startswith("#")}
+    for n, (d, t, c, p, s) in list(entries.items()):
+        if t == "junk":
+            continue
+        if ((d or "").startswith("This page used to hold an archived copy")
+                or (d or "").startswith("The skill leverages")   # template slop NB-Ecosystem
+                or any(frag in p for frag in manual)):
+            entries[n] = (d, "junk", c, p, s)
+
     if DB_PATH.exists():
         DB_PATH.unlink()
     conn = sqlite3.connect(DB_PATH)
@@ -519,6 +563,12 @@ def main():
     conn.executemany(
         "INSERT INTO skills (name, description, tier, category, path, source) VALUES (?,?,?,?,?,?)",
         [(n, d, t, c, p, s) for n, (d, t, c, p, s) in entries.items()],
+    )
+    # Tabel bahasa skill — dipakai skillq.py untuk penalti mismatch bahasa query.
+    conn.execute("CREATE TABLE sklang(name TEXT PRIMARY KEY, lang TEXT)")
+    conn.executemany(
+        "INSERT INTO sklang VALUES (?,?)",
+        [(n, _lang_of(d)) for n, (d, _t, _c, _p, _s) in entries.items()],
     )
     conn.commit()
     conn.close()

@@ -12,6 +12,8 @@ quarantine/
 # === DB besar (>100 MB, lewat limit GitHub) — dibagikan via Release asset ===
 retrieve.db
 skills-index.db
+datasets-index.db
+datasets/
 
 # === Lock & state runtime ===
 *.lock

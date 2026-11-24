@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -371,6 +372,56 @@ def tool_agent_context(args):
     ])
 
 
+MEM_MD = AG / "memory" / "MEMORY.md"
+MEM_STORE = AG / "memory-store.py"
+DATA_HUB = AG / "data-hub.py"
+
+
+def _run(cmd, timeout=60, cap=6000):
+    """Jalankan CLI 0-token, kembalikan output terpotong. Gagal → pesan error."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        out = (r.stdout or "") + (("\n[stderr] " + r.stderr) if r.returncode else "")
+        return out.strip()[:cap] or "(kosong)"
+    except Exception as e:
+        return "ERROR menjalankan %s: %s" % (cmd[0], e)
+
+
+def tool_memory_recall(args):
+    """Cari fakta di MEMORY.md berdasarkan kata kunci; kosong = 10 fakta terakhir."""
+    q = args.get("query", "").strip().lower()
+    try:
+        lines = [l.strip() for l in MEM_MD.read_text(errors="ignore").splitlines()
+                 if l.strip().startswith("-")]
+    except Exception:
+        return "MEMORY.md tidak bisa dibaca."
+    if q:
+        toks = [t for t in re.split(r"\W+", q) if len(t) > 2]
+        hits = [l for l in lines if any(t in l.lower() for t in toks)]
+        return ("Memori cocok '%s' (%d):\n%s" % (q, len(hits), "\n".join(hits[:15]))) \
+            if hits else "Tidak ada memori cocok '%s'." % q
+    return "Memori global (%d fakta, 15 terakhir):\n%s" % (len(lines), "\n".join(lines[-15:]))
+
+
+def tool_memory_save(args):
+    fact = args.get("fact", "").strip()
+    if not fact:
+        return "Butuh argumen 'fact'."
+    return _run(["python3", str(MEM_STORE), "add", fact])
+
+
+def tool_data_hub(args):
+    action = args.get("action", "search")
+    query = args.get("query", "").strip()
+    if action == "search":
+        return _run(["python3", str(DATA_HUB), "search", query or "dataset", "-n", "10"])
+    if action in ("get", "peek"):
+        if not query:
+            return "Butuh argumen 'query' (slug/hf:id/openml:id/zenodo:id/path)."
+        return _run(["python3", str(DATA_HUB), action, query], timeout=120)
+    return "action harus: search | get | peek"
+
+
 TOOLS = [
     ("skills_available", "Ringkasan katalog skill: jumlah, kategori teratas, contoh.",
      {"type": "object", "properties": {}}),
@@ -388,6 +439,19 @@ TOOLS = [
      {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}),
     ("agent_context", "Paket 'lihat dulu': skill + MCP + repo + aturan.",
      {"type": "object", "properties": {}}),
+    ("memory_recall", "Cari fakta memori antar-sesi (MEMORY.md). Pakai di awal tugas / saat butuh konteks lama.",
+     {"type": "object", "properties": {
+         "query": {"type": "string", "description": "kata kunci; kosong = fakta terakhir"}}}),
+    ("memory_save", "Simpan fakta penting ke memori global (fakta + alasan, satu baris).",
+     {"type": "object", "properties": {
+         "fact": {"type": "string", "description": "mis. 'repo X pakai pnpm bukan npm — kenapa: lockfile v9'"}},
+      "required": ["fact"]}),
+    ("data_hub", "Dataset publik: search indeks 957rb+ (HF/OpenML/Zenodo) + 23 curated; get unduh; peek = EDA instan.",
+     {"type": "object", "properties": {
+         "action": {"type": "string", "enum": ["search", "get", "peek"],
+                    "description": "search=cari metadata, get=unduh, peek=unduh+ringkasan data"},
+         "query": {"type": "string", "description": "kata kunci / slug / hf:owner/nama / openml:id / zenodo:id"}},
+      "required": ["action"]}),
 ]
 HANDLERS = {
     "skills_available": tool_skills_available,
@@ -395,6 +459,9 @@ HANDLERS = {
     "skill_for_task": tool_skill_for_task,
     "skill_load": tool_skill_load,
     "agent_context": tool_agent_context,
+    "memory_recall": tool_memory_recall,
+    "memory_save": tool_memory_save,
+    "data_hub": tool_data_hub,
 }
 
 

@@ -47,7 +47,12 @@ def registry_sources():
             if REG_SKIP_MINED and os.path.isdir(os.path.join(DEST, "mined-" + full.replace("/", "-"))):
                 continue  # sudah pernah ditambang
             out.append((full, "main"))
-        print("registry mode: %d kandidat (stars>=%d)" % (len(out), REG_MIN_STARS))
+        # shard paralel: REG_SHARD="i/n" ambil irisan ke-i dari n
+        shard = os.environ.get("REG_SHARD", "")
+        if "/" in shard:
+            i, n = (int(x) for x in shard.split("/", 1))
+            out = [s for j, s in enumerate(out) if j % n == i]
+        print("registry mode: %d kandidat (stars>=%d, shard=%s)" % (len(out), REG_MIN_STARS, shard or "all"))
     except Exception as e:
         print("registry gagal dibaca:", e)
     return out
