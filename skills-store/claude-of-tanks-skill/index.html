@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CoTFly — A fly plays Claude of Tanks</title>
+    <meta
+      name="description"
+      content="A neural fly pilot playing Claude of Tanks. Watch its sensory neurons, decisions, and motor commands live."
+    />
+    <meta name="theme-color" content="#141914" />
+    <link rel="canonical" href="https://fly.kevinliu.studio/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CoTFly" />
+    <meta property="og:title" content="CoTFly — A fly plays Claude of Tanks" />
+    <meta property="og:description" content="One tiny helmet. One very real tank. Watch a neural fly pilot drive, aim and fire from its miniature cockpit." />
+    <meta property="og:url" content="https://fly.kevinliu.studio/" />
+    <meta name="twitter:card" content="summary" />
+    <link rel="manifest" href="/cotfly.webmanifest" />
+    <link rel="icon" href="/cotfly.svg" />
+    <link rel="stylesheet" href="/src/fly/style.css" />
+  </head>
+  <body>
+    <svg class="icon-library" aria-hidden="true">
+      <defs>
+        <symbol id="i-github" viewBox="0 0 24 24">
+          <path d="M9 19c-4.3 1.3-4.3-2.5-6-3m12 6v-3.4a3 3 0 0 0-.8-2.3c2.7-.3 5.6-1.3 5.6-6a4.7 4.7 0 0 0-1.3-3.3 4.3 4.3 0 0 0-.1-3.3S17.4 3.4 15 5a11.4 11.4 0 0 0-6 0C6.6 3.4 5.6 3.7 5.6 3.7a4.3 4.3 0 0 0-.1 3.3 4.7 4.7 0 0 0-1.3 3.3c0 4.7 2.9 5.7 5.6 6A3 3 0 0 0 9 18.6V22" />
+        </symbol>
+        <symbol id="i-play" viewBox="0 0 24 24">
+          <path d="m8 5 11 7-11 7z" />
+        </symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24">
+          <path d="M8 5v14M16 5v14" />
+        </symbol>
+        <symbol id="i-reset" viewBox="0 0 24 24">
+          <path d="M4 10a8 8 0 1 1 1 8M4 4v6h6" />
+        </symbol>
+        <symbol id="i-sugar" viewBox="0 0 24 24">
+          <path d="m13 2-9 12h7l-1 8 10-13h-8z" />
+        </symbol>
+        <symbol id="i-hand" viewBox="0 0 24 24">
+          <path
+            d="M8 12V5a2 2 0 0 1 4 0v7-8a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v8c0 5-4 7-7 7-4 0-6-4-9-8a2 2 0 0 1 3-2l1 1"
+          />
+        </symbol>
+        <symbol id="i-brain" viewBox="0 0 24 24">
+          <path
+            d="M12 4c-4-4-8 0-7 3-4 1-4 6-1 8-1 5 5 7 8 4V4m0 0c4-4 8 0 7 3 4 1 4 6 1 8 1 5-5 7-8 4M5 7l3 2m-4 6 4-1m11-7-3 2m4 6-4-1"
+          />
+        </symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12h8M12 8v8" />
+        </symbol>
+        <symbol id="i-speed" viewBox="0 0 24 24">
+          <path d="M4 18a10 10 0 1 1 16 0M12 12l5-5M5 12H3m18 0h-2M12 4V2" />
+          <circle cx="12" cy="12" r="2" />
+        </symbol>
+        <symbol id="i-target" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="7" />
+          <path d="M12 1v6m0 10v6M1 12h6m10 0h6" />
+          <circle cx="12" cy="12" r="1" />
+        </symbol>
+        <symbol id="i-shell" viewBox="0 0 24 24">
+          <path d="M9 20V8c0-3 3-6 3-6s3 3 3 6v12M7 20h10M9 14h6" />
+        </symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24">
+          <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6m0-10v1" />
+        </symbol>
+        <symbol id="i-expand" viewBox="0 0 24 24">
+          <path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5" />
+        </symbol>
+        <symbol id="i-fly" viewBox="0 0 24 24">
+          <ellipse cx="12" cy="13" rx="3" ry="7" />
+          <path
+            d="M9 10C0 0 0 17 9 15m6-5C24 0 24 17 15 15M9 17l-5 4m11-4 5 4M9 12l-6 2m12-2 6 2M10 6 8 3m6 3 2-3"
+          />
+        </symbol>
+      </defs>
+    </svg>
+    <div class="lab">
+      <header class="masthead" aria-label="Tank command controls">
+        <a class="wordmark" href="/" aria-label="CoTFly"
+          ><svg><use href="#i-fly" /></svg
+          ><span><span class="brand-cot">CoT</span>Fly<small>Autonomous tank command</small></span></a
+        >
+        <div class="controls">
+          <button id="configure-trial" class="button" aria-label="Configure trial" title="Configure trial"><svg><use href="#i-target" /></svg><span>New trial</span></button
+          ><button id="pause" class="button" aria-label="Pause simulation" title="Pause simulation" disabled>
+            <svg><use href="#i-pause" /></svg><span>Pause</span></button
+          ><button id="sugar" class="button" aria-label="Sugar boost" title="Sugar boost" disabled>
+            <svg><use href="#i-sugar" /></svg><span>Sugar</span></button
+          ><button id="takeover" class="button" aria-label="Take control" title="Take control" disabled>
+            <svg><use href="#i-hand" /></svg><span>Take control</span></button
+          ><button
+            id="restart"
+            class="button square"
+            disabled
+            aria-label="Repeat trial"
+            title="Repeat trial"
+          >
+            <svg><use href="#i-reset" /></svg>
+          </button>
+        </div>
+        <div class="header-status">
+          <span class="dot" id="pulse"></span
+          ><span id="session-state">READY TO DEPLOY</span
+          ><div class="mission-clock"><span>Mission time</span><time id="timer">00:00</time></div>
+        </div>
+        <button
+          id="about-open"
+          class="icon-button"
+          aria-label="About this simulation"
+          title="About this simulation"
+        >
+          <svg><use href="#i-info" /></svg>
+        </button>
+      </header>
+      <nav class="panel-switch" aria-label="Console display">
+        <button data-panel="battle" aria-pressed="true">
+          <svg><use href="#i-target" /></svg>BATTLE</button
+        ><button data-panel="fly" aria-pressed="false">
+          <svg><use href="#i-fly" /></svg>PILOT</button
+        ><button data-panel="brain" aria-pressed="false">
+          <svg><use href="#i-brain" /></svg>NEURAL
+        </button>
+      </nav>
+      <main aria-label="Tank console">
+        <section class="experiment" aria-label="Live fly and battlefield">
+          <article class="specimen panel">
+            <div class="panel-top">
+              <span
+                ><svg><use href="#i-fly" /></svg>FLY
+                <b id="specimen-id">001</b></span
+              ><span class="status" id="specimen-status">IDLE</span>
+            </div>
+            <div class="specimen-stage">
+              <canvas
+                id="specimen"
+                aria-label="Responsive fruit fly on a trackball. Drag to rotate; scroll to zoom."
+              ></canvas>
+              <div class="specimen-caption">
+                <span>Drag to orbit · Scroll to zoom</span>
+              </div>
+              <div class="sugar-pop" id="sugar-pop" role="status">
+                SUGAR BOOST
+              </div>
+              <div class="view-buttons">
+                <button data-view="side" aria-pressed="true" class="selected">
+                  Orbit</button
+                ><button data-view="top" aria-pressed="false">Top</button>
+              </div>
+            </div>
+            <div class="motor-deck">
+              <div>
+                <span>THROTTLE</span><b id="throttle">0%</b>
+                <div class="bar"><i id="throttle-bar"></i></div>
+              </div>
+              <div>
+                <span>STEERING</span><b id="steer">0%</b>
+                <div class="bar"><i id="steer-bar"></i></div>
+              </div>
+            </div>
+            <div
+              class="station-readout"
+              aria-label="Physical controls operated by the fly"
+            >
+              <span data-key="look" title="Look joystick"
+                ><svg><use href="#i-eye" /></svg>LOOK</span
+              ><span data-key="aim" title="Aim pad"
+                ><svg><use href="#i-target" /></svg>AIM</span
+              ><span data-key="fire" title="Fire button"
+                ><svg><use href="#i-shell" /></svg>FIRE</span
+              ><span data-key="missile" title="Missile selector"
+                ><svg><use href="#i-sugar" /></svg>MISSILE</span
+              ><span data-key="repair" title="Repair kit"
+                ><svg><use href="#i-shield" /></svg>REPAIR</span
+              >
+            </div>
+            <div class="equipment-status">
+              <span>REPAIR <b id="repair-status">Ready</b></span
+              ><span>MISSILES <b id="missile-status">Not equipped</b></span>
+            </div>
+            <div class="intent">
+              <span class="dot"></span
+              ><span id="intent">Awaiting deployment</span>
+            </div>
+          </article>
+          <article class="arena panel">
+            <div class="panel-top">
+              <span
+                ><svg><use href="#i-target" /></svg
+                ><span id="tank-label">M1A1 Abrams · Sirocco Wadi</span></span
+              >
+              <div class="arena-tools">
+                <span class="status" id="arena-status">STANDBY</span
+                ><button
+                  id="vision"
+                  class="icon-button"
+                  aria-label="Compound-eye overlay"
+                  title="Compound-eye overlay"
+                  aria-pressed="false"
+                >
+                  <svg><use href="#i-eye" /></svg></button
+                ><button
+                  id="expand"
+                  class="icon-button"
+                  aria-label="Expand battlefield"
+                  title="Expand battlefield"
+                  aria-pressed="false"
+                >
+                  <svg><use href="#i-expand" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="monitor" id="monitor">
+              <div id="arena-idle" class="arena-idle">
+                <img id="idle-map" class="idle-map" alt="" />
+                <div class="trial-idle-content">
+                  <span class="eyebrow">TRIAL CONTROL / STANDBY</span>
+                  <img id="idle-tank" class="idle-tank" alt="Selected vehicle preview" />
+                  <h2 id="idle-tank-name"></h2>
+                  <span id="idle-map-name"></span>
+                  <button id="wake" class="button primary"><svg><use href="#i-target" /></svg><span>CONFIGURE TRIAL</span></button>
+                  <span class="load-note">Choose a vehicle and battlefield to begin</span>
+                </div>
+              </div>
+              <iframe
+                id="game"
+                title="Claude of Tanks battlefield"
+                allow="autoplay; fullscreen; gamepad"
+                hidden
+              ></iframe>
+              <div id="eye-grid" class="eye-grid" hidden></div>
+              <div id="loading" class="loading-veil" hidden>
+                <img id="loading-map" class="loading-map" alt="" />
+                <div class="trial-loading-content">
+                  <span class="loading-brand"><span class="brand-cot">CoT</span>Fly <small>TRIAL INITIALIZATION</small></span>
+                  <img id="loading-tank" alt="Selected vehicle" />
+                  <h3 id="loading-title">Preparing trial</h3>
+                  <span id="loading-map-name" class="load-note"></span>
+                  <div class="trial-progress-track" role="progressbar" aria-label="Trial loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="trial-progress"><i id="trial-progress-fill"></i></div>
+                  <div class="trial-progress-label"><span id="loading-text" role="status">Connecting battle systems…</span><b id="loading-percent">0%</b></div>
+                  <div class="loading-stages"><span id="load-stage-runtime">01 · Systems</span><span id="load-stage-world">02 · Battlefield</span><span id="load-stage-pilot">03 · Deployment</span></div>
+                  <div class="loading-actions"><button id="retry" class="button" hidden>Retry trial</button><button id="cancel-trial" class="button">Cancel</button></div>
+                </div>
+              </div>
+              <div id="arena-tag" class="arena-tag" hidden>
+                <span class="dot"></span>FLY CONTROL
+              </div>
+            </div>
+          </article>
+        </section>
+        <section class="stats" aria-label="Battle telemetry">
+          <article>
+            <svg class="stat-icon"><use href="#i-speed" /></svg>
+            <div>
+              <span class="stat-label">SPEED</span>
+              <div class="stat-value">
+                <b id="speed">0.0</b><small>km/h</small>
+              </div>
+            </div>
+            <svg class="spark" viewBox="0 0 180 38" aria-label="Recent speed">
+              <path id="speed-trace" d="M0 34H180" />
+            </svg>
+          </article>
+          <article>
+            <svg class="stat-icon"><use href="#i-shield" /></svg>
+            <div class="health-metric">
+              <span class="stat-label">ARMOR INTEGRITY</span>
+              <div class="stat-value">
+                <b id="health">—</b><small id="health-unit">HP</small>
+              </div>
+              <div class="bar health"><i id="health-bar"></i></div>
+            </div>
+          </article>
+          <article>
+            <svg class="stat-icon"><use href="#i-shell" /></svg>
+            <div>
+              <span class="stat-label">WEAPON</span>
+              <div class="stat-value"><b id="reload">Standby</b></div>
+              <span class="stat-note" id="fire-state">Awaiting deployment</span>
+            </div>
+          </article>
+          <article>
+            <svg class="stat-icon"><use href="#i-target" /></svg>
+            <div>
+              <span class="stat-label">TARGET</span>
+              <div class="stat-value">
+                <b id="target-range">—</b><small id="target-unit">m</small>
+              </div>
+              <span class="stat-note" id="target-state">No visual contact</span>
+            </div>
+          </article>
+        </section>
+        <section class="brain-panel panel" aria-label="Live neuron simulation">
+          <div class="panel-top">
+            <span
+              ><svg><use href="#i-brain" /></svg>NEURAL LINK<span
+                class="model-tag"
+                >124 CELLS</span
+              ></span
+            ><span id="brain-status" class="status">STANDBY</span>
+          </div>
+          <div class="brain-layout">
+            <div class="circuit">
+              <div class="cluster-heading">
+                <span>MaleCNS anatomy</span><span><b id="active-count">0</b> / 124 active</span>
+              </div>
+              <canvas
+                id="brain-network"
+                tabindex="0"
+                aria-label="Rotatable anatomical neuron cluster. Drag or use arrow keys to rotate, scroll to zoom. Select a cell below to inspect."
+              ></canvas>
+              <div class="brain-tools"><button id="brain-context" aria-pressed="true" title="Show anatomical context">Context</button><button id="brain-reset" title="Reset brain view"><svg><use href="#i-reset" /></svg>Reset view</button></div>
+              <div class="cluster-hint">Drag to orbit · Scroll to zoom</div>
+              <div class="circuit-footer">
+                <span
+                  ><i class="key purple"></i>mAL · Inhibitory
+                  <i class="key amber"></i>pC1 · P1-related</span
+                ><span>P1 output <b id="brain-output">0%</b></span>
+              </div>
+            </div>
+            <aside class="neuron-detail">
+              <label class="cell-picker"
+                >Active neuron<select
+                  id="cell-select"
+                  aria-label="Follow or select an active neuron"
+                ></select
+              ></label>
+              <div class="detail-top">
+                <span id="neuron-group">Waiting for activity</span
+                ><span id="neuron-index">—</span>
+              </div>
+              <h2 id="neuron-name">Awaiting spikes</h2>
+              <div class="activation">
+                <b id="neuron-value">0</b
+                ><span>Hz<small>FIRING RATE</small></span>
+              </div>
+              <div class="bar"><i id="neuron-bar"></i></div>
+              <dl class="neuron-metrics">
+                <div><dt>Voltage</dt><dd><b id="cell-voltage">−65.0</b><span>mV</span></dd></div>
+                <div><dt>Spikes</dt><dd id="cell-spikes">0</dd></div>
+                <div><dt>Connections</dt><dd id="cell-links">—</dd></div>
+              </dl>
+              <p id="neuron-description" class="sr-only">Live firing cells will appear here.</p>
+            </aside>
+            <div class="neural-history">
+              <div class="history-label"><span>Population activity</span><span>124 cells · Last 6 seconds</span></div>
+              <canvas id="brain-history" aria-label="Six second live spike raster for all 124 spiking neurons"></canvas>
+              <div class="history-axis"><span>−6 s</span><span>−3 s</span><span>Now</span></div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer>
+        <span><i class="console-led"></i>SOLO SYSTEM <b>LOCAL</b></span
+        >
+        <nav class="repo-links" aria-label="GitHub repositories">
+          <a class="repo-button repo-button-primary" data-repo="CoTFly" data-repo-name="CoTFly" href="https://github.com/Kevin-Liu-01/CoTFly" target="_blank" rel="noopener noreferrer" aria-label="CoTFly on GitHub (opens in a new tab)">
+            <svg class="repo-icon" aria-hidden="true"><use href="#i-github" /></svg>
+            <span class="repo-name"><span class="brand-cot">CoT</span>Fly</span>
+            <span class="repo-stars" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" /></svg><span data-star-count>—</span></span>
+          </a>
+          <a class="repo-button" data-repo="claude-of-tanks" data-repo-name="Original Claude of Tanks" href="https://github.com/Kevin-Liu-01/claude-of-tanks" target="_blank" rel="noopener noreferrer" aria-label="Original Claude of Tanks on GitHub (opens in a new tab)">
+            <svg class="repo-icon" aria-hidden="true"><use href="#i-github" /></svg>
+            <span class="repo-name">Claude of Tanks</span>
+            <span class="repo-stars" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" /></svg><span data-star-count>—</span></span>
+          </a>
+        </nav>
+        <button id="sources-open">MODEL / SOURCES ↗</button>
+      </footer>
+    </div>
+    <dialog id="trial-setup" aria-labelledby="trial-heading">
+      <div class="trial-dialog-heading"><div><span class="eyebrow"><span class="brand-cot">CoT</span>Fly / TRIAL CONTROL</span><h2 id="trial-heading">Initialize trial</h2></div><button id="trial-close" class="icon-button" aria-label="Close trial setup">×</button></div>
+      <div class="trial-cards">
+        <article class="trial-card"><button id="choose-tank" class="trial-select" aria-haspopup="listbox" aria-expanded="false" aria-controls="trial-options"><svg><use href="#i-shield" /></svg><span>Vehicle</span><span class="select-chevron">⌄</span></button><img id="trial-tank-image" alt="Selected vehicle preview" /><div class="trial-card-copy"><b id="trial-tank-name"></b><small id="trial-tank-detail"></small></div></article>
+        <article class="trial-card map-card"><button id="choose-map" class="trial-select" aria-haspopup="listbox" aria-expanded="false" aria-controls="trial-options"><svg><use href="#i-target" /></svg><span>Battlefield</span><span class="select-chevron">⌄</span></button><img id="trial-map-image" alt="Selected battlefield preview" /><div class="trial-card-copy"><b id="trial-map-name"></b><small id="trial-map-detail"></small></div></article>
+      </div>
+      <div class="trial-brief"><span><svg><use href="#i-brain" /></svg>Neural fly pilot</span><span><svg><use href="#i-target" /></svg>Solo · AI opponents</span></div>
+      <div class="trial-dialog-footer"><span id="trial-summary"></span><button id="trial-launch" class="button primary"><svg><use href="#i-play" /></svg><span>INITIALIZE TRIAL</span></button></div>
+      <div id="trial-dropdown" class="trial-dropdown" hidden><div class="trial-search-row"><input id="trial-search" type="search" autocomplete="off" aria-controls="trial-options" /><button id="trial-menu-close" class="icon-button" aria-label="Close selector">×</button></div><span id="trial-option-count" role="status"></span><div id="trial-options" role="listbox"></div><p id="trial-empty" hidden>No matches. Try another search.</p></div>
+    </dialog>
+    <dialog id="about">
+      <button id="about-close" class="dialog-close" aria-label="Close about">
+        ×</button
+      ><span class="eyebrow"><span class="brand-cot">CoT</span>Fly</span>
+      <h2>Inside the pilot</h2>
+      <p>
+        124 identified MaleCNS neurons and 1,106 measured anatomical
+        connections, from Fruitless’s reduced circuit, run a live leaky
+        integrate-and-fire simulation at 1 ms steps. The cluster shows their
+        real soma coordinates and sampled neurites. Dim background points
+        provide anatomical context and are not simulated.
+      </p>
+      <p>
+        Voltages, spikes and firing rates come from the running model. Its
+        P1-related population output modulates driving gain, alongside an
+        authored 24-channel motor controller. Battle inputs, physiological
+        parameters and tank mappings are game adaptations, not measured fly
+        behavior. This is a reduced circuit, not Fruitless’s 166,606-neuron
+        whole-CNS experiment.
+      </p>
+      <p>
+        The middle legs grip the steering wheel. Forelegs reach aim, look, fire,
+        missile and repair controls before they activate. Kits, ammunition,
+        reloads, turret aiming and damage use the normal game rules. Choose your
+        next tank, then deploy or start a new fly.
+      </p>
+      <p>
+        MaleCNS data: FlyEM / HHMI Janelia, University of Cambridge / MRC LMB,
+        and Google Research, CC BY 4.0. Our changes include decimated neurites,
+        live spiking dynamics and a game controller. Inhibitory effects are
+        model assumptions. The fly and cockpit are original procedural geometry.
+      </p>
+      <div class="source-list">
+        <a href="https://github.com/Kevin-Liu-01/CoTFly" target="_blank" rel="noreferrer">CoTFly · Source code ↗</a>
+        <a href="https://github.com/Kevin-Liu-01/claude-of-tanks" target="_blank" rel="noopener noreferrer">Claude of Tanks · Original game ↗</a>
+        <a
+          href="https://github.com/nicodunks/fruitless"
+          target="_blank"
+          rel="noreferrer"
+          >Fruitless · Circuit source ↗</a
+        ><a
+          href="https://male-cns.janelia.org/"
+          target="_blank"
+          rel="noreferrer"
+          >MaleCNS · Measured connectome ↗</a
+        ><a
+          href="https://creativecommons.org/licenses/by/4.0/"
+          target="_blank"
+          rel="noreferrer"
+          >Data license · CC BY 4.0 ↗</a
+        >
+        <a
+          href="https://github.com/TuragaLab/flybody"
+          target="_blank"
+          rel="noreferrer"
+          >Turaga Lab · flybody ↗</a
+        ><a
+          href="https://github.com/google-deepmind/mujoco_menagerie/tree/main/flybody"
+          target="_blank"
+          rel="noreferrer"
+          >MuJoCo Menagerie ↗</a
+        ><a
+          href="https://www.nature.com/articles/s41586-025-09029-4"
+          target="_blank"
+          rel="noreferrer"
+          >Whole-body physics simulation of fruit fly locomotion ↗</a
+        ><a
+          href="https://github.com/NeLy-EPFL/flygym"
+          target="_blank"
+          rel="noreferrer"
+          >EPFL · NeuroMechFly v2 ↗</a
+        >
+      </div>
+    </dialog>
+    <script type="module" src="/src/fly/main.ts"></script>
+  </body>
+</html>

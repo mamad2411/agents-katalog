@@ -1,0 +1,8871 @@
+#!/usr/bin/env python3
+"""End-to-end tests for caption, overlay, graphics, color, redact, deinterlace, denoise, stabilize, background and grid, plus fonts, emoji, shaping and caption wrap.
+
+    python3 tests/test_picture.py       # this group alone
+    python3 tests/test_all.py            # every group
+"""
+import argparse
+import collections
+import contextlib
+import io
+import json
+import os
+import platform
+import re
+import shlex
+import shutil
+import subprocess
+import struct
+import sys
+import tempfile
+import unittest
+import unittest.mock
+from pathlib import Path
+from xml.sax.saxutils import escape
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _fixtures import MediaFixtures, OUT, SCRIPTS, TONES, frame_rgb, legal_range_clip, sar_clip, tiny_clip, _ass_advance, _ass_ink_columns, _ass_ink_rows, _emoji_assets, _families_for, _family_installed, _frame_ink, _is_faststart, _no_fontconfig, _pixel_at, script, sh  # noqa: E402
+from _common import default_font_file, detect_script, escape_filter_path, font_family_for_script, font_for_script, probe  # noqa: E402
+
+
+class PictureTests(MediaFixtures):
+    """Caption, overlay, graphics, color, redact, deinterlace, denoise, stabilize, background and grid, plus fonts, emoji, shaping and caption wrap."""
+
+    def test_rtl_caption_keeps_punctuation_and_karaoke_in_reading_order(self):
+        from _common import script_font_status
+
+        def rgb(path, second):
+            return subprocess.run(["ffmpeg", "-v", "error", "-ss", str(second), "-i", str(path),
+                                   "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                  capture_output=True, check=True).stdout
+
+        def ink_mask(data):
+            return bytes(max(data[i:i + 3]) > 96 for i in range(0, len(data), 3))
+
+        for lang, words in (("he", "שלום זה מבחן"), ("ar", "مرحبا هذا اختبار"), ("en", "Hello this works")):
+            with self.subTest(lang=lang), tempfile.TemporaryDirectory(dir=OUT) as tmp:
+                if lang != "en" and script_font_status(lang) != "available":
+                    continue
+                folder = Path(tmp)
+                source = tiny_clip(folder / "black.mp4", "color=black:s=640x360:r=25", seconds=3)
+                cues = folder / "cues.txt"
+                plain = folder / "plain.mp4"
+                args = ("--lang", lang, "--size", "34", "--outline", "0", "--shadow", "0",
+                        "--quality", "0", "--fast", "--json")
+                if lang != "en":
+                    cues.write_text(f"0-1 {words}?\n1-2 \u200f{words}?\u200f\n", encoding="utf-8")
+                    script("caption.py", source, "--text", cues, "-o", plain, *args)
+                    unmarked, marked = (ink_mask(rgb(plain, t)) for t in (0.4, 1.4))
+                    self.assertGreater(sum(unmarked), 100)
+                    self.assertEqual(unmarked, marked, "terminal punctuation should match an explicit RTL cue")
+                cues.write_text(f"0-2.7 {words}\n", encoding="utf-8")
+                out, ass = folder / "karaoke.mp4", folder / "karaoke.ass"
+                script("caption.py", source, "--text", cues, "--karaoke", "--karaoke-timing", "even",
+                       "--highlight-color", "FF2222", "--color", "FFFFFF", "--write-ass", ass, "-o", out, *args)
+                style = next(line for line in ass.read_text(encoding="utf-8").splitlines() if line.startswith("Style:"))
+                self.assertEqual(style.rsplit(",", 1)[1], "1" if lang == "en" else "-1")
+                frame = rgb(out, 0.7)
+                reds = [(i // 3) % 640 for i in range(0, len(frame), 3)
+                        if frame[i] > 150 and frame[i] > frame[i + 1] + 75 and frame[i] > frame[i + 2] + 75]
+                self.assertGreater(len(reds), 30, "first word should have visible red highlight")
+                centre = sum(reds) / len(reds)
+                if lang == "en":
+                    self.assertLess(centre, 320)
+                else:
+                    self.assertGreater(centre, 320)
+
+    # ---------------------------------------------------------------- deinterlace
+    def test_deinterlace_frame_mode_keeps_fps(self):
+        out = OUT / "deint1.mp4"
+        script("deinterlace.py", self.src, "-o", out)
+        m = probe(str(out))
+        self.assertClose(m["video"]["fps"], 30.0, 0.5)
+        self.assertClose(m["duration"], 12.0, 0.3)
+        self.assertIsNotNone(m["audio"])
+
+    def test_deinterlace_field_mode_doubles_fps(self):
+        out = OUT / "deint2.mp4"
+        script("deinterlace.py", self.src, "--mode", "field", "-o", out)
+        m = probe(str(out))
+        self.assertClose(m["video"]["fps"], 60.0, 0.5)
+
+    # ---------------------------------------------------------------- denoise
+    def test_denoise_produces_valid_output(self):
+        out = OUT / "denoise1.mp4"
+        script("denoise.py", self.src, "--strength", "high", "-o", out)
+        m = probe(str(out))
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (1280, 720))
+        self.assertClose(m["duration"], 12.0, 0.3)
+
+    def test_denoise_negative_override_refused(self):
+        script("denoise.py", self.src, "--luma-spatial", "-1", expect_fail=True)
+
+    # ---------------------------------------------------------------- redact
+    def test_redact_blur_keeps_frame_size(self):
+        out = OUT / "redact1.mp4"
+        script("redact.py", self.src, "--x", "100", "--y", "50", "--width", "200", "--height", "100", "-o", out)
+        m = probe(str(out))
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (1280, 720))
+
+    def test_redact_pixelate_mode(self):
+        out = OUT / "redact2.mp4"
+        script("redact.py", self.src, "--x", "100", "--y", "50", "--width", "200", "--height", "100",
+               "--mode", "pixelate", "--block-size", "16", "-o", out)
+        m = probe(str(out))
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (1280, 720))
+
+    def test_redact_out_of_bounds_refused(self):
+        script("redact.py", self.src, "--x", "1200", "--y", "0", "--width", "200", "--height", "200", expect_fail=True)
+
+    def test_redact_blur_strength_1_blurs_colour_only_detail(self):
+        """Review of #521: the chroma radius was radius // 2, 0 at --blur-strength 1 for every
+        region, so detail carried by colour alone (constant luma) stayed readable. It is at least
+        1 wherever the chroma plane can hold it. A one-pixel chroma checkerboard on flat luma:
+        its spread inside a 16x16 region falls from 60 to well under 20 (6 here; 60 before)."""
+        src = OUT / "redact_chroma_detail.mp4"
+        sh("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+           "color=c=gray:s=64x64:r=25:d=1,format=yuv420p,"
+           "geq=lum=128:cb='128+60*(2*mod(X+Y\\,2)-1)':cr='128-60*(2*mod(X+Y\\,2)-1)'",
+           "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", src)
+        out = OUT / "redact_chroma_detail_out.mp4"
+        script("redact.py", src, "--x", "16", "--y", "16", "--width", "16", "--height", "16", "--blur-strength", "1", "-o", out)
+
+        def u_spread(path):
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-frames:v", "1", "-f", "rawvideo",
+                                  "-pix_fmt", "yuv420p", "-"], capture_output=True, check=True).stdout
+            u = raw[64 * 64:64 * 64 + 32 * 32]
+            # the region's chroma is 8..15 on the half-size plane; its edge pairs are shared
+            vals = [u[y * 32 + x] for y in range(9, 15) for x in range(9, 15)]
+            mean = sum(vals) / len(vals)
+            return (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+        self.assertGreater(u_spread(src), 50)
+        self.assertLess(u_spread(out), 20, "the colour-only detail inside the region was not blurred")
+
+    def test_redact_odd_dimensions_refused(self):
+        script("redact.py", self.src, "--x", "0", "--y", "0", "--width", "101", "--height", "100", expect_fail=True)
+
+    def test_delogo_interpolates_a_fixed_rectangle_and_refuses_the_frame_edge(self):
+        """ffmpeg's delogo fills a known box from the pixels around it. A white block on grey
+        comes back grey; the same box with x=0 is refused, because the filter's 1 px band
+        (no longer an option) would leave the frame."""
+        src = OUT / "delogo_src.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+           "-i", "color=c=gray:s=320x180:rate=10:d=0.4",
+           "-vf", "drawbox=x=40:y=30:w=80:h=40:color=white:t=fill",
+           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(src))
+        self.assertGreater(min(_pixel_at(src, 0.1, 80, 50)), 240, "the fixture's logo is white")
+        out = OUT / "delogo_out.mp4"
+        proc = script("redact.py", src, "--x", "40", "--y", "30", "--width", "80", "--height", "40",
+                      "--mode", "delogo", "--fast", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        self.assertIn("delogo=x=40:y=30:w=80:h=40", doc["commands"][0])
+        self.assertNotIn("boxblur", doc["commands"][0])
+        self.assertLess(max(_pixel_at(out, 0.1, 80, 50)), 180, "the white block was interpolated away")
+        self.assertGreater(min(_pixel_at(out, 0.1, 8, 8)), 90, "a corner outside the box stays grey")
+        edge = script("redact.py", src, "--x", "0", "--y", "30", "--width", "80", "--height", "40",
+                      "--mode", "delogo", "--json", expect_fail=True)
+        err = json.loads(edge.stdout)
+        self.assertEqual(err["error"]["kind"], "input")
+        self.assertIn("1 px", err["error"]["message"])
+
+    def test_delogo_refuses_a_10_bit_source(self):
+        proc = script("redact.py", self.hdr, "--x", "40", "--y", "30", "--width", "80", "--height", "40",
+                      "--mode", "delogo", "--json", expect_fail=True)
+        err = json.loads(proc.stdout)
+        self.assertEqual(err["error"]["kind"], "input")
+        self.assertIn("8-bit", err["error"]["message"])
+
+    # ---------------------------------------------------------------- grid
+    def test_grid_composites_cols_rows_with_labels(self):
+        out = OUT / "grid1.mp4"
+        script("grid.py", self.src, self.rot, self.vfr, self.hdr, "--cols", "2", "--rows", "2",
+               "--cell-width", "320", "--cell-height", "180", "-o", out)
+        m = probe(str(out))
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (640, 360))
+
+    def test_grid_wrong_input_count_refused(self):
+        script("grid.py", self.src, self.rot, "--cols", "2", "--rows", "2", expect_fail=True)
+
+    def test_grid_label_none_skips_drawtext(self):
+        proc = script("grid.py", self.src, self.rot, "--cols", "2", "--rows", "1", "--label", "none", "-o", OUT / "grid2.mp4")
+        self.assertNotIn("drawtext", proc.stderr)
+
+    def test_grid_audio_from_selects_track(self):
+        out = OUT / "grid3.mp4"
+        script("grid.py", self.src, self.rot, "--cols", "2", "--rows", "1", "--audio-from", "1", "-o", out)
+        m = probe(str(out))
+        self.assertTrue(m.get("audio"))
+
+    def test_grid_pad_extends_shorter_clip_to_the_longest(self):
+        short = OUT / "grid_short.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.src, "-t", "2", "-c", "copy", short)
+        out = OUT / "grid4.mp4"
+        script("grid.py", short, self.src, "--cols", "2", "--rows", "1", "--pad", "-o", out)
+        m = probe(str(out))
+        self.assertClose(m["duration"], probe(str(self.src))["duration"], 0.5)
+
+    def test_grid_pad_also_pads_the_selected_audio_track_with_silence(self):
+        """--pad holds a shorter cell's video on its last frame out to the longest clip -- but
+        --audio-from's track was, until fixed, mapped straight through with no padding at all, so
+        a grid with --pad and a short --audio-from track silently lost audio for the padded tail.
+        The audio stream must actually span the full padded duration, not just the video."""
+        short = OUT / "grid_pad_audio_short.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.src, "-t", "2", "-c", "copy", short)
+        out = OUT / "grid6.mp4"
+        script("grid.py", short, self.src, "--cols", "2", "--rows", "1", "--audio-from", "0", "--pad", "-o", out)
+        full_duration = probe(str(self.src))["duration"]
+        audio_duration = float(sh("ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+                                   "stream=duration", "-of", "default=nw=1:nk=1", out).stdout.strip())
+        self.assertClose(audio_duration, full_duration, 0.5, "audio must be padded with silence to match the padded video, not stop at 2s")
+
+    def test_grid_filename_derived_label_refuses_filter_graph_injection(self):
+        """The per-cell label is the clip's own filename (extension stripped), which the caller
+        does not choose through a flag -- but on a filesystem where filenames can contain a comma
+        or colon, it still reaches a drawtext=text=... option the same way --font's fallback did
+        in the #108 finding. Confirm the escaping catches it: a filename shaped like a filter-graph
+        breakout payload must render literally, not start a sibling filter."""
+        evil = OUT / "evil,drawtext=text=OWNED.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.src, "-t", "2", "-c", "copy", evil)
+        proc = script("grid.py", evil, self.rot, "--cols", "2", "--rows", "1", "-o", OUT / "grid5.mp4", "--json")
+        # since A178 the label reaches drawtext through its text file, so no part of the file name
+        # is in the filter graph at all (an escape is no longer what keeps it out)
+        cmd = shlex.split(json.loads(proc.stdout)["commands"][-1])
+        graph = cmd[cmd.index("-filter_complex") + 1]
+        self.assertIn("textfile=", graph)
+        self.assertNotIn("OWNED", graph, "the filename-derived label must not reach the filter graph")
+        self.assertEqual(probe(str(OUT / "grid5.mp4"))["video"]["width"], 960)
+
+    # ---------------------------------------------------------------- background
+    def test_background_solid_color(self):
+        out = OUT / "bg_solid.mp4"
+        script("background.py", "-o", out, "--duration", "2", "--width", "640", "--height", "360", "--color", "0x00ff00")
+        m = probe(str(out))
+        self.assertClose(m["duration"], 2.0, 0.1)
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (640, 360))
+
+    def test_background_gradient_has_two_distinct_colors(self):
+        out = OUT / "bg_grad.mp4"
+        script("background.py", "-o", out, "--duration", "1", "--width", "640", "--height", "360",
+               "--gradient", "0xff0000:0x0000ff")
+
+        def px(path, x, y):
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path),
+                                 "-vf", f"crop=2:2:{x}:{y}", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return r.stdout[:3]
+
+        left = px(out, 10, 180)
+        right = px(out, 620, 180)
+        self.assertGreater(left[0], right[0], "left edge should be redder than the right edge")
+        self.assertGreater(right[2], left[2], "right edge should be bluer than the left edge")
+
+    def test_background_gradient_pins_speed_and_seed_for_a_static_reproducible_clip(self):
+        """The `gradients` source filter defaults to speed=0.01 (a slow rotation applied every
+        frame) and seed=-1 (a fresh random seed every run) -- so this "static" background (per
+        its own docstring: "a title card background, a placeholder behind a logo") silently
+        drifted frame to frame instead of staying put, and was not reproducible between runs,
+        breaking the bit_exact/deterministic contract _contract.py declares for background.py.
+        Confirmed live: the same pixel changed value between t=0s and t=1s of a 3s clip before
+        pinning speed near its filter-enforced floor (1e-05; 0 itself is refused). Check the
+        constructed filter string directly rather than sampled pixels, since a pixel-value
+        comparison is sensitive to x264 encoder rounding that differs between platforms/builds
+        independently of whether speed/seed are actually pinned."""
+        out = OUT / "bg_grad_pin.mp4"
+        data = json.loads(script("background.py", "-o", out, "--duration", "3", "--width", "320", "--height", "240",
+                                  "--gradient", "0x000000:0xffffff", "--angle", "37", "--fast", "--json").stdout)
+        cmd = data["commands"][0]
+        self.assertIn("gradients=", cmd)
+        self.assertRegex(cmd, r"seed=\d+", "seed must be pinned to a fixed value, not left at the -1 (random) default")
+        self.assertNotIn("speed=0.01", cmd, "speed must not be left at its default 0.01 (a visible per-frame rotation)")
+        m = re.search(r"speed=([\d.e-]+)", cmd)
+        self.assertIsNotNone(m, f"expected an explicit speed= in: {cmd}")
+        self.assertLess(float(m.group(1)), 0.001, "speed must be pinned near-zero, not left animating")
+
+    def test_background_odd_dimensions_refused(self):
+        script("background.py", "-o", OUT / "bg_bad.mp4", "--duration", "1", "--width", "641", "--height", "360", expect_fail=True)
+
+    def test_background_zero_duration_refused(self):
+        script("background.py", "-o", OUT / "bg_bad2.mp4", "--duration", "0", "--width", "640", "--height", "360", expect_fail=True)
+
+    # ---------------------------------------------------------------- stabilize
+    def test_stabilize_reduces_frame_to_frame_motion(self):
+        """Proves the actual effect, not just that the command runs: measured motion must drop.
+
+        Three different synthetic "shaky" fixtures (a clean two-frequency sine, then jitter kept
+        within real hand-tremor range after the first version's ~9 Hz component turned out too
+        fast for optical-flow tracking at 30 fps) were each measured making the output *more*
+        jittery, not less, on at least one real macOS ffmpeg/libvidstab build -- while every one
+        of them was reliably corrected on Linux. This isn't a fixture-tuning problem: vidstab's
+        actual tracking/correction behaviour genuinely differs enough across builds that no
+        synthetic camera-shake pattern found so far is a portable ground truth. The quantitative
+        "motion measurably dropped" claim is therefore only enforced on the platform where it has
+        held up across repeated, differently-tuned fixtures (Linux); elsewhere this still proves
+        stabilize.py actually ran vidstabdetect/vidstabtransform and produced a valid, correctly
+        durationed output -- just not a specific claim about how much quieter it is.
+        """
+        shaky = OUT / "shaky.mp4"
+        jitter_x = "60+18*sin(2*PI*t*1.3)+9*sin(2*PI*t*2.1+1)"
+        jitter_y = "60+14*cos(2*PI*t*0.9)+8*sin(2*PI*t*1.7+0.5)"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1400x1000:rate=30",
+           "-t", "4", "-vf", f"crop=1280:720:x='{jitter_x}':y='{jitter_y}'",
+           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", shaky)
+        out = OUT / "stab1.mp4"
+        script("stabilize.py", shaky, "-o", out)
+        m = probe(str(out))
+        self.assertClose(m["duration"], 4.0, 0.3)
+
+        def motion_score(path):
+            # a Windows path's drive-letter colon must be escaped for a lavfi filter option value
+            movie_path = escape_filter_path(str(path))
+            cmd = ["ffprobe", "-hide_banner", "-f", "lavfi", "-i", f"movie={movie_path},tblend=all_mode=difference,signalstats",
+                   "-show_entries", "frame_tags=lavfi.signalstats.YAVG", "-of", "csv=p=0"]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            return [float(x) for x in proc.stdout.split() if x.strip()]
+
+        shaky_scores = motion_score(shaky)
+        stab_scores = motion_score(out)
+        self.assertTrue(shaky_scores, "motion_score produced no frames -- check the lavfi movie= filter path/escaping")
+        self.assertTrue(stab_scores, "motion_score produced no frames -- check the lavfi movie= filter path/escaping")
+        if platform.system() == "Linux":
+            shaky_avg = sum(shaky_scores) / len(shaky_scores)
+            stab_avg = sum(stab_scores) / len(stab_scores)
+            self.assertLess(stab_avg, shaky_avg, f"stabilized motion ({stab_avg:.2f}) should be below shaky ({shaky_avg:.2f})")
+
+    def test_stabilize_bad_shakiness_refused(self):
+        script("stabilize.py", self.src, "--shakiness", "11", expect_fail=True)
+
+    def test_stabilize_tripod_and_crop_black_produce_valid_output(self):
+        """--tripod and --crop black (vidstabdetect/vidstabtransform's own tripod and crop=1
+        options, #96) wire two more of the real filters' documented parameters through as typed
+        flags. vidstab's actual correction strength/appearance on synthetic content is build- and
+        content-dependent (see the docstring above on test_stabilize_reduces_frame_to_frame_motion
+        for why this suite doesn't try to assert an exact "how much" here) -- what's verifiable
+        portably is that both flags are accepted, reach the filter graph, and produce a valid,
+        correctly durationed/shaped output rather than being silently ignored or crashing."""
+        shaky = OUT / "shaky.mp4"
+        if not shaky.exists():
+            jitter_x = "60+18*sin(2*PI*t*1.3)+9*sin(2*PI*t*2.1+1)"
+            jitter_y = "60+14*cos(2*PI*t*0.9)+8*sin(2*PI*t*1.7+0.5)"
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1400x1000:rate=30",
+               "-t", "4", "-vf", f"crop=1280:720:x='{jitter_x}':y='{jitter_y}'",
+               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", shaky)
+        out = OUT / "stab_tripod_crop_black.mp4"
+        proc = script("stabilize.py", shaky, "--tripod", "--crop", "black", "-o", out, "--json")
+        # CodeRabbit (#97): duration/dimensions alone don't prove the flags actually reached the
+        # filter graph -- an implementation that accepted but silently dropped them would still
+        # pass those checks. Inspect the recorded commands directly.
+        commands = json.loads(proc.stdout)["commands"]
+        self.assertTrue(any("vidstabdetect=" in c and ":tripod=1" in c for c in commands),
+                         f"--tripod should reach vidstabdetect's own tripod option: {commands}")
+        self.assertTrue(any("vidstabtransform=" in c and ":crop=1" in c and ":tripod=1" in c for c in commands),
+                         f"--tripod/--crop black should reach vidstabtransform's tripod/crop options: {commands}")
+        m = probe(str(out))
+        self.assertClose(m["duration"], 4.0, 0.3)
+        self.assertEqual(m["video"]["width"], 1280)
+        self.assertEqual(m["video"]["height"], 720)
+
+    def test_stabilize_zoom_zero_keeps_the_framing_and_shows_the_edges(self):
+        """Audit A156 (class: a library default adds to what the caller's value says): vidstab's
+        optzoom=1 added its own zoom to --zoom, so --zoom 0 did not keep the original framing and
+        --crop black had almost no edge to fill (0 of 90 frames on this clip through 3.8.8). With
+        the zoom exactly --zoom, the corrected frames expose black edges."""
+        shaky = OUT / "shaky_wide_swing.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=480x300:rate=30",
+           "-t", "3", "-vf", "crop=320:180:x='80+50*sin(2*PI*t*1.3)':y='60+40*cos(2*PI*t*0.9)'",
+           "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", shaky)
+        out = OUT / "stab_zoom0_black.mp4"
+        script("stabilize.py", shaky, "--crop", "black", "--smoothing", "30", "-o", out)
+        edged = set()
+        for strip in ("crop=2:ih:0:0", "crop=2:ih:iw-2:0", "crop=iw:2:0:0", "crop=iw:2:0:ih-2"):
+            cmd = ["ffprobe", "-v", "error", "-f", "lavfi", "-i", f"movie={escape_filter_path(str(out))},{strip},signalstats",
+                   "-show_entries", "frame_tags=lavfi.signalstats.YLOW", "-of", "csv=p=0"]
+            lows = [float(x.strip(",")) for x in subprocess.run(cmd, stdout=subprocess.PIPE, text=True).stdout.split() if x.strip(",")]
+            self.assertTrue(lows, strip)
+            edged |= {i for i, low in enumerate(lows) if low <= 20}
+        self.assertGreaterEqual(len(edged), 10, f"only {len(edged)} frames show a black edge: the picture was zoomed")
+
+    def test_stabilize_bad_crop_refused(self):
+        script("stabilize.py", self.src, "--crop", "nonsense", expect_fail=True)
+
+    # ---------------------------------------------------------------- caption
+    def test_caption_text_to_srt_and_burn(self):
+        srt = OUT / "cues.srt"
+        out = OUT / "cap.mp4"
+        script("caption.py", self.src, "--text", self.cues, "--write-srt", srt, "--position", "top", "--bold", "-o", out)
+        text = srt.read_text(encoding="utf-8")
+        self.assertIn("00:00:03,000 --> 00:00:06,000", text)
+        self.assertIn("Second\nline", text)
+        self.assertIn("00:00:06,000 --> 00:00:09,000", text, "auto-timed cue follows previous")
+        m = probe(str(out))
+        self.assertClose(m["duration"], 12.0, 0.15)
+        self.assertEqual(m["video"]["width"], 1280)
+
+    def test_caption_refuses_cues_that_are_never_visible(self):
+        """2.2.6: a burn that draws nothing is a refusal, not a verified output -- every cue after
+        the end of the video, every cue blank, or an ASS with no Dialogue lines."""
+        late = OUT / "cap_late.srt"
+        late.write_text("1\n00:00:20,000 --> 00:00:22,000\nToo late\n", encoding="utf-8")
+        blank = OUT / "cap_blank.srt"
+        blank.write_text("1\n00:00:01,000 --> 00:00:02,000\n   \n\n2\n00:00:03,000 --> 00:00:04,000\n \n",
+                         encoding="utf-8")
+        empty_ass = OUT / "cap_empty.ass"
+        empty_ass.write_text("[Script Info]\nScriptType: v4.00+\n\n[Events]\nFormat: Layer, Start, End, "
+                             "Style, Name, MarginL, MarginR, MarginV, Effect, Text\n", encoding="utf-8")
+        late_ass = OUT / "cap_late.ass"
+        late_ass.write_text(empty_ass.read_text(encoding="utf-8")
+                            + "Dialogue: 0,0:00:30.00,0:00:31.00,Default,,0,0,0,,Late\n", encoding="utf-8")
+        for flag, path, needle in (("--srt", late, "no cue falls inside the video"),
+                                   ("--srt", blank, "every cue is blank"),
+                                   ("--ass", empty_ass, "no Dialogue lines"),
+                                   ("--ass", late_ass, "no cue falls inside the video")):
+            for dry in ((), ("--dry-run",)):
+                out = OUT / "cap_invisible.mp4"
+                proc = script("caption.py", self.src, flag, path, *dry, "--json", "-o", out, expect_fail=True)
+                doc = json.loads(proc.stdout)
+                self.assertEqual(doc["error"]["kind"], "input", (path, dry))
+                self.assertIn(needle, doc["error"]["message"], (path, dry))
+        self.assertIn("first cue starts at 20.0 s", json.loads(script(
+            "caption.py", self.src, "--srt", late, "--json", "-o", OUT / "cap_invisible.mp4",
+            expect_fail=True).stdout)["error"]["message"])
+
+    def test_caption_reports_cues_burned_and_outside(self):
+        srt = OUT / "cap_partly.srt"
+        srt.write_text("1\n00:00:01,000 --> 00:00:03,000\nSeen\n\n2\n00:00:30,000 --> 00:00:32,000\nUnseen\n",
+                       encoding="utf-8")
+        out = OUT / "cap_partly.mp4"
+        doc = json.loads(script("caption.py", self.src, "--srt", srt, "--preset", "ultrafast",
+                                "--json", "-o", out).stdout)
+        self.assertEqual(doc["caption"]["cues_burned"], 1)
+        self.assertEqual(doc["caption"]["cues_outside"], 1)
+        self.assertTrue(any("outside the video" in n for n in doc.get("notes", [])))
+
+    def test_caption_real_run_does_not_say_rerun_without_dry_run(self):
+        srt = OUT / "cap_adj.srt"
+        srt.write_text("1\n00:00:01,000 --> 00:00:03,000\nHello\n", encoding="utf-8")
+        out = OUT / "cap_adj.mp4"
+        doc = json.loads(script("caption.py", self.src, "--srt", srt, "--offset", "0.5", "--preset",
+                                "ultrafast", "--json", "-o", out).stdout)
+        notes = " ".join(doc.get("notes", []))
+        self.assertIn("_adjusted.srt", notes)
+        self.assertNotIn("without --dry-run", notes)
+        dry = json.loads(script("caption.py", self.src, "--srt", srt, "--offset", "0.5", "--dry-run",
+                                "--json", "-o", out).stdout)
+        self.assertIn("without --dry-run", " ".join(dry.get("notes", [])))
+
+    def test_graphics_and_overlay_refuse_blank_text(self):
+        out = OUT / "blank_text.mp4"
+        for tool, args in (("graphics.py", ("--template", "title", "--title", "  ")),
+                           ("graphics.py", ("--template", "lower-third", "--name", " ", "--title", "x")),
+                           ("graphics.py", ("--template", "sticker", "--text", "\t")),
+                           ("overlay.py", ("--text", "  "))):
+            proc = script(tool, self.src, *args, "--json", "-o", out, expect_fail=True)
+            self.assertEqual(json.loads(proc.stdout)["error"]["kind"], "input", (tool, args))
+
+    def test_caption_wraps_a_long_latin_cue_to_the_safe_area(self):
+        """A 60-character cue at size 48 on a 640-wide frame does not fit one line; it is wrapped
+        to the safe area and, past --max-lines, split into consecutive cues rather than running
+        off the frame or covering the picture."""
+        import caption  # noqa: E402  -- the wrap table under test
+        cues = OUT / "wrap_latin.txt"
+        text = "the quick brown fox jumps over the lazy dog and keeps runnin"
+        self.assertEqual(len(text), 60)
+        cues.write_text(f"0:00-0:04 {text}\n", encoding="utf-8")
+        srt = OUT / "wrap_latin.srt"
+        script("caption.py", self._small(), "--text", cues, "--size", "48", "--max-lines", "2",
+               "--write-srt", srt, "--fast", "-o", OUT / "wrap_latin.mp4")
+        blocks = self._srt_cues(srt)
+        self.assertGreater(len(blocks), 1, "60 characters at size 48 cannot fit 2 lines of a 640px frame")
+        max_em = 640 * caption.SAFE_WIDTH_FRACTION / (48 * 360 / 288.0)
+        for _, lines in blocks:
+            self.assertLessEqual(len(lines), 2, f"--max-lines 2 exceeded: {lines}")
+            for line in lines:
+                self.assertLessEqual(caption.text_width_em(line), max_em + 1e-6,
+                                      f"line wider than the safe area: {line!r}")
+        self.assertEqual(" ".join(l for _, lines in blocks for l in lines), text, "no word is lost or cut")
+
+    def test_caption_warns_when_a_cue_uses_30_over_a_2997_source(self):
+        with tempfile.TemporaryDirectory(dir=OUT) as tmp:
+            folder = Path(tmp)
+            source = tiny_clip(folder / "ntsc.mp4", "color=black:s=320x240:r=30000/1001", seconds=3)
+            self.assertAlmostEqual(probe(str(source))["video"]["fps"], 29.97, places=3)
+            cues = folder / "cues.txt"
+            cases = (("00:00:01:00-00:00:02:00 Hello", ["--fps", "30"], -0.002),
+                     ("00:00:01:00@30-00:00:02:00@30 Hello", [], -0.002),
+                     ("00:00:01:00-00:00:02:00 Hello", [], None),
+                     ("1-2 Hello", ["--fps", "30"], None))
+            for index, (line, flags, drift) in enumerate(cases):
+                with self.subTest(line=line, flags=flags):
+                    cues.write_text(line + "\n", encoding="utf-8")
+                    modes = ((), ("--dry-run",)) if index == 0 else (("--dry-run",),)
+                    for mode in modes:
+                        doc = json.loads(script("caption.py", source, "--text", cues, *flags, *mode,
+                                                "--fast", "-o", folder / f"written-{index}.mp4", "--json").stdout)
+                        warnings = [w for w in (doc.get("diagnostics") or {}).get("warnings", [])
+                                    if w["code"] == "caption_timecode_rate_mismatch"]
+                        if drift is None:
+                            self.assertEqual(warnings, [])
+                        else:
+                            self.assertEqual(len(warnings), 1)
+                            self.assertAlmostEqual(warnings[0]["drift_seconds"], drift, places=6)
+                            self.assertEqual(warnings[0]["cue_timecode"], "00:00:02:00")
+
+    def test_phrase_wrap_burns_and_reports(self):
+        """1.16 end to end: the dl1 and dl4 cues are burnt in, the ASS the run writes carries the
+        phrase breaks, and the result document says which wrap produced them."""
+        import caption  # noqa: E402
+        cues = OUT / "wrap_phrase.txt"
+        cues.write_text("0:00-0:02 A third line the tool times for me\n"
+                        "0:02-0:04 Una tercera l\u00ednea con tiempos autom\u00e1ticos\n", encoding="utf-8")
+        out = OUT / "wrap_phrase.mp4"
+        ass = OUT / "wrap_phrase.ass"
+        res = json.loads(script("caption.py", self._small(), "--text", cues, "--size", "32",
+                                "--max-lines", "2", "--animate", "fade", "--write-ass", ass,
+                                "--json", "--fast", "-o", out).stdout)
+        self.assertEqual(res["caption"]["wrap"], "phrase")
+        self.assertIn("phrase_breaks", res["caption"])
+        self.assertTrue(out.exists())
+        body = ass.read_text(encoding="utf-8")
+        self.assertIn("A third line\\Nthe tool times for me", body)
+        self.assertIn("Una tercera l\u00ednea\\Ncon tiempos autom\u00e1ticos", body)
+        # and --wrap measured still reproduces 1.15's split, byte for byte in the ASS
+        ass2 = OUT / "wrap_measured.ass"
+        script("caption.py", self._small(), "--text", cues, "--size", "32", "--max-lines", "2",
+               "--wrap", "measured", "--animate", "fade", "--write-ass", ass2, "--fast", "-o", OUT / "wrap_measured.mp4")
+        self.assertIn("A third line the\\Ntool times for me", ass2.read_text(encoding="utf-8"))
+        self.assertEqual(caption.wrap_text("A third line the tool times for me", 12.96),
+                         ["A third line", "the tool times for me"])
+
+    def test_caption_wraps_cjk_between_characters(self):
+        """Unspaced Chinese wraps between available boundaries, at one em per ideograph."""
+        import caption  # noqa: E402
+        from _common import font_for_script  # noqa: E402
+        if font_for_script("zh") is None:
+            self.skipTest("this machine has no font covering zh")
+        text = "你好世界这是一个很长的中文字幕需要换行处理的测试"
+        self.assertEqual(len(text), 24)
+        cues = OUT / "wrap_cjk.txt"
+        cues.write_text(f"0:00-0:04 {text}\n", encoding="utf-8")
+        srt = OUT / "wrap_cjk.srt"
+        proc = script("caption.py", self._small(), "--text", cues, "--size", "48", "--write-srt", srt,
+                      "--fast", "-o", OUT / "wrap_cjk.mp4")
+        blocks = self._srt_cues(srt)
+        lines = [l for _, ls in blocks for l in ls]
+        self.assertGreater(len(lines), 1, "a 24-character CJK cue at size 48 must break")
+        max_em = 640 * caption.SAFE_WIDTH_FRACTION / (48 * 360 / 288.0)
+        for line in lines:
+            self.assertLessEqual(caption.text_width_em(line), max_em + 1e-6, line)
+        self.assertEqual("".join(lines), text, "no character is lost")
+        self.assertIn("font:", proc.stderr, "a Chinese cue resolves a font by script")
+        self.assertRegex(proc.stderr, r"cues: .*(wrapped|split)")
+
+    def test_chinese_phrase_preserves_words_in_written_srt_and_burn(self):
+        from _common import font_for_script
+        if font_for_script("zh") is None:
+            self.skipTest("this machine has no font covering zh")
+        cue = "我们一起来看看这个视频的效果吧"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            timed_text = root / "cue.txt"
+            source_srt = root / "source.srt"
+            timed_text.write_text(f"0:00-0:02 {cue}\n", encoding="utf-8")
+            source_srt.write_text(f"1\n00:00:00,000 --> 00:00:02,000\n{cue}\n", encoding="utf-8")
+            for flag, path in (("--text", timed_text), ("--srt", source_srt)):
+                with self.subTest(flag=flag):
+                    out = root / f"{path.stem}.mp4"
+                    written = root / f"{path.stem}_adjusted.srt" if flag == "--srt" else out.with_suffix(".srt")
+                    doc = json.loads(script("caption.py", self._small(), flag, path, "--lang", "zh",
+                                            "--size", "72", "--max-lines", "3",
+                                            "--fast", "-o", out, "--json").stdout)
+                    self.assertTrue(doc["verified"], doc.get("verification"))
+                    lines = [line for _, rows in self._srt_cues(written) for line in rows]
+                    self.assertGreater(len(lines), 1)
+                    self.assertEqual("".join(lines), cue)
+                    for word in ("看看", "视频", "效果"):
+                        self.assertTrue(any(word in line for line in lines), (word, lines))
+
+    def test_caption_wrap_puts_mixed_script_text_back_exactly_as_written(self):
+        """A wrap must never change the text: CJK gains no spaces, and the author's own spaces
+        around a Latin word inside CJK survive."""
+        import caption  # noqa: E402
+        for text in ("Hello 世界 this is mixed 混合文本 wrapping",
+                     "你好世界这是一个很长的中文字幕",
+                     "one two three four five six"):
+            with self.subTest(text=text):
+                lines = caption.wrap_text(text, 8)
+                self.assertGreater(len(lines), 1)
+                rebuilt = ""
+                for line in lines:
+                    if not rebuilt:
+                        rebuilt = line
+                    elif text[len(rebuilt)] == " ":
+                        rebuilt += " " + line
+                    else:
+                        rebuilt += line
+                self.assertEqual(rebuilt, text)
+
+    def test_caption_offset_shifts_every_cue_in_both_directions(self):
+        cues = OUT / "offset_cues.txt"
+        cues.write_text("0:02-0:04 one\n0:05-0:07 two\n", encoding="utf-8")
+        late = OUT / "offset_late.srt"
+        script("caption.py", "--text", cues, "--write-srt", late, "--offset", "1.5")
+        self.assertIn("00:00:03,500 --> 00:00:05,500", late.read_text(encoding="utf-8"))
+        early = OUT / "offset_early.srt"
+        script("caption.py", "--text", cues, "--write-srt", early, "--offset", "-1.5")
+        self.assertIn("00:00:00,500 --> 00:00:02,500", early.read_text(encoding="utf-8"))
+
+    def test_caption_offset_rewrites_a_copy_never_the_callers_srt(self):
+        """--offset on a hand-written SRT must not edit the file the user passed in."""
+        src_srt = OUT / "offset_source.srt"
+        src_srt.write_text("1\n00:00:02,000 --> 00:00:04,000\nhello\n\n", encoding="utf-8")
+        before = src_srt.read_text(encoding="utf-8")
+        out = OUT / "offset_burn.mp4"
+        proc = script("caption.py", self._small(), "--srt", src_srt, "--offset", "1.0", "--fast", "-o", out)
+        self.assertEqual(src_srt.read_text(encoding="utf-8"), before, "the caller's SRT is never edited in place")
+        adjusted = OUT / "offset_burn_adjusted.srt"
+        self.assertTrue(adjusted.exists(), proc.stderr)
+        self.assertIn("00:00:03,000 --> 00:00:05,000", adjusted.read_text(encoding="utf-8"))
+        self.assertIn(str(adjusted), proc.stderr)
+
+    def test_caption_min_duration_extends_a_flashed_cue_but_never_past_the_next(self):
+        cues = OUT / "min_dur_cues.txt"
+        cues.write_text("0:00-0:00.3 flash\n0:01-0:03 next\n", encoding="utf-8")
+        srt = OUT / "min_dur.srt"
+        proc = script("caption.py", "--text", cues, "--write-srt", srt, "--min-duration", "1.5")
+        text = srt.read_text(encoding="utf-8")
+        self.assertIn("00:00:00,000 --> 00:00:01,000", text, "extended up to the next cue's start, not over it")
+        self.assertIn("extended", proc.stderr)
+        loose = OUT / "min_dur_loose.srt"
+        script("caption.py", "--text", cues, "--write-srt", loose, "--min-duration", "0")
+        self.assertIn("00:00:00,000 --> 00:00:00,300", loose.read_text(encoding="utf-8"), "--min-duration 0 leaves cues alone")
+
+    def test_caption_karaoke_uses_whisper_word_timings_when_the_transcript_has_them(self):
+        """A whisper JSON next to the SRT carries real per-word start/end times; --karaoke must
+        follow them instead of splitting the cue evenly or guessing from audio energy."""
+        srt = OUT / "words.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:04,000\nalpha beta gamma\n\n", encoding="utf-8")
+        (OUT / "words.json").write_text(json.dumps({"segments": [{"words": [
+            {"word": "alpha", "start": 0.0, "end": 0.5},
+            {"word": "beta", "start": 0.5, "end": 1.0},
+            {"word": "gamma", "start": 1.0, "end": 4.0}]}]}), encoding="utf-8")
+        ass = OUT / "words.ass"
+        proc = script("caption.py", self._small(), "--srt", srt, "--karaoke", "--write-ass", ass,
+                      "--fast", "-o", OUT / "words.mp4")
+        self.assertIn("word timings", proc.stderr)
+        body = ass.read_text(encoding="utf-8-sig")
+        self.assertIn(r"{\kf50}alpha", body)
+        self.assertIn(r"{\kf50}beta", body)
+        self.assertIn(r"{\kf300}gamma", body)
+
+    def test_caption_karaoke_keeps_source_word_timings_after_srt_layout(self):
+        """Layout can rewrite the SRT, but word timings still belong to the caller's file."""
+        cases = [
+            ("unchanged", "00:00:00,500 --> 00:00:00,900", ["--min-duration", "0"],
+             [10, 5, 25], ["0:00:00.50", "0:00:00.60", "0:00:00.65", "0:00:00.90"]),
+            ("normalised", "00:00,500 --> 00:00,900", ["--min-duration", "0"],
+             [10, 5, 25], ["0:00:00.50", "0:00:00.60", "0:00:00.65", "0:00:00.90"]),
+            ("extended", "00:00:00,500 --> 00:00:00,900", [],
+             [10, 5, 85], ["0:00:00.50", "0:00:00.60", "0:00:00.65", "0:00:01.50"]),
+            # #505: the word timings move with the cues --offset moves (they came from the same
+            # transcript); unshifted, 0.05 s cut the first word short and 0.2 s lost the timings
+            ("offset", "00:00:00,500 --> 00:00:00,900", ["--offset", "0.05"],
+             [10, 5, 85], ["0:00:00.55", "0:00:00.65", "0:00:00.70", "0:00:01.55"]),
+            ("offset_past_the_words", "00:00:00,500 --> 00:00:00,900", ["--offset", "0.2"],
+             [10, 5, 85], ["0:00:00.70", "0:00:00.80", "0:00:00.85", "0:00:01.70"]),
+        ]
+        for name, timing, flags, durations, boundaries in cases:
+            for style in ("sweep", "word"):
+                with self.subTest(layout=name, style=style):
+                    srt = OUT / f"source_words_{name}_{style}.srt"
+                    srt.write_text(f"1\n{timing}\nhello big world\n\n", encoding="utf-8")
+                    sidecar = srt.with_suffix(".words.json")
+                    sidecar.write_text(json.dumps({"words": [
+                        {"word": "hello", "start": 0.5, "end": 0.6},
+                        {"word": "big", "start": 0.6, "end": 0.65},
+                        {"word": "world", "start": 0.65, "end": 0.9}]}), encoding="utf-8")
+                    before = (srt.read_bytes(), sidecar.read_bytes())
+                    ass = OUT / f"laid_out_words_{name}_{style}.ass"
+                    proc = script("caption.py", self._small(), "--srt", srt, "--karaoke",
+                                  "--karaoke-style", style, "--karaoke-timing", "even",
+                                  "--write-ass", ass, "--fast", "-o", ass.with_suffix(".mp4"), *flags)
+                    body = ass.read_text(encoding="utf-8-sig")
+                    if style == "sweep":
+                        self.assertEqual([int(n) for n in re.findall(r"\\kf(\d+)", body)], durations)
+                    else:
+                        intervals = [line.split(",")[1:3] for line in body.splitlines()
+                                     if line.startswith("Dialogue:")]
+                        self.assertEqual(intervals, [boundaries[i:i + 2] for i in range(3)])
+                    self.assertIn("word timings", proc.stderr)
+                    self.assertEqual((srt.read_bytes(), sidecar.read_bytes()), before)
+
+    def test_caption_karaoke_text_keeps_its_own_word_timing_source(self):
+        """--text supplies the cues even when --srt names another transcript with word timings."""
+        srt = OUT / "ignored_words.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello big world\n\n", encoding="utf-8")
+        srt.with_suffix(".words.json").write_text(json.dumps({"words": [
+            {"word": "hello", "start": 0, "end": 0.1},
+            {"word": "big", "start": 0.1, "end": 0.15},
+            {"word": "world", "start": 0.15, "end": 1}]}), encoding="utf-8")
+        text = OUT / "preferred_cues.txt"
+        text.write_text("0:00-0:01 fresh cue text\n", encoding="utf-8")
+        for sidecar in (False, True):
+            for style in ("sweep", "word"):
+                with self.subTest(sidecar=sidecar, style=style):
+                    ass = OUT / f"preferred_words_{sidecar}_{style}.ass"
+                    if sidecar:
+                        ass.with_suffix(".words.json").write_text(json.dumps({"words": [
+                            {"word": "fresh", "start": 0, "end": 0.2},
+                            {"word": "cue", "start": 0.2, "end": 0.5},
+                            {"word": "text", "start": 0.5, "end": 1}]}), encoding="utf-8")
+                    script("caption.py", self._small(), "--srt", srt, "--text", text,
+                           "--karaoke", "--karaoke-style", style, "--karaoke-timing", "even",
+                           "--write-ass", ass, "--fast", "-o", ass.with_suffix(".mp4"))
+                    body = ass.read_text(encoding="utf-8-sig")
+                    self.assertIn("fresh", body)
+                    self.assertNotIn("hello", body)
+                    if style == "sweep":
+                        self.assertEqual([int(n) for n in re.findall(r"\\kf(\d+)", body)],
+                                         [20, 30, 50] if sidecar else [33, 33, 33])
+                    else:
+                        boundaries = (["0:00:00.00", "0:00:00.20", "0:00:00.50", "0:00:01.00"] if sidecar
+                                      else ["0:00:00.00", "0:00:00.33", "0:00:00.66", "0:00:00.99"])
+                        self.assertEqual([line.split(",")[1:3] for line in body.splitlines()
+                                          if line.startswith("Dialogue:")],
+                                         [boundaries[i:i + 2] for i in range(3)])
+
+    def test_caption_brand_styles_caption_block_sets_the_look(self):
+        """brand.json's `styles.caption` is the documented 1.12 spelling, shared with graphics.py;
+        an explicit flag still beats it."""
+        brand = OUT / "brand_styles.json"
+        brand.write_text(json.dumps({"styles": {"caption": {
+            "font": "DejaVu Serif", "size": 33, "colour": "00FF00", "position": "top", "box": True}}}), encoding="utf-8")
+        ass = OUT / "brand_styles.ass"
+        script("caption.py", self._small(), "--text", self.cues, "--brand", brand, "--animate", "fade",
+               "--write-ass", ass, "--fast", "-o", OUT / "brand_styles.mp4")
+        style = next(l for l in ass.read_text(encoding="utf-8-sig").splitlines() if l.startswith("Style: Default"))
+        self.assertIn("DejaVu Serif", style)
+        self.assertIn("&H0000FF00", style, "colour (British spelling) is read")
+        self.assertEqual(style.split(",")[-5], "8", "position top -> ASS alignment 8")
+        self.assertEqual(style.split(",")[15], "3", "box -> BorderStyle 3")
+
+    def test_caption_non_latin_text_picks_a_font_that_covers_it(self):
+        """Korean, Chinese, Arabic and Thai cues burn with a font that has the glyphs: the run
+        exits 0, names the font file it chose, and the caption band actually gains ink (tofu
+        boxes would too, which is why the font file is asserted as well)."""
+        if _no_fontconfig():
+            self.skipTest("no fc-list on this machine: fonts cannot be resolved by script here")
+        small = self._small()
+        base = self._band_luma(small, OUT / "band_plain.png")
+        samples = {"ko": "안녕하세요 여러분", "zh": "你好世界大家好", "ar": "مرحبا بالعالم", "th": "สวัสดีชาวโลก"}
+        for lang, text in samples.items():
+            with self.subTest(lang=lang):
+                if font_for_script(lang) is None:
+                    self.skipTest(f"this machine has no font covering {lang}")
+                cues = OUT / f"nl_{lang}.txt"
+                cues.write_text(f"0:00-0:04 {text}\n", encoding="utf-8")
+                out = OUT / f"nl_{lang}.mp4"
+                proc = script("caption.py", small, "--text", cues, "--lang", lang, "--size", "40",
+                              "--fast", "-o", out)
+                m = probe(str(out))
+                self.assertEqual(m["video"]["width"], 640)
+                chosen = re.search(r"^font: (.+?) \(covers (\w+)\)", proc.stderr, re.M)
+                self.assertIsNotNone(chosen, proc.stderr)
+                self.assertTrue(os.path.exists(chosen.group(1)), chosen.group(1))
+                self.assertEqual(chosen.group(2), lang)
+                inked = self._band_luma(out, OUT / f"band_{lang}.png")
+                self.assertNotAlmostEqual(inked, base, delta=0.05,
+                                          msg=f"{lang}: the caption band is identical to the uncaptioned frame")
+
+    def test_graphics_and_overlay_pick_a_font_by_script_for_non_latin_text(self):
+        """drawtext renders a box per missing glyph and still exits 0; graphics.py and overlay.py
+        resolve a font that covers the text instead, and say which file they chose."""
+        if _no_fontconfig():
+            self.skipTest("no fc-list on this machine: fonts cannot be resolved by script here")
+        if font_for_script("ko") is None:
+            self.skipTest("this machine has no font covering ko")
+        gfx = OUT / "gfx_ko.mp4"
+        proc = script("graphics.py", self._small(), "--template", "lower-third", "--name", "김민준",
+                      "--title", "감독", "--lang", "ko", "--preset", "veryfast", "-o", gfx, "--json")
+        chosen = re.search(r"^font: (.+?) \(covers ko\)", proc.stderr, re.M)
+        self.assertIsNotNone(chosen, proc.stderr)
+        self.assertIn(f"fontfile={escape_filter_path(chosen.group(1))}", json.loads(proc.stdout)["commands"][0])
+        ov = OUT / "overlay_ja.mp4"
+        proc2 = script("overlay.py", self._small(), "--text", "こんにちは世界", "--preset", "veryfast", "-o", ov, "--json")
+        chosen2 = re.search(r"^font: (.+?) \(covers ja\)", proc2.stderr, re.M)
+        self.assertIsNotNone(chosen2, proc2.stderr)
+        self.assertIn("fontfile=", json.loads(proc2.stdout)["commands"][0])
+
+    def test_an_explicit_font_is_kept_even_when_it_does_not_cover_the_script(self):
+        """A stated --font is the user's decision: it is warned about, never silently replaced."""
+        if _no_fontconfig():
+            self.skipTest("no fc-list on this machine")
+        cues = OUT / "explicit_font.txt"
+        cues.write_text("0:00-0:03 你好世界\n", encoding="utf-8")
+        proc = script("caption.py", self._small(), "--text", cues, "--font", "DejaVu Sans",
+                      "--fast", "-o", OUT / "explicit_font.mp4")
+        self.assertIn("FontName=DejaVu Sans", " ".join(proc.stderr.splitlines()))
+        self.assertNotIn("(covers zh)", proc.stderr, "an explicit font is never replaced")
+        if shutil.which("fc-list"):
+            self.assertIn("does not cover", proc.stderr, "but the caller is told it will not render")
+        else:
+            # Windows resolves fonts by file name and has no fontconfig to ask: coverage is
+            # unknown, so keeping the font silently (no "does not cover" claim) is correct.
+            self.assertNotIn("does not cover", proc.stderr)
+
+    def test_no_font_for_the_script_is_a_failed_job_not_tofu(self):
+        """The whole point: a machine that cannot render the text refuses the job instead of
+        writing a video of empty boxes that ffmpeg reports as a success. Forced with an fc-list
+        that answers normally (exit 0) and lists nothing -- fontconfig saying "no font covers
+        this", which is what a bare container with fontconfig but no font files looks like."""
+        if platform.system() == "Windows":
+            self.skipTest("the shim below is a #!/bin/sh script; Windows resolves fonts by file name, not fontconfig")
+        shim = OUT / "nofc"
+        shim.mkdir(exist_ok=True)
+        (shim / "fc-list").write_text("#!/bin/sh\nexit 0\n")
+        (shim / "fc-list").chmod(0o755)
+        env = dict(os.environ, PATH=f"{shim}{os.pathsep}{os.environ['PATH']}")
+        cues = OUT / "no_font.txt"
+        cues.write_text("0:00-0:03 안녕하세요\n", encoding="utf-8")
+        proc = script("caption.py", self._small(), "--text", cues, "--json", "--fast",
+                      "-o", OUT / "no_font.mp4", env=env, expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["status"], "failed")
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("Korean", doc["error"]["message"])
+        self.assertIn("--fonts-dir", doc["error"]["message"], "the message names a flag caption.py has")
+        self.assertNotIn("or pass --font-file", doc["error"]["message"], "caption.py has no --font-file")
+        self.assertFalse((OUT / "no_font.mp4").exists(), "nothing is written for a job that cannot be read")
+
+    def test_a_broken_or_absent_fontconfig_is_unknown_not_missing(self):
+        """`unknown` is not `missing` (the rule every other capability in this repo follows):
+        with no fc-list on PATH -- or one that fails -- coverage cannot be verified, so the job
+        runs with the caller's font (libass has its own font backend) behind one info line,
+        instead of refusing work that 1.11.1 rendered."""
+        if platform.system() == "Windows":
+            self.skipTest("the shim below is a #!/bin/sh script; Windows resolves fonts by file name, not fontconfig")
+        cues = OUT / "unknown_fc.txt"
+        cues.write_text("0:00-0:03 안녕하세요\n", encoding="utf-8")
+        broken = OUT / "brokenfc"
+        broken.mkdir(exist_ok=True)
+        (broken / "fc-list").write_text("#!/bin/sh\nexit 1\n")
+        (broken / "fc-list").chmod(0o755)
+        empty = OUT / "nobin"
+        empty.mkdir(exist_ok=True)
+        for tool in ("ffmpeg", "ffprobe"):
+            link = empty / tool
+            if not link.exists():
+                link.symlink_to(shutil.which(tool))
+        cases = {
+            "fc-list fails": dict(os.environ, PATH=f"{broken}{os.pathsep}{os.environ['PATH']}"),
+            "no fc-list at all": dict(os.environ, PATH=str(empty)),
+        }
+        for label, env in cases.items():
+            with self.subTest(case=label):
+                out = OUT / ("unknown_fc_%s.mp4" % label.replace(" ", "_").replace("-", "_"))
+                proc = script("caption.py", self._small(), "--text", cues, "--json", "--fast",
+                              "-o", out, env=env)
+                doc = json.loads(proc.stdout)
+                self.assertEqual(doc["status"], "completed", proc.stderr)
+                self.assertIn("could not verify", proc.stderr)
+                self.assertNotIn("no installed font covers", proc.stderr)
+                self.assertIn("FontName=DejaVu Sans", " ".join(doc["commands"]),
+                              "the caller's font stands when coverage is unknown")
+
+    def test_caption_hands_ffmpeg_the_cues_it_read(self):
+        """#414: with nothing to lay out, the caller's SRT went to ffmpeg's SRT reader, which reads
+        another grammar: `00:01,000` (no hours) was refused as input_unreadable, and `00:00:01,5`
+        burned at 1.005 s where the tool counted 1.5 s. Such a file is burned (and muxed) as the
+        copy the tool writes; a file in the grammar both read is still given as it is."""
+        for name, body, want in (("nohour", "1\n00:01,000 --> 00:02,500\nhi\n\n", "00:00:01,000 --> 00:00:02,500"),
+                                 ("shortms", "1\n00:00:01,5 --> 00:00:02,5\nhi\n\n", "00:00:01,500 --> 00:00:02,500")):
+            with self.subTest(name=name):
+                src_srt = OUT / f"grammar_{name}.srt"
+                src_srt.write_text(body, encoding="utf-8")
+                out = OUT / f"grammar_{name}.mp4"
+                adjusted = OUT / f"grammar_{name}_adjusted.srt"
+                if adjusted.exists():
+                    adjusted.unlink()
+                doc = json.loads(script("caption.py", self._small(), "--srt", src_srt, "--fast", "-o", out, "--json").stdout)
+                self.assertEqual(doc["status"], "completed")
+                self.assertIn(want, adjusted.read_text(encoding="utf-8"))
+                burned = [c for c in doc["commands"] if "-vf" in c]
+                self.assertIn(adjusted.name, burned[0])
+                mux = OUT / f"grammar_{name}.mkv"
+                doc = json.loads(script("caption.py", self._small(), "--srt", src_srt, "--srt", f"{src_srt}:fr",
+                                        "--mode", "mux", "-o", mux, "--json").stdout)
+                self.assertEqual(doc["status"], "completed")
+                self.assertTrue(all(src_srt.name not in (t["file"] or "") for t in doc["tracks"]), doc["tracks"])
+                for stream in (0, 1):  # both tracks: the first goes through _adjusted.srt, the second _track1.srt
+                    muxed = sh("ffmpeg", "-v", "error", "-i", mux, "-map", f"0:s:{stream}", "-f", "srt", "-").stdout
+                    # the muxed track's start, give or take the container's own start (a few ms of audio priming)
+                    got = re.search(r"(\d+):(\d+):(\d+),(\d+) -->", muxed).groups()
+                    h, m, sec, ms = (int(x) for x in got)
+                    self.assertAlmostEqual(h * 3600 + m * 60 + sec + ms / 1000, 1.0 if name == "nohour" else 1.5,
+                                           delta=0.05, msg=f"track {stream}")
+        plain = OUT / "grammar_plain.srt"
+        plain.write_text("1\n00:00:01.000 --> 00:00:02.000\nhi\n\n", encoding="utf-8")
+        doc = json.loads(script("caption.py", self._small(), "--srt", plain, "--fast", "-o", OUT / "grammar_plain.mp4",
+                                "--dry-run", "--json").stdout)
+        self.assertIn(plain.name, [c for c in doc["commands"] if "-vf" in c][0], "a file both read alike is burned as it is")
+        # "-->" in a cue's text is dialogue to both readers (#427 review), not a timing line to judge
+        arrow = OUT / "grammar_arrow.srt"
+        arrow.write_text("1\n00:00:01,000 --> 00:00:02,000\nnext --> left\n\n", encoding="utf-8")
+        doc = json.loads(script("caption.py", self._small(), "--srt", arrow, "--fast", "-o", OUT / "grammar_arrow.mp4",
+                                "--dry-run", "--json").stdout)
+        self.assertIn(arrow.name, [c for c in doc["commands"] if "-vf" in c][0], "dialogue with --> is no reason to copy")
+
+    def test_caption_dry_run_plans_the_same_file_the_real_run_burns(self):
+        """--dry-run/--plan must describe the job the real run executes: when --offset/--max-lines/
+        --min-duration adjust a hand-written SRT, the planned command names the adjusted copy (the
+        file the real run burns), the plan document says where it comes from, and no side file is
+        written under a dry run."""
+        src_srt = OUT / "plan_parity.srt"
+        src_srt.write_text("1\n00:00:01,000 --> 00:00:01,300\nflash\n\n"
+                           "2\n00:00:02,000 --> 00:00:04,000\n"
+                           "this is a very long caption line that certainly needs wrapping here\n\n",
+                           encoding="utf-8")
+        out = OUT / "plan_parity.mp4"
+        adjusted = OUT / "plan_parity_adjusted.srt"
+        if adjusted.exists():
+            adjusted.unlink()
+        plan = OUT / "plan_parity.json"
+        proc = script("caption.py", self._small(), "--srt", src_srt, "--size", "48",
+                      "-o", out, "--plan", plan)
+        doc = json.loads(plan.read_text(encoding="utf-8"))
+        planned = [c for c in doc["commands"] if "-vf" in c]
+        self.assertTrue(planned, doc["commands"])
+        # the filter string escapes the path (Windows: `D\\:/a/...`), so match the file name
+        self.assertIn(adjusted.name, planned[0], "the plan burns the adjusted copy, not the caller's file")
+        self.assertNotIn(src_srt.name, planned[0])
+        self.assertTrue(any(str(adjusted) in n for n in doc.get("notes") or []),
+                        f"the plan records the side file: {doc.get('notes')}")
+        self.assertFalse(adjusted.exists(), "a dry run writes no side file")
+        real = script("caption.py", self._small(), "--srt", src_srt, "--size", "48",
+                      "--fast", "-o", out, "--json")
+        self.assertTrue(adjusted.exists(), real.stderr)
+        burned = [c for c in json.loads(real.stdout)["commands"] if "-vf" in c]
+        self.assertIn(adjusted.name, burned[0], "the real run burns the file the plan named")
+
+    def test_caption_never_breaks_before_a_combining_mark(self):
+        """Thai tone marks and vowel signs, Devanagari matras, Arabic and Hebrew points are their
+        own code points: a line may never start with one, and they advance the pen by nothing."""
+        import caption  # noqa: E402
+        import unicodedata
+        for text in ("กิ้น" * 6, "मैंने" * 6, "مَرْحَبًا " * 4, "שָׁלוֹם " * 4):
+            with self.subTest(text=text[:8]):
+                for width in (1.5, 3.0, 6.0):
+                    for line in caption.wrap_text(text, width):
+                        first = line[0]
+                        self.assertEqual(unicodedata.combining(first), 0, f"line starts with a mark: {line!r}")
+                        self.assertNotIn(unicodedata.category(first), ("Mn", "Mc"), f"line starts with a mark: {line!r}")
+                self.assertEqual("".join(caption.wrap_text(text, 3.0)).replace(" ", ""),
+                                 text.replace(" ", ""), "no character is lost")
+        self.assertEqual(caption.text_width_em("\u0e01\u0e34\u0e49"), caption.text_width_em("\u0e01"),
+                         "a combining mark is charged no width")
+        self.assertEqual(caption.wrap_text("เก", 10.0), ["เก"], "a leading Thai vowel stays with its consonant")
+
+    def test_caption_offset_takes_the_skills_time_grammar(self):
+        """SKILL.md lists --offset among the timestamp flags: mm:ss and hh:mm:ss(.fff) work,
+        signed, and a bad value is a `kind: input` refusal document, not an argparse dump."""
+        cues = OUT / "offset_grammar.txt"
+        cues.write_text("0:05-0:07 one\n", encoding="utf-8")
+        for value, expected in (("0:02", "00:00:07,000 --> 00:00:09,000"),
+                                ("-0:00:02.500", "00:00:02,500 --> 00:00:04,500"),
+                                ("00:00:01:15@30", "00:00:06,500 --> 00:00:08,500")):
+            with self.subTest(offset=value):
+                srt = OUT / "offset_grammar.srt"
+                script("caption.py", "--text", cues, "--write-srt", srt, "--offset", value)
+                self.assertIn(expected, srt.read_text(encoding="utf-8"))
+        proc = script("caption.py", "--text", cues, "--write-srt", OUT / "offset_bad.srt",
+                      "--offset", "half past two", "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["status"], "failed")
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("--offset", doc["error"]["message"])
+
+    def test_caption_max_lines_holds_for_all_caps_text(self):
+        """Uppercase is far wider than the mixed-case average: an all-caps cue must be measured
+        with a per-character table, or libass re-wraps each line the wrapper produced and four
+        lines are drawn where --max-lines 2 was asked for."""
+        import caption  # noqa: E402
+        text = "WE MEASURE EVERY CAPITAL LETTER BECAUSE UPPERCASE RUNS WIDE"
+        cues = OUT / "caps_cue.txt"
+        cues.write_text(f"0:01-0:05 {text}\n", encoding="utf-8")
+        srt = OUT / "caps_cue.srt"
+        script("caption.py", self._small(), "--text", cues, "--size", "48", "--max-lines", "2",
+               "--write-srt", srt, "--fast", "-o", OUT / "caps_cue.mp4")
+        max_em = 640 * caption.SAFE_WIDTH_FRACTION / (48 * 360 / 288.0)
+        blocks = self._srt_cues(srt)
+        for _, lines in blocks:
+            self.assertLessEqual(len(lines), 2, f"--max-lines 2 exceeded: {lines}")
+        # The real DejaVu Sans advances (hmtx/unitsPerEm, unrounded), not caption.py's own table:
+        # what libass will actually draw has to fit, or it re-wraps the line and --max-lines 2
+        # becomes four lines in the picture.
+        real = {"A": .684, "B": .686, "C": .698, "D": .770, "E": .632, "F": .575, "G": .775,
+                "H": .752, "I": .295, "J": .295, "K": .656, "L": .557, "M": .863, "N": .748,
+                "O": .787, "P": .603, "Q": .787, "R": .695, "S": .635, "T": .611, "U": .732,
+                "V": .684, "W": .989, "X": .685, "Y": .611, "Z": .685, " ": .318}
+        for _, lines in blocks:
+            for line in lines:
+                drawn = sum(real[ch] for ch in line)
+                self.assertLessEqual(drawn, max_em, f"libass would re-wrap this line: {line!r}")
+        self.assertEqual(" ".join(l for _, lines in blocks for l in lines), text)
+        self.assertGreater(caption.text_width_em("CAPITALS"), caption.text_width_em("capitals"))
+
+    def test_a_resolved_font_path_with_spaces_survives_into_the_command(self):
+        """macOS resolves "/Library/Fonts/Arial Unicode.ttf": a space in the font path must not
+        split the info line, the drawtext `fontfile=`, or the libass `fontsdir=`."""
+        import _common  # noqa: E402
+        spaced_dir = OUT / "font dir"
+        spaced_dir.mkdir(exist_ok=True)
+        source = default_font_file("DejaVu Sans")
+        if not source or not os.path.exists(source):
+            self.skipTest("no concrete font file on this machine to copy")
+        spaced = spaced_dir / "My Font.ttf"
+        shutil.copyfile(source, spaced)
+
+        # the resolver's own answer and the line it prints keep the path whole
+        entry = (str(spaced), "My Font")
+        saved = dict(_common._SCRIPT_FONT_CACHE)
+        try:
+            _common._SCRIPT_FONT_CACHE[("ko", None)] = entry
+            with contextlib.redirect_stderr(io.StringIO()):  # the resolver's own info line
+                _script, resolved, family = _common.script_font_for_text("안녕하세요")
+        finally:
+            _common._SCRIPT_FONT_CACHE.clear()
+            _common._SCRIPT_FONT_CACHE.update(saved)
+        self.assertEqual(resolved, str(spaced))
+        self.assertEqual(family, "My Font")
+        line = f"font: {resolved} (covers ko)"
+        self.assertEqual(re.search(r"^font: (.+?) \(covers (\w+)\)", line, re.M).group(1), str(spaced),
+                         "the info line's path is read whole, not up to the first space")
+
+        # and the same path reaches ffmpeg as one argument in both draw paths
+        proc = script("overlay.py", self._small(), "--text", "spaced", "--font-file", spaced,
+                      "--preset", "veryfast", "-o", OUT / "spaced_overlay.mp4", "--json")
+        cmd = json.loads(proc.stdout)["commands"][0]
+        self.assertIn(f"fontfile={escape_filter_path(str(spaced))}", cmd)
+        cues = OUT / "spaced_cue.txt"
+        cues.write_text("0:00-0:02 spaced\n", encoding="utf-8")
+        proc2 = script("caption.py", self._small(), "--text", cues, "--fonts-dir", spaced_dir,
+                       "--fast", "-o", OUT / "spaced_caption.mp4", "--json")
+        self.assertIn(f"fontsdir={escape_filter_path(str(spaced_dir))}", json.loads(proc2.stdout)["commands"][0])
+
+    def test_caption_srt_only(self):
+        srt = OUT / "only.srt"
+        proc = script("caption.py", "--text", self.cues, "--write-srt", srt)
+        self.assertTrue(srt.exists())
+        self.assertEqual(proc.stdout.strip(), str(srt))
+
+    def test_caption_srt_lands_next_to_output_not_source(self):
+        sub = OUT / "capdir"
+        sub.mkdir(exist_ok=True)
+        out = sub / "cap_side.mp4"
+        script("caption.py", self.src, "--text", self.cues, "--preset", "veryfast", "-o", out)
+        self.assertTrue((sub / "cap_side.srt").exists(), "SRT written beside the output")
+        self.assertFalse((OUT / "source.srt").exists(), "no SRT dropped next to the source")
+
+    def test_caption_smpte_timecode_cues_convert_frames_to_seconds(self):
+        tc = OUT / "tc_cues.txt"
+        tc.write_text("00:00:00:12 --> 00:00:02:00 Hello\n00:00:02:00 --> 00:00:04:00 World\n", encoding="utf-8")
+        srt = OUT / "tc.srt"
+        script("caption.py", "--text", tc, "--write-srt", srt, "--fps", "24")
+        text = srt.read_text(encoding="utf-8")
+        self.assertIn("00:00:00,500 --> 00:00:02,000", text, "frame 12 at 24fps is exactly 0.5s")
+
+    def test_caption_smpte_timecode_without_fps_fails_loudly(self):
+        """A cue that looks like hh:mm:ss:ff but has no --fps must not be silently swallowed as auto-timed text."""
+        tc = OUT / "tc_no_fps.txt"
+        tc.write_text("00:00:00:12 --> 00:00:02:00 Hello\n", encoding="utf-8")
+        proc = script("caption.py", "--text", tc, "--write-srt", OUT / "tc_no_fps.srt", "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("fps", doc["error"]["message"])
+        self.assertFalse((OUT / "tc_no_fps.srt").exists())
+
+    def test_caption_fps_defaults_to_the_input_videos_own_fps(self):
+        tc = OUT / "tc_auto_fps.txt"
+        tc.write_text("00:00:00:15 --> 00:00:02:00 Hello\n", encoding="utf-8")
+        out = OUT / "tc_auto.mp4"
+        script("caption.py", self.src, "--text", tc, "-o", out, "--preset", "veryfast")
+        srt_text = (OUT / "tc_auto.srt").read_text(encoding="utf-8")
+        # self.src is 30fps: frame 15 is exactly 0.5s
+        self.assertIn("00:00:00,500 --> 00:00:02,000", srt_text)
+
+    def test_caption_mux_copies_streams_and_adds_a_subtitle_track(self):
+        srt = OUT / "mux_cues.srt"
+        out = OUT / "cap_mux.mp4"
+        script("caption.py", self.src, "--text", self.cues, "--write-srt", srt, "--mode", "mux", "-o", out)
+        m = probe(str(out))
+        self.assertEqual(m["subtitle_streams"], 1)
+        self.assertEqual(m["video"]["codec"], "h264", "video must be copied, not re-encoded to a different codec")
+        self.assertEqual(m["audio"]["codec"], "aac", "audio must be copied untouched")
+        self.assertClose(m["duration"], 12.0, 0.15)
+
+    def test_caption_mux_writes_faststart_mp4(self):
+        """Same shape as #275/#277: --mode mux stream-copies video/audio with -c:v copy / -c:a
+        copy while only adding a subtitle track, and must write -movflags +faststart on an mp4
+        output the same way every other mp4-writing path does."""
+        srt = OUT / "mux_faststart_cues.srt"
+        out = OUT / "cap_mux_faststart.mp4"
+        script("caption.py", self.src, "--text", self.cues, "--write-srt", srt, "--mode", "mux", "-o", out)
+        self.assertTrue(_is_faststart(out), "caption.py --mode mux must write +faststart")
+
+    def test_caption_mux_chained_keeps_every_language_track(self):
+        """--mode mux used to drop any subtitle track the input already had when adding a new
+        one (its map list never included 0:s?), so chaining it once per language -- the natural
+        way to build a multi-language subtitle set (e.g. an English track, then a Japanese one)
+        -- silently lost every earlier language but the last (#93). Each call must now keep what
+        was already there."""
+        srt_en = OUT / "mux_chain_en.srt"
+        srt_en.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+        srt_ja = OUT / "mux_chain_ja.srt"
+        srt_ja.write_text("1\n00:00:00,000 --> 00:00:02,000\nこんにちは\n", encoding="utf-8")
+        step1 = OUT / "cap_mux_chain1.mkv"
+        script("caption.py", self.src, "--srt", srt_en, "--mode", "mux", "--language", "en", "-o", step1)
+        step2 = OUT / "cap_mux_chain2.mkv"
+        script("caption.py", step1, "--srt", srt_ja, "--mode", "mux", "--language", "ja", "-o", step2)
+        m = probe(str(step2))
+        self.assertEqual(m["subtitle_streams"], 2)
+        langs = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream_tags=language",
+                   "-of", "csv=p=0", step2).stdout.split()
+        self.assertEqual(langs, ["en", "ja"])
+        self.assertEqual(m["video"]["codec"], "h264", "video must stay copied through both chained calls")
+        self.assertEqual(m["audio"]["codec"], "aac", "audio must stay copied through both chained calls")
+
+    def test_srt_lang_suffix_parsing(self):
+        """`FILE:lang` splits on the last colon, and only when the suffix is a language code and
+        the whole token is not itself a file on disk -- so a Windows path and a file genuinely
+        named `a:b.srt` survive."""
+        import caption  # noqa: E402
+        self.assertEqual(caption.split_srt_lang("en.srt:en"), ("en.srt", "en"))
+        self.assertEqual(caption.split_srt_lang("subs/file.srt:pt-BR"), ("subs/file.srt", "pt-BR"))
+        self.assertEqual(caption.split_srt_lang("plain.srt"), ("plain.srt", None))
+        # A Windows drive path is handled by the parser alone, with no file on disk: the drive
+        # letter is a one-character head that is not a language tag, in either slash style.
+        self.assertEqual(caption.split_srt_lang("C:\\subs\\en.srt"), ("C:\\subs\\en.srt", None))
+        self.assertEqual(caption.split_srt_lang("C:/subs/en.srt"), ("C:/subs/en.srt", None))
+        self.assertEqual(caption.split_srt_lang("D:\\media\\ja.srt"), ("D:\\media\\ja.srt", None))
+        # "the whole token is a file on disk, so do not split it" -- exercised with a colon-free
+        # name, which every OS can create.
+        plain = OUT / "suffix_plain.srt"
+        plain.write_text("1\n00:00:00,000 --> 00:00:01,000\nx\n", encoding="utf-8")
+        self.assertEqual(caption.split_srt_lang(str(plain)), (str(plain), None))
+        if platform.system() != "Windows":
+            # ... and, where the filesystem allows it, with a name that really contains a colon
+            odd = OUT / "a:b.srt"
+            odd.write_text("1\n00:00:00,000 --> 00:00:01,000\nx\n", encoding="utf-8")
+            self.assertEqual(caption.split_srt_lang(str(odd)), (str(odd), None))
+        # MPEG-4 needs the ISO-639-2 spelling (verified empirically: ffmpeg silently writes NO
+        # language tag for a two-letter code in .mp4); Matroska stores what it is given.
+        self.assertEqual(caption.container_language("ja", "x.mp4"), "jpn")
+        self.assertEqual(caption.container_language("ja", "x.mkv"), "ja")
+
+    def test_duplicate_language_and_bad_code_are_refused(self):
+        srt = OUT / "mux_dup.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+        script("caption.py", self.src, "--mode", "mux", "--srt", f"{srt}:en", "--srt", f"{srt}:en",
+               "-o", OUT / "dup.mkv", expect_fail=True)
+        script("caption.py", self.src, "--mode", "mux", "--srt", f"{srt}:en",
+               "--default-track", "ja", "-o", OUT / "dup2.mkv", expect_fail=True)
+        # a suffix meant as a language code but shaped wrong is a language error naming the
+        # token, not "SRT file not found: en.srt:zzzz"
+        proc = script("caption.py", self.src, "--mode", "mux", "--srt", f"{srt}:zzzzzzzzzzz",
+                      "-o", OUT / "dup3.mkv", "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("zzzzzzzzzzz", doc["error"]["message"])
+        self.assertIn("not a language code", doc["error"]["message"])
+        # a genuinely missing file still says so
+        missing = script("caption.py", self.src, "--mode", "mux",
+                         "--srt", str(OUT / "no_such_file.srt") + ":en",
+                         "-o", OUT / "dup4.mkv", expect_fail=True)
+        self.assertIn("not found", missing.stderr)
+
+    def test_every_missing_extra_srt_track_is_named_at_once(self):
+        """2.2.1: two missing extra tracks are one refusal naming both, not two reruns."""
+        srt = OUT / "mux_multi_ok.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+        proc = script("caption.py", self.src, "--mode", "mux", "--srt", f"{srt}:en",
+                      "--srt", str(OUT / "gone_ja.srt") + ":ja", "--srt", str(OUT / "gone_fr.srt") + ":fr",
+                      "-o", OUT / "multi_missing.mkv", "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertEqual([p["index"] for p in doc["problems"]], [1, 2])
+        self.assertIn("2 SRT file(s) not found", doc["error"]["message"])
+
+    def test_burn_with_two_srts_refused(self):
+        srt = OUT / "mux_burn2.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+        script("caption.py", self.src, "--srt", f"{srt}:en", "--srt", f"{srt}:ja",
+               "-o", OUT / "burn2.mp4", expect_fail=True)
+
+    def test_mux_three_languages_into_mkv(self):
+        """Three tracks in one call: nothing re-encoded, every stream tagged, and check.py's new
+        informational `subtitles` row lists all three."""
+        files = {}
+        for lang, text in (("en", "Hello"), ("ja", "\u3053\u3093\u306b\u3061\u306f"), ("es", "Hola")):
+            f = OUT / f"mux3_{lang}.srt"
+            f.write_text(f"1\n00:00:00,000 --> 00:00:02,000\n{text}\n", encoding="utf-8")
+            files[lang] = f
+        out = OUT / "cap_mux3.mkv"
+        res = json.loads(script("caption.py", self.src, "--mode", "mux",
+                                "--srt", f"{files['en']}:en", "--srt", f"{files['ja']}:ja",
+                                "--srt", f"{files['es']}:es", "--default-track", "en",
+                                "--json", "-o", out).stdout)
+        self.assertEqual(res["subtitle_tracks"], 3)
+        self.assertEqual([t["language"] for t in res["tracks"]], ["en", "ja", "es"])
+        self.assertEqual([t["default"] for t in res["tracks"]], [True, False, False])
+        disp = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                  "stream_disposition=default", "-of", "csv=p=0", out).stdout.split()
+        self.assertEqual(disp, ["1", "0", "0"], "the file disagrees with tracks[].default")
+        self.assertEqual(res["tracks"][1]["title"], "\u65e5\u672c\u8a9e")
+        src_m, m = probe(str(self.src)), probe(str(out))
+        self.assertEqual(m["subtitle_streams"], 3)
+        # ffprobe reports Matroska's codes verbatim (empirically: `en`, not `eng`)
+        langs = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                   "stream_tags=language", "-of", "csv=p=0", out).stdout.split()
+        self.assertEqual(langs, ["en", "ja", "es"])
+        self.assertEqual(m["video"]["codec"], src_m["video"]["codec"], "video was re-encoded")
+        self.assertEqual(m["audio"]["codec"], src_m["audio"]["codec"], "audio was re-encoded")
+        chk = json.loads(script("check.py", out, "--platform", "youtube", "--no-loudness",
+                                "--json").stdout)
+        subs_row = [r for r in chk["checks"] if r["check"] == "subtitles"]
+        self.assertEqual(len(subs_row), 1)
+        self.assertEqual(subs_row[0]["status"], "PASS")
+        for code in ("en", "ja", "es"):
+            self.assertIn(code, subs_row[0]["value"])
+
+    def test_offset_shifts_every_track_of_a_multi_track_mux(self):
+        """Audit A61: --offset moved the first --srt of a multi-track mux and left the other
+        languages where they were; the layout flags are the first track's, and a note says so."""
+        files = {}
+        for lang, words in (("en", ("hello", "world")), ("ja", ("konnichiwa", "sekai"))):
+            f = files[lang] = OUT / f"offset_mux_{lang}.srt"
+            f.write_text(f"1\n00:00:00,200 --> 00:00:00,900\n{words[0]}\n\n2\n00:00:01,000 --> 00:00:02,000\n{words[1]}\n",
+                         encoding="utf-8")
+        out = OUT / "offset_mux.mkv"
+        doc = json.loads(script("caption.py", self.src, "--mode", "mux", "--srt", f"{files['en']}:en",
+                                "--srt", f"{files['ja']}:ja", "--offset", "0.5", "-o", out, "--json").stdout)
+
+        def first_cue(stream):
+            return float(sh("ffprobe", "-v", "error", "-select_streams", f"s:{stream}", "-show_entries",
+                            "packet=pts_time", "-of", "csv=p=0", out).stdout.split()[0])
+        # both files' first cue is at 0.2 s; each track's is now 0.5 s later, the same for both
+        self.assertAlmostEqual(first_cue(1), first_cue(0), places=2)
+        self.assertGreater(first_cue(1), 0.65)
+        self.assertTrue(any("offset_mux_ja.srt shifted by --offset +0.5" in n for n in doc["notes"]), doc["notes"])
+        self.assertTrue(any("first --srt only" in n for n in doc["notes"]), doc["notes"])
+        # an offset that would leave a track with no cue is refused before a file is written
+        empty = OUT / "offset_mux_empty.mkv"
+        for p in (empty, OUT / "offset_mux_empty_adjusted.srt", OUT / "offset_mux_empty_track1.srt"):
+            p.unlink(missing_ok=True)
+        for srts in ([f"{files['en']}:en", f"{files['ja']}:ja"], [str(files["en"])]):
+            with self.subTest(tracks=len(srts)):
+                argv = [a for f in srts for a in ("--srt", f)]
+                proc = script("caption.py", self.src, "--mode", "mux", *argv, "--offset=-30", "-o", empty, "--json",
+                              expect_fail=True)
+                self.assertEqual(proc.returncode, 1)
+                err = json.loads(proc.stdout)["error"]
+                self.assertEqual(err["kind"], "input", err)
+                self.assertIn("offset_mux_en.srt before 0", err["message"])
+                self.assertEqual(sorted(p.name for p in OUT.glob("offset_mux_empty*")), [])
+        # every track is checked, not the first alone: here the first keeps its second cue and
+        # only the added track would be empty
+        short = OUT / "offset_mux_short.srt"
+        short.write_text("1\n00:00:00,200 --> 00:00:00,400\nmijikai\n", encoding="utf-8")
+        proc = script("caption.py", self.src, "--mode", "mux", "--srt", f"{files['en']}:en", "--srt", f"{short}:ja",
+                      "--offset=-1", "-o", empty, "--json", expect_fail=True)
+        err = json.loads(proc.stdout)["error"]
+        self.assertEqual(err["kind"], "input", err)
+        self.assertIn("offset_mux_short.srt before 0", err["message"])
+        self.assertEqual(sorted(p.name for p in OUT.glob("offset_mux_empty*")), [])
+        # text cues are a cue source too: every one moved before 0 is the same refusal, not an
+        # empty SRT (or, with a frame rate to report in, an IndexError)
+        cue_file = OUT / "offset_mux_cues.txt"
+        cue_file.write_text("0:00-0:01 hello\n", encoding="utf-8")
+        proc = script("caption.py", self.src, "--mode", "mux", "--text", cue_file, "--offset=-30", "-o", empty,
+                      "--json", expect_fail=True)
+        self.assertNotIn("Traceback", proc.stderr)
+        err = json.loads(proc.stdout)["error"]
+        self.assertEqual(err["kind"], "input", err)
+        self.assertIn("offset_mux_cues.txt before 0", err["message"])
+        self.assertEqual(sorted(p.name for p in OUT.glob("offset_mux_empty*")), [])
+        # a dry run plans an added track an earlier step has not written yet under the name the
+        # real run reads: the shifted copy, not the unshifted source
+        pending = OUT / "offset_mux_pending.srt"
+        pending.unlink(missing_ok=True)
+        plan = json.loads(script("caption.py", self.src, "--mode", "mux", "--srt", f"{files['en']}:en", "--srt",
+                                 f"{pending}:ja", "--offset", "0.5", "-o", OUT / "offset_mux_plan.mkv", "--dry-run",
+                                 "--json").stdout)
+        planned = " ".join(" ".join(c) if isinstance(c, list) else str(c) for c in plan["commands"])
+        self.assertIn("offset_mux_plan_track1.srt", planned)
+        self.assertNotIn("offset_mux_pending.srt", planned)
+
+    def test_mux_without_default_track_leaves_every_matroska_track_off(self):
+        """Given two or more new subtitle streams and no --default-track, ffmpeg flags the first
+        one `default` by itself -- the opposite of what the flag promises, and `tracks[].default`
+        then described a file that did not exist. Every disposition is stated explicitly now."""
+        files = []
+        for lang in ("en", "ja"):
+            f = OUT / f"mux_nodef_{lang}.srt"
+            f.write_text("1\n00:00:00,000 --> 00:00:02,000\nx\n", encoding="utf-8")
+            files.append(f"{f}:{lang}")
+        out = OUT / "cap_mux_nodef.mkv"
+        res = json.loads(script("caption.py", self.src, "--mode", "mux",
+                                *[a for f in files for a in ("--srt", f)],
+                                "--json", "-o", out).stdout)
+        disp = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                  "stream_disposition=default", "-of", "csv=p=0", out).stdout.split()
+        self.assertEqual(disp, ["0", "0"], "a track was marked default that nobody asked for")
+        self.assertEqual([t["default"] for t in res["tracks"]], [False, False])
+
+    def test_mux_into_mp4_converts_to_iso639_2_and_warns_about_players(self):
+        """Empirically, an .mp4 keeps three mov_text tracks but drops a two-letter language code
+        outright -- so the code is converted and the caller is told the container is the wrong
+        one for a switchable deliverable."""
+        files = []
+        for lang in ("en", "ja", "es"):
+            f = OUT / f"mux3mp4_{lang}.srt"
+            f.write_text("1\n00:00:00,000 --> 00:00:02,000\nx\n", encoding="utf-8")
+            files.append(f"{f}:{lang}")
+        out = OUT / "cap_mux3.mp4"
+        res = json.loads(script("caption.py", self.src, "--mode", "mux", *[a for f in files for a in ("--srt", f)],
+                                "--json", "-o", out).stdout)
+        self.assertEqual([t["language"] for t in res["tracks"]], ["eng", "jpn", "spa"])
+        langs = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                   "stream_tags=language", "-of", "csv=p=0", out).stdout.split()
+        self.assertEqual(langs, ["eng", "jpn", "spa"])
+        self.assertTrue(any(".mkv" in n for n in res.get("notes") or []), res.get("notes"))
+        # MPEG-4 stores no per-track title ffprobe reads back, so none is claimed
+        self.assertEqual([t["title"] for t in res["tracks"]], [None, None, None])
+        self.assertEqual(sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                            "stream_tags=title", "-of", "csv=p=0", out).stdout.split(), [])
+        # ... and it always enables its first subtitle track, which tracks[] must not deny
+        disp = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries",
+                  "stream_disposition=default", "-of", "csv=p=0", out).stdout.split()
+        self.assertEqual([("1" if t["default"] else "0") for t in res["tracks"]], disp)
+
+    def test_caption_mux_picks_the_subtitle_codec_from_the_container(self):
+        srt = OUT / "mux_container_cues.srt"
+        script("caption.py", "--text", self.cues, "--write-srt", srt)
+        for ext, expect_codec in ((".mp4", "mov_text"), (".mkv", "subrip")):
+            out = OUT / f"cap_mux{ext}"
+            script("caption.py", self.src, "--srt", srt, "--mode", "mux", "-o", out)
+            streams = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream=codec_name",
+                         "-of", "csv=p=0", out).stdout.strip()
+            self.assertEqual(streams, expect_codec, f"{ext} output")
+
+    def test_caption_mux_converts_an_existing_track_for_the_container(self):
+        """#414: an existing subtitle track was always copied, so subrip from .mkv into .mp4 and
+        mov_text into .mkv failed unclassified; it is converted as export.py converts it, and what
+        no conversion makes fit (H.264 into .webm) is refused as kind input."""
+        srt = OUT / "mux_conv_cues.srt"
+        script("caption.py", "--text", self.cues, "--write-srt", srt)
+        existing_srt = OUT / "mux_conv_existing.srt"
+        existing_srt.write_text("1\n00:00:03,000 --> 00:00:04,000\nExisting subtitle\n\n", encoding="utf-8")
+        cases = (("subrip", ".mkv", ".mp4", "mov_text"), ("mov_text", ".mp4", ".mkv", "subrip"))
+        for have, src_ext, out_ext, want in cases:
+            with self.subTest(have=have, out=out_ext):
+                src = OUT / f"mux_conv_src_{have}{src_ext}"
+                # the existing track is tagged with a two-letter code and a title, which MPEG-4 cannot store
+                sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.src, "-i", existing_srt,
+                   "-map", "0:v", "-map", "0:a?", "-map", "1", "-c", "copy", "-c:s", "srt" if have == "subrip" else "mov_text",
+                   "-metadata:s:s:0", "language=en", "-metadata:s:s:0", "title=Existing", src)
+                out = OUT / f"mux_conv_out_{have}{out_ext}"
+                doc = json.loads(script("caption.py", src, "--srt", srt, "--mode", "mux", "-o", out, "--json").stdout)
+                self.assertEqual(doc["status"], "completed")
+                streams = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream=codec_name",
+                             "-of", "csv=p=0", out).stdout.split()
+                self.assertEqual(streams, [want, want])
+                self.assertEqual(doc["tracks"][0]["kept_from_input"], True)
+                self.assertEqual(doc["tracks"][0]["codec"], "srt" if want == "subrip" else want)
+                existing = sh("ffmpeg", "-v", "error", "-i", out, "-map", "0:s:0", "-f", "srt", "-").stdout
+                added = sh("ffmpeg", "-v", "error", "-i", out, "-map", "0:s:1", "-f", "srt", "-").stdout
+                self.assertIn("Existing subtitle", existing)
+                self.assertNotIn("Existing subtitle", added)
+                # each track is reported with the language and title the written file carries (#427 review)
+                tags = json.loads(sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream_tags",
+                                     "-of", "json", out).stdout)["streams"]
+                for track, stream in zip(doc["tracks"], tags):
+                    self.assertEqual(track["language"], (stream.get("tags") or {}).get("language"), doc["tracks"])
+                    if track["kept_from_input"]:
+                        self.assertEqual(track["title"], (stream.get("tags") or {}).get("title"), doc["tracks"])
+        # an EIA-608 caption track (QuickTime c608) is text: converted into .mp4, kept as it is in .mov
+        scc = OUT / "mux_conv_608.scc"
+        scc.write_text("Scenarist_SCC V1.0\n\n00:00:00:00\t9420 9420 94ae 94ae 9452 9452 97a1 97a1 c845 4c4c cf80 942f 942f\n\n"
+                       "00:00:02:00\t942c 942c\n", encoding="utf-8")
+        src608 = OUT / "mux_conv_src_608.mov"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.src, "-i", scc,
+           "-map", "0:v", "-map", "0:a?", "-map", "1", "-c", "copy", src608)
+        for out_ext, want in ((".mp4", "mov_text"), (".mov", "eia_608")):
+            with self.subTest(have="eia_608", out=out_ext):
+                out = OUT / f"mux_conv_out_608{out_ext}"
+                doc = json.loads(script("caption.py", src608, "--srt", srt, "--mode", "mux", "-o", out, "--json").stdout)
+                self.assertEqual(doc["status"], "completed")
+                streams = sh("ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream=codec_name",
+                             "-of", "csv=p=0", out).stdout.split()
+                self.assertEqual(streams, [want, "mov_text"])
+        proc = script("caption.py", self.src, "--srt", srt, "--mode", "mux", "-o", OUT / "mux_conv.webm", "--json",
+                      expect_fail=True)
+        err = json.loads(proc.stdout)["error"]
+        self.assertEqual(err["kind"], "input")
+        self.assertIn(".webm", err["message"])
+
+    def test_caption_webm_mux_checks_the_audio_stream_it_copies(self):
+        """#427 review: the WebM guard read the first audio stream's codec, not --audio-stream's."""
+        src = OUT / "mux_webm_two_audio.mkv"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "1", "-map", "0:v", "-map", "1:a", "-map", "1:a",
+           "-c:v", "libvpx-vp9", "-deadline", "realtime", "-c:a:0", "aac", "-c:a:1", "libopus", src)
+        srt = OUT / "mux_webm_cues.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:00,800\nhi\n\n", encoding="utf-8")
+        out = OUT / "mux_webm_two_audio.webm"
+        doc = json.loads(script("caption.py", src, "--srt", srt, "--mode", "mux", "--audio-stream", "1", "-o", out,
+                                "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed")
+        proc = script("caption.py", src, "--srt", srt, "--mode", "mux", "--audio-stream", "0", "-o", out,
+                      "--dry-run", "--json", expect_fail=True)
+        err = json.loads(proc.stdout)["error"]
+        self.assertEqual(err["kind"], "input")
+        self.assertIn("aac", err["message"])
+
+    def test_caption_mux_refuses_ass_and_animation(self):
+        script("caption.py", self.src, "--ass", "/nonexistent.ass", "--mode", "mux", "-o", OUT / "x.mp4", expect_fail=True)
+        srt = OUT / "mux_refuse_cues.srt"
+        script("caption.py", "--text", self.cues, "--write-srt", srt)
+        script("caption.py", self.src, "--srt", srt, "--mode", "mux", "--karaoke", "-o", OUT / "x2.mp4", expect_fail=True)
+
+    def test_caption_mux_refuses_an_unrecognized_container(self):
+        srt = OUT / "mux_avi_cues.srt"
+        script("caption.py", "--text", self.cues, "--write-srt", srt)
+        script("caption.py", self.src, "--srt", srt, "--mode", "mux", "-o", OUT / "x.avi", expect_fail=True)
+
+    def test_caption_audio_stream_selects_the_requested_track_not_always_the_first(self):
+        two = OUT / "cap_two_streams.mkv"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100",
+           "-t", "4", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", two)
+        self.assertEqual(len(probe(str(two))["audio_streams"]), 2)
+        cue = OUT / "cap_two_cue.txt"
+        cue.write_text("0:00-0:02 Hello\n", encoding="utf-8")
+        # mux mode: the picked track survives a stream copy untouched, verified by its own probed sample rate
+        out_mux = OUT / "cap_two_mux.mp4"
+        script("caption.py", two, "--text", cue, "--audio-stream", "1", "--mode", "mux", "-o", out_mux, "--write-srt", OUT / "cap_two_mux.srt")
+        self.assertEqual(probe(str(out_mux))["audio"]["sample_rate"], 44100, "mux must keep the requested track (index 1), not default to index 0")
+        # burn mode: the picked track survives re-encoding to AAC too (sample rate normally changes on re-encode,
+        # so compare against the same tool re-encoding the default track 0 instead)
+        out_burn1 = OUT / "cap_two_burn1.mp4"
+        script("caption.py", two, "--text", cue, "--audio-stream", "1", "-o", out_burn1, "--preset", "veryfast")
+        out_burn0 = OUT / "cap_two_burn0.mp4"
+        script("caption.py", two, "--text", cue, "-o", out_burn0, "--preset", "veryfast")
+        # both re-encode to AAC, but decoding each and comparing peak frequency would be overkill here --
+        # the -map argument itself is what this test protects, already proven correct in mux mode above;
+        # this just confirms burn mode doesn't crash or silently drop audio when --audio-stream is given
+        self.assertIsNotNone(probe(str(out_burn1))["audio"])
+        self.assertIsNotNone(probe(str(out_burn0))["audio"])
+
+    def test_caption_audio_stream_out_of_range_refused(self):
+        cue = OUT / "cap_range_cue.txt"
+        cue.write_text("0:00-0:02 Hello\n", encoding="utf-8")
+        proc = script("caption.py", self.src, "--text", cue, "--audio-stream", "5", "-o", OUT / "x.mp4", "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("audio-stream", doc["error"]["message"])
+
+    # ---------------------------------------------------------------- overlay
+    def test_overlay_image_and_text(self):
+        out1 = OUT / "ov_img.mp4"
+        script("overlay.py", self.src, "--image", self.logo, "--position", "top-right", "--scale", "200",
+               "--opacity", "0.8", "--start", "1", "--end", "5", "--fade", "0.5", "-o", out1)
+        m = probe(str(out1))
+        self.assertClose(m["duration"], 12.0, 0.2)
+        self.assertIsNotNone(m["audio"], "audio must be kept")
+        out2 = OUT / "ov_txt.mp4"
+        script("overlay.py", self.src, "--text", "Episode 12", "--position", "bottom", "--box", "--start", "1", "--end", "5", "--fade", "0.3", "-o", out2)
+        self.assertClose(probe(str(out2))["duration"], 12.0, 0.15)
+
+    def _gray_clip(self, name):
+        clip = OUT / name
+        if not clip.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x404040:s=640x360:r=10",
+               "-t", "1", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "0", "-pix_fmt", "yuv420p", clip)
+        return clip
+
+    @staticmethod
+    def _gray_frame(path):
+        return subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                              stdout=subprocess.PIPE, check=True).stdout
+
+    def test_overlay_multi_line_text_draws_no_box_at_the_line_break(self):
+        """FFmpeg 8.0, 8.0.1 and 8.1.0 shape every line of a multi-line drawtext but the last WITH
+        its newline, so the font's missing-glyph box was drawn after the line (PR #346 only
+        warned). On those releases overlay.py draws each line with its own drawtext; on every
+        build, nothing may be drawn to the right of a short first line inside the block."""
+        clip, font = self._gray_clip("ov_nl_gray.mp4"), default_font_file("DejaVu Sans")
+        common = ("--position", "top-left", "--font-color", "white", "--border", "0", "--quality", "0", "--preset", "ultrafast")
+        if font:
+            common += ("--font-file", font)
+        one, two = OUT / "ov_nl_one.mp4", OUT / "ov_nl_two.mp4"
+        script("overlay.py", clip, "--text", "Hi", *common, "-o", one)
+        script("overlay.py", clip, "--text", "Hi\nmuch longer second line", *common, "-o", two)
+        a, b, w = self._gray_frame(one), self._gray_frame(two), 640
+        ink = lambda f, x, y: f[y * w + x] > 0x40 + 60  # noqa: E731
+        rows = [y for y in range(360) if any(ink(a, x, y) for x in range(w))]
+        right = max(x for x in range(w) for y in rows if ink(a, x, y))
+        stray = [(x, y) for y in rows for x in range(right + 3, w) if ink(b, x, y)]
+        self.assertEqual(stray, [], "ink after the first line: the line break was drawn")
+
+    @unittest.skipIf(platform.system() == "Windows", "the release shim is a #!/bin/sh ffprobe on a POSIX-only PATH")
+    def test_overlay_per_line_route_draws_what_one_multi_line_drawtext_draws(self):
+        """The per-line route (taken on 8.0/8.0.1/8.1.0, forced here by an ffprobe that reports
+        8.0.1) must put every line where one multi-line drawtext puts it on a fixed release:
+        widest line, first line's ascent, last line's descent, the font's line height, block box
+        and outlines included. Runs where drawtext is right (6.1+, not an affected release), so
+        the single drawtext is the reference."""
+        import _common
+        if _common.drawtext_draws_newline_glyph():
+            self.skipTest("needs a drawtext that draws multi-line text right")
+        shim = OUT / "ov_nl_shim"
+        shim.mkdir(exist_ok=True)
+        (shim / "ffprobe").write_text("#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then printf 'ffprobe version 8.0.1\\n'; exit 0; fi\n"
+                                      "exec %s \"$@\"\n" % shutil.which("ffprobe"))
+        (shim / "ffprobe").chmod(0o755)
+        bad = dict(os.environ, PATH=f"{shim}{os.pathsep}{os.environ['PATH']}")
+        clip, font = self._gray_clip("ov_nl_gray.mp4"), default_font_file("DejaVu Sans")
+        for pos, extra in (("center", ("--box",)), ("bottom-right", ()), ("top", ("--box", "--border", "0"))):
+            args = ["--text", "Hello there\ngjy World wide\nÉg", "--position", pos, "--quality", "0", "--preset", "ultrafast", *extra]
+            if font:
+                args += ["--font-file", font]
+            ref, per = OUT / f"ov_nl_ref_{pos}.mp4", OUT / f"ov_nl_per_{pos}.mp4"
+            script("overlay.py", clip, *args, "-o", ref)
+            doc = json.loads(script("overlay.py", clip, *args, "-o", per, "--json", env=bad).stdout)
+            self.assertEqual(doc["commands"][-1].count("drawtext="), 6 if "0" not in extra else 3, pos)
+            self.assertNotIn("notes", doc)
+            self.assertEqual(self._gray_frame(ref), self._gray_frame(per), pos)
+
+    def test_overlay_text_scale_is_refused(self):
+        """--scale is a layer width. On --text it used to be accepted and ignored, so the draw
+        stayed at fontsize 42 while the result said completed."""
+        for flag in ("--scale", "--scale-percent"):
+            value = "200" if flag == "--scale" else "40"
+            proc = script("overlay.py", self.src, "--text", "Hello", flag, value, "--dry-run", "--json",
+                          "-o", OUT / "ov_text_scale.mp4", expect_fail=True)
+            doc = json.loads(proc.stdout)
+            self.assertEqual(doc["error"]["kind"], "input", flag)
+            self.assertIn("--font-size", doc["error"]["message"])
+            self.assertEqual(doc["commands"], [])
+        # an image layer still takes the width
+        plan = json.loads(script("overlay.py", self.src, "--image", self.logo, "--scale", "80",
+                                 "--dry-run", "--json", "-o", OUT / "ov_img_scale.mp4").stdout)
+        self.assertTrue(any("scale=80:" in c for c in plan["commands"]))
+
+    def test_hdr_to_sdr_tonemap(self):
+        out = OUT / "sdr.mp4"
+        script("color.py", self.hdr, "--to-sdr", "--preset", "veryfast", "-o", out)
+        v = probe(str(out))["video"]
+        self.assertFalse(v["hdr"])
+        self.assertEqual((v["color_transfer"], v["color_primaries"], v["pix_fmt"]), ("bt709", "bt709", "yuv420p"))
+        self.assertEqual((v["width"], v["height"]), (1920, 1080))
+        # refuses on SDR input unless forced
+        script("color.py", self.src, "--to-sdr", expect_fail=True)
+
+    def test_every_tonemap_choice_is_a_curve_this_ffmpeg_has(self):
+        """2.24: --tonemap offered bt2390, which FFmpeg's CPU tonemap filter has never had (only
+        tonemap_opencl/libplacebo do), so choosing it always failed. Every choice must be one of
+        the filter's own curves on the ffmpeg under test."""
+        import color
+        help_text = sh("ffmpeg", "-hide_banner", "-h", "filter=tonemap").stdout
+        curves = set(re.findall(r"^\s{5}(\w+)\s+\d+\s", help_text, re.M))
+        self.assertTrue(curves, help_text)
+        self.assertEqual(set(color.TONEMAPS) - curves, set(), help_text)
+        script("color.py", self.hdr, "--to-sdr", "--tonemap", "bt2390", "-o", OUT / "sdr_bt2390.mp4", expect_fail=True)
+
+    def test_to_sdr_bt2020_sdr_converts_gamut_without_tonemap(self):
+        """BT.2020 primaries on an SDR transfer are not HDR: --to-sdr converts the gamut only.
+        It used to tone-map them as PQ, darkening white Y 235 -> 151 and grey 126 -> 90 while
+        still reporting verified: true. White and grey must come out where they went in."""
+        wide = OUT / "bt2020_sdr_levels.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:size=320x120:rate=30",
+           "-f", "lavfi", "-i", "color=c=0x808080:size=320x120:rate=30", "-t", "1",
+           "-filter_complex", "[0][1]vstack,format=yuv420p10le", "-c:v", "libx265", "-preset", "ultrafast",
+           "-x265-params", "colorprim=bt2020:transfer=bt709:colormatrix=bt2020nc:log-level=error", "-tag:v", "hvc1", wide)
+
+        def luma(path, crop):
+            proc = sh("ffmpeg", "-hide_banner", "-i", str(path), "-frames:v", "1",
+                      "-vf", f"crop={crop},format=yuv420p,signalstats,metadata=print:file=-", "-f", "null", "-")
+            return float(re.search(r"lavfi\.signalstats\.YAVG=([0-9.]+)", proc.stdout).group(1))
+
+        out = OUT / "bt2020_sdr_to_sdr.mp4"
+        proc = script("color.py", wide, "--to-sdr", "--fast", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        self.assertTrue(doc["verified"])
+        v = probe(str(out))["video"]
+        self.assertEqual((v["color_transfer"], v["color_primaries"], v["color_space"]), ("bt709", "bt709", "bt709"))
+        for crop in ("iw:ih/2-8:0:4", "iw:ih/2-8:0:ih/2+4"):  # white half, mid-grey half
+            self.assertLessEqual(abs(luma(out, crop) - luma(wide, crop)), 3, crop)
+        self.assertEqual(doc["sdr_path"], "gamut")
+        self.assertTrue(any("without a tone map" in n for n in doc["notes"]))
+        self.assertFalse(any("tonemap" in c for c in doc["commands"]), doc["commands"])
+
+    def test_an_untagged_transfer_is_not_written_as_another_signal(self):
+        """Audit A153 (class: an untagged colour property of the source is written into the
+        output as a guess at a different signal): BT.2020 primaries with no transfer tag are
+        "BT.2020 SDR" to probe(), and every re-encode tagged them HLG. Measured on the written
+        files of the shared encoder line (denoise) and of a tool that crops (crop)."""
+        src = OUT / "bt2020_no_trc.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=25:d=0.4",
+           "-vf", "setparams=color_primaries=bt2020:colorspace=bt2020nc", "-c:v", "libx264", "-preset", "ultrafast",
+           "-pix_fmt", "yuv420p10le", "-x264-params", "colorprim=bt2020:colormatrix=bt2020nc",
+           "-color_primaries", "bt2020", "-colorspace", "bt2020nc", src)
+        v = probe(str(src))["video"]
+        self.assertEqual((v["color_primaries"], v["color_transfer"], v["hdr"]), ("bt2020", None, False), v)
+        for tool, extra in (("denoise.py", ()), ("crop.py", ("--x", "0", "--y", "0", "--width", "80", "--height", "40"))):
+            with self.subTest(tool=tool):
+                out = OUT / f"bt2020_no_trc_{tool[:-3]}.mp4"
+                script(tool, src, *extra, "--fast", "-o", out)
+                w = probe(str(out))["video"]
+                self.assertEqual(w["color_transfer"], "bt2020-10", w)
+                self.assertFalse(w["hdr"], w)
+                self.assertEqual(w["hdr_format"], "BT.2020 SDR", w)
+
+    def test_to_sdr_force_on_a_non_hdr_file_says_what_it_read_it_as(self):
+        """Audit A161 (class: a note describes an assumption the code path did not make):
+        --to-sdr --force on a BT.709-tagged file said "tone-mapped untagged input as PQ" while the
+        chain linearised it as BT.709. Its untagged sibling failed outright (kind ffmpeg: zscale
+        on 6.1 found "no path between colorspaces" for a frame with unspecified primaries)."""
+        tagged = tiny_clip(OUT / "force_sdr_bt709.mp4", "testsrc2=s=160x90:r=25",
+                           "-vf", "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709",
+                           "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", seconds=0.4)
+        untagged = tiny_clip(OUT / "force_sdr_untagged.mp4", "testsrc2=s=160x90:r=25", seconds=0.4)
+        self.assertIsNone(probe(str(untagged))["video"]["color_primaries"])
+        for src, said in ((tagged, "transfer bt709, primaries bt709"),
+                          (untagged, "transfer smpte2084 (untagged, taken as PQ), primaries bt2020 (untagged)")):
+            with self.subTest(src=src.name):
+                out = OUT / f"{src.stem}_sdr.mp4"
+                doc = json.loads(script("color.py", src, "--to-sdr", "--force", "--fast", "--json", "-o", out).stdout)
+                self.assertEqual(doc["status"], "completed")
+                self.assertIn(said, doc["notes"][0])
+                self.assertNotIn("untagged input as PQ", doc["notes"][0])
+                self.assertEqual(probe(str(out))["video"]["color_transfer"], "bt709")
+
+    def test_color_retag_is_stream_copy(self):
+        out = OUT / "retag.mp4"
+        proc = script("color.py", self.src, "--retag", "bt601", "-o", out)
+        self.assertIn("-c copy", proc.stderr)
+        self.assertEqual(probe(str(out))["video"]["color_transfer"], "smpte170m")
+
+    def _tagged(self, name, codec, params):
+        src = OUT / name
+        if not src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=10",
+               "-t", "1", "-c:v", codec, "-preset", "ultrafast", "-pix_fmt", "yuv420p", *params, src)
+        return src
+
+    @staticmethod
+    def _tags(path):
+        v = probe(str(path))["video"]
+        return v["color_space"], v["color_primaries"], v["color_transfer"]
+
+    @staticmethod
+    def _frame_tags(path):
+        """What the decoder hands a player: from 8.1 ffprobe's stream tags follow the container's
+        colr even while an H.264 VUI still says otherwise."""
+        keys = ("color_space", "color_primaries", "color_transfer")
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames", "-read_intervals", "%+#1",
+                              "-show_entries", "frame=" + ",".join(keys), "-of", "json", str(path)],
+                             stdout=subprocess.PIPE, text=True, check=True).stdout
+        frame = json.loads(out)["frames"][0]
+        return tuple(frame.get(k) for k in keys)
+
+    @staticmethod
+    def _pixels(path):
+        out = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:v:0", "-f", "framemd5", "-"],
+                              stdout=subprocess.PIPE, text=True, check=True).stdout
+        return [line for line in out.splitlines() if not line.startswith("#")]
+
+    def test_color_retag_rewrites_the_tags_the_stream_itself_carries(self):
+        """H.264/HEVC carry their colour description in the SPS VUI, which every decoder reads
+        before the container: --retag used to stream-copy with -colorspace/-color_primaries/
+        -color_trc (container only), report completed, and ffprobe still read the old tags. The
+        copy now rewrites the VUI with h264_metadata/hevc_metadata, stays a copy (same decoded
+        frames) and checks the tags it claims."""
+        sources = [self._tagged("rt_h264_709.mp4", "libx264", ["-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709"])]
+        if "libx265" in __import__("_common").ffmpeg_encoders():
+            sources.append(self._tagged("rt_hevc_709.mp4", "libx265",
+                                        ["-x265-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709:log-level=error"]))
+        for src in sources:
+            self.assertEqual(self._tags(src), ("bt709", "bt709", "bt709"))
+            for target, want in (("bt601", ("smpte170m", "smpte170m", "smpte170m")),
+                                 ("bt2020-hlg", ("bt2020nc", "bt2020", "arib-std-b67"))):
+                out = OUT / f"rt_{src.stem}_{target}.mp4"
+                doc = json.loads(script("color.py", src, "--retag", target, "-o", out, "--json").stdout)
+                self.assertEqual(self._tags(out), want, f"{src.name} -> {target}")
+                self.assertEqual(self._frame_tags(out), want, f"{src.name} -> {target}: decoded frames")
+                self.assertFalse(doc["reencoded"], src.name)
+                self.assertIn("_metadata=", doc["commands"][0])
+                self.assertEqual(self._pixels(out), self._pixels(src), "a retag must not touch a picture")
+
+    def test_color_retag_reencode_fallback_labels_the_frames(self):
+        """When a copy cannot carry the tags (forced here by taking the bitstream filter away), the
+        re-encode puts them on the frames with setparams. Its output options used to do it: from
+        FFmpeg 7.1 those feed the graph's colourspace negotiation, which converted the matrix of a
+        tagged source and kept its primaries and transfer (8.0.1, 8.1.3: bt709 in, smpte170m/
+        bt709/bt709 out). The result says it re-encoded and why."""
+        src = self._tagged("rt_h264_709.mp4", "libx264", ["-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709"])
+        out = OUT / "rt_fallback_bt601.mp4"
+        code = ("import sys; sys.path.insert(0, %r); import color; color.retag_bsf = lambda meta, target: []; "
+                "sys.argv = ['color.py', %r, '--retag', 'bt601', '-o', %r, '--json', '--overwrite', '--quality', '0', "
+                "'--preset', 'ultrafast']; sys.exit(color.main())" % (str(SCRIPTS), str(src), str(out)))
+        doc = json.loads(sh(sys.executable, "-c", code).stdout)
+        self.assertTrue(doc["reencoded"])
+        self.assertTrue(any("re-encoded with the tags on its frames" in n for n in doc["notes"]), doc.get("notes"))
+        self.assertIn("setparams=color_primaries=smpte170m:color_trc=smpte170m:colorspace=smpte170m", doc["commands"][-1])
+        self.assertNotIn("-colorspace", doc["commands"][-1])
+        self.assertEqual(self._tags(out), ("smpte170m", "smpte170m", "smpte170m"))
+        self.assertEqual(self._frame_tags(out), ("smpte170m", "smpte170m", "smpte170m"))
+
+    def test_color_audio_stream_selects_the_requested_track_not_always_the_first(self):
+        two = OUT / "color_two_streams.mkv"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100",
+           "-t", "4", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", two)
+        self.assertEqual(len(probe(str(two))["audio_streams"]), 2)
+        out1 = OUT / "color_two_correct1.mp4"
+        script("color.py", two, "--correct", "--exposure", "0.2", "--audio-stream", "1", "-o", out1, "--preset", "veryfast")
+        self.assertIsNotNone(probe(str(out1))["audio"])
+        proc = script("color.py", two, "--correct", "--audio-stream", "5", "-o", OUT / "color_nope.mp4", "--json", expect_fail=True)
+        self.assertEqual(json.loads(proc.stdout)["error"]["kind"], "input")
+        self.assertIn("audio-stream", proc.stderr)
+
+    def test_color_lut(self):
+        lut = OUT / "invert.cube"
+        lines = ["LUT_3D_SIZE 2"]
+        for b in (0, 1):
+            for g in (0, 1):
+                for r in (0, 1):
+                    lines.append(f"{1 - r} {1 - g} {1 - b}")
+        lut.write_text("\n".join(lines) + "\n")
+        out = OUT / "lut.mp4"
+        script("color.py", self.src, "--lut", lut, "--lut-strength", "0.5", "--preset", "veryfast", "-o", out)
+        self.assertClose(probe(str(out))["duration"], 12.0, 0.2)
+
+    def test_color_lut_strength_zero_means_no_lut_and_out_of_range_is_refused(self):
+        """--lut-strength's blend branch only fired for the OPEN interval (0, 1); anything outside
+        it -- including exactly 0, and any value > 1 or < 0 -- fell into the "apply at full
+        strength" fallback with the number silently discarded. --lut-strength 0 is documented as
+        "blend graded and original, 0..1" -- 0 should mean the original, unmodified picture, not a
+        100%-strength grade (the opposite of what was asked). Verify 0 now leaves the picture
+        untouched, and an out-of-range value is refused instead of silently applying full strength."""
+        lut = OUT / "invert_strength.cube"
+        lines = ["LUT_3D_SIZE 2"]
+        for b in (0, 1):
+            for g in (0, 1):
+                for r in (0, 1):
+                    lines.append(f"{1 - r} {1 - g} {1 - b}")
+        lut.write_text("\n".join(lines) + "\n")
+        zero = OUT / "lut_zero.mp4"
+        script("color.py", self.src, "--lut", lut, "--lut-strength", "0", "--preset", "veryfast", "-o", zero)
+        self.assertGreater(self._psnr(self.src, zero), 40, "--lut-strength 0 must leave the picture unchanged, not fully inverted")
+        self.assertEqual(self._frame_count(zero), self._frame_count(self.src), "no frame may be dropped or duplicated by a no-op grade")
+        script("color.py", self.src, "--lut", lut, "--lut-strength", "2.5", "-o", OUT / "lut_oob.mp4", expect_fail=True)
+        script("color.py", self.src, "--lut", lut, "--lut-strength", "-1", "-o", OUT / "lut_oob2.mp4", expect_fail=True)
+
+    def test_color_correct_identity_holds_on_a_bt709_tagged_source(self):
+        """#159: the identity test below only ever ran on the untagged synthetic source. On a
+        source *tagged* bt709 (any camera file, anything export.py wrote) an all-defaults
+        --correct came back 26 dB PSNR and ~8 % less saturated, because libavfilter's auto-
+        inserted swscale legs around the RGB filters disagreed: yuv->rgb honoured the frame's
+        bt709 tag, rgb->yuv used the default bt601. Both legs are now pinned to one matrix, so
+        the result is the same on a tagged and an untagged copy of the same pixels, on FFmpeg
+        5.1 through 8.1 (measured 39.5 dB on all four)."""
+        tagged = OUT / "correct_src709.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(self.src), "-t", "3",
+           "-vf", "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-an", str(tagged))
+        self.assertEqual(probe(str(tagged))["video"]["color_space"], "bt709")
+        untagged = OUT / "correct_srcU.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(self.src), "-t", "3", "-c:v", "libx264", "-preset", "veryfast", "-crf", "12", "-an", str(untagged))
+        results = {}
+        for name, src in (("tagged", tagged), ("untagged", untagged)):
+            out = OUT / f"correct_identity_{name}.mp4"
+            data = json.loads(script("color.py", src, "--correct", "--preset", "veryfast", "-o", out, "--json").stdout)
+            m = data["measurements"]
+            self.assertAlmostEqual(m["input"]["saturation_avg"], m["output"]["saturation_avg"], delta=2.5, msg=name)
+            results[name] = self._psnr(src, out)
+            self.assertGreater(results[name], 36, f"{name}: an all-defaults --correct must be near-identity, got {results[name]:.1f} dB")
+        self.assertAlmostEqual(results["tagged"], results["untagged"], delta=1.0, msg="the colour tag must not change what --correct does to the pixels")
+
+    def test_color_correct_defaults_are_near_identity(self):
+        out = OUT / "correct_neutral.mp4"
+        data = json.loads(script("color.py", self.src, "--correct", "--preset", "veryfast", "-o", out, "--json").stdout)
+        m = data["measurements"]
+        self.assertIn("y_avg", m["input"])
+        self.assertAlmostEqual(m["input"]["y_avg"], m["output"]["y_avg"], delta=2.0)
+        self.assertAlmostEqual(m["input"]["saturation_avg"], m["output"]["saturation_avg"], delta=2.0)
+        v = probe(str(out))["video"]
+        self.assertEqual((v["width"], v["height"]), (1280, 720))
+
+    def test_color_correct_exposure_and_saturation_change_measured_levels(self):
+        brighter = OUT / "correct_bright.mp4"
+        data = json.loads(script("color.py", self.src, "--correct", "--exposure", "0.6", "--preset", "veryfast", "-o", brighter, "--json").stdout)
+        m = data["measurements"]
+        self.assertGreater(m["output"]["y_avg"], m["input"]["y_avg"], "positive exposure must raise measured luma")
+
+        gray = OUT / "correct_gray.mp4"
+        data2 = json.loads(script("color.py", self.src, "--correct", "--saturation", "0", "--preset", "veryfast", "-o", gray, "--json").stdout)
+        m2 = data2["measurements"]
+        self.assertLess(m2["output"]["saturation_avg"], m2["input"]["saturation_avg"], "saturation 0 must desaturate")
+        self.assertLess(m2["output"]["saturation_avg"], 5.0, "saturation 0 must be close to grayscale")
+
+    def test_color_legalize_clamps_after_the_420_conversion_and_measures_the_file(self):
+        """--legalize: --correct with no values clamps only (lutyuv clip() as the last filter, after
+        format=yuv420p); the written file is measured against the same limits check.py --levels uses.
+        Encoded losslessly (--quality 0) nothing is left out of range and the legal_levels step
+        passes with the clamped codes on the limits; at the default quality the encoder's error around
+        the clamped edges leaves a residue, reported as a warning, and the step follows the 1 %
+        allowance. The stream-copy modes and a --codec that would convert the clamped picture again
+        are refused before ffmpeg runs."""
+        src = OUT / "legalize_src.mkv"
+        legal_range_clip(src, size=128, frames=20, rate=10)
+        for standard, (ylo, yhi), (clo, chi) in (("bt709", (16, 235), (16, 240)), ("ebu-r103", (14, 241), (5, 251))):
+            out = OUT / f"legalize_{standard}.mp4"
+            data = json.loads(script("color.py", src, "--correct", "--legalize", standard, "--quality", "0",
+                                     "--preset", "veryfast", "-o", out, "--json").stdout)
+            cmd = data["commands"][0]
+            self.assertRegex(cmd, r"format=yuv420p,lutyuv=y=\W*clip\(val", "the clamp follows the 4:2:0 conversion")
+            self.assertNotIn("exposure", cmd, "no correction values: nothing but the clamp")
+            lg = data["legalize"]
+            self.assertEqual((lg["standard"], lg["legal"]), (standard, {"y": [ylo, yhi], "c": [clo, chi]}))
+            step = next(st for st in data["verification"] if st["step"] == "legal_levels")
+            self.assertTrue(step["ok"], step)
+            self.assertTrue(data["verified"])
+            out_lv = lg["output"]
+            self.assertEqual(out_lv["out_of_range_pct"], {"y": 0.0, "u": 0.0, "v": 0.0, "chroma": 0.0})
+            # the out-of-range pattern now sits on the limits (bt709's 15 and 240 too; ebu-r103 keeps them)
+            self.assertEqual((out_lv["min"]["y"], out_lv["max"]["y"]), (ylo, yhi))
+            self.assertEqual(out_lv["min"]["u"], max(clo, 10))
+            codes = [w["code"] for w in (data.get("diagnostics") or {}).get("warnings", [])]
+            self.assertNotIn("legalize_residual", codes, "nothing left out of range: no residual warning")
+        lossy = json.loads(script("color.py", src, "--correct", "--legalize", "bt709", "--preset", "veryfast",
+                                  "-o", OUT / "legalize_lossy.mp4", "--json").stdout)
+        step = next(st for st in lossy["verification"] if st["step"] == "legal_levels")
+        worst = step["worst_frame"]
+        self.assertEqual(step["ok"], worst["y_pct"] <= 1.0 and worst["chroma_pct"] <= 1.0, step)
+        self.assertEqual(lossy["verified"], step["ok"])
+        self.assertLess(step["out_of_range_pct"]["y"], 12.46 / 4, "the clamp removed most of the source's 12.46 % luma excursion")
+        if step["out_of_range_pct"]["y"] or step["out_of_range_pct"]["chroma"]:
+            self.assertIn("legalize_residual", [w["code"] for w in lossy["diagnostics"]["warnings"]])
+        for bad in (("--retag", "bt709"), ("--correct", "--codec", "prores")):
+            proc = script("color.py", src, *bad, "--legalize", "bt709", "-o", OUT / "legalize_refused.mov", "--json",
+                          expect_fail=True)
+            self.assertEqual(json.loads(proc.stdout)["error"]["kind"], "input", bad)
+            self.assertEqual(json.loads(proc.stdout)["commands"], [], bad)
+
+    def test_color_legalize_converts_a_full_range_picture_before_the_clamp(self):
+        """#432 review: a full-range source (tagged pc, or yuvj420p) is scaled to limited range before
+        the clamp, so its blacks and whites move into the limits instead of being cut there: full-range
+        code 20 becomes limited 33, where a clamp alone would have kept 20 and crushed nothing but
+        the extremes. A limited-range source's command is unchanged (no range conversion)."""
+        import struct
+        n = 64 * 64
+        raw = OUT / "legalize_full.yuv"
+        raw.write_bytes((struct.pack(f"{n}B", *([20] * (n // 2) + [128] * (n // 2))) + bytes([128]) * (n // 2)) * 4)
+        tagged = OUT / "legalize_full_pc.mkv"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-color_range", "pc",
+           "-s", "64x64", "-r", "10", "-i", raw, "-c:v", "ffv1", "-color_range", "pc", tagged)
+        jpeg = OUT / "legalize_full_j.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "yuvj420p", "-s", "64x64",
+           "-r", "10", "-i", raw, "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuvj420p", jpeg)
+        raw.unlink()
+        for src in (tagged, jpeg):
+            data = json.loads(script("color.py", src, "--correct", "--legalize", "bt709", "--quality", "0", "--preset", "veryfast",
+                                     "-o", OUT / "legalize_full_out.mp4", "--json").stdout)
+            self.assertIn("scale=out_range=tv,format=yuv420p,lutyuv", data["commands"][0], src)
+            out = data["legalize"]["output"]
+            self.assertLessEqual(abs(out["min"]["y"] - 33), 1, (src, out["min"]))
+            self.assertTrue(data["verified"], src)
+        limited = OUT / "legalize_src.mkv"
+        legal_range_clip(limited, size=64, frames=4, rate=10)
+        data = json.loads(script("color.py", limited, "--correct", "--legalize", "bt709", "--dry-run", "--json",
+                                 "-o", OUT / "legalize_limited.mp4").stdout)
+        self.assertNotIn("out_range", data["commands"][0])
+
+    def test_color_correct_temperature_and_tint_run_and_preserve_geometry(self):
+        out = OUT / "correct_wb.mp4"
+        script("color.py", self.src, "--correct", "--temperature", "3200", "--tint", "-0.3", "--contrast", "1.1", "--preset", "veryfast", "-o", out)
+        v = probe(str(out))["video"]
+        self.assertEqual((v["width"], v["height"]), (1280, 720))
+        self.assertClose(probe(str(out))["duration"], 12.0, 0.2)
+
+    def test_color_correct_rejects_out_of_safe_range_parameters(self):
+        for flag, bad in (("--exposure", "5"), ("--contrast", "3"), ("--saturation", "-1"), ("--temperature", "40000"), ("--tint", "2")):
+            out = OUT / "correct_reject.mp4"
+            proc = script("color.py", self.src, "--correct", flag, bad, "-o", out, expect_fail=True)
+            self.assertIn("outside", proc.stderr, f"{flag} {bad} should be refused as out of range")
+            self.assertFalse(out.exists(), f"{flag} {bad}: no partial output on refusal")
+
+    def test_color_correct_gamma_changes_measured_luma(self):
+        brighter = OUT / "correct_gamma_up.mp4"
+        data = json.loads(script("color.py", self.src, "--correct", "--gamma", "1.6", "--preset", "veryfast", "-o", brighter, "--json").stdout)
+        m = data["measurements"]
+        self.assertGreater(m["output"]["y_avg"], m["input"]["y_avg"], "gamma > 1 must raise measured luma")
+
+        darker = OUT / "correct_gamma_down.mp4"
+        data2 = json.loads(script("color.py", self.src, "--correct", "--gamma", "0.5", "--preset", "veryfast", "-o", darker, "--json").stdout)
+        m2 = data2["measurements"]
+        self.assertLess(m2["output"]["y_avg"], m2["input"]["y_avg"], "gamma < 1 must lower measured luma")
+
+    def test_color_correct_lift_and_gain_run_and_shift_measured_levels(self):
+        lifted = OUT / "correct_lift.mp4"
+        data = json.loads(script("color.py", self.src, "--correct", "--lift", "0.3", "--preset", "veryfast", "-o", lifted, "--json").stdout)
+        m = data["measurements"]
+        self.assertGreater(m["output"]["y_min"], m["input"]["y_min"], "positive lift must raise the shadow floor")
+
+        gained = OUT / "correct_gain.mp4"
+        data2 = json.loads(script("color.py", self.src, "--correct", "--gain", "-0.3", "--preset", "veryfast", "-o", gained, "--json").stdout)
+        m2 = data2["measurements"]
+        self.assertLess(m2["output"]["y_avg"], m2["input"]["y_avg"], "negative gain must dim the highlights and lower measured luma")
+        v = probe(str(gained))["video"]
+        self.assertEqual((v["width"], v["height"]), (1280, 720))
+
+    def test_color_correct_levels_narrows_measured_dynamic_range(self):
+        out = OUT / "correct_levels_out.mp4"
+        data = json.loads(script("color.py", self.src, "--correct", "--levels-out-black", "64", "--levels-out-white", "192",
+                                  "--preset", "veryfast", "-o", out, "--json").stdout)
+        m = data["measurements"]
+        # colorlevels' output remap is an affine map into [romin, romax]: no output pixel can fall
+        # outside it (mod encoder rounding), so this is a mathematical guarantee, not a content guess.
+        self.assertGreaterEqual(m["output"]["y_min"], 64 - 3, "--levels-out-black 64 must floor the output near 64")
+        self.assertLessEqual(m["output"]["y_max"], 192 + 3, "--levels-out-white 192 must ceiling the output near 192")
+        self.assertLess(m["output"]["y_max"] - m["output"]["y_min"], m["input"]["y_max"] - m["input"]["y_min"],
+                         "narrowing the output levels must narrow the measured dynamic range")
+
+        out2 = OUT / "correct_levels_in.mp4"
+        script("color.py", self.src, "--correct", "--levels-in-black", "16", "--levels-in-white", "235", "--preset", "veryfast", "-o", out2)
+        v = probe(str(out2))["video"]
+        self.assertEqual((v["width"], v["height"]), (1280, 720))
+        self.assertClose(probe(str(out2))["duration"], 12.0, 0.2)
+
+        # an all-default --levels-* call must not add a colorlevels term to the chain
+        neutral_chain = script("color.py", self.src, "--correct", "--dry-run").stderr
+        self.assertNotIn("colorlevels", neutral_chain)
+
+    def test_color_correct_curves_preset_runs_and_preserves_geometry(self):
+        out = OUT / "correct_curves.mp4"
+        script("color.py", self.src, "--correct", "--curves", "medium_contrast", "--preset", "veryfast", "-o", out)
+        v = probe(str(out))["video"]
+        self.assertEqual((v["width"], v["height"]), (1280, 720))
+        self.assertClose(probe(str(out))["duration"], 12.0, 0.2)
+        # omitting --curves must not add a curves term to the chain
+        neutral_chain = script("color.py", self.src, "--correct", "--dry-run").stderr
+        self.assertNotIn("curves=", neutral_chain)
+        proc = script("color.py", self.src, "--correct", "--curves", "not-a-real-preset", "-o", OUT / "correct_curves_bad.mp4", expect_fail=True)
+        self.assertIn("invalid choice", proc.stderr)
+
+    def test_color_correct_rejects_new_flags_out_of_range(self):
+        for flag, bad in (("--gamma", "0.05"), ("--gamma", "11"), ("--lift", "-1.5"), ("--gain", "1.5")):
+            out = OUT / "correct_reject_new.mp4"
+            proc = script("color.py", self.src, "--correct", flag, bad, "-o", out, expect_fail=True)
+            self.assertIn("outside", proc.stderr, f"{flag} {bad} should be refused as out of range")
+            self.assertFalse(out.exists(), f"{flag} {bad}: no partial output on refusal")
+
+        out = OUT / "correct_reject_levels_in.mp4"
+        proc = script("color.py", self.src, "--correct", "--levels-in-black", "200", "--levels-in-white", "100", "-o", out, expect_fail=True)
+        self.assertIn("must be less than", proc.stderr)
+        self.assertFalse(out.exists())
+
+        out2 = OUT / "correct_reject_levels_out.mp4"
+        proc2 = script("color.py", self.src, "--correct", "--levels-out-black", "200", "--levels-out-white", "100", "-o", out2, expect_fail=True)
+        self.assertIn("must be less than", proc2.stderr)
+        self.assertFalse(out2.exists())
+
+    def test_caption_animated_karaoke_ass(self):
+        out = OUT / "karaoke.mp4"
+        ass = OUT / "karaoke.ass"
+        script("caption.py", self.src, "--text", self.cues, "--animate", "pop", "--karaoke", "--write-ass", ass, "--preset", "veryfast", "-o", out)
+        text = ass.read_text(encoding="utf-8-sig")
+        self.assertIn("PlayResX: 1280", text)
+        self.assertIn("\\kf", text)
+        self.assertIn("\\fscx", text)
+        self.assertEqual(text.count("Dialogue:"), 3)
+        self.assertClose(probe(str(out))["duration"], 12.0, 0.2)
+        # from an existing SRT too
+        srt = OUT / "cues.srt"
+        if not srt.exists():
+            script("caption.py", "--text", self.cues, "--write-srt", srt)
+        out2 = OUT / "fade.mp4"
+        script("caption.py", self.src, "--srt", srt, "--animate", "fade", "--preset", "veryfast", "-o", out2)
+        self.assertTrue((OUT / "fade.ass").exists())
+
+    def test_karaoke_energy_timing_follows_audio(self):
+        gappy = OUT / "gappy_k.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+           "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)*lt(t\\,2)':s=48000",
+           "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-t", "4", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", gappy)
+        cues = OUT / "kcues.txt"
+        cues.write_text("0:00-0:04 one two three four\n", encoding="utf-8")
+        ass = OUT / "ke.ass"
+        script("caption.py", gappy, "--text", cues, "--karaoke", "--write-ass", ass, "--fast", "-o", OUT / "ke.mp4")
+        line = [l for l in ass.read_text(encoding="utf-8-sig").splitlines() if l.startswith("Dialogue")][0]
+        durs = [int(x) for x in re.findall(r"\\kf(\d+)", line)]
+        self.assertEqual(len(durs), 4)
+        self.assertEqual(sum(durs), 400)
+        self.assertLess(sum(durs[:3]), 200, "first three words should sit inside the 2 s of sound")
+        ass2 = OUT / "ke_even.ass"
+        script("caption.py", gappy, "--text", cues, "--karaoke", "--karaoke-timing", "even", "--write-ass", ass2, "--fast", "-o", OUT / "ke2.mp4")
+        line2 = [l for l in ass2.read_text(encoding="utf-8-sig").splitlines() if l.startswith("Dialogue")][0]
+        self.assertEqual([int(x) for x in re.findall(r"\\kf(\d+)", line2)], [100, 100, 100, 100])
+
+    # ---------------------------------------------------------------- --karaoke-style word (#276)
+    def test_karaoke_style_default_sweep_is_byte_identical_to_omitting_the_flag(self):
+        """The mode selector must not change a single byte of today's \\kf output for a caller who
+        never asks for --karaoke-style word: the default has to stay exactly 'sweep'."""
+        ass_default = OUT / "kstyle_default.ass"
+        ass_sweep = OUT / "kstyle_sweep.ass"
+        script("caption.py", self.src, "--text", self.cues, "--karaoke", "--write-ass", ass_default,
+               "--karaoke-timing", "even", "--preset", "veryfast", "-o", OUT / "kstyle_default.mp4")
+        script("caption.py", self.src, "--text", self.cues, "--karaoke", "--karaoke-style", "sweep",
+               "--karaoke-timing", "even", "--write-ass", ass_sweep, "--preset", "veryfast", "-o", OUT / "kstyle_sweep.mp4")
+        self.assertEqual(ass_default.read_bytes(), ass_sweep.read_bytes(),
+                         "--karaoke-style sweep (explicit or default) must be byte-identical")
+        self.assertIn("WrapStyle: 0", ass_default.read_text(encoding="utf-8-sig"),
+                      "sweep mode's header is unchanged from before this flag existed")
+
+    def test_karaoke_style_word_emits_one_dialogue_event_per_word_covering_its_span(self):
+        gappy = OUT / "gappy_kw.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+           "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*440*t)':s=48000",
+           "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-t", "4", "-c:v", "libx264",
+           "-preset", "veryfast", "-c:a", "aac", gappy)
+        cues = OUT / "kwcues.txt"
+        cues.write_text("0:00-0:04 one two three four\n", encoding="utf-8")
+        ass = OUT / "kword.ass"
+        script("caption.py", gappy, "--text", cues, "--karaoke", "--karaoke-style", "word",
+               "--karaoke-timing", "even", "--write-ass", ass, "--fast", "-o", OUT / "kword.mp4")
+        text = ass.read_text(encoding="utf-8-sig")
+        self.assertIn("WrapStyle: 2", text, "word mode freezes the line break: libass must not re-wrap")
+        dialogues = [l for l in text.splitlines() if l.startswith("Dialogue:")]
+        self.assertEqual(len(dialogues), 4, "one Dialogue event per word, not per cue")
+        # even timing over 4 s / 4 words -> 1 s each
+        expected_bounds = [("0:00:00.00", "0:00:01.00"), ("0:00:01.00", "0:00:02.00"),
+                           ("0:00:02.00", "0:00:03.00"), ("0:00:03.00", "0:00:04.00")]
+        for line, (want_start, want_end) in zip(dialogues, expected_bounds):
+            fields = line.split(",", 3)
+            self.assertEqual(fields[1], want_start)
+            self.assertEqual(fields[2], want_end)
+        # every event still carries the WHOLE cue text, not just the active word
+        for line in dialogues:
+            for word in ("one", "two", "three", "four"):
+                self.assertIn(word, line)
+
+    def test_karaoke_style_word_active_word_is_scaled_and_a_distinct_colour(self):
+        cues = OUT / "kwcues2.txt"
+        cues.write_text("0:00-0:02 alpha beta\n", encoding="utf-8")
+        ass = OUT / "kword2.ass"
+        script("caption.py", self.src, "--text", cues, "--karaoke", "--karaoke-style", "word",
+               "--karaoke-timing", "even", "--karaoke-scale", "130", "--highlight-color", "1EC3FC",
+               "--color", "FFFFFF", "--upcoming-color", "808080", "--write-ass", ass,
+               "--preset", "veryfast", "-o", OUT / "kword2.mp4")
+        dialogues = [l for l in ass.read_text(encoding="utf-8-sig").splitlines() if l.startswith("Dialogue:")]
+        self.assertEqual(len(dialogues), 2)
+        first, second = dialogues
+        self.assertIn(r"\fscx130", first)
+        self.assertIn(r"\fscy130", first)
+        self.assertIn("&H00FCC31E", first, "active word carries --highlight-color")
+        self.assertIn("&H00808080", first, "the not-yet-spoken word carries --upcoming-color")
+        self.assertIn("&H00FCC31E", second, "the second event's active word (beta) also gets --highlight-color")
+        self.assertIn("&H00FFFFFF", second, "the already-spoken word (alpha) falls back to --color")
+
+    def test_karaoke_style_word_preserves_explicit_line_breaks(self):
+        """A cue with a manual two-line break (the `|` syntax) must keep exactly that \\N split in
+        every per-word event -- the frozen line list from layout_cues, not a re-wrap."""
+        cues = OUT / "kwcues3.txt"
+        cues.write_text("0:00-0:02 top line | bottom line\n", encoding="utf-8")
+        ass = OUT / "kword3.ass"
+        script("caption.py", self.src, "--text", cues, "--karaoke", "--karaoke-style", "word",
+               "--karaoke-timing", "even", "--write-ass", ass, "--preset", "veryfast", "-o", OUT / "kword3.mp4")
+        dialogues = [l for l in ass.read_text(encoding="utf-8-sig").splitlines() if l.startswith("Dialogue:")]
+        self.assertEqual(len(dialogues), 4, "top line + bottom line = 4 words -> 4 events")
+        for line in dialogues:
+            self.assertEqual(line.count("\\N"), 1, "each event keeps the one frozen line break")
+            before, _, after = line.partition("\\N")
+            self.assertTrue(any(w in before for w in ("top", "line")))
+            self.assertTrue(any(w in after for w in ("bottom", "line")))
+
+    def test_karaoke_style_word_handles_emoji_placeholders_and_brace_escaping(self):
+        assets = _emoji_assets()
+        cues = OUT / "kwcues4.txt"
+        cues.write_text("0:00-0:02 say {hi} \U0001F389 now\n", encoding="utf-8")
+        ass = OUT / "kword4.ass"
+        script("caption.py", self.src, "--text", cues, "--karaoke", "--karaoke-style", "word",
+               "--karaoke-timing", "even", "--emoji-assets", assets, "--write-ass", ass,
+               "--preset", "veryfast", "-o", OUT / "kword4.mp4")
+        text = ass.read_text(encoding="utf-8-sig")
+        dialogues = [l for l in text.splitlines() if l.startswith("Dialogue:")]
+        # "say", "{hi}" (escaped) and "now" get their own event; the emoji token is a placeholder
+        # with no real duration of its own (same as --karaoke-style sweep's \kf0 emoji segment)
+        self.assertEqual(len(dialogues), 3)
+        self.assertNotIn("{\\pos", text, "cue text must not be able to open a real override block")
+        self.assertIn(r"\{hi\}", text, "the braces the user typed are escaped, not dropped")
+        for line in dialogues:
+            self.assertNotIn("\U0001F389", line, "the emoji glyph itself is replaced by the drawtext/libass placeholder")
+
+    # ---------------------------------------------------------------- colour-flag filter-graph injection (adversarial)
+    def test_color_like_flags_refuse_filter_graph_injection(self):
+        """Every flag that string-formats a colour straight into a filter graph (color=c=...,
+        tpad=...:color=..., rotate=...:fillcolor=..., drawtext=...:fontcolor=..., pad=...:color=...)
+        used to accept any string verbatim. Since ffmpeg filter options are comma/colon-delimited,
+        a value like "black,drawtext=text=INJECTED" doesn't just set an odd colour -- the comma ends
+        the colour filter early and starts an entirely new one, so the payload actually gets burnt
+        into the frame (confirmed by rendering it and inspecting the pixels before this fix existed).
+        This is a real filter-graph injection, not just a cosmetic validation gap -- every colour-like
+        flag across the codebase must refuse anything that isn't a plain colour token."""
+        payload = "black,drawtext=text=INJECTED"
+        cases = [
+            ("pad.py", [self.src, "--start", "1", "--color", payload]),
+            ("straighten.py", [self.src, "--degrees", "5", "--fit", "pad", "--fill-color", payload]),
+            ("waveform.py", [self.src, "--background", payload]),
+            ("waveform.py", [self.src, "--color", payload]),
+            ("background.py", ["--duration", "1", "--width", "640", "--height", "360", "--color", payload, "-o", OUT / "bg_inject.mp4"]),
+            ("background.py", ["--duration", "1", "--width", "640", "--height", "360", "--gradient", f"{payload}:0x0057ff", "-o", OUT / "bg_inject2.mp4"]),
+            ("fit.py", [self.src, "--aspect", "1:1", "--fit", "pad", "--pad-color", payload]),
+            ("export.py", [self.src, "--preset", "reels", "--pad-color", payload]),
+            ("join.py", [self.src, self.src, "--pad-color", payload]),
+            ("overlay.py", [self.src, "--text", "hi", "--font-color", payload]),
+            ("overlay.py", [self.src, "--text", "hi", "--border-color", payload]),
+            ("overlay.py", [self.src, "--text", "hi", "--box-color", payload]),
+            ("overlay.py", [self.src, "--video", self.src, "--chromakey", payload]),
+        ]
+        for name, argv in cases:
+            proc = script(name, *argv, expect_fail=True)
+            self.assertIn("colour", proc.stderr, f"{name} {argv}: expected a colour-validation refusal")
+
+    def test_color_like_flags_still_accept_real_colors(self):
+        script("pad.py", self.src, "--start", "0.5", "--color", "0x101010", "-o", OUT / "colorok1.mp4")
+        script("straighten.py", self.src, "--degrees", "5", "--fit", "pad", "--fill-color", "black", "-o", OUT / "colorok2.mp4")
+        script("waveform.py", self.src, "--background", "0x101010", "--color", "cyan|magenta", "-o", OUT / "colorok3.mp4")
+        script("background.py", "--duration", "1", "--width", "640", "--height", "360", "--gradient", "0xff6a00:0x0057ff", "-o", OUT / "colorok4.mp4")
+        script("overlay.py", self.src, "--text", "hi", "--box-color", "black@0.5", "-o", OUT / "colorok5.mp4")
+
+    # ---------------------------------------------------------------- font-name filter-graph injection (adversarial)
+    @unittest.skipIf(platform.system() == "Windows", "forces the fc-match-missing fallback path by symlinking just "
+                      "ffmpeg/ffprobe into a stub PATH dir -- os.symlink needs an elevated/dev-mode privilege on "
+                      "Windows that CI runners don't grant, and default_font_file() doesn't even consult fc-match "
+                      "there (it resolves a fixed arial.ttf under WINDIR, see its docstring), so this specific "
+                      "repro doesn't generalise to Windows. The fix itself (escape_drawtext() around the fallback "
+                      "value) is plain string handling with no OS branch, so it's equally in effect there.")
+    def test_font_flag_escapes_filter_graph_injection_when_unresolved(self):
+        """overlay.py and graphics.py both accept --font as a family NAME, not a file path, and try
+        to resolve it to a concrete file via default_font_file() (fc-match) first -- but that
+        resolution returns None whenever fc-match isn't on PATH (always true on some real systems,
+        e.g. minimal containers and every Windows build), in which case both tools used to fall back
+        to embedding the raw name straight into `font='{args.font}'` with zero escaping. Since
+        drawtext=... options are comma/colon-delimited, a value like "X',drawtext=text=OWNED"
+        doesn't just set an odd font -- the comma ends the font option (and the whole drawtext
+        filter) early and starts an entirely new drawtext filter, which actually rendered (confirmed
+        by rendering the pre-fix code and visually inspecting the burnt-in "OWNED" text). Force the
+        None-fallback path by hiding fc-match from PATH, exactly as it's naturally absent on some
+        real systems, and confirm the built filter graph no longer contains a live breakout."""
+        payload = "X',drawtext=text=OWNED:fontcolor=yellow:fontsize=40:x=10:y=10"
+        stub_dir = OUT / "no_fc_match_path"
+        stub_dir.mkdir(exist_ok=True)
+        for exe in ("ffmpeg", "ffprobe"):
+            real = shutil.which(exe)
+            link = stub_dir / exe
+            if not link.exists():
+                os.symlink(real, link)
+        # Python's own bin dir has to stay on PATH, and on a system-python machine (the Debian
+        # container job) that dir is /usr/bin, which also holds the real fc-match -- so "hidden
+        # by PATH" was not hidden at all there and the tool resolved a real fontfile= instead of
+        # taking the font= fallback this test exists to exercise. A stub fc-match that always
+        # fails sits first on PATH so the resolver returns None on every layout.
+        if platform.system() != "Windows":
+            stub = stub_dir / "fc-match"
+            stub.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            stub.chmod(0o755)
+        env = dict(os.environ)
+        env["PATH"] = os.pathsep.join([str(stub_dir), str(Path(sys.executable).parent)])
+
+        out = OUT / "font_inject_overlay.mp4"
+        proc = sh(sys.executable, SCRIPTS / "overlay.py", self.src, "--text", "hello", "--font", payload, "-o", out, env=env)
+        # The escaped payload must show up with a backslash-escaped comma ahead of the injected
+        # "drawtext=text=OWNED" -- proof it stays a literal char inside font='...' instead of
+        # closing the option early and starting a sibling filter.
+        self.assertIn("\\,drawtext=text=OWNED", proc.stderr, "comma must be escaped so it can't break out of font= into a new filter")
+
+        frame = OUT / "font_inject_overlay_frame.png"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", out, "-ss", "1", "-vframes", "1", frame)
+        self.assertTrue(frame.exists())
+
+    def test_caption_font_with_comma_and_colon_does_not_corrupt_ass_style(self):
+        """caption.py's --font flows into two ASS constructs escape_drawtext() was never meant to
+        cover: the comma-delimited [V4+ Styles] Style: line (write_ass()), and the comma-separated
+        Key=Value list inside a -vf subtitles=...:force_style='...' option. Neither is a drawtext
+        filter, so unlike overlay.py/graphics.py this call site used to embed args.font completely
+        raw. A font name containing a comma shifts every field after it (size, colours, bold flag,
+        alignment, margins) in the Style: line, and a comma or colon inside force_style's FontName=
+        breaks the option-list/-vf parsing the same way. Verify a hostile font name survives as an
+        inert, field-count-preserving value in both the --write-ass path and the plain SRT-burn
+        (force_style) path."""
+        hostile_font = "Arial,Bold:evil"
+        ass_out = OUT / "font_inject.ass"
+        script("caption.py", self.src, "--text", self.cues, "--font", hostile_font, "--animate", "fade", "--write-ass", ass_out, "--fast", "-o", OUT / "font_inject.mp4")
+        style_line = next(l for l in ass_out.read_text(encoding="utf-8").splitlines() if l.startswith("Style: Default,"))
+        self.assertNotIn(",Arial,Bold:evil,", style_line, "raw hostile font must not appear -- it would shift every later field")
+        fields = style_line.split(",")
+        self.assertEqual(len(fields), 23, "Style: line must keep its full field count (Format: line lists 23 columns)")
+
+        out = OUT / "font_inject_caption.mp4"
+        proc = sh(sys.executable, SCRIPTS / "caption.py", self.src, "--text", self.cues, "--font", hostile_font, "-o", out, "--dry-run")
+        self.assertNotIn("Arial,Bold:evil", proc.stderr, "hostile font must not reach force_style unsanitised")
+
+    def test_caption_ass_dialogue_text_cannot_forge_override_blocks(self):
+        """ASS Dialogue text treats a literal `{...}` as an override block -- real style/animation
+        commands (\\pos, \\fscx, \\t, ...), not literal characters. Cue text is effectively user-
+        controlled (--text cues, an SRT file, or ASR transcription), so cue content containing
+        braces used to be interpreted as those commands instead of being read out literally,
+        letting a caption reposition/rescale/recolor itself or later text. Verify a hostile cue
+        survives as inert text with the override syntax neutralised."""
+        hostile_cues = OUT / "brace_inject_cues.txt"
+        hostile_cues.write_text("00:00:00 --> 00:00:03 hi {\\pos(0,0)\\fscx500}INJECTED\n", encoding="utf-8")
+        ass_out = OUT / "brace_inject.ass"
+        # a real (fast) burn: since 1.4.9 --dry-run writes no side files, the generated ASS included
+        script("caption.py", self.src, "--text", hostile_cues, "--animate", "fade", "--write-ass", ass_out, "--fast", "-o", OUT / "brace_inject.mp4")
+        dialogue = next(l for l in ass_out.read_text(encoding="utf-8").splitlines() if l.startswith("Dialogue: "))
+        # --animate fade legitimately prepends its own "{\fad(200,200)}" override block; only the
+        # cue-text-derived braces from the hostile payload must be gone.
+        self.assertNotIn("{\\pos(0,0)\\fscx500}", dialogue, "cue text must not be able to open a real ASS override block")
+        self.assertIn("\\{\\pos(0,0)\\fscx500\\}INJECTED", dialogue,
+                      "the braces the user typed are ESCAPED (libass \\{ / \\}), not deleted: the cue "
+                      "reads out exactly what was written and still cannot open an override block")
+
+    def test_caption_srt_blank_line_in_cue_text_does_not_split_the_block(self):
+        """parse_text_cues() turns a bare '|' into a newline (a documented way to write a two-line
+        caption), so a source line with two adjacent pipes ("a||b") produces cue text containing a
+        blank line ("a\\n\\nb"). A blank line is SRT's own block separator (index / timecode / text
+        / blank / next block) -- writing it raw used to split one cue into two malformed half-
+        blocks, the second missing its own index and timecode. Verify the generated SRT still
+        parses back as exactly the cues that were written, not more."""
+        hostile_cues = OUT / "blank_line_cues.txt"
+        hostile_cues.write_text("00:00:00 --> 00:00:03 a||b\n00:00:03 --> 00:00:06 second cue\n", encoding="utf-8")
+        srt_out = OUT / "blank_line.srt"
+        script("caption.py", "--text", hostile_cues, "--write-srt", srt_out)
+        from caption import parse_srt
+        cues = parse_srt(str(srt_out))
+        self.assertEqual(len(cues), 2, "the blank line inside cue text must not fake a third block boundary")
+        self.assertEqual(cues[0][2], "a\nb", "text after the fake blank-line boundary must not be silently dropped")
+        self.assertEqual(cues[1][2], "second cue", "the second cue must still have its own timecode/index, not be swallowed as stray text")
+
+    def test_caption_malformed_timestamp_falls_back_to_just_the_text_not_the_whole_line(self):
+        """TIME_RE can match a line (finding a text portion after the arrow) even when one of the
+        two timestamps inside it fails parse_time() (e.g. a malformed "00:00:03.15.999" with a
+        stray extra segment). The except ValueError fallback used `line.strip()` -- the entire raw
+        line, broken timestamp included -- instead of the already-captured `m.group("text")`, so
+        the malformed timestamp string itself got burned into the caption as visible text."""
+        cues = OUT / "malformed_timestamp_cues.txt"
+        cues.write_text("00:00:00.15.999 --> 00:00:02 Hello there\n", encoding="utf-8")
+        srt_out = OUT / "malformed_timestamp.srt"
+        script("caption.py", "--text", cues, "--write-srt", srt_out)
+        from caption import parse_srt
+        parsed = parse_srt(str(srt_out))
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(parsed[0][2], "Hello there", "the broken timestamp text must not leak into the caption")
+
+    def test_drawtext_semicolon_and_quote_render_as_inert_literal_text(self):
+        """Before 1.15 this text went inline into the filtergraph, where two characters had no
+        escape that survives every call shape: ';' splits a filterchain exactly like ',', and the
+        quote corrupts a -filter_complex chain that uses explicit [label] pads (trailing option
+        text leaked into the picture as burnt-in literal text). The old fix dropped the quote and
+        escaped the semicolon. 1.15 removes the whole class: the drawn text is handed to drawtext
+        as `textfile=<path>:expansion=none`, so the graph parser never sees it -- the quote is now
+        KEPT, and nothing can leak into the options. Assert the new route, not the old escape."""
+        out = OUT / "semicolon_quote.mp4"
+        doc = json.loads(script("overlay.py", self.src, "--text", "a'b;c", "-o", out, "--json").stdout)
+        graph = " ".join(doc["commands"])
+        m = re.search(r"textfile=(\S+?\.txt)", graph.replace("\\", ""))
+        self.assertTrue(m, "drawn text must go through textfile=, not inline: " + graph)
+        self.assertIn("expansion=none", graph)
+        self.assertNotIn("a\\;c", graph, "no inline escaped copy of the text may remain in the graph")
+        # The textfile lives in a private 0700 per-run directory and is removed when the run
+        # ends -- assert both, since a world-shared, never-cleaned /tmp directory was the 1.15.0
+        # shape. The frame ink below is what proves the characters reached the picture.
+        self.assertTrue(Path(m.group(1)).parent.name.startswith("ffmpeg-skill-text-"),
+                        "drawn text must go in a private per-run directory: " + m.group(1))
+        self.assertFalse(Path(m.group(1)).exists(),
+                         "the drawn-text temp file must not outlive the run")
+        self.assertEqual(doc["status"], "completed")
+        frame = OUT / "semicolon_quote_frame.png"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", out, "-vframes", "1", frame)
+        self.assertTrue(frame.exists())
+
+    # ---------------------------------------------------------------- real iPhone regressions (Dolby Vision 8.4 / HLG, VFR, extra tracks)
+    def test_hdr_source_stays_hdr_through_reencodes(self):
+        # HLG 10-bit HEVC with audio AND a timecode data track, like an iPhone .mov
+        hlg = OUT / "hlg_tc.mov"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+           "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", "-f", "lavfi", "-i", f"aevalsrc='{TONES}':s=48000",
+           "-t", "5", "-vf", "format=yuv420p10le", "-c:v", "libx265", "-preset", "ultrafast",
+           "-x265-params", "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error", "-tag:v", "hvc1",
+           "-c:a", "aac", "-timecode", "01:00:00:00", hlg)
+        streams = json.loads(sh("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", hlg).stdout)["streams"]
+        self.assertEqual(len(streams), 3, "video + audio + tmcd data track")
+        for name, argv in [
+            ("cut.py", [hlg, "--start", "1", "--end", "3", "--accurate"]),
+            ("fit.py", [hlg, "--aspect", "1:1", "--width", "480"]),
+            ("caption.py", [hlg, "--text", self.cues]),
+            ("overlay.py", [hlg, "--text", "hdr"]),
+            ("silence.py", [hlg]),
+            ("join.py", [hlg, hlg, "--transition", "none"]),
+        ]:
+            out = OUT / f"hdrkeep_{name}.mp4"
+            script(name, *argv, "--fast", "-o", out)
+            v = probe(str(out))["video"]
+            self.assertTrue(v["hdr"], name)
+            self.assertEqual((v["codec"], v["pix_fmt"], v["color_transfer"]), ("hevc", "yuv420p10le", "arib-std-b67"), name)
+        # tone-mapping and the display path still work on the multi-track file
+        sdr = OUT / "hlg_tc_sdr.mp4"
+        script("color.py", hlg, "--to-sdr", "--fast", "-o", sdr)
+        self.assertFalse(probe(str(sdr))["video"]["hdr"])
+        proc = script("look.py", hlg, "--at", "1", "-o", OUT / "hlgframe")
+        self.assertIn("tone-mapped", proc.stderr)
+        self.assertTrue((OUT / "hlgframe_1.000s.png").exists())
+        # 10-bit levels are reported on an 8-bit scale, so a normal HDR clip is not called Log
+        data = json.loads(script("probe.py", hlg, "--analyze").stdout)
+        self.assertLessEqual(data["levels"]["y_max"], 255)
+        self.assertFalse(data["levels"]["looks_like_log"])
+
+    # ---------------------------------------------------------------- v0.6: graphics / brand / report
+    def test_graphics_templates(self):
+        brand = OUT / "brand.json"
+        brand.write_text(json.dumps({"font": "DejaVu Sans", "colors": {"primary": "FF6A00", "text": "FFFFFF", "background": "0B1D2A"},
+                                     "logo": "logo.png", "logo_position": "top-right", "logo_scale": 140, "safe_margin": 40,
+                                     "caption": {"size": 28, "position": "bottom", "animate": "pop", "karaoke": True, "bold": True}}), encoding="utf-8")
+        cases = {
+            "lower-third": ["--name", "Ada Lovelace", "--title", "Analyst", "--start", "1", "--end", "6"],
+            "title": ["--title", "Episode 12", "--subtitle", "The math of video", "--start", "0", "--end", "4"],
+            "chapter": ["--title", "Part 2", "--start", "0", "--end", "5"],
+            "progress": [],
+            "countdown": ["--from", "3", "--start", "1", "--end", "5"],
+            "bug": ["--title", "@handle"],
+        }
+        for name, argv in cases.items():
+            out = OUT / f"gfx_{name}.mp4"
+            proc = script("graphics.py", self.src, "--template", name, "--brand", brand, "--fast", "-o", out, *argv)
+            self.assertClose(probe(str(out))["duration"], 12.0, 0.2, name)
+            self.assertTrue("FF6A00" in proc.stderr or "0B1D2A" in proc.stderr, f"{name} uses the brand colours")
+        # animated templates must actually move: lower-third frame mid-slide differs from settled frame
+        script("look.py", OUT / "gfx_lower-third.mp4", "--at", "1.15", "--at", "3", "--no-timecode", "-o", OUT / "lt")
+        a, b = (OUT / "lt_1.150s.png").read_bytes(), (OUT / "lt_3.000s.png").read_bytes()
+        self.assertNotEqual(a[200:4000], b[200:4000])
+        script("graphics.py", self.src, "--template", "lower-third", expect_fail=True)
+
+    def test_sticker_hook_and_meme_draw_ink_where_they_promise(self):
+        """The three social graphics templates: each must render, put ink where the layout says it
+        goes (top band for the hook's progress bar, the two edges for a meme), and -- for the
+        sticker -- stay inside the platform's safe zone when --platform names one."""
+        sys.path.insert(0, str(SCRIPTS))
+        from _platforms import PLATFORMS
+        vertical = OUT / "safe_vertical.mp4"
+        script("fit.py", self.src, "--duration", "4", "--method", "speed", "--aspect", "9:16", "--fit", "crop",
+               "--width", "540", "--fast", "-o", vertical)
+        base = self._region_stats(vertical, "iw:60:0:0", at=1.0)
+
+        sticker = OUT / "gfx_sticker.mp4"
+        doc = json.loads(script("graphics.py", vertical, "--template", "sticker", "--text", "NEW",
+                                "--position", "top-right", "--platform", "tiktok", "--fast",
+                                "-o", sticker, "--json").stdout)
+        self.assertTrue(os.path.exists(sticker))
+        drawtext = [c for c in doc["commands"] if "drawtext" in c][0]
+        safe = PLATFORMS["tiktok"]["safe"]
+        W, H = 540, 960
+        right = int(re.search(r"x=w-text_w-(\d+)", drawtext).group(1))
+        top = int(re.search(r"y=[^0-9]*(\d+)\+", drawtext).group(1))  # the shell quoting around the expression varies
+        self.assertGreaterEqual(right, round(safe["right"] * W) - 1, "the sticker must clear the like column")
+        self.assertGreaterEqual(top, round(safe["top"] * H) - 1, "the sticker must clear the status bar")
+
+        hook = OUT / "gfx_hook.mp4"
+        script("graphics.py", vertical, "--template", "hook", "--title", "How I cut this",
+               "--duration", "3", "--fast", "-o", hook)
+        band_avg, _ = self._region_stats(hook, "iw:12:0:0", at=0.5)
+        late_avg, _ = self._region_stats(hook, "iw:12:0:0", at=3.5)
+        self.assertGreater(abs(band_avg - late_avg), 4,
+                           "the hook's progress bar must be drawn while the card is up and gone after it")
+        mid_card, _ = self._region_stats(hook, "iw:200:0:380", at=0.5)
+        mid_after, _ = self._region_stats(hook, "iw:200:0:380", at=3.5)
+        self.assertNotAlmostEqual(mid_card, mid_after, delta=1.0,
+                                  msg="the hook card must darken the middle of the frame while it is up")
+
+        meme = OUT / "gfx_meme.mp4"
+        script("graphics.py", vertical, "--template", "meme", "--top", "when the render",
+               "--bottom", "finally finishes", "--fast", "-o", meme)
+        plain_top, _ = self._region_stats(vertical, "iw:120:0:40", at=1.0)
+        meme_top, _ = self._region_stats(meme, "iw:120:0:40", at=1.0)
+        plain_bottom, _ = self._region_stats(vertical, "iw:120:0:820", at=1.0)
+        meme_bottom, _ = self._region_stats(meme, "iw:120:0:820", at=1.0)
+        self.assertNotAlmostEqual(meme_top, plain_top, delta=0.5, msg="meme --top draws nothing")
+        self.assertNotAlmostEqual(meme_bottom, plain_bottom, delta=0.5, msg="meme --bottom draws nothing")
+        script("graphics.py", vertical, "--template", "sticker", expect_fail=True)
+        script("graphics.py", vertical, "--template", "meme", expect_fail=True)
+
+    def test_graphics_audio_stream_selects_the_requested_track_not_always_the_first(self):
+        two = OUT / "gfx_two_streams.mkv"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100",
+           "-t", "4", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", two)
+        self.assertEqual(len(probe(str(two))["audio_streams"]), 2)
+        out1 = OUT / "gfx_two_s1.mp4"
+        script("graphics.py", two, "--template", "bug", "--title", "@handle", "--audio-stream", "1", "-o", out1, "--fast")
+        self.assertIsNotNone(probe(str(out1))["audio"])
+        out_prog = OUT / "gfx_two_progress.mp4"
+        script("graphics.py", two, "--template", "progress", "--audio-stream", "1", "-o", out_prog, "--fast")
+        self.assertIsNotNone(probe(str(out_prog))["audio"])
+        proc = script("graphics.py", two, "--template", "bug", "--title", "x", "--audio-stream", "5", "-o", OUT / "gfx_nope.mp4", "--json", expect_fail=True)
+        self.assertEqual(json.loads(proc.stdout)["error"]["kind"], "input")
+        self.assertIn("audio-stream", proc.stderr)
+
+    def test_transcribe_without_engine_explains(self):
+        import shutil
+        if any(shutil.which(e) for e in ("whisper-cli", "whisper-cpp", "whisper", "parakeet-mlx", "parakeet-cli")):
+            self.skipTest("a local ASR engine is installed")
+        try:
+            import faster_whisper  # noqa: F401
+            self.skipTest("faster-whisper installed")
+        except ImportError:
+            pass
+        proc = script("caption.py", self.src, "--transcribe", "-o", OUT / "asr.mp4", expect_fail=True)
+        self.assertIn("no local speech-to-text engine", proc.stderr)
+        self.assertIn("whisper", proc.stderr)
+
+    def test_caption_sidecars_are_refused_like_the_video_without_overwrite(self):
+        """caption.py's .srt/.ass sidecars go through the --overwrite check the video does, before
+        speech recognition and the first write, dry runs included. Through 2.2.3 a hand-corrected
+        final.srt was replaced on a re-run with the same -o, even by a run ffmpeg then refused."""
+        def raw(name, *a, **kw):  # script() adds --overwrite whenever -o is given
+            return sh(sys.executable, SCRIPTS / name, *a, **kw)
+
+        d = OUT / "cap_sidecar_overwrite"
+        if d.exists():
+            shutil.rmtree(d)
+        d.mkdir(parents=True)
+        cues = d / "cues.txt"
+        cues.write_text("0-1.5 Hello there\n1.5-3 Second line\n", encoding="utf-8")
+        out, srt, ass = d / "final.mp4", d / "final.srt", d / "final.ass"
+        hand = "1\n00:00:00,000 --> 00:00:01,000\nHAND EDITED\n"
+
+        def reset():
+            for p in (out, ass):
+                if p.exists():
+                    p.unlink()
+            srt.write_text(hand, encoding="utf-8")
+
+        # --text burning into a new video: the existing final.srt alone is enough to refuse
+        reset()
+        proc = raw("caption.py", self.src, "--text", cues, "-o", out, "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("refusing to overwrite", doc["error"]["message"])
+        self.assertIn("final.srt", doc["error"]["message"])
+        self.assertEqual(srt.read_text(encoding="utf-8"), hand, "a refused run leaves the hand edit alone")
+        self.assertFalse(out.exists(), "refused before ffmpeg ran")
+        # the dry run predicts the same refusal and writes nothing
+        dry = raw("caption.py", self.src, "--text", cues, "-o", out, "--dry-run", "--json", expect_fail=True)
+        self.assertIn("refusing to overwrite", json.loads(dry.stdout)["error"]["message"])
+        # both sidecars and the video are named together
+        out.write_bytes(b"x")
+        ass.write_text("hand ass", encoding="utf-8")
+        proc = raw("caption.py", self.src, "--text", cues, "--animate", "pop", "-o", out, "--json", expect_fail=True)
+        msg = json.loads(proc.stdout)["error"]["message"]
+        for name in ("final.srt", "final.ass", "final.mp4"):
+            self.assertIn(name, msg)
+        self.assertEqual(ass.read_text(encoding="utf-8"), "hand ass")
+        self.assertEqual(srt.read_text(encoding="utf-8"), hand)
+        # text-only mode (--write-srt, no video)
+        reset()
+        proc = raw("caption.py", "--text", cues, "--write-srt", srt, "--json", expect_fail=True)
+        self.assertIn("refusing to overwrite", json.loads(proc.stdout)["error"]["message"])
+        self.assertEqual(srt.read_text(encoding="utf-8"), hand)
+        # --transcribe is refused before any recognition starts (with or without an engine
+        # installed: the refusal, not the engine's absence, is the answer)
+        proc = raw("caption.py", self.src, "--transcribe", "-o", out, "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertIn("refusing to overwrite", doc["error"]["message"])
+        self.assertNotIn("speech-to-text", proc.stderr)
+        self.assertEqual(doc.get("commands") or [], [])
+        self.assertEqual(srt.read_text(encoding="utf-8"), hand)
+        # --overwrite is the consent: the sidecar is replaced
+        script("caption.py", "--text", cues, "--write-srt", srt, "--overwrite")
+        self.assertIn("Hello there", srt.read_text(encoding="utf-8-sig"))
+        reset()
+        script("caption.py", self.src, "--text", cues, "-o", out, "--overwrite", "--fast")
+        self.assertIn("Hello there", srt.read_text(encoding="utf-8-sig"))
+        self.assertTrue(out.exists())
+        shutil.rmtree(d)
+
+    def test_overlay_fade_without_start_end_fades_in_only(self):
+        """--fade without --end fades in at 0 and stays; the fade-out belongs to --end (eval 6,
+        e03-logo: every "fade in at the start" run had to caveat an unasked-for fade-out)."""
+        proc = script("overlay.py", self.src, "--image", self.logo, "--fade", "0.5", "--dry-run")
+        self.assertIn("fade=t=in:st=0.000", proc.stderr)
+        self.assertNotIn("fade=t=out", proc.stderr)
+        self.assertNotIn("\nwrote ", proc.stderr, "dry-run must not claim a file was written")
+        proc = script("overlay.py", self.src, "--image", self.logo, "--fade", "0.5", "--end", "5", "--dry-run")
+        self.assertIn("fade=t=out:st=4.500", proc.stderr)
+
+    def test_overlay_fade_out_longer_than_its_window_is_cut_to_it(self):
+        """#517: --fade N with --end E <= N left the image layer's fade-out out entirely: it faded in
+        and vanished at full strength at E. A fade-out longer than the window is cut to the window
+        (audio.py and cut.py cap theirs so), for an image and a text layer alike: each frame's layer
+        brightness peaks inside the window and is at most half that on its last frame (at full strength,
+        the peak itself, before)."""
+        d = OUT / "overlay_fade_cap"
+        d.mkdir(parents=True, exist_ok=True)
+        black, white = d / "black.mp4", d / "white.png"
+        sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:r=25:d=3",
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", black)
+        sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=white:s=320x180", "-frames:v", "1", white)
+        for layer in (["--image", str(white)], ["--text", "IIII", "--font-size", "120", "--box"]):
+            for window in (["--end", "1"], ["--end", "0.8"], ["--start", "0.5", "--end", "1"]):
+                with self.subTest(layer=layer[0], window=window):
+                    out = d / f"cap{layer[0]}{'_'.join(window)}.mp4"
+                    script("overlay.py", black, *layer, "--position", "center", *window, "--fade", "1",
+                           "--fast", "-o", out, "--overwrite")
+                    start, end = (0.0 if len(window) == 2 else float(window[1])), float(window[-1])
+                    stats = sh("ffmpeg", "-v", "error", "-i", out, "-vf",
+                               "format=gray,signalstats,metadata=print:key=lavfi.signalstats.YMAX:file=-",
+                               "-f", "null", "-").stdout
+                    rows = list(zip(map(float, re.findall(r"pts_time:([0-9.]+)", stats)),
+                                    map(float, re.findall(r"YMAX=([0-9.]+)", stats))))
+                    inside = [y for t, y in rows if start <= t < end]
+                    self.assertTrue(inside, stats[:300])
+                    peak = max(inside)
+                    self.assertGreater(peak, 30, "the layer shows inside its window")
+                    self.assertLess(inside[-1] - 16, (peak - 16) * 0.5,
+                                    f"the layer leaves at --end faded out, not at full strength: {inside}")
+
+    def test_graphics_fades_and_slides_fit_a_window_shorter_than_they_are(self):
+        """#539: every graphics.py template faded its text in and out over a fixed 0.3 s. In a window
+        shorter than 0.3 s the fade-out was never reached, so the text vanished part way up its
+        fade-in; between 0.3 and 0.6 s the brightness jumped down where the fade-out took over. The
+        ASS route did the same with its fixed \\fad. Both are cut to half the window now (the emoji
+        overlay already was, and overlay.py cuts its fade-out): the text's brightness rises to one
+        peak and falls, leaving at most half its peak on the last frame, with no step larger than
+        the fade's own. The lower third's slide shares a short window the same way: the bar's last
+        frame is further left than its rest, not at it."""
+        d = OUT / "graphics_fade_cap"
+        d.mkdir(parents=True, exist_ok=True)
+        black = d / "black.mp4"
+        sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:r=30:d=2",
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", black)
+
+        def stat_levels(path, start, end, stat):
+            stats = sh("ffmpeg", "-v", "error", "-i", path, "-vf",
+                       f"format=gray,signalstats,metadata=print:key=lavfi.signalstats.{stat}:file=-", "-f", "null", "-").stdout
+            rows = list(zip(map(float, re.findall(r"pts_time:([0-9.]+)", stats)),
+                            map(float, re.findall(stat + r"=([0-9.]+)", stats))))
+            base = min(y for _, y in rows)
+            return [y - base for t, y in rows if start - 0.001 <= t < end - 0.001]
+
+        def levels(path, start, end, stat="YAVG"):
+            """Each frame's mean brightness above the darkest frame's, for the frames in [start, end).
+            Counted from the decoded pixels: signalstats' YAVG named a frame 6.94 brighter than its
+            own YMAX allowed on FFmpeg 9.0.2 (#554's CI), so the filter's sum is not what is asserted."""
+            if stat != "YAVG":
+                return stat_levels(path, start, end, stat)
+            times = [float(t) for t in sh("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                          "frame=pts_time", "-of", "csv=p=0", path).stdout.replace(",", " ").split()]
+            v = probe(str(path))["video"]
+            size = v["width"] * v["height"]
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:v:0", "-vf", "format=gray",
+                                  "-f", "rawvideo", "-"], stdout=subprocess.PIPE, check=True).stdout
+            self.assertEqual(len(raw), size * len(times), "one decoded frame per frame time")
+            means = [sum(raw[i * size:(i + 1) * size]) / size for i in range(len(times))]
+            base = min(means)
+            return [y - base for t, y in zip(times, means) if start - 0.001 <= t < end - 0.001]
+        routes = ["drawtext"] if _no_fontconfig() else ["drawtext", "ass"]
+        filters = sh("ffmpeg", "-hide_banner", "-filters").stdout
+        routes = [r for r in routes if (r == "drawtext" and " drawtext " in filters) or (r == "ass" and " subtitles " in filters)]
+        if not routes:
+            self.skipTest("this ffmpeg build has neither drawtext nor libass")
+        for route in routes:
+            for start, end in ((0.5, 0.7), (0.5, 0.95), (0.5, 1.5)):
+                with self.subTest(route=route, window=(start, end)):
+                    out = d / f"chapter_{route}_{end}.mp4"
+                    script("graphics.py", black, "--template", "chapter", "--title", "HELLO", "--start", str(start),
+                           "--end", str(end), "--text-render", route, "--fast", "-o", out, "--overwrite")
+                    inside = levels(out, start, end)
+                    peak = max(inside)
+                    self.assertGreater(peak, 0.3, f"the chip shows inside its window: {inside}")
+                    at = inside.index(peak)
+                    self.assertLess(inside[-1], peak * 0.5, f"the chip leaves faded out, not part way up: {inside}")
+                    rise = [b - a for a, b in zip(inside[:at], inside[1:at + 1])]
+                    fall = [a - b for a, b in zip(inside[at:], inside[at + 1:])]
+                    if not all(x > -0.02 for x in rise + fall):
+                        # what the odd frame holds, for a build this cannot be run on locally: the
+                        # brightest and darkest pixel of each frame in the window, and the filter
+                        plan = json.loads(script("graphics.py", black, "--template", "chapter", "--title", "HELLO",
+                                                 "--start", str(start), "--end", str(end), "--text-render", route,
+                                                 "-o", d / "diag.mp4", "--dry-run", "--overwrite", "--json").stdout)
+                        raw = sh("ffmpeg", "-v", "error", "-i", out, "-vf", "format=gray,signalstats,metadata=print:file=-",
+                                 "-f", "null", "-").stdout
+                        frames = [blk for blk in raw.split("frame:")[1:]
+                                  if start - 0.11 <= float(re.search(r"pts_time:([0-9.]+)", blk).group(1)) <= start + 0.08]
+                        kept = [" ".join(ln.replace("lavfi.signalstats.", "") for ln in blk.splitlines()
+                                         if re.search(r"pts_time|YMIN|YLOW|YAVG|YHIGH|YMAX", ln)) for blk in frames]
+                        types = sh("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                   "frame=pts_time,pict_type", "-of", "csv=p=0", out).stdout.split()
+                        self.fail(f"one peak: it rises, then falls: {inside}; signalstats YAVG "
+                                  f"{stat_levels(out, start, end, 'YAVG')}; YMAX {stat_levels(out, start, end, 'YMAX')}; "
+                                  f"before the window {levels(out, start - 0.1, start)}; raw frames around --start {kept}; "
+                                  f"frame types {types[10:20]}; command {plan['commands'][-1]}")
+                    if rise and fall:
+                        self.assertLess(max(fall), max(rise) * 1.8 + 0.02, f"no jump where the fade-out takes over: {inside}")
+        if "drawtext" in routes:
+            # the alpha is held in 0..1 for every frame the window selects: the frame at --start
+            # came out far brighter than the rest on FFmpeg 9.0.2 (#554's CI), which the one-peak
+            # check above is there to catch
+            plan = json.loads(script("graphics.py", black, "--template", "chapter", "--title", "HELLO", "--start", "0.5",
+                                     "--end", "0.95", "--text-render", "drawtext", "-o", d / "plan.mp4", "--dry-run",
+                                     "--overwrite", "--json").stdout)
+            cmd = str(plan["commands"][-1])
+            self.assertIn("max(0,min(1,if(lt(t,0.500+0.225),", cmd)
+        # the sticker pops in over 0.25 s: cut with the fade on both routes, or drawtext's chip
+        # reached half the brightness the ASS route's did in a 0.2 s window (#554 review)
+        peaks = {}
+        for route in routes:
+            out = d / f"sticker_{route}.mp4"
+            script("graphics.py", black, "--template", "sticker", "--text", "HELLO", "--start", "0.5", "--end", "0.7",
+                   "--text-render", route, "--fast", "-o", out, "--overwrite")
+            inside = levels(out, 0.5, 0.7)
+            peaks[route] = max(inside)
+            self.assertLess(inside[-1], peaks[route] * 0.6, f"{route}: the chip leaves faded out: {inside}")
+        long_out = d / "sticker_long.mp4"
+        script("graphics.py", black, "--template", "sticker", "--text", "HELLO", "--start", "0.2", "--end", "1.8",
+               "--text-render", routes[0], "--fast", "-o", long_out, "--overwrite")
+        full = max(levels(long_out, 0.2, 1.8))
+        for route, peak in peaks.items():
+            self.assertGreater(peak, full * 0.8, f"{route}: the chip reaches its strength in a 0.2 s window: {peak} of {full}")
+        # the lower third: in a 0.35 s window the bar is still sliding out on its last frame (it sat
+        # at rest until the window closed before, having jumped back part way through)
+        out = d / "lower_third_short.mp4"
+        script("graphics.py", black, "--template", "lower-third", "--name", "HELLO", "--start", "0.5", "--end", "0.85",
+               "--text-render", "drawtext" if "drawtext" in routes else routes[0], "--fast", "-o", out, "--overwrite")
+        cover = levels(out, 0.5, 0.85)
+        self.assertGreater(max(cover), 0.3, cover)
+        at = cover.index(max(cover))
+        self.assertTrue(all(b >= a - 0.02 for a, b in zip(cover[:at], cover[1:at + 1]))
+                        and all(b <= a + 0.02 for a, b in zip(cover[at:], cover[at + 1:])),
+                        f"the bar slides in, then out, without jumping back: {cover}")
+        self.assertLess(cover[-1], max(cover) * 0.6, f"the bar is leaving the frame on its last frame: {cover}")
+        if "ass" in routes:
+            # the instant the slides meet is one centisecond for the bar and for the ASS lines (the
+            # text's slide-out started 4 ms before the bar's at 0.614286 s and led it by 11 px at
+            # 60 fps), and a window the slides fill has no rest line: its emoji PNG, which has no
+            # fade, showed for the one frame at that instant (#554 review)
+            out = d / "lower_third_ass.mp4"
+            doc = json.loads(script("graphics.py", black, "--template", "lower-third", "--name", "HELLO \U0001F389",
+                                    "--start", "0.5", "--end", "0.7", "--text-render", "ass", "--emoji", "png",
+                                    "--emoji-assets", _emoji_assets(), "--fast", "-o", out, "--overwrite", "--json").stdout)
+            cmd = str(doc["commands"][-1])
+            meet = 0.5 + float(re.search(r"lt\(t,0\.500\+([0-9.]+)\)", cmd).group(1))
+            ass = next(p for p in d.glob("lower_third_ass*.ass")).read_text(encoding="utf-8")
+            times = [tuple(int(h) * 3600 + int(m) * 60 + float(sec) for h, m, sec in re.findall(r"(\d+):(\d\d):(\d\d\.\d\d)", ln)[:2])
+                     for ln in ass.splitlines() if ln.startswith("Dialogue:")]
+            self.assertEqual(sorted(set(times)), [(0.5, round(meet, 6)), (round(meet, 6), 0.7)], cmd)
+            windows = re.findall(r"enable=\S*?between\(t,([0-9.]+),([0-9.]+)\)", cmd)
+            self.assertTrue(windows, "the emoji is composited")
+            self.assertTrue(all(float(a) < float(b) for a, b in windows), f"no emoji overlay of no length: {windows}")
+
+    def test_filter_paths_with_drive_colon_spaces_and_unicode(self):
+        """subtitles= / ass= / lut3d=file= / fontfile= take a path with a colon, spaces and non-ASCII.
+
+        A Windows path `D:\\a\\x.srt` is what broke on the Windows CI: the filter option value is
+        parsed twice, so the colon needs two levels of escaping. On POSIX a directory literally named
+        `D:` reproduces it; on Windows the real drive letter does.
+        """
+        base = OUT / "compat dir ünïcode"
+        d = base if os.name == "nt" else base / "D:"
+        d.mkdir(parents=True, exist_ok=True)
+        src = d / "src vid.mp4"
+        shutil.copyfile(self.src, src)
+        cues = d / "cues täxt.txt"
+        cues.write_text("0:00-0:06 Hello caption\n", encoding="utf-8")
+        # captions via subtitles= (SRT) and ass=, both re-parsed by libass
+        cap = d / "cap.mp4"
+        script("caption.py", src, "--text", cues, "--size", "40", "--fast", "-o", cap)
+        self.assertLess(self._psnr(self.src, cap), 45, "burned caption changed the picture")
+        capa = d / "cap ass.mp4"
+        script("caption.py", src, "--text", cues, "--animate", "pop", "--fast", "-o", capa)
+        self.assertTrue((d / "cap ass.ass").exists())
+        self.assertLess(self._psnr(self.src, capa), 45)
+        # a fonts dir with the same kind of path
+        script("caption.py", src, "--text", cues, "--fonts-dir", d, "--fast", "-o", d / "cap fonts.mp4")
+        # LUT file: full strength inverts the picture, half strength goes through the split/blend graph
+        lut = d / "invert lut.cube"
+        lines = ["LUT_3D_SIZE 2"] + [f"{1 - r} {1 - g} {1 - b}" for b in (0, 1) for g in (0, 1) for r in (0, 1)]
+        lut.write_text("\n".join(lines) + "\n")
+        inv = d / "lut.mp4"
+        script("color.py", src, "--lut", lut, "--preset", "veryfast", "-o", inv)
+        self.assertLess(self._psnr(self.src, inv), 15, "inverted LUT changed every pixel")
+        half = d / "lut half.mp4"
+        script("color.py", src, "--lut", lut, "--lut-strength", "0.5", "--preset", "veryfast", "-o", half)
+        self.assertClose(probe(str(half))["duration"], 12.0, 0.2)
+        # drawtext fontfile= with the same path shape (when a TTF is available to copy)
+        font = self._any_ttf()
+        if font:
+            ttf = d / "my font.ttf"
+            shutil.copyfile(font, ttf)
+            script("overlay.py", src, "--text", "Hi", "--font-file", ttf, "--fast", "-o", d / "ov.mp4")
+
+    def test_overlay_still_is_bounded_by_the_video_length(self):
+        """A looped still (-loop 1) must not make the output longer than the video (FFmpeg 7+ -shortest keeps a buffer)."""
+        out = OUT / "ov_bound.mp4"
+        data = json.loads(script("overlay.py", self.src, "--image", self.logo, "--fast", "-o", out, "--json").stdout)
+        self.assertIn("-t", data["commands"][0])
+        self.assertClose(data["probe"]["duration"], 12.0, 0.15)
+
+    def test_overlay_on_audio_less_video_terminates(self):
+        """Every other overlay test uses self.src, which has audio. Cover the audio-less case too:
+        overlay is documented elsewhere as risky on inputs with no audio stream to help -shortest
+        bound the looped-image (-loop 1) input, so pin down that it completes and the output duration
+        matches the source exactly (the explicit -t, not -shortest, is what actually bounds it)."""
+        noaudio = OUT / "overlay_noaudio_source.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.src, "-an", "-c:v", "copy", noaudio)
+        self.assertIsNone(probe(str(noaudio)).get("audio"))
+        out = OUT / "overlay_noaudio.mp4"
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "overlay.py"), str(noaudio), "--image", str(self.logo),
+             "--position", "bottom-right", "--start", "1", "--end", "5", "--fade", "0.3", "-o", str(out)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=60)
+        self.assertEqual(proc.returncode, 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
+        self.assertClose(probe(str(out))["duration"], probe(str(noaudio))["duration"], 0.15)
+
+    def test_overlay_audio_stream_selects_the_requested_track_not_always_the_first(self):
+        two = OUT / "ov_two_streams.mkv"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=30",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=44100",
+           "-t", "4", "-map", "0:v", "-map", "1:a", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", two)
+        self.assertEqual(len(probe(str(two))["audio_streams"]), 2)
+        out_text = OUT / "ov_two_text.mp4"
+        script("overlay.py", two, "--text", "hi", "--audio-stream", "1", "-o", out_text, "--preset", "veryfast")
+        self.assertIsNotNone(probe(str(out_text))["audio"])
+        out_img = OUT / "ov_two_img.mp4"
+        script("overlay.py", two, "--image", self.logo, "--audio-stream", "1", "-o", out_img, "--preset", "veryfast")
+        self.assertIsNotNone(probe(str(out_img))["audio"])
+        proc = script("overlay.py", two, "--text", "hi", "--audio-stream", "5", "-o", OUT / "ov_nope.mp4", "--json", expect_fail=True)
+        self.assertEqual(json.loads(proc.stdout)["error"]["kind"], "input")
+        self.assertIn("audio-stream", proc.stderr)
+
+    def test_overlay_video_pip_composites_at_the_right_position(self):
+        red_bg = OUT / "red_bg.mp4"
+        blue_quad = OUT / "blue_quad.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=1280x720:d=1",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", red_bg)
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=200x50:d=1",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", blue_quad)
+        out = OUT / "pip1.mp4"
+        script("overlay.py", red_bg, "--video", blue_quad, "--position", "bottom-right", "--scale", "200", "-o", out)
+
+        def px(path, x, y):
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path),
+                                 "-vf", f"crop=2:2:{x}:{y}", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return r.stdout[:3]
+
+        # PiP at bottom-right, 200 wide (50 tall for the 4:1 source), default margin 24:
+        # x=1280-200-24=1056, y=720-50-24=646
+        self.assertGreater(px(out, 1100, 660)[2], 100, "PiP area should show the blue overlay")
+        self.assertGreater(px(out, 100, 100)[0], 100, "outside the PiP area, the red background must remain")
+
+    def test_an_overlay_lands_where_its_position_says_in_luma(self):
+        """#512: overlay places a layer on a 4:2:0 picture on the chroma grid, so --position 11,13
+        drew the logo at 10,12, and a right-aligned or centred layer whose position came out odd
+        moved the same way. The layer now gets a transparent column/row where the position is
+        odd and is overlaid at the even one before it. Read in stored luma (extractplanes=y) on a
+        BT.709-tagged black main; the layers' own sizes are checked first."""
+        tags = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
+        main = OUT / "i512_main.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=96x64:r=25:d=0.4",
+           "-pix_fmt", "yuv420p", *tags, "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", main)
+        png = OUT / "i512_logo.png"   # 9x7: an odd size, made RGB so no 4:2:0 step rounds it
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:s=9x7,format=rgb24",
+           "-frames:v", "1", png)
+        pip = OUT / "i512_pip.mp4"    # 11x9 at 4:4:4
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+           "color=c=white:s=11x9:r=25:d=0.4,format=yuv444p", "-pix_fmt", "yuv444p", *tags,
+           "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", pip)
+        self.assertEqual((probe(str(png))["video"]["width"], probe(str(png))["video"]["height"]), (9, 7))
+        self.assertEqual((probe(str(pip))["video"]["width"], probe(str(pip))["video"]["height"]), (11, 9))
+
+        def box(path):
+            raw = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path), "-frames:v", "1",
+                                  "-vf", "extractplanes=y", "-f", "rawvideo", "-"], stdout=subprocess.PIPE).stdout
+            pts = [(i % 96, i // 96) for i, v in enumerate(raw[:96 * 64]) if v > 128]
+            return (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+
+        cases = (
+            (["--image", png, "--position", "11,13"], (11, 13, 19, 19)),
+            (["--image", png, "--position=-12,-14"], (75, 43, 83, 49)),     # W-w-12, H-h-14
+            (["--image", png, "--position", "bottom-right", "--margin", "12"], (75, 45, 83, 51)),
+            (["--image", png, "--position", "center"], (43, 28, 51, 34)),   # (96-9)/2 and (64-7)/2, their integer parts
+            (["--video", pip, "--position", "11,13"], (11, 13, 21, 21)),
+            (["--video", pip, "--position=-12,-14"], (73, 41, 83, 49)),
+        )
+        for argv, want in cases:
+            with self.subTest(argv=[str(a) for a in argv[1:]]):
+                out = OUT / "i512_pos.mp4"
+                script("overlay.py", main, *argv, "-o", out, "--overwrite")
+                self.assertEqual(box(out), want)
+
+    def test_an_image_layer_with_non_square_pixels_is_placed_at_its_displayed_size(self):
+        """#525 review: the --image position was computed from the still's displayed size
+        (display_size(), SAR applied) while the still reached overlay at its stored size, so a
+        20x10 PNG at SAR 2:1 drew 20 px wide at x=56 of a 96 px main for top-right, 20 px short of
+        the edge. It is made square at its display aspect first, as a --video layer is. The PNG
+        is checked to carry its SAR (pHYs) first."""
+        main = OUT / "sar_layer_main.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=96x64:r=25:d=0.4",
+           "-pix_fmt", "yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", main)
+        png = OUT / "sar_layer.png"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+           "color=c=white:s=20x10,format=rgb24,setsar=2/1", "-frames:v", "1", png)
+        v = probe(str(png))["video"]
+        self.assertEqual((v["width"], v["height"], v["sample_aspect_ratio"]), (20, 10, "2:1"))
+        out = OUT / "sar_layer_out.mp4"
+        script("overlay.py", main, "--image", png, "--position", "top-right", "--margin", "0", "-o", out, "--overwrite")
+        raw = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(out), "-frames:v", "1",
+                              "-vf", "extractplanes=y", "-f", "rawvideo", "-"], stdout=subprocess.PIPE).stdout
+        pts = [(i % 96, i // 96) for i, y in enumerate(raw[:96 * 64]) if y > 128]
+        self.assertEqual((min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)),
+                         (56, 0, 95, 9))
+
+    def test_overlay_chromakey_removes_the_key_color(self):
+        red_bg = OUT / "ck_red_bg.mp4"
+        green_fg = OUT / "ck_green_fg.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=100x100:d=1",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", red_bg)
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x00ff00:s=100x100:d=1",
+           "-f", "lavfi", "-i", "color=c=white:s=20x20:d=1", "-filter_complex", "[0][1]overlay=40:40",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", green_fg)
+        out = OUT / "ck1.mp4"
+        script("overlay.py", red_bg, "--video", green_fg, "--chromakey", "0x00ff00", "--position", "top-left",
+               "--margin", "0", "--scale", "100", "-o", out)
+
+        def px(path, x, y):
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path),
+                                 "-vf", f"crop=2:2:{x}:{y}", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return r.stdout[:3]
+
+        self.assertGreater(px(out, 10, 10)[0], 100, "keyed-out green should show the red background through it")
+        self.assertGreater(min(px(out, 45, 45)), 100, "the white square inside the green should be unaffected")
+
+    def test_overlay_place_lays_layer_ranges_at_their_times(self):
+        """--place SRC_START-SRC_END@AT shows only that range of the layer, from AT on the main
+        timeline, and the main picture untouched elsewhere: a 4 s layer whose first half is blue and
+        second half green, placed 2-3@1 (green at 1-2 s) and 0-1@4 (blue at 4-5 s) on a 6 s red main."""
+        main = OUT / "place_main.mp4"
+        layer = OUT / "place_layer.mov"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=160x90:r=30:d=6",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", main)
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=30:d=2",
+           "-f", "lavfi", "-i", "color=c=0x00ff00:s=160x90:r=30:d=2", "-filter_complex", "[0][1]concat=n=2:v=1:a=0",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", layer)
+        out = OUT / "placed.mp4"
+        doc = json.loads(script("overlay.py", main, "--video", layer, "--position", "0,0", "--margin", "0",
+                                "--place", "2-3@1", "--place", "0-1@4", "--json", "-o", out).stdout)
+        self.assertEqual(doc["status"], "completed")
+        self.assertAlmostEqual(probe(str(out))["duration"], 6.0, delta=0.1)
+
+        def rgb_at(t):
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", str(t), "-i", str(out),
+                                "-vf", "crop=4:4:40:40", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return tuple(r.stdout[:3])
+
+        def dominant(t):
+            return "rgb"[max(range(3), key=lambda i: rgb_at(t)[i])]
+
+        self.assertEqual([dominant(t) for t in (0.5, 1.5, 2.5, 4.5, 5.5)], ["r", "g", "r", "b", "r"])
+
+    def test_overlay_place_counts_from_the_layer_s_first_picture(self):
+        """A layer whose video starts a second after its audio (and so after the file's 0): `0-1`
+        is its first second of picture, not the second of silence before it."""
+        main = OUT / "place_late_main.mp4"
+        layer = OUT / "place_late_layer.mkv"   # Matroska keeps the late start (an MP4 edit list would hide it)
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=160x90:r=30:d=4",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", main)
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=160x90:r=30:d=2",
+           "-f", "lavfi", "-i", "sine=d=3", "-vf", "setpts=PTS+1/TB",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", layer)
+        out = OUT / "place_late.mp4"
+        script("overlay.py", main, "--video", layer, "--position", "0,0", "--margin", "0",
+               "--place", "0-1@1", "-o", out)
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "1.5", "-i", str(out),
+                            "-vf", "crop=4:4:40:40", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertGreater(r.stdout[2], r.stdout[0], "the layer's first second (blue) should show at 1-2 s")
+
+    def test_overlay_place_refusals(self):
+        layer = OUT / "place_ref_layer.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=30:d=2",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", layer)
+        long_audio = OUT / "place_ref_long_audio.mp4"   # 2 s of picture, 4 s of sound
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=30:d=2",
+           "-f", "lavfi", "-i", "sine=d=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", long_audio)
+        for args in (["--video", layer, "--place", "0-1@1", "--place", "0.5-1.5@1.5"],
+                     ["--video", long_audio, "--place", "0-3@0"],                         # past the layer's picture   # overlap on the main timeline
+                     ["--video", layer, "--place", "0-5@0"],                              # past the layer's end
+                     ["--video", layer, "--place", "2-2.01@1"],                           # starts at the layer's end
+                     ["--video", layer, "--place", "0-2.04@0"],                           # 0.04 s past it: over half a frame
+                     ["--video", layer, "--place", "1-0.5@0"],                            # backwards range
+                     ["--video", layer, "--place", "0-1"],                                # no @AT
+                     ["--video", layer, "--place", "0-1@0", "--start", "1"],              # with --start
+                     ["--image", self.logo, "--place", "0-1@0"]):                         # without --video
+            with self.subTest(args=args):
+                proc = script("overlay.py", self.src, *args, "--json", "-o", OUT / "place_ref.mp4", expect_fail=True)
+                self.assertEqual(json.loads(proc.stdout)["error"]["kind"], "input")
+
+    def test_overlay_place_timecodes_count_each_timeline_s_frames(self):
+        """SRC_START/SRC_END are layer positions, so hh:mm:ss:ff there counts the layer's frames;
+        AT counts the main video's. An @fps suffix in any of the three names its rate explicitly."""
+        layer = OUT / "place_24.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=24:d=3",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", layer)
+        main_fps = probe(str(self.src))["video"]["fps"]
+        for spec, want in (("00:00:00:12-00:00:01:00@00:00:00:00", "trim=start=0.500000:end=1.000000"),
+                           ("00:00:00:12@25-2@1", "trim=start=0.480000:end=2.000000"),
+                           ("0-1@00:00:00:15@30", "setpts=PTS-STARTPTS+0.500000/TB")):
+            with self.subTest(spec=spec):
+                doc = json.loads(script("overlay.py", self.src, "--video", layer, "--place", spec, "--dry-run",
+                                        "--json", "-o", OUT / "place_tc.mp4").stdout)
+                self.assertIn(want, doc["commands"][0])
+        self.assertNotEqual(round(main_fps), 24, "the main fixture must not share the layer's rate")
+
+    def test_overlay_chromakey_without_video_refused(self):
+        script("overlay.py", self.src, "--chromakey", "green", expect_fail=True)
+
+    def test_overlay_scale_percent_uses_the_displayed_width(self):
+        """--scale-percent 50 on a 1280x720 file tagged 90 degrees used to scale the layer to
+        640 px, half the stored width, on a frame that is 720 px wide."""
+        v = probe(str(self.rot))["video"]
+        self.assertIn(v["rotation"], (90, -90, 270, -270))
+        shown = v["height"]
+        doc = json.loads(script("overlay.py", self.rot, "--image", self.logo, "--scale-percent", "50",
+                                "--dry-run", "--json", "-o", OUT / "ov_rot_scale.mp4").stdout)
+        cmd = " ".join(doc["commands"])
+        self.assertIn(f"scale={int(shown * 50 / 100)}:-1", cmd)
+        self.assertNotIn(f"scale={int(v['width'] * 50 / 100)}:-1", cmd)
+        plain_v = probe(str(self.src))["video"]
+        plain = json.loads(script("overlay.py", self.src, "--image", self.logo, "--scale-percent", "50",
+                                  "--dry-run", "--json", "-o", OUT / "ov_plain_scale.mp4").stdout)
+        self.assertIn(f"scale={int(plain_v['width'] * 50 / 100)}:-1", " ".join(plain["commands"]))
+
+    def test_overlay_platform_margins_use_the_displayed_frame(self):
+        """TikTok's right margin is 14% of the width the viewer sees. On this rotated file that
+        is 14% of 720, not 14% of the stored 1280."""
+        from _platforms import safe_margins_px
+        v = probe(str(self.rot))["video"]
+        self.assertIn(v["rotation"], (90, -90, 270, -270))
+        edges = safe_margins_px("tiktok", v["height"], v["width"])
+        stored = safe_margins_px("tiktok", v["width"], v["height"])
+        doc = json.loads(script("overlay.py", self.rot, "--text", "hi", "--platform", "tiktok",
+                                "--dry-run", "--json", "-o", OUT / "ov_rot_safe.mp4").stdout)
+        cmd = " ".join(doc["commands"])
+        self.assertIn(f"main_w-text_w-{edges['right']}", cmd)
+        self.assertNotIn(f"main_w-text_w-{stored['right']}", cmd)
+
+    def test_emoji_font_listing_keeps_a_colon_in_the_path(self):
+        """fc-list separates the file from the family with colon-space. Splitting on the first
+        colon turned `C:\\Windows\\Fonts\\seguiemj.ttf: Segoe UI Emoji` into `C`."""
+        from _common import emoji as emoji_mod
+        colon = OUT / "C:Fonts"
+        colon.mkdir(exist_ok=True)
+        real = colon / "emoji.ttf"
+        real.write_bytes(b"not a font")
+        self.assertEqual(emoji_mod._fc_list_path(r"C:\Windows\Fonts\seguiemj.ttf: Segoe UI Emoji:style=Regular"),
+                         r"C:\Windows\Fonts\seguiemj.ttf")
+        line = f"{real}: Noto Color Emoji\n"
+
+        def fake_run(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 0, line, "")
+
+        with unittest.mock.patch("shutil.which", return_value="/usr/bin/fc-list"), \
+                unittest.mock.patch("subprocess.run", side_effect=fake_run):
+            family, path, answered = emoji_mod._emoji_color_font()
+        self.assertEqual((family, path, answered), ("Noto Color Emoji", str(real), True))
+
+    def test_libass_colour_probe_escapes_a_colon_in_the_srt_path(self):
+        """A Windows temp path is `C:/...`. `subtitles=C:/...` is split at the colon and the
+        probe reports colour emoji unknown. The escaped form opens the file."""
+        from _common import emoji as emoji_mod
+        colon = OUT / "C:probe"
+        colon.mkdir(exist_ok=True)
+        srt = colon / "e.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHi\n", encoding="utf-8")
+        bare = "subtitles=" + str(srt).replace("\\", "/")
+        escaped = "subtitles=" + escape_filter_path(str(srt), bind=False)
+        self.assertNotEqual(bare, escaped)
+        bad = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                              "-i", "color=c=black:s=64x64:d=0.04", "-vf", bare, "-frames:v", "1",
+                              "-f", "null", "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertNotEqual(bad.returncode, 0, "an unescaped colon must not parse as a subtitle path")
+        good = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                               "-i", "color=c=black:s=64x64:d=0.04", "-vf", escaped, "-frames:v", "1",
+                               "-f", "null", "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(good.returncode, 0, good.stderr.decode(errors="replace")[-400:])
+
+        class _Dir:
+            def __enter__(self):
+                return str(colon)
+            def __exit__(self, *exc):
+                return False
+
+        captured = {}
+
+        def fake_run(cmd, **kw):
+            captured["cmd"] = cmd
+            return subprocess.CompletedProcess(cmd, 1, b"", b"")
+
+        with unittest.mock.patch("tempfile.TemporaryDirectory", return_value=_Dir()), \
+                unittest.mock.patch.object(emoji_mod, "ffmpeg_exe", return_value=("ffmpeg",)), \
+                unittest.mock.patch("subprocess.run", side_effect=fake_run):
+            emoji_mod._libass_color_probe()
+        vf = captured["cmd"][captured["cmd"].index("-vf") + 1]
+        self.assertEqual(vf, "subtitles=" + escape_filter_path(str(colon / "e.srt"), bind=False))
+
+    def test_a_relative_path_with_a_colon_inside_a_filter_is_opened_as_a_file(self):
+        """#558: `caption.py --srt ./a:b.srt` failed inside ffmpeg ("Protocol not found").
+        escape_filter_path() went through Path(), which drops the `./`, and the subtitles filter
+        opens its file through libavformat, where a bare `a:b.srt` (or `d:e/c.srt`) is protocol
+        `a`. A relative path whose first segment has a colon is written `./...` again; an
+        absolute path and a Windows drive path are not touched."""
+        from _common import decision
+        self.assertEqual(escape_filter_path("plain.srt", bind=False), "plain.srt")
+        if os.name != "nt":
+            # POSIX names: on Windows `a:` is drive A and a name cannot hold a colon
+            self.assertEqual(escape_filter_path("a:b.srt", bind=False), "./a\\\\:b.srt")
+            self.assertEqual(escape_filter_path("./a:b.srt", bind=False), "./a\\\\:b.srt")
+            self.assertEqual(escape_filter_path("d:e/c.srt", bind=False), "./d\\\\:e/c.srt")
+            self.assertEqual(escape_filter_path("sub/a:b.srt", bind=False), "sub/a\\\\:b.srt")
+            self.assertEqual(escape_filter_path("/abs/a:b.srt", bind=False), "/abs/a\\\\:b.srt")
+            # the POSIX backslash escape (#408) still applies to a name that also has a colon: the
+            # first port of this fix put it under the colon branch's `else`, and `a:b\\x.srt` opened
+            # `a:bx.srt` (review of the 4.0 branch)
+            with unittest.mock.patch.object(decision, "_on_windows", return_value=False):
+                self.assertEqual(escape_filter_path("a:b\\x.srt", bind=False), "./a\\\\:b\\\\\\\\x.srt")
+        with unittest.mock.patch.object(decision, "_on_windows", return_value=True):
+            for drive_path, want in (("C:/Users/me/c.srt", "C\\\\:/Users/me/c.srt"),
+                                     ("C:\\Users\\me\\c.srt", "C\\\\:/Users/me/c.srt"),
+                                     ("C:c.srt", "C\\\\:c.srt"), ("sub\\c.srt", "sub/c.srt")):
+                self.assertEqual(escape_filter_path(drive_path, bind=False), want, "a drive letter is not a scheme")
+        if os.name == "nt":
+            self.skipTest("a file name cannot hold a colon on Windows")
+        work = OUT / "g558_colon"
+        (work / "d:e").mkdir(parents=True, exist_ok=True)
+        clip = work / "black.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=10:d=2",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", clip)
+        cue = "1\n00:00:00,000 --> 00:00:02,000\nHELLO\n"
+        for name in ("a:b.srt", "d:e/c.srt"):
+            (work / name).write_text(cue, encoding="utf-8")
+        cube = work / "l:ut.cube"
+        cube.write_text("LUT_3D_SIZE 2\n" + "".join(f"{r} {g} {b}\n" for b in (0, 1) for g in (0, 1) for r in (0, 1)), encoding="utf-8")
+
+        def run_in(argv):
+            proc = subprocess.run([sys.executable, str(SCRIPTS / argv[0]), *argv[1:], "--json", "--overwrite", "--fast"], cwd=work,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+            return json.loads(proc.stdout)
+
+        def brightest(path):
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", "1", "-i", str(path), "-frames:v", "1", "-f", "rawvideo",
+                                  "-pix_fmt", "gray", "-"], stdout=subprocess.PIPE, check=True).stdout
+            return max(raw)
+
+        self.assertLess(brightest(clip), 40, "the fixture is black")
+        for given in ("./a:b.srt", "a:b.srt", "d:e/c.srt", str(work / "a:b.srt")):
+            with self.subTest(srt=given):
+                doc = run_in(["caption.py", "black.mp4", "--srt", given, "-o", "burned.mp4"])
+                if (doc.get("error") or {}).get("reason") == "filter_missing":
+                    self.skipTest("this build has no subtitles filter")
+                self.assertEqual(doc["status"], "completed", doc.get("error"))
+                self.assertGreater(brightest(work / "burned.mp4"), 150, "the cue was drawn, so the file was opened")
+        with self.subTest(lut="l:ut.cube"):
+            doc = run_in(["color.py", "black.mp4", "--lut", "l:ut.cube", "-o", "graded.mp4"])
+            self.assertEqual(doc["status"], "completed", doc.get("error"))
+            self.assertIn("lut3d=file=./l\\\\:ut.cube", " ".join(doc["commands"]))
+
+    def test_help_survives_a_legacy_console_encoding(self):
+        """--help contains non-ASCII (Japanese example, arrows); a cp1252 console must not raise UnicodeEncodeError."""
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        for name in ("overlay.py", "render.py", "caption.py"):
+            proc = subprocess.run([sys.executable, str(SCRIPTS / name), "--help"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  env=env, encoding="utf-8", errors="replace")
+            self.assertEqual(proc.returncode, 0, f"{name}: {proc.stderr[-300:]}")
+            self.assertIn("usage:", proc.stdout)
+
+    # ------------------------------------------- 1.17: the size is fitted before the cue splits
+    def _fit_cues(self):
+        cues = OUT / "cues_fit.txt"
+        cues.write_text("0:00-0:03 A third line the tool times for me\n"
+                        "0:03-0:06 Segunda l\u00ednea de subt\u00edtulos\n", encoding="utf-8")
+        return cues
+
+    def test_caption_fit_size_shrinks_instead_of_splitting_the_sentence(self):
+        """e2e: at the TikTok caption size these cues needed four lines and were split into
+        consecutive cues (eval 17). 1.17 drops the size until they fit instead."""
+        vert, cues = self._vertical(), self._fit_cues()
+        out = OUT / "cap_fit.mp4"
+        data = json.loads(script("caption.py", vert, "--text", cues, "--platform", "tiktok",
+                                 "--max-lines", "2", "--animate", "fade",
+                                 "--font", "DejaVu Sans", "--write-ass", OUT / "cap_fit.ass",
+                                 "-o", out, "--json").stdout)
+        cap = data["caption"]
+        self.assertEqual(cap["fit_size"], "auto")
+        self.assertEqual(cap["fit_scope"], "file")
+        self.assertLess(cap["size_used"], cap["size_requested"])
+        self.assertEqual(cap["size_floor"], 13)
+        self.assertGreaterEqual(cap["shrunk"], 1)
+        self.assertFalse(cap["fit_exhausted"])
+        self.assertEqual(cap["split"], 0)           # the whole point: nothing was split
+        m = probe(str(out))
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (1080, 1920))
+        # the ASS on disk carries the shrunk size, and each cue is one cue of two lines
+        ass = (OUT / "cap_fit.ass").read_text(encoding="utf-8-sig")
+        style = next(l for l in ass.splitlines() if l.startswith("Style:"))
+        self.assertEqual(int(style.split(",")[2]), round(cap["size_used"] * 1920 / 288))
+        dialogue = [l for l in ass.splitlines() if l.startswith("Dialogue:")]
+        self.assertEqual(len(dialogue), 2)
+        for line in dialogue:
+            self.assertEqual(line.count("\\N"), 1)
+
+    def test_caption_scope_cue_lays_each_cue_out_at_its_own_size(self):
+        """The regression: with scope=cue every cue was wrapped to the FILE's budget -- the
+        budget of the smallest size, which is the widest line in em -- and then drawn at its own
+        larger size, so lines ran off the side of the frame. Each cue is now laid out at the size
+        it is drawn at, and no rendered line exceeds the safe width.
+
+        1.17.2: "the safe width" is now the ASS Style's real column (play_w minus the horizontal
+        safe margins), not play_w * SAFE_WIDTH_FRACTION, and the third cue genuinely needs three
+        lines at the floor in TikTok's narrower column -- it is split, and says so."""
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        text_mod = importlib.import_module("_common.text")
+        caption_mod = importlib.import_module("caption")
+        vert = self._vertical()
+        cues = OUT / "cues_scope.txt"
+        cues.write_text("0:00-0:03 A third line the tool times for me\n"
+                        "0:03-0:05 Hi\n"
+                        "0:05-0:08 Una tercera l\u00ednea con tiempos autom\u00e1ticos\n",
+                        encoding="utf-8")
+        ass = OUT / "cap_scope.ass"
+        data = json.loads(script("caption.py", vert, "--text", cues, "--platform", "tiktok",
+                                 "--max-lines", "2", "--animate", "fade", "--font", "DejaVu Sans",
+                                 "--fit-size-scope", "cue", "--write-ass", ass,
+                                 "-o", OUT / "cap_scope.mp4", "--json").stdout)
+        cap = data["caption"]
+        self.assertEqual(cap["fit_scope"], "cue")
+        # a cue is split only when the floor really cannot hold it, and then it is reported
+        self.assertEqual(bool(cap["split"]), bool(cap["fit_exhausted"]),
+                         "a split without fit_exhausted means the budget, not the floor, gave way")
+
+        body = ass.read_text(encoding="utf-8-sig")
+        style_line = next(l for l in body.splitlines() if l.startswith("Style:"))
+        style_px = int(style_line.split(",")[2])
+        margin_l, margin_r = (int(style_line.split(",")[-4]), int(style_line.split(",")[-3]))
+        dialogue = [l for l in body.splitlines() if l.startswith("Dialogue:")]
+        self.assertGreaterEqual(len(dialogue), 3)
+        # at least two different drawn sizes, which is the whole point of the flag
+        drawn = set()
+        # the column libass actually draws into -- the same number the fitter measured
+        safe_px = 1080 - margin_l - margin_r
+        self.assertAlmostEqual(safe_px / 1080.0,
+                               caption_mod.safe_width_fraction(
+                                   type("A", (), {"platform": "tiktok", "animate": "fade",
+                                                  "karaoke": False, "ass": None})(), 1080),
+                               places=6)
+        for line in dialogue:
+            payload = line.split(",,0,0,0,,", 1)[1]
+            override = re.search(r"\{\\fs(\d+)\}", payload)
+            px = int(override.group(1)) if override else style_px
+            drawn.add(px)
+            body_text = re.sub(r"\{[^}]*\}", "", payload)
+            for rendered in body_text.split("\\N"):
+                width = text_mod.text_width_em(rendered) * px
+                self.assertLessEqual(width, safe_px,
+                                     f"{rendered!r} is {width:.0f}px at size {px}, safe {safe_px:.0f}px")
+        self.assertGreaterEqual(len(drawn), 2)
+
+    def test_caption_fit_size_off_matches_the_pinned_ass(self):
+        """The stability answer: one flag restores the old layout, byte for byte against a pinned
+        file (tests/fixtures/caption_1_16_1_fitsize_off.ass).
+
+        The fixture was generated by 1.16.1's own caption.py and RE-PINNED at 1.17.2: it carried
+        the defect this release fixes -- MarginL=MarginR=MarginV=420 on a 1080-wide frame, a
+        240 px text column -- so it pinned wrong bytes. The re-pin keeps --fit-size off meaning
+        exactly what it meant (the size is never shrunk); only the side margins, and the wrap
+        budget that now agrees with them, differ. 2.10.3 added the header line `YCbCr Matrix: None`
+        (the colours are RGB, drawn in the video's own matrix), and nothing else."""
+        vert, cues = self._vertical(), self._fit_cues()
+        ass = OUT / "cap_fit_off.ass"
+        script("caption.py", vert, "--text", cues, "--platform", "tiktok", "--max-lines", "2",
+               "--animate", "fade", "--font", "DejaVu Sans", "--fit-size", "off",
+               "--write-ass", ass, "-o", OUT / "cap_fit_off.mp4")
+        pinned = Path(__file__).resolve().parent / "fixtures" / "caption_1_16_1_fitsize_off.ass"
+        self.assertEqual(ass.read_bytes(), pinned.read_bytes())
+
+    # ------------------------------------------------- 1.17.2: the horizontal margins are horizontal
+    def _style_margins(self, ass_path):
+        """(MarginL, MarginR, MarginV) from the ASS Style line."""
+        style = next(l for l in Path(ass_path).read_text(encoding="utf-8-sig").splitlines()
+                     if l.startswith("Style: Default,"))
+        fields = style.split(",")
+        return int(fields[-4]), int(fields[-3]), int(fields[-2])
+
+    def test_caption_style_margins_are_the_horizontal_safe_zone(self):
+        """1.17.2, the eval-19 defect: --margin is the VERTICAL safe margin (TikTok's 22 % bottom
+        bar = 63 ASS units = 420 px on a 1920-tall frame) and 1.14-1.17.1 wrote it into MarginL
+        and MarginR as well, leaving a 240 px text column on a 1080-wide frame. The side margins
+        come from the destination's own left/right safe zone instead."""
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        platforms = importlib.import_module("_platforms")
+        ass = OUT / "cap_margins.ass"
+        script("caption.py", self._vertical(), "--text", self._fit_cues(), "--platform", "tiktok",
+               "--animate", "pop", "--karaoke", "--font", "DejaVu Sans",
+               "--write-ass", ass, "-o", OUT / "cap_margins.mp4")
+        left, right, vertical = self._style_margins(ass)
+        safe = platforms.PLATFORMS["tiktok"]["safe"]
+        self.assertEqual((left, right), (round(safe["left"] * 1080), round(safe["right"] * 1080)))
+        self.assertAlmostEqual(vertical, safe["bottom"] * 1920, delta=4)   # via whole ASS units
+        # the column libass is given, not the sliver the vertical margin used to leave
+        self.assertGreater(1080 - left - right, 0.75 * 1080)
+        self.assertLess(left + right, 2 * vertical)
+
+    def test_caption_style_margins_without_a_platform_are_the_conventional_border(self):
+        """No --platform: the sides are the (1 - SAFE_WIDTH_FRACTION)/2 border the wrapper has
+        always assumed, so the fitter's budget and libass's column are the same number."""
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        text_mod = importlib.import_module("_common.text")
+        ass = OUT / "cap_margins_noplat.ass"
+        script("caption.py", self._vertical(), "--text", self._fit_cues(), "--animate", "fade",
+               "--font", "DejaVu Sans", "--write-ass", ass, "-o", OUT / "cap_margins_noplat.mp4")
+        left, right, _ = self._style_margins(ass)
+        self.assertEqual(left + right,
+                         round((1 - text_mod.SAFE_WIDTH_FRACTION) * 1080))
+
+    def test_caption_two_words_stay_on_one_line_at_tiktok_size(self):
+        """The headline symptom: "Hello world" came out as "Hello" over "world" while the tool
+        reported split 0 and no wrap at all -- the fitter measured the horizontal safe width and
+        libass was handed a 240 px column. With --max-lines 1 the fit is asked for a single line;
+        it is a single line in the ASS text AND a single band of lit rows in libass's raster."""
+        cues = OUT / "cues_two_words.txt"
+        cues.write_text("0:00-0:03 Hello world\n", encoding="utf-8")
+        ass = OUT / "cap_two_words.ass"
+        data = json.loads(script("caption.py", self._vertical(), "--text", cues,
+                                 "--platform", "tiktok", "--fit-size", "on", "--max-lines", "1",
+                                 "--animate", "pop", "--karaoke", "--font", "DejaVu Sans",
+                                 "--write-ass", ass, "-o", OUT / "cap_two_words.mp4",
+                                 "--json").stdout)
+        self.assertEqual(data["caption"]["split"], 0)
+        dialogue = [l for l in ass.read_text(encoding="utf-8-sig").splitlines()
+                    if l.startswith("Dialogue:")]
+        self.assertEqual(len(dialogue), 1)
+        self.assertNotIn("\\N", dialogue[0].split(",,0,0,0,,", 1)[1])
+        bands = _ass_ink_rows(ass, 1080, 1920)
+        self.assertEqual(len(bands), 1, "the cue was drawn on %d lines: %s" % (len(bands), bands))
+
+    def test_caption_eval_cues_fit_two_lines_in_the_raster_too(self):
+        """The eval-17/18 cw1 cues on the TikTok template: <= 2 lines per cue in the ASS AND
+        <= 2 bands of lit rows per cue once libass has applied the Style margins."""
+        cues = self._fit_cues()
+        for index, (start, text) in enumerate((("0:00", "A third line the tool times for me"),
+                                               ("0:00", "Segunda l\u00ednea de subt\u00edtulos"))):
+            one = OUT / ("cues_band_%d.txt" % index)
+            one.write_text("%s-0:03 %s\n" % (start, text), encoding="utf-8")
+            ass = OUT / ("cap_band_%d.ass" % index)
+            script("caption.py", self._vertical(), "--text", one, "--platform", "tiktok",
+                   "--max-lines", "2", "--animate", "fade", "--font", "DejaVu Sans",
+                   "--write-ass", ass, "-o", OUT / ("cap_band_%d.mp4" % index))
+            dialogue = [l for l in ass.read_text(encoding="utf-8-sig").splitlines()
+                        if l.startswith("Dialogue:")]
+            self.assertEqual(len(dialogue), 1, "the cue was split")
+            self.assertLessEqual(dialogue[0].count("\\N"), 1)
+            bands = _ass_ink_rows(ass, 1080, 1920)
+            self.assertLessEqual(len(bands), 2, "%r drew %d lines" % (text, len(bands)))
+            # the agreement itself: libass draws exactly the lines the ASS text asks for
+            self.assertEqual(len(bands), dialogue[0].count("\\N") + 1)
+        self.assertTrue(Path(cues).exists())
+
+    def test_caption_says_when_the_text_is_unchanged(self):
+        """1.17.1: the report sentence "the text is yours, unchanged" should not be a judgement
+        the agent has to make -- the run states it (eval 18 cs2/cs3, where one run rewrote the
+        user's cue text)."""
+        vert, cues = self._vertical(), self._fit_cues()
+        proc = script("caption.py", vert, "--text", cues, "--platform", "tiktok", "--max-lines", "2",
+                      "--font", "DejaVu Sans", "-o", OUT / "cap_unchanged.mp4", "--json")
+        data = json.loads(proc.stdout)["caption"]
+        self.assertEqual(data["split"], 0)
+        self.assertTrue(data["text_unchanged"])
+        self.assertIn("caption text unchanged", proc.stderr)
+
+    def test_caption_text_is_not_unchanged_when_a_cue_was_split(self):
+        """Review 17 finding 5: a cue the layout chopped into two consecutive cues is not the
+        text that was handed in -- and it is the exact defect 1.17.1 exists to fix, so the tool
+        must not claim honesty on precisely the runs that are still wrong."""
+        vert, cues = self._vertical(), self._fit_cues()
+        proc = script("caption.py", vert, "--text", cues, "--platform", "tiktok", "--max-lines", "2",
+                      "--size", "24", "--fit-size", "off", "--font", "DejaVu Sans",
+                      "-o", OUT / "cap_split.mp4", "--json")
+        cap = json.loads(proc.stdout)["caption"]
+        self.assertGreater(cap["split"], 0, "this run is the one that splits a cue")
+        self.assertFalse(cap["text_unchanged"])
+        self.assertNotIn("caption text unchanged", proc.stderr)
+
+    def test_caption_text_is_not_unchanged_when_emoji_none_strips_glyphs(self):
+        """--emoji none str.replace()s the clusters out of the drawn text: the viewer reads
+        something other than the cue that was handed in (review 17 finding 5)."""
+        cues = OUT / "cues_emoji_strip.txt"
+        cues.write_text("0:00-0:03 Ship it \U0001F680\n", encoding="utf-8")
+        proc = script("caption.py", self._vertical(), "--text", cues, "--platform", "tiktok",
+                      "--emoji", "none", "--font", "DejaVu Sans",
+                      "-o", OUT / "cap_emoji_none.mp4", "--json")
+        cap = json.loads(proc.stdout)["caption"]
+        self.assertFalse(cap["text_unchanged"])
+        self.assertNotIn("caption text unchanged", proc.stderr)
+
+    def test_caption_fit_size_auto_leaves_an_explicit_size_alone(self):
+        vert, cues = self._vertical(), self._fit_cues()
+        data = json.loads(script("caption.py", vert, "--text", cues, "--platform", "tiktok",
+                                 "--size", "30", "--max-lines", "2",
+                                 "-o", OUT / "cap_fit_explicit.mp4", "--json").stdout)
+        self.assertEqual(data["caption"]["size_used"], 30)
+        self.assertEqual(data["caption"]["size_requested"], 30)
+
+    def test_caption_plan_before_the_input_exists_uses_the_platform_frame(self):
+        """A plan that names a different FontSize from the run that executes it is not a plan.
+        With --platform there is a real frame to fit against; without one there is nothing, and
+        size_used says null rather than presenting the requested size as the fitted one."""
+        cues = self._fit_cues()
+        missing = OUT / "not_yet_recorded.mp4"
+        if missing.exists():
+            missing.unlink()
+        planned = json.loads(script("caption.py", missing, "--text", cues, "--platform", "tiktok",
+                                    "--dry-run", "-o", OUT / "plan_fit.mp4", "--json").stdout)
+        real = json.loads(script("caption.py", self._vertical(), "--text", cues,
+                                 "--platform", "tiktok", "--dry-run",
+                                 "-o", OUT / "plan_fit2.mp4", "--json").stdout)
+        self.assertEqual(planned["caption"]["size_used"], real["caption"]["size_used"])
+        self.assertLess(planned["caption"]["size_used"], planned["caption"]["size_requested"])
+        self.assertEqual(planned["caption"]["size_source"], "platform-frame")
+        burn = next(c for c in planned["commands"] if "FontSize" in c)
+        self.assertIn(f"FontSize={planned['caption']['size_used']}", burn)
+
+        # no platform and no input: nothing to measure against, so nothing is claimed
+        blind = json.loads(script("caption.py", missing, "--text", cues, "--dry-run",
+                                  "-o", OUT / "plan_fit3.mp4", "--json").stdout)
+        self.assertIsNone(blind["caption"]["size_used"])
+        self.assertEqual(blind["caption"]["size_requested"], 24)
+
+    def test_caption_min_size_above_size_is_an_input_refusal(self):
+        vert, cues = self._vertical(), self._fit_cues()
+        out = OUT / "cap_fit_refuse.mp4"
+        if out.exists():
+            out.unlink()
+        r = script("caption.py", vert, "--text", cues, "--size", "24", "--min-size", "30",
+                   "-o", out, "--json", expect_fail=True)
+        data = json.loads(r.stdout)
+        self.assertEqual(data["error"]["kind"], "input")
+        self.assertIn("--min-size", data["error"]["message"])
+        self.assertFalse(out.exists())
+
+    def test_caption_mux_is_unaffected_by_the_fitter(self):
+        """Soft subtitles carry no size, so --mode mux writes the SRT 1.16 wrote."""
+        vert, cues = self._vertical(), self._fit_cues()
+        a, b = OUT / "cap_mux_auto.mkv", OUT / "cap_mux_off.mkv"
+        script("caption.py", vert, "--text", cues, "--mode", "mux", "--platform", "tiktok",
+               "--write-srt", OUT / "cap_mux_auto.srt", "-o", a)
+        script("caption.py", vert, "--text", cues, "--mode", "mux", "--platform", "tiktok",
+               "--fit-size", "off", "--write-srt", OUT / "cap_mux_off.srt", "-o", b)
+        self.assertEqual((OUT / "cap_mux_auto.srt").read_bytes(),
+                         (OUT / "cap_mux_off.srt").read_bytes())
+
+
+class Bt601ConversionTests(unittest.TestCase):
+    """A BT.601-matrix source re-encoded here comes out tagged BT.709 *and* converted to it. Through
+    2.10.0 only the label changed: export.py --preset reels on a smpte170m clip wrote
+    bt709/bt709/bt709 over pixels 48.5 dB YUV PSNR from the source (untouched), so every player
+    that honours the tag showed shifted colours.
+
+    The pictures are compared in RGB, each decoded with the matrix it is tagged with (the source as
+    BT.601, the output as BT.709): a converted output matches its source there, a relabelled one
+    does not. Both sides' tags are pinned first, as in MediaFixtures._psnr, so no FFmpeg 7.1+
+    negotiation adds a conversion of its own."""
+
+    @classmethod
+    def setUpClass(cls):
+        encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], stdout=subprocess.PIPE, text=True).stdout
+        if "libx264" not in encoders:
+            raise unittest.SkipTest("this ffmpeg build has no libx264")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.clips = {}
+        for name, params, size in (("full601", "colorprim=smpte170m:transfer=smpte170m:colormatrix=smpte170m", "320x240"),
+                                   ("bt470bg", "colormatrix=bt470bg", "320x240"),
+                                   ("untagged", None, "320x240"),
+                                   ("bt709", "colorprim=bt709:transfer=bt709:colormatrix=bt709", "320x240"),
+                                   ("reels601", "colorprim=smpte170m:transfer=smpte170m:colormatrix=smpte170m", "1080x1920")):
+            path = OUT / f"matrix_{name}.mp4"
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", f"testsrc2=s={size}:r=30:d={1 if size == '1080x1920' else 2}",
+               "-f", "lavfi", "-i", "sine=sample_rate=48000:d=2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p",
+               *(["-x264-params", params] if params else []), "-c:a", "aac", "-shortest", path)
+            cls.clips[name] = path
+
+    @staticmethod
+    def _rgb_psnr(a, a_matrix, b, b_matrix, seek=None):
+        """PSNR in RGB of b (decoded with b_matrix) against a (decoded with a_matrix), over b's frames;
+        `seek` = (start, length) of a that b holds."""
+        def leg(i, m):
+            tag = {"bt601": "smpte170m", "bt709": "bt709"}[m]
+            return (f"[{i}:v]setpts=N/FRAME_RATE/TB,setparams=colorspace={tag}:color_primaries=bt709:color_trc=bt709:range=tv,"
+                    f"scale=in_color_matrix={m}:in_range=tv:out_range=pc,format=gbrp[{'ab'[i]}]")
+        cut = ["-ss", str(seek[0]), "-t", str(seek[1])] if seek else []
+        proc = subprocess.run(["ffmpeg", "-hide_banner", *cut, "-i", str(a), "-i", str(b), "-lavfi",
+                               f"{leg(0, a_matrix)};{leg(1, b_matrix)};[a][b]psnr", "-f", "null", "-"],
+                              stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+        m = re.search(r"average:(inf|[\d.]+)", proc.stderr)
+        assert m, proc.stderr[-400:]
+        return float("inf") if m.group(1) == "inf" else float(m.group(1))
+
+    def _runs(self, name):
+        """(tool, output, seek, result document) for fit.py and cut.py --accurate on clip `name`."""
+        src = self.clips[name]
+        for tool, args, seek in (("fit.py", ["--width", "320", "--height", "240", "--quality", "8"], None),
+                                 ("cut.py", ["--start", "0.5", "--end", "1.5", "--accurate", "--quality", "8"], (0.5, 1))):
+            out = OUT / f"matrix_{name}_{tool[:-3]}.mp4"
+            doc = json.loads(script(tool, src, *args, "--fast", "--json", "-o", out).stdout)
+            yield tool, out, seek, doc
+
+    def _assert_bt709_tags(self, out):
+        v = probe(str(out))["video"]
+        self.assertEqual((v["color_space"], v["color_primaries"], v["color_transfer"]), ("bt709", "bt709", "bt709"))
+
+    def test_a_bt601_source_is_converted_to_the_bt709_it_is_tagged_with(self):
+        # the issue's reproduction: export.py --preset reels on a 1080x1920 smpte170m clip
+        src = self.clips["reels601"]
+        out = OUT / "matrix_reels601_export.mp4"
+        doc = json.loads(script("export.py", src, "--preset", "reels", "--fast", "--crf", "8", "--json", "-o", out).stdout)
+        self.assertIn("colorspace=ispace=smpte170m", " ".join(doc["commands"]))
+        cases = [("export.py", out, None, src)] + [(t, o, s, self.clips[n]) for n in ("full601", "bt470bg") for t, o, s, _ in self._runs(n)]
+        for tool, out, seek, src in cases:
+            with self.subTest(tool=tool, source=src.name):
+                self._assert_bt709_tags(out)
+                converted = self._rgb_psnr(src, "bt601", out, "bt709", seek)
+                relabelled = self._rgb_psnr(src, "bt709", out, "bt709", seek)
+                # measured 42.2 dB converted (5.1.1, 6.1, a 7.1 snapshot); the 2.10.0 relabel was 24.8 dB
+                # here and 52 dB on the second comparison, which a converted picture can't reach
+                self.assertGreater(converted, 38.0, f"{tool}: the BT.709 output does not show the BT.601 source's colours")
+                self.assertLess(relabelled, 32.0, f"{tool}: the pixels were relabelled, not converted")
+
+    def test_an_untagged_or_bt709_source_is_not_converted(self):
+        """Untagged SDR is taken as BT.709 by players, and converting it is the 7.1 auto-conversion
+        bt709_tag_args() exists to avoid: no conversion is planned and the pixels stay the source's."""
+        for name in ("untagged", "bt709"):
+            for tool, out, seek, doc in self._runs(name):
+                with self.subTest(tool=tool, source=name):
+                    self.assertNotIn("colorspace=", " ".join(doc["commands"]))
+                    self._assert_bt709_tags(out)
+                    self.assertGreater(self._rgb_psnr(self.clips[name], "bt709", out, "bt709", seek), 45.0, tool)
+
+
+class RgbAndStillConversionTests(unittest.TestCase):
+    """2.10.1 converted a BT.601-tagged video source to the BT.709 its re-encode is tagged with; an
+    RGB picture (a PNG still or logo, an emoji PNG, a PNG sequence, a qtrle clip), a JPEG still and
+    grid.py's cells were still made YUV by FFmpeg's own default, BT.601, and tagged BT.709: pure
+    red decoded as (255,24,0) and pure green as (0,216,0) on 5.1.1, 6.1, 7.1 and 8.1 (mean
+    ΔRGB 8.8, max 38.9 over the three patches below).
+
+    Each output is decoded here, in Python, with the matrix and range its own tags name, and the
+    solid patches are compared with the colours the source holds (the PNG's RGB; the JPEG decoded
+    as BT.601 full range, what JPEG is). Converted, every patch is within ~1.6 of its colour."""
+
+    COLOURS = [(255, 0, 0), (0, 255, 0), (40, 120, 200)]
+    BAR = 64  # the still is three BAR x BAR bars side by side
+
+    @classmethod
+    def setUpClass(cls):
+        encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], stdout=subprocess.PIPE, text=True).stdout
+        if "libx264" not in encoders:
+            raise unittest.SkipTest("this ffmpeg build has no libx264")
+        cls.dir = OUT / "rgbstill"
+        cls.dir.mkdir(parents=True, exist_ok=True)
+        d, bar = cls.dir, cls.BAR
+        row = b"".join(bytes(cls.COLOURS[x // bar]) for x in range(3 * bar))
+        (d / "bars.ppm").write_bytes(b"P6\n%d %d\n255\n" % (3 * bar, bar) + row * bar)
+        q = ("ffmpeg", "-y", "-hide_banner", "-loglevel", "error")
+        sh(*q, "-i", d / "bars.ppm", "-pix_fmt", "rgb24", d / "bars.png")
+        sh(*q, "-i", d / "bars.ppm", "-pix_fmt", "pal8", d / "bars_pal8.png")
+        sh(*q, "-i", d / "bars.ppm", "-q:v", "1", "-pix_fmt", "yuvj420p", d / "bars.jpg")
+        (d / "seq").mkdir(exist_ok=True)
+        for i in range(1, 11):
+            shutil.copyfile(d / "bars.png", d / "seq" / f"f_{i:04d}.png")
+        cls.emoji = d / "emoji"
+        cls.emoji.mkdir(exist_ok=True)
+        # a solid red 'emoji' (the asset is named by code point, like _emoji_assets())
+        (d / "red.ppm").write_bytes(b"P6\n72 72\n255\n" + bytes((255, 0, 0)) * (72 * 72))
+        sh(*q, "-i", d / "red.ppm", "-pix_fmt", "rgba", cls.emoji / "1f389.png")
+        x264 = ("-c:v", "libx264", "-preset", "ultrafast", "-crf", "1", "-pix_fmt", "yuv420p")
+        tags = {"bt709": ("-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709"), "untagged": (),
+                "smpte170m": ("-x264-params", "colorprim=smpte170m:transfer=smpte170m:colormatrix=smpte170m")}
+        loop = (*q, "-loop", "1", "-framerate", "25", "-i", d / "bars.png", "-t", "1")
+        # the bars as a base to composite on, 768x256 with audio, BT.709-tagged and untagged (encoded
+        # with BT.709, what players take untagged video as): a shifted main picture shows as well
+        # (an untagged clip's frames are relabelled unknown: from 7.1 the scale's own BT.709 output
+        # would otherwise reach x264's VUI, and the "untagged" clip came out tagged bt709)
+        untag = {"untagged": ",setparams=colorspace=unknown"}
+        for name, tag in (("base709", "bt709"), ("baseun", "untagged")):
+            sh(*loop, "-f", "lavfi", "-i", "sine=d=1", "-vf",
+               "scale=768:256:flags=neighbor:out_color_matrix=bt709:out_range=tv,format=yuv420p" + untag.get(tag, ""),
+               *x264, *tags[tag], "-c:a", "aac", "-shortest", d / f"{name}.mp4")
+        # the bars as video: an RGB qtrle clip, and BT.601- / BT.709-tagged and untagged clips encoded with their own matrix
+        sh(*loop, "-vf", "scale=384:128:flags=neighbor", "-c:v", "qtrle", "-pix_fmt", "rgb24", d / "qtrle.mov")
+        for name, m, tag in (("v601", "bt601", "smpte170m"), ("v709", "bt709", "bt709"), ("vun", "bt709", "untagged")):
+            sh(*loop, "-vf", f"scale=384:128:flags=neighbor:out_color_matrix={m}:out_range=tv,format=yuv420p" + untag.get(tag, ""),
+               *x264, *tags[tag], d / f"{name}.mp4")
+        cls.jpeg = cls._patches(d / "bars.jpg", cls._bars(0, 0), t=0)  # what the JPEG holds, decoded as JPEG
+
+    @classmethod
+    def _bars(cls, x, y, scale=1, inset=12):
+        b = cls.BAR * scale
+        return [(x + k * b + inset, y + inset, x + (k + 1) * b - inset, y + b - inset) for k in range(3)]
+
+    @staticmethod
+    def _patches(path, rects, t=0.5):
+        """Mean RGB of each rect of the frame at `t`, decoded with the matrix and range the stream is
+        tagged with (BT.601 for a smpte170m/bt470bg tag or an untagged JPEG, else BT.709)."""
+        s = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                       "stream=width,height,pix_fmt,color_space,color_range", "-of", "json", str(path)],
+                                      stdout=subprocess.PIPE, text=True, check=True).stdout)["streams"][0]
+        w, h, pf, cs = s["width"], s["height"], s["pix_fmt"], s.get("color_space") or "unknown"
+        assert pf in ("yuv420p", "yuvj420p"), pf
+        raw = subprocess.run(["ffmpeg", "-v", "error", *(["-ss", str(t)] if t else []), "-i", str(path), "-frames:v", "1",
+                              "-f", "rawvideo", "-pix_fmt", pf, "-"], stdout=subprocess.PIPE, check=True).stdout
+        bt601 = cs in ("smpte170m", "bt470bg") or (cs == "unknown" and pf == "yuvj420p")
+        kr, kb = (0.299, 0.114) if bt601 else (0.2126, 0.0722)
+        full = pf == "yuvj420p" or s.get("color_range") == "pc"
+        cw, ch = w // 2, h // 2
+        out = []
+        for x0, y0, x1, y1 in rects:
+            mean = lambda off, stride, xs, ys: sum(raw[off + yy * stride + xx] for yy in ys for xx in xs) / (len(xs) * len(ys))
+            y_ = mean(0, w, range(x0, x1), range(y0, y1))
+            u = mean(w * h, cw, range(x0 // 2, x1 // 2), range(y0 // 2, y1 // 2)) - 128
+            v = mean(w * h + cw * ch, cw, range(x0 // 2, x1 // 2), range(y0 // 2, y1 // 2)) - 128
+            ys, cs_ = (1.0, 1.0) if full else (255 / 219, 255 / 224)
+            Y = (y_ - (0 if full else 16)) * ys
+            r, b = Y + 2 * (1 - kr) * v * cs_, Y + 2 * (1 - kb) * u * cs_
+            g = (Y - kr * r - kb * b) / (1 - kr - kb)
+            out.append(tuple(max(0.0, min(255.0, c)) for c in (r, g, b)))
+        return out
+
+    def _assert_colours(self, out, rects, want, t=0.5):
+        v = probe(str(out))["video"]
+        self.assertEqual(v["color_space"], "bt709", f"{out.name}: the output is not tagged BT.709")
+        got = self._patches(out, rects, t)
+        diffs = [abs(a - b) for g, w in zip(got, want) for a, b in zip(g, w)]
+        # measured after the fix: mean <= 0.65, max <= 1.6 (pal8: 0.94 / 2.6, the PNG is dithered);
+        # before it: mean >= 8.0, max >= 24 (BT.601 pixels under a BT.709 tag)
+        self.assertLess(sum(diffs) / len(diffs), 3.0, f"{out.name}: {[tuple(round(c) for c in g) for g in got]} != {want}")
+        self.assertLess(max(diffs), 8.0, f"{out.name}: {[tuple(round(c) for c in g) for g in got]} != {want}")
+
+    def test_an_rgb_or_jpeg_source_is_converted_to_the_bt709_it_is_tagged_with(self):
+        """Follow-up 1 of #332: RGB sources and JPEG stills, through every tool that takes one."""
+        d = self.dir
+        runs = [
+            ("insert.py", [d / "bars.png", "--duration", "1", "--width", "384", "--height", "128"], self.COLOURS, 0.5),
+            ("insert.py", [d / "bars_pal8.png", "--duration", "1", "--width", "384", "--height", "128"], self.COLOURS, 0.5),
+            ("insert.py", [d / "bars.jpg", "--duration", "1", "--width", "384", "--height", "128"], self.jpeg, 0.5),
+            ("sequence.py", ["--dir", d / "seq", "--pattern", "f_%04d.png", "--start-number", "1", "--fps", "10",
+                             "--width", "384", "--height", "128"], self.COLOURS, 0.3),
+            ("fit.py", [d / "qtrle.mov", "--width", "384", "--height", "128"], self.COLOURS, 0.5),
+            ("export.py", [d / "qtrle.mov", "--preset", "youtube", "--no-scale"], self.COLOURS, 0.5),
+        ]
+        for n, (tool, args, want, t) in enumerate(runs):
+            with self.subTest(tool=tool, source=Path(str(args[0])).name):
+                out = d / f"rgb_{n}_{tool[:-3]}.mp4"
+                script(tool, *args, "--fast", "-o", out)
+                self._assert_colours(out, self._bars(0, 0, 2), want, t)
+
+    def test_a_still_composited_over_the_video_is_converted_to_bt709(self):
+        """Follow-up 2 of #332: overlay.py --image (render.py's image/logo layers), waveform.py --image
+        (the audiogram template) and graphics/caption emoji PNGs. 7.1+ already converted an RGBA layer
+        by the main input's tag, so over a BT.709-tagged base only 5.1/6.1 were wrong; over an
+        untagged one 7.1+ negotiates one colourspace for both pictures and took "unknown" as BT.601.
+        The main's own bars are checked too: overlay's format=auto composited an RGBA logo in RGB, so
+        the WHOLE picture went through RGB and came back BT.601 (9.04 mean / 40.6 max on a BT.709 main,
+        7.93 / 37.4 on an untagged one, 5.1.1 and 6.1; the untagged one on 7.1.1 and 8.1.3 too)."""
+        d = self.dir
+        main = [(k * 256 + 20, 20, k * 256 + 236, 100) for k in range(3)]  # the base's bars, clear of the logo
+        for img, base, want in (("bars.png", "baseun", self.COLOURS), ("bars.png", "base709", self.COLOURS),
+                                ("bars.jpg", "base709", self.jpeg), ("bars.jpg", "baseun", self.jpeg)):
+            out = d / f"ov_{img.replace('.', '_')}_{base}.mp4"
+            script("overlay.py", d / f"{base}.mp4", "--image", d / img, "--position", "bottom-right", "--margin", "0", "--fast", "-o", out)
+            with self.subTest(tool="overlay.py", image=img, base=base, part="the image"):
+                self._assert_colours(out, self._bars(576, 192), want)
+            with self.subTest(tool="overlay.py", image=img, base=base, part="the main picture"):
+                self._assert_colours(out, main, self.COLOURS)
+        with self.subTest(tool="waveform.py"):
+            out = d / "wave_png.mp4"
+            script("waveform.py", d / "baseun.mp4", "--image", d / "bars.png", "--width", "384", "--height", "128",
+                   "--vis-height", "0.1", "--opacity", "0", "--fast", "-o", out)
+            self._assert_colours(out, self._bars(0, 0, 2), self.COLOURS)
+        filters = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], stdout=subprocess.PIPE, text=True).stdout
+        with self.subTest(tool="graphics.py --emoji png"):
+            if not re.search(r"^\s*\S+\s+ass\s", filters, re.M):
+                self.skipTest("this ffmpeg build has no ass filter")
+            out = d / "emoji_png.mp4"
+            doc = json.loads(script("graphics.py", d / "baseun.mp4", "--template", "sticker", "--text", "\U0001F389",
+                                    "--position", "bottom-right", "--emoji", "png", "--emoji-assets", self.emoji,
+                                    "--emoji-scale", "2", "--fast", "--json", "-o", out).stdout)
+            m = re.search(r"scale=(\d+):\d+.*overlay=x=(\d+):y=(\d+)", " ".join(doc["commands"]))
+            box, x, y = (int(g) for g in m.groups())
+            self._assert_colours(out, main, self.COLOURS)
+            self._assert_colours(out, [(x + 8, y + 8, x + box - 8, y + box - 8)], [(255, 0, 0)])
+
+    def test_grid_converts_each_cell_by_its_own_tags(self):
+        """Follow-up 3 of #332: grid.py relabelled every cell BT.709 (5.1.1, 6.1); on 7.1+ xstack
+        negotiated one colourspace for every cell and converted the others to it, so a BT.601 cell
+        took a BT.709 one with it, and an untagged cell beside a converted one was converted as
+        BT.601. Every order, every cell."""
+        d = self.dir
+        for order in (("v601", "v709"), ("v709", "v601"), ("v601", "vun"), ("vun", "v601")):
+            out = d / f"grid_{order[0]}_{order[1]}.mp4"
+            script("grid.py", *[d / f"{o}.mp4" for o in order], "--cols", "2", "--rows", "1", "--cell-width", "384",
+                   "--cell-height", "128", "--label", "none", "--fast", "-o", out)
+            for c, name in enumerate(order):
+                with self.subTest(order=order, cell=name):
+                    self._assert_colours(out, self._bars(384 * c, 0, 2), self.COLOURS)
+
+    def test_mixing_tools_label_an_untagged_clip_beside_a_converted_one(self):
+        """#332 converted a BT.601 clip in its own chain in join, broll, multicam and overlay --video,
+        but left an untagged clip beside it untagged: FFmpeg 7.1+ negotiates one colourspace for
+        concat/overlay and converts the rest, taking "unknown" as BT.601, so one of the two pictures
+        shifted (7.08 mean / 25.0 max with the BT.601 clip first, 9.12 / 40.1 with it second, on
+        7.1.1 and 8.1.3; 5.1.1 and 6.1 were already right). The untagged clip now gets its BT.709
+        label, tags only, as grid.py's cells did in #333. Every order, every picture."""
+        d = self.dir
+        clips = {}
+        for name, vf, tag in (("un", "out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=colorspace=unknown", ()),
+                              ("601", "out_color_matrix=bt601:out_range=tv,format=yuv420p",
+                               ("-x264-params", "colorprim=smpte170m:transfer=smpte170m:colormatrix=smpte170m"))):
+            clips[name] = d / f"mix_{name}.mp4"
+            if not clips[name].exists():  # 2 s of the bars, the same noise under both for multicam's alignment
+                sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-loop", "1", "-framerate", "25", "-i", d / "bars.png",
+                   "-f", "lavfi", "-i", "anoisesrc=d=2:seed=7:amplitude=0.3", "-t", "2", "-vf",
+                   f"scale=384:128:flags=neighbor:{vf}", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "1",
+                   "-pix_fmt", "yuv420p", *tag, "-c:a", "aac", "-shortest", clips[name])
+        big = d / "baseun.mp4"  # 768x256 untagged bars: the main picture for overlay --video
+        for clip in (clips["un"], big):  # really untagged on 7.1+ too
+            self.assertIn(probe(str(clip))["video"].get("color_space"), (None, "unknown", "unspecified"), clip.name)
+        pip = [(384 + 12 + k * 128, 128 + 12, 384 + (k + 1) * 128 - 12, 256 - 12) for k in range(3)]
+        main = [(k * 256 + 20, 20, k * 256 + 236, 100) for k in range(3)]
+        for a, b in (("un", "601"), ("601", "un")):
+            out = d / f"mix_join_{a}_{b}.mp4"
+            script("join.py", clips[a], clips[b], "--transition", "none", "--fast", "-o", out)
+            for t, name in ((0.5, a), (2.5, b)):
+                with self.subTest(tool="join.py", order=(a, b), clip=name):
+                    self._assert_colours(out, self._bars(0, 0, 2), self.COLOURS, t)
+            out = d / f"mix_broll_{a}_{b}.mp4"
+            script("broll.py", clips[a], "--insert", clips[b], "--at", "0.5", "--duration", "1", "--fast", "-o", out)
+            for t, name in ((0.2, a), (1.0, b)):
+                with self.subTest(tool="broll.py", order=(a, b), clip=name):
+                    self._assert_colours(out, self._bars(0, 0, 2), self.COLOURS, t)
+            out = d / f"mix_multicam_{a}_{b}.mp4"
+            script("multicam.py", clips[a], clips[b], "--switch", "0-1:0,1-2:1", "--fast", "-o", out)
+            for t, name in ((0.5, a), (1.5, b)):
+                with self.subTest(tool="multicam.py", order=(a, b), clip=name):
+                    self._assert_colours(out, self._bars(0, 0, 2), self.COLOURS, t)
+        for main_clip, pip_clip in ((big, clips["601"]), (d / "base601big.mp4", clips["un"])):
+            if not main_clip.exists():
+                sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-loop", "1", "-framerate", "25", "-i", d / "bars.png",
+                   "-f", "lavfi", "-i", "sine=d=1", "-t", "1", "-vf",
+                   "scale=768:256:flags=neighbor:out_color_matrix=bt601:out_range=tv,format=yuv420p", "-c:v", "libx264",
+                   "-preset", "ultrafast", "-crf", "1", "-pix_fmt", "yuv420p", "-x264-params",
+                   "colorprim=smpte170m:transfer=smpte170m:colormatrix=smpte170m", "-c:a", "aac", "-shortest", main_clip)
+            out = d / f"mix_overlay_{main_clip.stem}.mp4"
+            script("overlay.py", main_clip, "--video", pip_clip, "--position", "bottom-right", "--margin", "0", "--fast", "-o", out)
+            for part, rects in (("main", main), ("pip", pip)):
+                with self.subTest(tool="overlay.py --video", main=main_clip.name, part=part):
+                    self._assert_colours(out, rects, self.COLOURS)
+
+
+class DrawnColourTests(unittest.TestCase):
+    """A colour the skill draws -- a pad, a background, a box, text, a caption, a waveform -- from a
+    hex or named value. FFmpeg's drawing filters turn it into YUV with a matrix of their own: BT.601
+    always up to 7.0 (and drawbox on every version), the link's colourspace from 7.1 on, "unknown"
+    read as BT.601; the `color` source and an RGBA layer went through the encoder line's own BT.601
+    conversion. So through 2.10.2 the colour landed as BT.601 YUV under the output's BT.709 tag on
+    5.1.1, 6.1, 7.1.1 and 8.1.3: pure red decoded as (255,24,0), pure green as (0,216,0), mean
+    ΔRGB 8.8 / max 38.9 (7.1+ was right only for a BT.709-tagged or converted source's pad).
+
+    Each output is decoded with the matrix its own tags name, and the drawn region is compared with
+    the true colour (a translucent element: blended with the grey under it). Fixed, every one is
+    within ~1.6. A picture that only passes through keeps its pixels (the last test)."""
+
+    RED, GREEN, BLUE = (255, 0, 0), (0, 255, 0), (40, 120, 200)
+    GREY = (128, 128, 128)
+
+    @classmethod
+    def setUpClass(cls):
+        encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], stdout=subprocess.PIPE, text=True).stdout
+        if "libx264" not in encoders:
+            raise unittest.SkipTest("this ffmpeg build has no libx264")
+        cls.filters = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], stdout=subprocess.PIPE, text=True).stdout
+        cls.dir = OUT / "drawn"
+        cls.dir.mkdir(parents=True, exist_ok=True)
+        d = cls.dir
+        q = ("ffmpeg", "-y", "-hide_banner", "-loglevel", "error")
+        x264 = ("-c:v", "libx264", "-preset", "ultrafast", "-crf", "1", "-pix_fmt", "yuv420p")
+        bt709 = ("-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709")
+        grey = lambda size, dur: ("-f", "lavfi", "-i", f"color=c=0x808080:s={size}:r=25:d={dur}")  # noqa: E731
+        sine = lambda dur: ("-f", "lavfi", "-i", f"sine=d={dur}")  # noqa: E731
+        for name, args in (("grey", (*grey("640x360", 2), *sine(2), *x264, "-c:a", "aac", "-shortest")),
+                           ("grey709", (*grey("640x360", 2), *sine(2), *x264, *bt709, "-c:a", "aac", "-shortest")),
+                           ("silent", (*grey("640x360", 2), *x264)),  # pad.py: no audio track to delay
+                           ("tall", (*grey("360x640", 2), *sine(2), *x264, "-c:a", "aac", "-shortest")),
+                           ("big", (*grey("1280x720", 3), *sine(3), *x264, "-c:a", "aac", "-shortest"))):
+            if not (d / f"{name}.mp4").exists():
+                sh(*q, *args, d / f"{name}.mp4")
+        if not (d / "loud.wav").exists():
+            sh(*q, "-f", "lavfi", "-i", "sine=f=3:d=2:sample_rate=48000,volume=4", d / "loud.wav")
+        if not (d / "subs.srt").exists():
+            (d / "subs.srt").write_text("1\n00:00:00,000 --> 00:00:05,000\nHHH\n", encoding="utf-8")
+
+    def _has(self, name):
+        return re.search(rf"^\s*\S+\s+{name}\s", self.filters, re.M)
+
+    @staticmethod
+    def _blend(c, a):
+        return tuple(a * x + (1 - a) * 128 for x in c)
+
+    def _check(self, out, got, want):
+        v = probe(str(out))["video"]
+        self.assertEqual(v["color_space"], "bt709", f"{out.name}: the output is not tagged BT.709")
+        diffs = [abs(a - b) for g, w in zip(got, want) for a, b in zip(g, w)]
+        # measured fixed: mean <= 0.6, max <= 1.6 (5.1.1, 6.1, 7.1.1, 8.1.3); through 2.10.2 the
+        # colour was BT.601 under that tag: mean >= 6.6, max >= 24 for every case below
+        shown = [tuple(round(c) for c in g) for g in got]
+        self.assertLess(sum(diffs) / len(diffs), 3.0, f"{out.name}: {shown} != {want}")
+        self.assertLess(max(diffs), 8.0, f"{out.name}: {shown} != {want}")
+
+    def _patches(self, out, rects, t=0.5):
+        return RgbAndStillConversionTests._patches(out, rects, t)
+
+    def _mode(self, out, rect, t=0.5, ignore=(128, 128, 128)):
+        """The most common colour of the flat 2x2 blocks in `rect` that are not `ignore`: the drawn
+        text's or box's own colour, without knowing where the glyphs are."""
+        s = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                       "stream=width,height,color_range", "-of", "json", str(out)],
+                                      stdout=subprocess.PIPE, text=True, check=True).stdout)["streams"][0]
+        w, h = s["width"], s["height"]
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(out), "-frames:v", "1", "-f", "rawvideo",
+                              "-pix_fmt", "yuv420p", "-"], stdout=subprocess.PIPE, check=True).stdout
+        cw, ch = w // 2, h // 2
+        bins = {}
+        x0, y0, x1, y1 = rect
+        for by in range(y0 // 2, y1 // 2):
+            for bx in range(x0 // 2, x1 // 2):
+                ys = [raw[(2 * by + dy) * w + 2 * bx + dx] for dy in (0, 1) for dx in (0, 1)]
+                if max(ys) - min(ys) > 3:
+                    continue  # an edge
+                yy = (sum(ys) / 4 - 16) * 255 / 219
+                u = (raw[w * h + by * cw + bx] - 128) * 255 / 224
+                v = (raw[w * h + cw * ch + by * cw + bx] - 128) * 255 / 224
+                r, b = yy + 1.5748 * v, yy + 1.8556 * u
+                rgb = tuple(max(0.0, min(255.0, c)) for c in (r, (yy - 0.2126 * r - 0.0722 * b) / 0.7152, b))
+                if max(abs(a - c) for a, c in zip(rgb, ignore)) > 10:
+                    bins.setdefault(tuple(int(c) // 6 for c in rgb), []).append(rgb)
+        self.assertTrue(bins, f"{out.name}: nothing drawn in {rect}")
+        best = max(bins.values(), key=len)
+        return tuple(sum(c[i] for c in best) / len(best) for i in range(3))
+
+    def test_a_pad_fill_or_background_lands_in_the_bt709_its_output_is_tagged_with(self):
+        """Solid fills: background.py (the `color` source and a `gradients` one), the pad of fit.py,
+        export.py, join.py, broll.py and grid.py (its cells and its gaps), pad.py's tpad,
+        straighten.py's rotate fill and waveform.py's background, on an untagged and a BT.709-tagged
+        source. The picture beside the pad stays grey."""
+        d = self.dir
+        runs = [  # (tool, args, [(rect, colour)], t)
+            ("background.py", ["--duration", "1", "--width", "128", "--height", "64", "--color", "0xFF0000"],
+             [((16, 16, 112, 48), self.RED)], 0.5),
+            ("background.py", ["--duration", "1", "--width", "128", "--height", "64", "--color", "#2878C8"],
+             [((16, 16, 112, 48), self.BLUE)], 0.5),
+            ("fit.py", [d / "grey.mp4", "--width", "640", "--height", "640", "--fit", "pad", "--pad-color", "0x00FF00"],
+             [((100, 20, 540, 120), self.GREEN), ((100, 200, 540, 440), self.GREY)], 0.5),
+            ("fit.py", [d / "grey709.mp4", "--width", "640", "--height", "640", "--fit", "pad", "--pad-color", "red"],
+             [((100, 20, 540, 120), self.RED), ((100, 200, 540, 440), self.GREY)], 0.5),
+            ("export.py", [d / "grey.mp4", "--preset", "reels", "--pad-color", "0x2878C8"],
+             [((100, 40, 980, 400), self.BLUE)], 0.5),
+            ("pad.py", [d / "silent.mp4", "--start", "1", "--color", "0xFF0000"],
+             [((100, 100, 540, 260), self.RED)], 0.5),
+            ("join.py", [d / "grey.mp4", d / "tall.mp4", "--transition", "none", "--pad-color", "0x00FF00"],
+             [((20, 100, 200, 260), self.GREEN)], 3.0),
+            ("broll.py", [d / "grey.mp4", "--insert", d / "tall.mp4", "--at", "0.5", "--duration", "1",
+                          "--pad-color", "0x2878C8"], [((20, 100, 200, 260), self.BLUE)], 1.0),
+            ("grid.py", [d / "grey.mp4", d / "tall.mp4", "--cols", "2", "--rows", "1", "--cell-width", "320",
+                         "--cell-height", "180", "--gap", "16", "--background", "0xFF0000", "--label", "none"],
+             [((340, 20, 440, 160), self.RED), ((322, 20, 334, 160), self.RED), ((20, 20, 300, 160), self.GREY)], 0.5),
+            ("straighten.py", [d / "grey.mp4", "--degrees", "10", "--fit", "pad", "--fill-color", "0x00FF00"],
+             [((2, 2, 18, 18), self.GREEN)], 0.5),
+            ("waveform.py", [d / "loud.wav", "--width", "320", "--height", "180", "--background", "0x2878C8",
+                             "--color", "white"], [((2, 2, 30, 30), self.BLUE)], 0.5),
+        ]
+        for n, (tool, args, want, t) in enumerate(runs):
+            with self.subTest(tool=tool, args=[Path(str(a)).name for a in args if not str(a).startswith("--")][:3]):
+                out = d / f"fill_{n}_{tool[:-3]}.mp4"
+                script(tool, *args, "--fast", "-o", out)
+                self._check(out, self._patches(out, [r for r, _c in want], t), [c for _r, c in want])
+        with self.subTest(tool="background.py --gradient"):
+            out = d / "fill_gradient.mp4"
+            script("background.py", "--duration", "1", "--width", "256", "--height", "64", "--gradient",
+                   "0xFF0000:0x00FF00", "--fast", "-o", out)
+            rects = [(4, 16, 20, 48), (120, 16, 136, 48), (236, 16, 252, 48)]
+            # the truth: the same gradients source rendered as RGB by this very build (the source
+            # background.py builds, which draws on a larger canvas and crops the frame: A169)
+            sys.path.insert(0, str(SCRIPTS))
+            from background import gradient_source
+            src = gradient_source(256, 64, 30, "0xFF0000", "0x00FF00", 0)
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", src, "-frames:v", "1", "-f", "rawvideo",
+                                  "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, check=True).stdout
+            want = []
+            for x0, y0, x1, y1 in rects:
+                px = [raw[(y * 256 + x) * 3:(y * 256 + x) * 3 + 3] for y in range(y0, y1) for x in range(x0, x1)]
+                want.append(tuple(sum(p[i] for p in px) / len(px) for i in range(3)))
+            self._check(out, self._patches(out, rects), want)
+
+    def test_drawn_text_and_boxes_land_in_the_bt709_their_output_is_tagged_with(self):
+        """Text and boxes: overlay.py --text (font colour, box colour), graphics.py's templates (the
+        lower-third bar and accent, the title's box and accent line, the hook's band and bar, the
+        progress bar and its strip, a chapter chip, a countdown digit; brand primary and background
+        set to the colour), the libass route, caption.py's burn (--color) and waveform.py's waves."""
+        if not self._has("drawtext"):
+            self.skipTest("this ffmpeg build has no drawtext filter")
+        d = self.dir
+        cases = []  # (label, out, [measured colours], [true colours])
+        out = d / "text_box.mp4"
+        script("overlay.py", d / "grey.mp4", "--text", ".", "--box", "--box-color", "0xFF0000", "--font-size", "20",
+               "--position", "top-left", "--fast", "-o", out)
+        cases.append(("overlay.py --box-color", out, [self._mode(out, (0, 0, 320, 180))], [self.RED]))
+        out = d / "text_font.mp4"
+        script("overlay.py", d / "grey.mp4", "--text", "HHH", "--font-color", "0x00FF00", "--font-size", "160",
+               "--border", "0", "--position", "center", "--fast", "-o", out)
+        cases.append(("overlay.py --font-color", out, [self._mode(out, (0, 0, 640, 360))], [self.GREEN]))
+        for tpl, colour, extra in (("lower-third", self.BLUE, ["--name", "N"]), ("title", self.RED, ["--title", "T"]),
+                                   ("hook", self.GREEN, ["--title", "T", "--duration", "2"]), ("progress", self.RED, []),
+                                   ("chapter", self.BLUE, ["--title", "CHAPTER"]), ("countdown", self.GREEN, ["--from", "1"])):
+            hx = "%02X%02X%02X" % colour
+            brand = d / f"brand_{hx}.json"
+            brand.write_text(json.dumps({"colors": {"primary": hx, "background": hx, "text": "FFFFFF"}}), encoding="utf-8")
+            out = d / f"gfx_{tpl}.mp4"
+            doc = json.loads(script("graphics.py", d / "big.mp4", "--template", tpl, "--brand", brand, *extra, "--start", "0",
+                                    "--end", "3", "--fast", "--json", "-o", out).stdout)
+            if tpl == "lower-third":
+                m = re.search(r"s=(\d+)x(\d+).*?s=(\d+)x\2.*?,(\d+)\)\)\S*?:y=(\d+)", " ".join(doc["commands"]))
+                _bw, bh, aw, x, y = (int(g) for g in m.groups())
+                got = self._patches(out, [(x + aw + 2, y + 4, x + aw + 14, y + bh - 4), (x + 2, y + 4, x + aw - 2, y + bh - 4)], 1.5)
+                want = [self._blend(colour, 0.85), colour]
+            elif tpl == "title":  # a full-frame box at 0.55, the accent line under the title
+                got = self._patches(out, [(20, 20, 200, 200)], 1.5) + [self._mode(out, (500, 398, 780, 404), 1.5,
+                                                                                    ignore=self._blend(colour, 0.55))]
+                want = [self._blend(colour, 0.55), colour]
+            elif tpl == "hook":  # the band at 0.78, the bar along the top
+                got = self._patches(out, [(10, 280, 100, 300)], 0.5) + self._patches(out, [(10, 0, 200, 6)], 0.05)
+                want = [self._blend(colour, 0.78), colour]
+            elif tpl == "progress":  # the bar (overlay puts it on even rows: 714-718), and the strip at 0.5 ahead of it
+                got = self._patches(out, [(10, 714, 200, 718)], 2.5) + self._patches(out, [(1180, 716, 1270, 720)], 0.5)
+                want = [colour, self._blend(colour, 0.5)]
+            elif tpl == "chapter":  # drawtext's box at 0.9
+                got, want = [self._mode(out, (0, 360, 640, 720), 1.5)], [self._blend(colour, 0.9)]
+            else:  # the digit at 0.9 opacity at 0.5 s, over its own 0.9 border (the same colour): 0.99
+                got, want = [self._mode(out, (320, 0, 960, 720), 0.5)], [self._blend(colour, 0.99)]
+            cases.append((f"graphics.py {tpl}", out, got, want))
+        if self._has("ass"):
+            out = d / "gfx_ass.mp4"
+            brand = d / "brand_2878C8.json"
+            brand.write_text(json.dumps({"colors": {"primary": "2878C8", "background": "2878C8", "text": "FFFFFF"}}), encoding="utf-8")
+            script("graphics.py", d / "big.mp4", "--template", "chapter", "--brand", brand, "--title", "CHAPTER",
+                   "--text-render", "ass", "--start", "0", "--end", "3", "--fast", "-o", out)
+            # libass's chip: an opaque box in the primary (BorderStyle 3)
+            cases.append(("graphics.py --text-render ass", out, [self._mode(out, (0, 360, 640, 720), 1.5)], [self.BLUE]))
+            out = d / "caption.mp4"
+            script("caption.py", d / "grey.mp4", "--srt", d / "subs.srt", "--color", "FF0000", "--size", "120",
+                   "--outline", "0", "--shadow", "0", "--animate", "none", "--position", "center", "--fast", "-o", out)
+            cases.append(("caption.py --color", out, [self._mode(out, (0, 0, 640, 360), 1.0)], [self.RED]))
+        out = d / "waves.mp4"
+        doc = json.loads(script("waveform.py", d / "loud.wav", "--width", "320", "--height", "180", "--color", "0x00FF00",
+                                "--waveform-mode", "cline", "--quality", "0", "--fast", "--json", "-o", out).stdout)  # lossless
+        # the truth: showwaves draws its colour scaled by its own alpha (0x00FC00 at 252 on this frame,
+        # not 0x00FF00), so the same waves are composited over black in RGB by this build
+        waves = re.search(r"(showwaves=[^,\[]+)", " ".join(doc["commands"])).group(1)
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(d / "loud.wav"), "-filter_complex",
+                              f"color=c=black:s=320x180:r=25,format=rgba[bg];[0:a]{waves}[v];[bg][v]overlay=format=auto,format=rgb24",
+                              "-ss", "0.5", "-frames:v", "1", "-f", "rawvideo", "-"], stdout=subprocess.PIPE, check=True).stdout
+        truth = collections.Counter(tuple(raw[i:i + 3]) for i in range(0, len(raw), 3) if any(raw[i:i + 3])).most_common(1)[0][0]
+        cases.append(("waveform.py --color", out, [self._mode(out, (0, 0, 320, 180), ignore=(0, 0, 0))], [truth]))
+        for label, out, got, want in cases:
+            with self.subTest(tool=label):
+                self._check(out, got, want)
+
+    def test_a_picture_that_only_passes_through_keeps_its_pixels(self):
+        """The fix changes only the drawn pixels. Encoded losslessly (--quality 0), the picture of a
+        pad with chroma and of the same pad in black, and of chromatic text and the same text in
+        white, are bit-identical away from what was drawn -- on every build: 7.1+ only labels the
+        untagged picture (tags), 5.1-7.0 draw on an RGB copy and keep the untouched YUV pixels."""
+        src = self.dir / "bars_un.mp4"  # untagged, colourful
+        if not src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=384x128:rate=25",
+               "-t", "1", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "1", "-pix_fmt", "yuv420p", src)
+
+        def planes(out, rect):
+            w, h = 384, int(probe(str(out))["video"]["height"])
+            raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", "0.5", "-i", str(out), "-frames:v", "1", "-f", "rawvideo",
+                                  "-pix_fmt", "yuv420p", "-"], stdout=subprocess.PIPE, check=True).stdout
+            x0, y0, x1, y1 = rect
+            luma = bytes(raw[y * w + x] for y in range(y0, y1) for x in range(x0, x1))
+            cw, ch = w // 2, h // 2
+            chroma = bytes(raw[w * h + p * cw * ch + y * cw + x] for p in (0, 1)
+                           for y in range(y0 // 2, y1 // 2) for x in range(x0 // 2, x1 // 2))
+            return luma, chroma
+
+        pairs = [("fit.py", ["--width", "384", "--height", "256", "--fit", "pad"], "--pad-color", "0xFF0000", "black",
+                  (0, 72, 384, 184))]
+        if self._has("drawtext"):
+            pairs.append(("overlay.py", ["--text", "X", "--font-size", "40", "--position", "top-left", "--margin", "8",
+                                         "--border", "0"], "--font-color", "0x00FF00", "white", (0, 72, 384, 128)))
+        for tool, args, flag, colour, grey, rect in pairs:
+            with self.subTest(tool=tool):
+                outs = []
+                for c in (colour, grey):
+                    out = self.dir / f"keep_{tool[:-3]}_{c.strip('#')}.mp4"
+                    script(tool, src, *args, flag, c, "--quality", "0", "--fast", "-o", out)
+                    outs.append(planes(out, rect))
+                self.assertEqual(outs[0][0], outs[1][0], f"{tool}: the luma beside the drawing changed")
+                self.assertEqual(outs[0][1], outs[1][1], f"{tool}: the chroma beside the drawing changed")
+
+
+class ColourAuditGTests(unittest.TestCase):
+    """#410 (audit G): the colour paths #159/#325/#332-#334 left. Each output is decoded with the matrix
+    and range its own tags name (RgbAndStillConversionTests._patches), or read as RGB (a PNG, a GIF),
+    and the patches are compared with the colours the source holds.
+
+    Full range comes in two shapes: `yuvj` (H.264/HEVC/JPEG), which every scale here converts by
+    name, and a plain format tagged `pc`, which is how VP9 and AV1 full range and any 10-bit full
+    range decode. The fixtures use FFV1 in Matroska for the second: always built, lossless, and it
+    decodes as plain yuv420p/yuv420p10le tagged pc, as VP9 does."""
+
+    COLOURS = RgbAndStillConversionTests.COLOURS
+    GREY = (128, 128, 128)
+
+    @classmethod
+    def setUpClass(cls):
+        encoders = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], stdout=subprocess.PIPE, text=True).stdout
+        if "libx264" not in encoders:
+            raise unittest.SkipTest("this ffmpeg build has no libx264")
+        cls.dir = OUT / "audit_g"
+        cls.dir.mkdir(parents=True, exist_ok=True)
+        d, bar = cls.dir, RgbAndStillConversionTests.BAR
+        row = b"".join(bytes(cls.COLOURS[x // bar]) for x in range(3 * bar))
+        (d / "bars.ppm").write_bytes(b"P6\n%d %d\n255\n" % (3 * bar, bar) + row * bar)
+        q = ("ffmpeg", "-y", "-hide_banner", "-loglevel", "error")
+        sh(*q, "-i", d / "bars.ppm", "-pix_fmt", "rgb24", d / "bars.png")
+        # 2 s of the bars at 384x128, the same noise under each for multicam's alignment
+        loop = (*q, "-loop", "1", "-framerate", "25", "-i", d / "bars.png", "-f", "lavfi", "-i",
+                "anoisesrc=d=2:seed=7:amplitude=0.3", "-t", "2")
+        bars = "scale=384:128:flags=neighbor:out_color_matrix=bt709:out_range={},format={}"
+        x264 = ("-c:v", "libx264", "-preset", "ultrafast", "-crf", "1", "-pix_fmt", "yuv420p")
+        bt709 = ("-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709")
+        sh(*loop, "-vf", bars.format("tv", "yuv420p"), *x264, "-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709",
+           "-c:a", "aac", "-shortest", d / "tv.mp4")
+        # untagged: BT.709 pixels relabelled unknown (from 7.1 the scale's own label would reach x264)
+        sh(*loop, "-vf", bars.format("tv", "yuv420p") + ",setparams=colorspace=unknown", *x264, "-c:a", "aac", "-shortest",
+           d / "un.mp4")
+        for name, fmt in (("pc", "yuv420p"), ("pc10", "yuv420p10le")):
+            sh(*loop, "-vf", bars.format("pc", fmt), "-c:v", "ffv1", "-color_range", "pc", *bt709, "-c:a", "pcm_s16le",
+               "-shortest", d / f"{name}.mkv")
+            v = probe(str(d / f"{name}.mkv"))["video"]
+            assert (v["pix_fmt"], v.get("color_range")) == (fmt, "pc"), v
+        # a 1280x720 full-range grey main for graphics.py's templates
+        sh(*q, "-f", "lavfi", "-i", "color=c=0x808080:s=1280x720:r=25:d=3", "-f", "lavfi", "-i", "sine=d=3", "-vf",
+           "scale=out_color_matrix=bt709:out_range=pc,format=yuv420p", "-c:v", "ffv1", "-color_range", "pc", *bt709,
+           "-c:a", "pcm_s16le", "-shortest", d / "bigpc.mkv")
+
+    def _assert(self, label, got, want, mean=3.0, worst=8.0):
+        diffs = [abs(a - b) for g, w in zip(got, want) for a, b in zip(g, w)]
+        shown = [tuple(round(c) for c in g) for g in got]
+        self.assertLess(sum(diffs) / len(diffs), mean, f"{label}: {shown} != {want}")
+        self.assertLess(max(diffs), worst, f"{label}: {shown} != {want}")
+
+    def _video(self, label, out, rects, want, t=0.5, **tol):
+        self._assert(label, RgbAndStillConversionTests._patches(out, rects, t), want, **tol)
+
+    @staticmethod
+    def _rgb(path, rects):
+        """Mean RGB of each rect of an RGB picture (a PNG, a GIF's first frame)."""
+        w = int(probe(str(path))["video"]["width"])
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                             stdout=subprocess.PIPE, check=True).stdout
+        out = []
+        for x0, y0, x1, y1 in rects:
+            px = [raw[(y * w + x) * 3:(y * w + x) * 3 + 3] for y in range(y0, y1) for x in range(x0, x1)]
+            out.append(tuple(sum(p[i] for p in px) / len(px) for i in range(3)))
+        return out
+
+    def test_color_lut_identity_returns_the_picture(self):
+        """Item 1: lut3d takes RGB, and libavfilter's own conversions around it disagreed (in by the
+        frame's BT.709 tag, out by swscale's BT.601 default), so an identity LUT shifted every colour
+        (2FAE4E -> 249A4B). Both legs are now explicit BT.709, as the picture is."""
+        cube = self.dir / "identity.cube"
+        cube.write_text("LUT_3D_SIZE 2\n" + "".join(f"{r} {g} {b}\n" for b in (0, 1) for g in (0, 1) for r in (0, 1)))
+        for src in ("tv.mp4", "un.mp4", "pc.mkv"):
+            for strength in ("1", "0.5"):
+                out = self.dir / f"lut_{Path(src).stem}_{strength}.mp4"
+                doc = json.loads(script("color.py", self.dir / src, "--lut", cube, "--lut-strength", strength, "--fast", "--json",
+                                        "-o", out).stdout)
+                self.assertIn("scale=in_color_matrix=bt709,format=gbrpf32le", doc["commands"][-1])
+                with self.subTest(source=src, strength=strength):
+                    self._video("color --lut", out, RgbAndStillConversionTests._bars(0, 0, 2), self.COLOURS)
+
+    def test_color_lut_on_prores_keeps_a_bt601_sources_matrix(self):
+        """#416 review: --codec prores keeps a BT.601 source's matrix and tags (no conversion), so
+        legs pinned to BT.709 read and wrote its samples with the wrong coefficients."""
+        cube = self.dir / "identity.cube"
+        cube.write_text("LUT_3D_SIZE 2\n" + "".join(f"{r} {g} {b}\n" for b in (0, 1) for g in (0, 1) for r in (0, 1)))
+        src = self.dir / "s601.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", self.dir / "tv.mp4", "-vf",
+           "scale=out_color_matrix=bt601,format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "1",
+           "-colorspace", "smpte170m", "-color_primaries", "smpte170m", "-color_trc", "smpte170m", "-an", src)
+        doc = json.loads(script("color.py", src, "--lut", cube, "--codec", "prores", "--json", "--dry-run",
+                                "-o", self.dir / "lut_601.mov").stdout)
+        self.assertIn("scale=in_color_matrix=bt601,format=gbrpf32le", doc["commands"][-1])
+        self.assertIn("scale=out_color_matrix=bt601:out_range=tv", doc["commands"][-1])
+        doc = json.loads(script("color.py", src, "--lut", cube, "--json", "--dry-run", "-o", self.dir / "lut_601.mp4").stdout)
+        self.assertIn("scale=in_color_matrix=bt709,format=gbrpf32le", doc["commands"][-1], "h264 converts to BT.709 first")
+
+    def test_color_correct_defaults_leave_grey_grey(self):
+        """Item 7: colortemperature at 6500 K, documented as unchanged, was always in the chain and
+        tinted grey 808080 to 7E7E7B. At 6500 the term is left out."""
+        out = self.dir / "correct_defaults.mp4"
+        doc = json.loads(script("color.py", self.dir / "tv.mp4", "--correct", "--fast", "--json", "-o", out).stdout)
+        self.assertNotIn("colortemperature", doc["commands"][-1])
+        grey = self.dir / "grey.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x808080:s=128x64:r=25:d=1",
+           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "1", "-pix_fmt", "yuv420p", grey)
+        out = self.dir / "correct_grey.mp4"
+        script("color.py", grey, "--correct", "--fast", "-o", out)
+        self._video("color --correct", out, [(16, 16, 112, 48)], [self.GREY], mean=1.5, worst=2.5)
+        out = self.dir / "correct_warm.mp4"
+        script("color.py", grey, "--correct", "--temperature", "5000", "--fast", "-o", out)
+        r, _g, b = RgbAndStillConversionTests._patches(out, [(16, 16, 112, 48)])[0]
+        self.assertGreater(r - b, 10, "--temperature still reaches colortemperature when it is not 6500")
+
+    def test_mixing_tools_take_a_full_range_clip_to_limited_range(self):
+        """Item 2: concat, xfade, xstack and overlay mix samples, so a full-range clip in a plain
+        format beside a limited one was shown in the other's range (C03028 -> C9251B). Every SDR picture
+        they mix is now taken to limited range first. Every order, every clip."""
+        d, rects = self.dir, RgbAndStillConversionTests._bars(0, 0, 2)
+        for a, b in (("pc.mkv", "tv.mp4"), ("tv.mp4", "pc.mkv"), ("tv.mp4", "pc10.mkv")):
+            tag = f"{Path(a).stem}_{Path(b).stem}"
+            out = d / f"join_{tag}.mp4"
+            script("join.py", d / a, d / b, "--transition", "none", "--fast", "-o", out)
+            for t, name in ((0.5, a), (2.5, b)):
+                with self.subTest(tool="join.py", order=(a, b), clip=name):
+                    self._video("join", out, rects, self.COLOURS, t)
+            out = d / f"grid_{tag}.mp4"
+            script("grid.py", d / a, d / b, "--cols", "2", "--rows", "1", "--cell-width", "384", "--cell-height", "128",
+                   "--label", "none", "--fast", "-o", out)
+            for c, name in enumerate((a, b)):
+                with self.subTest(tool="grid.py", order=(a, b), cell=name):
+                    self._video("grid", out, RgbAndStillConversionTests._bars(384 * c, 0, 2), self.COLOURS)
+            out = d / f"broll_{tag}.mp4"
+            script("broll.py", d / a, "--insert", d / b, "--at", "0.5", "--duration", "1", "--fast", "-o", out)
+            for t, name in ((0.2, a), (1.0, b)):
+                with self.subTest(tool="broll.py", order=(a, b), clip=name):
+                    self._video("broll", out, rects, self.COLOURS, t)
+            out = d / f"multicam_{tag}.mp4"
+            script("multicam.py", d / a, d / b, "--switch", "0-1:0,1-2:1", "--fast", "-o", out)
+            for t, name in ((0.5, a), (1.5, b)):
+                with self.subTest(tool="multicam.py", order=(a, b), clip=name):
+                    self._video("multicam", out, rects, self.COLOURS, t)
+
+    def test_a_colour_drawn_on_a_full_range_picture_lands_in_its_range(self):
+        """Items 3 and 4: before FFmpeg 7.1 the drawing filters take the range from the pixel format
+        alone, so on a plain-format full-range picture black was drawn as 101010 and white as EBEBEB,
+        and rgb_island() converted a 10-bit full-range picture (or one 6.1's scale had already made
+        limited) with the wrong range, oversaturating a colour. 7.1+ draws in the link's range."""
+        for src in ("pc.mkv", "pc10.mkv"):
+            for colour, want in (("black", (0, 0, 0)), ("white", (255, 255, 255)), ("0x2878C8", (40, 120, 200))):
+                out = self.dir / f"pad_{Path(src).stem}_{colour}.mp4"
+                script("pad.py", self.dir / src, "--end", "0.5", "--color", colour, "--fast", "-o", out)
+                with self.subTest(source=src, colour=colour):
+                    self._video("pad.py --end", out, [(20, 20, 364, 108)], [want], 2.2)
+                out = self.dir / f"fit_{Path(src).stem}_{colour}.mp4"
+                script("fit.py", self.dir / src, "--width", "384", "--height", "384", "--fit", "pad", "--pad-color", colour,
+                       "--fast", "-o", out)
+                with self.subTest(tool="fit.py", source=src, colour=colour):
+                    self._video("fit.py", out, [(20, 20, 364, 100)] + RgbAndStillConversionTests._bars(0, 128, 2),
+                                [want] + self.COLOURS)
+
+    def test_converted_layers_on_a_full_range_main_land_in_its_range(self):
+        """Item 5: graphics.py's boxes and bars with chroma, emoji PNGs and overlay --image are RGB
+        layers converted to limited-range BT.709; on a full-range main they were composited in its
+        range (30B050 -> 37A757). The main is taken to limited range under them."""
+        d = self.dir
+        colour = (40, 120, 200)
+        brand = d / "brand_2878C8.json"
+        brand.write_text(json.dumps({"colors": {"primary": "2878C8", "background": "2878C8", "text": "FFFFFF"}}), encoding="utf-8")
+        out = d / "gfx_lower_third_pc.mp4"
+        doc = json.loads(script("graphics.py", d / "bigpc.mkv", "--template", "lower-third", "--brand", brand, "--name", "N",
+                                "--start", "0", "--end", "3", "--fast", "--json", "-o", out).stdout)
+        m = re.search(r"s=(\d+)x(\d+).*?s=(\d+)x\2.*?,(\d+)\)\)\S*?:y=(\d+)", " ".join(doc["commands"]))
+        _bw, bh, aw, x, y = (int(g) for g in m.groups())
+        self._video("graphics.py lower-third", out,
+                    [(x + 2, y + 4, x + aw - 2, y + bh - 4), (x + aw + 2, y + 4, x + aw + 14, y + bh - 4), (20, 20, 300, 200)],
+                    [colour, DrawnColourTests._blend(colour, 0.85), self.GREY], 1.5)
+
+    def test_rgb_views_of_an_untagged_source_read_it_as_bt709(self):
+        """Item 6: look.py's frames and contact sheet, scenes.py --sheet and export.py --preset gif
+        convert to RGB, and that conversion read an untagged source as BT.601 (C03028 -> B31F28) while
+        every encode here takes it as BT.709. Its frames are now labelled BT.709 first."""
+        d, src = self.dir, self.dir / "un.mp4"
+
+        def bars(scale, x=0, y=0):
+            return [(int(x + (k * 128 + 16) * scale), int(y + 16 * scale), int(x + ((k + 1) * 128 - 16) * scale),
+                     int(y + 112 * scale)) for k in range(3)]
+        frame = d / "look_un.png"
+        script("look.py", src, "--at", "0.5", "--width", "384", "--no-timecode", "-o", frame)
+        self._assert("look.py --at", self._rgb(frame, bars(1)), self.COLOURS)
+        sheet = d / "look_un_sheet.png"
+        script("look.py", src, "--tiles", "1x1", "--width", "384", "--no-timecode", "-o", sheet)
+        self._assert("look.py sheet", self._rgb(sheet, bars(1, 2, 2)), self.COLOURS)
+        scenes = d / "scenes_un.png"
+        script("scenes.py", src, "--sheet", scenes, "--no-timecode", "--overwrite")
+        self._assert("scenes.py --sheet", self._rgb(scenes, bars(1280 / 384, 2, 2)), self.COLOURS)
+        gif = d / "export_un.gif"
+        script("export.py", src, "--preset", "gif", "-o", gif)
+        # bayer-dithered to a 256-colour palette: a looser bound (the BT.601 read was 13-24 off)
+        self._assert("export.py --preset gif", self._rgb(gif, bars(480 / 384)), self.COLOURS, mean=4.0, worst=10.0)
+
+
+class ScriptFontTests(unittest.TestCase):
+    """1.12: which script text is written in, and a font file that actually covers it."""
+
+    def test_vietnamese_font_coverage_checks_decomposed_text_and_explicit_language(self):
+        import unicodedata
+        from _common import fonts
+
+        entry = ("/test/vi.ttf", "Test Vietnamese")
+        cases = (("Tiếng Việt", None), (unicodedata.normalize("NFD", "Tiếng Việt"), None),
+                 ("đã ăn", None), ("Xin chao", "vi-VN"), ("Tiếng Việt", "vie"))
+        with unittest.mock.patch.object(fonts, "_script_font_entry", return_value=entry) as resolve:
+            for sample, lang in cases:
+                with self.subTest(sample=sample, lang=lang):
+                    self.assertEqual(fonts.script_font_for_text(sample, lang=lang), ("latin", *entry))
+                    resolve.assert_called_with("vi")
+            for sample in ("hello", "Mănăstire", "rođen"):
+                self.assertEqual(fonts.script_font_for_text(sample), ("latin", None, None))
+            # Igbo shares these letters; a caller who names the language keeps its own font (review of #636)
+            for sample, lang in (("Ọ dị mma", "ig"), ("ẹ kú àárọ̀", "yo")):
+                self.assertEqual(fonts.script_font_for_text(sample, lang=lang), ("latin", None, None))
+        with unittest.mock.patch.object(fonts.platform, "system", return_value="Linux"), \
+             unittest.mock.patch.object(fonts, "_safe_which", return_value="fc-match"), \
+             unittest.mock.patch.object(fonts.subprocess, "run") as fc_match, \
+             unittest.mock.patch.object(fonts, "warn") as warn:
+            for result, code in ((subprocess.CompletedProcess([], 0, stdout="Narrow Font\ten\n"), "font_lacks_script"),
+                                 (subprocess.CompletedProcess([], 0, stdout="Fallback\ten|vi\n"), "font_coverage_unverified"),
+                                 (subprocess.CompletedProcess([], 1), "font_coverage_unverified"),
+                                 (subprocess.TimeoutExpired("fc-match", 10), "font_coverage_unverified")):
+                fc_match.side_effect = [result]
+                self.assertEqual(fonts.script_font_for_text("đã ăn", font="Narrow Font", font_explicit=True, font_bold=True),
+                                 ("latin", None, None))
+                self.assertEqual(fc_match.call_args.args[0][-1], "Narrow Font:bold")
+                self.assertEqual((warn.call_args.args[1], warn.call_args.kwargs["script"]), (code, "vi"))
+            warn.reset_mock()
+            fc_match.side_effect = [subprocess.CompletedProcess([], 0, stdout="Narrow Font\ten|vi\n")]
+            self.assertEqual(fonts.script_font_for_text("đã ăn", font="Narrow Font", font_explicit=True),
+                             ("latin", None, None))
+            self.assertEqual(fc_match.call_args.args[0][-1], "Narrow Font")
+            warn.assert_not_called()
+
+    def test_vietnamese_explicit_folder_face_is_checked_before_installed_fonts(self):
+        from _common import fonts
+
+        with tempfile.TemporaryDirectory() as root:
+            collection = Path(root) / "custom.ttc"
+            collection.touch()
+            faces = (f"{collection}\t0\tCustom\tCustom-Regular\tTrueType\t80\t0\tCustom Regular\tTrue\n"
+                     f"{collection}\t1\tCustom\tCustom-Bold\tTrueType\t200\t0\tCustom Bold\tTrue\n")
+            with unittest.mock.patch.object(fonts, "_safe_which", return_value="fc-scan"), \
+                 unittest.mock.patch.object(fonts.subprocess, "run") as scan, \
+                 unittest.mock.patch.object(fonts, "warn") as warn:
+                for bold in (False, True):
+                    warn.reset_mock()
+                    scan.side_effect = [subprocess.CompletedProcess([], 0, stdout=faces),
+                                        subprocess.CompletedProcess([], 0, stdout="0\ten|vi\n1\ten\n")]
+                    self.assertEqual(fonts.script_font_for_text("đã ăn", font="Custom", font_explicit=True,
+                                                                fonts_dir=root, font_bold=bold), ("latin", None, None))
+                    if bold:
+                        self.assertEqual(warn.call_args.args[1], "font_lacks_script")
+                    else:
+                        warn.assert_not_called()
+
+    def test_vietnamese_cues_burn_with_default_and_explicit_faces(self):
+        family = font_family_for_script("vi")
+        if not family:
+            self.skipTest("no known Vietnamese-capable font")
+        OUT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=OUT) as work:
+            d = Path(work)
+            source = tiny_clip(d / "blank.mp4", "color=black:s=480x270:r=10", seconds=2)
+            cue = "Tiếng Việt: ă ơ ư ạ ẫ ữ"
+            srt = d / "vi.srt"
+            srt.write_text(f"1\n00:00:00,000 --> 00:00:01,900\n{cue}\n", encoding="utf-8")
+            for name, flags in (("default", ()), ("explicit", ("--font", family, "--lang", "vi"))):
+                with self.subTest(name=name):
+                    out, ass = d / f"{name}.mp4", d / f"{name}.ass"
+                    result = json.loads(script("caption.py", source, "--srt", srt, "--animate", "fade",
+                                               "--write-ass", ass, "-o", out, "--json", *flags).stdout)
+                    self.assertTrue(result["verified"])
+                    self.assertEqual(result["caption"]["cues_burned"], 1)
+                    self.assertEqual(result["font_used"]["family"], family)
+                    if name == "default":
+                        self.assertEqual(result["font_used"]["how"], "script")
+                    self.assertIn(cue, ass.read_text(encoding="utf-8").replace(r"\N", " "))
+                    self.assertGreater(_frame_ink(out), _frame_ink(source))
+
+    def test_detect_script_reads_the_characters_not_the_locale(self):
+        cases = {
+            "こんにちは世界": "ja",          # kana + han -> Japanese
+            "カタカナ": "ja",
+            "你好世界": "zh",                # han alone -> Chinese
+            "안녕하세요": "ko",
+            "ㅎㅏㄴ": "ko",                  # jamo, not syllables
+            "مرحبا بالعالم": "ar",
+            "שלום עולם": "he",
+            "नमस्ते दुनिया": "hi",
+            "สวัสดีชาวโลก": "th",
+            "Привет мир": "ru",
+            "Γειά σου κόσμε": "el",
+            "Hello world": "latin",
+            "": "latin",
+            "1080p 30fps": "latin",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(detect_script(text), expected)
+
+    def test_every_script_drawtext_cannot_shape_is_detected(self):
+        """Audit A65 (#457): gu, pa, te, kn, ml, si, km and my were listed as needing shaping but had
+        no character range, so their text was detected as Latin, drawn in the Latin font (empty
+        boxes) and reported verified. Every listed script is detected and has a font lookup."""
+        from _common import BIDI_SCRIPTS, FC_LANG, LANGUAGE_NAMES, SCRIPTS, SHAPING_SCRIPTS
+        samples = {"hi": "नमस्ते", "bn": "নমস্কার", "pa": "ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ", "gu": "નમસ્તે", "ta": "வணக்கம்",
+                   "te": "నమస్కారం", "kn": "ನಮಸ್ಕಾರ", "ml": "നമസ്കാരം", "si": "ආයුබෝවන්", "th": "สวัสดี",
+                   "lo": "ສະບາຍດີ", "km": "សួស្តី", "my": "မင်္ဂလာပါ", "ar": "مرحبا", "he": "שלום"}
+        # a script added to either table needs a sample here, or this test does not cover it
+        self.assertEqual(set(SHAPING_SCRIPTS) | set(BIDI_SCRIPTS), set(samples))
+        for script_code, text in samples.items():
+            with self.subTest(script=script_code):
+                self.assertEqual(detect_script(text), script_code)
+                self.assertEqual(detect_script("Episode 3: " + text), script_code)
+                self.assertIn(script_code, SCRIPTS)
+                self.assertIn(script_code, FC_LANG)
+                self.assertIn(script_code, LANGUAGE_NAMES)
+
+    def test_detect_script_mixed_text_goes_by_character_count(self):
+        self.assertEqual(detect_script("Episode 12 — 日本語のテスト"), "ja")
+        self.assertEqual(detect_script("Part 2: 第二部分的内容说明"), "zh")
+        # kana anywhere makes the whole string Japanese, however few
+        self.assertEqual(detect_script("漢字漢字漢字の"), "ja")
+        # the non-Latin script with the most characters wins
+        self.assertEqual(detect_script("Привет 你好世界大家好"), "zh")
+
+    def test_lang_hint_only_breaks_the_han_only_tie(self):
+        """Han with no kana is Chinese by default; only the caller knows when it is Japanese or
+        Korean hanja. The hint never overrides what the characters already prove."""
+        self.assertEqual(detect_script("漢字表記"), "zh")
+        self.assertEqual(detect_script("漢字表記", lang="ja"), "ja")
+        self.assertEqual(detect_script("漢字表記", lang="ko"), "ko")
+        self.assertEqual(detect_script("漢字表記", lang="ja-JP"), "ja")
+        self.assertEqual(detect_script("こんにちは", lang="zh"), "ja", "kana is not ambiguous -- the hint must not win")
+        self.assertEqual(detect_script("안녕하세요", lang="ja"), "ko")
+
+    @unittest.skipIf(_no_fontconfig(), "no fc-list on this machine: fonts cannot be resolved by script here")
+    def test_font_for_script_finds_a_real_file_for_every_script(self):
+        for script in ("ja", "zh", "ko", "ar", "he", "hi", "th", "ru", "el"):
+            with self.subTest(script=script):
+                path = font_for_script(script)
+                if path is None:
+                    self.skipTest(f"this machine has no font covering {script}")
+                self.assertTrue(os.path.exists(path), path)
+                family = font_family_for_script(script)
+                self.assertTrue(family)
+                # "Unifont Sample" draws the code point in a box instead of the glyph -- the exact
+                # unreadable result this feature exists to avoid. It is only ever acceptable when
+                # nothing else on the machine covers the script at all.
+                if any(f for f in _families_for(script) if "unifont" not in f.lower()):
+                    self.assertNotIn("unifont", family.lower(),
+                                      f"{script}: picked {family} while a real font is installed")
+
+    @unittest.skipIf(_no_fontconfig(), "no fc-list on this machine")
+    def test_font_for_script_is_cached_and_stable(self):
+        self.assertEqual(font_for_script("ja"), font_for_script("ja"))
+
+
+class WindowsNirmalaTests(unittest.TestCase):
+    """#339: Windows 11 ships Nirmala UI as Nirmala.ttc. The lookup is by file name, so a
+    directory that contains only the collection must count as a font for hi, bn and ta."""
+
+    def tearDown(self):
+        import _common.fonts as fonts
+        fonts._SCRIPT_FONT_CACHE.clear()
+
+    def test_windows_11_nirmala_ttc_covers_hindi_bengali_and_tamil(self):
+        import _common.fonts as fonts
+        fonts._SCRIPT_FONT_CACHE.clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            fonts_dir = Path(tmp) / "Fonts"
+            fonts_dir.mkdir()
+            (fonts_dir / "Nirmala.ttc").write_bytes(b"not a real font; existence is the check")
+            with unittest.mock.patch("platform.system", return_value="Windows"), \
+                    unittest.mock.patch.dict(os.environ, {"WINDIR": tmp}):
+                for script_name in ("hi", "bn", "ta"):
+                    path, family = fonts._script_font_uncached(script_name)
+                    self.assertTrue(str(path).endswith("Nirmala.ttc"), path)
+                    self.assertEqual(family, "Nirmala UI")
+                    self.assertEqual(fonts.script_font_status(script_name), "available")
+                # A dedicated file still wins when both are installed: Mangal for Devanagari,
+                # Nirmala.ttf ahead of the collection for Bengali and Tamil.
+                (fonts_dir / "Nirmala.ttf").write_bytes(b"ttf")
+                (fonts_dir / "mangal.ttf").write_bytes(b"ttf")
+                fonts._SCRIPT_FONT_CACHE.clear()
+                hi, hi_family = fonts._script_font_uncached("hi")
+                bn, _bn_family = fonts._script_font_uncached("bn")
+                self.assertTrue(str(hi).endswith("mangal.ttf"), hi)
+                self.assertEqual(hi_family, "Mangal")
+                self.assertTrue(str(bn).endswith("Nirmala.ttf"), bn)
+            # No Nirmala and no Mangal: the script is missing, which is what doctor reported.
+            with tempfile.TemporaryDirectory() as empty:
+                (Path(empty) / "Fonts").mkdir()
+                fonts._SCRIPT_FONT_CACHE.clear()
+                with unittest.mock.patch("platform.system", return_value="Windows"), \
+                        unittest.mock.patch.dict(os.environ, {"WINDIR": empty}):
+                    self.assertIsNone(fonts._script_font_uncached("hi"))
+                    self.assertEqual(fonts.script_font_status("hi"), "missing")
+
+
+class WindowsFamilyResolutionTests(unittest.TestCase):
+    """#414: an explicit --font on Windows was resolved by file-name prefix, so "Malgun Gothic"
+    became YuGothM.ttc (no Hangul) and "Times New Roman" arial.ttf, each reported as
+    font_substituted "not installed here". The family's own file comes from the table of what
+    Windows installs under which name."""
+
+    def test_an_installed_family_resolves_to_its_own_file(self):
+        import _common.fonts as fonts
+        with tempfile.TemporaryDirectory() as tmp:
+            fonts_dir = Path(tmp) / "Fonts"
+            fonts_dir.mkdir()
+            for n in ("arial.ttf", "malgun.ttf", "msyh.ttc", "msjh.ttc", "YuGothM.ttc", "YuGothR.ttc", "Nirmala.ttc",
+                      "leelawui.ttf", "times.ttf", "cour.ttf", "segoeui.ttf", "tahoma.ttf", "simsun.ttc"):
+                (fonts_dir / n).write_bytes(b"x")
+            with unittest.mock.patch("platform.system", return_value="Windows"), \
+                    unittest.mock.patch.dict(os.environ, {"WINDIR": tmp}):
+                for family, file in (("Malgun Gothic", "malgun.ttf"), ("Microsoft YaHei", "msyh.ttc"),
+                                     ("Microsoft JhengHei", "msjh.ttc"), ("Yu Gothic", "YuGothR.ttc"),
+                                     ("Nirmala UI", "Nirmala.ttc"), ("Leelawadee UI", "leelawui.ttf"),
+                                     ("Times New Roman", "times.ttf"), ("Courier New", "cour.ttf"),
+                                     ("Segoe UI", "segoeui.ttf"), ("SimSun", "simsun.ttc")):
+                    with self.subTest(family=family):
+                        found = fonts.resolve_font(family)
+                        self.assertEqual(Path(found["file"]).name, file)
+                        self.assertFalse(found["substituted"])
+                # a family that is not there is still a substitution
+                gone = fonts.resolve_font("Gulim")
+                self.assertTrue(gone["substituted"])
+
+
+class WindowsFontPathTests(unittest.TestCase):
+    """drawtext hands fontfile= to FreeType, which opens it with the ANSI fopen on Windows: on the
+    gyan.dev 9.0.2 runner a font under `compat dir ünïcode` failed to load while the same file
+    under an ASCII directory loaded (measured on PR #365's CI). A non-ASCII path is given in its
+    8.3 short form, or copied to an ASCII name when the volume keeps no short names."""
+
+    def setUp(self):
+        import _common.drawtext as dt
+        self.dt = dt
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.font = self.tmp / "フォント" / "my font.ttf"
+        self.font.parent.mkdir()
+        self.font.write_bytes(b"font bytes")
+
+    def test_posix_and_ascii_paths_pass_through(self):
+        with unittest.mock.patch.object(self.dt, "_on_windows", return_value=False):
+            self.assertIn("フォント", self.dt.drawtext_fontfile(str(self.font)))
+        ascii_font = self.tmp / "my font.ttf"
+        with unittest.mock.patch.object(self.dt, "_on_windows", return_value=True):
+            self.assertEqual(self.dt.drawtext_fontfile(str(ascii_font)),
+                             "fontfile=" + self.dt.escape_filter_path(str(ascii_font), bind=False))
+
+    def test_windows_non_ascii_path_uses_the_short_form(self):
+        short = "C:/Users/TARO~1/FONT~1/MYFONT~1.TTF"
+        with unittest.mock.patch.object(self.dt, "_on_windows", return_value=True), \
+                unittest.mock.patch.object(self.dt, "_windows_short_path", return_value=short):
+            self.assertEqual(self.dt.drawtext_fontfile(str(self.font)),
+                             "fontfile=" + self.dt.escape_filter_path(short, bind=False))
+
+    def test_windows_without_short_names_draws_from_an_ascii_copy(self):
+        from _common import STATE
+        before = len(STATE.fallbacks)
+        tmpdir = self.tmp / "run"
+        tmpdir.mkdir()
+        with unittest.mock.patch.object(self.dt, "_on_windows", return_value=True), \
+                unittest.mock.patch.object(self.dt, "_windows_short_path", return_value=None), \
+                unittest.mock.patch.object(self.dt, "_drawtext_tmpdir", return_value=str(tmpdir)):
+            opt = self.dt.drawtext_fontfile(str(self.font))
+        copies = list(tmpdir.iterdir())
+        self.assertEqual(len(copies), 1)
+        self.assertTrue(copies[0].name.isascii() and copies[0].suffix == ".ttf")
+        self.assertEqual(copies[0].read_bytes(), b"font bytes")
+        self.assertIn(copies[0].name, opt)
+        self.assertIn(str(self.font), STATE.plan_inputs, "a plan binds the user's font, not the copy")
+        self.assertIn("font_path_copied", [f.get("code") for f in STATE.fallbacks[before:]])
+        # a font replaced in place gets a new copy, not the stale one
+        self.font.write_bytes(b"other font bytes")
+        os.utime(self.font, ns=(1, 1))
+        with unittest.mock.patch.object(self.dt, "_on_windows", return_value=True), \
+                unittest.mock.patch.object(self.dt, "_windows_short_path", return_value=None), \
+                unittest.mock.patch.object(self.dt, "_drawtext_tmpdir", return_value=str(tmpdir)):
+            self.dt.drawtext_fontfile(str(self.font))
+        self.assertEqual(sorted(p.read_bytes() for p in tmpdir.iterdir()), [b"font bytes", b"other font bytes"])
+
+    def test_a_missing_font_is_left_to_ffmpeg_not_a_traceback(self):
+        missing = str(self.tmp / "フォント" / "nope.ttf")
+        with unittest.mock.patch.object(self.dt, "_on_windows", return_value=True), \
+                unittest.mock.patch.object(self.dt, "_windows_short_path", return_value=None):
+            self.assertEqual(self.dt.drawtext_fontfile(missing), "fontfile=" + self.dt.escape_filter_path(missing))
+
+
+class TraditionalChineseFontTests(unittest.TestCase):
+    """2.19: Han-only text resolved a Simplified face whatever --lang said, so a zh-TW caption was
+    drawn in the Beijing glyph forms. A --lang naming Traditional Chinese now resolves a
+    Traditional face, and falls back to the Simplified one, recorded, when none is installed."""
+
+    def tearDown(self):
+        import _common.fonts as fonts
+        fonts._SCRIPT_FONT_CACHE.clear()
+
+    def test_font_key_reads_traditional_tags_only(self):
+        import _common.fonts as fonts
+        for lang in ("zh-TW", "zh_hk", "zh-Hant", "zh-Hant-TW", "yue", "zh-MO"):
+            self.assertEqual(fonts.font_key("zh", lang), "zh-hant", lang)
+        for lang in (None, "", "zh", "zh-CN", "zh-Hans", "ja", "zh-twx"):
+            self.assertEqual(fonts.font_key("zh", lang), "zh", lang)
+        self.assertEqual(fonts.font_key("ja", "zh-TW"), "ja", "kana text stays Japanese")
+
+    def test_windows_picks_jhenghei_for_traditional_and_yahei_for_simplified(self):
+        import _common.fonts as fonts
+        fonts._SCRIPT_FONT_CACHE.clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "Fonts").mkdir()
+            for name in ("msyh.ttc", "msjh.ttc"):
+                (Path(tmp) / "Fonts" / name).write_bytes(b"existence is the check")
+            with unittest.mock.patch("platform.system", return_value="Windows"), \
+                    unittest.mock.patch.dict(os.environ, {"WINDIR": tmp}):
+                script, path, family = fonts.script_font_for_text("台灣的骨頭", lang="zh-TW")
+                self.assertEqual((script, family), ("zh", "Microsoft JhengHei"))
+                self.assertTrue(path.endswith("msjh.ttc"), path)
+                script, path, family = fonts.script_font_for_text("台湾的骨头")
+                self.assertEqual((script, family), ("zh", "Microsoft YaHei"))
+
+    def test_no_traditional_face_falls_back_to_simplified_and_says_so(self):
+        import _common.fonts as fonts
+        from _common import STATE
+        fonts._SCRIPT_FONT_CACHE.clear()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "Fonts").mkdir()
+            (Path(tmp) / "Fonts" / "msyh.ttc").write_bytes(b"ttc")
+            before = len(STATE.fallbacks)
+            with unittest.mock.patch("platform.system", return_value="Windows"), \
+                    unittest.mock.patch.dict(os.environ, {"WINDIR": tmp}):
+                script, path, family = fonts.script_font_for_text("台灣", lang="zh-TW")
+            self.assertTrue(path.endswith("msyh.ttc"), path)
+            self.assertEqual((script, family), ("zh", "Microsoft YaHei"))
+            codes = [f.get("code") for f in STATE.fallbacks[before:]]
+            self.assertIn("font_variant_missing", codes)
+
+    def _fc(self, by_lang):
+        import _common.fonts as fonts
+        fonts._SCRIPT_FONT_CACHE.clear()
+        asked = []
+
+        def fake(lang):
+            asked.append(lang)
+            return by_lang.get(lang, [])
+        return asked, unittest.mock.patch.multiple(fonts, _fc_list_fonts=fake), \
+            unittest.mock.patch("platform.system", return_value="Linux")
+
+    def test_fontconfig_asks_zh_tw_and_picks_the_traditional_family(self):
+        import _common.fonts as fonts
+        asked, fc, plat = self._fc({
+            # one .ttc lists every face it holds; the name returned is the one that ranked
+            "zh-tw": [("/f/NotoSansCJK-Regular.ttc", ["Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Sans CJK TC"])],
+            "zh-cn": [("/f/NotoSansCJK-Regular.ttc", ["Noto Sans CJK SC"])]})
+        with fc, plat:
+            script, path, family = fonts.script_font_for_text("台灣", lang="zh-TW")
+        self.assertIn("zh-tw", asked)
+        self.assertEqual((script, family), ("zh", "Noto Sans CJK TC"))
+
+    def test_unifont_alone_for_traditional_does_not_block_the_simplified_face(self):
+        """fontconfig's Unifont "covers" zh-tw with code-point boxes; a real Simplified face
+        draws the characters, so it wins, and the swap is recorded."""
+        import _common.fonts as fonts
+        from _common import STATE
+        asked, fc, plat = self._fc({
+            "zh-tw": [("/f/unifont.otf", ["Unifont"])],
+            "zh-cn": [("/f/unifont.otf", ["Unifont"]), ("/f/NotoSansCJK-Regular.ttc", ["Noto Sans CJK SC"])]})
+        before = len(STATE.fallbacks)
+        with fc, plat:
+            script, path, family = fonts.script_font_for_text("台灣", lang="zh-TW")
+        self.assertEqual((script, family), ("zh", "Noto Sans CJK SC"))
+        self.assertEqual(path, "/f/NotoSansCJK-Regular.ttc")
+        self.assertIn("font_variant_missing", [f.get("code") for f in STATE.fallbacks[before:]])
+
+
+class EmojiTests(unittest.TestCase):
+    """1.15: emoji are detected as clusters, measured at a full em, reserved in the ASS and
+    composited as PNGs -- and every degraded path says so instead of lying."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.src = OUT / "emoji_src.mp4"
+        if not cls.src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+               "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25",
+               "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+               "-t", "4", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", str(cls.src))
+        cls.cues = OUT / "cues_emoji.txt"
+        cls.cues.write_text("0:00-0:02 Hello \U0001F389 world\n0:02-0:04 Nice \U0001F44D job\n",
+                            encoding="utf-8")
+
+    def test_emoji_cluster_detection_keeps_zwj_and_skin_tone_sequences_together(self):
+        from _common import emoji_clusters, emoji_codepoint_name, has_emoji
+        text = "\u3084\u3063\u305f \U0001F389 \U0001F469\u200d\U0001F4BB \U0001F1EF\U0001F1F5 \U0001F44D\U0001F3FD 1\ufe0f\u20e3"
+        names = [emoji_codepoint_name(cl) for _i, cl in emoji_clusters(text)]
+        self.assertEqual(names, ["1f389", "1f469-200d-1f4bb", "1f1ef-1f1f5", "1f44d-1f3fd", "31-fe0f-20e3"])
+        self.assertTrue(has_emoji(text))
+        self.assertFalse(has_emoji("plain ascii"))
+
+    def test_emoji_is_orthogonal_to_the_writing_system(self):
+        """A cue can be Japanese AND emoji: adding an "emoji" script would corrupt the font
+        resolution for the rest of the line."""
+        self.assertEqual(detect_script("\u3084\u3063\u305f \U0001F389"), "ja")
+        self.assertEqual(detect_script("Hello \U0001F389"), "latin")
+
+    def test_caption_wrap_counts_an_emoji_as_a_full_width_atom(self):
+        from _common import text_width_em
+        import importlib, sys as _s
+        _s.path.insert(0, str(SCRIPTS))
+        caption = importlib.import_module("caption")
+        self.assertAlmostEqual(text_width_em("\U0001F389"), 1.0, places=6)
+        self.assertAlmostEqual(text_width_em("\U0001F389", 1.5), 1.5, places=6)
+        # a wrap never breaks inside a cluster
+        lines = caption.wrap_text("aaa \U0001F469\u200d\U0001F4BB bbb", 3.0)
+        self.assertIn("\U0001F469\u200d\U0001F4BB", lines)
+        for line in lines:
+            self.assertNotEqual(line, "\U0001F469")
+
+    def _plan(self, *extra):
+        out = OUT / "emoji_out.mp4"
+        proc = script("caption.py", self.src, "--text", self.cues, "-o", out,
+                      "--dry-run", "--json", *extra)
+        return json.loads(proc.stdout)
+
+    def test_caption_emoji_overlay_places_one_png_per_cluster_inside_the_safe_area(self):
+        doc = self._plan("--emoji-assets", _emoji_assets())
+        self.assertEqual(doc["emoji"]["mode"], "png")
+        self.assertEqual(doc["emoji"]["overlays"], 2)
+        graph = [c for c in doc["commands"] if "overlay=" in c][-1]
+        overlays = re.findall(r"overlay=x=(\d+):y=(\d+):enable=\D*?between\(t,([\d.]+),([\d.]+)\)", graph)
+        self.assertEqual(len(overlays), 2, graph)
+        for x, y, start, end in overlays:
+            x, y = int(x), int(y)
+            self.assertTrue(0.05 * 640 <= x <= 0.95 * 640, f"x={x} outside the safe area")
+            self.assertTrue(0.05 * 360 <= y <= 0.95 * 360, f"y={y} outside the safe area")
+            self.assertLess(float(start), float(end))
+        self.assertEqual([(o[2], o[3]) for o in overlays], [("0.000", "2.000"), ("2.000", "4.000")])
+
+    def test_caption_emoji_placeholder_reserves_the_gap_in_the_generated_ass(self):
+        out = OUT / "emoji_ass.mp4"
+        script("caption.py", self.src, "--text", self.cues, "-o", out,
+               "--emoji-assets", _emoji_assets())
+        ass = (OUT / "emoji_ass.ass").read_text(encoding="utf-8-sig")
+        dialogue = [l for l in ass.splitlines() if l.startswith("Dialogue:")]
+        self.assertTrue(dialogue)
+        for line in dialogue:
+            self.assertIn("\\alpha&HFF&", line)
+            self.assertNotIn("\U0001F389", line, "the raw code point must not reach the drawn text")
+            self.assertNotIn("\U0001F44D", line)
+
+    def test_the_emoji_placeholder_reserves_exactly_the_box_it_asks_for(self):
+        """The reservation is measured, not assumed: U+2588 is 0.66-0.83 em depending on the face,
+        so the gap is reserved with alpha-hidden \\fsp spacing, which is exact in every face."""
+        from _ass_overlay import emoji_placeholder
+        families = ["FreeSans", "DejaVu Sans", "IPAPGothic", "WenQuanYi Zen Hei", "Loma"]
+        tested = 0
+        for family in families:
+            if not _family_installed(family):
+                continue
+            tested += 1
+            base = _ass_advance(family, "|")
+            with_gap = _ass_advance(family, emoji_placeholder(60) + "|")
+            if base is None or with_gap is None:
+                self.skipTest("libass render probe produced no ink here")
+            self.assertAlmostEqual(with_gap - base, 60, delta=2,
+                                   msg=f"{family}: reserved {with_gap - base}px, asked for 60")
+        if not tested:
+            self.skipTest("none of the measured families is installed here")
+
+    def test_caption_emoji_without_assets_is_a_warning_not_a_failure(self):
+        from _common import emoji_support
+        support = emoji_support(probe=True)
+        if support["mode"] not in ("mono", "none"):
+            self.skipTest("this machine has a colour emoji path; the degraded branch cannot be exercised")
+        out = OUT / "emoji_mono.mp4"
+        proc = script("caption.py", self.src, "--text", self.cues, "-o", out, "--json")
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["status"], "completed")
+        self.assertEqual(doc["emoji"]["mode"], support["mode"])
+        if support["mode"] == "mono":
+            self.assertIn("monochrome", proc.stderr + proc.stdout)
+            self.assertTrue(any("monochrome" in n for n in doc.get("notes", [])), doc.get("notes"))
+
+    def test_emoji_assets_directory_that_does_not_exist_is_a_failed_job(self):
+        out = OUT / "emoji_missing.mp4"
+        proc = script("caption.py", self.src, "--text", self.cues, "-o", out, "--json",
+                      "--emoji-assets", str(OUT / "no_such_emoji_dir"), expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("twemoji", doc["error"]["message"].lower())
+        self.assertIn("no network", doc["error"]["message"].lower())
+
+    def test_the_skill_never_fetches_an_emoji_asset(self):
+        """Mirror of the existing no-network assertions: nothing on the emoji path may import a
+        network module, and no tool offers a download flag for one."""
+        import _common
+        # _common is a package: every module in it, not just the facade.
+        source = "\n".join(p.read_text(encoding="utf-8")
+                           for p in sorted(Path(_common.__file__).parent.glob("*.py")))
+        for banned in ("urllib", "http.client", "requests", "socket."):
+            self.assertNotIn(banned, source, f"{banned} is reachable from the emoji path")
+        for tool in ("caption.py", "graphics.py", "overlay.py"):
+            helptext = script(tool, "--help").stdout.lower()
+            self.assertNotIn("--emoji-download", helptext)
+            self.assertNotIn("download", helptext.split("--emoji")[-1][:400])
+
+    def test_caption_emoji_overlay_is_capped(self):
+        many = OUT / "cues_many_emoji.txt"
+        many.write_text("".join("0:0%d-0:0%d %s\n" % (i, i + 1, "\U0001F389" * 9)
+                                for i in range(0, 8)), encoding="utf-8")
+        out = OUT / "emoji_capped.mp4"
+        proc = script("caption.py", self.src, "--text", many, "-o", out, "--json", "--dry-run",
+                      "--emoji-assets", _emoji_assets(), "--emoji-max", "4", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("--emoji-max", doc["error"]["message"])
+
+    def test_graphics_all_emoji_title_without_a_glyph_is_a_failed_job(self):
+        out = OUT / "emoji_title.mp4"
+        proc = script("graphics.py", self.src, "--template", "title", "--title", "\U0001F389",
+                      "--start", "0", "--end", "2", "--emoji", "none", "-o", out, "--json",
+                      expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("blank", doc["error"]["message"])
+
+    def test_overlay_text_refuses_the_png_emoji_route_and_names_the_tools_that_have_one(self):
+        out = OUT / "emoji_overlay.mp4"
+        proc = script("overlay.py", self.src, "--text", "Ship it \U0001F680", "--emoji", "png",
+                      "-o", out, "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("caption.py", doc["error"]["message"])
+        self.assertIn("graphics.py", doc["error"]["message"])
+
+
+    # ---------------------------------------------------------------- 1.15.0 fix pass
+    def test_emoji_cluster_never_starts_at_a_joiner_a_selector_or_a_plain_letter(self):
+        """U+200D ZWJ and U+200C ZWNJ are ordinary Indic/Persian orthography, not emoji: क्‍ष is
+        ka + virama + ZWJ + ssa. Treating a joiner (or a VS16, or a skin-tone modifier) as a
+        cluster TAIL that glues itself to whatever stands before it turned a Hindi conjunct into
+        "an emoji" -- reported as such, warned about as monochrome, and on the PNG route replaced
+        by an invisible gap, i.e. a different word. A cluster may only START at an emoji base."""
+        from _common import emoji_clusters, emoji_codepoint_name, has_emoji
+
+        def names(text):
+            return [emoji_codepoint_name(cl) for _i, cl in emoji_clusters(text)]
+
+        self.assertEqual(names("\u0915\u094d\u200d\u0937"), [], "a Hindi conjunct is not an emoji")
+        self.assertFalse(has_emoji("\u0905\u200c\u092c"), "a ZWNJ is not an emoji either")
+        self.assertEqual(names("abc\u200ddef"), [])
+        self.assertEqual(names("A\ufe0f"), [], "a VS16 after a letter does not make it an emoji")
+        self.assertEqual(names("\u00a9 \u2122 0123456789"), [], "(c), (tm) and digits are not emoji")
+        # ... and every real cluster still survives whole
+        self.assertEqual(names("\U0001F468\u200d\U0001F469\u200d\U0001F467"),
+                         ["1f468-200d-1f469-200d-1f467"])
+        self.assertEqual(names("\U0001F3F3\ufe0f\u200d\U0001F308"), ["1f3f3-fe0f-200d-1f308"])
+        self.assertEqual(names("1\ufe0f\u20e3"), ["31-fe0f-20e3"])
+        self.assertEqual(names("\U0001F1EF\U0001F1F5"), ["1f1ef-1f1f5"])
+
+    def test_vs15_asks_for_the_character_not_the_picture(self):
+        """U+FE0E is the TEXT presentation selector: the author explicitly asked for the glyph,
+        so the cluster must not be routed to the PNG overlay."""
+        from _common import emoji_clusters
+        self.assertEqual(emoji_clusters("\u2764\ufe0e"), [], "VS15 means: draw the character")
+        self.assertTrue(emoji_clusters("\u2764\ufe0f"), "VS16 still means: draw the emoji")
+
+    def test_caption_emoji_png_is_on_screen_for_the_whole_cue_and_only_that_cue(self):
+        """The one assertion the 1.15.0 emoji tests were all missing: a rendered frame from the
+        MIDDLE of the cue. A PNG input is a single frame at pts 0, so `eof_action=pass` (which
+        switches off overlay's "hold the last frame of the secondary input") composited every
+        emoji on frame 0 and nowhere else -- the demo GIF shipped an empty reserved gap."""
+        cues = OUT / "cues_one_emoji.txt"
+        cues.write_text("0:00-0:02 Hello \U0001F389 world\n", encoding="utf-8")
+        out = OUT / "emoji_midcue.mp4"
+        doc = json.loads(script("caption.py", self.src, "--text", cues, "-o", out, "--json",
+                                "--dry-run", "--emoji-assets", _emoji_assets()).stdout)
+        graph = [c for c in doc["commands"] if "overlay=" in c][-1]
+        m = re.search(r"overlay=x=(\d+):y=(\d+)", graph)
+        self.assertTrue(m, graph)
+        x, y = int(m.group(1)) + 4, int(m.group(2)) + 4
+        script("caption.py", self.src, "--text", cues, "-o", out,
+               "--emoji-assets", _emoji_assets())
+        orange = (255, 165, 0)   # _emoji_assets() draws 1f389 as a plain orange square
+
+        def near(pix):
+            return sum(abs(a - b) for a, b in zip(pix, orange)) < 60
+
+        self.assertTrue(near(_pixel_at(out, 1.0, x, y)),
+                        "the emoji is gone by the middle of its own cue: %r" % (_pixel_at(out, 1.0, x, y),))
+        self.assertTrue(near(_pixel_at(out, 1.8, x, y)), "the emoji left before its cue ended")
+        self.assertFalse(near(_pixel_at(out, 3.0, x, y)),
+                         "the emoji is still on screen a second after its cue ended")
+
+    def test_caption_rtl_emoji_is_placed_by_the_rendered_order_not_the_logical_prefix(self):
+        """libass lays an RTL line out right-to-left, so the LOGICAL prefix of a cluster occupies
+        the RIGHT end of the rendered line. Measuring from the left put the PNG on top of the
+        Arabic text, a prefix-width away from the gap libass actually reserved."""
+        from _common import script_font_status
+        cues = OUT / "cues_rtl.txt"
+        # the emoji is FIRST in logical order, so it must be drawn at the RIGHT end of the line
+        cues.write_text("0:00-0:02 \U0001F389 \u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645\n",
+                        encoding="utf-8")
+        out = OUT / "emoji_rtl.mp4"
+        doc = json.loads(script("caption.py", self.src, "--text", cues, "-o", out, "--json",
+                                "--dry-run", "--emoji-assets", _emoji_assets()).stdout)
+        graph = [c for c in doc["commands"] if "overlay=" in c][-1]
+        m = re.search(r"overlay=x=(\d+):y=(\d+)", graph)
+        self.assertTrue(m, graph)
+        x, y = int(m.group(1)), int(m.group(2))
+        self.assertGreater(x, 320, "a logically-first cluster in an RTL line belongs on the right "
+                                   "half of a centred line, not the left: x=%d" % x)
+        if script_font_status("ar") != "available":
+            self.skipTest("no font on this machine covers Arabic; tests never install fonts")
+        # and the box must land where libass drew nothing -- the reserved gap, not over a glyph
+        script("caption.py", self.src, "--text", cues, "-o", out, "--emoji-assets", _emoji_assets())
+        box = doc["emoji"].get("box_px") or 24
+        ink = _ass_ink_columns(OUT / "emoji_rtl.ass", 640, 360)
+        if not ink:
+            # the probe renders the sidecar with a bare `ass=` filter; without fontconfig (Windows,
+            # a static build) libass may resolve no face for Arabic and draw nothing, which says
+            # nothing about placement -- the caption itself goes through fontsdir handling
+            self.skipTest("the ASS probe drew no ink on this build (libass found no Arabic face)")
+        covered = [c for c in range(x + 2, x + box - 2) if c in ink]
+        self.assertEqual(covered, [], "the PNG would be composited over drawn text at columns %r" % covered)
+
+    def test_caption_emoji_max_zero_means_no_overlays_at_all(self):
+        """`int(args.emoji_max or 60)` swallowed the one value a caller would use to say 'none'."""
+        out = OUT / "emoji_max0.mp4"
+        doc = json.loads(script("caption.py", self.src, "--text", self.cues, "-o", out, "--json",
+                                "--dry-run", "--emoji-assets", _emoji_assets(), "--emoji-max", "0",
+                                expect_fail=True).stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("limit 0", doc["error"]["message"])
+
+    def test_caption_animate_fades_the_emoji_with_the_text(self):
+        """--animate fade gives the TEXT a \\fad; the PNG used to pop in against a fading line."""
+        cues = OUT / "cues_fade_emoji.txt"
+        cues.write_text("0:00-0:02 Hello \U0001F389 world\n", encoding="utf-8")
+        out = OUT / "emoji_fade.mp4"
+        doc = json.loads(script("caption.py", self.src, "--text", cues, "-o", out, "--json",
+                                "--dry-run", "--animate", "fade",
+                                "--emoji-assets", _emoji_assets()).stdout)
+        graph = [c for c in doc["commands"] if "overlay=" in c][-1]
+        self.assertIn("fade=t=in", graph)
+        self.assertIn("fade=t=out", graph)
+        self.assertIn("alpha=1", graph)
+        m = re.search(r"overlay=x=(\d+):y=(\d+)", graph)
+        x, y = int(m.group(1)) + 4, int(m.group(2)) + 4
+        script("caption.py", self.src, "--text", cues, "-o", out, "--animate", "fade",
+               "--emoji-assets", _emoji_assets())
+        orange = (255, 165, 0)
+
+        def dist(t):
+            return sum(abs(a - b) for a, b in zip(_pixel_at(out, t, x, y), orange))
+
+        self.assertLess(dist(1.0), 60, "the emoji never reached full opacity")
+        self.assertGreater(dist(0.02), dist(1.0), "the emoji did not fade in with the text")
+
+    def test_graphics_drawtext_route_never_reports_monochrome_emoji(self):
+        """drawtext loads ONE font file and has no fallback chain, so "whatever glyph the text
+        font has" is an empty box. Reporting `mode: mono` from that route is a claim the frame
+        does not keep: the run must route to libass (which does have a fallback chain) or strip."""
+        out = OUT / "emoji_gfx_mono.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "title",
+                                "--title", "Ship it \U0001F389 now", "--start", "0", "--end", "2",
+                                "-o", out, "--json", "--dry-run").stdout)
+        if doc.get("emoji", {}).get("mode") == "mono":
+            self.assertEqual(doc["text_renderer"], "ass",
+                             "mode mono on the drawtext route draws tofu, not a glyph")
+        pinned = json.loads(script("graphics.py", self.src, "--template", "title",
+                                   "--title", "Ship it \U0001F389 now", "--start", "0", "--end", "2",
+                                   "--text-render", "drawtext", "-o", out, "--json", "--dry-run").stdout)
+        self.assertEqual(pinned["text_renderer"], "drawtext")
+        self.assertNotEqual(pinned.get("emoji", {}).get("mode"), "mono",
+                            "a pinned drawtext run must not claim monochrome either")
+
+    def test_graphics_emoji_none_actually_strips_the_cluster(self):
+        """`--emoji none` only guarded the all-emoji case: the cluster stayed in the drawn text
+        and drawtext drew the same empty box it would have drawn anyway."""
+        with_emoji = OUT / "emoji_gfx_none.mp4"
+        without = OUT / "emoji_gfx_plain.mp4"
+        script("graphics.py", self.src, "--template", "title", "--title", "Ship it \U0001F389 now",
+               "--start", "0", "--end", "3", "--emoji", "none", "-o", with_emoji)
+        script("graphics.py", self.src, "--template", "title", "--title", "Ship it now",
+               "--start", "0", "--end", "3", "-o", without)
+        self.assertAlmostEqual(_frame_ink(with_emoji), _frame_ink(without),
+                               delta=max(1, _frame_ink(without) // 500),
+                               msg="--emoji none must draw the same frame as text with no emoji in it")
+
+    def test_drawn_text_temp_files_are_private_and_never_outlive_the_run(self):
+        """1.15.0 wrote every drawn label into a world-shared, predictable, never-cleaned
+        /tmp/ffmpeg-skill-text -- including under --dry-run and on the ASS route, which never
+        reads them."""
+        import glob
+        import tempfile as _tf
+        out = OUT / "textfile_life.mp4"
+        # A temp dir of its own: run_parallel shards this module, and a real drawtext run in the
+        # other shard holds an ffmpeg-skill-text-* directory in the shared one while it works.
+        with _tf.TemporaryDirectory() as tmp:
+            env = dict(os.environ, TMPDIR=tmp, TEMP=tmp, TMP=tmp)
+            doc = json.loads(script("overlay.py", self.src, "--text", "Label", "-o", out,
+                                    "--json", "--dry-run", env=env).stdout)
+            m = re.search(r"textfile=(\S+?\.txt)", " ".join(doc["commands"]).replace("\\", ""))
+            self.assertTrue(m, "the plan must still name the path it would use")
+            self.assertFalse(os.path.exists(m.group(1)), "a dry run wrote a file")
+            self.assertFalse(os.path.isdir(os.path.dirname(m.group(1))), "a dry run created a directory")
+            self.assertEqual(glob.glob(os.path.join(tmp, "ffmpeg-skill-text-*")), [],
+                             "a drawn-text directory was left behind")
+            self.assertFalse(os.path.exists(os.path.join(tmp, "ffmpeg-skill-text")),
+                             "the shared world-writable directory must not be created at all")
+
+    def test_the_ass_route_writes_no_drawtext_textfile(self):
+        from _common import script_font_status
+        if script_font_status("hi") != "available":
+            self.skipTest("no font on this machine covers Devanagari; tests never install fonts")
+        import glob
+        import tempfile as _tf
+        out = OUT / "textfile_ass_route.mp4"
+        with _tf.TemporaryDirectory() as tmp:  # private, as above: the module runs sharded
+            env = dict(os.environ, TMPDIR=tmp, TEMP=tmp, TMP=tmp)
+            script("graphics.py", self.src, "--template", "title", "--title", "\u0915\u093f\u0924\u093e\u092c",
+                   "--start", "0", "--end", "2", "-o", out, env=env)
+            self.assertEqual(glob.glob(os.path.join(tmp, "ffmpeg-skill-text-*")), [],
+                             "the ASS route wrote (and kept) a drawtext textfile it never reads")
+
+    def test_the_ass_route_keeps_braces_and_backslashes(self):
+        """The same title through drawtext and through libass must produce the same characters:
+        1.15.0 deleted `{`, `}` and `\\` on the ASS route while drawtext kept them."""
+        from _ass_overlay import ass_escape
+        self.assertEqual(ass_escape("A {b} c \\ d"), "A \\{b\\} c \\ d")
+        out = OUT / "ass_braces.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "title",
+                                "--title", "A {b} c \\ d", "--start", "0", "--end", "2",
+                                "--text-render", "ass", "-o", out, "--json").stdout)
+        ass = Path(doc["ass"]).read_text(encoding="utf-8-sig")
+        dialogue = next(l for l in ass.splitlines() if l.startswith("Dialogue:"))
+        self.assertIn("A \\{b\\} c \\ d", dialogue)
+
+
+class LookInkTests(unittest.TestCase):
+    """look.py --ink: a pixel-only non-background measurement per written PNG, so the agent can
+    check "is there ink where the caption should be" without eyeballing every frame."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.busy = OUT / "ink_busy.mp4"
+        if not cls.busy.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+               "-i", "testsrc2=size=320x240:rate=10", "-t", "3", "-pix_fmt", "yuv420p", cls.busy)
+        cls.blank = OUT / "ink_blank.mp4"
+        if not cls.blank.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+               "-i", "color=c=black:size=320x240:rate=10", "-t", "3", "-pix_fmt", "yuv420p", cls.blank)
+
+    def test_ink_reports_a_lit_frame_via_at(self):
+        out = OUT / "ink_at.png"
+        proc = script("look.py", self.busy, "--at", "1", "--no-timecode", "--ink", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        frame = doc["ink"]["frames"][0]
+        self.assertTrue(frame["has_ink"])
+        self.assertIsNotNone(frame["bbox"])
+        self.assertGreater(frame["ink_fraction"], 0.0)
+        self.assertTrue(frame["row_bands"])
+
+    def test_ink_reports_no_ink_on_a_blank_frame(self):
+        out = OUT / "ink_blank_at.png"
+        proc = script("look.py", self.blank, "--at", "1", "--no-timecode", "--ink", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        frame = doc["ink"]["frames"][0]
+        self.assertFalse(frame["has_ink"])
+        self.assertIsNone(frame["bbox"])
+        self.assertEqual(frame["ink_fraction"], 0.0)
+        self.assertEqual(frame["row_bands"], [])
+
+    def test_ink_is_omitted_without_the_flag(self):
+        out = OUT / "ink_off.png"
+        proc = script("look.py", self.busy, "--at", "1", "--no-timecode", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        self.assertNotIn("ink", doc)
+
+    def test_ink_measures_each_tile_of_a_contact_sheet(self):
+        out = OUT / "ink_sheet.png"
+        proc = script("look.py", self.busy, "--tiles", "2x2", "--ink", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        tiles = doc["ink"]["tiles"]
+        self.assertEqual(len(tiles), 4)
+        for tile in tiles:
+            self.assertTrue(tile["has_ink"])
+
+    def test_ink_measures_both_sides_of_a_compare(self):
+        out = OUT / "ink_compare.png"
+        proc = script("look.py", self.busy, "--compare", self.blank, "--at", "1", "--ink", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        frames = doc["ink"]["frames"]
+        self.assertEqual(len(frames), 1)
+        self.assertTrue(frames[0]["has_ink"])  # the hstacked image: busy half lights it up
+
+    def test_compare_uses_the_cut_in_point_and_the_output_start(self):
+        with tempfile.TemporaryDirectory(dir=OUT) as work:
+            root = Path(work)
+            source, cut, image = (root / name for name in ("source.mp4", "cut.mp4", "compare.png"))
+            tiny_clip(source, "color=black:s=160x90:r=10",
+                      "-vf", "drawbox=color=white:t=fill:enable='gte(t,2)'", seconds=3)
+            script("cut.py", source, "--start", "2.2", "--end", "2.9", "--accurate", "-o", cut)
+            cmd = ("look.py", source, "--at", "2.2", "--compare", cut, "--compare-at", "0",
+                   "--no-timecode", "--width", "320", "-o", image, "--json")
+            dry = json.loads(script(*cmd, "--dry-run").stdout)
+            expected = [{"output": str(image), "input_seek": 2.2, "compare_seek": 0.0}]
+            self.assertEqual(dry["comparisons"], expected)
+            self.assertFalse(dry["verified"])
+            self.assertFalse(image.exists())
+            result = json.loads(script(*cmd).stdout)
+            self.assertEqual(result["comparisons"], expected)
+            self.assertLess(max(frame_rgb(source, 0, 80, 45)), 10)
+            self.assertGreater(min(frame_rgb(image, 0, 80, 45)), 245)
+            self.assertGreater(min(frame_rgb(image, 0, 240, 45)), 245)
+
+    def test_compare_validates_every_timestamp_before_writing(self):
+        with tempfile.TemporaryDirectory(dir=OUT) as work:
+            output = Path(work) / "review.png"
+            args = ("look.py", self.busy, "--compare", self.blank, "--at", "1", "--at", "2",
+                    "--no-timecode", "-o", output, "--json")
+            for times, message in ((("0",), "one --compare-at"), (("0", "4"), "beyond")):
+                with self.subTest(times=times):
+                    flags = [arg for time in times for arg in ("--compare-at", time)]
+                    proc = script(*args, *flags, expect_fail=True)
+                    doc = json.loads(proc.stdout)
+                    self.assertEqual(doc["error"]["kind"], "input")
+                    self.assertIn(message, doc["error"]["message"])
+                    self.assertEqual(list(Path(work).glob("*.png")), [])
+
+    def test_compare_with_repeated_at_and_o_writes_distinct_files(self):
+        """-o given alongside --compare --at T1 --at T2 must not collapse onto one file: each
+        timestamp needs its own comparison image, or ink.frames (and any other per-frame
+        measurement) silently describes the same picture twice."""
+        out = OUT / "ink_compare_multi.png"
+        proc = script("look.py", self.busy, "--compare", self.blank, "--at", "1", "--at", "2",
+                     "--ink", "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        outputs = doc["outputs"]
+        self.assertEqual(len(outputs), 2)
+        self.assertNotEqual(outputs[0], outputs[1])
+        for o in outputs:
+            self.assertTrue(Path(o).exists(), o)
+        frames = doc["ink"]["frames"]
+        self.assertEqual(len(frames), 2)
+        self.assertTrue(frames[0]["has_ink"])
+        self.assertTrue(frames[1]["has_ink"])
+
+    def test_compare_with_the_same_at_value_twice_still_writes_two_files(self):
+        """The occurrence index, not just the timestamp, disambiguates the filename: two
+        identical --at values (or two that would round to the same millisecond) must not
+        collapse onto one file either."""
+        out = OUT / "ink_compare_dup.png"
+        proc = script("look.py", self.busy, "--compare", self.blank, "--at", "1", "--at", "1",
+                     "--json", "-o", out)
+        doc = json.loads(proc.stdout)
+        outputs = doc["outputs"]
+        self.assertEqual(len(outputs), 2)
+        self.assertNotEqual(outputs[0], outputs[1])
+        for o in outputs:
+            self.assertTrue(Path(o).exists(), o)
+
+
+class GraphicsSliceOverlongTests(unittest.TestCase):
+    """graphics.py's own `wrapped()` helper (used by lower-third, title, chapter, bug, sticker, hook
+    and meme labels; lower-third, title, chapter and bug since #411) now turns on the same `slice_overlong` escape hatch caption.py's burn path turned on
+    in 1.18.4, so a single unbreakable overlong atom drawn through a template no longer renders
+    past the frame's safe width."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.src = OUT / "gfx_src.mp4"
+        if not cls.src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+               "-i", "testsrc2=size=640x360:rate=30", "-f", "lavfi", "-i", "sine=f=440",
+               "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", cls.src)
+
+    def _dialogue_lines(self, doc):
+        ass = Path(doc["ass"]).read_text(encoding="utf-8-sig")
+        dialogue = next(l for l in ass.splitlines() if l.startswith("Dialogue:"))
+        text = dialogue.split(",", 9)[-1]
+        text = re.sub(r"\{[^}]*\}", "", text)  # strip the leading {\an5\pos(...)} override block
+        return text.split("\\N")
+
+    def _skip_without(self, script_code):
+        from _common import script_font_status
+        if script_font_status(script_code) != "available":
+            raise unittest.SkipTest("no font on this machine covers %r; tests never install fonts"
+                                    % script_code)
+
+    def test_overlong_word_no_longer_clips_a_hook_title(self):
+        """The same 32-letter Spanish word from caption's cs2 fixture, with no break point, drawn
+        as a --template hook --title at a scale where it used to be kept whole and clip past the
+        frame's safe width. Every produced line must now measure within the column."""
+        from _common import text_width_em
+        word = "Supercalifragilísticoespialidoso"
+        out = OUT / "gfx_slice_hook.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "hook", "--title", word,
+                                "--scale", "2", "--text-render", "ass", "-o", out, "--json").stdout)
+        base = min(640, 360) * 2.0
+        h1 = int(base * 0.085)
+        max_em = (640 * 0.9) / h1  # SAFE_WIDTH_FRACTION default
+        lines = self._dialogue_lines(doc)
+        self.assertGreater(len(lines), 1, "the word should have been sliced into more than one line")
+        for line in lines:
+            self.assertLessEqual(text_width_em(line), max_em + 1e-6, lines)
+        # no character was added, dropped or reordered
+        self.assertEqual("".join(lines), word)
+        self.assertEqual(doc.get("broken_inside_word"), 1, doc)
+
+    def test_fitting_thai_phrase_stays_unbroken_through_graphics_wrapped(self):
+        """A short-enough-to-fit Thai phrase with no natural break point must come back as one
+        unbroken line -- the escape hatch is only reachable when an atom does NOT fit alone, and
+        this must hold through graphics.py's `wrapped()` specifically, not just wrap.py itself."""
+        self._skip_without("th")
+        thai = "สวัสดีชาวโลก"
+        out = OUT / "gfx_slice_thai.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "hook", "--title", thai,
+                                "--text-render", "ass", "-o", out, "--json").stdout)
+        lines = self._dialogue_lines(doc)
+        self.assertEqual(lines, [thai], lines)
+        self.assertNotIn("broken_inside_word", doc)
+
+    def test_fitting_katakana_run_stays_unbroken_through_graphics_wrapped(self):
+        """A short-enough-to-fit katakana run with no natural break point must also come back as
+        one unbroken atom, unchanged, through graphics.py's `wrapped()`."""
+        self._skip_without("ja")
+        kata = "コンピューター"
+        out = OUT / "gfx_slice_kata.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "hook", "--title", kata,
+                                "--text-render", "ass", "-o", out, "--json").stdout)
+        lines = self._dialogue_lines(doc)
+        self.assertEqual(lines, [kata], lines)
+        self.assertNotIn("broken_inside_word", doc)
+
+
+class ShapingTests(unittest.TestCase):
+    """1.15: drawtext does bidi and Arabic joining on a fribidi build but never reorders or
+    re-clusters. graphics.py routes what it cannot shape through libass; overlay.py refuses."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.src = OUT / "text_src_silent.mp4"   # video only; emoji_src.mp4 is EmojiTests' clip, which has sound
+        if not cls.src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+               "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-t", "4",
+               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(cls.src))
+
+    def _skip_without(self, script_code):
+        from _common import script_font_status
+        if script_font_status(script_code) != "available":
+            raise unittest.SkipTest("no font on this machine covers %r; tests never install fonts"
+                                    % script_code)
+
+    def test_graphics_devanagari_renders_through_libass_not_drawtext(self):
+        self._skip_without("hi")
+        out = OUT / "shape_hi.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "lower-third",
+                                "--name", "\u092a\u094d\u0930\u093f\u092f\u093e \u0936\u0930\u094d\u092e\u093e",
+                                "--title", "\u0928\u093f\u0930\u094d\u0926\u0947\u0936\u0915",
+                                "--start", "0", "--end", "3", "-o", out, "--dry-run", "--json").stdout)
+        self.assertEqual(doc["text_renderer"], "ass")
+        self.assertEqual(doc["script"], "hi")
+        graph = " ".join(doc["commands"])
+        self.assertIn("ass=", graph)
+        self.assertNotIn("drawtext=", graph, "the text must not also go through drawtext")
+
+    def test_graphics_latin_still_renders_through_drawtext(self):
+        out = OUT / "shape_latin.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "title",
+                                "--title", "Episode 12", "--start", "0", "--end", "3",
+                                "-o", out, "--dry-run", "--json").stdout)
+        self.assertEqual(doc["text_renderer"], "drawtext")
+        self.assertNotIn("ass", doc)
+        self.assertIn("drawtext=", " ".join(doc["commands"]))
+
+    def test_graphics_drawtext_forced_with_an_indic_script_is_refused_naming_the_script(self):
+        self._skip_without("hi")
+        out = OUT / "shape_refuse.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "title",
+                                "--title", "\u0915\u093f\u0924\u093e\u092c", "--start", "0", "--end", "3",
+                                "--text-render", "drawtext", "-o", out, "--json",
+                                expect_fail=True).stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("Devanagari", doc["error"]["message"])
+        self.assertIn("harfbuzz", doc["error"]["message"])
+
+    def test_graphics_arabic_is_not_rerouted_on_a_fribidi_build(self):
+        from _common import drawtext_shaping
+        if not drawtext_shaping()["fribidi"]:
+            raise unittest.SkipTest("this ffmpeg has no fribidi: Arabic legitimately needs the ASS route")
+        self._skip_without("ar")
+        out = OUT / "shape_ar.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "title",
+                                "--title", "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645",
+                                "--start", "0", "--end", "3", "-o", out, "--dry-run", "--json").stdout)
+        self.assertEqual(doc["text_renderer"], "drawtext")
+
+    def test_graphics_font_file_override_survives_the_ass_route(self):
+        self._skip_without("hi")
+        font = font_for_script("hi")
+        out = OUT / "shape_fontfile.mp4"
+        proc = script("graphics.py", self.src, "--template", "title", "--title",
+                      "\u0915\u093f\u0924\u093e\u092c", "--start", "0", "--end", "3",
+                      "--font-file", font, "-o", out, "--json")
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["text_renderer"], "ass")
+        self.assertIn("fontsdir=", " ".join(doc["commands"]))
+        from _common import font_family_of_file
+        family = font_family_of_file(font)
+        ass = Path(doc["ass"]).read_text(encoding="utf-8-sig")
+        self.assertIn(family, ass, "the --font-file's own family must reach the ASS Style line")
+
+    def test_overlay_text_refuses_a_shaping_script_naming_the_tools_that_render_it(self):
+        out = OUT / "shape_overlay.mp4"
+        doc = json.loads(script("overlay.py", self.src, "--text", "\u0915\u093f\u0924\u093e\u092c",
+                                "-o", out, "--json", expect_fail=True).stdout)
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("caption.py", doc["error"]["message"])
+        self.assertIn("graphics.py", doc["error"]["message"])
+
+
+class ApostropheAndPercentTests(unittest.TestCase):
+    """1.15: `'` and `%` reach the picture. They used to be dropped outright by escape_drawtext."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.src = OUT / "text_src_silent.mp4"   # video only; emoji_src.mp4 is EmojiTests' clip, which has sound
+        if not cls.src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+               "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-t", "4",
+               "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", str(cls.src))
+
+    def test_drawtext_keeps_an_apostrophe_and_a_percent_sign(self):
+        out = OUT / "pct_overlay.mp4"
+        doc = json.loads(script("overlay.py", self.src, "--text", "it's 100% done",
+                                "-o", out, "--json").stdout)
+        graph = " ".join(doc["commands"])
+        m = re.search(r"textfile=(\S+?\.txt)", graph.replace("\\", ""))
+        self.assertTrue(m, graph)
+        self.assertIn("expansion=none", graph)
+        self.assertTrue(Path(m.group(1)).parent.name.startswith("ffmpeg-skill-text-"),
+                        "drawn text must go in a private per-run directory: " + m.group(1))
+        self.assertFalse(Path(m.group(1)).exists(), "the drawn-text temp file must not outlive the run")
+        self.assertEqual(doc["status"], "completed")
+        # the drawn ink differs from the same render with the two characters stripped
+        stripped = OUT / "pct_overlay_stripped.mp4"
+        script("overlay.py", self.src, "--text", "its 100 done", "-o", stripped)
+        self.assertNotEqual(_frame_ink(out), _frame_ink(stripped),
+                            "the apostrophe and the percent sign left no ink on the frame")
+
+    def test_caption_keeps_apostrophe_and_percent_in_the_drawn_text(self):
+        cues = OUT / "cues_pct.txt"
+        cues.write_text("0:00-0:02 it's 100% done\n", encoding="utf-8")
+        out = OUT / "pct_caption.mp4"
+        script("caption.py", self.src, "--text", cues, "--animate", "fade", "-o", out)
+        srt = (OUT / "pct_caption.srt").read_text(encoding="utf-8")
+        ass = (OUT / "pct_caption.ass").read_text(encoding="utf-8-sig")
+        self.assertIn("it's 100% done", srt)
+        self.assertIn("it's 100% done", ass)
+
+
+class MultiLineDrawtextTests(unittest.TestCase):
+    """graphics.py wrapped a title that did not fit ("WHO SHOWS UP?" at 1.4x on a
+    1080x1920 frame) and sized its band for two lines, but the drawtext sanitiser stripped the
+    newline, so the title ran off both edges as "WHOSHOWS UP?"."""
+
+    W, H = 1080, 1920
+
+    def test_the_drawn_text_keeps_its_line_breaks_and_loses_other_control_characters(self):
+        import _common
+        for text, drawn in (("A\nB", "A\nB"), ("A\r\nB", "A\nB"), ("A\rB", "A\nB"), ("A\x07B\x00", "AB"),
+                            ("tab\there\x0cnow", "tab here now"),
+                            # drawtext ignores one trailing newline and draws a second as a blank line
+                            ("A\nB\n", "A\nB"), ("A\nB\n\n", "A\nB"), ("\n", "\n")):
+            opts = _common.drawtext_text_opts(text, tmpdir=str(OUT))
+            path = re.search(r"textfile=(.+?\.txt)", opts.replace("\\", "")).group(1)
+            pending = {os.path.normpath(k): v for k, v in _common._DRAWTEXT_PENDING.items()}
+            self.assertEqual(pending[os.path.normpath(path)], drawn, repr(text))
+
+    def test_the_text_file_is_written_with_bare_line_feeds_on_every_platform(self):
+        """Text mode writes each line break as CRLF on Windows, and drawtext from FFmpeg 6.1 draws
+        that as a blank line plus a line break (a wrapped title came out at twice its height)."""
+        import _common
+        OUT.mkdir(parents=True, exist_ok=True)
+        tmp = tempfile.mkdtemp(dir=str(OUT))
+        opts = _common.drawtext_text_opts("one\ntwo\nthree", tmpdir=tmp)
+        path = os.path.join(tmp, re.search(r"(t_[0-9a-f]+\.txt)", opts).group(1))
+        # text mode would write os.linesep, which is CRLF on Windows and invisible on this runner, so
+        # the file is opened with newline="\n" and that argument is what this checks
+        with unittest.mock.patch("os.fdopen", wraps=os.fdopen) as fdopen:
+            written = _common.flush_drawtext_textfiles(["ffmpeg", "-vf", f"drawtext={opts}", "out.mp4"])
+        self.assertEqual(fdopen.call_args.kwargs.get("newline"), "\n", fdopen.call_args)
+        self.assertEqual([os.path.normpath(w) for w in written], [os.path.normpath(path)])
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), b"one\ntwo\nthree")
+
+    def _gray(self, path, at):
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
+                              "-f", "rawvideo", "-pix_fmt", "gray", "-"], stdout=subprocess.PIPE, check=True).stdout
+        self.assertEqual(len(raw), self.W * self.H)
+        return raw
+
+    def _bands(self, raw, top):
+        """(first row, last row, leftmost column, rightmost column) of each run of rows with
+        bright ink below `top`; a blank gap of more than 8 rows separates two lines."""
+        W = self.W
+        lit = [y for y in range(top, self.H) if sum(1 for v in raw[y * W:(y + 1) * W] if v > 200) > 2]
+        bands = []
+        for y in lit:
+            if bands and y - bands[-1][1] <= 8:
+                bands[-1][1] = y
+            else:
+                bands.append([y, y])
+        out = []
+        for y0, y1 in bands:
+            cols = [x for x in range(W) if any(raw[y * W + x] > 200 for y in range(y0, y1 + 1))]
+            out.append((y0, y1, min(cols), max(cols)))
+        return out
+
+    def test_a_wrapped_hook_title_is_drawn_on_two_centred_lines(self):
+        import _common
+        if not default_font_file("DejaVu Sans") and not default_font_file(""):
+            self.skipTest("no concrete font file on this machine for drawtext")
+        OUT.mkdir(parents=True, exist_ok=True)
+        bg = OUT / "t1_bg.mp4"
+        if not bg.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c=0x202020:s={self.W}x{self.H}:r=30:d=4",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", str(bg))
+        out = OUT / "t1_hook.mp4"
+        script("graphics.py", bg, "--template", "hook", "--title", "WHO SHOWS UP?", "--scale", "1.4",
+               "--duration", "2", "-o", out)
+        top = 40  # below the progress bar along the top edge
+        bands = self._bands(self._gray(out, 1.0), top)
+        self.assertEqual(len(bands), 2, f"two lines of text, got {bands}")
+        widths = [b[3] - b[2] for b in bands]
+        self.assertGreater(abs(widths[0] - widths[1]), 50, "the premise: lines of unequal width")
+        for band in bands:
+            self.assertLess(band[3], self.W - 1, "no line runs off the right edge")
+            self.assertGreater(band[2], 0, "no line runs off the left edge")
+            self.assertAlmostEqual((band[2] + band[3]) / 2, self.W / 2, delta=6, msg=f"line {band} is centred")
+        self.assertEqual(self._bands(self._gray(out, 3.0), top), [], "no text after the card's --duration")
+
+
+class LineAwareLayoutTests(unittest.TestCase):
+    """2.5.1 kept a newline in a title, but the title, lower-third and hook layouts were sized for
+    one line of text: a two-line title was struck through by its own accent bar and covered by its
+    subtitle, a two-line name was printed over its title, and a long 9:16 hook ran out of its band
+    onto the bare video. The layouts now follow the line count; one line is laid out as before."""
+
+    def _need_font(self):
+        if not default_font_file("DejaVu Sans") and not default_font_file(""):
+            self.skipTest("no concrete font file on this machine for drawtext")
+
+    def _background(self, name, size, colour):
+        OUT.mkdir(parents=True, exist_ok=True)
+        bg = OUT / f"{name}.mp4"
+        if not bg.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c={colour}:s={size}:r=30:d=3",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", str(bg))
+        return bg
+
+    def _rgb(self, path, w, h, at=1.5):
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(path), "-frames:v", "1",
+                              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE, check=True).stdout
+        self.assertEqual(len(raw), w * h * 3)
+        return raw
+
+    @staticmethod
+    def _runs(raw, w, h, pred, x0=0, x1=None, gap=4):
+        """(first row, last row) of each run of rows holding a pixel of columns x0..x1 that satisfies pred."""
+        x1 = w if x1 is None else x1
+        rows = [y for y in range(h) if any(pred(*raw[(y * w + x) * 3:(y * w + x) * 3 + 3]) for x in range(x0, x1))]
+        out = []
+        for y in rows:
+            if out and y - out[-1][1] <= gap:
+                out[-1][1] = y
+            else:
+                out.append([y, y])
+        return out
+
+    def test_a_two_line_title_with_a_two_line_subtitle_does_not_overlap_its_accent_bar(self):
+        self._need_font()
+        W, H = 1280, 720
+        bg = self._background("t2_bg_blue", f"{W}x{H}", "0x305070")
+        out = OUT / "t2_title.mp4"
+        script("graphics.py", bg, "--template", "title", "--title", "Hello\nWorld", "--subtitle", "sub one\nsub two",
+               "-o", out)
+        raw = self._rgb(out, W, H)
+        white = self._runs(raw, W, H, lambda r, g, b: r > 235 and g > 235 and b > 235)
+        yellow = self._runs(raw, W, H, lambda r, g, b: r > 230 and 170 < g < 235 and b < 90, gap=2)
+        self.assertEqual(len(white), 2, f"two title lines, got {white}")
+        self.assertEqual(len(yellow), 3, f"the accent bar, then two subtitle lines, got {yellow}")
+        bar, sub1, sub2 = yellow
+        self.assertLessEqual(bar[1] - bar[0], 6, f"the bar is a thin rule, got {bar}")
+        self.assertLess(white[1][1], bar[0], "the title ends above the bar")
+        self.assertLess(bar[1], sub1[0], "the first subtitle line starts below the bar")
+        self.assertLess(sub1[1], sub2[0], "the subtitle lines do not overlap")
+
+    def test_a_one_line_title_is_laid_out_as_it_always_was(self):
+        """The bar and subtitle of a one-line title sit where 2.5.0 put them (1280x720: bar at y=399)."""
+        self._need_font()
+        W, H = 1280, 720
+        bg = self._background("t2_bg_blue", f"{W}x{H}", "0x305070")
+        proc = script("graphics.py", bg, "--template", "title", "--title", "One line", "--subtitle", "plain sub",
+                      "-o", OUT / "t2_title1.mp4", "--dry-run", "--json")
+        cmd = " ".join(json.loads(proc.stdout)["commands"])
+        # the brand-yellow bar is a converted colour layer since 2.10.3 (drawn colours in BT.709): 86x4
+        # at x=597, y=399 as the drawbox was, placed on overlay's even 4:2:0 grid with a transparent
+        # first column and row
+        self.assertIn("color=c=0xFFD200:s=86x4:", cmd)
+        self.assertIn("pad=87:5:1:1:color=black@0", cmd)
+        # the layer's window is in its x position after 3.8.11 (decision.windowed_overlay_x)
+        self.assertRegex(" ".join(shlex.split(cmd)), r"overlay=x='if\(between\(t,[-0-9.]+,[0-9.]+\),596,-w\)':y=398:")
+        self.assertIn("y=(h-text_h)/2+60:", cmd)
+
+    def test_a_two_line_name_and_title_fit_in_the_lower_third_bar(self):
+        self._need_font()
+        W, H = 1280, 720
+        bg = self._background("t2_bg_blue", f"{W}x{H}", "0x305070")
+        out = OUT / "t2_lower.mp4"
+        script("graphics.py", bg, "--template", "lower-third", "--name", "Jane\nDoe", "--title", "CEO\nand founder",
+               "-o", out)
+        raw = self._rgb(out, W, H)
+        # the bar is the dark plate right of the accent stripe; the text lies inside it
+        plate = self._runs(raw, W, H, lambda r, g, b: r < 40 and g < 45 and b < 50, x0=60, x1=62, gap=2)
+        self.assertEqual(len(plate), 1, plate)
+        # the two name lines can merge into one run on FFmpeg 5.1 (their rows are close): the name is
+        # checked as a block, the title as its two lines
+        white = self._runs(raw, W, H, lambda r, g, b: r > 235 and g > 235 and b > 235, x0=60)
+        yellow = self._runs(raw, W, H, lambda r, g, b: r > 230 and 170 < g < 235 and b < 90, x0=60, gap=2)
+        self.assertEqual(len(yellow), 2, yellow)
+        self.assertTrue(white, "the name is drawn")
+        self.assertGreater(white[-1][1] - white[0][0], 39, f"a two-line name is taller than one line, got {white}")
+        self.assertLess(white[-1][1], yellow[0][0], "the name ends above the title")
+        self.assertGreaterEqual(white[0][0], plate[0][0])
+        self.assertLessEqual(yellow[-1][1], plate[0][1])
+
+    def test_a_trailing_newline_is_not_a_second_line(self):
+        """'One line\\n' is one line: the frame drawn for it is the frame drawn for 'One line'. Before the
+        normalisation the block was counted as two lines and the bar was placed for the second."""
+        self._need_font()
+        W, H = 1280, 720
+        bg = self._background("t2_bg_blue", f"{W}x{H}", "0x305070")
+        frames = []
+        for i, title in enumerate(("One line", "One line\n")):
+            out = OUT / f"t2_trailing_{i}.mp4"
+            script("graphics.py", bg, "--template", "title", "--title", title, "--subtitle", "sub",
+                   "-o", out)
+            frames.append(self._rgb(out, W, H))
+        self.assertEqual(frames[0], frames[1], "a trailing newline changed the layout")
+
+    def test_a_crlf_title_on_the_libass_route_draws_both_lines_above_the_bar(self):
+        """libass drops a bare CR's line, so a CRLF title drew one line while the bar was placed for
+        two: the line breaks are normalised once for every route, and both lines are drawn."""
+        self._need_font()
+        W, H = 1280, 720
+        bg = self._background("t2_bg_blue", f"{W}x{H}", "0x305070")
+        out = OUT / "t2_title_crlf_ass.mp4"
+        script("graphics.py", bg, "--template", "title", "--title", "Hello\r\nWorld", "--subtitle", "sub",
+               "--text-render", "ass", "-o", out)
+        raw = self._rgb(out, W, H)
+        white = self._runs(raw, W, H, lambda r, g, b: r > 235 and g > 235 and b > 235)
+        yellow = self._runs(raw, W, H, lambda r, g, b: r > 230 and 170 < g < 235 and b < 90, gap=2)
+        self.assertEqual(len(white), 2, f"both title lines are drawn, got {white}")
+        self.assertLess(white[1][1], yellow[0][0], "the title ends above the accent bar")
+
+    def test_a_long_hook_title_stays_inside_its_band(self):
+        self._need_font()
+        W, H = 1080, 1920
+        bg = self._background("t2_bg_grey_portrait", f"{W}x{H}", "0x909090")
+        out = OUT / "t2_hook.mp4"
+        script("graphics.py", bg, "--template", "hook", "--title",
+               "How I went from zero to a million followers in just ninety days with no budget", "-o", out)
+        raw = self._rgb(out, W, H)
+        band = self._runs(raw, W, H, lambda r, g, b: r < 100, x0=2, x1=4, gap=2)
+        band = [r for r in band if r[0] > 40]  # not the progress bar along the top edge
+        self.assertEqual(len(band), 1, band)
+        # rows separated by less than the run gap merge (a descender touching the next line's ascender
+        # does so on FFmpeg 5.1), so this checks where the block starts and ends, not how many runs
+        text = self._runs(raw, W, H, lambda r, g, b: r > 235 and g > 235 and b > 235, x0=0, x1=W)
+        text = [r for r in text if r[0] > 40]
+        self.assertTrue(text, "the title is drawn")
+        self.assertGreater(text[-1][1] - text[0][0], 3 * 91, f"a multi-line title, got {text}")
+        self.assertGreater(text[0][0], band[0][0], "the first line starts inside the band")
+        self.assertLess(text[-1][1], band[0][1], "the last line ends inside the band")
+
+
+class WrapReadabilityTests(unittest.TestCase):
+    """1.15: no one-character orphan line, and a balanced break for spaced scripts."""
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        self.caption = importlib.import_module("caption")
+
+    def test_caption_wrap_never_leaves_a_one_character_orphan_line(self):
+        C = self.caption
+        cases = [
+            # dl3's Japanese cue at sizes where greedy wrapping stranded one character (the Thai
+            # case this test carried until 1.16.0 is gone: a Thai run is no longer broken inside,
+            # see test_th1_cue_exact_split); a Chinese run stands in for the per-character scripts
+            ("\u4eca\u5929\u5929\u6c14\u5f88\u597d\u6211\u4eec\u53bb\u516c\u56ed\u6563\u6b65\u5427\u597d", 7),
+            ("\u3053\u3093\u306b\u3061\u306f\u3001\u4e16\u754c 2 \u884c\u76ee\u306e\u5b57\u5e55\u3067\u3059 "
+             "\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c\u6c7a\u307e\u308b\u884c", 10),
+            ("\u3053\u3093\u306b\u3061\u306f\u3001\u4e16\u754c 2 \u884c\u76ee\u306e\u5b57\u5e55\u3067\u3059 "
+             "\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c\u6c7a\u307e\u308b\u884c", 29),
+        ]
+        for text, max_em in cases:
+            with self.subTest(max_em=max_em):
+                greedy = C.wrap_text(text, max_em, balance=False)
+                self.assertTrue(len(C._atoms(greedy[-1])) == 1 and C.text_width_em(greedy[-1]) < C.ORPHAN_MIN_EM,
+                                "the case no longer reproduces greedily: %r" % greedy)
+                lines = C.wrap_text(text, max_em)
+                self.assertGreater(C.text_width_em(lines[-1]), C.ORPHAN_MIN_EM, lines)
+                for line in lines:
+                    self.assertLessEqual(C.text_width_em(line), max_em, lines)
+                self.assertEqual("".join(lines).replace(" ", ""), "".join(greedy).replace(" ", ""))
+
+    def test_caption_wrap_prefers_a_balanced_break_for_latin(self):
+        C = self.caption
+        text = "A third line the tool times for me"
+        greedy = C.wrap_text(text, 14, balance=False)
+        balanced = C.wrap_text(text, 14)
+        self.assertEqual(len(greedy), len(balanced))
+        self.assertLessEqual(max(C.text_width_em(l) for l in balanced),
+                             max(C.text_width_em(l) for l in greedy))
+        self.assertEqual(" ".join(balanced), text)
+        self.assertNotEqual(greedy, balanced, "dl1's break did not move")
+
+    def test_caption_wrap_rebalance_never_changes_the_line_count(self):
+        C = self.caption
+        samples = ["A third line the tool times for me",
+                   "Hello world", "one two three four five six seven eight nine ten",
+                   "\u3053\u3093\u306b\u3061\u306f\u3001\u4e16\u754c\u306e\u5b57\u5e55\u3067\u3059",
+                   "Shipping day \U0001F389 for everyone here"]
+        for text in samples:
+            for max_em in range(4, 30):
+                with self.subTest(text=text[:12], max_em=max_em):
+                    self.assertEqual(len(C.wrap_text(text, max_em)),
+                                     len(C.wrap_text(text, max_em, balance=False)))
+
+
+class PhraseWrapTests(unittest.TestCase):
+    """1.16: the four phrase rules (R1 never inside a word, R2 no weak line, R3 ja/zh preferred
+    break points, R4 no function word at the end of a line), locked against the eval-16 cues."""
+
+    # The em width a caption line has at a real destination's caption size, computed from the
+    # platform table rather than pinned as a magic float (the size, the frame and the safe-area
+    # fraction can all move; the test should move with them).
+    @staticmethod
+    def _max_em(platform_name):
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        _platforms = importlib.import_module("_platforms")
+        caption = importlib.import_module("caption")
+        frame = _platforms.PLATFORMS[platform_name]["frame"]
+        cap = _platforms.caption_defaults(platform_name)
+        size_px = cap["size"] * frame["h"] / 288.0
+        return (frame["w"] * caption.SAFE_WIDTH_FRACTION) / size_px
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        self.caption = importlib.import_module("caption")
+        self.W = self._max_em("linkedin")     # 12.96 em: wide enough for a two-line cue
+        self.NARROW = self._max_em("tiktok")  # 6.075 em: the vertical caption width
+
+    def test_no_line_opens_with_punctuation_that_may_not_start_one(self):
+        """Audit A54 (#457): the fullwidth comma Chinese writes was missing from the kinsoku table,
+        so phrase mode opened a line with '，'; and the greedy fill opened one with '、' or '。'
+        wherever no later pass reconsidered the break (a cue of three lines or more, the pieces of
+        a cue split past --max-lines). Measured against a fixed list, not the table under test."""
+        C = self.caption
+        never_first = "，、。；：！？）」』"
+        corpus = ["我们今天去公园散步，然后回家吃饭",
+                  "好的，我们走吧，今天很冷，大家穿暖和点；天气很好：大家",
+                  "好的、我们走吧、今天很冷、大家穿暖和点。天气很好。大家",
+                  "今日は、とても、いい天気ですね。明日も、晴れるでしょう。",
+                  "你好！真的吗？我们走吧（现在）好的"]
+        for text in corpus:
+            for max_em in (4.0, 5.0, 6.0, 7.0, 8.0, 12.0):
+                with self.subTest(text=text[:8], max_em=max_em):
+                    lines = C.wrap_text(text, max_em)
+                    self.assertEqual("".join(lines), text)
+                    self.assertEqual([l for l in lines[1:] if l[0] in never_first], [], lines)
+            # the caption layout's split path: each piece of a cue split past --max-lines
+            out, _stats = C.layout_cues([(0.0, 6.0, text)], max_em=4.0, max_lines=2, min_duration=0, offset=0)
+            for _s, _e, piece in out:
+                with self.subTest(text=text[:8], piece=piece):
+                    self.assertEqual([l for l in piece.split("\n") if l and l[0] in never_first], [], piece)
+
+    # -------------------------------------------------------------- R1: never inside a word
+    def test_wrap_never_splits_inside_a_word(self):
+        C = self.caption
+        corpus = [
+            "A third line the tool times for me",
+            "Segunda linea de subtitulos con acentos",
+            "one two three four five six seven eight nine ten",
+            "\u3053\u3093\u306b\u3061\u306f\u3001\u4e16\u754c 2 \u884c\u76ee\u306e\u5b57\u5e55\u3067\u3059",
+            "\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01 \u0e40\u0e2a\u0e35\u0e22\u0e07\u0e19\u0e49\u0e33\u0e44\u0e2b\u0e25",
+        ]
+        for text in corpus:
+            for max_em in (4.0, 6.075, 9.0, 12.96, 20.0):
+                with self.subTest(text=text[:12], max_em=max_em):
+                    lines = C.wrap_text(text, max_em)
+                    self.assertEqual("".join(lines).replace(" ", ""), text.replace(" ", ""))
+                    # every boundary between two spaced-script lines stood at a space or a hyphen
+                    for a, b in zip(lines, lines[1:]):
+                        if not a or not b:
+                            continue
+                        spaced = C.char_script(a[-1]) not in C.NO_SPACE_SCRIPTS \
+                            and C.char_script(b[0]) not in C.NO_SPACE_SCRIPTS
+                        if not spaced:
+                            continue   # a no-space script breaks between characters by design
+                        if not C._break_spaced(a, b):
+                            self.assertTrue(a.endswith(("-", "\u2010")),
+                                            "broke inside a word: %r | %r" % (a, b))
+
+    def test_wrap_breaks_a_hyphenated_word_only_after_the_hyphen(self):
+        C = self.caption
+        lines = C.wrap_text("an end-to-end example", 6.0)
+        self.assertEqual("".join(lines).replace(" ", ""), "anend-to-endexample")
+        for a, b in zip(lines, lines[1:]):
+            if a and b and not C._break_spaced(a, b):
+                self.assertTrue(a.endswith("-"), "broke inside a word: %r | %r" % (a, b))
+        # a non-breaking hyphen is never a break point
+        self.assertEqual(C._split_hyphens([("well\u2011known", False)]), [("well\u2011known", False)])
+        # ... and neither is a leading or trailing one
+        self.assertEqual(C._split_hyphens([("-5", False)]), [("-5", False)])
+
+    # -------------------------------------------------------------- R2: no weak line
+    def test_is_weak_line_names_the_lines_no_reader_should_get(self):
+        C = self.caption
+        for weak in ("2", "--", "\u3066", "\u30f3", " "):
+            self.assertTrue(C._is_weak_line(weak), repr(weak))
+        for fine in ("me", "\u4e16\u754c", "\u0e44\u0e2b\u0e25"):
+            self.assertFalse(C._is_weak_line(fine), repr(fine))
+
+    def test_dl3_cue_exact_split(self):
+        """dl3: no line that is a lone digit; the break is not between a kanji stem and its
+        okurigana (`\u6c7a\u307e` | `\u308b`); and no line OPENS with a particle -- a particle is
+        enclitic, so kinsoku keeps it with the word before it."""
+        C = self.caption
+        jp = "\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c\u6c7a\u307e\u308b\u884c"
+        for max_em in (self.NARROW, self.W, 10.0, 14.0):
+            with self.subTest(max_em=max_em):
+                lines = C.wrap_text("2 \u884c\u76ee\u306e\u5b57\u5e55\u3067\u3059", max_em)
+                self.assertNotIn("2", lines, lines)
+                lines = C.wrap_text(jp, max_em)
+                for a, b in zip(lines, lines[1:]):
+                    self.assertFalse(a.endswith("\u6c7a\u307e") and b.startswith("\u308b"),
+                                     "broke inside \u6c7a\u307e\u308b: %r" % (lines,))
+                    self.assertNotIn(b[0], C.JA_PARTICLES,
+                                     "a line opens with a particle: %r" % (lines,))
+        # the break falls after \u304c, not before it
+        self.assertEqual(C.wrap_text(jp, 10.0),
+                         ["\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c", "\u6c7a\u307e\u308b\u884c"])
+        self.assertEqual(C.wrap_text(jp, self.W),
+                         ["\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c", "\u6c7a\u307e\u308b\u884c"])
+
+    def test_th1_cue_exact_split(self):
+        """th1: the trailing line is never the stranded `\u0e44\u0e2b\u0e25` alone -- and since 1.16.1 a
+        Thai run is never broken inside at all. Thai writes no space inside a phrase and the
+        wrapper has no dictionary, so every character-level break eval 17 took landed inside a
+        word (`\u0e02|\u0e2d\u0e07`, `\u0e40\u0e27|\u0e25\u0e32`). The break goes where the writer put a space; a run
+        with none stays long on its own line, the rule long Latin words already follow."""
+        C = self.caption
+        first, second = "\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01", "\u0e40\u0e2a\u0e35\u0e22\u0e07\u0e19\u0e49\u0e33\u0e44\u0e2b\u0e25"
+        text = first + " " + second
+        for max_em in (self.NARROW, 8.0, self.W):
+            with self.subTest(max_em=max_em):
+                lines = C.wrap_text(text, max_em)
+                self.assertEqual(lines, [first, second], lines)
+                self.assertFalse(C._is_weak_line(lines[-1]), lines)
+        # a Thai run with no space is one atom: never chopped, however narrow the line
+        run = "\u0e1a\u0e23\u0e23\u0e17\u0e31\u0e14\u0e17\u0e35\u0e48\u0e2a\u0e2d\u0e07\u0e02\u0e2d\u0e07\u0e04\u0e33\u0e1a\u0e23\u0e23\u0e22\u0e32\u0e22"
+        self.assertEqual(C.wrap_text(run, self.NARROW), [run])
+        self.assertEqual(C.wrap_text(run, 8.0, mode="measured"), [run])
+
+    def test_katakana_run_is_one_atom(self):
+        """eval 17 dl3: `\u30bf\u30a4|\u30df\u30f3\u30b0` -- a katakana loan word was broken like a run of kanji.
+        Katakana plus the prolonged-sound mark are one atom; the break lands before or after
+        the word, and a word too wide for the line stays long rather than chopped."""
+        C = self.caption
+        jp = "\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c\u6c7a\u307e\u308b\u884c"
+        for max_em in (self.NARROW, 8.0, 10.0):
+            with self.subTest(max_em=max_em):
+                joined = "".join(C.wrap_text(jp, max_em))
+                self.assertEqual(joined, jp)
+                for line in C.wrap_text(jp, max_em):
+                    self.assertFalse(line.endswith("\u30bf\u30a4") or line.startswith("\u30df\u30f3\u30b0"), line)
+        self.assertEqual(C.wrap_text(jp, self.NARROW), ["\u81ea\u52d5\u3067", "\u30bf\u30a4\u30df\u30f3\u30b0\u304c", "\u6c7a\u307e\u308b\u884c"])
+        self.assertEqual(C.wrap_text("\u30b3\u30f3\u30d4\u30e5\u30fc\u30bf\u30fc\u3092\u8cb7\u3063\u305f", 7.0), ["\u30b3\u30f3\u30d4\u30e5\u30fc\u30bf\u30fc", "\u3092\u8cb7\u3063\u305f"])
+        self.assertEqual([a for a, _ in C._atoms("\u30bf\u30a4\u30df\u30f3\u30b0\u304c")][0], "\u30bf\u30a4\u30df\u30f3\u30b0")
+
+    # -------------------------------------------------------------- escape hatch (1.18.4, cs2)
+    def test_overlong_word_is_sliced_at_the_column_edge(self):
+        """cs2 (eval 20): a single 32-letter word with no break point, wider than the live column
+        even at --min-size, used to be kept whole and clipped past both frame edges. It is now
+        hard-sliced at exactly the column width, wherever `slice_overlong` is turned on -- the
+        escape hatch itself is off by default in wrap_text()/wrap_variants(), so nothing here
+        changes unless a caller asks for it (caption.py's burn-in pass is the only caller that
+        does)."""
+        C = self.caption
+        word = "Supercalifragil\u00edsticoespialidoso"
+        for max_em in (self.NARROW, 8.0, self.W):
+            with self.subTest(max_em=max_em):
+                # off by default: the word is kept whole, exactly as before this change
+                self.assertEqual(C.wrap_text(word, max_em), [word])
+                # the escape hatch: every produced line now measures within the column
+                lines = C.wrap_text(word, max_em, slice_overlong=True)
+                for line in lines:
+                    self.assertLessEqual(C.text_width_em(line), max_em, lines)
+                # no character was added, dropped or reordered
+                self.assertEqual("".join(lines), word)
+
+    def test_overlong_word_prefers_its_own_hyphen(self):
+        """When the overlong atom already has a hyphen, the slice prefers the cut right after it
+        -- the same break R1 already allows elsewhere -- over an arbitrary character cut, as long
+        as that still fits the column."""
+        C = self.caption
+        atom = "co-occurrencemeasurementsomethingunbreakablylong"
+        pieces = C._slice_atom(atom, 12.0)
+        self.assertTrue(pieces[0].endswith("-"), pieces)
+        for piece in pieces:
+            self.assertLessEqual(C.text_width_em(piece), 12.0, pieces)
+        self.assertEqual("".join(pieces), atom)
+
+    def test_layout_cues_reports_broken_inside_word_not_overlong(self):
+        """caption.py's per-cue loop (layout_cues) is the one caller that turns the escape hatch
+        on. cs2's cue now burns in with every line inside the safe column, and the new
+        `broken_inside_word` stat -- not `overlong` -- counts it."""
+        C = self.caption
+        word = "Supercalifragil\u00edsticoespialidoso"
+        max_em = self.NARROW
+        cues = [(0.0, 3.0, word)]
+        out, stats = C.layout_cues(cues, max_em=max_em, max_lines=4, min_duration=0.0, offset=0.0)
+        self.assertEqual(stats.get("broken_inside_word", 0), 1, stats)
+        self.assertNotIn("overlong", stats)
+        for _start, _end, text in out:
+            for line in text.split("\n"):
+                self.assertLessEqual(C.text_width_em(line), max_em, out)
+
+    def test_overlong_still_fires_when_even_one_character_does_not_fit(self):
+        """The escape hatch guarantees every piece fits as long as at least one character does.
+        `overlong` is not dead code: it is the fallback for the one case the hatch cannot fix, a
+        single character wider than the column itself (a pathologically small --size)."""
+        C = self.caption
+        # a full-width ideograph is 1.0 em; 0.5 em is narrower than any single character of it
+        text = "\u4e00\u4e8c\u4e09"
+        max_em = 0.5
+        cues = [(0.0, 3.0, text)]
+        out, stats = C.layout_cues(cues, max_em=max_em, max_lines=1, min_duration=0.0, offset=0.0)
+        self.assertEqual(stats.get("overlong", 0), 1, stats)
+
+    def test_escape_hatch_never_touches_a_fitting_thai_or_katakana_run(self):
+        """The hard constraint: an atom that already fits is never eligible for the escape hatch,
+        even with `slice_overlong=True` -- a fitting Thai phrase or katakana run must come back
+        exactly as written, same as 1.16.1."""
+        C = self.caption
+        thai_run = "\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35\u0e0a\u0e32\u0e27\u0e42\u0e25\u0e01"
+        kata_run = "\u30b3\u30f3\u30d4\u30e5\u30fc\u30bf\u30fc"
+        wide = self.W  # both runs fit comfortably at the wide platform width
+        self.assertLessEqual(C.text_width_em(thai_run), wide)
+        self.assertLessEqual(C.text_width_em(kata_run), wide)
+        self.assertEqual(C.wrap_text(thai_run, wide, slice_overlong=True), [thai_run])
+        self.assertEqual(C.wrap_text(kata_run, wide, slice_overlong=True), [kata_run])
+        # and unbroken through wrap_variants, the entry point caption.py actually calls
+        wrapped, greedy, measured = C.wrap_variants(thai_run, wide, slice_overlong=True)
+        self.assertEqual(wrapped, [thai_run])
+        wrapped, greedy, measured = C.wrap_variants(kata_run, wide, slice_overlong=True)
+        self.assertEqual(wrapped, [kata_run])
+
+    # -------------------------------------------------------------- R4: function words
+    def test_function_word_never_ends_a_line(self):
+        C = self.caption
+        cases = {
+            "en": "A third line the tool times for me",
+            "es": "Una tercera linea con tiempos automaticos",
+            "pt": "Uma terceira linha com tempos automaticos",
+            "fr": "La ligne trois avec temps automatiques",
+            "de": "Zeile drei zeigt die Zeiten automatisch",
+            "it": "Una terza riga con i tempi automatici",
+        }
+        for lang, text in cases.items():
+            with self.subTest(lang=lang):
+                lines = C.wrap_text(text, self.W, lang=lang)
+                for line in lines[:-1]:
+                    last = C._bare_word(line.split(" ")[-1])
+                    self.assertNotIn(last, C._function_words(lang),
+                                     "%s: line ends on a function word: %r" % (lang, lines))
+                # and the rule works by preferring the break BEFORE the word, not only by
+                # vetoing the one after it
+                self.assertNotEqual(lines, C.wrap_text(text, self.W, mode="measured"),
+                                    "%s: the greedy break did not move" % lang)
+
+    def test_dl4_cue_exact_split(self):
+        """dl4, both cues, at the width that reproduced the eval-16 splits."""
+        C = self.caption
+        self.assertEqual(C.wrap_text("Segunda l\u00ednea de subt\u00edtulos", self.W, lang="es"),
+                         ["Segunda l\u00ednea", "de subt\u00edtulos"])
+        self.assertEqual(C.wrap_text("Una tercera l\u00ednea con tiempos autom\u00e1ticos", self.W, lang="es"),
+                         ["Una tercera l\u00ednea", "con tiempos autom\u00e1ticos"])
+
+    def test_dl1_cue_exact_split(self):
+        """dl1. R4 scores both directions: `the` opens the phrase it governs, so the break BEFORE
+        it is the preferred one and the break after it the penalised one. Both halves fit, so the
+        cue comes out as one whole phrase per line. `--wrap measured` still gives 1.15's split."""
+        C = self.caption
+        text = "A third line the tool times for me"
+        for max_em in (self.W, 14.0, 16.0):
+            with self.subTest(max_em=max_em):
+                self.assertEqual(C.wrap_text(text, max_em, lang="en"),
+                                 ["A third line", "the tool times for me"])
+        self.assertEqual(C.wrap_text(text, self.W, mode="measured"),
+                         ["A third line the", "tool times for me"])
+
+    # -------------------------------------------------------------- modes and invariants
+    def test_wrap_measured_is_byte_identical_to_1_15(self):
+        """`--wrap measured` reproduces the outputs the 1.15 tests pinned."""
+        C = self.caption
+        self.assertEqual(C.wrap_text("A third line the tool times for me", 14.0, mode="measured"),
+                         ["A third line the", "tool times for me"])
+        self.assertEqual(C.wrap_text("A third line the tool times for me", 14.0,
+                                     balance=False, mode="measured"),
+                         ["A third line the tool times", "for me"])
+        self.assertEqual(C.wrap_text("Segunda l\u00ednea de subt\u00edtulos", self.W, mode="measured"),
+                         ["Segunda l\u00ednea", "de subt\u00edtulos"])
+
+    def test_wrap_line_count_never_grows(self):
+        C = self.caption
+        corpus = ["A third line the tool times for me", "Hello world",
+                  "one two three four five six seven eight nine ten",
+                  "Una tercera l\u00ednea con tiempos autom\u00e1ticos",
+                  "\u3053\u3093\u306b\u3061\u306f\u3001\u4e16\u754c\u306e\u5b57\u5e55\u3067\u3059",
+                  "\u81ea\u52d5\u3067\u30bf\u30a4\u30df\u30f3\u30b0\u304c\u6c7a\u307e\u308b\u884c",
+                  "an end-to-end example of a long hyphenated line"]
+        for text in corpus:
+            for max_em in range(4, 30):
+                with self.subTest(text=text[:12], max_em=max_em):
+                    for mode in ("phrase", "measured"):
+                        self.assertEqual(len(C.wrap_text(text, float(max_em), mode=mode)),
+                                         len(C.wrap_text(text, float(max_em), balance=False)),
+                                         mode)
+
+    def test_multi_character_particles_are_matched_as_words_not_characters(self):
+        """から / まで / より are two-character particles. Keeping them in the CHARACTER table made
+        か, ら, ま, で, よ and り one-character particles of their own, which none of them is."""
+        C = self.caption
+        for ch in "\u304b\u3089\u307e\u3088\u308a":
+            self.assertNotIn(ch, C.JA_PARTICLES, "%r is not a particle on its own" % ch)
+        # \u304b after a kanji stem is okurigana, not a forbidden line start
+        self.assertEqual(C.break_penalty("\u6f22", "\u304b", "ja",
+                                         before="\u6f22", after="\u304b\u305f\u3061"), 0.9)
+        # the whole word is seen when the caller passes the surrounding text
+        self.assertEqual(C.break_penalty("\u305f", "\u304b", "ja",
+                                         before="\u898b\u305f", after="\u304b\u3089\u3067\u3059"), 1.0)
+        self.assertEqual(C.break_penalty("\u3089", "\u8a71", "ja",
+                                         before="\u898b\u305f\u304b\u3089", after="\u8a71\u3057\u305f"), 0.2)
+        # ... and a \u3089 that merely ends a word is not a particle
+        self.assertEqual(C.break_penalty("\u3089", "\u8a71", "ja",
+                                         before="\u3055\u304f\u3089", after="\u8a71\u3057\u305f"), 0.5)
+
+    def test_break_penalty_prefers_a_sentence_end_and_a_particle(self):
+        C = self.caption
+        self.assertEqual(C.break_penalty("\u3002", "\u6b21", "ja"), 0.0)
+        # a particle keeps company with the word BEFORE it: breaking after one is preferred,
+        # breaking before one is forbidden
+        self.assertEqual(C.break_penalty("\u306f", "\u4e16", "ja"), 0.2)   # after a particle
+        self.assertEqual(C.break_penalty("\u754c", "\u306f", "ja"), 1.0)   # before a particle
+        self.assertLess(C.break_penalty("\u306f", "\u4e16", "ja"),         # after a particle
+                        C.break_penalty("\u6c7a", "\u307e", "ja"))         # inside a word
+        self.assertEqual(C.break_penalty("\u3042", "\u3063", "ja"), 1.0)  # small kana may not start a line
+
+
+    def _assert_pair_never_torn(self, text, char, lang, widths, modes=("phrase", "measured")):
+        """End to end: the text survives wrapping and no line ends with the first half of a
+        `char` pair while the second half opens the next line."""
+        C = self.caption
+        for max_em in widths:
+            for mode in modes:
+                lines = C.wrap_text(text, float(max_em), mode=mode, lang=lang)
+                self.assertEqual("".join(lines), text, (lines, max_em, mode, lang))
+                for a, b in zip(lines, lines[1:]):
+                    run = len(a) - len(a.rstrip(char))
+                    if run and b.startswith(char):
+                        # a break inside a run of `char` falls between pairs: an even count ends the line
+                        self.assertEqual(run % 2, 0, (lines, max_em, mode, lang))
+
+    def test_reduplicated_ideographs_are_never_split(self):
+        """A repeated ideograph is one word -- Chinese verb reduplication (看看 "have a look",
+        试试 "give it a try", 想想 "think it over") and words like 人人. A reader of the 3.10.0
+        release found 看|看 split across two lines of a burned-in Chinese caption: the pair
+        were two atoms at penalty 0.6 (two ideographs, nothing to say), so a width that
+        filled the first line exactly tore the word in half."""
+        C = self.caption
+        # the penalty table forbids the break itself, whatever language the cue declares
+        for pair in ("看看", "试试", "想想", "人人"):
+            self.assertEqual(C.break_penalty(pair[0], pair[1], "zh"), 1.0, pair)
+        self.assertEqual(C.break_penalty("看", "看", None), 1.0)
+        # two different ideographs keep their ordinary score
+        self.assertLess(C.break_penalty("看", "这", "zh"), 1.0)
+        # the atomiser keeps the pair together, as it already keeps a katakana run together
+        self.assertIn("想想", [a for a, _sp in C._atoms("我想想办法")])
+        self.assertIn("看看", [a for a, _sp in C._atoms("你先看看这个")])
+        self.assertIn("试试", [a for a, _sp in C._atoms("我们试试吧")])
+        # end to end, at every width that wraps the cue at all, in both modes
+        self._assert_pair_never_torn("你先看看这个再说吧", "看", "zh", range(3, 13))
+        self._assert_pair_never_torn("我们试试这个新办法吧", "试", "zh", range(3, 13))
+
+    def test_chinese_phrase_wrap_keeps_common_words_and_punctuation(self):
+        C = self.caption
+        cases = (
+            ("我们一起来看看这个视频的效果吧", ("看看", "视频", "效果"), (None, "zh-CN")),
+            ("你可以试试这个新的功能看看效果如何呢", ("试试", "功能", "看看", "效果"), (None, "zh-CN")),
+            ("我們來看看「視頻」的效果，試試新的功能吧！", ("看看", "視頻", "效果", "試試", "功能"), ("zh-TW",)),
+            ("这是段原声音频请认真听听", ("声音", "音频", "听听"), (None, "zh-CN")),
+        )
+        for cue, words, langs in cases:
+            for lang in langs:
+                for width in range(6, 11):
+                    with self.subTest(cue=cue, lang=lang, width=width):
+                        wrapped, greedy, measured = C.wrap_variants(cue, width, lang=lang)
+                        self.assertEqual(wrapped, C.wrap_text(cue, width, lang=lang))
+                        self.assertEqual(measured, C.wrap_text(cue, width, mode="measured", lang=lang))
+                        self.assertEqual(len(wrapped), len(greedy))
+                        for lines in (wrapped, greedy):
+                            self.assertEqual("".join(lines), cue)
+                            self.assertTrue(all(C.text_width_em(line) <= width for line in lines), lines)
+                            for word in words:
+                                self.assertTrue(any(word in line for line in lines), (word, lines))
+                            for line in lines:
+                                self.assertNotIn(line[0], "，。！？、」", lines)
+                                self.assertNotIn(line[-1], "「", lines)
+
+    def test_reduplication_merge_is_capped_at_two(self):
+        """An uncapped merge made any run of one ideograph a single atom, so 哈哈哈哈哈哈 in a
+        caption could not be wrapped except by a hard slice at the column edge. The merge
+        stops at two: a longer run is pairs, and a lone last character when it is odd."""
+        C = self.caption
+
+        def atoms(s):
+            return [a for a, _sp in C._atoms(s)]
+
+        self.assertEqual(atoms("人人人"), ["人人", "人"])
+        self.assertEqual(atoms("哈" * 8), ["哈哈"] * 4)
+        self.assertEqual(atoms("哈" * 9), ["哈哈"] * 4 + ["哈"])
+        self.assertEqual(atoms("哈" * 10), ["哈哈"] * 5)
+        # the break between two pairs is still scored as inside a word (a cost, not a wall)
+        self.assertEqual(C.break_penalty("哈", "哈", "zh"), 1.0)
+
+    def test_long_run_of_one_ideograph_still_wraps(self):
+        """8-10 identical ideographs at narrow widths: wrap_text returns (terminates), keeps
+        the text, and breaks only between pair atoms. Every line but the last holds an even
+        count; a run kept as one atom would be hard-sliced at 3 or 5 em into odd lines."""
+        C = self.caption
+        for n in (8, 9, 10):
+            text = "哈" * n
+            for max_em in (3.0, 5.0):
+                for mode in ("phrase", "measured"):
+                    lines = C.wrap_text(text, max_em, mode=mode, lang="zh")
+                    self.assertEqual("".join(lines), text, (n, max_em, mode))
+                    self.assertGreater(len(lines), 1, (lines, n, max_em, mode))
+                    for line in lines[:-1]:
+                        self.assertEqual(len(line) % 2, 0, (lines, n, max_em, mode))
+
+    def test_three_run_is_a_pair_and_one(self):
+        """人人人: the cap makes it 人人 + 人, so the only break inside the run is after the pair."""
+        C = self.caption
+        self.assertEqual([a for a, _sp in C._atoms("大家人人人都有")].count("人人"), 1)
+        self._assert_pair_never_torn("大家人人人都有", "人", "zh", range(2, 9))
+
+    def test_reduplication_inside_brackets(self):
+        """A reduplicated pair inside brackets ("（看看）") is never torn.
+
+        Guarantees differ by mode, and the assertions are scoped to match:
+
+        - Both modes: the wrap is lossless (joined lines == input), and the
+          pair "看看" always sits intact on a single line.
+        - Phrase mode only: the brackets stay attached to the pair, so the
+          whole "（看看）" lands on one line and no line starts with a
+          closing bracket (break_penalty("看", "」", "zh") is 1.0, and
+          phrase mode honours kinsoku via _greedy_chunks).
+
+        Measured mode runs _greedy_chunks with kinsoku=False and is pinned
+        to 1.15's behaviour exactly: no one-character orphan line, a break
+        chosen only to minimise the widest line, and the greedy fill's line
+        count never changes. It protects the pair itself, but the brackets
+        can separate from it. Verified layouts for "他说（看看）这个吧":
+            phrase   max_em=4/5 -> ['他说', '（看看）', '这个吧']
+            measured max_em=4   -> ['他说（', '看看）这', '个吧']
+            measured max_em=5   -> ['他说（看看', '）这个吧']
+        So no bracket-attachment or line-start assertion is made for
+        measured mode. Do not "fix" that here without changing the
+        measured-mode contract.
+        """
+        C = self.caption
+        text = "他说（看看）这个吧"
+        # Breaking between 看 and a closing 」 is forbidden outright.
+        self.assertEqual(C.break_penalty("看", "」", "zh"), 1.0)
+        for max_em in (4, 5):
+            for mode in ("phrase", "measured"):
+                with self.subTest(mode=mode, max_em=max_em):
+                    lines = C.wrap_text(text, float(max_em), mode=mode, lang="zh")
+                    # Both modes: lossless, and the pair is never torn.
+                    self.assertEqual("".join(lines), text)
+                    self.assertTrue(
+                        any("看看" in line for line in lines),
+                        f"pair torn in {mode} mode: {lines!r}",
+                    )
+                    if mode == "phrase":
+                        self.assertTrue(
+                            any("（看看）" in line for line in lines),
+                            f"brackets split from pair in phrase mode: {lines!r}",
+                        )
+                        for line in lines:
+                            self.assertFalse(
+                                line.startswith("」"),
+                                f"line starts with 」 in phrase mode: {lines!r}",
+                            )
+
+    def test_reduplication_kept_whatever_the_cue_language(self):
+        """The cue's declared language does not change it: a Chinese line tagged ja, or with
+        no language at all, keeps 看看 together end to end."""
+        C = self.caption
+        for lang in (None, "ja"):
+            self.assertEqual(C.break_penalty("看", "看", lang), 1.0, lang)
+            self._assert_pair_never_torn("你先看看这个再说吧", "看", lang, range(3, 13))
+
+
+class FitCropLossTests(unittest.TestCase):
+    """Crop measurements on a 32x18 grey frame and controlled decoder responses."""
+    W, H = 32, 18
+    WINDOW = (0.35, 0.65)  # a centred crop keeping 30%
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+        import sys
+        scripts = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import fit
+        cls.fit = fit
+
+    def frame(self, x0, x1, y0, y1, fill=0):
+        buf = bytearray([fill]) * (self.W * self.H)
+        for y in range(y0, y1):
+            buf[y * self.W + x0:y * self.W + x1] = b"\xff" * (x1 - x0)
+        return bytes(buf)
+
+    def moving(self, x0, x1, y0, y1, dx=1, dy=0, n=3):
+        return [(self.frame(x0, x1, y0, y1), self.frame(x0 + dx, x1 + dx, y0 + dy, y1 + dy))] * n
+
+    def test_crop_check_does_not_decode_past_a_short_trim(self):
+        from unittest.mock import patch
+        with patch.object(self.fit, "run_analysis") as decode:
+            check = self.fit.check_crop("clip.mp4", [], 32, 18, ("x", *self.WINDOW), 1.0, 0.1)
+        decode.assert_not_called()
+        self.assertEqual((check["verdict"], check["samples"]), ("unmeasured", 0))
+
+    def test_crop_check_timeout_is_advisory(self):
+        from unittest.mock import patch
+        from _common import runner
+        with patch.object(self.fit, "require_tool", return_value="ffmpeg"), \
+             patch.object(runner.subprocess, "run", side_effect=subprocess.TimeoutExpired("ffmpeg", 1)), \
+             patch.object(self.fit, "note") as note:
+            check = self.fit.check_crop("clip.mp4", [], 32, 18, ("x", *self.WINDOW), 0.0, 2.0)
+        self.assertEqual((check["verdict"], check["samples"]), ("unmeasured", 0))
+        self.assertIn("timed out", note.call_args.args[0])
+
+    def test_crop_check_reports_an_outlier_even_when_most_motion_survives(self):
+        from unittest.mock import patch
+
+        outside, = self.moving(2, 7, 6, 13, n=1)
+        inside, = self.moving(14, 19, 2, 16, n=1)
+        samples = [(4.5, outside), (5.0, inside), (5.5, inside)]
+        with patch.object(self.fit, "sample_crop_frames", return_value=(samples, self.W, self.H)), \
+             patch.object(self.fit, "warn") as warn:
+            result = self.fit.check_crop("clip.mp4", [], self.W, self.H, ("x", *self.WINDOW), 4, 2,
+                                         speed=2, output_video={"duration": 1, "fps": 25})
+        self.assertLess(result["motion_outside"], 0.5)
+        self.assertEqual(result["verdict"], "review")
+        first, = result["review_points"]
+        self.assertEqual((first["source_time"], first["output_time_estimate"]), (4.5, 0.25))
+        self.assertEqual(first["signal"], "motion")
+        self.assertGreaterEqual(first["motion_outside"], 0.5)
+        self.assertEqual(warn.call_args.kwargs["review_points"], result["review_points"])
+
+        # At 1 fps, a 4-second video has no frame to seek to after 3.0.
+        with patch.object(self.fit, "sample_crop_frames",
+                          return_value=([(2.7, outside), (3.7, outside)], self.W, self.H)), \
+             patch.object(self.fit, "warn"):
+            result = self.fit.check_crop("clip.mp4", [], self.W, self.H, ("x", *self.WINDOW), 0, 4,
+                                         output_video={"duration": 4, "fps": 1})
+        self.assertEqual([p["output_time_estimate"] for p in result["review_points"]], [2.7, None])
+
+    def test_left_heavy_motion_is_review_anchor_near_0(self):
+        c = self.fit.crop_loss(self.moving(2, 7, 6, 13), self.W, self.H, self.WINDOW, "x")
+        self.assertEqual(c["verdict"], "review", c)
+        self.assertEqual(c["axis"], "x")
+        self.assertEqual(c["basis"], "luma_motion_proxy")
+        self.assertAlmostEqual(c["discarded_fraction"], 0.7, places=4)
+        self.assertGreaterEqual(c["motion_outside"], 0.99)
+        self.assertLess(c["centroid"], 0.25)
+        self.assertLessEqual(c["suggested_anchor"], 0.1)
+        self.assertEqual(c["samples"], 3)
+
+    def test_right_heavy_motion_is_review_anchor_near_1(self):
+        c = self.fit.crop_loss(self.moving(25, 30, 6, 13), self.W, self.H, self.WINDOW, "x")
+        self.assertEqual(c["verdict"], "review", c)
+        self.assertGreater(c["centroid"], 0.75)
+        self.assertGreaterEqual(c["suggested_anchor"], 0.9)
+
+    def test_centred_motion_is_ok(self):
+        c = self.fit.crop_loss(self.moving(14, 19, 6, 13), self.W, self.H, self.WINDOW, "x")
+        self.assertEqual(c["verdict"], "ok", c)
+        self.assertLess(c["motion_outside"], 0.5)
+        self.assertAlmostEqual(c["suggested_anchor"], 0.5, delta=0.1)
+
+    def bars(self, xs, shift=0):
+        buf = bytearray(self.W * self.H)
+        for y in range(4, 14):
+            for x in xs:
+                buf[y * self.W + x + shift] = 255
+        return bytes(buf)
+
+    def test_motion_spread_over_the_frame_is_not_off_centre(self):
+        """#630: a 16:9 to 9:16 crop cuts 68% of the width, so motion spread evenly over the frame
+        (a pan, handheld footage, testsrc2) has more than half of it outside. That is the area
+        share, not content off centre: ok. Motion at both edges is review, and the remedy does not
+        name the centred anchor the run already used."""
+        from unittest.mock import patch
+
+        spread = list(range(0, 31, 3))
+        c = self.fit.crop_loss([(self.bars(spread), self.bars(spread, 1))] * 3, self.W, self.H, self.WINDOW, "x")
+        self.assertGreater(c["motion_outside"], 0.5, c)
+        self.assertEqual(c["verdict"], "ok", c)
+        edges = [1, 2, 3, 28, 29, 30]
+        pair = (self.bars(edges), self.bars([0, 1, 2, 29, 30, 31]))  # both move outward: centred
+        c = self.fit.crop_loss([pair] * 3, self.W, self.H, self.WINDOW, "x")
+        self.assertEqual((c["verdict"], c["suggested_anchor"]), ("review", 0.5), c)
+        with patch.object(self.fit, "sample_crop_frames", return_value=([(1.0, pair)], self.W, self.H)), \
+             patch.object(self.fit, "warn") as warn:
+            self.fit.check_crop("clip.mp4", [], self.W, self.H, ("x", *self.WINDOW), 0, 2)
+        message = warn.call_args.args[0]
+        self.assertNotIn("--crop-x", message)
+        self.assertIn("--fit pad", message)
+
+    def test_flat_frames_are_unmeasured_without_division_by_zero(self):
+        for fill in (0, 128):
+            flat = self.frame(0, 0, 0, 0, fill=fill)
+            c = self.fit.crop_loss([(flat, flat)] * 3, self.W, self.H, self.WINDOW, "x")
+            self.assertEqual(c["verdict"], "unmeasured", c)
+            self.assertIsNone(c["centroid"])
+            self.assertIsNone(c["suggested_anchor"])
+            self.assertIsNone(c["motion_outside"])
+        # no frames at all, and frames of the wrong size, are unmeasured too
+        c = self.fit.crop_loss([], self.W, self.H, self.WINDOW, "x")
+        self.assertEqual((c["verdict"], c["samples"]), ("unmeasured", 0))
+        c = self.fit.crop_loss([(b"\x00" * 5, b"\x00" * 5)], self.W, self.H, self.WINDOW, "x")
+        self.assertEqual((c["verdict"], c["samples"]), ("unmeasured", 0))
+
+    def test_static_detail_off_centre_is_review_by_the_detail_rule(self):
+        f = self.frame(2, 7, 6, 13)
+        c = self.fit.crop_loss([(f, f)] * 3, self.W, self.H, self.WINDOW, "x")
+        self.assertEqual(c["verdict"], "review", c)
+        self.assertGreaterEqual(c["detail_outside"] - c["discarded_fraction"], 0.15)
+        self.assertLessEqual(c["suggested_anchor"], 0.1)
+        f = self.frame(14, 19, 6, 13)
+        c = self.fit.crop_loss([(f, f)] * 3, self.W, self.H, self.WINDOW, "x")
+        self.assertEqual(c["verdict"], "ok", c)
+
+    def test_y_axis_profiles_rows(self):
+        c = self.fit.crop_loss(self.moving(12, 20, 13, 16, dx=0, dy=1), self.W, self.H, self.WINDOW, "y")
+        self.assertEqual((c["axis"], c["verdict"]), ("y", "review"), c)
+        self.assertGreaterEqual(c["suggested_anchor"], 0.9)
+
+class FitSizeTests(unittest.TestCase):
+    """1.17: the caption size is fitted to the cue before the cue is split (eval 17).
+
+    Pure -- no fixtures, no ffmpeg. The geometry and the requested size come from the platform
+    table, never from a pinned float, so the lock moves if the platform's caption default moves.
+    """
+
+    # The eval-17 cues, verbatim. cw1 and dl1 carry the same English sentence.
+    CW1 = "A third line the tool times for me"
+    DL4 = "Una tercera l\u00ednea con tiempos autom\u00e1ticos"
+    DL4B = "Segunda l\u00ednea de subt\u00edtulos"
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        self.caption = importlib.import_module("caption")
+        self._platforms = importlib.import_module("_platforms")
+        frame = self._platforms.PLATFORMS["tiktok"]["frame"]
+        self.W, self.H = frame["w"], frame["h"]
+        self.SIZE = self._platforms.caption_defaults("tiktok")["size"]
+
+    def _fit(self, cues, **kw):
+        kw.setdefault("size", self.SIZE)
+        kw.setdefault("max_lines", 2)
+        return self.caption.fit_size(cues, play_w=self.W, play_h=self.H, **kw)
+
+    def _wrap(self, text, size):
+        em = self.caption.line_em_for_size(size, self.W, self.H)
+        return self.caption.wrap_text(text, em)
+
+    def test_the_floor_is_four_and_a_half_percent_of_the_frame(self):
+        C = self.caption
+        self.assertEqual(C.MIN_CAPTION_FRACTION, 0.045)
+        self.assertEqual(self._platforms.ass_units(C.MIN_CAPTION_FRACTION), 13)
+        self.assertEqual(self._fit([self.CW1])["floor"], 13)
+
+    def test_eval17_cues_fit_two_lines_at_the_shrunk_size(self):
+        """The regression lock. At the TikTok caption size every one of these needs three or
+        four lines, so --max-lines 2 split each into consecutive cues; shrinking fits them."""
+        # At the requested size, all three are over the line budget -- the defect.
+        for text in (self.CW1, self.DL4, self.DL4B):
+            self.assertGreater(len(self._wrap(text, self.SIZE)), 2)
+
+        cw1 = self._fit([self.CW1])
+        self.assertEqual(cw1["size"], 16)
+        self.assertEqual(self._wrap(self.CW1, 16), ["A third line the", "tool times for me"])
+
+        dl4 = self._fit([self.DL4])
+        self.assertEqual(dl4["size"], 13)
+        self.assertEqual(self._wrap(self.DL4, 13),
+                         ["Una tercera l\u00ednea con", "tiempos autom\u00e1ticos"])
+
+        # 19, not 18: 18 is simply the next size the spec's coarse table sampled. 19 is the
+        # largest size at which this cue fits two lines, and the fitter returns the largest.
+        dl4b = self._fit([self.DL4B])
+        self.assertEqual(dl4b["size"], 19)
+        self.assertEqual(self._wrap(self.DL4B, 19), ["Segunda l\u00ednea", "de subt\u00edtulos"])
+
+        whole = self._fit([self.CW1, self.DL4, self.DL4B])
+        self.assertEqual(whole["size"], 13)
+        self.assertEqual(whole["scope"], "file")
+        self.assertTrue(whole["fits"])
+        self.assertEqual(whole["shrunk"], 3)
+        for text in (self.CW1, self.DL4, self.DL4B):
+            self.assertLessEqual(len(self._wrap(text, whole["size"])), 2)
+
+    def test_fit_size_never_goes_below_the_floor(self):
+        # One unbreakable run far wider than the line at any size in range.
+        fit = self._fit(["Donaudampfschifffahrtsgesellschaftskapitaenspatentpruefung " * 3])
+        self.assertEqual(fit["size"], 13)
+        self.assertEqual(fit["floor"], 13)
+        self.assertFalse(fit["fits"])
+
+    def test_fit_size_leaves_a_cue_that_already_fits_alone(self):
+        fit = self._fit(["Short line"])
+        self.assertEqual(fit["size"], self.SIZE)
+        self.assertEqual(fit["shrunk"], 0)
+
+    def test_fit_size_honours_an_explicit_min_size(self):
+        fit = self._fit([self.DL4], min_size=16)
+        self.assertEqual(fit["floor"], 16)
+        self.assertEqual(fit["size"], 16)
+        self.assertFalse(fit["fits"])
+
+    def test_fit_size_without_geometry_changes_nothing(self):
+        fit = self.caption.fit_size([self.DL4], size=self.SIZE, max_lines=2,
+                                    play_w=None, play_h=None)
+        self.assertEqual(fit["size"], self.SIZE)
+        self.assertEqual(fit["shrunk"], 0)
+
+    def test_scope_cue_gives_per_cue_sizes(self):
+        fit = self._fit([self.CW1, self.DL4, "Short line"], scope="cue")
+        self.assertEqual(fit["scope"], "cue")
+        self.assertEqual(fit["per_cue"][0], 16)
+        self.assertEqual(fit["per_cue"][1], 13)
+        self.assertEqual(fit["per_cue"][2], self.SIZE)
+        self.assertEqual(fit["size"], min(fit["per_cue"].values()))
+
+    def test_fit_size_accepts_cue_tuples(self):
+        tuples = [(0.0, 1.0, self.CW1), (1.0, 2.0, self.DL4)]
+        self.assertEqual(self._fit(tuples)["size"], self._fit([self.CW1, self.DL4])["size"])
+
+    def test_fit_size_is_pure(self):
+        """No subprocess, no ffmpeg, no ffprobe: the size is a text measurement."""
+        import importlib
+        _common = importlib.import_module("_common")
+        def boom(*a, **k):
+            raise AssertionError("fit_size ran a subprocess")
+        with unittest.mock.patch.object(_common, "run", boom), \
+             unittest.mock.patch.object(_common, "run_analysis", boom), \
+             unittest.mock.patch.object(subprocess, "run", boom), \
+             unittest.mock.patch.object(subprocess, "Popen", boom):
+            self.assertEqual(self._fit([self.CW1])["size"], 16)
+
+
+class AsrNoSpeechTests(unittest.TestCase):
+    """An engine that ran and heard nothing is `<engine> found no speech in <input>` (kind input,
+    reason no_speech). Before 2.3.0 faster-whisper fell through to "no local speech-to-text engine
+    found" and whisper.cpp / openai-whisper said "no cues found in /tmp/ffskill_asr_*/audio.srt".
+    The engines are stubbed: none is installed where this suite runs."""
+
+    def _run(self, which, write_srt=None, faster=None):
+        import tempfile
+        import types
+        import _common
+        from _common import asr
+
+        class FakeShutil:
+            @staticmethod
+            def which(name):
+                return which.get(name)
+
+        class FakeSubprocess:
+            PIPE = subprocess.PIPE
+            TimeoutExpired = subprocess.TimeoutExpired
+
+            @staticmethod
+            def run(cmd, **kw):
+                write_srt(cmd)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        calls = []
+
+        def fake_die(msg, code=1, kind="input", **extra):
+            calls.append((msg, kind, extra))
+            raise SystemExit(code)
+
+        mods = dict(sys.modules)
+        if faster is not None:
+            mods["faster_whisper"] = faster
+        else:
+            mods["faster_whisper"] = None  # ImportError on import
+        tmp = tempfile.mkdtemp(prefix="asr_test_")
+        try:
+            with unittest.mock.patch.object(_common, "run_analysis", lambda *a, **k: None), \
+                 unittest.mock.patch.object(asr, "die", fake_die), \
+                 unittest.mock.patch.dict(sys.modules, mods), \
+                 self.assertRaises(SystemExit):
+                asr._transcribe_in(tmp, "talk.wav", os.path.join(tmp, "out.srt"), None, "base", 0,
+                                   "ffmpeg", FakeShutil, FakeSubprocess)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertEqual(len(calls), 1, calls)
+        return calls[0]
+
+    def _assert_no_speech(self, call, engine):
+        msg, kind, extra = call
+        self.assertEqual(msg, f"{engine} found no speech in talk.wav")
+        self.assertEqual(kind, "input")
+        self.assertEqual(extra.get("reason"), "no_speech")
+        self.assertEqual(extra.get("engine"), engine)
+        self.assertNotIn("/tmp", msg)
+
+    def test_whisper_cpp_empty_srt_is_no_speech(self):
+        def write(cmd):
+            Path(cmd[cmd.index("-of") + 1] + ".srt").write_text("", encoding="utf-8")
+        self._assert_no_speech(self._run({"whisper-cli": "/opt/whisper/whisper-cli"}, write), "whisper.cpp")
+
+    def test_openai_whisper_empty_srt_is_no_speech(self):
+        def write(cmd):
+            Path(cmd[cmd.index("--output_dir") + 1], "audio.srt").write_text("\n", encoding="utf-8")
+        self._assert_no_speech(self._run({"whisper": "/usr/bin/whisper"}, write), "openai-whisper")
+
+    def test_faster_whisper_no_segments_is_no_speech_not_no_engine(self):
+        import types
+        mod = types.ModuleType("faster_whisper")
+
+        class WhisperModel:
+            def __init__(self, *a, **k):
+                pass
+
+            def transcribe(self, *a, **k):
+                return iter([]), None
+        mod.WhisperModel = WhisperModel
+        call = self._run({}, faster=mod)
+        self._assert_no_speech(call, "faster-whisper")
+        self.assertNotIn("no local speech-to-text engine", call[0])
+
+
+@unittest.skipIf(platform.system() == "Windows", "the fake whisper-cli is a #!/bin/sh script on a POSIX PATH shim")
+class WhisperDefaultModelTests(unittest.TestCase):
+    """A whisper.cpp install made the way the refusal hint says (brew + ggml-base.bin) must be the
+    model caption.py --transcribe runs by default: the default became large-v3-turbo with the
+    Parakeet engines, and whisper-cli was handed a bare model name it could not open."""
+
+    def test_the_default_model_is_the_one_the_install_hint_names(self):
+        import tempfile
+        from _common import asr
+        self.assertIn("ggml-base.bin", asr.ASR_INSTALL_HINT)
+        with tempfile.TemporaryDirectory() as d:
+            home, bin_dir = Path(d, "home"), Path(d, "bin")
+            (home / ".cache" / "whisper.cpp").mkdir(parents=True)
+            model = home / ".cache" / "whisper.cpp" / "ggml-base.bin"
+            model.write_bytes(b"")
+            bin_dir.mkdir()
+            seen = Path(d, "args.txt")
+            # a whisper-cli that records its arguments and writes one cue where -of says
+            cli = bin_dir / "whisper-cli"
+            cli.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "' + str(seen) + '"\n'
+                           'while [ $# -gt 0 ]; do [ "$1" = "-of" ] && of="$2"; shift; done\n'
+                           'printf "1\\n00:00:00,000 --> 00:00:01,000\\nhello\\n" > "$of.srt"\n', encoding="utf-8")
+            cli.chmod(0o755)
+            clip = Path(d, "talk.mp4")
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=2",
+               "-f", "lavfi", "-i", "sine=d=2", "-c:v", "libx264", "-c:a", "aac", "-shortest", clip)
+            env = dict(os.environ, HOME=str(home), PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                       FFMPEG_SKILL_ASR_ENGINE="whisper.cpp")
+            script("caption.py", clip, "--transcribe", "-o", Path(d, "out.mp4"), env=env)
+            args = seen.read_text(encoding="utf-8").split("\n")
+            self.assertEqual(args[args.index("-m") + 1], str(model))
+
+
+class GeometryAuditPictureTests(unittest.TestCase):
+    """Issue #411 (audit H) for the text-drawing tools: graphics title / lower-third / chapter
+    wrap with the shared wrapped() helper, overlay --text wraps to the frame, the non-square-pixel
+    source is drawn on in square pixels, and grid labels pick a font by script and keep their
+    start. Every fixture is a short lavfi clip built here."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.src = tiny_clip(OUT / "g411p_src.mp4", "testsrc2=s=640x360:r=30", seconds=2, audio=True)
+        cls.black = tiny_clip(OUT / "g411p_black.mp4", "color=c=black:s=320x180:r=30", seconds=1)
+        cls.sar = sar_clip(OUT / "g411p_sar.mp4", seconds=1, audio=True)
+        cls.white = tiny_clip(OUT / "g411p_white.mp4", "color=c=white:s=320x180:r=30", seconds=1)
+
+    def _ass_lines(self, doc):
+        """The text of every Dialogue line of the template's ASS, one list of \\N-lines each."""
+        ass = Path(doc["ass"]).read_text(encoding="utf-8-sig")
+        out = []
+        for line in ass.splitlines():
+            if line.startswith("Dialogue:"):
+                out.append(re.sub(r"\{[^}]*\}", "", line.split(",", 9)[-1]).split("\\N"))
+        return out
+
+    def _graphics(self, name, *args):
+        out = OUT / f"g411p_{name}.mp4"
+        return json.loads(script("graphics.py", self.src, *args, "--text-render", "ass", "-o", out, "--json").stdout)
+
+    def test_graphics_title_wraps_a_long_title_and_subtitle(self):
+        from _common import text_width_em
+        title = "This episode title is far too long to fit across one line of the frame"
+        doc = self._graphics("title", "--template", "title", "--title", title,
+                             "--subtitle", "and its subtitle is long enough to run past both edges of the frame at this size, too")
+        lines = self._ass_lines(doc)
+        self.assertGreater(len(lines[0]), 1, lines)
+        self.assertGreater(len(lines[1]), 1, lines)
+        h1 = int(360 * 0.11)
+        for line in lines[0]:
+            self.assertLessEqual(text_width_em(line) * h1, 640 * 0.9 + 1e-6, lines[0])
+        self.assertFalse(any("taller than" in n for n in doc.get("notes") or []), doc.get("notes"))
+
+    def test_graphics_title_says_when_the_wrapped_block_is_taller_than_the_frame(self):
+        """#416 review: the title wraps with no line limit, and a block taller than the frame lost
+        its first and last lines off the edges without a word."""
+        doc = json.loads(script("graphics.py", self.src, "--template", "title", "--title", " ".join(["a long title"] * 30),
+                                "--text-render", "ass", "--dry-run", "-o", OUT / "g416p_tall.mp4", "--json").stdout)
+        self.assertTrue(any("taller than the 360 px frame" in n for n in doc.get("notes") or []), doc.get("notes"))
+
+    def test_graphics_lower_third_wraps_inside_the_margins_and_widens_its_bar(self):
+        from _common import text_width_em
+        name = "Maximiliana Alexandrovna Konstantinopolskaya-Wittgenstein"
+        doc = self._graphics("lt", "--template", "lower-third", "--name", name, "--title", "Analyst")
+        name_lines = self._ass_lines(doc)[0]
+        self.assertGreater(len(name_lines), 1, name_lines)
+        h1, margin, pad = int(360 * 0.055), 48, int(360 * 0.035)
+        for line in name_lines:
+            self.assertLessEqual(text_width_em(line) * h1, 640 - 2 * margin - 2 * pad + 1e-6, name_lines)
+
+    def test_graphics_lower_third_bar_stays_inside_the_margins_at_a_large_scale(self):
+        """#416 review: the bar's 62 % floor of the short side won over the room between the
+        margins: at --scale 3 on 640x360 it was 669 px wide from x=48, past the right margin."""
+        doc = json.loads(script("graphics.py", self.src, "--template", "lower-third", "--name", "Ann", "--scale", "3",
+                                "--text-render", "ass", "--dry-run", "-o", OUT / "g416p_lt_bar.mp4", "--json").stdout)
+        bar_w = int(re.findall(r"color=c=[^:]+:s=(\d+)x\d+", " ".join(doc["commands"]))[0])
+        self.assertLessEqual(bar_w, 640 - 2 * 48)
+
+    def test_graphics_chapter_chip_wraps_between_the_margins(self):
+        doc = self._graphics("chapter", "--template", "chapter", "--scale", "2",
+                             "--title", "Part 2 — Setting up the whole studio from scratch")
+        self.assertGreater(len(self._ass_lines(doc)[0]), 1, self._ass_lines(doc))
+
+    def test_graphics_places_a_png_emoji_on_its_own_wrapped_line(self):
+        """#416 review: a wrapped label was measured as one line, so an emoji on its last line kept
+        the first line's y and an x that counted every earlier line's width (clamped to the edge)."""
+        title = "\U0001F389 This episode title is far too long to fit across one line of the frame \U0001F44D"
+        out = OUT / "g416p_title_emoji.mp4"
+        doc = json.loads(script("graphics.py", self.src, "--template", "title", "--title", title,
+                                "--emoji", "png", "--emoji-assets", _emoji_assets(), "--text-render", "ass",
+                                "-o", out, "--dry-run", "--json").stdout)
+        graph = [c for c in doc["commands"] if "overlay=" in c][-1]
+        (x1, y1), (x2, y2) = [(int(x), int(y)) for x, y in re.findall(r"overlay=x=(\d+):y=(\d+)", graph)[-2:]]
+        h1 = int(360 * 0.11)
+        self.assertGreater(y2 - y1, h1, (x1, y1, x2, y2))  # a line or more below the first emoji
+        self.assertLess(x2, 640 - int(round(h1)) - 1, (x1, y1, x2, y2))  # not pinned to the right edge
+
+    def test_overlay_text_wraps_to_the_frame(self):
+        """drawtext never wraps: through 3.1.3 a long --text ran off the right edge silently."""
+        out = OUT / "g411p_ov_wrap.mp4"
+        doc = json.loads(script("overlay.py", self.black, "--text", "A long overlay line that runs past the edge",
+                                "--font-size", "24", "--position", "top-left", "--border", "0",
+                                "-o", out, "--json").stdout)
+        self.assertTrue(any("wrapped to" in n for n in doc.get("notes") or []), doc.get("notes"))
+        # nothing drawn in the right margin
+        for y in range(20, 90, 4):
+            self.assertLess(max(frame_rgb(out, 0.5, 316, y)), 60, y)
+
+    def test_overlay_text_says_when_it_still_does_not_fit(self):
+        """#416 review: the wrap checked only the width, so a block taller than the frame lost
+        lines without a word, and a position too near the edge to wrap in was drawn off it."""
+        def notes(*argv):
+            doc = json.loads(script("overlay.py", self.black, "--text", *argv, "--border", "0", "--dry-run",
+                                    "-o", OUT / "g416p_ov_fit.mp4", "--json").stdout)
+            return " ".join(doc.get("notes") or [])
+        long = " ".join(["many words that will wrap"] * 8)
+        self.assertIn("taller", notes(long, "--font-size", "40", "--position", "bottom-left"))
+        self.assertIn("does not fit", notes("Edge", "--font-size", "24", "--position", "300,10"))
+        self.assertNotIn("fit", notes("Fits", "--font-size", "24", "--position", "top-left"))
+
+    def test_text_tools_draw_on_square_pixels(self):
+        """caption, overlay --text and graphics drew on the 180x180 storage of a SAR 16:9 source,
+        so the player stretched every glyph 1.78x wide; they now draw on the 320x180 picture."""
+        srt = OUT / "g411p.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+        runs = {
+            "caption": ("caption.py", self.sar, "--srt", srt),
+            "overlay": ("overlay.py", self.sar, "--text", "Hello"),
+            "graphics": ("graphics.py", self.sar, "--template", "bug", "--title", "LIVE"),
+        }
+        for name, (tool, *args) in runs.items():
+            with self.subTest(tool=name):
+                out = OUT / f"g411p_sq_{name}.mp4"
+                script(tool, *args, "-o", out)
+                v = probe(str(out))["video"]
+                self.assertEqual((v["width"], v["height"], v["sample_aspect_ratio"]), (320, 180, "1:1"))
+
+    def test_grid_squares_a_non_square_pixel_cell(self):
+        out = OUT / "g411p_grid_sar.mp4"
+        script("grid.py", self.sar, self.sar, "--cols", "2", "--rows", "1", "--cell-width", "320",
+               "--cell-height", "180", "--label", "none", "-o", out)
+        rgb = frame_rgb(out, 0.5, 6, 90)  # the left edge of the first cell: picture, not a pad bar
+        self.assertGreater(rgb[0], 180, rgb)
+
+    def test_grid_keeps_the_start_of_a_long_label(self):
+        """A right-aligned label wider than its cell lost its start off the left edge; it is now
+        shortened from the end, so the cell's bottom-left corner stays clear."""
+        long = OUT / "g411p_an_extremely_long_camera_filename_A001_C002_20261105_take_three.mp4"
+        shutil.copyfile(self.white, long)
+        out = OUT / "g411p_grid_long.mp4"
+        doc = json.loads(script("grid.py", long, self.white, "--cols", "2", "--rows", "1", "--cell-width", "320",
+                                "--cell-height", "180", "-o", out, "--json").stdout)
+        self.assertTrue(any("shortened" in n for n in doc.get("notes") or []), doc.get("notes"))
+        self.assertGreater(min(frame_rgb(out, 0.5, 2, 170)), 200)
+
+    def test_grid_shortens_a_label_in_a_cell_with_room_for_one_em(self):
+        """#416 review: when the cell left an em or less, the whole filename came back unshortened
+        and, right-aligned, lost its start (and the note did not count it)."""
+        sys.path.insert(0, str(SCRIPTS))
+        from grid import _fit_label
+        self.assertEqual(_fit_label("camera_A001", 40, 16), "c")
+        self.assertEqual(_fit_label("A", 40, 16), "A")
+
+    def test_grid_label_font_covers_its_script(self):
+        from _common import script_font_status
+        if script_font_status("ja") != "available":
+            raise unittest.SkipTest("no font on this machine covers Japanese; tests never install fonts")
+        named = OUT / "東京.mp4"
+        shutil.copyfile(self.white, named)
+        out = OUT / "g411p_grid_ja.mp4"
+        doc = json.loads(script("grid.py", named, named, "--cols", "2", "--rows", "1", "-o", out, "--json").stdout)
+        self.assertEqual(doc["font_used"]["how"], "script", doc["font_used"])
+
+
+class UserReportTests(unittest.TestCase):
+    """Bugs reported from outside the repository, each pinned by what was measured."""
+
+    def _bright_box(self, video):
+        """Bounding box (x1, x2, y1, y2) of the bright pixels of the frame at 0.5 s."""
+        proc = subprocess.run(
+            ["ffmpeg", "-v", "error", "-ss", "0.5", "-i", str(video), "-frames:v", "1",
+             "-vf", "format=gray,lut='if(gt(val,150),255,0)',bbox=min_val=128,metadata=print:file=-", "-f", "null", "-"],
+            capture_output=True, text=True)
+        found = dict(re.findall(r"lavfi\.bbox\.(x1|x2|y1|y2)=(\d+)", proc.stdout))
+        self.assertEqual(len(found), 4, proc.stdout + proc.stderr)
+        return tuple(int(found[k]) for k in ("x1", "x2", "y1", "y2"))
+
+    def test_caption_srt_position_lands_where_it_says(self):
+        """#436: the SRT burn passed the v4+ numpad Alignment to libass's force_style, which reads
+        the legacy SSA numbering, so --position top landed mid-left, center top-left and top-left
+        top-right; only the bottom row (the same numbers in both) was right."""
+        filters = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+        if not re.search(r"\bsubtitles\b", filters):
+            self.skipTest("this ffmpeg build has no subtitles filter (libass)")
+        OUT.mkdir(parents=True, exist_ok=True)
+        clip, srt = OUT / "pos436.mp4", OUT / "pos436.srt"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x1d2433:s=1080x1920:r=30:d=1",
+           "-f", "lavfi", "-i", "sine=d=1", "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", clip)
+        srt.write_text("1\n00:00:00,000 --> 00:00:03,000\nCentered?\n", encoding="utf-8")
+        W, H = 1080, 1920
+        where = {}
+        for pos in ("bottom", "top", "center", "top-left", "top-right", "bottom-left", "bottom-right"):
+            out = OUT / f"pos436_{pos}.mp4"
+            script("caption.py", clip, "--srt", srt, "--position", pos, "-o", out, "--overwrite")
+            x1, x2, y1, y2 = self._bright_box(out)
+            where[pos] = ((x1 + x2) / 2 / W, (y1 + y2) / 2 / H)
+        for pos, (cx, cy) in where.items():
+            with self.subTest(position=pos):
+                row = "top" if pos.startswith("top") else "bottom" if pos.startswith("bottom") else "center"
+                col = "left" if pos.endswith("left") else "right" if pos.endswith("right") else "center"
+                self.assertTrue({"top": cy < 0.33, "center": 0.4 < cy < 0.6, "bottom": cy > 0.67}[row], (pos, cx, cy))
+                self.assertTrue({"left": cx < 0.45, "center": 0.45 <= cx <= 0.55, "right": cx > 0.55}[col], (pos, cx, cy))
+
+    def test_insert_takes_an_odd_sized_jpeg(self):
+        """#437: a 4:2:0 JPEG with an odd width or height (a phone screenshot) failed with
+        "Invalid odd size": the BT.601 -> BT.709 colorspace filter came first in the graph and
+        refuses odd frames. The same picture as a PNG worked."""
+        OUT.mkdir(parents=True, exist_ok=True)
+        odd = OUT / "odd437.jpg"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=640x1408",
+           "-vf", "scale=629:1401,format=yuvj420p", "-frames:v", "1", "-update", "1", odd)
+        m = probe(str(odd))
+        self.assertEqual((m["video"]["width"], m["video"]["height"], m["video"]["pix_fmt"]), (629, 1401, "yuvj420p"),
+                         "the fixture has to be the odd 4:2:0 JPEG the report is about")
+        for extra in ([], ["--zoom", "in"]):
+            with self.subTest(extra=extra):
+                out = OUT / "odd437.mp4"
+                doc = json.loads(script("insert.py", odd, "--duration", "2", "--width", "1080", "--height", "1920",
+                                        *extra, "-o", out, "--overwrite", "--json").stdout)
+                self.assertEqual((doc["status"], doc["verified"]), ("completed", True), doc)
+                self.assertEqual((doc["probe"]["video"]["width"], doc["probe"]["video"]["height"]), (1080, 1920))
+        # the conversion keeps the frame's own size: padded for the filter, cropped back after it,
+        # so a rectangle that ends on the last column still means that column
+        from _common.color import bt709_matrix_filter
+        conv = bt709_matrix_filter(m)
+        self.assertTrue(conv.startswith("pad=") and conv.endswith(",crop=iw-1:ih-1:0:0:exact=1"), conv)
+        kept = OUT / "odd437_kept.png"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", odd, "-vf", conv, "-frames:v", "1", "-update", "1", kept)
+        k = probe(str(kept))
+        self.assertEqual((k["video"]["width"], k["video"]["height"]), (629, 1401))
+        rotated = dict(m, video=dict(m["video"], width=1400, height=629, rotation=90))
+        self.assertTrue(bt709_matrix_filter(rotated).endswith(",crop=iw-1:ih-0:0:0:exact=1"), "the odd axis after FFmpeg's rotation")
+
+
+    def test_an_odd_sized_clip_is_captioned_and_stabilized(self):
+        """#438, found by sweeping the class behind #437: on a 629x1401 clip caption.py retried
+        with the even scale at the head of its chain, where a later filter made the frame odd
+        again (the encoder refused it twice), and stabilize.py let vid.stab abort on its own
+        assertion. Both now write an even frame and say so."""
+        OUT.mkdir(parents=True, exist_ok=True)
+        odd = OUT / "odd438.mov"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=640x1408:r=30:d=2",
+           "-f", "lavfi", "-i", "sine=d=2", "-vf", "scale=629:1401,format=yuvj420p", "-c:v", "mjpeg", "-q:v", "3",
+           "-c:a", "aac", odd)
+        m = probe(str(odd))
+        self.assertEqual((m["video"]["width"], m["video"]["height"]), (629, 1401), "the fixture has to be odd on both axes")
+        cues = OUT / "odd438.txt"
+        cues.write_text("0-1.5 Odd\n", encoding="utf-8")
+        runs = {"caption.py": ["--text", cues]}
+        filters = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+        if re.search(r"\bvidstabdetect\b", filters):
+            runs["stabilize.py"] = []
+        if not re.search(r"\bsubtitles\b", filters):
+            runs.pop("caption.py")
+        if not runs:
+            self.skipTest("this ffmpeg build has neither libass nor vid.stab")
+        for tool, extra in runs.items():
+            with self.subTest(tool=tool):
+                out = OUT / f"odd438_{tool[:-3]}.mp4"
+                doc = json.loads(script(tool, odd, *extra, "-o", out, "--overwrite", "--json").stdout)
+                self.assertEqual((doc["status"], doc["verified"]), ("completed", True), doc)
+                v = doc["probe"]["video"]
+                self.assertEqual((v["width"] % 2, v["height"] % 2), (0, 0), v)
+                codes = [f["code"] for f in (doc.get("diagnostics") or {}).get("fallbacks", [])]
+                self.assertIn("odd_dimensions_scaled_even", codes, doc)
+
+
+class CaptionTextFidelityTests(unittest.TestCase):
+    """The words a viewer reads are the words handed in: no text symbol taken for an emoji and cut
+    out, no space lost when a wrap pass moves a break, no SRT tag drawn as text. Each test iterates
+    the class, not the one reported input."""
+
+    def setUp(self):
+        sys.path.insert(0, str(SCRIPTS))
+        import importlib
+        self.caption = importlib.import_module("caption")
+
+    # ------------------------------------------------------------ text symbols are not emoji
+    def test_text_symbols_are_drawn_by_the_font_not_counted_as_emoji(self):
+        """♪ ✓ ★ are not emoji in Unicode's emoji-data, and ♥ ✔ ☺ are emoji only with VS16:
+        counting the whole Misc Symbols/Dingbats block made SDH music notes "emoji", and an
+        `--emoji none` run (auto on macOS, or on Linux without a colour face) cut them out."""
+        from _common import char_script, emoji_clusters, emoji_codepoint_name, has_emoji
+
+        def names(text):
+            return [emoji_codepoint_name(cl) for _i, cl in emoji_clusters(text)]
+
+        # never emoji: not in emoji-data at all, or text-default with nothing asking for the picture
+        for text in ("♪", "♫", "✓", "★", "☆", "→", "♥", "✔",
+                     "☺", "❤", "☀", "⬆", "\U0001F0A1", "♥︎"):
+            with self.subTest(text=text):
+                self.assertEqual(names(text), [])
+                self.assertEqual(names("a %s b" % text), [])
+                self.assertNotEqual(char_script(text[0]), "emoji")
+        self.assertFalse(has_emoji("♪ La la la ♪ / Done ✓ / ★★★"))
+        # emoji: presentation by default, or asked for with VS16 / a skin tone / inside a ZWJ sequence
+        for text, want in (("✅", ["2705"]), ("✨", ["2728"]), ("⭐", ["2b50"]),
+                           ("⚡", ["26a1"]), ("\U0001F004", ["1f004"]),
+                           ("❤️", ["2764-fe0f"]), ("♥️", ["2665-fe0f"]),
+                           ("✔️", ["2714-fe0f"]), ("☝\U0001F3FD", ["261d-1f3fd"]),
+                           ("\U0001F3C3‍♀️", ["1f3c3-200d-2640-fe0f"]),
+                           ("\U0001F469‍❤️‍\U0001F468", ["1f469-200d-2764-fe0f-200d-1f468"]),
+                           ("⛹️‍♂️", ["26f9-fe0f-200d-2642-fe0f"])):
+            with self.subTest(text=text):
+                self.assertEqual(names(text), want)
+
+    def test_emoji_none_keeps_the_text_symbols_in_the_drawn_text(self):
+        """The reported run: mode none (no face draws emoji here) on an SDH cue. The emoji goes,
+        the music notes and the check mark stay, and only the emoji is counted."""
+        caption = self.caption
+        support = {"mode": "none", "libass_color": False, "libass_glyph": False, "detail": "no face",
+                   "assets": None, "color_font": None, "color_font_file": None, "fix": ""}
+        args = argparse.Namespace(emoji="auto", emoji_assets=None, fonts_dir=None)
+        with unittest.mock.patch.object(caption, "emoji_support", return_value=support), \
+                unittest.mock.patch.object(caption, "resolve_emoji_assets", return_value=None), \
+                unittest.mock.patch.object(caption, "warn", lambda *a, **k: None), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(caption.plan_emoji([(0.0, 2.0, "♪ La la la ♪"),
+                                                 (2.0, 4.0, "Done ✓")], args, 640, 360),
+                             ([(0.0, 2.0, "♪ La la la ♪"), (2.0, 4.0, "Done ✓")], None))
+            cues, plan = caption.plan_emoji([(0.0, 2.0, "♪ Party \U0001F389 ★")], args, 640, 360)
+        self.assertEqual(cues[0][2], "♪ Party ★")
+        self.assertEqual((plan["count"], plan["clusters"]), (1, ["1f389"]))
+
+    # ------------------------------------------------------------ a moved break keeps its space
+    @staticmethod
+    def _round_trips(original, lines):
+        """Do `lines` read back as `original`, each break either a space that stood there or a
+        break between two characters written together? Spaces are compared, not stripped."""
+        norm = re.sub(r"\s+", " ", original.strip())
+        pos = 0
+        for k, line in enumerate(lines):
+            if k and norm.startswith(" ", pos) and not norm.startswith(line, pos):
+                pos += 1
+            if not norm.startswith(line, pos):
+                return False
+            pos += len(line)
+        return pos == len(norm)
+
+    def test_wrap_keeps_every_space_through_every_pass_in_every_script(self):
+        """The greedy fill knows whether a space stood at each break; the orphan, weak-line and
+        rebalance passes used to guess it from the script, so a moved break in Korean (spaced, but
+        counted as unspaced) or in Japanese/Chinese written with spaces ran two words together:
+        `늦지마세요`, `したよろしく`, `谢谢大家` -- and the result still said text_unchanged."""
+        C = self.caption
+        corpus = [
+            "오늘 회의는 오후 세시에 시작합니다 "
+            "늦지 마세요 감사합니다",
+            "그럼 내일 다시 이야기해요 네",
+            "はい そうです それでは また あした "
+            "よろしく おねがいします",
+            "我 爱 你 我们 明天 见 好的 谢谢 大家",
+            "Hello 世界 good 你好 morning 早上好 everyone 大家",
+            "A third line the tool times for me",
+            "Done ✓ now \U0001F389 party \U0001F44D yes ok fine",
+        ]
+        for text in corpus:
+            for mode in ("phrase", "measured"):
+                for max_em in [x / 2 for x in range(6, 50)]:
+                    with self.subTest(text=text[:10], mode=mode, max_em=max_em):
+                        lines = C.wrap_text(text, max_em, mode=mode)
+                        self.assertTrue(self._round_trips(text, lines), lines)
+                        wrapped, _greedy, measured = C.wrap_variants(text, max_em, mode=mode)
+                        self.assertTrue(self._round_trips(text, wrapped), wrapped)
+                        self.assertTrue(self._round_trips(text, measured), measured)
+
+    def test_korean_breaks_only_between_words(self):
+        """Korean is written with spaces: a break goes at one, never inside a word (eojeol), unless
+        the word alone is wider than the line (the slice escape hatch, counted as such)."""
+        C = self.caption
+        text = ("오늘 회의는 오후 세시에 시작합니다 "
+                "늦지 마세요 감사합니다")
+        words = text.split(" ")
+        for mode in ("phrase", "measured"):
+            for max_em in (5.0, 6.075, 9.0, 12.0, 19.2):
+                with self.subTest(mode=mode, max_em=max_em):
+                    lines = C.wrap_text(text, max_em, mode=mode, lang="ko")
+                    self.assertEqual(" ".join(lines).split(" "), words, lines)
+        stats = C.layout_cues([(0.0, 4.0, text)], max_em=19.2, max_lines=2, min_duration=0, offset=0,
+                              lang="ko")[1]
+        self.assertNotIn("broken_inside_word", stats)
+
+    # ------------------------------------------------------------ SRT markup is markup on every route
+    def test_srt_markup_becomes_ass_overrides_not_text(self):
+        """What ffmpeg's SRT reader writes for the same cue (`ffmpeg -i tags.srt -f ass -`), with
+        the one difference kept on purpose: other `{\\...}` blocks stay escaped text."""
+        from _ass_overlay import ass_escape_markup, strip_srt_markup
+        cases = {
+            "<i>Hello there</i>": "{\\i1}Hello there{\\i0}",
+            "<B>bold</B> <u>u</u> <s>s</s>": "{\\b1}bold{\\b0} {\\u1}u{\\u0} {\\s1}s{\\s0}",
+            '{\\an8}<font color="#ffff00">Top</font>': "{\\an8}{\\c&H00FFFF&}Top{\\c}",
+            "<font color=red>r</font>": "{\\c&H0000FF&}r{\\c}",
+            "I <3 you {curly} {\\pos(1,1)}p": "I <3 you \\{curly\\} \\{\\pos(1,1)\\}p",
+            "<i>a\nb</i>": "{\\i1}a\\Nb{\\i0}",
+        }
+        for src, want in cases.items():
+            with self.subTest(src=src):
+                self.assertEqual(ass_escape_markup(src), want)
+        self.assertEqual(ass_escape_markup('<font color="#ffff00">k</font>', colour=False), "k")
+        self.assertEqual(strip_srt_markup('{\\an8}<font color="#ff0000">Top</font> <b>bold</b>'), "Top bold")
+
+    def test_layout_measures_the_words_and_keeps_the_tags_with_them(self):
+        """The tags take no width (a tagged cue wraps where the plain one does), a break never
+        lands inside `<font color=...>`, and a cue split in two keeps its italics and its {\\anN}
+        on both halves."""
+        C = self.caption
+        plain = "Hello there my good friend how are you today"
+        for src in ("<i>%s</i>" % plain, '{\\an8}<font color="#ffff00">%s</font>' % plain,
+                    "<b>Hello</b> there my <i>good friend</i> how are you <u>today</u>"):
+            for max_em in (6.075, 9.0, 12.96):
+                with self.subTest(src=src[:14], max_em=max_em):
+                    want = C.layout_cues([(0.0, 4.0, plain)], max_em=max_em, max_lines=9,
+                                         min_duration=0, offset=0)[0]
+                    got = C.layout_cues([(0.0, 4.0, src)], max_em=max_em, max_lines=9,
+                                        min_duration=0, offset=0)[0]
+                    self.assertEqual([C.strip_srt_markup(t) for _s, _e, t in got],
+                                     [t for _s, _e, t in want])
+                    self.assertEqual(C.strip_srt_markup(got[0][2]).count("\n"), want[0][2].count("\n"))
+                    for line in got[0][2].split("\n"):
+                        self.assertEqual(line.count("<"), line.count(">"), line)
+        split = C.layout_cues([(0.0, 4.0, "{\\an8}<i>%s</i>" % plain)], max_em=8.0, max_lines=1,
+                              min_duration=0, offset=0)[0]
+        self.assertGreater(len(split), 1)
+        for _s, _e, text in split:
+            self.assertTrue(text.startswith("{\\an8}<i>") and text.endswith("</i>"), text)
+
+    def test_markup_around_whitespace_only_keeps_its_place(self):
+        """A tag pair that encloses no visible character has nothing to anchor to: it stays where
+        the source has it, around the whitespace. Through 3.6.1 the closing tag went after A and
+        the opening one before B, so `A<font color=red> </font>B` coloured B. Tags that enclose a
+        character are anchored as before."""
+        from _ass_overlay import ass_escape_markup, reinsert_srt_markup
+        cases = [
+            ("A<font color=red> </font>B", ["A B"], ["A<font color=red> </font>B"]),
+            ("A<i> </i>B", ["A B"], ["A<i> </i>B"]),
+            ("A<i><b> </b></i>B", ["A B"], ["A<i><b> </b></i>B"]),
+            ('A<font color=blue><font color=red> </font>B</font>', ["A B"],
+             ['A<font color=blue><font color=red> </font>B</font>']),
+            ("A<i></i>B", ["AB"], ["A<i></i>B"]),
+            # the whitespace became the break: the pair goes to the start of the next line, whole
+            ("A<font color=red> </font>B", ["A", "B"], ["A", "<font color=red></font>B"]),
+            # unchanged: each tag anchored to the character it encloses
+            ("<i>A</i> <b>B</b>", ["A B"], ["<i>A</i> <b>B</b>"]),
+            ("<i>A</i> <b>B</b>", ["A", "B"], ["<i>A</i>", "<b>B</b>"]),
+            ("A <font color=red>B</font>", ["A B"], ["A <font color=red>B</font>"]),
+        ]
+        for marked, lines, want in cases:
+            with self.subTest(marked=marked, lines=lines):
+                self.assertEqual(reinsert_srt_markup(marked, lines), want)
+        # the drawn result: B keeps the default colour (the reset comes before it)
+        drawn = ass_escape_markup(reinsert_srt_markup("A<font color=red> </font>B", ["A B"])[0])
+        self.assertTrue(drawn.endswith("{\\c}B"), drawn)
+
+    def test_a_split_cue_takes_its_alignment_from_any_piece(self):
+        """A cue's {\\anN} places the whole cue: a piece cut before the tag is placed by it too.
+        Through 3.6.1 an {\\an8} first met in the second piece was given to that piece only."""
+        from _ass_overlay import carry_srt_markup, srt_alignment
+        for chunks in (["one two", "three {\\an8}four"], ["{\\an8}one", "two"], ["<i>one", "two</i>{\\an7}", "six"]):
+            with self.subTest(chunks=chunks):
+                want = srt_alignment("".join(chunks))
+                out = carry_srt_markup(chunks)
+                self.assertEqual([srt_alignment(p) for p in out], [want] * len(chunks), out)
+        self.assertEqual(carry_srt_markup(["one", "two"]), ["one", "two"])
+        C = self.caption
+        plain = "Hello there my good friend how are you today"
+        split = C.layout_cues([(0.0, 4.0, "%s {\\an8}" % plain)], max_em=8.0, max_lines=1,
+                              min_duration=0, offset=0)[0]
+        self.assertGreater(len(split), 1)
+        for _s, _e, text in split:
+            self.assertEqual(C.srt_alignment(text), 8, text)
+
+    def test_the_generated_ass_route_draws_no_srt_tag(self):
+        """The reported run, on the routes where caption.py writes its own ASS: --animate fade,
+        --karaoke (sweep and word) with --animate pop (the tiktok/reels/shorts templates' pair).
+        No Dialogue carries `<i>`, `<font` or an escaped `\\{\\an8\\}`, the italic and the
+        position are real overrides, and the result still says the text is unchanged."""
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        src = tiny_clip(OUT / "markup_src.mp4", "testsrc2=size=320x180:rate=25", seconds=2, audio=True)
+        srt = OUT / "markup.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:01,000\n<i>Hello there</i>\n\n"
+                       "2\n00:00:01,000 --> 00:00:02,000\n{\\an8}<font color=\"#ffff00\">Top</font> <b>bold</b>\n\n",
+                       encoding="utf-8")
+        routes = {"fade": ["--animate", "fade"],
+                  "sweep": ["--karaoke", "--karaoke-timing", "even", "--animate", "pop"],
+                  "word": ["--karaoke", "--karaoke-style", "word", "--karaoke-timing", "even"]}
+        for name, extra in routes.items():
+            with self.subTest(route=name):
+                ass = OUT / ("markup_%s.ass" % name)
+                doc = json.loads(script("caption.py", src, "--srt", srt, *extra, "--write-ass", ass,
+                                        "--preset", "ultrafast", "-o", OUT / ("markup_%s.mp4" % name),
+                                        "--overwrite", "--json").stdout)
+                self.assertTrue(doc["caption"]["text_unchanged"], doc["caption"])
+                dialogue = [l for l in ass.read_text(encoding="utf-8-sig").splitlines()
+                            if l.startswith("Dialogue:")]
+                body = "\n".join(dialogue)
+                for literal in ("<i>", "</i>", "<b>", "<font", "\\{\\an8\\}"):
+                    self.assertNotIn(literal, body)
+                self.assertIn("{\\i1}", body)
+                self.assertIn("{\\an8}", body)
+                self.assertIn("Hello", body)
+                if name == "fade":
+                    self.assertIn("{\\c&H00FFFF&}Top", body)
+
+
+class HdrLevelsAndDepthTests(unittest.TestCase):
+    """3.6.1, three defects that leave a run `verified: true` with a wrong picture.
+
+    * --to-sdr (and look.py's HDR sheet) linearised with zscale npl=--peak, while the tonemap filter
+      reads linear 1.0 as 100 nits: no HDR pixel reached SDR white (PQ 1000 nits and HLG 100 % ->
+      Y 151 of 235) and a higher --peak darkened everything.
+    * overlay --video --opacity below 1 scaled the alpha with colorchannelmixer (RGB only), so the
+      whole main picture went through RGB and came back BT.601 under its BT.709 tag.
+    * every overlay onto a 10-bit HDR main (broll, redact blur/pixelate, graphics layers, overlay
+      --video / --image) ran at overlay's 8-bit default (or 8-bit RGB for --image): the whole
+      picture lost its two low bits before the Main10 encoder.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------ fixtures and readers
+    @staticmethod
+    def _patches(name, trc, codes):
+        """256x64 10-bit BT.2020 clip, four 64 px stripes at the limited-range luma `codes`, grey chroma."""
+        path = OUT / name
+        a, b, c, d = codes
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+           f"color=black:s=256x64:r=10:d=1,format=yuv420p10le,"
+           f"geq=lum='if(lt(X,64),{a},if(lt(X,128),{b},if(lt(X,192),{c},{d})))':cb=512:cr=512",
+           "-c:v", "libx265", "-preset", "ultrafast", "-tag:v", "hvc1",
+           "-x265-params", f"lossless=1:colorprim=bt2020:transfer={trc}:colormatrix=bt2020nc:log-level=error", path)
+        return path
+
+    @staticmethod
+    def _yuv_at(video, t, points, depth=8):
+        """[(Y, Cb, Cr)] at each (x, y) of the frame at `t`, as stored (limited-range codes)."""
+        fmt, n = ("yuv420p10le", 2) if depth > 8 else ("yuv420p", 1)
+        size = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                               "stream=width,height", "-of", "csv=p=0", str(video)],
+                              stdout=subprocess.PIPE, text=True).stdout.strip().split(",")
+        w, h = int(size[0]), int(size[1])
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(video), "-frames:v", "1",
+                              "-f", "rawvideo", "-pix_fmt", fmt, "-"], stdout=subprocess.PIPE).stdout
+
+        def at(offset):
+            return int.from_bytes(raw[offset * n:offset * n + n], "little")
+        out = []
+        for x, y in points:
+            cw = w // 2
+            out.append((at(y * w + x), at(w * h + (y // 2) * cw + x // 2), at(w * h + w * h // 4 + (y // 2) * cw + x // 2)))
+        return out
+
+    STRIPES = [(32, 32), (96, 32), (160, 32), (224, 32)]
+
+    # ------------------------------------------------------------------ tone map levels
+    def test_to_sdr_takes_the_source_peak_to_sdr_white(self):
+        # PQ 100 / 203 / 1000 / 4000 nits; HLG 50 % / 75 % (BT.2408 reference white) / 100 %
+        pq = self._patches("tm_pq_patches.mp4", "smpte2084", (509, 573, 723, 855))
+        hlg = self._patches("tm_hlg_patches.mp4", "arib-std-b67", (502, 721, 940, 940))
+        self.assertTrue(probe(str(pq))["video"]["hdr"] and probe(str(hlg))["video"]["hdr"], "fixtures are HDR")
+
+        def levels(src, *flags):
+            out = OUT / f"{src.stem}_sdr{'_'.join(flags).replace('-', '')}.mp4"
+            doc = json.loads(script("color.py", src, "--to-sdr", "--fast", "--json", *flags, "-o", out).stdout)
+            self.assertTrue(doc["verified"], doc)
+            return [p[0] for p in self._yuv_at(out, 0.5, self.STRIPES)]
+
+        y = levels(pq)  # --peak 1000
+        self.assertGreaterEqual(y[2], 230, f"a 1000-nit pixel at --peak 1000 is SDR white: {y}")
+        self.assertGreater(y[0], 110, f"100 nits is no longer pushed to the bottom of the range (was Y 73): {y}")
+        y4 = levels(pq, "--peak", "4000")
+        self.assertGreaterEqual(y4[3], 230, f"a 4000-nit pixel at --peak 4000 is SDR white: {y4}")
+        self.assertLess(y4[2], y[2], "a brighter master leaves room above 1000 nits")
+        h = levels(hlg)
+        self.assertGreaterEqual(h[2], 230, f"HLG 100 % is SDR white: {h}")
+        self.assertGreater(h[1], 150, f"HLG reference white is well up the range (was Y 91): {h}")
+        # --peak is a PQ setting: HLG's linear peak is 1000 nits whatever it says
+        self.assertEqual(h, levels(hlg, "--peak", "4000"))
+
+    def test_look_shows_an_hdr_sheet_at_the_to_sdr_levels(self):
+        hlg = self._patches("tm_hlg_look.mp4", "arib-std-b67", (502, 721, 940, 940))
+        png = OUT / "tm_hlg_look.png"
+        script("look.py", hlg, "--at", "0.5", "--width", "256", "--no-timecode", "-o", png)
+        rgb = frame_rgb(png, 0, 160, 32)
+        self.assertGreaterEqual(min(rgb), 240, f"HLG 100 % shows as white on the sheet (was 157): {rgb}")
+
+    def test_look_compare_converts_each_input_by_its_own_tags(self):
+        """`look.py pq.mp4 --compare sdr.mp4`: the PQ picture is tone-mapped and the BT.709 SDR one
+        is shown as it is. Through 3.6.1 the first input's tone map ran on both, so the SDR grey
+        was decoded as PQ and came out near black; the other order kept the PQ picture raw."""
+        pq = self._patches("tm_pq_cmp.mp4", "smpte2084", (509, 573, 723, 855))
+        sdr = OUT / "tm_sdr_cmp.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=0x808080:s=256x64:r=10:d=1",
+           "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast",
+           "-qp", "0", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", sdr)
+        self.assertFalse(probe(str(sdr))["video"].get("bt2020_or_hdr"), "fixture is SDR")
+        for first, second, pq_x, sdr_x in ((pq, sdr, 80, 192), (sdr, pq, 208, 64)):
+            with self.subTest(first=first.name):
+                png = OUT / f"tm_cmp_{first.stem}.png"
+                proc = script("look.py", first, "--compare", second, "--at", "0.5", "--width", "256",
+                              "--no-timecode", "-o", png)
+                grey = frame_rgb(png, 0, sdr_x, 16)
+                self.assertTrue(all(abs(c - 128) <= 6 for c in grey), f"the SDR grey is shown as it is: {grey}")
+                white = frame_rgb(png, 0, pq_x, 16)
+                self.assertGreaterEqual(min(white), 230, f"PQ 1000 nits is tone-mapped to white: {white}")
+                self.assertEqual(proc.stderr.count("tone-mapped to SDR for display"), 1, proc.stderr)
+
+    # ------------------------------------------------------------------ PiP opacity colour
+    def test_a_pip_with_opacity_leaves_the_main_picture_alone(self):
+        main = OUT / "op_main709.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=0xC03028:s=320x180:r=30:d=1",
+           "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast",
+           "-qp", "0", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", main)
+        pip = tiny_clip(OUT / "op_pip.mp4", "color=0x30B050:s=96x54:r=30")
+        src = self._yuv_at(main, 0.5, [(300, 170)])[0]
+        for opacity in ("1", "0.9", "0.5"):
+            with self.subTest(opacity=opacity):
+                out = OUT / f"op_pip_{opacity}.mp4"
+                proc = script("overlay.py", main, "--video", pip, "--position", "top-left", "--scale", "80",
+                              "--opacity", opacity, "--json", "-o", out)
+                self.assertNotIn("colorchannelmixer", " ".join(json.loads(proc.stdout)["commands"]))
+                got = self._yuv_at(out, 0.5, [(300, 170)])[0]
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(got, src)), 1, f"main away from the PiP: {got} vs {src}")
+        # the PiP is blended at the stated alpha, in YUV: half way between its colour and the main's
+        half = self._yuv_at(OUT / "op_pip_0.5.mp4", 0.5, [(60, 40)])[0]
+        full = self._yuv_at(OUT / "op_pip_1.mp4", 0.5, [(60, 40)])[0]
+        for h, f, m in zip(half, full, src):
+            self.assertLessEqual(abs(h - (f + m) / 2), 3, (half, full, src))
+
+    # ------------------------------------------------------------------ 10-bit through an overlay
+    def test_an_overlay_onto_a_10_bit_main_keeps_its_low_bits(self):
+        """A flat 10-bit PQ picture at Y 402 / Cb 602 / Cr 422 (none a multiple of 4): an 8-bit
+        composite turns them into 400 / 603 / 423 (or, through RGB, 399 / 608 / 418)."""
+        flat = OUT / "d10_flat.mp4"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+           "color=black:s=320x180:r=30:d=1,format=yuv420p10le,geq=lum=402:cb=602:cr=422",
+           "-f", "lavfi", "-i", "sine=f=440:d=1:sample_rate=48000", "-c:v", "libx265", "-preset", "ultrafast",
+           "-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:log-level=error",
+           "-tag:v", "hvc1", "-c:a", "aac", "-shortest", flat)
+        v = probe(str(flat))["video"]
+        self.assertEqual((v["bit_depth"], v["bt2020_or_hdr"]), (10, True))
+        want = self._yuv_at(flat, 0.1, [(300, 170)], depth=10)[0]
+        self.assertEqual(want, (402, 602, 422), "fixture")
+        pip = tiny_clip(OUT / "d10_pip8.mp4", "color=0x30B050:s=96x54:r=30")
+        logo = OUT / "d10_logo.png"
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red@0.8:s=60x30,format=rgba",
+           "-frames:v", "1", logo)
+        # (tool, arguments, a point the layer does not cover)
+        runs = [
+            ("broll.py", ["--insert", pip, "--at", "0.6", "--duration", "0.3"], (300, 170)),
+            ("broll.py", ["--insert", flat, "--at", "0.6", "--duration", "0.3"], (300, 170)),
+            ("redact.py", ["--x", "10", "--y", "10", "--width", "40", "--height", "40"], (300, 170)),
+            ("redact.py", ["--x", "10", "--y", "10", "--width", "40", "--height", "40", "--mode", "pixelate"], (300, 170)),
+            ("graphics.py", ["--template", "progress", "--start", "0", "--end", "1"], (300, 20)),
+            ("graphics.py", ["--template", "lower-third", "--name", "Name", "--start", "0", "--end", "1"], (300, 20)),
+            ("overlay.py", ["--video", pip, "--position", "top-left", "--scale", "80"], (300, 170)),
+            ("overlay.py", ["--video", pip, "--position", "top-left", "--scale", "80", "--opacity", "0.9"], (300, 170)),
+            ("overlay.py", ["--image", logo, "--position", "top-left"], (300, 170)),
+        ]
+        for i, (tool, args, point) in enumerate(runs):
+            with self.subTest(tool=tool, args=" ".join(map(str, args))):
+                out = OUT / f"d10_{i}_{tool[:-3]}.mp4"
+                doc = json.loads(script(tool, flat, *args, "--json", "-o", out).stdout)
+                self.assertTrue(doc["verified"], doc)
+                self.assertEqual(probe(str(out))["video"]["bit_depth"], 10)
+                got = self._yuv_at(out, 0.1, [point], depth=10)[0]
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(got, want)), 1, f"{tool}: {got} vs {want}")
+
+
+class CaptionDrawingAuditTests(unittest.TestCase):
+    """Audit #457 (captions and text drawing) and #505: what the caption route draws, measured on
+    the rendered frame where the defect is in the pixels, one test per class."""
+
+    W, H = 640, 360
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        filters = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+        if not re.search(r"\bass\b", filters):
+            raise unittest.SkipTest("this ffmpeg build has no ass filter (libass)")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.src = OUT / "a457_src.mp4"
+        if not cls.src.exists():
+            sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+               "-i", f"color=c=black:s={cls.W}x{cls.H}:r=25:d=3", "-f", "lavfi", "-i", "sine=f=440:d=3",
+               "-shortest", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", cls.src)
+
+    def _frame(self, ass, t, pix_fmt="gray"):
+        """The frame at `t` s of `ass` rendered over black, as bytes (gray or rgb24)."""
+        proc = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"color=c=black:s={self.W}x{self.H}:d=3",
+                               "-ss", f"{t:.3f}", "-vf", "ass=%s" % escape_filter_path(str(ass)), "-frames:v", "1",
+                               "-f", "rawvideo", "-pix_fmt", pix_fmt, "-"], stdout=subprocess.PIPE)
+        return proc.stdout
+
+    def _ink_box(self, ass, t, threshold=60):
+        """(x1, x2, y1, y2) of the drawn pixels at `t`, or None for a blank frame."""
+        data, w = self._frame(ass, t), self.W
+        lit = [(i % w, i // w) for i, v in enumerate(data) if v > threshold]
+        if not lit:
+            return None
+        xs, ys = [p[0] for p in lit], [p[1] for p in lit]
+        return min(xs), max(xs), min(ys), max(ys)
+
+    def _ink_sum(self, ass, t):
+        return sum(self._frame(ass, t))
+
+    def test_animate_slide_ends_where_the_line_is_drawn_without_it(self):
+        """A56: the slide's \\move always ended at the bottom centre, so --position top slid into the
+        bottom of the frame and a left/right line jumped to the middle; it ends on the anchor libass
+        draws the same line at, for every position and with a platform's uneven side margins."""
+        cues = OUT / "a457_slide.txt"
+        cues.write_text("0:00-0:02 hello world\n", encoding="utf-8")
+        for pos in ("bottom", "top", "center", "top-left", "top-right", "bottom-left", "bottom-right"):
+            for extra in ([], ["--platform", "tiktok"]):
+                with self.subTest(position=pos, extra=extra):
+                    boxes = {}
+                    for anim in ("fade", "slide"):
+                        ass = OUT / f"a457_slide_{pos}_{anim}_{len(extra)}.ass"
+                        script("caption.py", self.src, "--text", cues, "--animate", anim, "--position", pos, *extra,
+                               "--write-ass", ass, "--fast", "-o", ass.with_suffix(".mp4"))
+                        boxes[anim] = self._ink_box(ass, 1.0)
+                    self.assertIsNotNone(boxes["fade"])
+                    for a, b in zip(boxes["fade"], boxes["slide"]):
+                        self.assertLessEqual(abs(a - b), 2, boxes)
+
+    def test_word_karaoke_takes_one_envelope_across_its_word_events(self):
+        """A57: with --karaoke-style word each word is its own event, and --animate's \\fad sat on the
+        first one only, so the whole caption faded out at the end of the first word and came back
+        at the second; slide and pop started over or jumped. The fade-out is at the cue's end."""
+        srt = OUT / "a457_k57.srt"
+        srt.write_text("1\n00:00:01,000 --> 00:00:02,600\nMOVE WITH ME\n", encoding="utf-8")
+        srt.with_suffix(".words.json").write_text(json.dumps({"words": [
+            {"word": "MOVE", "start": 1.0, "end": 1.6}, {"word": "WITH", "start": 1.6, "end": 2.0},
+            {"word": "ME", "start": 2.0, "end": 2.6}]}), encoding="utf-8")
+        for anim in ("fade", "pop", "slide"):
+            with self.subTest(animate=anim):
+                ass = OUT / f"a457_k57_{anim}.ass"
+                script("caption.py", self.src, "--srt", srt, "--karaoke", "--karaoke-style", "word",
+                       "--karaoke-timing", "even", "--animate", anim, "--write-ass", ass, "--fast",
+                       "-o", ass.with_suffix(".mp4"))
+                mid = self._ink_sum(ass, 1.8)
+                self.assertGreater(mid, 0)
+                # just before the first word ends, and just after: the caption is fully drawn
+                for t in (1.56, 1.62):
+                    self.assertGreater(self._ink_sum(ass, t), 0.8 * mid, f"t={t}")
+                # and it fades out at the cue's end, as a whole-cue animation does
+                self.assertLess(self._ink_sum(ass, 2.57), 0.5 * mid)
+                box_mid, box_first = self._ink_box(ass, 1.8), self._ink_box(ass, 1.3)
+                for a, b in zip(box_first[2:], box_mid[2:]):
+                    self.assertLessEqual(abs(a - b), 2, f"the line moves between word events: {box_first} {box_mid}")
+
+    def test_karaoke_waits_for_the_first_word_and_moves_with_offset(self):
+        """A59: with real word timings the highlight started at the cue's start, so every word led
+        the speech by the silence before the first one. #505: --offset moved the cues and left the
+        word timings where they were. Nothing is highlighted before the first word is spoken."""
+        srt = OUT / "a457_k59.srt"
+        srt.write_text("1\n00:00:00,500 --> 00:00:02,900\nMOVE WITH ME\n", encoding="utf-8")
+        srt.with_suffix(".words.json").write_text(json.dumps({"words": [
+            {"word": "MOVE", "start": 1.5, "end": 2.0}, {"word": "WITH", "start": 2.0, "end": 2.4},
+            {"word": "ME", "start": 2.4, "end": 2.9}]}), encoding="utf-8")
+
+        def yellow(ass, t):
+            data = self._frame(ass, t, "rgb24")
+            return sum(1 for i in range(0, len(data), 3) if data[i] > 200 and data[i + 1] > 200 and data[i + 2] < 80)
+        for style in ("sweep", "word"):
+            for offset in ("0", "0.1"):
+                with self.subTest(style=style, offset=offset):
+                    ass = OUT / f"a457_k59_{style}_{offset}.ass"
+                    script("caption.py", self.src, "--srt", srt, "--karaoke", "--karaoke-style", style,
+                           "--karaoke-timing", "even", "--highlight-color", "FFFF00", "--min-duration", "0",
+                           "--offset", offset, "--write-ass", ass, "--fast", "-o", ass.with_suffix(".mp4"))
+                    shift = float(offset)
+                    self.assertEqual(yellow(ass, 1.2 + shift), 0, "a word is highlighted before it is spoken")
+                    self.assertGreater(yellow(ass, 1.8 + shift), 0, "the first word is not highlighted while spoken")
+
+    def test_the_size_fit_measures_the_word_karaoke_budget(self):
+        """A58: --karaoke-style word wraps to a budget narrowed by --karaoke-scale, and the size fit
+        measured the full width: a cue reported as fitting (fit_exhausted false) was split anyway."""
+        cues = OUT / "a457_fit.txt"
+        cues.write_text("0:00-0:03 this is a fairly long caption line that needs to fit into two lines on screen "
+                        "for sure today\n", encoding="utf-8")
+        for style in ("sweep", "word"):
+            with self.subTest(style=style):
+                doc = json.loads(script("caption.py", self.src, "--text", cues, "--karaoke", "--karaoke-style", style,
+                                        "--karaoke-timing", "even", "--dry-run", "--json",
+                                        "-o", OUT / f"a457_fit_{style}.mp4").stdout)
+                cap = doc["caption"]
+                self.assertTrue(cap["shrunk"], cap)
+                self.assertFalse(cap["fit_exhausted"], cap)
+                self.assertEqual(cap["split"], 0, cap)
+
+    def test_a_soft_subtitle_is_not_wrapped_at_the_burn_in_size(self):
+        """A55: --mode mux wrapped and split the SRT at the burn-in size, which on a portrait video
+        turned one cue into three; a soft track keeps its cues, and a layout flag is refused."""
+        vert = OUT / "a457_vert.mp4"
+        if not vert.exists():
+            tiny_clip(vert, "color=c=black:s=360x640:r=25", seconds=4)
+        srt = OUT / "a457_soft.srt"
+        text = "this is a fairly long caption line for a soft subtitle track"
+        srt.write_text(f"1\n00:00:00,500 --> 00:00:03,500\n{text}\n", encoding="utf-8")
+        out = OUT / "a457_soft.mkv"
+        doc = json.loads(script("caption.py", vert, "--mode", "mux", "--srt", srt, "-o", out, "--json").stdout)
+        self.assertEqual(doc["tracks"][0]["cues"], 1, doc)
+        muxed = sh("ffmpeg", "-v", "error", "-i", out, "-map", "0:s:0", "-f", "srt", "-").stdout
+        self.assertIn(text, muxed)
+        for flag in (["--max-lines", "3"], ["--wrap", "measured"]):
+            with self.subTest(flag=flag):
+                proc = script("caption.py", vert, "--mode", "mux", "--srt", srt, *flag, "-o", out, "--json",
+                              expect_fail=True)
+                err = json.loads(proc.stdout)["error"]
+                self.assertEqual(err["kind"], "input", err)
+                self.assertIn(flag[0], err["message"])
+
+    def test_language_is_a_track_tag_only_where_there_is_a_track(self):
+        """A71: a burn read --language as the --srt track's tag and refused 'ja_JP' as `--srt: ... is
+        not a language code`; in a mux the refusal names --language, the flag that was given."""
+        srt = OUT / "a457_lang.srt"
+        srt.write_text("1\n00:00:00,500 --> 00:00:02,000\nhello\n", encoding="utf-8")
+        doc = json.loads(script("caption.py", self.src, "--srt", srt, "--language", "ja_JP", "--dry-run", "--json",
+                                "-o", OUT / "a457_lang.mp4").stdout)
+        self.assertEqual(doc["status"], "completed", doc)
+        # and the wrap reads the hint as the font pick does: `pt_BR` is Portuguese, not unknown
+        from _common import wrap as wrap_mod
+        self.assertEqual(wrap_mod._function_words("pt_BR"), wrap_mod._function_words("pt"))
+        self.assertNotEqual(wrap_mod._function_words("pt"), wrap_mod._function_words(None))
+        cue_file = OUT / "a457_lang.txt"
+        cue_file.write_text("0:00-0:01 hello\n", encoding="utf-8")
+        for source in (["--srt", srt], ["--text", cue_file]):
+            with self.subTest(source=source[0]):
+                proc = script("caption.py", self.src, "--mode", "mux", *source, "--language", "ja_JP", "--dry-run",
+                              "--json", "-o", OUT / "a457_lang.mkv", expect_fail=True)
+                err = json.loads(proc.stdout)["error"]
+                self.assertEqual(err["kind"], "input", err)
+                self.assertTrue(err["message"].startswith("--language:"), err)
+
+    @unittest.skipIf(_no_fontconfig() or shutil.which("fc-match") is None,
+                     "no fc-match here: the bold face cannot be resolved")
+    def test_font_used_names_the_bold_face_libass_draws(self):
+        """A70: under --bold libass draws the family's bold face, and font_used.file named the
+        regular one."""
+        bold = subprocess.run(["fc-match", "--format=%{file}", "DejaVu Sans:bold"], capture_output=True, text=True).stdout
+        regular = subprocess.run(["fc-match", "--format=%{file}", "DejaVu Sans"], capture_output=True, text=True).stdout
+        if not bold or bold == regular:
+            self.skipTest("DejaVu Sans has no separate bold face here")
+        srt = OUT / "a457_bold.srt"
+        srt.write_text("1\n00:00:00,500 --> 00:00:02,000\nhello\n", encoding="utf-8")
+        for flags, want in (([], regular), (["--bold"], bold)):
+            with self.subTest(flags=flags):
+                doc = json.loads(script("caption.py", self.src, "--srt", srt, "--font", "DejaVu Sans", *flags,
+                                        "--dry-run", "--json", "-o", OUT / "a457_bold.mp4").stdout)
+                self.assertEqual(doc["font_used"]["file"], want, doc["font_used"])
+
+    def test_an_srt_burn_draws_the_text_in_braces(self):
+        """A68: ffmpeg's SRT reader hands `{curly}` to libass, which takes it for an override block
+        and draws nothing, while the generated-ASS route draws it; the burn reported
+        text_unchanged all the same. The braced words are drawn on every route."""
+        widths = {}
+        for name, line in (("braces", "use {curly} braces"), ("parens", "use (curly) braces"),
+                           ("none", "use braces")):
+            srt = OUT / f"a457_br_{name}.srt"
+            srt.write_text(f"1\n00:00:00,000 --> 00:00:02,000\n{line}\n", encoding="utf-8")
+            out = OUT / f"a457_br_{name}.mp4"
+            doc = json.loads(script("caption.py", self.src, "--srt", srt, "--fast", "-o", out, "--json").stdout)
+            self.assertTrue(doc["caption"]["text_unchanged"])
+            data = subprocess.run(["ffmpeg", "-v", "error", "-ss", "1", "-i", str(out), "-frames:v", "1", "-f", "rawvideo",
+                                   "-pix_fmt", "gray", "-"], stdout=subprocess.PIPE).stdout
+            cols = [x for x in range(self.W) if any(data[y * self.W + x] > 100 for y in range(self.H))]
+            widths[name] = cols[-1] - cols[0]
+        self.assertGreater(widths["braces"], widths["none"] + 30, widths)
+        self.assertLess(abs(widths["braces"] - widths["parens"]), 20, widths)
+
+    def test_the_emoji_placeholder_keeps_the_lines_own_animation(self):
+        """A69: the placeholder ended in `{\\r}`, which reset the pop's \\fscx/\\t (and a per-cue \\fs)
+        for the text after an emoji: mid-pop the words before it were small, the words after full
+        size."""
+        cues = OUT / "a457_pop.txt"
+        cues.write_text("0:00-0:02 HHHH \U0001F389 HHHH\n", encoding="utf-8")
+        ass = OUT / "a457_pop.ass"
+        script("caption.py", self.src, "--text", cues, "--animate", "pop", "--size", "40", "--emoji-assets",
+               _emoji_assets(), "--write-ass", ass, "--fast", "-o", ass.with_suffix(".mp4"))
+        for t in (0.03, 1.0):
+            with self.subTest(t=t):
+                data = self._frame(ass, t)
+                cols = [x for x in range(self.W) if any(data[y * self.W + x] > 60 for y in range(self.H))]
+                self.assertTrue(cols)
+                mid = (cols[0] + cols[-1]) // 2
+
+                def height(c0, c1):
+                    rows = [y for y in range(self.H) if any(data[y * self.W + x] > 60 for x in range(c0, c1))]
+                    return rows[-1] - rows[0]
+                self.assertLessEqual(abs(height(cols[0], mid) - height(mid, cols[-1] + 1)), 1)
+
+    def test_a_left_or_right_emoji_png_sits_in_its_gap(self):
+        """A62: the PNG of a left- or right-aligned caption was placed from --margin (the vertical
+        distance), not the Style's MarginL/MarginR libass lays the line out from: on the left it
+        covered the first words, on the right it floated before its gap."""
+        cues = OUT / "a457_emo.txt"
+        cues.write_text("0:00-0:02 \U0001F389 Hello world\n", encoding="utf-8")
+        for pos in ("bottom-left", "bottom", "bottom-right", "top-left", "top-right"):
+            with self.subTest(position=pos):
+                out = OUT / f"a457_emo_{pos}.mp4"
+                doc = json.loads(script("caption.py", self.src, "--text", cues, "--position", pos, "--margin", "60",
+                                        "--emoji-assets", _emoji_assets(), "--fast", "-o", out, "--json").stdout)
+                graph = [c for c in doc["commands"] if "overlay=" in c][-1]
+                x = int(re.search(r"overlay=x=(\d+)", graph).group(1))
+                box = doc["emoji"].get("box_px") or 30
+                ink = sorted(_ass_ink_columns(out.with_suffix(".ass"), self.W, self.H))
+                self.assertTrue(ink)
+                self.assertEqual([c for c in range(x + 2, x + box - 2) if c in ink], [], "the PNG covers the text")
+                # the emoji leads the line, so the first drawn word follows its box: a space away on
+                # the left, and on the right as far as the averaged em table misjudges the line's width
+                # (the documented bound of the emoji position, docs/design-decisions.md)
+                self.assertLess(ink[0] - (x + box), 2 * box, f"x={x}, text from {ink[0]}")
+
+
+class CompositingAuditPictureTests(unittest.TestCase):
+    """Issue #460 (audit 2026-11): a gradient at any angle, a rectangle at an odd position, the
+    sticker's pop on both routes and a file name's label. Fixtures are small lavfi clips."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _gray(path, t=0.0):
+        w, h = (int(n) for n in subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0",
+             str(path)], stdout=subprocess.PIPE, text=True, check=True).stdout.strip().split(","))
+        # the Y plane as stored (extractplanes), not a conversion to gray: swscale's yuv->gray is a
+        # range/matrix conversion whose result depends on the file's colour tags and the FFmpeg
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1",
+                              "-vf", "extractplanes=y", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                             stdout=subprocess.PIPE, check=True).stdout
+        return raw, w, h
+
+    @staticmethod
+    def _colour(path):
+        return subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                               "stream=codec_name,pix_fmt,color_range,color_space,color_transfer,color_primaries",
+                               "-of", "csv=p=0", str(path)], stdout=subprocess.PIPE, text=True).stdout.strip()
+
+    def test_background_gradient_runs_corner_to_corner_at_any_angle(self):
+        """A169: --angle outside 0-90 failed as kind ffmpeg (`gradients` refuses a point below -1),
+        and inside it the far point lay past the frame, which `gradients` replaces with a seeded
+        random one. C1 is now on the corner the direction starts from and C2 on the opposite one,
+        at every angle; the other two corners lie between them."""
+        corners = {"tl": (2, 2), "tr": (157, 2), "bl": (2, 87), "br": (157, 87)}
+        # angle -> (the C1 corner(s), the C2 corner(s)); at 45-degree steps the others are mixed
+        cases = {"0": (("tl", "bl"), ("tr", "br")), "90": (("tl", "tr"), ("bl", "br")),
+                 "135": (("tr",), ("bl",)), "180": (("tr", "br"), ("tl", "bl")),
+                 "270": (("bl", "br"), ("tl", "tr")), "-45": (("bl",), ("tr",))}
+        for angle, (red, blue) in cases.items():
+            with self.subTest(angle=angle):
+                out = OUT / "a460_grad.mp4"
+                script("background.py", "--duration", "0.2", "--width", "160", "--height", "90", "--gradient",
+                       "0xff0000:0x0000ff", "--angle", angle, "--fast", "-o", out)
+                px = {n: frame_rgb(out, 0, x, y) for n, (x, y) in corners.items()}
+                for n in red:
+                    self.assertGreater(px[n][0], 200, (n, px))
+                for n in blue:
+                    self.assertGreater(px[n][2], 200, (n, px))
+                for n in set(corners) - set(red) - set(blue):
+                    self.assertTrue(40 < px[n][0] < 215 and 40 < px[n][2] < 215, (n, px))
+
+    def test_an_odd_rectangle_is_taken_and_redacted_where_it_was_asked(self):
+        """A170: crop rounds an odd --x/--y down to the chroma grid of a 4:2:0 frame unless told
+        exact, and overlay always does, so redact.py took and put back its rectangle one pixel up
+        and left (the last column and row left as they were, one outside changed) and crop.py cut
+        the rectangle one pixel left of / above the asked one. Lossless in and out, so every luma
+        sample is compared."""
+        src = OUT / "a460_odd_src.mkv"
+        # one picture held for ten frames and tagged BT.709: the comparison is of stored luma, so it
+        # must not depend on which frame a read at 0 returns or on what an untagged file is read as
+        sh("ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=0.4",
+           "-vf", "loop=loop=9:size=1:start=0,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709",
+           "-frames:v", "10", "-c:v", "ffv1", "-pix_fmt", "yuv420p", src)
+        before, w, _h = self._gray(src)
+        x, y, rw, rh = 11, 13, 40, 40
+        for mode in ("pixelate", "blur"):
+            with self.subTest(mode=mode):
+                out = OUT / f"a460_odd_{mode}.mkv"
+                script("redact.py", src, "--x", str(x), "--y", str(y), "--width", str(rw), "--height", str(rh),
+                       "--mode", mode, "--block-size", "40", "--quality", "0", "--fast", "-o", out)
+                after, _w, _h = self._gray(out)
+                inside = lambda i: x <= i % w < x + rw and y <= i // w < y + rh  # noqa: E731
+                outside = [i for i in range(len(before)) if not inside(i) and before[i] != after[i]]
+                self.assertEqual(len(outside), 0,
+                                 f"luma outside the rectangle changed at {[(i % w, i // w) for i in outside[:4]]}, "
+                                 f"largest step {max((abs(before[i] - after[i]) for i in outside), default=0)}; "
+                                 f"source {self._colour(src)}; written {self._colour(out)}")
+                self.assertTrue(any(before[i] != after[i] for i in range(len(before)) if inside(i)),
+                                f"{mode} did not change the rectangle")
+                if mode == "pixelate":  # one block: the whole rectangle is one value, its last column and row included
+                    vals = {after[i] for i in range(len(after)) if inside(i)}
+                    self.assertEqual(len(vals), 1, sorted(vals)[:8])
+        out = OUT / "a460_odd_crop.mkv"
+        script("crop.py", src, "--x", str(x), "--y", str(y), "--width", str(rw), "--height", str(rh), "--quality", "0",
+               "-o", out)
+        got, cw, _ch = self._gray(out)
+        want = bytes(before[(y + r) * w + x + c] for r in range(rh) for c in range(rw))
+        self.assertEqual(cw, rw)
+        self.assertEqual(got == want, True, "crop.py must cut the rectangle at the odd position asked for: "
+                         f"{sum(1 for g, x_ in zip(got, want) if g != x_)} of {len(want)} samples differ; "
+                         f"source {self._colour(src)}; written {self._colour(out)}")
+
+    def test_sticker_rises_into_place_on_both_routes(self):
+        """A177: on the drawtext route a bottom sticker started above its rest and dropped into
+        place, while the ASS route (and the top positions) rise from below."""
+        flat = tiny_clip(OUT / "a460_flat.mp4", "color=c=0x202020:s=640x360:r=25", seconds=2)
+        for route in ("drawtext", "ass"):
+            for position in ("bottom-right", "top-left"):
+                with self.subTest(route=route, position=position):
+                    out = OUT / "a460_sticker.mp4"
+                    script("graphics.py", flat, "--template", "sticker", "--text", "NEW", "--position", position,
+                           "--start", "0.5", "--text-render", route, "--fast", "-o", out)
+                    tops = []
+                    for t in (0.62, 1.2):
+                        raw, w, _h = self._gray(out, t)
+                        rows = [i // w for i in range(len(raw)) if abs(raw[i] - 0x20) > 30]
+                        self.assertTrue(rows, f"no sticker at {t}s")
+                        tops.append(min(rows))
+                    self.assertGreater(tops[0], tops[1], f"the chip must start below its rest and rise: tops {tops}")
+
+    def test_grid_label_keeps_an_apostrophe_and_a_percent_sign(self):
+        """A178: grid.py drew a cell label through escape_drawtext (a font name's escape), which
+        drops ' and %: a cell named p'%.mp4 was labelled `p`, like p.mp4. The label now goes through
+        drawtext's text file, as every other drawn text does."""
+        if not shutil.which("ffmpeg") or "drawtext" not in subprocess.run(
+                ["ffmpeg", "-hide_banner", "-filters"], stdout=subprocess.PIPE, text=True).stdout:
+            self.skipTest("this ffmpeg build has no drawtext filter")
+        flat = tiny_clip(OUT / "a460_cell.mp4", "color=c=0x202020:s=320x180:r=25", seconds=1)
+        plain, odd = OUT / "p.mp4", OUT / "p'%.mp4"
+        shutil.copyfile(flat, plain)
+        shutil.copyfile(flat, odd)
+        out = OUT / "a460_grid.mp4"
+        script("grid.py", plain, odd, "--cols", "2", "--rows", "1", "--fast", "-o", out)
+        raw, w, _h = self._gray(out, 0.5)
+        ink = [sum(1 for i in range(len(raw)) if raw[i] > 120 and (i % w >= w // 2) == half) for half in (False, True)]
+        self.assertGreater(ink[1], ink[0] * 1.5, f"the p'% label must draw more than p's: {ink}")
+
+
+class LeanBuildTests(unittest.TestCase):
+    """#393-#396: what a build without libass/drawtext, or a file handed to the wrong flag, says.
+    The lean build is a mocked filter list: every runner has the filters, so the refusals are
+    pinned where they are decided."""
+
+    def setUp(self):
+        from _common import runner
+        self.runner = runner
+        self.saved = runner._FILTERS
+
+    def tearDown(self):
+        self.runner._FILTERS = self.saved
+
+    def _refusal(self, fn):
+        calls = []
+
+        def fake_die(msg, code=1, kind="input", **extra):
+            calls.append((msg, kind, extra))
+            raise SystemExit(code)
+
+        with unittest.mock.patch.object(self.runner, "die", fake_die), self.assertRaises(SystemExit):
+            fn()
+        return calls[0]
+
+    def test_require_filter_refuses_a_filter_the_build_lacks_with_the_runtime_reason(self):
+        self.runner._FILTERS = {"scale", "tile"}
+        msg, kind, extra = self._refusal(lambda: self.runner.require_filter("subtitles", "burning captions"))
+        self.assertEqual(kind, "ffmpeg")
+        self.assertEqual(extra["error_extra"], {"reason": "filter_missing", "details": {"name": "subtitles"}})
+        self.assertIn("doctor", extra["hint"])
+        self.assertIn("subtitles", msg)
+
+    def test_an_unreadable_filter_list_refuses_nothing(self):
+        self.runner._FILTERS = set()
+        self.runner.require_filter("subtitles", "burning captions")  # no SystemExit
+
+    def test_the_filter_list_is_read_from_this_build(self):
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        self.runner._FILTERS = None
+        names = self.runner.ffmpeg_filters()
+        self.assertIn("scale", names)
+        self.assertIn("anull", names)
+
+    def test_caption_names_the_subtitle_file_as_an_option(self):
+        """subtitles=<path> (positional) fails at parse time on a build without the filter, with a
+        message that names no filter; subtitles=filename=<path> gets "No such filter" (#393)."""
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        srt = OUT / "lean_subs.srt"
+        srt.write_text("1\n00:00:00,500 --> 00:00:01,500\nHello\n", encoding="utf-8")
+        src = OUT / "lean_src.mp4"
+        if not src.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:d=2", "-c:v", "libx264", str(src))
+        proc = script("caption.py", str(src), "--srt", str(srt), "-o", str(OUT / "lean_out.mp4"), "--dry-run", "--json")
+        self.assertIn("subtitles=filename=", proc.stderr + proc.stdout)
+
+    def test_an_srt_given_as_a_cue_file_is_refused_with_a_pointer_to_srt(self):
+        """#396: read as a cue file, an SRT's numbers and timing lines are burned in as captions."""
+        OUT.mkdir(parents=True, exist_ok=True)
+        srt = OUT / "as_text.srt"
+        srt.write_text("1\n00:00:00,500 --> 00:00:02,500\nHello\n\n2\n00:00:03,000 --> 00:00:05,000\nWorld\n",
+                       encoding="utf-8")
+        proc = script("caption.py", "--text", str(srt), "--write-srt", str(OUT / "as_text_out.srt"), "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["status"], "failed")
+        self.assertEqual(doc["error"]["kind"], "input")
+        self.assertIn("--srt", doc["error"]["message"])
+        dropf = OUT / "drop_frame.txt"
+        dropf.write_text("00:01:00;00 --> 00:01:02;00 Hello\n", encoding="utf-8")
+        proc = script("caption.py", "--text", str(dropf), "--write-srt", str(OUT / "drop_frame_out.srt"), "--json",
+                      expect_fail=True)
+        self.assertIn("drop-frame", json.loads(proc.stdout)["error"]["message"])
+        # a cue file with its text on the line of its times is unchanged
+        cues = OUT / "same_line.txt"
+        cues.write_text("00:00:00,500 --> 00:00:02,500 Hello\n0:03-0:05 World\n", encoding="utf-8")
+        script("caption.py", "--text", str(cues), "--write-srt", str(OUT / "same_line_out.srt"))
+        self.assertIn("Hello", (OUT / "same_line_out.srt").read_text(encoding="utf-8"))
+
+    def test_drop_frame_labels_convert_and_refuse_skipped_frames(self):
+        from caption import parse_text_cues
+        OUT.mkdir(parents=True, exist_ok=True)
+        cues = OUT / "drop_frame_valid.txt"
+        for fps, first, second in ((29.97, "02", "03"), (59.94, "04", "06")):
+            with self.subTest(fps=fps):
+                cues.write_text(f"00:01:00;{first}@{fps} --> 00:01:00;{second}@{fps} First minute\n"
+                                f"00:10:00;00 --> 00:10:01;00 Tenth minute\n", encoding="utf-8")
+                result = parse_text_cues(str(cues), 3, 0, fps)
+                self.assertAlmostEqual(result[0][0], 60.06, places=6)
+                self.assertAlmostEqual(result[1][0], 599.9994, places=6)
+                self.assertAlmostEqual(result[1][1] - result[1][0], 1.001, places=6)
+        cues.write_text("00:01:00;00 --> 00:01:02;00 Invalid\n", encoding="utf-8")
+        proc = script("caption.py", "--text", cues, "--fps", "29.97", "--json",
+                      "--write-srt", OUT / "invalid_drop.srt", expect_fail=True)
+        self.assertIn("not a valid label", json.loads(proc.stdout)["error"]["message"])
+        cues.write_text("0-00:00:02;00@oops Malformed endpoint\n", encoding="utf-8")
+        proc = script("caption.py", "--text", cues, "--fps", "29.97", "--json",
+                      "--write-srt", OUT / "invalid_drop.srt", expect_fail=True)
+        self.assertIn("malformed drop-frame timing", json.loads(proc.stdout)["error"]["message"])
+        ordinary_text = "2019-2020; text"
+        cues.write_text(ordinary_text + "\n", encoding="utf-8")
+        self.assertEqual(parse_text_cues(str(cues), 3, 0, 29.97), [(0, 3, ordinary_text)])
+
+    def test_look_draws_the_sheet_without_timecodes_on_a_build_without_drawtext(self):
+        """#394: the default sheet needs drawtext only for its stamps; without it the step every
+        picture change ends with must still give a sheet, and say what it left out."""
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        src = OUT / "lean_src.mp4"
+        if not src.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:d=2", "-c:v", "libx264", str(src))
+        import look
+        from _common import STATE
+        real = self.runner.ffmpeg_filters()
+        self.runner._FILTERS = set(real) - {"drawtext"}
+        sheet = OUT / "lean_sheet.png"
+        out = io.StringIO()
+        argv = ["look.py", str(src), "-o", str(sheet), "--tiles", "2x1", "--overwrite", "--json"]
+        try:
+            with unittest.mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    look.main()
+                except SystemExit as e:
+                    self.assertEqual(e.code or 0, 0, out.getvalue()[-800:])
+        finally:
+            STATE.reset()
+        doc = json.loads(out.getvalue())
+        self.assertEqual(doc["status"], "completed")
+        self.assertIn("look_no_drawtext", [f["code"] for f in doc["diagnostics"]["fallbacks"]])
+        self.assertNotIn("drawtext", " ".join(doc["commands"]))
+        self.assertTrue(sheet.exists())
+
+
+class LeanBuildSheetTests(unittest.TestCase):
+    """#394's shape in grid.py (--label auto) and scenes.py (--sheet): drawtext is needed only for
+    the labels/stamps, so a build without it still gets the picture, and is told what was left out."""
+
+    def setUp(self):
+        from _common import runner
+        self.runner = runner
+        self.saved = runner._FILTERS
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        self.src = OUT / "lean_sheet_src.mp4"
+        if not self.src.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:d=4", "-c:v", "libx264", str(self.src))
+        self.runner._FILTERS = set(self.runner.ffmpeg_filters()) - {"drawtext"}
+
+    def tearDown(self):
+        self.runner._FILTERS = self.saved
+
+    def _run(self, module, argv):
+        from _common import STATE
+        mod = __import__(module)
+        out = io.StringIO()
+        try:
+            with unittest.mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    mod.main()
+                except SystemExit as e:
+                    self.assertEqual(e.code or 0, 0, out.getvalue()[-800:])
+        finally:
+            STATE.reset()
+        return json.loads(out.getvalue())
+
+    def test_grid_draws_unlabelled_cells(self):
+        doc = self._run("grid", ["grid.py", str(self.src), str(self.src), "--cols", "2", "--rows", "1",
+                                 "-o", str(OUT / "lean_grid.mp4"), "--overwrite", "--json"])
+        self.assertEqual(doc["status"], "completed")
+        self.assertIn("grid_no_drawtext", [f["code"] for f in doc["diagnostics"]["fallbacks"]])
+        self.assertNotIn("drawtext", " ".join(doc["commands"]))
+
+    def test_scenes_sheet_has_no_stamps(self):
+        doc = self._run("scenes", ["scenes.py", str(self.src), "--sheet", str(OUT / "lean_scenes.png"),
+                                   "--overwrite", "--json"])
+        self.assertIn("scenes_sheet_no_drawtext", [f["code"] for f in doc["diagnostics"]["fallbacks"]])
+        self.assertNotIn("drawtext", " ".join(doc["commands"]))
+        # --json-brief goes through emit() too, so the fallback is in that document as well
+        brief = self._run("scenes", ["scenes.py", str(self.src), "--sheet", str(OUT / "lean_scenes.png"),
+                                     "--overwrite", "--json-brief"])
+        self.assertIn("scenes_sheet_no_drawtext", json.dumps(brief))
+
+
+class EmojiGlyphProbeTests(unittest.TestCase):
+    """#395: "no colour pixels" is a monochrome glyph OR the empty .notdef box; the probe tells
+    them apart by comparing the emoji with a code point no font has."""
+
+    def setUp(self):
+        import _common
+        self.c = _common
+        _common._EMOJI_SUPPORT_CACHE.clear()
+
+    def tearDown(self):
+        self.c._EMOJI_SUPPORT_CACHE.clear()
+
+    def _support(self, emoji_frame, nothing_frame, fonts_dir=None):
+        from _common import emoji as emoji_mod
+        frames = {"\U0001F389": emoji_frame, "\U0010FFFD": nothing_frame}
+        seen = self.seen = []
+        with unittest.mock.patch.object(emoji_mod, "_libass_color_probe", return_value=False), \
+                unittest.mock.patch.object(emoji_mod, "_libass_render", side_effect=lambda exe, ch, fd=None: (seen.append(fd), frames[ch])[1]), \
+                unittest.mock.patch.object(emoji_mod, "_emoji_color_font", return_value=("Apple Color Emoji", "/x.ttc", True)), \
+                unittest.mock.patch.object(emoji_mod, "ffmpeg_exe", return_value=("ffmpeg",)):
+            return emoji_mod.emoji_support(probe=True, fonts_dir=fonts_dir)
+
+    def test_a_render_that_matches_the_missing_glyph_is_no_glyph(self):
+        box = bytes([0]) * 100 + bytes([255]) * 50 + bytes([0]) * 100
+        s = self._support(box, box)
+        self.assertIs(s["libass_glyph"], False)
+        self.assertEqual(s["mode"], "none")
+        self.assertIn("no emoji glyph", s["detail"])
+
+    def test_a_blank_render_is_no_glyph(self):
+        blank = bytes(300)
+        self.assertIs(self._support(blank, blank)["libass_glyph"], False)
+
+    def test_a_glyph_from_a_face_that_is_not_a_listed_colour_family_is_mono(self):
+        """Audit A64 (#457): with no colour family listed, a glyph libass does draw (libass_glyph:
+        true) was answered mode `none`, against the docstring's `mono` -- and an auto caption run
+        then left the emoji out of the text it could draw."""
+        from _common import emoji as emoji_mod
+        glyph = bytes([0]) * 120 + bytes([200]) * 30 + bytes([0]) * 100
+        frames = {"\U0001F389": glyph, "\U0010FFFD": bytes(250)}
+        with unittest.mock.patch.object(emoji_mod, "_libass_color_probe", return_value=False), \
+                unittest.mock.patch.object(emoji_mod, "_libass_render", side_effect=lambda exe, ch, fd=None: frames[ch]), \
+                unittest.mock.patch.object(emoji_mod, "_emoji_color_font", return_value=(None, None, True)), \
+                unittest.mock.patch.object(emoji_mod, "ffmpeg_exe", return_value=("ffmpeg",)):
+            s = emoji_mod.emoji_support(probe=True)
+        self.assertIs(s["libass_glyph"], True)
+        self.assertEqual(s["mode"], "mono")
+        self.assertIn("monochrome", s["detail"])
+        self.c._EMOJI_SUPPORT_CACHE.clear()
+        with unittest.mock.patch.object(emoji_mod, "_libass_color_probe", return_value=False), \
+                unittest.mock.patch.object(emoji_mod, "_libass_render", side_effect=lambda exe, ch, fd=None: bytes(250)), \
+                unittest.mock.patch.object(emoji_mod, "_emoji_color_font", return_value=(None, None, True)), \
+                unittest.mock.patch.object(emoji_mod, "ffmpeg_exe", return_value=("ffmpeg",)):
+            self.assertEqual(emoji_mod.emoji_support(probe=True)["mode"], "none")
+
+    def test_a_render_that_differs_is_a_monochrome_glyph(self):
+        glyph = bytes([0]) * 120 + bytes([200]) * 30 + bytes([0]) * 100
+        s = self._support(glyph, bytes(250))
+        self.assertIs(s["libass_glyph"], True)
+        self.assertEqual(s["mode"], "mono")
+
+    def test_the_probe_searches_the_callers_fonts_dir(self):
+        glyph = bytes([0]) * 120 + bytes([200]) * 30 + bytes([0]) * 100
+        self._support(glyph, bytes(250), fonts_dir="/my/fonts")
+        self.assertEqual(self.seen, ["/my/fonts", "/my/fonts"])
+
+    def _plan_refusal(self, want, assets):
+        import caption
+        support = {"mode": "png" if assets else "none", "libass_color": False, "libass_glyph": False,
+                   "detail": "Apple Color Emoji: no glyph", "assets": assets, "color_font": "Apple Color Emoji",
+                   "color_font_file": None, "fix": ""}
+        calls = []
+
+        def fake_die(msg, code=1, kind="input", **extra):
+            calls.append((msg, kind))
+            raise SystemExit(code)
+
+        args = argparse.Namespace(emoji=want, emoji_assets=assets, fonts_dir=None)
+        with unittest.mock.patch.object(caption, "emoji_support", return_value=support), \
+                unittest.mock.patch.object(caption, "resolve_emoji_assets", return_value=assets), \
+                unittest.mock.patch.object(caption, "die", fake_die):
+            try:
+                caption.plan_emoji([(0.0, 2.0, "Emoji \U0001F3AC")], args, 0, 0)
+            except SystemExit:
+                return calls[0]
+        return None
+
+    def test_mono_refuses_even_with_assets_and_auto_with_assets_does_not(self):
+        self.assertIsNotNone(self._plan_refusal("mono", "/assets"))
+        self.assertIsNone(self._plan_refusal("auto", "/assets"))
+
+    def test_caption_auto_leaves_undrawable_emoji_out_and_says_so(self):
+        """#395: an auto run burns no empty boxes; it drops the emoji, as with no emoji face at
+        all, and records why. --emoji mono asked for the glyph and is refused."""
+        import caption
+        support = {"mode": "none", "libass_color": False, "libass_glyph": False, "detail": "Apple Color Emoji: no glyph",
+                   "assets": None, "color_font": "Apple Color Emoji", "color_font_file": None, "fix": ""}
+        warned = []
+        args = argparse.Namespace(emoji="auto", emoji_assets=None, fonts_dir=None)
+        with unittest.mock.patch.object(caption, "emoji_support", return_value=support), \
+                unittest.mock.patch.object(caption, "resolve_emoji_assets", return_value=None), \
+                unittest.mock.patch.object(caption, "warn", lambda msg, code, **k: warned.append(code)), \
+                contextlib.redirect_stderr(io.StringIO()):
+            cues, plan = caption.plan_emoji([(0.0, 2.0, "Emoji \U0001F3AC\u2705")], args, 640, 360)
+        self.assertEqual(plan["mode"], "none")
+        self.assertEqual(cues[0][2], "Emoji")
+        self.assertEqual(warned, ["emoji_not_drawn"])
+        self.assertIsNotNone(self._plan_refusal("mono", None))
+
+
+class BuildComponentPreflightTests(unittest.TestCase):
+    """#402: an encoder or a filter the command names and this ffmpeg build lacks is refused before
+    ffmpeg runs, dry runs included, with the kind and reason ffmpeg's own failure got. The lean
+    build is a mocked list (every runner has the components), as in LeanBuildTests."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        OUT.mkdir(parents=True, exist_ok=True)
+        cls.sdr = OUT / "pre_sdr.mp4"
+        cls.hevc = OUT / "pre_hevc.mp4"
+        cls.hdr = OUT / "pre_hdr.mp4"
+        base = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=2", "-f", "lavfi", "-i", "sine=f=440:d=2"]
+        if not cls.sdr.exists():
+            sh(*base, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", cls.sdr)
+        cls.x265 = "libx265" in sh("ffmpeg", "-hide_banner", "-encoders").stdout
+        if cls.x265 and not cls.hevc.exists():
+            sh(*base, "-c:v", "libx265", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p", "-tag:v", "hvc1",
+               "-c:a", "aac", "-shortest", cls.hevc)
+        if cls.x265 and not cls.hdr.exists():
+            sh(*base, "-c:v", "libx265", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1", "-color_primaries", "bt2020",
+               "-color_trc", "smpte2084", "-colorspace", "bt2020nc",
+               "-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:log-level=error",
+               "-c:a", "aac", "-shortest", cls.hdr)
+
+    def setUp(self):
+        from _common import runner
+        self.runner = runner
+        self.saved = (runner._FILTERS, runner._ENCODERS)
+        runner._FILTERS = runner._ENCODERS = None
+        self.filters, self.encoders = set(runner.ffmpeg_filters()), set(runner.ffmpeg_encoders())
+
+    def tearDown(self):
+        self.runner._FILTERS, self.runner._ENCODERS = self.saved
+
+    def _run(self, module, argv):
+        """(exit code, the --json document) of one tool's main(), in this process."""
+        from _common import STATE
+        mod = __import__(module)
+        out, code = io.StringIO(), 0
+        try:
+            with unittest.mock.patch.object(sys, "argv", [module + ".py"] + [str(a) for a in argv]), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    code = mod.main() or 0
+                except SystemExit as e:
+                    code = e.code or 0
+        finally:
+            STATE.reset()
+        return code, json.loads(out.getvalue())
+
+    def test_a_missing_encoder_or_filter_is_refused_before_ffmpeg_runs_dry_runs_included(self):
+        # --no-hw on the missing-encoder cases: on Apple Silicon a build without libx265 but with
+        # hevc_videotoolbox encodes on VideoToolbox instead (_vt_in_place_of, decided), and these
+        # cases are about a missing CPU encoder
+        cases = [  # tool, arguments, the hidden component, its list, the reason, needs libx265 to build the input
+            ("overlay", [self.sdr, "--text", "Hello"], "drawtext", "filters", "filter_missing", False),
+            ("reverse", [self.sdr, "--codec", "hevc", "--no-hw"], "libx265", "encoders", "encoder_missing", False),
+            ("crop", [self.hdr, "--x", "0", "--y", "0", "--width", "80", "--height", "44", "--no-hw"], "libx265", "encoders", "encoder_missing", True),
+            ("export", [self.hdr, "--preset", "youtube-hdr", "--no-hw"], "libx265", "encoders", "encoder_missing", True),
+            ("cut", [self.hevc, "--start", "0.5", "--end", "1.5", "--accurate", "--no-hw"], "libx265", "encoders", "encoder_missing", True),
+            ("color", [self.hdr, "--to-sdr"], "zscale", "filters", "filter_missing", True),
+            ("stabilize", [self.sdr], "vidstabdetect", "filters", "filter_missing", False),
+        ]
+        for tool, args, name, which, reason, needs_x265 in cases:
+            for dry in (["--dry-run"], []):
+                with self.subTest(tool=tool, dry_run=bool(dry)):
+                    if needs_x265 and not self.x265:
+                        self.skipTest("this build has no libx265 to make the HEVC input with")
+                    if name not in (self.filters if which == "filters" else self.encoders):
+                        self.skipTest(f"this build has no {name} to hide")
+                    self.runner._FILTERS = self.filters - ({name} if which == "filters" else set())
+                    self.runner._ENCODERS = self.encoders - ({name} if which == "encoders" else set())
+                    out = OUT / f"pre_{tool}_{'dry' if dry else 'real'}.mp4"
+                    out.unlink(missing_ok=True)
+                    code, doc = self._run(tool, args + ["-o", out, "--json"] + dry)
+                    self.assertEqual((code, doc["status"]), (1, "failed"), doc)
+                    err = doc["error"]
+                    self.assertEqual((err["kind"], err["reason"], err["details"]), ("ffmpeg", reason, {"name": name}), err)
+                    self.assertIn("doctor", err["hint"])
+                    self.assertFalse(out.exists(), "a refused run writes nothing")
+
+    def test_an_hdr_contact_sheet_without_zscale_is_refused(self):
+        """#510, decided: look.py has no HDR path without zscale (the other PQ/HLG-capable filters
+        a build may have are GPU ones: libplacebo, tonemap_opencl, tonemap_vaapi), so an HDR sheet
+        on such a build is refused, dry and real, with filter_missing, and nothing is written."""
+        if not self.x265:
+            self.skipTest("this build has no libx265 to make the HDR input with")
+        if "zscale" not in self.filters:
+            self.skipTest("this build has no zscale to hide")
+        for dry in (["--dry-run"], []):
+            with self.subTest(dry_run=bool(dry)):
+                self.runner._FILTERS = self.filters - {"zscale"}
+                self.runner._ENCODERS = self.encoders
+                out = OUT / f"pre_look_hdr_{'dry' if dry else 'real'}.png"
+                out.unlink(missing_ok=True)
+                code, doc = self._run("look", [self.hdr, "-o", out, "--json"] + dry)
+                self.assertEqual((code, doc["status"]), (1, "failed"), doc)
+                err = doc["error"]
+                self.assertEqual((err["kind"], err["reason"], err["details"]), ("ffmpeg", "filter_missing", {"name": "zscale"}), err)
+                self.assertFalse(out.exists(), "a refused run writes nothing")
+
+    def test_an_encoder_for_a_stream_the_output_does_not_have_is_not_required(self):
+        """ffmpeg opens an encoder per output stream, after stream selection: cut.py --accurate names
+        -c:a aac for a video-only source too, and a build without AAC encodes that source; with sound
+        it is still refused. -an drops the sound an input has, so it needs no audio encoder either."""
+        if "aac" not in self.encoders:
+            self.skipTest("this build has no aac to hide")
+        from _common import STATE
+        silent = OUT / "pre_silent.mp4"
+        if not silent.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=2", "-c:v", "libx264",
+               "-pix_fmt", "yuv420p", silent)
+        r = self.runner
+        r._ENCODERS, r._FILTERS = self.encoders - {"aac"}, self.filters
+        for src, refused in ((silent, False), (self.sdr, True)):
+            with self.subTest(source=src.name):
+                out = OUT / f"pre_cut_{src.stem}.mp4"
+                out.unlink(missing_ok=True)
+                code, doc = self._run("cut", [src, "--start", "0.5", "--end", "1.5", "--accurate", "--no-hw", "-o", out, "--json", "--dry-run"])
+                if refused:
+                    self.assertEqual((code, doc["error"]["reason"], doc["error"]["details"]), (1, "encoder_missing", {"name": "aac"}), doc)
+                else:
+                    self.assertEqual((code, doc["status"]), (0, "completed"), doc)
+        r._check_build_components(["ffmpeg", "-i", str(self.sdr), "-c:v", "libx264", "-an", "-c:a", "aac", "out.mp4"])
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit):
+                r._check_build_components(["ffmpeg", "-i", str(self.sdr), "-c:v", "libx264", "-c:a", "aac", "out.mp4"])
+        finally:
+            STATE.reset()
+
+    def test_only_what_the_build_list_lacks_is_refused(self):
+        """A decoder named before an input, a stream copy, a VideoToolbox encoder (left to --hw's
+        checks) and a list that could not be read refuse nothing; text inside a quoted or escaped
+        filter option is not a filter name."""
+        r = self.runner
+        names = r.graph_filter_names
+        self.assertEqual(names("[0:v]scale=2:2,drawtext=text='a,zscale=1;b':x=1[v];[v]null[o]"), ["scale", "drawtext", "null"])
+        self.assertEqual(names("sws_flags=bicubic;[0:v]format=yuv420p,select=gt(scene\\,0.3),fps=30"), ["format", "select", "fps"])
+        self.assertEqual(names("subtitles=filename=/a/b\\,c.srt:force_style='FontName=X,Bold=1'"), ["subtitles"])
+        self.assertEqual(names("[1:v]setpts=PTS-STARTPTS[b0];[a][b0]overlay=0:0:enable='between(t,1,2)'"), ["setpts", "overlay"])
+        r._ENCODERS, r._FILTERS = {"aac"}, {"scale"}
+        r._check_build_components(["ffmpeg", "-c:v", "libvpx-vp9", "-i", "a.webm", "-vf", "scale=2:2", "-c:v", "h264_videotoolbox",
+                                   "-c:a", "copy", "out.mp4"])
+        r._ENCODERS, r._FILTERS = set(), set()
+        saved = dict(r._PREFLIGHT_LISTS)
+        r._PREFLIGHT_LISTS.clear()
+        try:
+            with unittest.mock.patch.object(r, "_read_ff_list", return_value=set()):
+                r._ENCODERS = r._FILTERS = None  # nothing read yet, and the quiet read finds nothing
+                r._check_build_components(["ffmpeg", "-i", "a.mp4", "-vf", "nosuchfilter", "-c:v", "nosuchencoder", "out.mp4"])
+        finally:
+            r._PREFLIGHT_LISTS.clear()
+            r._PREFLIGHT_LISTS.update(saved)
+
+    def test_a_tool_that_writes_its_own_failure_message_keeps_the_cause(self):
+        """cut.py's re-encode and the measurement passes die with their own message; the reason,
+        details and hint of the cause ffmpeg named ride along (ffmpeg_failure_extra()), and
+        waveform.py passes its stage's on."""
+        r = self.runner
+        calls = []
+
+        def fake_die(msg, code=1, kind="input", **extra):
+            calls.append((msg, kind, extra))
+            raise SystemExit(code)
+
+        for stderr, reason, details in (("x\nUnknown encoder 'libx265'\n", "encoder_missing", {"name": "libx265"}),
+                                        ("[out#0] Error writing trailer: No space left on device\n", "disk_full", {}),
+                                        ("something else\n", None, None)):
+            with self.subTest(stderr=stderr):
+                extra = r.ffmpeg_failure_extra(stderr)
+                self.assertEqual(extra.get("error_extra"), {"reason": reason, "details": details} if reason else None)
+                self.assertEqual(bool(extra.get("hint")), bool(reason))
+        # the wiring: each pass that writes its own message dies through its own module's die()
+        import loudness
+        probe_mod = sys.modules["_common.probe"]
+        missing = "[AVFilterGraph @ 0x1] No such filter: 'silencedetect'\n"
+        passes = (("silencedetect", probe_mod, lambda: probe_mod.detect_silences("in.mp4", -30.0, 0.5), False),
+                  ("content", probe_mod, lambda: probe_mod.detect_content("in.mp4", 3.0, video=False), False),
+                  ("dropouts", probe_mod, lambda: probe_mod._detect_dropouts("in.mp4", 3.0), False),
+                  ("decode pcm", probe_mod, lambda: probe_mod.decode_pcm_mono("in.mp4", 22050, check=True), True),
+                  ("loudness", loudness, lambda: loudness.measure("in.mp4", -16.0, -1.0, 11.0), False))
+        for label, module, call, binary in passes:
+            with self.subTest(measurement=label):
+                calls.clear()
+                failed = subprocess.CompletedProcess(["ffmpeg"], 1, b"" if binary else "",
+                                                     missing.encode() if binary else missing)
+                with unittest.mock.patch.object(module, "run_analysis", return_value=failed), \
+                        unittest.mock.patch.object(module, "die", fake_die), self.assertRaises(SystemExit):
+                    call()
+                msg, kind, extra = calls[-1]
+                self.assertEqual((kind, extra.get("error_extra")),
+                                 ("ffmpeg", {"reason": "filter_missing", "details": {"name": "silencedetect"}}), msg)
+        import waveform
+        child = {"status": "failed", "exit_code": 1, "commands": [],
+                 "error": {"kind": "ffmpeg", "message": "this ffmpeg build has no drawtext filter", "hint": "see doctor",
+                           "reason": "filter_missing", "details": {"name": "drawtext"}}}
+        proc = subprocess.CompletedProcess(["graphics.py"], 1, json.dumps(child), "")
+        calls.clear()
+        with unittest.mock.patch.object(waveform, "run_tool", return_value=proc), \
+                unittest.mock.patch.object(waveform, "die", fake_die), contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit):
+            waveform._child("graphics.py", ["in.mp4"])
+        msg, kind, extra = calls[-1]
+        self.assertEqual((kind, extra["error_extra"], extra["hint"]),
+                         ("ffmpeg", {"reason": "filter_missing", "details": {"name": "drawtext"}}, "see doctor"))
+
+    def test_arabic_and_hebrew_are_refused_for_this_build_not_for_every_build(self):
+        """#402: without fribidi, drawtext cannot order or join Arabic and Hebrew; a build with it
+        can, so the refusal names this build. The harfbuzz scripts stay "any ffmpeg build"."""
+        from _common import STATE, drawtext
+        self.assertIn("any ffmpeg build", drawtext.shaping_refusal("hi"))
+        saved = dict(drawtext._SHAPING_BUILD_CACHE)
+        drawtext._SHAPING_BUILD_CACHE.clear()
+        drawtext._SHAPING_BUILD_CACHE.update({"fribidi": False, "harfbuzz": False})
+        try:
+            for tool, args in (("overlay", [self.sdr, "--text", "مرحبا"]),
+                               ("graphics", [self.sdr, "--template", "title", "--title", "שלום", "--text-render", "drawtext"])):
+                with self.subTest(tool=tool):
+                    out = OUT / f"pre_bidi_{tool}.mp4"
+                    out.unlink(missing_ok=True)
+                    code, doc = self._run(tool, args + ["-o", out, "--json", "--dry-run"])
+                    self.assertEqual((code, doc["error"]["kind"]), (1, "input"), doc)
+                    self.assertIn("on this ffmpeg build", doc["error"]["message"])
+                    self.assertIn("libfribidi", doc["error"]["message"])
+                    self.assertNotIn("any ffmpeg build", doc["error"]["message"])
+                    self.assertFalse(out.exists())
+        finally:
+            drawtext._SHAPING_BUILD_CACHE.clear()
+            drawtext._SHAPING_BUILD_CACHE.update(saved)
+            STATE.reset()
+
+
+class WrongFormatFileTests(unittest.TestCase):
+    """#404: a file in another format than the flag reads is refused by name, saying what it is
+    and what takes it, instead of being read as something else or failing inside ffmpeg."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        cls.dir = OUT / "wrong_format"
+        cls.dir.mkdir(parents=True, exist_ok=True)
+        cls.src = cls.dir / "src.mp4"
+        if not cls.src.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=3", "-f", "lavfi", "-i", "sine=f=440:d=3",
+               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", cls.src)
+        cls.gif = cls.dir / "one_frame.gif"
+        if not cls.gif.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=red:s=64x64", "-frames:v", "1", cls.gif)
+
+    def write(self, name, text):
+        p = self.dir / name
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def test_a_file_in_the_wrong_format_is_refused_by_name(self):
+        srt = self.write("subs.srt", "1\n00:00:00,500 --> 00:00:01,500\nHello\n")
+        cases = [  # label, tool, arguments, the file the message must name, words it must hold
+            ("WebVTT without hours as cues", "caption.py", ["--text", self.write("mmss.vtt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello\n")], "mmss.vtt", ["WebVTT", "--srt"]),
+            ("WebVTT with cue settings as cues", "caption.py",
+             ["--text", self.write("set.vtt", "WEBVTT\n\n00:00:01.000 --> 00:00:02.000 align:start position:0%\nHello\n")], "set.vtt", ["WebVTT", "--srt"]),
+            ("headerless mm:ss timing lines as cues", "caption.py", ["--text", self.write("bare.txt", "00:01.000 --> 00:02.000\nHello\n")], "bare.txt", ["subtitle file", "--srt"]),
+            ("ASS as cues", "caption.py", ["--text", self.write("x.ass", "[Script Info]\nScriptType: v4.00+\n\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hi\n")], "x.ass", ["ASS", "--ass"]),
+            ("JSON as cues", "caption.py", ["--text", self.write("cues.json", '[{"start": 1.0, "end": 2.0, "text": "Hello"}]\n')], "cues.json", ["JSON"]),
+            ("SRT as chapters", "metadata.py", [self.src, "--chapters", srt], "subs.srt", ["subtitle", "chapter list"]),
+            ("WebVTT as chapters", "metadata.py", [self.src, "--chapters", self.write("ch.vtt", "WEBVTT\n\n00:01.000 --> 00:02.000\nHello\n")],
+             "ch.vtt", ["WebVTT header", "chapter list"]),
+            ("a concat directive in a list", "join.py", ["--list", self.write("parts.ffconcat", f"ffconcat version 1.0\nfile '{self.src}'\ninpoint 1\nfile '{self.src}'\n")], "parts.ffconcat", ["inpoint 1", "directive"]),
+            ("the argument-free stream directive in a list", "join.py",
+             ["--list", self.write("streams.ffconcat", f"ffconcat version 1.0\nfile '{self.src}'\nstream\nfile '{self.src}'\n")],
+             "streams.ffconcat", ["`stream`", "directive"]),
+            ("a .cube with no LUT", "color.py", [self.src, "--lut", self.write("bad.cube", "not a cube\n")], "bad.cube", ["LUT_3D_SIZE"]),
+            ("a .cube cut short", "color.py", [self.src, "--lut", self.write("short.cube", "LUT_3D_SIZE 2\n0 0 0\n1 1 1\n")], "short.cube", ["2 rows", "has 8"]),
+            ("a 1D .cube", "color.py", [self.src, "--lut", self.write("one.cube", "LUT_1D_SIZE 2\n0 0 0\n1 1 1\n")], "one.cube", ["1D"]),
+            ("text as a beat source", "cut.py", [self.src, "--start", "1", "--end", "2", "--snap", "beats", "--snap-source", srt], "subs.srt", ["no audio could be decoded"]),
+            ("a JSON list as a beat source", "cut.py", [self.src, "--start", "1", "--end", "2", "--snap", "beats", "--snap-source", self.write("list.json", "[1, 2]\n")], "list.json", ["not a scenes.py document"]),
+            ("a video as an overlay image", "overlay.py", [self.src, "--image", self.src], "src.mp4", ["not a still image", "--image"]),
+            ("a video as a waveform plate", "waveform.py", [self.src, "--image", self.src], "src.mp4", ["not a still image", "--image"]),
+            ("a video as a waveform plate, dry run", "waveform.py", [self.src, "--image", self.src, "--dry-run"], "src.mp4", ["not a still image"]),
+            ("a GIF as an overlay image", "overlay.py", [self.src, "--image", self.gif], "one_frame.gif", ["GIF", "PNG"]),
+            ("a GIF as a waveform plate", "waveform.py", [self.src, "--image", self.gif], "one_frame.gif", ["GIF", "PNG"]),
+        ]
+        for label, tool, args, named, words in cases:
+            with self.subTest(case=label):
+                out = self.dir / ("out_" + re.sub(r"\W+", "_", label) + (".srt" if tool == "caption.py" else ".mp4"))
+                out.unlink(missing_ok=True)
+                flag = "--write-srt" if tool == "caption.py" else "-o"
+                proc = script(tool, *args, flag, out, "--json", expect_fail=True)
+                doc = json.loads(proc.stdout)
+                self.assertEqual((proc.returncode, doc["status"], doc["error"]["kind"]), (1, "failed", "input"), doc)
+                for word in [named] + words:
+                    self.assertIn(word, doc["error"]["message"])
+                self.assertNotEqual(doc["error"].get("reason"), "input_unreadable", "the video was not the unreadable file")
+                self.assertFalse(out.exists(), "a refused run writes nothing")
+
+    def test_what_these_flags_do_read_is_still_read(self):
+        """The refusals above are narrow: a cue file whose first cue is in brackets, a concat list
+        with its header, a 3D .cube and a chapter list are read as before; a chapter title's
+        `- ` separator, a WebVTT file's inline tags and Noto's asset names are no longer text."""
+        cues = self.write("ok_cues.txt", "[Music]\n0:03-0:05 World\n")
+        out = self.dir / "ok_cues.srt"
+        script("caption.py", "--text", cues, "--write-srt", out)
+        self.assertIn("[Music]", out.read_text(encoding="utf-8"))
+        lst = self.write("ok.ffconcat", f"ffconcat version 1.0\n# two parts\nfile '{self.src}'\nfile '{self.src}'\n")
+        doc = json.loads(script("join.py", "--list", lst, "-o", self.dir / "ok_join.mp4", "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed")
+        self.assertEqual((doc.get("diagnostics") or {}).get("skipped", []), [])
+        # a line that names a file that is there is a path, even when its name is a directive's
+        named = self.dir / "named"  # its own folder: the refusal case's list must not find this file
+        named.mkdir(exist_ok=True)
+        shutil.copyfile(self.src, named / "stream")
+        lst = named / "ok_named.txt"
+        lst.write_text(f"stream\n{self.src}\n", encoding="utf-8")
+        doc = json.loads(script("join.py", "--list", lst, "-o", self.dir / "ok_join_named.mp4", "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed", doc)
+        cube = self.write("ok.cube", "LUT_3D_SIZE 2\n" + "".join(f"{r} {g} {b}\n" for b in (0, 1) for g in (0, 1) for r in (0, 1)))
+        graded = self.dir / "ok_lut.mp4"
+        self.assertTrue(json.loads(script("color.py", self.src, "--lut", cube, "-o", graded, "--json").stdout)["verified"])
+        ch = self.write("ok_ch.txt", "0:00 - Intro\n0:01 – Part two\n0:02 Plain - kept\n")
+        tagged = self.dir / "ok_ch.mp4"
+        script("metadata.py", self.src, "--chapters", ch, "-o", tagged)
+        self.assertEqual([c["title"] for c in probe(str(tagged))["chapters"]], ["Intro", "Part two", "Plain - kept"])
+        from _common import asr, emoji
+        vtt = self.write("yt.vtt", "WEBVTT\nKind: captions\n\n00:00:01.000 --> 00:00:03.000 align:start position:0%\n"
+                                   "hello<00:00:01.500><c> world</c> <i>kept</i>\n")
+        self.assertEqual(asr.parse_srt(str(vtt)), [(1.0, 3.0, "hello world <i>kept</i>")])
+        plain = self.write("tags.srt", "1\n00:00:01,000 --> 00:00:03,000\na <c>b</c>\n")
+        self.assertEqual(asr.parse_srt(str(plain))[0][2], "a <c>b</c>", "an SRT's text is not WebVTT")
+        noto = self.dir / "noto"
+        noto.mkdir(exist_ok=True)
+        for name in ("emoji_u1f600.png", "emoji_u1f469_200d_1f4bb.png", "emoji_u0031_20e3.png"):
+            (noto / name).write_bytes(b"png")
+        self.assertEqual(os.path.basename(emoji.emoji_asset_for("\U0001F600", str(noto))), "emoji_u1f600.png")
+        self.assertEqual(os.path.basename(emoji.emoji_asset_for("\U0001F469‍\U0001F4BB", str(noto))), "emoji_u1f469_200d_1f4bb.png")
+        # a keycap: Noto pads each code point to four digits (0031), Twemoji does not (31-20e3.png)
+        self.assertEqual(os.path.basename(emoji.emoji_asset_for("1\ufe0f\u20e3", str(noto))), "emoji_u0031_20e3.png")
+        twemoji = self.dir / "twemoji"
+        twemoji.mkdir(exist_ok=True)
+        (twemoji / "31-20e3.png").write_bytes(b"png")
+        self.assertEqual(os.path.basename(emoji.emoji_asset_for("1\ufe0f\u20e3", str(twemoji))), "31-20e3.png")
+
+    def failed_input(self, tool, *args):
+        proc = script(tool, *args, "--json", expect_fail=True)
+        doc = json.loads(proc.stdout)
+        self.assertEqual((proc.returncode, doc["status"], doc["error"]["kind"]), (1, "failed", "input"), doc)
+        return doc["error"]
+
+    def test_a_font_file_that_is_not_a_font_is_refused(self):
+        """#510: drawtext that cannot load its fontfile= asks fontconfig for a default face and exits
+        0, and libass finds no face in the brand font's folder and does the same: a text file named
+        .ttf drew DejaVu Sans with font_used.substituted false. Every tool that draws with a named
+        font file, from the flag and from a brand file, refuses one that is not there or not a font."""
+        fake = self.write("fake.ttf", "this is not a font\n")
+        missing = self.dir / "missing.ttf"
+        brand = self.dir / "fake_font_brand.json"
+        brand.write_text(json.dumps({"font_file": fake.name}), encoding="utf-8")
+        srt = self.write("font.srt", "1\n00:00:00,500 --> 00:00:01,500\nHello\n")
+        cases = [  # label, tool, arguments, the name the message gives the file
+            ("overlay --font-file", "overlay.py", [self.src, "--text", "Hi", "--font-file", fake], "--font-file"),
+            ("overlay --font-file missing", "overlay.py", [self.src, "--text", "Hi", "--font-file", missing], "--font-file"),
+            ("overlay brand", "overlay.py", [self.src, "--text", "Hi", "--brand", brand], "font_file"),
+            ("graphics --font-file, drawtext", "graphics.py", [self.src, "--template", "title", "--title", "Hi", "--font-file", fake,
+                                                              "--text-render", "drawtext"], "--font-file"),
+            ("graphics brand, libass", "graphics.py", [self.src, "--template", "title", "--title", "Hi", "--brand", brand,
+                                                       "--text-render", "ass"], "font_file"),
+            ("caption brand", "caption.py", [self.src, "--srt", srt, "--brand", brand], "font_file"),
+        ]
+        for label, tool, args, named in cases:
+            for dry in ([], ["--dry-run"]):
+                with self.subTest(case=label, dry_run=bool(dry)):
+                    out = self.dir / ("font_" + re.sub(r"\W+", "_", label) + ".mp4")
+                    out.unlink(missing_ok=True)
+                    err = self.failed_input(tool, *args, "-o", out, *dry)
+                    self.assertIn(named, err["message"])
+                    self.assertFalse(out.exists())
+        # a real font is drawn with as before, and a brand font is not read where nothing is drawn
+        real = default_font_file("DejaVu Sans")
+        if real and os.path.isfile(real):
+            doc = json.loads(script("overlay.py", self.src, "--text", "Hi", "--font-file", real, "-o", self.dir / "font_ok.mp4",
+                                    "--dry-run", "--json").stdout)
+            self.assertEqual((doc["status"], doc["font_used"]["how"]), ("completed", "font_file"))
+        plate = self.dir / "font_plate.png"
+        if not plate.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=red:s=32x32", "-frames:v", "1", plate)
+        doc = json.loads(script("overlay.py", self.src, "--image", plate, "--brand", brand, "-o", self.dir / "font_img.mp4",
+                                "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed", doc)
+        # nor by a template that draws no text (progress), nor where only an SRT is written (no
+        # input video): review of #532
+        doc = json.loads(script("graphics.py", self.src, "--template", "progress", "--brand", brand, "-o",
+                                self.dir / "font_progress.mp4", "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed", doc)
+        cues = self.write("font_cues.txt", "0:00-0:01 Hello\n")
+        srt_only = self.dir / "font_only.srt"
+        srt_only.unlink(missing_ok=True)
+        proc = script("caption.py", "--text", cues, "--write-srt", srt_only, "--brand", brand)
+        self.assertTrue(srt_only.exists(), proc.stderr)
+        # nor where a soft subtitle track is muxed: nothing is drawn
+        doc = json.loads(script("caption.py", self.src, "--srt", srt, "--brand", brand, "--mode", "mux",
+                                "-o", self.dir / "font_mux.mkv", "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed", doc)
+        from _common import fonts
+        for magic in (b"\x00\x01\x00\x00", b"OTTO", b"ttcf", b"wOF2"):
+            with self.subTest(magic=magic):
+                f = self.dir / "magic.bin"
+                f.write_bytes(magic + b"\x00" * 12)
+                self.assertEqual(fonts.require_font_file(str(f)), str(f))
+
+    def test_a_brand_key_no_tool_reads_is_refused(self):
+        """#510: a misspelt brand key ("safe_margn", "colours", "styles.caption.colr") was dropped and
+        the default drawn, as a project's was until review 9. Every block is checked; a key the
+        shipped example carries is still read, and `loudness`, which no tool reads, gets a note."""
+        for label, doc, where in (("top level", {"safe_margn": 10}, "safe_margn"),
+                                  ("a whole block", {"colours": {"primary": "FF0000"}}, "colours"),
+                                  ("colors", {"colors": {"primay": "FF0000"}}, "colors.primay"),
+                                  ("caption", {"caption": {"sise": 30}}, "caption.sise"),
+                                  ("styles", {"styles": {"captions": {}}}, "styles.captions"),
+                                  ("styles.caption", {"styles": {"caption": {"colr": "00FF00"}}}, "styles.caption.colr"),
+                                  # the caller's key is quoted as JSON: a line break stays on the message's one line
+                                  ("a line break", {"safe\nmargin": 10}, "safe\\nmargin")):
+            for tool, args in (("graphics.py", [self.src, "--template", "title", "--title", "Hi"]),
+                               ("caption.py", [self.src, "--text", self.write("brand_cues.txt", "0:00-0:01 Hello\n")])):
+                with self.subTest(case=label, tool=tool):
+                    brand = self.dir / "unknown_key_brand.json"
+                    brand.write_text(json.dumps(doc), encoding="utf-8")
+                    err = self.failed_input(tool, *args, "--brand", brand, "-o", self.dir / "brand_key.mp4", "--dry-run")
+                    self.assertIn(f'unknown key "{where}"', err["message"])
+        example = json.loads((SCRIPTS.parent / "examples" / "brand.json").read_text(encoding="utf-8"))
+        example["logo"] = None
+        example["loudness"] = {"lufs": -14}
+        brand = self.dir / "example_brand.json"
+        brand.write_text(json.dumps(example), encoding="utf-8")
+        doc = json.loads(script("graphics.py", self.src, "--template", "title", "--title", "Hi", "--brand", brand,
+                                "-o", self.dir / "brand_ok.mp4", "--dry-run", "--json").stdout)
+        self.assertEqual(doc["status"], "completed", doc)
+        self.assertTrue(any('"loudness" is read by no tool' in n for n in doc.get("notes", [])), doc.get("notes"))
+
+    def test_report_pack_takes_only_the_pack_table(self):
+        """#510: report.py --pack took the first Markdown table of any file, and every table after
+        it, and reported the HTML verified. It takes the table render.py --template all writes."""
+        row = "| youtube | a.mp4 | 1.0 MB | 2.00 s | pass |\n"
+        pack = self.write("talk_pack.md", "# Social pack \u2014 talk\n\n| platform | file | size | duration | check |\n"
+                                          "|---|---|---|---|---|\n" + row + "\n| other | table |\n|---|---|\n| 1 | 2 |\n")
+        doc = json.loads(script("report.py", "--pack", pack, "-o", self.dir / "pack.html", "--json").stdout)
+        self.assertEqual([r["platform"] for r in doc["pack"]], ["youtube"], "a later table is not part of the pack")
+        for label, text in (("any table", "# Notes\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"),
+                            ("columns renamed", "| platform | file | size | length | check |\n|---|---|---|---|---|\n" + row),
+                            ("a short row", "| platform | file | size | duration | check |\n|---|---|---|---|---|\n| youtube | a.mp4 |\n"),
+                            ("no table", "just prose\n"),
+                            # review of #532: a header and a row with no delimiter line is no Markdown
+                            # table, and a row of empty cells after a good row is a row, not a delimiter
+                            ("no delimiter", "| platform | file | size | duration | check |\n" + row),
+                            ("an empty row", "| platform | file | size | duration | check |\n|---|---|---|---|---|\n"
+                                             + row + "| | |\n")):
+            with self.subTest(case=label):
+                out = self.dir / "not_pack.html"
+                out.unlink(missing_ok=True)
+                err = self.failed_input("report.py", "--pack", self.write("not_pack.md", text), "-o", out)
+                self.assertIn("not_pack.md", err["message"])
+                self.assertFalse(out.exists())
+        import report
+        render_src = (SCRIPTS / "render.py").read_text(encoding="utf-8")
+        self.assertIn('"| ' + " | ".join(report.PACK_HEADER) + ' |"', render_src, "report.py reads the header render.py writes")
+
+
+class EmojiClaimTests(unittest.TestCase):
+    """#403: what an emoji diagnostic and the result's emoji block say is what the route draws."""
+
+    def _support(self, **over):
+        base = {"mode": "mono", "libass_color": False, "libass_glyph": True, "detail": "the probe's detail", "assets": None,
+                "color_font": "Noto Color Emoji", "color_font_file": None, "fix": ""}
+        base.update(over)
+        return base
+
+    def _plan(self, want, support, assets=None, text="Emoji \U0001F3AC"):
+        import caption
+        warned = []
+        args = argparse.Namespace(emoji=want, emoji_assets=assets, fonts_dir=None, size=14, margin=20, position="bottom",
+                                  animate="none", emoji_scale=1.0, emoji_max=None)
+        with unittest.mock.patch.object(caption, "emoji_support", return_value=support), \
+                unittest.mock.patch.object(caption, "resolve_emoji_assets", return_value=assets), \
+                unittest.mock.patch.object(caption, "warn", lambda msg, code, **k: warned.append((code, msg))), \
+                contextlib.redirect_stderr(io.StringIO()):
+            _cues, plan = caption.plan_emoji([(0.0, 2.0, text)], args, 640, 360)
+        return plan, warned
+
+    def test_caption_mono_on_a_colour_build_says_colour(self):
+        plan, warned = self._plan("mono", self._support(mode="color", libass_color=True))
+        self.assertEqual(plan["mode"], "color")
+        self.assertEqual([c for c, _m in warned], ["emoji_mono_drawn_in_colour"])
+        self.assertNotIn("no colour path", warned[0][1])
+        plan, warned = self._plan("mono", self._support())
+        self.assertEqual((plan["mode"], [c for c, _m in warned]), ("mono", ["emoji_monochrome"]))
+
+    def test_a_cluster_with_no_png_is_not_said_to_be_drawn_when_libass_draws_no_glyph(self):
+        assets = OUT / "emoji_claim_assets"
+        assets.mkdir(parents=True, exist_ok=True)
+        for glyph, words in ((False, "empty box"), (True, "for libass to draw")):
+            with self.subTest(libass_glyph=glyph):
+                plan, warned = self._plan("png", self._support(mode="png", libass_glyph=glyph, assets=str(assets)), assets=str(assets))
+                self.assertEqual(plan["missing"], ["1f3ac"])
+                msg = dict(warned)["emoji_assets_missing"]
+                self.assertIn(words, msg)
+                self.assertNotIn("drawn by the text font", msg)
+
+    def _graphics(self, support, *extra):
+        import graphics
+        from _common import STATE
+        src = OUT / "emoji_claim_src.mp4"
+        if not src.exists():
+            OUT.mkdir(parents=True, exist_ok=True)
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", src)
+        out = io.StringIO()
+        argv = ["graphics.py", str(src), "--template", "title", "--title", "Party \U0001F389", "-o", str(OUT / "emoji_claim_out.mp4"),
+                "--overwrite", "--dry-run", "--json", *extra]
+        try:
+            with unittest.mock.patch.object(graphics, "emoji_support", return_value=support), \
+                    unittest.mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    graphics.main()
+                except SystemExit as e:
+                    self.assertEqual(e.code or 0, 0, out.getvalue()[-600:])
+        finally:
+            STATE.reset()
+        return json.loads(out.getvalue())
+
+    def test_graphics_reports_the_route_that_draws_the_emoji(self):
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        # a colour-capable libass: the text goes through libass, not the drawtext route that draws a box
+        doc = self._graphics(self._support(mode="color", libass_color=True))
+        self.assertEqual(doc["emoji"]["mode"], "color")
+        self.assertNotIn("drawtext=", " ".join(doc["commands"]))
+        # drawtext pinned: nothing draws the emoji, which is said, and counted before it is removed
+        doc = self._graphics(self._support(mode="color", libass_color=True), "--text-render", "drawtext")
+        self.assertEqual((doc["emoji"]["mode"], doc["emoji"]["count"], doc["emoji"]["clusters"]), ("none", 1, ["1f389"]))
+        self.assertIn("emoji_not_drawn", [w["code"] for w in doc["diagnostics"]["warnings"]])
+        # auto on a machine that draws none: the same record, not "(--emoji none)"
+        doc = self._graphics(self._support(mode="none", libass_glyph=False))
+        self.assertEqual((doc["emoji"]["mode"], doc["emoji"]["count"]), ("none", 1))
+        warn = [w for w in doc["diagnostics"]["warnings"] if w["code"] == "emoji_not_drawn"]
+        self.assertEqual([w["count"] for w in warn], [1])
+        # --emoji none asked for: no warning
+        doc = self._graphics(self._support(mode="mono"), "--emoji", "none")
+        self.assertNotIn("emoji_not_drawn", [w["code"] for w in (doc.get("diagnostics") or {}).get("warnings", [])])
+        # --emoji mono on a colour build is drawn in colour, and says so
+        doc = self._graphics(self._support(mode="color", libass_color=True), "--emoji", "mono")
+        self.assertEqual(doc["emoji"]["mode"], "color")
+        self.assertIn("emoji_mono_drawn_in_colour", [w["code"] for w in doc["diagnostics"]["warnings"]])
+        # ... unless drawtext is pinned: then nothing draws them, and no warning says they are drawn in colour
+        doc = self._graphics(self._support(mode="color", libass_color=True), "--emoji", "mono", "--text-render", "drawtext")
+        codes = [w["code"] for w in doc["diagnostics"]["warnings"]]
+        self.assertEqual(doc["emoji"]["mode"], "none")
+        self.assertIn("emoji_not_drawn", codes)
+        self.assertNotIn("emoji_mono_drawn_in_colour", codes)
+
+    def test_overlay_says_drawtext_has_one_font_and_no_fallback(self):
+        if not shutil.which("ffmpeg"):
+            self.skipTest("ffmpeg not on PATH")
+        src = OUT / "emoji_claim_src.mp4"
+        if not src.exists():
+            OUT.mkdir(parents=True, exist_ok=True)
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", src)
+        doc = json.loads(script("overlay.py", src, "--text", "Hi \U0001F389", "-o", OUT / "emoji_claim_ov.mp4", "--dry-run", "--json").stdout)
+        msg = [w["message"] for w in doc["diagnostics"]["warnings"] if w["code"] == "emoji_monochrome"][0]
+        self.assertIn("no fallback", msg)
+        self.assertIn("empty box", msg)
+        self.assertNotIn("drawn by the text font", msg)
+
+
+
+class RgbStabilizeAndFontsDirTests(unittest.TestCase):
+    """#531: stabilize.py on an RGB source, and caption.py --fonts-dir without the asked face."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        cls.dir = OUT / "rgb_stab_fonts_dir"
+        cls.dir.mkdir(parents=True, exist_ok=True)
+
+    def test_stabilize_takes_an_rgb_source(self):
+        """vid.stab aborts on an RGB picture (libvidstab 1.1: the assertion `fi->planes==1`), so
+        pass 1 failed as kind ffmpeg for a PNG still, an RGB .mov and a gbrp file. Both passes now
+        see YUV 4:4:4; the output is the encoder line's format and the colour is kept."""
+        if "vidstabdetect" not in subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout:
+            self.skipTest("this ffmpeg build has no vid.stab")
+        red = "color=c=0xC03028:s=160x120:r=25:d=1"
+        sources = {
+            "rgb24 qtrle .mov": (self.dir / "red_rgb24.mov", [red + ",format=rgb24"], ["-c:v", "qtrle"]),
+            "gbrp ffv1 .mkv": (self.dir / "red_gbrp.mkv", [red + ",format=gbrp"], ["-c:v", "ffv1"]),
+            "rgb24 .png still": (self.dir / "red.png", [red + ",format=rgb24"], ["-frames:v", "1"]),
+        }
+        for name, (path, graph, codec) in sources.items():
+            if not path.exists():
+                sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", graph[0], *codec, path)
+            self.assertRegex(probe(str(path))["video"]["pix_fmt"], r"^(rgb|bgr|gbr)", "fixture: the source is RGB")
+            for codec_flags, ext, pix in (([], ".mp4", "yuv420p"), (["--codec", "prores"], ".mov", "yuv422p10le")):
+                with self.subTest(source=name, line=ext):
+                    out = self.dir / f"stab_{path.stem}_{path.suffix[1:]}{ext}"
+                    doc = json.loads(script("stabilize.py", path, *codec_flags, "-o", out, "--json").stdout)
+                    self.assertEqual(doc["status"], "completed", doc.get("error"))
+                    self.assertEqual(doc["probe"]["video"]["pix_fmt"], pix, "the output's format is stated")
+                    self.assertTrue(any("the source is RGB" in n for n in doc.get("notes") or []), doc.get("notes"))
+                    if not codec_flags:
+                        # the BT.709 conversion every other RGB re-encode makes: C03028 comes back C03028
+                        got = frame_rgb(out, 0, 80, 60)
+                        self.assertEqual(len(got), 3, "a pixel was read")  # zip() of an empty read passes
+                        for channel, want in zip(got, (0xC0, 0x30, 0x28)):
+                            self.assertLessEqual(abs(channel - want), 4)
+
+    def test_a_fonts_dir_miss_reports_no_established_face(self):
+        """A directory miss cannot establish which face libass selects through fontconfig."""
+        if _no_fontconfig() or not shutil.which("fc-scan") or platform.system() == "Windows":
+            self.skipTest("needs fontconfig's fc-scan and fc-match")
+        face = default_font_file("DejaVu Sans")
+        if not face or "dejavu" not in os.path.basename(face).lower():
+            self.skipTest("DejaVu Sans is not installed")
+        with_face, empty = self.dir / "with_face", self.dir / "empty"
+        for d in (with_face, empty):
+            d.mkdir(exist_ok=True)
+        shutil.copy(face, with_face / os.path.basename(face))
+        (empty / "brand.ttf").write_text("not a font\n", encoding="utf-8")
+        src = self.dir / "black.mp4"
+        if not src.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:r=25:d=1", "-c:v", "libx264",
+               "-pix_fmt", "yuv420p", src)
+        cues = self.dir / "cues.txt"
+        cues.write_text("0-1 Hello there\n", encoding="utf-8")
+
+        def burn(fonts_dir, font, name):
+            out = self.dir / f"{name}.mp4"
+            doc = json.loads(script("caption.py", src, "--text", cues, "--fonts-dir", fonts_dir, "--font", font,
+                                    "-o", out, "--json").stdout)
+            self.assertEqual(doc["status"], "completed")
+            frame = subprocess.run(["ffmpeg", "-v", "error", "-ss", "0.5", "-i", str(out), "-frames:v", "1", "-f", "md5", "-"],
+                                   capture_output=True, text=True, check=True).stdout
+            return doc, frame
+
+        for fonts_dir in (with_face, empty):
+            with self.subTest(fonts_dir=fonts_dir.name):
+                doc, frame = burn(fonts_dir, "No Such Family 531", f"missing_{fonts_dir.name}")
+                used = doc["font_used"]
+                self.assertEqual((used["file"], used["how"], used["family"]), (None, "fonts_dir", "No Such Family 531"))
+                self.assertEqual(used["fonts_dir"], str(fonts_dir))
+                self.assertTrue(any("alias" in n for n in doc.get("notes", [])))
+        # the face that is in the folder is the one reported, by its file
+        doc, _ = burn(with_face, "DejaVu Sans", "in_dir")
+        used = doc["font_used"]
+        self.assertEqual((used["how"], used["substituted"], used["file"]), ("fonts_dir", False, str(with_face / os.path.basename(face))))
+        # even an installed family missing from the folder is not claimed as measured
+        doc, _ = burn(empty, "DejaVu Sans", "installed_not_in_dir")
+        used = doc["font_used"]
+        self.assertEqual((used["how"], used["substituted"], used["fonts_dir"]), ("fonts_dir", None, str(empty)), used)  # no file, so not measured (#663)
+        self.assertIsNone(used["file"])
+
+    def test_a_fonts_dir_face_is_matched_as_libass_matches_it(self):
+        """--fonts-dir names a file only where libass's pick is certain. A face libass does not match
+        in the folder draws nothing when fontconfig is given no fonts, so each name rule is checked
+        by drawing: a face in a subfolder (fc-scan recursed), a TrueType face by its PostScript
+        name, a CFF face by its full name and a typographic family (name ID 16) are no match; a face
+        whose family is only in Macintosh name records is one. A face of the asked family in exactly
+        the asked style is named, checked against the face libass logs it selected; a folder that
+        holds the family only in another style names no file (libass chose installed DejaVu Sans,
+        not the folder's Bold, for a regular burn, where the report named the Bold)."""
+        if _no_fontconfig() or not shutil.which("fc-scan") or platform.system() == "Windows":
+            self.skipTest("needs fontconfig's fc-scan and fc-match")
+        import struct
+        from _common.fonts import _sfnt_names, fonts_dir_face
+
+        def fc_face(pattern, family, weight):
+            # fontconfig answers every pattern with some font: the face is taken only when it is
+            # the asked family at the asked weight (80 regular, 200 bold), upright
+            got = subprocess.run(["fc-match", "--format", "%{file}\t%{family[0]}\t%{weight}\t%{slant}", pattern],
+                                 capture_output=True, text=True).stdout.split("\t")
+            ok = len(got) == 4 and os.path.isfile(got[0]) and got[1] == family and got[2] == str(weight) and got[3] == "0"
+            return got[0] if ok else None
+
+        regular, bold = fc_face("DejaVu Sans", "DejaVu Sans", 80), fc_face("DejaVu Sans:bold", "DejaVu Sans", 200)
+        serif, mono_bold = fc_face("DejaVu Serif", "DejaVu Serif", 80), fc_face("Liberation Mono:bold", "Liberation Mono", 200)
+        if not (regular and bold and serif and mono_bold):
+            self.skipTest("DejaVu Sans (regular and bold), DejaVu Serif and Liberation Mono Bold are needed")
+        base = self.dir / "match"
+        shutil.rmtree(base, ignore_errors=True)
+        conf_dir = base / "fontconfig"
+        conf_dir.mkdir(parents=True)
+        conf = conf_dir / "fonts.conf"
+        conf.write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>'
+                        f'<cachedir>{conf_dir / "cache"}</cachedir></fontconfig>\n', encoding="utf-8")
+
+        def folder(name, *files, nested=()):
+            d = base / name
+            (d / "nested").mkdir(parents=True)
+            for f in files:
+                shutil.copy(f, d / os.path.basename(f))
+            for f in nested:
+                shutil.copy(f, d / "nested" / os.path.basename(f))
+            return d
+
+        def burn(fonts_dir, family, is_bold=False, no_fonts=True):
+            ass = base / "probe.ass"
+            ass.write_text("[Script Info]\nScriptType: v4.00+\nPlayResX: 320\nPlayResY: 120\n\n[V4+ Styles]\n"
+                           "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+                           "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
+                           "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+                           f"Style: Default,{family},40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,{-1 if is_bold else 0},"
+                           "0,0,0,100,100,0,0,1,0,0,5,10,10,10,1\n\n[Events]\n"
+                           "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                           "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hello Wg\n", encoding="utf-8")
+            vf = f"ass={escape_filter_path(str(ass))}:fontsdir={escape_filter_path(str(fonts_dir))}"
+            env = dict(os.environ, FONTCONFIG_FILE=str(conf)) if no_fonts else None
+            return subprocess.run(["ffmpeg", "-v", "debug", "-f", "lavfi", "-i", "color=black:320x120:d=0.04", "-vf", vf,
+                                   "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                                  env=env, capture_output=True, check=True)
+
+        # DejaVu Sans with its Microsoft-platform family, full and typographic names renumbered, so
+        # only its Macintosh records name the family (the name table's checksum recomputed)
+        data = bytearray(Path(regular).read_bytes())
+        for i in range(struct.unpack(">H", data[4:6])[0]):
+            rec = 12 + 16 * i
+            tag, _sum, off, length = struct.unpack(">4sIII", data[rec:rec + 16])
+            if tag == b"name":
+                for j in range(struct.unpack(">H", data[off + 2:off + 4])[0]):
+                    r = off + 6 + 12 * j
+                    pid, _enc, _lang, nid = struct.unpack(">4H", data[r:r + 8])
+                    if pid == 3 and nid in (1, 4, 16):
+                        struct.pack_into(">H", data, r + 6, 0x7F00 + nid)
+                table = bytes(data[off:off + length]) + b"\0" * (-length % 4)
+                struct.pack_into(">I", data, rec + 4, sum(struct.unpack(f">{len(table) // 4}I", table)) & 0xFFFFFFFF)
+        mac_dir = folder("mac_names")
+        (mac_dir / "DejaVuSans.ttf").write_bytes(bytes(data))
+        self.assertEqual(_sfnt_names(str(mac_dir / "DejaVuSans.ttf"), 0)[0], [], "fixture: no Microsoft family record")
+
+        cases = [  # (folder, asked, the file named, found)
+            (folder("nested", nested=[serif]), "DejaVu Serif", None, False),
+            (folder("truetype", mono_bold), "Liberation Mono", None, True),  # the family, but bold only
+            (folder("truetype_full", mono_bold), "Liberation Mono Bold", os.path.basename(mono_bold), True),
+            (folder("truetype_ps", mono_bold), "LiberationMono-Bold", None, False),
+            (mac_dir, "DejaVu Sans", "DejaVuSans.ttf", True),
+        ]
+        # a CFF face whose full name is neither its PostScript name nor a family, and a face with a
+        # typographic family (ID 16) that is not its family (ID 1), where this machine has them
+        listed = subprocess.run(["fc-list", "--format", "%{file}\t%{index}\t%{family}\t%{postscriptname}\t%{fontformat}\n"],
+                                capture_output=True, text=True).stdout.splitlines()
+        cff = typographic = None
+        for line in sorted(listed):
+            cells = line.split("\t")
+            if len(cells) < 5 or cells[1] != "0" or not cells[0].endswith((".otf", ".ttf")):
+                continue
+            names = _sfnt_names(cells[0], 0)
+            if not names or not names[0] or not names[1]:
+                continue
+            families = {n.lower() for n in names[0]}
+            if not cff and cells[4] == "CFF" and names[1][0].lower() not in families | {cells[3].lower()}:
+                cff = (cells[0], names[1][0], cells[3])
+            extra = [f for f in cells[2].split(",") if f.strip() and f.strip().lower() not in families]
+            if not typographic and extra:
+                typographic = (cells[0], extra[0].strip())
+        if cff:
+            cases += [(folder("cff_full", cff[0]), cff[1], None, False),
+                      (folder("cff_ps", cff[0]), cff[2], os.path.basename(cff[0]), True)]
+        if typographic:
+            cases.append((folder("typographic", typographic[0]), typographic[1], None, False))
+        for fonts_dir, asked, want, want_found in cases:
+            with self.subTest(fonts_dir=fonts_dir.name, font=asked):
+                file, found = fonts_dir_face(str(fonts_dir), asked)
+                self.assertEqual((os.path.basename(file) if file else None, found), (want, want_found))
+                self.assertEqual(max(burn(fonts_dir, asked).stdout) > 64, want_found, "libass matched what is reported")
+
+        # a face of the family in exactly the asked style is named, for both values of --bold, and
+        # it is the face libass says it selected (by PostScript name: the folder's own face is
+        # logged without a path; an installed copy that ties is the same family and style)
+        selected = re.compile(r"fontselect: \(.*?, (\d+), (\d+)\) -> .*, \d+, (\S+)\s*$", re.M)
+        both = folder("both", bold, regular)
+        for is_bold, want in ((False, regular), (True, bold)):
+            with self.subTest(bold=is_bold):
+                file, found = fonts_dir_face(str(both), "DejaVu Sans", bold=is_bold)
+                self.assertEqual((file, found), (str(both / os.path.basename(want)), True))
+                log = burn(both, "DejaVu Sans", is_bold, no_fonts=False).stderr.decode("utf-8", "replace")
+                picks = selected.findall(log)
+                self.assertTrue(picks, "libass logged no font selection")
+                psname = subprocess.run(["fc-scan", "--format", "%{postscriptname}", file], capture_output=True,
+                                        text=True).stdout
+                self.assertEqual((picks[0][0], picks[0][1], picks[0][2]), ("700" if is_bold else "400", "0", psname))
+        # the family only in another style: no file is named, and the burn says why
+        only_bold = folder("only_bold", bold)
+        self.assertEqual(fonts_dir_face(str(only_bold), "DejaVu Sans"), (None, True))
+        src = self.dir / "black.mp4"
+        if not src.exists():
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:r=25:d=1", "-c:v", "libx264",
+               "-pix_fmt", "yuv420p", src)
+        cues = base / "cues.txt"
+        cues.write_text("0-1 Hello there\n", encoding="utf-8")
+        for fonts_dir, name, want in ((both, "regular", str(both / os.path.basename(regular))), (only_bold, "other_style", None)):
+            with self.subTest(burn=name):
+                doc = json.loads(script("caption.py", src, "--text", cues, "--fonts-dir", fonts_dir, "--font", "DejaVu Sans",
+                                        "-o", base / f"{name}.mp4", "--json").stdout)
+                self.assertEqual(doc["status"], "completed", doc.get("error"))
+                used = doc["font_used"]
+                self.assertEqual((used["how"], used["file"], used["family"], used["substituted"]),
+                                 ("fonts_dir", want, "DejaVu Sans", False if want else None))  # null with no file (#663)
+                self.assertEqual(any("only in other styles" in n for n in doc.get("notes") or []), want is None, doc.get("notes"))
+
+
+
+class FontsDir545Tests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if _no_fontconfig() or not shutil.which("fc-scan") or platform.system() == "Windows":
+            raise unittest.SkipTest("needs fontconfig's fc-scan and fc-match")
+        cls.root = OUT / "fonts545"
+        cls.root.mkdir(parents=True, exist_ok=True)
+        cls.base = default_font_file("DejaVu Sans")
+        if not cls.base or "dejavu" not in os.path.basename(cls.base).lower():
+            raise unittest.SkipTest("needs DejaVu Sans")
+        for name in ("private", "bitmap", "competing", "empty"):
+            (cls.root / name).mkdir(exist_ok=True)
+        cls.face(cls.root / "private" / "private.ttf", 400, False)
+        cls.face(cls.root / "competing" / "semibold.ttf", 600, False)
+        cls.face(cls.root / "competing" / "italic.ttf", 700, True)
+        (cls.root / "bitmap" / "face.bdf").write_text("STARTFONT 2.1\nFONT -misc-TriageBitmap545-medium-r-normal--8-80-75-75-p-80-iso10646-1\nSIZE 8 75 75\nFONTBOUNDINGBOX 8 8 0 0\nSTARTPROPERTIES 13\nFONT_ASCENT 8\nFONT_DESCENT 0\nFAMILY_NAME \"Bitmap545\"\nWEIGHT_NAME \"Regular\"\nSLANT \"R\"\nPIXEL_SIZE 8\nPOINT_SIZE 80\nRESOLUTION_X 75\nRESOLUTION_Y 75\nSPACING \"P\"\nAVERAGE_WIDTH 80\nCHARSET_REGISTRY \"ISO10646\"\nCHARSET_ENCODING \"1\"\nENDPROPERTIES\nCHARS 1\nSTARTCHAR A\nENCODING 65\nSWIDTH 1000 0\nDWIDTH 8 0\nBBX 8 8 0 0\nBITMAP\n7E\n42\n42\n7E\n42\n42\n42\n00\nENDCHAR\nENDFONT\n", encoding="ascii")
+        cls.source = cls.root / "source.mp4"
+        sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=black:s=320x180:r=25:d=1",
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", cls.source)
+        cls.cues = cls.root / "cue.srt"
+        cls.cues.write_text("1\n00:00:00,000 --> 00:00:01,000\nAAA\n", encoding="utf-8")
+        for alias in (False, True):
+            conf = cls.root / f"fonts-{alias}.conf"
+            conf.write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>'
+                            f'<dir>{escape(str(Path(cls.base).parent))}</dir><cachedir>{escape(str(cls.root / "cache"))}</cachedir>'
+                            + ('<alias><family>Review545</family><prefer><family>Unique Sans</family></prefer></alias>' if alias else '')
+                            + '</fontconfig>', encoding="utf-8")
+
+    @classmethod
+    def face(cls, out, weight, italic):
+        data = bytearray(Path(cls.base).read_bytes().replace(b"DejaVu", b"Unique")
+                         .replace("DejaVu".encode("utf-16-be"), "Unique".encode("utf-16-be")))
+        for i in range(struct.unpack_from(">H", data, 4)[0]):
+            rec = 12 + i * 16
+            tag, _, off, length = struct.unpack_from(">4sIII", data, rec)
+            if tag == b"OS/2":
+                struct.pack_into(">H", data, off + 4, weight)
+                struct.pack_into(">H", data, off + 62, 33 if italic else (64 if weight == 400 else 0))
+            elif tag == b"head":
+                struct.pack_into(">H", data, off + 44, 3 if italic else 0)
+            elif tag == b"post":
+                struct.pack_into(">i", data, off + 4, -12 * 65536 if italic else 0)
+            table = bytes(data[off:off + length]) + b"\0" * (-length % 4)
+            struct.pack_into(">I", data, rec + 4, sum(struct.unpack(f">{len(table) // 4}I", table)) & 0xffffffff)
+        out.write_bytes(data)
+
+    def burn(self, folder, family, alias=False, bold=False, karaoke=False):
+        env = dict(os.environ, FONTCONFIG_FILE=str(self.root / f"fonts-{alias}.conf"))
+        out = self.root / f"{folder}-{alias}-{bold}-{karaoke}.mp4"
+        doc = json.loads(script("caption.py", self.source, "--srt", self.cues, "--fonts-dir", self.root / folder,
+                                "--font", family, "--overwrite", "-o", out, "--json",
+                                *(["--bold"] if bold else []), *(["--karaoke"] if karaoke else []), env=env).stdout)
+        cmd = shlex.split(doc["commands"][-1])
+        cmd[cmd.index("-loglevel") + 1] = "info"
+        log = sh(*cmd[:-1], "-frames:v", "1", "-f", "null", "-", env=env).stderr
+        return doc, "\n".join(l for l in log.splitlines() if "fontselect:" in l or "Using font provider " in l)
+
+    def test_alias_does_not_claim_the_installed_fallback(self):
+        for karaoke in (False, True):
+            doc, selected = self.burn("private", "Review545", alias=True, karaoke=karaoke)
+            if "Using font provider fontconfig" in selected:
+                self.assertIn("Unique", selected, "libass must actually select the private alias")
+            self.assertIsNone(doc["font_used"]["file"])
+            self.assertEqual(doc["font_used"]["how"], "fonts_dir")
+            self.assertTrue(any("alias" in n for n in doc.get("notes", [])))
+        doc, selected = self.burn("private", "Review545")
+        if "Using font provider fontconfig" in selected:
+            self.assertNotIn("Unique", selected)
+        self.assertIsNone(doc["font_used"]["file"])
+
+    def test_alias_reporting_does_not_require_a_fontconfig_provider(self):
+        doc = {"font_used": {"file": None, "how": "fonts_dir"}, "notes": ["alias: face not established"]}
+        for provider in ("coretext", "directwrite", None):
+            log = (f"Using font provider {provider}\n" if provider else "") + "fontselect: (Review545, 400, 0) -> Arial, 0, Arial"
+            with unittest.mock.patch.object(self, "burn", return_value=(doc, log)) as burn:
+                self.test_alias_does_not_claim_the_installed_fallback()
+                self.assertEqual(burn.call_count, 3)
+            for used in ({"file": "unmeasured.ttf", "how": "fonts_dir"}, {"file": None, "how": "resolved"}):
+                with unittest.mock.patch.object(self, "burn", return_value=(dict(doc, font_used=used), log)), self.assertRaises(AssertionError):
+                    self.test_alias_does_not_claim_the_installed_fallback()
+
+    def test_unknown_outline_does_not_check_installed_vietnamese_coverage(self):
+        from _common import fonts
+        face = str(self.root / "private" / "private.ttf")
+        for suffix in ("", "\t", "\tunknown"):
+            text = f"{face}\t0\tUnique Sans\tUniqueSans\tTrueType\t80\t0\tUnique Sans" + suffix + "\n"
+            with unittest.mock.patch.object(fonts.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, text)), \
+                 unittest.mock.patch.object(fonts, "_installed_face_coverage", return_value=False) as installed, \
+                 unittest.mock.patch.object(fonts, "warn") as warn:
+                fonts.script_font_for_text("đã ăn", font="Unique Sans", font_explicit=True, fonts_dir=str(self.root / "private"))
+                self.assertEqual(warn.call_args.args[1], "font_coverage_unverified")
+                installed.assert_not_called()
+
+    def test_bitmap_does_not_claim_an_unusable_face(self):
+        scan = subprocess.run(["fc-scan", "--format", "%{outline}", str(self.root / "bitmap" / "face.bdf")],
+                              capture_output=True, text=True, timeout=10).stdout
+        if scan != "False":
+            self.skipTest("this FreeType build cannot scan the bitmap fixture")
+        doc, selected = self.burn("bitmap", "Bitmap545")
+        self.assertTrue(selected)
+        self.assertNotIn("Bitmap545, 0,", selected)
+        self.assertIsNone(doc["font_used"]["file"])
+
+    def test_exact_competing_empty_and_unavailable_scan_controls(self):
+        doc, selected = self.burn("private", "Unique Sans")
+        self.assertIn("Unique", selected)
+        self.assertEqual(doc["font_used"]["file"], str(self.root / "private" / "private.ttf"))
+        styles = sh("fc-scan", "--format", "%{weight}:%{slant}\n", *sorted((self.root / "competing").glob("*.ttf"))).stdout
+        self.assertEqual(set(styles.splitlines()), {"180:0", "200:100"})
+        doc, selected = self.burn("competing", "Unique Sans", bold=True)
+        self.assertIn("Unique", selected)
+        self.assertIsNone(doc["font_used"]["file"])
+        doc, _ = self.burn("empty", "DejaVu Sans")
+        self.assertEqual((doc["font_used"]["file"], doc["font_used"]["how"]), (None, "fonts_dir"))
+        from _common import fonts
+        with unittest.mock.patch.object(fonts, "_safe_which", return_value=None):
+            self.assertEqual(fonts.fonts_dir_face(str(self.root / "private"), "Unique Sans"), (None, None))
+
+    def test_missing_or_unreadable_outline_never_claims_a_file(self):
+        from _common import fonts
+        face = str(self.root / "private" / "private.ttf")
+        for suffix in ("", "\t", "\tunknown", "\tFalse"):
+            text = f"{face}\t0\tUnique Sans\tUniqueSans\tTrueType\t80\t0\tUnique Sans" + suffix + "\n"
+            with unittest.mock.patch.object(fonts.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, text)):
+                self.assertEqual(fonts.fonts_dir_face(str(self.root / "private"), "Unique Sans"),
+                                 (None, False if suffix == "\tFalse" else None))
+
+class HdrRgbSourceTests(unittest.TestCase):
+    """#544: an RGB source that probes BT.2020 or HDR, re-encoded on the 10-bit line that keeps its colour."""
+
+    PATCHES = {"red": ((0xC0, 0x30, 0x28), (40, 30)), "green": ((0x30, 0xC0, 0x50), (120, 30)),
+               "blue": ((0x20, 0x30, 0xC0), (40, 90)), "grey": ((0x80, 0x80, 0x80), (120, 90))}
+    # Read back 8-bit through a lossy 10-bit encode. After the fix every patch is at most 2 off on
+    # FFmpeg 6.1.1 and at most 5 off on 7.1 (CI, Debian's build: all four patches a little dark, the
+    # grey 128 -> 126, on the default x265 line; 8.0.1 and 9.0.2 pass at 4). BT.601 pixels under the
+    # bt2020nc tag leave the grey alone and put the green patch 15 and the blue 11 off, so the
+    # largest error over the four patches separates the two with room on both sides. Why 7.1 reads
+    # darker was not run down (it cannot be run here); the pattern is a level, not a matrix.
+    TOLERANCE = 7
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("ffmpeg"):
+            if os.environ.get("CI"):
+                raise AssertionError("ffmpeg not on PATH -- in CI this is a broken install step")
+            raise unittest.SkipTest("ffmpeg not on PATH")
+        encoders = __import__("_common").ffmpeg_encoders()
+        if not {"libx265", "ffv1"} <= set(encoders):
+            raise unittest.SkipTest("needs libx265 (the HDR line) and ffv1 (the RGB fixture)")
+        cls.dir = OUT / "hdr_rgb_source"
+        cls.dir.mkdir(parents=True, exist_ok=True)
+
+    def _source(self, name, tags):
+        """Four flat patches, gbrp10le FFV1 with BT.2020 primaries and `tags`; the patches are RGB
+        code values, so the file itself reads back exactly."""
+        path = self.dir / f"{name}.mkv"
+        if not path.exists():
+            cells = ";".join(f"color=c=0x{'%02X%02X%02X' % rgb}:s=80x60:r=25:d=1,format=gbrp[{k}]"
+                             for k, (rgb, _) in self.PATCHES.items())
+            # the tags are set on the frames as well as asked of the encoder: FFmpeg 7 and later write
+            # a stream's colour from its frames, and the encoder options alone left the file
+            # untagged there (8.0.1 in CI: the source did not probe as BT.2020)
+            asked = dict(zip(tags[::2], tags[1::2]))
+            frame_tags = (f"setparams=color_primaries=bt2020:color_trc={asked['-color_trc']}"
+                          f":colorspace={ {'rgb': 'gbr'}.get(asked['-colorspace'], asked['-colorspace']) }")
+            sh("ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+               f"{cells};[red][green][blue][grey]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,{frame_tags}",
+               "-f", "lavfi", "-i", "sine=f=440:d=1:sample_rate=48000", "-pix_fmt", "gbrp10le", "-c:v", "ffv1",
+               "-color_primaries", "bt2020", *tags, "-c:a", "pcm_s16le", "-shortest", path)
+        return path
+
+    def _assert_colours(self, video, matrix, what):
+        """Each patch's centre, decoded with the matrix the file's own tag names."""
+        vf = None if matrix is None else f"scale=in_color_matrix={matrix}:in_range=tv,format=rgb24"
+        read = {}
+        for patch, (want, (x, y)) in self.PATCHES.items():
+            got = frame_rgb(video, 0.4, x, y, vf=vf)
+            self.assertEqual(len(got), 3, f"{what}: a pixel was read")  # zip() of an empty read passes
+            read[patch] = (want, tuple(got), max(abs(g - w) for g, w in zip(got, want)))
+        # every patch is in the message: which way each is off tells a wrong matrix from a level shift
+        self.assertLessEqual(max(w for _, _, w in read.values()), self.TOLERANCE,
+                             f"{what}: " + "; ".join(f"{k} {want} came back {got}" for k, (want, got, _) in read.items()))
+
+    def test_an_hdr_or_bt2020_rgb_source_keeps_its_colours_on_the_hdr_line(self):
+        """The line tagged the source's matrix and left the conversion to FFmpeg: `gbr` (what FFV1,
+        PNG and qtrle carry) is no encoder option, so every re-encode failed inside ffmpeg, and with
+        no matrix tag the YUV was BT.601 under a bt2020nc tag (C03028 read 196/52/35 by the tag).
+        The conversion now names the matrix the line tags, in every tool that re-encodes through
+        that line; an RGB file already tagged bt2020nc, which FFmpeg 6.1 converted by its tag, is
+        unchanged."""
+        pq = ["-color_trc", "smpte2084"]
+        variants = {
+            # name: (encoder tags, the matrix probe() must read for the variant to be the one named)
+            "pq_gbr": (pq + ["-colorspace", "rgb"], "gbr"),
+            "pq_untagged": (pq + ["-colorspace", "unknown"], None),
+            "pq_bt2020nc": (pq + ["-colorspace", "bt2020nc"], "bt2020nc"),
+            "hlg_gbr": (["-color_trc", "arib-std-b67", "-colorspace", "rgb"], "gbr"),
+            "bt2020_sdr_gbr": (["-color_trc", "bt2020-10", "-colorspace", "rgb"], "gbr"),
+        }
+        vidstab = "vidstabdetect" in subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+        ran = 0
+        for name, (tags, matrix) in variants.items():
+            src = self._source(name, tags)
+            v = probe(str(src))["video"]
+            self.assertRegex(v["pix_fmt"], r"^gbr", "fixture: the source is RGB")
+            self.assertTrue(v["bt2020_or_hdr"], "fixture: the source probes BT.2020 or HDR")
+            try:
+                self._assert_colours(src, None, f"fixture {name}")
+            except AssertionError as exc:
+                if matrix != "bt2020nc":
+                    raise
+                # RGB mislabelled with a YUV matrix is read back through that matrix by FFmpeg 7.1
+                # (CI: C03028 read 197/53/37), so the variant that pins "already right, unchanged"
+                # on 6.1 cannot be made there; the others still run
+                with self.subTest(source=name):
+                    self.skipTest(f"this FFmpeg does not read the mislabelled fixture back as written: {exc}")
+                continue
+            if v.get("color_space") != matrix:
+                # the muxer or decoder of this FFmpeg did not keep the matrix tag as asked: the
+                # variant cannot be made here, and the others still run
+                with self.subTest(source=name):
+                    self.skipTest(f"this FFmpeg reads the fixture's matrix as {v.get('color_space')!r}, not {matrix!r}")
+                continue
+            lines = {
+                "crop": ("crop.py", [src, "--x", "0", "--y", "0", "--width", "160", "--height", "120"], ".mp4"),
+                "crop --codec prores": ("crop.py", [src, "--x", "0", "--y", "0", "--width", "160", "--height", "120", "--codec", "prores"], ".mov"),
+                "fit --fps": ("fit.py", [src, "--fps", "30"], ".mp4"),
+                "denoise": ("denoise.py", [src], ".mp4"),
+                "export youtube-hdr": ("export.py", [src, "--preset", "youtube-hdr"], ".mp4"),
+                "join": ("join.py", [src, src, "--transition", "none"], ".mp4"),
+            }
+            if vidstab:
+                lines["stabilize"] = ("stabilize.py", [src], ".mp4")
+            if name != "pq_gbr":  # the other variants take one single-source line and the join
+                lines = {k: lines[k] for k in ("crop", "join")}
+            for line, (tool, args, ext) in lines.items():
+                with self.subTest(source=name, line=line):
+                    out = self.dir / f"{name}_{re.sub(r'[^a-z0-9]+', '_', line)}{ext}"
+                    doc = json.loads(script(tool, *args, "-o", out, "--json").stdout)
+                    self.assertEqual(doc["status"], "completed", doc.get("error"))
+                    written = probe(str(out))["video"]
+                    self.assertEqual((written["color_space"], written["color_primaries"]), ("bt2020nc", "bt2020"))
+                    self.assertEqual(written["color_transfer"], v["color_transfer"])
+                    self.assertIn("10", written["pix_fmt"], "the line is 10-bit")
+                    self._assert_colours(out, "bt2020", f"{name} through {line}")
+                    ran += 1
+        self.assertGreater(ran, 0, "no variant of the fixture could be made on this FFmpeg")
+
+    def _pq_gbr(self):
+        src = self._source("pq_gbr", ["-color_trc", "smpte2084", "-colorspace", "rgb"])
+        v = probe(str(src))["video"]
+        self.assertRegex(v["pix_fmt"], r"^gbr", "fixture: the source is RGB")
+        self.assertTrue(v["bt2020_or_hdr"], "fixture: the source probes BT.2020 or HDR")
+        return src
+
+    def test_an_hdr_rgb_source_on_a_bt709_line_is_converted_with_the_bt709_matrix(self):
+        """#559: the youtube preset tags BT.709 and made an HDR RGB source's YUV with FFmpeg's BT.601
+        (the red patch C03028 read CE3E26 by the bt709 tag, 14 off): the matrix tag was a claim the
+        pixels did not meet. The primaries and transfer are still not converted (the preset warns)."""
+        if "libx264" not in __import__("_common").ffmpeg_encoders():
+            self.skipTest("needs libx264")
+        src = self._pq_gbr()
+        out = self.dir / "youtube.mp4"
+        doc = json.loads(script("export.py", src, "--preset", "youtube", "-o", out, "--json").stdout)
+        self.assertEqual(doc["status"], "completed", doc.get("error"))
+        w = probe(str(out))["video"]
+        # the stream and the container say the same: on FFmpeg 9 the colr box came from the frames and
+        # kept the source's bt2020/smpte2084 under a bt709 VUI until the frames were relabelled (#711)
+        self.assertEqual((w["color_space"], w["color_primaries"], w["color_transfer"]), ("bt709",) * 3)
+        # the 160x120 picture is centred in 1920x1080 by the preset: 9x, 240 columns of bar
+        read = {k: (want, tuple(frame_rgb(out, 0.4, 240 + x * 9, y * 9, vf="scale=in_color_matrix=bt709:in_range=tv,format=rgb24")))
+                for k, (want, (x, y)) in self.PATCHES.items()}
+        err = {k: max(abs(g - c) for g, c in zip(got, want)) if len(got) == 3 else 255 for k, (want, got) in read.items()}
+        self.assertLessEqual(max(err.values()), self.TOLERANCE, f"youtube: {read}")
+
+    def test_an_editing_master_of_an_hdr_rgb_source_keeps_its_tags_and_names_its_matrix(self):
+        """#559: prores (10-bit), dnxhr and the alpha master wrote no colour tag for an HDR RGB source (or
+        bt709 over BT.601 pixels, 8-bit DNxHR): they carry the source's primaries and transfer and the
+        bt2020nc matrix the picture was converted with, as a YUV source's frames always did."""
+        if "prores_ks" not in __import__("_common").ffmpeg_encoders():
+            self.skipTest("needs prores_ks")
+        src = self._pq_gbr()
+        # the 8-bit DNxHR master is 256x120 at least: the same picture at twice the size
+        big = self.dir / "pq_gbr_320.mkv"
+        sh("ffmpeg", "-y", "-v", "error", "-i", src, "-vf", "scale=320:240:flags=neighbor,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=gbr",
+           "-an", "-c:v", "ffv1", "-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "rgb", big)
+        alpha = self.dir / "pq_gbrap.mkv"  # the picture of the alpha master, half transparent
+        sh("ffmpeg", "-y", "-v", "error", "-i", src, "-vf", "format=rgba,colorchannelmixer=aa=0.5,format=gbrap10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=gbr",
+           "-an", "-c:v", "ffv1", "-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "rgb", alpha)
+        for preset, source in (("prores", src), ("dnxhr-hq", big), ("prores4444", alpha)):
+            with self.subTest(preset=preset):
+                out = self.dir / f"{preset}.mov"
+                doc = json.loads(script("export.py", source, "--preset", preset, "-o", out, "--json").stdout)
+                self.assertEqual(doc["status"], "completed", doc.get("error"))
+                w = probe(str(out))["video"]
+                self.assertEqual((w["color_space"], w["color_primaries"], w["color_transfer"]), ("bt2020nc", "bt2020", "smpte2084"))
+                if source != big:
+                    self._assert_colours(out, "bt2020", preset)
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

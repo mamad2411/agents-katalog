@@ -1,0 +1,10 @@
+.
+./setup.sh
+./LICENSE
+./install.sh
+./README.md
+./.gitignore
+./SKILL.md
+./AGENTS.md
+./.git
+./TREE.txt

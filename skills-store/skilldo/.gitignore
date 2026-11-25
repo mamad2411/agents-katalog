@@ -1,0 +1,52 @@
+# Rust build artifacts
+/target
+debug
+**/*.rs.bk
+*.pdb
+
+# Worktrees
+.worktrees/
+
+# Claude/Swarm tool directories
+.claude/
+.claude-flow/
+.swarm/
+.mcp.json
+
+# Dev configs (contain local paths, model preferences)
+dev/configs/
+!dev/configs/batch/
+!dev/configs/batch/claude-sonnet.toml
+!dev/configs/batch/gpt41.toml
+
+# Local-only docs (not published)
+BACKLOG.md
+
+# Dev artifacts
+dev/bad-outputs/
+
+# Generated test outputs
+test-outputs/
+
+# Temp/scratch files
+tmp/
+
+# Crash leftovers from interrupted generate runs + local coverage output
+.tmp??????
+.SKILL.md.*.tmp
+lcov.info
+
+# Runtime config (keep examples only)
+skilldo.toml
+skilldo-*.toml
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+dev/scripts/

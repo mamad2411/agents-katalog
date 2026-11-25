@@ -1,0 +1,2243 @@
+#!/usr/bin/env python3
+"""Build the before/after demo gallery: committed footage in, previews out.
+
+The pictures come from demos/footage/ (clips AI-generated with Google Veo, and a few shot on a
+phone); the sound is synthetic (aevalsrc), so every pause and level a demo measures is a fact of
+the build. A few demos need a synthetic picture (HDR10, a panorama, cells: testsrc2, life). reframe_talk reads demos/footage/ai_talk.mp4,
+and filler_en and pauses_en demos/footage/ai_talk_en.mp4: AI-generated clips (no real person), and every "after" file is produced by running
+this repo's own scripts, so a demo that renders is also a smoke test of the tool behind it.
+
+    python3 demos/build.py                 # build every demo
+    python3 demos/build.py --list          # names + groups, render nothing
+    python3 demos/build.py --only captions_ja
+    python3 demos/build.py --docs          # rewrite docs/demos.md from the table, render nothing
+
+Each demo writes demos/out/<name>_before.mp4, demos/out/<name>_after.mp4, a side-by-side
+demos/out/<name>.mp4 (640 px wide, <= 6 s) and a palette-optimised preview
+docs/demos/<name>.gif (<= 480 px, 10-12 fps). The preview is the only file committed, so the
+build FAILS if any of them is over 500 KB rather than letting a fat binary into git.
+
+demos/out/ is gitignored; --keep-fixtures (the default) reuses fixtures across runs, so a
+second run of --only is fast. Python 3.9 standard library only.
+"""
+import argparse
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+from collections import namedtuple
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = ROOT / "scripts"
+OUT = Path(os.environ.get("DEMO_OUT", ROOT / "demos" / "out"))
+FIX = OUT / "fixtures"
+PREVIEWS = ROOT / "docs" / "demos"
+
+PREVIEW_MAX_BYTES = 500 * 1024      # hard limit: the build fails rather than commit a fatter file
+PREVIEW_TARGET_BYTES = 250 * 1024   # what the ladder aims for, so the cap is never a near miss
+CELL_W, CELL_H = 320, 180          # each half of the side-by-side; 640 px wide in total
+COMPARE_MAX_SECONDS = 6.0
+PY = sys.executable or "python3"
+
+sys.path.insert(0, str(SCRIPTS))
+from _common import font_for_script, script_font_status  # noqa: E402
+
+# A speech-like bed: a two-formant "voice" gated by a slow square wave, so there are real
+# pauses for silence.py to find and real level changes for loudness.py to move.
+SPEECH = ("0.45*(sin(2*PI*180*t)+0.5*sin(2*PI*420*t)+0.25*sin(2*PI*900*t))"
+          "*gt(sin(2*PI*0.55*t)\\,0.15)*(0.6+0.4*sin(2*PI*5*t))")
+# A music-like tone bed: a held triad with a pulsing fifth, quiet enough to duck under speech.
+MUSIC = "0.30*sin(2*PI*110*t)+0.22*sin(2*PI*165*t)+0.18*sin(2*PI*220*t)*gt(sin(2*PI*2*t)\\,0)"
+
+
+# --------------------------------------------------------------------------- process helpers
+class BuildError(RuntimeError):
+    pass
+
+
+def run(cmd, capture=False):
+    proc = subprocess.run([str(c) for c in cmd], stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise BuildError("command failed: %s\n%s\n%s" % (" ".join(str(c) for c in cmd),
+                                                         proc.stdout[-2000:], proc.stderr[-2000:]))
+    return proc.stdout if capture else None
+
+
+def ffmpeg(*args):
+    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + list(args))
+
+
+def duration(path) -> float:
+    out = run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+               "-of", "default=nw=1:nk=1", str(path)], capture=True)
+    try:
+        return float(out.strip())
+    except ValueError:
+        return 0.0
+
+
+def label_font() -> str:
+    """A concrete font file for the BEFORE/AFTER labels drawn on the comparison."""
+    for script in ("latin", "ja"):
+        path = font_for_script(script)
+        if path:
+            return path
+    for guess in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                  "/System/Library/Fonts/Supplemental/Arial.ttf",
+                  "C:\\Windows\\Fonts\\arial.ttf"):
+        if Path(guess).exists():
+            return guess
+    raise BuildError("no usable font found for the BEFORE/AFTER labels")
+
+
+def esc(path: str) -> str:
+    """Escape a path for use inside an ffmpeg filter argument (fontfile=)."""
+    return str(path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+
+
+# --------------------------------------------------------------------------- context
+class Ctx:
+    """One demo's working area. Records every skill-script invocation it makes, so the gallery
+    page can print the exact command that produced the picture instead of a retyped one."""
+
+    dry = False  # _DryCtx: nothing runs, so nothing is measured
+
+    def __init__(self, name, verbose=True):
+        self.name = name
+        self.verbose = verbose
+        self.commands = []
+        self.notes = []
+
+    def path(self, suffix):
+        return OUT / ("%s_%s" % (self.name, suffix))
+
+    def script(self, tool, *args, capture=False):
+        """Run scripts/<tool> and record it as a copyable one-liner."""
+        cmd = [PY, str(SCRIPTS / tool)] + [str(a) for a in args]
+        self.commands.append(" ".join(["python3", "scripts/" + tool] + [_short(a) for a in args]))
+        if self.verbose:
+            print("    $ " + self.commands[-1])
+        return run(cmd, capture=capture)
+
+    def note(self, text):
+        self.notes.append(text)
+
+    def expect(self, path, what):
+        """A file the last command must have written; the docs recorder (_DryCtx) runs nothing, so
+        there it is a no-op and the commands after it are still recorded."""
+        if not Path(path).exists():
+            raise BuildError("%s did not write %s" % (what, path))
+
+
+# A demo whose second command takes a value the first one measured. The gallery page is written
+# by replaying the builders with nothing run (_DryCtx), so it can only print these values; a real
+# build uses what was measured and stops when that differs from them, so the command under the
+# picture is the one that made it (#467 A243, A244). Measured from the synthetic fixtures with
+# FFmpeg 6.1.1: the letterbox fixture pads a 1280x400 picture at y=160, and the shots fixture
+# cuts at 2 s and 4 s.
+CROPDETECT_GALLERY_RECT = {"x": 0, "y": 160, "width": 1280, "height": 400}
+SCENES_GALLERY_SEGMENTS = "0.00-2.00,2.00-4.00"
+
+
+def measured(raw, gallery, what, pick, constant):
+    """The value a real build measured, checked against the one the gallery prints. `raw` is the
+    first command's stdout (`pick` takes the value out of its JSON) or, with `pick` None, the
+    value itself. Nothing measured, or a value other than the gallery's, is a BuildError."""
+    value = raw
+    if pick is not None:
+        try:
+            value = pick(json.loads(raw or ""))
+        except (ValueError, AttributeError):
+            value = None
+        value = {k: value.get(k) for k in gallery} if isinstance(value, dict) else None
+    if not value:
+        raise BuildError("%s: nothing was measured, so there is no value to run the next command with" % what)
+    if value != gallery:
+        raise BuildError("%s: the build measured %s, the gallery prints %s; set %s in demos/build.py "
+                         "to the measured value and run demos/build.py --docs" % (what, value, gallery, constant))
+    return value
+
+
+def _short(arg) -> str:
+    """Render an argument for the docs: absolute paths under demos/out become relative."""
+    text = str(arg)
+    for base, prefix in ((OUT, "demos/out"), (ROOT, "")):
+        try:
+            # both sides resolved: a temp DEMO_OUT is a short (8.3) name on Windows and under a
+            # /var symlink on macOS, while the argument resolves to the long, real path
+            rel = Path(text).resolve().relative_to(Path(base).resolve())
+        except (ValueError, OSError):
+            continue
+        text = (prefix + "/" + str(rel).replace("\\", "/")).lstrip("/")
+        break
+    # shlex.quote, not a test for a space: an unquoted '#' colour made the rest of a pasted line
+    # a comment (two gallery commands), and '|', ';' or '(' would do worse
+    return text if text.startswith("'") else shlex.quote(text)
+
+
+# --------------------------------------------------------------------------- fixtures
+def picture(clip, width, height, rate):
+    """A committed clip from demos/footage as a silent picture of exactly this size and rate, long
+    enough for any fixture (looped to 10 s). The fixtures add their own synthetic sound, so every
+    pause, tone and level a demo measures stays a fact of the build rather than of the footage."""
+    path = FIX / ("_pic_%s_%dx%d_%d.mp4" % (clip, width, height, rate))
+    if not path.exists() or path.stat().st_size == 0:
+        ffmpeg("-stream_loop", "-1", "-i", str(ROOT / "demos" / "footage" / (clip + ".mp4")), "-t", "10", "-an",
+               "-vf", "scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d,fps=%d,setsar=1"
+               % (width, height, width, height, rate),
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", str(path))
+    return str(path)
+
+
+def build_fixtures(force=False):
+    """Source material: pictures from demos/footage (AI-generated and phone clips) with synthetic
+    sound, and synthetic pictures where a demo needs one (HDR10, a panorama, cells). Nothing here
+    is downloaded."""
+    FIX.mkdir(parents=True, exist_ok=True)
+    made = []
+
+    def need(name):
+        path = FIX / name
+        if force or not path.exists() or path.stat().st_size == 0:
+            made.append(name)
+            return path
+        return None
+
+    # 1. The main clip: a moving test pattern with speech-like audio (pauses included).
+    path = need("motion.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_basketball", 1280, 720, 30),
+               "-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % SPEECH,
+               "-t", "8", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", str(path))
+
+    # 2. A fractal zoom: real, non-repeating motion, so a transition or a speed change is
+    #    actually visible frame to frame (a static pattern hides both).
+    path = need("mandel.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_sea", 1280, 720, 30),
+               "-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % MUSIC,
+               "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", str(path))
+
+    # 3. Conway's life: coarse cells at 12 fps -- real motion that a GIF palette can still
+    #    carry (a fine-grained life pattern changes every pixel every frame and blows the budget).
+    path = need("life.mp4")
+    if path:
+        ffmpeg("-f", "lavfi", "-i",
+               "life=size=80x45:rate=12:mold=32:ratio=0.1:death_color=#101030:life_color=#39ff88",
+               "-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % MUSIC,
+               "-t", "6", "-vf", "scale=1280:720:flags=neighbor,fps=30", "-c:v", "libx264",
+               "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", "-b:a", "128k", str(path))
+
+    # 3b. A vertical 1080x1920 clip: the real TikTok/Reels geometry, where a caption line holds
+    #     about six em at the default size and an ordinary sentence needs four lines.
+    path = need("vertical.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_talk_en", 1080, 1920, 30),
+               "-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % SPEECH,
+               "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", str(path))
+
+    # 3c. A synthetic 120 BPM click over moving pictures: a 40 ms pulse at the top of every half
+    #     second, so the measured tempo is a fact of the fixture rather than of the machine.
+    path = need("clicks.mp4")
+    if path:
+        click = "0.8*sin(2*PI*880*t)*lt(mod(t\\,0.5)\\,0.04)"
+        ffmpeg("-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % click,
+               "-i", picture("veo_hands", 640, 360, 30),
+               "-t", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", str(path))
+
+    # 4. A music bed on its own, for the ducking demo.
+    path = need("music.m4a")
+    if path:
+        ffmpeg("-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % MUSIC,
+               "-t", "8", "-c:a", "aac", "-b:a", "128k", str(path))
+
+    # 5. A 5.1 clip: six distinct tones, one per channel, so a downmix is audible and provable.
+    path = need("surround.mp4")
+    if path:
+        tones = ["0.5*sin(2*PI*%d*t)" % f for f in (220, 330, 440, 60, 550, 660)]
+        ffmpeg("-i", picture("veo_hall", 1280, 720, 30),
+               "-f", "lavfi", "-i", "aevalsrc='%s':s=48000:c=5.1" % "|".join(tones),
+               "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", "-ac", "6", str(path))
+
+    # 6. An HDR10 clip: 10-bit HEVC tagged PQ / BT.2020, like tests/ builds.
+    path = need("hdr10.mp4")
+    if path:
+        ffmpeg("-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
+               "-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % MUSIC, "-t", "5",
+               "-vf", "format=yuv420p10le", "-c:v", "libx265", "-preset", "ultrafast",
+               "-x265-params", "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:log-level=error",
+               "-tag:v", "hvc1", "-c:a", "aac", str(path))
+
+    # 7. The project's own mark, for the overlay demo.
+    path = need("logo.png")
+    if path:
+        ffmpeg("-i", str(ROOT / "brand" / "app-icon-dark.png"), "-vf", "scale=120:120,format=rgba",
+               "-frames:v", "1", str(path))
+
+    # 8. Caption cues, one file per script, in caption.py's plain-text cue format.
+    cues = {
+        "cues_en.txt": ["0:00-0:02 Edited by asking, with FFmpeg",
+                        "0:02-0:04 Captions burned in with libass",
+                        "0:04-0:06 No cloud. No API keys.",
+                        "0:06-0:08 Just python3 and ffmpeg."],
+        "cues_ja.txt": ["0:00-0:02 FFmpeg だけで作った映像です",
+                        "0:02-0:04 字幕は libass で焼き込み",
+                        "0:04-0:06 クラウドも API キーも不要",
+                        "0:06-0:08 python3 と ffmpeg だけ"],
+        "cues_zh.txt": ["0:00-0:02 完全由 FFmpeg 生成的画面",
+                        "0:02-0:04 字幕用 libass 烧录",
+                        "0:04-0:06 不需要云端，也不需要密钥",
+                        "0:06-0:08 只要 python3 和 ffmpeg"],
+        "cues_ko.txt": ["0:00-0:02 FFmpeg 만으로 만든 영상입니다",
+                        "0:02-0:04 자막은 libass 로 굽습니다",
+                        "0:04-0:06 클라우드도 API 키도 필요 없습니다",
+                        "0:06-0:08 python3 과 ffmpeg 만 있으면 됩니다"],
+        "cues_ar.txt": ["0:00-0:02 فيديو من صنع FFmpeg وحده",
+                        "0:02-0:04 الترجمة محروقة عبر libass",
+                        "0:04-0:06 بلا سحابة وبلا مفاتيح",
+                        "0:06-0:08 يكفي python3 و ffmpeg"],
+        "cues_emoji.txt": ["0:00-0:02 Shipping day 🎉",
+                           "0:02-0:04 Nice work 👍 everyone",
+                           "0:04-0:06 Ship it 🚀 now",
+                           "0:06-0:08 Done ✅"],
+        # eval 16's dl1 and dl4 cues, the ones the 1.16 phrase breaker exists for
+        "cues_phrase.txt": ["0:00-0:03 Una tercera linea con tiempos automaticos",
+                            "0:03-0:06 A third line the tool times for me"],
+        "cues_pop.txt": ["0:00-0:02 word by word",
+                         "0:02-0:04 the karaoke highlight tracks the beat",
+                         "0:04-0:06 pop scales each cue in",
+                         "0:06-0:08 all of it is plain ASS"],
+    }
+    for name, lines in cues.items():
+        path = need(name)
+        if path:
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # 9. A render.py project that stitches several of the above into one edit.
+    path = need("project.json")
+    if path:
+        project = {
+            "output": str(OUT / "render_project_after.mp4"),
+            "frame": {"aspect": "16:9", "width": 960, "fps": 30},
+            "clips": [{"src": str(FIX / "motion.mp4"), "in": 0, "out": 3},
+                      {"src": str(FIX / "mandel.mp4"), "in": 0, "out": 3}],
+            "transition": {"type": "fade", "duration": 0.5},
+            "captions": {"text": str(FIX / "cues_en.txt"), "animate": "pop", "size": 26,
+                         "position": "bottom"},
+            "graphics": [{"template": "title", "title": "ffmpeg-skill",
+                          "subtitle": "one project file, one render", "start": 0, "end": 2.5}],
+            "export": {"preset": "youtube"},
+        }
+        path.write_text(json.dumps(project, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # 9b. #326: a project with a keyed video layer, composited after the 9:16 reframe.
+    path = need("project_pip.json")
+    if path:
+        project = {
+            "output": str(OUT / "render_pip_after.mp4"),
+            "frame": {"aspect": "9:16", "width": 540, "fit": "blur"},
+            "clips": [{"src": str(FIX / "motion.mp4"), "in": 0, "out": 4}],
+            "overlays": [{"video": str(FIX / "green.mp4"), "chromakey": "0x50b64f",
+                          "chromakey_similarity": 0.1, "chromakey_blend": 0.05,
+                          "position": "bottom", "scale": 540}],
+        }
+        path.write_text(json.dumps(project, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # 10. A letterboxed clip: real picture in the middle, black bars top and bottom, so
+    #     cropdetect.py has something to measure and crop.py something to remove.
+    path = need("letterbox.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_basketball", 1280, 400, 25), "-t", "4",
+               "-vf", "pad=1280:720:0:160:black", "-c:v", "libx264", "-preset", "veryfast",
+               "-crf", "22", "-pix_fmt", "yuv420p", str(path))
+
+    # 11. A noisy clip: heavy film-grain-like noise added on purpose, so denoise.py has
+    #     something real to remove rather than rounding error.
+    path = need("noisy.mp4")
+    if path:
+        ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "4", "-vf", "noise=alls=42:allf=t+u",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+               "-c:a", "aac", str(path))
+
+    # 12. An interlaced clip: tinterlace weaves each pair of frames into one, which is exactly
+    #     the combing yadif (deinterlace.py) undoes.
+    path = need("interlaced.mp4")
+    if path:
+        ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "4", "-vf",
+               "tinterlace=mode=interleave_top,setparams=field_mode=tff",
+               "-flags", "+ilme+ildct", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", str(path))
+
+    # 13. A shaky clip: a crop window jittering around a larger frame -- handheld camera shake
+    #     with no camera, and the motion vidstab (stabilize.py) is built to cancel.
+    path = need("shaky.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_hall", 1400, 800, 25), "-t", "4",
+               "-vf", "crop=1280:720:x='60+26*sin(2*PI*3.1*t)+12*sin(2*PI*6.7*t)':"
+                      "y='40+18*cos(2*PI*2.3*t)+9*sin(2*PI*5.3*t)'",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+               str(path))
+
+    # 14. A tilted clip: the frame rotated 5 degrees, the "horizon is off" case straighten.py
+    #     corrects (the black corner wedges are part of the problem, not the fixture's).
+    path = need("tilted.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_sea", 1280, 720, 25), "-t", "4",
+               "-vf", "rotate=5*PI/180:fillcolor=black", "-c:v", "libx264", "-preset", "veryfast",
+               "-crf", "22", "-pix_fmt", "yuv420p", str(path))
+
+    # 15. A 2:1 "equirectangular" panorama for sphere.py. Nothing here proves a file is really
+    #     spherical (see sphere.py's docstring) -- this is a synthetic panorama shaped like one.
+    path = need("equirect.mp4")
+    if path:
+        ffmpeg("-f", "lavfi", "-i", "testsrc2=size=1280x640:rate=25", "-t", "4",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+               str(path))
+
+    # 16. A green-screen clip: a moving subject on chroma green, to be keyed onto a background.
+    path = need("green.mp4")
+    if path:
+        ffmpeg("-i", picture("veo_greenscreen", 960, 540, 25), "-t", "4",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+               str(path))
+
+    # 17. A second camera angle of the same "event": the same audio, started 0.6 s earlier and
+    #     graded differently, so multicam.py has a real offset to find and a visible B angle.
+    path = need("camb.mp4")
+    if path:
+        ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "6", "-vf",
+               "hue=h=150:s=1.4,tpad=start_duration=0.6:start_mode=add:color=black",
+               "-af", "adelay=600|600", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", str(path))
+
+    # 18. An external mic recording of the same speech: louder, thinner, and started 1 s late.
+    path = need("mic.wav")
+    if path:
+        ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "6", "-vn", "-af",
+               "adelay=1000,volume=6dB,highpass=f=220", "-ac", "1", "-ar", "48000",
+               "-c:a", "pcm_s16le", str(path))
+
+    # 19. A numbered still sequence, the shape sequence.py expects from a render farm or a
+    #     camera's burst mode.
+    frames = FIX / "frames"
+    if force or not (frames / "frame_0001.png").exists():
+        made.append("frames/")
+        frames.mkdir(parents=True, exist_ok=True)
+        ffmpeg("-i", str(FIX / "life.mp4"), "-vf", "fps=8,scale=640:360:flags=neighbor",
+               "-frames:v", "24", "-start_number", "1", str(frames / "frame_%04d.png"))
+
+    # 20. Chapter marks for metadata.py, in its `TIME TITLE` format.
+    path = need("chapters.txt")
+    if path:
+        path.write_text("0:00 Cold open\n0:02 The demo\n0:05 Outro\n", encoding="utf-8")
+
+    # 21. A tiny .cube LUT (a warm-highlight / cool-shadow look). A 2x2x2 cube is the smallest
+    #     legal one: eight corners, interpolated in between, which is enough to see a grade.
+    path = need("look.cube")
+    if path:
+        rows = ["# Synthetic demo look, generated by demos/build.py", "LUT_3D_SIZE 2", ""]
+        for b in (0.0, 1.0):
+            for g in (0.0, 1.0):
+                for r in (0.0, 1.0):
+                    out = (min(1.0, r * 1.10 + 0.05), min(1.0, g * 0.94 + 0.02),
+                           min(1.0, b * 0.80 + 0.10 * (1.0 - r)))
+                    rows.append("%.6f %.6f %.6f" % out)
+        path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    # 22. A still frame, for insert.py's Ken Burns card.
+    path = need("slate.png")
+    if path:
+        ffmpeg("-ss", "3", "-i", str(FIX / "mandel.mp4"), "-frames:v", "1",
+               "-vf", "scale=960:540", str(path))
+
+    # 23. A clip with hard cuts in it: three unrelated shots butted together, which is what
+    #     scenes.py's scdet pass is looking for.
+    path = need("shots.mp4")
+    if path:
+        ffmpeg("-i", str(FIX / "motion.mp4"), "-i", str(FIX / "mandel.mp4"),
+               "-i", str(FIX / "life.mp4"), "-filter_complex",
+               "[0:v]trim=0:2,setpts=PTS-STARTPTS,scale=960:540[a];"
+               "[1:v]trim=0:2,setpts=PTS-STARTPTS,scale=960:540[b];"
+               "[2:v]trim=0:2,setpts=PTS-STARTPTS,scale=960:540[c];"
+               "[a][b][c]concat=n=3:v=1:a=0[v];"
+               "[0:a]atrim=0:6,asetpts=PTS-STARTPTS[aud]",
+               "-map", "[v]", "-map", "[aud]", "-c:v", "libx264", "-preset", "veryfast",
+               "-crf", "22", "-pix_fmt", "yuv420p", "-c:a", "aac", str(path))
+
+    return made
+
+
+# --------------------------------------------------------------------------- comparison + preview
+# The package ships NO emoji art: Twemoji is CC-BY 4.0 and Noto Emoji OFL/Apache-2.0, and a
+# gallery does not need to redistribute either. The demo draws its own coloured placeholder PNGs
+# with ffmpeg, named by code point exactly as --emoji-assets expects, so `--emoji-assets DIR`
+# is demonstrated end to end while the real glyphs stay the user's own download.
+EMOJI_PLACEHOLDERS = {"1f389": "orange", "1f44d": "gold", "1f680": "tomato", "2705": "limegreen"}
+
+
+def build_emoji_placeholders():
+    d = FIX / "emoji"
+    d.mkdir(parents=True, exist_ok=True)
+    for name, colour in EMOJI_PLACEHOLDERS.items():
+        path = d / ("%s.png" % name)
+        if not path.exists():
+            ffmpeg("-f", "lavfi", "-i", "color=c=%s:s=72x72:d=0.04" % colour,
+                   "-vf", "format=rgba,geq=r='r(X,Y)':a='if(lt((X-36)*(X-36)+(Y-36)*(Y-36),34*34),255,0)'",
+                   "-frames:v", "1", str(path))
+    return d
+
+
+def _side(idx, label, font, seconds):
+    """One half of the side-by-side: letterboxed into a fixed cell so a 9:16 'after' and a
+    16:9 'before' still stack cleanly, held on its last frame if it is the shorter of the two."""
+    return ("[%d:v]scale=%d:%d:force_original_aspect_ratio=decrease,"
+            "pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=0x101014,setsar=1,fps=25,"
+            "tpad=stop_mode=clone:stop_duration=%.2f,"
+            "drawtext=fontfile='%s':text='%s':fontsize=18:fontcolor=white:borderw=2:"
+            "bordercolor=black@0.8:x=(w-text_w)/2:y=6[v%d]"
+            % (idx, CELL_W, CELL_H, CELL_W, CELL_H, seconds, esc(font), label, idx))
+
+
+def make_compare(before, after, dest, font, labels=("BEFORE", "AFTER")):
+    """640x180 side-by-side, <= 6 s. Both sides are held on their last frame to the same
+    length, so silence removal (a genuinely shorter 'after') reads as the timeline shrinking
+    rather than as one side simply vanishing.
+
+    `labels` overrides the two captions for a demo where "before/after" is the wrong pair of
+    words -- a lossless cut against an accurate one is two settings, not two generations."""
+    seconds = min(COMPARE_MAX_SECONDS, max(duration(before), duration(after)) or COMPARE_MAX_SECONDS)
+    chain = "%s;%s;[v0][v1]hstack=inputs=2[out]" % (_side(0, labels[0], font, COMPARE_MAX_SECONDS),
+                                                    _side(1, labels[1], font, COMPARE_MAX_SECONDS))
+    ffmpeg("-i", str(before), "-i", str(after), "-filter_complex", chain,
+           "-map", "[out]", "-t", "%.2f" % seconds, "-an", "-c:v", "libx264",
+           "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p", str(dest))
+    return dest
+
+
+def make_wave_compare(before, after, dest, font, labels=("BEFORE", "AFTER")):
+    """For audio-only work there is nothing to see in the video, so the comparison is the two
+    waveforms side by side, held for 3 s: thin bars on the page's dark ground, the source in grey
+    and the result in the brand green running to blue, each with a soft glow and its label."""
+    pics = []
+    bars = (CELL_W - 2) // 3   # a 2 px bar and a 1 px gap
+    for idx, (src, c0, c1) in enumerate(((before, "0x6B7280", "0x9CA3AF"), (after, "0x17D16A", "0x38BDF8"))):
+        pic = OUT / ("%s_wave%d.png" % (dest.stem, idx))
+        ffmpeg("-i", str(src),
+               "-f", "lavfi", "-i", "gradients=s=%dx%d:c0=%s:c1=%s:x0=0:y0=%d:x1=%d:y1=%d:n=2:speed=0.00001:d=1"
+               % (CELL_W, CELL_H, c0, c1, CELL_H // 2, CELL_W - 1, CELL_H // 2),
+               "-f", "lavfi", "-i", "color=c=0x0B0C0F:s=%dx%d:d=1" % (CELL_W, CELL_H),
+               "-filter_complex",
+               "[0:a]aformat=channel_layouts=mono,showwavespic=s=%dx%d:split_channels=0:scale=sqrt:draw=full:colors=white,"
+               "scale=%d:%d:flags=neighbor,drawgrid=w=3:h=%d:t=1:c=black,pad=%d:%d:1:%d:black,format=rgb24,format=gray[m];"
+               "[1:v]format=rgb24[gr];[gr][m]alphamerge,split[w1][w2];[w2]gblur=sigma=7[g];[2:v][g]overlay[bg];"
+               "[bg][w1]overlay,drawbox=x=0:y=%d:w=%d:h=1:c=white@0.08:t=fill,"
+               "drawtext=fontfile='%s':text='%s':fontsize=11:fontcolor=white@0.75:x=12:y=11"
+               % (bars, CELL_H - 70, bars * 3, CELL_H - 70, CELL_H * 2, CELL_W, CELL_H, 38,
+                  CELL_H // 2 + 3, CELL_W, esc(font), labels[idx]),
+               "-frames:v", "1", str(pic))
+        pics.append(pic)
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(pics[0]), "-loop", "1", "-t", "3", "-i", str(pics[1]),
+           "-filter_complex", "[0:v][1:v]hstack=inputs=2,drawbox=x=%d:y=0:w=1:h=%d:c=0x1F2229:t=fill,format=yuv420p[out]"
+           % (CELL_W, CELL_H), "-map", "[out]", "-r", "10", "-c:v", "libx264",
+           "-preset", "veryfast", "-crf", "24", str(dest))
+    return dest
+
+
+def make_preview(compare_mp4, dest):
+    """Palette-optimised GIF, aiming at 250 KB and hard-capped at 500 KB.
+
+    The ladder steps quality down only as far as it has to: a still waveform comparison lands
+    at a few KB on the first rung, a noisy fractal walks several rungs down. Aiming below the
+    cap rather than at it matters because GIF size varies with the ffmpeg build -- a preview
+    that squeaks in at 499 KB here would fail the same check on a different runner.
+    """
+    # fps, width, palette colours, seconds: the preview is a taster, not the deliverable, so
+    # it is allowed to be shorter than the 6 s side-by-side it is cut from.
+    ladder = [(12, 480, 96, 4.0), (10, 480, 64, 4.0), (10, 480, 48, 3.5), (10, 420, 48, 3.5),
+              (10, 380, 32, 3.5), (10, 320, 24, 3.0)]
+    last = None
+    for fps, width, colors, seconds in ladder:
+        chain = ("fps=%d,scale=%d:-2:flags=lanczos,split[s0][s1];"
+                 "[s0]palettegen=max_colors=%d:stats_mode=diff[p];"
+                 "[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
+                 % (fps, width, colors))
+        ffmpeg("-i", str(compare_mp4), "-t", "%.2f" % seconds, "-filter_complex", chain,
+               "-loop", "0", str(dest))
+        last = (dest.stat().st_size, fps, width, colors)
+        if last[0] <= PREVIEW_TARGET_BYTES:
+            return last
+    if last[0] <= PREVIEW_MAX_BYTES:  # under the cap, just not under the target
+        return last
+    raise BuildError("preview %s is %d bytes, over the %d byte budget even at the smallest "
+                     "setting -- shorten the demo or drop its frame rate"
+                     % (dest.name, last[0], PREVIEW_MAX_BYTES))
+
+
+# --------------------------------------------------------------------------- capabilities
+_FILTERS = None
+
+
+def have_filter(name) -> bool:
+    """Is `name` compiled into the ffmpeg on PATH? vidstab (stabilize) and v360 (sphere) are
+    optional at build time on several distributions, so a demo that needs one skips with a
+    reason rather than failing the whole gallery."""
+    global _FILTERS
+    if _FILTERS is None:
+        try:
+            out = run(["ffmpeg", "-hide_banner", "-filters"], capture=True) or ""
+        except BuildError:
+            out = ""
+        _FILTERS = {line.split()[1] for line in out.splitlines()
+                    if len(line.split()) > 2 and line.startswith(" ")}
+    return name in _FILTERS
+
+
+def missing_requirement(needs):
+    """Why this demo cannot render here, or None. A requirement is either a script name for
+    the font check ("ja") or "filter:NAME" for an ffmpeg feature check."""
+    for need in ((needs,) if isinstance(needs, str) else tuple(needs or ())):
+        if need.startswith("filter:"):
+            name = need.split(":", 1)[1]
+            if not have_filter(name):
+                return "this ffmpeg build has no %s filter" % name
+        elif need != "latin" and script_font_status(need) == "missing":
+            return "no font on this machine covers script %r" % need
+    return None
+
+
+# --------------------------------------------------------------------------- demos
+def _caption_demo(ctx, cues, extra=()):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("caption.py", before, "--text", FIX / cues, "--size", "30", "--bold",
+               "--position", "bottom", "--margin", "40", *extra, "-o", after)
+    return before, after
+
+
+def demo_captions_en(ctx):
+    return _caption_demo(ctx, "cues_en.txt")
+
+
+def demo_captions_ja(ctx):
+    return _caption_demo(ctx, "cues_ja.txt")
+
+
+def demo_captions_zh(ctx):
+    return _caption_demo(ctx, "cues_zh.txt")
+
+
+def demo_captions_ko(ctx):
+    return _caption_demo(ctx, "cues_ko.txt")
+
+
+def demo_captions_ar(ctx):
+    return _caption_demo(ctx, "cues_ar.txt")
+
+
+def demo_captions_pop_karaoke(ctx):
+    return _caption_demo(ctx, "cues_pop.txt", ("--animate", "pop", "--karaoke",
+                                               "--highlight-color", "#39ff88"))
+
+
+def demo_captions_emoji(ctx):
+    """Colour emoji (PNG overlay) against the monochrome fallback the same machine gives you."""
+    assets = build_emoji_placeholders()
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("caption.py", FIX / "motion.mp4", "--text", FIX / "cues_emoji.txt", "--size", "30",
+               "--bold", "--margin", "40", "--emoji", "mono", "-o", before)
+    ctx.script("caption.py", FIX / "motion.mp4", "--text", FIX / "cues_emoji.txt", "--size", "30",
+               "--bold", "--margin", "40", "--emoji-assets", assets, "-o", after)
+    ctx.note("the left side is what this ffmpeg draws without --emoji-assets (monochrome or "
+             "nothing); the right side composites one PNG per cluster")
+    return before, after
+
+
+def demo_lower_third_hindi(ctx):
+    """The eval-14 defect and its fix: drawtext cannot reorder Devanagari matras, libass can."""
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    font = font_for_script("hi")
+    # The "before" is raw drawtext on purpose: graphics.py now REFUSES --text-render drawtext for a
+    # shaping script, so the wrong frame can only be produced outside the tool -- which is the point.
+    ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "5", "-vf",
+           "drawtext=text='प्रिया शर्मा':fontfile=%s:fontsize=40:fontcolor=white:x=60:y=h-140,"
+           "drawtext=text='निर्देशक':fontfile=%s:fontsize=28:fontcolor=0xFFD200:x=60:y=h-90" % (font, font),
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+           "-c:a", "copy", str(before))
+    ctx.script("graphics.py", FIX / "motion.mp4", "--template", "lower-third",
+               "--name", "प्रिया शर्मा", "--title", "निर्देशक", "--start", "0.5", "--end", "5",
+               "--text-render", "ass", "-o", after)
+    ctx.note("left: drawtext (matras unreordered, the eval-14 hi1 failure). right: the same "
+             "template through libass, which graphics.py now picks automatically")
+    return before, after
+
+
+def demo_lower_third(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("graphics.py", before, "--template", "lower-third", "--name", "Ada Lovelace",
+               "--title", "Analytical Engine", "--start", "0.5", "--end", "5", "-o", after)
+    return before, after
+
+
+def demo_title_card(ctx):
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("graphics.py", before, "--template", "title", "--title", "Episode 12",
+               "--subtitle", "The math of video", "--start", "0", "--end", "4", "-o", after)
+    return before, after
+
+
+def demo_logo_overlay(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("overlay.py", before, "--image", FIX / "logo.png", "--position", "top-right",
+               "--scale", "200", "--opacity", "0.9", "--start", "0.5", "--end", "7.5",
+               "--fade", "0.6", "-o", after)
+    return before, after
+
+
+def demo_hdr_tonemap(ctx):
+    before = FIX / "hdr10.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("color.py", before, "--to-sdr", "--tonemap", "hable", "--preset", "veryfast",
+               "-o", after)
+    return before, after
+
+
+def demo_reframe_crop(ctx):
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("fit.py", before, "--aspect", "9:16", "--fit", "crop", "--width", "540",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+FOOTAGE = ROOT / "demos" / "footage"   # the only non-synthetic sources: two AI-generated clips, used by three demos (see demos/footage/README.md)
+
+
+def demo_reframe_talk(ctx):
+    """A talking-head clip made vertical: --crop-x keeps the speaker, who sits left of centre."""
+    before = FOOTAGE / "ai_talk.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("fit.py", before, "--aspect", "9:16", "--fit", "crop", "--crop-x", "0.27", "--width", "540",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_filler_en(ctx):
+    """English speech with two hesitations ("er" at 1.1 s, "um" at 4.4 s). The word timings are
+    the --words file faster-whisper wrote for this clip, primed with the filler list as
+    silence.py --filler --transcribe primes it (demos/footage/ai_talk_en.words.json), so the demo
+    builds without a speech engine."""
+    before = ctx.path("talk.mp4")
+    ffmpeg("-i", FOOTAGE / "ai_talk_en.mp4", "-t", "6", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", str(before))
+    after = ctx.path("after.mp4")
+    ctx.script("silence.py", before, "--filler", "--words", FOOTAGE / "ai_talk_en.words.json", "--margin", "0",
+               "--preset", "veryfast", "-o", after)
+    ctx.note("removed er (1.14-1.34 s) and um (4.44-4.78 s); %.2f s in, %.2f s out" % (duration(before), duration(after)))
+    return before, after
+
+
+def demo_pauses_en(ctx):
+    """The same English speech: three sentences with a pause of 1.5 s or more after each. The
+    pauses after a sentence end are told from the others by the punctuation in the word timings
+    (demos/footage/ai_talk_en.words.json), and keep a longer tail than a pause inside a sentence."""
+    before = ctx.path("talk.mp4")
+    ffmpeg("-i", FOOTAGE / "ai_talk_en.mp4", "-t", "10", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", str(before))
+    after = ctx.path("after.mp4")
+    ctx.script("silence.py", before, "--words", FOOTAGE / "ai_talk_en.words.json", "--threshold", "-30",
+               "--min-silence", "0.2", "--sentence-min-silence", "0.3",
+               "--margin-lead", "0.1", "--margin-tail", "0.15", "--sentence-margin-tail", "0.3",
+               "--preset", "veryfast", "-o", after)
+    ctx.note("pauses tightened; %.2f s in, %.2f s out" % (duration(before), duration(after)))
+    return before, after
+
+
+def demo_reframe_pad(ctx):
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("fit.py", before, "--aspect", "9:16", "--fit", "pad", "--pad-fill", "blur",
+               "--width", "540", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_speed_up(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    raw = ctx.script("fit.py", before, "--duration", "4", "--method", "speed", "--preset", "veryfast",
+                     "--json", "-o", after, capture=True)
+    if not ctx.dry:
+        warnings = json.loads(raw).get("diagnostics", {}).get("warnings", [])
+        if not any(w["code"] == "large_speed_change" for w in warnings):
+            raise BuildError("fit.py did not report the 2x retime as large_speed_change")
+    return before, after
+
+
+def demo_reverse(ctx):
+    before = FIX / "life.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("reverse.py", before, "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_join_fade(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("join.py", FIX / "motion.mp4", FIX / "mandel.mp4", "--transition", "fade",
+               "--duration", "0.8", "--width", "960", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_join_fadeblack(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("join.py", FIX / "motion.mp4", FIX / "mandel.mp4", "--transition", "fadeblack",
+               "--duration", "0.8", "--width", "960", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_silence_removal(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    timemap = ctx.path("timemap.csv")
+    ctx.script("silence.py", before, "--threshold", "-35", "--min-silence", "0.4",
+               "--margin", "0.1", "--timemap", timemap, "--preset", "veryfast", "-o", after)
+    rows = timemap.read_text(encoding="utf-8").splitlines()[1:] if timemap.exists() else []
+    ctx.note("%.2f s in, %.2f s out; the time map lists %d kept and %d removed range(s)"
+             % (duration(before), duration(after), sum(r.startswith("kept,") for r in rows),
+                sum(r.startswith("removed,") for r in rows)))
+    return before, after
+
+
+def demo_loudness(ctx):
+    """A real voice (the AI-generated talk), made deliberately quiet, so the two waveforms differ by
+    more than rounding."""
+    before = ctx.path("before.mp4")
+    ffmpeg("-i", str(ROOT / "demos" / "footage" / "veo_talk_en.mp4"), "-af", "volume=-10dB", "-c:v", "copy", "-c:a", "aac",
+           str(before))
+    after = ctx.path("after.mp4")
+    ctx.script("loudness.py", before, "-I", "-14", "--tp", "-1", "-o", after)
+    return before, after
+
+
+def demo_downmix_51(ctx):
+    before = FIX / "surround.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("audio.py", before, "--downmix", "-o", after)
+    return before, after
+
+
+def demo_bgm_ducking(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("audio.py", before, "--music", FIX / "music.m4a", "--duck", "--duck-amount", "12",
+               "--music-volume", "0.6", "--fade-out", "1.5", "-o", after)
+    return before, after
+
+
+def demo_tempo_exact_length(ctx):
+    """The music bed 1.25x faster at the same pitch, resampled to 44.1 kHz and ended on an exact
+    sample count (4 s at that rate); the output is PCM so the count is the file's own."""
+    before = FIX / "music.m4a"
+    after = ctx.path("after.wav")
+    ctx.script("audio.py", before, "--tempo", "1.25", "--sample-rate", "44100", "--length-samples", "176400",
+               "-o", after)
+    return before, after
+
+
+def demo_matroska_audio_cut(ctx):
+    before = FIX / "music.m4a"
+    after = ctx.path("after.mka")
+    raw = ctx.script("cut.py", before, "--start", "1", "--end", "4", "--accurate",
+                     "-o", after, "--json", capture=True)
+    if not ctx.dry:
+        report = json.loads(raw)
+        audio = report["probe"]["audio"]
+        if not report["verified"] or report["probe"]["video"] or audio["codec"] != "flac":
+            raise BuildError("the Matroska cut did not verify as FLAC audio")
+        ctx.note("verified FLAC audio in Matroska")
+    return before, after
+
+
+def demo_export_reels(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("export.py", before, "--preset", "reels", "--fit", "crop", "-o", after)
+    report = ctx.script("check.py", after, "--platform", "reels", "--json", capture=True)
+    if report:
+        (OUT / ("%s_check.json" % ctx.name)).write_text(report, encoding="utf-8")
+        ctx.note("check.py --platform reels: %s" % json.loads(report).get("status", "?"))
+    return before, after
+
+
+def demo_fit_blur(ctx):
+    """16:9 to 9:16 with nothing cropped: the picture sits on a blurred, dimmed copy of itself."""
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("fit.py", before, "--aspect", "9:16", "--fit", "blur", "--width", "540",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_template_tiktok(ctx):
+    """One command per destination: the delivery template does the whole chain and checks it."""
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("render.py", before, "--template", "tiktok", "--cues", FIX / "cues_en.txt",
+               "--fast", "-o", after)
+    ctx.expect(after, "render.py --template tiktok")
+    ctx.note("1080x1920, captions clear of TikTok's description bar, check.py --platform tiktok passes")
+    return before, after
+
+
+def demo_render_project(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("render.py", FIX / "project.json", "--fast")
+    ctx.expect(after, "render.py")
+    # 2.1: the same project as an editor timeline (nothing rendered), so every demo build runs
+    # --export-timeline end to end and the gallery shows the command next to the render
+    timeline = ctx.path("timeline.otio")
+    ctx.script("render.py", FIX / "project.json", "--export-timeline", timeline)
+    ctx.expect(timeline, "render.py --export-timeline")
+    ctx.note("the same project also opens in an editor: --export-timeline writes .otio / .fcpxml / .edl")
+    return before, after
+
+
+def demo_render_pip(ctx):
+    """#326: a video layer in a project's overlays[], keyed and placed after fit."""
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("render.py", FIX / "project_pip.json", "--fast")
+    ctx.expect(after, "render.py")
+    ctx.note('overlays[]: {"video": "green.mp4", "chromakey": "0x50b64f", "position": "bottom", "scale": 540}')
+    return before, after
+
+
+def demo_contact_sheet(ctx):
+    """look.py answers 'did that actually work?' with a picture; the 'after' side of the
+    comparison is that contact sheet, held as video so the gallery can show it inline."""
+    before = FIX / "mandel.mp4"
+    sheet = ctx.path("sheet.png")
+    ctx.script("look.py", before, "--tiles", "4x3", "--width", "960", "-o", sheet)
+    after = ctx.path("after.mp4")
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(sheet), "-vf",
+           "scale=960:-2,format=yuv420p", "-r", "10", "-c:v", "libx264", "-preset", "veryfast",
+           "-crf", "24", str(after))
+    return before, after
+
+
+def demo_cut_accurate(ctx):
+    """Two cuts of the same request: the lossless one snaps to the nearest keyframe, the
+    accurate one re-encodes and lands on the asked-for frame."""
+    src = FIX / "mandel.mp4"
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    # --tolerance 5 lets the stream copy keep its keyframe snap instead of quietly re-encoding
+    # (cut.py's "hybrid" mode), which is the behaviour this demo exists to show.
+    out = ctx.script("cut.py", src, "--start", "2.05", "--duration", "3", "--tolerance", "5",
+                     "--json", "-o", before, capture=True)
+    ctx.script("cut.py", src, "--start", "2.05", "--duration", "3", "--accurate",
+               "--preset", "veryfast", "-o", after)
+    ctx.script("look.py", src, "--at", "2.05", "--compare", after, "--compare-at", "0",
+               "-o", ctx.path("start.png"))
+    if out:
+        found = json.loads(out)
+        ctx.note("copy: keyframe_snapped=%s, %.2f s of extra material; accurate: 2.05 s exactly"
+                 % (found.get("keyframe_snapped"), found.get("duration_delta_seconds", 0.0)))
+    return before, after
+
+
+def demo_cut_remove(ctx):
+    """--remove names what to drop and keeps the rest: 2-4 s of the clip are gone."""
+    src = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    out = ctx.script("cut.py", src, "--remove", "2-4", "--accurate", "--preset", "veryfast", "--json", "-o", after,
+                     capture=True)
+    if out:
+        ctx.note("kept %.2f s; 2-4 s of the source removed" % (json.loads(out).get("output_duration") or 0.0))
+    return src, after
+
+
+def demo_cut_smart(ctx):
+    """--smart: a frame-exact cut that re-encodes only the partial GOPs at its two ends. The source
+    is re-encoded here with a keyframe every second, so the cut has whole GOPs in the middle to copy."""
+    src = ctx.path("gop30.mp4")
+    ffmpeg("-i", str(FIX / "motion.mp4"), "-c:v", "libx264", "-preset", "veryfast", "-g", "30", "-bf", "2",
+           "-pix_fmt", "yuv420p", "-c:a", "aac", str(src))
+    after = ctx.path("after.mp4")
+    out = ctx.script("cut.py", src, "--start", "1.3", "--end", "6.6", "--smart", "--json", "-o", after, capture=True)
+    ctx.expect(after, "cut.py --smart")
+    if out:
+        doc = json.loads(out)
+        if doc.get("mode") != "smart" or not doc.get("verified"):
+            raise BuildError("cut.py --smart did not make a verified smart cut: %s" % (doc.get("smart") or {}).get("reason"))
+        sm = doc["smart"]
+        ctx.note("%d frames re-encoded, %d copied" % (sm["reencoded_frames"], sm["copied_frames"]))
+    return src, after
+
+
+def demo_cut_edit_list(ctx):
+    """Two lossless copies of the same request: the default one shifts its timestamps to zero and
+    shows the keyframe's pre-roll, the --edit-list one keeps the MP4 edit list that hides it, so
+    its picture starts where asked. Both are stream copies; neither re-encodes."""
+    src = FIX / "mandel.mp4"
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    # --tolerance 5 keeps both on the stream copy, which is what this demo compares
+    plain = ctx.script("cut.py", src, "--start", "2.05", "--duration", "3", "--tolerance", "5",
+                       "--json", "-o", before, capture=True)
+    listed = ctx.script("cut.py", src, "--start", "2.05", "--duration", "3", "--tolerance", "5",
+                        "--edit-list", "--json", "-o", after, capture=True)
+    if plain and listed:
+        a, b = json.loads(plain), json.loads(listed)
+        ctx.note("default: mode=%s, start_snapped=%s; --edit-list: mode=%s, start_snapped=%s, "
+                 "stored_preroll_seconds=%s" % (a.get("mode"), a.get("start_snapped"), b.get("mode"),
+                                                b.get("start_snapped"), b.get("stored_preroll_seconds")))
+    return before, after
+
+
+def demo_crop_rect(ctx):
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("crop.py", before, "--x", "320", "--y", "120", "--width", "640", "--height", "480",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_cropdetect_crop(ctx):
+    """Measure the bars, then remove them: cropdetect.py reports the rectangle and crop.py is
+    the tool that acts on it -- two commands, because measuring is not deciding."""
+    before = FIX / "letterbox.mp4"
+    after = ctx.path("after.mp4")
+    out = ctx.script("cropdetect.py", before, "--seconds", "4", "--json", capture=True)
+    rect = dict(CROPDETECT_GALLERY_RECT)
+    if not ctx.dry:
+        # the rectangle is the measured one: the build read `x`/`y`/... off the document's top
+        # level, where they are not (they are under `crop`), and cropped the fallback (#467 A244)
+        rect = measured(out, CROPDETECT_GALLERY_RECT, "cropdetect.py's rectangle",
+                        lambda doc: doc.get("crop"), "CROPDETECT_GALLERY_RECT")
+        ctx.note("detected x=%(x)s y=%(y)s %(width)sx%(height)s" % rect)
+    ctx.script("crop.py", before, "--x", rect["x"], "--y", rect["y"], "--width", rect["width"],
+               "--height", rect["height"], "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_pad_timeline(ctx):
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("pad.py", before, "--start", "1", "--end", "1", "--color", "0x101014",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_freeze_hold(ctx):
+    """A title over the picture, then the frame under it held: the card has time to be read."""
+    before = FIX / "mandel.mp4"
+    titled = ctx.path("titled.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("graphics.py", before, "--template", "title", "--title", "Hold this frame",
+               "--subtitle", "freeze.py --at 2 --hold 1.5", "--start", "1.6", "--end", "4",
+               "-o", titled)
+    ctx.script("freeze.py", titled, "--at", "2", "--hold", "1.5", "--preset", "veryfast",
+               "-o", after)
+    return before, after
+
+
+def demo_loop_times(ctx):
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("cut.py", FIX / "life.mp4", "--start", "0", "--duration", "1.5", "--accurate",
+               "--preset", "veryfast", "-o", before)
+    ctx.script("loop.py", before, "--times", "4", "--preset", "veryfast", "-o", after)
+    ctx.note("%.1f s in, %.1f s out" % (duration(before), duration(after)))
+    return before, after
+
+
+def demo_loop_crossfade(ctx):
+    """The same 1.5 s clip looped four times, plain against --crossfade: the plain loop jumps at
+    every seam, the crossfaded one fades the clip's last 0.4 s into its first."""
+    clip = ctx.path("clip.mp4")
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("cut.py", FIX / "life.mp4", "--start", "0", "--duration", "1.5", "--accurate",
+               "--preset", "veryfast", "-o", clip)
+    ctx.script("loop.py", clip, "--times", "4", "--preset", "veryfast", "-o", before)
+    ctx.script("loop.py", clip, "--times", "4", "--crossfade", "0.4", "--preset", "veryfast", "-o", after)
+    ctx.note("%.1f s plain, %.1f s with the fade (each repeat is 0.4 s shorter)" % (duration(before), duration(after)))
+    return before, after
+
+
+def demo_insert_still(ctx):
+    """A still becomes a timed clip with a Ken Burns move, then lands in the middle of the
+    timeline: insert.py makes the card, join.py puts it between the two shots."""
+    before = FIX / "motion.mp4"
+    card = ctx.path("card.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("insert.py", FIX / "slate.png", "--duration", "2", "--width", "960",
+               "--height", "540", "--fps", "25", "--zoom", "in", "--pan", "right",
+               "--preset", "veryfast", "-o", card)
+    ctx.script("join.py", FIX / "motion.mp4", card, FIX / "mandel.mp4", "--transition", "fade",
+               "--duration", "0.5", "--width", "960", "--height", "540", "--fps", "25",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_sequence_frames(ctx):
+    """A folder of numbered PNGs becomes a clip. The 'before' side is the first frame held,
+    because that is all a still sequence is until something assembles it."""
+    first = FIX / "frames" / "frame_0001.png"
+    before = ctx.path("before.mp4")
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(first), "-vf", "scale=640:360,format=yuv420p",
+           "-r", "10", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", str(before))
+    after = ctx.path("after.mp4")
+    ctx.script("sequence.py", "--dir", FIX / "frames", "--pattern", "frame_%04d.png",
+               "--start-number", "1", "--fps", "8", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_speedramp(ctx):
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("speedramp.py", before, "--segment", "0-2:2.0", "--segment", "2-3:0.35",
+               "--segment", "3-6:1.5", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_denoise(ctx):
+    before = FIX / "noisy.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("denoise.py", before, "--strength", "high", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_deinterlace(ctx):
+    before = FIX / "interlaced.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("deinterlace.py", before, "--mode", "frame", "--parity", "tff",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_stabilize(ctx):
+    before = FIX / "shaky.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("stabilize.py", before, "--shakiness", "8", "--smoothing", "20", "--zoom", "5",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_straighten(ctx):
+    before = FIX / "tilted.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("straighten.py", before, "--degrees", "-5", "--fit", "crop",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_redact_blur(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("redact.py", before, "--x", "420", "--y", "180", "--width", "440",
+               "--height", "360", "--mode", "blur", "--blur-strength", "24",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_delogo(ctx):
+    """A fixed white block stands in for a burned-in logo. redact.py --mode delogo fills that
+    rectangle from the picture around it. The box is given; nothing finds it."""
+    before = ctx.path("before.mp4")
+    ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "4",
+           "-vf", "drawbox=x=48:y=36:w=240:h=96:color=white:t=fill",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "copy", str(before))
+    after = ctx.path("after.mp4")
+    ctx.script("redact.py", before, "--x", "48", "--y", "36", "--width", "240",
+               "--height", "96", "--mode", "delogo", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_sphere_flat(ctx):
+    before = FIX / "equirect.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("sphere.py", before, "--input-projection", "equirect", "--yaw", "40",
+               "--pitch", "-10", "--h-fov", "100", "--v-fov", "70", "--width", "960",
+               "--height", "540", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_greenscreen(ctx):
+    """Two tools: background.py generates the plate (no input file at all), overlay.py keys the
+    green out of the subject and composites it on top."""
+    before = FIX / "green.mp4"
+    plate = ctx.path("plate.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("background.py", "--duration", "4", "--width", "960", "--height", "540",
+               "--gradient", "0xff6a00:0x0057ff", "--angle", "45", "--fps", "25",
+               "--preset", "veryfast", "-o", plate)
+    ctx.script("overlay.py", plate, "--video", before, "--chromakey", "0x50b64f",
+               "--chromakey-similarity", "0.1", "--chromakey-blend", "0.05",
+               "--position", "center", "--scale", "960", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def _require_verified(doc, what):
+    """Fail the build when a tool's --json result says verified: false (the run itself exited 0).
+    The docs recorder (_DryCtx) runs nothing and returns "", so there it checks nothing and the
+    builder goes on recording the commands that follow."""
+    if not doc:
+        return
+    result = json.loads(doc)
+    if not result.get("verified"):
+        raise BuildError("%s did not verify: %s" % (what, [s for s in result.get("verification") or []
+                                                           if not s.get("ok")]))
+
+
+def demo_alpha_layer(ctx):
+    """The alpha path: background.py --transparent makes an empty canvas, graphics.py --keep-alpha
+    renders a lower third on it as a layer with its own alpha (QuickTime Animation: an RLE line that
+    stays small for a mostly transparent picture), and overlay.py puts that layer over the footage."""
+    before = FIX / "motion.mp4"
+    canvas = ctx.path("canvas.mov")
+    layer = ctx.path("layer.mov")
+    after = ctx.path("after.mp4")
+    # a run whose alpha step failed exits 0 (verified: false), so each verdict is read and a layer
+    # that did not verify fails the build, as demo_color_legalize does
+    doc = ctx.script("background.py", "--transparent", "--alpha-codec", "qtrle", "--duration", "6", "--width", "1280",
+                     "--height", "720", "--fps", "30", "-o", canvas, "--json", capture=True)
+    ctx.expect(canvas, "background.py --transparent")
+    _require_verified(doc, "background.py --transparent")
+    doc = ctx.script("graphics.py", canvas, "--template", "lower-third", "--name", "Ada Lovelace",
+                     "--title", "Analytical Engine", "--start", "0.5", "--end", "5.5", "--keep-alpha",
+                     "--alpha-codec", "qtrle", "-o", layer, "--json", capture=True)
+    ctx.expect(layer, "graphics.py --keep-alpha")
+    _require_verified(doc, "graphics.py --keep-alpha")
+    ctx.script("overlay.py", before, "--video", layer, "--position", "0,0", "--margin", "0",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_overlay_place(ctx):
+    """overlay.py --place: two ranges of one layer, each shown at its own time on the main
+    timeline; the main picture is untouched between them."""
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("overlay.py", before, "--video", FIX / "mandel.mp4", "--position", "bottom-right",
+               "--scale", "480", "--place", "0-1.5@0.5", "--place", "4-5.5@3.5",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_color_lut(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("color.py", before, "--lut", FIX / "look.cube", "--lut-strength", "1.0",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_color_correct(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("color.py", before, "--correct", "--exposure", "0.25", "--contrast", "1.25",
+               "--saturation", "1.3", "--temperature", "7000", "--gamma", "1.1",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def _waveform_over_picture(src, dst):
+    """The picture (top) over its luma waveform with the digital-scale graticule (bottom): the
+    16/235 legal limits are where the graticule lines sit, so a level past them is visible."""
+    ffmpeg("-i", str(src), "-filter_complex",
+           "[0:v]split[p][w];[p]scale=1280:360,setsar=1[top];"
+           "[w]waveform=graticule=green:flags=numbers:scale=digital:filter=lowpass,scale=1280:360,setsar=1[bot];"
+           "[top][bot]vstack,format=yuv420p", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(dst))
+
+
+def demo_color_legalize(ctx):
+    # a grade that runs hot: luma stretched past 235 and below 16, chroma past 240
+    hot = ctx.path("hot.mp4")
+    ffmpeg("-i", str(FIX / "motion.mp4"), "-t", "4", "-an", "-vf",
+           "lutyuv=y='(val-16)*1.18+4':u='128+(val-128)*1.3':v='128+(val-128)*1.3'",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", str(hot))
+    legal = ctx.path("legal.mp4")
+    # --quality 8: at the default 18, x264's error around the clamped chroma of this saturated
+    # pattern left 1.4 % of one frame out of range, past the 1 % the legal_levels step allows. A
+    # run whose own check failed exits 0 (verified: false), so the demo reads the verdict and fails
+    # the build rather than publish a preview of a file that did not verify.
+    doc = ctx.script("color.py", hot, "--correct", "--legalize", "bt709", "--quality", "8", "--preset", "veryfast",
+                     "-o", legal, "--json", capture=True)
+    ctx.expect(legal, "color.py --legalize")
+    if not json.loads(doc).get("verified"):
+        raise BuildError("color.py --legalize did not verify: %s" % [s for s in json.loads(doc).get("verification") or []
+                                                                     if s.get("step") == "legal_levels"])
+    before, after = ctx.path("before.mp4"), ctx.path("after.mp4")
+    _waveform_over_picture(hot, before)
+    _waveform_over_picture(legal, after)
+    return before, after
+
+
+def demo_grid_2x2(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("grid.py", FIX / "motion.mp4", FIX / "mandel.mp4", FIX / "life.mp4",
+               FIX / "camb.mp4", "--cols", "2", "--rows", "2", "--cell-width", "480",
+               "--cell-height", "270", "--fps", "25", "--audio-from", "0", "--gap", "4",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_multicam_switch(ctx):
+    """Two angles of one event, aligned by their shared audio and then cut between on a list of
+    ranges -- the cut list is the caller's, the alignment is measured."""
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("multicam.py", FIX / "motion.mp4", FIX / "camb.mp4",
+               "--switch", "0-2:0,2-4:1,4-6:0", "--width", "960", "--height", "540",
+               "--fps", "25", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_broll_cutaway(ctx):
+    before = FIX / "motion.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("broll.py", before, "--insert", FIX / "mandel.mp4", "--at", "2",
+               "--duration", "3", "--audio", "a", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_sync_mic(ctx):
+    """The external mic started 1 s late. sync.py measures the offset by cross-correlating
+    the two envelopes and writes the camera clip with the aligned mic as its audio."""
+    before = FIX / "mic.wav"
+    after = ctx.path("after.mp4")
+    out = ctx.script("sync.py", FIX / "motion.mp4", before, "--replace-audio", "--json",
+                     "-o", after, capture=True)
+    if out:
+        try:
+            found = json.loads(out)
+            ctx.note("offset %.3f s, confidence %.2f"
+                     % (found.get("offset_seconds", 0.0), found.get("confidence", 0.0)))
+        except ValueError:
+            pass
+    return before, after
+
+
+def demo_waveform_render(ctx):
+    """An audio-only file has nothing to show; waveform.py gives it a picture that moves with
+    the sound it carries."""
+    before = ctx.path("before.mp4")
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=640x360:rate=10", "-i", str(FIX / "music.m4a"),
+           "-shortest", "-t", "5", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+           "-pix_fmt", "yuv420p", "-c:a", "aac", str(before))
+    after = ctx.path("after.mp4")
+    ctx.script("waveform.py", FIX / "music.m4a", "--style", "waveform", "--width", "960",
+               "--height", "540", "--color", "0x39ff88", "--background", "0x101014",
+               "--waveform-mode", "cline", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_captions_phrase(ctx):
+    """The same cue rendered twice, at the same size, with one flag different -- the only demo in
+    the gallery whose two halves are the same tool. Left is 1.15's width-only wrap, right is the
+    phrase-aware one: no line ends on an article or a preposition."""
+    src = FIX / "motion.mp4"
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    for out, mode in ((before, "measured"), (after, "phrase")):
+        ctx.script("caption.py", src, "--text", FIX / "cues_phrase.txt", "--size", "34",
+                   "--bold", "--position", "bottom", "--margin", "40", "--wrap", mode,
+                   "--preset", "veryfast", "-o", out)
+    return before, after
+
+
+def demo_captions_fitsize(ctx):
+    """The same cue file at the same platform, with one flag different. Left is 1.16: at the
+    TikTok caption size the sentence needs four lines, so --max-lines 2 splits it into two
+    consecutive cues. Right is 1.17: the size drops until the whole sentence fits at once."""
+    src = FIX / "vertical.mp4"
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    for out, mode in ((before, "off"), (after, "on")):
+        ctx.script("caption.py", src, "--text", FIX / "cues_phrase.txt", "--platform", "tiktok",
+                   "--max-lines", "2", "--fit-size", mode, "--bold",
+                   "--preset", "veryfast", "-o", out)
+    return before, after
+
+
+def demo_beats_snap(ctx):
+    """Both cuts asked for the same second. The right one moved to the nearest measured onset;
+    the left one did not. The waveform is the evidence -- the cut edge sits on a click."""
+    src = FIX / "clicks.mp4"
+    before = ctx.path("before.mp4")
+    after = ctx.path("after.mp4")
+    ctx.script("cut.py", src, "--start", "2.03", "--end", "6.01", "--snap", "none",
+               "--accurate", "--preset", "veryfast", "-o", before)
+    ctx.script("cut.py", src, "--start", "2.03", "--end", "6.01", "--snap", "beats",
+               "--accurate", "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_captions_multitrack(ctx):
+    """Nothing is burnt in and nothing is re-encoded: the video and audio are copied bit for bit
+    and three SRTs ride along as toggleable, language-tagged streams. The right half is the track
+    list ffprobe reads back, drawn the way the chapters demo draws its strip."""
+    before = FIX / "mandel.mp4"
+    srts = []
+    for lang, line in (("en", "Hello from the English track"),
+                       ("ja", "\u65e5\u672c\u8a9e\u306e\u5b57\u5e55\u30c8\u30e9\u30c3\u30af"),
+                       ("es", "Pista de subtitulos en espanol")):
+        path = ctx.path("track_%s.srt" % lang)
+        path.write_text("1\n00:00:00,000 --> 00:00:03,000\n%s\n" % line, encoding="utf-8")
+        srts.append("%s:%s" % (path, lang))
+    muxed = ctx.path("muxed.mkv")
+    ctx.script("caption.py", before, "--mode", "mux", "--srt", srts[0], "--srt", srts[1],
+               "--srt", srts[2], "--default-track", "en", "-o", muxed)
+    rows = []
+    if muxed.exists():
+        raw = run(["ffprobe", "-v", "error", "-print_format", "json", "-select_streams", "s",
+                   "-show_streams", str(muxed)], capture=True)
+        for st in json.loads(raw).get("streams", []):
+            tags = st.get("tags") or {}
+            rows.append("%s  %s  %s" % (st.get("codec_name", "?"), tags.get("language", "-"),
+                                        tags.get("title", "-")))
+        ctx.note("%d subtitle tracks, video and audio stream-copied" % len(rows))
+    font = label_font()
+    draws = []
+    for i, text in enumerate(rows or ["no tracks"]):
+        draws.append("drawtext=fontfile='%s':text='%s':fontsize=24:fontcolor=white:x=40:y=%d"
+                     % (esc(font), text.replace(":", "\\:"), 150 + i * 52))
+    draws.append("drawtext=fontfile='%s':text='ffprobe -select_streams s':fontsize=18:"
+                 "fontcolor=0x39ff88:x=40:y=%d" % (esc(font), 150 + max(1, len(rows)) * 52 + 24))
+    card = ctx.path("tracks.png")
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=960x540", "-frames:v", "1",
+           "-vf", ",".join(draws), str(card))
+    after = ctx.path("after.mp4")
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(card), "-vf", "format=yuv420p", "-r", "10",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", str(after))
+    return before, after
+
+
+def demo_cut_waveform(ctx):
+    source = ctx.path("source.wav")
+    edited = ctx.path("trimmed.wav")
+    ffmpeg("-f", "lavfi", "-i",
+           r"aevalsrc=0.8*sin(2*PI*230*t)*if(lt(t\,2)\,0.2\,1):s=48000:d=4", str(source))
+    ctx.script("cut.py", source, "--start", "2", "--accurate", "-o", edited)
+    for name, track, time in (("before", source, "2"), ("after", edited, "0")):
+        still = ctx.path(name + ".png")
+        ctx.script("waveform.py", track, "--at", time, "--window", "2", "--width", "960",
+                   "--height", "288", "-o", still)
+        ffmpeg("-loop", "1", "-t", "3", "-i", str(still), "-vf", "format=yuv420p", "-r", "10",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", str(ctx.path(name + ".mp4")))
+    return ctx.path("before.mp4"), ctx.path("after.mp4")
+
+
+def demo_audiogram(ctx):
+    """The same track as the waveform demo, this time over a still plate with the episode title
+    and burnt-in captions -- one render.py --template audiogram call. The picture is generated by
+    background.py; nothing was downloaded and no cover art was invented."""
+    before = ctx.path("before.mp4")
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=640x360:rate=10", "-i", str(FIX / "music.m4a"),
+           "-shortest", "-t", "5", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+           "-pix_fmt", "yuv420p", "-c:a", "aac", str(before))
+    plate_clip = ctx.path("plate.mp4")
+    ctx.script("background.py", "--width", "960", "--height", "540",
+               "--gradient", "#101014:#2a1846", "--duration", "1", "-o", plate_clip)
+    plate = ctx.path("plate.png")
+    ffmpeg("-i", str(plate_clip), "-frames:v", "1", str(plate))
+    cues = ctx.path("cues.txt")
+    cues.write_text("0:00-0:02 The waveform rides over the plate\n"
+                    "0:02-0:05 One render.py --template audiogram call\n", encoding="utf-8")
+    after = ctx.path("after.mp4")
+    ctx.script("waveform.py", FIX / "music.m4a", "--image", plate, "--width", "960",
+               "--height", "540", "--position", "strip", "--vis-height", "0.3",
+               "--color", "0x39ff88", "--title", "Episode 12", "--text", cues,
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+def demo_auto_chapters(ctx):
+    """The left strip is the file with no markers; the right is the same file after
+    --auto-chapters, whose timestamps come from the measured pauses and scene cuts and whose
+    titles are deliberately 'Chapter 1..N' -- the skill proposes where, the caller says what."""
+    before = FIX / "shots.mp4"
+    tagged = ctx.path("auto.mp4")
+    ctx.script("metadata.py", before, "--auto-chapters", "--min-chapter", "1",
+               "--from", "scenes", "-o", tagged)
+    marks = []
+    if tagged.exists():
+        raw = run(["ffprobe", "-v", "error", "-print_format", "json", "-show_chapters",
+                   str(tagged)], capture=True)
+        total = duration(tagged) or 6.0
+        for chapter in json.loads(raw).get("chapters", []):
+            start = float(chapter["start_time"])
+            marks.append((start / total, "%d:%02d %s" % (int(start) // 60, int(start) % 60,
+                                                         chapter.get("tags", {}).get("title", "?"))))
+        ctx.note("%d chapters proposed from measured structure, titles are placeholders" % len(marks))
+    font = label_font()
+    after = ctx.path("after.mp4")
+    strip = ctx.path("auto_strip.png")
+    draws = ["drawbox=x=0:y=70:w=960:h=8:color=0x39ff88@0.7:t=fill"]
+    for idx, (frac, title) in enumerate(marks or [(0.0, "Chapter 1")]):
+        x = int(frac * 940)
+        draws.append("drawbox=x=%d:y=56:w=4:h=36:color=white:t=fill" % x)
+        draws.append("drawtext=fontfile='%s':text='%s':fontsize=20:fontcolor=white:"
+                     "x=%d:y=%d" % (esc(font), title.replace(":", "\\:"), min(x + 10, 700),
+                                    100 if idx % 2 else 20))
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=960x160", "-frames:v", "1",
+           "-vf", ",".join(draws), str(strip))
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(strip), "-vf",
+           "pad=960:540:0:190:0x101014,format=yuv420p", "-r", "10", "-c:v", "libx264",
+           "-preset", "veryfast", "-crf", "24", str(after))
+    return before, after
+
+
+def demo_proxy(ctx):
+    """Both sides are shown at the same size, which is the only honest way to compare a proxy
+    with its master: the proxy is smaller on disk, not on screen."""
+    before = FIX / "mandel.mp4"
+    after = ctx.path("after.mp4")
+    ctx.script("proxy.py", before, "--width", "320", "--quality", "34", "--fps", "12", "-o", after)
+    ctx.note("%.1f MB master, %.2f MB proxy"
+             % (before.stat().st_size / 1e6, after.stat().st_size / 1e6 if after.exists() else 0))
+    return before, after
+
+
+def demo_scenes_highlights(ctx):
+    """scenes.py finds the cuts and proposes ranges; cut.py --segments is what turns that list
+    into a reel. The proposal is a measurement, the edit is still a command someone ran."""
+    before = FIX / "shots.mp4"
+    edl = ctx.path("picks.txt")
+    after = ctx.path("after.mp4")
+    ctx.script("scenes.py", before, "--highlights", "2", "--min-scene", "1", "--edl", edl)
+    segments = SCENES_GALLERY_SEGMENTS
+    if not ctx.dry:
+        # the cut list is the one scenes.py wrote: the gallery printed a placeholder list while
+        # the build cut the measured one (#467 A243), and a missing EDL fell back to it silently
+        picked = [line.strip() for line in edl.read_text(encoding="utf-8").split()
+                  if line.strip()] if edl.exists() else []
+        segments = measured(",".join(picked), SCENES_GALLERY_SEGMENTS, "scenes.py --edl's ranges",
+                            None, "SCENES_GALLERY_SEGMENTS")
+        ctx.note("%d highlight ranges: %s" % (len(picked), segments))
+    ctx.script("cut.py", before, "--segments", segments, "--accurate", "--preset", "veryfast",
+               "-o", after)
+    return before, after
+
+
+def demo_metadata_chapters(ctx):
+    """Chapters are container metadata, not pixels: nothing about the picture changes. The
+    'after' side is the chapter list read back out of the file and drawn as a timeline strip,
+    which is what a player's chapter bar shows."""
+    before = FIX / "mandel.mp4"
+    tagged = ctx.path("tagged.mp4")
+    ctx.script("metadata.py", before, "--chapters", FIX / "chapters.txt",
+               "--title", "Demo episode", "-o", tagged)
+    marks = []
+    if tagged.exists():
+        raw = run(["ffprobe", "-v", "error", "-print_format", "json", "-show_chapters",
+                   str(tagged)], capture=True)
+        total = duration(tagged) or 6.0
+        for chapter in json.loads(raw).get("chapters", []):
+            start = float(chapter["start_time"])
+            marks.append((start / total, "%d:%02d %s" % (int(start) // 60, int(start) % 60,
+                                                         chapter.get("tags", {}).get("title", "?"))))
+        ctx.note("%d chapters written, streams copied" % len(marks))
+    strip = ctx.path("strip.png")
+    font = label_font()
+    draws = ["drawbox=x=0:y=70:w=960:h=8:color=0x39ff88@0.7:t=fill"]
+    for idx, (frac, title) in enumerate(marks or [(0.0, "Chapter")]):
+        x = int(frac * 940)
+        draws.append("drawbox=x=%d:y=56:w=4:h=36:color=white:t=fill" % x)
+        draws.append("drawtext=fontfile='%s':text='%s':fontsize=20:fontcolor=white:"
+                     "x=%d:y=%d" % (esc(font), title.replace(":", "\\:"), min(x + 10, 700),
+                                    100 if idx % 2 else 20))
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=960x160", "-frames:v", "1",
+           "-vf", ",".join(draws), str(strip))
+    after = ctx.path("after.mp4")
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(strip), "-vf",
+           "pad=960:540:0:190:0x101014,format=yuv420p", "-r", "10", "-c:v", "libx264",
+           "-preset", "veryfast", "-crf", "24", str(after))
+    return before, after
+
+
+def demo_scenes_shots(ctx):
+    """scenes.py --shots labels each detected shot static / pan / motion from a measured
+    optical-flow proxy -- a report, not an edit. The three shots in the fixture are three
+    unrelated sources concatenated, so the labels differ and this is not a guess."""
+    before = FIX / "shots.mp4"
+    out = ctx.script("scenes.py", before, "--shots", "--json", capture=True)
+    shots = []
+    if out:
+        found = json.loads(out)
+        shots = found.get("shots") or []
+        if shots:
+            ctx.note("%d shots: %s" % (len(shots), ", ".join(
+                "%.1fs-%.1fs %s" % (s.get("start", 0), s.get("end", 0), s.get("label", "?"))
+                for s in shots)))
+    total = duration(before) or 6.0
+    font = label_font()
+    draws = ["drawbox=x=0:y=70:w=960:h=8:color=0x39ff88@0.7:t=fill"]
+    for idx, s in enumerate(shots or [{"start": 0, "end": total, "label": "?"}]):
+        x0 = int((s.get("start", 0) / total) * 940)
+        draws.append("drawbox=x=%d:y=56:w=4:h=36:color=white:t=fill" % x0)
+        draws.append("drawtext=fontfile='%s':text='%s':fontsize=22:fontcolor=white:"
+                     "x=%d:y=%d" % (esc(font), s.get("label", "?"), x0 + 10,
+                                    100 if idx % 2 else 20))
+    strip = ctx.path("strip.png")
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=960x160", "-frames:v", "1",
+           "-vf", ",".join(draws), str(strip))
+    after = ctx.path("after.mp4")
+    ffmpeg("-loop", "1", "-t", "3", "-i", str(strip), "-vf",
+           "pad=960:540:0:190:0x101014,format=yuv420p", "-r", "10", "-c:v", "libx264",
+           "-preset", "veryfast", "-crf", "24", str(after))
+    return before, after
+
+
+def demo_silence_speech_aware(ctx):
+    """A 0.25 s breath sits inside a sentence, well under the 0.6 s default --min-silence, and a
+    1 s pause sits between sentences. Left is what a --min-silence low enough to also catch the
+    breath (0.2 s) cuts under plain detection -- it removes the breath along with the pause.
+    Right is --speech-aware at the ordinary 0.6 s --min-silence: the fine 0.12 s floor still
+    finds the breath, but it is shorter than --min-silence so it is kept and only the real
+    sentence-boundary pause is cut."""
+    before = ctx.path("breathy.mp4")
+    expr = "0.5*sin(2*PI*440*t)*(lt(t\\,3)+between(t\\,3.25\\,6)+gt(t\\,7))"
+    ffmpeg("-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % expr, "-t", "10", str(before))
+    naive_out = ctx.script("silence.py", before, "--threshold", "-35", "--min-silence", "0.2",
+                           "--margin", "0.1", "--list", "--json", capture=True)
+    naive = ctx.path("naive.mp4")
+    ctx.script("silence.py", before, "--threshold", "-35", "--min-silence", "0.2",
+               "--margin", "0.1", "--preset", "veryfast", "-o", naive)
+    aware_out = ctx.script("silence.py", before, "--threshold", "-35", "--min-silence", "0.6",
+                           "--speech-aware", "--list", "--json", capture=True)
+    after = ctx.path("after.mp4")
+    ctx.script("silence.py", before, "--threshold", "-35", "--min-silence", "0.6",
+               "--speech-aware", "--preset", "veryfast", "-o", after)
+    naive_cuts = len(json.loads(naive_out).get("silences", [])) if naive_out else "?"
+    aware = json.loads(aware_out) if aware_out else {}
+    breaths = aware.get("speech_aware", {}).get("breaths_kept", "?")
+    ctx.note("--min-silence 0.2 (low enough to also catch the 0.25s breath): %s silence(s) cut, "
+             "the breath among them; --min-silence 0.6 --speech-aware: only the real "
+             "sentence-boundary pause is cut, %s breath(s) kept" % (naive_cuts, breaths))
+    return naive, after
+
+
+def demo_filler_korean(ctx):
+    """2.19 built-in Korean list. Five timed words over a tone bed: the two 음/어 hesitations are
+    cut, 음악은 ("music"), which starts with the same syllable, is kept -- fillers match whole
+    words, never prefixes. The timings are the --words file a speech engine would write."""
+    before = ctx.path("speech.mp4")
+    words = [("오늘은", 0.3, 1.1), ("음", 1.4, 2.0), ("음악은", 2.3, 3.3), ("어", 3.6, 4.2), ("좋아요", 4.5, 5.5)]
+    filler = {"음", "어"}
+    voiced = "+".join("between(t\\,%s\\,%s)" % (a, b) for w, a, b in words if w not in filler)
+    hum = "+".join("between(t\\,%s\\,%s)" % (a, b) for w, a, b in words if w in filler)
+    expr = "(%s)*(%s)+0.35*sin(2*PI*140*t)*(%s)" % (SPEECH, voiced, hum)
+    ffmpeg("-f", "lavfi", "-i", "aevalsrc='%s':s=48000" % expr, "-t", "6", str(before))
+    words_json = ctx.path("words.json")
+    words_json.write_text(json.dumps({"language": "ko", "segments": [
+        {"words": [{"word": w, "start": a, "end": b} for w, a, b in words]}]}, ensure_ascii=False),
+        encoding="utf-8")
+    listed = ctx.script("silence.py", before, "--filler", "--words", words_json, "--filler-list",
+                        "--json", capture=True)
+    after = ctx.path("after.mp4")
+    ctx.script("silence.py", before, "--filler", "--words", words_json, "--margin", "0",
+               "--preset", "veryfast", "-o", after)
+    removed = (json.loads(listed).get("filler", {}).get("removed_words") if listed else None) or "?"
+    ctx.note("--filler-lang auto read 'ko' from the transcript; removed %s, kept 음악은; "
+             "%.2f s in, %.2f s out" % (", ".join(removed) if removed != "?" else "?", duration(before), duration(after)))
+    return before, after
+
+
+def make_offcentre_motion(path):
+    ffmpeg("-f", "lavfi", "-i", "color=c=0x101014:s=960x540", "-f", "lavfi",
+           "-i", "color=c=0xff5533:s=90x90", "-filter_complex",
+           "[0:v][1:v]overlay=x='740+40*sin(2*PI*0.4*t)':y=225", "-t", "4",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
+           str(path))
+
+
+def demo_fit_crop_check(ctx):
+    source = ctx.path("offcentre.mp4")
+    make_offcentre_motion(source)
+    before, after = ctx.path("centre.mp4"), ctx.path("after.mp4")
+    options = ("--aspect", "9:16", "--fit", "crop", "--preset", "veryfast", "--json")
+    centre = ctx.script("fit.py", source, *options, "-o", before, capture=True)
+    right = ctx.script("fit.py", source, *options, "--crop-x", "1", "-o", after, capture=True)
+    if not ctx.dry:
+        result = json.loads(centre)
+        warnings = result.get("diagnostics", {}).get("warnings", [])
+        if not any(w["code"] == "crop_content_off_centre" for w in warnings):
+            raise BuildError("fit.py did not warn about motion outside the centre crop")
+        if json.loads(right).get("crop_check", {}).get("verdict") != "ok":
+            raise BuildError("the right-anchored crop did not keep the moving block")
+    return before, after
+
+
+def demo_motion_centre(ctx):
+    """cropdetect.py --motion-centre reports where the motion sits per second; it never picks a
+    reframe. Left is a naive centre crop, which clips the moving subject sitting off to one
+    side; right is a crop.py window placed on the measured centroid instead."""
+    before = ctx.path("offcentre.mp4")
+    make_offcentre_motion(before)
+    out = ctx.script("cropdetect.py", before, "--motion-centre", "--json", capture=True)
+    # Matches this fixture's own measured centroid (deterministic -- verified across reruns) so
+    # _DryCtx's doc-generation pass (which never actually runs cropdetect.py) records the same
+    # --x the real build below computes, instead of drifting from an arbitrary placeholder.
+    x_frac = 0.817
+    if out:
+        found = json.loads(out)
+        points = [p for p in (found.get("motion_centre") or []) if p.get("x_frac") is not None]
+        if points:
+            x_frac = sum(p["x_frac"] for p in points) / len(points)
+            ctx.note("measured motion centroid: x_frac=%.2f (average of %d samples)"
+                     % (x_frac, len(points)))
+    crop_w, crop_h = 304, 540
+    centre = ctx.path("centre.mp4")
+    ctx.script("crop.py", before, "--x", (960 - crop_w) // 2, "--y", 0,
+               "--width", crop_w, "--height", crop_h, "--preset", "veryfast", "-o", centre)
+    target_x = max(0, min(960 - crop_w, int(x_frac * 960 - crop_w / 2)))
+    after = ctx.path("after.mp4")
+    ctx.script("crop.py", before, "--x", target_x, "--y", 0, "--width", crop_w,
+               "--height", crop_h, "--preset", "veryfast", "-o", after)
+    return centre, after
+
+
+def demo_switch_energy(ctx):
+    """multicam.py --switch energy auto-switches to whichever camera is loudest at each moment,
+    respecting --min-shot; left is a fixed single-camera cut for contrast."""
+    before = ctx.path("single_cam.mp4")
+    ctx.script("multicam.py", FIX / "motion.mp4", FIX / "camb.mp4", "--switch", "0-6:0",
+               "--width", "960", "--height", "540", "--fps", "25", "--preset", "veryfast",
+               "-o", before)
+    after = ctx.path("after.mp4")
+    ctx.script("multicam.py", FIX / "motion.mp4", FIX / "camb.mp4", "--switch", "energy",
+               "--min-shot", "1", "--width", "960", "--height", "540", "--fps", "25",
+               "--preset", "veryfast", "-o", after)
+    return before, after
+
+
+CAPTIONS, PICTURE, AUDIO, DELIVERY, PROJECTS = (
+    "Captions & text", "Picture", "Audio", "Delivery & checks", "Projects & inspection")
+
+# One demo. `kind` is "video" (side-by-side clips) or "wave" (two showwavespic plots, for work
+# only the ears can hear). `needs` is what this machine must have for the demo to render at all:
+# a script name for the font check ("ja") or "filter:NAME" for an optional ffmpeg filter --
+# either may also be a tuple. `labels` overrides the two captions burnt into the comparison.
+Demo = namedtuple("Demo", "name group title look builder kind needs labels",
+                  defaults=(None, ("BEFORE", "AFTER")))
+
+_ROWS = [
+    # name, group, title, what to look for, builder, comparison kind, requirements[, labels]
+    ("captions_en", CAPTIONS, "Burned-in captions (English)",
+     "Plain-text cues become an SRT and are rendered by libass -- outline and margin come from the flags, not from a template.",
+     demo_captions_en, "video", "latin"),
+    ("captions_phrase", CAPTIONS, "Phrase-aware line breaks",
+     "The same cue at the same size, with one flag different. Left is 1.15's wrap, which only minimised the widest line and left `the` and `con` stranded at the end of a line; right is 1.16's default, which never breaks inside a word and never ends a line on an article or a preposition. The text itself is untouched -- the skill never rewrites a caption to make it fit.",
+     demo_captions_phrase, "video", "latin", ("GREEDY WRAP", "PHRASE WRAP")),
+    ("captions_fitsize", CAPTIONS, "Caption size fitted to the cue",
+     "The same cue file at the same destination, with one flag different. Left is 1.16: at the TikTok caption size the cue cannot fit two lines, so it is split into two consecutive cues and half the sentence arrives late. Right is 1.17's default: the size dropped until the whole sentence is on screen at once, and stopped well above the 4.5 %-of-frame-height floor. The text is untouched -- the skill never rewrites a caption to make it fit.",
+     demo_captions_fitsize, "video", "latin", ("--fit-size off (1.16)", "--fit-size on (1.17)")),
+    ("captions_multitrack", CAPTIONS, "Three subtitle tracks in one file",
+     "Nothing is burnt in and nothing is re-encoded: the video and audio are copied bit for bit and three SRTs ride along as toggleable, language-tagged streams. The right half is the track list ffprobe reads back.",
+     demo_captions_multitrack, "video", "latin", ("ONE FILE, NO SUBTITLES", "3 TAGGED TRACKS")),
+    ("captions_ja", CAPTIONS, "Japanese captions",
+     "The font is chosen per script: Japanese cues get a CJK face automatically, so no box-glyph tofu appears.",
+     demo_captions_ja, "video", "ja"),
+    ("captions_zh", CAPTIONS, "Chinese captions",
+     "Same command, Han text: line breaking and the font switch are handled without a --font flag.",
+     demo_captions_zh, "video", "zh"),
+    ("captions_ko", CAPTIONS, "Korean captions",
+     "Hangul wins script detection even when Latin words are mixed into the same cue.",
+     demo_captions_ko, "video", "ko"),
+    ("captions_ar", CAPTIONS, "Arabic captions",
+     "Right-to-left text shaped by libass; the Latin fragments inside it stay left-to-right.",
+     demo_captions_ar, "video", "ar"),
+    ("captions_pop_karaoke", CAPTIONS, "Animated pop captions with karaoke",
+     "Each cue scales in, and the highlight colour walks word by word across the line.",
+     demo_captions_pop_karaoke, "video", "latin"),
+    ("captions_emoji", CAPTIONS, "Emoji captions in colour",
+     "Left: emoji as this ffmpeg's libass draws them (monochrome, or missing). Right: one PNG per emoji cluster composited over the caption, with the ASS reserving the exact gap -- the text does not move.",
+     demo_captions_emoji, "video", "latin"),
+    ("lower_third_hindi", CAPTIONS, "Hindi lower third, shaped",
+     "Left: the same text through drawtext -- the i-matra is not reordered and the final matra is dropped. Right: graphics.py routing Devanagari through libass automatically. drawtext does not use harfbuzz on any build.",
+     demo_lower_third_hindi, "video", "hi"),
+    ("lower_third", CAPTIONS, "Lower third",
+     "Name and role slide in from the left over the picture and slide out again -- no image asset involved.",
+     demo_lower_third, "video", "latin"),
+    ("title_card", CAPTIONS, "Title card",
+     "A centred title and subtitle fade in over the first seconds and leave the rest of the clip untouched.",
+     demo_title_card, "video", "latin"),
+
+    ("logo_overlay", PICTURE, "Logo overlay with fade",
+     "The semi-transparent logo fades in at 0.5 s and out before the end; the underlying picture is unchanged.",
+     demo_logo_overlay, "video", None),
+    ("hdr_tonemap", PICTURE, "HDR10 to SDR",
+     "The PQ / BT.2020 source is tone-mapped to BT.709: on an SDR screen the 'before' is the washed-out one.",
+     demo_hdr_tonemap, "video", None),
+    ("reframe_crop", PICTURE, "16:9 to 9:16 by cropping",
+     "The vertical frame is cut out of the centre of the wide one -- full height, sides lost.",
+     demo_reframe_crop, "video", None),
+    ("fit_crop_check", PICTURE, "Check a vertical crop for lost motion",
+     "The centre crop reports crop_content_off_centre and suggests a shift right. The crop with --crop-x 1 keeps the moving block and reports crop_check.verdict: ok.",
+     demo_fit_crop_check, "video", None, ("CENTRE CROP", "RIGHT-ANCHORED CROP")),
+    ("reframe_talk", PICTURE, "A talking head made vertical (AI-generated footage)",
+     "The 9:16 frame is placed on the speaker with --crop-x 0.27 instead of the centre, where it would cut her face in half. The source is AI-generated footage, not a real person.",
+     demo_reframe_talk, "video", None),
+    ("filler_en", AUDIO, "Filler words cut from real speech (AI-generated footage)",
+     "\"Hey, er, hello there. Well, um, good morning.\" Right is silence.py --filler: the er and the um are gone and the sentence plays straight through. The source is AI-generated footage, not a real person.",
+     demo_filler_en, "video", None, ("BEFORE", "--FILLER")),
+    ("pauses_en", AUDIO, "Pauses tightened, more room left after a sentence (AI-generated footage)",
+     "\"Hey, er, hello there. Well, um, good morning. Hope you're having a good day.\" Right is silence.py with --sentence-min-silence and --sentence-margin-tail: the 1.5 s pauses after each sentence shrink to 0.4 s (0.3 s kept after the sentence, 0.1 s before the next), a pause inside a sentence would keep 0.15 s. The source is AI-generated footage, not a real person.",
+     demo_pauses_en, "video", None, ("BEFORE", "TIGHTENED")),
+    ("reframe_pad", PICTURE, "16:9 to 9:16 by padding",
+     "Nothing is lost: the wide frame is kept whole and the gap above and below is filled with a blurred copy.",
+     demo_reframe_pad, "video", None),
+    ("speed_up", PICTURE, "Speed change to hit a duration",
+     "An 8 s clip retimed to 4 s with pitch-corrected audio. The JSON result reports large_speed_change with a factor of 2.",
+     demo_speed_up, "video", None),
+    ("reverse", PICTURE, "Reverse",
+     "The life pattern runs backwards -- cells un-die; the audio is reversed with it.",
+     demo_reverse, "video", None),
+    ("join_fade", PICTURE, "Join with a cross fade",
+     "Two clips of different content become one; watch the 0.8 s dissolve in the middle.",
+     demo_join_fade, "video", None),
+    ("join_fadeblack", PICTURE, "Join through black",
+     "The same join with fadeblack: the cut dips to black instead of blending the two pictures.",
+     demo_join_fadeblack, "video", None),
+
+    ("silence_removal", AUDIO, "Silence removal",
+     "The 'after' side runs out of material and freezes: that held frame is the part of the timeline that was cut. "
+     "The --timemap CSV beside it says where each kept range sits in the source and in the cut, to re-time subtitles.",
+     demo_silence_removal, "video", None),
+    ("loudness", AUDIO, "Loudness normalisation to -14 LUFS",
+     "Two showwavespic plots: the quiet input on the left, the same programme brought up to broadcast level on the right without clipping.",
+     demo_loudness, "wave", None),
+    ("downmix_51", AUDIO, "5.1 to stereo downmix",
+     "Six discrete tones folded into two channels with the ITU-R BS.775 weights -- the centre and surrounds are still audible, the LFE is dropped, and nothing clips.",
+     demo_downmix_51, "wave", None),
+    ("bgm_ducking", AUDIO, "Music bed with ducking",
+     "The bed drops by 12 dB whenever the speech-like track is active and comes back up in the pauses.",
+     demo_bgm_ducking, "wave", None),
+    ("tempo_exact_length", AUDIO, "Faster at the same pitch, to an exact length",
+     "The bed plays 1.25x faster without its pitch moving, resampled to 44.1 kHz, and is cut at sample 176400 (4 s): "
+     "the right-hand plot holds more of the bed's pulses in half the time. The result's length_samples step counts the written samples.",
+     demo_tempo_exact_length, "wave", None),
+
+    ("export_reels", DELIVERY, "Reels export, then checked",
+     "One command produces the 1080x1920 deliverable; check.py then reports the spec row by row and exits non-zero on a FAIL.",
+     demo_export_reels, "video", None),
+
+    ("fit_blur", PICTURE, "16:9 to 9:16 on a blurred background",
+     "Nothing is cropped and there are no black bars: the whole wide frame sits centred on a blurred, dimmed copy of itself.",
+     demo_fit_blur, "video", None),
+
+    ("template_tiktok", DELIVERY, "TikTok delivery template",
+     "One command turns the master into the 1080x1920 deliverable: reframe, burned-in captions kept clear of TikTok's own UI, loudness to -14 LUFS, the tiktok export preset and check.py's platform rows.",
+     demo_template_tiktok, "video", "latin"),
+
+    ("render_project", PROJECTS, "Whole edit from one project file",
+     "Clips, a transition, captions and a title card described as JSON and rendered in one pass.",
+     demo_render_project, "video", "latin"),
+    ("render_pip", PROJECTS, "A keyed video layer in a project",
+     "The 16:9 master is reframed to 9:16 on a blurred background, then a green-screen clip is keyed and composited at the bottom. The overlays stage runs after fit, so \"scale\": 540 is the full width of the delivered frame.",
+     demo_render_pip, "video", None),
+    ("contact_sheet", PROJECTS, "Contact sheet",
+     "Twelve timecoded frames in one PNG: the fastest way to confirm an edit landed where it should.",
+     demo_contact_sheet, "video", None),
+
+    ("cut_accurate", PICTURE, "Lossless cut vs. accurate cut",
+     "Both sides asked for the same 2.05 s start. The stream copy could only snap to the nearest keyframe, so its first frame is from earlier in the clip; --accurate re-encodes and starts on the frame that was asked for.",
+     demo_cut_accurate, "video", None, ("LOSSLESS", "--ACCURATE")),
+    ("cut_remove", PICTURE, "Cut out a range, keep the rest",
+     "cut.py --remove 2-4 drops two seconds from the middle and joins what is left: the 'after' side jumps from 2 s to 4 s of the source and finishes two seconds early.",
+     demo_cut_remove, "video", None, ("SOURCE", "--REMOVE 2-4")),
+    ("cut_smart", PICTURE, "Frame-exact cut, re-encoding only the ends",
+     "cut.py --smart cuts 1.3-6.6 s frame-exactly but re-encodes only 1.3-2 s and 6-6.6 s, matched to the source's H.264 parameters; the whole GOPs between are the source's own packets, checked against it before the file is written. The build fails unless the result is a verified smart cut.",
+     demo_cut_smart, "video", None, ("SOURCE", "--SMART 1.3-6.6")),
+    ("cut_edit_list", PICTURE, "Lossless cut that starts where asked",
+     "Both sides are stream copies of the same 2.05 s request. The default shifts the copy's timestamps to zero, so the keyframe's pre-roll plays first (start_snapped: true); --edit-list keeps the MP4 edit list that hides it, so the picture starts at 2.05 s (start_snapped: false, stored_preroll_seconds says how much is hidden). A player that ignores edit lists shows the pre-roll.",
+     demo_cut_edit_list, "video", None, ("DEFAULT COPY", "--EDIT-LIST")),
+    ("beats_snap", PICTURE, "Cuts that land on the beat",
+     "Both cuts asked for 2.03 s. The right one moved 30 ms to the nearest measured onset, so its first frame lands on a click instead of just after one; the waveform is the evidence. The tempo, the beat list and the confidence are in the JSON -- nothing is snapped to a grid the audio does not support, and below --min-confidence the cut refuses rather than inventing one.",
+     demo_beats_snap, "wave", None, ("--snap none", "--snap beats")),
+    ("crop_rect", PICTURE, "Crop to an exact rectangle",
+     "A literal 640x480 window at x=320, y=120 in the source frame -- no aspect maths, no auto-centring; the rectangle is the caller's and is refused rather than rounded if it does not fit.",
+     demo_crop_rect, "video", None),
+    ("cropdetect_crop", PICTURE, "Detect letterbox bars, then remove them",
+     "cropdetect.py measures the bars and prints the rectangle; crop.py is what actually cuts them off. Measuring and deciding stay two commands.",
+     demo_cropdetect_crop, "video", None),
+    ("pad_timeline", PICTURE, "Pad the timeline with black",
+     "A second of black and silence before and after the clip -- the TIMELINE grows, the frame does not (that is fit.py --fit pad).",
+     demo_pad_timeline, "video", None),
+    ("freeze_hold", PICTURE, "Freeze frame under a title",
+     "The clip stops dead at 2 s for a beat and a half while the title card sits over it, then carries on -- everything after the freeze is pushed later, nothing is lost.",
+     demo_freeze_hold, "video", "latin"),
+    ("loop_times", PICTURE, "Loop a short clip",
+     "A 1.5 s clip repeated four times back to back. The seam is not smoothed: a clip that does not already loop cleanly shows its cut (--crossfade, below, fades it).",
+     demo_loop_times, "video", None),
+    ("loop_crossfade", PICTURE, "A seamless loop",
+     "The same clip looped four times, plain (left) and with loop.py --crossfade 0.4 (right): the plain loop jumps back at every seam, the crossfaded one fades the clip's last 0.4 s into its first, so each repeat runs on into the next.",
+     demo_loop_crossfade, "video", None),
+    ("insert_still", PICTURE, "A still card dropped into the timeline",
+     "insert.py turns one PNG into a 2 s clip with a slow zoom and pan, and join.py cross-fades it in between the two shots.",
+     demo_insert_still, "video", None),
+    ("sequence_frames", PICTURE, "Numbered stills into a clip",
+     "Twenty-four PNGs named frame_0001.png onwards become one 8 fps clip; the frame list is resolved and checked on disk before ffmpeg is asked to read it.",
+     demo_sequence_frames, "video", None, ("FIRST FRAME", "SEQUENCE")),
+    ("speedramp", PICTURE, "Speed ramp",
+     "Three constant-speed segments in one pass: 2x, then a 0.35x slam for the beat, then 1.5x out. Audio is pitch-corrected through all three.",
+     demo_speedramp, "video", None),
+    ("denoise", PICTURE, "Denoise",
+     "hqdn3d at --strength high takes the grain out; look closely and the fine detail softens with it, which is the trade the flag is making.",
+     demo_denoise, "video", None),
+    ("deinterlace", PICTURE, "Deinterlace",
+     "The combing on moving edges -- alternate lines from two different moments -- is woven back into whole progressive frames by yadif.",
+     demo_deinterlace, "video", None),
+    ("stabilize", PICTURE, "Stabilize shaky footage",
+     "vidstab's two passes cancel the handheld jitter and crop in 5% to hide the edges that smoothing exposes; the frame stops wandering.",
+     demo_stabilize, "video", ("filter:vidstabdetect", "filter:vidstabtransform")),
+    ("straighten", PICTURE, "Straighten a tilted horizon",
+     "A 5 degree tilt taken back out. --fit crop scales up just enough that the rotated corners leave no gap, costing a thin border of picture.",
+     demo_straighten, "video", None),
+    ("redact_blur", PICTURE, "Redact a rectangle",
+     "One region blurred for the whole clip and the rest of the frame untouched. The rectangle has to be given: this tool finds no faces and no plates.",
+     demo_redact_blur, "video", None),
+    ("delogo", PICTURE, "Remove a fixed logo",
+     "The white block is a stand-in for a burned-in logo. redact.py --mode delogo fills that rectangle from the picture around it. A logo that moves, or text that needs inpainting, is out of scope: the box is the caller's, and it has to sit 1 px inside the frame.",
+     demo_delogo, "video", None),
+    ("sphere_flat", PICTURE, "360 panorama to a flat view",
+     "v360 maps the 2:1 equirectangular source onto a rectilinear camera pointed 40 degrees right and 10 degrees down -- the same viewport a headset would show, baked into a file.",
+     demo_sphere_flat, "video", "filter:v360"),
+    ("greenscreen", PICTURE, "Green screen onto a generated background",
+     "background.py draws the gradient plate from nothing (there is no input file), then overlay.py keys the chroma green out of the subject and composites it on top.",
+     demo_greenscreen, "video", None),
+    ("alpha_layer", PICTURE, "A graphic rendered as its own alpha layer",
+     "background.py --transparent makes an empty canvas, graphics.py --keep-alpha draws a lower third on it and writes it with its alpha (QuickTime Animation here; ProRes 4444 by default), checked frame by frame, and overlay.py lays that one layer over the footage. The layer can go to an editor as it is: nothing but the graphic was ever in its picture.",
+     demo_alpha_layer, "video", None),
+    ("overlay_place", PICTURE, "Pieces of one layer at their own times",
+     "overlay.py --place lays two ranges of the fractal clip on the test pattern: its first 1.5 s at 0.5 s, its 4-5.5 s at 3.5 s. Between them the layer is hidden and the main picture is untouched -- one pass, no full-length mostly-transparent layer to render first.",
+     demo_overlay_place, "video", None),
+    ("color_lut", PICTURE, "Apply a .cube LUT",
+     "A 3D LUT applied at full strength: highlights warm, shadows cool. The same flag takes a camera vendor's Log-to-709 transform or a creative look -- the file decides, the tool does not.",
+     demo_color_lut, "video", None),
+    ("color_correct", PICTURE, "Primary colour correction",
+     "Typed values, not a look: exposure +0.25, contrast 1.25, saturation 1.3, white balance to 7000 K, gamma 1.1 -- each one a number the caller chose.",
+     demo_color_correct, "video", None),
+    ("color_legalize", PICTURE, "Broadcast legal levels",
+     "A grade that runs hot, before and after color.py --legalize bt709: each half shows the picture over its luma waveform, whose green graticule marks the digital scale. The clamp acts before encoding, on the 4:2:0 picture the encoder receives (16-235 luma, 16-240 chroma); the encoder's error at the clamped edges can put a few decoded samples back out. The run then measures the encoded file (check.py --levels counts the same way), which passes with up to 1 % of a frame's luma or chroma samples out of range, and the build fails unless that check passes; --quality 8 keeps this pattern inside the allowance.",
+     demo_color_legalize, "video", None),
+    ("grid_2x2", PICTURE, "2x2 comparison grid",
+     "Four clips of different content in one frame, each letterboxed into its cell rather than stretched, with the source name burnt into the corner and only input 0's audio carried through.",
+     demo_grid_2x2, "video", "latin"),
+    ("broll_cutaway", PICTURE, "B-roll cutaway",
+     "From 2 s to 5 s the picture cuts away to the insert while the interview audio keeps running underneath, then comes back at its own time -- the output is exactly as long as the A-roll.",
+     demo_broll_cutaway, "video", None),
+    ("multicam_switch", PICTURE, "Two cameras, one cut list",
+     "Camera B's audio is the same event 0.6 s offset; multicam.py measures that by cross-correlation, aligns both, then cuts between them on the ranges it was given.",
+     demo_multicam_switch, "video", None),
+
+    ("sync_mic", AUDIO, "External mic aligned to the camera",
+     "The mic was started after the camera, so its envelope begins late in its own file; after the sync the same speech sits where the camera's does. Left is the mic as recorded, right is the track that ends up on the picture -- the measured offset and its confidence are printed by the command.",
+     demo_sync_mic, "wave", None, ("MIC AS RECORDED", "ALIGNED")),
+    ("waveform_render", AUDIO, "Audio rendered as a waveform video",
+     "An audio-only file has nothing to show; showwaves draws the amplitude as it plays, and the rendered clip carries the same audio it is drawing.",
+     demo_waveform_render, "video", None, ("AUDIO ONLY", "WAVEFORM")),
+    ("cut_waveform", AUDIO, "Inspect a cut on the source and edited waveforms",
+     "The source tone gets louder at 2 s. After trimming away the quiet opening, the same cut is at 0 s on the edited audio. Each waveform PNG marks the cut on its own timeline.",
+     demo_cut_waveform, "video", None, ("SOURCE", "TRIMMED")),
+    ("audiogram", AUDIO, "Audio episode as a shareable audiogram",
+     "The same track as the waveform demo, this time over a still plate with the episode title and burnt-in captions -- one waveform.py --image call (or render.py --template audiogram). The picture is generated by background.py: nothing was downloaded and no cover art was invented.",
+     demo_audiogram, "video", "latin", ("AUDIO ONLY", "AUDIOGRAM")),
+
+    ("proxy", DELIVERY, "Proxy vs. master, shown at the same size",
+     "Both halves are scaled to the same cell, which is the honest comparison: the proxy is smaller on disk and cheaper to decode, not smaller on screen. The softness is the point of it.",
+     demo_proxy, "video", None, ("MASTER", "PROXY")),
+
+    ("scenes_highlights", PROJECTS, "Scene detection into a highlight reel",
+     "scdet finds the hard cuts, scenes.py ranks the scenes and writes the ranges as an EDL, and cut.py --segments is what turns that proposal into a reel. The ranking is a proxy for interest, not a judgement of it.",
+     demo_scenes_highlights, "video", None),
+    ("metadata_chapters", PROJECTS, "Chapter marks written into the container",
+     "Nothing in the picture changes -- every stream is copied bit for bit. The right half is the chapter list read back out of the file with ffprobe and drawn as the timeline strip a player would show.",
+     demo_metadata_chapters, "video", "latin", ("NO CHAPTERS", "CHAPTER MARKS")),
+    ("metadata_auto_chapters", PROJECTS, "Chapters proposed from measured structure",
+     "The left strip is the file with no markers; the right is the same file after --auto-chapters, whose timestamps come from the measured pauses and scene cuts and whose titles are deliberately 'Chapter 1..N' -- the skill proposes where, the caller says what.",
+     demo_auto_chapters, "video", "latin", ("NO CHAPTERS", "PROPOSED CHAPTERS")),
+
+    ("scenes_shots", PROJECTS, "Shots labelled static / pan / motion",
+     "scenes.py --shots measures an optical-flow proxy per detected shot and reports a label for each -- a measurement, not an edit. The strip shows the three shots in the fixture with the labels actually returned.",
+     demo_scenes_shots, "video", None),
+    ("matroska_audio_cut", AUDIO, "An accurate cut to Matroska audio",
+     "The left waveform shows the source. The right shows the selected three seconds, verified as FLAC audio in a .mka file.",
+     demo_matroska_audio_cut, "wave", None, ("SOURCE", "MATROSKA AUDIO")),
+    ("silence_speech_aware", AUDIO, "Speech-aware silence removal keeps the breaths",
+     "A 0.25 s breath sits inside a sentence and a 1 s pause sits between sentences. Left uses a --min-silence low enough to catch the breath too, so plain detection cuts both; right is --speech-aware at the ordinary --min-silence -- its finer 0.12 s floor still measures the breath, but the breath is shorter than --min-silence so it is kept, and only the real sentence-boundary pause is cut.",
+     demo_silence_speech_aware, "wave", None, ("--MIN-SILENCE 0.2 (cuts the breath)", "--SPEECH-AWARE (breath kept)")),
+    ("filler_korean", AUDIO, "Korean filler words cut by the built-in list",
+     "Five timed words, two of them the hesitations 음 and 어 (the low hum). Right is silence.py --filler with the transcript's language read as Korean: both hesitations are gone, and 음악은 (music), which starts with the same syllable, stays -- a filler matches a whole word, never a prefix.",
+     demo_filler_korean, "wave", None, ("BEFORE", "--FILLER (KO)")),
+    ("motion_centre_crop", PICTURE, "Crop centred on the measured motion",
+     "cropdetect.py --motion-centre reports where the motion sits per second; it never picks a reframe itself. Left is a naive centre crop that clips the moving subject sitting off to one side; right is crop.py aimed at the measured centroid instead.",
+     demo_motion_centre, "video", None, ("CENTRE CROP", "MOTION-CENTRED CROP")),
+    ("multicam_switch_energy", PICTURE, "Auto-switch to whichever camera is loudest",
+     "The literal 'energy' switch list auto-cuts to whichever of the two cameras is loudest at each moment, respecting --min-shot; left is a fixed single-camera cut for contrast.",
+     demo_switch_energy, "video", None, ("SINGLE CAMERA", "--SWITCH ENERGY")),
+]
+
+DEMOS = [Demo(*row) for row in _ROWS]
+GROUP_ORDER = [CAPTIONS, PICTURE, AUDIO, DELIVERY, PROJECTS]
+BY_NAME = {d.name: d for d in DEMOS}
+
+# Tools whose whole output is a table, a JSON document or an HTML file: there is no before/after
+# picture to render, so they are listed in the gallery's Inspection section with the command
+# instead. tests/test_orchestration.py reads this list -- every other script under scripts/ must appear in
+# at least one demo's command, so a tool cannot quietly arrive with nothing to look at.
+INSPECTION = [
+    ("probe.py", "python3 scripts/probe.py demos/out/render_project_after.mp4 --compact",
+     "duration, fps and VFR suspicion, frame size, codecs, pixel format and colour tags, audio "
+     "channels and sample rate -- one JSON document, or one line per file with --compact."),
+    ("verify.py", "python3 scripts/verify.py ~/Footage --quick --report verify.md",
+     "runs the whole toolchain over your own files and prints a PASS/FAIL table, one row per "
+     "tool per file. Synthetic fixtures cannot show what a real phone container does; this can."),
+    ("batch.py", "python3 scripts/batch.py ~/Footage --recipe batch.json --dry-run",
+     "applies one recipe to a folder with a content-hash cache, printing what it would run, "
+     "what it skipped as unchanged, and where each output lands."),
+    ("check.py --content", "python3 scripts/check.py final.mp4 --platform youtube --content",
+     "adds content rows to the platform check: black frames, frozen frames, the share of "
+     "silence, and short dropouts (digital silence for 20 ms to 1 s with sound on both sides, "
+     "the mark of lost audio at a join), single-frame flashes (one frame unlike both of its "
+     "neighbours) and a first frame of one flat colour. The dropouts and flashes rows list the "
+     "first five times; a row that does not pass names a fix."),
+    ("check.py --levels", "python3 scripts/check.py spot.mxf --platform broadcast --levels ebu-r103",
+     "counts the luma and chroma samples outside the legal range in every frame (bt709 16-235 / "
+     "16-240, or EBU R 103's -1..103 % luma) and adds a legal levels row with the worst frame's time "
+     "and min/max Y/U/V; the JSON has the shares per window. color.py --legalize clamps after the "
+     "4:2:0 conversion and measures the file it wrote the same way -- a change no preview would show, "
+     "which is why it is a number here and not a GIF."),
+    ("check.py --expect-changed", "python3 scripts/check.py new.mp4 --platform custom --compare old.mp4 --expect-changed 12-18",
+     "after a small re-render, says whether anything changed outside the span the edit was meant "
+     "to touch: both pictures are subtracted frame by frame on a 32x18 grid, and a change_scope row "
+     "FAILs with the time and place of a change nobody declared, WARNs when the declared span did "
+     "not change, and FAILs when the two files could not be compared. A 200x60 box on a 1080p "
+     "frame leaves the whole-frame SSIM above 0.99; this row finds it."),
+    ("report.py", "python3 scripts/report.py --before raw.mov --after final.mp4 -o report.html",
+     "a single self-contained HTML page: before/after contact sheets, loudness, the platform "
+     "check table and the exact commands. It is a file to open, not a picture to embed here."),
+]
+
+
+# --------------------------------------------------------------------------- docs
+DOC_HEADER = """# Demo gallery
+
+For a complete edit of spoken footage, follow the
+[subtitled Reels walkthrough](../examples/reels-walkthrough.md).
+
+The pictures on this page come from `demos/footage/`: clips AI-generated with Google Veo (the people
+and places in them do not exist) and a few shot on a phone. The sound is synthetic, so every pause
+and level a demo measures is a fact of the build; a few demos (HDR10, a panorama, a frame sequence)
+use a synthetic picture too. `reframe_talk`, `filler_en` and `pauses_en` use AI-generated speech. Each "after" is produced by running one of this
+repo's scripts on its source. Rebuild the whole page's material with:
+
+```bash
+python3 demos/build.py            # or: npm run demo
+python3 demos/build.py --list     # what gets built
+python3 demos/build.py --only captions_ja
+```
+
+The full-resolution `<name>_before.mp4`, `<name>_after.mp4` and side-by-side `<name>.mp4` land
+in `demos/out/` (gitignored). Only the small previews below are committed, and the build fails
+if any of them exceeds 500 KB.
+
+In every preview the left half is the input and the right half is what the command produced --
+except where the burnt-in labels say otherwise, for a demo comparing two settings (a lossless
+cut against an accurate one) rather than a before against an after.
+
+The tools at the bottom, under **Inspection**, have no picture: they answer a question instead
+of changing one, so the command is the demo.
+"""
+
+
+INSPECTION_HEADER = """These tools answer a question instead of changing a picture, so there is
+nothing to put a before and an after next to. Each one prints a table, a JSON document or writes
+an HTML file; the command is the demo.
+"""
+
+
+def write_docs(path=ROOT / "docs" / "demos.md"):
+    """Generate the gallery page from the same table the builder runs, so the command printed
+    under a preview cannot drift from the command that made it."""
+    lines = [DOC_HEADER]
+    for group in GROUP_ORDER:
+        lines.append("\n## %s\n" % group)
+        for demo in DEMOS:
+            if demo.group != group:
+                continue
+            lines.append("### %s\n" % demo.title)
+            lines.append("![%s](demos/%s.gif)\n" % (demo.title, demo.name))
+            lines.append("```bash\n%s\n```\n" % "\n".join(_commands_for(demo.name)))
+            lines.append("**Look for:** %s\n" % demo.look)
+    lines.append("\n## Inspection\n")
+    lines.append(INSPECTION_HEADER)
+    for tool, command, what in INSPECTION:
+        lines.append("### %s\n" % tool)
+        lines.append("```bash\n%s\n```\n" % command)
+        lines.append("**No picture:** %s\n" % what)
+    lines.append("\n---\n")
+    lines.append("Missing a feature you use? A `feat` PR is expected to add a demo here and in "
+                 "`demos/build.py` -- see [CONTRIBUTING.md](../CONTRIBUTING.md).\n")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+class _DryCtx(Ctx):
+    """Records what a builder would run without running any of it."""
+
+    dry = True
+
+    def script(self, tool, *args, capture=False):
+        self.commands.append(" ".join(["python3", "scripts/" + tool] + [_short(a) for a in args]))
+        return ""
+
+    def expect(self, path, what):
+        pass  # nothing ran, so nothing was written: keep recording the commands that follow
+
+
+def _commands_for(name):
+    """Replay a demo's builder against a recorder, so the docs print the exact command the
+    build runs rather than a hand-copied approximation of it."""
+    ctx = _DryCtx(name, verbose=False)
+    # a builder that writes a side file (an SRT, a cue list) before its command needs the folder:
+    # without it the replay stopped there and the page printed "..." for the commands
+    OUT.mkdir(parents=True, exist_ok=True)
+    global ffmpeg, duration
+    real_ffmpeg, real_duration = ffmpeg, duration
+    ffmpeg, duration = (lambda *a: None), (lambda p: 0.0)
+    try:
+        BY_NAME[name].builder(ctx)
+    except Exception:  # a builder that inspects its own output stops early; its commands stand
+        pass
+    finally:
+        ffmpeg, duration = real_ffmpeg, real_duration
+    return ctx.commands or ["python3 scripts/%s.py ..." % name]
+
+
+# --------------------------------------------------------------------------- driver
+def build_demo(name, font, verbose=True):
+    demo = BY_NAME[name]
+    group, title, builder, kind = demo.group, demo.title, demo.builder, demo.kind
+    reason = missing_requirement(demo.needs)
+    if reason:
+        return {"name": name, "status": "skipped", "reason": reason}
+    print("==> %s (%s)" % (name, group))
+    ctx = Ctx(name, verbose=verbose)
+    # A rebuild writes the same paths again, and since 2.0 a tool refuses an existing output
+    # without --overwrite: clear this demo's own files (not those of a demo whose name extends
+    # this one's) rather than add the flag to every command the gallery prints.
+    longer = tuple(n + "_" for n in BY_NAME if n != name and n.startswith(name + "_"))
+    for stale in OUT.glob("%s_*" % name):
+        if stale.is_file() and not stale.name.startswith(longer):
+            stale.unlink()
+    started = time.time()
+    before, after = builder(ctx)
+
+    # Normalise the "before" side into demos/out/ so a demo's three files sit together.
+    before_copy = OUT / ("%s_before.mp4" % name)
+    if Path(before).resolve() != before_copy.resolve():
+        shutil.copyfile(str(before), str(before_copy))
+
+    compare = OUT / ("%s.mp4" % name)
+    if kind == "wave":
+        make_wave_compare(before_copy, after, compare, font, demo.labels)
+    else:
+        make_compare(before_copy, after, compare, font, demo.labels)
+
+    PREVIEWS.mkdir(parents=True, exist_ok=True)
+    size, fps, width, colors = make_preview(compare, PREVIEWS / ("%s.gif" % name))
+    return {"name": name, "status": "ok", "title": title, "group": group,
+            "bytes": size, "fps": fps, "width": width, "colors": colors,
+            "seconds": round(time.time() - started, 1), "commands": ctx.commands,
+            "notes": ctx.notes}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0],
+                                 formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 epilog=__doc__)
+    ap.add_argument("--only", action="append", metavar="NAME",
+                    help="build just this demo (repeatable); --list shows the names")
+    ap.add_argument("--list", action="store_true", help="list the demos and exit")
+    ap.add_argument("--docs", action="store_true",
+                    help="rewrite docs/demos.md from the table and exit, rendering nothing")
+    ap.add_argument("--force-fixtures", action="store_true",
+                    help="regenerate the synthetic source material even if it is already there")
+    ap.add_argument("--json", action="store_true", help="print the result as JSON")
+    args = ap.parse_args(argv)
+
+    if args.list:
+        for demo in DEMOS:
+            print("%-22s %-20s %s" % (demo.name, demo.group, demo.title))
+        return 0
+    if args.docs:
+        print("wrote %s" % write_docs())
+        return 0
+
+    for tool in ("ffmpeg", "ffprobe"):
+        if not shutil.which(tool):
+            print("%s not found on PATH" % tool, file=sys.stderr)
+            return 127
+
+    names = args.only or [d[0] for d in DEMOS]
+    unknown = [n for n in names if n not in BY_NAME]
+    if unknown:
+        print("unknown demo(s): %s (try --list)" % ", ".join(unknown), file=sys.stderr)
+        return 2
+
+    started = time.time()
+    OUT.mkdir(parents=True, exist_ok=True)
+    made = build_fixtures(force=args.force_fixtures)
+    if made:
+        print("==> fixtures: %s" % ", ".join(made))
+
+    font = label_font()
+    results = [build_demo(n, font) for n in names]
+    if not args.only:
+        write_docs()
+
+    ok = [r for r in results if r["status"] == "ok"]
+    skipped = [r for r in results if r["status"] == "skipped"]
+    total = sum(r["bytes"] for r in ok)
+    elapsed = time.time() - started
+    if args.json:
+        print(json.dumps({"demos": results, "preview_bytes": total,
+                          "seconds": round(elapsed, 1)}, indent=2, ensure_ascii=False))
+    else:
+        print("\n%-24s %8s %s" % ("demo", "preview", "notes"))
+        for r in results:
+            if r["status"] == "ok":
+                print("%-24s %7.1fK  %s" % (r["name"], r["bytes"] / 1024.0, "; ".join(r["notes"])))
+            else:
+                print("%-24s %8s  %s" % (r["name"], "skip", r["reason"]))
+        print("\n%d demos, %d skipped, docs/demos/ total %.1f KB, %.1f s"
+              % (len(ok), len(skipped), total / 1024.0, elapsed))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except BuildError as exc:
+        print("demo build failed: %s" % exc, file=sys.stderr)
+        sys.exit(1)

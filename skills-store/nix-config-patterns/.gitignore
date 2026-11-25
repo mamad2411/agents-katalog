@@ -1,0 +1,9 @@
+# 本机特定配置（硬件、UUID 等），每台机器不同，不应上传
+hosts/local/
+
+# git-hooks.nix 生成的配置文件
+.pre-commit-config.yaml
+
+# nix build / nixos-rebuild 产生的构建产物 symlink
+result
+result-*

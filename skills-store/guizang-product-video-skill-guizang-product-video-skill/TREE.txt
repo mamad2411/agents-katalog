@@ -1,0 +1,8 @@
+.
+./COMMERCIAL_LICENSING.md
+./LICENSE
+./README.md
+./.gitignore
+./SKILL.md
+./.git
+./TREE.txt

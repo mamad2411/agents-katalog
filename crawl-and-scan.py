@@ -31,6 +31,7 @@ RAW_DIR = Path("/tmp/crawl-scan-raw")
 TOKEN_FILE = AGENTS / ".gh-token"
 AUDITOR = AGENTS / "skills/skill-security-auditor/scripts/skill_security_auditor.py"
 FM_NAME = re.compile(r'^name:\s*["\']?([\w-]+)', re.M)
+FM_DESC = re.compile(r'^description:\s*["\']?(.+)$', re.M)
 
 # small curated query set — each = 1 search API page (100 hits max)
 QUERIES = [
@@ -42,8 +43,16 @@ QUERIES = [
     'filename:SKILL.md path:.claude/skills',
     'filename:SKILL.md "description:"',
     'filename:SKILL.md path:skills',
+    'filename:SKILL.md "allowed-tools"',
+    'filename:SKILL.md "argument-hint"',
+    'filename:SKILL.md path:.agents',
+    'filename:SKILL.md path:plugins',
+    'filename:SKILL.md "license:"',
+    'filename:SKILL.md "metadata:"',
+    'filename:SKILL.md path:.codex',
+    'filename:SKILL.md path:.opencode',
 ]
-SEARCH_SLEEP = 7.0        # code-search API: 10 req/min
+SEARCH_SLEEP = 7.0        # code-search API auth: HANYA 10 req/min
 UA = "crawl-and-scan/1.0"
 
 
@@ -156,25 +165,49 @@ def fetch(pairs: list, limit: int, state: dict) -> list:
 
 
 def scan(records: list) -> list:
-    """Stage 3: run skill-security-auditor --json on each fetched skill dir."""
+    """Stage 3: scan pakai repo-hub.py (aturan sama dengan gate ingest)."""
+    hub = str(AGENTS / "repo-hub.py")
     for rec in records:
         d = OUT / rec["name"]
         try:
-            r = subprocess.run(
-                ["python3", str(AUDITOR), "--json", str(d)],
-                capture_output=True, text=True, timeout=60,
-            )
-            try:
-                j = json.loads(r.stdout)
-                rec["verdict"] = j.get("verdict") or j.get("result") or "UNKNOWN"
-                rec["findings"] = j.get("findings") or j.get("issues") or []
-            except Exception:
-                rec["verdict"] = "UNKNOWN"
-                rec["findings"] = [{"raw": (r.stdout or r.stderr)[:500]}]
+            r = subprocess.run([sys.executable, hub, "scan", str(d), "--json"],
+                               capture_output=True, text=True, timeout=120)
+            findings = json.loads(r.stdout or "[]")
+            crit = [f for f in findings if f["severity"] == "critical"]
+            high = [f for f in findings if f["severity"] == "high"]
+            rec["findings"] = findings[:20]
+            rec["verdict"] = "FAIL" if crit else ("WARN" if high else "PASS")
         except Exception as e:
             rec["verdict"] = "ERROR"
             rec["findings"] = [{"error": str(e)}]
     return records
+
+
+def index_records(records: list) -> int:
+    """Stage 3b: daftarkan skill lolos scan ke skills-index.db supaya `sk` bisa menemukannya."""
+    import sqlite3
+    c = sqlite3.connect(str(DB), timeout=30)
+    have = {r[0] for r in c.execute("SELECT name FROM skills")}
+    n = 0
+    for rec in records:
+        if rec.get("verdict") == "FAIL":
+            continue
+        name = rec["name"]
+        if name in have:
+            continue
+        p = OUT / name / "SKILL.md"
+        if not p.exists():
+            continue
+        txt = p.read_text(encoding="utf-8", errors="ignore")
+        m = FM_DESC.search(txt)
+        desc = re.sub(r"\s+", " ", m.group(1)).strip()[:200] if m else f"Skill dari {rec.get('repo', '')}"
+        c.execute("INSERT INTO skills(name,description,tier,category,path,source) VALUES(?,?,?,?,?,?)",
+                  (name, desc, "curated", "mined", str(p), f"github/{rec.get('repo', '')}"))
+        have.add(name)
+        n += 1
+    c.commit()
+    c.close()
+    return n
 
 
 def write_report(records: list) -> dict:
@@ -224,6 +257,8 @@ def main() -> int:
         print("nothing new to scan.")
         return 0
     records = scan(records)
+    n_idx = index_records(records)
+    print(f'[index] {n_idx} skill baru masuk skills-index.db')
     counts = write_report(records)
     print(f"[scan] {counts}")
     print(f"[report] {REPORT}")

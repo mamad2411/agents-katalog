@@ -1,0 +1,15 @@
+.
+./.npmignore
+./.opencode.json
+./LICENSE
+./buchbinder-logo.png
+./ATTRIBUTION.md
+./buchbinder-logo.svg
+./README.md
+./.gitignore
+./package-lock.json
+./package.json
+./restructure.mjs
+./SKILL.md
+./tsconfig.json
+./.git

@@ -1,0 +1,5 @@
+.phpunit.cache/
+.wiki-publish/
+/vendor/
+/composer.lock
+/docker/mageos-ci/seed.sql.gz

@@ -1,0 +1,251 @@
+{
+  "name": "@alebianco/cr-design-system",
+  "version": "1.0.0",
+  "description": "Control Room \u2014 a neon-noir, neobrutalist design system for dense operational dashboards. Design language (the nine laws), a four-theme token layer, a component library, motion tiers, and an accessibility contract.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alebianco/control-room-design-system.git"
+  },
+  "homepage": "https://github.com/alebianco/control-room-design-system#readme",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "files": [
+    "dist",
+    "catalog",
+    "references",
+    "templates",
+    "checklists",
+    "SKILL.md",
+    "README.md",
+    "packages",
+    "lib"
+  ],
+  "exports": {
+    "./tokens.json": "./packages/tokens/tokens/tokens.json",
+    "./css": "./packages/tokens/dist/control-room.css",
+    "./structure.css": "./packages/tokens/dist/structure.css",
+    "./themes/*": "./packages/tokens/dist/themes/*",
+    "./theme-contract": "./packages/tokens/dist/theme-contract.json",
+    "./theme": "./packages/utils/theme/index.js",
+    "./components": "./packages/styles/styles/components.css",
+    "./base": "./packages/styles/styles/base.css",
+    "./styles/*": "./packages/styles/styles/parts/*",
+    "./tailwind.css": "./packages/styles/styles/tailwind.css",
+    "./utilities.css": "./packages/styles/dist/utilities.css",
+    "./tw-theme.css": "./packages/tokens/dist/tw-theme.css",
+    "./flat": "./packages/tokens/dist/tokens.flat.json",
+    "./dtcg": "./packages/tokens/design-tokens/control-room.tokens.json",
+    "./catalog": "./catalog/catalog.json",
+    "./forms": "./packages/utils/forms/index.js",
+    "./react": {
+      "types": "./packages/components/dist/pkg/react/index.d.ts",
+      "import": "./packages/components/dist/pkg/react/index.js",
+      "default": "./packages/components/dist/pkg/react/index.js"
+    },
+    "./vue": {
+      "types": "./packages/components/dist/frameworks/vue/index.d.ts",
+      "vue": "./packages/components/dist/frameworks/vue/index.ts",
+      "import": "./packages/components/dist/frameworks/vue/index.ts",
+      "default": "./packages/components/dist/frameworks/vue/index.ts"
+    },
+    "./svelte": {
+      "types": "./packages/components/dist/frameworks/svelte/index.d.ts",
+      "svelte": "./packages/components/dist/frameworks/svelte/index.js",
+      "import": "./packages/components/dist/frameworks/svelte/index.js",
+      "default": "./packages/components/dist/frameworks/svelte/index.js"
+    },
+    "./angular": {
+      "types": "./packages/components/dist/frameworks/angular/index.d.ts",
+      "import": "./packages/components/dist/frameworks/angular/index.ts",
+      "default": "./packages/components/dist/frameworks/angular/index.ts"
+    },
+    "./solid": {
+      "types": "./packages/components/dist/frameworks/solid/index.d.ts",
+      "solid": "./packages/components/dist/frameworks/solid/index.jsx",
+      "import": "./packages/components/dist/frameworks/solid/index.jsx",
+      "default": "./packages/components/dist/frameworks/solid/index.jsx"
+    },
+    "./qwik": {
+      "types": "./packages/components/dist/pkg/qwik/index.d.ts",
+      "import": "./packages/components/dist/pkg/qwik/index.js",
+      "default": "./packages/components/dist/pkg/qwik/index.js"
+    },
+    "./frameworks/*": "./packages/components/dist/frameworks/*",
+    "./cn": {
+      "types": "./packages/utils/cn.d.ts",
+      "default": "./packages/utils/cn.js"
+    },
+    "./href": {
+      "types": "./packages/utils/href.d.ts",
+      "default": "./packages/utils/href.js"
+    },
+    "./duration": {
+      "types": "./packages/utils/duration.d.ts",
+      "default": "./packages/utils/duration.js"
+    },
+    "./position": "./packages/utils/position.js",
+    "./time-scale": "./packages/utils/time-scale.js",
+    "./icons/pixel": "./packages/icons/pixel.ts"
+  },
+  "scripts": {
+    "build:tokens": "node packages/tokens/build/build-tokens.mjs",
+    "build:theme": "node packages/tokens/build/build-theme.mjs",
+    "build:palette": "node packages/tokens/build/build-palette.mjs",
+    "build:tw": "pnpm --filter @alebianco/cr-styles run build:utilities",
+    "build:styles": "node packages/styles/build/build-styles.mjs",
+    "build:icons": "node packages/icons/build/build-icons.mjs",
+    "build:components": "node packages/components/build/compile-mitosis.mjs && node packages/components/build/build-fix-qwik.mjs && node packages/components/build/build-fix-react.mjs && node packages/components/build/build-fix-angular.mjs && node packages/components/build/build-fix-solid.mjs && node packages/components/build/build-fix-vue.mjs && node packages/components/build/build-fix-keys.mjs && node packages/components/build/build-fix-lifecycle.mjs && node packages/components/build/build-barrels.mjs && node packages/components/build/build-pkg-types.mjs",
+    "build:components:cli": "pnpm --filter @alebianco/cr-components run build:cli",
+    "build:pkg": "node packages/components/build/build-pkg.mjs",
+    "build:catalog": "node build/build-catalog.mjs",
+    "build:mcp": "pnpm --filter @alebianco/cr-mcp run build",
+    "build:skill": "pnpm --filter @alebianco/cr-skill run build",
+    "build:showcase": "pnpm --filter @alebianco/cr-docs run build:showcase",
+    "build:brand-preview": "pnpm --filter @alebianco/cr-docs run build:brand-preview",
+    "build:llms": "pnpm --filter @alebianco/cr-docs run build:llms",
+    "build:content": "pnpm --filter @alebianco/cr-docs run build:content",
+    "build:site": "pnpm --filter @alebianco/cr-docs run build:site",
+    "build": "pnpm run build:tokens && pnpm run build:theme && pnpm run build:tw && pnpm run build:styles && pnpm run build:brand-preview && pnpm run build:icons && pnpm run build:catalog && pnpm run build:components && pnpm run build:pkg && pnpm run build:showcase && pnpm run build:mcp && pnpm run build:skill && pnpm run build:llms && pnpm run build:content && pnpm run build:site",
+    "prepack": "pnpm run build:components && pnpm run build:pkg",
+    "dev": "pnpm --filter @alebianco/cr-docs run dev",
+    "preview": "pnpm --filter @alebianco/cr-docs run preview",
+    "verify:tokens": "node packages/tokens/build/build-tokens.mjs --check",
+    "verify:theme": "node packages/tokens/build/build-theme.mjs --check",
+    "verify:pkg": "node packages/components/build/build-pkg.mjs --check",
+    "verify:catalog": "node build/build-catalog.mjs --check",
+    "verify:types": "tsc -p packages/components/build/tsconfig.frameworks.json",
+    "verify:pkg-types": "node packages/components/build/build-pkg-types.mjs --check",
+    "verify:palette": "node packages/tokens/build/build-palette.mjs --check",
+    "verify:styles": "node packages/styles/build/build-styles.mjs --check",
+    "verify:icons": "node packages/icons/build/build-icons.mjs --check",
+    "verify:llms": "pnpm --filter @alebianco/cr-docs run verify:llms",
+    "verify:brand-preview": "pnpm --filter @alebianco/cr-docs run verify:brand-preview",
+    "verify:mcp": "pnpm --filter @alebianco/cr-mcp run verify",
+    "verify:skill": "pnpm --filter @alebianco/cr-skill run verify",
+    "skills:sync": "node scripts/skills-sync.mjs",
+    "skills:check": "node scripts/skills-sync.mjs --check",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format --write",
+    "pretest:e2e": "pnpm run build:tokens && pnpm run build:theme && pnpm run build:brand-preview && pnpm run build:components && pnpm run build:showcase",
+    "test:e2e": "pnpm --filter @alebianco/cr-docs run test:e2e",
+    "test:a11y": "pnpm --filter @alebianco/cr-docs run test:a11y",
+    "test:islands": "pnpm --filter @alebianco/cr-docs run test:islands",
+    "test:responsive": "pnpm --filter @alebianco/cr-docs run test:responsive",
+    "test:visual": "pnpm --filter @alebianco/cr-docs run test:visual",
+    "test:visual:update": "pnpm --filter @alebianco/cr-docs run test:visual:update",
+    "test:forms": "node --test tests/forms.test.mjs",
+    "test:theme": "node --test packages/tokens/tests/theme.test.mjs",
+    "test:position": "node --test tests/position.test.mjs",
+    "test:position:port": "node --test tests/position-port.test.mjs",
+    "test:timescale": "node --test tests/time-scale.test.mjs",
+    "test:separation": "node --test tests/appearance-separation.test.mjs",
+    "test:rtl": "node --test tests/rtl.test.mjs",
+    "pretest:pkg": "pnpm run build:pkg",
+    "test:pkg": "node --test tests/pkg-react.test.mjs tests/pkg-qwik.test.mjs tests/pkg-vue.test.mjs tests/pkg-exports.test.mjs tests/reltime-parity.test.mjs",
+    "pretest:frameworks": "pnpm run build:components",
+    "test:frameworks": "node --test tests/pkg-frameworks.test.mjs tests/cross-fw-contract.test.mjs tests/compile-all.test.mjs",
+    "test:contract": "node --test tests/styling-contract.test.mjs tests/pt-chaining.test.mjs tests/pt-types.test.mjs tests/responsive.test.mjs tests/utils-ports.test.mjs tests/position-port.test.mjs tests/key-notation.test.mjs tests/style-parts.test.mjs",
+    "test:tooling": "node --test tests/mcp.test.mjs tests/skill-install.test.mjs",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish",
+    "verify": "pnpm run verify:tokens && pnpm run verify:theme && pnpm run verify:palette && pnpm run verify:styles && pnpm run verify:icons && pnpm run verify:catalog && pnpm run verify:llms && pnpm run verify:brand-preview && pnpm run verify:mcp && pnpm run verify:skill && pnpm run skills:check",
+    "test:client": "pnpm --filter @alebianco/cr-docs run test:client",
+    "test:aot": "pnpm --filter @alebianco/cr-angular-aot run test:aot"
+  },
+  "devDependencies": {
+    "@angular/common": "^22.1.2",
+    "@angular/compiler": "^22.1.2",
+    "@angular/core": "^22.1.2",
+    "@angular/platform-browser": "^22.1.2",
+    "@angular/platform-server": "^22.1.2",
+    "@astrojs/starlight": "^0.41.7",
+    "@axe-core/playwright": "^4.13.0",
+    "@babel/core": "^8.0.0",
+    "@biomejs/biome": "^2.5.8",
+    "@builder.io/mitosis": "^0.14.0",
+    "@builder.io/mitosis-cli": "^0.14.0",
+    "@builder.io/qwik": "^1.20.0",
+    "@changesets/cli": "^3.0.0",
+    "@fontsource/saira-condensed": "^5.3.0",
+    "@iconify-json/pixelarticons": "^1.2.8",
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vue/compiler-sfc": "^3.5.41",
+    "@vue/server-renderer": "^3.5.41",
+    "astro": "^7.2.2",
+    "babel-preset-solid": "^1.9.12",
+    "culori": "^4.0.2",
+    "esbuild": "^0.28.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "rxjs": "^7.8.2",
+    "solid-js": "^1.9.14",
+    "svelte": "^5.55.8",
+    "tailwindcss": "^4.3.3",
+    "tslib": "^2.8.1",
+    "typescript": "^7.0.2",
+    "undici": "^8.10.0",
+    "vue": "^3.5.41",
+    "zone.js": "^0.16.2"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=17",
+    "@builder.io/qwik": ">=1.5",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "solid-js": ">=1.8",
+    "svelte": ">=4 <6",
+    "vue": ">=3.4"
+  },
+  "peerDependenciesMeta": {
+    "@angular/core": {
+      "optional": true
+    },
+    "@builder.io/qwik": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@alebianco/cr-components": "workspace:*",
+    "@alebianco/cr-icons": "workspace:*",
+    "@alebianco/cr-mcp": "workspace:*",
+    "@alebianco/cr-skill": "workspace:*",
+    "@alebianco/cr-utils": "workspace:*",
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "arktype": "^2.2.3",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.6.0"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@parcel/watcher",
+      "svelte-preprocess"
+    ]
+  }
+}

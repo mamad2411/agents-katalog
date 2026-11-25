@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nature-academic-search"
+version = "0.3.1"
+description = "Academic Paper Search for Codex, Claude Code, and DeepSeek Harness with verified multi-source literature, citation graphs, and trial workflows"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "wp-a" }]
+license = { file = "LICENSE" }
+keywords = [
+  "academic-search",
+  "arxiv",
+  "citation",
+  "citation-graph",
+  "crossref",
+  "literature-review",
+  "mcp",
+  "openalex",
+  "pubmed",
+  "research-workflow",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
+dependencies = [
+  "mcp>=1.27,<2",
+  "pyyaml>=6,<7",
+  "requests>=2.28,<3",
+  "toml>=0.10.2,<1",
+]
+
+[project.optional-dependencies]
+test = [
+  "build>=1.6.0,<2",
+  "pyyaml>=6,<7",
+  "pytest>=8,<10",
+  "ruff>=0.16.5,<1",
+  "tomli>=2,<3; python_version < '3.11'",
+  "twine>=7,<8",
+]
+
+[project.scripts]
+nature-academic-search = "nature_academic_search.cli:main"
+nature-academic-search-mcp = "nature_academic_search.server:main"
+
+[project.urls]
+Homepage = "https://github.com/wp-a/nature-academic-search"
+Issues = "https://github.com/wp-a/nature-academic-search/issues"
+Repository = "https://github.com/wp-a/nature-academic-search"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nature_academic_search"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"SKILL.md" = "nature_academic_search/_skill/SKILL.md"
+"references/search-workflows.md" = "nature_academic_search/_skill/references/search-workflows.md"
+"references/source-tiers.md" = "nature_academic_search/_skill/references/source-tiers.md"
+"references/citation-files.md" = "nature_academic_search/_skill/references/citation-files.md"
+"plugins/nature-academic-search/skills/nature-academic-search/agents/openai.yaml" = "nature_academic_search/_skill/agents/openai.yaml"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

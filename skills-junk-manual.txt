@@ -1,0 +1,8 @@
+# Skill berbahaya terkonfirmasi (inj scan 2026-11-24) — 1 fragmen path per baris
+injection_xml_tags
+challenge-08
+mined-trompetilla-skills/super-helper
+mined-krusty84-skill.md-inspector/malicious-exfil
+mined-aibot88-sec_skill_store/evil-tool
+mined-aibot88-sec_skill_store/eval-injection-test
+mined-trompetilla-skills/jailbreak-override

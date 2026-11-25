@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "Blaze.LlmGateway.AppHost/Blaze.LlmGateway.AppHost.csproj"
+  }
+}

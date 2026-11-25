@@ -1,0 +1,8 @@
+.
+./LICENSE
+./README.md
+./.gitignore
+./README_EN.md
+./SKILL.md
+./.git
+./TREE.txt

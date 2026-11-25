@@ -1,0 +1,209 @@
+# Kesiapan skill di device ini
+
+diperiksa: 18962 · siap: 18806 · butuh dependency: 156
+
+## Siap pakai (tanpa install tambahan)
+
+- `3dsvg-interactive-react` — npm, pnpm
+- `724-office-ai-agent` — pip, python3
+- `8-bit-orbit-video-template` — tanpa CLI khusus
+- `a-b-test-analysis` — tanpa CLI khusus
+- `ab-test-setup` — python3
+- `ab-testing` — tanpa CLI khusus
+- `abp-dapr` — tanpa CLI khusus
+- `absolute-debt` — eslint, go
+- `absolute-deflake` — go, pytest
+- `absolute-init` — git, make, npm
+- `absolute-prune` — eslint, go
+- `absolute-simplify` — git, go
+- `absolute-spec` — git
+- `absolute-ui` — tanpa CLI khusus
+- `absolute-upgrade` — go, npm, pip, pnpm, uv
+- `absolute-work` — git, make, npm
+- `academic-search` — tanpa CLI khusus
+- `academy-guide` — tanpa CLI khusus
+- `accelerated-computing-cudf` — tanpa CLI khusus
+- `access-control-rbac` — tanpa CLI khusus
+- `accessibility` — node, npm, npx, uv
+- `accessibility-auditing` — tanpa CLI khusus
+- `accessibility-auditor` — tanpa CLI khusus
+- `accessibility-compliance` — tanpa CLI khusus
+- `accessibility-expert` — npm, playwright
+- `accessibility-learn` — tanpa CLI khusus
+- `accessibility-patterns` — tanpa CLI khusus
+- `accessibility-specialist` — npm
+- `accessibility-testing` — tanpa CLI khusus
+- `ace-step` — curl, npm, npx
+- `acgti-anime-persona-quiz` — git, npm, npx
+- `acquire-codebase-knowledge` — git
+- `acreadiness-assess` — node, npx
+- `acreadiness-generate-instructions` — tanpa CLI khusus
+- `acreadiness-policy` — tanpa CLI khusus
+- `actions-cli` — tanpa CLI khusus
+- `ad-campaign-analyzer` — tanpa CLI khusus
+- `ad-creative` — bundle
+- `add-educational-comments` — tanpa CLI khusus
+- `add-harness-package` — pnpm
+- `add-hf-model` — git
+- `add-model-price` — tanpa CLI khusus
+- `add-uint-support` — tanpa CLI khusus
+- `adding-api-docs` — npm
+- `adding-auth` — tanpa CLI khusus
+- `adding-e2e-tests` — npm, npx, playwright
+- `adding-error-tracking` — node, npm, pip
+- `adding-stripe` — stripe
+- `adf-master` — tanpa CLI khusus
+- `adf-ml-analytics` — tanpa CLI khusus
+- `adf-validation-rules` — tanpa CLI khusus
+- `ado-pipeline-best-practices` — tanpa CLI khusus
+- `ado-windows-git-bash-compatibility` — az, docker, dotnet, git, npm
+- `adobe-illustrator-scripting` — tanpa CLI khusus
+- `adr-backfill` — tanpa CLI khusus
+- `adr-critique` — tanpa CLI khusus
+- `adr-discovery` — tanpa CLI khusus
+- `adr-drafting` — tanpa CLI khusus
+- `adr-writer` — tanpa CLI khusus
+- `ads-copywriter` — tanpa CLI khusus
+- `advanced-array-patterns` — tanpa CLI khusus
+- `advanced-features-2025` — tanpa CLI khusus
+- `advanced-patterns` — tanpa CLI khusus
+- `adversarial-reviewer` — git
+- `advertising-skills-ai-agents` — tanpa CLI khusus
+- `aeo` — pip
+- `[replace: skill_name]` — curl
+- `aeris10-plfm-radar` — gcc, make, pip
+- `after-effects` — tanpa CLI khusus
+- `after-effects-scripting` — tanpa CLI khusus
+- `after-hours-editorial-template` — tanpa CLI khusus
+- `agb-agent-browser` — tanpa CLI khusus
+- `agency-agents-ai-specialists` — git
+- `agent-architecture-audit` — tanpa CLI khusus
+- `agent-browser` — curl, rg
+- `agent-browser-automation` — tanpa CLI khusus
+- `agent-compliance-security-assessment` — tanpa CLI khusus
+- `agent-designer` — tanpa CLI khusus
+- `agent-development` — tanpa CLI khusus
+- `agent-eval` — tanpa CLI khusus
+
+## Butuh dependency
+
+- `access-review` — kurang: aws
+- `neon-object-storage` — kurang: aws
+- `neon-postgres` — kurang: vercel
+- `bug-bounty` — kurang: aws
+- `cloud-pentest` — kurang: aws
+- `pii-hunter` — kurang: aws
+- `conducting-cloud-incident-response` — kurang: aws
+- `deploying-cloud-deception-with-decoy-resources` — kurang: aws
+- `enumerating-cloud-with-cloudfox` — kurang: aws
+- `exploiting-aws-with-pacu` — kurang: aws
+- `exploiting-broken-link-hijacking` — kurang: aws
+- `implementing-aws-config-rules-for-compliance` — kurang: aws
+- `performing-cloud-forensics-investigation` — kurang: aws
+- `performing-serverless-function-security-review` — kurang: aws
+- `remediating-s3-bucket-misconfiguration` — kurang: aws
+- `scanning-docker-images-with-trivy` — kurang: aws
+- `securing-api-gateway-with-aws-waf` — kurang: aws
+- `aracli-deploy-management` — kurang: fly
+- `asset-inventory` — kurang: aws
+- `aws-cdk-python-setup` — kurang: aws
+- `aws-cloud-architecture` — kurang: aws
+- `aws-cloudfront-cdn` — kurang: aws
+- `aws-cloudtrail` — kurang: aws
+- `aws-cost-optimization` — kurang: aws
+- `aws-cost-optimize` — kurang: aws
+- `aws-ec2` — kurang: aws
+- `aws-ec2-setup` — kurang: aws
+- `aws-ecs-fargate` — kurang: aws
+- `aws-iam` — kurang: aws
+- `aws-lambda` — kurang: aws
+- `aws-lambda-functions` — kurang: aws
+- `aws-lambda-php-integration` — kurang: aws
+- `aws-lambda-typescript-integration` — kurang: aws
+- `aws-rds` — kurang: aws
+- `aws-rds-database` — kurang: aws
+- `aws-resource-health-diagnose` — kurang: aws
+- `aws-resource-query` — kurang: aws
+- `aws-s3` — kurang: aws
+- `aws-s3-management` — kurang: aws
+- `aws-sdk-java-v2-secrets-manager` — kurang: aws
+- `aws-solution-architect` — kurang: aws
+- `aws-vpc` — kurang: aws
+- `aws-well-architected-review` — kurang: aws
+- `backup-recovery` — kurang: aws
+- `backup-restore-runbook-generator` — kurang: aws
+- `block-storage` — kurang: aws
+- `cdn-setup` — kurang: aws
+- `circleci` — kurang: aws
+- `cloud-cost-management` — kurang: aws
+- `cloud-security` — kurang: aws
+- `cloud-security-configuration` — kurang: aws
+- `cloud-storage-optimization` — kurang: aws
+- `cloudflare-r2` — kurang: aws
+- `cloudformation` — kurang: aws
+- `container-registries` — kurang: aws
+- `container-registry-management` — kurang: aws
+- `data-retention-archiving-planner` — kurang: aws
+- `dbt-data-transformation` — kurang: aws
+- `deployment-patterns` — kurang: vercel
+- `aws-cloudformation-rds` — kurang: aws
+- `disaster-recovery` — kurang: aws
+- `dns-management` — kurang: aws
+- `dt-obs-aws` — kurang: aws
+- `dynamodb-toolbox-patterns` — kurang: aws
+- `fedramp-compliance` — kurang: aws
+- `firewall-config` — kurang: aws
+- `gem-devops-guidelines` — kurang: vercel
+- `github-actions-templates` — kurang: aws
+- `hybrid-cloud-networking` — kurang: aws
+- `identity-access-management` — kurang: aws
+- `incident-runbook-generator` — kurang: aws
+- `incident-runbook-templates` — kurang: aws
+- `infrastructure-cost-optimization` — kurang: aws
+- `linkedin-obsidian-memory-graph` — kurang: ollama
+- `load-balancing` — kurang: aws
+- `mac-mini-llm-lab` — kurang: ollama
+- `ministack-aws-emulator` — kurang: aws
+- `mirofish-offline-simulation` — kurang: ollama
+- `modern-automation-patterns` — kurang: aws
+- `mongodb` — kurang: mongosh
+- `netlify-deploy` — kurang: netlify
+- `nothing-ever-happens-polymarket-bot` — kurang: heroku
+- `object-storage` — kurang: aws
+- `open-codesign-ai-design` — kurang: ollama
+- `openclaude-multi-llm` — kurang: ollama
+- `pci-dss-compliance` — kurang: aws
+- `runbook-creation` — kurang: aws
+- `saas-security-posture` — kurang: aws
+- `security-first-2025` — kurang: aws
+- `soc2-compliance` — kurang: aws
+- `startup-it-troubleshooting` — kurang: aws
+- `supply-chain-attack-response` — kurang: aws
+- `talk-normal-llm-prompt` — kurang: ollama
+- `terragrunt-generator` — kurang: aws
+- `trending-skills-open-codesign-ai-design` — kurang: ollama
+- `trending-skills-open-design-ai` — kurang: vercel
+- `trending-skills-openyak-desktop-agent` — kurang: ollama
+- `vercel-deploy` — kurang: vercel
+- `vercel-deployments` — kurang: vercel
+- `vercel-labs-emulate` — kurang: vercel
+- `vercel-microfrontends` — kurang: vercel
+- `waf-setup` — kurang: aws
+- `setup-development-environment` — kurang: vercel
+- `agents-md-appydave-tools-s3-operations-split-campaign` — kurang: aws
+- `ai-application` — kurang: vercel
+- `vercel-optimization-report-projectname` — kurang: vercel
+- `claude-code-brain-bootstrap-command-db` — kurang: mongosh
+- `database-backup-best-practices` — kurang: aws
+- `fairdb-setup-backup` — kurang: aws
+- `vercel-cli-deployment-protocol` — kurang: vercel
+- `backend-engineer-super-skill` — kurang: aws
+- `frontend-engineer-super-skill` — kurang: aws
+- `qa-engineer-super-skill` — kurang: aws
+- `sre-engineer-super-skill` — kurang: aws
+- `curiosity-ai-scans-localocr` — kurang: ollama
+- `claude-md-project-context-for-claude-code` — kurang: ollama
+- `session-initialization` — kurang: ollama
+- `ai-updates-agent` — kurang: ollama
+- `crew-agent` — kurang: ollama
+- `claude-md-kenos` — kurang: vercel

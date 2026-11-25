@@ -1,0 +1,15 @@
+.
+./setup.sh
+./ORIGIN_TEMPLATE.md
+./LICENSE
+./install.sh
+./todo.md
+./README.md
+./SKILL_TEMPLATE.md
+./.gitignore
+./SKILL.md
+./INSTALL_PROMPT.md
+./.git
+./TREE.txt
+./README-FR.md
+./META_SKILL_TEMPLATE.md

@@ -1,0 +1,13 @@
+.
+./LICENSE
+./CHANGELOG.md
+./kusto_spark.png
+./pom.xml
+./README.md
+./.scalafix.conf
+./.gitignore
+./SKILL.md
+./.scalafmt.conf
+./.git
+./TREE.txt
+./SECURITY.md

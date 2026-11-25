@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if page.title and page.title != site.title %}{{ page.title }} · {% endif %}{{ site.title }}</title>
+<meta name="description" content="{{ site.description }}">
+<meta property="og:title" content="{{ page.title | default: site.title }}">
+<meta property="og:description" content="{{ site.description }}">
+<meta property="og:image" content="https://kajisho5.github.io/ffmpeg-skill/brand/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="{{ '/brand/favicon.ico' | relative_url }}" sizes="48x48">
+<link rel="icon" href="{{ '/brand/favicon.svg' | relative_url }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ '/brand/apple-touch-icon.png' | relative_url }}">
+<style>
+:root {
+  --bg: #0B0C10; --fg: #F2F3F5; --muted: #A3A9B4; --line: rgba(255,255,255,.12);
+  --link: #17D16A; --code-bg: rgba(255,255,255,.07); --nav-bg: rgba(11,12,16,.7);
+  color-scheme: dark;
+}
+/* the landing page's light, once, behind the top of every document */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(46vw 420px at 96% 0, rgba(23,209,106,.30), transparent 70%),
+              radial-gradient(40vw 420px at 0 100%, rgba(37,99,235,.22), transparent 70%);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+}
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+nav {
+  position: sticky; top: 0; z-index: 1; background: var(--nav-bg);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--line);
+}
+nav .in {
+  max-width: 980px; margin: 0 auto; padding: 10px 16px;
+  display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+}
+nav .brand { font-weight: 600; color: var(--fg); margin-right: auto; }
+main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; overflow-wrap: anywhere; }
+h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 .6em; }
+h1, h2 { padding-bottom: .3em; border-bottom: 1px solid var(--line); }
+img { max-width: 100%; }
+img:not([height]) { height: auto; }
+code, pre { font: 85%/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+code { background: var(--code-bg); padding: .15em .35em; border-radius: 6px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 6px; overflow-x: auto; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; display: block; overflow-x: auto; max-width: 100%; }
+th, td { border: 1px solid var(--line); padding: 6px 12px; vertical-align: top; }
+blockquote { margin: 0; padding: 0 1em; color: var(--muted); border-left: 4px solid var(--line); }
+hr { border: 0; border-top: 1px solid var(--line); }
+footer { max-width: 980px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<nav><div class="in">
+  <a class="brand" href="{{ '/' | relative_url }}"><img src="{{ '/brand/favicon.svg' | relative_url }}" alt="" width="20" height="20" style="vertical-align:-4px;margin-right:6px">ffmpeg-skill</a>
+  <a href="{{ '/readme.html' | relative_url }}">README</a>
+  <a href="{{ '/docs/demos.html' | relative_url }}">Demos</a>
+  <a href="{{ '/docs/contract.html' | relative_url }}">Contract</a>
+  <a href="{{ '/docs/design-decisions.html' | relative_url }}">Design decisions</a>
+  <a href="{{ '/CHANGELOG.html' | relative_url }}">Changelog</a>
+  <a href="https://github.com/kajisho5/ffmpeg-skill">GitHub</a>
+</div></nav>
+<main>
+{{ content }}
+</main>
+<footer>Generated from the repository's own Markdown by <code>.github/scripts/build_pages.py</code>. Source: <a href="https://github.com/kajisho5/ffmpeg-skill">kajisho5/ffmpeg-skill</a> · MIT</footer>
+</body>
+</html>

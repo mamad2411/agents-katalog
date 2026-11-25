@@ -63,6 +63,7 @@
   "pr-review",
   "prd",
   "prompt-engineering",
+  "push-green",
   "python-patterns",
   "react-native-patterns",
   "react-patterns",
@@ -87,5 +88,8 @@
   "web-search",
   "writing-tests",
   "xlsx"
+ ],
+ "learned": [
+  "push-green"
  ]
 }

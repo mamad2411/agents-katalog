@@ -1,0 +1,13 @@
+.
+./LICENSE
+./CHANGELOG.md
+./README.md
+./.gitignore
+./package-lock.json
+./package.json
+./CONTRIBUTING.md
+./SKILL.md
+./AGENTS.md
+./.git
+./TREE.txt
+./SECURITY.md

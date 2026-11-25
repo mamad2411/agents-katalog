@@ -1,0 +1,201 @@
+# oil-subtitle
+
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="oil-subtitle 将本地视频转换为可校对并烧录的中文字幕">
+</p>
+
+为本地视频转录、校对、预览并烧录中文字幕，支持章节进度和同时间轴英文字幕。
+
+也可以将审校后的中文字幕翻译成英文 SRT，保留原有时间轴。明确只要英文字幕文件时，不启动预览、生成章节或烧录视频。
+
+[快速开始](#快速开始) · [工作流程](#工作流程) · [维护词库](#维护-hotwords-与-glossary) · [数据边界](#数据边界)
+
+## 效果预览
+
+<p align="center">
+  <img src="./assets/readme/subtitle-editor.png" width="100%" alt="oil-subtitle 本地字幕编辑器：左侧预览字幕与章节进度，右侧逐句校对">
+</p>
+
+左侧实时预览字幕和章节进度，右侧逐句修改、删除或批量查找替换，确认后点击「保存并关闭」即可继续烧录。中文与英文或数字之间默认补一个半角空格，预览、SRT/ASS 和最终成片使用同一规则。
+
+保存时会自动比较人工修改并生成待审报告，但不会调用模型或自动写入个人错题本。Agent 只把稳定、安全且不冲突的 ASR 映射写入词库；润色、删句和标点修改不会污染词库。
+
+## 最终会得到什么
+
+一次完整处理会保留可追溯的中间结果，并交付可继续修改的字幕文件和成片：
+
+```text
+demo.subtitle-work/
+├── bailian_asr.json             # 原始 ASR 响应
+├── transcript.json              # ASR、术语校正并分行后的转录稿
+├── reviewed-transcript.json     # 等待 Agent 校对的转录稿副本
+├── subtitle-review.json         # 技术词聚焦清单与校对模式记录
+├── review-frames/               # Agent 按需抽取的验证帧
+├── subtitle-transcript.json     # 人工预览后保存的字幕
+├── manual-edit-review.json      # 人工修改的待审与忽略记录
+├── subtitle-chapters.json       # 长视频章节
+└── subtitle-manifest.json       # 本地预览入口
+
+demo_subtitled.srt
+demo_subtitled.ass
+demo_subtitled.mp4
+```
+
+## 工作流程
+
+1. 用 FFmpeg 从本地视频提取单声道音频。
+2. 通过 DashScope Python SDK 调用百炼 FunAudio ASR，保留原始识别结果和词级时间戳。
+3. 在识别阶段应用 hotwords，再用 glossary 修正常见误识别。
+4. 脚本原样复制转录稿并生成技术词聚焦清单；Agent 通读全部字幕，结合上下文、音频和必要画面修正错词。百炼模型不自动修改字幕正文。
+5. 用 Qwen 完成字幕级断句；章节进度默认开启，视频严格超过 3 分钟时，同时根据字幕生成 2–6 个宽粒度章节，并在视频画面底部以半透明渐变阴影展示进度。
+6. 启动本地字幕编辑器，由用户检查 Agent 校对结果，并按需修改或删除字幕。
+7. 保存时自动提取人工修改并生成待审报告；Agent 判断是否需要显式加入个人 glossary，脚本不会自动写入。
+8. 生成 SRT、ASS，并用 FFmpeg 一次烧录成片。
+
+正常烧录还会检测持续出现的人脸区域并执行固定轻度美颜；需要保留原画时使用 `--no-beauty`。
+
+## 快速开始
+
+运行环境：macOS、Python 3、Homebrew。`setup.sh` 会准备独立虚拟环境，并在缺少 FFmpeg 时通过 Homebrew 安装。
+
+```bash
+SKILL_DIR="/absolute/path/to/oil-subtitle"
+
+bash "$SKILL_DIR/setup.sh"
+node "$SKILL_DIR/scripts/credential-ui/src/profile.ts" status default
+# 缺少凭据时，由用户在页面亲自填写：
+node "$SKILL_DIR/scripts/credential-ui/src/profile.ts" setup default
+```
+
+配置完成后，把视频路径和目标告诉 Agent：
+
+```text
+给 /path/to/demo.mp4 加中文字幕，先让我校对，再烧录成片。
+```
+
+Agent 的完整执行规范见 [SKILL.md](SKILL.md)。
+
+不想显示章节进度条时，直接告诉 Agent“这次关闭章节进度条”即可；Agent 会跳过章节生成并在烧录时关闭进度条，不需要手动修改配置。需要重新开启时说“开启章节进度条”。
+
+## API Key 只需配置一次
+
+FunAudio ASR、Qwen 字幕断句、章节生成和 hotwords 共用同一个百炼 API Key，全部通过 DashScope Python SDK 调用，业务程序不需要额外 CLI；本机配置页需要 Node.js 22.18+。
+
+新凭据保存在系统凭据库，普通配置 `~/.config/oil-subtitle/config.json` 只保存引用。默认在本机配置页亲自填写，再按配置说明通过 run 入口运行业务；不要把密钥发到聊天。读取顺序为运行时 `DASHSCOPE_API_KEY`、系统凭据；旧密钥文件和旧百炼配置只有设置 `OIL_SUBTITLE_ALLOW_LEGACY_PLAINTEXT=1` 时才读取。
+
+安装脚本不会自动迁移凭据，`configure_api_key.py` 也不会接受密钥或执行迁移。系统凭据库不可用时直接失败，不改用明文文件。
+
+## 维护 hotwords 与 glossary
+
+词库全部使用普通 JSON 文件，放在用户自己的配置目录，不必修改 Skill 代码，也不要把个人词库或 API Key 提交进仓库。个人 glossary 默认保存在 `~/.config/oil-subtitle/glossary.json`；只有希望换位置时才需要在配置中填写 `glossary`。
+
+`hotwords.json` 在 ASR 识别阶段提高产品名、英文缩写和人名的命中率：
+
+```json
+[
+  { "text": "Claude Code", "weight": 4, "lang": "en" },
+  { "text": "百炼", "weight": 4, "lang": "zh" }
+]
+```
+
+`glossary.json` 在识别完成后执行确定性替换，适合修正已经反复出现的错字：
+
+```json
+[
+  { "wrong": "Claude Core", "correct": "Claude Code" },
+  { "wrong": "白练", "correct": "百炼" }
+]
+```
+
+在 `~/.config/oil-subtitle/config.json` 中指向这两个文件：
+
+```json
+{
+  "hotwords": "~/.config/oil-subtitle/hotwords.json",
+  "glossary": "~/.config/oil-subtitle/glossary.json",
+  "subtitles": {
+    "progress_enabled": true,
+    "progress_min_duration_seconds": 180
+  }
+}
+```
+
+预览页保存后，脚本会固定比较修改前后的字幕，把可能复用的错词映射记录到 `manual-edit-review.json` 的 `pending`，但不会调用模型或自动追加 glossary。Agent 只在映射来自原句连续子串、保留必要上下文且不与已有规则冲突时显式写入；一次性改写、删句和标点调整保持忽略。hotwords 内容变化后，脚本会自动更新远程词表缓存。
+
+## 手动运行
+
+如果不通过 Agent，也可以直接执行各阶段脚本。下面是主流程中的核心命令：
+
+```bash
+SKILL_DIR="/absolute/path/to/oil-subtitle"
+VIDEO="/path/to/demo.mp4"
+WORK="/path/to/demo.subtitle-work"
+mkdir -p "$WORK"
+RUN_CLOUD=(node "$SKILL_DIR/scripts/credential-ui/src/profile.ts" run default --)
+
+"${RUN_CLOUD[@]}" "$SKILL_DIR/.venv/bin/python3" "$SKILL_DIR/scripts/bailian_transcribe.py" \
+  "$VIDEO" \
+  --output "$WORK/transcript.json" \
+  --raw-output "$WORK/bailian_asr.json" \
+  --language zh
+
+"$SKILL_DIR/.venv/bin/python3" "$SKILL_DIR/scripts/review_subtitles.py" \
+  --video "$VIDEO" \
+  --transcript "$WORK/transcript.json" \
+  --output "$WORK/reviewed-transcript.json" \
+  --report "$WORK/subtitle-review.json" \
+  --frames-dir "$WORK/review-frames"
+
+"${RUN_CLOUD[@]}" "$SKILL_DIR/.venv/bin/python3" "$SKILL_DIR/scripts/prepare_subtitles.py" \
+  --transcript "$WORK/reviewed-transcript.json" \
+  --video "$VIDEO" \
+  --output "$WORK/subtitle-transcript.json" \
+  --chapters-output "$WORK/subtitle-chapters.json" \
+  --manifest-output "$WORK/subtitle-manifest.json" \
+  --work-dir "$WORK/cache" \
+  --resume
+```
+
+预览、草稿检查和最终烧录命令见 [SKILL.md](SKILL.md)。
+
+## 适用边界
+
+- 只处理已经导出的本地视频，不修改 `.screenstudio` 工程时间线。
+- 默认远程转录；本地 Whisper 只作为明确指定的降级或对比路径。
+- 默认只生成中文字幕，不生成双语字幕。
+- 章节进度默认开启，但只在视频严格超过 3 分钟时显示；可直接让 Agent 为当前任务关闭。
+- 预览服务只在本机启动；端口默认是 `8765`。
+
+## 数据边界
+
+- 远程转录会把从视频提取的音频上传到百炼临时存储。
+- 字幕断句和章节生成会把对应的字幕文本发送给百炼 Qwen。
+- 用户保存预览修改后，修改前后的相关字幕只在本机生成待审报告，不发送给百炼 Qwen。
+- API Key、个人配置和词库保存在用户目录，不应进入仓库。
+- 预览界面、人工编辑、判断报告、个人词库写入、SRT/ASS 生成和 FFmpeg 烧录都在本机完成。
+
+## 脚本索引
+
+| 脚本 | 作用 |
+| --- | --- |
+| `scripts/credential-ui/src/profile.ts` | 默认配置页面、状态检查与业务凭据注入 |
+| `scripts/configure_api_key.py` | 启动或检查随附的系统凭据页 |
+| `scripts/bailian_transcribe.py` | FunAudio ASR、hotwords、glossary 和字幕分行 |
+| `scripts/review_subtitles.py` | 原样复制转录稿并生成 Agent 技术词聚焦清单，不自动改词 |
+| `scripts/local_transcribe.py` | 本地 Whisper 降级转录 |
+| `scripts/prepare_subtitles.py` | 准备中文字幕、章节和预览 manifest |
+| `scripts/preview_editor.py` | 启动本地字幕预览编辑器 |
+| `scripts/learn_glossary.py` | 从人工修改中生成待 Agent 审阅的错词报告，不自动写词库 |
+| `scripts/burn_subtitles.py` | 生成 SRT/ASS 并烧录 MP4；默认拒绝覆盖 |
+
+## 测试
+
+```bash
+./.venv/bin/python3 -m unittest discover -s tests
+```
+
+## API Key 配置页面
+
+首次使用外部服务时，可以在本机配置页亲自填写 Key；已有配置会复用，密钥存入系统凭据库。只为实际使用的外部服务配置；纯本地处理不需要 Key。页面需要 Node.js 22.18+ 与可用的系统凭据服务，业务运行仍使用原依赖。
+
+安装、状态检查、打开页面和带凭据运行的完整入口见[配置说明](references/api-key-setup.md)。页面保存与业务读取已经接通；不把 Key 发进聊天，也不自动迁移旧文件。

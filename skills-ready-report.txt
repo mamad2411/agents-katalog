@@ -1,0 +1,2 @@
+[skills-ready] 18962 skill diperiksa · siap=18806 · butuh-dependency=156
+(laporan: /Users/chaali0324/.agents/skills-readiness.md)

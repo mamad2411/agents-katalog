@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+.claude/
+
+# Eval artifacts
+eval-results/
+eval-output/
+*.tar.gz
+*.zip
+
+# Logs
+npm-debug.log
+batch-*.log
+
+# Internal docs and scripts (not part of product)
+CLAUDE.md
+docs/
+run-all-batches.sh
+run-batch-eval.sh
+skill-evolution-comparison-zh.md
+.tmp-*
+
+# ClawHub packaging artifacts (generated, not source)
+clawhub-upload/
+clawhub-canary-upload/
+clawhub-oc-canary-upload/
+clawhub-canary-publish.txt
+
+# OC compiled output (regenerated via npm run build:oc)
+oc/dist/
+
+# Test fixtures (fetched from separate repo: Evol-ai/SkillCompass-test-fixtures)
+test-fixtures/
+
+# Runtime state (user-specific)
+.skill-compass/
+
+# Backup files
+.backup-pre-clawhub/

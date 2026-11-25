@@ -1,0 +1,13 @@
+{"w":1280,"h":720,"fps":30,"dur":4,"bg":"#0B1020",
+ "els":[
+  {"type":"circle","cx":200,"cy":360,"r":40,"fill":"#38BDF8",
+   "keyframes":{"cx":[200,640,1100],"cy":[360,300,360],"r":[20,90,40],"opacity":[0,1,1]},
+   "delay":0.1,"dur":3.0,"ease":"inout"},
+  {"type":"rect","x":80,"y":560,"w":1120,"h":14,"radius":7,"fill":"#1E293B"},
+  {"type":"rect","x":80,"y":560,"w":1120,"h":14,"radius":7,"fill":"#22C55E","progress":true},
+  {"type":"text","text":"MAMAT MEDIA FORGE","x":640,"y":120,"size":64,"fill":"#E2E8F0",
+   "weight":"bold","keyframes":{"opacity":[0,1]},"delay":0.4,"dur":1.4},
+  {"type":"polygon","points":[[0,0],[60,0],[30,52]],"x":100,"y":300,"fill":"#F472B6",
+   "keyframes":{"x":[100,1150],"rotate":[0,360],"opacity":[0,1,0.6]},
+   "delay":0.8,"dur":2.8,"ease":"inout","scale":1.2}
+ ]}

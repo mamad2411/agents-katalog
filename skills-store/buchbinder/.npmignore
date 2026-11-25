@@ -1,0 +1,20 @@
+# Development files
+src/tools/
+node_modules/
+.git/
+.gitignore
+tsconfig.json
+
+# Documentation (keep README.md, LICENSE, ATTRIBUTION.md, SKILL.md)
+CHANGELOG.md
+metadata.json
+
+# Config files
+.eslintrc*
+.prettierrc*
+
+# Test files
+*.test.ts
+*.spec.ts
+test-*.js
+test-*.toml

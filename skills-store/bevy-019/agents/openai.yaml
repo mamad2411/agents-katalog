@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bevy 0.19"
+  short_description: "Build Rasterra against the Bevy 0.19 APIs"
+  default_prompt: "Use $bevy-019 to implement this feature with Bevy 0.19 APIs."

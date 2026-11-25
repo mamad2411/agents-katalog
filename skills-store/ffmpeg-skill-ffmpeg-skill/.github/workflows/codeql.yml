@@ -1,0 +1,48 @@
+# Static analysis for the two languages actually shipped: Python (scripts/, mcp/, tests/) and
+# JavaScript (bin/install.js). Runs on every PR/push to main plus a weekly schedule so a query-pack
+# update can surface something new in code nobody touched recently. This repo has had a real,
+# manually-found vulnerability of exactly the kind CodeQL targets -- batch.py recipe steps
+# resolving outside scripts/ via an absolute path or `../` traversal (fixed in #124) -- so this is
+# a genuine second line of defense, not a checkbox.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays
+
+# See ci.yml's identical block for why: a superseded run's result is thrown away anyway, so
+# cancelling it saves real Actions minutes rather than just finishing a run nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Read-only at the top; the one write the analysis needs is granted to its job (Scorecard
+# Token-Permissions).
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload the SARIF to code scanning
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: ${{ matrix.language }}
+
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: "/language:${{ matrix.language }}"

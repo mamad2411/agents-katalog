@@ -1,0 +1,2 @@
+# git-crypt 加密的私有数据（含公网 IP）
+vars/private.nix filter=git-crypt diff=git-crypt

@@ -1,0 +1,14 @@
+{
+  "name": "决策算法",
+  "slug": "decision-algorithm",
+  "version": "v2",
+  "created_at": "2026-04-09T13:39:50.177042+00:00",
+  "updated_at": "2026-04-10T04:04:00.000000+00:00",
+  "source": "juece_suanfan_100jiang",
+  "framework": "EKB (Expected Value + Kelly Criterion + Bayes)",
+  "knowledge_base": "knowledge/course_rules.json",
+  "platforms": ["openclaw", "claude-code", "codex"],
+  "entry_point": "SKILL.md",
+  "description": "基于老喻EKB决策算法框架，帮助用户分析人生重大决策",
+  "triggers": ["要不要", "该不该", "纠结", "犹豫", "选择困难", "怎么选", "值不值", "风险", "该投多少"]
+}

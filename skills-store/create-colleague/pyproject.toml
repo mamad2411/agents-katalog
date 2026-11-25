@@ -1,0 +1,28 @@
+[project]
+name = "colleague-company-platform"
+version = "2.0.0"
+description = "A multi-skill company platform built on top of colleague-skill."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "requests>=2.32.0",
+  "PyYAML>=6.0.2",
+  "fastapi>=0.116.0",
+  "uvicorn>=0.35.0",
+  "google-genai>=1.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+
+[project.scripts]
+company-platform = "company_platform.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["company_platform*"]

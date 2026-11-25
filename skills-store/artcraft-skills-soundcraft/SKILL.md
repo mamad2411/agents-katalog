@@ -1,0 +1,297 @@
+---
+name: soundcraft
+description: >-
+  SoundCraft is an open-source, pure-Rust digital audio workstation (a clean-room Pro Tools-style
+  DAW) for macOS, Windows, Linux, FreeBSD and the browser: multitrack audio and MIDI editing, a
+  full mixer with built-in and CLAP/VST3/AU plug-ins, automation, recording, bounce/export, video
+  and surround — and every action is a command reachable from the CLI, a JSON control channel and
+  an MCP server. Trigger this skill whenever the user mentions SoundCraft (or `.scraft`, `.scraftz`,
+  `.scgrp`, `soundcraft-cli`, its control channel/MCP server, or "the SoundCraft app"), asks what it
+  can or cannot do, which audio/session/MIDI formats it reads or writes, its keyboard shortcuts, or
+  how to launch, script, automate, inspect or troubleshoot it — and equally when they never name it
+  but describe the job ("edit this multitrack session", "bounce a mix to WAV", "record takes from my
+  interface", "convert audio", "drive a DAW from an agent"). Do not infer SoundCraft behaviour from
+  Pro Tools knowledge: read this first.
+---
+
+# SoundCraft
+
+**Audit basis.** Refreshed 2026-11-12 against tag **v0.20.1**, commit **`a52bbdccbe15342f44e0de1906bf71a621e7a68f`** — `git rev-parse HEAD` in the pinned checkout confirms, and the installed SoundCraft 0.20.1 bundle matches: its binary's read-only `--version` prints `soundcraft 0.20.1 (macos aarch64)`. The previous release this skill described was v0.18.0 (`5ff012ab88490cdfc635ee304c1019885e1b880d`). The checkout is shallow and carries only the v0.18.0 and v0.20.1 tag objects, so the delta below is measured against v0.18.0; v0.19.0, v0.19.1 and v0.20.0 shipped between and are not separately diffable here.
+
+**v0.18.0 → v0.20.1 delta.** `git diff v0.18.0..HEAD --stat` measures **171 files, +3,824/−5,732**; most deletions are `crates/audio-io` (31 files), removed in favour of the shared `craft-audio` crate. In the surfaces this skill documents:
+
+- **Audio formats moved out of the repo.** `crates/audio-io` is gone; formats, codecs and peaks now come from `craft-audio` at the rev pinned in `Cargo.toml` (feature set `decode`, `lossless-encode`, `peaks`, `serde`), and `crates/model/src/source.rs::FileFormat` is only the session-facing mapping (Wav, Aiff, Flac, Mp3, Ogg, Aac, Alac, Caf, Other). CLI help and file dialogs derive their filters from `craft_audio::DECODE_EXTENSIONS` / `ENCODE_EXTENSIONS` (`apps/soundcraft-cli/src/args.rs`, `apps/soundcraft/src/main.rs`), so the list can no longer drift from the decoder. Write aliases are now **seven**: `wav`, `wave`, `bwf`, `aif`, `aiff`, **`aifc`**, `flac` — asserted verbatim by `apps/soundcraft-cli/tests/it/behaviour.rs`. The repo's updated `docs/file-format-parity.md` records new import families: Opus, AC-3/E-AC-3 and the audio of `.mov`/`.mka` files.
+- **Exports are defensive.** Bounce/save part files are created exclusively, so a link planted at a predictable part name is replaced, not written through. `io::write_file` (score, MIDI, session text) follows an existing symlink, but refuses a dangling link, a non-regular file, a read-only file and a **hard-linked destination** ("refusing to overwrite a hard-linked file; choose a new export path"); a mix/stem bounce writes a fresh part file and renames it over the name instead. `file.export_clips` creates each WAV with `create_new`, skips an occupied name (a link included) and numbers a run of same-named clips in one pass (`crates/engine/src/io.rs` `create_new`, `write_file`, `export_clips`, `clip_file`).
+- **Import has a growth guard.** A file whose sample rate is more than **128×** below the session's is refused before conversion (`MAX_RATE_EXPANSION`, `crates/engine/src/io/import.rs`), and the same `at_rate` guard now covers session load, clip-group import and the Sampler. The older `MAX_IMPORT_SAMPLES` (~4 GiB of f32) cap remains.
+- **Locked clips stay whole.** Separate, Trim and range edits skip time- and edit-locked clips; Event Time Insert/Cut split locked clips first so the whole timeline moves (`crates/engine/src/edit.rs` `separate_at_if` / `separate_all_at` / `trim_*`, `crates/engine/src/cmd/event.rs`). Strip Silence cuts all its points in one pass (`separate_at_points`, `crates/engine/src/io/strip.rs`).
+- **Mix accuracy.** Track volume (with trim and VCA) and master volume automation are read at **every sample** as a segment-linear dB ramp instead of once per block (track faders cap at +12 dB; the master uses the shared 200 dB ceiling) (`crates/mix/src/automation.rs` `apply_gain`, `crates/mix/src/strip.rs` `apply_fader`, `crates/mix/src/lib.rs`); a hosted instrument's reported latency is compensated (`crates/mix/src/strip.rs::run_inserts`); the audio thread renders strips itself rather than parking on rayon (`crates/mix/src/threads.rs`); Consolidate runs clip effects over the clip plus a bounded tail (`crates/mix/src/offline.rs`). CLAP reset keeps queued note-offs, so held notes stop at Stop/Play/Locate (`crates/clap-host/src/plugin.rs`).
+- **Editing and UI.** F5–F10 still pick tools; **F6+F7 or F7+F8 in either order**, and **Cmd/Ctrl+7**, pick the Smart Tool; **Cmd/Ctrl+6** picks Pencil; only the three zoom commands repeat while a key is held; plain Left/Right with an edit selection centre the Edit window on its start/end (not over the piano roll) (`crates/ui-egui/src/shortcuts.rs`, `crates/engine/src/cmd/edit.rs`). The Sub counter opens its format menu; a menu taller than the window scrolls; I/O menus search inputs, the main output and buses; double-clicking a track colour strip opens the Color Palette (`crates/ui-egui/src/toolbar.rs`, `menus.rs`, `mix_window/routing.rs`, `edit_window/header.rs`).
+- **Names changed, ids did not.** `feature_names.rs` relabels Beat Detective→Beat Analysis, QuickPunch→Punch Recording, Sibelius→MusicXML, x-form→Rendered (High Quality), HEAT→Analog Saturation, Melodyne→No ARA plug-ins, Ableton Link→Tempo Sync, Pro Tools Search→Search; the `lofi` plug-in now displays "Bit Crusher" (`crates/dsp/src/plugins/harmonic.rs`). Five catalog leaves are disabled placeholders with "Not available yet." (`crates/engine/src/catalog.rs` `PLACEHOLDERS`), and legacy catalog paths still dispatch (`LEGACY_LABEL_ALIASES`). The updater reports installing/ready/installed/failed, offers Restart to Update and installs at exit (`crates/ui-egui/src/updates_ui.rs`, `apps/soundcraft/src/main.rs`).
+
+**v0.17.0 → v0.18.0 delta (kept).** 108 files, +6,468/−554. Complete Grid/Nudge time scales (`clips_markers` grid only, `{"timecode"}`/`{"feet_frames"}` increments, `follow_main`); a nine-page Preferences window with only Theme, Reduce Visual Effects and Levels of Undo wired; WAV bounces stamped with a BWF `bext` TimeReference (and `convert` keeping one); a 256 MiB session cap with duplicate-field and duplicate-payload refusals; transient record-arm/input-monitor toggles; hosted plug-ins told offline vs realtime. UI commands moved 68 → 70 (`ui.reduce_visual_effects`, `ui.undo_levels`), so a live app reports 554 ids, while engine specs stayed at 484. Older v0.15/v0.16 history is folded into `CHANGES.md`.
+
+**Verify against your installed version** — the ArtCraft Launcher auto-updates, so a newer build may differ; every count quoted here was re-measured at this tag, and code paths that moved were re-cited. The measurement method for each count is in `evidence.md`.
+
+## Overview
+
+SoundCraft is an open-source, pure-Rust digital audio workstation: a clean-room reimplementation of the Avid Pro Tools workflow (recording, editing, mixing, automation, bounce) that also runs in a browser (`README.md`, `docs/target-app-parity.md`). The parity target is Pro Tools Ultimate 2026.4.1. It is a Cargo workspace of **13** library crates plus three entry points — the desktop app (egui 0.37), `soundcraft-cli` (parsed with clap following the repo's RFC-0012), and a WebAssembly build; `crates/audio-io` no longer exists, because shared audio formats live in `craft-audio`. It is **pre-alpha**: the repo's own generated report counts 397/512 target menu leaves implemented by the engine (77.5 %, `docs/parity-checklist.md`) and the alpha gate still fails on a duplex interface path, MIDI recording and session interchange (`docs/roadmap.md` "Alpha gate"). Source: `github.com/storytold/soundcraft`.
+
+## Capabilities (verified)
+
+### The command layer is the API (start here)
+
+- **484 engine command specs** at v0.20.1 — **unchanged at v0.20.1** from v0.18.0, with the full dotted-id literal set diffed clean between the two tag trees — from the **32** production modules registered by `command_specs()` (`crates/engine/src/cmd.rs`).
+  - Breakdown, re-extracted at this tag: **389** literal `cmd!` ids in non-test engine sources + **94** generated by four local helper macros (`toggle!` 17, `flag!` 61, `radio!` 6, `option!` 10) + **1** direct `CommandSpec` (`mix.insert_state`) = **484**.
+  - Each spec carries id, label, menu path, shortcut, params doc, enabled reason, journal/undo flags and a run function. Counting textual `cmd!(` occurrences overcounts macro-definition/doc/test lines and misses the 94 generated ids — derive the count from the id literals. Count your own build with the CLI rather than trusting any static number.
+- **70 UI commands** at v0.20.1 — **unchanged at v0.20.1**; the sorted id list is identical to v0.18.0 (`crates/ui-egui/src/menus.rs` `UI_COMMANDS`): windows, dialogs, `app.checkForUpdates`, `ui.dock`, `ui.dock.reset`, `ui.theme`, `ui.audio_device`, `ui.set`, `ui.reduce_visual_effects`, `ui.undo_levels`, `window.*`, `view.mix_section`, `view.scroll_into_view`. The desktop control channel appends them to `engine.commands`, so a running app reports **554 ids**; `soundcraft-cli commands` and the headless MCP server report **484**. No id overlaps the two sets (re-checked at this tag).
+- **CLI** (`soundcraft-cli`, **10 subcommands**, unchanged at v0.20.1, plus `--version`/`--help`; arguments are parsed with clap following RFC-0012, so a flag a subcommand does not take is a usage error): `info FILE [--compact]`; `convert IN OUT [--bit-depth 16|24|32f] [--rate HZ] [--normalize] [--dither|--no-dither] [--in-place]`; `run [--in S.scraft | --demo] [--cmd ID[=JSON]]… [--bounce OUT] [--start T --end T] [--save S.scraft] [--inspect [--compact]] [--in-place]`; `script FILE [--in S | --demo] [--save S] [--bounce OUT [--start T --end T]] [--keep-going] [--inspect [--compact]] [--in-place]`; `commands [FILTER] [--json [--compact]]`; `describe ID [--compact]`; `app [--port P] METHOD [JSON] [--compact]`; `mcp [--connect PORT] [--demo] [--automation-read-root DIR]… [--automation-write-root DIR]…`; `parity [--write PATH]`; `plugins`. `--in-place` allows an output that is an input (or a `--save` that is the `--in` file); `--compact` requires the JSON/inspect output it compacts.
+  - `convert` writes only the craft-audio encode formats: the output extension decides, `wav`/`wave`/`bwf`/`aif`/`aiff`/`aifc`/`flac` are accepted, anything else is refused with that list. It keeps a BWF source's `bext` on WAV output, rescaled to the output rate (`apps/soundcraft-cli/src/convert.rs`).
+  - Carried behaviour: every flag accepts `--flag=value`; `run`, `script` and `convert` **reject unknown options and missing values**; `--cmd=ID=JSON` inline; `--bounce` with no `--start`/`--end` bounces the **whole session**; `convert` dithers only when resolution is lost unless `--dither`/`--no-dither` says otherwise; `script --keep-going` still exits non-zero when a command failed.
+  - `app` shorthand: a dotted command id is wrapped as `engine.execute`; accepted control methods stay methods. Caveat: `ui.scroll` and `ui.zoom` are **not** in that whitelist, so `soundcraft-cli app … ui.scroll/ui.zoom` is misrouted; send those two over the raw TCP channel (`apps/soundcraft-cli/src/app.rs`).
+- **MCP over stdio** (`crates/automation/src/mcp.rs`): protocol `2025-06-18` (accepts `2025-03-26`, `2024-11-05`); **17 tools + 2 resources, unchanged at v0.20.1**. Core: `list_commands`, `execute`, `batch`, `inspect_session`, `new_session`, `open_session`, `save_session`, `import_audio`, `bounce_mix`, `parity`. App-only (need the desktop app plus `mcp --connect`): `screenshot`, `ui_inspect`, `ui_set`, `menu_invoke`, `click`, `drag`, `key`. Resources: `soundcraft://session` and `soundcraft://commands`.
+  - `batch` runs up to **1000** calls (`MAX_BATCH_CALLS`); larger arrays are rejected before anything runs. Any failed call makes the tool result `isError: true`; `keep_going` still runs the rest. Empty batches and non-object messages get a JSON-RPC `Invalid Request` reply.
+  - Tool schemas are a subset: `new_session`/`open_session`/`save_session`/`import_audio`/`bounce_mix` forward their arguments to the engine command, so extra engine params work. Verify with `describe`.
+- **Desktop control channel**: `soundcraft --control <port>` or `SOUNDCRAFT_CONTROL_PORT`; newline-delimited JSON over TCP on `127.0.0.1`, one reply per line. **17 canonical methods, unchanged at v0.20.1** (`crates/ui-egui/src/control.rs`): `engine.execute` (alias `command`), `engine.commands`, `engine.parity`, `session.inspect` (alias `document.inspect`), `ui.inspect`, `ui.menu.list`, `ui.menu.invoke`, `ui.set`, `ui.move`, `ui.click`, `ui.drag`, `ui.scroll`, `ui.zoom`, `ui.key`, `ui.text`, `ui.screenshot`, `app.quit`. `ui.dock`, `ui.dock.reset`, `ui.theme`, `ui.audio_device`, `ui.reduce_visual_effects`, `ui.undo_levels` and the `setup.*` dialogs are **UI/engine commands** invoked through `engine.execute`, not top-level methods.
+  - `ui.screenshot {path?}` writes a PNG, or returns base64 in `png_base64` and the pixel size when no path is given. It binds the request to the window geometry, focus state and open session: a geometry change is retried within its deadline and then fails `screenshot stale`; a focus or session change cancels it; it can also fail `screenshot unavailable: the window has no capturable size yet` before the first paint, `screenshot queue full` (8 pending, 4 in flight), `screenshot too large`, `screenshot timed out`, or `screenshot path longer than 4096 bytes`.
+  - Two UI commands refuse a direct call and name the replacement: `ui.new_tracks_dialog` ("call `track.new` with parameters") and `ui.bounce_dialog` ("call `file.bounce_mix` with a path").
+  - Offscreen UI, no window: `cargo run -p soundcraft-ui-egui --example ui_shot -- out.png [script.jsonl] [--blank] [--size WxH] [--system-theme light|dark|none]` (`crates/ui-egui/examples/ui_shot.rs`).
+- **Path confinement is MCP-only**: `--automation-read-root` / `--automation-write-root` confine every path for the in-process MCP server; each flag may be repeated, a kind left out grants no access of that kind, roots must be existing folders, and `--connect` with roots is refused. The desktop control channel has no equivalent confinement. Limits (`crates/engine/src/file_access.rs`): a symlink that resolves inside a root still wins, so the roots bound an agent, they do not sandbox a hostile one. Reads got stricter in this delta: clip-group audio is opened once and must resolve inside the group folder (`crates/engine/src/io.rs::read_file_inside`, `crates/engine/src/clip_group_file.rs`), and a movie path is read-checked and must be a regular file (`crates/ui-egui/src/video_track.rs`).
+
+### Editing and arrangement
+
+- Edit window with tracks/clips/waveforms; Mix window (also as a separate native OS window through `window.mix_separate`); movable/dockable panels Tracks/Groups, Clips, MIDI Editor, Memory Locations, Undo History — Tracks/Groups and Clips dock as full-height columns (`crates/ui-egui/src/docking.rs`).
+- Five edit modes Shuffle, Slip, Spot, Grid, Grid-Relative; seven tools Zoom, Trim, Selector, Grabber, Scrubber, Pencil, Smart (`crates/model/src/session.rs`).
+- **Tool selection:** F5–F10 pick Zoom/Trim/Selector/Grabber/Scrubber/Pencil; **F6+F7 or F7+F8 in either order** and **Cmd/Ctrl+7** pick the Smart Tool; **Cmd/Ctrl+6** picks Pencil. Only `view.zoom_in`, `view.zoom_out` and `view.waveform_zoom` repeat while their key is held — every other shortcut ignores auto-repeat, so one press is one action (`crates/ui-egui/src/shortcuts.rs`).
+- **Grid and Nudge time scales (complete since v0.18.0).** `view.grid {value?, step?, format?, follow_main?, lines?}` and `view.nudge {value?, step?, format?, follow_main?}`; `format` is `bars_beats|min_secs|timecode|feet_frames|samples` (Clips/Markers additionally for grid, and nudge refuses it). Values still accept `"1/16"`, `"1 bar"`, `"1/8t"`, `"1/4."`, `{"seconds"}`, `{"frames"}`, `{"samples"}`, plus `{"timecode":"frame|half_frame|quarter_frame|subframe|second|5_frames"}` and `{"feet_frames":"foot|frame|quarter_frame|subframe"}`. `follow_main: true` makes the Grid/Nudge track the main counter, and a `format: "clips_markers"` grid draws and snaps at visible clip boundaries and memory locations. Snapping excludes the clips being moved (`crates/engine/src/cmd/view.rs`, `crates/model/src/session.rs` `grid_lines` / `snap_to_grid_excluding`, `crates/engine/src/edit.rs::grid_delta`). Both settings are saved in the session (`crates/model/src/session.rs` `EditState`).
+- Fades/crossfades in five shapes; cut/copy/paste/duplicate/repeat/shift/insert-silence/separate/heal/consolidate/strip-silence/nudge; Tab to Transient; Zoom Toggle; loop, quantize-to-grid, clip gain and gain envelope, clip effects, edit locks, colour, ratings.
+- **Time- and edit-locked clips keep their extent** through Separate, Trim Start/End and range trims, like they already do for Nudge; Event Time Insert/Cut split locked clips first so the timeline moves as a whole (`crates/engine/src/edit.rs`, `crates/engine/src/cmd/event.rs`).
+- **Plain Left/Right with an edit selection** scroll the Edit window so the selection's start/end is centred; with only an insertion point, or over the MIDI piano roll, the keys are left alone (`crates/ui-egui/src/shortcuts.rs::centre_on_selection`).
+- **Strip Silence has three modes**: `edit.strip_silence {…, mode?: strip|extract|separate, name?, number?, zeros?, suffix?}`; `edit.strip_silence_preview` (query) returns the padded ranges it would keep. It now cuts every boundary in one pass over the playlist (`crates/engine/src/io/strip.rs`, `crates/engine/src/edit.rs::separate_at_points`).
+- **Clip Looping**: `clip.loop {clips?, count?, length?, fill?}`; `clip.unloop {mode?: remove|flatten}`.
+- **Clip List › Auto Rename**: `clip.auto_rename {clips?, name?, number?, zeros?, suffix?}` sets the names editing gives the clips it separates; the schemes live in the session and survive save/reopen.
+- Playlists with comping lanes, clip groups (`.scgrp`), Clip List, track folders, VCA masters, track freeze/commit/bounce, file-based track presets (`track.save_preset` / `track.load_preset`) and Import Session Data. `.scgrp` import rejects audio paths that are absolute, contain `..`, or resolve through a link outside the group folder (`crates/engine/src/clip_group_file.rs`).
+- **`track.commit` keeps the track's exact `ChannelFormat`**, surround/height/ambisonic included, up to the renderer's 16 channels.
+- Commands Keyboard Focus single-key editing in the Edit window; `options.keyboard_focus {commands|clips|groups|none}`.
+- Undo/redo for document commands, an undo history window, and `engine.history` returning `{undo, can_redo}`. The depth is 1–64 (default 64) and settable through `ui.undo_levels`; live input toggles do not enter undo.
+- A menu taller than the window scrolls; a search field in the I/O menus finds hardware inputs, the main output, "no input"/"no output" and buses; double-clicking a track's colour strip opens the Color Palette for the selected tracks; the Sub counter opens the same time-format menu as the Main counter (`crates/ui-egui/src/menus.rs`, `mix_window/routing.rs`, `edit_window/header.rs`, `toolbar.rs`).
+
+### Mixing, automation and plug-ins
+
+- 10 inserts and 10 sends per track (`INSERT_SLOTS`/`SEND_SLOTS`, `crates/model/src/mixer.rs`), busses, aux inputs, master faders, VCAs, routing folders, object/bed routing, solo modes, mute/solo groups, phase invert, input trim, pre/post sends, automatic plug-in delay compensation. Aux and Folder strips are ordered by exact acyclic routing depth.
+- **30 built-in plug-ins** in `REGISTRY`, unchanged at v0.20.1: 27 processors + 3 instruments (subtractive synth, drum synth, sampler; incl. `auto_pan`, `ring_mod`, `subharmonic`). `engine.plugins` / `soundcraft-cli plugins` list them; ids are stable, display names can change — `lofi` now shows as "Bit Crusher" (`crates/dsp/src/plugins.rs`, `crates/dsp/src/plugins/harmonic.rs`).
+- Offline AudioSuite processing via `audiosuite.process {process, params?, clips?, tracks?, start?, end?}`: any built-in plug-in id from `engine.plugins` **plus seven legacy process names that are not plug-ins** — `normalize`, `reverse`, `duplicate`, `time_stretch`, `pitch_shift`, `varispeed`, `speed_ramp` (unchanged at v0.20.1). Hosted `clap:`/`vst3:`/`au:` ids are refused with a message naming `engine.plugins` (`crates/engine/src/cmd/audiosuite.rs`); `signal_generator` fills a range with a new clip and is also a built-in id. The AudioSuite menu lists each processor once per category and uses its SoundCraft name, but every historical catalog path still dispatches to `audiosuite.process`.
+- Automation: lanes for volume, pan, mute, send level/pan/mute and any insert parameter; seven modes (`crates/model/src/automation.rs`); moving a send fader writes send-level automation; `automation.set_point`, `write_range`, `clear`, `thin`, `thin_all`, `write_to_current`, `write_to_all`, `volume_to_clip_gain`, plus coalesce commands.
+  - **Track volume (with trim and VCA) and master volume are evaluated at every sample in the v0.18.0→v0.20.1 delta**, as a ramp linear in dB (track faders cap at +12 dB); a breakpoint acts on its own sample whatever the block size (`crates/mix/src/automation.rs::apply_gain`, `crates/mix/src/strip.rs::apply_fader`, `crates/mix/src/lib.rs`). Send levels and insert parameters are still read once per block. Mute automation is evaluated per sample inside a render block.
+- Third-party hosting in-process: CLAP, VST3 and macOS Audio Units. Discovery: `engine.clap_plugins {rescan?}`, `engine.vst3_plugins {rescan?}`; ids `clap:<id>`, `vst3:<class id hex>`, `au:<type>:<subtype>:<manufacturer>`. **There is no Audio Unit discovery command** — the UI scans AUs at menu time. Hosts are told whether they render offline (`kOffline`, `clap.render`), and a load failure keeps the system's dlopen/GetPluginFactory reason instead of a bare "failed".
+- Plug-in editors: CLAP opens the plug-in's own floating window (Windows hosted-embedded), VST3 editors on macOS and Windows, Audio Units never; on the signed macOS build third-party VST3 is refused (library-validation entitlement). A CLAP editor must be asked for on the process main thread, enforced on every platform.
+- A CLAP reset keeps queued note-offs and reserves queue slots for releases, so a hosted instrument stops every held note at Stop, Play and Locate (`crates/clap-host/src/plugin.rs`). A hosted instrument's reported latency is added to the strip's delay compensation (`crates/mix/src/strip.rs::run_inserts`).
+- Plug-in presets are partly UI-only; for a hosted plug-in's opaque state use `mix.insert_state {track, slot, state: base64|null}` — not undoable and not journaled.
+
+### Recording and audio devices
+
+- Record arm, input monitoring, punch on selection or on the fly, pre/post-roll, loop recording with a playlist per take, destructive and track-punch modes.
+- **Live input state is transient**: `mix.record_arm`, `mix.input_monitor` and `track.set_record_to_input_only` write the runtime session, are not undoable, do not mark the document dirty, and are not restored from an autosave (`crates/engine/src/cmd/mix.rs`, `crates/engine/src/dirty.rs`, `crates/engine/src/autosave.rs`).
+- Takes **stream to disk** while recording: one WAV per take, created exclusively, the header rewritten every second; after stop the take is decoded into RAM as a session source (`crates/playback/src/record.rs`). A session never saved and with no settings folder records into a new random, owner-only (0700 on Unix) folder under the temporary folder, made exclusively on first use (`crates/ui-egui/src/app/playback.rs`, `crates/engine/src/autosave.rs::create_unique_folder`). `docs/gaps.md` still says takes are held in RAM — that doc row is stale.
+- **Track input routing exists**: `track.input {"input":"In 3"}` (or a bus name / `none`); `plan_takes` records `track.channels()` consecutive device channels starting from that input, wrapped to the device's input count (`crates/engine/src/io.rs::plan_takes`). What is missing is an input/output matrix with per-channel gain/delay and latency reporting.
+- Device selection is real: `ui.audio_device {system?, output?, input?, sample_rate?, buffer_size?, list?}` changes the audio system/device/rate/buffer (sample rate 8 000–768 000, buffer 16–8192) and reopens the player; it refuses while recording. `setup.playback_engine {device?, buffer_size?, delay_compensation?}` is the engine command: a programmatic call in the desktop app now routes device/buffer through `ui.audio_device` and applies delay compensation, returning the open device and `applied: true` when a device is open; headless it stores the request and returns `applied: false` (`crates/engine/src/cmd/setup_more.rs`, `crates/ui-egui/src/panels/windows.rs::setup_audio_command`). ASIO is behind the opt-in `asio` build feature.
+- Autosave on its own thread after changes, one folder per session, plus crash recovery at launch; `Backups/` beside a session keeps the newest ten **numbered** copies (`Backups/<name> backup <n>.<ext>`) on overwrite.
+
+### MIDI, notation, instruments and time
+
+- Instrument and MIDI tracks, piano-roll editor with velocity lane and event list, note add/edit/delete/move, quantize, input quantize, step input, transpose, real-time properties, MIDI track offsets, retrospective record.
+- Standard MIDI File: reads formats 0 and 1 fully and format 2 best-effort; **always writes format 1**. Controller events are indexed per channel and kind, so a controller number reused across channels no longer collides (`crates/midi/src/sequence.rs`).
+- `mix.sampler_load {track?, path, params?}` / `mix.sampler_clear` for the built-in Sampler; the Sampler accepts the craft-audio decode formats.
+- Score Editor and MusicXML export. The command ids remain `file.export_sibelius`, `file.send_to_sibelius` and `file.print_score`, but their labels are now "MusicXML...", "MusicXML" and "Print Score..." (`crates/engine/src/cmd/file.rs`).
+- Monophonic audio-to-MIDI (`edit.copy_audio_as_midi`, `track.extract_midi`) and chord detection to markers.
+- Five counter timebases (bars|beats, min:secs, timecode, feet+frames, samples); tempo and meter maps with ramps; key signatures; **Beat Analysis** (id `event.beat_detective`) and Identify Beat; Elastic Audio warping (the "x-form" algorithm displays "Rendered (High Quality)").
+- **No MIDI hardware I/O at all**: `setup.midi_*` only store settings.
+
+### Audio and session formats
+
+- **Read:** WAV/BWF/RF64 and AIFF/AIFF-C natively; FLAC, MP3/MP2/MP1, Ogg Vorbis and Opus, AAC and ALAC in MP4/M4A/M4B and MOV, CAF, AC-3/E-AC-3, and Matroska/WebM audio through `craft-audio`; the older `crates/audio-io` crate is gone. The container is detected from bytes first, the extension is only a hint (`apps/soundcraft-cli/src/info.rs`, `crates/model/src/source.rs`, `docs/file-format-parity.md`).
+- **Write:** **seven** extension aliases — `wav`, `wave`, `bwf`, `aif`, `aiff`, `aifc`, `flac` — with optional TPDF dither. WAV switches to RF64 above 4 GiB; float WAV and AIFF-C `fl32` keep finite samples above full scale; FLAC is integer-depth only. There is still no MP3/AAC/Ogg/Opus export (`apps/soundcraft-cli/tests/it/behaviour.rs` asserts the accepted list, `crates/engine/src/cmd/file.rs`).
+- Import converts to the session rate, but refuses a conversion that would grow the audio more than **128-fold** or exceed `MAX_IMPORT_SAMPLES` (1 << 30 samples across channels, ~4 GiB of f32); session load, clip-group import and the Sampler use the same guard (`crates/engine/src/io/import.rs`).
+- Waveform overviews are generated in memory, not cached as `.wfm` files (`craft_audio::peaks`).
+- **Native session `.scraft`**: pretty-printed serde JSON with `format_version` **1**; a newer version is refused. The text is parsed straight into the document, and a **document field repeated in one JSON object is refused** (`duplicate field`), while keys of map-like data (plugin params, edit values, Auto Rename schemes, MIDI originals) and unknown keys keep the last value / are ignored. Files over **256 MiB** are refused unread and are never written (`MAX_SESSION_BYTES`, `crates/engine/src/io.rs`, `crates/model/src/session.rs`). `from_json` sanitises and validates (duplicate ids and an exhausted id space are rejected). Audio that only exists in memory is written as 32-bit float WAV into a sibling `Audio Files/` folder; saves are atomic; an overwrite copies the old file to `Backups/` first.
+- `.scraftz` is the **browser** bundle (zip of the `.scraft` plus `Audio Files/`, 10,000-entry / 1 GiB caps). Desktop SoundCraft does **not** open it. A bundle whose zip entries share one payload is refused ("bundle: files share data"), and the session inside is subject to the 256 MiB cap (`crates/engine/src/io/bundle.rs`, `crates/ui-egui/src/dialogs/files.rs`).
+- Stored media paths are resolved by `craft_docpath.resolve_absolute`: a stored path is followed only when local or on the session's own network share.
+- `.scgrp` clip groups are JSON plus a `<name> Audio/` folder of 32-bit float WAVs; import resolves each audio path inside the group folder and refuses an escape, existing or missing alike (`crates/engine/src/clip_group_file.rs`).
+- One session per running app; there are no session tabs.
+
+### Export, bounce and delivery
+
+- `file.bounce_mix {path, format?, bit_depth?: 16|24|32f, start?, end?, source?: main|bus name, normalize?, dither?, fold_down?: stereo}` streams the render to disk and returns `{path, bytes, seconds, peak_db, lufs, true_peak_db}`; `dither` defaults true, `normalize` false, omitted range means the edit selection else the whole content. The doc names `wav|aiff|flac`, but any craft-audio write alias is accepted, including `aifc`. **WAV output carries a `bext` TimeReference** (session timecode start + bounce start); AIFF/FLAC have nowhere to put it (`crates/engine/src/io.rs`). Bounces are limited to 4 hours (`MAX_BOUNCE_SECS`).
+- `file.bounce_stems {dir, format?, bit_depth?, start?, end?, dither?, fold_down?}` writes one file per unmuted, active audio/instrument/MIDI track; stem WAVs carry the same BWF stamp. A non-string `format` and an unsupported one are now both rejected with the supported list, instead of silently falling back to WAV (`crates/engine/src/cmd/file.rs`).
+- `file.export_clips {dir, clips?, format?: wav}` writes clips as **WAV only**; it opens each name with `create_new`, so an occupied name (a planted link included) is skipped and `<stem>-2.wav` used, and a run of same-named clips counts up once (`crates/engine/src/io.rs::export_clips`). Also `file.export_midi {path, tracks?}`, `file.export_session_text {path?, replace?}`, `file.export_selected_tracks_as_session`, `file.export_sibelius`/`file.send_to_sibelius`, `file.print_score`, `file.export_clip_groups`.
+- Exports do not write through planted links: `write_file` follows an existing symlink, refuses a dangling link, a non-regular file, a read-only file and a hard-linked destination; bounces and saves write a fresh part file and rename it over the name, so a destination that is a hard link is replaced, not truncated (`crates/engine/src/io.rs::write_file`, `write_export_checked`, `create_new`).
+- `session.save_template {path, replace?}` writes a clip-stripped `.scraft` (also subject to the 256 MiB cap); there is no template browser.
+
+### Video, surround and platforms
+
+- Video track with thumbnails, Video window with optional timecode burn-in, Video Universe strip; pure-Rust decoding of H.264 (8-bit 4:2:0), Apple ProRes (422 family, 4444/XQ) and Motion JPEG. HEVC, AV1 and DNx movies are recognised by the demuxer but frames return "unsupported". Hostile-frame bounds now include an MJPEG dimension check before decode and per-request H.264 byte/sample budgets (`crates/video/src/movie.rs`). Container/bitstream layers are shared craft-libs code (`craft_media::isobmff`, `craft_media::bitstream`).
+- Surround/immersive mixing: **34** main/bus format choices from Mono to 9.1.6 and 1st–7th Order Ambisonics — **unchanged at v0.20.1** (`ChannelFormat::ALL`, `crates/model/src/mixer.rs`); `setup.main_format`; surround panners; `track.object` for object/bed routing; Renderer window.
+- Native builds for macOS (universal, signed/notarized), Windows x64/x86/arm64 (per-user install by default), Linux (AppImage, deb, rpm, Flatpak, tar.gz, riscv64 tarball; **XWayland drag-and-drop by default on Wayland**), FreeBSD, and WebAssembly. The web build has no TCP control channel and no filesystem.
+- **Startup update prompt with direct self-updating** (craft-update). The updater reports installing, ready, installed and failed, offers Restart to Update, and starts the installer when the app exits (`crates/ui-egui/src/updates_ui.rs`, `apps/soundcraft/src/main.rs`).
+
+## Known limitations and not-implemented
+
+Do not assign these; each is absent or partial at v0.20.1:
+
+- **MIDI hardware I/O is absent.** No recording from a keyboard, no live playing through instruments, no MIDI out, clock or MTC.
+- **No Pro Tools interchange.** No `.ptx`/`.ptf`, AAF, OMF or Media Composer session import/export; the nearest bridge is `file.import_session_data` between SoundCraft `.scraft` sessions.
+- **Audio-interface depth.** Input and output are separate cpal streams; the mix runs in fixed 512-sample blocks; no duplex clock, no I/O matrix, no latency reporting, no record-offset compensation. Choosing a device, rate and buffer now works in the desktop app (`ui.audio_device`, `setup.playback_engine`), but the routing/duplex path is the remaining alpha blocker.
+- **All audio sources are decoded whole into RAM.** No disk streaming for playback; bounces themselves stream to disk, and takes stream to WAV while recording.
+- **Plug-in limits.** AAX is not hosted. The signed macOS build refuses third-party VST3 (library-validation entitlement). AU editors are not hosted and AUs have no discovery command; CLAP embedded editors only on Windows; VST3 editors only macOS/Windows. No external sidechain, no ARA, no out-of-process sandboxing. AudioSuite runs built-in plug-ins only, never hosted ones.
+- **No compressed export** (MP3/AAC/M4A/Ogg/Opus) even though those decode on import.
+- **Video is decode-only and limited.** No HEVC/AV1/DNxHD/DNxHR decode, no video export or bounce-with-video, no external timecode.
+- **No immersive delivery.** No ADM BWF, Dolby Atmos renderer integration or binaural.
+- **No control surfaces (HUI/MCU/EUCON) and no external sync (MTC/LTC/video reference).**
+- **English-only UI, unchanged at v0.20.1.** No string catalog; a Hangul fallback font is appended for Korean names; no other fallbacks (`crates/ui-egui/src/fonts.rs`). `docs/localization-parity.md` still denies the Hangul fallback — the code wins.
+- **Preferences is mostly a catalog.** The nine-page window (`crates/ui-egui/src/preferences.rs`) only wires UI Theme, Reduce Visual Effects and Levels of Undo; every other control is a disabled placeholder that says "This preference is not available yet."
+- **Five menu leaves are deliberate placeholders**: `View > Transport > Ableton Link` (shown "Tempo Sync"), `Track > ARA Plugins > Melodyne` and `Clip > ARA Plugins > Melodyne` ("No ARA plug-ins"), `View > Mix Window Views > HEAT` ("Analog Saturation") and `Options > Activate HEAT` ("Activate Analog Saturation"). They keep their catalog place, are always disabled, and say "Not available yet." on hover (`crates/engine/src/catalog.rs::PLACEHOLDERS`). Do not treat them as implemented features.
+- **Session management is thin.** No template browser, no batch rename; the Workspace window is a one-folder file list. Sessions over 256 MiB cannot be opened or saved.
+- **Automation is only partly per-sample.** Track/master volume (with trim and VCA) is per-sample in the v0.18.0→v0.20.1 delta; send levels and insert parameters are read once per block, so their interior breakpoints still depend on block size (`docs/gaps.md` G-04).
+- **No speech-to-text** (settings only, `setup.transcription_settings`) and **no fidelity harness** against Pro Tools.
+- **`.scraftz` does not open on the desktop**; only the browser build opens it.
+- **Shortcut collisions exist.** `Cmd+Alt+L` is declared by both `clip.loop` and `edit.move_selection_left`; `command_for` walks the specs in registration order and `edit::specs()` comes before `clip::specs()`, so the key runs Move Edit Left. Trigger Loop by command id. `Space` is declared by play/stop/toggle but is handled before the registry, so it behaves as play/stop. Audit any shortcut you rely on against the handler, not the spec table (`crates/engine/src/cmd/edit.rs`, `crates/engine/src/cmd/clip.rs`, `crates/ui-egui/src/shortcuts.rs::command_for`, `crates/engine/src/cmd.rs`).
+- **Parity is uneven by area, unchanged at v0.20.1.** The generated report counts 397/512 menu leaves implemented (Window 1/52, AudioSuite 0/28, View 92/112, File 22/30). AudioSuite catalog leaves all map to the single `audiosuite.process` command, even though the menu now folds duplicate processor entries.
+- **Docs still lag the code** in places (the alpha-gate device and RAM-take rows, G-16 track-preset recall, the Hangul fallback denial). Trust the code paths cited here, then `soundcraft-cli describe`.
+
+## How to operate
+
+### Launch on macOS
+
+- `open -a SoundCraft`, or `open -a SoundCraft --args --demo`. A terminal launch of the app executable with `--control` prints `SOUNDCRAFT_CONTROL_PORT=<port>` on **stdout**; `open -a … --args` does not show it, so prefer a fixed port there.
+- App flags (verified with the installed binary's `--help`): `--demo` / `--sample`, `--no-audio` (never open an output device in a smoke test), `--control <port>` (`0` = pick a free port and print it), `--version`/`-V`, `-h`/`--help`, and positional files: `.scraft` opens as a session, `.mid`/`.midi`/`.smf` imports MIDI, anything else imports as audio.
+- Environment: `SOUNDCRAFT_CONTROL_PORT` (port or loopback `host:port`; another host is ignored with a warning), `SOUNDCRAFT_CONFIG_DIR` (the whole settings folder; empty disables it), `SOUNDCRAFT_NO_PREFS` (recommended for agent test runs), `SOUNDCRAFT_NO_SYSTEM_FONTS`, `SOUNDCRAFT_WAYLAND` (Linux: `1` keeps native Wayland instead of XWayland), `RUST_LOG`. On/off variables take `1/on/true/yes` or `0/off/false/no`.
+- Settings on macOS: `~/Library/Application Support/SoundCraft/` — `ui.json`, `Autosave/`, `Presets/`, `logs/soundcraft.log`. A `portable.txt` beside the executable switches to `<exe dir>/SoundCraftData`.
+### Getting the CLI (the launcher installs the app, not the CLI)
+
+The ArtCraft Launcher installs `SoundCraft.app`; it does not put `soundcraft-cli` on your `PATH`. It ships **no** CLI binary inside the bundle — the bundle holds only `SoundCraft` — so a launcher-only install has no `soundcraft-cli` at all. The CLI is published on the app's GitHub release, `soundcraft-cli-0.20.1-macos-universal.zip` (9.0 MB), so `soundcraft-cli` answering *command not found* means "not installed yet", not "not supported".
+
+Find it, in this order:
+
+1. **On `PATH`** — `command -v soundcraft-cli`. If it answers, `soundcraft-cli --version` must report the version this skill was written against (0.20.1). A different version means the CLI and the app have drifted: re-read *Verify against your installed version* before trusting ids.
+2. **Bundle copy** — Skip it: `find "/Applications/SoundCraft.app" -name 'soundcraft-cli'` finds nothing (verified), so go to step 3.
+3. **Install it from the release** — user-local, no `sudo`:
+
+```sh
+APP_VER=0.20.1
+REL="https://github.com/storytold/soundcraft/releases/download/v$APP_VER"
+ASSET="soundcraft-cli-$APP_VER-macos-universal.zip"
+mkdir -p "$HOME/.local/bin" "$HOME/Downloads/soundcraft-cli" && cd "$HOME/Downloads/soundcraft-cli"
+curl -fLO "$REL/$ASSET" && curl -fLO "$REL/SHA256SUMS.txt"
+expected=$(grep -F "$ASSET" SHA256SUMS.txt | awk '{print $1}')
+actual=$(shasum -a 256 "$ASSET" | awk '{print $1}')
+[ "$expected" = "$actual" ] && echo "checksum OK" || { echo "checksum MISMATCH — stop"; exit 1; }
+unzip -oq "$ASSET"
+install -m 0755 "soundcraft-cli-$APP_VER-macos-universal/soundcraft-cli" "$HOME/.local/bin/soundcraft-cli"
+"$HOME/.local/bin/soundcraft-cli" --version
+```
+
+`~/.local/bin` must be on `PATH` for the shell that runs the skill: `export PATH="$HOME/.local/bin:$PATH"` (put it in your shell profile to keep it).
+
+Rules: never `sudo` into `/usr/local`, never unzip into `/Applications`, and never replace an existing `soundcraft-cli` of a different version without telling the user. macOS is what this recipe verifies; on Linux/Windows the CLI ships inside the app package (not verified in this round).
+
+### Document and window model
+
+One session per app; `session.new`/`session.open`/`session.close` replace it. Programmatic session switches **do not prompt to save** — save first. Edit and Mix are separate views; `window.mix_separate` puts Mix in its own native window. There are no session tabs. The Preferences window is modal: while it is open, menu entries and single-key editing are disabled.
+
+### Positions, references and ranges
+
+- Positions: a JSON integer (or float) is **samples**; `{"seconds": 2.5}` is seconds; a string is parsed in the current main-counter format then all formats, optionally prefixed with `bars_beats:`, `min_secs:`, `timecode:`, `feet_frames:` or `samples:`. CLI `--start`/`--end` parse a bare decimal as seconds.
+- Ranges: `start` + `end`, or `start` + `length`; `start` alone is a point range; both omitted = the edit selection. Tracks by id or name; clips by id; buses by case-insensitive name.
+- Grid/Nudge: set them by command, not by string guessing — `view.grid {"format":"timecode","follow_main":true}` is unambiguous, and `edit.separate_on_grid` / `edit.move_clips` / `edit.quantize` use whichever scale is current.
+
+### Open, import, save, export
+
+- New/open: `session.new {name?, sample_rate?, bit_depth?: 24, template?: blank|demo}`; `session.open {path}` never fails on missing media (it warns, and returns `missing`); `session.save {path?, replace?}`, `session.save_as`, `session.save_copy`, `session.save_template`, `session.revert`, `session.close`.
+- Import: `file.import_audio {path | paths: [..], track?, at?, new_tracks?}`, `file.import_midi`, `file.import_video`, `file.import_clip_groups`, `file.import_session_data`. A file whose rate is more than 128× below the session's is refused before conversion.
+- Export/bounce: see above. Always read the returned `path`/`bytes`/levels; a completed call does not prove the audio is non-silent. `soundcraft-cli info mix.wav` prints the `bwf.time_reference` a WAV bounce was stamped with. Export to a **fresh path or a regular file**: a hard-linked destination is refused by `write_file` exports and replaced by rename for bounces, and `file.export_clips` will skip an occupied name and write `-2` rather than overwrite it.
+- Audio device: `ui.audio_device {"list":true}` returns `{config, device, systems}`; applying reopens the devices and refuses while recording. Save before changing devices. `setup.playback_engine` works programmatically in the desktop app too (it routes through the same device command), but `ui.audio_device` is the direct API.
+
+### Keyboard shortcuts (verified in code)
+
+Space play/stop; Shift+Space half-speed; Cmd+Space or F12 record; F1–F4 edit modes; F5–F10 tools (F6+F7 or F7+F8 = Smart Tool, Cmd/Ctrl+7 = Smart Tool, Cmd/Ctrl+6 = Pencil); Enter new memory location; Cmd+= Mix/Edit; Tab to transient; Cmd+Shift+N new tracks; Cmd+S/O/N save/open/new; Cmd+E separate; Cmd+D duplicate; Cmd+U strip silence; Cmd+Z undo; Cmd+Shift+K export clips; Cmd+Alt+B bounce mix; Cmd+P print score; Cmd+1 Transport, Cmd+3 Big Counter, Cmd+4 Automation, Cmd+5 Memory Locations, Cmd+9 Video; Alt+Shift+C track commit; Cmd+Alt+[ / ] waveform zoom (held keys repeat); Cmd+Ctrl+1–5 zoom presets; Cmd+Alt+0–5 clip rating; Cmd+W close window; plain Left/Right centre the Edit window on the edit selection. In Commands Keyboard Focus, single keys edit: N toggles Insertion Follows Playback, B separates, X/C/V cut/copy/paste, Z undo, O/E-adjacent keys move the timeline selection (`crates/ui-egui/src/shortcuts.rs`). Cmd+Alt+L is declared by both `clip.loop` and `edit.move_selection_left`; the keyboard handler resolves the earlier-registered `edit.move_selection_left`, so trigger Clip Loop by id. The in-app **Setup › Keyboard Shortcuts** window (`window.shortcuts`) is the live list.
+
+### Recipes that work at this tag
+
+```sh
+# Headless: demo session → set a level → insert an EQ → bounce → print the session JSON.
+soundcraft-cli run --demo \
+  --cmd 'mix.volume={"track":"Kick","db":-6}' \
+  --cmd 'mix.insert={"track":"Bass","plugin":"eq_7band"}' \
+  --bounce mix.wav --inspect
+
+# Discover a build: ids + labels as text, then every detail as JSON.
+soundcraft-cli commands bounce
+soundcraft-cli commands --json --compact
+
+# Convert to a fresh file; aifc is a write alias, and a BWF source keeps its bext on WAV.
+soundcraft-cli convert in.wav out.aifc --bit-depth 24 --rate 48000
+
+# Live app (where a GUI is allowed): fixed control port, no output device, then drive it.
+open -a SoundCraft --args --demo --no-audio --control 7801
+soundcraft-cli app --port 7801 mix.new_bus '{"name":"Verb"}'
+soundcraft-cli app --port 7801 mix.send '{"track":"Bass","bus":"Verb","level_db":-12}'
+soundcraft-cli app --port 7801 automation.write_range '{"track":"Bass","param":"volume","start":0,"end":96000,"value":-6}'
+soundcraft-cli app --port 7801 file.bounce_mix '{"path":"mix.wav","source":"Verb"}'
+soundcraft-cli app --port 7801 ui.screenshot '{"path":"shot.png"}'
+
+# Grid that follows the main counter, then a Clips/Markers grid, then back to a note value.
+soundcraft-cli run --in song.scraft --cmd 'view.grid={"format":"timecode","follow_main":true}' --save song.scraft
+soundcraft-cli run --in song.scraft --cmd 'view.grid={"format":"clips_markers"}'
+soundcraft-cli run --in song.scraft --cmd 'view.grid={"value":"1/16"}'
+
+# Named clips from Strip Silence, then preview the ranges without touching the session.
+soundcraft-cli run --in song.scraft --cmd 'edit.strip_silence_preview={"tracks":["Vox"]}'
+soundcraft-cli run --in song.scraft \
+  --cmd 'edit.strip_silence={"tracks":["Vox"],"mode":"strip","name":"VOX","number":1,"zeros":2}' \
+  --save song.scraft --inspect
+
+# Give an MCP client a headless DAW confined to two read folders and one output folder.
+claude mcp add soundcraft -- soundcraft-cli mcp --demo \
+  --automation-read-root ./project --automation-read-root ./samples \
+  --automation-write-root ./out
+```
+
+`mix.insert` takes a built-in id from `engine.plugins` (or a `clap:`/`vst3:`/`au:` id); `mix.send` needs the bus to exist. All positions in these examples are samples.
+
+### Discover the build you are talking to
+
+`soundcraft-cli commands <filter>` lists ids/labels/menu paths; `soundcraft-cli commands --json` or `soundcraft-cli describe ID` prints the authoritative parameter doc; over the control channel use `engine.commands {filter}` and `session.inspect`; over MCP use `list_commands` and `inspect_session`. Labels, menu paths and shortcuts can change between releases — bind to **ids**. At v0.20.1 several labels are deliberately different from the ids' historical names (Beat Analysis, Punch Recording, MusicXML, Bit Crusher, Tempo Sync).
+
+## Working with an AI agent
+
+Legitimate, evidence-checkable work:
+
+- **Prepare and convert inputs.** `soundcraft-cli info FILE` probes audio (including a WAV's `bwf` block); `soundcraft-cli convert IN OUT` lands assets in WAV/AIFF/AIFF-C/FLAC (output extension decides; anything else is refused) and keeps a BWF source's time reference on WAV. An extreme low-rate source is refused rather than expanded.
+- **Drive it headlessly** with `soundcraft-cli run` / `script` / `mcp`, or bridge MCP to a running app with `--connect`. Prefer `batch` for many edits (cap 1000), then `inspect_session` and `session.audio_health` to verify. Most document commands are undoable; queries, view/session settings, the live input toggles (`mix.record_arm`, `mix.input_monitor`, `track.set_record_to_input_only`) and the explicitly non-journaled `mix.insert_state` are not.
+- **Read and repair `.scraft`.** Pretty JSON with `format_version: 1`: you may parse, diff and patch it, but never bump the version, do not add private top-level keys, and **never emit the same document field twice in one object** — the parser refuses it. Keep ids unique per namespace. Keep `Audio Files/` paths relative to the session folder. Never edit a session while the app or CLI has it open, and keep the file under 256 MiB.
+- **Compose mix work from commands.** `mix.new_bus` before `mix.send`; `mix.insert {"plugin":"eq_7band"}` then `mix.insert_params`/`mix.insert_param`; `mix.volume`/`pan`/`trim`; `automation.write_range` or `set_point`; `file.bounce_mix … source:"Verb"` to bounce a bus. `engine.plugins` lists built-ins by id; AU has no query — know the fourcc id or use the UI. AudioSuite accepts built-ins only.
+- **Set the grid explicitly** with `view.grid`/`view.nudge` `format` + `follow_main` instead of assuming a note-value scale; a Clips/Markers grid depends on what is visible, so inspect the session first.
+- **Name clips from a batch edit.** `clip.auto_rename` before a cut/Strip Silence run gives every resulting piece a numbered name.
+- **Respect locks.** Separate/Trim/range edits leave time- and edit-locked clips alone; unlock them first (`clip.edit_lock` for edit lock, `clip.time_lock` for time lock) when an edit must include them.
+- **Verify exports.** `file.bounce_mix` returns `bytes`, `seconds`, `peak_db`, `lufs`, `true_peak_db`; check the file exists, has plausible duration and non-silent levels, then re-probe with `soundcraft-cli info` (which also shows a WAV's BWF stamp). For a stem set, check `files` count and each file. Export to a new name when a previous export exists: `write_file` exports refuse a hard link, and Export Clips numbers around an occupied name instead of replacing it.
+- **Automate UI acceptance** with the control channel and its UI commands. Run with `--no-audio` and an isolated `SOUNDCRAFT_CONFIG_DIR`; never arm a track, enable input monitoring or start recording in a smoke test. Screenshots are bound to the geometry/session they were admitted for; expect `screenshot stale`/`canceled` rather than a silently wrong image.
+- **What not to attempt:** driving the GUI blind; promising AAF/OMF/`.ptx`, MIDI-hardware recording/playback, MP3/AAC export, ADM/Atmos delivery or video export; opening `.scraftz` on the desktop; assuming `setup.playback_engine` is headless-applied (it returns `applied: false` there); expecting Audio Unit discovery or AU editors; expecting AudioSuite to run a hosted plug-in; expecting a Preferences placeholder or one of the five catalog placeholders to do anything; reading/copying Pro Tools resources — SoundCraft is clean-room (`AGENTS.md`).
+
+## Verification protocol
+
+SoundCraft is pre-alpha and its docs lag the code in a few places. For any real task:
+
+1. **Round-trip on a throwaway session first**: `session.new` → one edit → `session.save` to a scratch folder → `session.open` it back → `file.bounce_mix` → confirm the returned levels are non-silent and the file exists.
+2. **Never trust a silent export**: compare `peak_db`/`lufs`/`true_peak_db` with expectations and re-probe the output with `soundcraft-cli info`; for a WAV bounce, check the `bwf.time_reference` is the timecode position you expect. Export to a fresh path, and treat a hard-link refusal as a signal to choose another name, not to delete files.
+3. **Back up and version per session**: copy the whole folder (`.scraft` + `Audio Files/`), not just the JSON; `Backups/` keeps the newest ten numbered copies. Keep sessions under 256 MiB — a larger save is refused before any audio is written.
+4. **One session at a time, isolated profile**: run agents with `SOUNDCRAFT_CONFIG_DIR` pointing at a fresh folder. Recovered autosaves come back with record-arm and input-monitor off; re-arm explicitly.
+5. **Exercise the lock rules**: if an edit must move every clip, check for locked clips first; Separate/Trim silently leave them in place and Event Time operations split them.
+6. **Update apps only between projects**: this skill is pinned to v0.20.1 (`soundcraft 0.20.1 (macos aarch64)`). Check `--version` before relying on a format or parameter detail.
+7. **Inspect, don't guess**: `soundcraft-cli describe ID`, `commands --json` and `engine.commands` give the authoritative schema; `session.audio_health` checks loaded media without touching files.
+
+## Sources & evidence
+
+- Repo: https://github.com/storytold/soundcraft — inspected at tag **v0.20.1**, commit `a52bbdccbe15342f44e0de1906bf71a621e7a68f`, release dated 2026-11-12; inspection date **2026-11-12**. The previous pin was v0.18.0, commit `5ff012ab88490cdfc635ee304c1019885e1b880d` (2026-11-06). Installed bundle: `/Applications/SoundCraft.app`, `soundcraft 0.20.1 (macos aarch64)`, `CFBundleShortVersionString` 0.20.1, `CFBundleIdentifier` `ai.storyteller.soundcraft`; the bundle contains only `SoundCraft`, not `soundcraft-cli`. Only `--version` and `--help` were run; the GUI was never launched.
+- Read: `README.md`, `ROADMAP.md`, `Cargo.toml`, `AGENTS.md`, `apps/soundcraft/src/{main.rs,launch_args.rs,control_server.rs,env.rs}`, `apps/soundcraft-cli/src/{args.rs,catalog.rs,convert.rs,error.rs,info.rs,logger.rs,main.rs,app.rs,mcp.rs}`, `apps/soundcraft-cli/tests/it/{run.rs,behaviour.rs}`, `crates/engine/src/{cmd.rs,io.rs,autosave.rs,dirty.rs,edit.rs,score.rs,file_access.rs,clip_group_file.rs,feature_names.rs,catalog.rs}`, `crates/engine/src/cmd/{file.rs,view.rs,view_more.rs,options.rs,mix.rs,edit.rs,track.rs,track_more.rs,setup_more.rs,clip.rs,health.rs,plugin_state.rs,zoom_toggle.rs,audiosuite.rs,audio_midi.rs,event.rs,event_more.rs,strip_silence.rs,sampler.rs}`, `crates/engine/src/io/{session.rs,bundle.rs,import.rs,strip.rs,record.rs}`, `crates/model/src/{session.rs,mixer.rs,track.rs,automation.rs,clip.rs,source.rs}`, `crates/time/src/{grid.rs,tempo.rs,format.rs}`, `crates/midi/src/sequence.rs`, `crates/mix/src/{lib.rs,instances.rs,offline.rs,automation.rs,threads.rs,strip.rs,clips.rs}`, `crates/dsp/src/{lib.rs,plugins.rs,plugins/utility.rs,plugins/harmonic.rs}`, `crates/automation/src/{mcp.rs,args.rs}`, `crates/clap-host/src/{lib.rs,plugin.rs,ffi/instance.rs,ffi/gui.rs}`, `crates/vst3-host/src/{lib.rs,plugin.rs,ffi/instance.rs}`, `crates/video/src/movie.rs`, `crates/playback/src/record.rs`, `crates/ui-egui/src/{menus.rs,control.rs,preferences.rs,shortcuts.rs,toolbar.rs,docking.rs,fonts.rs,updates_ui.rs}`, `crates/ui-egui/src/app/playback.rs`, `crates/ui-egui/src/panels/{windows.rs,midi_editor.rs,video_window.rs,sampler_window.rs}`, `crates/ui-egui/src/{dialogs.rs,dialogs/files.rs,mix_window/routing.rs,edit_window/header.rs,video_track.rs}`, `crates/ui-egui/examples/ui_shot.rs`, `crates/engine/catalog/menus.txt`, `docs/{cli,mcp,control-protocol,gaps,roadmap,parity-checklist,file-format-parity,ui-parity,localization-parity,target-app-parity,releasing}.md`.
+- Counts recomputed from source at this pin: **484 engine specs — unchanged at v0.20.1** (389 non-test literal `cmd!` ids + 94 helper-macro ids [toggle 17 / flag 61 / radio 6 / option 10] + 1 direct struct) from **32** registered modules; the full dotted-id literal set is identical to v0.18.0; **70 UI commands** (id list identical), so a running app's `engine.commands` has **554** ids with no overlap; **17 MCP tools / 2 resources** and **17 control methods (+2 aliases)**, both unchanged; **10 CLI subcommands**, unchanged (new flags are inside existing subcommands: `--in-place`, `--compact`); **30 built-in plug-ins**, **34 channel formats**, **512 catalog leaves**, **397/512 engine parity (77.5 %)** — unchanged; **seven write extension aliases** (was six; `aifc` added); `FORMAT_VERSION = 1`; `MAX_BATCH_CALLS = 1000`; `MAX_SESSION_BYTES = 256 MiB`; `MAX_RATE_EXPANSION = 128`; `MAX_IMPORT_SAMPLES = 1 << 30`; `BUNDLE_LIMITS` 10,000 entries / 1 GiB; bounces capped at 4 hours.
+- Workspace: **13** library crates plus `soundcraft`, `soundcraft-cli`, `soundcraft-web` and `xtask`; `crates/audio-io` was removed at v0.20.0. Shared library pins: `craft-audio` and `craft-media` at `75895c0321d8cb6e175a42466cba050352b117c5`; `craft-docpath`, `craft-ui` and `craft-update` at `6e03f65bf45181db77ba6229716e6624db9eb25b`; the egui fork stays at `6d518fc799681571963842f95b55a6b68431b15a`.
+- Evidence table: `evidence.md` next to this file.

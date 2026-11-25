@@ -1,0 +1,84 @@
+# dependencies
+node_modules
+.pnp
+.pnp.js
+
+# testing
+coverage
+
+# next.js
+.next
+.nitro
+.output
+out
+
+# production
+build
+
+# misc
+.DS_Store
+.venv-skill
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.turbo
+
+# local env files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Payload CMS generated types (do not format; may differ from Prettier output)
+apps/admin/payload-types.ts
+
+# generated and auxiliary agent artifacts
+.tmp
+.tmp-pw-artifact
+.tmp-pw-trace
+.eve
+.agent
+.agents
+.claude/worktrees
+.claude/worktrees.bak-push
+.claude/settings.local.json
+.next-docs
+.nia-sync
+.traycer
+.local-secrets
+~
+vendor/payload-upstream
+vendor/react-pdf-packages/*/
+
+# keep command docs but skip bundled skill libraries
+.cursor/skills
+.cursor/mcp.json
+.claude/skills
+
+# Vendored NestJS, Playwright, and Payload examples trip the commit scanner
+# when Prettier wraps identifiers that contain a common demo credential word.
+docs/ai/skills/nestjs-best-practices/
+docs/ai/skills/playwright-best-practices/
+docs/ai/skills/payloadcms-payload/reference/
+
+# Local Supabase CLI temp state
+supabase/.temp/
+
+# MapLibre 6 worker + shared ESM files copied from node_modules at Next config load
+/apps/donor/public/maplibre/
+/apps/admin/public/maplibre/
+
+# Immutable founder-supplied roadmap and original reference assets (hash verified)
+docs/prds/program-roadmap/source-2026-09-22/
+
+# Exact MIT upstream bytes used by refresh regression tests; provenance hashes are checked.
+tests/fixtures/skills/emil-upstream/

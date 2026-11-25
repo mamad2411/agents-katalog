@@ -1,0 +1,56 @@
+{
+ "denizsafak/abogen": {
+  "bin": null,
+  "kind": "uv",
+  "status": "failed"
+ },
+ "github/github-mcp-server": {
+  "bin": "github-mcp-server",
+  "cmd": "github-mcp-server",
+  "kind": "go",
+  "mcp": null,
+  "path": "/Users/chaali0324/.agents/repo-refs/github_github-mcp-server",
+  "status": "installed"
+ },
+ "jerbouma/financetoolkit": {
+  "bin": "sk",
+  "cmd": "sk",
+  "kind": "uv",
+  "mcp": null,
+  "path": "/Users/chaali0324/.agents/repo-refs/jerbouma_financetoolkit",
+  "status": "installed"
+ },
+ "microsoft/playwright-mcp": {
+  "bin": "playwright-mcp",
+  "cmd": "playwright-mcp",
+  "kind": "npm",
+  "mcp": null,
+  "path": "/Users/chaali0324/.agents/repo-refs/microsoft_playwright-mcp",
+  "status": "installed"
+ },
+ "nvidia/skillspector": {
+  "bin": null,
+  "kind": "uv",
+  "status": "failed"
+ },
+ "officecli/officecli": {
+  "bin": null,
+  "kind": null,
+  "status": "unknown-install"
+ },
+ "pluja/anysub": {
+  "bin": null,
+  "kind": null,
+  "status": "unknown-install"
+ },
+ "samuraigpt/llm-wiki-agent": {
+  "bin": null,
+  "kind": null,
+  "status": "unknown-install"
+ },
+ "xuliang2024/cutcli-cookbook": {
+  "bin": null,
+  "kind": null,
+  "status": "unknown-install"
+ }
+}

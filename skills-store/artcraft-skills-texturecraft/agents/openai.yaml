@@ -1,0 +1,3 @@
+interface:
+  display_name: "TextureCraft"
+  short_description: "Drive TextureCraft, the Rust 3D texture painter: paint, bake, export PBR sets via CLI, MCP, control channel"

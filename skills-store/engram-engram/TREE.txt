@@ -1,0 +1,14 @@
+.
+./LICENSE
+./requirements.txt
+./CHANGELOG.md
+./pyproject.toml
+./README.md
+./registry.example.json
+./requirements-dev.txt
+./.gitignore
+./CONTRIBUTING.md
+./SKILL.md
+./.gitattributes
+./.git
+./TREE.txt

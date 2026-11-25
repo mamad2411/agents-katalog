@@ -1,0 +1,14 @@
+.
+./llms.txt
+./CODE_OF_CONDUCT.md
+./LICENSE
+./CHANGELOG.md
+./NOTICE
+./README.md
+./.gitignore
+./package.json
+./CONTRIBUTING.md
+./SKILL.md
+./.git
+./TREE.txt
+./SECURITY.md

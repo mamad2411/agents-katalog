@@ -1,0 +1,44 @@
+# Ultra bundle atomic refinement — scenario specification
+
+This is a draft contract, not an executable ai-tester scenario. The assertions
+below describe intended behavior and still need concrete assertion definitions.
+Keep this specification in Markdown so ai-tester does not discover it as YAML.
+
+```yaml
+scenario: ultra-bundle-atomic-refinement
+description: |
+  /aif-improve given an ultra directory or index.md must read every linked phase
+  before refinement, preserve Original Request and completed index checkboxes,
+  update affected phase files together with index links/task mappings, and leave
+  phase files without progress checkboxes. A broken link is a blocking
+  plan-integrity error, not permission to regenerate only index.md.
+skill: aif-improve
+argument: "@.ai-factory/plans/feature-billing tighten migration rollback details"
+
+fixtures:
+  files:
+    - path: .ai-factory/plans/feature-billing/index.md
+      content: |
+        <!-- aif:plan-mode:ultra -->
+        # Ultra Implementation Plan: Billing
+        Mode: ultra
+        ## Original Request
+        rebuild billing
+        ## Phase Index
+        1. [Migration](phase-01-migration.md) — Tasks 1-2
+        ## Tasks
+        - [x] Task 1: Define schema
+        - [ ] Task 2: Migrate data
+    - path: .ai-factory/plans/feature-billing/phase-01-migration.md
+      content: |
+        # Phase 1: Migration
+        ## Task 1: Define schema
+        ## Task 2: Migrate data
+
+assertions:
+  - preserves_original_request_exactly
+  - preserves_completed_task_1_in_index
+  - reads_phase_before_refining
+  - updates_index_and_phase_consistently
+  - no_task_checkboxes_in_phase_file
+```

@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────
+# CodebrewRouter — Docker Compose stack
+# Creates a named 'codebrewRouter' Docker network
+# visible in `docker network ls` / Docker Desktop.
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# ─────────────────────────────────────────────────────
+
+networks:
+  codebrewRouter:
+    name: codebrewRouter
+    driver: bridge
+
+services:
+  # ── Blaze Gateway API + in-process DevUI ─────────
+  api:
+    build:
+      context: .
+      dockerfile: Blaze.LlmGateway.Api/Dockerfile
+    container_name: codebrewrouter-api
+    restart: unless-stopped
+    ports:
+      - "5022:5022"
+    volumes:
+      - llm-cache:/app/.llm-cache
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      # Override provider endpoints if your LAN IPs change.
+      # Defaults come from appsettings.json in the image.
+      # Uncomment and adjust as needed:
+      # LlmGateway__Providers__OllamaRouter__PrimaryEndpoint: "http://192.168.16.53:11434"
+      # LlmGateway__Providers__LmStudio__Endpoint: "http://192.168.16.53:11434/v1"
+    networks:
+      - codebrewRouter
+
+  # ── Open WebUI (chat playground) ──────────────────
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:v0.10.2
+    container_name: codebrewrouter-openwebui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - blaze-openwebui-data:/app/backend/data
+    environment:
+      WEBUI_AUTH: "False"
+      ENABLE_OLLAMA_API: "False"
+      OPENAI_API_BASE_URL: "http://api:5022/v1"
+      OPENAI_API_KEY: "sk-blaze-openwebui"
+    networks:
+      - codebrewRouter
+    depends_on:
+      - api
+
+volumes:
+  llm-cache:
+  blaze-openwebui-data:

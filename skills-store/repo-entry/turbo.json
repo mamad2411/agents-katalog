@@ -1,0 +1,243 @@
+{
+  "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  "envMode": "loose",
+  "cacheMaxAge": "14d",
+  "cacheMaxSize": "10GB",
+  "globalEnv": [
+    "NODE_ENV",
+    "VERCEL",
+    "VERCEL_ENV",
+    "VERCEL_TARGET_ENV",
+    "VERCEL_URL",
+    "VERCEL_GIT_COMMIT_SHA"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**",
+        "*.tsbuildinfo",
+        "!**/node_modules/**"
+      ],
+      "env": [
+        "NODE_ENV",
+        "CORE_EVE_BUILD_MODE",
+        "NEXT_PUBLIC_*",
+        "GOOGLE_SITE_VERIFICATION",
+        "BING_SITE_VERIFICATION",
+        "SUPABASE_*",
+        "PAYLOAD_SECRET",
+        "DATABASE_URL",
+        "PAYLOAD_DATABASE_URI",
+        "PAYLOAD_DATABASE_POOL_MAX",
+        "DONOR_APP_URL",
+        "SKIP_ENV_VALIDATION",
+        "RESEND_API_KEY",
+        "RESEND_WEBHOOK_SECRET",
+        "RESEND_ENCRYPTION_KEY",
+        "SENTRY_AUTH_TOKEN",
+        "SENTRY_DSN",
+        "SENTRY_ORG",
+        "SENTRY_PROJECT",
+        "SENTRY_RELEASE",
+        "CLOUDINARY_API_SECRET",
+        "ALLOW_DEMO_ACCOUNTS",
+        "DEMO_ONLY_LOGIN"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env",
+        ".env.*",
+        "$TURBO_ROOT$/scripts/load-workspace-env.mjs",
+        "$TURBO_ROOT$/.env",
+        "$TURBO_ROOT$/.env.*"
+      ]
+    },
+    "lint": {
+      "outputs": [],
+      "passThroughEnv": [
+        "CI",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "TERM"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "outputs": [
+        "tsconfig.tsbuildinfo",
+        "*.tsbuildinfo",
+        "dist/*.tsbuildinfo",
+        "!**/node_modules/**"
+      ],
+      "passThroughEnv": ["CI", "NODE_OPTIONS", "FORCE_COLOR", "NO_COLOR"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:e2e": {
+      "cache": false
+    },
+    "test:e2e:ui": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:a11y": {
+      "cache": false
+    },
+    "test:perf": {
+      "cache": false
+    },
+    "lighthouse": {
+      "cache": false
+    },
+    "verify": {
+      "cache": false
+    },
+    "verify:e2e": {
+      "cache": false
+    },
+    "verify:e2e:loop": {
+      "cache": false,
+      "persistent": true
+    },
+    "generate:icons": {
+      "cache": false
+    },
+    "cms:migrate": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_ENV",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "DATABASE_URL",
+        "PAYLOAD_*",
+        "SUPABASE_*",
+        "NEXT_PUBLIC_SUPABASE_*",
+        "RESEND_API_KEY",
+        "DONOR_APP_URL",
+        "NEXT_PUBLIC_DONOR_URL",
+        "CMS_*"
+      ]
+    },
+    "cms:migrate:create": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_ENV",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "DATABASE_URL",
+        "PAYLOAD_*",
+        "SUPABASE_*",
+        "NEXT_PUBLIC_SUPABASE_*",
+        "RESEND_API_KEY",
+        "DONOR_APP_URL",
+        "NEXT_PUBLIC_DONOR_URL",
+        "CMS_*"
+      ]
+    },
+    "cms:migrate:status": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_ENV",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "DATABASE_URL",
+        "PAYLOAD_*",
+        "SUPABASE_*",
+        "NEXT_PUBLIC_SUPABASE_*",
+        "RESEND_API_KEY",
+        "DONOR_APP_URL",
+        "NEXT_PUBLIC_DONOR_URL",
+        "CMS_*"
+      ]
+    },
+    "cms:importmap": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_ENV",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "DATABASE_URL",
+        "PAYLOAD_*",
+        "SUPABASE_*",
+        "NEXT_PUBLIC_SUPABASE_*",
+        "RESEND_API_KEY",
+        "DONOR_APP_URL",
+        "NEXT_PUBLIC_DONOR_URL",
+        "CMS_*"
+      ]
+    },
+    "legal:validate": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "TERM"
+      ]
+    },
+    "legal:generate:md": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "TERM"
+      ]
+    },
+    "legal:generate:html": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "TERM"
+      ]
+    },
+    "legal:generate:pdf": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "TERM"
+      ]
+    },
+    "legal:generate:all": {
+      "cache": false,
+      "passThroughEnv": [
+        "CI",
+        "NODE_OPTIONS",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "TERM"
+      ]
+    },
+    "setup": {
+      "cache": false
+    },
+    "setup:verify": {
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

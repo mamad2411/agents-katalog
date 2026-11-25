@@ -1,0 +1,1 @@
+{"before": ["all-deploy", "anti-ui-slop", "audit-project", "baca-gambar", "cloudflare-deploy", "code-review", "code-security", "deep-research", "frontend-design", "mcp-builder", "pdf", "push-green", "refactor", "self-hosted-docker-stack", "skill-creator", "skill-router", "systematic-debugging", "verification-loop", "web-scraping-python", "writing-tests", "xlsx"]}

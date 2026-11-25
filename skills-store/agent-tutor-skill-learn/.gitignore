@@ -1,0 +1,16 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Workspace (eval results, iterations)
+*-workspace/
+
+# Temp files
+/tmp/
+*.tmp

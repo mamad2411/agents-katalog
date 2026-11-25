@@ -1,0 +1,31 @@
+# ──────────────────────────────────────────────
+# characters/ 说明
+# ──────────────────────────────────────────────
+# 此目录里的 4 个角色（lin-daiyu、sainisi、zelda、test-original-vex）
+# 是示例数据，随 skill 发布。用户生成的新角色不应提交到这个仓库。
+#
+# 如果你 fork 了这个仓库并在本地生成了自己的角色，
+# 建议在你的 fork 里把 characters/ 加入 .gitignore（或只 track 你想保留的）。
+
+# 完整原始资料（过大 / 版权风险，不上传）
+# auto/source/ 体积小可以提交，manual/source/ 防止误提交大文件（如完整小说原文）
+characters/*/references/manual/source/
+characters/*/references/manual/original/source/
+examples/*/references/manual/source/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# macOS
+.DS_Store
+
+# Node dependencies (both web/ and video/)
+node_modules/
+
+# Rendered video output (distributed via GitHub Releases, not in repo)
+video/
+
+# Local chat history (user-specific, not for repo)
+web/history/

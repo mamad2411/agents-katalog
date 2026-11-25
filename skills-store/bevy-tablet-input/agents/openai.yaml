@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bevy Tablet Input"
+  short_description: "Integrate framed tablet input with Bevy"
+  default_prompt: "Use $bevy-tablet-input to implement or review Rasterra tablet input."

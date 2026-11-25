@@ -1,0 +1,9 @@
+.
+./mkdocs.yml
+./README.md
+./.gitignore
+./SKILL.md
+./.gitattributes
+./.git
+./TREE.txt
+./.readthedocs.yaml

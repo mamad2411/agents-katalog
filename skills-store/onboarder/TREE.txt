@@ -1,0 +1,6 @@
+.
+./registry.json
+./README.md
+./SKILL.md
+./.git
+./TREE.txt

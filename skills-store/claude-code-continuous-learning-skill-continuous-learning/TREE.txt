@@ -1,0 +1,7 @@
+.
+./WARP.md
+./LICENSE
+./README.md
+./SKILL.md
+./.git
+./TREE.txt

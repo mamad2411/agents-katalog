@@ -1,0 +1,334 @@
+# Unreleased
+
+**Fixes**
+* **`reinitialize` no longer serves boot-time file content from opcache.** With `opcache.enable_cli=On` and `opcache.revalidate_freq > 0`, a long-running CLI process never revalidates cached scripts — the revalidate window is measured against the request start time, which is frozen at process start — so `app/etc/config.php` (and any PHP file changed after first include) was served in its boot-time version forever. A module enabled mid-session then stayed invisible no matter how often `reinitialize` ran: the fresh ObjectManager and the stale-registry guard both re-`include`d the poisoned compile (symptom: `modules_loaded` one short of `config.php`, `registered_components` correct, `newly_registered_files: 0`, no warning). Reinit now force-invalidates every cached script first (per-script `opcache_invalidate` — `opcache_reset()` only schedules a restart for a next request that never comes in a daemon) and clears the stat/realpath caches. CLI opcache is per-process, so this cannot affect php-fpm or other processes.
+
+**CI**
+* **Mage-OS integration lane.** A new `integration` workflow runs the full stack against a real, installed Mage-OS: it boots the pre-baked CI image (GHCR), injects the working tree via a Composer path repository (the same layout as a real `composer require` install), runs `bricklayer install` and `verify`, and executes a new `Integration` PHPUnit suite (`composer test-integration`) covering runtime introspection, entity writes with config gating and hot reload, `code-runner` through PsySH, `reinitialize`, and a complete MCP stdio handshake (`initialize`, `tools/list`, `tools/call`) against the real server process. Selective trigger by design: path-filtered pushes and PRs, manual dispatch, and after every image bake. A companion `mageos-image` workflow bakes the image daily and on demand (Mage-OS community edition from `repo.mage-os.org`, no auth keys, MariaDB seed dump, OpenSearch wiring) and re-runs the integration lane against each fresh tag. `mageos-init` rewrites `env.php` in plain PHP instead of `setup:config:set`, which on the community edition exits 255 (a command constructor opens a DB connection before the retarget), and CI runs the checkout's copy of the script so fixes land without a rebake. The images double as disposable local sandboxes; see `docker/mageos-ci/README.md`.
+* **Workflow housekeeping.** Runners moved to `ubuntu-26.04` ahead of the `ubuntu-latest` migration (October 2026); `docker/login-action`, `docker/build-push-action`, `actions/cache` and `actions/upload-artifact` bumped to their Node 24 majors, clearing the Node 20 deprecation warnings.
+
+# 1.18.0
+
+A feature release adding Mistral Vibe and OpenAI Codex agent support, a Magewire 3 skill suite contributed by the Magewire author, a Hyvä Checkout architecture skill, and nested sub-skill resources — plus `reinitialize` fixes that make modules created mid-session visible and stop stale-registry cache poisoning. No breaking changes.
+
+**New**
+* **Mistral Vibe agent support.** `install --agents=mistral-vibe` writes the MCP server config to `.vibe/config.toml` (environment-aware command; an existing file keeps user-managed settings — only the `[[mcp_servers]]` entry named `magento-bricklayer` is replaced, idempotently) and compiles `AGENTS.md` guidelines. Vibe reads project-scoped config from `./.vibe/config.toml` automatically, so no extra setup is needed. Gemini, Codex and Mistral Vibe share `AGENTS.md`: it is written once and its footer lists all agents it serves.
+* **OpenAI Codex agent support.** `install --agents=codex` writes the MCP server config to `.codex/config.toml` (environment-aware command; an existing file keeps user-managed settings — only the `[mcp_servers.magento-bricklayer]` section is replaced, idempotently) and compiles `AGENTS.md` guidelines. Gemini and Codex share `AGENTS.md`: it is written once and its footer lists every agent it serves. Note: project-scoped `.codex/config.toml` requires a recent Codex CLI and a trusted project.
+
+**Fixes**
+* **Modules created mid-session are now visible after `reinitialize`.** Component registration (`registration.php`) runs once per PHP process via Composer's autoload hook, so a fresh ObjectManager reused the stale `ComponentRegistrar` registry: a new `app/code` module stayed invisible to `code-runner` and config readers, and — worse — reinitialization regenerated merged-config caches *without* the module and wrote them to the shared cache storage, breaking fresh CLI processes too. The new `Support\ComponentRegistration` re-runs the `registration_globlist.php` globs on every (re)init (`require_once` is idempotent — only files not yet loaded execute) and re-scans Composer's `autoload_files.php` on reinit for packages installed mid-session.
+* **`reinitialize` aborts before touching shared caches when the registry is irrecoverably stale.** If a module is enabled in `config.php` but not registered, or an *enabled* module's directory was deleted (registration cannot be undone in-process), reinit now refuses with an actionable "restart the MCP server" error and keeps the previous ObjectManager, instead of silently poisoning caches. Sentinel-triggered auto-reinit refuses the tool call with the same message rather than answering from stale state.
+* **`reinitialize` response is honest about registry state.** Now reports `registered_components` and `newly_registered_files` alongside the `config.php`-based `modules_loaded` (which previously counted modules the process could not actually see); a failed module-count read surfaces as `modules_loaded_error` instead of a bare `null`. A `warning` field flags enabled-but-unregistered modules and registered components removed from disk — the latter succeed on reinit (a removed *disabled* module cannot poison merged config) but break module enumeration (`module-list`, `application-info`) until a server restart, because Magento reads `module.xml` of every registered component.
+* **`MagentoBootstrap::reset()` now clears the sentinel-mtime snapshot and reinit stats**, not just the ObjectManager and root path.
+
+**Skills**
+* **Magewire 3 development suite** — a new `magewire-three` skill covering greenfield Magewire 3 components, Magewire V1→V3 migration, Livewire V3-style directives and events, component resolvers, snapshots, synthesizers, compiled templates, and Alpine CSP integration — with nested sub-skills for architecture internals (boot modes, Mechanisms, Features, Component Hooks), the per-component backwards-compatibility layer, application-code best practices, CSP-compatible JavaScript, theme compatibility modules (Hyvä Theme, Hyvä Checkout, adminhtml), and the Portman framework-maintainer workflow. Contributed by Magewire author Willem Poortman. Bare index keywords are now domain-prefixed so unrelated searches (e.g. "graphql resolver") no longer surface the Magewire 3 guide.
+* **Hyvä Checkout architecture and development** — added a central skill covering Evaluation results, primary navigation, Place Order Services, frontend payment methods and backports, layout-independent integrations, and a mandatory compatibility profile that selects Magewire V1 for checkout 1.0-1.3.*, native Magewire 3 for new components on 1.4+, or the backwards-compatibility migration track for existing V1 components. Corrected the existing API, configuration, and Magewire guides to remove component-owned order placement and direct step progression patterns.
+
+**Improvements**
+* **Nested sub-skill resources.** A skill directory can now contain focused topic sub-directories (`config/skills/{name}/{topic}/SKILL.md`), served via the new `magento://skills/{name}/{topic}` resource template. Previously only flat `magento://skills/{name}` URIs resolved, so skill content pointing at sub-skills returned *Resource not found*.
+* **Frontmatter stripped from skill resources.** An optional YAML frontmatter block in a `SKILL.md` is now removed before the content is served over `resources/read`, matching `development-context` behavior. Path segments containing `..` are rejected.
+
+# 1.17.0
+
+A feature release adding an order-creation tool, plus `code-runner` correctness fixes, a canonical `.phtml` template convention, and community/contribution docs. No breaking changes.
+
+**New tools** (hidden, discover via `search-tools`)
+* **`order-create`** — build and place an order: line items by SKU, one billing/shipping address, chosen shipping and payment method. Supports all default product types (configurable, grouped, bundle, downloadable) with option data given by human-friendly codes/labels/SKUs, product custom options, existing-customer orders via `customerId` (0 = guest), and virtual/downloadable-only orders (shipping skipped automatically). Like other order-mutating tools it is **disabled by default** and blocked in production; enable via `tools.order-create.enabled=true` in `.bricklayer.json`.
+
+**Fixes**
+* **`code-runner`: a timeout no longer kills the MCP server.** The execution limit is now enforced by a catchable wall-clock SIGALRM (where `pcntl` is available) instead of `set_time_limit()`'s uncatchable fatal: on timeout the transaction rolls back and the call returns a normal error (`timed_out: true`) — the server keeps running and session state (defined functions, bootstrap) survives. Wall-clock also means stalled DB queries now count toward the limit (CPU-time `set_time_limit` never saw them; it remains as backstop and as the only limit on platforms without `pcntl`).
+* **`code-runner`: fatals now report instead of silently dropping the connection.** If user code still fatals the process (OOM, redeclare), a shutdown hook answers the in-flight request with a JSON-RPC tool error naming the fatal before the process dies, so the agent sees the real cause rather than `Connection closed`.
+* **`code-runner`: define-mode helpers no longer fatal on the second use.** Defined functions were prepended as raw declarations to every subsequent execute, so the second call in the long-lived server process fataled with `Cannot redeclare <fn>()`. Functions are now declared once into the global namespace at define time (behind a `function_exists` guard); syntax errors surface at define time, and redefining an already-declared name returns a `warning` (the original body stays in effect until the MCP server restarts) instead of fataling.
+* **`code-runner`: `timeout=0` no longer disables the execution limit.** The effective timeout is now floored at 1s — previously `timeout<=0` reached `set_time_limit(0)`, which means *unlimited*, the inverse of the cap.
+* **`database-query`: `SELECT(...)` is no longer rejected.** The SELECT guard now uses a word boundary instead of requiring whitespace, so `SELECT(1) AS x` passes while `SELECTED...` is still rejected.
+* **`code-runner`: state reset now clears repository identity maps** (product, category, `CustomerRegistry`), so changes made outside the MCP process are no longer hidden by stale cached entities.
+* **`code-runner`: clearer message when writes are blocked by config.** If `allow_write=true` is requested but disabled in `.bricklayer.json`, the response now says so (`write_blocked_by_config: true`) and names the config key to enable, instead of suggesting a flag that was already set.
+
+**Guidelines & generated code**
+* **Standard `.phtml` template convention** (Luma and Hyvä): required header order (`declare` → `use` → `@var`) and clear escaping rules (`$escaper`, or `/* @noEscape */` for safe non-HTML output). `generate-controller` output and all guideline examples now follow it.
+
+**Docs**
+* Added `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md`.
+
+# 1.16.0
+
+A feature release adding runtime introspection for the view layer and message-queue wiring — three read-only tools that surface resolved/merged state no single source file shows. No breaking changes.
+
+**New tools** (hidden, discover via `search-tools`)
+* **`layout-inspect`** — resolve a layout handle into its runtime-merged block/container tree (merged across every module and the active theme), showing applied `referenceBlock`/`referenceContainer`/`move`/`remove` directives, declared and theme-resolved `.phtml` template paths, and the page layout. Omit the handle to list every registered handle for an area (`frontend`/`adminhtml`). Config-gated, enabled by default.
+* **`ui-component-inspect`** — resolve an admin grid/form UI component's runtime-merged configuration, showing the component tree, data source, and child components merged across modules. Config-gated, enabled by default.
+* **`message-queue-inspect`** — the runtime-merged consumer → topic → queue → exchange topology with publisher and handler bindings, assembled across `communication.xml`, `queue_consumer.xml`, `queue_topology.xml`, and `queue_publisher.xml`. Each section degrades independently when a sub-config is absent. Ungated.
+
+**Removed**
+* The static `layouts_reference` MCP resource (a hand-maintained handle catalogue) is retired in favour of `layout-inspect`'s runtime list mode — the registered handles are now read from the live install and cannot drift.
+
+**Internal (no behavior change)**
+* `AreaEmulator::emulateAreaCode()` added — a restoring area-code swap (via `State::emulateAreaCode`) so view tools can resolve frontend layout while the MCP server process is locked to the adminhtml area.
+
+# 1.15.1
+
+A patch release fixing a `code-runner` helper-function regression. No breaking changes.
+
+**Fixes**
+* **`code-runner` bare helper functions now work in the PsySH runtime.** `get()`, `create()`, `repo()`, `config()`, `query()`, and `runLog()` — documented in `code-runner-help` and used throughout its examples — only existed as global functions in the `eval` fallback engine. Under PsySH (the default when installed) they were exposed solely as the `$get`/`$create`/… scope closures, so the documented bare form fataled with `Call to undefined function get()`. The bare functions are now declared in the global namespace for both runtimes and stay bound to the live ObjectManager across calls.
+* Fixed a latent guard bug in the `eval` fallback where the helper-function `function_exists()` check resolved against the wrong namespace, which could fatally re-declare the helpers on a second invocation in a long-lived process.
+
+# 1.15.0
+
+A code-audit release: fixes a batch of correctness and security bugs, makes `code-runner` use PsySH as intended, and consolidates duplicated internal logic. No breaking changes.
+
+**Security & safety**
+* **Environment-variable tool overrides now work for every tool.** `BRICKLAYER_TOOLS_*` settings were silently ignored for hyphenated tools (e.g. `code-runner`, `product-delete`), so disabling a tool via an env var had no effect. Use the full-path form, e.g. `BRICKLAYER_TOOLS_CODE_RUNNER_ENABLED=false`.
+* **`code-runner` is now reliably blocked in production** even when the deploy mode can't be read (fails closed instead of open).
+
+**Fixes**
+* **`code-runner` actually runs through PsySH** when it's installed — it previously fell back to a basic `eval` engine on every call while wrongly reporting "PsySH not available". Responses now report the active `runtime`.
+* **`diagnose-error`** counts error history from the log the error was actually found in, instead of always `exception.log`.
+* **GraphQL introspection** labels input types correctly and returns type descriptions (both were broken).
+* **`database-schema`** now respects its own enable/disable setting (it was tied to `database-query`).
+* **The `mcp` command** honors `--magento-root` on systems without `pcntl`.
+* Many smaller fixes: safer log-file handling, accurate text truncation, recursive module validation, correct config-write success reporting, dynamic (non-hardcoded) tool/category counts, data-URI image type detection, and more.
+
+**Internal (no behavior change)**
+* Consolidated duplicated logic — error responses, pagination, sensitive-value masking, time parsing, command setup, and log/markdown scanning — into shared traits and helpers.
+* Removed dead code and wired up the previously-orphaned PhpStorm config writer, so `install` now generates `.idea/mcp.json`.
+
+# 1.14.2
+* **New guideline: Pool pattern** (`patterns/pool.md`) — DI-based strategy resolution with extensible array injection, replacing if/else branching on type identifiers. Covers implementation, third-party extensibility, and chain of responsibility with sortOrder.
+* **New guideline: Value Object / DTO** (`patterns/value-object.md`) — Immutable data carriers with `public readonly` properties, `fromJson()`/`toJson()` serialization for JSON columns, and comparison with Data Interfaces.
+* **New guideline: Context Object** (`patterns/context-object.md`) — Bundling repeated request-scoped parameters (customerId, storeId, currencyCode) into a single immutable object with a Builder.
+* **Updated: Plugin pattern** (`patterns/plugin.md`) — Added "Plugin Chain on Repositories" section showing how to chain multiple `beforeSave` plugins with sortOrder for cross-cutting concerns (validation, timestamps, encryption).
+* **Updated: Coding Standards** (`core/coding-standards-quality.md`) — Added "Constants as Final Classes" section for grouping enum-like constants in `final class` instead of interfaces.
+
+# 1.14.1
+* Added Symfony Console 7 compatibility
+
+# 1.14.0
+* **Project-local overrides** — A new `.bricklayer/` directory at the Magento root lets projects add or replace bundled content without forking the package. The path is the contract; no registration in `.bricklayer.json` required.
+  * `.bricklayer/project-context.md` — free-form markdown appended to every generated agent file under a `## Project-Specific Context` heading
+  * `.bricklayer/decision-matrix.md` — extra rows merged into the "Before Modifying Magento Code" table; malformed lines skipped
+  * `.bricklayer/guidelines/{path}.md` — files matching a bundled path override it; files with no bundled counterpart are compiled as new sections with headings derived from the directory and filename
+  * `.bricklayer/skills/{category}/SKILL.md` — overrides by category, or new local-only categories directly callable via `development-context category={directory-name}` and listed under a **Project-specific** row in the CLAUDE.md categories table
+  * Optional YAML frontmatter (`name:` and `description:`) for SKILL.md files — stripped before content is returned to agents, used as display metadata in `search-docs` and the categories table
+  * Local entries tagged `[Project]` in `search-docs` results; override entries replace bundled ones in the merged index, no duplicates
+* **`bricklayer update` reports local changes** — after regenerating agent files, the command lists every applied local override/addition and the number of local docs-index entries
+* **`bricklayer init` creates `.bricklayer/`** — the project override directory is created automatically so developers know where to drop local content; subdirectories are created on first use, no placeholder files generated
+* **New `Inchoo\MagentoBricklayer\Guidelines\LocalOverrideHelper`** — shared static helpers for parsing SKILL.md YAML frontmatter and stripping it from content. Used by `GuidelinesCompiler`, `ContextTools`, and `SearchTools` (no duplicated parser code)
+* `GuidelinesCompiler`, `ContextTools`, and `SearchTools` constructors now accept optional `$magentoRoot` and `$packageRoot` arguments for testability (defaults preserve previous behavior)
+* Added `vendor/bricklayer config:set` interactive command to easily set and change config values in `.bricklayer.json`
+* Added Bricklayer SKILL.md file for agents to understand how Bricklayer works
+
+# 1.13.2
+* Fixed array_map error in InstallCommand when single AI agent is selected
+
+# 1.13.1
+* Added ArrayManager for checkout jsLayout manipulation in LayoutProcessor skill example
+
+# 1.13.0
+* **`check-class` tool** — New Tier 1 tool combining plugin-list, di-configuration, and preference-list in one call for any class. The essential pre-modification check.
+* **Behavioral triggers in server instructions** — Server instructions now explain WHY agents should check runtime state before modifying code, not just how to use tools
+* **"Before Modifying Magento Code" section in agent guidelines** — Generated CLAUDE.md/.cursorrules now include a task→tool→skill decision matrix that tells agents what to check before writing code
+* **`_skill_hint` in introspection tool responses** — Plugin-list, di-configuration, preference-list, eav-attributes, database-schema, graphql-inspect, route-list, api-endpoints, and diagnose-performance now hint which `development-context` category to load next
+* **`_next_steps` in development-context responses** — After loading guidelines, agents are told which introspection tools to call for the specific task
+* **Rewrote Tier 1 tool descriptions** — Descriptions now include WHEN to use each tool (e.g., "Check BEFORE writing a plugin"), not just what the tool does
+* **Removed generic architecture section** from generated agent guidelines (duplicated training data)
+* **Simplified Context Quick Reference** — Replaced 20-row file-pattern table with reference to the new decision matrix
+* **README rewritten** — Added "How Agents Use Bricklayer" section, documented check→learn→write workflow, updated tool counts and feature descriptions
+
+# 1.12.1
+* **Bug fix**: Fixed preamble duplication in `code-runner` `mode=define` — multi-function define calls no longer cause "Cannot redeclare" fatal errors
+* **Bug fix**: Fixed `$mode` variable shadowing in `CodeRunnerTools` — response `mode` field now correctly reports `execute` instead of the Magento deploy mode
+* Added `diagnose-performance` to search indexes in `search-docs` and `search-tools` (diagnostic and performance categories)
+* Added config gating to `diagnose-performance` tool — now respects `tools.diagnose-performance.enabled` in `.bricklayer.json`
+* Removed phantom Integration test suite declaration from `phpunit.xml.dist`
+* Reduced coupling: `PerformanceTools` now uses a single lazy-initialized `DevelopmentTools` instance instead of creating new instances per check
+* Added unit tests for `FiltersFields` trait, `RequiresMagento` trait, and `ToolScanner`
+
+# 1.12.0
+* **Config staleness detection** — `.bricklayer.json` changes are now detected automatically via mtime tracking; the MCP server reloads config on the next tool call without requiring a restart
+* **Reusable code-runner functions** — Added `mode=define` to `code-runner` for saving named PHP functions that persist across calls within a session; cleared on `reinitialize`; capped at 20 functions
+* **`diagnose-performance` tool** — New diagnostic tool with 6 checks: `indexes`, `cache`, `flat-tables`, `cron-backlog`, `config`, `queries`; returns findings with severity levels (info/warning/critical) and fix suggestions
+* Added `PerformanceTools` to the `diagnostic` tool group in `ToolRegistry`
+* Updated `code-runner-help` with `mode` parameter documentation and reusable functions section
+
+# 1.11.2
+* Improved test coverage
+
+# 1.11.1
+* **Security**: Fixed `isProductionMode()` to fail closed — returns `true` when Magento bootstrap is unavailable, blocking destructive tools by default instead of allowing them
+* Tightened MCP SDK version constraint from `>=0.3` to `^0.3 || ^1.0` to prevent accepting breaking future major versions
+* Improved `checkDiagnoseError` in VerifyCommand to actually instantiate and test `ExceptionParser` instead of always reporting pass
+* Clarified `graphql-inspect` tool description to note that `resolvers` target returns guidance only
+* Added inline comment in `MagentoBootstrap::reinitialize()` explaining why `require_once` works correctly during reinit
+
+# 1.11.0
+* Added `reinitialize` MCP tool to rebuild the Magento ObjectManager on demand after external state changes (setup:upgrade, setup:di:compile, module:enable)
+* Added automatic staleness detection — the MCP server now tracks `app/etc/config.php` and `generated/metadata/global.php` mtimes and auto-reinitializes when they change on disk
+* Added `MagentoBootstrap::reinitialize()` method for programmatic ObjectManager rebuild
+* Added `MagentoBootstrap::isStale()` and `reinitializeIfStale()` for sentinel-based staleness checks
+* Updated `RequiresMagento` trait to auto-reinitialize before every tool call when staleness is detected
+* **Progressive tool disclosure** — Added `meta: ['hidden' => true]` to tier 2 tools so only 16 essential tools appear in `tools/list`; all 78 tools remain callable and discoverable via `search-tools`
+* **Compressed tool descriptions** — Rewrote all tool descriptions to ≤80 words, removing redundant explanations already conveyed by parameter names and types
+* **Tool consolidation** — Reduced tool count by merging related tools into single entry points with routing parameters:
+  - 5 GraphQL tools → `graphql-inspect` (parameter: `target` = types|queries|mutations|resolvers, optional `name` for type detail)
+  - 4 Log tools → `log` (parameter: `action` = read|list|search|analyze)
+  - 5 System status tools → `system-status` (parameter: `check` = cache|indexers|deploy-mode|cron|cron-history)
+  - `store-configuration` merged into `application-info` (parameter: `include` = stores)
+* **Pagination metadata** — Added `has_more` boolean to all list tool responses (product-list, order-list, customer-list, category-products, invoice-list, shipment-list, creditmemo-list, customer-orders) for reliable pagination signaling
+* **Pruned guidelines duplication** — Removed tool documentation tables from guidelines templates (CLAUDE.md, .cursorrules, etc.) since `tools/list` already provides this information
+* **Minimal server instructions** — Compressed MCP server instructions from multi-paragraph prose to 5 actionable lines
+* **Context-aware hints** — Added conditional `_hint` field to tool responses guiding agents toward logical next steps:
+  - `product-get` / `customer-get` — hints when custom EAV attributes are present
+  - `system-status` — hints when indexers are invalid or cache types are disabled
+  - `diagnose-error` — hints to check `plugin-list` or `di-configuration` when relevant
+
+# 1.10.2
+* Added standalone `magewire` development-context category for generic Magewire component development outside Hyvä Checkout
+* Refocused `hyva-checkout` category on checkout-specific patterns with condensed Magewire quick-reference
+
+# 1.10.1
+* **Security**: Fixed `requireNonProduction` bypass when no `.bricklayer.json` exists — destructive tools are now blocked by default in production mode
+* **Security**: Fixed SQL injection vector in `DatabaseTools::getTableSchema` — table names are now validated against actual database tables before use in queries
+* Removed unimplemented `production_safety` config field (`strict`/`standard`/`unrestricted`) — per-tool `enabled` flags already provide full control
+* Removed `getProductionSafety()` from `ConfigLoader` and updated `VerifyCommand` to report disabled tool count instead
+* Added `max_lines` config enforcement to `LogTools::readLog` — now respects `tools.log-reader.max_lines` setting (matching `DatabaseTools` `max_rows` pattern)
+* Removed unused `ToolException` import from `RequiresMagento` trait
+* Added file overwrite detection to `CodeGenerationTools::writeFiles` — existing files now cause a conflict error instead of silent overwrite
+* Added `force` parameter to all 4 code generation tools (`generate-module`, `generate-model`, `generate-controller`, `generate-api`)
+* Added `new`/`exists` file status annotations in dry-run mode for code generation tools
+* Added unit tests for `ChecksConfig` trait (production safety, tool enable/disable, destructive tool defaults)
+* Added unit tests for `ConfigInitializer` (production/developer config, file generation, deploy mode detection)
+
+# 1.10.0
+* Added production safety system with per-tool enable/disable via `.bricklayer.json`
+* Added ChecksConfig trait providing `requireToolEnabled()` and `requireNonProduction()` for all tool classes
+* Added `production_safety` config flag with strict/standard/unrestricted levels
+* Enforced config checks on DatabaseTools — `database-query` and `database-schema` now respect `tools.database-query.enabled`
+* Enforced config checks on LogTools — all 4 log tools now respect `tools.log-reader.enabled`
+* Enforced config checks on all 10 CatalogTools write operations (product-create, product-update, product-delete, etc.)
+* Enforced config checks on all 8 OrderTools write operations (order-cancel, invoice-create, creditmemo-create, etc.)
+* Enforced config checks on all 6 CustomerTools write operations (customer-create, customer-delete, etc.)
+* Enforced config checks on all 4 CodeGenerationTools (generate-module, generate-model, etc.)
+* Added production mode blocking for destructive tools: product-delete, category-delete, customer-delete, customer-address-delete, order-cancel, creditmemo-create
+* Added production mode blocking for all code generation tools (file writes to live servers)
+* Added `max_rows` config enforcement on DatabaseTools (previously hardcoded, now reads `tools.database-query.max_rows`)
+* Added sensitive config path masking in database-query results (payment/*, carriers/*, oauth/*, etc.)
+* Added path traversal protection to CodeGenerationTools `writeFiles()` with `realpath()` boundary check
+* Refactored CodeRunnerTools to use shared ChecksConfig trait (removes duplicate ConfigLoader logic)
+* Extended ConfigLoader defaults to include all 26 write/destructive tools for per-tool configuration
+* Added `bricklayer init` command to generate `.bricklayer.json` with deploy-mode-aware defaults
+* Added ConfigInitializer for shared config generation logic across init, install, and verify commands
+* Added automatic `.bricklayer.json` generation in `bricklayer verify` when config file is missing
+* Integrated `init` into `bricklayer install` flow — config file is now generated alongside `.mcp.json` and agent files
+
+# 1.9.5
+* Extracted ToolRegistry singleton for centralized tool scanning (replaces static caches in BatchTools/SearchTools)
+* Extracted shared traits: FiltersFields, SecureArea, RequiresMagento
+* Replaced hardcoded version constant with dynamic reading from composer.json
+* Replaced static DOCUMENTATION_INDEX with runtime generation from CATEGORY_MAP
+* Standardized error responses across CatalogTools, CustomerTools, OrderTools, CodeRunnerTools
+* Applied RequiresMagento trait to all 15 Magento-dependent tool classes
+* Used match expressions in BatchTools result summarization
+* Fixed unit tests for BatchTools, SearchTools, and MagentoDetector
+
+# 1.9.4
+* Added root directory check to config loader
+
+# 1.9.3
+* Fixed layer resolver instantiation on code-runner
+
+# 1.9.2
+* Added application state reset before code-runner actions to remove stale app context
+
+# 1.9.1
+* Added automated verify command for installation verification
+* Removed unused doc index files
+
+# 1.9.0
+* Fixed module generator
+* Added MCP efficiency features (batch-execute, count_only, fields filter, verbosity, truncation)
+* Added search-tools tool for discovering tools by keyword
+* Added configuration-list, di-configuration, plugin-list, event-list, preference-list tools
+* Added eav-entity-types tool
+* Improved code-runner with code-runner-help companion tool
+* Improved log tools with max_entry_length truncation support
+* Added unit tests for batch tools, search tools, field filter, count only, truncation, and verbosity
+
+# 1.8.4
+* Fixed docker user for mcp server
+
+# 1.8.3
+* Fixed doc indexing on installation
+
+# 1.8.1
+* Added interactive env selection
+* Added composer post install script
+
+# 1.8.0
+* Added verify command/tool for installation verification
+* Fixed GraphQL available methods
+* Added unit tests for diagnostic tools and exception parser
+* Improved code-runner tool
+* Improved log file reading with ReadsLogFiles concern
+
+# 1.7.0
+* Added autodiscovery for new functionalities
+* Added ToolScanner for automatic tool detection
+* Refactored guidelines resource and skills resource
+* Improved context tools with dynamic category loading
+
+# 1.6.3
+* Updated guidelines compiler
+
+# 1.6.2
+* Simplified codebase
+* Simplified error diagnostics and error discovery
+* Removed unused exception classes
+* Reduced code complexity across bootstrap, config, and tool classes
+
+# 1.6.1
+* Added missing tool to CLAUDE.md generator
+
+# 1.6.0
+* Improved code-runner tool with enhanced helpers and capabilities
+* Added code-runner unit tests
+
+# 1.5.0
+* Added diagnose-error diagnostics tool with exception parser
+* Added ReadsLogFiles concern for shared log reading
+* Fixed route-list tool
+* Added missing categories to search-docs tool
+* Removed unneeded composer.lock file
+* Fixed version number
+
+# 1.4.1
+* Fixed route-list tool, added missing categories to search-docs tool
+
+# 1.4.0
+* Added Hooli support
+* Split skills and guidelines to smaller chunks for less context usage
+* Added new split skill files for checkout, payment, theme, Hyva, import/export, and UI components
+
+# 1.3.0
+* Added development-context tool
+* Added instructions for code to pass coding standards checks
+* Enhanced guidelines and skills with additional patterns and examples
+
+# 1.2.0
+* Added general Hyva knowledge
+* Added Hyva UI components knowledge
+* Added Hyva checkout knowledge
+* Updated readme
+
+# 1.1.0
+* Added interactive install
+* Added missing features
+* Added checkout customization, payment integration, and theme development skills
+* Removed legacy test directory
+
+# 1.0.1
+* Added container auto discovery
+
+# 1.0.0
+* Initial release

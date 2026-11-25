@@ -1,0 +1,12 @@
+.
+./flake.lock
+./Justfile
+./git-hooks.nix
+./README.md
+./.gitignore
+./flake.nix
+./SKILL.md
+./.gitattributes
+./AGENTS.md
+./.git
+./TREE.txt

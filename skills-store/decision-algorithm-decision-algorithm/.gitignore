@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.egg-info
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Knowledge data (user-specific, should not be committed)
+knowledge/
+!knowledge/.gitkeep
+
+# Generated skill files
+colleagues/
+skills/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Temporary files
+/tmp/
+*.tmp
+
+# Playwright data (if using browser-based collection)
+playwright-data/

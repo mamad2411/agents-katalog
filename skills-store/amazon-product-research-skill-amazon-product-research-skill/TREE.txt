@@ -1,0 +1,7 @@
+.
+./requirements.txt
+./install.sh
+./README.md
+./SKILL.md
+./.git
+./TREE.txt

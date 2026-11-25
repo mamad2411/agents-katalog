@@ -1,0 +1,13 @@
+.
+./l10n.yaml
+./.metadata
+./pubspec.lock
+./README.md
+./pubspec.yaml
+./.gitignore
+./SKILL.md
+./analysis_options.yaml
+./AGENTS.md
+./.git
+./TREE.txt
+./CLAUDE.md

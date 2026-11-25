@@ -1,0 +1,41 @@
+# CADCraft — round 2026-11-12 changes
+
+## 2026-11-15b — CLI availability and install
+
+Round **2026-11-15b** (skills release v2.1.0) closes the launcher/CLI gap: the ArtCraft Launcher installs `CADCraft.app` only, and the bundle holds no `cadcraft-cli`, so `## How to operate` now carries one canonical *Getting the CLI* block — `command -v cadcraft-cli` → bundle check (`find` finds nothing) → download `cadcraft-cli-0.20.1-macos-universal.zip` (63.0 MB) from `storytold/cadcraft` v0.20.1, compare it against `SHA256SUMS.txt`, `unzip`, `install -m 0755` into `~/.local/bin`, put that on `PATH`. It replaces the old one-line "install `cadcraft-cli` from the CLI zip" sentence in the launch paragraph. Measured 2026-11-15: the `SHA256SUMS.txt` entry `2754055a…8fb3b` matches the download, `find "/Applications/CADCraft.app" -name 'cadcraft-cli'` returns nothing, and the downloaded CLI prints `cadcraft-cli 0.20.1 (7526dc6…)` and lists 457 commands.
+
+Re-pinned: v0.18.0 (`32238e8`) -> v0.20.1 (`7526dc6`, installed `cadcraft 0.20.1 (7526dc62c14e71b3c8d46e73bbf1fa29ef506af1)`, bundle id `ai.storyteller.cadcraft`).
+
+## Corrected / re-measured
+
+- **The engine command registry is unchanged**: 457 commands (439 unique literal `CommandSpec::new` ids + 18 `gc!`/`dc!` macro ids), 441 static `CommandSpec::new(` sites, zero ids added or removed; the literal id set is identical at v0.18.0 and v0.20.1. The one new catalog id is **UI-only**: `ui.shortcuts` (Tools ▸ Customize ▸ Keyboard Shortcuts...), taking `UI_COMMANDS` from **59 to 60** and the app-level catalog from 516 to 517.
+- Re-measured at both tags and unchanged: **15 MCP tools** (12 headless + 3 app-only), **27 app / 12 headless control methods**, **8 CLI verbs**, **19 interface languages**, **23 built-in hatch patterns**, **14 object snaps**, **4 drawing formats read / 6 written** plus **4 raster image formats** (PNG/JPEG/BMP/TIFF), **acadrust 0.6.6**, **egui/eframe 0.37**. The MCP and control *sets* did not change; their descriptions and some behaviour did (token handling, web `ui.screenshot`).
+- New or changed behaviour now documented: the **Keyboard Shortcuts dialog** and user shortcut store; **ALIASEDIT aliases persist** across restarts and the Command Aliases dialog **imports a `.pgp`**; **Right-Click Customization** (duration 100–2000 ms, Default/Edit/Command modes); **TEXTEDIT and double-click on an existing MTEXT open the in-place editor with its contents and formats**, and **multileader text is editable** (#842, #1081); the **Properties palette shows one type's properties for several selected objects** (`*VARIES*` where they differ); **DWG saves keep other applications' registered entities and objects as proxies** of their own classes; the browser build exposes **`window.cadcraft`** (`request`, `execute`, `commands`, `docInspect`, `uiInspect`, `screenshot`); **control-token hardening** in the MCP bridge; **macOS file dialogs as sheets** (the #1527 crash); and the **Flatpak update permission** fixed in 0.20.1.
+- Corrections to the previous text: `docs/localization.md` now lists all 19 languages including Vietnamese, so the old “omits `vi`” drift is **resolved**; `docs/file-format-parity.md` now says acadrust **0.6.6** in its main text (a historical “measured with 0.6.3” note remains); `ROADMAP.md` (2026-10-24) no longer claims “no XCLIP” or “no REFEDIT” — it now says dynamic-block authoring and in-place xref editing are missing, which the code supports; polyline offsets **do** recompute arc bulges (no loop cleanup), so “ignore bulges” was removed; `docs/plotters.md` no longer claims model-space PDF plots ignore the paper margins — `crates/io/src/pdf.rs` applied them at both tags, so this was doc drift, not a code change. `README.md` still says SHX fonts “aren't read yet” and advertises “2D and 3D”; both remain doc drift.
+- The previous ledger's v0.18.0 counts all held when re-run with the same method (457 / 59 / 15 / 27 / 12 / 8 / 19 / 23 / 14 / 4 read / 6 written / 4 raster). No stale-count correction was needed this round.
+
+## Method
+
+- Diffed `v0.18.0..HEAD`: **146 files, +8,144/−856**, 14 added, 132 modified, 0 deleted. The checkout is a shallow clone with both tag trees; the compare API in the context file lists 134 commits, but no claim here uses that count.
+- Command ids: multiline-aware `CommandSpec::new("id")` extraction over every `*.rs` at both tags, plus the 12 `gc!` and 6 `dc!` invocations; the id diff is +0/−0. UI-only ids: `UI_COMMANDS` rows in `crates/ui-egui/src/menus.rs`. Counts otherwise from source, not docs: `crates/mcp/src/tools.rs`, `crates/ui-egui/src/control.rs`, `crates/mcp/src/backend.rs`, `apps/cadcraft-cli/src/args.rs`, `crates/ui-egui/src/i18n.rs`, `crates/doc/src/library.rs`, `crates/engine/src/snap.rs`, `crates/doc/src/format.rs`, `crates/dwg/Cargo.toml`.
+- Read the new code paths and their tests: `crates/ui-egui/src/keys.rs`, `crates/engine/src/cmd/file/pgp.rs`, `crates/ui-egui/src/aliasdlg.rs`, `crates/ui-egui/src/options.rs`, `crates/ui-egui/src/options/dialog.rs`, `crates/ui-egui/src/context_menu.rs`, `crates/engine/src/cmd/modify2/textedit.rs`, `crates/engine/src/mtext_edit.rs`, `crates/ui-egui/src/mtext_editor.rs`, `crates/ui-egui/src/palettes.rs`, `crates/dwg/src/proxy_transport.rs`, `crates/dwg/src/lib.rs`, `crates/io/src/dxf_raw.rs`, `apps/cadcraft-web/src/api.rs`, `apps/cadcraft/src/sheet.rs`, `crates/mcp/src/backend.rs`, `crates/mcp/src/control_token.rs`.
+- `git diff` supplied every delta claim; release notes were used only as an index, never as fact. The app binary was only run with `--version` and `--help`; no build, no GUI launch, no test run, no drawing modified.
+- No `cadcraft-cli` is installed and the bundle ships none, so the command catalog is a source derivation, not a live `commands | jq length`.
+
+## Unchanged
+
+- The draw, modify, annotation, hatch, block/xref, layout/plot, inquiry, parametric, AutoLISP and file-command surfaces apart from the edits above; the MCP tool set; the control method set; the CLI verbs and flags; drawing formats read/written; the web host mode; native packaging targets (macOS universal DMG, Windows MSI, Linux AppImage/deb/rpm/tar/Flatpak, FreeBSD tar); the token location and 16-connection/64-queued/256 MiB-line/512 MiB-total/60 s-reply/10 min-idle/30 s-write limits.
+- `agents/openai.yaml` is kept as is: “CADCraft” and the one-line description still match the app and its MCP/CLI automation surface.
+
+## Earlier history (folded out of SKILL.md)
+
+- **v0.17.0 → v0.18.0** (previous release, now the second delta paragraph in `SKILL.md`): XCLIP/XCLIPFRAME, raster IMAGEATTACH/IMAGE, SHX shape/big/unifont fonts, DVIEW and view twist, MINSERT, the round-trip harness, the DWG worker process on acadrust 0.6.6, autosave locks/recovery and the UI panic guard, Find and Replace and Edit Text windows, PLOT format from the path extension, Georgian, and web page-host mode.
+- **v0.16.0 → v0.17.0:** `-WBLOCK` and `OOPS`; command-line parity (`-ATTDEF` modes, `-INSERT` ATTREQ/Preset/Verify, `CHANGE`, `-ARRAY`, `-UNITS`); Thai text and MTEXT word wrap; RECTANG/POLYGON vertex order; SCALE text heights while OFFSET keeps them; DXF code-page and escape fixes; staged CLI writes; a `.bak` kept when a DWG is overwritten.
+- **v0.15.x and earlier:** `CHPROP`, `SOLID`, PEDIT Multiple, BEDIT block switching, Vietnamese, and MCP/control buffer bounds.
+
+## Known gap in this round
+
+- No live catalog, no GUI, no browser and no real DWG save: the Keyboard Shortcuts dialog, alias Import, Right-Click Customization, the in-place MTEXT/multileader editors, the Properties palette multi-selection, the web page API, the macOS sheet dialogs and the DWG proxy preservation are **code-read** (their in-repo tests exist but were not run). The proxy path was not exercised on a real third-party DWG.
+- Menu breadth **298 / 491** is still the 2026-11-01 `docs/parity-checklist.md` snapshot; it cannot be regenerated without a build, and it still says 449 commands.
+- v0.20.1 itself is the Flatpak update patch; most of the delta landed between v0.18.0 and v0.20.1, so the delta paragraph describes the tag range, not a single release note.
+- With no CLI on the machine, the 457-command figure and the 60 UI-only entries are source derivations. The 0.20.1 bundle's `Contents/MacOS/` holds only `CADCraft`.

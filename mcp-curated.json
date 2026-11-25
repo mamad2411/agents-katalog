@@ -1,0 +1,532 @@
+[
+ [
+  "filesystem",
+  "npm",
+  "@modelcontextprotocol/server-filesystem",
+  [
+   "/Users/chaali0324"
+  ],
+  "akses file lokal (read/write) — tanpa API key",
+  "util"
+ ],
+ [
+  "memory",
+  "npm",
+  "@modelcontextprotocol/server-memory",
+  [],
+  "memori pengetahuan persisten (knowledge graph) — tanpa key",
+  "memory"
+ ],
+ [
+  "sequential-thinking",
+  "npm",
+  "@modelcontextprotocol/server-sequential-thinking",
+  [],
+  "rantai berpikir terstruktur — tanpa key",
+  "coding"
+ ],
+ [
+  "context7",
+  "npm",
+  "@upstash/context7-mcp",
+  [],
+  "dokumentasi library versi terbaru — tanpa key",
+  "coding"
+ ],
+ [
+  "chrome-devtools",
+  "npm",
+  "chrome-devtools-mcp",
+  [],
+  "kontrol Chrome DevTools (perf, network) — tanpa key",
+  "test"
+ ],
+ [
+  "fetch",
+  "pypi",
+  "mcp-server-fetch",
+  [],
+  "ambil halaman web jadi markdown — tanpa key",
+  "search"
+ ],
+ [
+  "time",
+  "pypi",
+  "mcp-server-time",
+  [],
+  "waktu/timezone — tanpa key",
+  "util"
+ ],
+ [
+  "git",
+  "pypi",
+  "mcp-server-git",
+  [],
+  "operasi git lokal — tanpa key",
+  "coding"
+ ],
+ [
+  "sqlite",
+  "pypi",
+  "mcp-server-sqlite",
+  [],
+  "query SQLite lokal — tanpa key",
+  "data"
+ ],
+ [
+  "duckduckgo",
+  "pypi",
+  "duckduckgo-mcp-server",
+  [],
+  "web search tanpa API key",
+  "search"
+ ],
+ [
+  "github",
+  "npm",
+  "@modelcontextprotocol/server-github",
+  [],
+  "GitHub API (butuh GITHUB_TOKEN)",
+  "coding"
+ ],
+ [
+  "brave-search",
+  "npm",
+  "@brave/brave-search-mcp-server",
+  [],
+  "web search (butuh BRAVE_API_KEY)",
+  "search"
+ ],
+ [
+  "exa",
+  "npm",
+  "exa-mcp-server",
+  [],
+  "semantic search (butuh EXA_API_KEY)",
+  "search"
+ ],
+ [
+  "tavily",
+  "npm",
+  "tavily-mcp",
+  [],
+  "web research (butuh TAVILY_API_KEY)",
+  "search"
+ ],
+ [
+  "firecrawl",
+  "npm",
+  "firecrawl-mcp",
+  [],
+  "scrape/crawl (butuh FIRECRAWL_API_KEY)",
+  "search"
+ ],
+ [
+  "notion",
+  "npm",
+  "@notionhq/notion-mcp-server",
+  [],
+  "Notion (butuh NOTION_TOKEN)",
+  "comms"
+ ],
+ [
+  "supabase",
+  "npm",
+  "@supabase/mcp-server-supabase",
+  [],
+  "Supabase (butuh SUPABASE_KEY)",
+  "data"
+ ],
+ [
+  "sentry",
+  "npm",
+  "@sentry/mcp-server",
+  [],
+  "Sentry (butuh SENTRY_TOKEN)",
+  "security"
+ ],
+ [
+  "stripe",
+  "npm",
+  "@stripe/mcp",
+  [],
+  "Stripe (butuh STRIPE_SECRET_KEY)",
+  "deploy"
+ ],
+ [
+  "postgres",
+  "npm",
+  "@modelcontextprotocol/server-postgres",
+  [],
+  "Postgres (butuh connection string)",
+  "data"
+ ],
+ [
+  "magic-21st",
+  "npm",
+  "@21st-dev/magic",
+  [],
+  "komponen UI dari 21st.dev (butuh key)",
+  "design"
+ ],
+ [
+  "figma-dev",
+  "npm",
+  "figma-developer-mcp",
+  [],
+  "Figma developer (butuh token)",
+  "design"
+ ],
+ [
+  "playwright-npx",
+  "npm",
+  "@playwright/mcp",
+  [],
+  "browser automation (cadangan bila binary lokal hilang)",
+  "design"
+ ],
+ [
+  "chart",
+  "npm",
+  "@antv/mcp-server-chart",
+  [],
+  "buat chart/graph dari data",
+  "design"
+ ],
+ [
+  "shadcn",
+  "npm",
+  "shadcn-mcp",
+  [],
+  "komponen shadcn/ui",
+  "design"
+ ],
+ [
+  "tailwind",
+  "npm",
+  "tailwindcss-mcp",
+  [],
+  "utility Tailwind CSS",
+  "design"
+ ],
+ [
+  "serena",
+  "pypi",
+  "serena-agent",
+  [],
+  "coding agent semantik (LSP) untuk repo besar",
+  "coding"
+ ],
+ [
+  "everything",
+  "npm",
+  "@modelcontextprotocol/server-everything",
+  [],
+  "server contoh/diagnostik MCP",
+  "coding"
+ ],
+ [
+  "sequential-thinking-2",
+  "npm",
+  "@modelcontextprotocol/server-sequential-thinking",
+  [],
+  "rantai berpikir",
+  "coding"
+ ],
+ [
+  "cloudflare",
+  "npm",
+  "@cloudflare/mcp-server-cloudflare",
+  [],
+  "Cloudflare resmi (butuh token)",
+  "deploy"
+ ],
+ [
+  "kubernetes",
+  "npm",
+  "mcp-server-kubernetes",
+  [],
+  "operasi klaster k8s",
+  "deploy"
+ ],
+ [
+  "terraform",
+  "npm",
+  "terraform-mcp-server",
+  [],
+  "HashiCorp Terraform",
+  "deploy"
+ ],
+ [
+  "docker",
+  "pypi",
+  "mcp-server-docker",
+  [],
+  "kelola container Docker",
+  "deploy"
+ ],
+ [
+  "docker-mcp",
+  "pypi",
+  "docker-mcp",
+  [],
+  "Docker alternatif (compose)",
+  "deploy"
+ ],
+ [
+  "heroku",
+  "npm",
+  "@heroku/mcp-server",
+  [],
+  "Heroku (butuh token)",
+  "deploy"
+ ],
+ [
+  "vercel",
+  "npm",
+  "vercel-mcp",
+  [],
+  "Vercel deploy (butuh token)",
+  "deploy"
+ ],
+ [
+  "railway",
+  "npm",
+  "@railway/mcp-server",
+  [],
+  "Railway deploy (butuh token)",
+  "deploy"
+ ],
+ [
+  "browserstack",
+  "npm",
+  "@browserstack/mcp-server",
+  [],
+  "test di browser cloud (butuh key)",
+  "test"
+ ],
+ [
+  "puppeteer",
+  "npm",
+  "@modelcontextprotocol/server-puppeteer",
+  [],
+  "otomasi Chrome via Puppeteer",
+  "test"
+ ],
+ [
+  "axe",
+  "npm",
+  "axe-mcp-server",
+  [],
+  "audit aksesibilitas (axe-core)",
+  "test"
+ ],
+ [
+  "playwright-server",
+  "npm",
+  "playwright-mcp-server",
+  [],
+  "varian server Playwright",
+  "test"
+ ],
+ [
+  "postgres-mcp",
+  "npm",
+  "postgres-mcp",
+  [],
+  "Postgres (butuh connection string)",
+  "data"
+ ],
+ [
+  "mongodb",
+  "npm",
+  "mongodb-mcp-server",
+  [],
+  "MongoDB resmi (butuh URI)",
+  "data"
+ ],
+ [
+  "redis",
+  "pypi",
+  "redis-mcp-server",
+  [],
+  "Redis (butuh URL)",
+  "data"
+ ],
+ [
+  "duckdb",
+  "pypi",
+  "duckdb-mcp-server",
+  [],
+  "query DuckDB/Parquet lokal",
+  "data"
+ ],
+ [
+  "qdrant",
+  "pypi",
+  "mcp-server-qdrant",
+  [],
+  "vector DB Qdrant",
+  "data"
+ ],
+ [
+  "mysql",
+  "npm",
+  "mcp-server-mysql",
+  [],
+  "MySQL (butuh kredensial)",
+  "data"
+ ],
+ [
+  "perplexity",
+  "npm",
+  "perplexity-mcp",
+  [],
+  "riset web Perplexity (butuh key)",
+  "search"
+ ],
+ [
+  "open-websearch",
+  "npm",
+  "open-websearch",
+  [],
+  "web search tanpa key",
+  "search"
+ ],
+ [
+  "brave-pypi",
+  "pypi",
+  "mcp-server-brave-search",
+  [],
+  "Brave Search (butuh key)",
+  "search"
+ ],
+ [
+  "youtube",
+  "pypi",
+  "youtube-mcp-server",
+  [],
+  "cari & ambil transkrip YouTube",
+  "search"
+ ],
+ [
+  "slack",
+  "npm",
+  "@modelcontextprotocol/server-slack",
+  [],
+  "Slack (butuh token)",
+  "comms"
+ ],
+ [
+  "notion",
+  "npm",
+  "@notionhq/notion-mcp-server",
+  [],
+  "Notion (butuh token)",
+  "comms"
+ ],
+ [
+  "linear",
+  "npm",
+  "linear-mcp-server",
+  [],
+  "Linear issues (butuh key)",
+  "comms"
+ ],
+ [
+  "google-maps",
+  "npm",
+  "@modelcontextprotocol/server-google-maps",
+  [],
+  "Google Maps (butuh key)",
+  "comms"
+ ],
+ [
+  "obsidian",
+  "npm",
+  "obsidian-mcp",
+  [],
+  "Obsidian vault",
+  "comms"
+ ],
+ [
+  "markitdown",
+  "pypi",
+  "markitdown-mcp",
+  [],
+  "PDF/Office → markdown (Microsoft)",
+  "docs"
+ ],
+ [
+  "pandoc",
+  "pypi",
+  "mcp-pandoc",
+  [],
+  "konversi dokumen via pandoc",
+  "docs"
+ ],
+ [
+  "pptx",
+  "pypi",
+  "office-powerpoint-mcp-server",
+  [],
+  "buat/edit PowerPoint",
+  "docs"
+ ],
+ [
+  "docx",
+  "pypi",
+  "office-word-mcp-server",
+  [],
+  "buat/edit Word",
+  "docs"
+ ],
+ [
+  "excel",
+  "pypi",
+  "excel-mcp-server",
+  [],
+  "buat/edit Excel",
+  "docs"
+ ],
+ [
+  "basic-memory",
+  "pypi",
+  "basic-memory",
+  [],
+  "catatan markdown + MCP",
+  "memory"
+ ],
+ [
+  "semgrep",
+  "pypi",
+  "semgrep-mcp",
+  [],
+  "analisis keamanan kode (semgrep)",
+  "security"
+ ],
+ [
+  "filesystem-2",
+  "npm",
+  "mcp-server-filesystem",
+  [],
+  "akses file alternatif",
+  "security"
+ ],
+ [
+  "desktop-commander",
+  "npm",
+  "@wonderwhy-er/desktop-commander",
+  [],
+  "terminal + file manager untuk agent",
+  "util"
+ ],
+ [
+  "commands",
+  "npm",
+  "mcp-server-commands",
+  [],
+  "jalankan perintah shell aman",
+  "util"
+ ]
+]

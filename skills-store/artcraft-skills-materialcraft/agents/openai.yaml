@@ -1,0 +1,3 @@
+interface:
+  display_name: "MaterialCraft"
+  short_description: "Drive MaterialCraft's node-based PBR materials: SBS/.mcraft graphs, map export, .mcmat, CLI and MCP"

@@ -1,0 +1,17 @@
+# Tool artifacts
+.sisyphus/
+.DS_Store
+
+# Node
+node_modules/
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+prompt/.DS_Store

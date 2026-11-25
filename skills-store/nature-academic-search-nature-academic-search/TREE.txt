@@ -1,0 +1,9 @@
+.
+./LICENSE
+./install.sh
+./pyproject.toml
+./README.md
+./.gitignore
+./SKILL.md
+./.git
+./TREE.txt

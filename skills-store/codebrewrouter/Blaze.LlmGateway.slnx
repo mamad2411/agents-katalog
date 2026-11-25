@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Brew/">
+    <Project Path="Brew/Brew.App/Brew.App.csproj" />
+    <Project Path="Brew/Brew.Core/Brew.Core.csproj" />
+  </Folder>
+  <Project Path="Blaze.LlmGateway.Api/Blaze.LlmGateway.Api.csproj" />
+  <Project Path="Blaze.LlmGateway.AppHost/Blaze.LlmGateway.AppHost.csproj" />
+  <Project Path="Blaze.LlmGateway.Benchmarks/Blaze.LlmGateway.Benchmarks.csproj" />
+  <Project Path="Blaze.LlmGateway.Core/Blaze.LlmGateway.Core.csproj" />
+  <Project Path="Blaze.LlmGateway.Infrastructure/Blaze.LlmGateway.Infrastructure.csproj" />
+  <Project Path="Blaze.LlmGateway.LocalInference/Blaze.LlmGateway.LocalInference.csproj" />
+  <Project Path="Blaze.LlmGateway.ServiceDefaults/Blaze.LlmGateway.ServiceDefaults.csproj" />
+  <Project Path="Blaze.LlmGateway.Tests/Blaze.LlmGateway.Tests.csproj" />
+</Solution>

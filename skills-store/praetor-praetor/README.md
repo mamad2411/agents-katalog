@@ -1,0 +1,327 @@
+<div align="center">
+
+<img src="assets/social-preview.svg" alt="PRAETOR — Autonomous Production Readiness & Audit System" width="100%">
+
+<br/>
+<br/>
+
+### **18 autonomous experts audit your entire codebase. Zero hallucinations.**
+
+<br/>
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-DFBA73?style=flat)](https://github.com/Harery/Praetor/blob/main/LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-00f260?style=flat)](https://github.com/Harery/Praetor/pulls)
+[![v2.9.2 Stable](https://img.shields.io/badge/v2.9.2-Stable-00f2fe?style=flat)](https://github.com/Harery/Praetor/releases)
+[![npm](https://img.shields.io/npm/v/praetor-audit-kit?style=flat)](https://www.npmjs.com/package/praetor-audit-kit)
+[![GitHub Stars](https://img.shields.io/github/stars/Harery/Praetor?style=social)](https://github.com/Harery/Praetor/stargazers)
+[![GitHub Discussions](https://img.shields.io/badge/Discussions-Join-9cf?style=flat)](https://github.com/Harery/Praetor/discussions)
+[![18 Expert Agents](https://img.shields.io/badge/18-Expert_Agents-a855f7?style=flat)](#-the-18-expert-agents)
+[![13 Agentic Tools](https://img.shields.io/badge/13-Agentic_Tools-6366f1?style=flat)](#-quick-start)
+[![4-Judge Quality Council](https://img.shields.io/badge/4-Judge-Quality_Council-f43f5e?style=flat)](#-the-4-judge-quality-council)
+
+<br/>
+
+[`Quick Start`](#-quick-start) · [`Features`](#-features) · [`Architecture`](#-how-it-works) · [`Agents`](#%EF%B8%8F-the-18-expert-agents) · [`Contributing`](#-contributing) · [`License`](#-license)
+
+</div>
+
+---
+
+## What is Praetor?
+
+**Praetor** (Production Readiness, Audit, Evidence, Testing, Operations & Review) is a single-prompt, multi-agent orchestration framework that transforms any codebase into a comprehensive **production readiness audit package**. Install it into your agentic LLM (Claude Code, OpenCode, Cursor, and more) or run it standalone — **18 autonomous domain experts** fan out across your entire codebase, analyzing security, compliance, performance, accessibility, and operations. A **4-Judge Quality Council** independently verifies every citation before a single word reaches you. The result: test cases, runbooks, compliance evidence, risk registers, and support playbooks — every finding tied to a verified `file:line` citation, packaged for six distinct audiences.
+
+No assumptions. No hallucinations. Just mathematically precise, file-line cited evidence packages for engineering, compliance, operations, and business stakeholders.
+
+> [!NOTE]
+> **TL;DR** — Install Praetor and point it at your codebase. It returns test cases, runbooks, compliance evidence, risk registers, and support playbooks — every finding tied to a real `file:line` citation, verified by an independent quality council.
+
+---
+
+## ✨ Features
+
+| | Feature | Description |
+|:---:|:---|:---|
+| 🐝 | **18 Specialized Agents** | Hierarchical swarm of autonomous experts — each with 12–20 years of simulated domain expertise (OWASP Security, WCAG Accessibility, SRE Chaos, SOC2 Compliance, and more) |
+| 📍 | **100% File-Line Traceability** | Every finding carries a verified `file:line` citation, re-derived by the Quality Council before emission — hallucinated references are rejected |
+| ⚖️ | **4-Judge Quality Council** | Independent review for Coverage, Citations, Clarity, and Skip-Validity — no unverified finding escapes |
+| 📊 | **Multi-Audience Deliverables** | Automatic output streams formatted for Engineering, Business, Operations, Support, Compliance, and Cross-Cutting stakeholders |
+| 🔧 | **Tooling-Adaptive Output** | Detects your stack (Datadog, Prometheus, Sentry, etc.) and emits artifacts in matching syntax — generic format with adoption recommendations when nothing is detected |
+| 🔒 | **Compliance Mappings** | SOC2, GDPR, HIPAA, PCI, WCAG control mappings, PII flow tracking, and audit evidence packs ready for reviewer consumption |
+| 🔑 | **Secret Hygiene** | Built-in secret-key scanning with a runnable secret-lint CI stage |
+| ⏸️ | **Resumable Sessions** | `halt` emits a compact snapshot — resume tomorrow without re-running discovery |
+| 🚦 | **Release Gate Hooks** | Ready-to-run shell gates tying every CRITICAL/HIGH fix to CI pipelines, alerts, and runbooks |
+| 🚀 | **Multiple Install Options** | Install into your agentic LLM via `--install` (Claude Code, OpenCode, Cursor, and more) or run standalone via npm — no runtime dependencies |
+|| 🎯 | **Interactive Scope Selector** | 8 audit scopes with 52 sub-scopes — arrow-key TUI or `--scope biz` for CLI/CI |
+|| 🔄 | **Self-Update** | `npx praetor-audit-kit --update` checks npm and installs the latest version |
+|| 🔍 | **13 Agentic Tools** | Auto-detects Claude Code, OpenCode, Cursor, Windsurf, Copilot, Cline, Amazon Q, Gemini, Aider, Continue.dev, Codex CLI, Roo Code, Cody |
+|| 📋 | **Sub-scope Detail** | Each sub-scope shows assigned agents, areas covered, AI tool compatibility, and a 5-step install guide |
+|| ⚠ | **Honest Disclaimers** | Banner + pre-flight explicitly state Praetor does NOT provide LLM API keys or install AI tools |
+
+---
+
+## 🚀 Quick Start
+
+> [!IMPORTANT]
+> Praetor runs inside long-context LLM environments (Claude, GPT-5, Gemini, etc.). Install it into your agentic LLM or run it standalone — no API key configuration required.
+
+### Option A — Install Into Your Agentic LLM (Recommended)
+
+```bash
+npx praetor-audit-kit --install
+```
+
+This auto-detects and installs Praetor into Claude Code, OpenCode, Cursor, and other supported tools. Then just tell your LLM:
+
+```
+audit my codebase for production readiness
+```
+
+### Option B — Run Standandalone
+
+```bash
+npx praetor-audit-kit
+```
+
+Launches the interactive scope selector. Use `--scope biz` for CLI/CI, or `--scope 2-4` for a range of scopes.
+
+### 3 — Confirm & Execute
+
+Once **Phases 0–2** complete (~30 seconds), review the Discovery Report and respond:
+
+```markdown
+continue with:
+  Q1 = "React Frontend with Node/Express Backend"
+  Q2 = "Requires SOC2 compliance"
+override:
+  RUN_PRIORITIES = [P0, P1]
+then continue
+```
+
+<div align="center">
+
+**That's it.** Praetor handles the rest — module by module, audience by audience.
+
+📖 **First time?** Read the [step-by-step walkthrough](prompt/GETTING_STARTED.md).
+
+</div>
+
+---
+
+## 🔄 How It Works
+
+```mermaid
+flowchart LR
+    A["📋 MASTER PROMPT"] --> B["🔍 Phase 0–2 Discovery"]
+    B --> C["✋ Phase 3 MUST CONFIRM"]
+    C --> D["🐝 Phase 4 Swarm Orchestration"]
+    D --> E["⚖️ Phase 5 Quality Council"]
+    E --> F["🚦 Phase 6 Release Gate"]
+
+    style A fill:#1e293b,stroke:#DFBA73,stroke-width:2px,color:#fff
+    style B fill:#0f172a,stroke:#3b82f6,stroke-width:1px,color:#fff
+    style C fill:#1e1b4b,stroke:#ff5858,stroke-width:1px,color:#fff
+    style D fill:#0f172a,stroke:#a855f7,stroke-width:1px,color:#fff
+    style E fill:#0f172a,stroke:#00f2fe,stroke-width:1px,color:#fff
+    style F fill:#14532d,stroke:#00f260,stroke-width:1px,color:#fff
+```
+
+| Phase | What Happens |
+|:---|:---|
+| **1. Initialization** | Praetor loads into your LLM context — the system initializes |
+| **2. Technical Discovery** | Auto-detects language stacks, frameworks, databases, and monitoring libraries |
+| **3. MUST CONFIRM Gate** | Stop-point requiring your explicit confirmation and parameter tuning |
+| **4. Agent Swarm** | Parallelized execution of 18 specialized analysis mandates across your codebase |
+| **5. Quality Council** | 4 independent judges verify Coverage, Citations, Clarity, and Skip-Validity |
+| **6. Release Gate** | Emits the structured markdown readiness package with executive summary |
+
+---
+
+## 📦 Deliverables
+
+| Audience | Stream | Key Artifacts |
+|:---|:---|:---|
+| **Engineering & QA** | `[ENG]` | Unit, integration, security, performance & chaos test specs (k6, Playwright, fast-check), secret-scan CI stage |
+| **Product & Business** | `[BIZ]` | Plain-language verification matrices, user journey maps, User Acceptance Test scripts |
+| **SRE & Operations** | `[OPS]` | 3:00 AM incident runbooks, alert templates, metric dashboards (Prometheus, Datadog) |
+| **Support & CX** | `[SUP]` | Triage decision trees, error code translations, customer-facing incident templates |
+| **Compliance & Security** | `[COMP]` | SOC2, GDPR, HIPAA, PCI control mappings, PII flow tracking, access control registers |
+| **Cross-Cutting** | `[CROSS]` | Unified Risk Register (severity, owner, dev-days) and automated Release Gates |
+
+---
+
+## ⚡ Why Praetor?
+
+| Metric | Manual Audits | Single-Agent Review | **Praetor Swarm** |
+|---|:---:|:---:|:---:|
+| **Time to Complete** | 2–4 Weeks | ~5 Min | **~2 Min** |
+| **Disciplines Checked** | Siloed / Incomplete | Surface-level | **18 Specialized Domains** |
+| **Citation Traceability** | Manual & Tedious | None (High Hallucination) | **100% Verified (file:line)** |
+| **Output Stakeholders** | Engineering only | Engineering only | **6 Audience Packages** |
+| **Hallucination Guard** | N/A | ❌ High Risk | **✅ 4-Judge QC** |
+| **Release Gate Hooks** | Static PDF Checklist | General text output | **Runnable Shell Gates** |
+
+---
+
+## 🏛️ The 18 Expert Agents
+
+<details>
+<summary><strong>Tier 1 — Discovery & Domain Mapping</strong></summary>
+
+| ID | Role |
+|:---|:---|
+| **A01** | Discovery — Principal Software Archaeologist |
+| **A02** | Domain Mapping — DDD Architect |
+| **A03** | Tooling Discovery — DevOps & CI/CD Integrator |
+
+</details>
+
+<details>
+<summary><strong>Tier 2 — Quality & Robustness Specialists</strong></summary>
+
+| ID | Role |
+|:---|:---|
+| **A04** | Unit Test — Senior Test Automation Engineer |
+| **A05** | Integration Test — System Test Lead |
+| **A06** | Security — OWASP Top 10 Specialist |
+| **A07** | Performance — Scaling & Volumetric Architect |
+| **A08** | Accessibility — WCAG Compliance Expert |
+| **A09** | Chaos — SRE Chaos & Resiliency Lead |
+
+</details>
+
+<details>
+<summary><strong>Tier 3 — Business & Operations Leaders</strong></summary>
+
+| ID | Role |
+|:---|:---|
+| **A10** | Business Analyst — Senior Requirements Lead |
+| **A11** | UAT — User Acceptance Testing Specialist |
+| **A12** | Runbook — Staff SRE & Runbook Architect |
+| **A13** | Alerting — Observability & Alerting Specialist |
+
+</details>
+
+<details>
+<summary><strong>Tier 4 — Governance, Compliance & Communications</strong></summary>
+
+| ID | Role |
+|:---|:---|
+| **A14** | Support Triage — Helpdesk & CX Lead |
+| **A15** | Customer Comms — Customer Communications Lead |
+| **A16** | Compliance — Compliance and Audit Director |
+| **A17** | Risk — Risk Management Lead |
+
+</details>
+
+<details>
+<summary><strong>The Quality Layer — 4-Judge Quality Council</strong></summary>
+
+| ID | Role | Scope |
+|:---|:---|:---|
+| **QC** | Quality Council — 4 Independent Judges | **Coverage** · **Citations (100% verified)** · **Clarity** · **Skip-Validity** |
+
+All generated artifacts pass through the Quality Council before emission. Any finding that fails citation verification or skip-validity review is rejected and returned to the originating agent for regeneration.
+
+</details>
+
+---
+
+## 🎯 Running Modes
+
+| Goal | Override | Use Case |
+|:---|:---|:---|
+| Full run (default) | *(no override)* | Complete production readiness audit |
+| Discovery only | `RUN_PHASES = [0,1,2,3]` | Quick technical assessment without full audit |
+| P0 readiness floor | `RUN_PRIORITIES = [P0]` | Critical items only — fastest path to baseline |
+| Under-resourced triage | `RUN_CATEGORIES = [B,C,D]`, `RUN_PRIORITIES = [P0]` | Business + Ops + Support, critical priority |
+| Single critical module | `RUN_MODULES = [M_PAYMENTS]` | Deep-dive on one high-risk area |
+| Compliance audit prep | `RUN_CATEGORIES = [E]` | SOC2 / GDPR / HIPAA evidence generation |
+
+---
+
+## 🚫 What Praetor Does Not Do
+
+- ❌ Execute the generated tests (your CI runs them)
+- ❌ Deploy fixes or send customer communications
+- ❌ File tickets automatically
+- ❌ Replace human review or external audit certification
+- ❌ Externally certify its citations (citations are re-derived by the model — spot-check before using as audit evidence)
+
+> [!TIP]
+> **Praetor produces the specifications. Your team executes them.**
+
+---
+
+## 📂 Project Structure
+
+<details>
+<summary><strong>Expand to see full project layout</strong></summary>
+
+```
+praetor/
+├── assets/                                   ← Logo suite & social preview
+├── references/                               ← Flat reference structure (agents, phases, protocols, mandates)
+├── prompt/
+│   ├── 00-orchestrator/                      ← Master Prompt & Agent Roster (START HERE)
+│   ├── 01-phases/                            ← 7-phase execution orchestration
+│   ├── 02-categories/                        ← 5 audience configurations (ENG, BIZ, OPS, SUP, COMP)
+│   ├── 03-registers/                         ← 12 traceability register types (Risk, Role, WF)
+│   ├── 04-mandates/                          ← Per-audience deliverable charters + secret scan
+│   ├── 05-execution/                         ← Priority rubrics & effort timelines
+│   ├── 06-templates/                         ← Standardized output templates (UAT, Runbook, Test Case)
+│   ├── 07-agents/                            ← 18 expert persona definitions + Quality Council
+│   ├── 08-protocols/                         ← 13 inter-agent protocols (citations, handoffs, gates)
+│   ├── 99-reference/                         ← Cheatsheets, glossary, ID schemes, migration guide
+│   ├── scripts/                              ← Scope selector + scope manifest
+│   │   ├── scope-select.js                   ← Interactive TUI scope picker
+│   │   └── scopes.json                       ← Scope definitions (single source of truth)
+│   ├── GETTING_STARTED.md                    ← First-time step-by-step walkthrough
+│   ├── VERSION.md                            ← Version history & design properties
+│   └── SKILL.md                              ← Claude Code skill manifest (entry metadata)
+└── wiki/                                     ← Extended documentation
+    ├── Home.md
+    ├── Why-Praetor.md
+    ├── The-18-Expert-Agents.md
+    ├── The-4-Judge-Quality-Council.md
+    └── The-7-Execution-Phases.md
+```
+
+</details>
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from **SREs, compliance officers, security auditors, prompt engineers, and anyone passionate about production readiness**.
+
+| Resource | Description |
+|:---|:---|
+| 📖 [**CONTRIBUTING.md**](CONTRIBUTING.md) | Contribution guidelines, quality rules, and PR process |
+| 🐛 [**Issue Tracker**](https://github.com/Harery/Praetor/issues) | Report bugs, request features, or propose new compliance mappings |
+| 📜 [**CODE_OF_CONDUCT.md**](CODE_OF_CONDUCT.md) | Community standards and expected behavior |
+| 🔒 [**SECURITY.md**](SECURITY.md) | Vulnerability reporting and disclosure policy |
+| 📚 [**Wiki**](https://github.com/Harery/Praetor/wiki) | Extended documentation, architecture deep-dives, and operator guides |
+
+---
+
+## 📄 License
+
+Praetor is distributed under the **MIT License**. Use it, modify it, and distribute it freely inside your organization. Attribution appreciated but not required.
+
+---
+
+<div align="center">
+
+<img src="assets/logo.svg" alt="Praetor" width="100">
+
+<br/>
+<br/>
+
+**One system. Eighteen experts. Six disciplines. Full traceability.**
+
+<br/>
+
+Made with intent by [**@Harery**](https://github.com/Harery)
+
+</div>

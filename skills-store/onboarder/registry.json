@@ -1,0 +1,9 @@
+{
+  "domains": {
+    "engineering": {
+      "repo": "your-org/onboarder-domain-engineering",
+      "ref": "main",
+      "description": "Software engineering — architecture, tech stack, coding standards, and shared services"
+    }
+  }
+}

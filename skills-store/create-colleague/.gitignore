@@ -1,0 +1,21 @@
+# Demo colleagues are tracked in this release package.
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Config with credentials
+company_data/provider.yaml
+
+# Runtime artifacts
+company_data/runs/
+knowledge/
+playwright-data/
+
+# OS
+.DS_Store
+Thumbs.db

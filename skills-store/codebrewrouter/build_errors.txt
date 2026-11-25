@@ -1,0 +1,24 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  Blaze.LlmGateway.Core -> E:\src\CodebrewRouter\Blaze.LlmGateway.Core\bin\Debug\net10.0\Blaze.LlmGateway.Core.dll
+  Blaze.LlmGateway.ServiceDefaults -> E:\src\CodebrewRouter\Blaze.LlmGateway.ServiceDefaults\bin\Debug\net10.0\Blaze.LlmGateway.ServiceDefaults.dll
+  Blaze.LlmGateway.Infrastructure -> E:\src\CodebrewRouter\Blaze.LlmGateway.Infrastructure\bin\Debug\net10.0\Blaze.LlmGateway.Infrastructure.dll
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(163,32): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(165,32): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(166,13): error CS0103: The name 'IsLmStudioConfigured' does not exist in the current context [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(166,53): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(178,50): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(179,14): error CS0103: The name 'IsLmStudioConfigured' does not exist in the current context [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+
+Build FAILED.
+
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(163,32): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(165,32): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(166,13): error CS0103: The name 'IsLmStudioConfigured' does not exist in the current context [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(166,53): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(178,50): error CS1061: 'ProvidersOptions' does not contain a definition for 'LmStudio' and no accessible extension method 'LmStudio' accepting a first argument of type 'ProvidersOptions' could be found (are you missing a using directive or an assembly reference?) [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+E:\src\CodebrewRouter\Blaze.LlmGateway.Api\ModelAvailabilityHeartbeatService.cs(179,14): error CS0103: The name 'IsLmStudioConfigured' does not exist in the current context [E:\src\CodebrewRouter\Blaze.LlmGateway.Api\Blaze.LlmGateway.Api.csproj]
+    0 Warning(s)
+    6 Error(s)
+
+Time Elapsed 00:00:01.04

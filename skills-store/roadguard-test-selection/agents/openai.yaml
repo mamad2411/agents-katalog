@@ -1,0 +1,8 @@
+interface:
+  display_name: "RoadGuard Focused Verification"
+  short_description: "Choose sufficient tests with fresh binaries"
+  default_prompt: "Use $roadguard-test-selection to select sufficient fresh verification, track reused and invalidated evidence, and record exact results and remaining risks in the assigned RoadGuard task."
+  icon_small: "./assets/icon.svg"
+  icon_large: "./assets/icon.svg"
+policy:
+  allow_implicit_invocation: true

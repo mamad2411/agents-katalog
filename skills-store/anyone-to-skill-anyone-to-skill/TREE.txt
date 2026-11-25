@@ -1,0 +1,14 @@
+.
+./README_ZH_TW.md
+./README_JA.md
+./install.sh
+./pyproject.toml
+./README_KO.md
+./README.md
+./install.ps1
+./chat.py
+./.gitignore
+./README_EN.md
+./SKILL.md
+./.git
+./TREE.txt

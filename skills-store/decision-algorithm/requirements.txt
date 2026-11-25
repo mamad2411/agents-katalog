@@ -1,0 +1,12 @@
+# Decision Algorithm Skill - Dependencies
+
+# Core dependencies (none required for basic operation)
+# All scripts use Python 3.10+ standard library only
+
+# Optional: OpenAI API for course material extraction
+# Uncomment if using OpenAI API features
+# openai>=1.0.0
+
+# Development
+pytest>=7.0.0
+pytest-cov>=4.0.0

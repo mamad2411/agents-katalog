@@ -1,0 +1,12 @@
+.
+./CODE_OF_CONDUCT.md
+./LICENSE
+./README.md
+./.gitignore
+./CONTRIBUTING.md
+./SKILL.md
+./.gitattributes
+./AGENTS.md
+./.git
+./TREE.txt
+./SECURITY.md

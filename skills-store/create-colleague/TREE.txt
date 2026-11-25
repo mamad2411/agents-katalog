@@ -1,0 +1,12 @@
+.
+./LICENSE
+./requirements.txt
+./environment.yml
+./pyproject.toml
+./demo.md
+./README.md
+./.gitignore
+./SKILL.md
+./.env.example
+./.git
+./TREE.txt

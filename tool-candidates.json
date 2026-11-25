@@ -1,0 +1,3578 @@
+[
+ {
+  "slug": "00200200/cinch",
+  "kind": "uv"
+ },
+ {
+  "slug": "06chaynes/http-cache",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0verL1nk/PaperSage",
+  "kind": "uv"
+ },
+ {
+  "slug": "0x676e67/vproxy",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0x676e67/wreq",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xERR0R/blocky",
+  "kind": "go"
+ },
+ {
+  "slug": "0xKobold/0xkobolds",
+  "kind": "npm"
+ },
+ {
+  "slug": "0xMassi/webclaw",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xMaxMa/claude-gateway",
+  "kind": "npm"
+ },
+ {
+  "slug": "0xRayAI/xray",
+  "kind": "npm"
+ },
+ {
+  "slug": "0xcafed00d/joystick",
+  "kind": "go"
+ },
+ {
+  "slug": "0xclaw-ai/0xClaw",
+  "kind": "uv"
+ },
+ {
+  "slug": "0xdea/augur",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xdea/haruspex",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xdea/jiggy",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xdea/oneiromancer",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xdea/rhabdomancer",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xlane/pe-sign",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xmhha/buddy",
+  "kind": "go"
+ },
+ {
+  "slug": "0xplaygrounds/rig",
+  "kind": "cargo"
+ },
+ {
+  "slug": "0xsline/OpenChatCut",
+  "kind": "npm"
+ },
+ {
+  "slug": "0xwi11iam/Suijin",
+  "kind": "uv"
+ },
+ {
+  "slug": "1024XEngineer/ClawPet",
+  "kind": "go"
+ },
+ {
+  "slug": "197g/oxide-auth",
+  "kind": "cargo"
+ },
+ {
+  "slug": "1broseidon/cymbal",
+  "kind": "go"
+ },
+ {
+  "slug": "1c3t3a/rust-socketio",
+  "kind": "cargo"
+ },
+ {
+  "slug": "1cFE/agentic-mbse",
+  "kind": "uv"
+ },
+ {
+  "slug": "1set/cronrange",
+  "kind": "go"
+ },
+ {
+  "slug": "1set/starlet",
+  "kind": "go"
+ },
+ {
+  "slug": "1set/todotxt",
+  "kind": "go"
+ },
+ {
+  "slug": "1sh1ro/sec4skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "2014-y/NexoraAgent",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "2031905942/code",
+  "kind": "uv"
+ },
+ {
+  "slug": "23min/aiwf",
+  "kind": "go"
+ },
+ {
+  "slug": "291-Group/LAN-Orangutan",
+  "kind": "go"
+ },
+ {
+  "slug": "2lab-ai/soma-work",
+  "kind": "npm"
+ },
+ {
+  "slug": "2ykwang/mac-cleanup-go",
+  "kind": "go"
+ },
+ {
+  "slug": "32leaves/bel",
+  "kind": "go"
+ },
+ {
+  "slug": "3Hren/msgpack-rust",
+  "kind": "cargo"
+ },
+ {
+  "slug": "3d0c/gmf",
+  "kind": "go"
+ },
+ {
+  "slug": "40RTY-ai/shopify-admin-skills",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "42Atomys/webhooked",
+  "kind": "go"
+ },
+ {
+  "slug": "4citeB4U/LeeWay-Agent-Skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "64bit/async-openai",
+  "kind": "cargo"
+ },
+ {
+  "slug": "777genius/universal-agent-plugins",
+  "kind": "go"
+ },
+ {
+  "slug": "7801943/myagent",
+  "kind": "uv"
+ },
+ {
+  "slug": "7df-lab/devo",
+  "kind": "cargo"
+ },
+ {
+  "slug": "7xuanlu/wenlan",
+  "kind": "cargo"
+ },
+ {
+  "slug": "89jobrien/obfsck",
+  "kind": "cargo"
+ },
+ {
+  "slug": "8u9i/picoclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "9001/copyparty",
+  "kind": "uv"
+ },
+ {
+  "slug": "99designs/aws-vault",
+  "kind": "go"
+ },
+ {
+  "slug": "99designs/gqlgen",
+  "kind": "go"
+ },
+ {
+  "slug": "99le16/ECC",
+  "kind": "uv"
+ },
+ {
+  "slug": "AFLplusplus/LibAFL",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AI4MS/MatCreator",
+  "kind": "uv"
+ },
+ {
+  "slug": "AI4NeuroLab/SeekBrain",
+  "kind": "npm"
+ },
+ {
+  "slug": "AIByJohannes/obsidian",
+  "kind": "npm"
+ },
+ {
+  "slug": "AIXP-Labs/AISP",
+  "kind": "uv"
+ },
+ {
+  "slug": "AMC-JTC/gbrain-1",
+  "kind": "npm"
+ },
+ {
+  "slug": "AMD-AGI/Hyperloom",
+  "kind": "uv"
+ },
+ {
+  "slug": "AR6420/Hail_Hydra",
+  "kind": "npm"
+ },
+ {
+  "slug": "ATLURI0001/Oriel",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AVIDS2/memorix",
+  "kind": "npm"
+ },
+ {
+  "slug": "AaronJan/Hunch",
+  "kind": "go"
+ },
+ {
+  "slug": "AbdoKnbGit/tau",
+  "kind": "npm"
+ },
+ {
+  "slug": "AbdullahMalik17/malikclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "Accelerated-Innovation/governed-ai-delivery",
+  "kind": "uv"
+ },
+ {
+  "slug": "Accessory/minus_games",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Ackee-Blockchain/trident",
+  "kind": "cargo"
+ },
+ {
+  "slug": "ActiveMemory/ctx",
+  "kind": "go"
+ },
+ {
+  "slug": "Ad3bay0c/routex",
+  "kind": "go"
+ },
+ {
+  "slug": "AdRoll/hologram",
+  "kind": "go"
+ },
+ {
+  "slug": "Adaptive-Liquidity/aeon-lab",
+  "kind": "uv"
+ },
+ {
+  "slug": "Adelie-Squad/solosquad",
+  "kind": "npm"
+ },
+ {
+  "slug": "AdguardTeam/AdGuardHome",
+  "kind": "go"
+ },
+ {
+  "slug": "Adnan-Bawani/ruflo.chat",
+  "kind": "npm"
+ },
+ {
+  "slug": "AdrianV101/obsidian-pkm-plugin",
+  "kind": "npm"
+ },
+ {
+  "slug": "Aejkatappaja/phantom-ui",
+  "kind": "npm"
+ },
+ {
+  "slug": "AfterShip/clickhouse-sql-parser",
+  "kind": "go"
+ },
+ {
+  "slug": "AfterShip/email-verifier",
+  "kind": "go"
+ },
+ {
+  "slug": "Ageniti/Ageniti",
+  "kind": "npm"
+ },
+ {
+  "slug": "Agent-Field/SWE-AF",
+  "kind": "uv"
+ },
+ {
+  "slug": "Agentic-OpenOps/open_ops",
+  "kind": "uv"
+ },
+ {
+  "slug": "AgentsMesh/AgentsMesh",
+  "kind": "go"
+ },
+ {
+  "slug": "AgilData/mysql-proxy-rs",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AlKass/polish",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Alejandro-M-P/git-courer",
+  "kind": "go"
+ },
+ {
+  "slug": "AlexPikalov/cdrs",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AlexsJones/llmfit",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AlexsJones/llmserve",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Alisa0808/vibe-creating-skill",
+  "kind": "npm"
+ },
+ {
+  "slug": "AllenDang/cimgui-go",
+  "kind": "go"
+ },
+ {
+  "slug": "Allenxuxu/gev",
+  "kind": "go"
+ },
+ {
+  "slug": "Allra-Fintech/mdv",
+  "kind": "go"
+ },
+ {
+  "slug": "AlmanacCode/Yoke",
+  "kind": "uv"
+ },
+ {
+  "slug": "AltrinaAI/vibestudio",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AlvaroMS25/vesper",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AnalyseDeCircuit/oxideterm",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Andrew-M-C/go.jsonvalue",
+  "kind": "go"
+ },
+ {
+  "slug": "Ankith-m1006/wolfpack-backend",
+  "kind": "uv"
+ },
+ {
+  "slug": "Anmolnoor/skep",
+  "kind": "uv"
+ },
+ {
+  "slug": "Antonboom/testifylint",
+  "kind": "go"
+ },
+ {
+  "slug": "Antonito/gfile",
+  "kind": "go"
+ },
+ {
+  "slug": "AppsFlyer/go-sundheit",
+  "kind": "go"
+ },
+ {
+  "slug": "AprilNEA/OpenLogi",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Arceus-7/matrix",
+  "kind": "go"
+ },
+ {
+  "slug": "ArchiveBox/ArchiveBox",
+  "kind": "uv"
+ },
+ {
+  "slug": "ArdurAI/ardur-agent",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AreevAI/flowcat",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AreteA4/arete",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Army161/ECC",
+  "kind": "uv"
+ },
+ {
+  "slug": "ArroyoSystems/arroyo",
+  "kind": "cargo"
+ },
+ {
+  "slug": "ArtalkJS/Artalk",
+  "kind": "go"
+ },
+ {
+  "slug": "ArthurZizumbo/batten",
+  "kind": "go"
+ },
+ {
+  "slug": "AsadMirza44/AILearningProgram",
+  "kind": "uv"
+ },
+ {
+  "slug": "AsaiYusuke/jsonpath",
+  "kind": "go"
+ },
+ {
+  "slug": "AscendingCreations/AscendingGraphics",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Ashutosh0x/rust-finance",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AshvinBambhaniya/autopool",
+  "kind": "go"
+ },
+ {
+  "slug": "AtheMathmo/rusty-machine",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Atrium-Hermes/Atrium",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "Auburn/FastNoiseLite",
+  "kind": "go"
+ },
+ {
+  "slug": "AugustHuangMX/HZDDigitalGarden",
+  "kind": "npm"
+ },
+ {
+  "slug": "Ave-Sergeev/Tictonix",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Avinava/sf-documentation-knowledge",
+  "kind": "npm"
+ },
+ {
+  "slug": "Axect/Peroxide",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Axernel-Labs/Stackdome",
+  "kind": "go"
+ },
+ {
+  "slug": "AxioRank/hermes-plugin",
+  "kind": "uv"
+ },
+ {
+  "slug": "AxiomicCoreness/hello_world.py",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "AxiosLeo/node-orm-mysql",
+  "kind": "npm"
+ },
+ {
+  "slug": "Ayagikei/LifeUp-SDK",
+  "kind": "npm"
+ },
+ {
+  "slug": "AyoubTadlaoui/GoLogX",
+  "kind": "go"
+ },
+ {
+  "slug": "Azure/azure-sdk-for-rust",
+  "kind": "cargo"
+ },
+ {
+  "slug": "AzzzGoodFish/openteam",
+  "kind": "npm"
+ },
+ {
+  "slug": "BANANASJIM/rdc-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "BOHICA-LABS/vsdd-factory",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BOHUYESHAN-APB/openagent-labforge-bio",
+  "kind": "npm"
+ },
+ {
+  "slug": "Balaji01-4D/pgxcli",
+  "kind": "go"
+ },
+ {
+  "slug": "Barnett-Studios/cxpak",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BdM-15/capture-insights",
+  "kind": "uv"
+ },
+ {
+  "slug": "BeardyWalrus/autopilot-jobhunt",
+  "kind": "uv"
+ },
+ {
+  "slug": "Beever-AI/beever-atlas",
+  "kind": "uv"
+ },
+ {
+  "slug": "BikS2013/sync-repo-to-azure",
+  "kind": "npm"
+ },
+ {
+  "slug": "Bilibili/discovery",
+  "kind": "go"
+ },
+ {
+  "slug": "BinChengZhao/delay-timer",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BlackBeltTechnology/pi-agent-dashboard",
+  "kind": "npm"
+ },
+ {
+  "slug": "BlackRoad-OS-Inc/blackroad-operator",
+  "kind": "npm"
+ },
+ {
+  "slug": "BoRuDar/configuration",
+  "kind": "go"
+ },
+ {
+  "slug": "Boeing/config-file-validator",
+  "kind": "go"
+ },
+ {
+  "slug": "BooleanCat/go-functional",
+  "kind": "go"
+ },
+ {
+  "slug": "Boulea7/ohmyclaude",
+  "kind": "uv"
+ },
+ {
+  "slug": "BoundaryML/baml",
+  "kind": "go"
+ },
+ {
+  "slug": "BoxBoxJason/sonarqube-client-go",
+  "kind": "go"
+ },
+ {
+  "slug": "Brad-Fullwood/al.language.zed",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BrainerVirus/workit",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "BrandonXu6106/designnotes",
+  "kind": "npm"
+ },
+ {
+  "slug": "Breeze0806/go-etl",
+  "kind": "go"
+ },
+ {
+  "slug": "BrianLeishman/go-imap",
+  "kind": "go"
+ },
+ {
+  "slug": "BrightBlock/hyprlayer-cli",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/byteorder",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/fst",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/jiff",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/rust-csv",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/suffix",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/tabwriter",
+  "kind": "cargo"
+ },
+ {
+  "slug": "BurntSushi/toml",
+  "kind": "go"
+ },
+ {
+  "slug": "C2FO/vfs",
+  "kind": "go"
+ },
+ {
+  "slug": "CHATS-lab/verbalized-sampling",
+  "kind": "uv"
+ },
+ {
+  "slug": "CODE-NAVI-X/code-navi",
+  "kind": "uv"
+ },
+ {
+  "slug": "CalamityXeroc/GIS-agent",
+  "kind": "uv"
+ },
+ {
+  "slug": "CalebQ42/bbConvert",
+  "kind": "go"
+ },
+ {
+  "slug": "Canop/bacon",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Catalyst-Astro/Catalyst-Blockchain-Structural-Token-",
+  "kind": "uv"
+ },
+ {
+  "slug": "CaveViewer/CaveViewer",
+  "kind": "uv"
+ },
+ {
+  "slug": "Ch1nyzzz/Optimizer1",
+  "kind": "uv"
+ },
+ {
+  "slug": "Chaoticghost1/chaoticghost0932",
+  "kind": "go"
+ },
+ {
+  "slug": "Charlieverse-ai/charlieverse",
+  "kind": "uv"
+ },
+ {
+  "slug": "ChenZhongxi-sjtu/WanHunFan-Cyber-company",
+  "kind": "uv"
+ },
+ {
+  "slug": "ChicagoHAI/OpenAIReview",
+  "kind": "uv"
+ },
+ {
+  "slug": "ChonSong/skill-retriever",
+  "kind": "uv"
+ },
+ {
+  "slug": "Chorus-AIDLC/Chorus",
+  "kind": "npm"
+ },
+ {
+  "slug": "ChrisTowles/towles-tool",
+  "kind": "cargo"
+ },
+ {
+  "slug": "CircuitWall/jarela",
+  "kind": "npm"
+ },
+ {
+  "slug": "ClawBio/ClawBio",
+  "kind": "uv"
+ },
+ {
+  "slug": "CodeGenLabs/forge-harness",
+  "kind": "uv"
+ },
+ {
+  "slug": "Coder8124/logos",
+  "kind": "go"
+ },
+ {
+  "slug": "Codric-Enterprise/ClaudRick",
+  "kind": "uv"
+ },
+ {
+  "slug": "CodySwannGT/lisa",
+  "kind": "npm"
+ },
+ {
+  "slug": "Coinyak/onchainai",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Compass-Brand/compass-engine",
+  "kind": "npm"
+ },
+ {
+  "slug": "ContextualWisdomLab/appguardrail",
+  "kind": "uv"
+ },
+ {
+  "slug": "CopilotKit/pathfinder",
+  "kind": "npm"
+ },
+ {
+  "slug": "CrispyW0nton/Ghost-Studio",
+  "kind": "uv"
+ },
+ {
+  "slug": "Cubiczan/agent-conductor",
+  "kind": "npm"
+ },
+ {
+  "slug": "CyberStefNef/skillverk",
+  "kind": "go"
+ },
+ {
+  "slug": "CyrilLeMat/temper-skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "Cyrilthetecchieee/cyril-code-",
+  "kind": "uv"
+ },
+ {
+  "slug": "D0NMEGA/donnyclaude",
+  "kind": "npm"
+ },
+ {
+  "slug": "DCCA/skval",
+  "kind": "uv"
+ },
+ {
+  "slug": "DECORATOR0/project_gaia_skillrl",
+  "kind": "uv"
+ },
+ {
+  "slug": "DISSIDIA-986/Industry-AI-Flow",
+  "kind": "uv"
+ },
+ {
+  "slug": "DNYoussef/context-cascade",
+  "kind": "uv"
+ },
+ {
+  "slug": "DamonZS/Claude-Codex-Pro-Tool",
+  "kind": "cargo"
+ },
+ {
+  "slug": "DaviAlcanfor/fenrir",
+  "kind": "uv"
+ },
+ {
+  "slug": "Dazlarus/karl-code",
+  "kind": "uv"
+ },
+ {
+  "slug": "Denissvgn/python-wiki-llm",
+  "kind": "uv"
+ },
+ {
+  "slug": "DeployGate/deploygate-agent-plugin",
+  "kind": "npm"
+ },
+ {
+  "slug": "Dicklesworthstone/destructive_command_guard",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Dicklesworthstone/pi_agent_rust",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Diogo17/gemini-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "DoIT-Artificial-Intelligence/youtube-to-docs",
+  "kind": "uv"
+ },
+ {
+  "slug": "Dobeu-tech-eco/ecc",
+  "kind": "uv"
+ },
+ {
+  "slug": "Dong90/oh-my-taiyiforge",
+  "kind": "npm"
+ },
+ {
+  "slug": "DoodzCode/koad-os",
+  "kind": "cargo"
+ },
+ {
+  "slug": "DorianGallo/agentmemory-local",
+  "kind": "npm"
+ },
+ {
+  "slug": "DorianGallo/antigravity-awesome-skills-local",
+  "kind": "npm"
+ },
+ {
+  "slug": "Dpro-at/Tel-Agent",
+  "kind": "uv"
+ },
+ {
+  "slug": "Dr-SoloDev/ginva",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Dragonmonk111/junoclaw",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Dreamt0511/Pocket-Agent",
+  "kind": "uv"
+ },
+ {
+  "slug": "Duke0503/shopee-aff",
+  "kind": "uv"
+ },
+ {
+  "slug": "Dwlad90/stylex-swc-plugin",
+  "kind": "cargo"
+ },
+ {
+  "slug": "EfficientContext/ContextPilot",
+  "kind": "uv"
+ },
+ {
+  "slug": "EmpoweredHouse/process-native-starter",
+  "kind": "npm"
+ },
+ {
+  "slug": "EndoTheDev/omega",
+  "kind": "go"
+ },
+ {
+  "slug": "Endsi3g/uprising-coldoutreach",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "Estom/aiflex",
+  "kind": "uv"
+ },
+ {
+  "slug": "EvanWangZ/vela",
+  "kind": "npm"
+ },
+ {
+  "slug": "EvanZhang008/open-walnut",
+  "kind": "npm"
+ },
+ {
+  "slug": "Fabio29T/Everything-Claude",
+  "kind": "npm"
+ },
+ {
+  "slug": "Fei2-Labs/kirocrew",
+  "kind": "uv"
+ },
+ {
+  "slug": "Fergana-Labs/stash",
+  "kind": "uv"
+ },
+ {
+  "slug": "Fluid-CAD/FluidCAD",
+  "kind": "npm"
+ },
+ {
+  "slug": "GGwujun/SigmX",
+  "kind": "uv"
+ },
+ {
+  "slug": "GabrielMartinMoran/cairil-ttrpg-setting",
+  "kind": "npm"
+ },
+ {
+  "slug": "GaoSSR/best-claude-hud",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Gaubee/jixo",
+  "kind": "npm"
+ },
+ {
+  "slug": "GeneGulanesJr/LaPis",
+  "kind": "npm"
+ },
+ {
+  "slug": "General-Magick-Industries/mindroid",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Geraldow/iris",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "Gmark2000/AIgile-Method",
+  "kind": "npm"
+ },
+ {
+  "slug": "GodMode-Team/godmode",
+  "kind": "npm"
+ },
+ {
+  "slug": "GodmanAutomations/Kira",
+  "kind": "uv"
+ },
+ {
+  "slug": "Goldziher/ai-rulez",
+  "kind": "go"
+ },
+ {
+  "slug": "GoogleCloudPlatform/BigQuery-Agent-Analytics-SDK",
+  "kind": "uv"
+ },
+ {
+  "slug": "GoogleCloudPlatform/db-context-enrichment",
+  "kind": "uv"
+ },
+ {
+  "slug": "Gowrav-M/agent-skillguard",
+  "kind": "npm"
+ },
+ {
+  "slug": "GroepOnline/pi-tools",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Guild-Agents/guild",
+  "kind": "npm"
+ },
+ {
+  "slug": "GuillemPT/Agent-Orchestrator",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "GustavoPenaBeltrami/self-learning-platform",
+  "kind": "uv"
+ },
+ {
+  "slug": "HKUDS/OpenSpace",
+  "kind": "uv"
+ },
+ {
+  "slug": "HKUDS/Vibe-Trading",
+  "kind": "uv"
+ },
+ {
+  "slug": "HL911/super_admin",
+  "kind": "go"
+ },
+ {
+  "slug": "HabitaNexus/monorepo",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "Hack23/European-Parliament-MCP-Server",
+  "kind": "npm"
+ },
+ {
+  "slug": "Hanchenk/dsh-team-coordinate",
+  "kind": "npm"
+ },
+ {
+  "slug": "Harery/Praetor",
+  "kind": "npm"
+ },
+ {
+  "slug": "Harmitx7/tribunal-kit",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Harzva/deepseek-cli",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "HelixDevelopment/agent",
+  "kind": "go"
+ },
+ {
+  "slug": "Hephaestus-DevKit/codex-skills-registry",
+  "kind": "npm"
+ },
+ {
+  "slug": "HomericIntelligence/Scylla",
+  "kind": "uv"
+ },
+ {
+  "slug": "Hongjiseung-ROK/MLP-auto-researcher",
+  "kind": "uv"
+ },
+ {
+  "slug": "Houseofmvps/ultraship",
+  "kind": "npm"
+ },
+ {
+  "slug": "Hova25/ccgh-bridge",
+  "kind": "npm"
+ },
+ {
+  "slug": "HvH1110/OpenOCR",
+  "kind": "uv"
+ },
+ {
+  "slug": "Hvuj/The-Soverign-Imperia-citadel",
+  "kind": "uv"
+ },
+ {
+  "slug": "Hyaxia/blogwatcher",
+  "kind": "go"
+ },
+ {
+  "slug": "ICME-Lab/kinic-wiki",
+  "kind": "cargo"
+ },
+ {
+  "slug": "IbIFACE-Tech/paracle",
+  "kind": "uv"
+ },
+ {
+  "slug": "IharKharytanovich/foundation",
+  "kind": "npm"
+ },
+ {
+  "slug": "Imad-Oute/MicroHard",
+  "kind": "npm"
+ },
+ {
+  "slug": "Infopibe/everything-claude-code",
+  "kind": "npm"
+ },
+ {
+  "slug": "Intelligent-Internet/CommonGround",
+  "kind": "uv"
+ },
+ {
+  "slug": "Isites/AnyAI",
+  "kind": "go"
+ },
+ {
+  "slug": "Izume01/omnis",
+  "kind": "uv"
+ },
+ {
+  "slug": "JCE-Joshhh77/JCE-Opencode-Tools",
+  "kind": "npm"
+ },
+ {
+  "slug": "JLmehdi92/novaclaw",
+  "kind": "npm"
+ },
+ {
+  "slug": "JYeswak/grok_bot_playground",
+  "kind": "uv"
+ },
+ {
+  "slug": "Jamie-BitFlight/claude_skills",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "Jannael/Config",
+  "kind": "npm"
+ },
+ {
+  "slug": "Jannael/Devsync",
+  "kind": "npm"
+ },
+ {
+  "slug": "Jannael/Glinter",
+  "kind": "npm"
+ },
+ {
+  "slug": "JantonioFC/skillsbank",
+  "kind": "npm"
+ },
+ {
+  "slug": "JaredStewart/coderlm",
+  "kind": "uv"
+ },
+ {
+  "slug": "JavanC/Homunculus",
+  "kind": "npm"
+ },
+ {
+  "slug": "Jeeva0104/connector-service-mini",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Jeomon/Operator-Use",
+  "kind": "uv"
+ },
+ {
+  "slug": "Jeremy-Kr/create-agent-system",
+  "kind": "npm"
+ },
+ {
+  "slug": "Jerrylalala/compound-engineering",
+  "kind": "npm"
+ },
+ {
+  "slug": "JonathLima/orquestra",
+  "kind": "cargo"
+ },
+ {
+  "slug": "JonusNattapong/Pinocchio-Scanner-Skill",
+  "kind": "npm"
+ },
+ {
+  "slug": "JoseAntonioNuevo/markrail",
+  "kind": "npm"
+ },
+ {
+  "slug": "Jumpsy/a2z-forge",
+  "kind": "npm"
+ },
+ {
+  "slug": "JustineDevs/meta-architect",
+  "kind": "npm"
+ },
+ {
+  "slug": "K-Dense-AI/mimeo",
+  "kind": "uv"
+ },
+ {
+  "slug": "Kael-Yan/AgentForge",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "Kaggle/kaggle-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "Kastalien-Research/thoughtbox",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "KeigoShimadaCC/AgentAdvisor",
+  "kind": "uv"
+ },
+ {
+  "slug": "Kevin-Liu-01/Agent-Machines",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "KevinBean/emptyos",
+  "kind": "uv"
+ },
+ {
+  "slug": "KhanUzeb/kite",
+  "kind": "uv"
+ },
+ {
+  "slug": "Kkkirito-123/ZLAgent",
+  "kind": "uv"
+ },
+ {
+  "slug": "KlyrhonMiko/kly-skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "KonghaYao/mcpp",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "KooshaPari/PhenoRegistry",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Krishnendu409/EVERYTHING-CLAUDE-FREE-VERSION",
+  "kind": "npm"
+ },
+ {
+  "slug": "KrismithReddy12/ECC",
+  "kind": "uv"
+ },
+ {
+  "slug": "KyaniteLabs/kinocut",
+  "kind": "uv"
+ },
+ {
+  "slug": "KyleyHarris/criteria-review",
+  "kind": "npm"
+ },
+ {
+  "slug": "L1AD/claude-task-viewer",
+  "kind": "npm"
+ },
+ {
+  "slug": "LE0-Lin/AgentConfigScore",
+  "kind": "uv"
+ },
+ {
+  "slug": "LanShanPi/agent-evolution-os",
+  "kind": "npm"
+ },
+ {
+  "slug": "LazyAGI/LazyLLM",
+  "kind": "uv"
+ },
+ {
+  "slug": "LeeHengYu/mediator-coevo",
+  "kind": "uv"
+ },
+ {
+  "slug": "Leon-Drq/openagentskill",
+  "kind": "npm"
+ },
+ {
+  "slug": "Leonsalner/agentfile",
+  "kind": "go"
+ },
+ {
+  "slug": "Lingtai-AI/lingtai-kernel",
+  "kind": "uv"
+ },
+ {
+  "slug": "LingyiChen-AI/OpenSkills",
+  "kind": "uv"
+ },
+ {
+  "slug": "Lixiang9716/govrail",
+  "kind": "uv"
+ },
+ {
+  "slug": "LucasXCoder/engram",
+  "kind": "uv"
+ },
+ {
+  "slug": "LucioY250/phdude",
+  "kind": "npm"
+ },
+ {
+  "slug": "LumioGames/workflow-plugin",
+  "kind": "npm"
+ },
+ {
+  "slug": "Luqman-Ud-Din/blackbox-qa-agent",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "Lykhoyda/rn-dev-agent",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "M155K4R4/Skill_Workbench",
+  "kind": "npm"
+ },
+ {
+  "slug": "MC-Archived/Loom",
+  "kind": "npm"
+ },
+ {
+  "slug": "MCP-Defender/MCP-Defender",
+  "kind": "npm"
+ },
+ {
+  "slug": "MChrys/Agent_Workflow",
+  "kind": "uv"
+ },
+ {
+  "slug": "MK2code/census-agent-chatbot",
+  "kind": "uv"
+ },
+ {
+  "slug": "MNSTRY/atelier",
+  "kind": "npm"
+ },
+ {
+  "slug": "MaTo8888/ECC",
+  "kind": "uv"
+ },
+ {
+  "slug": "MaTriXy/auto-skill",
+  "kind": "npm"
+ },
+ {
+  "slug": "MadLlama25/fastmail-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "MaddieMo1/Pi-Agent-Web",
+  "kind": "npm"
+ },
+ {
+  "slug": "Maijied/Loragent",
+  "kind": "go"
+ },
+ {
+  "slug": "MakCoder-2004/herdr-maks-version",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Malti2/PokeClaw",
+  "kind": "npm"
+ },
+ {
+  "slug": "Manavarya09/design-extract",
+  "kind": "npm"
+ },
+ {
+  "slug": "Mark-liz/qwenpaw_hermes",
+  "kind": "uv"
+ },
+ {
+  "slug": "Matheus-Gama-deluna/Maestro",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "MauricioPerera/fastwebmcp",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "McClain-Thiel/OmniSci",
+  "kind": "uv"
+ },
+ {
+  "slug": "Mecha-Aima/AI-coding-agent-harness",
+  "kind": "uv"
+ },
+ {
+  "slug": "Meteorkid/open-design-ecosystem",
+  "kind": "npm"
+ },
+ {
+  "slug": "Microck/kagi-cli",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Microindole/quell",
+  "kind": "go"
+ },
+ {
+  "slug": "MidOSresearch/midos",
+  "kind": "uv"
+ },
+ {
+  "slug": "Minakamiii/Chaining_Skills_to_Hijack_LLM_Agents",
+  "kind": "uv"
+ },
+ {
+  "slug": "MingyiSecLab/Mingyi-Atlas",
+  "kind": "npm"
+ },
+ {
+  "slug": "MiniMax-AI/MiniMax-MCP-JS",
+  "kind": "npm"
+ },
+ {
+  "slug": "Mininglamp-AI/OctoASR",
+  "kind": "uv"
+ },
+ {
+  "slug": "Mitriyweb/agent-team",
+  "kind": "npm"
+ },
+ {
+  "slug": "MohitGoyal09/AgentForge",
+  "kind": "uv"
+ },
+ {
+  "slug": "MoizIbnYousaf/marketing-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "MoofonLi/dev-ready",
+  "kind": "uv"
+ },
+ {
+  "slug": "Morphicai/openclaw-morphixai",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "Mr-Nobody-Anonymous/All-skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "MrShininnnnn/SuperCtx",
+  "kind": "uv"
+ },
+ {
+  "slug": "MustafaKemal0146/fetih",
+  "kind": "uv"
+ },
+ {
+  "slug": "MykytaStel/repopilot",
+  "kind": "cargo"
+ },
+ {
+  "slug": "MythologIQ-Labs-LLC/Qor-logic",
+  "kind": "uv"
+ },
+ {
+  "slug": "N0xMare/nomiso",
+  "kind": "cargo"
+ },
+ {
+  "slug": "N4M3Z/forge-lib",
+  "kind": "cargo"
+ },
+ {
+  "slug": "NCMFN/ClaudeCode",
+  "kind": "npm"
+ },
+ {
+  "slug": "NVIDIA/NeMo-Fabric",
+  "kind": "cargo"
+ },
+ {
+  "slug": "NVIDIA/OpenShell",
+  "kind": "cargo"
+ },
+ {
+  "slug": "NVIDIA/srt-slurm",
+  "kind": "cargo"
+ },
+ {
+  "slug": "NarratorAI-Studio/narrator-ai-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "NauelG/astro-blocks",
+  "kind": "npm"
+ },
+ {
+  "slug": "Nemex81/spark-framework-engine",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "NeuZhou/repo2skill",
+  "kind": "npm"
+ },
+ {
+  "slug": "Neural-Node-Labs/devnull",
+  "kind": "npm"
+ },
+ {
+  "slug": "New1Direction/korgex",
+  "kind": "uv"
+ },
+ {
+  "slug": "Nickalus12/Loom",
+  "kind": "uv"
+ },
+ {
+  "slug": "NicolaiLassen/orxhestra",
+  "kind": "uv"
+ },
+ {
+  "slug": "NikifyArt/API-lib-for-fixing-common-format-issues-",
+  "kind": "uv"
+ },
+ {
+  "slug": "Nikk157/pentesting",
+  "kind": "uv"
+ },
+ {
+  "slug": "NoesisVision/nasde-toolkit",
+  "kind": "uv"
+ },
+ {
+  "slug": "Nohac/rasterra",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Nostem/github-wiki",
+  "kind": "npm"
+ },
+ {
+  "slug": "NotNull92/hera-agent-godot",
+  "kind": "go"
+ },
+ {
+  "slug": "NotePlan/plugins",
+  "kind": "npm"
+ },
+ {
+  "slug": "OGKevin/cadmus",
+  "kind": "cargo"
+ },
+ {
+  "slug": "OU9999/codex-webtoon",
+  "kind": "npm"
+ },
+ {
+  "slug": "Ocyss/srs-auth",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Odevio/Odevio-CLI",
+  "kind": "uv"
+ },
+ {
+  "slug": "Ohmmy3847/Octobot",
+  "kind": "cargo"
+ },
+ {
+  "slug": "OmarMusayev/terminaltui",
+  "kind": "npm"
+ },
+ {
+  "slug": "Omni-Craft/OmniCraft",
+  "kind": "uv"
+ },
+ {
+  "slug": "Omniorganization/omni-desk-ai",
+  "kind": "uv"
+ },
+ {
+  "slug": "OnchainRouter/onchain-router-hermes",
+  "kind": "uv"
+ },
+ {
+  "slug": "OnourImpram/claude-code-for-social-scientists",
+  "kind": "uv"
+ },
+ {
+  "slug": "OpenDemon/Pilipili-AutoVideo",
+  "kind": "uv"
+ },
+ {
+  "slug": "OpenDemon/anyone-to-skill",
+  "kind": "uv"
+ },
+ {
+  "slug": "OutlitAI/outlit-sdk",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Oyeonseok/WHS4_DAST_Project",
+  "kind": "uv"
+ },
+ {
+  "slug": "P0lar1ght/dock",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Pact-Lang/pact",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Pancakeshake/Zombera",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "Pangu-Immortal/hunter-ai-content-factory",
+  "kind": "uv"
+ },
+ {
+  "slug": "Pantani/tdmcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "Paparusi/jarvis",
+  "kind": "uv"
+ },
+ {
+  "slug": "Parad0x-Labs/openclaw-skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "Patdolitse/piia-engram",
+  "kind": "uv"
+ },
+ {
+  "slug": "Patrity/cognova-v1",
+  "kind": "npm"
+ },
+ {
+  "slug": "PaulJPhilp/EffectPatterns",
+  "kind": "npm"
+ },
+ {
+  "slug": "PaystackOSS/paystack-mcp-server",
+  "kind": "npm"
+ },
+ {
+  "slug": "PerpetualSoftware/pad",
+  "kind": "go"
+ },
+ {
+  "slug": "Portkey-AI/gateway",
+  "kind": "npm"
+ },
+ {
+  "slug": "PrayforH/KAI",
+  "kind": "uv"
+ },
+ {
+  "slug": "Privatris/AgentLeak",
+  "kind": "uv"
+ },
+ {
+  "slug": "PsyChaos/ai-team-harness",
+  "kind": "go"
+ },
+ {
+  "slug": "PyModel/pythinker-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "QianjieTech/Open-ClaudeSkill",
+  "kind": "uv"
+ },
+ {
+  "slug": "QodeXcli/QodeX",
+  "kind": "npm"
+ },
+ {
+  "slug": "Quantco/dataframely",
+  "kind": "cargo"
+ },
+ {
+  "slug": "QwenLM/Qwen-MM-Plugins",
+  "kind": "uv"
+ },
+ {
+  "slug": "RAGton/kryonix-dev",
+  "kind": "cargo"
+ },
+ {
+  "slug": "RCHENLAB/AiScientist",
+  "kind": "uv"
+ },
+ {
+  "slug": "RDEL-Group/compound-knowledge-work",
+  "kind": "npm"
+ },
+ {
+  "slug": "RUSHYOP/imperium-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "RaNDoM6913/claude-code-superkit",
+  "kind": "npm"
+ },
+ {
+  "slug": "Rachasumanth/text2llm001",
+  "kind": "npm"
+ },
+ {
+  "slug": "Rainnystone/skill-orchestration-system",
+  "kind": "uv"
+ },
+ {
+  "slug": "RantAI-dev/RantAIClaw",
+  "kind": "cargo"
+ },
+ {
+  "slug": "RarestStatue/ok-script-linux",
+  "kind": "uv"
+ },
+ {
+  "slug": "Rayna-RRR/agent-project-lab",
+  "kind": "uv"
+ },
+ {
+  "slug": "Reckgrin/gemini-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "Refiant-Inc/admit-bench",
+  "kind": "uv"
+ },
+ {
+  "slug": "Reihantt6/sns-myagent",
+  "kind": "npm"
+ },
+ {
+  "slug": "Research-Equality/ResearchClaw",
+  "kind": "uv"
+ },
+ {
+  "slug": "RobaireTH/NERVE",
+  "kind": "cargo"
+ },
+ {
+  "slug": "RobinNorberg/oh-my-copilot",
+  "kind": "npm"
+ },
+ {
+  "slug": "RoseYuan12138/my-blog",
+  "kind": "npm"
+ },
+ {
+  "slug": "Ruya-AI/cozempic",
+  "kind": "uv"
+ },
+ {
+  "slug": "SFKislev/Flue",
+  "kind": "uv"
+ },
+ {
+  "slug": "SHORiN-KiWATA/miyu-agent",
+  "kind": "cargo"
+ },
+ {
+  "slug": "SKZL-AI/tscg",
+  "kind": "npm"
+ },
+ {
+  "slug": "STUkh/sparq-assistant",
+  "kind": "npm"
+ },
+ {
+  "slug": "SYMBaiEX/doolittle",
+  "kind": "npm"
+ },
+ {
+  "slug": "SamHennessy/hlive",
+  "kind": "go"
+ },
+ {
+  "slug": "Saman-Sunasara/wifi-densepose",
+  "kind": "uv"
+ },
+ {
+  "slug": "SantyagoSeaman/sidegraph",
+  "kind": "uv"
+ },
+ {
+  "slug": "ScienceIsNeato/slop-mop",
+  "kind": "uv"
+ },
+ {
+  "slug": "SeemSeam/claude_codex_bridge",
+  "kind": "npm"
+ },
+ {
+  "slug": "SepineTam/mcp-for-stata",
+  "kind": "uv"
+ },
+ {
+  "slug": "SepineTam/tabra",
+  "kind": "uv"
+ },
+ {
+  "slug": "Serdarsahinn05/claudiva",
+  "kind": "npm"
+ },
+ {
+  "slug": "SethyPagna/Secretary-Jarvis",
+  "kind": "uv"
+ },
+ {
+  "slug": "Shanghai-Collection-Stone/super-claw",
+  "kind": "npm"
+ },
+ {
+  "slug": "Sharjeelbaig/Human-To-Code",
+  "kind": "npm"
+ },
+ {
+  "slug": "ShellSecrets/PeekAStokk",
+  "kind": "go"
+ },
+ {
+  "slug": "ShenaoW/MalSkills",
+  "kind": "uv"
+ },
+ {
+  "slug": "Shintaro-Abe/TapInShift",
+  "kind": "uv"
+ },
+ {
+  "slug": "Shirataki2/DisCalendar",
+  "kind": "cargo"
+ },
+ {
+  "slug": "ShunmeiCho/claude-config",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "Shweta-Mishra-ai/tokenmizer",
+  "kind": "uv"
+ },
+ {
+  "slug": "SiniyaYousuf/everything_claudecode",
+  "kind": "npm"
+ },
+ {
+  "slug": "Sinlair/reagent",
+  "kind": "npm"
+ },
+ {
+  "slug": "Sir-chawakorn/power-ranger-toolkit",
+  "kind": "npm"
+ },
+ {
+  "slug": "SkillDoAI/skilldo",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Smart-AI-Memory/attune-ai",
+  "kind": "uv"
+ },
+ {
+  "slug": "Smarter-Dev/smarter-dev",
+  "kind": "uv"
+ },
+ {
+  "slug": "SmartisanNaive/BioFoundry",
+  "kind": "uv"
+ },
+ {
+  "slug": "Soju06/codex-lb",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Solizardking/clawdbot-go",
+  "kind": "go"
+ },
+ {
+  "slug": "Solizardking/solana-clawd",
+  "kind": "npm"
+ },
+ {
+  "slug": "Sompote/Tiger_bot",
+  "kind": "npm"
+ },
+ {
+  "slug": "SoraLabsOSS/skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "Soul-Brews-Studio/arra-oracle-skills-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "SpartanLabsXyz/simmer-sdk",
+  "kind": "uv"
+ },
+ {
+  "slug": "Spielewoy/autoprompt-skill",
+  "kind": "npm"
+ },
+ {
+  "slug": "SriramGandhiS/Skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "Stackdome/Stackdome",
+  "kind": "go"
+ },
+ {
+  "slug": "StarWindv/PicoClaw-shou",
+  "kind": "go"
+ },
+ {
+  "slug": "SummerEngine/summer",
+  "kind": "npm"
+ },
+ {
+  "slug": "SuperagenticAI/superqode",
+  "kind": "uv"
+ },
+ {
+  "slug": "Supervertaler/Supervertaler-Workbench",
+  "kind": "uv"
+ },
+ {
+  "slug": "Swastik023/marketing-api-automation-mcp",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "SylphAI-Inc/atskills",
+  "kind": "npm"
+ },
+ {
+  "slug": "SynkraAI/aiox-core",
+  "kind": "npm"
+ },
+ {
+  "slug": "TannerTitlow/jira-ticket-tools",
+  "kind": "npm"
+ },
+ {
+  "slug": "TaoELi/FermiLink",
+  "kind": "uv"
+ },
+ {
+  "slug": "Tatsh/dbeaver-creds",
+  "kind": "uv"
+ },
+ {
+  "slug": "Tatsh/macprefs",
+  "kind": "uv"
+ },
+ {
+  "slug": "Tatsh/youtube-unofficial",
+  "kind": "uv"
+ },
+ {
+  "slug": "TeaEntityLab/teaAgent",
+  "kind": "uv"
+ },
+ {
+  "slug": "TechCorp25/kingdom",
+  "kind": "uv"
+ },
+ {
+  "slug": "TencentCloud/Octop",
+  "kind": "uv"
+ },
+ {
+  "slug": "TheProfs/pointerdriver",
+  "kind": "npm"
+ },
+ {
+  "slug": "ThomasRohde/strands-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "Thomashighbaugh/buchbinder",
+  "kind": "npm"
+ },
+ {
+  "slug": "Thomashighbaugh/kombinat-writer",
+  "kind": "npm"
+ },
+ {
+  "slug": "ThreatRecall/zettelforge",
+  "kind": "uv"
+ },
+ {
+  "slug": "ThuanPanda/bav-ai-labs",
+  "kind": "npm"
+ },
+ {
+  "slug": "Tienching/AgentNexus",
+  "kind": "uv"
+ },
+ {
+  "slug": "TimofeySukh/picoclaw_build",
+  "kind": "go"
+ },
+ {
+  "slug": "TomasBack2Future/voice-agent-squad",
+  "kind": "go"
+ },
+ {
+  "slug": "TomasWard1/limbo",
+  "kind": "npm"
+ },
+ {
+  "slug": "TonikLeung/running_coach",
+  "kind": "uv"
+ },
+ {
+  "slug": "Topdu/OpenOCR",
+  "kind": "uv"
+ },
+ {
+  "slug": "Trycatch-tv/tryckers-backend",
+  "kind": "go"
+ },
+ {
+  "slug": "TypedDevs/bashunit",
+  "kind": "npm"
+ },
+ {
+  "slug": "UitbreidenOS/UitKit",
+  "kind": "npm"
+ },
+ {
+  "slug": "UnknOownU/oh-my-zcode",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Uomocosa/Leles-Standard-of-Combat",
+  "kind": "npm"
+ },
+ {
+  "slug": "UpayanGhosh/Synapse-OSS",
+  "kind": "uv"
+ },
+ {
+  "slug": "UsernameTron/claude-code-arsenal",
+  "kind": "npm"
+ },
+ {
+  "slug": "VMSTE/pico_V3",
+  "kind": "go"
+ },
+ {
+  "slug": "Varuas37/spec-test",
+  "kind": "uv"
+ },
+ {
+  "slug": "VertaKhan/cs_gstack",
+  "kind": "uv"
+ },
+ {
+  "slug": "VertaKhan/dudy",
+  "kind": "uv"
+ },
+ {
+  "slug": "Vibes-lj/goldfish",
+  "kind": "uv"
+ },
+ {
+  "slug": "Vinix24/vnx-orchestration",
+  "kind": "uv"
+ },
+ {
+  "slug": "VoDaiLocz/kilo-kit-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "WW-AI-Lab/openclaw-office",
+  "kind": "npm"
+ },
+ {
+  "slug": "WaterDimension/Focus-news-In-Time",
+  "kind": "npm"
+ },
+ {
+  "slug": "Wjl1224734792/Jarvis-Agent-Factory",
+  "kind": "npm"
+ },
+ {
+  "slug": "Wladimirfn/IDU-PI",
+  "kind": "npm"
+ },
+ {
+  "slug": "Wyl-cmd/kxns-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "XSpoonAi/spoon-bot",
+  "kind": "uv"
+ },
+ {
+  "slug": "XposeMarket/PromSRC",
+  "kind": "npm"
+ },
+ {
+  "slug": "XposeMarket/SmallClaw",
+  "kind": "npm"
+ },
+ {
+  "slug": "Y7-Labs/7review",
+  "kind": "go"
+ },
+ {
+  "slug": "YaoIsAI/SerialRUN",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Yeachan-Heo/oh-my-claudecode",
+  "kind": "npm"
+ },
+ {
+  "slug": "YellowDusk04/einoclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "Z-57-z/gameops-agentic-framework",
+  "kind": "uv"
+ },
+ {
+  "slug": "Zackriya-Solutions/syncfu",
+  "kind": "cargo"
+ },
+ {
+  "slug": "Zekiog/ruflo",
+  "kind": "npm"
+ },
+ {
+  "slug": "ZhangShenao/harness9",
+  "kind": "go"
+ },
+ {
+  "slug": "Zyrexnn/Cybermes",
+  "kind": "go"
+ },
+ {
+  "slug": "aRustyDev/agents",
+  "kind": "uv"
+ },
+ {
+  "slug": "aa-blinov/cast",
+  "kind": "npm"
+ },
+ {
+  "slug": "aaditya1903/skillscope",
+  "kind": "uv"
+ },
+ {
+  "slug": "aallan/vera",
+  "kind": "uv"
+ },
+ {
+  "slug": "abhaymundhara/poke-core",
+  "kind": "npm"
+ },
+ {
+  "slug": "abhinav/cardamom",
+  "kind": "go"
+ },
+ {
+  "slug": "actions-marketplace-validations/sattyamjjain_agent-audit-kit",
+  "kind": "uv"
+ },
+ {
+  "slug": "adam-hanna/semantic-search-mcp",
+  "kind": "uv"
+ },
+ {
+  "slug": "adamtpang/summon.guide",
+  "kind": "npm"
+ },
+ {
+  "slug": "adea-ai/cortana",
+  "kind": "cargo"
+ },
+ {
+  "slug": "adennng/stock_strategy_lab",
+  "kind": "uv"
+ },
+ {
+  "slug": "administrakt0r/AI-Agents-Safe-Coding-Skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "admirhodzic/project-bootstrap",
+  "kind": "npm"
+ },
+ {
+  "slug": "adrienj/npxall",
+  "kind": "npm"
+ },
+ {
+  "slug": "aegis-aead/boringssl",
+  "kind": "go"
+ },
+ {
+  "slug": "aegntic/soldexter",
+  "kind": "npm"
+ },
+ {
+  "slug": "aeonfun/aeon",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "aeriondyseti/vector-memory-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "afaraha8403/balakit",
+  "kind": "npm"
+ },
+ {
+  "slug": "affaan-m/ecc",
+  "kind": "uv"
+ },
+ {
+  "slug": "afjcjsbx/picoclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "afnanpvt/ai-agent-skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "afonsoft/ai-studio-workspace",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "agencia-conversion/agentic-seo-skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "agent-ecosystem/skill-validator",
+  "kind": "go"
+ },
+ {
+  "slug": "agenteer/jevpad",
+  "kind": "uv"
+ },
+ {
+  "slug": "agentforce314/clawcodex",
+  "kind": "uv"
+ },
+ {
+  "slug": "agentic-in/elephant-agent",
+  "kind": "uv"
+ },
+ {
+  "slug": "agentlas-ai/Agentlas-OS",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "ahmadawais/excalidraw-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "ahmadawais/ramadan-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "ai-ecoverse/slicc",
+  "kind": "npm"
+ },
+ {
+  "slug": "ai-integr8tor/NousResearch-hermes-agent",
+  "kind": "uv"
+ },
+ {
+  "slug": "ai-integr8tor/QwenLM_Qwen-MM-Plugins",
+  "kind": "uv"
+ },
+ {
+  "slug": "ai4curation/ai-gene-review",
+  "kind": "uv"
+ },
+ {
+  "slug": "aig787/agpm",
+  "kind": "cargo"
+ },
+ {
+  "slug": "aigengame/godot-agent",
+  "kind": "uv"
+ },
+ {
+  "slug": "aillom/casa",
+  "kind": "npm"
+ },
+ {
+  "slug": "akhilyad/deployy",
+  "kind": "npm"
+ },
+ {
+  "slug": "alaliqing/claude-paper",
+  "kind": "npm"
+ },
+ {
+  "slug": "alejandroqh/browser39",
+  "kind": "cargo"
+ },
+ {
+  "slug": "alexandremendoncaalvaro/agentic-development",
+  "kind": "npm"
+ },
+ {
+  "slug": "alexfayers/llm-prompts",
+  "kind": "uv"
+ },
+ {
+  "slug": "alexishida/dalhe-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "alexj212/shabadoo",
+  "kind": "go"
+ },
+ {
+  "slug": "alexpfau/zigbee2mqtt-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "ali-heydari-1989/openDesignWithLogin",
+  "kind": "npm"
+ },
+ {
+  "slug": "aliarain/uiskillbook",
+  "kind": "npm"
+ },
+ {
+  "slug": "alifarooq-zk/agent-library-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "alivirgo/Major-AI-Skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "all-source-os/all-source",
+  "kind": "cargo"
+ },
+ {
+  "slug": "allcolor/PawFlow-Agents",
+  "kind": "uv"
+ },
+ {
+  "slug": "allsmog/promptarmor-plugin",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "alpha-unito/streamflow",
+  "kind": "uv"
+ },
+ {
+  "slug": "als-apg/osprey",
+  "kind": "uv"
+ },
+ {
+  "slug": "alsk1992/CloddsBot",
+  "kind": "npm"
+ },
+ {
+  "slug": "alsk1992/Flip-God",
+  "kind": "npm"
+ },
+ {
+  "slug": "alsk1992/Ghostbot",
+  "kind": "npm"
+ },
+ {
+  "slug": "alsotoes/momo",
+  "kind": "go"
+ },
+ {
+  "slug": "alternayte/avero",
+  "kind": "go"
+ },
+ {
+  "slug": "altrace-dev-role/rashomon",
+  "kind": "go"
+ },
+ {
+  "slug": "altrupets/monorepo",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "alunfuturestudio/sindica",
+  "kind": "npm"
+ },
+ {
+  "slug": "alymaquiling/any-harness",
+  "kind": "uv"
+ },
+ {
+  "slug": "amaiya/patchpal",
+  "kind": "uv"
+ },
+ {
+  "slug": "ammawla/encode-toolkit",
+  "kind": "uv"
+ },
+ {
+  "slug": "amxcodes/flowbot",
+  "kind": "cargo"
+ },
+ {
+  "slug": "andreagongrac-maker/Athena",
+  "kind": "uv"
+ },
+ {
+  "slug": "andrei-shtanakov/spec-runner",
+  "kind": "uv"
+ },
+ {
+  "slug": "andreibesleaga/GABBE",
+  "kind": "uv"
+ },
+ {
+  "slug": "andrewstellman/quality-playbook",
+  "kind": "uv"
+ },
+ {
+  "slug": "andriyshevchenko/SecureVault",
+  "kind": "npm"
+ },
+ {
+  "slug": "androoAGI/starnet",
+  "kind": "npm"
+ },
+ {
+  "slug": "andycungkrinx91/konoha",
+  "kind": "npm"
+ },
+ {
+  "slug": "aninramesh/nctui",
+  "kind": "cargo"
+ },
+ {
+  "slug": "annatchijova/zaynor",
+  "kind": "uv"
+ },
+ {
+  "slug": "ansonj-dev/neon-reverse",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "anthony-chaudhary/dos-kernel",
+  "kind": "uv"
+ },
+ {
+  "slug": "antryu2b/_y",
+  "kind": "npm"
+ },
+ {
+  "slug": "antstanley/skill-builder",
+  "kind": "cargo"
+ },
+ {
+  "slug": "anubhavg-icpl/vibe",
+  "kind": "npm"
+ },
+ {
+  "slug": "anysiteio/agent-skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "apify/apify-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "apwn/zubo",
+  "kind": "npm"
+ },
+ {
+  "slug": "ar4mirez/samuel",
+  "kind": "go"
+ },
+ {
+  "slug": "arcanist-sh/hx",
+  "kind": "cargo"
+ },
+ {
+  "slug": "archat-hash/FlyCLI",
+  "kind": "npm"
+ },
+ {
+  "slug": "archdochq/archdoc",
+  "kind": "go"
+ },
+ {
+  "slug": "archish9/Rudra",
+  "kind": "uv"
+ },
+ {
+  "slug": "argoproj-labs/mcp-for-argocd",
+  "kind": "npm"
+ },
+ {
+  "slug": "ariel-frischer/profile-mango",
+  "kind": "go"
+ },
+ {
+  "slug": "ariffazil/arifOS",
+  "kind": "uv"
+ },
+ {
+  "slug": "arman-jalili/rigorix-oss",
+  "kind": "cargo"
+ },
+ {
+  "slug": "armelhbobdad/bmad-module-skill-forge",
+  "kind": "npm"
+ },
+ {
+  "slug": "arpitarya/fux",
+  "kind": "uv"
+ },
+ {
+  "slug": "artokun/comfyui-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "ashaychangwani/imprint",
+  "kind": "npm"
+ },
+ {
+  "slug": "ashiqrniloy/prism",
+  "kind": "npm"
+ },
+ {
+  "slug": "ashokraj2011/singularityflow",
+  "kind": "npm"
+ },
+ {
+  "slug": "ashokraj2011/stable25",
+  "kind": "npm"
+ },
+ {
+  "slug": "ashutoshrathi0909-oss/everything-claude-code",
+  "kind": "npm"
+ },
+ {
+  "slug": "atakanatali/contextify",
+  "kind": "go"
+ },
+ {
+  "slug": "athola/skrills",
+  "kind": "cargo"
+ },
+ {
+  "slug": "atomicstrata/atomicmemory",
+  "kind": "cargo"
+ },
+ {
+  "slug": "atthaboon/demo-a-eye",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "attunehq/nudge",
+  "kind": "cargo"
+ },
+ {
+  "slug": "austinjan/aaagent-rs",
+  "kind": "cargo"
+ },
+ {
+  "slug": "autohandai/code-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "autonomous-ai/autonomous-os",
+  "kind": "go"
+ },
+ {
+  "slug": "autopus-ai/autopus-adk",
+  "kind": "go"
+ },
+ {
+  "slug": "avarajar/constellation",
+  "kind": "npm"
+ },
+ {
+  "slug": "averatec0773/prudence",
+  "kind": "uv"
+ },
+ {
+  "slug": "avibe-bot/avibe",
+  "kind": "uv"
+ },
+ {
+  "slug": "awkoy/notion-mcp-server",
+  "kind": "npm"
+ },
+ {
+  "slug": "axone-protocol/contracts",
+  "kind": "cargo"
+ },
+ {
+  "slug": "axsh/tokotachi",
+  "kind": "go"
+ },
+ {
+  "slug": "ayazelrico/Milyonus-Agent-5.5",
+  "kind": "uv"
+ },
+ {
+  "slug": "az9713/ECC-tutorial",
+  "kind": "uv"
+ },
+ {
+  "slug": "az9713/mellea-skills-compiler-tutorial",
+  "kind": "uv"
+ },
+ {
+  "slug": "azalio/map-framework",
+  "kind": "uv"
+ },
+ {
+  "slug": "azusagasaku/--claude-config",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "azxav/2brain-techawards",
+  "kind": "npm"
+ },
+ {
+  "slug": "b-tree-labs/axiom-os",
+  "kind": "uv"
+ },
+ {
+  "slug": "babarmuhammad/archeus",
+  "kind": "uv"
+ },
+ {
+  "slug": "badowhp/skill-mania",
+  "kind": "go"
+ },
+ {
+  "slug": "band-ai/band-sdk-python",
+  "kind": "uv"
+ },
+ {
+  "slug": "banjtheman/renpy_mcp_server",
+  "kind": "uv"
+ },
+ {
+  "slug": "bannff/Ditto-Challenge",
+  "kind": "uv"
+ },
+ {
+  "slug": "baphuongna/pi-crew",
+  "kind": "npm"
+ },
+ {
+  "slug": "bastani-inc/atomic",
+  "kind": "cargo"
+ },
+ {
+  "slug": "belos-street/skill-kit",
+  "kind": "npm"
+ },
+ {
+  "slug": "berkayturanci/keel",
+  "kind": "uv"
+ },
+ {
+  "slug": "bernos/bastion",
+  "kind": "go"
+ },
+ {
+  "slug": "better-auth/better-icons",
+  "kind": "npm"
+ },
+ {
+  "slug": "bh-rat/steer",
+  "kind": "uv"
+ },
+ {
+  "slug": "bhodgens/meept",
+  "kind": "go"
+ },
+ {
+  "slug": "billdenney/claude_runner",
+  "kind": "uv"
+ },
+ {
+  "slug": "bishwambharsen/gearbox",
+  "kind": "npm"
+ },
+ {
+  "slug": "bitflight-devops/skilllint",
+  "kind": "uv"
+ },
+ {
+  "slug": "bitomule/musts",
+  "kind": "cargo"
+ },
+ {
+  "slug": "bitranox/bitranox-skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "bkrsna/gemini-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "blackms/aistack",
+  "kind": "npm"
+ },
+ {
+  "slug": "blackwell-systems/agent-lsp",
+  "kind": "go"
+ },
+ {
+  "slug": "blissito/ghostycode",
+  "kind": "cargo"
+ },
+ {
+  "slug": "bmccoard/hal",
+  "kind": "uv"
+ },
+ {
+  "slug": "bobmatnyc/claude-mpm",
+  "kind": "uv"
+ },
+ {
+  "slug": "bonez-io/re_gent",
+  "kind": "go"
+ },
+ {
+  "slug": "boshu2/gastown-operator",
+  "kind": "go"
+ },
+ {
+  "slug": "boundless-xyz/boundless",
+  "kind": "cargo"
+ },
+ {
+  "slug": "brainbrewlabs/brainbrew-devkit",
+  "kind": "npm"
+ },
+ {
+  "slug": "brandtam/rubber-ducky-legacy",
+  "kind": "npm"
+ },
+ {
+  "slug": "brandy-savage/hot-potato",
+  "kind": "uv"
+ },
+ {
+  "slug": "brave/bravebot",
+  "kind": "cargo"
+ },
+ {
+  "slug": "brekkylab/ailoy",
+  "kind": "cargo"
+ },
+ {
+  "slug": "brianwestphal/apple-fm",
+  "kind": "npm"
+ },
+ {
+  "slug": "brijsethi/brijse",
+  "kind": "npm"
+ },
+ {
+  "slug": "bsostech/vault-blockchain",
+  "kind": "go"
+ },
+ {
+  "slug": "buluma/Code-Agent-Monitor",
+  "kind": "npm"
+ },
+ {
+  "slug": "bumkoo/npc-mind-rs",
+  "kind": "cargo"
+ },
+ {
+  "slug": "bupt-lmy/AxonFlow",
+  "kind": "uv"
+ },
+ {
+  "slug": "burgebj/agentharness",
+  "kind": "uv"
+ },
+ {
+  "slug": "burgebj/claude_everything",
+  "kind": "npm"
+ },
+ {
+  "slug": "burgebj/ecc_harness",
+  "kind": "uv"
+ },
+ {
+  "slug": "burgebj/everything-claude",
+  "kind": "npm"
+ },
+ {
+  "slug": "burin-labs/harn",
+  "kind": "cargo"
+ },
+ {
+  "slug": "butttons/dora",
+  "kind": "npm"
+ },
+ {
+  "slug": "buzzxu/bbg",
+  "kind": "npm"
+ },
+ {
+  "slug": "byerlikaya/claude-starter-kit",
+  "kind": "npm"
+ },
+ {
+  "slug": "byte5digital/agentsweep",
+  "kind": "cargo"
+ },
+ {
+  "slug": "c4kar/Kukufi",
+  "kind": "cargo"
+ },
+ {
+  "slug": "caioribeiroclw-pixel/pluribus",
+  "kind": "npm"
+ },
+ {
+  "slug": "calinfaja/K-LEAN",
+  "kind": "uv"
+ },
+ {
+  "slug": "camel-ai/GBQA",
+  "kind": "uv"
+ },
+ {
+  "slug": "cameleonh/omo-adaptive",
+  "kind": "npm"
+ },
+ {
+  "slug": "candorsystems/candor-finance",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "captainsafia/grove",
+  "kind": "cargo"
+ },
+ {
+  "slug": "carhaix/oi-cursor",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "carla-simulator/carla-agentic-tools",
+  "kind": "uv"
+ },
+ {
+  "slug": "cartridge-gg/controller-rs",
+  "kind": "cargo"
+ },
+ {
+  "slug": "casmidi/drakar-bot",
+  "kind": "cargo"
+ },
+ {
+  "slug": "caspar000/emzar-booklet",
+  "kind": "npm"
+ },
+ {
+  "slug": "catlog22/maestro-flow",
+  "kind": "npm"
+ },
+ {
+  "slug": "catlog22/maestro-flow-one",
+  "kind": "npm"
+ },
+ {
+  "slug": "cbip-solutions/hades-system",
+  "kind": "go"
+ },
+ {
+  "slug": "cedrickchee/amethyst",
+  "kind": "go"
+ },
+ {
+  "slug": "ceedot-rock/SlidPhiLabs",
+  "kind": "npm"
+ },
+ {
+  "slug": "cerul-ai/cerul",
+  "kind": "cargo"
+ },
+ {
+  "slug": "cgfixit/CG-agent-harness",
+  "kind": "cargo"
+ },
+ {
+  "slug": "cgorricho/bmad-sdlc",
+  "kind": "uv"
+ },
+ {
+  "slug": "charlieviettq/awesome-agent-skill",
+  "kind": "uv"
+ },
+ {
+  "slug": "charly-vibes/incitaciones",
+  "kind": "npm"
+ },
+ {
+  "slug": "chatbotkit/go-sdk",
+  "kind": "go"
+ },
+ {
+  "slug": "chazarksystems-ops/TheNest",
+  "kind": "cargo"
+ },
+ {
+  "slug": "chdb-io/chdb",
+  "kind": "uv"
+ },
+ {
+  "slug": "cheRoma/gbrain-link-chat",
+  "kind": "npm"
+ },
+ {
+  "slug": "chenhunghan/oxpilot",
+  "kind": "cargo"
+ },
+ {
+  "slug": "chimeranext/flutter-boilerplate-monorepo-template",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "chloebrett/slay",
+  "kind": "cargo"
+ },
+ {
+  "slug": "chocholous/openpmkit",
+  "kind": "uv"
+ },
+ {
+  "slug": "chrisokchen/bbDsl",
+  "kind": "uv"
+ },
+ {
+  "slug": "christian-marino-alvarez/agentic-workflow",
+  "kind": "npm"
+ },
+ {
+  "slug": "chughtapan/google-guide-skills",
+  "kind": "uv"
+ },
+ {
+  "slug": "circlefin/sidequestor",
+  "kind": "uv"
+ },
+ {
+  "slug": "claude-world/claude-skill-antivirus",
+  "kind": "npm"
+ },
+ {
+  "slug": "claudiodangelis/banco",
+  "kind": "cargo"
+ },
+ {
+  "slug": "clavia-labs/agentjsx",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "claw-bench/claw-bench",
+  "kind": "uv"
+ },
+ {
+  "slug": "clay-good/OpenLore",
+  "kind": "npm"
+ },
+ {
+  "slug": "clearloop/walrus",
+  "kind": "cargo"
+ },
+ {
+  "slug": "cloudflare/mcp",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "cmetech/otto-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "coco-research/coco",
+  "kind": "npm"
+ },
+ {
+  "slug": "coco4atJP/mcp-context-hub",
+  "kind": "npm"
+ },
+ {
+  "slug": "conorbronsdon/avoid-ai-writing",
+  "kind": "npm"
+ },
+ {
+  "slug": "cq27-dev/rag-rat",
+  "kind": "cargo"
+ },
+ {
+  "slug": "cyberchitta/cad-khana",
+  "kind": "uv"
+ },
+ {
+  "slug": "cyberuni/drover",
+  "kind": "cargo"
+ },
+ {
+  "slug": "dash0hq/dash0-agent-plugin",
+  "kind": "go"
+ },
+ {
+  "slug": "dedene/claw-wrap",
+  "kind": "go"
+ },
+ {
+  "slug": "devjotaduo/picoclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "dmarcguardhq/parse-dmarc",
+  "kind": "go"
+ },
+ {
+  "slug": "doanchienthangdev/omgkit",
+  "kind": "npm"
+ },
+ {
+  "slug": "dsheard/cobol-o-matic",
+  "kind": "uv"
+ },
+ {
+  "slug": "eery1677-lab/Antigravity-Awesome-Skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "efugier/smartcat",
+  "kind": "cargo"
+ },
+ {
+  "slug": "elastic/mcp-server-elasticsearch",
+  "kind": "cargo"
+ },
+ {
+  "slug": "elitjs/elit",
+  "kind": "cargo"
+ },
+ {
+  "slug": "eric-cielo/moflo",
+  "kind": "npm"
+ },
+ {
+  "slug": "fancyboi999/goofish-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "flamehaven01/Flamehaven-Filesearch",
+  "kind": "uv"
+ },
+ {
+  "slug": "flashbots/builder-playground",
+  "kind": "go"
+ },
+ {
+  "slug": "friuns2/codex-mobile",
+  "kind": "npm"
+ },
+ {
+  "slug": "funny-vibes/agent-vibes",
+  "kind": "npm"
+ },
+ {
+  "slug": "fynnfluegge/agtx",
+  "kind": "cargo"
+ },
+ {
+  "slug": "github/github-mcp-server",
+  "kind": "go"
+ },
+ {
+  "slug": "gitmono-dev/mega",
+  "kind": "cargo"
+ },
+ {
+  "slug": "giuseppe-trisciuoglio/developer-kit",
+  "kind": "uv"
+ },
+ {
+  "slug": "googleworkspace/cli",
+  "kind": "cargo"
+ },
+ {
+  "slug": "grantl1274/ECC_",
+  "kind": "uv"
+ },
+ {
+  "slug": "guilingzhouyi-creator/Praxis",
+  "kind": "uv"
+ },
+ {
+  "slug": "gwittebolle/claude-carbon",
+  "kind": "npm"
+ },
+ {
+  "slug": "hcipengm/cogneva",
+  "kind": "cargo"
+ },
+ {
+  "slug": "henryalouf/ruflow",
+  "kind": "npm"
+ },
+ {
+  "slug": "howdeploy/deploychan_mcp",
+  "kind": "uv"
+ },
+ {
+  "slug": "hypit-ai/hypit",
+  "kind": "npm"
+ },
+ {
+  "slug": "iMerica/kubeclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "ideksec/bellwether",
+  "kind": "uv"
+ },
+ {
+  "slug": "ihor-sokoliuk/mcp-searxng",
+  "kind": "npm"
+ },
+ {
+  "slug": "ilanbm/kpopper",
+  "kind": "npm"
+ },
+ {
+  "slug": "infinri/Writ",
+  "kind": "uv"
+ },
+ {
+  "slug": "initMAX/zabbix-mcp-server",
+  "kind": "uv"
+ },
+ {
+  "slug": "jannekbuengener/sample-brain",
+  "kind": "uv"
+ },
+ {
+  "slug": "jin-bo/chahua",
+  "kind": "uv"
+ },
+ {
+  "slug": "joeseesun/qiaomu-codex-imagegen",
+  "kind": "npm"
+ },
+ {
+  "slug": "jon-makinen/cursor-local-remote",
+  "kind": "npm"
+ },
+ {
+  "slug": "junhoyeo/tokscale",
+  "kind": "cargo"
+ },
+ {
+  "slug": "kenjorgensen/ClawInbox",
+  "kind": "uv"
+ },
+ {
+  "slug": "l0ng-ai/papr",
+  "kind": "cargo"
+ },
+ {
+  "slug": "larksuite/cli",
+  "kind": "go"
+ },
+ {
+  "slug": "lidge-ai/cli-jaw",
+  "kind": "npm"
+ },
+ {
+  "slug": "lukas-grigis/ralphctl",
+  "kind": "npm"
+ },
+ {
+  "slug": "lydakis/mcpx",
+  "kind": "go"
+ },
+ {
+  "slug": "maetin0324/celeris",
+  "kind": "cargo"
+ },
+ {
+  "slug": "mangiapanejohn-dev/Resonix-AG",
+  "kind": "npm"
+ },
+ {
+  "slug": "marcogoldin/agent-jump-start",
+  "kind": "npm"
+ },
+ {
+  "slug": "marjoballabani/hypergrep",
+  "kind": "cargo"
+ },
+ {
+  "slug": "mcpdotdirect/evm-mcp-server",
+  "kind": "npm"
+ },
+ {
+  "slug": "meganii/www.meganii.com-v3",
+  "kind": "go"
+ },
+ {
+  "slug": "microsoft/playwright-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "mikeyobrien/ralph-orchestrator",
+  "kind": "cargo"
+ },
+ {
+  "slug": "mims-harvard/ToolUniverse",
+  "kind": "uv"
+ },
+ {
+  "slug": "mindflight-orchestrator/ghostcrab-personal-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "mme/langforge",
+  "kind": "go"
+ },
+ {
+  "slug": "modelcontextprotocol/go-sdk",
+  "kind": "go"
+ },
+ {
+  "slug": "mthamil107/prompt-shield",
+  "kind": "uv"
+ },
+ {
+  "slug": "mvanhorn/agentcookie",
+  "kind": "go"
+ },
+ {
+  "slug": "nanoinfraorg/nanoinfra",
+  "kind": "uv"
+ },
+ {
+  "slug": "neondatabase/agent-skills",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "noah-hrbth/agent-tool-sync",
+  "kind": "go"
+ },
+ {
+  "slug": "notforyou23/home23",
+  "kind": "npm"
+ },
+ {
+  "slug": "nvidia/skillspector",
+  "kind": "uv"
+ },
+ {
+  "slug": "omnigent-ai/omnigent",
+  "kind": "uv"
+ },
+ {
+  "slug": "openlegion-ai/openlegion",
+  "kind": "uv"
+ },
+ {
+  "slug": "openwong2kim/wmux",
+  "kind": "npm"
+ },
+ {
+  "slug": "opsre/ZenOps",
+  "kind": "go"
+ },
+ {
+  "slug": "patw/Pengy",
+  "kind": "uv"
+ },
+ {
+  "slug": "pbakaus/impeccable",
+  "kind": "cargo"
+ },
+ {
+  "slug": "peek-travel/app-cli",
+  "kind": "npm"
+ },
+ {
+  "slug": "peters/horizon",
+  "kind": "cargo"
+ },
+ {
+  "slug": "phamphamh/mobctl",
+  "kind": "npm"
+ },
+ {
+  "slug": "plosson/agentio",
+  "kind": "npm"
+ },
+ {
+  "slug": "pohi99999/mcp-brunella-core",
+  "kind": "npm"
+ },
+ {
+  "slug": "pomclaw/pomclaw",
+  "kind": "go"
+ },
+ {
+  "slug": "praxstack/ai-visual-code-review",
+  "kind": "npm"
+ },
+ {
+  "slug": "proxysoul/Empryo",
+  "kind": "npm"
+ },
+ {
+  "slug": "qdrant/mcp-server-qdrant",
+  "kind": "uv"
+ },
+ {
+  "slug": "qoder-plugins/oh-my-qoder",
+  "kind": "npm"
+ },
+ {
+  "slug": "raketbizdev/claude-planner",
+  "kind": "npm"
+ },
+ {
+  "slug": "rakshitgondwal/skillsig",
+  "kind": "go"
+ },
+ {
+  "slug": "raphaelmansuy/edgecrab",
+  "kind": "cargo"
+ },
+ {
+  "slug": "rasros/lx",
+  "kind": "go"
+ },
+ {
+  "slug": "ravikiranvm/aws-finops-mcp-server",
+  "kind": "uv"
+ },
+ {
+  "slug": "reticlehq/reticle",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "ridelink0/ultimate-frontend-skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "rohitg00/pro-workflow",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "ruvnet/agentic-flow",
+  "kind": "npm"
+ },
+ {
+  "slug": "rynfar/meridian",
+  "kind": "npm"
+ },
+ {
+  "slug": "sachs7/flight_finder_and_trip_planner_crewai",
+  "kind": "uv"
+ },
+ {
+  "slug": "saltnpepper97/hames",
+  "kind": "cargo"
+ },
+ {
+  "slug": "sandbaseai/sandbase-skills",
+  "kind": "npm"
+ },
+ {
+  "slug": "sandraschi/libreoffice-mcp",
+  "kind": "uv"
+ },
+ {
+  "slug": "saurabhsharma2u/search-console-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "sebastianweiss83/sentinel-kernel",
+  "kind": "uv"
+ },
+ {
+  "slug": "sentdm/sent-plugin",
+  "kind": "mcp-json"
+ },
+ {
+  "slug": "sghng/abstract",
+  "kind": "npm"
+ },
+ {
+  "slug": "sheshbabu/zen",
+  "kind": "go"
+ },
+ {
+  "slug": "shibukawa/popcornweb",
+  "kind": "go"
+ },
+ {
+  "slug": "shopify/shopify-ai-toolkit",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "simon-ami/win-cli-mcp-server",
+  "kind": "npm"
+ },
+ {
+  "slug": "sipyourdrink-ltd/bernstein",
+  "kind": "uv"
+ },
+ {
+  "slug": "spayyavula/myresearchbot",
+  "kind": "uv"
+ },
+ {
+  "slug": "steipete/claude-code-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "stellarlinkco/myclaude",
+  "kind": "npm"
+ },
+ {
+  "slug": "strangeadvancedmarketing/Adam",
+  "kind": "uv"
+ },
+ {
+  "slug": "strelov1/freehire",
+  "kind": "go"
+ },
+ {
+  "slug": "superplanehq/superplane",
+  "kind": "go"
+ },
+ {
+  "slug": "surajkumar811/swarm-test",
+  "kind": "uv"
+ },
+ {
+  "slug": "tableau/tableau-mcp",
+  "kind": "npm"
+ },
+ {
+  "slug": "tencent/weknora",
+  "kind": "go"
+ },
+ {
+  "slug": "testdriverai/testdriverai",
+  "kind": "npm"
+ },
+ {
+  "slug": "thesongzhu/Friday",
+  "kind": "npm"
+ },
+ {
+  "slug": "tkuramot/muxrun",
+  "kind": "go"
+ },
+ {
+  "slug": "tmonk/mcp-stata",
+  "kind": "cargo"
+ },
+ {
+  "slug": "to-agent/agent-exec",
+  "kind": "npm"
+ },
+ {
+  "slug": "typedef-ai/fenic",
+  "kind": "uv"
+ },
+ {
+  "slug": "u9401066/med-paper-assistant",
+  "kind": "uv"
+ },
+ {
+  "slug": "uiverify/uiverify",
+  "kind": "mcp-node"
+ },
+ {
+  "slug": "umputun/revdiff",
+  "kind": "go"
+ },
+ {
+  "slug": "uptrain-ai/uptrain",
+  "kind": "uv"
+ },
+ {
+  "slug": "urjitbhatia/brainlog",
+  "kind": "cargo"
+ },
+ {
+  "slug": "usharma123/nginx-rewrite",
+  "kind": "cargo"
+ },
+ {
+  "slug": "vast-ai/vast-cli",
+  "kind": "uv"
+ },
+ {
+  "slug": "vh2224/forge-executor",
+  "kind": "npm"
+ },
+ {
+  "slug": "vinzenz/workflows",
+  "kind": "npm"
+ },
+ {
+  "slug": "volcengine/SearchCLI",
+  "kind": "npm"
+ },
+ {
+  "slug": "wardgate/wardgate",
+  "kind": "go"
+ },
+ {
+  "slug": "wenb1n-dev/mysql_mcp_server_pro",
+  "kind": "uv"
+ },
+ {
+  "slug": "wp-a/nature-academic-search",
+  "kind": "uv"
+ },
+ {
+  "slug": "xiaotian2333/EchoMusic-Lyrics-WinIsland",
+  "kind": "cargo"
+ },
+ {
+  "slug": "xichan96/cortex",
+  "kind": "go"
+ },
+ {
+  "slug": "xt765/FinchBot",
+  "kind": "uv"
+ },
+ {
+  "slug": "xt765/mermaid-trace",
+  "kind": "uv"
+ },
+ {
+  "slug": "xu-xiang/everything-claude-code-zh",
+  "kind": "npm"
+ },
+ {
+  "slug": "yifanfeng97/Hyper-Extract",
+  "kind": "uv"
+ },
+ {
+  "slug": "yufangjie1643/aigc-commerce-video-generator",
+  "kind": "npm"
+ },
+ {
+  "slug": "zendev-lab/spark",
+  "kind": "cargo"
+ },
+ {
+  "slug": "zircote/git-notes-memory",
+  "kind": "uv"
+ }
+]

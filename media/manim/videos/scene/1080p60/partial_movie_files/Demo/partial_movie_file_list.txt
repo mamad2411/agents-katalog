@@ -1,0 +1,6 @@
+# This file records the segment order used by Manim.
+file 'file:/Users/chaali0324/.agents/media/manim/videos/scene/1080p60/partial_movie_files/Demo/ccba8546013fdb9d604021834a1c0f06dfa7230af6e09680a9f0cdada19ea46d.mp4'
+file 'file:/Users/chaali0324/.agents/media/manim/videos/scene/1080p60/partial_movie_files/Demo/b4d3b5864b6666fc377ec66d59bd71025d0da74ca72035639d88de813b44b0c1.mp4'
+file 'file:/Users/chaali0324/.agents/media/manim/videos/scene/1080p60/partial_movie_files/Demo/cfbd690e862e3aadd0a3a95249aca911183b08907d72fb9df72b14edcfcaef44.mp4'
+file 'file:/Users/chaali0324/.agents/media/manim/videos/scene/1080p60/partial_movie_files/Demo/73c413d2d5cfed408ef9f584a4a368a475e1cdbf9671eeb637438f1c7acddc58.mp4'
+file 'file:/Users/chaali0324/.agents/media/manim/videos/scene/1080p60/partial_movie_files/Demo/952116ae6f0a1de2e5bd6937b0b207d0c289803aa2550111a1eb3dfb925de1c5.mp4'

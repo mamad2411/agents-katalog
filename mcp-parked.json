@@ -270,5 +270,41 @@
       "-y",
       "animation-workflow-mcp"
     ]
+  },
+  "internet-browse": {
+    "command": "python3",
+    "args": [
+      "/Users/chaali0324/.agents/skills-store/internet-asset-fetcher/scripts/browse.py"
+    ]
+  },
+  "internet-fetch": {
+    "command": "python3",
+    "args": [
+      "/Users/chaali0324/.agents/skills-store/internet-asset-fetcher/scripts/fetch.py"
+    ]
+  },
+  "lightcraft": {
+    "command": "/Users/chaali0324/bin/lightcraft-cli",
+    "args": [
+      "mcp"
+    ]
+  },
+  "pdfcraft": {
+    "command": "/Users/chaali0324/bin/pdfcraft-cli",
+    "args": [
+      "mcp"
+    ]
+  },
+  "photocraft": {
+    "command": "/Users/chaali0324/bin/photocraft-cli",
+    "args": [
+      "mcp"
+    ]
+  },
+  "vectorcraft": {
+    "command": "/Users/chaali0324/bin/vectorcraft-cli",
+    "args": [
+      "mcp"
+    ]
   }
 }

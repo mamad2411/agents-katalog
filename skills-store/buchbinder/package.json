@@ -1,0 +1,95 @@
+{
+  "name": "buchbinder",
+  "version": "0.2.1",
+  "description": "Professional-grade book writing workflow for OpenCode — 25-subcommand slash command router, 26 hard-block quality gates, 8 HITL features, XML-structured drafting, per-character voice profiles, series lorebook infrastructure, and an OpenCode TUI sidebar plugin.",
+  "type": "module",
+  "main": "bin/install.mjs",
+  "bin": {
+    "buchbinder": "bin/install.mjs",
+    "buchbinder-refresh": "bin/refresh.mjs",
+    "buchbinder-index": "bin/build-lore-index.mjs",
+    "buchbinder-models": "bin/fetch-models.mjs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/plugins/tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "prepack": "npm run build",
+    "postinstall": "node bin/refresh.mjs --postinstall || true"
+  },
+  "keywords": [
+    "opencode",
+    "ai-writing",
+    "novel-writing",
+    "book-authoring",
+    "writing-workflow",
+    "tui-sidebar",
+    "quality-gates",
+    "human-in-the-loop",
+    "xml-structuring",
+    "voice-profiling",
+    "series-lorebook",
+    "creative-writing",
+    "fiction",
+    "non-fiction",
+    "revision-cycles",
+    "solidjs",
+    "opentui",
+    "typescript",
+    "slash-commands",
+    "multi-format-publishing",
+    "buchbinder"
+  ],
+  "author": "Thomas Highbaugh <https://github.com/Thomashighbaugh>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Thomashighbaugh/buchbinder.git"
+  },
+  "homepage": "https://github.com/Thomashighbaugh/buchbinder#readme",
+  "bugs": {
+    "url": "https://github.com/Thomashighbaugh/buchbinder/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/Thomashighbaugh"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "@inquirer/prompts": "^7.0.0",
+    "@opentui/core": ">=0.1.97",
+    "@opentui/solid": ">=0.1.97",
+    "chalk": "^5.3.0",
+    "fast-xml-parser": "^5.10.1",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.17.13",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.0.0",
+    "solid-js": "^1.9.12",
+    "typescript": "^5.7.0"
+  },
+  "overrides": {
+    "brace-expansion": "^2.1.4",
+    "@babel/core": "^7.29.7"
+  },
+  "files": [
+    "bin/",
+    "src/tools/",
+    "src/skills/",
+    "src/templates/",
+    "src/lib/",
+    "src/commands/",
+    "src/rules/",
+    "src/hooks-plugin/",
+    "src/plugins/",
+    "SKILL.md",
+    "ATTRIBUTION.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

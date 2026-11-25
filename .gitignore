@@ -13,7 +13,11 @@ quarantine/
 retrieve.db
 skills-index.db
 datasets-index.db
-datasets/
+
+# === Artefak besar/lokal yang tidak perlu di git ===
+refs/          # screenshot referensi desain (198MB, regenerasi via dref)
+tools/          # dependency node_modules/cargo hasil install (257MB)
+node_modules/   # deps di level mana pun (skill clone bawa node_modules)
 
 # === Lock & state runtime ===
 *.lock

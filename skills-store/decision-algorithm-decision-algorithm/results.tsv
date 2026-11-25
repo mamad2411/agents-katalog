@@ -1,0 +1,3 @@
+timestamp	commit	skill	old_score	new_score	status	dimension	note	eval_mode
+2026-04-15T21:41	baseline	decision-algorithm	-	71.6	baseline	-	初始评估	dry_run
+2026-04-15T21:45	e732ec5	decision-algorithm	71.6	78.3	keep	检查点设计+边界条件	增加多处确认检查点和异常处理表	dry_run

@@ -1,0 +1,6 @@
+.
+./README.md
+./package.json
+./SKILL.md
+./.git
+./TREE.txt

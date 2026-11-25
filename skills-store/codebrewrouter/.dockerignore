@@ -1,0 +1,30 @@
+# ── Build / test artifacts ──
+**/bin/
+**/obj/
+**/node_modules/
+*.user
+*.suo
+
+# ── IDE / editor ──
+.vs/
+.vscode/
+.idea/
+
+# ── Git ──
+.git/
+.gitignore
+
+# ── Docs (not needed runtime) ──
+Docs/
+
+# ── Test / bench projects ──
+Blaze.LlmGateway.Tests/
+Blaze.LlmGateway.Benchmarks/
+Blaze.LlmGateway.AppHost/
+
+# ── Local model cache (should not be in build context) ──
+**/.llm-cache/
+
+# ── OS files ──
+.DS_Store
+Thumbs.db

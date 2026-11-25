@@ -1,6 +1,6 @@
 # Laporan kesehatan skill
 
-Dibuat: 2026-11-02 09:33
+Dibuat: 2026-11-23 09:23
 
 ## Masalah (0)
 
@@ -14,7 +14,7 @@ Dibuat: 2026-11-02 09:33
 - ✅ MCP skill-catalog: merespons
 - ✅ skill 0 token: sk + index siap
 - ✅ MCP terdaftar: semua
-- ✅ belajar pemakaian: pemakaian tercatat: 10 skill | naik kelas baru: 0 | symlink: 0 | laporan: ~/.agents/skill-learn-report.md
+- ✅ belajar pemakaian: pemakaian tercatat: 2 skill | naik kelas baru: 0 | symlink: 0 | laporan: ~/.agents/skill-learn-report.md
 
 ## Sumber
 

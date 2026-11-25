@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bevy Feathers UI"
+  short_description: "Build and customize Rasterra UI widgets"
+  default_prompt: "Use $bevy-feathers-ui to build this UI with Feathers and headless widgets."

@@ -1,0 +1,57 @@
+site_name: MESS - Meatspace Execution and Submission System
+site_description: Dispatch physical-world tasks from AI agents to human executors using GitHub as the backend
+site_url: https://git-messe-af.readthedocs.io/en/latest/
+
+repo_name: git-messe-af
+repo_url: https://github.com/teaguesterling/git-messe-af
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - toc.follow
+    - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Skills:
+    - Overview: skill-overview.md
+    - MCP Server: skill-mcp.md
+    - Exchange Server API: skill-server.md
+    - Web Client: skill-client.md
+  - Protocol:
+    - MESS Protocol v1: mess-protocol-v1.md
+    - MESSE-AF Format: messe-af-v1.md
+  - Guides:
+    - Deployment Guide: mess-deployment-guide.md
+    - Implementation Plan: mess-implementation-plan.md

@@ -1,372 +1,300 @@
 {
- "generated": "2026-10-11T22:40:25",
+ "generated": "2026-11-10T11:47:51",
  "counts": {
-  "fetched": 50,
-  "PASS": 49,
+  "fetched": 40,
+  "PASS": 40,
   "WARN": 0,
-  "FAIL": 1,
+  "FAIL": 0,
   "OTHER": 0
  },
  "skills": [
   {
-   "name": "shopify-admin-skills",
-   "repo": "40RTY-ai/shopify-admin-skills",
+   "name": "shuidao-skill",
+   "repo": "LZX0719-Hub/shuidao-skill",
    "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "happy-platform-skills",
-   "repo": "Happy-Technologies-LLC/happy-platform-skills",
+   "name": "paoding-skill",
+   "repo": "longyunfeigu/paoding-skill",
    "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "pavedpath-code",
-   "repo": "Jia-Ethan/pavedpath-code",
+   "name": "product-demo-director",
+   "repo": "crimeacs/product-demo-director",
    "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "ikuai-cli",
-   "repo": "ikuaidev/ikuai-cli",
+   "name": "daily-newsletter",
+   "repo": "zinan92/daily-newsletter",
    "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "openclawfice",
-   "repo": "openclawfice/openclawfice",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "input-handling",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/tui-master/skills/input-handling/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "joinquant-skill",
-   "repo": "gaaiyun/joinquant-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "tui-testing-debugging",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/tui-master/skills/tui-testing-debugging/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "swafra",
-   "repo": "kunal12203/swafra",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "terminal-standards",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/tui-master/skills/terminal-standards/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "cap-table",
-   "repo": "1984vc/cap-table",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "tui-troubleshooting",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/tui-master/skills/tui-troubleshooting/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "claw3d",
-   "repo": "makermate/claw3d-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "datasets-models-sources",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/kaggle-master/skills/datasets-models-sources/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "vibe-paper-writing",
-   "repo": "Zhangyanbo/vibe-paper-writing",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "rendering-layout-performance",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/tui-master/skills/rendering-layout-performance/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "clawkeep",
-   "repo": "taco-devs/clawkeep",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "name": "skeptic-agent",
+   "repo": "jleechanorg/agent-orchestrator-ts",
+   "path": "skills/skeptic-agent/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "uncodixify",
-   "repo": "dazeb/uncodixify-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "make-slide",
-   "repo": "Kuneosu/make-slide",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "portfolio-v2",
-   "repo": "itsyaba/portfolio-v2",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "trent-openclaw-security",
-   "repo": "trnt-ai/trent-openclaw-security-assessment",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "xhs-downloader-skill",
-   "repo": "Guing/xhs-downloader-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "textfocus",
-   "repo": "CodingWithLewis/TextFocus",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "trendingcontent",
-   "repo": "gabogabucho/trendingcontent-agent",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "memory-tool",
-   "repo": "pbrns/Lethe",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "hoa",
-   "repo": "hoa-js/hoa",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "tdb",
-   "repo": "AlDanial/tdb",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "antigravity",
-   "repo": "sakibsadmanshajib/antigravity-plugin",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "operate-ui-by-screenshot",
-   "repo": "BanmaXM/operate-ui-by-screenshot",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "pdf-proof",
-   "repo": "metedata/pdf-proof",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "paperclaw",
-   "repo": "0xMerl99/PaperClaw",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "swiftbutler",
-   "repo": "Cocoanetics/SwiftButler",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "tteg",
-   "repo": "kiluazen/tteg",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "email-channel",
-   "repo": "timothy-node/openclaw-email-channel",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "slopcheck",
-   "repo": "mattschaller/slopcheck",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "gpt-image-2-prompting",
-   "repo": "zhouwei713/gpt-image-2-prompting-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "real-code-practice-coach",
-   "repo": "pawel-cell/real-code-practice-coach",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "refactoring-react",
-   "repo": "silveiracamilo/refactoring-react",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "homework-solver",
-   "repo": "Li-Baichuan-James/homework-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "stateproof",
-   "repo": "HexaField/stateproof",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "x-monitor",
-   "repo": "ythx-101/x-monitor",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "devcontainer-mcp",
-   "repo": "aniongithub/devcontainer-mcp",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "px-asset-extract",
-   "repo": "JadeLiu-tech/px-asset-extract",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "bilibili-video-summarizer",
-   "repo": "catchpeak/bilibili-video-summarizer",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "premium-ui-builder-skill",
-   "repo": "ziguishian/premium-ui-builder-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "a-philosophy-of-software-design-skills",
-   "repo": "markduan/a-philosophy-of-software-design-skills",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "pretext-motion-bubble",
-   "repo": "Asunfly/pretext-motion-bubble-demo",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "youtube-podcast-ingestion",
-   "repo": "uzairansaruzi/youtube-ingest",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "ai-video-storyboard",
-   "repo": "aicontentskills/ai-video-storyboard-skill",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "technology-mapping",
-   "repo": "AlphaMao1/AlphaMao-technology-mapping",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "polygnosis",
-   "repo": "mosesman831/PolyGnosis",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "conversation-logger",
-   "repo": "sirkitree/conversation-logger",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "deep-novel-system",
-   "repo": "ALBEDO-TABAI/deep-novel-system",
-   "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
-  },
-  {
-   "name": "bagman-skill",
-   "repo": "zscole/bagman-skill",
-   "path": "SKILL.md",
-   "verdict": "FAIL",
+   "name": "git-security-2025",
+   "repo": "JosiahSiegel/claude-plugin-marketplace",
+   "path": "plugins/git-master/skills/git-security-2025/SKILL.md",
    "findings": [
     {
-     "severity": "CRITICAL",
-     "category": "PROMPT-OVERRIDE",
-     "file": "/Users/chaali0324/.agents/skills-expanded/bagman-skill/SKILL.md",
-     "line": 197,
-     "pattern": "| Override | \"ignore previous instructions\" | Block |",
-     "risk": "Attempts to override system prompt and prior instructions",
-     "fix": "Remove instruction override attempts"
+     "severity": "docs",
+     "rule": "credential-read",
+     "path": "/Users/chaali0324/.agents/skills-expanded/git-security-2025/SKILL.md",
+     "line": 212,
+     "snippet": "pgsign true  # Add public key to GitHub cat ~/.ssh/id_ed25519.pub # GitHub Settings \u2192 SSH and GPG keys \u2192 New SSH key \u2192 K"
     }
-   ]
+   ],
+   "verdict": "PASS"
   },
   {
-   "name": "codex-sessions-manager",
-   "repo": "1939869736luosi/codex-sessions-manager",
+   "name": "streamient-memory",
+   "repo": "streamient/streamient",
    "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "findings": [],
+   "verdict": "PASS"
   },
   {
-   "name": "hwp-pipeline",
-   "repo": "Yoojin-nam/hwp-pipeline",
+   "name": "codexgo",
+   "repo": "JY0xLU/codexgo",
    "path": "SKILL.md",
-   "verdict": "PASS",
-   "findings": []
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "reddit-growth",
+   "repo": "oh-ashen-one/reddit-growth-skill",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "keyword-research-harvest",
+   "repo": "zhongzhx/literature-harvest",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "awesome-rebuttal",
+   "repo": "xiongqi123123/awesome-rebuttal",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "humanizer-zh",
+   "repo": "ai-zixun/humanizer-zh",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "project-structure-viewer",
+   "repo": "1m01m0/project-structure-viewer",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "easyslides",
+   "repo": "Rimagination/easyslides",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "android-cli-ui-automation-skill",
+   "repo": "takahirom/android-cli-ui-automation-skill",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "dimer-ppt",
+   "repo": "dididimer/dimer-ppt",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "liuyishou",
+   "repo": "liuyishou-skill/liuyishou-skill",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "phased-code-review",
+   "repo": "vladimir-cicovic/ai_review_skills",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "ai-figure",
+   "repo": "hustcc/ai-figure",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "install-superpowers-for-opencode",
+   "repo": "awdemos/opencode-superpowers",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "ai-paper2slide-skill",
+   "repo": "Leo1998-Lu/ai-paper2slide-skill",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "migration-atlas",
+   "repo": "gula00/migration-skill",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "qiaomu-book-script",
+   "repo": "joeseesun/qiaomu-book-script",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "sembol-passkey-wallets",
+   "repo": "keyboord01/sembol",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "sql-connector",
+   "repo": "VeXHarbinger/clawbot-sql-connector",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "ah-talent-finder",
+   "repo": "ahang008/ah-talent-finder",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "annas-archive-ferry",
+   "repo": "ATP24/annas-archive-ferry",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "ux-araby",
+   "repo": "abadLife/ux-araby",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "tml",
+   "repo": "maf404/tml",
+   "path": "SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "nd",
+   "repo": "damus-io/notedeck",
+   "path": ".claude/skills/nd/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "sivtr",
+   "repo": "Ariestar/sivtr",
+   "path": ".claude/skills/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "solana-ai-kit",
+   "repo": "solanabr/ai-kit",
+   "path": ".claude/skills/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "fzuhelper-server",
+   "repo": "west2-online/fzuhelper-server",
+   "path": ".claude/skills/rr/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
+  },
+  {
+   "name": "architectkb",
+   "repo": "DavidROliverBA/ArchitectKB",
+   "path": ".claude/skills/q/SKILL.md",
+   "findings": [],
+   "verdict": "PASS"
   }
  ]
 }

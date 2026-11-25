@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Dossier run artifacts (generated in the user's workspace, never committed)
+dossier_temp/
+output/
+Enterprise_Research_Report.md
+Enterprise_Research_Report.docx
+*.temp.docx
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

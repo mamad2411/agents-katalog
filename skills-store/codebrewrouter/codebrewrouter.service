@@ -1,0 +1,24 @@
+[Unit]
+Description=CodebrewRouter — AI Gateway API
+Documentation=http://192.168.16.58:5000/swagger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/peterab/src/CodebrewRouter
+Environment=DOTNET_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
+ExecStart=/home/peterab/.dotnet/dotnet run --project Blaze.LlmGateway.Api --no-build
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=codebrewrouter
+
+# Health check
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf http://localhost:5000/api/health && exit 0; sleep 2; done; exit 1'
+
+[Install]
+WantedBy=multi-user.target

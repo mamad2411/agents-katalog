@@ -1,0 +1,526 @@
+{
+ "filesystem": {
+  "pkg": "@modelcontextprotocol/server-filesystem",
+  "version": "2.2.0",
+  "verdict": "PASS",
+  "note": "akses file lokal (read/write) — tanpa API key",
+  "cmd": "npx -y @modelcontextprotocol/server-filesystem /Users/chaali0324"
+ },
+ "memory": {
+  "pkg": "@modelcontextprotocol/server-memory",
+  "version": "2.1.0",
+  "verdict": "PASS",
+  "note": "memori pengetahuan persisten (knowledge graph) — tanpa key",
+  "cmd": "npx -y @modelcontextprotocol/server-memory"
+ },
+ "sequential-thinking": {
+  "pkg": "@modelcontextprotocol/server-sequential-thinking",
+  "version": "2.1.1",
+  "verdict": "PASS",
+  "note": "rantai berpikir terstruktur — tanpa key",
+  "cmd": "npx -y @modelcontextprotocol/server-sequential-thinking"
+ },
+ "context7": {
+  "pkg": "@upstash/context7-mcp",
+  "version": "4.6.0",
+  "verdict": "PASS",
+  "note": "dokumentasi library versi terbaru — tanpa key",
+  "cmd": "npx -y @upstash/context7-mcp"
+ },
+ "chrome-devtools": {
+  "pkg": "chrome-devtools-mcp",
+  "version": "1.12.0",
+  "verdict": "PASS",
+  "note": "kontrol Chrome DevTools (perf, network) — tanpa key",
+  "cmd": "npx -y chrome-devtools-mcp"
+ },
+ "fetch": {
+  "pkg": "mcp-server-fetch",
+  "version": "2026.11.4",
+  "verdict": "PASS",
+  "note": "ambil halaman web jadi markdown — tanpa key",
+  "cmd": "uvx mcp-server-fetch"
+ },
+ "time": {
+  "pkg": "mcp-server-time",
+  "version": "2026.11.4",
+  "verdict": "PASS",
+  "note": "waktu/timezone — tanpa key",
+  "cmd": "uvx mcp-server-time"
+ },
+ "git": {
+  "pkg": "mcp-server-git",
+  "version": "2026.11.4",
+  "verdict": "PASS",
+  "note": "operasi git lokal — tanpa key",
+  "cmd": "uvx mcp-server-git"
+ },
+ "sqlite": {
+  "pkg": "mcp-server-sqlite",
+  "version": "2025.4.25",
+  "verdict": "PASS",
+  "note": "query SQLite lokal — tanpa key",
+  "cmd": "uvx mcp-server-sqlite"
+ },
+ "duckduckgo": {
+  "pkg": "duckduckgo-mcp-server",
+  "version": "0.7.0",
+  "verdict": "PASS",
+  "note": "web search tanpa API key",
+  "cmd": "uvx duckduckgo-mcp-server"
+ },
+ "github": {
+  "pkg": "@modelcontextprotocol/server-github",
+  "version": "2025.4.8",
+  "verdict": "PASS",
+  "note": "GitHub API (butuh GITHUB_TOKEN)",
+  "cmd": "npx -y @modelcontextprotocol/server-github"
+ },
+ "brave-search": {
+  "pkg": "@brave/brave-search-mcp-server",
+  "version": "2.1.4",
+  "verdict": "PASS",
+  "note": "web search (butuh BRAVE_API_KEY)",
+  "cmd": "npx -y @brave/brave-search-mcp-server"
+ },
+ "exa": {
+  "pkg": "exa-mcp-server",
+  "version": "3.4.3",
+  "verdict": "PASS",
+  "note": "semantic search (butuh EXA_API_KEY)",
+  "cmd": "npx -y exa-mcp-server"
+ },
+ "tavily": {
+  "pkg": "tavily-mcp",
+  "version": "0.2.22",
+  "verdict": "PASS",
+  "note": "web research (butuh TAVILY_API_KEY)",
+  "cmd": "npx -y tavily-mcp"
+ },
+ "firecrawl": {
+  "pkg": "firecrawl-mcp",
+  "version": "3.38.0",
+  "verdict": "PASS",
+  "note": "scrape/crawl (butuh FIRECRAWL_API_KEY)",
+  "cmd": "npx -y firecrawl-mcp"
+ },
+ "notion": {
+  "pkg": "@notionhq/notion-mcp-server",
+  "version": "2.6.1",
+  "verdict": "PASS",
+  "note": "Notion (butuh NOTION_TOKEN)",
+  "cmd": "npx -y @notionhq/notion-mcp-server"
+ },
+ "supabase": {
+  "pkg": "@supabase/mcp-server-supabase",
+  "version": "0.16.1",
+  "verdict": "PASS",
+  "note": "Supabase (butuh SUPABASE_KEY)",
+  "cmd": "npx -y @supabase/mcp-server-supabase"
+ },
+ "sentry": {
+  "pkg": "@sentry/mcp-server",
+  "version": "0.49.0",
+  "verdict": "PASS",
+  "note": "Sentry (butuh SENTRY_TOKEN)",
+  "cmd": "npx -y @sentry/mcp-server"
+ },
+ "stripe": {
+  "pkg": "@stripe/mcp",
+  "version": "0.3.4",
+  "verdict": "PASS",
+  "note": "Stripe (butuh STRIPE_SECRET_KEY)",
+  "cmd": "npx -y @stripe/mcp"
+ },
+ "postgres": {
+  "pkg": "@modelcontextprotocol/server-postgres",
+  "version": "0.6.2",
+  "verdict": "PASS",
+  "note": "Postgres (butuh connection string)",
+  "cmd": "npx -y @modelcontextprotocol/server-postgres"
+ },
+ "figma": {
+  "pkg": "https://mcp.figma.com/mcp",
+  "version": "remote",
+  "verdict": "remote-no-scan",
+  "note": "Figma resmi (OAuth saat dipakai)"
+ },
+ "cloudflare-docs": {
+  "pkg": "https://docs.mcp.cloudflare.com/mcp",
+  "version": "remote",
+  "verdict": "remote-no-scan",
+  "note": "dokumentasi Cloudflare resmi"
+ },
+ "deepwiki": {
+  "pkg": "https://mcp.deepwiki.com/mcp",
+  "version": "remote",
+  "verdict": "remote-no-scan",
+  "note": "tanya isi repo GitHub (tanpa key)"
+ },
+ "magic-21st": {
+  "pkg": "@21st-dev/magic",
+  "version": "0.2.3",
+  "verdict": "PASS",
+  "note": "komponen UI dari 21st.dev (butuh key)",
+  "cmd": "npx -y @21st-dev/magic",
+  "cat": "design"
+ },
+ "figma-dev": {
+  "pkg": "figma-developer-mcp",
+  "version": "0.13.2",
+  "verdict": "PASS",
+  "note": "Figma developer (butuh token)",
+  "cmd": "npx -y figma-developer-mcp",
+  "cat": "design"
+ },
+ "playwright-npx": {
+  "pkg": "@playwright/mcp",
+  "version": "0.0.85",
+  "verdict": "PASS",
+  "note": "browser automation (cadangan bila binary lokal hilang)",
+  "cmd": "npx -y @playwright/mcp",
+  "cat": "design"
+ },
+ "chart": {
+  "pkg": "@antv/mcp-server-chart",
+  "version": "0.9.10",
+  "verdict": "PASS",
+  "note": "buat chart/graph dari data",
+  "cmd": "npx -y @antv/mcp-server-chart",
+  "cat": "design"
+ },
+ "shadcn": {
+  "pkg": "shadcn-mcp",
+  "version": "1.0.0",
+  "verdict": "PASS",
+  "note": "komponen shadcn/ui",
+  "cmd": "npx -y shadcn-mcp",
+  "cat": "design"
+ },
+ "tailwind": {
+  "pkg": "tailwindcss-mcp",
+  "version": "1.1.0",
+  "verdict": "PASS",
+  "note": "utility Tailwind CSS",
+  "cmd": "npx -y tailwindcss-mcp",
+  "cat": "design"
+ },
+ "serena": {
+  "pkg": "serena-agent",
+  "version": "2.1.0",
+  "verdict": "BLOCKED",
+  "note": "[critical] pipe-to-shell /tmp/mcpscan/serena-agent/src/solidlsp/language_servers/lean4_language_server.py:38",
+  "cat": "coding"
+ },
+ "everything": {
+  "pkg": "@modelcontextprotocol/server-everything",
+  "version": "2.2.1",
+  "verdict": "PASS",
+  "note": "server contoh/diagnostik MCP",
+  "cmd": "npx -y @modelcontextprotocol/server-everything",
+  "cat": "coding"
+ },
+ "sequential-thinking-2": {
+  "pkg": "@modelcontextprotocol/server-sequential-thinking",
+  "version": "2.1.1",
+  "verdict": "PASS",
+  "note": "rantai berpikir",
+  "cmd": "npx -y @modelcontextprotocol/server-sequential-thinking",
+  "cat": "coding"
+ },
+ "cloudflare": {
+  "pkg": "@cloudflare/mcp-server-cloudflare",
+  "version": "0.2.0",
+  "verdict": "PASS",
+  "note": "Cloudflare resmi (butuh token)",
+  "cmd": "npx -y @cloudflare/mcp-server-cloudflare",
+  "cat": "deploy"
+ },
+ "kubernetes": {
+  "pkg": "mcp-server-kubernetes",
+  "version": "4.2.1",
+  "verdict": "PASS",
+  "note": "operasi klaster k8s",
+  "cmd": "npx -y mcp-server-kubernetes",
+  "cat": "deploy"
+ },
+ "terraform": {
+  "pkg": "terraform-mcp-server",
+  "version": "0.13.0",
+  "verdict": "PASS",
+  "note": "HashiCorp Terraform",
+  "cmd": "npx -y terraform-mcp-server",
+  "cat": "deploy"
+ },
+ "docker": {
+  "pkg": "mcp-server-docker",
+  "version": "0.3.0",
+  "verdict": "PASS",
+  "note": "kelola container Docker",
+  "cmd": "uvx mcp-server-docker",
+  "cat": "deploy"
+ },
+ "docker-mcp": {
+  "pkg": "docker-mcp",
+  "version": "0.2.0",
+  "verdict": "PASS",
+  "note": "Docker alternatif (compose)",
+  "cmd": "uvx docker-mcp",
+  "cat": "deploy"
+ },
+ "heroku": {
+  "pkg": "@heroku/mcp-server",
+  "version": "1.2.14",
+  "verdict": "PASS",
+  "note": "Heroku (butuh token)",
+  "cmd": "npx -y @heroku/mcp-server",
+  "cat": "deploy"
+ },
+ "vercel": {
+  "pkg": "vercel-mcp",
+  "version": "0.0.7",
+  "verdict": "PASS",
+  "note": "Vercel deploy (butuh token)",
+  "cmd": "npx -y vercel-mcp",
+  "cat": "deploy"
+ },
+ "railway": {
+  "pkg": "@railway/mcp-server",
+  "version": "0.1.12",
+  "verdict": "PASS",
+  "note": "Railway deploy (butuh token)",
+  "cmd": "npx -y @railway/mcp-server",
+  "cat": "deploy"
+ },
+ "browserstack": {
+  "pkg": "@browserstack/mcp-server",
+  "version": "2.6.5",
+  "verdict": "PASS",
+  "note": "test di browser cloud (butuh key)",
+  "cmd": "npx -y @browserstack/mcp-server",
+  "cat": "test"
+ },
+ "puppeteer": {
+  "pkg": "@modelcontextprotocol/server-puppeteer",
+  "version": "2025.5.12",
+  "verdict": "PASS",
+  "note": "otomasi Chrome via Puppeteer",
+  "cmd": "npx -y @modelcontextprotocol/server-puppeteer",
+  "cat": "test"
+ },
+ "axe": {
+  "pkg": "axe-mcp-server",
+  "version": "1.7.1",
+  "verdict": "PASS",
+  "note": "audit aksesibilitas (axe-core)",
+  "cmd": "npx -y axe-mcp-server",
+  "cat": "test"
+ },
+ "playwright-server": {
+  "pkg": "playwright-mcp-server",
+  "version": "1.0.0",
+  "verdict": "PASS",
+  "note": "varian server Playwright",
+  "cmd": "npx -y playwright-mcp-server",
+  "cat": "test"
+ },
+ "postgres-mcp": {
+  "pkg": "postgres-mcp",
+  "version": "1.0.4",
+  "verdict": "PASS",
+  "note": "Postgres (butuh connection string)",
+  "cmd": "npx -y postgres-mcp",
+  "cat": "data"
+ },
+ "mongodb": {
+  "pkg": "mongodb-mcp-server",
+  "version": "3.3.0",
+  "verdict": "PASS",
+  "note": "MongoDB resmi (butuh URI)",
+  "cmd": "npx -y mongodb-mcp-server",
+  "cat": "data"
+ },
+ "redis": {
+  "pkg": "redis-mcp-server",
+  "version": "0.5.1",
+  "verdict": "PASS",
+  "note": "Redis (butuh URL)",
+  "cmd": "uvx redis-mcp-server",
+  "cat": "data"
+ },
+ "duckdb": {
+  "pkg": "duckdb-mcp-server",
+  "version": "0.1.0",
+  "verdict": "PASS",
+  "note": "query DuckDB/Parquet lokal",
+  "cmd": "uvx duckdb-mcp-server",
+  "cat": "data"
+ },
+ "qdrant": {
+  "pkg": "mcp-server-qdrant",
+  "version": "0.8.1",
+  "verdict": "PASS",
+  "note": "vector DB Qdrant",
+  "cmd": "uvx mcp-server-qdrant",
+  "cat": "data"
+ },
+ "mysql": {
+  "pkg": "mcp-server-mysql",
+  "version": "1.0.42",
+  "verdict": "PASS",
+  "note": "MySQL (butuh kredensial)",
+  "cmd": "npx -y mcp-server-mysql",
+  "cat": "data"
+ },
+ "perplexity": {
+  "pkg": "perplexity-mcp",
+  "version": "0.2.3",
+  "verdict": "PASS",
+  "note": "riset web Perplexity (butuh key)",
+  "cmd": "npx -y perplexity-mcp",
+  "cat": "search"
+ },
+ "open-websearch": {
+  "pkg": "open-websearch",
+  "version": "2.2.0",
+  "verdict": "PASS",
+  "note": "web search tanpa key",
+  "cmd": "npx -y open-websearch",
+  "cat": "search"
+ },
+ "brave-pypi": {
+  "pkg": "mcp-server-brave-search",
+  "version": "0.0.1",
+  "verdict": "PASS",
+  "note": "Brave Search (butuh key)",
+  "cmd": "uvx mcp-server-brave-search",
+  "cat": "search"
+ },
+ "youtube": {
+  "pkg": "youtube-mcp-server",
+  "version": "0.1.0",
+  "verdict": "PASS",
+  "note": "cari & ambil transkrip YouTube",
+  "cmd": "uvx youtube-mcp-server",
+  "cat": "search"
+ },
+ "slack": {
+  "pkg": "@modelcontextprotocol/server-slack",
+  "version": "2025.4.25",
+  "verdict": "PASS",
+  "note": "Slack (butuh token)",
+  "cmd": "npx -y @modelcontextprotocol/server-slack",
+  "cat": "comms"
+ },
+ "linear": {
+  "pkg": "linear-mcp-server",
+  "version": "0.1.0",
+  "verdict": "PASS",
+  "note": "Linear issues (butuh key)",
+  "cmd": "npx -y linear-mcp-server",
+  "cat": "comms"
+ },
+ "google-maps": {
+  "pkg": "@modelcontextprotocol/server-google-maps",
+  "version": "0.6.2",
+  "verdict": "PASS",
+  "note": "Google Maps (butuh key)",
+  "cmd": "npx -y @modelcontextprotocol/server-google-maps",
+  "cat": "comms"
+ },
+ "obsidian": {
+  "pkg": "obsidian-mcp",
+  "version": "2.0.1",
+  "verdict": "PASS",
+  "note": "Obsidian vault",
+  "cmd": "npx -y obsidian-mcp",
+  "cat": "comms"
+ },
+ "markitdown": {
+  "pkg": "markitdown-mcp",
+  "version": "0.0.1a8",
+  "verdict": "PASS",
+  "note": "PDF/Office → markdown (Microsoft)",
+  "cmd": "uvx markitdown-mcp",
+  "cat": "docs"
+ },
+ "pandoc": {
+  "pkg": "mcp-pandoc",
+  "version": "0.11.1",
+  "verdict": "PASS",
+  "note": "konversi dokumen via pandoc",
+  "cmd": "uvx mcp-pandoc",
+  "cat": "docs"
+ },
+ "pptx": {
+  "pkg": "office-powerpoint-mcp-server",
+  "version": "2.0.7",
+  "verdict": "PASS",
+  "note": "buat/edit PowerPoint",
+  "cmd": "uvx office-powerpoint-mcp-server",
+  "cat": "docs"
+ },
+ "docx": {
+  "pkg": "office-word-mcp-server",
+  "version": "1.1.11",
+  "verdict": "PASS",
+  "note": "buat/edit Word",
+  "cmd": "uvx office-word-mcp-server",
+  "cat": "docs"
+ },
+ "excel": {
+  "pkg": "excel-mcp-server",
+  "version": "2.3.0",
+  "verdict": "PASS",
+  "note": "buat/edit Excel",
+  "cmd": "uvx excel-mcp-server",
+  "cat": "docs"
+ },
+ "basic-memory": {
+  "pkg": "basic-memory",
+  "version": "1.0.0",
+  "verdict": "BLOCKED",
+  "note": "[critical] pipe-to-shell /tmp/mcpscan/basic-memory/src/basic_memory/cli/commands/hook.py:1556",
+  "cat": "memory"
+ },
+ "semgrep": {
+  "pkg": "semgrep-mcp",
+  "version": "0.9.0",
+  "verdict": "PASS",
+  "note": "analisis keamanan kode (semgrep)",
+  "cmd": "uvx semgrep-mcp",
+  "cat": "security"
+ },
+ "filesystem-2": {
+  "pkg": "mcp-server-filesystem",
+  "version": "0.6.2",
+  "verdict": "PASS",
+  "note": "akses file alternatif",
+  "cmd": "npx -y mcp-server-filesystem",
+  "cat": "security"
+ },
+ "desktop-commander": {
+  "pkg": "@wonderwhy-er/desktop-commander",
+  "version": "0.3.1",
+  "verdict": "PASS",
+  "note": "terminal + file manager untuk agent",
+  "cmd": "npx -y @wonderwhy-er/desktop-commander",
+  "cat": "util"
+ },
+ "commands": {
+  "pkg": "mcp-server-commands",
+  "version": "0.8.2",
+  "verdict": "PASS",
+  "note": "jalankan perintah shell aman",
+  "cmd": "npx -y mcp-server-commands",
+  "cat": "util"
+ },
+ "media": {
+  "pkg": "local:media-mcp.py",
+  "version": "1.0.0",
+  "verdict": "PASS",
+  "note": "editing lokal: ffmpeg, ImageMagick, G'MIC, Potrace, rsvg, Manim, Lottie, rembg, Blender 3D, say, synth musik",
+  "cmd": "python3 ~/.agents/media-mcp.py",
+  "cat": "media"
+ }
+}

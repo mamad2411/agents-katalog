@@ -1,0 +1,14 @@
+name: colleague-company
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - requests>=2.32
+  - pyyaml>=6.0
+  - fastapi>=0.116
+  - uvicorn>=0.35
+  - pytest>=8.3
+  - pip:
+      - google-genai>=1.30.0

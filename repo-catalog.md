@@ -1,0 +1,270 @@
+# Katalog repo (~/.agents/repo-refs)
+
+Dibuat oleh `~/.agents/repo-hub.py catalog`. Cari: `python3 ~/.agents/repo-hub.py search "kata"`
+
+## Statistik
+
+```
+total repo terdaftar: 100115
+cloned: 7
+ingested: 143
+stub: 99965
+```
+
+## Repo lokal yang benar-benar ada kodenya (siap dijalankan)
+
+- `fderuiter/agy-skills` — /Users/chaali0324/.agents/repo-refs/fderuiter_agy-skills
+- `mr-smilin/lom-wiki` — /Users/chaali0324/.agents/repo-refs/Mr-Smilin_LoM-wiki
+- `cebus-ai/cebus` — /Users/chaali0324/.agents/repo-refs/cebus-ai_cebus
+- `tencent/weknora` — /Users/chaali0324/.agents/repo-refs/tencent_weknora
+- `green-api/whatsapp-api-client-python` — /Users/chaali0324/.agents/repo-refs/green-api_whatsapp-api-client-python
+- `nvidia/skillspector` — /Users/chaali0324/.agents/repo-refs/nvidia_skillspector
+
+## Repo dengan skill ter-ingest (siap dipakai `sk`)
+
+- `reason-machines/trending-skills` — 411 skill — 
+- `claude-office-skills/skills` — 137 skill — 
+- `bagelhole/devops-security-agent-skills` — 133 skill — Agent-ready DevOps, security, infrastructure, and compliance knowledge base with 80+ skill
+- `giuseppe-trisciuoglio/developer-kit` — 114 skill —  Modular plugin marketplace for Claude Code and agentic CLIs, with validated, spec-driven 
+- `googleworkspace/cli` — 94 skill — Google Workspace CLI — one command-line tool for Drive, Gmail, Calendar, Sheets, Docs, Cha
+- `spencerpauly/awesome-cursor-skills` — 60 skill — 
+- `manutej/luxor-claude-marketplace` — 49 skill — Professional Claude Code marketplace with 140 development tools: 67 skills, 28 commands, 3
+- `microsoft/azure-skills` — 41 skill — Official agent plugin providing skills and MCP server configurations for Azure scenarios.
+- `codewithmukesh/dotnet-claude-kit` — 38 skill — 
+- `langfuse/langfuse` — 36 skill — 
+- `astronomer/agents` — 33 skill — AI agent tooling for data engineering workflows.
+- `larksuite/cli` — 33 skill — 
+- `genmedia-labs/skills` — 33 skill — 
+- `flutter/agent-plugins` — 31 skill — 
+- `prime-skills/runcomfy-agent-skills` — 30 skill — 
+- `akin-ozer/cc-devops-skills` — 29 skill — 
+- `tencentcloudbase/cloudbase-skills` — 27 skill — 
+- `nvidia/skillspector` — 26 skill — Security scanner for AI agent skills. Detect vulnerabilities, malicious patterns, security
+- `shopify/shopify-ai-toolkit` — 21 skill — 
+- `manaflow-ai/cmux` — 21 skill — Open source Ghostty-based macOS terminal with vertical tabs and notifications for AI codin
+- `langchain-ai/langchain-skills` — 20 skill — 
+- `intellectronica/agent-skills` — 20 skill — 
+- `yasurem/portfolio` — 16 skill — 
+- `google-labs-code/stitch-skills` — 16 skill — 
+- `vercel/ai` — 14 skill — 
+- `firebase/agent-skills` — 13 skill — 
+- `parallel-web/parallel-agent-skills` — 12 skill — 
+- `affaan-m/ecc` — 11 skill — The agent harness performance optimization system. Skills, instincts, memory, security, an
+- `kotlin/kotlin-agent-skills` — 10 skill — 
+- `pluginagentmarketplace/custom-plugin-nodejs` — 10 skill — 
+- `maddhruv/absolute` — 9 skill — 
+- `julianoczkowski/designer-skills` — 8 skill — 
+- `vuejs-ai/skills` — 8 skill — 
+- `google/agents-cli` — 8 skill — 
+- `microsoft/playwright` — 8 skill — 
+- `neondatabase/agent-skills` — 7 skill — 
+- `wu529778790/shenzjd-skills` — 7 skill — 
+- `jiatastic/open-python-skills` — 6 skill — AI skill sets that provides intelligence for building solid Python backends across multipl
+- `langgenius/dify` — 6 skill — Build Agentic workflows, RAG pipelines, with rich AI model and tool support on one collabo
+- `nohac/rasterra` — 6 skill — 
+- `solana-mobile/solana-mobile-skills` — 6 skill — 
+- `prisma/skills` — 6 skill — 
+- `alsotoes/momo` — 5 skill — 
+- `rivet-dev/skills` — 5 skill — 
+- `insforge/insforge-skills` — 4 skill — 
+- `hoanganhvu2207/roadguardsystem` — 4 skill — 
+- `momentic-ai/skills` — 4 skill — Agent skills and MCP servers that teach coding agents to write, run, and repair Momentic t
+- `planetscale/database-skills` — 4 skill — 
+- `google-gemini/gemini-skills` — 3 skill — 
+- `apify/agent-skills` — 3 skill — Collection of Apify agent skills
+- `patricio0312rev/skills` — 2 skill — Comprehensive library of +100 production-ready development skills covering every aspect of
+- `tencent/weknora` — 2 skill — Open-source LLM knowledge platform: turn raw documents into a queryable RAG, an autonomous
+- `semgrep/skills` — 2 skill — A collection of skills for AI coding agents from Semgrep
+- `netresearch/docker-development-skill` — 2 skill — Agent Skill: Docker image development patterns - Dockerfile best practices, CI testing, co
+- `aeonfun/aeon` — 2 skill — The most autonomous AI agent framework: runs unattended on GitHub Actions, self-healing sk
+- `buluslan/amazon-listing-doctor` — 1 skill — 亚马逊 Listing 质检+打分 Skill | Amazon listing health-check & scoring (CDQ/A9/COSMO/Alexa) 
+- `jiangyurong609/motion-pages` — 1 skill — Claude Code skill for award-site motion pages — Three.js worlds, liquid-glass shaders, spr
+- `tianhaowu66/trip-planner` — 1 skill — 
+- `yonganzhang/code-token-optiization` — 1 skill — 
+- `zcx960/seedance-storyboard` — 1 skill — 
+- `kevin-liu-01/cotfly` — 1 skill — 
+- `azure/azure-kusto-spark` — 1 skill — 
+- `mitriyweb/agent-team` — 1 skill — 
+- `yjlio/nvwa` — 1 skill — 
+- `truongnat/aix` — 1 skill — 
+- `vercel/microfrontends` — 1 skill — 
+- `ceorkm/mobile-app-ui-design` — 1 skill — 
+- `loyage/nix-config` — 1 skill — 
+- `op7418/guizang-product-video-skill` — 1 skill — 归藏 product video skill：复用真实产品组件和设计语言，用代码制作软件更新宣传片。包含分镜文案、原创配乐、动作音效与视频渲染，支持 Claude Code 和 C
+- `sheikhsajid69/toon-skill` — 1 skill — 
+- `autosendhq/email-skills` — 1 skill — 
+- `mimify/skill_everyone` — 1 skill — 🎭 万物皆可角色 · 召唤任意小说/游戏/动漫角色或原创人设，生成可对话的 Claude Code Skill
+- `alexmikhalev/claude-code-continuous-learning-skill` — 1 skill — 
+- `luciferdono/deglaze` — 1 skill — 
+- `lucasxcoder/engram` — 1 skill — 
+- `samcuipogobongo/reddit-intel` — 1 skill — 
+- `hyaxia/blogwatcher` — 1 skill — 
+- `lewislulu/html-ppt-skill` — 1 skill — 
+- `designed-by-ai/skills` — 1 skill — 
+- `bzwh321/data-analysis-report-agent` — 1 skill — 
+- `to3akarin/mac-computer-use` — 1 skill — 
+- `maddness/agent-research-radar` — 1 skill — 
+- `natebjones-projects/developer-documentation-skill` — 1 skill — A standalone AI skill for creating accurate, usable developer documentation.
+- `chenzhongxi-sjtu/wanhunfan-cyber-company` — 1 skill — 
+- `codebrew-company/codebrewrouter` — 1 skill — 
+- `wp-a/nature-academic-search` — 1 skill — Academic Paper Search：中文科研用户的 Codex / Claude Code / DeepSeek Harness Skill + MCP；跨 CrossRe
+- `acher1234/meta-skills` — 1 skill — 
+- `thomashighbaugh/kombinat-writer` — 1 skill — 
+- `hbrinj/onboarder` — 1 skill — 
+- `realspqrk/harness-subagent` — 1 skill — Dispatch Claude Code, Codex, or Grok as a one-shot subagent, then synthesize.
+- `ylsssq926/relic.skill` — 1 skill — 万物皆可 Relic — 给灵魂开个 GitHub | Universal Digital Immortality Engine 🧬
+- `agenmod/immortal-skill` — 1 skill — ♾️ 开源数字永生框架 — 从聊天记录蒸馏任何人的七维数字分身。支持微信/飞书/iMessage/Telegram等12+平台，7种角色模板，对齐 OpenClaw Soul Sp
+- `twostraws/swift-testing-agent-skill` — 1 skill — 
+- `streamlit/agent-skills` — 1 skill — 
+- `vantoan252003/mozi` — 1 skill — 
+- `alexliu0130/ibkr-options-assistant` — 1 skill — 
+- `1-skill/shuorenhua` — 1 skill — 
+- `huige-opc/text-motion-skill` — 1 skill — 
+- `skilldoai/skilldo` — 1 skill — 
+- `myucakhr/kiben-check` — 1 skill — 
+- `modoojunko/awesome-novel-agent` — 1 skill — 让 AI agent成为你的小说创作搭档。从世界观搭建到角色塑造，从章节规划到正文写作，一步步陪你完成整部小说。
+- `khou/watch-video` — 1 skill — 
+- `evol-ai/skillcompass` — 1 skill — Evaluate agent skill quality. Find the weakest link. Fix it. Prove it worked.
+- `1nuoiscute/taishan-rk3566-skill` — 1 skill — 
+- `thomashighbaugh/buchbinder` — 1 skill — 
+- `santhosh0303/enterprise-deep-research` — 1 skill — 
+- `blader/humanizer` — 1 skill — Agent skill that removes signs of AI-generated writing from text
+- `pengfei-happy/ma-xing-lian-ai-nao-skill` — 1 skill — 
+- `alebianco/control-room-design-system` — 1 skill — 
+- `casper-hansen/fresh-eyes-loop` — 1 skill — 
+- `40rty-ai/shopify-admin-skills` — 1 skill — 
+- `spacezephyr/career.skill` — 1 skill — 
+- `waynefu2020/xhs-studio` — 1 skill — 
+- `inchoo/magento-bricklayer` — 1 skill — 
+- `anivar/jest-skill` — 1 skill — AI agent skill for Jest 29/30 — 28 rules: mocks, async, timers, snapshots, CI. Works with 
+- `pbakaus/impeccable` — 1 skill — The design vocabulary for your coding agent. Steer with polish and bolder, review with cri
+- `casemark/skills` — 1 skill — 
+- `wrsmith108/claude-skill-security-auditor` — 1 skill — Claude Code skill for running structured security audits with actionable remediation plans
+- `conorbronsdon/avoid-ai-writing` — 1 skill — Skill that audits and rewrites content to remove AI writing patterns. Use it with your fav
+- `jantoniofc/skillsbank` — 1 skill — 
+- `beriberikix/zephyr-agent-skills` — 1 skill — A complete catalog of Agent Skills (agentskills.io) for Zephyr RTOS development.
+- `joeseesun/qiaomu-codex-imagegen` — 1 skill — 让任何 Agent 调用 Codex 内置生图（MCP + CLI + Skill），内置小红书、视频封面、Mondo 海报技巧 · Codex image generation 
+- `caomz/decision-algorithm` — 1 skill — 
+- `aallan/vera` — 1 skill — 
+- `strangeadvancedmarketing/adam` — 1 skill — Adam Framework for OpenClaw — 5-layer persistent memory and identity architecture for AI a
+- `vercel/ai-elements` — 1 skill — 
+- `evalyze-ai/founder-fundraising-outreach` — 1 skill — A Claude skill that helps founders write investor outreach that gets replies and reads lik
+- `teaguesterling/git-messe-af` — 1 skill — 
+- `eliy1988/nuwa-skill` — 1 skill — 
+- `openai/skills` — 1 skill — 
+- `green-api/whatsapp-api-client-python` — 1 skill — 
+- `alexandershi/nvwa-skill` — 1 skill — 
+- `outsystems/outsystems-mcp` — 1 skill — Plugins for the OutSystems remote MCP.
+- `harery/praetor` — 1 skill — 
+- `bowen31337/apple-design` — 1 skill — 
+- `shen169/amazon-product-research-skill` — 1 skill — 
+- `bhala-srinivash/agent-tutor-skill` — 1 skill — 
+- `opendemon/anyone-to-skill` — 1 skill — 
+- `spark-to-paper-skills/paperjury-codex` — 1 skill — 
+- `asymmetric-al/core` — 1 skill — 
+- `jamesshi96/project-butler` — 1 skill — Project memory system for AI coding assistants (Claude Code, Cursor, Codex): session logs,
+- `heartease1/sparkle.skills` — 1 skill — 
+- `blackcorpse2012/nuwa-skill-new` — 1 skill — 
+
+## 100 repo paling populer
+
+- `morluto/rea` ⭐446094 — Reverse engineer anything with agents, from app behavior down to native binaries.
+- `affaan-m/ecc` ⭐300168 — The agent harness performance optimization system. Skills, instincts, memory, security, an
+- `deepseek-ai/deepseek-harness` ⭐277225 — DeepSeek Harness: Everything is a Plugin.
+- `nousresearch/hermes-agent` ⭐262038 — The agent that grows with you
+- `n8n-io/n8n` ⭐209915 — Fair-code workflow automation platform with native AI capabilities. Combine visual buildin
+- `firecrawl/firecrawl` ⭐200035 — Supercharge your AI agents with data from the web and beyond. Building the library for sup
+- `anthropics/skills` ⭐190406 — Public repository for Agent Skills
+- `significant-gravitas/autogpt` ⭐187972 — AutoGPT is the vision of accessible AI for everyone, to use and to build on. Our mission i
+- `dietrichgebert/ponytail` ⭐187603 — Makes your AI agent think like the laziest senior dev in the room. The best code is the co
+- `f/prompts.chat` ⭐176729 — f.k.a. Awesome ChatGPT Prompts. Share, discover, and collect prompts from the community. F
+- `langgenius/dify` ⭐160774 — Build Agentic workflows, RAG pipelines, with rich AI model and tool support on one collabo
+- `snailclimb/javaguide` ⭐159495 — Java 面试 & 后端通用面试指南，覆盖计算机基础、数据库、分布式、高并发、系统设计与 AI 应用开发
+- `open-webui/open-webui` ⭐158211 — User-friendly AI Interface (Supports Ollama, OpenAI API, ...)
+- `farion1231/cc-switch` ⭐153032 — A cross-platform desktop All-in-One assistant for Claude Code, Codex, OpenCode,DeepSeek Ha
+- `langchain-ai/langchain` ⭐149267 — The agent engineering platform.
+- `nextlevelbuilder/ui-ux-pro-max-skill` ⭐147332 — An AI skill that provides design intelligence for building professional UI/UX across multi
+- `graphify-labs/graphify` ⭐145107 — Turn any codebase, with its docs, SQL schemas, configs, and PDFs, into a queryable knowled
+- `browser-use/browser-use` ⭐120425 — Open-source Python library for AI browser agents, plus Browser Use Cloud: stealth browsers
+- `stablyai/orca` ⭐120152 — Orca lets you run a fleet of coding agents (e.g. Claude Code, Codex) with your own subscri
+- `juliusbrussee/caveman` ⭐118615 — 🪨 why use many token when few token do trick. Viral skill + proxy for coding agents that c
+- `thedotmack/claude-mem` ⭐115464 — Persistent Context Across Sessions for Every Agent –  Captures everything your agent does 
+- `supabase/supabase` ⭐114722 — The Postgres development platform. Supabase gives you a dedicated Postgres database to bui
+- `addyosmani/agent-skills` ⭐114396 — Production-grade engineering skills for AI coding agents.
+- `paperclipai/paperclip` ⭐112612 — The open-source app everyone uses to manage agents at work
+- `leonxlnx/taste-skill` ⭐112394 — Agent skills that give coding agents taste: art direction, reference images and a browser 
+- `panniantong/agent-reach` ⭐110540 — Give your AI agent eyes to see the entire internet. Read & search Twitter, Reddit, YouTube
+- `google-gemini/gemini-cli` ⭐108751 — An open-source AI agent that brings the power of Gemini directly into your terminal.
+- `nexu-io/open-design` ⭐106769 — The 1st Collaborative AI Design Agent Workspace. Local-first and open source. Create motio
+- `pbakaus/impeccable` ⭐106622 — The design vocabulary for your coding agent. Steer with polish and bolder, review with cri
+- `ruvnet/ruview` ⭐103372 — π RuView turns commodity WiFi signals into real-time spatial intelligence, vital sign moni
+- `d4vinci/scrapling` ⭐100388 — 🕷️ The BEST Web Scraping framework that handles everything from a single request to a full
+- `punkpeye/awesome-mcp-servers` ⭐97526 — A collection of MCP servers.
+- `tt-a1i/archify` ⭐94990 — Turn any idea, plan, or codebase into a beautiful interactive diagram. An agent skill for 
+- `infiniflow/ragflow` ⭐93877 — RAGFlow is an agent-native database: a Retrieval-Augmented Generation (RAG) engine that gr
+- `egonex-ai/understand-anything` ⭐91775 — Graphs that teach > graphs that impress. Turn any code into an interactive knowledge graph
+- `koala73/worldmonitor` ⭐90411 — Real-time global intelligence dashboard. AI-powered news aggregation, geopolitical monitor
+- `chatgptnextweb/nextchat` ⭐88941 — ✨ Zero-config AI chat assistant. No API key needed — sign up and instantly chat with GPT-5
+- `unclecode/crawl4ai` ⭐87141 — Official Crawl4AI Cloud: a hosted web scraping, extraction, and search API for AI agents. 
+- `rtk-ai/rtk` ⭐85983 — CLI proxy that reduces LLM token consumption by 60-90% on common dev commands. Single Rust
+- `cheaper-inference/omniroute` ⭐85961 — Never stop coding. Free MIT AI gateway: one endpoint, 375 providers (150+ free), 1,400+ mo
+- `bytedance/deer-flow` ⭐85189 — An open-source long-horizon SuperAgent harness that researches, codes, and creates. With t
+- `666ghj/mirofish` ⭐85101 — A Simple and Universal Swarm Intelligence Engine, Predicting Anything. 简洁通用的群体智能引擎，预测万物
+- `lobehub/lobehub` ⭐84565 — 🤯 LobeHub - Super-Agents on Your Team. Add super-agents to the chats your team already use
+- `heygen-com/hyperframes` ⭐81515 — Write HTML. Render video. Built for agents.
+- `career-ops-hq/career-ops` ⭐81383 — Open-source AI job search agent and job finder: scan job boards, score each job 1-5 agains
+- `ruvnet/ruflo` ⭐81378 — 🌊 The original agent harness. Deploy intelligent multi-player swarms, coordinate autonomou
+- `netdata/netdata` ⭐81327 — The fastest path to AI-powered full stack observability, even for lean teams.
+- `shareai-lab/learn-claude-code` ⭐80144 — Bash is all you need -  A nano claude code–like 「agent harness」, built from 0 to 1
+- `dair-ai/prompt-engineering-guide` ⭐79948 — 🐙 Guides, papers, lessons, notebooks and resources for prompt engineering, context enginee
+- `microsoft/ai-agents-for-beginners` ⭐79275 — 18 Lessons to Get Started Building AI Agents
+- `headroomlabs-ai/headroom` ⭐79219 — Compress tool outputs, logs, files, and RAG chunks before they reach the LLM. 20% fewer to
+- `composiohq/awesome-claude-skills` ⭐79136 — A curated list of awesome Claude Skills, resources, and tools for customizing Claude AI wo
+- `openmontageinc/openmontage` ⭐79069 — World's first open-source, agentic video production system. 12 production pipelines, 100+ 
+- `elastic/elasticsearch` ⭐78549 — Free and Open Source, Distributed, RESTful Search Engine
+- `rohitg00/ai-engineering-from-scratch` ⭐78077 — Learn AI Engineering! Learn it. Build it. Ship it for others.
+- `redis/redis` ⭐77332 — For developers, who are building real-time data-driven applications, Redis is the preferre
+- `thedaviddias/front-end-checklist` ⭐74684 — 🗂 The essential checklist for modern web development, for humans and AI agents
+- `daytonaio/daytona` ⭐71342 — Daytona is a Secure and Elastic Infrastructure for Running AI-Generated Code
+- `asgeirtj/system_prompts_leaks` ⭐71080 — Leaked system prompts of ChatGPT, Claude, Gemini and more. The hidden system prompt of eve
+- `code-yeongyu/oh-my-openagent` ⭐70800 — OmO: Just type "mass ulw" keyword with your prompt. Now you are the master of graph engine
+- `ai-job-search-dev/ai-job-search` ⭐70800 — The job search that runs on your machine. AI job application framework built on Claude Cod
+- `shanraisshan/claude-code-best-practice` ⭐68893 — from vibe coding to agentic engineering - practice makes claude perfect
+- `mem0ai/mem0` ⭐68694 — The Memory Layer for AI Agents - Drop-in memory infrastructure for AI agents and apps. Con
+- `mintplex-labs/anything-llm` ⭐68107 — Stop renting your intelligence. Own it with AnythingLLM. Everything you need for a powerfu
+- `ebony-vinyl/dsh-our-free-model` ⭐67594 — 在 dsh 里装上这个插件即可，无需登录、注册或填 API Key，就能使用包括 DeepSeek V4.1 Flash、Kimi K3 在内的前沿模型——完全免费，不限量。 Al
+- `mvanhorn/last30days-skill` ⭐67122 — AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and th
+- `blader/humanizer` ⭐67051 — Agent skill that removes signs of AI-generated writing from text
+- `cathrynlavery/diagram-design` ⭐66043 — Editorial diagram design for Claude Code, Codex, GitHub Copilot, Cursor, Factory Droid, Qo
+- `traefik/traefik` ⭐65503 — The Cloud Native Application Proxy
+- `upstash/context7` ⭐64420 — Context7 Platform -- Up-to-date docs for AI agents
+- `gsd-build/get-shit-done` ⭐64158 — A light-weight and powerful meta-prompting, context engineering and spec-driven developmen
+- `sansan0/trendradar` ⭐63543 — ⭐AI-driven public opinion & trend monitor with multi-platform aggregation, RSS, and smart 
+- `tw93/pake` ⭐63045 — Turn any website into a lightweight desktop app with one command, on macOS, Windows and Li
+- `crewaiinc/crewai` ⭐60689 — Framework for orchestrating role-playing, autonomous AI agents. By fostering collaborative
+- `ayghri/i-have-adhd` ⭐60603 — A skill to stop your coding agent from burying the answer. ADHD-friendly output.
+- `mempalace/mempalace` ⭐60488 — The best-benchmarked open-source AI memory system. And it's free.
+- `meilisearch/meilisearch` ⭐59825 — A lightning-fast search engine API bringing AI-powered hybrid search to your sites and app
+- `coreyhaines31/marketingskills` ⭐59398 — Marketing skills for Claude Code and AI agents. CRO, copywriting, SEO, analytics, and grow
+- `router-for-me/cliproxyapi` ⭐58047 — Wrap Antigravity, ChatGPT Codex, Claude Code, Grok Build, Muse Code, Devin as an OpenAI/Ge
+- `hesreallyhim/awesome-claude-code` ⭐57620 — A hand-picked collection of the finest of resources for the most awesome of agents, Claude
+- `bojieli/ai-agent-book` ⭐57572 — 《深入理解 AI Agent：设计原理与工程实践》（李博杰 著）开源主仓库：全书正文、编译版 PDF 与按章配套代码
+- `hkuds/deeptutor` ⭐57511 — DeepTutor: Lifelong Personalized Tutoring. https://deeptutor.info/.
+- `k-dense-ai/scientific-agent-skills` ⭐56600 — Turn any AI agent into an AI Scientist. The #1 Agent Skills library for science, used by 2
+- `aaif-goose/goose` ⭐56402 — an open source, extensible AI agent that goes beyond code suggestions - install, execute, 
+- `imbad0202/academic-research-skills` ⭐56150 — Academic Research Skills for Claude Code: research → write → review → revise → finalize
+- `gathin23/cleanyourtv` ⭐55228 — Debloat any Android or Google TV over Wi-Fi and get an Apple TV-style home.
+- `chromedevtools/chrome-devtools-mcp` ⭐55016 — Chrome DevTools for coding agents
+- `voltagent/awesome-openclaw-skills` ⭐53651 — The awesome collection of OpenClaw skills. 5,400+ skills filtered and categorized from the
+- `cherryhq/cherry-studio` ⭐53375 — Your AI workspace for models, agents, and productivity.
+- `quantumnous/new-api` ⭐51632 — Open-source AI gateway. Self-hosted LLM gateway with OpenAI-, Claude- and Gemini-compatibl
+- `kepano/obsidian-skills` ⭐51323 — Agent skills for Obsidian. Teach your agent to use Obsidian CLI and open formats including
+- `mudler/localai` ⭐50278 — LocalAI is the open-source AI engine. Run any model - LLMs, vision, voice, image, video - 
+- `hkuds/nanobot` ⭐49970 — Your lightweight open-source personal agent.
+- `alibaba/open-code-review` ⭐49707 — Secure, fast, efficient, battle-tested at Alibaba's scale. Hybrid architecture code review
+- `herdrdev/herdr` ⭐49696 — the runtime your coding agents live on
+- `sickn33/agentic-awesome-skills` ⭐49404 — 2,955+ reusable AI agent skills for Claude Code, Codex, Cursor and Gemini CLI. AAS Core ad
+- `deusdata/codebase-memory-mcp` ⭐48424 — Local code intelligence for developers and AI agents. Connect code, docs and infrastructur
+- `jeecgboot/jeecgboot` ⭐48413 — 【AI 时代的业务系统基座】企业级 AI 低代码平台：权限、多租户、工作流、报表、大屏、AI 知识库等通用能力开箱即用，AI 只需生成业务差异部分。AI Skills 一句话生成完
+- `zhayujie/cowagent` ⭐47851 — Open-source personal AI assistant & Agent Harness. Plans tasks, runs tools and skills, sel
+- `siyuan-note/siyuan` ⭐47145 — An open-source, privacy-first, self-hosted knowledge workspace where humans and AI agents 

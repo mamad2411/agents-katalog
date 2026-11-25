@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bevy BSN UI"
+  short_description: "Author composable Bevy 0.19 UI with BSN"
+  default_prompt: "Use $bevy-bsn-ui to author this Rasterra UI with bsn! scenes."

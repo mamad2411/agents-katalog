@@ -5,16 +5,20 @@
     "last_used": 1791027496.894371
   },
   "skill_for_task": {
-    "count": 14,
+    "count": 18,
     "first_used": 1792375209.27682,
-    "last_used": 1793586819.1388521,
+    "last_used": 1795400580.238392,
     "days_active": [
       "2026-10-19",
       "2026-10-22",
       "2026-10-23",
       "2026-10-26",
       "2026-10-28",
-      "2026-11-02"
+      "2026-11-02",
+      "2026-11-09",
+      "2026-11-16",
+      "2026-11-22",
+      "2026-11-23"
     ]
   },
   "agent_context": {
@@ -40,6 +44,54 @@
     "last_used": 1792744751.8961651,
     "days_active": [
       "2026-10-23"
+    ]
+  },
+  "internet-browse": {
+    "count": 0,
+    "last_used": 1794023171.2942011
+  },
+  "internet-fetch": {
+    "count": 0,
+    "last_used": 1794023171.2942011
+  },
+  "lightcraft": {
+    "count": 0,
+    "last_used": 1794023171.2942011
+  },
+  "pdfcraft": {
+    "count": 0,
+    "last_used": 1794023171.2942011
+  },
+  "photocraft": {
+    "count": 0,
+    "last_used": 1794023171.2942011
+  },
+  "vectorcraft": {
+    "count": 0,
+    "last_used": 1794023171.2942011
+  },
+  "memory_recall": {
+    "count": 1,
+    "first_used": 1795509983.873742,
+    "last_used": 1795509983.873742,
+    "days_active": [
+      "2026-11-24"
+    ]
+  },
+  "memory_save": {
+    "count": 1,
+    "first_used": 1795509983.933579,
+    "last_used": 1795509983.933579,
+    "days_active": [
+      "2026-11-24"
+    ]
+  },
+  "data_hub": {
+    "count": 1,
+    "first_used": 1795509985.604087,
+    "last_used": 1795509985.604087,
+    "days_active": [
+      "2026-11-24"
     ]
   }
 }

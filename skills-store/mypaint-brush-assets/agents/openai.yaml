@@ -1,0 +1,4 @@
+interface:
+  display_name: "MyPaint Brush Assets"
+  short_description: "Manage presets, previews, and brush catalogs"
+  default_prompt: "Use $mypaint-brush-assets to integrate these MyPaint presets and preview icons safely."

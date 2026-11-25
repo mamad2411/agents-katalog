@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "codebrewrouter": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "CodebrewRouter",
+      "options": {
+        "baseURL": "http://localhost:5022/v1",
+        "apiKey": "sk-local"
+      },
+      "models": {
+        "codebrewRouter": {
+          "name": "codebrewRouter",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "model": "codebrewrouter/codebrewRouter",
+  "small_model": "codebrewrouter/codebrewRouter"
+}

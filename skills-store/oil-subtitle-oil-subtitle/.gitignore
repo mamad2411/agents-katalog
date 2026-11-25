@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.vocabulary-cache.json
+glossary.json
+node_modules/

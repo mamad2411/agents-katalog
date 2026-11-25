@@ -1,0 +1,73 @@
+repos:
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - build
+          - ci
+          - chore
+          - revert
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'cargo fmt --all && git diff --name-only -- "*.rs" | while IFS= read -r f; do git add "$f"; done'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --all-targets
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-fmt-push
+        name: cargo fmt
+        entry: cargo fmt --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-clippy-push
+        name: cargo clippy
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-check-push
+        name: cargo check
+        entry: cargo check --all-targets
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-test
+        name: cargo test
+        entry: bash -c 'MODULES=$(git diff --name-only @{push}..HEAD -- "*.rs" 2>/dev/null | grep "^src/" | sed "s|^src/||; s|\.rs$||; s|/mod$||; s|/|::|g" | sort -u); if [ -z "$MODULES" ]; then cargo test --quiet; else for mod in $MODULES; do echo "Testing $mod..."; cargo test --lib "$mod" --quiet || exit 1; done; fi'
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]

@@ -1,0 +1,151 @@
+# Changelog
+
+All notable changes to the Azure Kusto Spark Connector will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Version numbers follow the `{major}.{minor}.{patch}` scheme (e.g., `7.0.5`).
+Tags are created as `v4.0_{version}` (Spark 4 / master) and `v3.0_{version}` (Spark 3 / release/spark3).
+
+## [Unreleased]
+
+### Changed
+- None
+
+### Added
+- None
+
+### Fixed
+- None
+
+## [7.1.4] - 2026-09-23
+
+### Changed
+- None
+
+### Added
+- None
+
+### Fixed
+- Scope ABFS distributed read storage credentials to the storage account, so the token resolves on both the JVM and native readers and other ABFS accounts in the session are no longer forced into SAS auth (#514)
+
+## [7.1.3] - 2026-09-08
+
+### Changed
+- None
+
+### Added
+- Opt-in Data Management export storage discovery for distributed reads, supporting Fabric Private Link while preserving existing read and ingestion behavior by default (#509)
+
+### Fixed
+- Retry export storage discovery promptly after transient API failures instead of caching legacy fallback for the full refresh interval (#509)
+- Mask Azure access tokens in GitHub Actions build and release logs (#504)
+
+## [7.1.2] - 2026-07-29
+
+### Changed
+- None
+
+### Added
+- None
+
+### Fixed
+- Read queries ending in a single-line comment (`// ...`) no longer disable the connector's appended operators. The generated `| take`, `| count`, `| evaluate estimate_rows_count()`, `| where`, and `| project` are now placed on a new line so a trailing comment cannot swallow them — fixing reads that failed with `E_QUERY_RESULT_SET_TOO_LARGE` on large results and a silent column-pruning corruption (#267)
+
+## [7.1.1] - 2026-06-12
+
+### Fixed
+- Removed `/Files/` subfolder restriction from OneLake path validation — allows any subfolder (e.g., `/Ingestions/`)
+- Removed `isOneLakeUrl` method and host string checks (simplification)
+
+## [7.1.0] - 2026-06-10
+
+### Changed
+- Jackson ObjectMapper in `TransientStorageParameters.fromString` now accepts case-insensitive property names
+
+### Added
+- OneLake transient storage support for distributed reads (PR #491)
+  - New `oneLakeUrl` field in `storageCredentials` JSON for Fabric OneLake URLs
+  - Kusto exports via `.export to oneLakeUrl;impersonate`; Spark reads back over abfss with ambient AAD
+  - Automatic `fs.azure.abfs.valid.endpoints` allowlisting for OneLake hosts
+  - Supports both `https://` and `abfss://` URL formats (canonicalized internally)
+- Cloud-agnostic OneLake host validation — supports internal/sovereign environments (e.g., `dfs.pbidedicated.windows-int.net`)
+- Security: reject IP-literal, localhost, and single-label hosts for OneLake URLs
+- Security: URL-decoded path traversal checks on workspace and artifact segments
+
+### Fixed
+- OneLake host validation no longer rejects valid internal/sovereign OneLake domains
+- `validate()` now attempts `parseOneLake` as fallback instead of rejecting when derived fields are unpopulated
+
+## [7.0.7] - 2026-05-28
+
+### Changed
+- None
+
+### Added
+- None
+
+### Fixed
+- Add commons-io as explicit compile-scope dependency to fix shading (resolves NoClassDefFoundError for `kusto_connector_shaded/org/apache/commons/io/IOUtils` on Fabric)
+
+## [7.0.6] - 2026-05-11
+
+### Changed
+- Bump kusto-data and kusto-ingest SDK from 7.0.5 to 8.0.1
+- Bump azure-sdk-bom from 1.3.2 to 1.3.6
+
+### Added
+- None
+
+### Fixed
+- Fix HTTP client timeout being 30s longer than expected (via SDK 8.0.1 fix)
+
+## [7.0.5] - 2026-03-09
+
+### Changed
+- None
+
+### Added
+- Add documentation for troubleshooting (#461)
+
+### Fixed
+- Fix issue with CloudInfo cache (#466)
+- Fix Hadoop and Spark config setup (#462, #463)
+- Remove minimizeJar directive (#470)
+- Fix Github release pipeline (#472)
+
+## [7.0.3] - 2026-01-16
+
+### Changed
+- None
+
+### Added
+- None
+
+### Fixed
+- Fix version of Kusto SDK (#459)
+
+## [7.0.2] - 2026-01-15
+
+### Changed
+- None
+
+### Added
+- New read option for storage protocol in distributed reads (#450)
+
+### Fixed
+- Whitelist storage to avoid Fabric error (#455)
+- Fix for release pipeline for Spark 4 (#454)
+- Correct the resilience and vavr lib versions (#452)
+- Reformatted code to have SAS key checks (#458)
+
+## [7.0.1] - 2025-11-12
+
+### Changed
+- None
+
+### Added
+- Syntax support for V11 engine for extents drop (#445)
+
+### Fixed
+- Remove V3 engine check (#439)
+- Fix filter keys (#446)

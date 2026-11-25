@@ -1,0 +1,31 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+coverage/
+
+# aix local state — runtime output (.aix/runtime: memory, context index, generated
+# code, checkpoints) + static inputs (.aix/static: config, eval suites). All machine-local.
+.aix/
+# generated skill index — contains machine-absolute paths; regenerate via `aix skills`
+catalog.json
+
+# env
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# build artifacts
+*.log
+
+# legacy source repos — kept locally as reference, not tracked
+imports/

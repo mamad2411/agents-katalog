@@ -1,0 +1,12 @@
+# OS / editor
+.DS_Store
+*.swp
+
+# Local demo server / browser tooling artifacts
+.playwright-mcp/
+demos/*.png
+demos/*.jpeg
+
+# Dependencies (none required, but just in case someone adds a demo build)
+node_modules/
+dist/
