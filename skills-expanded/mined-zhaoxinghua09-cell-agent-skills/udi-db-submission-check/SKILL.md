@@ -1,0 +1,204 @@
+---
+name: udi-db-submission-check
+slug: udi-db-submission-check
+title: UDI 数据库提交合规判定器
+displayName: UDI 数据库提交合规判定器
+display_name: UDI 数据库提交合规判定器
+display_name_en: UDI Database Submission Compliance Checker
+version: 1.0.2
+homepage: https://zhaoxinghua09-cell.github.io/lgd-skills-index/
+license: MIT
+compatibility: Cross-platform; zero external dependencies (stdlib only)
+metadata: {dependencies: "none"}
+allowed-tools: Read, Glob, Grep, Bash, Write, WebFetch
+license_scope: 代码（.py 文件）MIT；本 SKILL.md 与其中理论文本按 CC BY 4.0 授权（见文末「License & attribution」）
+author: SynomosAI (LGD initiative)
+copyright: MedXpert
+category: 医疗器械合规
+platforms: [WorkBuddy, QClaw, ima, Claude Code, Cursor]
+tags: ["医疗器械","医械合规","UDI 数据库提交合规判定器","判定器","TH-MED-007","决策支持"]
+description: "UDI 码串格式对了，但该传哪个库、什么时候传、必填哪些字段，没人一次说清；漏传或漏维护，上市即违规。（零依赖 CLI · 确定性 JSON IR · rc=0/1/2 · --demo 自带案例） 适用场景：当需要UDI 数据库提交合规判定器能力时使用本技能；触发词：医疗器械、医械合规、UDI 数据库提交合规判定器、判定器、TH-MED-007。"
+description_en: "Deterministic zero-dependency CLI screener for medical-device compliance (udi-db-submission-check). JSON IR output, rc=0/1/2, demo case included. Decision support only — always verify against official texts."
+agent_created: true
+verified_links: "规则源条款号已逐条标注；包内全部外链（含徽章）于 2026-10-29 逐条 HTTP 探测核验，13/13 可达（GitHub 网页端经 API 复核 public=true）"
+description_zh: "UDI 码串格式对了，但该传哪个库、什么时候传、必填哪些字段，没人一次说清；漏传或漏维护，上市即违规。（零依赖 CLI · 确定性 JSON IR · rc=0/1/2 · --demo 自带案例）"
+classification:
+  internal: ["主轴1 医械合规咨询"]
+  skillhub: ["medtech-reg"]
+  clawhub: ["productivity", "data-analytics", "development"]
+  iso_25010: ["Functional suitability"]
+risk_tier: medium
+risk_rationale: "门禁批量补丁默认 medium（Steven 2026-09-28 令：我们的 skill 设计为中等风险）：调用 API/读写文件/本地执行，最小权限，密钥走 Secret；若实际涉对外代执行(push/发布/发送/上架)须人工复评，改 high 并走 Steven 批准。"
+ai_protocol: true
+
+lineage: ["LGD-有籍"]
+capabilities: [read]
+---
+> 凡自治之物 · LGD 治理学 · 创造术家族 ｜ 评测协议：[skill-quality-gate](../skill-quality-gate/SKILL.md)
+
+## 何时用
+
+- 当用户需要UDI 数据库提交合规判定器相关能力时。
+- 触发词：医疗器械、医械合规、UDI 数据库提交合规判定器、判定器、TH-MED-007、决策支持。
+
+## 用法
+
+调用方式与参数详见正文「## 四、用法」节。
+执行步骤见正文「## 七、家族合集（按注册全流程）」节。
+入口脚本（在技能目录下执行）：udi-db-submission-check.py。
+
+## 流程
+
+1. 触发：识别UDI 数据库提交合规判定器相关任务（见「何时用」）。
+2. 执行：按「用法」运行udi-db-submission-check.py。
+3. 校验：核对脚本输出/退出码是否符合预期。
+4. 交付：向用户呈现结果/产物。
+
+![LGD-aligned MED 医疗](https://medxpert.cn/badge/directions/svg/lgd-aligned-med-cn.svg)
+![LGD 有籍 Registered](https://medxpert.cn/badge/laws/svg/lgd-registered-cn.svg)
+![LGD 有证 Evidenced](https://medxpert.cn/badge/laws/svg/lgd-evidenced-cn.svg)
+![LGD 有门禁 Gated](https://medxpert.cn/badge/laws/svg/lgd-gated-cn.svg)
+![LGD-Powered](https://medxpert.cn/badge/powered/svg/lgd-powered-cn.svg)
+
+# UDI 数据库提交合规判定器
+
+> ⚠️ **免责声明**：本工具由 AI 辅助生成，输出为**决策支持**，不构成医疗器械注册、合规或法律意见。输出请人工复核，正式结论须以主管部门决定与官方最新文件为准。
+> 文本核验日期：2026-10-29 · 条款文本以官方最新发布为准（EU 硬日期已于当日按欧盟委员会决定 (EU) 2025/2371 及 EUDAMED 过渡期时间表复核）
+
+> 🌐 **在线版与家族合集**
+> - 医械注册知识库（免费公开层）：https://medxpert.cn/knowledge/
+> - 技能索引页：https://medxpert.cn/skills/
+> - 官网首页：https://medxpert.cn/
+
+## 证据与安全声明
+
+- 证据：TBD（暂无评测/徽章链接；产生后在此更新实际链接）
+- 版本：1.0.2
+- 安全：未做独立安全扫描（TBD），结论待补；补全前不作推荐背书。
+
+## 一、痛点
+
+UDI 码串格式对了，但该传哪个库、什么时候传、必填哪些字段，没人一次说清；漏传或漏维护，上市即违规。
+
+## 二、这是什么
+
+一个**零依赖、确定性输出**的判定器。你把已知条件以参数传入，它按公开规则源给出结构化判定 + 义务清单 + 风险提示，输出 JSON IR（机器可读），可直接嵌入你自己的流程。
+
+- **零依赖**：仅用 Python 标准库，无第三方包、无网络请求、无 API Key。
+- **确定性**：同一输入永远同一输出（无随机、无模型调用）。
+- **可回溯**：每条结论附规则源条款号，便于人工核对。
+- **离线可用**：可在内网、断网、老电脑上运行。
+
+## 三、判定核心
+
+| 项 | 说明 |
+|---|---|
+| 规则源 | `NMPA《医疗器械唯一标识系统规则》/ FDA 21 CFR 830 + GUDID / EU MDR Art 27-29 + EUDAMED` |
+| 输出 | JSON IR（`result` + `rc` + `error_code` + `rules_verified_on` + `aigc_mark`） |
+| 错误码 | `E_ENUM_INVALID` market 非法或缺失 / `E_RUNTIME` 其他 |
+| 退出码 | `rc=0` 判定完成；`rc=1` 完成但带风险提示；`rc=2` 输入不足或非法 |
+
+## 四、用法
+
+```bash
+python udi-db-submission-check.py --demo                     # 跑内置冒烟案例（推荐先跑这个）
+python udi-db-submission-check.py --json <你的参数...>        # 正式判定
+```
+
+可用参数：`--market / --is_registered / --has_di / --has_pi / --reusable / --implant / --sterile`
+
+## 四A、真机输出（实跑节选）
+> 实跑命令 `python udi-db-submission-check.py --json --market cn --has_di yes --sterile yes`（2026-10-29，Python 3.13.14）。仅调整 JSON 缩进便于阅读，**字段与字段值逐字未改**（完整原文见做齐报告）。
+
+```json
+{
+  "tool": "udi-db-submission-check",
+  "version": "1.0.2",
+  "input": {"market": "cn", "is_registered": null, "has_di": "yes", "has_pi": null,
+            "reusable": null, "implant": null, "sterile": "yes"},
+  "result": {
+    "market": "cn",
+    "database": "国家药监局·医疗器械唯一标识数据库（UDI 数据库）",
+    "submit_timing": "产品上市销售前完成数据上传与维护；实施范围按 NMPA 分批公告推进，以最新公告为准",
+    "issuing_agency": "GS1 / 中关村工信 / 阿里健康（合规发码机构）",
+    "core_fields": ["器械标识（DI）", "器械名称", "标签人/注册人", "型号规格", "生产日期与失效日期（如适用）",
+                    "注册证号/备案号", "是否植入", "是否无菌", "是否可重复使用", "无菌指示项（须与标签申报一致）"],
+    "formatters_present": {"DI": "yes", "PI": "未提供"},
+    "obligations": ["…3 条（载体与数据一致 / 持续维护 / 发码机构须合规）"],
+    "notes": ["…3 条（义务清单非操作指引 / 以最新公告为准 / 以官方系统界面为准）"],
+    "evidence": ["NMPA 医疗器械唯一标识系统规则", "FDA 21 CFR 830 / GUDID", "MDR (EU) 2017/745 Art 27-29 / EUDAMED"],
+    "official_portals": ["https://udi.nmpa.gov.cn/", "https://accessgudid.nlm.nih.gov/", "https://ec.europa.eu/tools/eudamed"],
+    "warnings": [
+      "输入不完整：未提供 --is_registered——中国 UDI 数据库提交通常与注册/备案信息绑定，按从严推定请先确认注册状态后复核。"
+    ]
+  },
+  "rc": 1,
+  "error_code": null,
+  "rules_verified_on": "2026-10-29",
+  "aigc_mark": {"standard": "GB 45438-2025", "is_generated": true, "generator": "udi-db-submission-check@MedXpert",
+                "content_type": "decision_support_output", "disclaimer": "决策支持非权威结论，须人工复核；以官方最新文件为准"}
+}
+```
+（`obligations` / `notes` 数组字段值逐字未改，此处折叠。）
+
+三档 rc 实测：`--market cn --is_registered yes --has_di yes --has_pi yes --sterile no --implant no` → rc=0；`--market us --has_di yes --reusable yes` → rc=1（PI 缺失高风险提示）；`--market jp` → rc=2（枚举非法）。
+
+## 五、能力边界（请务必阅读）
+
+- 只做**规则判定**，不做法律意见、不出具证明；结论须人工复核，最终以监管机构认定为准。
+- **输入不足时从严提示**：DI/PI 缺失、cn 场景注册状态未确认等均在 `warnings` 中明示（`rc=1`），不静默按「可提交」输出；**未识别的枚举值同样按缺失从严处理并显式警告**（v1.0.2）。
+- 不覆盖特殊情形（创新器械、药械组合、边界产品、纳米材料等），此类须走官方界定程序。
+- 规则版本会变；**条款号已给出，请以官方最新文本核对**。
+- 输出为起始清单，**不替代产品技术要求、适用标准清单与专业评价者判断**。
+
+## 六、理论依据
+
+有籍在册——发码只是开始，入库与持续维护才算真正「登记在案」。
+
+> 域站位件：`TH-MED-007` · LGD 理论总账 REGISTRY · 医疗器械全链路治理（有籍 · 有证 · 有门禁）
+
+## 七、家族合集（按注册全流程）
+
+| 环节 | 工具 | 位置 |
+|---|---|---|
+| 分类与路径 | `md-classification-route` | 本批 |
+| 注册资料-技术文件 | `medxpert-reg-hub` | 存量枢纽 |
+| 临床评价（选路） | `clin-eval-route-picker` | 存量 |
+| 临床评价（证据要素） | `cer-equivalence-check` | 本批 |
+| 检测项目与实验室匹配 | `test-lab-match-check` | 本批 |
+| 申报前非临床研究 | `non-clinical-checker` | 存量 |
+| UDI（格式校验） | `udi-format-validator` | 存量 |
+| UDI（数据库提交） | `udi-db-submission-check` | 本批 |
+| 上市后·PMCF 计划 | `pmcf-plan-check` | 存量 |
+| 上市后·PMCF 评价报告 | `pmcf-evaluation-report-check` | 本批 |
+| 上市后·不良事件 | `pms-vigilance-intake` | 存量 |
+| 上市后·召回 | `recall-decision-checker` | 存量 |
+| 标签与说明书 | `label-compliance-checker` | 存量 |
+| 进出口路径 | `import-export-router` | 存量 |
+
+---
+
+诺桥@MED 域·国际准入 · TH-MED-007 · © 2026 MedXpert · MIT License
+本内容由 AI 辅助生成（非自然人），署名机构承担出品责任。
+
+## License & attribution
+**分层许可（务必并读；代码许可不覆盖文档与理论文本）**
+
+| 层 | 载体 | 许可 |
+|---|---|---|
+| 代码 | `udi-db-submission-check.py` | **MIT** |
+| 文档与理论文本 | 本 `SKILL.md`、`README.md`、其中「理论依据」段与一切理论表述 | **不在 MIT 覆盖范围内**：按 **CC BY 4.0** 授权（须保留署名） |
+
+> 即：**代码（.py）MIT；本 SKILL.md 与其中理论文本按 CC BY 4.0 授权（须保留署名）。** 代码可依 MIT 使用与再分发；文档与理论文本可复制、转载与演绎，须保留署名。
+
+```
+© 2026 赵兴华 / Steven Zhao·China (ORCID 0009-0001-0512-1237). Theory texts licensed under CC BY 4.0.
+理论署名 (attribution) : LGD（Lifecycle Governance Doctrine / 全程治理论）— SynomosAI initiative
+名称状态 (name status)  : "SynomosAI" / "MedXpert" — 未申请实体注册、未申请商标注册
+                        (not a registered legal entity; no trademark registered)
+生产参考部署 (production reference, self-reported) : MedXpert
+                    ← 非认证、非背书、非监管认可（not a certification or endorsement）
+代码许可 (code license) : 本包 = MIT (see LICENSE)
+                    本文本与理论表述不在任何代码许可覆盖范围内，按 CC BY 4.0 授权（须保留署名）
+引用格式 (cite as)      : 本资产无 DOI
+```

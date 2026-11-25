@@ -1,0 +1,130 @@
+---
+name: md-tasks
+description: >-
+  Apply consistent Markdown checkbox task conventions in READMEs, epics/journals,
+  specs, and design docs. Use when the user wants task lists with "- [ ]" /
+  "- [x]", nested subtasks, context sub-bullets under items, or terminal
+  commands (grep/rg) to list open versus completed tasks in Markdown files —
+  especially in repo documentation and planning Markdown.
+---
+
+# Markdown tasks and checkbox conventions
+
+Follow these conventions so agents and humans can scan open work reliably.
+
+## Usage guidelines
+
+### Checkbox notation
+
+Denote open tasks or TODOs with standard checkbox notation:
+
+- `- [ ]` for incomplete tasks.
+- `- [x]` for done tasks.
+
+Indentation defines subtasks: extra leading spaces nest bullets under a parent item.
+
+In planning/spec documents, default every actionable item at every nesting level
+to checkbox notation. Do not hide implementation work in ordinary bullets.
+
+Often add ordinary sub-bullets for status or context beneath a task, but only
+when the bullet is not itself work to do. For example:
+
+```markdown
+- [ ] Some task
+  - Status: maybe some status description or how it was completed
+  - More context
+  - [ ] Subtask A
+```
+
+This keeps review tight: unfinished work sorts visually to checklist lines while
+still allowing narrative detail.
+
+### Actionable sub-bullets
+
+If a sub-bullet describes work to do, a decision to resolve, behavior to
+implement, a file to create, a test to add, or an acceptance criterion to verify,
+write it as a checkbox task too:
+
+```markdown
+- [ ] Implement tx archive CLI.
+  - [ ] Keep Bash responsible for chain config, keyring preflight, and broadcast.
+  - [ ] Make TypeScript responsible for txhash parsing and Markdown formatting.
+  - Rationale: TypeScript is easier to test for JSON, filenames, and CLI args.
+```
+
+Use ordinary nested bullets only for non-actionable context, rationale, status,
+examples, or notes. When unsure whether a sub-bullet is actionable, prefer
+`- [ ]`.
+
+### Task Questions
+
+Sometimes we'll pose a question or frame a resolve decision as a task. That can
+look like this.
+
+```markdown
+- [ ] Q: Some open question?
+  A: Once resolved, replace this question with a plain decision note and open
+  tasks for its actionable consequences.
+```
+
+### Decisions and implementation tasks
+
+Deciding what to do and doing it are different things. During specification, an
+unresolved decision may be an open task. Once resolved, replace that task with
+a plain decision note. Put its concrete consequences immediately beneath it as
+unchecked tasks. Do not mark a decision `[x]` merely because the user answered
+the question.
+
+```markdown
+## Impl 1: referral fee storage
+
+Fees are keyed by market and referral code. Code ownership can change without
+moving accrued state.
+
+- [ ] Change the fee map to use the new key.
+- [ ] Migrate existing balances.
+- [ ] Test ownership transfer with accrued fees.
+```
+
+Use numbered `## Impl N` sections for implementation-bearing specs. Start with
+`## Impl 1` even when there is one sequence. The numbers organize the document;
+they do not impose an implementation order. When editing an epic or durable
+spec, follow agent skill `epics` for placement and handoff organization. Use
+agent skill `drill-spec` when material design questions still need resolution.
+
+### Optional Follow-Ups
+
+Put optional work that should not block completion under a `## Follow-Ups`
+heading. Open tasks there do not keep a document from being done, and tooling
+such as `epics-plus health` excludes them from its done-with-open-tasks check.
+Keep required work, including acceptance criteria, outside that section. When
+the follow-ups grow into a cohesive outcome, move them to their own document
+and link it.
+
+```markdown
+## Follow-Ups
+
+- [ ] Add a dashboard panel for fee accrual.
+  - Why: useful for monitoring, but the migration is complete without it.
+```
+
+### Finding tasks in the terminal
+
+Patterns differ by shell (`**/*.md` is not universal glob). Typical approaches:
+
+```bash
+# Completed tasks under a directory (GNU grep fallback)
+grep -rF -- '- [x]' <path-or-glob>
+
+# Open tasks — limit to Markdown (example: cwd tree)
+grep -rF -- '- [ ]' . --include='*.md'
+```
+
+Or use **`rg`** for `**` globs and filters:
+
+```bash
+rg --fixed-strings -g '*.md' -- '- [ ]'
+rg --fixed-strings -g '*.md' -- '- [x]'
+```
+
+Tune paths and `-g`/globbing to match the repo layout.

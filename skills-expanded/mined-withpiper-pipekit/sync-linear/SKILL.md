@@ -1,0 +1,223 @@
+---
+name: sync-linear
+description: Reconcile strategy-doc drift against the Linear i{N}./I{N}.P{N}. initiative hierarchy. Use when issues are mis-placed across projects or naming has drifted. Linear is the source of truth.
+---
+
+# Sync Linear Skill
+
+**v5.0.0** — Last updated: 2026-10-10 *(v5.0.0 — Linear via the project's route (`Linear transport`), no MCP tool names; carries v4.1.0 — Linear-native initiative surface — no PHASES.md/linear-map.json to sync.)*
+
+You are a Linear hierarchy reconciliation coordinator. Your job is to keep the Linear board's initiative hierarchy coherent with the project's strategy docs and requirements. Read `method.config.md` for project context — specifically `## Initiative Surface`, which defines the canonical model.
+
+**Linear is the source of truth for the initiative surface.** There is no planning-file mirror to push to or pull from. Initiative order is encoded directly in Linear object names, not in a file and not in Linear's `sortOrder`.
+
+## Canonical Model (Initiative Surface)
+
+Per `method.config.md` § Initiative Surface:
+
+| Linear object | Role | Order |
+|---------------|------|-------|
+| **Initiative** `i{N}. label` | ordered, **completable RELEASE PHASE** | integer `{N}` in the name prefix |
+| **Project** `I{N}.P{N}. label` | a completable **LANE** of ~3–8 issues | the `P{N}` integer in the name prefix |
+| **Initiative**, unprefixed | long-running **THEME**; may never complete | outside the walk |
+| **Issue**, no project | uncut **BACKLOG**, classified by an `Area:` label | — |
+| **Issue** | individual requirement/task | lives inside the right `I{N}.P{N}.` project |
+
+**The contract is unchanged; what the levels *mean* is what shifted (v4.28.0).** Both initiatives and projects are completable — a project that keeps accepting work is a pool the `i{N}.`→`P{N}.` walk cannot see into. "No project" is therefore a legitimate, intended state for uncut work, not placement drift on its own; see Placement drift below.
+
+Order is the **numeric prefix** in the object name (`i1.`, `i2.`, … / the `P{N}` number). Linear's `sortOrder` is **never** used to determine initiative order — always parse the name prefix. **Projects carry their initiative number** (v4.5.0+: `I1.P2. label`) so the initiative reads at the project level; legacy bare `P{N}.` is still valid (`bin/pk` accepts both) — treat a bare `P{N}.` as a rename candidate, not an error.
+
+A narrative `ROADMAP.md` may exist at the project root. It is not synced state — treat it as a human-readable reference only, never as a source or target of reconciliation.
+
+## Triggers
+
+This skill is invoked when the user says:
+- `/sync-linear`
+- "sync linear"
+- "reconcile linear"
+- "check linear hierarchy"
+- "are issues in the right phase?"
+
+## What This Skill Reconciles
+
+It detects and proposes fixes for **drift between the project's strategy docs / requirements and the Linear board's initiative hierarchy**:
+
+1. **Naming-convention drift** — initiatives not named `i{N}. label`, projects not named `I{N}.P{N}. label` (a bare `P{N}.` is legacy-valid but a rename candidate; flag it as such, not as an error), duplicate or gapped prefixes (`i1, i3` with no `i2`), an `I{N}.` prefix that disagrees with the project's parent initiative, or out-of-order numbering.
+2. **Placement drift** — issues sitting in the wrong `I{N}.P{N}.` project given what the strategy docs say belongs in that lane. **"No project" is not drift by itself** on the lanes model: uncut work belongs in the `Area:`-labelled backlog until a human cuts it into a lane (`/phase-plan --cut`). Flag a project-less issue only when it carries no `Area:` label, or when the strategy docs place it in a lane that already exists. Never propose creating a project to absorb loose issues — that manufactures a pool.
+3. **Coverage drift** — strategy-doc requirements with no corresponding Linear issue, or Linear issues that no longer map to any documented requirement.
+
+It does **not** reconcile a planning-file mirror — there is none. All reconciliation targets are live Linear objects.
+
+## Modes
+
+| Mode | Command | What it does |
+|------|---------|--------------|
+| **check** | `/sync-linear` (default) | Read-only audit: report naming, placement, and coverage drift against the board. Proposes no writes. |
+| **fix** | `/sync-linear fix` | Propose-then-apply: present the drift report, ask for confirmation, then apply approved renames/re-placements/issue creations to Linear. |
+| **promote** | `/sync-linear promote` | Analyze sub-phase completion and recommend status promotions for the next batch of issues. |
+
+## Reading the Board
+
+To reconcile, build a live picture of the hierarchy from Linear (never from a map file):
+
+Every read and write in this skill goes through the project's Linear route (verb table: `sop/Linear_SOP.md § Linear transport`; the `mcp` route's equivalent of each call is listed there). Run the whole survey in **one** subagent, serially — never fan out subagents at Linear, it is one shared per-user quota (`sop/Linear_SOP.md § Rate limits`).
+
+1. **List initiatives** with their projects — `pk gql '{ initiatives(first:50) { nodes { id name status projects { nodes { id name } } } } }'` — these are the initiatives. Parse `i{N}.` from each name to get initiative order.
+2. **List projects** under each initiative — the `projects { nodes { id name } }` of each initiative from step 1; `pk project list --all --json` adds each project's state and focus tier. These are the sub-phases. Parse `P{N}.` from each name to get sub-phase order.
+3. **List issues** in each project — a project sweep, not a title search, so page it with `pk gql` (`first: 50`, follow `endCursor` while `hasNextPage` is true):
+   ```bash
+   pk gql 'query($p: ID!, $after: String) { issues(first:50, after:$after, filter:{ project:{ id:{ eq:$p } } }) { nodes { identifier title state { name } labels { nodes { name } } } pageInfo { hasNextPage endCursor } } }' '{"p":"<PROJECT-ID>","after":null}'
+   ```
+   These are the requirements/tasks.
+4. **Read the strategy docs** named in `method.config.md` — these define what *should* exist and where. This is the requirement side of the reconciliation.
+
+The Linear team ID comes from `method.config.md` (`pk config "Team ID"`). The issue verbs take state, label and project **names** (`--state Approved`, `--project I5.P2`) and resolve ids themselves, so a workflow-state id is needed only inside a hand-written `pk gql` mutation — take it from `method.config.md` or resolve it live with `pk gql '{ team(id:"<TEAM>") { states { nodes { id name type } } } }'`. **Never hardcode Linear IDs** and never read them from `linear-map.json` — that file is retired.
+
+## Execution Steps
+
+### Check Mode (default, read-only)
+
+1. **Read** `method.config.md` § Initiative Surface for the convention and the Linear team/state references.
+2. **Read** the strategy docs listed in `method.config.md`.
+3. **Build the live hierarchy** from Linear (initiatives → projects → issues) per *Reading the Board* above.
+4. **Detect naming-convention drift:**
+   - Each initiative name matches `i{N}. label`; each project name matches `P{N}. label`.
+   - Prefixes are contiguous and non-duplicated within their scope.
+5. **Detect placement drift:**
+   - Every issue lives in exactly one `P{N}.` project.
+   - Issue subject matter matches the sub-phase the strategy docs assign it to.
+6. **Detect coverage drift:**
+   - Each strategy-doc requirement maps to at least one Linear issue.
+   - Each Linear issue maps to a documented requirement (or is flagged as undocumented).
+7. **Present a drift report** (see *Output Format*). Propose no writes in check mode.
+
+### Fix Mode (propose-then-apply)
+
+1. Run **Check Mode** to produce the drift report.
+2. **Present each proposed change** as a table (rename / re-place / create), grouped by drift type.
+3. **Ask for confirmation.** Never auto-apply.
+4. On approval, apply only the approved changes — one call per approved row, serially, in the same single subagent (never fan out at Linear):
+   - Rename initiatives — `pk gql 'mutation($id: String!, $in: InitiativeUpdateInput!) { initiativeUpdate(id:$id, input:$in) { success } }' '{"id":"<INITIATIVE-ID>","in":{"name":"i1. Foundation"}}'`.
+   - Rename projects — `pk gql 'mutation($id: String!, $in: ProjectUpdateInput!) { projectUpdate(id:$id, input:$in) { success } }' '{"id":"<PROJECT-ID>","in":{"name":"I1.P2. Budget Editor"}}'`. Re-parent a project by moving its initiative link — `initiativeToProjectCreate(input:{ initiativeId:"<NEW-INITIATIVE-ID>", projectId:"<PROJECT-ID>" })`, then `initiativeToProjectDelete(id:"<OLD-LINK-ID>")` — both through `pk gql`.
+   - Move issues into the correct project — `pk issue update <ID> --project <I{N}.P{N}>`; create missing issues — `pk issue create --title "…" --project <I{N}.P{N}> --state <state> --label "Area: <area>" --description-file <F>`, one call each.
+5. **Re-run Check Mode** after applying to confirm the drift cleared. Report residual drift, if any.
+
+### Promote Mode
+
+Analyzes sub-phase completion status and recommends moving the next batch of issues up a workflow status level. Runs standalone via `/sync-linear promote`.
+
+#### Workflow Status Ladder
+
+```
+Future Phases → On Deck → Needs Spec → Specced → Approved → In Progress → Building → UAT → [Released →] Done
+```
+
+The promotions below pass the state **name** (`pk issue update <ID> --state "On Deck"`) and `pk` resolves the id. When a raw id is needed for a hand-written `pk gql` mutation, take it from `method.config.md` or resolve it live with `pk gql '{ team(id:"<TEAM>") { states { nodes { id name type } } } }'`. Never hardcode them and never read them from `linear-map.json`.
+
+#### Logic
+
+1. **Read** workflow state references from `method.config.md` (or resolve live).
+2. **List the `P{N}.` projects** in numeric-prefix order for the active phase initiative.
+3. **For each project, in order (P1 → Pn):**
+   - Fetch all issues — the per-project `pk gql` issues page from *Reading the Board* step 3 (`first: 50`, follow `endCursor`).
+   - Classify by status bucket:
+     - **Done bucket:** Done, Canceled, Duplicate
+     - **Active bucket:** In Progress, Building, UAT, Approved, Specced, Needs Spec
+     - **Waiting bucket:** On Deck, Future Phases, Triage, Ideas
+   - Determine project completion: all non-canceled issues in the Done bucket.
+4. **Find the promotion boundary:**
+   - Walk projects in numeric-prefix order. The **leading project** is the highest-numbered `P{N}.` where ALL issues are Done.
+   - The **active project** is the next one (being specced/built).
+   - The **on-deck project** is the one after that.
+   - The **next-up project** is the one after on-deck (candidates for Future Phases → On Deck).
+5. **Recommend promotions** for the next-up project's issues:
+   - Issues in `Future Phases` → recommend `On Deck`.
+   - Issues in `Triage` or `Ideas` → recommend `On Deck` (they're in a project, so they're real).
+6. **Present the recommendation** as a table showing issue ID, title, current status, and proposed status.
+7. **Ask for confirmation** before executing. On approval, apply the batch as serial `pk issue update <ID> --state "On Deck"` calls — one per issue, in one subagent.
+
+#### Edge Cases
+
+- **Project with mixed statuses:** If a `P{N}.` project has some Done and some In Progress issues, it's still active — don't promote the next project yet.
+- **Skipped projects:** If a `P{N}.` project has 0 issues, skip it in the chain.
+- **Already promoted:** If the next-up project's issues are already On Deck or higher, report "already promoted" and look further ahead.
+- **Multiple promotions:** If several projects have completed since last check, recommend promoting multiple batches. Present each separately for confirmation.
+
+#### Output Format
+
+```
+## Promote Check
+
+### Project Status
+| Project | Total | Done | Active | Waiting | Status |
+|---------|-------|------|--------|---------|--------|
+| P1. Foundation Fixes | 7 | 7 | 0 | 0 | Complete |
+| P2. Budget Editor | 15 | 0 | 2 | 13 | Active (speccing) |
+| P3. Auth & Account | 12 | 0 | 0 | 12 | On Deck |
+| P4. Navigation & Layout | 8 | 0 | 0 | 8 | Waiting |
+
+### Recommended Promotions
+| Issue | Title | Current | Proposed |
+|-------|-------|---------|----------|
+| PROJ-XXX | ... | Future Phases | On Deck |
+
+Approve? (y/n)
+```
+
+## Resolution Discipline
+
+When a proposed change is ambiguous (e.g., an issue plausibly belongs in two sub-phases, or a requirement maps to no obvious project):
+
+- **Show the options** with the evidence from the strategy docs.
+- **Ask the user** which placement to apply — never auto-resolve a judgment call.
+- Apply only what the user approves.
+
+## Output Format
+
+After a check or fix, display a drift summary:
+
+```
+## Linear Hierarchy Report (2026-06-21)
+
+### Naming-convention drift
+| Object | Current name | Expected | Action |
+|--------|--------------|----------|--------|
+| Initiative | Foundation | i1. Foundation | rename |
+| Project | Budget Editor | P2. Budget Editor | rename |
+
+### Placement drift
+| Issue | Currently in | Belongs in | Action |
+|-------|--------------|------------|--------|
+| PROJ-XXX | (none) | P3. Auth & Account | move |
+
+### Coverage drift
+| Requirement (strategy doc) | Linear issue | Action |
+|----------------------------|--------------|--------|
+| OAuth token refresh | (missing) | create in P3. |
+| PROJ-YYY | (undocumented) | flag for review |
+
+### Clean: naming ✓  placement ✓  coverage ✓   (only sections with drift are shown)
+```
+
+In **check** mode the Action column is advisory only. In **fix** mode each row is presented for approval before any write.
+
+## Linear Operations Used
+
+All through the project's Linear route — `api` forms shown; the `mcp` column of the verb table in `sop/Linear_SOP.md § Linear transport` carries each equivalent.
+
+- List / read initiatives (phases) — `pk gql '{ initiatives(first:50) { nodes { id name status projects { nodes { id name } } } } }'`
+- Rename an initiative to the `i{N}.` convention — `pk gql` `initiativeUpdate` mutation (shape in *Fix Mode*)
+- List / read projects (sub-phases) — `pk project list --all --json`, plus the initiative query above for parentage
+- Rename / re-parent a project to the `P{N}.` convention — `pk gql` `projectUpdate` / `initiativeToProject*` mutations (shape in *Fix Mode*)
+- List / filter issues in a project — the `pk gql` issues page filtered by `project.id` (shape in *Reading the Board*); a title lookup is `pk issue search "<text>" [--project P] [--state S] --json`
+- Read issue details — `pk issue show <ID>` (add `--comments` only when the description or thread is needed)
+- Create or re-place an issue — `pk issue create …` / `pk issue update <ID> --project <I{N}.P{N}>`
+- Resolve workflow state IDs when not in `method.config.md` — `pk gql '{ team(id:"<TEAM>") { states { nodes { id name type } } } }'`
+
+## Important Notes
+
+- **Linear is the initiative surface.** Parse initiative/sub-phase order from the `i{N}.` / `P{N}.` name prefix — never from `sortOrder`, never from a planning file.
+- **`linear-map.json` and `PHASES.md` are retired** — this skill never reads or writes them. Resolve Linear IDs from `method.config.md` or live reads over the project's Linear route (`pk gql`).
+- **`ROADMAP.md`, if present, is optional legacy narrative** — read it for human context only; it is not a reconciliation source or target.
+- **Initiative/project descriptions** use Markdown (`## Phase`, `### Scope`, `### Success Criteria`); normalize formatting when reading edits made in Linear's rich-text editor.
+- Include `PROJ-{number}` in commit messages when completing tasks linked to Linear issues.

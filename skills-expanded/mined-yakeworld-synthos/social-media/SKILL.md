@@ -1,0 +1,136 @@
+---
+name: social-media
+description: social-media
+version: 1.0.0
+category: social-media
+signature: 'social-media -> social-media: 社交媒体 — X/Twitter发帖、搜索、DM；小红书（XHS）内容生成与发布。'
+author: Synthos
+license: MIT
+triggers:
+- 需要执行social-media下的子技能
+metadata:
+  synthos:
+    priority: P2
+    atom_type: parent-skill
+    description: 父级技能 — 社交媒体 — X/Twitter发帖、搜索、DM；小红书内容生成与发布。
+    signature: 'social-media -> sub-skills: [xurl, xhs-content]'
+    related_skills:
+    - xurl
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `request: str, context: dict` — 用户请求描述、上下文信息
+- **output**: `result: dict — 技能执行结果（结构因技能而异）`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# social-media
+
+> 父级技能目录，包含 1 个子技能。
+> 子技能通过Hermes技能加载机制自动发现，无需显式调用。
+
+## 子技能
+
+- `xurl` — X/Twitter 发帖、搜索、DM（官方 CLI xurl）
+- `xhs-content` — 小红书内容生成（SKILL.md在本目录的 xhs-content/ 子目录）
+
+## 子技能详情
+
+- `xurl`  → 技能目录：`xurl/`
+- `xhs-content`  → 技能目录：`xhs-content/`（含 references/ 发布指南、templates/ 内容包模板）
+
+## 使用方式
+
+直接调用子技能名称即可：
+
+```
+skill_view(name='xurl')      # 加载 Twitter 技能
+skill_view(name='xhs-content')  # 加载小红书技能
+```
+
+父级SKILL.md仅作为目录索引，实际执行由子技能完成。
+
+## 技能目录结构
+
+```
+social-media/
+├── SKILL.md              ← 本文件（父级索引）
+├── xhs-content/          ← 小红书内容生成技能
+│   ├── SKILL.md
+│   ├── references/
+│   │   └── xhs-posting-guide.md
+│   └── templates/
+│       └── xhs-content-bundle-template.md
+├── xurl/                 ← X/Twitter 发帖技能
+│   ├── SKILL.md
+│   └── references/
+│       └── README.md
+└── [future]              ← 更多社交媒体平台
+```
+
+## 小红书 (XHS) 发布现状
+
+- 内容生成能力已就绪：系统内有已成型的小红书帖子素材（`/home/yakeworld/桌面/social-media/xhs/`）
+- 发布通道：暂无官方API，需通过手动复制粘贴或浏览器自动化完成
+- 内容格式：正文+标签+封面文案建议+排版建议，详见 xhs-content 技能
+- 待补齐：小红书开放平台 OAuth 认证或第三方发帖工具集成
+
+## 验证清单 · VERIFICATION
+
+- [ ] 父级目录结构完整：`xurl/SKILL.md` 与 `xhs-content/SKILL.md`（含 `references/`、`templates/`）均可被 Hermes 技能加载机制发现
+- [ ] 用户请求能正确路由到对应子技能（X/Twitter → `xurl`，小红书 → `xhs-content`），而非在父级目录直接执行
+- [ ] 小红书内容包包含正文、标签、封面文案建议与排版建议四要素（对照 `templates/xhs-content-bundle-template.md`）
+- [ ] 小红书发布通道现状确认：无官方 API，仅通过手动复制粘贴或浏览器自动化完成发布
+- [ ] 子技能执行结果符合 IO 契约（`request: str, context: dict` → `result: dict`），结果已保存并报告
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+# Social Media
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[SOCI-001]** 当需要执行社交媒体操作时 → 通过 Hermes 机制自动发现并加载对应的子技能（如 xurl 或 xhs-content），而非直接操作父级目录
+- **[SOCI-002]** 当处理小红书（XHS）内容发布时 → 由于缺乏官方 API，采用手动复制粘贴或浏览器自动化作为发布通道，并生成包含正文、标签及排版建议的内容包
+- **[SOCI-003]** 当执行任何技能操作前 → 必须校验输入参数、文件及路径的完整性与有效性，确保符合 IO 契约规范
+- **[SOCI-004]** 当技能执行失败或遇到异常时 → 错误信息必须包含具体的上下文背景及明确的恢复指引，以便快速定位问题
+- **[SOCI-005]** 当进行输出验证时 → 确保返回值的结构、编码及命名保持一致，并覆盖空输入、极大值及异常场景的边界验证
+- **[SOCI-006]** 当涉及代码执行或状态暴露时 → 严格遵循安全约束，拒绝执行未验证的任意代码，且不暴露内部系统状态

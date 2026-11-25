@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vectorspacelab/arex-skill (path: skills/repositories/repo-skills/xtuner/sub-skills/cli-and-tools/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Operate XTuner legacy command routing, old config-zoo discovery,

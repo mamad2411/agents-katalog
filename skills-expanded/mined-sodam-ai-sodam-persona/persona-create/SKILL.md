@@ -1,0 +1,11 @@
+---
+name: persona-create
+description: "인터뷰 방식으로 SoDam Persona에 새 도메인 전문가 페르소나를 추가한다. 새 관점, 트리거 단어, 관련 skill과 코어 파일을 함께 생성·동기화할 때 명시적으로 호출한다."
+---
+
+# 새 페르소나 생성
+
+1. 이 스킬 디렉터리를 기준으로 `../../commands/create.md`를 처음부터 끝까지 읽는다.
+2. 그 문서의 절차를 그대로 수행한다.
+3. 저장소 소스 경로는 `plugins/sodam-persona/`를 기준으로 사용한다.
+4. 파일 변경 후 저장소 루트에서 `node validate.mjs`를 실행한다.

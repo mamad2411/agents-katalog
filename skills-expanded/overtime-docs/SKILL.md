@@ -1,0 +1,264 @@
+---
+name: overtime-docs
+description: How Overtime works, for answering the person's questions and acting correctly - where settings, MCP servers, budgets, backends, files and logs live, what each tool does, and the exact commands the person runs.
+---
+
+# How Overtime works
+
+Overtime runs you as a long-lived agent. It has no model of its own: it drives a coding CLI (the
+"backend") over ACP, gives you a few tools over MCP, and keeps your state in files. Everything below
+is how it really works; when the person asks how to do something, give them the exact command or
+setting from here.
+
+## Where things live
+
+Overtime's home is `~/overtime` (or `$OVERTIME_HOME`).
+
+- `~/overtime/settings.json` - the person's settings for all agents (see Settings).
+- `~/overtime/skills/` - skills the person gives every agent.
+- `~/overtime/agents/<name>/` - your folder:
+  - `AGENT.md` - who you are, your role, goals and rules (yours to keep current). The settings block
+    between `---` lines at the top only shows the person's settings; Overtime puts it back if it changes.
+  - `INDEX.md` - your map of your folder.
+  - `memory/` - what you've learned (see Memory).
+  - `skills/` - your own skills (see Skills).
+  - `files/received/<date>/` - files the person attached to messages.
+  - anything else you organise.
+  - `.overtime/` - Overtime's bookkeeping. Read it if useful, never edit it: `messages.jsonl` (the
+    conversation), `state.json`, `schedule.json`, `monitors.json`, `helpers.json`, `helpers/<id>/work`
+    (helper folders), `runs/*.jsonl` (full transcript of every session: what you were sent and did,
+    kept 30 days), `usage.jsonl` (cost and tokens per turn), `background.json` (processes you left running).
+- `~/overtime/archive/` - archived agents' folders.
+- `~/overtime/overtimed.log` - the background process's log (rotates at 10 MB).
+
+## Settings
+
+Global, in `~/overtime/settings.json`:
+
+| key | default | meaning |
+|---|---|---|
+| `backend` | `"claude"` | backend new agents use |
+| `model` | `null` | model id, or null for the backend's own default |
+| `dailyBudgetUsd` | `100` | daily spend cap per agent, from the cost the backend reports |
+| `dailyTokenBudget` | `null` | daily token cap, for backends that report no cost |
+| `turnTimeoutMinutes` | `180` | longest a single work session may run |
+| `mcpServers` | `[]` | MCP servers every agent gets (see MCP) |
+| `protect` | `[]` | paths no agent may write to, e.g. `["~/Documents", "~/.ssh"]` |
+| `customBackends` | `{}` | extra ACP backends: `{ "name": { "command": "...", "args": [...] } }` |
+| `autoUpdate` | `true` | Overtime updates itself to new versions (`overtime set autoUpdate=off`, or in the app's settings) |
+
+Per agent (only keys that differ from the global ones), shown for reference in the block at the top
+of its `AGENT.md`; the copy that counts is in its `.overtime/settings.json`:
+`backend`, `model`, `dailyBudgetUsd`, `dailyTokenBudget`, `workspace` (where its work lives; default
+its own folder), `mcpServers` (extra servers), `disableMcp` (names of shared servers to leave out),
+`protect` (extra protected paths), `visibility` (`public`, the default, or `private`: no `message` tool,
+not listed or messageable, and on macOS its folder is unreadable to other agents).
+
+The person changes an agent's settings in the app (select the agent, press →) or with:
+
+```
+overtime set <name> backend=codex model=<id> budget=20 tokens=500k workspace=~/code/app protect=~/Documents,~/.ssh visibility=private
+overtime settings <name>      # show them
+overtime models [backend]     # the models a backend offers
+```
+
+`overtime set` accepts exactly these keys: `backend`, `model`, `budget`, `tokens`, `workspace`, `protect`, `visibility`.
+`overtime new <name> key=value…` takes the same keys to choose them up front; in the app, + New agent shows them after the name, before anything is made (Enter twice keeps the defaults).
+Global defaults are edited in `~/overtime/settings.json`; an agent's MCP servers are switched on and off,
+or removed, in the app, and the person adds one for a single agent in its `.overtime/settings.json` (see
+MCP servers). An agent's settings change only these ways: the block in `AGENT.md` is for
+reference, and any other change to it (by you, a helper, a script, git, or the person editing it by
+hand) is put back. If a change would help, tell the person the exact command. Changes apply from your
+next session.
+
+## MCP servers
+
+An agent gets MCP servers from three places, all in the same shape (a local command, or a URL):
+
+- **Shared, for every agent:** `mcpServers` in `~/overtime/settings.json` (the person's).
+- **Set by the person for one agent:** `mcpServers` in `~/overtime/agents/<name>/.overtime/settings.json`,
+  the copy of its settings that counts (the person edits it there; it's used from the next turn, and the
+  block at the top of AGENT.md then shows it). The person can remove these in the app.
+- **Added by the agent itself:** `mcp.json` in your folder. This one is yours: when you need a server,
+  add it here and it's yours from your next turn. Format:
+  `{ "servers": [ { "name": "github", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": { "GITHUB_TOKEN": "..." } },
+  { "name": "linear", "url": "https://mcp.example.com/mcp", "headers": { "Authorization": "Bearer ..." } } ] }`.
+  Never put a secret you don't have into it: ask the person for tokens (with ask), and say which.
+
+The person sees every server and controls it in the app (select the agent, press → for settings, "MCP
+servers"), like Claude Code's /mcp: whether it's connected (✓), failed (✗, with why) or off, how many
+tools it has; connect or disconnect it for this agent, check it again, see its tools, or remove it.
+A server they disconnect stays off for you (it's in `disableMcp` in your settings); don't re-add
+it under another name. Any change takes effect from your next turn, in the same session. On Claude and
+Codex, agents don't get the person's own CLI settings, instructions or MCP servers: only these (Codex
+agents get their own Codex home, sharing only the sign-in). Gemini and OpenCode have no way to switch
+that off, so agents on those also see whatever the person set up in those CLIs themselves. Overtime's own
+tools come from a server named `overtime`.
+
+Servers added by URL are reached through Overtime's own connection, whichever CLI you run on (it handles
+both the current and the older HTTP transport). A server that needs a sign-in (most hosted ones, e.g.
+Linear or Notion) is signed in to by the person, once, in the app: the server's menu in your settings has
+"Sign in…", which opens their browser (the standard MCP sign-in). Its tools then work for every agent
+that has the server, and the sign-in renews by itself. If a tool call answers that the server "needs the
+person to sign in", ask them to do that (name the server); don't look for tokens yourself. A token the
+person put in a server's `headers` is used as is instead.
+
+## Backends
+
+Built in: `claude` (bundled; uses the person's Claude Code login), `codex` (its ACP adapter via npx;
+uses the Codex login), `gemini` and `opencode` (need their CLI installed and signed in). Any other
+coding CLI that speaks ACP: add it to `customBackends`, e.g. `"goose": { "command": "goose", "args": ["acp"] }`,
+then `overtime set <name> backend=goose`. Cost is read when the backend reports it; otherwise tokens.
+
+## Your tools
+
+- `wake` - when to wake next: `in` ("20m", "6h", "2d") or `at` (a time), between 1 minute and 3 days;
+  `every` for repeating; `watch` for a shell command Overtime runs without the model (each printed line
+  wakes you; with `every`, it wakes you when the output changes; `cooldown` limits how often). Watches
+  run in your folder. If you set nothing and have no watch or repeating wake, you wake in an hour.
+- `cancel` - stop a repeating wake, a watch, or a running helper, by id; or withdraw a question that no
+  longer applies, with a short `why` the person sees on it.
+- `ask` - a question for the person, with options and your recommendation; never blocks you: only the
+  thing you asked about waits on the answer, so carry on with everything else, and ask more whenever
+  something else needs them (several can be open at once; none replaces another). Each answer reaches
+  you as `Answer to your question "<question>" (asked 3:12 PM): <answer>`. They may
+  pick several options unless you set `single: true`. Batch related questions into one ask with
+  `questions` (each with its own options, recommendation and `single`): one card, one notification, and
+  the answers come back to you together, question by question, with any they left unanswered marked.
+- `send` - message the person (`report: true` with a `title` for finished work), share `files`, set your
+  one-line `status`.
+- `spawn` - a helper: a separate session doing one task in parallel, in its own git worktree of your
+  workspace's last commit (or a copy of a small non-git workspace). Up to 6 at once. Optional `role_file`
+  (a file in your folder describing the role; `backend`/`model` at its top choose what it runs on).
+  Its result arrives in your inbox; its folder is removed a week after it finished (git branches stay).
+- `tell` - tell one of your helpers something, by id. A running helper reads it at once and carries
+  on in its session; one that finished, failed, was cancelled or was cut off carries on from where it
+  was (same session and folder). Use it to correct a helper, add what it needs, or ask a finished one
+  for a follow-up instead of starting a new one. `cancel` stops one.
+- `helpers` - your helpers right now: what each running one is doing and last reported, and the ones
+  that finished recently (ids, results, folders). `spawn` with `with_context` starts a helper that
+  knows what you know: what you were told, did and said in your recent sessions is given to it.
+- `message` - message another public agent (listed in the tool, with its job and where its `AGENT.md`
+  and conversation are: read them, never write them). Only when the person asked or your `AGENT.md` says
+  when; when they tell you, write that rule into `AGENT.md`. It wakes them, shows quietly in both
+  conversations, and a pair can exchange 20 a day.
+- `done` - helpers only: hand back the result.
+- `update` - helpers only: tell the agent how it's going while you keep working (`urgent` wakes it now).
+- `skill` - load a skill by name (or list them).
+
+## Skills
+
+A skill is a folder with a `SKILL.md`: front matter with `name` and a one-line `description`, then the
+know-how in Markdown; scripts or reference files it needs sit beside it. Every session lists the skills
+you have by name and description; load one with `skill` when it's relevant (or read the file).
+
+- Built into Overtime: like this one.
+- The person's, for every agent: `~/overtime/skills/<name>/SKILL.md`.
+- Yours: `skills/<name>/SKILL.md` in your folder. When you work out how to do something you'll do again
+  (a release, a report, a tricky setup), write it down as a skill so later sessions and helpers reuse it.
+  A skill with the same name as a built-in or the person's one replaces it for you.
+
+The person can point you at a skill by starting a message with `/<name>` (the app lists your skills as
+they type `/`). Load that skill and follow it for that message.
+
+## Memory
+
+- `memory/MEMORY.md` is the index: one line per memory, `- [Title](file.md) — the rule itself`, kept
+  under about 150 lines (past that you're told, after the turn's request, to consolidate). It's in every
+  fresh session's opening, and sent again whenever it changes. Each memory is its own small file with
+  front matter: `type` (person, feedback, project or reference), `source` (person, observed,
+  other-agent, web or inferred), `date`, `last-verified`, `quote` (the person's exact words, when it came from them) (the last day it was checked and still held). Update or
+  delete a wrong memory; don't add a contradiction. How-tos are skills.
+- A fact that can change (`can-change: true`: a status, version, price, someone's role) ages: unchecked
+  for 30 days (project) or 60 (other types), its index line gets "(possibly stale: last verified …)";
+  check it, then set `last-verified` and the mark goes. Rules and preferences don't age.
+- The reflect pass may also infer a pattern from at least 3 memories or runs (at most 2 a pass), as
+  `source: inferred`, always unconfirmed until the person bears it out; it never overrides a rule from them.
+- Backends' own memory is off (Claude's auto-memory, Codex's memories; Gemini's `save_memory` and Auto
+  Memory through `.gemini/settings.json` in your folder). OpenCode has none of its own; only plugins in
+  the person's own config would add one. Claude's old memories for your folder (and your helpers'
+  folders, as `helper-<id>-<name>.md`) were copied in once.
+- A reflect pass (kind `reflect`, transcripts in `.overtime/runs/reflect_*.jsonl`) reads your turns and
+  chats once each, oldest first, from where the last one stopped (`reflectCursor` in
+  `.overtime/state.json`), about 80,000 characters at a time, over as many passes as it takes. It runs
+  while you're idle: when a chunk's worth is unread, after a compaction, or after an hour idle with
+  anything unread; at most 10 passes and a tenth of your daily budget a day. Stopped because work came
+  in, or by an overload, a usage limit or being offline, it waits for 30 minutes of idle (doubling, up
+  to 4 hours) before trying again; a limit it hits is never recorded against your own turns. It never
+  starts within 5 minutes of a turn. It runs on your backend, on your model or the person's
+  `reflectModel` setting, with none of your MCP servers, sees AGENT.md, INDEX.md and your skills read-only,
+  and can change only `memory/` (enforced by the sandbox, by refusing other edits and commands, and by
+  undoing its own changes elsewhere, never anyone else's). What it thinks a skill or AGENT.md lacks
+  becomes a memory whose index line ends "(for skill <name>)", "(for a new skill)" or "(for AGENT.md)":
+  put it there and delete the memory. Helpers can read your `memory/` but not write it; they end done
+  with "learned: …" lines (or "learned: nothing new"), which the reflect pass reads.
+  The person turns reflect passes off with `overtime set <name> reflect=off`, for every agent with
+  `"reflect": false` in settings.json, or for a run of the daemon with `OVERTIME_REFLECT=0`.
+
+## How sessions work
+
+- You have one main session, and the person always talks to it. When they write while you're working,
+  your work pauses at the next step; you answer them, then carry on where you left off. Helpers are
+  their own sessions.
+- It's one continuous session: each turn continues it, and your backend compacts it automatically when
+  it fills up (summarising older parts). Compaction loses detail, so keep what matters in your folder
+  (notes, INDEX.md, AGENT.md). Only switching to a different backend, or a session that can't be
+  continued, starts a new one; it begins with your folder and your recent conversation with the person.
+- What you start in the background keeps running after your session; you see it listed each turn.
+  Stopping or archiving you stops it. Long jobs: run in the background with output to a log file.
+
+## Budgets and limits
+
+- Daily budget per agent (default $100) from the backend's reported cost; or a token budget. When it's
+  used, you pause until tomorrow and the person gets one alert. Raising it (Settings, or
+  `overtime set <name> budget=…`) lifts the pause at once.
+- On a subscription usage limit (e.g. Claude's 5-hour or weekly window), agents on that backend and
+  model pause (limits are per model: opus can be over while sonnet isn't). They try again every 15
+  minutes or at the reset, sooner when a turn on the same model gets through.
+
+## Safety
+
+- Overtime answers your backend's permission requests itself, instantly, and allows them. A refusal
+  you see ("blocked", "refused permission") comes from your coding CLI's own rules, not from Overtime
+  or the person: follow what it says (e.g. its suggested way to wait), or do it another way.
+- Protected paths (`protect`) are read-only for you and everything you run, enforced by the system.
+- From your own shell the `overtime` command only reads (`ls`, `messages`, `settings`, `models`): `send`, `answer`, `set`, `stop` and the rest are the person's and are refused, so nothing you run can speak as them or message other agents.
+
+## The person's side
+
+- `overtime` opens the app: agents on the left, the conversation on the right. ↑↓ moves between agents,
+  → opens settings, typing always writes a message. Open questions are pinned together above the message
+  box (newest last) and stay there until answered; Tab (or a click) goes to one, ↑↓ to another, then 1-9
+  picks options (several unless it takes one) or the box takes an answer in their own words, and Enter
+  answers; Esc goes back to their message. On a card of several questions Tab moves between them and
+  Enter on the last sends them. Answered ones show in the conversation where they were asked, with the
+  answer. Drag a file in to attach it, ? for keys.
+- Commands: `overtime new <name>`, `ls`, `send <name> "..." [--attach file]`, `messages <name>`,
+  `answer <name> [<question>] <n>` (several: `1,3`; a card: one per question, `-` to leave one; with
+  several questions open, first say which: its number in `messages`, or its id), `stop|start|wake <name>`, `settings <name>`, `set <name> key=value`,
+  `models [backend]`, `archive <name>` (stops it for good, moves its folder to `~/overtime/archive/`,
+  nothing deleted), `daemon stop`, `daemon install` (start at login), `acp` (for editors: Zed, JetBrains, VS Code).
+
+## When something goes wrong
+
+- Your full transcripts: `.overtime/runs/` in your folder. The background process: `~/overtime/overtimed.log`.
+- Provider trouble (a 5xx, "overloaded", rate limits, a network drop) isn't a failure: the turn is retried
+  after 1, 5, 15, then every 60 minutes in the same session, nothing handed to you is lost, and the person
+  is told only if it lasts about two hours. A helper hit by it retries by itself (up to 3 attempts),
+  carrying on from its folder.
+- A usage limit (e.g. Claude's 5-hour or weekly window) pauses agents on that backend and model until it
+  lifts (tried again every 15 minutes, or at the reset).
+- Any other failed turn is retried with growing gaps (1, 5, 15, 60 minutes); after 3 the person gets an alert.
+- A backend that isn't installed fails with a plain message; tell the person what to install.
+- Overtime restarting (an update, the app replacing its background process, a crash) doesn't lose work:
+  a turn or helper that was running carries on by itself in the same session, told "Overtime restarted
+  (update to …) while you were working". Check what you had already done before redoing it.
+- Auto-update: once a day and at each start, Overtime installs a newer version from npm the way it was
+  installed (npm, pnpm, bun or yarn, globally), never older, and not from a source checkout or `npm link`.
+  If that fails (e.g. no write permission), the person is told once with the command to run. Its lines in
+  `~/overtime/overtimed.log` start with "auto-update:".
+- A backend that says it isn't signed in (its own sign-in code, never words like "unauthorized" in an
+  error) isn't a failure either: the agent, or a helper, checks again after 30 seconds, 1, 2, then every
+  5 minutes, in the same session, and at once when another turn on that backend gets through or the app
+  restarts the background process. The person is told after about a minute and a half (what to run to
+  sign in); once signed in, everything carries on by itself, with no need to wake anyone.

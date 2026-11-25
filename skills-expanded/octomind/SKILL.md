@@ -1,0 +1,170 @@
+---
+name: octomind
+description: Delegate coding to the Octomind CLI — a token-efficient, model-agnostic coding agent. Use when the user asks to use Octomind, or to hand off features, fixes, refactors, reviews, or long-running coding work to an external agent.
+license: Apache-2.0
+compatibility: Requires the octomind CLI (Linux, macOS, Windows) and model access via `octomind login` or a provider API key
+metadata:
+  author: Muvon
+  version: "1.0.0"
+---
+
+# Octomind CLI
+
+Use Octomind as an autonomous coding worker orchestrated by Hermes terminal/process tools. Octomind is an open-source,
+model-agnostic coding agent in one Rust binary, built for long autonomous runs at low token cost (adaptive cache-aware
+context compaction, out-of-band planning and loop detection).
+
+## When to Use
+
+- User explicitly asks to use Octomind
+- You want an external coding agent to implement, fix, refactor, or review code
+- Long-running coding sessions where token cost matters
+- Parallel task execution in isolated workdirs/worktrees
+
+## Prerequisites
+
+- Install: follow https://github.com/muvon/octomind/blob/master/doc/usage/01-installation.md — Homebrew
+  (`brew install muvon/tap/octomind`), `cargo install octomind`, or a release binary from
+  https://github.com/muvon/octomind/releases
+- Model access: `octomind login` (Octomind Cloud), or set a provider key such as `OPENROUTER_API_KEY` and choose that
+  provider's model in `~/.local/share/octomind/config/config.toml`
+- Verify: `octomind --version`
+- Git repository for code tasks (recommended)
+
+## One-Shot Tasks
+
+`octomind run` takes no message argument — its positional argument is the agent tag. Pipe the task through stdin; piped
+input runs non-interactively and exits when the work is done:
+
+```
+terminal(command="echo 'Add retry logic to API calls and update tests' | octomind run developer --format plain", workdir="~/project")
+```
+
+Machine-readable events instead of text:
+
+```
+terminal(command="echo 'List the TODO items in src/' | octomind run developer --format jsonl", workdir="~/project")
+```
+
+Force a specific model:
+
+```
+terminal(command="echo 'Refactor the auth module' | octomind run developer --format plain --model openrouter:anthropic/claude-sonnet-4", workdir="~/project")
+```
+
+Restrict file writes to the working directory with `--sandbox`.
+
+Completion verification may offer one evidence advisory per user turn and then check completion again. Configure
+`[supervisor.gate] unsettled_advisory` (default `true`). With gate evaluation enabled, a calibrated check removes
+conditions whose specific case recorded actions exercised; otherwise every unsettled condition remains eligible.
+The advisory is not a failure or a block.
+With `[supervisor.advise] enabled = true` (default `false`), a loop or recovery alarm note is written by the supervisor
+model and cites one tool receipt (`#N`); it is an observation, never a command, and one alarm in four keeps the plain
+note as a control. Records land in `advise.jsonl` in the data directory.
+
+## Iterative Work (Daemon + send)
+
+For multi-step work, keep one named session alive and inject follow-ups from separate commands:
+
+```
+terminal(command="echo 'Implement the OAuth refresh flow' | octomind run developer --name oauth --daemon --format jsonl", workdir="~/project", background=true)
+# Returns session_id
+
+# Monitor progress
+process(action="poll", session_id="<id>")
+process(action="log", session_id="<id>")
+
+# Send a follow-up to the running session
+terminal(command="octomind send --name oauth 'Now add error handling for token expiry'", workdir="~/project")
+
+# Stop
+process(action="kill", session_id="<id>")
+```
+
+## Resuming Sessions
+
+Sessions persist on disk. `--name <name>` resumes an existing session of that name; `--resume-recent` picks the most
+recent session for the working directory:
+
+```
+terminal(command="echo 'Continue with the remaining tests' | octomind run developer --name oauth --format plain", workdir="~/project")
+```
+
+## Common Flags
+
+| Flag | Use |
+|------|-----|
+| `run <tag>` | Start an agent: `developer` for coding; other `domain:spec` tags come from Octomind's tap registry |
+| `--format plain` / `--format jsonl` | Non-interactive output for piped input |
+| `--name <name>` / `-n` | Create or resume a named session |
+| `--resume-recent` | Resume the latest session in this directory |
+| `--model <provider:model>` / `-m` | Override the model |
+| `--daemon` | Keep the session alive for `octomind send` |
+| `--sandbox` | Limit filesystem writes to the working directory |
+| `--schema <file>` | Constrain output to a JSON Schema (model must support structured output) |
+
+Hosts that speak the Agent Client Protocol (ACP) can run the same specialist as a sub-agent over stdio:
+`octomind acp developer`.
+
+## Procedure
+
+1. Verify readiness: `terminal(command="octomind --version")`.
+2. For bounded tasks, pipe the task into `octomind run developer --format plain`.
+3. For iterative tasks, start a named `--daemon` session in the background and use `octomind send`.
+4. Monitor long tasks with `process(action="poll"|"log")`.
+5. Summarize file changes, test results, and remaining risks back to the user.
+
+## Parallel Work Pattern
+
+Use separate workdirs/worktrees to avoid collisions:
+
+```
+terminal(command="echo 'Fix issue #101 and commit' | octomind run developer --format plain", workdir="~/.hermes/cache/scratch/issue-101", background=true)
+terminal(command="echo 'Add parser regression tests and commit' | octomind run developer --format plain", workdir="~/.hermes/cache/scratch/issue-102", background=true)
+process(action="list")
+```
+
+## Pitfalls
+
+- Passing the task as an argument (`octomind run 'fix it'`) treats the text as an agent tag — always pipe the task.
+- `--format` at a terminal without piped input errors unless combined with `--daemon`.
+- The first run of a specialist fetches its tap and installs tool dependencies, so it is slower than later runs.
+- A missing `OCTOHUB_API_KEY` with the default `octohub:auto` model means `octomind login` was not run.
+- Avoid sharing one working directory across parallel Octomind sessions.
+- Run inside the project's git repository: the code-search server `octocode` refuses to start outside one, leaving
+  the agent without semantic search.
+
+## Verification
+
+Smoke test:
+
+```
+terminal(command="echo 'Respond with exactly: OCTOMIND_SMOKE_OK' | octomind run developer --format plain")
+```
+
+Success criteria:
+
+- Output includes `OCTOMIND_SMOKE_OK`
+- Command exits without provider/model errors
+- For code tasks: expected files changed and tests pass
+
+## Rules
+
+1. Prefer piped one-shot runs for automation — they exit on their own.
+2. Use a named daemon session only when iteration is needed.
+3. Always scope Octomind sessions to a single repo/workdir.
+4. For long tasks, provide progress updates from `process` logs.
+5. Report concrete outcomes (files changed, tests, remaining risks).
+
+
+## Local inference lifecycle
+
+Hindsight uses an automatically started local worker shared by Octomind processes in the
+same runtime directory. It may remain alive for up to 15 idle minutes. Use normal Octomind
+commands; `hindsight-worker` is an internal process entry point, not an agent command.
+CoreML compiled-model cache reuse is macOS-only; Linux and Windows keep their existing
+execution-provider selection.
+
+Model profiles accept `request_timeout_seconds` (total deadline per HTTP/WebSocket attempt) and `stream_timeout_seconds` (SSE/WebSocket response inactivity, default `0` = disabled). Stream activity never extends the total deadline; WebSocket ping/pong does not reset response inactivity.
+
+Model profiles also accept `request_transport` (`"websocket"` default, or `"http"` to opt out). It applies to `octohub:` and `chatgpt:` models only; other providers ignore it.

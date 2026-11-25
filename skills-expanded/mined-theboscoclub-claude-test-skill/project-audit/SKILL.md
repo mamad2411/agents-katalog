@@ -1,0 +1,103 @@
+---
+name: project-audit
+description: Autonomous 20-phase project audit with testing, security scanning, code quality, GitHub auditing, and auto-fixing
+---
+
+# /test - Modular Project Audit
+
+A comprehensive 20-phase autonomous project audit system with full GitHub integration.
+
+## Quick Reference
+
+```text
+/test                    # Full audit (autonomous - fixes everything)
+/test prodapp            # Validate installed production app (Phase P)
+/test docker             # Validate Docker image and registry (Phase D)
+/test github             # Audit GitHub repository settings (Phase G)
+/test --phase=A          # Run single phase
+/test --phase=0-2        # Run phase range
+/test --phase=5,6        # Security + Dependencies only
+/test --interactive      # Enable interactive mode
+/test help               # Show help
+```
+
+## Key Features
+
+- **Autonomous**: Fixes ALL issues without prompting, loops until clean
+- **20 Phases**: Complete coverage from safety snapshots to documentation sync
+- **Multi-Language**: Python, Node.js, Go, Rust, Shell, Docker, YAML
+- **20+ Tools**: ruff, pylint, bandit, trivy, CodeQL, and more
+- **GitHub Integration**: Dependabot, CodeQL workflows, branch protection audit
+- **Context Efficient**: 93% reduction via on-demand phase loading
+
+## Available Phases
+
+| Phase | Name | Description |
+| --- | --- | --- |
+| S | Snapshot | BTRFS safety snapshot |
+| 0 | Pre-Flight | Environment validation + config audit + sandbox setup |
+| 1 | Discovery | Detect project type, tools, GitHub |
+| 2 | Execute | Run tests + analysis + coverage |
+| 2a | Runtime | Service health checks |
+| 5 | Security | CVE scanning, SAST |
+| 6 | Dependencies | Package health |
+| 7 | Quality | Linting, complexity, dead code cleanup |
+| 10 | Fix | Auto-fix issues |
+| A | App Test | Sandbox app testing |
+| P | Production | Live app validation |
+| D | Docker | Image validation |
+| G | GitHub | Repo security audit |
+| I | Infrastructure | Runtime issue detection |
+| 12 | Verify | Re-run tests |
+| 13 | Docs | Documentation sync |
+| V | VM Testing | Heavy isolation testing |
+| VM | Lifecycle | VM startup/shutdown management |
+| C | Restore | Cleanup |
+| ST | Self-Test | Framework self-validation (explicit only) |
+
+## Autonomous Behavior
+
+The skill operates **entirely non-interactively**:
+
+1. **Fix ALL Issues** - No "manual required" lists, no deferrals, no exceptions
+2. **Iterative Until Clean** - After fixes are committed, the entire audit re-runs until a clean pass with zero issues
+3. **All Audits Are Holistic** - Cross-component analysis is a structural property of every analysis phase
+4. **Documentation Sync** - Docs always match codebase state
+5. **Commit and Stage** - All fixes committed; added to staged release if one exists
+
+## Tool Detection
+
+Phase 1 automatically detects installed tools:
+
+**Code Quality**: ruff, pylint, mypy, black, isort, eslint, prettier, hadolint, yamllint, shfmt, markdownlint, codespell
+
+**Security**: pip-audit, bandit, npm audit, cargo audit, trivy, CodeQL
+
+**GitHub**: gh CLI for repository auditing
+
+## Installation
+
+### Claude.ai (Web)
+
+Upload this `SKILL.md` file directly to your Claude.ai account:
+
+1. Go to [claude.ai](https://claude.ai) → Settings → Skills
+2. Click "Upload skill" and select this file
+3. The skill reference will be available in your projects
+
+### Claude Code (CLI)
+
+For full autonomous execution with all 20 phases:
+
+```bash
+# Clone and symlink
+git clone https://github.com/TheBoscoClub/claude-test-skill.git ~/claude-test-skill
+ln -s ~/claude-test-skill/commands/test.md ~/.claude/commands/test.md
+ln -s ~/claude-test-skill/skills/test-phases ~/.claude/skills/test-phases
+```
+
+## More Information
+
+- **Repository**: <https://github.com/TheBoscoClub/claude-test-skill>
+- **Full Documentation**: See README.md and INSTALL.md
+- **Version**: 4.1.1

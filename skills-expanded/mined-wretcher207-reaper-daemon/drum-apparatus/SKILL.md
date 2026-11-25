@@ -1,0 +1,316 @@
+---
+name: drum-apparatus
+description: Program heavy / death-metal drums into the user's live REAPER session the way David does it — kicks built off the guitar riff first, snare by his call, cymbals by feel, spicy fills, humanized at placement time. Use when the user asks for a drum groove, beat, blast, breakdown, fill, or a multi-section drum part, says "give me a <subgenre> groove" / "program drums for this riff", or asks to analyze/profile a guitar track to plan drums (open vs muted, tremolo, breakdowns, section map). Drops generated MIDI into REAPER via the agent bridge.
+---
+
+# Drum Apparatus — David's drum-programming SOP
+
+This is how David programs drums. Follow the order. The cardinal sin is starting
+from a named groove in the catalog — David does NOT think that way. He builds the
+beat from the riff up. The catalog is a vocabulary to reach into mid-build, not a
+menu to order from.
+
+Prefer the REAPER MCP tools when they're connected (`profile_track`, `riff_grid`,
+`insert_groove`, `humanize_take`). The `reaperd.py` commands below run from the
+Reaper Daemon folder, the clone that REAPER loads the bridge from.
+
+## The procedure (in this order, always)
+
+### 0. Profile the song first (multi-section work only)
+For a full song or anything spanning sections, run the profiler BEFORE touching
+kicks — it turns the guitar stem into a per-bar feature table + a section map,
+so the whole build is planned once instead of discovered bar by bar. For a
+single riff/section, skip straight to step 1.
+
+- `python reaperd.py profile <project.RPP> <track> [--bars N] [--start-bar N]
+  [--json]` — per-bar: onset density, IOI regularity, **decay_ratio** (palm-mute
+  vs ringing open — low ≈ dead chug, high ≈ ringing), silence ratio, low/bright
+  band balance, RMS/crest, and a 16th accent grid (X accent / x hit / . rest).
+  Plus suggested section boundaries and repeated-section groups (A/B/A...).
+- **Point it at the DI track, not the amped stem.** David keeps DIs. Distortion
+  flattens the decay contrast that separates open notes from mutes; density and
+  silence survive the amp, decay_ratio doesn't. Say which track you used.
+- **The table is numbers; YOU do the labeling, David corrects it.** Read the
+  rows and propose: "bars 1-8 tight chugs (decay .05, half the bar silent) —
+  verse; 9-16 dense regular 16ths (density 8, ioi .06) — tremolo part; 17-24
+  rings out (decay .6) and repeats at 41-48 — chorus?" There are NO fixed
+  thresholds; judge each stem against ITSELF (a bar's decay only means
+  something next to its neighbors' decay).
+- Repetition ≠ chorus automatically: the profiler only says "these chunks are
+  the same music". David names them. Present the section map, get his
+  corrections, THEN build — per section, in the order below.
+- Rough label heuristics (starting points, not rules): tremolo = high density +
+  ioi_cv near 0 + little silence. Chug/djent riffing = low decay + notable
+  silence + strong low band. Breakdown candidates = sparse accented stabs, high
+  crest, lots of air — confirm with him. Open/big sections = high decay, low
+  silence, often the repeated group.
+
+### 1. Kicks first — built off the guitar riff
+Drums start as kicks ALONE, matched to the guitar. David tracks the guitar as
+audio before drumming.
+
+- Find the riff's guitar take (he points you at the track, or it's the obvious
+  guitar audio item under the cursor) and **read its transients** to get the hit
+  timing, quantize to the grid, and propose kicks on the strong/open hits.
+- HONEST LIMIT: transients tell you *when* he picks, not which notes ring open vs
+  palm-muted. So this is a **proposal he corrects**, not a magic auto-beat. Show
+  the kick grid, let him fix the few you get wrong. That's still miles faster than
+  him describing a riff in words (which he says is basically impossible).
+- If there's no guitar take yet (drums-first), ask him for the kick rhythm. Don't
+  invent one.
+- Transient reading: `python3 reaperd.py riff <project.RPP> <track> [--bars N]
+  [--start-bar N]` (parses the .RPP for the track's stem, detects onsets, prints
+  the kick grid at 100/50/30% attack strength).
+- **Kick density = a real flavor choice (David's words):**
+  - **Slam / breakdown (his DEFAULT):** one single kick per transient. Sparse,
+    heavy, slamming. Use a LOW keep_pct (~30) so only the strong open hits become
+    kicks. This is how David's own hand plays it.
+  - **Gallops / triplets:** keep_pct=100 turns every pick attack into a kick, so a
+    fast riff reads as gallops/triplets. David does NOT instinctively do this but
+    LIKES being pushed to it ("not what I would've done, but that's why I like it").
+    Offer it as the adventurous option, don't make it the default.
+- **Phase calibration:** the grid is anchored to item time 0; a stem's real downbeat
+  can sit a step off. GTR_1 read one 16th early -> pass `offset_steps=1`. Per stem,
+  so check the first render against the riff and adjust.
+- It's a PROPOSAL David corrects (the percentile is a strength heuristic, not true
+  open-vs-muted). He has ears; let him pick density and dial the offset.
+
+### 2. Snare — David calls it, every time
+There is **no default snare placement.** It's pure feel and it sets the whole
+section's pace and feel. Once kick + snare are down, the backbone is LOCKED —
+you do not go back and move kicks.
+
+- ASK for the snare placement, or take what he gives. Never guess it.
+- If he describes it loosely ("backbeat", "half-time", "on the e of 3"), place
+  that — but the call is his.
+
+### 3. Cymbals — the feel knob, by ear
+Kick + snare are the backbone; the cymbal choice is what sets the mood. There is
+**no fixed section→cymbal rule** (the old rigid table was wrong). It can be
+anything, and it's usually several cymbals at once.
+
+- **Cymbals dictate the pace of the song — write them with nuance and accents,
+  not spam** (David's correction, 2026-07-28, after a build walled crashes on
+  every 8th for 16 bars). A cymbal grid at constant spacing and constant weight
+  is the tell of a programmed part. Vary the placement (phrase starts, pushes,
+  chord changes), vary the weight (X vs x), and leave air — a wall is a COLOR
+  for a peak moment, one or two bars, not the default treatment of a loud
+  section.
+- Hi-hats → more mellow groove. Crashes / chinas → loud, lots of noise.
+- The ONE default: in heavy parts, **steer away from closed hi-hats** unless he
+  asks — closed-hat breakdowns are the off-putting tell of a bad beat.
+- Verses lean open hi-hat, but crashes and ride are all fair game.
+- Breakdowns lean **china + crash on the stabs**, never a hat grid. (See
+  Breakdowns below — they're not grooves.)
+- **Chokes:** `china_choke` / `crash_choke` / `splash_choke` lanes play the
+  kit's choke articulation — the genre move on stabs, dead stops, and
+  endings. Optional roles: on a map without choke notes (GM) they fall back
+  to the open cymbal, so the DSL stays portable. RS Monarch and MDL Tone map
+  their choke keys. `discover-map` puts a kit's choke keys on these roles, never on
+  a cymbal hit.
+  **Authoring rule (verified live on MDL Tone, 2026-07-28):** kit choke
+  notes are MUTE TRIGGERS, not hits — fired alone they play nothing. Always
+  author the real cymbal hit first, then the choke lane one grid step later
+  (hit rings a 16th, then gets grabbed). A choke with no ringing cymbal
+  under it is silence where the smash should be.
+- When in doubt, ask which cymbal. It's a taste call, not a rule.
+
+### 4. Fills — last, and get spicy
+Fills go in last, after the backbone and cymbals. Default placement: **at the end
+of a section/phrase**, to break up the energy and lead into what's next. Frequency
+is mood-dependent — some songs only use fills to bridge sections, others are
+stuffed with them; both are good.
+
+- David LOVES fills but hates writing them: **be creative here.** This is the one
+  place to be inventive, not conservative. Roll across the kit, vary it, surprise
+  him.
+- Fill velocity shape: start lower, ramp up across the kit — especially coming off
+  the highest tom, low→high gives the real rolling sound.
+
+## Humanization — the golden rules (applied at placement time)
+David humanizes as he places each note (nudging velocity 2–3 notches per hit), not
+in a final pass. So the engine bakes these in at render time — the output is
+already humanized, nothing to fix after. These are physics, not taste:
+
+1. **THE GOLDEN RULE — no drum ever hits the same velocity twice in a row.**
+   Per drum, in time order, across the whole take. **Other drums landing in
+   between are irrelevant**: kick 104, then a crash, a snare and another crash,
+   then kick 104 again is a violation. Identical velocities are the machine-gun
+   tell, and one audible pair gives the whole part away. This is the rule the
+   system is built on — a hard invariant, not a flourish, and it holds at every
+   amount setting.
+   *(in code: `drumgen/goldenrule.py` — the ONE implementation. `groovekit` bakes
+   it in at placement time; `humanize` and `learn` both end in `goldenrule.enforce`.)*
+   **Any velocity pass — including a one-off script written for a single take —
+   ends with `goldenrule.enforce` and is checked with `goldenrule.violations`
+   before the write.** Skipping it is how 66 violations shipped on the stigmergy
+   Monarch pass (2026-08-28): the bespoke model matched David's bands exactly and
+   still machine-gunned, because it never went through the humanizer.
+
+   **The rule governs what the SYSTEM generates. It is NOT a spec David's own
+   playing has to pass.** His hand-played Monarch bars 1-6 contain four
+   same-velocity repeats (Left Crash b2, Right Crash b3->4 and b5->6, Rack 1
+   b2->6). They were raised with him on 2026-09-01 and his verdict was that the
+   part is fine as it is. **Do not "fix" them, and do not run a humanize pass
+   over his own performance to make the numbers comply.** A violation count on
+   material he played is an observation to offer him, never a defect to
+   correct. He decides; the invariant binds the generator.
+2. **A cymbal that lands together with a shell (kick/snare/tom) is louder** — a
+   human pushes harder on the cymbal because he's also hitting a shell.
+   *(in code: groovekit CYMBAL_SHELL_BOOST)*
+3. **Hi-hat has its own curve: closed = softer, open = louder.** Never one flat
+   hat velocity, never just two alternating.
+   *(in code: groovekit HAT_CURVE)*
+4. **Double kick: every 2nd kick is −7…−9 lower** (weaker left foot). ONLY on fast
+   double-kick parts where both feet are truly used — not slow single-foot kicks.
+   *(in code: groovekit run-scoped −7…−9)*
+5. **Blast-beat snare arcs down over time, then lifts at the end** — blasts
+   exhaust the forearms so intensity sags, then he digs deep to finish. *(pending)*
+6. **Fills ramp low→high across the kit.** *(author the fill into the DSL grid —
+   roll across the toms, ramp low→high; the engine humanizes velocity + timing)*
+7. **Don't omit a cymbal where one is obviously called for.** Bare focal snare hits
+   are the bug. Passing accents in a flurry can be bare (more is coming right
+   after); the focal hits want something with them. *(judgment — apply by ear; the
+   engine also FLAGS bare focal snare/cymbal hits as warnings — groovekit
+   exposed_focal_hits — so they surface for review)*
+8. **Kicks don't typically play alone in featured moments** (David's correction,
+   2026-07-29, on an ending kick run with nothing on top). Inside a groove a
+   kick under hats/ride is fine — but an EXPOSED kick passage (ending run,
+   dead-stop chug answer, build) wants hands doing something over it — and
+   "something" means a REAL FILL: doubles rolling down the kit (snare-snare,
+   tom1-tom1, tom2-tom2...), flam to kick it off, ramping into the smash.
+   One polite hit per tom is its own programmed-part tell — David rejected
+   that too ("I meant like a fill, man"). A naked kick run in a spotlight
+   moment is the bug either way. *(judgment — apply at authoring time)*
+
+## Follow my lead (the usual way a long song gets humanized)
+
+David humanizes as he programs — he nudges each hit by ear as he places it. On a
+long song he does that for the first section by hand and then wants **the same
+hand carried through the rest**. That is the standard flow, not a special case.
+
+```
+python3 reaperd.py humanize --track Monarch --follow-lead --dry-run
+python3 reaperd.py humanize --track Monarch --follow-lead
+```
+
+It auto-detects where his hand stops (the first bar whose velocities are all one
+value — the dead 127 wall) and learns from everything before it. Override with
+`--example-through-bar N` when the take needs it.
+
+**The take he touched wins over the shared model.** `--follow-lead` measures what
+he actually did on THIS song and applies that; plain `humanize` applies the shared
+taste model. When they disagree, his hand is right — never "correct" his section
+toward the defaults.
+
+What it measures, per voice, per metric slot (downbeat / beat / off-eighth /
+in-between 16th / off-grid): the observed velocity band, plus the shape of his
+fills and which voices he actually ramps. The in-between 16th matters most — it is
+where his kick ducks ~5 for the weak hit, and it is the single biggest difference
+between "humanized" and "randomized".
+
+Three things to hold onto:
+- **It only does what he did.** If he only moved velocities, it only moves
+  velocities. Positions stay put unless the example region shows off-grid hits.
+- **His bars are never edited**, only read — but they seed the golden rule, so the
+  join at the boundary can't repeat either.
+- **Voices he had not reached yet are extrapolated and reported** in `guessed`.
+  Those are inference, not his taste. Say so, and ask him to listen to them
+  specifically.
+
+## Velocity targets & per-kit voices (David's mix preferences)
+- **Kicks stay under ~114.** Punchy, not maxed. *(in code: groovekit KICK_VEL_MAX,
+  per-render override `kick_vel_max`)*
+- **Monarch kit → rimshot snare, held 90–110.** The rimshot is fuller/louder; it's
+  his go-to snare on Monarch, and it runs hot (loud-as-fuck by design).
+  *(in code: groovekit VOICE_PROFILE["RS Monarch"])*
+- These live in `VOICE_PROFILE` (per map) + `KICK_VEL_MAX` in groovekit.render. As
+  new kits get preferences, add a profile entry — don't hardcode in the render loop.
+
+## Ground truth from David's own part (reverse-engineered, Monarch)
+Decoded from a full part he programmed by hand (skill-build.RPP, bars 1–4). Treat
+as the reference for how his layers actually behave:
+- **Every snare and every cymbal lands ON a kick** — 100% coincidence in the
+  sample. Focal hits are never bare; a shell is always under them. This is the
+  hard form of the "snare/cymbal never alone" rule (#7) and the cymbal-with-shell
+  rule (#2).
+- **Cymbals are the loudest layer and they drive.** Crashes 101–117, china 116,
+  a double-crash (CRASH_R+CRASH_L stacked) on the big accent, china+crash on the
+  section-end stab. Snares 90–110 and toms 92–106 sit underneath. Cymbals are not
+  garnish — they're the top of the dynamic stack.
+- **Snare placement is by feel, not a fixed backbeat** (landed on 1.4, 2.3, 3.1,
+  4.1, 4.3), and he'll drop a 16th-apart double rimshot for flavor.
+- **Loud sections in the sample used a crash wall** on ~8th spacing, never a
+  hi-hat grid. CAUTION: that was ONE 4-bar part — David has since corrected
+  that walls are not the default; cymbals carry pace/nuance/accents (see the
+  cymbal rule above). Reach for a wall briefly, at a peak, not section-wide.
+- **Tom fills roll across the kit with velocity ramping up** (observed 92→106).
+
+### Measured again on stigmergy / Monarch (2026-08-28, bars 1—6 by hand)
+A second, independent read of his hand — 146 BPM, 508 notes, velocity only (every
+note stayed exactly on the grid, so **he did not touch timing on this one**):
+
+| Voice | Band | The shape inside it |
+| --- | --- | --- |
+| Kick | 99—106 | 103—106 on the 8th grid, **99—101 on the in-between 16th** |
+| Snare rimshot | 93—95 | flat and well under everything; backbeat a hair over |
+| Toms | 100—108 | each fill ramps upward across its hits |
+| Crashes / china | 112—121 | beat 3 hottest (~118), downbeat ~117, mid-bar ~115; china +1 |
+
+Four same-velocity repeats sit inside these bars. David reviewed them on
+2026-09-01 and left them: his hand, his call, and they do not read as
+machine-gunned in context. Treat that as settled rather than re-raising it.
+
+Jitter inside a band is only —1—2. The bands are narrow and the CONTOUR does the
+work — that is the opposite of "add randomness", and it is why a wide random
+spread never sounds like him. Consistent with the earlier skill-build read
+(cymbals on top, snare and toms underneath, kick well under its ceiling).
+
+
+## Generate & insert
+1. **Compose** the section(s) as a spec or DSL once kicks/snare/cymbals/fills are
+   decided (sections with bars, per-section `power_hand` / `fill`).
+2. **Generate + insert**: `python3 reaperd.py groove <dsl> --track <name>`
+   renders humanized MIDI and inserts it in one round trip.
+3. **Insert** on the track David SELECTED (or `--track <name>` if he names one).
+   NEVER guess a track.
+4. **VERIFY AUDIBLY (hard gate):** set the cursor to the clip, `play`, and ask if
+   it sounds right. NEVER claim a beat is good without his ear. Parse-back proves
+   the notes exist, not that it slaps.
+
+## Params that matter
+The live engine (`groove` + the DSL) exposes: `@tempo`, `@map`, `@seed`,
+per-section `bars` / `feel` (pp-fff) / `grid`, and the cell articulations
+(`x` hit, `X` accent, `o` ghost, `f` flam). Humanization (velocity model,
+fatigue envelope, weak foot, golden rule, timing jitter) happens in the engine
+at render time — there are no `humanize` / `push_pull` / `power_hand` /
+`fills` knobs (those belonged to the removed legacy renderer). Tighter or
+looser: change `feel` or re-roll `@seed`; write fills as explicit lanes.
+
+## Breakdowns (read this — they are NOT grooves)
+A breakdown is spaced stabs + silence + naked kick chug, with a cymbal on the BIG
+accents only (the stab, the snare smash) — not a steady groove with a hat. Use the
+breakdown grooves that carry a `cymbal` accent lane: **"World Ending Stomp"**
+(2-bar) and **"Chug Breakdown"** (1-bar). The cymbal lane auto-suppresses the
+power-hand grid. Keep the stabs tight (low `@feel`, no fills) and render with
+`reaperd.py groove`. The named patterns ("World Ending Stomp", "Tight Chug
+Breakdown") live in `catalog/grooves.json` — reach in and transcribe.
+Authoring your own: add a `cymbal` step-string (`X`=crash, `C`=china, `p`=splash,
+`r`=ride, `b`=bell, `-`=rest) same length as `kick`; 2-bar (32-step) patterns work,
+cross-bar indexing handles it.
+
+## Catalog (vocabulary, not a menu)
+50 grooves across 10 subgenres (DEATH METAL, SLAM DEATH, BLACK METAL, GRINDCORE,
+METALCORE, DOOM & SLUDGE, PROGRESSIVE METAL, ROCK, THRASH METAL, BREAKDOWNS) in
+`catalog/grooves.json`. Reach into these for patterns mid-build — but the beat is
+built from the riff (step 1), not selected from this list.
+
+## Drum kit maps (MIDI note assignments)
+`catalog/maps.json` maps drum roles (KICK_R, SNARE, etc.) to MIDI notes. `--map
+<name>` selects one. Ships with GM Standard plus example library maps (RS Monarch,
+Odeholm Default, MDL Tone, Sleep Token II). `python3 reaperd.py list-maps` lists
+them. If the kit isn't there, auto-discover from its `.midnam`:
+`python3 reaperd.py discover-map Drums --save MyKit`. For kits with no `.midnam`
+(some Kontakt libs), ask for the notes: `reaperd.py add-map MyKit --roles
+'{"KICK_R":36,"SNARE":38,...}'`. Discovered maps save to the gitignored user
+overlay, so `git pull` never clobbers them.

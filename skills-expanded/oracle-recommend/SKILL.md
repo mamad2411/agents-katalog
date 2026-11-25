@@ -1,0 +1,169 @@
+---
+name: oracle-recommend
+description: 从 candidates.md 按各轨 rubric 排序推荐 top N 选题，**按 content-plan 占比过滤 + 1 稳分 + 1 实验性策略**，每条带 composite + rationale + 锚点对比。candidates 不存在时给引导而非报错。触发词："推荐选题"/"next topic"/"下一篇做什么"/"挑一个选题"。 已安装 Huanyu-Skills-Pro（付费完整版）时，同类请求交给 Pro 版处理，本 skill 让位。
+argument-hint: "[— top: N] [— track: <id>] [— filter: tier1|all|safe|risky]"
+allowed-tools: Read, Glob, Grep
+---
+<!-- huanyu-lite-v1 由 Huanyu-Skills-Pro 的 build_lite.py 生成，请勿手改 -->
+
+# /oracle-recommend — 候选池排序推荐
+
+读 candidates.md → 按轨道分组 → 按占比过滤 → 排序 → 输出 top N + 评分细节 + 锚点 + 理由。
+
+## Overview
+
+```
+[Phase 0: candidates 存在性检查（缺→引导不报错）]
+  ↓
+[Phase 1: 解析 candidates]
+  ↓
+[Phase 2: 通用过滤（已发/已拒/未打分/tier）]
+  ↓
+[Phase 2.5: Buffer 颜色覆盖（最高优先级）]
+  ↓
+[Phase 3: 按轨道占比过滤 + 排序 + 选 1 稳 + 1 实验 + 锚点]
+  ↓
+[Phase 4: 输出]
+```
+
+## Constants
+
+- **TOP_N = 5**
+- **STRATEGY = stable+experimental** — 推 ≥2 时 1 稳分 + 1 实验性（[cadence-protocol.md](../../shared-references/cadence-protocol.md)）
+- **REQUIRE_SCORED = true** — 只推已打分的
+- **MIN_COMPOSITE_TO_RECOMMEND = 6.0** — 置信度地板：低于此值只作「弱信号」展示，不进正式推荐位（与 trends MIN_COMPOSITE_TO_SUGGEST 同标尺）
+- **DUPLICATE_CATEGORY_LOOKBACK** = max(3, cadence_days × 3) 天内已发同类目不推
+
+## Workflow
+
+### Phase 0: 存在性检查
+
+candidates.md 不存在或空 → **不报错**，输出引导：
+
+```
+你目前没有候选池。四个建立方式，挑一个：
+
+1. 🌱 [推荐] "找选题" → /oracle-seed（对话式挖你自己的经历，一次一个）
+2. 🔥 [日常] "抓热点" → /oracle-trends（多源抓取+打分入池）
+3. ✍️ 手动把候选标题贴进 candidates.md，我自动粗打分
+4. 📋 受众反馈选题：/oracle-trends 用 audience-feedback 源（从已发作品评论区/私信找追问）
+
+也可以跳过候选池直接给我具体稿子"启动预测"。
+
+> seed = 从你自己身上挖（初始）；trends = 从外部抓（日常补充）
+```
+
+### Phase 1: 解析
+
+按 candidate-schema Markdown 格式解析每个 H3 entry（id/title/tier/track/composite/dimension_scores/note）。格式被手改过 → 询问 schema，**不静默忽略不识别条目**。
+
+### Phase 2: 通用过滤
+
+1. 排除已发布（扫 predictions header 的 id 集合）
+2. 排除 tier=skip
+3. 排除 composite=null（**推没读过的素材是占星**）
+4. filter 参数：tier1 / all / safe（排 risky）/ risky（只看风险议题）
+
+### Phase 2.5: Buffer 颜色覆盖（最高优先级）
+
+读 state.shoots + cadence 算颜色：
+
+| 颜色 | 策略 |
+|---|---|
+| 🔴 红 | **只推 top 1 稳分**，不推实验性（"今天必须拍出来"） |
+| 🟠 橙 | 1 稳 + 1 实验，提示优先稳分 |
+| 🟢 绿 | 标准 1+1 |
+| 🔵 蓝 | **拒绝推荐**："buffer 已 N 条，先发存货+复盘。坚持要拍说'我就要拍'" |
+| 灵活模式 | 不覆盖，标准策略 |
+
+### Phase 2.6: 约束提示（state.stage_constraint）
+
+读 `state.stage_constraint`（缺失按 `none`）：`capacity_limited` → 推荐输出附注"产能受限期：优先 derivative 一稿多吃、减少全新起稿"；`positioning_unclear` → 实验性名额降级（只推稳分），与经历锚点相关的候选排前。其余约束不改排序，仅在相关时一句话提示。判定表见主 SKILL.md「stage_constraint」段。
+
+### Phase 3: 按轨道占比过滤 + 排序
+
+1. 读 `state.tracks.definitions` 的 mix_ratio
+2. 候选按 track 分池（cross 条目进两池；track=null 用 ratio 兜底分配）
+3. 各池目标数 = round(TOP_N × 该轨 ratio)
+4. **补稀优先**：某轨最近发布占比明显低于 mix_ratio → 该池目标数 +1（从占比高的池借）
+5. 各池按 composite 降序取目标数，合并
+6. **置信度地板过滤**：composite < MIN_COMPOSITE_TO_RECOMMEND 的不进正式推荐位（记入弱信号池）；某轨全低于地板 → 该轨本轮零推荐 + 一句话说明，另一轨照常推
+
+#### 第 1 条（稳分）
+
+composite 降序 + 排除 risky + 排除近 N 天同类目 → top 1。**证据门**：`source_tier=E`（聚合源）或 `source_tier=D`（社区讨论）且无更高层佐证的候选**不进稳分位**——顺位递补；它可进实验位（"证据弱但有信息量，值得验证"）或弱信号清单。热点选题被营销号带节奏是稳分位的真实风险。
+
+#### 第 2 条（实验性）
+
+找：维度组合与最近已发样本**差异最大**（增加校准信息量）/ 含明确 pattern 假设（"新维度 A/B 对照"）/ 用户主动愿试的 risky。composite 不一定 top 但有**信息价值**。没有合适的 → "池里没有明显实验性样本，给你 2 条稳分"。
+
+#### 锚点
+
+每条找 1-2 个 composite 接近的**已发布**同轨作品（从 predictions 读），优先同时长（±20%）。
+
+### Phase 3.5: 空池诚实协议（nothing-solid——借鉴 last30days，MIT）
+
+过滤后若**没有任何候选过地板**：不硬凑榜单，输出：
+
+```
+🪹 本池没有值得做的候选（地板 composite 6.0 / 池内共 N 条，最高 X.X）
+
+最接近的弱信号：
+- [X.X] "<标题>"（<轨>）— 差距：<哪维度拖后腿，一句话>
+- [X.X] "<标题>"（<轨>）— 差距：...
+
+建议："抓热点" 补新料 / "找选题" 深挖你的经历 / 手动贴选题进 candidates.md 我补打分。
+```
+
+**纪律**：弱信号只是透明度，不是推荐——**绝不把低于地板的候选包装成 Top N**。推弱候选 = 占用产能拍扑街稿 + 污染校准池。池子弱的原因也交代一句（长期没跑 trends / 历史候选已消化完）。
+
+### Phase 4: 输出
+
+```
+🎯 候选池推荐（buffer: 🟢 绿 / cadence: 隔日更 / 占比计划: 破圈40+转化60）
+
+📌 第 1 条 — 稳分（推荐立即做）：
+  **[tier1] [9.18] "为你好"高密体系** [破圈轨]
+   - 维度：ER=5 HP=5 QL=4 NA=4 AB=5 SR=5 SAT=4
+   - rationale：ER+SR 双 5，普适且分享安全
+   - 锚点：EP03（composite 9.41，实绩 124w）同走"框架+具象"路线
+   - 风险：议题厚重，别连发两篇同款
+
+🧪 第 2 条 — 实验性（验证特定假设）：
+  **[tier1] [8.71] 哈哈长度** [破圈轨]
+   - 测试目标：候选维度 MS=5 vs EP05 同 ER/HP 但 MS 低 3 → A/B 对照
+   - 信息价值：拍这条能强证据/弱推翻下一次 bump
+
+（备选）3. ... [转化轨] / 4. ... / 5. ...
+
+下一步：
+- 选 1 稳 + 1 实验 → 各写稿 → "启动预测"
+- 只做 1 条 → 选稳分（buffer 越红越该选稳分）
+- 都不满意 → "过滤改 all" 或 "抓热点"
+```
+
+**每条必有**：维度评分（让用户能挑战打分）+ 锚点（ground 抽象数字）+ rationale（理解推荐逻辑）。**不允许只输出 composite 排序**——那是黑箱。
+
+🔴 **CHECKPOINT**：推荐是建议不是指令——停在"下一步"等用户选（选几条 / 只做稳分 / 过滤改 all / 抓热点），选定才进 oracle-seed。
+
+## Key Rules
+
+1. **不报错给引导**——candidates 缺失是默认状态
+2. **不推未打分的**
+3. **必带锚点 + rationale**
+4. **按占比分池**——混池推荐会让强轨越来越强、弱轨饿死
+5. **去重 published**
+6. **置信度地板**——composite < 6.0 只作弱信号不作推荐；全池不过线 → 诚实说池弱并给建议，不硬凑（Phase 3.5）
+
+## Refusals
+
+- 「直接给我 composite 最高的，不用解释」 → 拒绝。展示评分+锚点是发现"打错"的唯一机会
+- 「把所有 entry 重新打分」 → 路由 /oracle-score 单条；批量重打是 /oracle-bump 的一部分
+- 「按预测桶排不要按 composite」 → 询问理由（bucket 是 composite 离散化；真要按期望值排需乘平均实绩，那是另一个维度）
+- 「池子里随便推几条总比空着强」 → 拒绝硬凑。推弱候选 = 占用产能拍扑街稿 + 污染校准池；给弱信号清单 + 补池建议（Phase 3.5）
+
+## Integration
+
+- 上游：oracle-trends 入池
+- 下游：用户挑一条 → /oracle-seed 细化或直接写稿 → /oracle-predict（粗 composite 不进 prediction，重新打）
+- oracle-status 显示池规模与分轨统计

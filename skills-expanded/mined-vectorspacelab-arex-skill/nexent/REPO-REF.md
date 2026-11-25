@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vectorspacelab/arex-skill (path: skills/repositories/repo-skills/nexent/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Route Nexent SDK, backend, frontend, knowledge/memory, and

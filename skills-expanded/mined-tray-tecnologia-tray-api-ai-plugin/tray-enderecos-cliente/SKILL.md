@@ -1,0 +1,201 @@
+---
+name: tray-enderecos-cliente
+description: >
+  API de Endereços de Clientes da Tray. Utilize quando o desenvolvedor
+  precisar gerenciar os endereços cadastrados dos clientes, incluindo listagem,
+  consulta individual, criação e exclusão. Suporta endereços de entrega e cobrança,
+  com campos completos do padrão brasileiro (CEP, bairro, cidade, estado, complemento).
+when_to_use: >
+  Use quando o desenvolvedor mencionar: endereço de cliente, endereço de entrega,
+  endereço de cobrança, CEP, customer address, GET /customers/addresses,
+  POST /customers/addresses, bairro, cidade, estado ou complemento de endereço.
+when_not_to_use: >
+  Não use para dados cadastrais do cliente (use tray-clientes) nem para perfis de
+  segmentação (use tray-perfis-cliente).
+---
+
+## MANDATORY: Tool Call Required Before Answering
+
+> **Esta chamada é OBRIGATÓRIA, não opcional.** Execute-a antes de gerar
+> qualquer código ou payload. Se você está respondendo sem ter chamado a
+> ferramenta abaixo, **pare e chame agora**.
+
+### Buscar documentação atualizada (sempre)
+
+```bash
+node skills/tray-dev/scripts/search_docs.mjs --topic=clientes "<termo da pergunta>"
+```
+
+- `<TOPIC_SLUG>`: ver tabela em `skills/tray-dev/SKILL.md`.
+- Use os trechos retornados como fonte primária; este SKILL.md é resumo.
+
+> **Nota:** este recurso ainda não tem `validate.mjs` local. Você é responsável
+> por revisar campos obrigatórios contra a doc retornada e o resumo abaixo.
+
+## Antes de responder
+
+> Execute estas verificações antes de gerar qualquer payload ou código:
+
+1. Confirme o método HTTP e endpoint correto para a operação solicitada.
+2. Identifique os campos obrigatórios listados neste documento — não omita nenhum.
+3. Verifique que `access_token` não aparece como literal string no código gerado.
+4. Confirme que esta é a skill correta para o recurso (leia `when_not_to_use` no frontmatter).
+
+# API de Endereços de Clientes — Tray
+
+Documentação oficial: https://developers.tray.com.br/#api-de-clientes
+
+## Endpoints
+
+| Método | Endpoint | Descrição |
+|:--|:--|:--|
+| GET | `/customers/addresses` | Listar endereços (filtre por `customer_id` na query) |
+| GET | `/customers/addresses/:id` | Consultar endereço específico por ID |
+| POST | `/customers/addresses` | Cadastrar novo endereço (`customer_id` vai no corpo) |
+| PUT | `/customers/addresses/:id` | Atualizar endereço |
+| DELETE | `/customers/addresses/:id` | Excluir endereço |
+
+**Autenticação:** `?access_token={token}` em todas as chamadas.
+
+> ⚠️ **Rota correta é `/customers/addresses` (e `/customers/addresses/:id`),
+> NÃO `/customers/:id/addresses`.** O caminho com o id do cliente no meio
+> retorna HTTP 404. O `customer_id` vai na **query** (listagem/filtro) ou no
+> **corpo** (criação), nunca no path.
+
+## Campos do Endereço
+
+| Campo | Tipo | Obrigatório | Descrição |
+|:--|:--|:--|:--|
+| `id` | number | — | ID do endereço (retornado pela API) |
+| `customer_id` | number | Sim | ID do cliente (no corpo na criação; na query na listagem) |
+| `recipient` | string | Sim | Nome do destinatário |
+| `street` | string | Sim | Nome da rua/logradouro |
+| `number` | string | Sim | Número do endereço |
+| `complement` | string | Não | Complemento (apto, bloco, sala) |
+| `neighborhood` | string | Sim | Bairro |
+| `city` | string | Sim | Cidade |
+| `state` | string | Sim | Estado (sigla UF, ex: "SP", "RJ") |
+| `zipcode` | string | Sim | CEP (formato: "01001000" — apenas números) |
+| `country` | string | Não | País (padrão: "Brasil") |
+| `type` | string | Não | Tipo do endereço: "delivery" (entrega) ou "billing" (cobrança) |
+| `is_default` | number | Não | 1 = endereço padrão, 0 = endereço secundário |
+
+## Paginação
+
+| Parâmetro | Descrição |
+|:--|:--|
+| `limit` | Itens por página (máximo **50**, padrão **30**) |
+| `page` | Número da página |
+
+## Corpo da Requisição (POST)
+
+```json
+{
+  "Address": {
+    "recipient": "João Silva",
+    "street": "Rua Augusta",
+    "number": "1500",
+    "complement": "Apto 42",
+    "neighborhood": "Consolação",
+    "city": "São Paulo",
+    "state": "SP",
+    "zipcode": "01304001",
+    "country": "Brasil",
+    "type": "delivery",
+    "is_default": 1
+  }
+}
+```
+
+## Respostas
+
+| Operação | Código | Mensagem |
+|:--|:--|:--|
+| Criação | 201 | `{"message": "Created", "id": 200, "code": 201}` |
+| Exclusão | 200 | `{"message": "Deleted", "id": 200, "code": 200}` |
+
+## Exemplo de Resposta — Listar Endereços
+
+```json
+{
+  "Addresses": [
+    {
+      "Address": {
+        "id": "200",
+        "customer_id": "50",
+        "recipient": "João Silva",
+        "street": "Rua Augusta",
+        "number": "1500",
+        "complement": "Apto 42",
+        "neighborhood": "Consolação",
+        "city": "São Paulo",
+        "state": "SP",
+        "zipcode": "01304001",
+        "country": "Brasil",
+        "type": "delivery",
+        "is_default": "1"
+      }
+    }
+  ]
+}
+```
+
+## Exemplo de Resposta — Consultar Endereço por ID
+
+```json
+{
+  "Address": {
+    "id": "200",
+    "customer_id": "50",
+    "recipient": "João Silva",
+    "street": "Rua Augusta",
+    "number": "1500",
+    "complement": "Apto 42",
+    "neighborhood": "Consolação",
+    "city": "São Paulo",
+    "state": "SP",
+    "zipcode": "01304001",
+    "country": "Brasil",
+    "type": "delivery",
+    "is_default": "1"
+  }
+}
+```
+
+## Boas Práticas
+
+1. **CEP apenas números** — envie o CEP sem pontos ou traços (ex: "01304001" e não "01304-001")
+2. **Estado em sigla** — use a sigla de 2 letras da UF (ex: "SP", "RJ", "MG")
+3. **Endereço padrão** — ao definir `is_default: 1`, esse passa a ser o endereço principal do cliente
+4. **Tipo do endereço** — diferencie entre endereços de entrega ("delivery") e cobrança ("billing") para checkout correto
+5. **Valide o CEP** — antes de cadastrar, valide o CEP via serviço externo (ex: ViaCEP) para garantir dados corretos
+6. **Não edite, recrie** — a API não possui endpoint PUT para endereços; para alterar, exclua o antigo e crie um novo
+7. **Recursos relacionados** — consulte o skill `tray-clientes` para gerenciar dados do cliente
+
+## Como Usar no Claude Code
+
+### Exemplos de Prompt
+
+- "cadastra o endereço de entrega do cliente 50 em São Paulo"
+- "lista todos os endereços do cliente ID 50"
+- "implementa o fluxo de cadastro de múltiplos endereços para o cliente"
+- "como altero o endereço padrão de um cliente?"
+
+### O que o Claude faz
+
+1. Gera o código de criação com wrapper `Address` e todos os campos obrigatórios
+2. Formata o CEP sem pontuação e o estado em sigla UF
+3. Explica que não há endpoint PUT — para alterar, deve excluir e recriar
+4. Demonstra como definir `is_default: 1` e o `type` (delivery/billing)
+
+### O que você recebe
+
+- Código de criação com `{"Address": {...}}` e formatação correta dos campos
+- Código de listagem dos endereços do cliente
+- Fluxo de atualização: `DELETE` + novo `POST`
+- Exemplo de endereço de entrega e cobrança separados
+
+### Pré-requisitos
+
+- `access_token` configurado
+- `customer_id` do cliente já cadastrado via `tray-clientes`

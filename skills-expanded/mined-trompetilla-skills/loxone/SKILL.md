@@ -1,0 +1,20 @@
+---
+name: loxone
+description: Control and monitor a Loxone Miniserver (smart home) via HTTP API and real-time WebSocket. Use for querying room/device status (temperatures, lights), watching live events, and sending safe control commands.
+---
+
+# Loxone (Smart Home)
+
+## Setup
+- Create `config.json` next to this file (it is gitignored). Start from `config.json.example`.
+
+## Commands
+- `python3 scripts/loxone.py rooms`
+- `python3 scripts/loxone.py map`
+- `python3 scripts/loxone.py status "<Room>"`
+- `python3 scripts/loxone.py control "<Room>" "<Control>" on|off`
+- `python3 scripts/loxone_watch.py --room "<Room>" [--changes-only] [--duration <sec>]`
+
+## Notes
+- Treat as **read-only by default**; only use control commands when explicitly requested.
+- WebSocket auth can be finicky; if WS fails, fall back to HTTP status queries.

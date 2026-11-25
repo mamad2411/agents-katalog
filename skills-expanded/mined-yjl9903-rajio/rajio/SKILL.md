@@ -1,0 +1,677 @@
+---
+name: rajio
+description: Use only when explicitly asked to use rajio for Japanese audio/video subtitle translation.
+metadata:
+  author: OneKuma
+  version: '0.2.1'
+---
+
+# Rajio
+
+Use this skill to translate Japanese audio/video into polished, carefully proofread
+subtitles with `rajio`: prepare context, extract audio, transcribe Japanese, proofread
+the transcript, run multi-round Simplified Chinese translation and review, polish the
+final subtitle text, and export SRT/ASS files.
+
+Do not use this skill unless the user explicitly asks for the rajio skill or asks you to
+create polished Chinese subtitles from Japanese audio/video with rajio.
+
+## Non-Negotiable Rules
+
+Quality comes first:
+
+- The goal is accurate, natural, comfortable subtitles. Correctness, readability, tone,
+  subtitle flow, and viewing comfort outrank mechanical formatting cleanup.
+- `rajio check` is a quality floor, not the definition of finished quality. `fatal` means
+  invalid data or session state, `error` means a problem that seriously hurts readability in
+  ordinary cases, and `warning` means a recommended improvement.
+- Clearing, skipping, or preserving `rajio check` issues only establishes the technical
+  baseline. Manual review and text refinement are still required for ASR mistakes, proper
+  nouns, context, terminology, fixed phrases, translation consistency, concision, tone, and
+  Chinese subtitle polish.
+- Do not satisfy QA heuristics by making subtitles less correct, less natural, or harder to
+  watch. Also do not ignore warnings mechanically: inspect remaining warnings and decide
+  case by case whether to fix, preserve, merge, split, retime, compress, or document the
+  exception.
+
+Respect privacy and provider boundaries:
+
+- Make the privacy boundary explicit before transcription. Rajio uploads audio to the configured
+  transcription provider; start transcription only after the user authorizes that upload.
+- During `translation_work`, do not use manual AI/API calls as a bulk machine-translation
+  service for whole subtitle ranges. This does not forbid using the configured ASR provider
+  for transcription. Sub-agents produce the first-draft batch translations from the provided
+  context; the main agent reviews, merges, validates, and performs the required full-file
+  Chinese refinement.
+
+Respect manual-stage ownership:
+
+- `transcript_work` and `translation_work` are manual stages. Always process first-draft
+  proofreading and translation through sub-agent batches. If sub-agent tooling is
+  unavailable, stop and report that the manual stage cannot be completed under this skill.
+- The main agent owns batch planning, patch review, patch application, glossary decisions,
+  consistency QA, `description.md`, validation, commits, exports, and final reporting.
+- The main agent must not proofread or translate the full first-draft manual stage by
+  itself. The explicit exception is final Chinese refinement: after sub-agent translation
+  batches have produced the first draft, the main agent must perform full-file Chinese
+  subtitle refinement as described in [Refine Chinese Subtitles](#4-refine-chinese-subtitles).
+
+Define manual review strictly:
+
+- Manual review means reading subtitle segment text in timeline order with enough
+  neighboring context to judge meaning, flow, timing, tone, terminology, and subtitle
+  comfort. It does not mean only running `rajio check`, scanning issue summaries, applying
+  generated patches, or spot-checking validation examples.
+- During `transcript_work`, `translation_work`, and final Chinese refinement, agents must
+  use `rajio segments list` with explicit ranges, offsets, IDs, issue filters, and
+  neighboring context to inspect actual subtitle text in batches. Every segment in the
+  assigned or owned scope must be reviewed as text, not only as QA metadata.
+- Batch workers must read every segment in their assigned range plus enough surrounding
+  segments to catch cross-boundary continuity problems. The main agent must review worker
+  patches, batch boundaries, glossary decisions, and at least one continuous full-file
+  Chinese pass after applying first-draft translation patches.
+- `rajio check` is only validation support. Passing checks, clearing warnings, adding
+  `skip_checks`, or applying suggested patches does not count as manual review unless the
+  affected subtitle text has been read in context.
+- Do not use ad hoc automation scripts to edit `segments.toml`, generate subtitle text,
+  generate translation/proofread patch operations, or add `skip_checks`. Write and review
+  subtitle edits through the manual process and `rajio segments` tooling.
+- Automation scripts are allowed only for non-editing support such as collecting counts,
+  slicing check JSON for inspection, comparing statistics, or validating data shape. They
+  must support review, not replace reading and judgment.
+- If a range was not read segment by segment in context, report it as unreviewed. Do not
+  call the stage polished or final.
+
+Respect file boundaries:
+
+- Never edit `transcript/raw/segments.toml` or `transcript/raw/checkpoints/*.toml`. Raw
+  transcript files are references.
+- Edit only the active manual work file, `description.md`, and session-local patch or
+  review artifacts: `transcript/work/segments.toml`, `translation/work/segments.toml`,
+  `description.md`, and files under session-local `patches/` or clip review directories.
+- `description.md` is the source of truth for media metadata, user notes, context,
+  glossary, fixed terms, style requirements, and unresolved uncertainty. Keep it current
+  throughout the session.
+
+Use rajio tools deliberately:
+
+- Use `rajio check` using its installed CLI help before commits and final reporting,
+  while remembering it is not a substitute for manual QA.
+- Use `rajio segments` commands for stable targeted edits to work-stage `segments.toml`:
+  list/filter segments, edit fields, split/merge subtitle units, and delete semantically
+  empty filler segments. Shape: `rajio segments <command> <target>`.
+- Use `rajio clips` commands for difficult source-video ranges that need independent
+  retranscription for comparison. Clip outputs are sidecar review artifacts only; do not
+  treat them as automatic replacements for `transcript/work/segments.toml`.
+- Use `rajio frames` when audio and notes cannot resolve on-screen names, text, objects,
+  or actions. Request a few relevant time points or a short range, then inspect the
+  returned images. Do not scan the full video by default.
+- Record intentional subtitle QA `error` exceptions with per-segment `skip_checks` in the
+  work-stage `segments.toml`. Every skip must name the exact issue code and include a
+  reason. Never skip `fatal` data/file/schema/timeline issues, unfinished translation, or
+  unreviewed batches. Matched skips are omitted from check output; stale skips still report
+  `fatal unused_skip_check`.
+
+## Sub-Agent Batch Contract
+
+- Spawn sub-agents for every `transcript_work` proofread batch and every
+  `translation_work` translation batch. If sub-agent tooling is unavailable, stop and
+  report that manual stages cannot be completed under this skill.
+- Run sub-agent batches within the active concurrency/thread limit, and close or release
+  completed workers before spawning more.
+- Read [SUB_AGENTS.md](SUB_AGENTS.md) before spawning sub-agents. Keep this file focused
+  on workflow rules; use that document for mandatory batch-worker templates and
+  instructions.
+- The main agent owns batch planning, patch application, glossary decisions, consistency
+  QA, final full-file Chinese refinement, `description.md`, `rajio check`, commits,
+  exports, and final reporting.
+
+## Required Input
+
+- Local audio/video path. Refuse to start without this.
+- Optional but preferred: title, original URL, publish date, uploader/channel, synopsis,
+  cast, program/corner names, user notes, fixed terminology, and translation style
+  requirements.
+
+If optional metadata is missing, proceed with filename-based defaults, record the
+uncertainty in `description.md`, and revisit it when transcript context reveals more.
+
+## CLI Discovery
+
+Check availability with `command -v rajio`; if unavailable, use `npx rajio ...`.
+Read installed CLI help for command syntax, defaults, constraints, patch formats, output
+structures, and provider configuration:
+
+```bash
+rajio --help
+rajio segments --help
+rajio segments list --help
+rajio segments apply --help
+rajio clips --help
+rajio frames --help
+rajio check --help
+rajio doctor --help
+```
+
+Read the relevant leaf-command help before unfamiliar operations. The installed CLI is
+the source of truth for command contracts. Use `--json` for machine-readable output;
+pipe verbose JSON through `jq` to inspect only needed fields. Pass `--stage` explicitly
+for manual segment work, and write batch patches under session-local `patches/`.
+
+Use `rajio check` before manual commits and final reporting. Inspect warnings and reviewed
+exceptions in context; passing checks does not replace semantic proofreading or Chinese
+refinement. Use clips to compare difficult ASR ranges, then decide edits manually.
+Run `clean` only when the user explicitly asks to discard generated workflow artifacts.
+
+## Subtitle QA Rules
+
+These are the subtitle QA thresholds enforced by `rajio check`; severity, stage, and
+language filtering follow `rajio check --help`.
+
+| Rule                 | Warning                                                 | Error                                                                                                                                     |
+| -------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Japanese line length | `ja` line exceeds 20 visible non-space characters       | `ja` line exceeds 28 visible non-space characters                                                                                         |
+| Chinese line length  | `zh` line exceeds 16 visible non-space characters       | `zh` line exceeds 24 visible non-space characters                                                                                         |
+| Line breaks          | 2 lines that still need review after merge-length check | More than 2 lines, or 2 lines that merge within the soft length and should be one line                                                    |
+| Subtitle duration    | shorter than 0.5 seconds or longer than 7 seconds       | shorter than 0.3 seconds or longer than 10 seconds                                                                                        |
+| Reading speed        | Japanese exceeds 15 chars/s; Chinese exceeds 11 chars/s | Japanese exceeds 20 chars/s; Chinese exceeds 15 chars/s                                                                                   |
+| Adjacent gap         | gap is 50-150 ms                                        | gap is under 50 ms                                                                                                                        |
+| Punctuation          | none                                                    | ordinary comma/period punctuation, ordinary sentence-ending punctuation, 2+ repeated question/exclamation marks, or punctuation-only line |
+
+Do not satisfy numeric limits by creating unreadable single-character, single-syllable,
+or isolated filler subtitles. Prefer natural compression, merging with an adjacent segment,
+retiming, or splitting at a semantic pause. Single `？` or `！` is allowed when needed for
+intent, but use it sparingly.
+
+Warnings are still work items. Review them in context and either improve the subtitle or
+keep the current form because it is more accurate, natural, or comfortable than the
+mechanical alternative.
+
+## Workflow
+
+### 0. Prepare The Session
+
+1. Resolve the media path to an absolute path and confirm it exists.
+2. Choose the session directory. If the user provides one, use it. Otherwise create one
+   near the media file or in the current workspace using a filesystem-safe title or media
+   stem. Do not copy large media files unless the user asks.
+3. Create or update `description.md`.
+4. Gather confirmed context before transcription when practical. Use the original URL,
+   official pages, video title, filenames, on-screen text, user notes, and later transcript
+   discoveries. Record uncertainty explicitly instead of guessing.
+
+Use this `description.md` shape:
+
+```markdown
+---
+media: ./video.mp4
+title: Video title or filename stem
+url: https://example.com/original
+published_at: 2026-06-06
+---
+
+## Context
+
+- Source/uploader:
+- User notes:
+- Video synopsis:
+- Cast/speakers:
+- Program/corner structure:
+- Known fixed greetings or sign-offs:
+- Related events/products/works mentioned:
+
+## Glossary And Fixed Terms
+
+- Japanese term/person/place -> Chinese translation or note
+- Common ASR confusion -> Correct Japanese term / Chinese translation
+
+## Style Requirements
+
+- Translate into natural Simplified Chinese subtitles.
+- Preserve important names and terminology consistently.
+```
+
+### 1. Run To Transcript Work
+
+Before automatic stages, run:
+
+```bash
+rajio doctor /path/to/session
+```
+
+`rajio doctor` reports the rajio CLI version and update-check result first. Confirm the CLI version matches this SKILL frontmatter `metadata.version`; if they differ, or doctor reports a newer version is available or update checking failed, report that before starting automatic stages. It also validates runtime configuration and provider access using the target directory for `.env` loading. Do not start transcription until `rajio doctor` passes or the environment issue is resolved.
+
+Run:
+
+```bash
+rajio /path/to/session --continue=until-manual
+```
+
+Expected result: rajio creates or reads `session.toml`, extracts audio, transcribes
+Japanese, writes raw transcript artifacts, creates `transcript/work/segments.toml`, and
+stops at `transcript_work`.
+
+Wait for `transcript/raw/checkpoints/input-*.toml` or
+`transcript/raw/checkpoints/input-*.error.log`. Do not restart while requests may still be in
+flight unless there is a clear CLI/provider failure.
+
+Treat automatically created work segments as a draft.
+
+Rajio may write suggested patches under
+`transcript/work/suggested-patches/`, but never applies them automatically. Review them during
+the proofread stage below.
+
+Suggested patch review:
+
+- Review suggested patches in numeric filename order before spawning transcript workers.
+- Before spawning transcript workers, either apply, manually fold in, or explicitly reject
+  each suggested patch, including `*-low.*` files.
+- Treat `confidence = "medium"` patches with extra care and `*-low.*` files as manual
+  decision candidates, not automatic cleanup or post-worker TODOs.
+- Patch `reason` and `confidence` fields do not change apply behavior.
+
+Example generated files:
+
+```text
+transcript/work/suggested-patches/
+  01-punctuation-cleanup-chunk-000-000000s-000600s-high.toml
+  02-fragment-merge-chunk-000-000000s-000600s-high.toml
+  02-fragment-merge-chunk-000-000000s-000600s-medium.toml
+  03-boundary-retime-chunk-000-000000s-000600s-high.toml
+  04-long-segment-candidates-chunk-000-000000s-000600s-low.md
+```
+
+### 2. Proofread And Polish Japanese
+
+Proofread flow:
+
+1. Review automatically generated suggested patches under
+   `transcript/work/suggested-patches/`, adjust them if needed, dry-run them with
+   `rajio segments apply <session> <patch> --stage transcript --dry-run`, then apply,
+   manually incorporate, or reject them before assigning worker ranges.
+2. Spawn transcript proofread sub-agents following [SUB_AGENTS.md](SUB_AGENTS.md). Each
+   worker gets a label and assigned source-media `start`/`end` range.
+3. Review each worker patch file, dry-run summary, and final report confirmations. Apply
+   accepted patches to `transcript/work/segments.toml`. A blocker report is not an
+   accepted patch; resolve it or reassign that range before committing.
+4. Manually perform a whole-transcript review and polish pass for context, terminology,
+   fixed phrases, structure, and readability across batch boundaries.
+5. Commit `transcript_work` only after semantic review and validation are clean, or only
+   intentional subtitle QA exceptions remain with exact `skip_checks`.
+
+Transcript review requirements:
+
+- Use the segment commands described by the relevant leaf-command help with `--stage transcript` for
+  transcript inspection, patch review, patch application, and validation.
+- Do not translate in this stage; only correct and polish the Japanese transcript.
+- The main agent's proofread and polish pass must be the manual review defined in
+  [Non-Negotiable Rules](#non-negotiable-rules). Use `rajio segments list` to read the
+  actual transcript text in timeline-order batches with neighboring context, review
+  suggested and worker patches against those segments, and inspect batch boundaries.
+- `rajio check`, suggested patches, issue filters, dry-run summaries, or statistics are
+  only supporting evidence. They do not count as transcript proofreading unless the
+  affected subtitle text is read in context.
+
+For complex, noisy, overlapped, or suspicious ASR ranges, the main agent or a sub-agent may
+use `rajio clips transcribe` to retranscribe the original media time range as sidecar
+evidence. Then use
+`rajio clips list <session> --json` and `rajio clips show <session> <id> --json` to compare the alternate
+transcript against `transcript/work/segments.toml`. Clip output is reference material; do
+not treat it as an automatic replacement.
+
+Validate often with `rajio check` using its installed CLI help. This only checks data
+shape, timing, required fields, and subtitle limits; before committing, still polish the
+content semantically against the acceptance criteria below.
+
+Acceptance criteria:
+
+- Every segment has stable `id`, numeric `start`/`end`, non-empty `speaker`, and non-empty
+  Japanese `ja`.
+- Timestamps increase and do not overlap.
+- Japanese text is coherent, natural, and corrected against `description.md`, glossary,
+  proper nouns, and raw transcript references.
+- Known names, program titles, corner names, event names, hashtags, greetings, mail reads,
+  and sign-offs are corrected consistently.
+- Search the whole transcript for likely ASR variants of fixed terms, not only exact
+  glossary terms.
+- Check high-risk positions explicitly: opening title call, self-introductions, listener
+  greetings, corner starts, event announcements, mail-address reads, and ending sign-off.
+- Follow the Subtitle QA Rules for line length, line count, duration, reading speed, gaps,
+  and punctuation.
+
+Speaker and segment structure:
+
+- A normal segment should represent one readable subtitle unit.
+- Do not preserve unreadable fragments such as single characters or syllables when adjacent
+  fragments form one jointly spoken phrase.
+- If multiple speakers complete the same short phrase together, merge it into one segment
+  with complete `ja`; combine speakers with comma-separated values such as
+  `speaker = "A,B"` when attribution matters.
+- Preserve segment IDs unless a structural correction truly requires a change.
+
+Before committing:
+
+- Update `description.md` with newly confirmed context and terminology.
+- Search for known ASR confusions and wrong proper nouns.
+- Spot-check opening, middle, and ending subtitles for proper nouns and fixed phrases.
+- Confirm no remaining segment is an unreadable fragment that should be merged.
+
+When clean:
+
+```bash
+rajio /path/to/session --commit --continue=until-manual
+```
+
+If only intentional subtitle QA exceptions remain, inspect them first:
+
+```bash
+rajio check /path/to/session --json --stage transcript --language ja --verbose
+```
+
+If preserving an exception improves accuracy, naturalness, or readability, add
+`skip_checks` to the affected segment with the exact issue code and a reason, then commit
+normally:
+
+```bash
+rajio /path/to/session --commit --continue=until-manual
+```
+
+Expected result: rajio commits `transcript_work`, creates
+`translation/work/segments.toml`, and stops at `translation_work`.
+
+### 3. Translate And Polish Chinese
+
+Initial translation flow:
+
+1. Plan explicit translation batches by non-overlapping source-media time ranges instead
+   of attempting the whole file in one pass. Choose range sizes by dialogue density and
+   the active sub-agent concurrency limit.
+2. Spawn translation sub-agents following [SUB_AGENTS.md](SUB_AGENTS.md). Each worker gets
+   a label and assigned source-media `start`/`end` range.
+3. Review each worker patch file, dry-run summary, and final report confirmations. Apply
+   accepted patches to `translation/work/segments.toml` so every segment has filled or
+   refined `zh`. A blocker report is not an accepted patch or a completed batch; resolve
+   it or reassign that range before committing.
+4. Manually perform a whole-file first-draft review for terminology, subtitle continuity,
+   missing translations, Japanese corrections made during translation, and cross-batch
+   style consistency.
+5. Commit `translation_work` and export only after every batch has been translated,
+   terminology has been cross-checked, and validation has no blocking `fatal` or Chinese
+   `error` issues except reviewed intentional subtitle QA exceptions.
+
+Translation review requirements:
+
+- Use the segment commands described by the relevant leaf-command help with `--stage translation` for
+  translation inspection, patch review, patch application, and validation.
+- Fill or refine translated subtitle text in `zh`; keep Japanese corrections limited to
+  transcript issues found while translating.
+- The main agent's first-draft translation review must be the manual review defined in
+  [Non-Negotiable Rules](#non-negotiable-rules). Use `rajio segments list` to read
+  translated segments in timeline-order batches with neighboring context, compare `ja` and
+  `zh`, review worker patches against those segments, and inspect batch boundaries.
+- `rajio check`, issue lists, dry-run summaries, or statistics are only supporting
+  evidence. They do not count as translation review unless the subtitle text is read in
+  context.
+
+During batch work, keep glossary updates and unresolved uncertainty in `description.md`,
+and search earlier completed batches when a new name, phrase, or style decision appears.
+Before committing, confirm this command has no blocking `fatal` or Chinese `error` issues:
+
+```bash
+rajio check /path/to/session --json --stage translation
+```
+
+To inspect Japanese QA in the current translation work file, run the same command with
+`--language ja`.
+
+During `translation_work`, `translation/work/segments.toml` is the active subtitle work
+file. If translation reveals a Japanese typo, wrong name, wrong fixed phrase, missing
+context, or bad segment structure, correct the relevant `ja` and `zh` in
+`translation/work/segments.toml` and update `description.md` when the decision affects
+terminology or future batches.
+
+If a translation problem points back to an uncertain or messy source-audio range, use
+`rajio clips transcribe` for that original media time range and inspect it with
+`rajio clips show <session> <id> --json`. Use the sidecar transcript as a second reference before
+editing the committed transcript and reconciling the translation.
+
+Validate often with `rajio check` using its installed CLI help. This only checks data
+shape, timing, required fields, and subtitle limits; before committing, still polish the
+content semantically against the acceptance criteria below.
+
+Acceptance criteria:
+
+- Keep `id`, `start`, `end`, and `speaker` stable unless a structural correction or
+  intentionally removed semantically empty filler genuinely requires a change. `ja` may be
+  corrected in `translation/work/segments.toml` when translation review finds a Japanese
+  typo, name, or fixed-phrase issue.
+- Every segment has non-empty `zh`.
+- Chinese is natural Simplified Chinese subtitle language, not word-by-word literal output.
+- Preserve meaning, tone, speaker intent, jokes, references, and discourse flow.
+- Very short segments that are only meaningless fillers, breaths, interjections, or pure
+  hesitation sounds may be deleted from the subtitle if removing them does not change
+  meaning, speaker intent, or timing comprehension.
+- Smooth spoken hesitation, false starts, and harmless repetition in Chinese unless they are
+  semantically important, characterize the speaker, or affect the scene's rhythm.
+- Remove unnecessary Chinese filler and transcript-shaped clutter, including but not
+  limited to redundant `嗯`, `啊`, `哦`, `呃`, `欸`, `那个`, `就是`, repeated `对对对`,
+  duplicated verbs, repeated subjects, stalled false starts, and trailing particles such
+  as `嘛` when they do not carry tone or timing value. Treat these as review candidates,
+  not a fixed deletion list. Keep interjections when they express a real reaction, joke
+  beat, surprise, embarrassment, or speaker personality.
+- Keep Chinese renderings globally consistent for people, programs, corners, events,
+  hashtags, works, products, honorific decisions, and recurring phrases.
+- Use `description.md` as the glossary and style source. Update it if new confirmed terms
+  are discovered.
+- Translate merged multi-speaker phrases as one complete subtitle. Do not preserve
+  syllable-by-syllable fragments in Chinese.
+- Follow the Subtitle QA Rules for line length, line count, duration, reading speed, gaps,
+  and punctuation.
+- Do not create an awkward short trailing subtitle only to satisfy a warning threshold.
+  Preserve subtitle continuity and readability first.
+
+Before committing:
+
+- Compare `description.md` glossary against `translation/work/segments.toml`.
+- Search for inconsistent Chinese names, untranslated Japanese names, wrong titles, and
+  stale translations from earlier draft assumptions.
+- Spot-check opening, middle, ending, fixed greetings, mail reads, event announcements,
+  and sign-off for Japanese correctness and Chinese readability.
+- Check subtitle continuity across adjacent segments: the Chinese should read as connected
+  dialogue, not isolated literal fragments.
+- Review Japanese `error` and `warning` issues still present in
+  `translation/work/segments.toml`:
+
+```bash
+rajio check /path/to/session --json --stage translation --language ja --level warning
+```
+
+- Record unresolved uncertainty in `description.md` or mention it in the final report.
+
+When clean, commit and export the first translation draft:
+
+```bash
+rajio /path/to/session --commit --continue=until-manual
+```
+
+If intentional Chinese QA exceptions remain, inspect them first:
+
+```bash
+rajio check /path/to/session --json --stage translation --verbose
+```
+
+Add `skip_checks` to each affected segment only after manual review confirms every
+remaining `error` issue is an intentional subtitle QA exception and no `fatal` issues
+remain. Then commit normally.
+
+```bash
+rajio /path/to/session --commit --continue=until-manual
+```
+
+Expected result: rajio commits `translation_work`, runs export, and reaches the
+terminal `done` state. This ends the CLI workflow, but the exported subtitles are still
+only a first-pass translation and proofread draft. The current main agent must continue
+with the refinement pass below before treating the subtitles as final polished output.
+
+Expected draft output:
+
+- `output/*.ja.srt`
+- `output/*.zh.srt`
+- `output/*.ja-zh.ass`
+
+### 4. Refine Chinese Subtitles
+
+After the first draft export, the main agent must perform at least three full-pass Chinese
+subtitle refinement passes over `translation/work/segments.toml`, and should keep
+iterating while meaningful improvements remain. This is not a
+substitute for the sub-agent batch translation stage: do not use these passes to fill
+large missing sections or redo the whole translation from scratch. Use them to raise the
+already translated draft to final subtitle quality.
+
+Preserve the committed draft's structure unless a change clearly improves accuracy,
+readability, or subtitle continuity. Do not break the Subtitle QA Rules, timeline
+integrity, required fields, segment IDs, or transcript alignment. If refinement changes
+the work file after export, recommit `translation_work` and regenerate export output.
+
+Required refinement pass loop:
+
+For each Chinese refinement pass, follow these steps exactly:
+
+1. Read `translation/work/segments.toml` from start to end in timeline order as actual
+   `ja`/`zh` subtitle text, using `rajio segments list` windows or ranges with neighboring
+   context until the full file is covered. This full read is mandatory; do not replace it
+   with `rg`, `rajio check`, issue summaries, issue lists, issue IDs, examples, filters,
+   or statistics.
+2. Edit the Chinese subtitles for style, flow, tone, concision, consistency, and viewing
+   comfort. Update matching `ja`, glossary, or `description.md` entries only when the
+   Chinese review exposes a confirmed source or term problem.
+3. Run the translation checks for `zh` and `ja` only as regression checks. Final
+   refinement starts from a committed draft that should already have no blocking
+   `fatal` or `error` issues; if this pass introduces any new `fatal` or `error`, fix it
+   immediately. Warnings may guide inspection, but this pass is not mechanical warning
+   cleanup.
+4. Reread every segment changed in this pass one by one in its final subtitle form, with
+   neighboring context for boundary flow.
+5. If the reread finds a style, meaning, flow, or consistency problem, fix it. If checks
+   show a new `fatal` or `error`, fix it immediately. Then repeat steps 3-4.
+6. Count the pass complete only after the full-file read, editorial pass, regression
+   checks, and changed-segment reread are all done.
+
+Refinement requirements:
+
+- Perform at least three full-file Chinese refinement passes before final verification. A
+  pass must make a deliberate full-file check for text quality, not only run `rajio check`.
+- Each refinement pass must satisfy the manual review definition in
+  [Non-Negotiable Rules](#non-negotiable-rules): read the actual `ja`/`zh` segment text in
+  timeline order with neighboring context, using `rajio segments list` windows or ranges
+  to cover the full file. Warning lists, statistics, scripted transformations, and
+  validation output may guide where to look, but they do not count as a refinement pass.
+- Do not substitute `rg` searches, `rajio check` summaries, `rajio check --verbose` issue
+  lists, issue IDs, examples, or filtered issue views for full-file reading. They are only
+  navigation aids; the pass counts only when the subtitle text itself was read and edited
+  in order.
+- Read the Chinese subtitles continuously across adjacent segments, not only segment by
+  segment. Repair places where the text reads like isolated translated fragments.
+- Enforce global term consistency for names, programs, corners, events, works, products,
+  hashtags, recurring jokes, honorific choices, and fixed phrases.
+- Match register, tone, and speaker intent to the local context: casual speech should not
+  become stiff, jokes should not become flat, and emotional emphasis should not disappear.
+- Prefer natural Simplified Chinese subtitle language over literal completeness. Compress
+  harmless repetition and spoken clutter when the source meaning, rhythm, and speaker
+  personality are preserved.
+- Clean up filler-heavy Chinese, wordiness, and direct translation artifacts, including
+  but not limited to redundant interjections, duplicated words or clauses, repeated
+  subjects, over-explicit pronouns, stalled false starts, stiff connectives, explanatory
+  padding, and literal translations of Japanese hesitation. Treat these as review
+  candidates rather than a fixed deletion list; delete or rewrite them when they only
+  mirror source disfluency or make the subtitle read like prose instead of subtitles.
+- Check pronouns, ellipses, omitted subjects, callbacks, and topic shifts against nearby
+  Japanese context so Chinese lines do not become ambiguous or misleading.
+- Smooth sentence flow across subtitle boundaries while keeping each subtitle readable on
+  its own timing. Avoid awkward trailing fragments created only to satisfy line limits.
+- Revisit glossary decisions in `description.md`; update it when a better confirmed term
+  or style rule is chosen, then apply that choice consistently through the full file.
+- Search for stale draft assumptions, mixed translations of the same term, untranslated
+  Japanese, accidental simplified/traditional mismatches, and Chinese punctuation noise.
+- Preserve meaningful speaker style differences where the source supports them, but do
+  not over-characterize beyond the audio/video evidence.
+- If a Chinese issue exposes a likely Japanese subtitle mistake, fix the `ja`/`zh` pair in
+  `translation/work/segments.toml`, update `description.md` if needed, and rerun the
+  translation checks.
+
+During and after refinement, validate with:
+
+```bash
+rajio check /path/to/session --json --stage translation --language zh --level warning
+rajio check /path/to/session --json --stage translation --language ja --level warning
+```
+
+After the final refinement pass, run export reset with commit. This commits dirty
+`translation_work` when refinement changed it, and otherwise just regenerates export from
+the existing committed translation:
+
+```bash
+rajio /path/to/session --reset export --commit --continue=until-manual
+```
+
+If the final refined translation still has intentional Chinese QA exceptions, inspect them
+first as documented above, add exact per-segment `skip_checks`, then rerun the same commit
+and export reset command:
+
+```bash
+rajio /path/to/session --reset export --commit --continue=until-manual
+```
+
+Expected final output:
+
+- `output/*.ja.srt`
+- `output/*.zh.srt`
+- `output/*.ja-zh.ass`
+
+### 5. Final Verification
+
+Before reporting completion:
+
+1. Run `rajio check` using its installed CLI help.
+2. Treat the result as data validation only.
+3. Confirm `session.toml` is not stuck in `failed`, `dirty`, or an unexpected manual stage.
+4. Confirm expected output files exist under `output/`.
+5. Confirm at least three full-file Chinese refinement passes were performed after the
+   sub-agent translation draft. If refinement changed `translation/work/segments.toml`,
+   recommit and regenerate exports before reporting completion.
+6. Perform manual content QA:
+   - proper nouns and fixed terms
+   - opening title call and speaker introductions
+   - middle section timing and speaker continuity
+   - event/work/corner names
+   - ending sign-off
+   - Chinese readability, subtitle continuity, and terminology consistency
+   - unnecessary filler words, repeated expressions, false starts, and direct-translation
+     artifacts in Chinese
+7. Search final work files for known ASR-confusion variants and glossary terms one last
+   time.
+8. Perform at least two final spot-check rounds before reporting. Each round should sample
+   opening, middle, ending, at least one dense dialogue range, and at least one known
+   uncertain range from `description.md`; do not count `rajio check` as a spot-check.
+9. Report output files, remaining warnings, assumptions, content-QA limits, and any spots
+   needing user judgment.
+
+## Failure Handling
+
+- If `rajio check` reports schema, duplicate ID, empty text, invalid time, or overlap
+  errors, fix the relevant work file before committing.
+- If a committed manual stage becomes `dirty`, inspect the changed work and rerun
+  `--commit` only after it passes manual review and validation.
+- If the main workflow's `transcript_raw` stage fails, inspect
+  `transcript/raw/checkpoints/input-*.error.log`, check
+  credentials, provider access, media path, ffmpeg, and ffprobe, report the likely cause and
+  recommended next step to the user, then pause work. Do not retry main transcription, reset
+  its artifacts, or continue downstream stages unless the user explicitly asks for it.
+  A matching completed checkpoint is reused on retry; use `--reset transcript_raw` only when the
+  user asks to start a full new transcription round.
+- Clip failures do not block the main workflow.
+- If the user asks to retry an earlier main workflow step, run the default command with
+  `--reset`: `--reset audio` retries audio extraction, `--reset transcript_raw` reruns
+  transcription generation, `--reset transcript_work` regenerates the transcript
+  work file, `--reset translation_work` regenerates the translation draft, and
+  `--reset export` reruns subtitle export.

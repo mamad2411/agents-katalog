@@ -1,0 +1,396 @@
+---
+name: ywc-finish-branch
+description: >-
+  (ywc) Use when delivering one completed feature branch to the base branch:
+  PR-ready, CI wait, bot review polling, merge, post-merge verification, task
+  bookkeeping, and local branch cleanup. Triggers: "finish branch", "deliver
+  branch", "ywc-finish-branch", "merge feature branch", "branch 마무리",
+  "ブランチ完了", "deliver task". Do not use for branch creation, worktree
+  management, draft PR creation alone (use ywc-create-pr), or PR review
+  comment handling (use ywc-handle-pr-reviews).
+---
+
+# ywc-finish-branch
+
+**Announce at start:** "I'm using the ywc-finish-branch skill to deliver this feature branch."
+
+Encapsulates the post-implementation delivery flow that `ywc-sequential-executor` and `ywc-parallel-executor` previously inlined separately. One feature branch, one task — given a verified branch with passing local tests, this skill takes it the rest of the way to "done": optionally creates the PR, marks it ready, waits for CI, handles automated bot reviews, merges (PR or local), runs the post-merge hard gate, moves the task directory to `completed/`, and deletes the local feature branch. Worktree-specific cleanup is intentionally **not** in scope — that stays with `ywc-parallel-executor` because the lifecycle differs.
+
+## Rationalization Defense
+
+When tempted to skip a step, check this table first:
+
+| Excuse | Reality |
+|---|---|
+| "Step 4 (Merge) succeeded, that means we are done" | The Definition of Done has 5 conditions. Merge is condition 2 of 5. Mark Task Complete (Step 7) and branch deletion (Step 8) are equally required — skipping them silently breaks dependency resolution for downstream tasks. |
+| "Post-merge verification is just running `git log` — skip it for speed" | The hard gate exists because `git merge` can silently no-op (already merged, nothing to do, fast-forward elided) and the caller cannot tell from exit code alone. Always verify. |
+| "Bot review polling found 0 comments, skip the wait window" | Polling the full window is the contract. Bots can post asynchronously after CI completes; cutting short the window misses real findings. `poll-pr-reviews.sh --verify` must confirm the completed-poll artifact before merge. |
+| "Branch was already deleted by `gh pr merge --delete-branch`, skip the local cleanup" | `--delete-branch` only removes the **remote** branch. The local copy persists and the next task's branch creation will conflict. Always run `git branch -d`. |
+| "Mode flag conflict was already validated upstream, skip the check here" | This skill is a callable unit and may be invoked outside the executors. Validate flag conflicts at every entry point, not just the upstream caller. |
+| "Mark Task Complete is bookkeeping — defer it for after all wave tasks merge" | `tasks/completed/` is the contract that downstream tasks read for dependency resolution. Move-then-merge ordering is forbidden by the Definition of Done; merge-then-move within the same task cycle is required. |
+| "If `git merge --no-ff` reports a conflict, abort and try again" | An aborted merge loses the working state needed to debug the conflict. **Never** auto-abort — surface the conflict to the user so they can inspect it. |
+| "`build-pr-title.py` exited 1 — I'll use just the slug as the title" | Exit 1 means `TASK_NUMBER` was not detected. Stop and return `NEEDS_CONTEXT` — do not construct a title without `[TASK_NUMBER]`. A title without the task number cannot be traced back to the task in the audit trail. |
+| "`ywc-create-pr` generates its own title from `git log`, so `--title` is optional" | `ywc-create-pr`'s internal title generation does not know the task-number format. It silently produces a title without `[TASK_NUM]`. Always pass `--title` explicitly with `[TASK_NUMBER]` already included. |
+| "CI failed twice — return BLOCKED and let the user fix it" | Before returning BLOCKED, categorize the failure type. Lint/format failures are auto-fixable without judgment. Type errors and build errors usually have a clear mechanical fix visible in the log. Only return BLOCKED when the root cause requires a design decision or all fix attempts are genuinely exhausted. |
+| "CI is green, so `gh pr merge` will succeed" | A PR can be `CONFLICTING` or `BEHIND` against the base even with green CI — a sibling task or another PR merged first. Check `gh pr view --json mergeable,mergeStateStatus` before merging instead of letting `gh pr merge` fail. If the branch is merely behind, merge the base into it (never rebase — it orphans review threads) and re-verify CI; if it is a real textual conflict, surface it and return `BLOCKED`. See `../references/pr-conflict-resolution.md`. |
+| "The UL update in Step 1.5 is optional bookkeeping — skip it to save time" | The glossary is the shared vocabulary LLMs use in every subsequent prompt on this project. A branch that introduces new domain terms without updating the glossary silently pollutes downstream code generation and spec reviews. If `docs/ubiquitous-language.md` does not exist, Step 1.5 skips automatically — there is no overhead in that case. |
+
+**Violating the letter of these rules is violating the spirit.** Delivery is the step where the user trusts the executor most — earning that trust requires honesty about partial completion.
+
+## Arguments
+
+| Parameter | Format | Example | Description |
+|---|---|---|---|
+| `--mode` | `<mode>` | `--mode local-merge` | One of `normal-pr`, `local-merge`, `draft`, `skip-ci-wait`, `per-task-pr`. See [Modes](#modes). |
+| `--branch` | `feature/<task-name>` | `--branch feature/yk-000001-010-db-create-users` | The feature branch to deliver. Must already exist locally; prefixed, unprefixed, and legacy task names are carried unchanged. |
+| `--base-branch` | `<branch-name>` | `--base-branch develop` | Target branch. Default: auto-detect (`develop` > `main` > `master`). |
+| `--task-name` | `<task-name>` | `--task-name yk-000001-010-db-create-users` | Task directory name under `<tasks-dir>/`, used for the Mark Complete commit. All supported ID forms remain valid. |
+| `--tasks-dir` | `<path>` | `--tasks-dir tasks/` | Tasks directory root. Default: `tasks/`. |
+| `--pr-lang` | `en` \| `ja` \| `ko` \| `zh` \| `es` \| `auto` | `--pr-lang ja` | PR title/description language. If omitted or `auto`, resolve through shared YWC language policy; if no tier resolves a language, ask the user before creating the PR. |
+| `--bot-action` | `sequential` \| `parallel` | `--bot-action sequential` | Post-bot polling behavior. Default: `sequential` (re-run CI after bot fixes). Use `parallel` when called from a wave loop where CI does not re-gate between bot iterations. |
+| `--defer-push` | flag | | Skip the push of the Mark Complete commit. Used by range-mode callers that batch pushes at the end of the range. |
+| `--keep-branch` | flag | | Skip the local feature branch deletion (`git branch -d`). Used by `ywc-parallel-executor`, where the branch is checked out in a worktree at the time of merge — `git branch -d` would fail until the worktree is removed. Caller takes responsibility for the eventual `git worktree remove` + `git branch -d`. |
+| `--worktree-path` | `<path>` | `--worktree-path ../worktree-run-001010` | Run merge, verification, and Mark Complete commands against the supplied worktree using `git -C <path>` and path-scoped task moves. Used by `ywc-sequential-executor --worktree`. |
+
+**Mode-flag mutual exclusivity**: `--mode` is a single value; conflicts are impossible by construction. The caller is responsible for resolving ambiguity (e.g., the upstream executor's `--draft` and `--local-merge` flags must be collapsed into one `--mode` value before invoking this skill).
+
+## Modes
+
+| Mode | PR? | CI wait? | Merge? | Mark Complete? | Cleanup? | Use case |
+|---|---|---|---|---|---|---|
+| `normal-pr` | yes (delegates to `ywc-create-pr`) | yes | yes (`gh pr merge --delete-branch`) | yes | yes (`git branch -d`) | Default upstream flow |
+| `local-merge` | no | no | yes (`git merge --no-ff` + push) | yes | yes | Personal repos, fast iteration |
+| `draft` | yes | no | no | **no** (task stays open until manually merged) | no | User wants PR for review without auto-merge |
+| `skip-ci-wait` | yes (mark ready) | no | no | **no** | no | User merges manually after offline review |
+| `per-task-pr` | yes | no (caller handles per-wave CI) | no (caller merges locally for wave progression) | no (caller marks complete in wave loop) | no | `ywc-parallel-executor` per-task PR delivery |
+
+`per-task-pr` is the special mode used inside `ywc-parallel-executor`'s wave loop — this skill creates and pushes the PR but stops short of merging or marking complete, because wave-level orchestration handles those steps. For all other modes, this skill executes the full lifecycle.
+
+## Worktree-path Mode
+
+When `--worktree-path <path>` is supplied, this skill remains a single-branch
+delivery unit but scopes filesystem and git operations to that worktree:
+
+- Validate the path exists and is a git worktree before changing branches.
+- Use `git -C <path>` for branch checks, merge, post-merge verification,
+  marker commits, and branch cleanup.
+- Resolve `<tasks-dir>` relative to `<path>` for Mark Complete so the run-level
+  worktree state and task directories move together.
+- Do not create or remove the worktree here. `ywc-sequential-executor
+  --worktree` owns run-level worktree creation and cleanup through
+  `ywc-worktrees --mode prune --keep-branch`.
+
+Example local-merge command shape:
+
+```bash
+git -C <path> checkout <base-branch>
+git -C <path> pull origin <base-branch>
+git -C <path> merge --no-ff feature/<task-name> -m "Merge branch 'feature/<task-name>'"
+git -C <path> push origin <base-branch>
+```
+
+## Definition of Done
+
+A `--mode normal-pr` or `--mode local-merge` invocation is **done** only when all of the following have happened, in this order:
+
+1. **Verification gate passed** (caller's responsibility — this skill does not re-run tests; the upstream executor must have completed its verification before invoking).
+2. **Merge succeeded**: either the PR was merged via `gh pr merge --delete-branch` (normal-pr) or `git merge --no-ff` succeeded locally and was pushed (local-merge).
+3. **Post-merge verification passed**: `git log -1 --format="%s"` on the base branch begins with `Merge branch 'feature/`.
+4. **Task directory moved**: `git mv <tasks-dir>/<task-name> <tasks-dir>/completed/<task-name>` and the `chore: mark <task-name> as completed` commit was created.
+5. **Local feature branch deleted**: `git branch -d feature/<task-name>` succeeded (refuses to delete an unmerged branch — that is the safety check).
+
+For `--mode draft` and `--mode skip-ci-wait`, conditions 2–5 are intentionally not performed; the skill's responsibility ends at PR creation (and ready-marking for `skip-ci-wait`). For `--mode per-task-pr`, only the PR creation portion runs; the caller handles the rest within the wave loop.
+
+## Execution Steps
+
+### Step 1: Validate Inputs
+
+- Confirm `--branch` exists locally (`git branch --list <branch>` returns the branch).
+- Confirm `--base-branch` is reachable (`git rev-parse --verify <base-branch>` succeeds).
+- Confirm `--task-name` matches an entry under `<tasks-dir>/` (not under `<tasks-dir>/completed/`).
+- If `--worktree-path` is supplied, confirm the path exists and use `git -C <path>` for all subsequent git commands.
+- For PR-based modes: confirm `gh auth status` succeeds.
+
+If any check fails, return `NEEDS_CONTEXT` with the specific missing input. Do not proceed with partial information.
+
+### Step 1.5: Ubiquitous Language Update (optional)
+
+Check whether `docs/ubiquitous-language.md` exists in the project root:
+
+```bash
+test -f docs/ubiquitous-language.md
+```
+
+- **Exists**: Invoke `ywc-ubiquitous-language --mode update`. This runs before PR creation so that any new domain terms introduced by this branch are captured in the glossary before the PR description is written.
+- **Not exists**: Skip silently — the project has not yet established a ubiquitous language document.
+
+`ywc-create-pr` is called in Step 2 with `--skip-ubiquitous-update` to prevent a second invocation of the same update.
+
+### Step 2: PR Creation (PR-based modes only)
+
+For `--mode` ∈ {`normal-pr`, `draft`, `skip-ci-wait`, `per-task-pr`}: resolve `--pr-lang` first. Explicit `en|ja|ko|zh|es` wins. Omitted or `auto` language uses [`../references/language-resolution.md`](../references/language-resolution.md); if no policy tier resolves a language, ask the user before creating the PR.
+
+Construct the PR title per the format below, then invoke `ywc-create-pr` passing:
+- `--title "<constructed-title>"` — the `[task-number] description` string built from `--task-name` and `--pr-lang`
+- `--lang <pr-lang>` — so the description is written in the correct language
+- `--base-branch <base-branch>` — the resolved target branch
+- `--skip-post-ci-check` — prevents `ywc-create-pr` from running its own post-PR CI + bot check; this skill handles CI verification in Step 4
+- `--skip-ubiquitous-update` — prevents `ywc-create-pr` from running the UL update a second time; Step 1.5 already ran it
+
+`ywc-create-pr` handles security check, CI pre-push validation, push, and PR creation as a draft. Because `--title` is provided explicitly, `ywc-create-pr` will use it verbatim and skip its own title-generation step.
+
+**PR title format**: `[<task-number>] <human-readable description in --pr-lang>`
+
+`--pr-lang` supports `en`, `ja`, `ko`, `zh`, and `es`. Pass the selected value unchanged to `ywc-create-pr` as `--lang <pr-lang>`. The PR title/body prose follows that language, while branch names, task IDs, file paths, commands, labels, code blocks, and other machine identifiers stay unchanged. If the caller provided an explicit `--title`, `ywc-create-pr` uses it verbatim.
+
+Run the bundled script to extract the task number and English slug without regex parsing:
+
+```bash
+RESOLVER_LAUNCHER="$(bash "${CODEX_HOME:-$HOME/.codex}/skills/scripts/select-resolver-launcher.sh" 2>&1)" || { echo "BLOCKED: ${RESOLVER_LAUNCHER#BLOCKED: }" >&2; exit 3; }
+TITLE_SCRIPT="$(bash "$RESOLVER_LAUNCHER" "ywc-finish-branch/scripts/build-pr-title.py" python)" || exit $?
+python "$TITLE_SCRIPT" <task-name>
+# TASK_NUMBER=000001-010
+# SLUG_EN=Db Create Users Table
+```
+
+**If the script exits 1 (`TASK_NUMBER` is empty)**: stop immediately and return `NEEDS_CONTEXT` — report the task name that failed to parse. Do not construct a title with an empty task number.
+
+For English PRs (`--pr-lang en`), use `--format title` to get the complete title directly:
+
+```bash
+RESOLVER_LAUNCHER="$(bash "${CODEX_HOME:-$HOME/.codex}/skills/scripts/select-resolver-launcher.sh" 2>&1)" || { echo "BLOCKED: ${RESOLVER_LAUNCHER#BLOCKED: }" >&2; exit 3; }
+TITLE_SCRIPT="$(bash "$RESOLVER_LAUNCHER" "ywc-finish-branch/scripts/build-pr-title.py" python)" || exit $?
+python "$TITLE_SCRIPT" <task-name> --format title
+# [000001-010] Db Create Users Table
+```
+
+For other languages (`ja`, `ko`, `zh`, `es`), translate only `SLUG_EN` to `--pr-lang`, then compose: `[<TASK_NUMBER>] <translated-slug>`.
+
+The script supports initials-prefixed (`yk-000001-010-slug`), current unprefixed (`000001-010-slug`), and legacy (`001010-slug`) task names. Completion moves use the original full task name in every form.
+
+**Before calling `ywc-create-pr`**: verify the constructed title string starts with `[`. If it does not, stop — the `[TASK_NUMBER]` prefix was lost somewhere in the construction. Do not call `ywc-create-pr` without a valid title.
+
+For `--mode local-merge`: skip this step entirely. Local-merge does not produce a PR.
+
+### Step 3: Mark PR Ready (normal-pr only)
+
+Invoke `gh pr ready <pr-number>` to convert the draft into an open PR. Skip for `--mode draft`, `--mode skip-ci-wait`, `--mode per-task-pr` (those modes leave the PR as draft or hand control back to the caller).
+
+### Step 4: CI Verification + Bot Review Polling (normal-pr only)
+
+> **Action required**: Read [`../references/pr-bot-polling.md`](../references/pr-bot-polling.md) now before proceeding. The 60-second initial wait, the 300-second polling window, the `BOT_COUNT` jq query, and the merge condition are all defined there. Do not implement your own polling logic without reading it first.
+
+Run the CI wait + fix loop and the bot review polling per [../references/pr-bot-polling.md](../references/pr-bot-polling.md). The polling reference defines the canonical loop; this skill applies its `--bot-action` parameter to choose the post-bot behavior:
+
+Before entering Step 4 final or Step 5, run the reference's `poll-pr-reviews.sh --verify <pr-number>` command. If it fails, return `BLOCKED`; do not treat a timeout, fetch failure, or missing artifact as zero bot comments, and do not call `gh pr merge`.
+
+- `--bot-action sequential`: after `ywc-handle-pr-reviews` runs, re-run the CI verification step before re-polling. Bot fixes may trigger a new CI run that must pass before merging.
+- `--bot-action parallel`: after `ywc-handle-pr-reviews` runs, re-poll without re-gating on CI. The wave loop in `ywc-parallel-executor` handles CI at the wave level.
+
+**CI failure handling (up to 2 fix attempts per failure cycle):**
+
+1. **Identify failing checks:**
+   ```bash
+   gh pr checks <pr-number>
+   ```
+
+2. **Get failure logs:**
+   ```bash
+   # Get the most recent failed run ID for the feature branch
+   gh run list --branch <feature-branch> \
+     --json databaseId,name,conclusion \
+     --jq '.[] | select(.conclusion == "failure") | .databaseId' | head -1
+   gh run view <run-id> --log-failed
+   ```
+
+3. **Categorize and fix by failure type:**
+
+   | Failure type | Fix action |
+   |---|---|
+   | Lint / format | Run the project's auto-fix command (`eslint --fix`, `prettier --write`, `ruff --fix`, `biome check --apply`), commit, push |
+   | Type errors | Read compiler output, fix type mismatches in affected files, commit, push |
+   | Test failures | Analyze failing test output, fix the implementation (never disable or weaken tests), commit, push |
+   | Build errors | Read compiler/bundler output, fix compilation or import errors, commit, push |
+
+4. After each push, re-run the CI wait and bot review polling loop (return to the top of Step 4).
+
+5. If CI still fails after **2 fix attempts**, return `BLOCKED` with: the failing check name(s), a log excerpt (last 30 lines), the PR URL, and the failure category so the user has enough context to resolve it manually.
+
+Skip this step entirely for `--mode local-merge`, `--mode draft`, `--mode skip-ci-wait`, `--mode per-task-pr`.
+
+#### Step 4 final: Merge-Readiness Gate (normal-pr only)
+
+CI green is necessary but not sufficient — the base may have advanced into a conflict while CI ran. Before Step 5's `gh pr merge`, confirm the PR can actually merge:
+
+> **Action required**: Read [`../references/pr-conflict-resolution.md`](../references/pr-conflict-resolution.md) — it defines the `mergeable` / `mergeStateStatus` table and the merge-not-rebase update procedure.
+
+```bash
+gh pr view <pr-number> --json mergeable,mergeStateStatus --jq '{mergeable, mergeStateStatus}'
+```
+
+- `MERGEABLE` / `CLEAN` → proceed to Step 5.
+- `BEHIND` (branch protection requires up-to-date; no textual conflict) → merge the base into the feature branch (never rebase), push, and re-verify CI (counts as one CI cycle). Then re-check the gate.
+- `CONFLICTING` / `DIRTY` that auto-resolves → merge the base into the feature branch (never rebase), push, and re-verify CI (counts as one CI cycle). Then re-check the gate.
+- `CONFLICTING` / `DIRTY` with real textual conflicts → surface the conflicting files + PR URL and return `BLOCKED`. Do not auto-resolve or force-push.
+- `BLOCKED` (a required check or review is missing — not a conflict) → do not run the base-merge procedure; surface the outstanding required check/review and return `BLOCKED` so the user can resolve the gate.
+- `UNKNOWN` → poll briefly per the reference, then re-read.
+
+### Step 5: Merge
+
+For `--mode normal-pr`:
+```bash
+# Step 4 must have produced and verified the completed-poll artifact for this PR.
+# Pin to the head Step 4 verified: read headRefOid when its CI gate passed (must match
+# ^[0-9a-f]{40}$, else BLOCKED: head unreadable) and write it here as a literal.
+gh pr merge <pr-number> --delete-branch --match-head-commit "<HEAD_SHA>"
+```
+
+A refused pinned merge means the head moved after CI passed: re-run Step 4 on the new head and pin to it. Never retry the merge unpinned.
+
+For `--mode local-merge`:
+```bash
+# Caller has already verified its Step 4 (Task Verification); this skill does not re-verify.
+git checkout <base-branch>             # or: git -C <path> checkout <base-branch>
+git pull origin <base-branch>          # or: git -C <path> pull origin <base-branch>
+git merge --no-ff feature/<task-name> -m "Merge branch 'feature/<task-name>'"
+git push origin <base-branch>          # omit when --defer-push is set; use git -C <path> in worktree-path mode
+git branch -d feature/<task-name>      # omit when --keep-branch is set; use git -C <path> in worktree-path mode
+```
+
+For all other modes: skip — merge happens later (manual for `draft`, caller for `skip-ci-wait` and `per-task-pr`).
+
+**Why `git merge --no-ff` specifically** (not cherry-pick, not direct commit on main): preserves original commit SHAs, marks the task boundary in `git log --graph`, and lets `git branch -d` act as a built-in safety check that refuses to delete an unmerged branch. Full rationale lives in the upstream executor's `references/branch-lifecycle.md`.
+
+**Error handling**: `git merge` conflict → stop and ask the user to resolve manually (do not auto-abort; the user may want to inspect). `gh pr merge` failure due to conflict/out-of-date → apply the Step 4 final Merge-Readiness Gate (`../references/pr-conflict-resolution.md`): merge the base into the feature branch and re-verify, or return `BLOCKED` on a real textual conflict. Other `gh pr merge` failures → stop and report. Push rejected (remote moved) → stop; never force-push.
+
+### Step 6: Post-Merge Verification (hard gate)
+
+For `--mode normal-pr` and `--mode local-merge`:
+```bash
+git log -1 --format="%s"
+```
+The output **must** begin with `Merge branch 'feature/`. If not, the merge did not execute correctly — investigate and retry before proceeding to Step 7. Do not write a completion marker for a merge that did not happen; downstream tasks would resolve dependencies against a broken contract.
+
+### Step 7: Mark Task Complete
+
+For `--mode normal-pr` and `--mode local-merge`:
+
+Use the shared marker script — it handles the `.gitignore` branch, the mandatory marker commit, and the post-move verification in one deterministic step (exits non-zero if anything failed):
+
+```bash
+RESOLVER_LAUNCHER="$(bash "${CODEX_HOME:-$HOME/.codex}/skills/scripts/select-resolver-launcher.sh" 2>&1)" || { echo "BLOCKED: ${RESOLVER_LAUNCHER#BLOCKED: }" >&2; exit 3; }
+MARK_SCRIPT="$(bash "$RESOLVER_LAUNCHER" "scripts/mark-complete.sh" bash)" || exit $?
+bash "$MARK_SCRIPT" <tasks-dir> <task-name> [--push | --defer-push]
+```
+
+In `--worktree-path` mode, run the marker script from `<path>` or pass a
+`<tasks-dir>` that resolves inside `<path>`; the post-move verification must
+prove `<path>/<tasks-dir>/completed/<task-name>` exists and
+`<path>/<tasks-dir>/<task-name>` is gone.
+
+The marker script runs `codex/skills/ywc-task-generator/scripts/compact-dependency-graph.py` between the move and marker commit, using the same resolved `<tasks-dir>`, and stages the resulting graph when it is tracked. The heading-based compactor retroactively handles existing graphs: completed phases become `## Phase NNNNNN — done` plus a `- Completed: ...` bullet, while fully completed Parallel Execution Notes and Visual Dependency Graph sections are removed. In worktree mode, the script path may come from the main checkout, but `<tasks-dir>` must resolve inside `<path>`.
+
+Why a script, not inline git: `git mv` cannot stage a path inside a gitignored `<tasks-dir>` (the move produces no diff), so that case needs a plain `mv` plus an `--allow-empty` marker commit, while a tracked `<tasks-dir>` uses `git mv`. The script detects which applies. The `chore: mark <task-name> as completed` commit is **mandatory in both cases** — it is the `git log` audit boundary that humans, audit tooling, downstream skills, the Completion Report, and resume / replay all rely on to verify task completion at a specific commit. The script then verifies the move (destination exists, source gone, marker commit at HEAD) and exits non-zero if any check fails; **do not declare `DONE` on a non-zero exit** — investigate and retry.
+
+**Push strategy**: pass `--push` to `mark-complete.sh` for `--mode local-merge` and for `--mode normal-pr` when `--defer-push` is **not** set. Otherwise pass `--defer-push` (the script's default) so the caller can batch completion-marker commits and push them once at the end of the range. The caller is responsible for the eventual push when deferral is requested.
+
+For `--mode draft`, `--mode skip-ci-wait`, `--mode per-task-pr`: skip Step 7 entirely. The task is not yet merged; marking it complete would be incorrect.
+
+### Step 8: Local Branch Cleanup
+
+For `--mode normal-pr`:
+```bash
+git checkout <base-branch>
+git pull origin <base-branch>
+git branch -d feature/<task-name>      # omit when --keep-branch is set
+```
+The local branch must be deleted explicitly because `gh pr merge --delete-branch` only removes the remote. Skip the deletion when `--keep-branch` is set — the caller (typically `ywc-parallel-executor`) will release the worktree and delete the branch in its own cleanup step.
+
+For `--mode local-merge`: already handled inside Step 5's command sequence (which honors `--keep-branch` likewise).
+
+For all other modes: skip. The branch stays alive for the user or caller to handle.
+
+**Remote deletion guard**: normal delivery removes a remote branch through `gh pr merge --delete-branch`. A separate user-requested remote deletion runs only after every guard below passes, in this order. `$branch` is the caller's branch and `$base` its intended base. These are instruction contracts, not enforced hooks.
+
+1. Validate the branch in-process, without interpolating it into any shell command: it must match `^[A-Za-z0-9._/-]+$` over the whole string, must not start with `-`, and must not contain `..`; only then `git check-ref-format "refs/heads/$branch"` must succeed. Any failure returns `BLOCKED: invalid branch name` and runs no remote command. The branch to delete must also not be `HEAD` (which `check-ref-format` accepts) or equal `$base`; either returns `BLOCKED: refusing to delete <branch>` with no remote command. Pass the branch only as a quoted argument, never shell source.
+2. Pin the push target: `url` is `git remote get-url origin` and must not start with `-`. `url` is the git remote URL (HTTPS or SSH, as `git remote get-url` prints it); `gh repo view` accepts both forms. `git remote get-url --push --all origin` must print exactly one line, equal to `url` (a `pushurl` or `pushInsteadOf` would send the delete somewhere these checks never looked); otherwise return `NEEDS_CONTEXT` with zero deletions.
+3. Bind the repository to `origin`: run every `gh` call in this guard as `env -u GH_HOST gh …` with an explicit `--repo`. `env -u GH_HOST gh repo view --json url,isFork,parent,defaultBranchRef -- "$url"` (flags before `--`) gives `repo`, the `url` without its `https://` prefix (`<host>/<owner>/<name>`). Take `repo` from the `url` field of gh's JSON output (always `https://<host>/<owner>/<name>`), never from the git remote string: an SSH remote such as `git@github.com:o/r.git` has no `https://` prefix to strip and would fail the shape check below. When `isFork` is true, `parent` is `<host>/<parent.owner.login>/<parent.name>` and `env -u GH_HOST gh repo view --json isFork -- "$parent"` must report `false`; a fork of a fork returns `NEEDS_CONTEXT`. Each value must match `^[A-Za-z0-9.-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, otherwise `NEEDS_CONTEXT`. Every `gh pr list` below runs with `--repo "$repo"` and, for a fork, again with `--repo "$parent"`; never rely on gh's implicit remote pick.
+4. Read the exact remote tip with `git ls-remote origin "refs/heads/$branch"`. Patterns tail-match, so take `tip` from the one line whose ref field is exactly `refs/heads/$branch`; it must match `^[0-9a-f]{40}([0-9a-f]{24})?$`. No exact line means the ref is already absent: report it with zero deletions. Then refuse the repository's default branch and any protected branch: `$branch` must differ from `defaultBranchRef.name` of the step 3 JSON, and `env -u GH_HOST gh api --hostname "<host>" "repos/<owner>/<name>/branches/$branch" --jq .protected` (host, owner and name from `repo`) must print exactly `false`; `true` stops with zero deletions and reports `protected branch`. Ambiguous output or a malformed `tip` is `NEEDS_CONTEXT`.
+5. Merged check (unconditional): `env -u GH_HOST gh pr list --repo "$repo" --head "$branch" --state merged --json number,baseRefName,headRefOid,headRepository,headRepositoryOwner` (plus the `$parent` run for a fork) must return a row whose `baseRefName` is the intended base and `headRefOid` equals the current remote tip. The row's head repository must be `origin`: `headRepositoryOwner.login` and `headRepository.name` must equal the owner and name in `repo`, in the `$parent` run too, since `--head` filters by branch name only and a same-named branch from another fork is not evidence. A different base or tip means zero deletions; a differing tip means commits were pushed after the merge. Never infer a merge from `git branch -r --merged HEAD`, or from `gh pr view <branch>` returning only one of several PRs.
+6. Open-PR check, last before the delete to shrink the race window: `env -u GH_HOST gh pr list --repo "$repo" --head "$branch" --state open --json number` must exit 0, and the parsed array must have exactly 0 entries; for a fork, the `--repo "$parent"` run must return an empty array too. Check the array in-process; only a successful, parseable, empty result allows deletion. Any entry is an open PR: stop with zero deletions and report its numbers.
+7. Protect the final delete with a tip-bound lease (`git push --force-with-lease="refs/heads/$branch:$tip" origin --delete "refs/heads/$branch"`). This lease authorizes deletion of that exact tip only; a push landing after step 4 rejects the delete. A race window remains between step 6 and this push: a PR opened in it is not seen and is auto-closed by the delete; the lease does not cover that. A failed or uncertain result stops subsequent mutation; reconcile the exact remote ref before any retry and rerun every guard. Never turn partial cleanup into `DONE`.
+
+Outcomes: any command exiting non-zero (`gh`, `git ls-remote`, the push) is `BLOCKED`. An undeterminable repository, a value failing its shape check, or ambiguous output (unparseable JSON, a malformed `tip`) is `NEEDS_CONTEXT`. An open PR, no qualifying merged row, or a tip mismatch stops with zero deletions and reports the PR numbers or both SHAs. Compare JSON on the parsed result in-process (or with `jq --arg`); never interpolate `$base` or `$tip` into a `--jq` filter.
+
+**Worktree prune (when caller used a worktree)** — if the caller created a per-task worktree (`ywc-parallel-executor` does this), the post-cleanup prune is delegated to the installed `ywc-worktrees` skill:
+
+```bash
+ywc-worktrees --mode prune --task-name <task-name>
+```
+
+`ywc-worktrees --mode prune` runs the bundled `cleanup-worktree.sh` against the resolved worktree path — `git worktree remove` + local `git branch -d` + `git worktree prune` + post-removal verification, refusing to operate on dirty worktrees without `--force`. This skill does not inline the prune logic; the worktree priority chain (`.worktrees/` > CLAUDE.md `worktree_root` > `--root` fallback) and the dirty-tree safety check live in one place. Skip this delegation when no worktree was created (the typical `--mode local-merge` / `--mode normal-pr` flow that ran inside the main checkout).
+
+## Output Format
+
+```text
+## Finish Branch Result: <task-name>
+
+### Mode
+<mode>
+
+### Outcome
+- PR: <pr-url-or-"none-local-merge">
+- Merge: <commit-sha-or-"deferred">
+- Mark Complete commit: <commit-sha-or-"skipped">
+- Local branch: <"deleted"|"preserved">
+- Remote branch: <"deleted"|"retained"|"already-absent"|"uncertain">
+
+### Verification
+- Post-merge gate: <passed|skipped|failed>
+- Post-move gate: <passed|skipped|failed>
+
+### Completion Status
+<DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT>
+```
+
+**Completion Status rules:**
+
+| Status | When to use |
+|---|---|
+| `DONE` | All applicable steps for the chosen mode succeeded; verification gates passed |
+| `DONE_WITH_CONCERNS` | Delivery succeeded but with caveats (e.g., advisor budget exceeded for the bot-polling loop, or `--defer-push` was set and the caller now owns the push) |
+| `BLOCKED` | Cannot proceed — merge conflict, CI failure unfixable in 2 attempts, push rejected, post-merge verification failed, or a remote deletion guard command failed or the final lease-protected delete failed or had an uncertain result (report `Remote branch: uncertain` — the remote ref may already have changed) |
+| `NEEDS_CONTEXT` | One of `--branch`, `--base-branch`, `--task-name`, `--tasks-dir`, or `--mode` was missing or invalid; no work was performed. A remote deletion guard that finds missing or ambiguous evidence before the delete is attempted also returns this, with `Remote branch: retained` |
+
+## Validation
+
+Before reporting `DONE`, verify:
+
+- [ ] Input validation passed for branch, base branch, task name, tasks directory, and mode.
+- [ ] PR-based modes created the expected PR and applied the documented CI / bot-review / merge-readiness gates.
+- [ ] `normal-pr` and `local-merge` modes produced a verified merge commit whose subject starts with `Merge branch 'feature/`.
+- [ ] Mark Task Complete moved the task under `<tasks-dir>/completed/<task-name>` or created the required empty marker commit for gitignored task directories.
+- [ ] The latest commit subject is exactly `chore: mark <task-name> as completed` after Mark Task Complete.
+- [ ] Local feature branch cleanup ran unless the selected mode or `--keep-branch` explicitly preserves it.
+- [ ] Required pushes completed, or `--defer-push` is reported as a caller-owned concern.
+
+## Banned Output Patterns
+
+This skill produces operational side effects (commits, pushes, merges), not source code. The "Banned Output Patterns" idea applied here means: **never** declare `DONE` while leaving any of the following:
+
+- A merge commit that the post-merge verification step did not confirm
+- A `chore: mark <task-name> as completed` commit that has not been verified by the post-move test
+- A local feature branch that should have been deleted (modes `normal-pr` and `local-merge`, when `--keep-branch` is **not** set)
+- An unpushed commit when push was required (modes `local-merge` always; `normal-pr` when `--defer-push` is not set)
+
+Each of these is a hidden defect that breaks the next task's dependency resolution. Surface them honestly via `DONE_WITH_CONCERNS` or `BLOCKED` rather than declaring `DONE`.
+
+## Integration
+
+- **upstream**: `ywc-sequential-executor` (replaces its Steps 5–8), `ywc-parallel-executor` (replaces the merge + mark-complete portion of Step 4e–4f; worktree cleanup at Step 4g stays in parallel).
+- **internal delegation**: `ywc-create-pr` (Step 2), `ywc-handle-pr-reviews` (Step 4 inside the bot polling loop).
+- **shared references**: [../references/pr-bot-polling.md](../references/pr-bot-polling.md) (CI + bot polling), [../references/local-merge-permissions.md](../references/local-merge-permissions.md) (pre-authorized git/gh patterns the caller must set), [../references/subagent-status-actions.md](../references/subagent-status-actions.md) (how the caller responds to this skill's status return).
+
+## Notes
+
+This skill is a single-task delivery unit. It does not iterate over a range, manage a wave, or maintain checkpoint state — those concerns belong to the calling executor. Worktree creation and removal are intentionally out of scope, because the lifecycle differs between sequential (no worktree) and parallel (per-task worktree); placing it here would force one of the two callers to special-case its cleanup.

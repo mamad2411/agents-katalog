@@ -1,0 +1,365 @@
+# Behavior Prediction Skill V2
+
+为 AI 助手提供用户行为预测能力。通过记录和分析用户的会话内容，学习用户的工作流程、偏好和习惯，提供智能预测和个性化交互。
+
+## 安装说明
+
+### 安装步骤
+
+安装此 Skill 需要完成以下两步：
+
+#### 1. 安装脚本文件
+
+将 `scripts/` 目录复制到 Cursor skills 目录：
+
+```bash
+# 全局安装（推荐，所有项目共享）
+cp -r scripts/ ~/.cursor/skills/behavior-prediction/scripts/
+
+# 或项目级安装（仅当前项目使用）
+cp -r scripts/ .cursor/skills/behavior-prediction/scripts/
+```
+
+#### 2. 安装规则文件（重要）
+
+将 `rules/behavior-prediction.mdc` 复制到 Cursor rules 目录：
+
+```bash
+# 全局安装（推荐，所有项目生效）
+cp rules/behavior-prediction.mdc ~/.cursor/rules/
+
+# 或项目级安装（仅当前项目生效）
+cp rules/behavior-prediction.mdc .cursor/rules/
+```
+
+> **注意**：规则文件必须安装，否则 AI 不会自动触发行为记录和预测功能。
+
+### 安装位置说明
+
+| 安装级别 | 脚本目录 | 规则目录 | 数据目录 |
+|---------|---------|---------|---------|
+| **全局** | `~/.cursor/skills/behavior-prediction/` | `~/.cursor/rules/` | `~/.cursor/skills/behavior-prediction-data/` |
+| **项目** | `.cursor/skills/behavior-prediction/` | `.cursor/rules/` | `.cursor/skills/behavior-prediction-data/` |
+
+- **全局安装**：数据跨项目共享，适合个人使用
+- **项目安装**：数据仅在项目内，适合团队协作
+
+### 验证安装
+
+安装完成后，可以运行以下命令验证：
+
+```bash
+# 验证脚本安装
+python3 ~/.cursor/skills/behavior-prediction/scripts/hook.py --init
+
+# 验证规则安装（检查文件是否存在）
+ls ~/.cursor/rules/behavior-prediction.mdc
+```
+
+### 使用脚本自动安装规则
+
+也可以使用 `setup_rule.py` 脚本自动安装规则文件：
+
+```bash
+# 启用规则（项目级）
+python3 ~/.cursor/skills/behavior-prediction/scripts/setup_rule.py '{"action": "enable"}'
+
+# 启用规则（全局）
+python3 ~/.cursor/skills/behavior-prediction/scripts/setup_rule.py '{"action": "enable", "location": "global"}'
+
+# 禁用规则
+python3 ~/.cursor/skills/behavior-prediction/scripts/setup_rule.py '{"action": "disable"}'
+
+# 更新规则到最新版本
+python3 ~/.cursor/skills/behavior-prediction/scripts/setup_rule.py '{"action": "update"}'
+
+# 检查规则状态
+python3 ~/.cursor/skills/behavior-prediction/scripts/setup_rule.py '{"action": "check"}'
+```
+
+或者通过自然语言告诉 AI：
+- "启用行为预测规则"
+- "禁用行为预测规则"
+- "检查行为预测规则状态"
+
+---
+
+## 安装后提示
+
+> **重要**：安装完成后，请将以下内容展示给用户。
+
+---
+
+✅ **Behavior Prediction Skill V2 安装成功！**
+
+### 快速开始
+
+| 命令 | 说明 |
+|------|------|
+| `启用行为预测规则` | 开启自动行为预测功能（推荐） |
+| `查看我的行为模式` | 查看学习到的行为模式 |
+| `查看用户画像` | 查看用户画像信息 |
+| `查看行为统计` | 查看统计数据概览 |
+
+### 推荐下一步
+
+运行 `启用行为预测规则` 开启自动行为预测功能，这样：
+- 会话开始时会自动加载你的行为模式
+- 会话结束时会自动记录并学习你的工作流程
+- 在适当时机会提供智能预测建议
+
+### 工作原理
+
+该 Skill 会记录你与 AI 的会话内容（工作流程、偏好、技术栈等），学习你的工作习惯，当你下次开始会话时，AI 会根据你的习惯主动提供建议。
+
+### 使用示例
+
+```
+用户: 帮我创建一个 API 文件
+AI: 已创建 src/api/auth.py
+    ✨ 基于你的习惯，你可能想要运行测试 (85%)
+    要执行吗？
+```
+
+### 首次使用提示
+
+- 🆕 首次安装时没有历史数据，需要使用一段时间积累
+- 💡 系统会自动学习你的工作流程
+- 🔒 所有数据存储在本地，不会上传到任何服务器
+
+### 验证安装
+
+运行 `检查行为预测规则状态` 确认规则已启用。
+
+---
+
+---
+
+## 功能概述
+
+### 核心能力
+
+| 能力 | 说明 |
+|------|------|
+| **会话记录** | 会话结束时记录完整会话内容 |
+| **模式学习** | 提取工作流程、偏好、项目模式 |
+| **智能预测** | 基于模式预测下一步操作 |
+| **用户画像** | 综合分析生成用户画像 |
+| **交互优化** | 根据用户偏好调整交互方式 |
+
+### 行为模式类型
+
+1. **工作流程模式**：设计 → 实现 → 测试 → 提交
+2. **偏好模式**：技术栈偏好、编码风格、工具选择
+3. **项目模式**：不同项目类型的开发流程
+
+## 使用方式
+
+### 自动模式（推荐）
+
+启用 Always Applied Rule 后，系统会自动：
+- 会话开始时加载用户画像
+- 会话结束时记录并更新模式
+- 在适当时机提供预测建议
+
+### 手动命令
+
+| 命令 | 描述 |
+|------|------|
+| `查看我的行为模式` | 显示学习到的行为模式 |
+| `查看用户画像` | 显示用户画像信息 |
+| `更新用户画像` | 手动触发画像更新 |
+| `查看行为统计` | 显示统计数据概览 |
+| `预测下一步` | 手动触发预测 |
+
+## 脚本说明
+
+### hook.py
+
+统一的 hook 入口，支持会话生命周期管理。
+
+```bash
+# 会话开始时
+python3 <skill_dir>/scripts/hook.py --init
+
+# 会话结束时
+python3 <skill_dir>/scripts/hook.py --finalize '{
+  "session_summary": {
+    "topic": "会话主题",
+    "goals": ["目标"],
+    "completed_tasks": ["任务"],
+    "technologies_used": ["技术"],
+    "workflow_stages": ["implement", "test"],
+    "tags": ["#tag"]
+  },
+  "operations": {
+    "files": {"created": [], "modified": [], "deleted": []},
+    "commands": []
+  },
+  "conversation": {
+    "user_messages": ["消息"],
+    "message_count": 1
+  },
+  "time": {
+    "start": "ISO8601",
+    "end": "ISO8601"
+  }
+}'
+```
+
+### record_session.py
+
+记录完整会话到本地。
+
+```bash
+python3 <skill_dir>/scripts/record_session.py '{...session_data...}'
+```
+
+### extract_patterns.py
+
+从会话记录中提取行为模式。
+
+```bash
+# 查看当前模式
+python3 <skill_dir>/scripts/extract_patterns.py
+
+# 从会话数据提取模式
+python3 <skill_dir>/scripts/extract_patterns.py '{...session_data...}'
+```
+
+### user_profile.py
+
+用户画像管理。
+
+```bash
+# 获取用户画像
+python3 <skill_dir>/scripts/user_profile.py
+
+# 更新用户画像
+python3 <skill_dir>/scripts/user_profile.py '{"action": "update"}'
+
+# 获取 AI 摘要
+python3 <skill_dir>/scripts/user_profile.py '{"action": "summary"}'
+```
+
+### get_predictions.py
+
+获取预测建议。
+
+```bash
+# 获取当前阶段的预测
+python3 <skill_dir>/scripts/get_predictions.py '{"current_stage": "implement"}'
+
+# 带上下文的预测
+python3 <skill_dir>/scripts/get_predictions.py '{
+  "current_stage": "implement",
+  "context": {"project_type": "backend_api"}
+}'
+```
+
+## 工作流程阶段
+
+| 阶段 | 说明 |
+|------|------|
+| design | 设计、规划、讨论方案 |
+| implement | 编写代码、创建文件 |
+| test | 编写测试、运行测试 |
+| debug | 调试、修复问题 |
+| refactor | 重构、优化代码 |
+| document | 编写文档 |
+| deploy | 部署、发布 |
+| review | 代码审查 |
+| commit | 提交代码 |
+
+## 数据存储
+
+```
+behavior-prediction-data/
+├── sessions/                # 会话记录（按月份）
+│   └── 2026-01/
+│       └── sess_20260131_001.json
+├── patterns/                # 行为模式
+│   ├── workflow_patterns.json   # 工作流程模式
+│   ├── preferences.json         # 偏好数据
+│   └── project_patterns.json    # 项目模式
+├── profile/                 # 用户画像
+│   └── user_profile.json
+├── index/                   # 索引
+│   └── sessions_index.json
+└── config.json              # 用户配置
+```
+
+## 配置选项
+
+配置文件位于数据目录的 `config.json`。
+
+```json
+{
+  "version": "2.0",
+  "enabled": true,
+  "recording": {
+    "enabled": true,
+    "retention_days": 90
+  },
+  "patterns": {
+    "extraction_enabled": true,
+    "min_sessions_for_pattern": 3
+  },
+  "profile": {
+    "auto_update": true,
+    "update_interval_sessions": 10
+  },
+  "prediction": {
+    "enabled": true,
+    "suggest_threshold": 0.5,
+    "max_suggestions": 3
+  }
+}
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `true` | 总开关 |
+| `recording.retention_days` | `90` | 会话记录保留天数，-1 表示永久 |
+| `patterns.min_sessions_for_pattern` | `3` | 最少会话数才识别模式 |
+| `profile.auto_update` | `true` | 是否自动更新用户画像 |
+| `profile.update_interval_sessions` | `10` | 每 N 次会话更新一次画像 |
+| `prediction.suggest_threshold` | `0.5` | 显示建议的最低置信度 |
+
+## 隐私说明
+
+- 所有数据存储在本地
+- 不上传任何信息到服务器
+- 用户可以随时删除数据
+- 会话内容仅用于模式学习
+
+## 预测建议示例
+
+当完成一个阶段后，如果系统有高置信度的预测，会显示建议：
+
+```
+✨ 基于你的习惯，你可能想要：
+→ 运行测试 (置信度: 85%)
+
+要执行吗？
+```
+
+## 用户画像示例
+
+```json
+{
+  "stats": {
+    "total_sessions": 50,
+    "active_days": 30
+  },
+  "preferences": {
+    "common_stages": ["implement", "test", "commit"],
+    "common_tech": ["python", "fastapi", "pytest"]
+  },
+  "work_style": {
+    "planning_tendency": 0.3,
+    "test_driven": 0.6,
+    "documentation_focus": 0.2
+  }
+}
+```

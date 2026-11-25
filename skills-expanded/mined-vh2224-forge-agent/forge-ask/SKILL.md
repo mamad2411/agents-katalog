@@ -1,0 +1,292 @@
+---
+name: forge-ask
+description: "Modo conversa — discute ideias, captura decisoes, salva sessao."
+allowed-tools: Read, Write, Bash, Glob, Skill, WebSearch, WebFetch
+---
+
+## CONVERSATION-ONLY MODE — CRITICAL
+
+This is a **read-only brainstorming and discussion mode** for production source code. The following rules are absolute and apply for the ENTIRE session:
+
+1. **Do NOT modify, create, or fix source files** — not even obvious typos, not even one line. Source files = `src/`, `lib/`, `components/`, `app/`, `pages/`, root `package.json`, or any code that ships.
+2. **Do NOT run Bash commands that change production state** — no `git commit` on source changes, no `npm install` at root, no file edits in production paths.
+3. **Do NOT implement production features** — if you see a bug, a risk, or an improvement, MENTION it in conversation only.
+4. **Write operations permitted:**
+   - `.gsd/sessions/*.md` (session log — auto-updated every turn)
+   - `.gsd/DECISIONS.md` via "salvar decisão" (Edit only, append-only)
+   - `.gsd/probes/**` via `Skill("forge-probe")` — throwaway feasibility experiments, isolated from production code
+   - `.gsd/milestones/M###/M###-BRAINSTORM.md` via `Skill("forge-brainstorm")`
+5. **If the user asks you to fix or build production code** — respond with: "No modo /forge-ask eu só discuto. Para implementar, use `/forge-next` ou `/forge-auto`."
+
+The purpose of this mode is thinking (and sometimes validating feasibility via isolated probes), not building production code. Stay in conversation or scoped experimentation.
+
+## Research freely (web + docs)
+
+Conversa de qualidade precisa de fatos. Pesquise livremente com `WebSearch` / `WebFetch` (ou MCPs `brave-search` / `context7` / `fetch` quando configurados — `WebSearch` nativo da Anthropic já funciona zero-config) sempre que:
+
+- O usuário perguntar sobre uma lib/framework/API e você não tem certeza 100% atual
+- A discussão envolver tradeoffs entre tecnologias — traga numbers/benchmarks reais
+- Aparecer um erro, CVE, changelog, ou breaking change
+- O usuário pedir comparação ou "qual o estado da arte em X"
+
+Cite as fontes na resposta (url + 1 linha do que foi encontrado). Lembre: pesquisar NÃO viola o modo read-only — só escrita em source files é proibida.
+
+## Bootstrap guard
+
+```bash
+ls CLAUDE.md 2>/dev/null && echo "ok" || echo "missing"
+ls .gsd/STATE.md 2>/dev/null && echo "ok" || echo "missing"
+pwd
+```
+
+**Se CLAUDE.md não existe:** Stop. Tell the user:
+> Projeto não inicializado. Execute `/forge-init` primeiro.
+
+**Se .gsd/STATE.md não existe:** Stop. Tell the user:
+> Nenhum projeto GSD encontrado. Execute `/forge-init` para começar.
+
+---
+
+## Parse mode
+
+From `$ARGUMENTS`:
+- `resume` → load last open session and continue
+- `close` → close and archive current session
+- `list` → list all sessions
+- (empty or text) → start new session OR continue today's open session
+
+---
+
+## Mode: list
+
+```bash
+ls .gsd/sessions/ 2>/dev/null | sort -r | head -20
+```
+
+Display the sessions with their topics (read first line of each file). Stop.
+
+---
+
+## Mode: close
+
+Find the latest open session:
+```bash
+ls .gsd/sessions/ask-*.md 2>/dev/null | sort -r | head -1
+```
+
+If found: read it, write a 3-5 sentence summary into the `## Session Summary` section, set `status: closed` in frontmatter, update `updated` timestamp. Report closed. Stop.
+
+If not found: tell user "No open session found." Stop.
+
+---
+
+## Mode: resume
+
+Find the latest open session:
+```bash
+ls .gsd/sessions/ask-*.md 2>/dev/null | sort -r | head -3
+```
+
+Read the latest open session file (`status: open` in frontmatter).
+
+If none open: tell user "No open sessions. Starting a new one..." and continue as new session below.
+
+If found: display to user:
+```
+Retomando sessão: {session id}
+Tópico: {topic from frontmatter}
+Iniciada: {started date}
+Última atualização: {updated date}
+
+## Conversa anterior
+{content of ## Conversation section}
+
+## Decisões capturadas até agora
+{content of ## Captured Decisions section}
+
+## Ações pendentes
+{content of ## Queued Actions section}
+```
+
+Then load project context (see below) and continue as active session.
+
+---
+
+## Mode: new session (default)
+
+### Step 1 — Load project context (read these files only)
+
+```bash
+mkdir -p .gsd/sessions
+```
+
+Read:
+- `.gsd/STATE.md` → current position
+- `.gsd/PROJECT.md` → project description
+- Last 15 rows of `.gsd/DECISIONS.md` → recent decisions
+- First 60 lines of `.gsd/AUTO-MEMORY.md` → active memories (skip if missing)
+
+### Step 2 — Check for today's open session
+
+```bash
+ls .gsd/sessions/ask-$(date +%Y-%m-%d)*.md 2>/dev/null | sort -r | head -1
+```
+
+If today's open session exists → load it and continue as resume mode.
+
+### Step 3 — Create session file
+
+Generate session ID: `ask-{YYYY-MM-DD}-{HHmm}` (use current date/time from `date +%Y-%m-%d-%H%M`).
+
+Write `.gsd/sessions/{session-id}.md`:
+
+```markdown
+---
+type: ask-session
+id: {session-id}
+started: {ISO8601 timestamp}
+updated: {ISO8601 timestamp}
+status: open
+topic: (pending first message)
+---
+
+## Context Loaded
+- STATE: {active milestone/slice/task from STATE.md, or "idle"}
+- Recent decisions: {count of decision rows}
+- Active memories: {count of MEM entries in AUTO-MEMORY.md}
+
+## Conversation
+
+## Captured Decisions
+
+## Queued Actions
+
+## Session Summary
+```
+
+### Step 4 — Present to user
+
+Tell the user:
+
+```
+💬 Modo conversa ativo — {session-id}
+
+Contexto carregado:
+  Milestone ativo: {from STATE.md}
+  Próxima ação: {next action from STATE.md}
+  Memórias ativas: {count}
+
+Este é um modo de discussão e brainstorming.
+Não vou modificar arquivos nem implementar nada sem você pedir explicitamente.
+Se quiser executar algo, use /forge-next ou /forge-auto.
+
+Arquivo da sessão: .gsd/sessions/{session-id}.md
+
+Comandos durante a conversa:
+  "brainstorm: X"       → explora abordagens, riscos e escopo de X
+  "salvar decisão: X"   → registra X em .gsd/decisions/ask-{session-id}.md
+  "criar milestone: X"  → gera /forge-new-milestone com contexto desta sessão
+  "criar task: X"       → instrução para /forge-add-task
+  "encerrar sessão"     → fecha e arquiva esta sessão
+  /forge-ask resume       → retoma esta sessão se o chat cair
+```
+
+---
+
+## Active session behavior (follow these rules for the ENTIRE conversation after this command)
+
+**REMINDER — CONVERSATION-ONLY:** Do NOT fix code, do NOT create files, do NOT run git or build commands. If you notice something worth fixing, say it — don't do it.
+
+**CRITICAL: After EVERY response you give in this conversation, perform these two actions:**
+
+### A. Update the session file
+
+Read `.gsd/sessions/{session-id}.md`. Then:
+
+1. Update `updated` in frontmatter to current timestamp
+2. If topic is still "(pending first message)" → set it to a 3-5 word summary of what the user first asked
+3. Append to `## Conversation`:
+   ```
+   ### [{HH:mm}] User
+   {user's message — paraphrase if long, verbatim if short}
+
+   ### [{HH:mm}] Agent
+   {your response — paraphrase to 2-4 sentences capturing the key points}
+   ```
+4. If you or the user captured a decision → append to `## Captured Decisions`:
+   ```
+   - [{timestamp}] {decision text}
+   ```
+5. If an action was agreed (create milestone, add task, run something) → append to `## Queued Actions`:
+   ```
+   - [ ] [{timestamp}] {action description}
+   ```
+
+Write the updated file.
+
+### B. Check for special commands
+
+If user said **"salvar decisão: [text]"**:
+- Determine the active session ID from the current session file (frontmatter `id` field — e.g. `ask-2026-05-22-1430`). Use it as `unit_id` prefixed with `ask-` (e.g. `ask-ask-2026-05-22-1430` if the id already starts with `ask-`, otherwise `ask-{id}`). The fragment lands in `.gsd/decisions/ask-{session-id}.md`.
+- <!-- pre-S03: this used to Edit/cat >> .gsd/DECISIONS.md directly -->
+- Invoke via Bash (sidesteps the PreToolUse Write-block since the script does the write):
+  ```bash
+  FORGE_SCRIPTS_DIR=$([ -f scripts/forge-decisions.js ] && echo scripts || echo "${FORGE_HOME:-$HOME/.forge-agent}/scripts")
+  SESSION_ID="{session-id}"   # from the active session frontmatter
+  echo '{"unit_id":"ask-'"$SESSION_ID"'","decisions":[{"when":"'"$(date +%Y-%m-%d)"'","scope":"ask","decision":"[text from user]","choice":"","rationale":"","revisable":"yes"}]}' | node "$FORGE_SCRIPTS_DIR/forge-decisions.js" --write --cwd "$(pwd)"
+  ```
+- Confirm: "✓ Decisão salva em `.gsd/decisions/ask-{session-id}.md`"
+
+If user said **"brainstorm: [topic]"** or **"brainstorming: [topic]"**:
+- Invoke: `Skill({ skill: "forge-brainstorm", args: "[topic]" })`
+- The skill explores approaches, risks, and scope boundaries and writes a BRAINSTORM.md
+- After the skill completes, summarize the key findings in the conversation (Recommended approach + Top 3 risks + Open questions)
+- Append to `## Queued Actions`: `- [ ] [{timestamp}] Brainstorm produzido para: [topic]`
+
+**Auto-suggest brainstorm:** If the user describes a new feature, milestone idea, or architectural change and NO brainstorm exists for it yet, suggest: "Quer que eu rode o brainstorm para explorar abordagens e riscos antes de continuarmos?"
+
+If user said **"probe: [question/idea]"** or **"probar: [idea]"** or **"testar: [idea]"**:
+- Invoke: `Skill({ skill: "forge-probe", args: "[idea]" })`
+- The skill decomposes the idea into 2-5 focused experiments (or 1 if `--quick` is passed), builds throwaway code in `.gsd/probes/NNN-name/`, and produces verdicts (VALIDATED/INVALIDATED/PARTIAL) with observable evidence
+- The conversation context (tradeoffs discussed, constraints mentioned, stack preferences) flows directly into the probe — Skill tool runs in main context, not isolated
+- After the skill completes, summarize verdicts + recommendation (prosseguir com milestone, pivotar, ou abandonar abordagem) in the conversation
+- Append to `## Queued Actions`: `- [ ] [{timestamp}] Probes rodados para: [idea]`
+
+**Auto-suggest probe:** If the user's discussion surfaces technical uncertainty that benefits from observable evidence — phrases like "vale testar se", "será que X aguenta", "é viável usar Y", "qual é mais rápido: A ou B", "queria ver se X funciona", comparisons between competing libraries/approaches, or performance/compatibility concerns — suggest: "Quer rodar um probe rápido para validar isso com evidência antes de decidir? `probe: [reformulação da pergunta em Given/When/Then]`"
+
+**Brainstorm vs Probe — quando sugerir qual:**
+- **Brainstorm:** problema mal definido, escopo incerto, múltiplas abordagens possíveis mas nenhuma testada. Output = decision brief em markdown.
+- **Probe:** pergunta técnica específica com resposta verificável por código. Output = evidência executável (exit code, benchmark number, response body).
+- **Ambos em sequência:** brainstorm gera alternativas → usuário escolhe top 2 → probe valida as escolhidas.
+
+If user said **"criar milestone: [description]"**:
+- Check if the current session has meaningful content (non-empty `## Conversation` or `## Captured Decisions` sections, or a brainstorm was run)
+- If YES (session has context): Tell the user: "Execute `/forge-new-milestone {description} -session {session-id}` para criar o milestone aproveitando o contexto desta sessão."
+- If NO (session is empty): Tell the user: "Execute `/forge-new-milestone {description}` para criar o milestone completo com brainstorm e planejamento."
+- Append to `## Queued Actions` in session file: `- [ ] [{timestamp}] Criar milestone: {description} (session: {session-id})`
+
+If user said **"criar task: [description]"**:
+- Tell the user: "Execute `/forge-add-task {active slice} {description}` para adicionar a task."
+- Append to `## Queued Actions`
+
+If user said **"encerrar sessão"** or **"close session"**:
+- Write 3-5 sentence summary to `## Session Summary`
+- Set `status: closed` in frontmatter
+- Update `updated` timestamp
+- Tell user: "✓ Sessão encerrada. Arquivo: .gsd/sessions/{session-id}.md"
+- Stop updating the file in subsequent turns
+
+---
+
+## Context reference
+
+During this conversation, use the loaded project context to give relevant, grounded answers:
+
+- Refer to STATE.md for current position ("you're on M002/S03/T01")
+- Refer to DECISIONS.md to avoid re-debating locked decisions
+- Refer to AUTO-MEMORY memories to warn about known gotchas
+- When asked about architecture, refer to what's in CONTEXT files (not speculation)
+
+You do NOT need to read more files unless the user asks about something specific. If you need to look something up, read it and summarize — do not edit it.
+
+**If you spot a bug, an inconsistency, or an improvement while reading:** mention it conversationally ("Notei que X pode ser um problema — quer que eu investigue mais?"). Do NOT fix it silently. Do NOT fix it even if asked mid-conversation — that's for `/forge-next`.

@@ -1,0 +1,123 @@
+---
+name: gaming
+description: gaming
+version: 1.0.0
+category: gaming
+signature: 'gaming -> gaming: 游戏服务器 — Minecraft模组服务器、宝可梦模拟器。'
+author: Synthos
+license: MIT
+triggers:
+- 需要执行gaming下的子技能
+metadata:
+  synthos:
+    priority: P2
+    atom_type: parent-skill
+    description: 父级技能 — 游戏服务器 — Minecraft模组服务器、宝可梦模拟器。
+    signature: 'gaming -> sub-skills: [minecraft-modpack-server, pokemon-player]'
+    related_skills:
+    - minecraft-modpack-server
+    - pokemon-player
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `game_type: str, mode: str` — 用户请求描述、上下文信息
+- **output**: `game_state: dict — 游戏状态`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# gaming
+
+> 父级技能目录，包含 2 个子技能。
+> 子技能通过Hermes技能加载机制自动发现，无需显式调用。
+
+## 子技能
+
+- `minecraft-modpack-server`
+- `pokemon-player`
+
+## 使用方式
+
+直接调用子技能名称即可：
+
+## 验证清单 · VERIFICATION
+
+- [ ] 确认 `game_type` 与 `mode` 参数完整且有效（属于已知子技能范围：minecraft-modpack-server / pokemon-player）
+- [ ] 请求被正确路由到对应子技能执行，父级仅作为目录索引、未越界执行实际游戏操作
+- [ ] 输出 `game_state` 为 dict 结构，字段命名与编码符合契约（P2）
+- [ ] 执行失败时错误信息包含具体上下文与明确的恢复指引，而非仅抛出异常
+- [ ] 未执行未验证的任意代码，未向外部暴露内部敏感状态
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+## 示例 · EXAMPLES
+
+1. **请求 Minecraft 模组服务器**
+   - 输入: `game_type="minecraft", mode="modpack-server"`。
+   - 操作: 父级校验参数后路由到子技能 `minecraft-modpack-server`（如 `skill_view(name='minecraft-modpack-server')` 加载），父级自身不执行游戏操作。
+   - 验证: 输出 `game_state` 为 dict 且字段命名符合契约（P2）；请求确实由子技能处理。
+
+2. **请求宝可梦模拟器**
+   - 输入: `game_type="pokemon", mode="player"`。
+   - 操作: 路由到子技能 `pokemon-player` 执行；父级仅作为目录索引。
+   - 验证: 子技能返回的 `game_state` 结构一致；无越界执行。
+
+3. **未知游戏类型（Golden Error 路径）**
+   - 输入: `game_type="chess", mode="play"`。
+   - 操作: 参数校验拒绝（不在已知子技能范围 minecraft-modpack-server / pokemon-player）。
+   - 验证: 错误信息包含上下文（未知 game_type）与恢复指引（列出可用子技能），而非裸异常。
+
+```
+skill_view(name='minecraft-modpack-server')  # 加载第一个子技能
+```
+
+父级SKILL.md仅作为目录索引，实际执行由子技能完成。
+
+# Gaming
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[GAMI-001]** 父级技能接收请求 → 仅作为目录索引，通过 Hermes 机制自动发现并路由至具体子技能（如 minecraft-modpack-server 或 pokemon-player）执行
+- **[GAMI-002]** 执行核心操作前 → 必须校验输入参数（game_type, mode）的类型、范围及格式完整性
+- **[GAMI-003]** 处理游戏状态输出 → 确保返回值结构（game_state: dict）、编码及命名规范严格一致
+- **[GAMI-004]** 遇到执行失败或异常 → 错误信息必须包含具体上下文及明确的恢复指引，而非仅抛出异常
+- **[GAMI-005]** 涉及代码执行或状态暴露 → 严禁执行未验证的任意代码，且不向外部暴露内部敏感状态
+- **[GAMI-006]** 进行功能改进或测试 → 必须以 Golden 集合（标准输入/预期输出/预期错误）为单一真理来源进行验证

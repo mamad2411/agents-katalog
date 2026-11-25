@@ -1,0 +1,368 @@
+---
+name: recommend-all-open-questions
+description: Annotate every open question in the named mission carrying alternatives with a single recommended option, reasoning over the whole set inline.
+---
+
+# recommend-all-open-questions
+
+This is the second of the two annotating passes over a mission's open questions, and the
+non-interactive batch form of `/discuss-open-question`'s pick: the alternatives pass,
+`/provide-alternatives-to-all-open-questions`, has already given every `<open-question>` block
+its frozen set of `<alternative>` elements, and this pass picks one of them per block. It runs
+**inline and dispatches no agents**: you read the question document whole, hold every question
+still lacking a `<recommendation>` in view at once, follow the shared pick procedure over that
+whole set, and embed each block's `<recommendation>`, its `<depends-on>` declarations, and its
+`<applied-principle>` citations yourself, through the plugin's open-question tool. You are the
+only party in this pass that changes `<MISSION_DIR>/open_questions.xml`, and every write
+you make of it is a tool call — `embed` to write, `lift` to read back the lines the commit
+records, `sort` to reorder — never a direct edit, and every commit of it is a call to the
+plugin's commit tool, never a git write of your own; reading the document whole
+with the file-reading tool is for reasoning only, and every list, locate, or lift of a block
+is the tool's, each call written out in full as its fenced block shows it, never through a
+variable, alias, or function of your own defined to stand for the command or any part of it.
+Once the picks are decided, the writing is **one fixed shell call** that embeds every picked
+block, lifts each one the tool accepted, commits the document under one
+`Recommendation-annotation: <MISSION_DIR>` commit whose body is one lifted line per annotated
+question, then sorts the document — the annotated blocks first in the order the answer sweep
+will walk them — and commits that reorder as its own `Question-ordering: <MISSION_DIR>`
+commit, a fixed step of every run that found questions. A run makes that call once, and once
+more only to re-send the blocks it refused, so it lands at most two annotation commits. It takes
+**no Short Title**, records **no decisions**, triggers **no cascades**, and never adds, drops,
+or edits a block's `<alternative>` — it only picks and orders.
+Each embedded recommendation is consumed later, when it is recorded as an answer, by
+`/answer-open-question-with-recommendation` or the
+`/answer-all-open-questions-with-recommendation` sweep.
+
+## Usage
+
+```
+/recommend-all-open-questions --mission <path>
+```
+
+It sweeps every `<open-question>` block in the named mission's `open_questions.xml`. The
+required leading `--mission <path>` names the mission by its repo-relative path, exactly as
+the definition tool printed it, trailing slash included, e.g. `mission_user-guide/`.
+Both commit subjects below carry `<MISSION_DIR>`, the mission path exactly as resolved,
+trailing slash included.
+
+## Workflow
+
+### 0. Find the mission
+
+Follow `${PLUGIN_ROOT}/shared/resolve-mission.md` to resolve `<MISSION_DIR>`.
+Never use a hardcoded path.
+
+### 1. Gather the questions once, in three tool calls
+
+**a. Every question.** Run
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py list <MISSION_DIR>
+```
+
+It prints the `id` (Short Title) of every `<open-question>` block, one per line in document
+order. If it prints nothing, the document holds no questions: print the one fixed no-op line
+`No recommendations embedded — the document holds no questions.` and stop. If it fails, print
+the fixed line `Recommendation pass stopped — the question list failed.` first, then its one
+`Error: <reason>` line from stderr verbatim below it, and stop.
+
+**b. The ones without alternatives — the stop test.** Run
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py list --without-alternatives <MISSION_DIR>
+```
+
+It prints, in document order, the ids of the blocks carrying no `<alternative>` element. If it
+prints **anything**, this pass cannot run: it picks only against a frozen alternative set, and
+a block without one has nothing to pick from. **Stop without changing anything**: print the
+fixed line `Recommendation pass stopped — some questions lack alternatives.` first, then below
+it the ids the call listed, and point the user at `/provide-alternatives-to-all-open-questions`,
+which supplies those blocks' alternatives — a re-run of this skill afterwards picks for them.
+Only when this call prints nothing does the pass continue.
+
+**c. The ones without a recommendation.** Run
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py list --without-recommendation <MISSION_DIR>
+```
+
+It prints, in document order, the ids of the blocks carrying no `<recommendation>` element —
+the ones this run annotates. Every other block already carries a recommendation and is
+**skipped** (step 2). If this call prints nothing, every block is already annotated: there is
+nothing to pick, so skip steps 3 and 4 and go straight to step 5, whose call then carries no
+block — its sort runs on every run that found questions, this one included, and step 7 then
+picks the report line from what the call printed. Never exit to the no-op line from here.
+
+Gather this set **once**: there is **no** per-question live re-check against the document and
+**no** outer re-gather loop. This run only adds children to blocks — it records no decisions
+and triggers no cascades — so the question set never shrinks under it and the ids **c**
+printed stay valid for the whole run.
+
+### 2. Blocks already carrying a recommendation are skipped (re-run idempotency)
+
+Step 1's `--without-recommendation` filter is the whole skip test: a block that already
+carries a `<recommendation>` element is never re-picked, so re-runs are cheap and a standing
+recommendation is left as it stands — the tool's `embed --recommendation` refuses a block
+already carrying one, so the rule holds in the tool and not only here. The primary re-run
+motive is exactly the recommendation-less set a later `/review-mission-requirements` pass
+surfaces, or that an answer's cascade cleared: a dependent whose pick an answer invalidated
+loses its `<recommendation>`, `<depends-on>`, and `<applied-principle>` children and keeps its
+`<alternative>` children, so it is this pass's to re-pick on the next run, against the same
+frozen set. A standing recommendation on a block this run is not writing is **context**: step
+3 reads it as a sibling pick this run's own picks may build on and declare a `<depends-on>`
+against, and never revises it.
+
+**Escape hatch for a stale recommendation:** to force a fresh pick on a block, run
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py strip --recommendation <MISSION_DIR> "<Short Title>" …
+```
+
+(one or more Short Titles), then re-run this skill. `strip --recommendation` deletes only the
+`<recommendation>`, `<depends-on>`, and `<applied-principle>` children of each named block,
+leaving its `<alternative>` children, its wrapper, and its `<question>` intact and every other
+block untouched; the block now carries no `<recommendation>`, so the next run's
+`--without-recommendation` list yields it and this pass re-picks it against the same frozen
+set. That call and a re-run are the whole hatch — `open_questions.xml` is never edited by
+hand, since the tool is its sole writer. Revising the alternative set itself is the
+alternatives pass's hatch (the bare `strip`, then that pass), not this one's.
+
+When such a re-picked block's new `<recommendation option>` differs from the option that
+surviving dependents' `<depends-on question="…" option="…"/>` elements assumed of it, **leave
+those dependents exactly as they are**: do not strip them, do not rewrite their `option`
+values, and print no mismatch advisory. A `<depends-on>` records what a dependent assumed, not
+a pointer that must track its target's live recommendation; reconciling it against the option
+actually recorded is the answer-time cascade's job, never this pass's. A dependent the user also
+wants re-picked is named in the same `strip --recommendation` call.
+
+### 3. Pick over the whole set at once
+
+Read `<MISSION_DIR>/requirements.md` and `<MISSION_DIR>/open_questions.xml` **whole**
+with the file-reading tool. The document read gives you, for every id step 1c printed, the
+block's `<question>` text and its frozen `<alternative>` set — each option's `id`, what-it-is
+text, `<advantage>`, and `<drawback>` — and, for every other block, the `<recommendation>`
+already standing on it. That whole read is for reasoning only; it changes nothing and finds
+nothing you later write against, since every write names a block by its Short Title.
+
+Then read and follow the shared pick procedure at
+`${PLUGIN_ROOT}/shared/recommend-procedure.md`, carrying out its steps yourself over
+**every question step 1c printed, held in view together as one judgment**. For each such
+question its QUESTION is the block's Short Title and `<question>` text and its ALTERNATIVES
+are the block's own `<alternative>` elements, taken as given — the pick names one of them by
+its `id` and never adds to or drops from the set. Ground once for the whole set (the
+procedure's grounding step names the live project, the principle store, and the sibling
+questions with their alternatives and any standing recommendations), then form one
+recommendation per question, keeping every question's set in view while you reason so the
+picks cohere with one another and with the recommendations already standing. Decide every
+pick before rendering any of them; what follows in steps 4 and 5 is rendering and writing only.
+
+Two of the procedure's outcomes carry over into this pass as its own rules:
+
+- **A pick that leans on a sibling** settling on one of its alternatives — a sibling with a
+  standing recommendation, or one whose pick you are forming in this same pass — is
+  disclosed as a `<depends-on question="…" option="…"/>` element of the block (step 4),
+  naming the sibling's `id` and one of that sibling's own `<alternative>` ids. Every block
+  carries its alternatives by step 1b, so every such sibling is a legitimate target; there is
+  no option-less tag form and no guessed option.
+- **A stale set** — a decision recorded since the alternatives were enumerated, under
+  `## Decisions` of `requirements.md` or as a sibling's answer, has closed one of a block's
+  options — still gets a pick: recommend the best option still viable and state in the
+  rationale which option that decision closed and why. Only a block **no** option of which
+  survives is **skipped**: give it no section in step 5's call, leave its block untouched,
+  and note its Short Title with the decision that closed the set for the step-7 advisory,
+  where the remedy is named — the bare `strip` on that block followed by a run of
+  `/provide-alternatives-to-all-open-questions`, since only a fresh alternative set can give
+  it something to pick from. That is the one judged skip this pass has.
+
+### 4. Render each pick as XML
+
+For every question you picked for in step 3, render the pick as the sub-elements that go
+*inside* its `<open-question>` block, each a direct child of it — never the
+`<open-question …>` / `</open-question>` wrapper, the `<question>` element, or an
+`<alternative>` element, which the document already holds — in exactly this shape:
+
+```
+<applied-principle>Short Title</applied-principle>
+<depends-on question="Sibling Short Title" option="Option X"/>
+<recommendation option="Option A">one-line rationale</recommendation>
+```
+
+- One `<applied-principle>` element per confirmed principle that bore on the pick, carrying
+  that principle's Short Title as its text — a sibling of `<recommendation>`, never a child
+  of it, one element per bearing principle with no list syntax, and **none at all** when no
+  principle bore.
+- One self-closing `<depends-on question="…" option="…"/>` element per sibling the pick
+  leans on (step 3): `question` is that sibling block's `id`, `option` one of that sibling's
+  `<alternative id>` values. None when the pick builds on no sibling.
+- Exactly one `<recommendation option="…">…</recommendation>` element: its `option` names the
+  winning alternative by that alternative's `id`, and its text is the one-line rationale
+  alone — the answer path lifts this element by recombining the two as
+  "`<option>` — `<rationale>`", so the rationale carries neither a principle citation nor a
+  sibling dependency, which live only in their own sibling elements.
+
+The elements must be well-formed XML, since the tool parses them before it writes them — a
+literal `&` or `<` in element text or an attribute value is written `&amp;` or `&lt;`. Beyond
+that, indentation, escaping, and child order are the tool's: the block is re-rendered in its
+canonical form when it is written.
+
+### 5. Write, commit, and sort in one batched shell call
+
+Run this one fixed shell call, written out in full exactly as shown, with only
+`<MISSION_DIR>` (in the two subjects too) and each block section's `<Short Title>` and
+rendered elements replaced:
+
+```
+body=''
+if { err="$(python3 ${PLUGIN_ROOT}/tools/open_questions.py embed --recommendation <MISSION_DIR> "<Short Title>" 2>&1)"; } <<'EOF'
+<the block's rendered elements>
+EOF
+then
+  body="${body:+$body
+}$(python3 ${PLUGIN_ROOT}/tools/open_questions.py lift <MISSION_DIR> "<Short Title>")"
+else
+  printf '%s\t%s\n' "<Short Title>" "$err"
+fi
+if [ -n "$body" ]; then
+  out="$(python3 ${PLUGIN_ROOT}/tools/commit.py --subject "Recommendation-annotation: <MISSION_DIR>" --body "$body" -- <MISSION_DIR>/open_questions.xml)" &&
+  if [ -z "$out" ]; then
+    echo 'annotation commit landed'
+  fi
+fi &&
+python3 ${PLUGIN_ROOT}/tools/open_questions.py sort <MISSION_DIR> &&
+out="$(python3 ${PLUGIN_ROOT}/tools/commit.py --subject "Question-ordering: <MISSION_DIR>" -- <MISSION_DIR>/open_questions.xml)" &&
+if [ -z "$out" ]; then
+  echo 'ordering commit landed'
+fi
+```
+
+**The block section** — the lines from `if {` through the `fi` that closes it — is written
+once per block you picked for in step 3, every picked block in the one call however many there
+are, with no cap and no splitting: each copy carries that block's Short Title in its three
+places and its rendered elements between the `<<'EOF'` line and the `EOF` line (the delimiter
+is quoted so nothing inside is expanded; pick a delimiter line the elements do not contain).
+The heredoc feeds the `{ … }` group rather than sitting inside the `$( )`, the form every shell
+parses alike whatever apostrophes or parentheses the elements hold.
+Write the sections **in any order** — the order step 1c printed is as good as any: the tool
+resolves a `<depends-on>` against its target's alternatives, which every block already
+carries, so a block may be written before or after the sibling it depends on. A run with no
+block to write — step 1c printed nothing, or step 3 skipped every block — runs this same call
+with the section written zero times; there is no branch and no second form.
+
+Each section's `embed --recommendation` is its own process. It parses and validates the
+fragment — no wrapper or `<question>` line, no text outside the elements, no `<alternative>`
+element, exactly one `<recommendation>` whose `option` names one of the block's own
+`<alternative>` ids, every `<depends-on>` resolving to another block of the document that
+carries `<alternative>` elements and to one of that block's ids, a target block carrying
+alternatives and no `<recommendation>` yet — and writes those elements into the existing block
+re-rendered in canonical form, adding, dropping, and editing no `<alternative>`; or it refuses
+the block with one `Error:` line and the document unchanged for that block, while every other
+section's process still writes. Its stderr is captured into `err`. On exit 0 that block's
+`lift` runs, and its one printed line, "`<option>` — `<rationale>`", is appended to `body`;
+the newline in that join is a literal line break inside the quotes, the one form every shell
+reads alike, never `$'\n'` or `echo -e`. On a refusal the call prints the block's Short Title,
+a tab, and the `Error:` line, and adds no line to `body`.
+
+After the last section the call runs the one command of the shared commit procedure at
+`${PLUGIN_ROOT}/shared/commit-procedure.md`, the plugin's commit tool, with
+`<MISSION_DIR>/open_questions.xml` alone as its path, `Recommendation-annotation:
+<MISSION_DIR>` as its subject, and the lifted lines, one per annotated block in section order,
+as its body. That commit is conditioned on a non-empty `body`, so a call that wrote no block
+never commits an empty-bodied annotation. The call then runs `sort`, which rewrites the
+document with the `<recommendation>`-bearing blocks first, in exactly the order the answer
+sweep's `walk` will dispatch them, and every block still carrying none last in its prior order
+— so a reader meets the questions whose answers no dependency can nullify before the questions
+that build on them — and commits the reorder through the same tool under `Question-ordering:
+<MISSION_DIR>` with **no body**. Each time, the tool runs the dirty-own-path guard over the
+one document, stages exactly it, and commits it with it as the commit's pathspec, so nothing
+else the index holds — a change another run has staged included — rides in the commit, and it
+repeats a git write another process's lock refused before giving up. Its stdout is captured in
+`out`: empty when the commit landed, its fixed no-op line when the document did not change, so
+each commit's marker line is printed only when `out` is empty and a no-op commits and prints
+nothing. That guard is the sort's **only** no-op test: a document already in sorted order is
+left as it is, the path stays unchanged, and nothing is committed. Never test the outcome
+yourself — no `list` before and after, no diff read. Because the annotation commit lands before
+the sort runs, no annotation rides in the `Question-ordering:` commit and no reorder in the
+annotation commit; a failed annotation commit stops the call before the sort for the same
+reason. `err`, `body`, and `out` are each one quoted text value set and used within this one
+call, never a tool command or a path list. This pass requires **no** clean working tree: each
+commit is made with the one document as its pathspec, so a dirty tree elsewhere stays out of
+it.
+
+What the call prints is the whole outcome:
+
+- **`<Short Title>`, a tab, an `Error:` line** — a refused block, unchanged in the document.
+  Hold the line verbatim for step 6.
+- **`annotation commit landed`** — the `Recommendation-annotation: <MISSION_DIR>` commit
+  landed.
+- **`ordering commit landed`** — the sort moved a block and the `Question-ordering:
+  <MISSION_DIR>` commit landed.
+- **Any other line** — the sort's own `Error:` line (the document unchanged by it) or the
+  commit tool's (nothing committed, its line carrying git's own message); nothing after it in
+  the call ran. Print it verbatim alongside step 7's report.
+
+An accepted block prints nothing of its own. Hold the two marker lines: step 7 reads them across
+every call of the run.
+
+### 6. Correct and re-send the refused blocks once
+
+If the call printed no refused block, there is nothing to re-send: go to step 7. Otherwise the
+fragments are yours, so each refusal is a rendering slip: correct every refused block's elements
+against the `Error:` line the call printed for it, then re-send them **all together** in **one**
+more call of exactly step 5's shape, with one section per refused block — that call commits its
+own `Recommendation-annotation: <MISSION_DIR>` commit and sorts again, as any call does.
+
+Make at most **one** such call per run. A block it refuses again is **skipped**: correct it no
+further, and note its Short Title with that second `Error:` line verbatim for the step-7
+advisory. A run is thus bounded at two batched calls and two annotation commits.
+
+### 7. Report
+
+Print exactly one fixed terse status line for the whole run, chosen by **what this run
+committed**, read from the marker lines every call of the run printed (step 5): test these
+three in strict order and print the first that holds.
+
+1. **An `embed` wrote** — some call printed `annotation commit landed`, because at least one
+   block was annotated — print `Recommendations embedded.`, whether or not a sort also
+   committed.
+2. **Else the sort committed** — no call printed `annotation commit landed`, but one printed
+   `ordering commit landed`, because the sort moved a block — print `Questions reordered.`
+3. **Else nothing was committed** — no call printed either marker, so the document was already
+   in sorted order — print no success line; print instead the one fixed no-op line its case
+   gives:
+   - **Every block already carried a `<recommendation>` element** (step 1c printed nothing) —
+     `Nothing embedded or reordered — every question already carries a recommendation.`
+   - **Every block step 1c printed was left un-annotated** — skipped in step 3 because no option
+     of its set survived, or refused again in step 6 —
+     `Nothing embedded or reordered — every question to pick was skipped.`
+
+Each line is the whole of its output and names no identifier: no annotated-vs-skipped
+breakdown, no moved-block count, no per-question listing, and no consumer pointer to the
+`/answer-open-question-with-recommendation` / `/answer-all-open-questions-with-recommendation`
+skills. Those lines are the whole vocabulary, and the strict order is what keeps each
+true to the git log: the success line means there are new recommendations to answer, the
+reorder line that the document was reordered and nothing else was committed, and a no-op
+line that this run left git history untouched.
+
+Alongside whichever line is chosen, print only the blocks left un-annotated, one per line as
+an advisory, together with any line step 5 told you to print verbatim:
+
+- A block step 3 **skipped** because no option of it survived a recorded decision: its Short
+  Title, the decision that closed its set, and the remedy — run the tool's bare `strip` on that
+  block, then `/provide-alternatives-to-all-open-questions` to enumerate a fresh set, then this
+  skill again; a bare re-run of this skill alone would only skip it again.
+- A block step 6 **skipped** because the re-send refused it again: its Short Title, that second
+  `Error:` line verbatim, and the remedy — re-run this skill, which re-picks the block because
+  it still carries no `<recommendation>`.
+
+This survives the terse-reporting rule because nothing else records it: the run's commits and
+the annotated `open_questions.xml` show only the blocks that *were* annotated, and the
+`Question-ordering:` commit shows only where blocks moved, so a block left un-annotated is
+git-absent and the console must carry it.
+
+A block that **was** annotated gets **no console mention at all**, however its fragment
+reached the document — the first call or the re-send. The embedded block in the diff is the
+whole record.
+
+If there were no questions at all, or the step-1a call failed, step 1a's line is the whole
+output — nothing to report here. If step 1b stopped the run, its stop message is the whole
+output — nothing was committed, and nothing is reported here.

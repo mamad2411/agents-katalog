@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vectorspacelab/arex-skill (path: skills/repositories/repo-skills/torchio/sub-skills/patch-workflows/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Design TorchIO patch-based training queues and dense patch

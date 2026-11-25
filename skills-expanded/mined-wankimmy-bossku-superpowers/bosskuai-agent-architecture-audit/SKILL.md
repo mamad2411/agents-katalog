@@ -1,0 +1,296 @@
+---
+name: bosskuai-agent-architecture-audit
+description: "Use when auditing an agent or LLM app for wrapper regression, memory pollution, tool discipline or hidden repair loops. 12-layer diagnostic, severity-ranked, code-first fixes; covers the BosskuAI pipeline itself."
+license: MIT
+metadata:
+  author: affaan-m/ECC (origin oh-my-agent-check)
+  source: agent-architecture-audit
+allowed-tools: Read, Grep, Glob, Bash(rg:*), Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(bossku memory-path:*)
+---
+
+# Agent Architecture Audit
+
+## Configured memory location
+
+Run `bossku memory-path --project <project-root>` to resolve `<memory-dir>` before reading or writing memory. Automatically save verified durable notes with `bossku remember` without waiting for the user to ask. When memory_storage is obsidian, all memory including handoffs lives directly in the vault; never create .bossku/memory in a code repo.
+
+A diagnostic workflow for agent systems that hide failures behind wrapper layers, stale memory, retry loops, or transport/rendering mutations.
+
+## When to Activate
+
+**MANDATORY for:**
+- Releasing any agent or LLM-powered application to production
+- Shipping features with tool calling, memory, or multi-step workflows
+- Agent behavior degrades after adding wrapper layers
+- User reports "the agent is getting worse" or "tools are flaky"
+- Same model works in playground but breaks inside your wrapper
+- Debugging agent behavior for more than 15 minutes without finding root cause
+
+**Especially critical when:**
+- You've added new prompt layers, tool definitions, or memory systems
+- Different agents in your system behave inconsistently
+- The model was fine yesterday but is hallucinating today
+- You suspect hidden repair/retry loops silently mutating responses
+
+**Do not use for:**
+- Agent run failures mid-task — use `bosskuai-agent-introspection`
+- General code debugging — use `bosskuai-diagnose-loop`
+- Code review — use `bosskuai-rigorous-code-review`
+- Security scanning — use `bosskuai-cybersecurity-risk` or `bosskuai-prompt-injection-defense`
+- Agent performance benchmarking — use `bosskuai-eval-driven-agent-improvement`
+- Writing new features — use the appropriate workflow skill
+
+**BosskuAI grounding:** when the target is this repo's own pipeline (a Python CLI plus skill library; there is no runtime service), the 12 layers map to real components — system prompt + persona injection (the full body of each `agents/*.md` file, which Claude Code uses as the subagent system prompt), tool/route selection (`find_skill` in `bossku/skills.py` over `skills/skill-index.json` plus `CURATED_TRIGGERS` in `bossku/index.py`; a `confident: false` result from `select_skill_stack` in `bossku/skills.py` acted on as if certain is a finding), long-term memory admission (`remember` in `bossku/memory.py` writing `<memory-dir>/` through `bossku/redact.py`), and contract drift (`bossku/validate.py`). Anything that names a Laravel service class describes BosskuAI 1.x and is stale.
+
+## The 12-Layer Stack
+
+Every agent system has these layers. Any of them can corrupt the answer:
+
+| # | Layer | What Goes Wrong |
+|---|-------|----------------|
+| 1 | System prompt | Conflicting instructions, instruction bloat |
+| 2 | Session history | Stale context injection from previous turns |
+| 3 | Long-term memory | Pollution across sessions, old topics in new conversations |
+| 4 | Distillation | Compressed artifacts re-entering as pseudo-facts |
+| 5 | Active recall | Redundant re-summary layers wasting context |
+| 6 | Tool selection | Wrong tool routing, model skips required tools |
+| 7 | Tool execution | Hallucinated execution — claims to call but doesn't |
+| 8 | Tool interpretation | Misread or ignored tool output |
+| 9 | Answer shaping | Format corruption in final response |
+| 10 | Platform rendering | Transport-layer mutation (UI, API, CLI mutates valid answers) |
+| 11 | Hidden repair loops | Silent fallback/retry agents running second LLM pass |
+| 12 | Persistence | Expired state or cached artifacts reused as live evidence |
+
+## Common Failure Patterns
+
+### 1. Wrapper Regression
+
+The base model produces correct answers, but the wrapper layers make it worse.
+
+**Symptoms:**
+- Model works fine in playground or direct API call, breaks in your agent
+- Added a new prompt layer, existing behavior degraded
+- Agent sounds confident but is confidently wrong
+- "It was working before the last update"
+
+### 2. Memory Contamination
+
+Old topics leak into new conversations through history, memory retrieval, or distillation.
+
+**Symptoms:**
+- Agent brings up unrelated past topics
+- User corrections don't stick (old memory overwrites new)
+- Same-session artifacts re-enter as pseudo-facts
+- Memory grows without bound, degrading response quality over time
+
+### 3. Tool Discipline Failure
+
+Tools are declared in the prompt but not enforced in code. The model skips them or hallucinates execution.
+
+**Symptoms:**
+- "Must use tool X" in prompt, but model answers without calling it
+- Tool results look correct but were never actually executed
+- Different tools fight over the same responsibility
+- Model uses tool when it shouldn't, or skips it when it must
+
+### 4. Rendering/Transport Corruption
+
+The agent's internal answer is correct, but the platform layer mutates it during delivery.
+
+**Symptoms:**
+- Logs show correct answer, user sees broken output
+- Markdown rendering, JSON parsing, or streaming fragments corrupt valid responses
+- Hidden fallback agent quietly replaces the answer before delivery
+- Output differs between terminal and UI
+
+### 5. Hidden Agent Layers
+
+Silent repair, retry, summarization, or recall agents run without explicit contracts.
+
+**Symptoms:**
+- Output changes between internal generation and user delivery
+- "Auto-fix" loops run a second LLM pass the user doesn't know about
+- Multiple agents modify the same output without coordination
+- Answers get "smoothed" or "corrected" by invisible layers
+
+## Audit Workflow
+
+### Phase 1: Scope
+
+Define what you're auditing:
+
+- **Target system** — what agent application?
+- **Entrypoints** — how do users interact with it?
+- **Model stack** — which LLM(s) and providers? Read the exact model ids and SDK versions from the app's config and lockfile, then check the provider's current model list live, since models are renamed and retired.
+- **Symptoms** — what does the user report?
+- **Time window** — when did it start?
+- **Layers to audit** — which of the 12 layers apply?
+
+### Phase 2: Evidence Collection
+
+Gather evidence from the codebase:
+
+- **Source code** — agent loop, tool router, memory admission, prompt assembly
+- **Logs** — historical session traces, tool call records
+- **Config** — prompt templates, tool schemas, provider settings
+- **Memory files** — SOPs, knowledge bases, session archives
+
+Use `rg` to search for anti-patterns:
+
+```bash
+# Tool requirements expressed only in prompt text (not code)
+rg "must.*tool|必须.*工具|required.*call" --type md
+
+# Tool execution without validation
+rg "tool_call|toolCall|tool_use" --type py --type ts
+
+# Hidden LLM calls outside main agent loop
+rg "completion|chat\.create|messages\.create|llm\.invoke"
+
+# Memory admission without user-correction priority
+rg "memory.*admit|long.*term.*update|persist.*memory" --type py --type ts
+
+# Fallback loops that run additional LLM calls
+rg "fallback|retry.*llm|repair.*prompt|re-?prompt" --type py --type ts
+
+# Silent output mutation
+rg "mutate|rewrite.*response|transform.*output|shap" --type py --type ts
+```
+
+### Phase 3: Failure Mapping
+
+For each finding, document:
+
+- **Symptom** — what the user sees
+- **Mechanism** — how the wrapper causes it
+- **Source layer** — which of the 12 layers
+- **Root cause** — the deepest cause
+- **Evidence** — file:line or log:row reference
+- **Confidence** — 0.0 to 1.0
+
+### Phase 4: Fix Strategy
+
+Default fix order (code-first, not prompt-first):
+
+1. **Code-gate tool requirements** — enforce in code, not just prompt text
+2. **Remove or narrow hidden repair agents** — make fallback explicit with contracts
+3. **Reduce context duplication** — same info through prompt + history + memory + distillation
+4. **Tighten memory admission** — user corrections > agent assertions
+5. **Tighten distillation triggers** — don't compress what shouldn't be compressed
+6. **Reduce rendering mutation** — pass-through, don't transform
+7. **Convert to typed JSON envelopes** — structured internal flow, not freeform prose
+
+Ship each fix so that memory and session state written by the old version still load, and keep a rollback that does not lose data written by the new one.
+
+## Severity Model
+
+| Level | Meaning | Action |
+|-------|---------|--------|
+| `critical` | Agent can confidently produce wrong operational behavior | Fix before next release |
+| `high` | Agent frequently degrades correctness or stability | Fix this sprint |
+| `medium` | Correctness usually survives but output is fragile or wasteful | Plan for next cycle |
+| `low` | Mostly cosmetic or maintainability issues | Backlog |
+
+## Output Format
+
+Present findings to the user in this order:
+
+1. **Severity-ranked findings** (most critical first)
+2. **Architecture diagnosis** (which layer corrupted what, and why)
+3. **Ordered fix plan** (code-first, not prompt-first)
+
+Do not lead with compliments or summaries. If the system is broken, say so directly.
+
+## Quick Diagnostic Questions
+
+When auditing an agent system, answer these:
+
+| # | Question | If Yes → |
+|---|----------|----------|
+| 1 | Can the model skip a required tool and still answer? | Tool not code-gated |
+| 2 | Does old conversation content appear in new turns? | Memory contamination |
+| 3 | Is the same info in system prompt AND memory AND history? | Context duplication |
+| 4 | Does the platform run a second LLM pass before delivery? | Hidden repair loop |
+| 5 | Does the output differ between internal generation and user delivery? | Rendering corruption |
+| 6 | Are "must use tool X" rules only in prompt text? | Tool discipline failure |
+| 7 | Can the agent's own monologue become persistent memory? | Memory poisoning |
+| 8 | Do logs keep raw prompts or responses that hold personal data? | Data leak: mask before the log write |
+
+## Anti-Patterns to Avoid
+
+- Avoid blaming the model before falsifying wrapper-layer regressions.
+- Avoid blaming memory without showing the contamination path.
+- Do not let a clean current state erase a dirty historical incident.
+- Do not treat markdown prose as a trustworthy internal protocol.
+- Do not accept "must use tool" in prompt text when code never enforces it.
+- Keep findings direct, evidence-backed, and severity-ranked.
+
+## Report Schema
+
+Audits should produce structured reports following this shape:
+
+```json
+{
+  "schema_version": "bosskuai.agent-architecture-audit.report.v1",
+  "executive_verdict": {
+    "overall_health": "high_risk",
+    "primary_failure_mode": "string",
+    "most_urgent_fix": "string"
+  },
+  "scope": {
+    "target_name": "string",
+    "model_stack": ["string"],
+    "layers_to_audit": ["string"]
+  },
+  "findings": [
+    {
+      "severity": "critical|high|medium|low",
+      "title": "string",
+      "mechanism": "string",
+      "source_layer": "string",
+      "root_cause": "string",
+      "evidence_refs": ["file:line"],
+      "confidence": 0.0,
+      "recommended_fix": "string"
+    }
+  ],
+  "ordered_fix_plan": [
+    { "order": 1, "goal": "string", "why_now": "string", "expected_effect": "string" }
+  ]
+}
+```
+
+## Multi-agent identity and delegation
+
+Add this when agents call each other or act with real authority.
+
+- Identity is proven, not claimed: an agent saying it is "finance-agent" or "was told to do this" is not authorization. Look for verifiable credentials with scope and expiry, plus rotation and revocation.
+- Delegation is scoped (one action type is not all) and revocation reaches downstream agents. A broken link in the chain invalidates the chain.
+- Audit records are append-only and tamper-evident; the writer cannot edit its own log. Fail closed: if identity cannot be verified or evidence cannot be written, the action does not run.
+- Assume one agent in the network is compromised or misconfigured, and ask what it can reach.
+- Key material never appears in logs, evidence records or API responses.
+
+## Related Skills
+
+- `bosskuai-agent-introspection` — Debug agent runtime failures (loops, timeouts, state errors)
+- `bosskuai-eval-driven-agent-improvement` — Benchmark and regression-test agent behavior
+- `bosskuai-cybersecurity-risk` — Security audit for code and configuration
+- `bosskuai-prompt-injection-defense` — Harden agent workspaces, MCP setups, and injection surfaces
+- `bosskuai-context-budget` — Quantify context overhead when layer 1-5 duplication is the finding
+- `../../references/checklists/engineering-quality-bar.md` — the shared quality bar that fixes are checked against.
+
+Adapted from specialized/agentic-identity-trust.md (agency-agents, MIT).
+
+## Harness design checks (layers 6-8)
+
+When tool selection or interpretation is the suspect layer, check the harness before blaming the model.
+
+- Tool names are stable and explicit; inputs are schema-first and narrow; output shapes are deterministic. Flag catch-all tools and tools with overlapping semantics.
+- Granularity matches risk: micro-tools for deploy, migration and permission changes; medium tools for routine read/edit/search loops; macro-tools only where round-trip cost dominates.
+- Each tool result carries a status (success/warning/error), a one-line summary, follow-up actions and artifact paths or IDs. Error-only or opaque output with no next step is a finding.
+- Each error path gives a root-cause hint, a safe retry instruction and an explicit stop condition; otherwise expect retry loops (layer 11).
+- Context budget: system prompt minimal and invariant, large guidance loaded on demand, file references instead of inlined documents, compaction at phase boundaries rather than at arbitrary token counts.
+- Prefer ReAct-style planning with typed tool execution; pure ReAct for deterministic flows or pure function-calling for exploratory ones is a smell.
+- Each model and tool call has an explicit timeout and a capped retry with backoff. Wait for the `Retry-After` time when a 429 sends one. Retry only a call that is safe to repeat, such as a read or a write with an idempotency key; a retry must not send a second email, charge or write. Reject schema-breaking output loudly instead of passing it on.
+
+Adapted in part from ECC skills/agent-harness-construction (affaan-m/ECC, MIT).

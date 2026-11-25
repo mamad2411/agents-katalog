@@ -1,0 +1,102 @@
+---
+name: shared
+description: shared
+version: 1.0.0
+category: productivity
+signature: 'shared -> productivity: 共享资源 — 跨技能引用的通用资源。'
+author: Synthos
+license: MIT
+triggers:
+- 需要执行shared下的子技能
+metadata:
+  synthos:
+    priority: P2
+    atom_type: parent-skill
+    description: 父级技能 — 共享资源 — 跨技能引用的通用资源。
+    signature: 'shared -> sub-skills: [references]'
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `request: str, context: dict` — 用户请求描述、上下文信息
+- **output**: `result: dict — 技能执行结果（结构因技能而异）`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# shared
+
+> 父级技能目录，包含 1 个子技能。
+> 子技能通过Hermes技能加载机制自动发现，无需显式调用。
+
+## 子技能
+
+- `references`
+
+## 使用方式
+
+直接调用子技能名称即可：
+
+## 验证清单 · VERIFICATION
+
+- [ ] 子技能 `references` 是否可被 Hermes 自动发现并以 `skill_view(name='references')` 加载
+- [ ] 子技能目录 `references/` 下引用的文件是否真实存在且可读
+- [ ] 返回的 `result: dict` 结构是否符合 `IO_CONTRACT` 声明
+- [ ] 本父级 SKILL.md 是否仅作为目录索引，未与子技能功能重叠
+- [ ] Golden 集合（Input/Output/Error）是否覆盖正常与失败两条路径
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+```
+skill_view(name='references')  # 加载第一个子技能
+```
+
+父级SKILL.md仅作为目录索引，实际执行由子技能完成。
+
+# Shared
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[SHAR-001]** 执行核心操作前 → 必须确认输入参数完整且符合类型/范围/格式约束
+- **[SHAR-002]** 处理异常或失败场景 → 错误信息必须包含上下文和明确的恢复指引
+- **[SHAR-003]** 验证输出结果 → 确保返回值结构、编码及命名与契约保持一致
+- **[SHAR-004]** 面对未验证的代码或外部输入 → 拒绝执行或隔离，严禁暴露内部状态
+- **[SHAR-005]** 进行技能改进或测试 → 以 Golden 集合（输入/输出/错误）作为单一真理来源进行校验
+- **[SHAR-006]** 执行验证流程 → 确保每项验证可执行、可记录且可复现，失败时记录原因

@@ -1,0 +1,520 @@
+---
+name: grimoire-campaign-context
+description: >
+  Drive the Grimoire MCP server correctly for tabletop RPG campaign work. Use this
+  skill whenever a Grimoire connector is available and the user asks anything about
+  their campaign, world, NPCs, factions, locations, quests, sessions, plot threads,
+  or wiki. Covers the session-start centering sequence (current_campaign,
+  get_constitution, get_narrative_state; a player-role session runs the same
+  sequence and reads the shared flags get_constitution returns) that must run before
+  answering campaign questions, which read tool to reach for, how to write typed
+  entities without dumping data into the wrong fields, how to search, read, and write
+  the wiki without breaking its links or tables, how the visibility model constrains
+  what you can see, and recipes for parsing prep notes, filing session recaps,
+  relationship spelunking, wiki lookups, and pre-session prep pulls.
+license: MIT
+compatibility: Any MCP client that supports remote streamable HTTP connectors, including Claude, ChatGPT, Cursor, and Claude Code.
+metadata:
+  author: zafety-vibin
+  version: "1.2.1"
+---
+
+# Working with Grimoire
+
+Grimoire is a campaign manager for tabletop RPG gamemasters, and its MCP server
+gives you live read and write access to one campaign's database. That database is
+not a pile of notes. It is typed: 14 entity categories, typed relationships between
+them, three knowledge graph projections, open narrative threads, and a block-based
+wiki whose pages link to the records. The endpoint is `https://api.ttrpg.bot/mcp`,
+transport is streamable HTTP, auth is OAuth 2.1, and access is scoped to the single
+campaign the user approved.
+
+Your job is to answer from that campaign's canon, not from generic tabletop RPG
+knowledge. The homebrew is the authority. If the campaign says elves are extinct
+and magic costs blood, that is true, and your training data is wrong.
+
+Grimoire exposes 52 tools in 8 groups. The tools carry their own layer numbering in
+their descriptions. Follow it. Every tool description is current; when this skill
+and a tool description disagree, the tool description wins.
+
+## Center yourself first
+
+Do not answer a campaign question, and do not write anything, until you have
+grounded yourself in this campaign. The whole point of the layered design is that
+context gets loaded deliberately instead of dumped all at once.
+
+**Every session, before the first substantive answer:**
+
+1. `current_campaign` (free, instant). Returns the campaign, user, and **role** bound
+   to this MCP session. Call it first, every time. Everything after this depends on
+   it, and the role decides how much of the next two steps you get back. A player
+   token also lists the player's own characters under `characters`.
+   See "If you are connected as a player" below.
+2. `get_constitution` (Layer 1). Both roles. The world's non-negotiable truths:
+   campaign summary, Campaign Bible summary, and the world foundations graph. This
+   is where the setting's defining events, cosmology, and the GM's content
+   boundaries live. It colors every downstream answer. A player-role connection
+   gets its table's own constitutional layer, never the GM's: the response carries
+   a `shared` object (`bible`, `foundations`, and a `graphs` map), and the Bible
+   summary and foundation nodes are present only where the matching flag is true.
+   Read `shared` first, because a false flag means the GM did not share that part,
+   not that the call failed.
+3. The `campaignContext` block. Genre, ruleset, setting technology and magic levels,
+   which entity categories this campaign uses, and what this campaign calls them.
+   It rides inside the `get_constitution` response you just read, and inside
+   `get_narrative_state` and `get_entity_catalog` as well, so read it there instead
+   of fetching it again. `get_campaign_context` is the standalone form of the same
+   block, for a session that needs nothing but the vocabulary.
+   Read it either way: it is how you stop saying
+   "NPC" when this table says "contact," and how you stop applying D&D 5e
+   assumptions to a Blades-adjacent horror game.
+
+**Then, if the question touches the present tense of the story:**
+
+4. `get_narrative_state` (Layer 1.5). Recent sessions with summaries and key events,
+   in play order, newest first, whatever their canonical status (archived recaps are
+   skipped), plus each session's canonicalStatus, dmConsequences and dmBehindScenes
+   on GM connections, open
+   threads split into major and minor, canonical facts, active arcs, and recent
+   observations. Call it for anything about "now": what the party is doing, what
+   just happened, how an NPC would react today, prep, recaps, consequences. Skip it
+   for a pure static lookup like "what is the population of Vethmoor."
+
+**Then, only if you still need more:**
+
+5. `get_entity_catalog` (Layer 2). Every active entity as id plus name, grouped by
+   type, plus compact node and edge lists for the political, geography, timeline,
+   and foundations graphs, with the same edge types get_knowledge_graph returns.
+   Cheap. This is the map. Call it when you need to know
+   what exists, and always call it before creating anything so you do not make a
+   duplicate.
+6. `get_knowledge_graph(graph_type, attention=true)` (Layer 3). The GM-curated
+   subset: only entities the GM has flagged as relevant right now. This is the right
+   first graph call on a large campaign.
+7. `get_knowledge_graph(graph_type)` (Layer 4). The full projection. Use when the
+   attention-filtered view is genuinely not enough.
+8. `get_entity(...)` (Layer 5). Full detail on one entity, by id. Call it as many
+   times as the question warrants, on ids you already hold.
+
+The wiki sits beside the layers rather than inside them. Reach for it when the
+question is about prose the GM wrote (a handout, a house rule, a lore page, session
+notes) rather than about a record's fields. See "The wiki" below.
+
+If you skip step 2 and step 3, you will produce answers that sound like a tabletop
+RPG and read like someone else's campaign. That is the failure mode this system
+exists to prevent.
+
+## If you are connected as a player
+
+`tools/list` is the same 52 tools for everyone. Role is enforced when you **call**
+a tool, not when you list them. So do not assume a tool works just because you can
+see it. Check `current_campaign` first and branch.
+
+**Permanently unavailable to a player-role connection** (returns "not available to
+player-role MCP connections"): `get_relationships`, `get_open_threads`,
+`get_thread_progressions`, `list_entity_graphs`, `get_entity_graph`. That is five
+tools. Do not retry these, and do not treat the error as a transient failure.
+
+**Gated by the campaign's player portal policy**: `get_entity`, `list_entities`,
+`get_campaign_context`, `get_narrative_state`, `get_entity_catalog`,
+`get_knowledge_graph`, `get_constitution`, `get_campaign_bible`. Under a
+`wiki-only` portal they refuse outright, with one exception: `get_entity` on one of
+the player's own characters answers under every portal setting (see below). Under
+`revealed` or `open` they work: `get_entity` and `list_entities` return exactly what
+the player portal shows that player, and the rest return visibility-filtered data
+(World Foundations reaches a player connection only, never a portal page): no `dm_*` fields, and only the custom field values the GM shows players,
+under `shared_fields`. The refusal message names the policy, so read it rather than
+guessing.
+
+**Gated again by the GM's sharing flags**: `get_constitution` and
+`get_campaign_bible` for the Campaign Bible; `get_constitution` and
+`get_knowledge_graph(graph_type='foundations')` for World Foundations; and one
+portal sharing switch per graph for the political, timeline and geography graphs of
+`get_knowledge_graph` and of `get_constitution`'s `graphStructures`. A flag that is
+off is not an error. `get_campaign_bible` and every unshared graph answer the
+normal result `{"shared": false, "message": "..."}`, and `get_constitution` simply
+carries that flag false in its `shared` object with that part absent. Say so
+plainly and point the user at their GM; retrying changes nothing. With the Bible
+flag on you get only the blocks the GM marked `common-knowledge`; with the
+Foundations flag on you get the player-safe projection, GM Secret nodes and every
+edge touching them dropped, and never `aiGuidance`.
+
+**Always available to a player**: `current_campaign`, `search_campaign`,
+`search_wiki`, `get_wiki_tree`, `get_wiki_page`, `get_entity_schema`,
+`get_field_options`, `get_tag_options`, and `get_entity` on the player's own
+characters. All of them return only what the player's visibility admits
+(`get_field_options` answers a campaign-defined custom field only when the GM shows
+it to players), and a page the player cannot reach answers "page not found" rather
+than "forbidden", so a not-found is not evidence that something is being hidden.
+
+**The player's own characters.** When the GM assigned characters to this player,
+`current_campaign` lists them under `characters` (id, name, archived).
+`get_entity(category="player_characters", entity_id=<id>)` on one of them answers
+under every portal setting, wiki-only included, with `categoryData.my_character`
+true, `archived`, `key_items` (the full entries of the items the character carries)
+and `editable_custom_fields`. A key item's own `get_entity` still follows the portal
+policy, so read items through their character. You cannot change the character:
+every write tool is GM-only, and the player edits their sheet on the player
+portal's My Character page.
+
+So a player-role centering sequence is: `current_campaign` (and `get_entity` on
+any character it lists), then `get_constitution`, and read its `shared` object to
+learn what this table actually gives you. That one call already carries the
+campaignContext block, the player's campaign summary, and whichever of the Bible
+and the foundations the GM shared, so you rarely need `get_campaign_context` on its
+own. Then `get_wiki_tree`, `search_wiki`, and `search_campaign` for everything
+else; `get_narrative_state` and `get_entity_catalog` embed the same campaignContext
+block when the portal allows them, so one fetch is enough. When `shared` says a part is not shared, say so
+plainly if the user asks for world truths you cannot reach, and point them at their
+GM. Every write tool is GM-only as well.
+
+## Choosing a read tool
+
+| You want | Call |
+|---|---|
+| Which campaign and role am I in | `current_campaign` |
+| World truths, tone, content boundaries | `get_constitution`, then `get_campaign_bible` for full blocks |
+| Genre, ruleset, category vocabulary | `get_campaign_context` |
+| Where the story is right now | `get_narrative_state` |
+| Just the loose ends | `get_open_threads` |
+| How a thread has moved over time | `get_thread_progressions` |
+| A cheap map of everything | `get_entity_catalog` |
+| Find a record by name or keyword, category unknown | `search_campaign` |
+| Find prose by the words in it (a handout, a rule, a note) | `search_wiki`, then `get_wiki_page` |
+| Everything in one category, paginated | `list_entities` |
+| How things connect | `get_knowledge_graph` (political, timeline, geography, foundations) |
+| One entity's edges | `get_relationships` |
+| Full detail on a known entity | `get_entity` |
+| Valid field values and tags before writing | `get_entity_schema`, `get_field_options`, `get_tag_options` |
+| Wiki structure, then a page | `get_wiki_tree`, then `get_wiki_page` |
+
+Etiquette that saves tokens and mistakes:
+
+- `search_campaign` is full-text over every free-text field of an entity: name,
+  description, and the category's own text fields. As the GM it also matches the
+  GM-only `dm_*` fields and custom field values; player connections never match on
+  those. It never touches wiki rows. It returns truncated descriptions and a
+  relevance score, so a hit on a GM-only field or a custom field may not show the
+  matched text: follow up with `get_entity`. Filter with `categories` when you know
+  the type.
+- `search_wiki` is full-text over wiki page titles and block prose, and never
+  touches entities. Results carry `pageId`, `pageTitle`, an optional `blockId` when
+  the hit is inside a block, a snippet, and a rank. Follow up with `get_wiki_page`.
+  When you do not know whether the thing is a record or a page, run both searches.
+- `list_entities` is for enumeration, not lookup. Do not page through 200 NPCs
+  hunting for a name; search instead.
+- Reach for `get_knowledge_graph` when the question is about relationships rather
+  than attributes. "Who does House Vale hate" is a graph question. "How old is Lady
+  Vale" is an entity question.
+- `get_entity_catalog` before any create. Duplicates are the most common damage an
+  AI does to a campaign database.
+
+## Writing without making a mess
+
+Grimoire's categories have real columns. Writing blind means dumping structured
+data into a generic blob where nothing can query it. Do not do that.
+
+**The rule: `get_entity_schema(category)` before `create_entity` or
+`update_entity`.** It returns:
+
+- `globalFields`: name, description, status, player_knowledge, tags, set at the top
+  level of the call. `name` is required on every create; a nameless entity is
+  refused.
+- `defaultFields`: the category's native fields. These go **inside** `custom_fields`
+  and are written to real columns. Examples: `npcs.faction_id`,
+  `locations.location_type`, `factions.allied_faction_ids`, `quests.quest_giver_id`.
+- `selectOptions`: suggested values for select-type fields. These are hints, not a
+  closed enum. A select-type default field also accepts a brand-new free-text value,
+  and the new value becomes a campaign option. Do not avoid the right word just
+  because it is not listed. A default field that lists `values` (the quest and
+  session prep workflow status) is the exception: it accepts only those values.
+- `customFields`: the GM's own defined fields for this campaign, each with
+  `isDMOnly` (GM Secret) and `showToPlayers`. Only a `showToPlayers` field's value
+  reaches players; every other custom field value stays with the GM.
+
+Any key in `custom_fields` that is neither a default field nor a defined custom
+field is rejected outright. Relation fields take arrays of entity UUIDs and sync
+junction tables, so you need real ids, which means catalog or search first.
+
+Other write rules:
+
+- **Tags.** Call `get_tag_options` first. The standard set is political, personal,
+  economic, religious, magical, historical, secret, prophetic, combat, social,
+  environmental, technological. Tags you pass on create and update are kept.
+- **Bulk.** `batch_create_entities` takes up to 10 entities of one category per
+  call, as an array. It is **not** transactional: entities insert sequentially, so a
+  failure at #3 leaves #1 and #2 committed. Always read the `failed` array. To undo
+  a partial batch, `delete_entity` the ids from `created`.
+- **Relationships.** `add_relationship` routes automatically: it writes an FK field
+  when one exists (`faction_id`, `parent_location_id`, `owner_npc_id`) and a
+  junction row otherwise, using `relationship_type` as the edge label. Database
+  relationships are the edges of `get_knowledge_graph`. Political ones (NPC-NPC,
+  memberships, alliances, rivalries, PC ties) also place both endpoints on the
+  campaign's Political Web in the app, and so do the three political FK writes,
+  `npcs.faction_id` (member_of), `npcs.superior_npc_id` (reports_to) and
+  `factions.leader_id` (led_by), so `add_to_entity_graph(graph_type=political)`
+  is never needed after `add_relationship`. Writing a session recap places what it
+  references the same way: the NPCs and player characters it names join the
+  Political Web, the locations it names join the geography graph. Do **not** also call
+  `add_to_entity_graph` or `create_entity_graph_edge` for the same link; those two
+  exist only for custom edges with no database equivalent, and using them here
+  creates duplicate edges.
+- **Attention.** `toggle_graph_attention` promotes an entity from Layer 4 into the
+  Layer 3 session-context view. Use it when prep identifies what matters next
+  session. Do not mass-flag; the value of Layer 3 is that it is small.
+- **Threads.** After a session, log progressions rather than rewriting thread text.
+  `add_thread_progression` takes `thread_id`, `session_id`, `progression_type`
+  (start, update, complication, resolution), and a `title`. Link it to a session key
+  event with `key_event_id` when you have one; `key_event_index` is legacy and
+  breaks if key events are reordered. GM-role connections only. Every thread carries
+  a `status` of open or resolved; `get_open_threads` with `status=all` interleaves
+  both kinds inside major and minor, so read `status` rather than testing for
+  `resolvedSessionId`.
+- **Foundations.** The six `*_foundation_*` tools and `update_world_foundations`
+  change the frame every future answer is generated inside. Confirm with the GM
+  before writing there.
+
+## The wiki
+
+The wiki is where the GM writes in sentences: lore pages, handouts, house rules,
+session notes. Over MCP you reach the **campaign wiki space only**. The party wiki
+and each player's private notebook are not listed, not searchable, and not writable
+from here; their page ids answer "page not found".
+
+**Read.** `get_wiki_tree` for structure, `search_wiki` for words, `get_wiki_page`
+for content. A page comes back with its blocks, breadcrumb, children, and a token
+estimate. Each block has a typed `content` object and a flat `text` rendering.
+
+**Links are tokens, and they are the point.** In block text, an entity mention is
+`@[Label](entity://<category>/<uuid>)` and a page link is
+`@[Title](page://<uuid>)`. Reads emit them; writes resolve valid tokens into real
+links, which is what makes a page show up under an entity's "Mentioned in" list and
+a page's "Linked from" rail in the app. Two rules follow:
+
+- When you rewrite prose that contains tokens, edit around them and write the
+  tokens back verbatim. Retyping a name as plain text silently breaks the link.
+- When you write new prose about a record whose id you already hold, write the
+  token, not the bare name. `@[Abbess Mirel](entity://npcs/<uuid>)` links the page
+  to her record; "Abbess Mirel" does not. Category is the plural table name from
+  `get_entity_schema` or the catalog: `npcs`, `factions`, `locations`, and so on.
+  Page ids come from `get_wiki_tree`. A token with an id that does not exist in this
+  campaign is stored as plain text, so use ids you have actually read.
+
+**Blocks.** Types are text, heading (level 1 to 6), bullet, numbered, quote, callout
+(info, warning, success, error), divider, page, image, and table. Text is wrapped as
+`{"content": [{"text": "..."}]}`. `update_wiki_block` takes a content object of the
+same shape, never the flat `text` string. Block type cannot be changed; delete and
+recreate instead, with the cascade caveat below.
+
+**Ordering.** `batch_create_wiki_blocks` (up to 50) chains blocks in array order,
+so stored order matches your array with no verification pass. Sequential single
+creates are ordered too; only concurrent create calls can interleave. Use
+`batch_reorder_wiki_blocks` when you actually want a different order, passing every
+block id on the page.
+
+**Tables.** A table block is written and read as a plain markdown grid:
+`{"markdown": "| Name | Role |\n| --- | --- |\n| Varka | Chief |"}`. Cells are
+paragraph-only (no spans, no nested blocks), tokens work inside cells, and reads
+render the grid back in `text`. An update replaces the whole table. Tables are not
+allowed on the Campaign Bible and cannot be moved onto it. A person with the table
+open in a browser tab re-saves their copy about two seconds after they click into
+it, so an edit you make while it is on someone's screen can be overwritten; prefer
+table edits between sessions.
+
+**Pages.** `create_wiki_page` with `parent_id` nests; root pages cannot be
+`inherit`. After creating a page, make it reachable: either a `page` block on the
+parent (or the home page) or an inline `@[Title](page://<uuid>)` token in a
+sentence. Pages you create are in the campaign space.
+
+**Deleting.** `delete_wiki_block` is a hard delete with no undo; only pages go to
+the wiki trash. Deleting a **page block** (type `page`) also moves its linked page
+and every sub-page to the trash, exactly like deleting the page card in the app.
+Never delete a page block as a way to "edit" it; page blocks accept only a
+visibility change through `update_wiki_block`. The Campaign Bible's title block
+cannot be deleted.
+
+**The Campaign Bible** is a wiki page with its own tools. `get_campaign_bible`
+returns blocks in whichever shape they were written in; when you rewrite, pass the
+simple `{"content": [{"text": "..."}]}` shape to `update_campaign_bible` and let the
+server normalize. Do not hand-build TipTap documents. The update replaces every
+block except the title, allows only text, heading, bullet, numbered, quote,
+callout, divider, and image, and is create-then-delete, so a failed write leaves the
+old content in place.
+
+Campaign Bible blocks are GM Secret by default. Set a block to `common-knowledge`
+only when players may know it, such as world mechanics or everyday life; leave
+secrets and the campaign spine at the default. That marks the block player-safe,
+and it is the GM's separate sharing switch that actually hands it over. The Bible
+reaches player connections only through `get_campaign_bible` and
+`get_constitution`, only those Common Knowledge blocks, and only while sharing is
+on. The Bible cannot be renamed.
+
+## Visibility is not yours to negotiate
+
+Every entity, wiki page, wiki block, and graph node carries a visibility value:
+
+- `common-knowledge`: everyone at the table knows it.
+- `player-knowledge`: on an **entity**, every player in the campaign can see it in
+  the portal (it is the "the party has learned this" tier). On a **wiki page or
+  block** it means the same: every player who has joined the campaign can read it,
+  and a GM previewing as a player sees it too. Use it for what the party has
+  discovered; use `common-knowledge` for what everyone in the world already knows.
+- `dm-secret`: GM only. This is the "GM secret" tier.
+- `system` (wiki only): rules and meta notes; players see it like common knowledge.
+- `inherit` (wiki only): a block follows its page; a child page follows the page
+  block that links it, then its parent chain. The sane default for body content.
+  Not allowed on a root page.
+
+On the Campaign Bible, `inherit` resolves to GM Secret whatever the page says, and
+the wiki-page sharing advice above does not apply: a Bible block reaches a player
+connection only when it is `common-knowledge` and the GM has Bible sharing on, and
+only through `get_campaign_bible` and `get_constitution`. It never reaches one
+through the wiki tools.
+
+This is enforced in the backend query layer, not in the response text. A player-role
+connection never receives GM-secret rows in the first place, and a page it cannot
+reach is absent from the tree, search, mentions, and backlinks. There is no flag,
+phrasing, or tool call that gets around it, and trying is a bug in your reasoning,
+not a puzzle to solve.
+
+What this means for you:
+
+- If a player-role user asks about something and you find nothing, say you cannot
+  see it in this campaign's data from this connection. Do not fill the gap with
+  invention and do not speculate about what is being hidden.
+- When you write, set visibility deliberately. Anything the GM told you in
+  confidence, anything that would spoil a reveal, anything a villain knows and the
+  party does not: `dm-secret`. Public reputation, geography, common rumor:
+  `common-knowledge`. When unsure on a secret, choose `dm-secret`; over-hiding is
+  recoverable, leaking is not.
+- Category-specific GM-only fields exist and are named for it: `npcs.dm_secrets`,
+  `factions.dm_true_agenda`, `quests.dm_true_objective`,
+  `items.dm_secret_properties`, `session_recaps.dm_consequences`. Put the twist
+  there, not in the public description.
+
+## Recipes
+
+### Parse prep notes into entities
+
+1. `get_constitution` if not already loaded this session (its campaignContext block
+   covers genre and vocabulary).
+2. `get_entity_catalog`. Match every proper noun in the notes against it.
+3. For each name that already exists, `get_entity`, then `update_entity` with only
+   the new information. Do not recreate.
+4. For each genuinely new thing, `get_entity_schema(category)`, then
+   `batch_create_entities` in groups of 10 per category.
+5. `add_relationship` for every link the notes imply. Do not add graph edges by
+   hand afterwards.
+6. If the notes are also worth keeping as prose (a handout, a read-aloud box, a
+   timeline of the evening), file them as a wiki page whose sentences carry entity
+   tokens for the records you just created, so the page and the records point at
+   each other.
+7. Report back: what you created, what you updated, what you skipped as a
+   duplicate, and any contradiction you hit between the notes and existing canon.
+   Contradictions get surfaced, not silently resolved.
+
+### File a session recap
+
+1. `get_narrative_state` for what was already open going in. On a GM connection the
+   previous recaps' dmConsequences and dmBehindScenes arrive with it, so you know
+   what the party has not yet realized without reading each recap.
+2. `get_entity_schema("session_recaps")`, then `create_entity` with
+   `session_number`, `summary`, `key_events`, `pcs_present_ids`, and
+   `dm_consequences` for anything the party has not realized yet. `key_events` is an
+   array of `{description, important, is_canonical_fact}`; `id` and `order` are
+   assigned by the server. Set `important` only for campaign-defining beats and
+   `is_canonical_fact` for facts that should surface in
+   `get_narrative_state.canonicalFacts`.
+3. `get_open_threads`. For each thread the session touched,
+   `add_thread_progression` against the new session id with the right
+   `progression_type`, linked to a key event where one applies.
+4. `resolve_open_thread` for anything actually closed; it records a resolution
+   progression at that session on its own, so add a resolution progression first
+   only when the closing entry should carry its own title, description, or key event
+   link. `create_open_thread` for new loose ends, with the type that fits:
+   consequence, promise, mystery, foreshadowing, callback_opportunity; passing
+   `created_session_id` logs the start progression for you.
+5. `update_entity` on NPCs, factions, and locations the session changed.
+6. If the table keeps a written recap in the wiki, add it as a page under the
+   sessions page with tokens for the NPCs and places it mentions.
+
+### Find it in the wiki
+
+1. `search_wiki` with the words you remember. If a hit has a `blockId`, the match is
+   inside that block; if not, the page title matched.
+2. `get_wiki_page` on the best hit. Read the `text` of the relevant blocks.
+3. Follow the tokens: `get_entity` on any `entity://` id and `get_wiki_page` on any
+   `page://` id the prose points at, as far as the question needs.
+4. If nothing matches and the user is a player, say it is not in the wiki you can
+   see, without speculating.
+
+### Write a wiki page for an entity
+
+1. `get_entity` for the record and `get_wiki_tree` for where the page belongs.
+2. `create_wiki_page` with a `parent_id` under the right section, `inherit`
+   visibility unless the GM says otherwise.
+3. `batch_create_wiki_blocks` with a heading, prose that carries the entity's own
+   token and tokens for every related record you hold ids for, and a `dm-secret`
+   callout for anything the party must not read.
+4. Make it reachable: a `page` block on the parent page, or a page token in the
+   parent's prose.
+5. Tell the GM which record the page is linked to, so they can confirm it shows
+   under "Mentioned in".
+
+### Who knows what about X
+
+1. `search_campaign` for X, get the id and category.
+2. `get_relationships` on it for direct edges.
+3. `get_knowledge_graph("political")` to see it inside the wider web of factions and
+   NPCs rather than as an isolated node.
+4. `search_wiki` for X to find the prose that mentions it, then `get_wiki_page`.
+5. `get_entity` on the neighbours that matter.
+6. Answer with the visibility tier attached. "The city guard treats this as common
+   knowledge; the Duke's involvement is a GM secret" is a more useful answer than a
+   flat list.
+
+### Prep pull before a session
+
+1. `get_narrative_state` for open threads and recent arcs.
+2. `get_knowledge_graph("timeline", attention=true)` for what the GM has already
+   flagged as live.
+3. `get_knowledge_graph("geography")` if the party is travelling, to get the
+   location hierarchy right.
+4. `get_entity` on the handful of NPCs and locations that will actually appear, and
+   `search_wiki` for any handout or rule the scene will need.
+5. Offer the GM a short prep brief, then use `toggle_graph_attention` to flag the
+   entities you both agreed matter, so the next session's Layer 3 view is already
+   correct. If the brief is worth keeping, file it as a `dm-secret` wiki page or as
+   a table block on the session prep page.
+
+## Anti-patterns
+
+- Answering a campaign question before `get_constitution`, whatever the role. This
+  is the single biggest failure mode.
+- Filling a gap with generic fantasy or sci-fi content instead of saying the data
+  does not cover it, or asking.
+- Creating an entity without checking `get_entity_catalog` for a near-duplicate.
+- Writing structured data into `custom_fields` keys that are not real fields,
+  instead of calling `get_entity_schema` first.
+- Calling `get_knowledge_graph` with `attention=false` as the opening move on a
+  large campaign, then drowning in it.
+- Adding a graph edge with `create_entity_graph_edge` for a relationship that
+  `add_relationship` already visualized.
+- Searching for a handout with `search_campaign`, or for an NPC with `search_wiki`,
+  then concluding it does not exist.
+- Retyping an entity or page name as plain text when the block already carried a
+  token, or when you hold the id. That is how links quietly disappear.
+- Deleting a page block to "edit" it. That trashes the page and its sub-pages.
+- Editing a table while it is on someone's screen.
+- Treating a visibility filter as an obstacle, or a "page not found" as a clue.
+- Rewriting a thread's text instead of logging a progression, which destroys the
+  session-over-session history that `get_thread_progressions` returns.
+
+## Reference
+
+- `references/tool-groups.md`: all 52 tools by group, with what each is for.
+- `references/context-architecture.md`: why the layers exist and how to pick a
+  traversal.
+- Setup and client instructions: https://www.ttrpg.bot/docs/mcp/
+- The wiki, as the GM sees it: https://www.ttrpg.bot/dnd-campaign-wiki/
+- Architecture write-up: https://www.ttrpg.bot/blog/grimoire-mcp-secret-sauce/

@@ -1,0 +1,122 @@
+---
+name: sync-upstream
+description: Reconcile this repo's forked skills with a new upstream release. Use when the user says an upstream (compound-engineering, mattpocock/skills) was updated, asks to merge/sync upstream changes into the forks, or wants the forks' divergence audited.
+version: 1.6.1
+---
+
+Reconcile the forked skills with a new upstream release: disposition every upstream delta, gate every disposition on the user's approval, audit the whole divergence surface, and record the new sync point.
+Nothing enters the repository without an approval, and a case these rules do not cover is put to the user rather than improvised on.
+
+## Step 1: Measure
+
+Get the exact new tag from `gh release list -R <upstream>`.
+Every measurement comes from `scripts/fork-diff.sh` (through `mise run dev:fork-diff -- …`); fetch nothing by hand.
+The tool reads each fork's `source:` frontmatter, re-prefixes its bare pinned version into the real tag, resolves the upstream skill's directory from the repository tree API rather than guessing it, fetches and caches the upstream files under `.scratch/sync/`, and prints a unified diff per file with a divergent-line count.
+
+Run it twice:
+
+- With no skill arguments, against the pins: every fork measured, whether or not upstream moved it.
+  This is the audit — a release touching three files still gets all the forks measured, drift nobody has looked at being the audit's whole point.
+- With `--tag <new-tag>` and the updated upstream's forks named, since one tag cannot be right for both upstreams.
+  Pass the tag exactly as the release lists it, prefix included: the tool uses the override verbatim, re-prefixing only the pinned `source:` version.
+  A wrong tag prints `skipped: could not read the tree` per fork and exits zero: an all-skipped second run is a failed measurement, never zero deltas.
+  Check each fork's tag line, printed under its `════` header as `<repo>@<version> → <tag>, upstream skill '<name>'`: a tag line still naming the pinned tag means the override named the pin, not the release — the same failure — while identical hunks under the new tag are a real zero-delta release, not a failure.
+  A fork with no tag line was skipped, never measured.
+
+First set aside what was not measured: a file or fork the run could not read — `could not fetch`, `upstream copy unreadable`, a `skipped` fork, or an `upstream only` line carrying `(size unknown, fetch failed)` — classifies as nothing, whatever else its label says.
+Retry unread files once with `--refresh`; park what a second attempt still cannot read, since an absent measurement is never a delta and never convergence.
+Parking is per measurement: a fork skipped at the new tag keeps its pin-run measurement, whose hunks stay audit material.
+For the updated upstream's forks, classify each remaining spot by whether upstream moved there, read from the upstream side of the two runs' diffs — hunk headers and context shift with unrelated edits, so compare the quoted upstream lines, never the hunk framing.
+Where the upstream side reads the same in both runs, upstream left that text alone: the fork's divergence there is pre-existing — audit material.
+Where the upstream sides differ, or a hunk shows in only one run, upstream moved: an upstream delta for Step 2, whose Standing-or-afresh question Step 2's anchoring rule decides.
+A file the tool reports whole takes the same both-runs test: the same report in both runs is pre-existing — a never-ported or fork-only file, audit material — while a report in one run alone, pin or new tag, means upstream moved that file: an upstream delta.
+Upstream edits inside a file the fork never carried are invisible to these diffs; where a ledgered policy asks for their evaluation — the preamble's persona rule — diff the two cached tags under `.scratch/sync/`.
+The non-updated upstream's forks are measured once, against their pins, so every hunk they show is audit material.
+Treat `source:` as provenance, not ground truth: a fork may have been cut from upstream main between releases and already contain wording "newer" than its recorded version.
+An audit divergence is therefore not proof of local invention: a revert proposal states the divergence and leaves its origin open — for the non-updated upstream the run holds nothing newer than the pin, so origin stays uncheckable until that upstream's own sync.
+
+The orchestrating session reads every diff itself and dispatches no sub-agents: ranking findings and writing the ledger take the whole picture, the tool has already done the measuring, and a sub-agent's summary would stand in for the diff the gate must show.
+
+## Step 2: Disposition every delta
+
+Consult the divergence ledger, [FORKS.md](../../../FORKS.md), then give each delta exactly one of four dispositions:
+
+- **Standing** — a ledgered difference already covers it, or it lands in a section the fork dropped entirely and the recorded skip decides it.
+  Zero churn: its gate block asks only for confirmation, and a confirmed Standing writes nothing.
+- **Merge** — nothing in this repo's environment forces words different from upstream's current text.
+  On approval: the delta lands byte-identical to upstream; where the fork already carries upstream's text — upstream converged — nothing lands and the Merge's whole effect is ending the stale bullet.
+  Byte-identity is scoped to the delta — where it lands inside a sentence carrying a fork-wide systematic convention, that convention stays.
+- **Rework** — belongs in the fork, but a named environmental forcing demands different words.
+  On approval: the reworked text lands and its ledger bullet is written in the same edit.
+- **Skip** — tied to an upstream-only convention this repo lacks: a caller skill, a plan format, a file such as `CONTEXT.md`.
+  On approval: it stays out and its ledger bullet records the skip, written in the same edit.
+
+Merge is the default and needs no justification.
+A Rework must name the file, skill, convention, harness, storage verb or cross-skill name this repo lacks that forces different words; a rework justified only by this repo's authoring standard — leading words, positive phrasing, one sentence per line, pruning — is a Merge, since a carried passage stays byte-identical even where a quality pass finds a real improvement in it.
+
+A bullet covers a delta only while the upstream text it was anchored to survives.
+Once upstream rewrites that text, the recorded decision was about wording that no longer exists: judge the delta afresh — which is how a Merge can end a difference the ledger still describes.
+
+Write a Rework's text in full before the gate, so one pass approves the real artifact rather than a promise about it.
+Its evidence is a diff against upstream, never against the fork's current text: a Rework's cost is the permanent divergence it re-creates at every future sync, and a diff against the fork's own file hides it.
+
+## Step 3: Gate
+
+Open the gate with one overview message: the tags measured and each section's count — Standing deltas, dispositions, audit findings — so the first block's `X/Y` lands in known territory.
+Then present the run as one stream of blocks — every Standing delta, then every Merge, Rework and Skip, then every audit finding — one block per message, waiting for the user's verdict before presenting the next.
+A bulk answer ("OK to everything remaining") is an explicit verdict covering every remaining block at its recommendation; silence covers nothing and writes nothing.
+
+Each block is numbered within its own section and shaped:
+
+```
+❓ **<Standing | Disposition | Audit finding> <X>/<Y>** - **<fork or scope>: <topic>**: <the context, then the diff>
+
+➡️ <the recommended verdict, with its cost>
+```
+
+The context rebuilds what the verdict needs, in order: the fork and its place in the pipeline, one line; where the delta sits and what upstream changed there, in plain words; what the ledger already records about that spot.
+Write those parts with a little context before any claim, in ASD-STE100 Simplified Technical English, in this repo's own vocabulary; the diff stays raw.
+The user maintains thousands of lines of prose and syncs occasionally, so the block carries the whole re-exposure their judgment runs on.
+
+Verdicts by section:
+
+- **Standing** — an OK confirms the ledgered decision still covers the delta and writes nothing; a contest re-dispositions the delta in place as Merge, Rework or Skip, which then follows the normal regime.
+- **Disposition** — approve, adjust, or reject.
+- **Audit finding** — apply now, defer to a later `/spec`, or keep; defer is the default recommendation.
+
+The audit findings are every local divergence no bullet covers, every bullet describing a difference that no longer exists, and every divergence justified by house formatting alone (a reflow, a restructure, a reordering, a gloss), ranked by what leaving them costs — behavior above maintenance.
+The house-formatting class travels as one grouped block with each divergence listed, one verdict covering the class.
+An apply-now lands this run under Step 4's rules — the restores and bullet deletions AGENTS.md rule 2 orders included.
+A defer travels to the `/spec` the closing flow pointer names as an entry in the ledger's "Deferred to the next `/spec`" section — the question, the forks it touches, the sync that raised it, and the user's or deputy's lean where one was given — since a question held only in this conversation reaches no later session; the edit an adjustment asks for travels the same way unless the user orders it applied now, the bullet recording the intent.
+A keep is the user's explicit answer to a presented finding, and what it writes depends on the finding's class.
+A kept uncovered divergence gets one ledger bullet per divergence, in its section, recording the user's reason; a kept house-formatting divergence gets its bullet rewritten around that reason, which then justifies more than formatting, so neither the audit's classes nor rule 2 match it again.
+A kept stale-bullet proposal — the user declining a deletion — leaves the bullet standing and writes nothing new.
+
+Apply only what a verdict ordered: approved dispositions and apply-now findings.
+
+## Step 4: Apply and record
+
+- An approved Merge lands byte-identical; where it ends a difference the ledger still describes, delete that bullet in the same edit.
+- An approved Rework or Skip lands with its ledger bullet written in the same edit.
+- An apply-now audit finding lands with its ledger edit — a bullet written, rewritten or deleted — in the same edit.
+- Refresh the `Verified against <tag>.` line of every section the run measured — under the full audit, every fork section, whether or not anything changed — to the newest tag it was fully compared against: the new tag for the updated upstream's forks, the pinned tag for the rest, always the full prefixed tag the stamps already use.
+  A section merely consulted keeps its old stamp untouched.
+- A section whose findings the run deferred to the `/spec` takes the annotated stamp the ledger's preamble defines, reason `<n> findings unresolved`, so the stamp does not read as a clean verification; each counted finding has its entry under "Deferred to the next `/spec`", written in the same edit.
+  A measurement the run could not complete — a fork skipped at the new tag, or a file still unread after the retry — adds the reason `not fully compared: <what>` to that same stamp, so the failure survives in the ledger rather than only in this session.
+- Advance the updated upstream's pin in the ledger's preamble and set each of its forks' `source:` to the new version, including forks where nothing merged — never one not fully compared at the new tag, which keeps its own `source:` and parks as a question — so the next sync starts from the right baseline.
+  A secondary pin — the updated upstream's version recorded inside the `source:` of a fork whose primary upstream is the other one — advances the same way once the passage it names has been compared at the new tag, read from the two cached tags under `.scratch/sync/` since the tool measures a fork against its primary upstream only; one not compared keeps its version and parks as a question.
+- Bump each touched fork's `version` for what the sync changed — patch for clarifications, minor for new rules, major for a breaking change — at one bump per skill per release, sized to the largest change in it.
+  A fork whose `version:` line already differs from `git show <this repo's last release tag>:skills/<fork>/SKILL.md` (a cantrips `v…` tag, never an upstream one) takes no second bump; where the sync's change is the larger, resize that bump instead.
+- A fork whose only change is its `source:` line takes a patch bump where no bump this release already covers it: that line is shipped frontmatter that moved, and left unbumped it would break the property that a fork's recorded version matches what it carries.
+
+Done when every block of the stream carries the user's verdict, every approved disposition and apply-now finding has been applied, every kept audit finding carries its ledger bullet, every fully compared section is stamped, every touched fork's `version` carries a bump covering this sync, the sync point is recorded, every parked question has been put to the user, and the sync's diff has been through `/review-gate high --loop` — an invocation handed to the user, the run holding the sync open until that gate has run; it stops short of the rest only by parking a question for the user.
+
+Close with a flow pointer (the message's final paragraph, a blockquote in full italics opening `Next:` — or `Next steps:` over one bullet per pointer — each pointer naming its skill the way this skill was itself invoked, same prefix and namespace, and ending in a one-clause rationale after an em dash), a **chain** rendered in order:
+
+- `/review-gate high --loop` (user-invoked) — a byte-level diff spanning many shipped skills is not landed on trust.
+- `/commit` (user-invoked) — once the gate is green.
+- `/spec` (user-invoked), where the run deferred audit findings to it.
+
+This skill is invoked bare while its targets are the plugin's, so render each target under the plugin's namespace (`/cantrips:commit`).
+
+Where the first rendered step that names a skill is `/review-gate`, precede the blockquote with a paragraph of its own recommending that the user compact the conversation first.

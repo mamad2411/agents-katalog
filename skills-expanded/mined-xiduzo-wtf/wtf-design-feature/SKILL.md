@@ -1,0 +1,183 @@
+---
+name: wtf.design-feature
+description: This skill should be used when a designer wants to produce a holistic design for a full feature before Traces are cut — for example "design feature #X", "create the Figma flow for this feature", "map the UX for this feature", "design the full user journey for feature #X", "create a feature design handoff", or "add design coverage to feature #X". Covers the full feature journey (all user stories, all screens, cross-screen states) and writes the Design Handoff section back into the Feature issue, fulfilling the Definition of Ready gate. Not applicable to individual Traces — use `wtf.design-trace` for per-trace coverage of the claimed scenarios.
+---
+
+# Design Feature
+
+Take a Feature as a designer. Produce a full design for the user journey before Traces are cut.
+
+Map every user story to screens and states. Find shared components across the feature. Write a complete Design Handoff into the Feature issue. Then `wtf.feature-to-traces` can derive a better Trace Plan. Then `wtf.design-trace` can reuse feature-level decisions.
+
+## Process
+
+### 0. GitHub CLI setup
+
+Run steps 1–2 of `../references/gh-setup.md` (install check and auth check). Stop if `gh` is not installed or not authenticated. Extensions are not required for this skill.
+
+Skip this step if another skill already ran gh-setup this session.
+
+### 1. Identify the Feature
+
+If the user gave an issue number, use it. Otherwise call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Which Feature are you designing?"
+- header: "Feature"
+- options: from recent open Feature issues (list per `../references/issue-classification.md`)
+
+Walk Feature → Epic per `../references/spec-hierarchy.md`. Extract user stories, ACs, Edge Cases, and Domain Events from the Feature. Extract Goal, Context, and Design Artifacts from the Epic.
+
+Extract and hold in context:
+- Feature capability name (Actor + verb + object)
+- All user stories
+- All Acceptance Criteria
+- Edge Cases
+- Domain Events (emitted/consumed)
+- Epic Design Artifacts (Figma links or research docs — these are upstream constraints)
+
+### 2. Lifecycle check
+
+Apply the **present-label overwrite gate** from `../references/lifecycle-labels.md` for the `designed` label on the Feature. Output is "Design Handoff". Re-run verb is "Redesign". If the label is absent, continue.
+
+### 3. Load the design steering document
+
+Load `docs/steering/DESIGN.md` per the **strict consumer-side load** in `../references/steering-doc-process.md` (recommended skill: `wtf.steer-design`). Apply its design principles, tokens, component patterns, and accessibility standards for this session.
+
+### 4. Explore the design system and codebase
+
+Use the Agent tool to find, with independent searches in parallel:
+
+- Existing UI components — flag any that map to domain objects in this Feature's user stories
+- Design tokens in use (token, theme, or variables files; CSS custom properties; Tailwind config)
+- Storybook stories as pattern references for similar flows
+- Existing Figma references in docs or related issues
+
+Note which existing components you can reuse. Note which components are new. This feeds step 7.
+
+### 5. Map the full user journey
+
+For each user story ("As a [Actor], I want [action] so that [outcome]"), derive:
+
+1. **Entry point** — what triggers this story? (screen, action, event)
+2. **Happy path screens** — ordered list of screens/states the actor moves through
+3. **Branch states** — loading, error, empty, partial data, permission denied
+4. **Exit point** — what confirms the story is complete for the actor?
+
+Also map:
+- **Cross-story transitions** — screens shared between multiple user stories
+- **Edge case screens** — one screen per Edge Case from the Feature issue
+- **Domain Event surfaces** — where in the UI each emitted Domain Event becomes visible to the actor
+
+Produce a journey map as a structured list. Do not ask the user. Derive the map from user stories and ACs.
+
+### 6. Ask about design assets
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "How would you like to handle designs for this feature?"
+- header: "Design assets"
+- options:
+  - **I have Figma frames** → provide frame URLs. Validate coverage against the full journey map (Path A)
+  - **Generate designs for me** → use Figma MCP to generate frames from the user stories and design system (Path B)
+  - **Scaffold a brief only** → no Figma. Produce a text screen inventory and component map (Path C)
+  - **Partial — some screens designed** → provide available frames. Send remaining screens to generate or scaffold
+
+**Path A — Human provides frames:**
+Collect the top-level Figma file URL plus individual frame URLs. For each screen in the journey map (step 5), check whether a frame covers it. Present a coverage matrix: screen → frame URL (or ⚠ gap). If gaps exist, call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "How should I handle the uncovered screens?"
+- header: "Gaps"
+- options:
+  - **Generate missing frames** → run Path B for the gaps
+  - **Leave as pending** → record gaps in the Design Handoff and continue
+
+Also validate provided frames against the spec:
+- Every user story has at least one matching frame
+- Every edge case from the Feature issue has a matching error/boundary state frame
+- Every Domain Event surface from step 5 is represented
+
+Flag any validation failure as a gap in the coverage matrix.
+
+**Path B — AI generates via Figma MCP:**
+Check whether the Figma MCP tool `generate_figma_design` is available. If it is unavailable, warn the user and use Path C (scaffold).
+
+If available: for each screen in the journey map without a frame, call `generate_figma_design` with:
+- The screen's user story and entry/exit points as the design brief
+- Component patterns and tokens from `docs/steering/DESIGN.md` (loaded in step 3)
+- Shared components from step 7 as reuse constraints
+- Any Figma URLs from the Epic's Design Artifacts as style reference
+
+Collect the generated frame URLs. Treat them as Path A frames for the coverage matrix and Design Handoff.
+
+**Path C — Scaffold brief only:**
+For each screen in the journey map, produce a text brief. List required UI elements, interactions, and relevant design tokens. This is a Figma-free design brief a designer or developer can execute. Use `../wtf.design-trace/references/component-spec-template.md` as the structure if available.
+
+**Partial:**
+Collect available frame URLs. Run Path A validation on covered screens. For uncovered screens, call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "How should I handle the remaining screens?"
+- header: "Remainder"
+- options:
+  - **Generate** → run Path B
+  - **Scaffold** → run Path C
+
+### 7. Identify shared components
+
+Across all screens in the journey map, identify:
+
+- **Reused existing components** — already in the codebase (found in step 4). List component path and which screens use it
+- **New shared components** — appear on 2+ screens but do not exist yet. Name them with domain language
+- **Screen-specific components** — appear on only one screen. Note them. Do not detail them here. That is the job of `wtf.design-trace`
+
+This component map reduces duplication when `wtf.design-trace` runs per Trace.
+
+### 8. Draft the Design Handoff
+
+Apply strict STE per `../references/ste-writing.md` before you write any durable body.
+
+Produce content for the **Design Handoff** section of the Feature issue. Use the structure in `references/design-handoff-template.md`.
+
+### 9. Review with user
+
+Show the draft. Then call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Does this cover the full feature journey?"
+- header: "Review"
+- options:
+  - **Looks complete — update the issue** → proceed
+  - **Missing screens or states** → add coverage
+  - **Other changes** → adjust something else
+
+Apply edits. Then proceed.
+
+### 10. Update the Feature issue
+
+Read the current body with the gh body helper. Replace only the **Design Handoff** section with the new content (Read + Edit tools). Preserve all other sections. See `../references/gh-body-helper.md`:
+
+```bash
+python3 .wtf/gh-body.py read <feature_number>     # prints a temp path; Read it, edit the Design Handoff section
+python3 .wtf/gh-body.py edit <feature_number> --body-file "<path-from-read>"
+```
+
+Add the `designed` label when either:
+- Path A/B: all screens in the journey map have Figma frames (no open gaps in coverage matrix), or
+- Path C: the full scaffold brief is complete (no Figma expected)
+
+```bash
+gh issue edit <feature_number> --add-label "designed"
+```
+
+If Path A/B has open gaps, do not add `designed`. Note that you will add it once gaps are closed.
+
+This fulfills the Feature DoR gate: "Design handoff complete".
+
+Print the updated Feature issue URL.
+
+### 11. Offer to continue
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "What's next?"
+- header: "Next step"
+- options:
+  - **Plan Traces** → run `feature-to-traces`. Design context will inform the Trace Plan (default)
+  - **Design another Feature** → design another Feature for the same Epic
+  - **Stop here** → exit. No further action
+
+- **Plan Traces** → follow the `wtf.feature-to-traces` skill. Pass the Feature number as context. Tell the user that `wtf.design-trace` will inherit the shared component map from this Design Handoff.
+- **Design another Feature** → restart from step 1. Reuse the same Epic context.
+- **Stop here** → exit.

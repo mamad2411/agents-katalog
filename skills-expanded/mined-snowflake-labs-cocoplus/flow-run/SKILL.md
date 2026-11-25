@@ -1,0 +1,321 @@
+---
+name: "flow-run"
+description: "Execute a CocoFlow pipeline from flow.json. Supports adaptive parallelism (--concurrency flag), dual-file state recovery, intermediate result persistence for parallel evaluation runs, HITL stage pausing, and dual synthesis path with deterministic rule-based fallback. If a stage-id is provided, execute only that stage."
+version: "1.2.0"
+author: "CocoPlus"
+tags:
+  - cocoplus
+  - execution-engine
+---
+
+Your objective is to execute a CocoFlow pipeline.
+
+Before proceeding, verify that `.cocoplus/` exists.
+If not: output "CocoPlus not initialized in this directory. Run `$pod init` to begin." Then stop.
+
+Read `.cocoplus/flow.json`. If `stages` is empty:
+Output: "No stages defined in flow.json. Run `$plan` then `$build` to generate the pipeline." Then stop.
+
+Check for `.cocoplus/flow.pause` flag file. If it exists:
+Output: "Pipeline is paused. Run `$flow resume` to continue." Then stop.
+
+## Parse Arguments
+
+- `--model <haiku|sonnet|opus>`: pipeline-level model default (Tier 2). Without `--stage`, applies to all stages.
+- `--model <value> --stage <stage-id>`: stage-level override (Tier 3). Does not modify `flow.json`.
+- `--concurrency <normal|caution|single-track>`: force concurrency mode for this run. Overrides the mode inferred from SubagentStop signals. Not persisted — next `$flow run` resumes inference from signals.
+- `--outcome "<observable result>"`: records the outcome frame for this run. If absent and the request is implementation-framed, ask: "What does success look like? Describe the state of the world when this work is done, not the steps to get there."
+
+Stages may also declare `model_tier: "smol" | "regular" | "smart" | "ultra"`. Resolve tiers from `[model_tiers]` in `cocoplus.toml` before spawning the stage by reading the configured tier map directly.
+
+If the tier is unmapped or marked unavailable, halt the stage and surface the error. Do not silently fall back to another model.
+
+Resolve role-based defaults from `[model_roles]`: orchestration and synthesis use judgment tiers; worker steps use execution tiers; facilitator and evaluator roles use elevated judgment tiers unless explicitly overridden in the flow definition.
+
+Stages may declare `thinking_effort: "low" | "medium" | "high"`. If absent, inherit `[session] default_thinking_effort` from `cocoplus.toml` (default `medium`). Pass the resolved value to the stage environment as `CORTEX_THINKING_EFFORT`; do not mutate global session settings.
+
+Stages may declare `contract_tier: "light" | "standard" | "full"` for CocoContract verification depth. Default to `standard`; default to `full` when `allow_irreversible_actions: true` or `human_gate: true` unless the stage explicitly declares a lower tier and the operator has accepted that risk in the flow definition.
+
+Stages may declare `premortem: true | false`. When absent, treat it as true for stages with `allow_irreversible_actions: true` or `require_outcome_verification: true`, and false for read-only advisory stages. A required pre-mortem must be recorded before dispatch.
+
+Read `[flow.tiers]` before dispatch:
+- `advisor_budget` caps advisor-tier calls per flow session.
+- `worker_budget` caps worker-tier calls per flow session.
+- `mandatory_advisor_calls` defaults to `plan-critique` and `final-quality-review`.
+
+Advisor-tier calls are reserved for commitment boundaries. Do not call the advisor inside the worker execution loop unless an escalation trigger fires: contradictory stage outputs, repeated artifact protocol failure, out-of-scope judgment, or a required topology change.
+
+Read `[flow.planning]` before the orchestration pass. If `diverge_on_branch_points = true`, invoke diverge-then-focus only at high-consequence branch points: multiple structural options, no dominant choice, and downstream impact. Use isolated branches, then a separate critic pass that produces shortlist, `nonObviousPick`, named traps, and design-space clusters.
+
+## Pre-Dispatch Complexity Gate
+
+If `[flow] complexity_estimation = true`, run the skill-native lexical estimator before first stage dispatch.
+
+Write the result to `.cocoplus/lifecycle/cocoflow/<run-id>/complexity.json` with `tier`, `score`, `signals`, `ambiguity_score`, `has_acceptance_check`, and the applied harness floor.
+
+Complexity sets the floor for `model_tier` and `thinking_effort`; budget state caps only parallelism and retry budget. Do not use abundant budget to raise a trivial task above its complexity floor. Do not use reserve pressure to lower a hard or open-ended task below its model/effort floor. When `[harness] trivial_floor_invariant = true`, preserve this invariant even if raw harness defaults are more expensive.
+
+If the description has high ambiguity or no acceptance check, surface a non-blocking advisory before launch. The developer may proceed, but record the advisory in `.cocoplus/session/PROGRESS.md` Notes when the run starts.
+
+## Completion Timestamp Provenance
+
+When stages run as background CocoPods, completion time must come from authoritative transcript queue records when available. The SubagentStop hook queues the `execution-engine/flow-event-reader` skill when it can see the transcript path; that skill writes pod records to `.cocoplus/lifecycle/flow-state.json`.
+
+Each pod record should include:
+
+- `completion_source`: `enqueue_record` when corrected from the transcript, otherwise `tool_result_fallback`.
+- `completion_timestamp_reliable`: boolean provenance flag for duration and cost attribution consumers.
+
+Do not compute pod duration from `tool_result` timestamps alone when a transcript queue completion record is available.
+
+## Multi-Pod Branch Topology
+
+For multi-pod CocoFlow runs, derive branch names from the flow tree using dotted topology tokens:
+
+```text
+<flow-run-id>.<pod-role>
+<flow-run-id>.<pod-role>.<sub-task>
+<flow-run-id>.<pod-role>.<sub-task>.<iteration-label>
+```
+
+The parent is always the branch name with the final dotted segment removed. Treat the branch namespace as authoritative and registries as caches. Use per-pod commits during execution, no-fast-forward downward integration to preserve pod seams, and upward squash when a sub-pod reports a concise result to its parent.
+
+Before dispatching a new stage, respect CocoSession cost-budget state. If `.cocoplus/session/budget-state.json` is `reserve` or `exhausted`, stop new stage dispatch and spend remaining work on landing artifacts and handoff.
+
+## Check Dual-File State for Recovery
+
+Read `flow.json` `runtime.harvest_id` (if present). If a `harvest/[harvest-id]-tasks.json` file exists, read it:
+- Stages with `status: "completed"` and validated `validation_commands` are not re-run.
+- Stages with `status: "in_progress"`: if checkpoint artifacts exist, mark completed; if not, reset to pending.
+- Read the last 20 entries of `harvest/[harvest-id]-progress.txt` for narrative context and log a `SESSION_BOUNDARY` entry.
+
+## Determine Execution Scope
+
+If a stage-id argument is provided (e.g., `$flow run stage-001`):
+- Execute only that stage, skip dependency check
+- If stage not found: output "Stage [stage-id] not found in flow.json. Available stages: [list]" Then stop.
+
+If no argument: execute all stages with status != "completed" in dependency order.
+
+## Build Execution Order
+
+For full pipeline execution:
+1. Attempt an execution plan template match from `.cocoplus/flows/templates/`. A validated match may skip the strategic assessment and orchestration pass; record the reuse in `.cocoplus/meter/template-benchmarks.jsonl`.
+2. Run the CocoFlow bootstrap validator before any CocoPod dispatch. Invoke the deterministic `flow-bootstrap` backing to apply `[cocoflow] execution_conflict_gate_enabled`, `[cocoflow] liveness_check_enabled`, and `[cocoflow] surface_learning_log_enabled`. If it returns `conflict_gate_blocked` or `liveness_check_blocked`, stop before dispatch and surface the structured error. On pass, read `.cocoplus/lifecycle/context.json` and pass that file reference to every CocoPod prompt so each pod receives the same prior learnings and active policy context.
+3. Run the complexity estimator if enabled and store `complexity.json` before any model-backed planning call.
+4. Run the conditional strategic assessment unless a valid template match exists or the workflow is trivially single-stage. Capture objective, risk, quality bar, and escalation boundaries.
+5. Run the mandatory orchestration pass. Produce `dependency_graph`, `dependency_groups`, `tier_assignments`, `expected_outputs`, and one context brief per step. Each `context_briefs[*].text` must be 200 words or fewer.
+6. Read `runtime.concurrency_mode` from `flow.json` (or apply `--concurrency` override)
+7. Dispatch dependency groups, not isolated stages. All stages in the same ready group are submitted in one batch when their dependencies are satisfied.
+8. Apply concurrency mode:
+   - **normal**: spawn all ready stages simultaneously
+   - **caution**: spawn at most 2 stages simultaneously; wait for at least 1 to complete before spawning another
+   - **single-track**: spawn 1 stage at a time; wait for completion and checkpoint validation before spawning next
+9. After each dependency group completes, run a synthesis pass to reconcile contradictions before unblocking downstream groups.
+10. Repeat until all stages complete or one fails with on_failure: stop
+
+## Execute Each Stage
+
+For each stage to execute:
+
+1. **Log start:** Update flow.json stage status to `"running"`, add `started_at` timestamp. Append `STAGE_STARTED` entry to `harvest/[run-id]-progress.txt` and `.cocoplus/session/steps.jsonl`. Write updated `harvest/[run-id]-tasks.json` atomically.
+2. **Human gate, pre-mortem, model floor, and contract tier:** if the stage declares `human_gate: true`, do not dispatch until `$flow gate-clear [stage-id]` writes the run clearance. If the stage requires a pre-mortem, record three plausible failure scenarios and prevention status in `.cocoplus/session/PROGRESS.md` before dispatch. If the stage declares `model_tier_floor`, PreToolUse records the resolved `effective_model_tier` in the policy snapshot before dispatch. Resolve `contract_tier` before CocoContract evaluation and pass it to `$contract prove`.
+3. **Named artifact protocol:** if the stage declares `artifacts.reads`, verify every required file exists under `.cocoplus/flow/artifacts/[run-id]/` before dispatch. If missing, stop with the missing path and the upstream stage expected to write it.
+4. **Run setup commands** (if stage has setup commands in flow.json)
+5. **Read prompt file** from `.cocoplus/prompts/[stage-id]-prompt.md`
+6. **Create worktree** if `context: "isolated"` or `isolated: true`: `git worktree add .git/worktrees/[stage-id] -b agent/[stage-id]`
+7. **Inject shell identity:** set `COCOPLUS_FUNCTION`, `COCOPLUS_PERSONA`, `COCOPLUS_EVAL_ID`, `COCOPLUS_HARVEST_ID`, `COCOPLUS_STAGE_ID`, `COCOPLUS_RUN_ID`, `COCOPLUS_STAGE_START=true`, and resolved `CORTEX_THINKING_EFFORT` in the subagent shell environment. Set `CTX_STEP_ENFORCEMENT=false` for CocoFlow stages so ctx step enforcement cannot conflict with CocoFlow gates. Never set `CTX_DIR`.
+8. **Invoke persona subagent** with the prompt file content and stage context
+9. **Wait for completion**
+10. **Intermediate result persistence** (for evaluation stages with `isolated: true`): if the subagent is a Data Scientist running evaluation work, require detailed results to be written to `.cocoplus/harvest/intermediate/[agent-id]-results.json`; only a summary (accuracy score, pass/fail, function name, anomalies) returns to orchestrator context
+11. **Validate checkpoints:** for each glob pattern in `checkpoints`, verify at least one matching file exists. If `[evidence_gate] enabled = true`, read at least one qualifying evidence artifact before marking the stage completed, unless the stage declares `evidence_exempt: true`. If `artifacts.writes` is declared, verify each expected artifact was produced under `.cocoplus/flow/artifacts/[run-id]/`.
+12. **Handle result:**
+    - If all checkpoints pass: update flow.json stage to `"completed"`, add `completed_at`. Append `STAGE_COMPLETED` to progress.txt. Reset `consecutive_failure_count` to 0 in tasks.json.
+    - If any checkpoint fails: increment `consecutive_failure_count` in tasks.json. Append `STAGE_FAILED` to progress.txt. Apply `on_failure` action. If `consecutive_failure_count` reaches `maxConsecutiveFailures`, append `ESCALATED` and halt with full escalation message.
+13. **External coach queue:** if `[harness] coach_model` is configured, stage completion queues a per-stage CocoSentinel coach review. The coach model must differ from the executor model; same-model coach requests become known-gaps entries.
+14. **Stage instruction rubric:** if `[cocopod].instruction_rubric_enforcement_enabled = true`, evaluate applicable `phase: stage` rubric entries against the completed stage context. A probability of 0.8 or higher creates a source-cited repair request before downstream dispatch; 0.5 through less than 0.8 records a non-blocking Safety-panel note; evaluator failure is logged and fails open.
+15. **Dual synthesis path** (if stage has `synthesis.primary: "llm"` and `synthesis.fallback: "rule-based"`):
+    - Attempt primary LLM synthesis normally.
+    - If the LLM synthesis call fails (access error, timeout, rate limit, credential constraint):
+      - Do NOT halt the pipeline.
+      - Execute the rule-based fallback instructions declared in the stage definition using Coco-native file, query, and shell tools.
+      - Produce the same schema as the primary output, plus `"synthesis_path": "rule-based"`.
+      - Write a notification to `.cocoplus/ui-notifications.jsonl`: `{"type": "synthesis_fallback", "stage_id": "<id>", "reason": "<error>"}`
+      - Surface to developer: `CocoFlow: LLM unavailable for stage [id] synthesis — rule-based fallback ran. Review fallback output before proceeding.`
+      - Continue the pipeline with the fallback output.
+    - Stages with `synthesis` absent or `synthesis.primary != "llm"` are unaffected.
+    - Execution stages (SQL execution, test runs, file writes) do NOT have a fallback — they fail hard by design.
+16. **HITL pause** (if `hitl: true`): after successful completion, output the stage results and ask developer to confirm before spawning downstream stages
+17. **No-op workflow check** (if `handler: "noop-check"`): execute the `execution-engine/noop-check` skill-native check against the stage state. If it returns `noop: true`, mark the stage `skipped` with the recorded reason and append `NOOP_SKIPPED` to progress. This is a successful no-op, not an error.
+18. **Retained proposal model** (if `writes_via_proposal: true`): write Snowflake DDL, SQL file changes, or pipeline configuration output under `.cocoplus/proposals/[stage-id]/[timestamp]/` and stop before live application. Surface: `Proposal retained. Run $flow settle --accept [stage-id] or $flow settle --discard [stage-id].`
+19. **Surface learning append**: when a CocoPod stage concludes with success, regression, or abandoned status, append one domain learning through the CocoFlow bootstrap backing when `[cocoflow] surface_learning_log_enabled = true`. The line belongs in `.cocoplus/lifecycle/surfaces/<surface>.md` and must preserve prior entries.
+
+## Adaptive Checkpoint Typing
+
+After each stage completes, determine the checkpoint type before surfacing the status report.
+
+Read `checkpoint_type` from the stage definition in `flow.json`. Valid values: `"MANDATORY"`, `"FULL"`, `"SLIM"`.
+
+**Default assignment if not specified:**
+- First stage in any session: `"FULL"`
+- Subsequent stages in an established pipeline: `"SLIM"`
+- Stages with `hitl: true`: `"MANDATORY"` (overrides any configured value)
+- Stages adjacent to EHRB-triggering operations (detected by PreToolUse hook flag in `flow.json`): `"MANDATORY"`
+
+**Awareness Guard:** Track `consecutive_slim_responses` in `harvest/[run-id]-tasks.json`. Increment when the developer responds to a SLIM checkpoint with a bare "continue" (no modification, no comment, no question). Reset to 0 when the developer provides any substantive response. When `consecutive_slim_responses` reaches 4, promote the next checkpoint to `"FULL"` regardless of its configured type. Surface: "Four stages have completed without detailed engagement. Here is a comprehensive status update before we continue."
+
+**Checkpoint presentation by type:**
+
+`"MANDATORY"` — Present full decision context. Block execution until developer provides a substantive response (not just a keypress or bare "continue"). Output:
+```
+🔴 MANDATORY CHECKPOINT — [stage name]
+[Full deliverables list, metrics, findings summary]
+[Decision required before proceeding — describe the decision]
+Your response:
+```
+
+`"FULL"` — Present complete deliverables list plus metrics plus next decision. Output:
+```
+✅ FULL CHECKPOINT — [stage name] complete
+[Complete deliverables and metrics]
+[Next stage: description and persona]
+Continue? (yes/no/pause)
+```
+
+`"SLIM"` — One-line status plus continue prompt. Output:
+```
+✓ [stage name] complete. Next: [next-stage-name] ([persona]). Continue? (yes/no/pause)
+```
+
+## on_failure Actions
+
+- `"stop"`: Mark stage `"failed"`. Output error with checkpoint that failed. Halt pipeline. Output: "Stage [id] failed. Checkpoint not satisfied: [pattern]. Fix the issue and run `$flow run [stage-id]` to retry."
+- `"retry"`: Re-run stage up to `retry_limit` (default: 2) times. Track attempt count in flow.json.
+- `"skip"`: Mark stage `"skipped"`. Log reason. Continue to next stage.
+
+## Loop Stages
+
+For stages with `"type": "loop"`:
+- Repeat the stage execution up to `until.limit` iterations
+- Track iteration count in flow.json as `iteration_count`
+- Each iteration can reference previous iteration output
+
+## Parallel Stages (Fan-Out, Feature 47 Enhancement)
+
+For stages with `"type": "parallel"`:
+
+```json
+{
+  "type": "parallel",
+  "label": "Multi-perspective audit",
+  "pods": ["sentinel-pod", "review-pod", "trace-pod"],
+  "on_partial": "continue_with_flag",
+  "on_error": "halt"
+}
+```
+
+1. Spawn all pods in the `pods:` list simultaneously, in a single response turn. Do not advance to the next flow step until every pod has reported a terminal status: `COMPLETE`, `PARTIAL`, `ERROR`, or `SKIPPED`.
+2. Each pod's subagent output must open with a status envelope (see Pattern: Agent Status Envelope). The `cococonverge/status-envelope-check` skill validates and records it to `.cocoplus/pod-status.json` at SubagentStop.
+3. If `require_complete: true` is set on the step: halt the flow if any pod reports anything other than `COMPLETE`, regardless of `on_partial:`.
+4. Otherwise, apply `on_partial:` when any pod reports `PARTIAL`:
+   - `continue_with_flag` (default) — proceed to the next step; the convergence step will flag the partial source
+   - `halt` — stop the flow, surface the partial pods to the developer
+   - `skip_partial` — proceed, but exclude PARTIAL pod outputs from the subsequent convergence step
+5. Apply `on_error:` when any pod reports `ERROR`:
+   - `halt` (default) — stop the flow
+   - `continue_with_flag` — proceed, flag the errored pod in convergence output
+
+## Converge Stages (Fan-In, Feature 47 Enhancement)
+
+For stages with `"type": "converge"`:
+
+```json
+{
+  "type": "converge",
+  "label": "Synthesize findings",
+  "handler": "cococonverge",
+  "output": "lifecycle/FINDINGS.md"
+}
+```
+
+A `converge:` step is the fan-in point for the immediately preceding `parallel:` step. When `handler: cococonverge` is set, invoke `$pivot run` automatically once all upstream pods have reached terminal status — this writes the file named in `output:`. A `parallel:` step with no subsequent `converge:` step in the flow definition is incomplete; when building or validating a flow definition, warn: "Parallel step '[label]' has no subsequent converge step — N pod outputs will have no synthesis step and the reconciliation burden falls on the developer."
+
+## Named Flow Templates
+
+Reusable execution patterns live under `.cortex/skills/execution-engine/templates/`:
+
+- Litmus Test
+- Drain Loop
+- HITL Gate
+- Per-Project Working Directory
+- No-op Workflow
+
+Project-local execution plan templates live under `.cocoplus/flows/templates/` and are managed by `$flow template list/save/validate/show/delete`.
+
+## Create Stage Commit
+
+After each stage completes successfully:
+```
+git add [deliverable files from stage definition]
+git commit -m "build([stage-id]): [stage name] — checkpoints verified"
+```
+
+## Final Output
+
+When all stages complete:
+Output:
+```
+Pipeline complete.
+Stages: [N] completed, [M] skipped, [K] failed
+Time: [duration]
+```
+
+## Anti-Rationalization
+
+| Temptation | Why Not |
+|------------|---------|
+| Halt pipeline on LLM synthesis failure | Synthesis stages degrade gracefully — run the rule-based fallback and continue |
+| Skip the synthesis_path field in fallback output | Downstream consumers need to know which path ran — omitting it hides degraded output |
+| Apply fallback to execution stages | Execution stages (SQL, file writes) fail hard by design — fallback applies to synthesis only |
+| Skip checkpoint validation | Checkpoints are the quality gate — never skip |
+| Proceed past a stop failure | stop means STOP — require manual intervention |
+| Mix stage outputs in same git commit | One commit per stage for traceability |
+| Skip dual-file state updates | Without state updates, a context reset leaves the pipeline unrecoverable from files |
+| Let evaluation agents return full results to orchestrator context | Full results from 5 parallel agents saturate orchestrator context; only summaries return, details go to intermediate files |
+| Ignore HITL stage pausing | Downstream stages of a HITL stage may depend on a human decision that hasn't been made |
+| Fall back from `ultra` to `regular` when unavailable | Model tiers are governance declarations; silent fallback changes quality and cost semantics |
+| Treat no-op as a failed stage | A verified no-op is a valid workflow outcome and must be logged as such |
+| Run divergent options in one prompt | Divergence requires isolated contexts; one prompt anchors every option on shared text |
+| Skip artifact read declarations | Missing handoff files are a deterministic failure and should not be inferred by the model |
+
+## Exit Criteria
+
+- [ ] Each completed stage has `status: "completed"` and a `completed_at` timestamp in `flow.json`
+- [ ] Each completed stage has a corresponding git commit with message `build([stage-id]): [stage name] — checkpoints verified`
+- [ ] All checkpoint glob patterns for each completed stage matched at least one file
+- [ ] `harvest/[run-id]-progress.txt` has `STAGE_COMPLETED` entry for each completed stage
+- [ ] `harvest/[run-id]-tasks.json` reflects current task state, written atomically
+- [ ] HITL stages paused for developer review before downstream stages were spawned
+- [ ] If consecutive failures reached `maxConsecutiveFailures`, pipeline halted with escalation message
+- [ ] If any stage had `on_failure: stop` and failed, the pipeline halted immediately with an actionable error message
+- [ ] If any synthesis stage used the rule-based fallback, a `synthesis_fallback` notification was written to `ui-notifications.jsonl` and the developer was notified
+- [ ] `parallel:` steps do not advance until all listed pods report a terminal status; `on_partial:` and `on_error:` govern behavior per the step's declared values
+- [ ] `converge:` steps with `handler: cococonverge` invoke `$pivot run` automatically once upstream pods reach terminal status
+- [ ] A `parallel:` step without a subsequent `converge:` step triggers a validator warning
+- [ ] Every `model_tier` resolves from `cocoplus.toml` without silent fallback
+- [ ] Every `thinking_effort` resolves from stage config or `[session] default_thinking_effort`
+- [ ] Every `contract_tier` resolves to light, standard, or full, with irreversible or human-gated stages defaulting to full
+- [ ] Required pre-mortem stages have a PROGRESS.md Pre-Mortem section before dispatch
+- [ ] `complexity.json` exists for enabled complexity-estimation runs before first model-backed dispatch
+- [ ] Model and thinking-effort floors come from complexity tier; budget state caps only parallelism and retry budget
+- [ ] High ambiguity or missing acceptance check is surfaced as a non-blocking pre-launch advisory
+- [ ] Every declared `artifacts.reads` exists before stage start and every declared `artifacts.writes` exists before stage completion
+- [ ] Advisor-tier calls stay within `[flow.tiers] advisor_budget` and occur only at commitment boundaries or documented escalation triggers
+- [ ] Multi-pod branches use dotted topology naming and parent derivation is visible from branch names
+- [ ] New stage dispatch does not start inside CocoSession reserve or exhausted budget state
+- [ ] No-op stages write `noop-log.jsonl` before being marked skipped
+- [ ] Strategic assessment, orchestration pass, dependency-group dispatch, and synthesis pass are recorded unless a validated execution plan template was reused
+- [ ] Every worker context brief is 200 words or fewer
+- [ ] CocoFlow bootstrap wrote `.cocoplus/lifecycle/context.json` before first CocoPod dispatch
+- [ ] Execution conflict gate and CocoPod liveness check passed, or dispatch stopped with a structured block
+- [ ] Surface learning logs under `.cocoplus/lifecycle/surfaces/` were appended, never overwritten, for concluded CocoPod stages with learnings

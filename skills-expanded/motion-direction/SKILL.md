@@ -1,0 +1,259 @@
+---
+name: motion-direction
+description: Set the motion language for a piece before anything is animated — one easing family, one timing unit, one transition family, one stagger rhythm — and audit a timeline against it. Use when starting a title pass or a whole cut, when animation feels busy, cheap or inconsistent across shots, or when turning a brand or brief into motion rules an agent can follow. Not for individual clip mechanics — that is timeline-edit-ops.
+---
+
+# Motion Direction → the rules everything else obeys
+
+Direction is the judgment layer above craft. It turns a brief into a short set of
+motion rules, so every shot reads as one hand. Most of the work is subtraction:
+deciding what does not move.
+
+`motion-principles` gives the numbers and owns them: where this page and it
+disagree, it wins. This decides which of its numbers the whole piece is
+allowed to use.
+
+## The one rule
+
+Lock the motion language first, then animate to it. Pick **one** of each row
+below and reuse it. Consistency reads as confidence; variety reads as noise. When
+in doubt, repeat rather than invent.
+
+## The motion-language spec
+
+Fill every row once, at the top of the job, and state it back to the user before
+you animate. The rows guide the timeline document; `timeline-edit-ops` owns
+the tool calls.
+
+| Row | Pick one | Example |
+|---|---|---|
+| Easing family | One entrance `easing` and one exit `easing` | `cubic-bezier(0.16,1,0.3,1)` in, `cubic-bezier(0.7,0,0.84,0)` out |
+| Base timing unit | The atomic `durationMs`; everything else is a multiple | 400 — micro 200, hero 800 |
+| Transition family | Which cut style this piece uses | `crossfade` only, hard cuts elsewhere |
+| Stagger rhythm | One `offsetMs` and one `from` | 80ms, `from: "start"` |
+| Motion intensity | The travel, scale and overshoot budget | `distance` ≤ 0.15, `overshoot` ≤ 1.05 |
+| Hold discipline | The read hold and the rest between moves | `motion-principles` § Holds: ≥ 1000ms read hold, ≥ 400ms rest |
+| Type family and weights | One bundled family and a weight for each text tier | `Inter` 800 for the hero, 400 for support |
+| Space and focus | One camera path and a depth plan, if the piece needs 2.5D | Hero at `depthPx: 0`, background farther away |
+| Shutter and texture | Which layers blur, echo, or step | Hero blur on the impact, background held |
+
+Two easings maximum: one for entrances and landings, one for exits. A third has
+to justify itself.
+
+## Match depth to the brief
+
+For a showcase, hero, launch, or "best" piece, plan each scene with a background
+bed, midground, foreground, and a grain or grade finish. Group each scene. Use
+path shapes, masks, repeaters, style tracks, animation links, and effects where
+they give the composition depth. Read the full document with `get_timeline` and
+use `set_timeline_document` for fields `edit_timeline` cannot write, including
+`styleTracks` and `repeater`.
+
+Study a shipped reference before building. Call `list_example_timelines` to
+choose a slug, then `get_example_timeline` to read its stats, scene catalog and
+first scene excerpt. Use `scene_id` to choose another scene and `clip_offset` /
+`clip_limit` to page through its layers. The CodeAct forms are
+`nodetool.timelines.examples.list()` and
+`nodetool.timelines.examples.get("kite", {clip_limit: 12})`. No library install
+or repository filesystem is needed. Kite, Prism, Voltra and Tidewater show
+different ways to group scenes and combine keyframed layers. Cadence shows a
+vertical data story built from the chart helpers and a reusable component.
+
+Build with the craft methods, not hand-keyframed fades. `video({palette,
+fonts, ...})` from `@nodetool-ai/sandbox-timeline` gives every scene
+`s.backdrop()`, `s.glow()`, `s.flash()`, `s.kicker()`, `s.pill()`,
+`s.streaks()` and `s.finish()` — the vocabulary the shipped examples build
+scenes from. A slam, a rise or a grow is `el.enter()`/`el.animate()` with the
+right `from`/props (`title.enter({from: {scale: 1.35, blur: 26, opacity: 0}})`
+is a slam), a count-up is `el.count()`, a draw-on is `el.draw()`. The depth
+plan below maps directly onto the API — reach for one of these before a bare
+`animate()` custom curve:
+
+| Plane | Built with |
+|---|---|
+| Background bed | `s.backdrop()`, `s.streaks()`, a low-amplitude `el.loop()` |
+| Midground | supporting elements, laid out in a container (`frame-composition`'s `s.stack`/`s.row`) |
+| Hero | the one element with the boldest `el.enter()`/`el.animate()`, on the beat |
+| Finish | `s.finish()` inside each scene, or `v.adjust()` for a whole-video grade after `v.series()` |
+
+Plan every showcase scene across all four before writing the hero's
+animation. Read the pack documentation
+(`nodetool.packs.docs("@nodetool-ai/sandbox-timeline")`) for every method's
+signature. A generated still or music bed can lift a showcase, but generation
+costs money. Build from the user's assets and the pack's own vocabulary by
+default. Propose a generated asset, with how many and what for, and generate
+it only after the user agrees.
+
+After saving a showcase, call
+`validate_timeline` with `{"timeline_id":"<id>","tier":"showcase"}`, or
+`nodetool.timelines.validate(id, {tier: "showcase"})`. Address its warnings
+about scene groups, custom keyframes, finish, camera and concurrent visual
+layers. These checks inspect document structure. Preview the result to judge
+composition and readability. Standard validation remains appropriate for
+ordinary edits and intentionally minimal pieces.
+
+## Typography
+
+Choose the family and weights in the motion-language spec before building text
+clips. NodeTool ships `Inter`, `Space Grotesk`, `Bebas Neue`, `Playfair Display`,
+`Lora`, and `JetBrains Mono`. Use one family across a piece and make the hero
+visibly heavier than support, such as Inter 800 against 400. `Bebas Neue` ships
+only at 400, so use size and spacing for contrast if you choose it.
+
+On a 1920×1080 frame, start a hero title at 96–160 `fontSizePx`, support at
+42–64, and a short kicker at 28–36. Keep large display tracking tight
+(`letterSpacingPx` −2 to 1); open an uppercase kicker to 2–5px. Check the
+actual words at the target frame size and adjust for fit and legibility.
+
+For an existing text clip, `edit_timeline` can set the type as a
+`set_clip_params` patch:
+
+```json
+{"timeline_id":"<id>","ops":[{"op":"set_clip_params","target":"Hero title","textStyle":{"fontFamily":"Inter","fontWeight":800,"letterSpacingPx":-1,"fontSizePx":128}}]}
+```
+
+`timeline-edit-ops` owns the full op contract. `frame-composition` handles
+placement and safe areas for each aspect ratio.
+
+## Tone and energy
+
+Place the piece on two axes and commit. Mixing cells inside one piece is the
+usual cause of "inconsistent".
+
+| | Soft (organic, eased) | Sharp (precise, snappy) |
+|---|---|---|
+| **Calm** | Luxury, wellness, editorial: long windows, generous holds, minimal stagger | Premium tech, finance: deliberate, clean, unhurried, no overshoot |
+| **Kinetic** | Lifestyle, playful, kids: overshoot and spring, loose timing | Sports, hype, gaming: short windows, hard cuts, accents on beats |
+
+## Motion personality
+
+The named preset that fills the spec's easing, timing and intensity rows. Pick
+one per project and hand it to every later step by name.
+
+| Personality | Entrance `durationMs` | Entrance `easing` | Exit `easing` | Overshoot | Presets it lives on |
+|---|---|---|---|---|---|
+| **Playful** | 400–600 | `easeOutBack` or `cubic-bezier(0.34,1.56,0.64,1)` | `easeIn` | `overshoot` 1.1–1.2 | `pop`, `bounce`, `squash`, `float` |
+| **Premium** | 400–600 | `cubic-bezier(0.16,1,0.3,1)` | `easeIn` | none | `fade`, `blur`, `kenBurns`, `breathe` |
+| **Corporate** | 300–400 | `easeOut` | `cubic-bezier(0.7,0,0.84,0)` | `overshoot` ≤ 1.03 | `fade`, `slide`, `wipe` |
+| **Energetic** | 150–250 | `easeOut` | `cubic-bezier(0.7,0,0.84,0)` | `overshoot` 1.15–1.3 | `pop`, `flash`, `shake`, `spin` |
+
+The entrance ranges come from `motion-principles`: its playful landing for
+Playful, its title and hero entrances for Premium and Corporate, and its micro
+beat for Energetic. Exits run shorter than entrances, as its quick reference
+gives.
+
+Premium sits calm-soft, Corporate calm-sharp, Playful kinetic-soft, Energetic
+kinetic-sharp. Default to Corporate for product and Playful for lifestyle.
+`easeOutElastic` and `easeOutBounce` belong to Playful alone.
+
+## Motion hierarchy
+
+Rank every element, animate down the list, and stop early.
+
+| Tier | What it is | How it moves |
+|---|---|---|
+| Hero | The one thing the moment is about | The boldest, longest, most-eased move; lands on the beat |
+| Support | Context that helps the hero land | Smaller and faster, out of the way, never competing |
+| Texture | Bed, grain, ambient drift | A `loop` preset at low amplitude; no hard events |
+
+These are the three layers `motion-principles` names Primary, Secondary and
+Ambient. If two elements compete for the eye in one frame, the direction failed:
+demote one before touching its keyframes.
+
+Hierarchy is also a track decision. Lowest track `index` renders on top, so the
+hero belongs on a low index and the bed on a high one; a scrim sits between the
+picture it darkens and the text it carries. For a camera move, set clip
+`transform.depthPx` separately from track order. The sequence's `camera2d`
+can keyframe position and depth while `focusDepthPx` and `aperturePx` decide
+which plane softens. Keep one plane legible while the others move.
+
+Use `layout` (a flex container on a group clip, its real children via
+`parentId`) for elements whose spacing should survive a text or shape
+change: `flexDirection: "row" | "column"` with `gap` keeps siblings apart,
+and a plate sized from live text is a `flexItem: {position: "absolute",
+inset: 0}` sibling in a padded container. Use
+`animationLinks` when one clip should follow another's authored position,
+scale, rotation, or opacity. Linked followers share one motion decision;
+they do not chain through a second link.
+
+## Restraint
+
+For every element ask whether the motion carries meaning. If not, hold it still.
+
+- Do not animate the whole frame at once. Leave the eye an anchor.
+- Do not stack a transition on a transition — a `wipe` cut under a `spin` in
+  under a `flash` is three ideas competing for 500ms.
+- Do not loop-animate text somebody is still reading.
+- Do not give overshoot to serious content.
+- One outsized moment per piece. A second cancels the first.
+- A clip that both dissolves in and carries a `fade` in ramps twice and reads
+  slower than either alone. Pick one.
+
+## Pacing
+
+Map energy across the whole timeline before timing any single move: a low open,
+a build, one peak, a settled end. Vary it on purpose — tension, then release.
+Stillness is pacing, not a gap. `beat-sync-editing` turns this shape into cut
+points.
+
+An animation's `beat` anchor follows the document tempo: one-based `index`,
+`scope: "clip"` or `"sequence"`, and optional `offsetMs`. A measured audio
+curve from `bake_audio_animation` follows the audio source instead. Use the
+former for a rhythmic rule and the latter when a real onset or envelope must
+drive the picture. `stagger_animations` offsets existing animations across an
+ordered list of clip IDs while leaving media timing fixed.
+
+Choose motion texture deliberately. `repeater` makes positioned, delayed
+copies of one clip; `temporalEcho` trails it with fading delayed copies;
+`steppedTime` quantizes its clock. Per-clip `motionBlur` controls its own shutter
+angle and minimum sample count. When layers request different counts, the
+scene uses the highest count up to 32 and samples each layer evenly across its
+own shutter. Give blur to the fast hero when it clarifies direction, then
+inspect the held frame for readability.
+
+## Direction notes, per shot
+
+Write intent, not keyframes. One line per shot is enough for someone else — or a
+later turn — to animate it:
+
+> Shot 3, 4s. Hero: the price plate, `pop` in on the downbeat, Corporate.
+> Support: the caption 80ms behind it, `fade`. Texture: bed holds `kenBurns`
+> from shot 2. Nothing else moves.
+
+For a repeated title or logo system, inspect `list_compositions` before
+building bare clips. `title-slam`, `word-cards`, and `logo-sting` are starting
+rigs when their timing matches the brief. `timeline-edit-ops` owns the tool
+contract. `set_clip_params` does not accept the new camera, layout, link,
+repeat, echo, step, or per-clip blur fields; author those through the full
+document with `set_timeline_document` after reading it with `get_timeline`.
+
+## The consistency audit
+
+Before calling a pass done, read the document back with `get_timeline` and check
+every clip against the spec. A miss is a direction defect, not a preference.
+
+- Same easing family on comparable moves, and no stray `linear` outside loops.
+- Every `durationMs` a multiple of the base unit.
+- Only the chosen transition types on the cut.
+- One text stagger rhythm, and one `offset_ms` order for cross-clip builds.
+- Hold discipline respected: every read hold and every rest between moves meets
+  `motion-principles` § Holds. A still hero is not a still frame: the Texture
+  bed keeps moving through the holds, so a static bed is still a finding in
+  the `motion-graphics` review pass.
+- Exactly one hero animating at any instant.
+- One font family, and it is a bundled one — `Inter`, `Space Grotesk`,
+  `Bebas Neue`, `Playfair Display`, `Lora`, `JetBrains Mono`. Anything else
+  reports `font_not_portable` and resolves differently per host.
+
+Then look: `preview_timeline_frame` over the midpoints of the moves you just
+audited. An audit that only read the document has checked the spec, not the
+picture.
+
+## Required example comparison
+
+Run the review pass `motion-graphics` owns (its `## Review pass`) once, not
+twice per piece — contact sheet, per-scene checklist, example comparison,
+`tier: "showcase"` validation, and a real revision. Judge what comes back
+against this page's spec too: does the busiest scene still respect Motion
+hierarchy, does Restraint survive under the example's density, is the chosen
+Motion personality still legible once the gaps are closed.

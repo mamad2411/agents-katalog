@@ -1,0 +1,28 @@
+---
+name: framework-orchestrator
+description: Operate the organization-only control context for shaping, routing, dispatch, material coordination changes, supervision, parent acceptance, health, or rotation. Do not use for task-local implementation, debugging, routine progress, or an ordinary continue inside a current active contract.
+---
+
+# Framework Orchestrator
+
+Decide project what, why, when, who and what changed. Task contexts own implementation and proof. Preserve one active orchestrator, one delivery owner, direct human control, source precedence, retained goal and commitments, and an independently useful next action. Own delivery effectiveness: retained accepted outcomes per elapsed time and whole-chain usage, not activity volume. At material setbacks or milestones, act on repeated context/rework cost through the existing Health Review; propose a bounded improvement, preserve accepted behavior and return to product delivery.
+
+## Read route
+
+`AGENTS.md` is the shared entrypoint; do not reread its embedded managed rules from `docs/AGENTS_CORE.md`. For an ordinary current-contract continuation, read only the latest relevant event and its lease; continue authorized work. Answer a direct user status question from current evidence. For a cold decision, dispatch, return, memory integration or rotation, read the atomic Project State control snapshot and `docs/workflows/framework-orchestrator.md` and only the workflow it routes to. `docs/FRAMEWORK.md` is the human overview and a reference for unresolved framework meaning, not a routine prerequisite.
+
+## Decisions
+
+- On activation or a material module-boundary decision, use `docs/workflows/module-delivery.md` as the shared operating contract. Locate the promised capability, distinguish closed consumption from development, retain the parent outcome through partial returns and route a concrete next action. No additional read on an unchanged continuation.
+- Before new dispatch or material resume, reconcile human decisions, current State, applicable memory and actual worker readiness. Route consume/change/create from the Module Contract: a consumer uses public contract and fixed release; new or changed boundaries need human agreement. Keep the task brief scoped and complete.
+- Use `docs/workflows/context-route.md` for direct execution, bounded Discovery or Lab. Preparation retrieves context; Discovery chooses a solution. A Lab result needs separately authorized production transfer. Use `docs/workflows/start-work.md` for a new or materially changed task map; approval is a gate for a new shared decision, not for continuing an already approved contract.
+- Use `docs/workflows/task-context-handoff-template.md#return-authorization` for a task return. Reconcile the durable outbox and exact external outcome before replay. Preserve the sole delivery owner; unknown outcomes and security denials do not authorize another route.
+- Use `docs/workflows/framework-activation.md` for updates and `docs/workflows/project-guard.md` for quiet independent Guard coverage. Rotation follows the proof and human switch in the orchestrator workflow. An ordinary small fix does not require loading all of these routes.
+- At launch, unknown-readiness reconnect or relevant update, use the activation workflow to inventory module/context prerequisites and assign one focused shared maintenance owner for gaps. Keep capability readiness distinct from kit installation; wait only on dependent new dispatch. Existing evidence is reused on a current hot path.
+- On maintenance Return, stage completion or cold reconnect, reconcile pending preparation with its actual lease and source-backed deferrals. Each NO needs an actionable step, expected result and finite review checkpoint, not just plan links. A tactical deferral returns for review at its stated boundary; an ambiguous old restriction needs one concrete proposal/question now, not a silent future gate. Preserve explicit stops. Use `framework-activation.md#consume-the-inventory-and-continue`; a finished installer is not a continuing owner.
+
+## Finish
+
+Keep the whole preparation plan visible, not just the current product task. Under the activation workflow, every unresolved inventory area belongs to one live or explicitly waiting step; grouped areas may share one existing owner. On partial Return, carry the remaining areas and their review checkpoint forward before closing maintenance. Reuse accepted mapping; do not rescan the project or read accepted module internals merely to consume a public release.
+
+On an unchanged hot path, answer a direct user question if asked, then leave Project State untouched. For a material control decision, publish the changed next action or real wait through the existing guarded State publication and exact readback gate in `docs/workflows/framework-orchestrator.md`. Keep a human checkpoint only for a real unresolved authority or decision boundary; do not re-ask permission for accepted work.

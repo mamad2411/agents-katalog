@@ -1,0 +1,149 @@
+---
+name: hyper-research
+description: Use when starting a non-trivial task and want prior-art, pitfalls, or recommendations before designing. Also when the user invokes /hyperclaude:hyper-research. Runs Codex and Claude in parallel by default, producing two artifacts in .hyperclaude/research/.
+---
+
+# hyper-research
+
+Pre-implementation research gate. By default runs **both** the Codex research path and the Claude research path in parallel, producing two artifacts (`.hyperclaude/research/<timestamp>-<slug>.md` from Codex and `.hyperclaude/research/<timestamp>-<slug>-claude.md` from Claude) that share one frontmatter `slug:`; you read them and integrate findings into your next planning step. A single path runs only on explicit user request.
+
+## When to use
+
+- User typed `/hyperclaude:hyper-research <task>`.
+- You're about to start substantial new work and want a parallel Codex + Claude research context dump.
+
+Skip when:
+- The task is a small fix or rename.
+- A recent research file (within ~30 min) already covers this task.
+
+## How to invoke
+
+`--resume` is not supported (deferred — research is not iterative).
+
+**Invocation argument:** $ARGUMENTS
+
+### Path selection
+
+Two research paths exist (Codex and Claude). Pick by reading the user's intent — this is a plain-language rule, **not** a flag/token/`$ARGUMENTS` grammar:
+
+- **Default** (a normal `/hyperclaude:hyper-research <task>`) → **both paths in parallel** (Codex + Claude), producing two artifacts that share one slug.
+- The user asks for **Codex only / no Claude** → **Codex path** alone.
+- The user asks for **Claude only / Claude-native / no-Codex / a Claude second opinion** → **Claude path** alone.
+- When the request doesn't clearly ask for one path, run both.
+
+All cases first resolve the task description the same way:
+
+- If the invocation argument is non-empty, that is the task description.
+- If empty, fall back to the user's most recent build/implement intent in this conversation. If none exists, ask the user to describe the task and stop.
+
+### Default: both paths in parallel
+
+This is the default. Run the Codex and Claude research paths concurrently so the two multi-minute operations overlap:
+
+1. Resolve the task description (as in **Path selection**), derive `<slug>` (Claude-path rule, step 1 below), and get `<timestamp>` once — these are shared by both artifacts.
+
+2. **Write the Codex task to a temp file** with the Write tool (avoids shell quoting), as the Codex path step 2 below describes — this must land before the bridge launches.
+
+3. **Launch both in ONE message, both backgrounded** — neither blocks, so the lead stays free while the two multi-minute operations run:
+   - The `researcher` agent via the Agent tool, `subagent_type: hyperclaude:researcher`, in return-body mode, using the same prompt contract as the Claude path step 4 below (Task verbatim + required section structure).
+   - The bridge via the Bash tool, **`run_in_background: true`** with `timeout: 7200000`: `node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-bridge.mjs" research --task-file "<temp file path>"`. It writes `.hyperclaude/research/<timestamp>-<slug>.md`.
+
+   Both deliver their result as a completion notification. End the turn and let them run; answer the user if they ask something else meanwhile.
+
+4. **Once both have completed, write and report the artifacts.** `Read` the bridge task's output file and parse the JSON line in it (ignore the trailing `[exited with code N]` marker), then `rm -f "<temp file path>"`.
+   - Codex `{"ok":true,"path":"..."}` → the Codex artifact is on disk at that path.
+   - Codex `{"ok":false,"error":"..."}` → surface the error to the user. Do NOT pretend the Codex artifact was produced.
+   - Researcher returned a body → write the Claude artifact with the Write tool to `.hyperclaude/research/<timestamp>-<slug>-claude.md`, using the SAME frontmatter block + one-liner as in **Claude path (single — explicit request only)** steps 5–6. The ONLY difference from the single-Claude case is the filename's `-claude` suffix; the frontmatter `slug:` stays `<slug>` (identical to the Codex artifact — this is the canonical trace key).
+   - Researcher errored or returned an empty body → SKIP writing the Claude artifact.
+   - Exactly one side succeeded → report it as a **PARTIAL result** and continue using only what succeeded. Both failed → report full failure to the user and stop.
+
+5. Report BOTH artifact paths to the user (Codex artifact + Claude artifact). Read both and integrate BOTH into your subsequent plan. When you write a plan, save it under `.hyperclaude/plans/<timestamp>-<slug>.md` so `/hyperclaude:hyper-plan-review` can find it later.
+
+### Codex path (single — explicit request only)
+
+1. Resolve the task description as described in **Path selection** above.
+
+2. Write the resolved task description with the **Write tool** (not the Bash tool — this avoids shell quoting) to a file in the session scratchpad, outside the repo. Save the task as plain text; no escaping needed.
+
+3. Run the bridge in research mode using the Bash tool with **`run_in_background: true`** and `timeout: 7200000`:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/codex-bridge.mjs" research --task-file "<temp file path>"
+   ```
+
+   The lead stays free to answer the user while Codex runs; end the turn and wait for the completion notification.
+
+4. After the bridge task completes, clean up the temp file:
+
+   ```bash
+   rm -f "<temp file path>"
+   ```
+
+5. The bridge prints a single JSON line to stdout. `Read` the completed task's output file and parse that line (ignore the trailing `[exited with code N]` marker).
+   - On `{"ok":true,"path":"..."}` — read the file with the Read tool.
+   - On `{"ok":false,"error":"..."}` — surface the error to the user; do not pretend research happened.
+
+6. Integrate the file's findings into your subsequent plan. When you write a plan, save it under `.hyperclaude/plans/<timestamp>-<slug>.md` so `/hyperclaude:hyper-plan-review` can find it later.
+
+### Claude path (single — explicit request only)
+
+This path runs Claude-native research via the `researcher` agent. It uses `WebFetch` against KNOWN URLs only — it is **not** web-search parity with the Codex `--search` bridge mode. If the user needs broad live web search, route them to the Codex path instead.
+
+1. Derive `<slug>` from the resolved task with the same rule as `hyper-plan`: lowercase, ASCII only, alphanumerics + hyphen, first 5 words of the task joined by `-`. Example: "Add OAuth login to the API" → `add-oauth-login-to-the`.
+
+2. Get `<timestamp>` (UTC — matches the bridge's artifact filename convention):
+
+   ```bash
+   date -u +%Y%m%d-%H%M
+   ```
+
+3. Create the artifact directory and resolve the artifact path:
+
+   ```bash
+   mkdir -p .hyperclaude/research
+   ```
+
+   Base path: `.hyperclaude/research/<timestamp>-<slug>-claude.md` (the `-claude` suffix is how the Claude artifact coexists with the Codex one when both ran). If it exists, append `-2`, `-3`, … before the extension until free.
+   - **No-ASCII-slug fallback** (mirrors the bridge): if slug derivation yields no ASCII characters (e.g. an all-Korean topic), the filename is timestamp + `-claude` — `.hyperclaude/research/<timestamp>-claude.md` (with the same `-2`/`-3` collision suffixing) — and the frontmatter `slug:` line is the bare key with an empty value: `slug: ` (key, colon, single space, nothing after — NOT `slug: ""`).
+
+4. Dispatch the `researcher` agent with the Agent tool, `subagent_type: hyperclaude:researcher`, in return-body mode (the agent returns the report markdown; it does not write files) — it runs backgrounded, so end the turn and resume at step 5 on its completion notification. The prompt MUST include:
+   - **Task** — the resolved task description, verbatim.
+   - **Required section structure** — the report must use exactly these headings, in this order: `### Prior Art`, `### Pitfalls`, `### Recommendations`, `### Open Questions`.
+
+5. Collect the always-present frontmatter values with one short Node one-liner (keeps `cwd`/`git-head` JSON-quoted the same way the bridge's renderer does):
+
+   ```bash
+   node -e 'const c=require("child_process");let h;try{h=c.execSync("git rev-parse HEAD").toString().trim();}catch(e){h="unknown";}console.log(JSON.stringify({generated:new Date().toISOString(),cwd:process.cwd(),gitHead:h}))'
+   ```
+
+6. Write the artifact with the Write tool to the path from step 3. Its frontmatter is exactly the keys below, in this order — the PostToolUse stamp hook adds `plugin-version` after the write:
+
+   ```
+   ---
+   mode: research
+   task: |-
+     <task, each line 2-space indented>
+   slug: <slug>
+   generated: <generated ISO from the one-liner>
+   codex-version: claude
+   template-version: 1
+   cwd: <JSON-quoted cwd from the one-liner>
+   git-head: <JSON-quoted gitHead from the one-liner>
+   codex-resume-status: fresh
+   ---
+   # Research: <task>
+
+   <researcher agent body verbatim>
+   ```
+
+   For the no-ASCII-slug fallback, the `slug:` line is the bare empty form described in step 3.
+
+7. Tell the user the artifact path and that this was Claude-native research (no Codex). Then integrate the findings into your subsequent plan as in the Codex path step 6.
+
+## Output contract
+
+A research file has YAML frontmatter followed by markdown sections (Prior Art / Pitfalls / Recommendations / Open Questions). Do not modify the file.
+
+The default (parallel) run produces a **Codex + Claude pair**: `.hyperclaude/research/<timestamp>-<slug>.md` (Codex) and `.hyperclaude/research/<timestamp>-<slug>-claude.md` (Claude). Both files carry an **identical frontmatter `slug:`** — that shared slug is the canonical trace key, not the filename. A single-path run produces only the one corresponding file.
+
+Every research file has the same always-present frontmatter keys (mode, task, slug, generated, plugin-version, codex-version, template-version, cwd, git-head, codex-resume-status) and the same section structure. `plugin-version` is present on both, but by different means: the bridge writes it into the Codex artifact, while the Claude artifact gets it from the PostToolUse stamp hook post-write (so it lands as the first frontmatter key, not mid-block). The Codex artifact's `codex-version` is the Codex CLI version and it may add Codex-only conditional keys (e.g. `codex-thread-id`; `codex-input-tokens`, `codex-cached-input-tokens`, `codex-output-tokens`, `codex-reasoning-output-tokens` — each emitted independently when Codex reported that token field in usage); the Claude artifact's `codex-version` is `claude` and it omits those conditional keys. Downstream consumers match on frontmatter `slug:` and may find BOTH files of a pair.

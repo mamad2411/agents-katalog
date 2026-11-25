@@ -1,0 +1,80 @@
+---
+name: okf-reader
+description: Guidance for AI agents on how to parse, traverse, and query Open Knowledge Format (OKF) bundles efficiently — minimizing token usage and avoiding slow recursive directory walks. Use when reading, navigating, analyzing, or answering questions about an existing OKF bundle. Instructions-only; no binary required.
+license: Apache-2.0
+metadata:
+  version: "0.3.0"
+  author: Yurii Serhiichuk
+  tags: "okf, open-knowledge-format, agent-guidance, documentation, prompt-engineering"
+---
+
+# OKF Bundle Reader Guidance Skill
+
+Procedural rules for reading and traversing **any** OKF bundle efficiently, no matter how its producer organized it. Following them reduces token consumption, speeds execution, and avoids recursive directory walks.
+
+OKF is deliberately flexible: the directory layout, the concept `type` values, and whether concepts cross-link are all **producer-defined**. So these rules key off the spec's universal structures — frontmatter `type`, `index.md`, markdown links, and `resource` — and never off any one source's conventions (there is no required `tables/` folder, no fixed type vocabulary, no guaranteed cross-links).
+
+## When to Use
+
+Load this skill whenever you are tasked with reading, parsing, querying, or analyzing an existing OKF bundle.
+
+## Instructions for Agents
+
+### 1. Index-first discovery (descend nested indexes)
+- **Rule**: NEVER recursively read or load every markdown file at startup.
+- **Protocol**:
+  1. Read the bundle-root `index.md` first if present — it is the directory listing.
+  2. Follow its links to map the available concepts. The index may be **flat** (every concept — including container/directory concepts — listed at the root as peers) or **hierarchical** (subdirectories carry their own `index.md` or sub-index concept). Descend any nested indexes for progressive disclosure instead of walking the tree.
+  3. If there is no `index.md`, discover concepts cheaply — a shallow listing or a `*.md` glob — without reading bodies yet.
+  4. Sanity-check it is an OKF bundle: concept files have YAML frontmatter with a `type`; the root `index.md` may declare `okf_version`.
+
+### 2. Route directly to a concept (layout is producer-defined)
+- **Rule**: Do **not** assume a fixed directory layout. There is no required `tables/` (or any other) folder — producers organize concepts however suits the domain (SQL connectors group under `tables/`; filesystem/git bundles mirror the source tree; others differ).
+- **Protocol**:
+  - Resolve a concept's location from the `index.md` links — use each link target **verbatim**; do not guess, strip, or rewrite paths (filenames and separators are producer-defined).
+  - When the layout mirrors a source path, the concept file is usually that path; otherwise trust the index links or the directory tree.
+  - Open only the one file you need — don't list or read its siblings.
+
+### 3. Frontmatter-first parsing
+- **Rule**: To identify, filter, or catalog concepts, read only the top frontmatter — not the bodies.
+- **Protocol**:
+  - Parse the YAML block between the first two `---`.
+  - Use `type` (an arbitrary producer-defined kind — e.g. `Table`, `File`, `Metric`, `Playbook`, `Attested Computation`), `title`, `description` (the one-line summary — the most useful field for cataloging), and `resource` (canonical URI of the underlying asset).
+  - **OKF v0.2 Metadata Families**:
+    - **Generation & Timestamp**: Read `generated.by` (actor) and `generated.at` (ISO 8601 timestamp). Fall back to legacy `timestamp` if `generated` is absent.
+    - **Trust Tier**: Derive trust from `verified`: `human-reviewed` if any `verified[].by` starts with `human:`, `machine-confirmed` if verified by processes/agents only, `unverified` if absent.
+    - **Freshness & Staleness**: Check `stale_after` (`YYYY-MM-DD`). A concept is stale when `today >= stale_after`.
+    - **Lifecycle Status**: Read `status` (`draft` | `stable` | `deprecated`; default: `stable`).
+    - **Provenance**: Read `sources` array (`id`, `resource`, `title`, `author`, `usage_count`, `last_modified`) and `usage_window`. Resolve inline footnote claim citations (`[^source-id]`).
+    - **Attested Computations**: Concepts with `type: Attested Computation` declare `runtime`, `parameters`, `computation` (or `# Computation` body fence), `executor`, and `attester`.
+  - The bundle stores **knowledge about** an asset, not its contents — for filesystem/git bundles the body may be only metadata. To read the asset itself, dereference its `resource` URI: for `file://`, drop the scheme and URL-decode to a local path; other schemes (`bq://`, `postgres://`, `git://`, …) identify the asset but need the matching connector or credentials to fetch.
+
+### 4. Search by name or keyword with grep
+- **Rule**: To find a field, key, column, or any keyword across the bundle, don't open files one by one.
+- **Protocol**: Run `grep`/`ripgrep` across the bundle directory and open only the files that match. For frontmatter-only filters, grep anchored lines (e.g. `^type:`, `^title:`, `^status:`).
+
+### 5. Follow links for relationships — when they exist
+- **Rule**: Relationships are expressed as standard markdown links between concepts; don't infer them. Some bundles are richly cross-linked; others (e.g. filesystem/git) encode structure only as index/tree containment and have **no** body links — tolerate their absence rather than forcing a graph.
+- **Protocol**: Scan a concept body for links to other concept files and follow them to build a relationship view. Treat a broken link as not-yet-written knowledge, not an error.
+
+### 6. Source-side catalog: `.okf-metadata.yaml`
+- **Rule**: When pointed at a **source directory** (not a bundle) that has been ingested, a `.okf-metadata.yaml` at its root is a flat `path: description` catalog — read it directly for an instant index, no bundle required.
+- **Protocol**: Inside a bundle you don't need it — the same descriptions already live in each concept's frontmatter `description` (Rule 3). Reach for `.okf-metadata.yaml` only when summarizing the source itself.
+
+### 7. Navigating Attested Computations (`type: Attested Computation`)
+- **Rule**: When answering questions that require calculating a metric or running a formula, check for an `Attested Computation` link instead of improvising custom queries.
+- **Protocol**:
+  1. Follow links from narrative concepts (`Metric`, `Playbook`) to target `Attested Computation` documents.
+  2. Inspect contract frontmatter: `runtime` (`bigquery`, `postgres`, `dbt`, `python`), `parameters` list (`name`, `type`, `required`), `executor` resource, and `attester` resource.
+  3. Supply required parameter values as declared — do **not** edit or rewrite the sanctioned query under `# Computation` (or in `computation: <file>`).
+  4. Pass execution receipts to the `attester` script to confirm run fidelity and provenance before presenting final values.
+
+### 8. Trust, Staleness, and Provenance Gating (OKF v0.2)
+- **Rule**: Weight facts according to their trust tier, recency, and lifecycle status.
+- **Protocol**:
+  - **Trust Tier**: Classify trust as `human-reviewed` (highest; verified by `human:<id>`), `machine-confirmed` (verified by `process:` / tools), or `unverified` (no `verified` entry). Surface trust status when presenting critical business figures.
+  - **Staleness**: Compare today's date against `stale_after` (`YYYY-MM-DD`). If `today >= stale_after`, flag the fact as stale or suggest re-verification.
+  - **Lifecycle Status**: Respect `status` (`draft` | `stable` | `deprecated`). Ignore `deprecated` concepts for active decision-making unless historical context is requested.
+  - **Per-Claim Attribution**: When reading bodies with inline footnotes `[^source-id]`, resolve attribution by joining `source-id` against `sources[].id` in frontmatter. Inspect `author`, `usage_count`, and `last_modified` credibility signals to gauge source authority.
+
+

@@ -1,0 +1,59 @@
+---
+name: performance-goal
+description: "[oh-my-agy] Evaluator-gated performance optimization loop: define a benchmark evaluator and pass/fail contract first, then optimize in small reversible patches with checkpoints. Use for measurable speed, latency, throughput, or memory gains."
+---
+
+# Performance Goal Workflow
+
+Use this skill when the user asks to optimize performance and wants a goal-oriented loop rather than a one-off review.
+
+## Contract
+
+- Durable workflow state lives under `.omagy/goals/performance/<slug>/` (`state.json`, `checkpoints.jsonl`).
+- No optimization work starts until an **evaluator command** and a **pass/fail contract** exist.
+- Completion requires a passing evaluator checkpoint plus a completion audit. Passing ordinary tests alone is not enough unless they are the declared evaluator.
+- Codex's hidden goal tools do not exist in Antigravity. The artifacts are the source of truth.
+
+## Create
+
+If no workflow exists, establish (asking with `ask_question` only for values the repo cannot answer):
+- objective (e.g. "Reduce CLI startup latency by 20%")
+- evaluator command (e.g. `npm run perf:startup`)
+- evaluator contract (e.g. "PASS when p95 latency improves by >= 20% vs baseline and regression tests pass")
+- slug
+
+Write `.omagy/goals/performance/<slug>/state.json`:
+```json
+{"slug":"startup-latency","objective":"...","evaluator_command":"...","evaluator_contract":"...",
+ "baseline":null,"lastValidation":null,"status":"active","created_at":"<ISO>","updated_at":"<ISO>"}
+```
+Also write `.omagy/state/performance-goal-state.json` (`mode:"performance-goal"`, `active:true`, `current_phase:"baseline"`, `state.slug`). The Stop hook uses it to keep the loop going.
+
+## Agent loop
+
+1. **Baseline, Coverage Guard & 5-Step Number-Vetting Checklist (`benchmark-checklist`)**: before optimizing, check `sh <plugin>/hooks/run.sh coverage-map <workspace> --json` so any unmapped hot-path module is locked by a correctness test first; before trusting any baseline or post-patch number, verify all 5 checks: (1) **Name the limiter** (CPU, memory bandwidth, disk/network I/O, lock contention, or startup parse), (2) **Measure warm vs. cold** separately, (3) **Repeat `>= 5x`** and report **median + spread (min/max or IQR)** rather than a single run, (4) **Rule out observer overhead** (profiler/logger distortion), and (5) **Label every number** explicitly as `measured | inferred | guess`. Optionally dispatch `runtime-qa` to stress timeout/concurrency behavior under load.
+2. **Optimize (`hillclimb`)**: iterate in small, reversible patches — strictly **1 hypothesis per commit/patch** so wins and regressions are attributable. Load [domain-playbooks.md](./references/domain-playbooks.md) when targeting web CWV, SQL queries, connection pools, or caching. Use the `debugger` or `architect` subagent for profiling analysis when useful.
+3. **Evaluate**: run the evaluator and related regression tests after each patch.
+4. **Checkpoint** every result by appending to `checkpoints.jsonl` (using newline-isolated appends via `sh <plugin>/hooks/run.sh append-jsonl .omagy/goals/performance/<slug>/checkpoints.jsonl '<json>'` or ensuring a leading newline if the file tail was torn):
+   `{"at":"<ISO>","status":"pass|fail|blocked","evidence":"<numbers, command, exit code>","patch":"<summary>"}`
+   Then update `lastValidation` in `state.json` and `updated_at`/`iteration` in the mode state. Apply **"Neutral is a revert"** ([domain-playbooks.md](./references/domain-playbooks.md#5-neutral-is-a-revert-discipline)): revert patches that regress or stay within run-to-run noise rather than accumulating complexity.
+5. **Complete** only when `lastValidation.status == "pass"` and the audit confirms no required work remains. Set `state.json` `status:"complete"` and write the mode state terminal (`active:false`, `current_phase:"complete"`, `completed_at`).
+6. **Blocked** (e.g. a missing fixture or benchmark infra): checkpoint `blocked`, set the mode state to `current_phase:"blocked"`, `active:false`, and ask the user.
+
+## Evaluation Integrity Audit (`eval-integrity`)
+
+Before declaring a benchmark or evaluator result trustworthy, audit the evaluation setup across:
+1. **7 Evaluation Roles**: map `Claim`, `System under test`, `Dataset and split`, `Designer`, `Evaluator or judge`, `Scorer`, and `Subjects`, and confirm an independent ground-truth signal exists.
+2. **8 Independence Failure Probes**: check for `Contamination` (benchmark leakage), `Invalid controls` (unfair baseline flags/warmup), `Circular judging` (system judging its own output), `Scorer-label coupling`, `Evaluator-designer coupling` (tuning the evaluator to make the patch pass), `Split/annotator dependence`, `Hypothesis priming`, and `Observer/demand effects`.
+3. **Verdict Line**: record a single `**Verdict: PASS | FAIL | INCONCLUSIVE**` line in `.omagy/goals/performance/<slug>/summary.md` (and `evalIntegrityVerdict` in `state.json` if needed), which the HUD `Overview` tab surfaces on the benchmark card.
+
+## Domain Playbooks (Lazy-Loaded)
+
+Consult [domain-playbooks.md](./references/domain-playbooks.md) only for the subsystem under optimization:
+- **Web / Frontend CWV**: [Core Web Vitals Field (`CrUX` p75) vs Lab (`Lighthouse`) Metric-Honesty Rule](./references/domain-playbooks.md#1-core-web-vitals-field-vs-lab-metric-honesty-rule)
+- **SQL / Database Queries**: [`EXPLAIN (ANALYZE, BUFFERS)` 3-signal table](./references/domain-playbooks.md#2-database-query-tuning-and-explain-analyze-buffers) and [connection pool sizing math (`instances * pool_max < max_connections - reserved`)](./references/domain-playbooks.md#3-connection-pool-sizing-math)
+- **Caching & Concurrency**: [viewer-keyed cache isolation + singleflight stampede coalescing](./references/domain-playbooks.md#4-viewer-keyed-cache-isolation-and-singleflight-coalescing) and ["Neutral is a revert"](./references/domain-playbooks.md#5-neutral-is-a-revert-discipline)
+
+## Completion gate
+
+A performance goal is incomplete unless `state.json` holds `lastValidation.status: "pass"` produced by the declared evaluator command, with the evidence recorded in `checkpoints.jsonl` and an `eval-integrity` `**Verdict: PASS**` in `summary.md`. Report baseline vs final numbers, the patches kept, the patches reverted, and the residual risks, and surface `[oh-my-agy HUD](sidecar://oh-my-agy/hud/)` once so the user can inspect the benchmark card in the Auxiliary Pane.

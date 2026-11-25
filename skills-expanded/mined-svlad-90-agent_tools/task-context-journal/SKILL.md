@@ -1,0 +1,97 @@
+---
+name: task-context-journal
+description: Maintain compact workspace task context using TASK_CONTEXT.sqlite3 singleton slots. Use whenever Codex starts, updates, queries, compacts, or hands off task context, decisions, findings, validation, blockers, environment notes, user preferences, or operational memory.
+---
+
+# Task Context Journal
+
+Prefer the Agent Workspace MCP `task_context_*` tools when they are available
+in the active agent client. Use `tool_search` to discover them if they are not
+already visible. The CLI implementation at `agent_tools/tools/task_context` is
+the fallback path when MCP tools are unavailable or when a workflow needs shell
+composition. Do not recreate `TASK_CONTEXT.md`; `TASK_CONTEXT.sqlite3` is the
+only current task context source.
+
+Also follow `agent_tools/rules/task-workflow.md`; that rule is authoritative
+for task context policy.
+
+## Model
+
+Task context is a fixed set of singleton slots. A slot is current state, not a
+journal event. Update the relevant slot in place; do not append changelog notes.
+
+Categories:
+
+- `goal` - required. Task purpose, scope, acceptance criteria.
+- `env` - recommended. Canonical build/run environment and commands.
+- `decisions` - optional. Current architectural/product decisions.
+- `findings` - optional. Current facts and observations.
+- `validation` - recommended. Canonical fast/full validation commands and last result.
+- `blocker-risk` - optional. Current blockers and risks.
+- `operational-memory` - required. Current state, next steps, handoff.
+- `user-preference` - optional. Durable user preferences for this task.
+- `repo-registry` - optional. Explicit git repositories used by this task.
+- `legacy` - temporary migration material from old context files/entries.
+
+If `legacy` is non-empty, move still-current facts into typed slots and then
+clear or shrink `legacy`.
+
+## MCP Tools
+
+- `task_context_query` reads slots.
+- `task_context_set_slot` replaces one singleton slot.
+- `task_context_add_entry` appends one structured journal entry.
+- `task_context_edit_entries` edits or deletes entries.
+- `task_context_dictionary` reads or appends dictionary aliases.
+- `task_context_compile_dictionary` refreshes auto-discovered aliases.
+- `task_context_compact` renders compact context.
+- `task_context_migrate_legacy` imports old JSONL context.
+- `repo_guard repos list`, `repo_guard repos validate`, `repo_guard repos add`,
+  and `repo_guard repos remove` maintain the `repo-registry` slot.
+
+## CLI Fallback
+
+Read all slots:
+
+```sh
+python3 -m agent_tools.tools.task_context query \
+  --task tasks/<task-name> \
+  --format agent
+```
+
+Read selected slots:
+
+```sh
+python3 -m agent_tools.tools.task_context query \
+  --task tasks/<task-name> \
+  --cats env,validation \
+  --format agent
+```
+
+Update one slot:
+
+```sh
+python3 -m agent_tools.tools.task_context slot \
+  --task tasks/<task-name> \
+  --category operational-memory \
+  --content "Current: ...\nNext: ...\nHandoff: ..."
+```
+
+Add stable terminology only through the dictionary command:
+
+```sh
+python3 -m agent_tools.tools.task_context dictionary \
+  --task tasks/<task-name> \
+  --add "Agent Workspace"
+```
+
+Dictionary aliases are task-local immutable identifiers such as `§00`. Reuse
+aliases returned by `--format agent`; do not redefine them and do not hand-code
+new aliases in slot text.
+
+## Style
+
+Slot content must use terse factual engineering prose. Prefer commands, facts,
+paths, statuses, risks, and next actions. Avoid praise, motivational phrasing,
+narrative recap, hedging, and decorative adjectives. Keep technical qualifiers
+when they change behavior or risk.

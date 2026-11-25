@@ -1,0 +1,97 @@
+---
+name: release
+description: Cut a new release tag so `brew upgrade ralph` picks up the latest build. Verifies main/clean state, runs the verify script, picks a semver bump, pushes the tag, monitors the Release workflow, and confirms the Homebrew tap was updated. Manual trigger only. Repo-specific — not distributed via template.
+disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, AskUserQuestion
+---
+Cut a release tag for this repository so Homebrew users can `brew upgrade ralph` to the new version.
+
+## How the release pipeline works
+
+1. Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`.
+2. The workflow runs `goreleaser release --clean` using `.goreleaser.yml`.
+3. goreleaser builds cross-platform archives, creates the GitHub Release, and updates the Homebrew tap at `yoshpy-dev/homebrew-tap`.
+4. Once the tap is updated, `brew update && brew upgrade ralph` distributes the new build.
+
+This skill automates steps around pushing the tag — it does not mutate `.goreleaser.yml` or the workflow.
+
+## Pre-checks
+
+Stop and report which check failed if any of these are false:
+
+1. `gh` CLI is authenticated (`gh auth status`).
+2. Current branch is `main`.
+3. Working tree is clean (`git status --porcelain` is empty).
+4. Local `main` is up to date with `origin/main` (`git fetch origin main` then compare `HEAD` with `origin/main`).
+5. No uncommitted `v*` tags exist locally that are missing on remote (`git push --tags --dry-run`).
+
+## Steps
+
+1. **Discover current version.** Run `git tag --sort=-v:refname | head -1` to find the latest `vX.Y.Z`. If no tag exists, start from `v0.1.0`.
+2. **Run the quality gate.** Run `./scripts/run-verify.sh`. If it fails, stop and surface the error — do not proceed to tagging.
+3. **Preview the changeset.** Run `git log <latest-tag>..HEAD --oneline` and show it to the user. This is the raw material goreleaser will turn into release notes (filtered by `.goreleaser.yml` `changelog.filters`).
+4. **Select the version bump.** Use `AskUserQuestion` with three options:
+   - `patch` — bug fixes, docs, chore (default)
+   - `minor` — new backwards-compatible features
+   - `major` — breaking changes
+   Compute the next version from the latest tag. Confirm the computed `vX.Y.Z` with the user before tagging.
+
+4b. **Check the behavior notes.** The binary built from the tag embeds `internal/upgrade/notes/<X.Y.Z>.md`, one note per release, and `ralph upgrade` prints the notes of the releases an upgrade crosses in its report's `## Behavior changes` section. A note must be on `main` before the tag is pushed, and this skill does not write it: it has no Edit or Write tool, and the pre-checks require a clean `main` equal to `origin/main`. `internal/upgrade/notes/README.md` says how to write one.
+   - Show the changes since the latest tag that can alter what an upgrading project does: `git diff --stat <latest-tag>..HEAD -- templates/ internal/org/prompts/ ':(exclude)templates/base/docs/'`. This covers the scaffold's skills, rules, agent definitions for both CLIs (including `.codex/agents/` and `AGENTS.override.md`), the managed block sources, hooks, scripts, and language packs, and the org role prompts; the scaffold's docs are left out. A change to a single file there, such as `templates/base/.codex/agents/implementer.toml` alone, counts.
+   - List the notes on HEAD: `git ls-tree --name-only HEAD internal/upgrade/notes/`. Check whether `X.Y.Z.md` exists (the computed `vX.Y.Z` without the leading `v`), and that no other `.md` there names a version above the latest tag.
+   - If a note names a version above the latest tag other than the computed one (left from an earlier attempt with another bump), stop and say so. Do not tag.
+   - If the diff is not empty and the note for the computed version is missing, use `AskUserQuestion` with two options:
+     - `write a note` — stop the release here. Write `internal/upgrade/notes/X.Y.Z.md` and merge it into `main` through a pull request, then run `/release` again; its step 3 changeset shows that pull request.
+     - `no behavior change` — nothing in these changes alters behavior an upgrading project must know. Continue without a note, and record that decision in the step 9 report.
+   - Otherwise (the diff is empty, or the note for the computed version exists), continue.
+
+5. **Create and push the tag.**
+   - `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+   - `git push origin vX.Y.Z`
+6. **Monitor the Release workflow.**
+   - Find the run: `gh run list --workflow=release.yml --limit 1 --json databaseId,status,conclusion,headBranch`.
+   - Watch it: `gh run watch <id> --exit-status`. If the workflow fails, surface the logs (`gh run view <id> --log-failed`) and stop. The tag remains on origin; the user must decide whether to delete it (`git push --delete origin vX.Y.Z` + `git tag -d vX.Y.Z`) or re-run the workflow.
+7. **Verify the GitHub Release.** `gh release view vX.Y.Z` — confirm all four archives exist (`darwin_amd64`, `darwin_arm64`, `linux_amd64`, `linux_arm64`) plus `checksums.txt`.
+8. **Verify the Homebrew tap update.** Fetch the tap Formula and confirm the version bumped:
+   - `gh api repos/yoshpy-dev/homebrew-tap/contents/ralph.rb --jq '.content' | base64 -d | grep -E 'version|url'`
+   - The `version` line must match the new `vX.Y.Z` (without the leading `v`).
+   - If the Formula does not yet reflect the new version, wait ~30s and retry once; goreleaser pushes to the tap as the final step.
+9. **Report completion.** Show the user:
+   - Release URL (`gh release view vX.Y.Z --json url --jq '.url'`)
+   - The command to install the new build: `brew update && brew upgrade ralph` (or `brew install yoshpy-dev/tap/ralph` for fresh installs)
+   - The result of step 4b: the note `internal/upgrade/notes/X.Y.Z.md` the tag includes, an empty step 4b diff, or the user's decision that those changes alter no behavior an upgrading project must know
+
+## Completion gate
+
+Do NOT declare the release complete until ALL of the following are true:
+
+- [ ] Step 4b passed before the tag: the tagged commit has `internal/upgrade/notes/X.Y.Z.md`, or the step 4b diff was empty, or the user chose `no behavior change` and the report says so; and no note names another version above the previous tag
+- [ ] Tag `vX.Y.Z` exists on `origin`
+- [ ] Release workflow run finished with `conclusion: success`
+- [ ] GitHub Release `vX.Y.Z` has all 5 assets (4 archives + checksums.txt)
+- [ ] Homebrew tap Formula `version` matches `X.Y.Z`
+- [ ] User was shown the `brew upgrade` command
+
+## Failure recovery
+
+- **Verify script fails before tagging.** No cleanup needed. Fix the issue on `main` first.
+- **Workflow fails after tag push.** Decide with the user:
+  - Re-run: `gh run rerun <id>` (keeps the same tag).
+  - Abandon: delete the remote and local tag, then fix and retry with a new patch version. Do **not** overwrite a pushed tag — goreleaser and Homebrew consumers treat tags as immutable.
+- **Homebrew tap not updated but GitHub Release succeeded.** Check `HOMEBREW_TAP_GITHUB_TOKEN` secret in the repo settings. Manually re-run the workflow after fixing.
+
+## CLI execution modes
+
+This skill runs under both Claude Code and Codex. The execution mode follows
+the conventions in AGENTS.md and `.codex/AGENTS.override.md`.
+
+| Aspect | Claude Code | Codex |
+|--------|-------------|-------|
+| Skill invocation | `/skill-name` slash command | `$skill-name` mention or the `/skills` menu (avoid the `/skill-name` form — it collides with built-ins) |
+| Skill body path | `.claude/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` |
+| Subagent mechanism | `Task(subagent_type=...)` when a policy delegates | `.codex/agents/` custom agents when a policy delegates |
+| Structured prompts | `AskUserQuestion` | Numbered options printed to stdout, awaiting a digit reply |
+| Artifacts | `docs/reports/`, `docs/plans/`, `docs/specs/` (shared) | Same (CLI-agnostic) |
+
+The drift check (`./scripts/check-skill-sync.sh`) cross-checks both bodies and
+invocation metadata — editing only one side will fail CI.

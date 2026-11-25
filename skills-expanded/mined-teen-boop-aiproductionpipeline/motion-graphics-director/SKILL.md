@@ -1,0 +1,124 @@
+---
+name: motion-graphics-director
+description: Entry-point orchestrator for AI motion-graphics work (Vox-style explainers, animated charts, collage clips). Decides which of the two production routes applies — CODE (Remotion + Claude Code, for numbers/charts/typography/programmatic scale) or VIDEO (Omni Flash / video models, for dynamic collage, camera moves, big blocks) — then routes to the correct companion skill in the correct order. Owns the shared prompt library of 46 composable animation blocks. Use whenever starting or resuming a motion-graphics project, when it is unclear which route or skill applies, when asked which animation to use for a beat, or when assembling a multi-scene explainer. Triggers on motion graphics, vox style, animated chart, remotion, explainer video, which route, animation library, motion prompt, bar chart animation, boil, style sheet, collage clip.
+---
+
+# Motion Graphics Director
+
+## This project first (binding)
+
+This skill arrives at every project knowing nothing about it. Before applying any default written below:
+
+1. **Study this project.** Read its brief or script, every file in its references folder (images, video frames, saved prompts and their notes) and the results already approved in it. Say what you see in concrete terms before generating or writing anything.
+2. **Learn from this project's results.** After each approved result, add to this project's `LESSONS.md` what was asked, the prompt or setting that produced it and why it worked; after each rejection, what failed and the fix. Read `LESSONS.md` before the next task. For this project it overrides the defaults below.
+3. **Stay inside this project.** Never open, copy or imitate material from another project, brand or earlier job: no images, fonts, prompts, names or folders from elsewhere. What is missing comes from this project's own sources or from the user.
+4. **Examples here are samples.** Every name, date, place or line used as an example in this skill is invented sample data. Do not carry it into the work.
+5. **Improve the skill, not a memory of one project.** When a lesson would help any project, propose it to the user as a general rule with no project names in it.
+
+## Why this exists
+
+Motion-graphics work here splits into two production routes that share ONE visual language but have completely different mechanics, failure modes and prompt shapes. Picking the wrong route wastes the most time of any decision in this pipeline. This skill makes that decision explicitly, then hands off.
+
+## Design is per-project, always
+
+The pipeline is constant; the design is not. Every project gets its own **STYLE PACK** built against one fixed ten-slot schema (`motion-style-core`). Shipped packs — `paper-vox`, `blueprint`, `clay` — are worked examples, **not house style**. Reusing one because it is convenient is how every project ends up looking identical. Reach for an existing pack only when the project genuinely belongs to that family, and say so out loud.
+
+Everything downstream reads **slots**, not colors: the prompt library, the Remotion builder and the video route work unchanged across wildly different looks. Any hex or font in the library is an example filling, to be substituted from the project's pack — and an empty slot means that block is not used in this project.
+
+## Step 0 — always: which route?
+
+| The shot needs | Route | Why |
+|---|---|---|
+| Exact numbers, charts, axes, counting values | **CODE** | video models still fabricate digits |
+| Fine typography, small labels, dense text | **CODE** | video models warp type below headline size |
+| Programmatic scale (N variants, data-driven) | **CODE** | one composition, swapped props |
+| Precise timing to a voice-over | **CODE** | frame-accurate sequencing |
+| Dynamic camera, orbits, dives, parallax depth | **VIDEO** | expensive and stiff to fake in code |
+| Photo/collage cutouts, halftone people, torn paper | **VIDEO** | or CODE with pre-made cutouts |
+| Big blocks, logos, chunky headline type only | **VIDEO** | fast route, no intermediate frame |
+| A whole multi-scene explainer film | **CODE** | scene architecture + master sequence |
+
+Mixed piece? That is normal and correct — the hybrid wins. Route **per shot**, not per project. Both routes must draw from the same STYLE CORE.
+
+## Order of operations (never reorder)
+
+1. **Script → voice-over → scenes.** The script IS the timeline. Each beat maps to one visual. Never build scenes before the VO exists, or the timing gets rebuilt twice.
+2. **Lock the STYLE CORE** → `motion-style-core`. Nothing is generated before this exists.
+3. **Design & references intake** → `motion-design-references`. Inspect the folder before asking anything, split every reference into STYLE vs ASSET, lock approved images, write the INDEX.
+4. **Build per route** → `motion-remotion-build` (CODE) or `motion-video-route` (VIDEO).
+5. **Assemble** — master sequence, VO sync, music, render. This step is not done here; hand it to the skills below.
+
+## After the build — titles placed, edit, sound, delivery
+
+| Need | Skill |
+|---|---|
+| Title cards, lower thirds, overlays inside a film's look | `cinematic-motion-graphics` |
+| Ad hook line and end card (logo, line, button) | build on the CODE route with the brand's own style pack; `cinematic-motion-graphics` film-look bans do not apply to it |
+| Title behind a person | `text-behind-subject` |
+| Looping background under a title | `seamless-motion-loops` |
+| Graphics that follow a voice-over | `references/BOARD-RECIPES.md` here, then `retention-packaging-plan` |
+| Cut on the music | `music-beat-grid` |
+| Put parts or shots on a timeline | `nle-timeline-assembly`, or `davinci-series-assembly` for DaVinci Resolve |
+| Grade the overlays to the footage | `video-color-grade` |
+| Sound effects from the timeline | `opus-sound-layer` (if installed) |
+| Project folder tree, before any of the steps below | `project-scaffold` |
+| Check the encoded file | `render-cut-verification` |
+| Package and file the finals | `delivery-package`, `final-outputs-organizer` |
+
+Title rules that held in tests on new projects:
+- Place titles on the real frame after it exists; a position chosen in the script can land on a face or hands.
+- Keep each phrase on one line; break between phrases, never leave one word alone. Automatic text balancing split sentences in two tests.
+- Fonts: the project's own files, or the brand's own site for a brand. Never search the disk for a font that belongs to another project.
+- Social ads usually run at 30 fps; set it in the spec and say why.
+- Scene changes: a hard cut, or a fade where the old text leaves before the new text arrives. Start the new scene's first element on the cut frame, partly visible, so no frame is empty and no two scenes' text overlaps. Check it on the encoded file with `render-cut-verification`.
+- Order after a CODE-route render: sound from the animation's timing first (`opus-sound-layer`, loudness set to the delivery target), then `edit-media-bins` and the timeline.
+
+## The roster
+
+| Skill | Phase | Owns |
+|---|---|---|
+| `motion-style-core` | 2 | the project's STYLE PACK — fonts, palette roles, surface, edge, motion vocabulary |
+| `motion-design-references` | 3 | reference intake, STYLE/ASSET split, locked images, INDEX, Lovart attachment sets |
+| `motion-remotion-build` | 4 | Remotion project, props, exact numbers, render |
+| `motion-video-route` | 4 | master style sheet image, image→video, shot blocks |
+| `cinematic-motion-graphics` | 1–5 | the cinematic / documentary category set: period maps with routes, date stamps, press headlines, lower thirds, fact cards, timelines, blueprints, title cards, overlays inside a film's look |
+
+## The prompt library
+
+`references/PROMPT-LIBRARY.md` — 46 composable blocks in 9 groups (ING, CAM, ENT, VAL, ANN, FIN, TRN, AUD, QA), plus 5 assembled combos and a compatibility matrix.
+
+`references/HYPERFRAMES-BRIEFS.md` — complete sectioned briefs for HyperFrames films: the eight sections (PRODUCT, STORY, FORMAT, LOOK, MOTION, SOUND, QUALITY CHECK, RULES), a 20 s launch film, a 6 s logo animation (the animation becomes the logo), logo variants, a let-the-model-invent idea block, a brief-writer prompt, a blank template, 20 style briefs (STY-01 particles to STY-20 neo-brutalism) and binding notes for our projects. Start any logo sting, launch film or styled explainer from it; pick a style by ID. Card page with search and copy buttons: `assets/hyperframes-briefs.html`, rebuilt by `python3 scripts/briefs_page.py` after every change to the briefs file (open it for the user with `open`).
+
+`references/BOARD-RECIPES.md` covers narration-aligned explainer boards on the CODE route:
+- the seek contract;
+- graphics locked to the voice (in-time = start of the naming word, minimum time on screen, motion tokens);
+- safe zones next to a presenter or PiP camera;
+- the transcript → brief → static board → motion → review chain;
+- 18 board effects BRD-01 to BRD-18 (line-to-frame reveal, tile-to-full insert, iris, brush mask, knockout, scramble, liquid fill, spotlight, lens, virtual camera with minimap, line rider, cinematic open, receipt, exploded layers, gooey merge, squash, deck fan, odometer).
+
+Use it whenever graphics must follow a voice-over.
+
+`assets/effects-gallery.html` plays every move live: the film helpers, the library blocks and BRD-01 to BRD-18, each with a copy button for its recipe. Open it in a browser to pick by eye.
+
+**Composition formula for any one shot:**
+```
+SETUP + STYLE CORE + 1×CAM + 1–3×ENT/VAL + 1–2×ANN + FIN + QA
+```
+
+**Three mixing rules — enforce these, they are the difference between designed and generated:**
+1. Exactly one camera move per composition. Wanting a second means it is a second composition.
+2. At most three element movements at once; everything else is spread by stagger.
+3. The FIN finish layer is never off — but text never enters a displacement filter.
+
+Check the compatibility matrix before combining. Known bad pairs: boil + 3D rotate, line race + parallax, wave + 3D rotate.
+
+## Before any prompt leaves — the anti-slop gate
+
+Run the 12-point checklist in `references/PROMPT-LIBRARY.md §7`. The three that catch the most failures:
+- **Is the font named explicitly?** A default font is the single biggest slop tell.
+- **Has the model's default been named and forbidden?** (rings→grid, bouncy ease→marker pace, straight wipe→torn edge)
+- **Is there exactly one hero accent,** with everything else muted?
+
+## Doctrine
+
+`references/DOCTRINE.md` — the extracted rules from the four source tutorials, and the combined architecture diagram. Read it when a decision feels arbitrary; the answer is usually already there.

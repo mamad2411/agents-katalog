@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/kjaylee/godot/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Godot Engine 게임 개발. 프로젝트 생성, GDScript 코딩, 2D/3D 게임 제작, 노드 시스템, Scene 구조, 물리/애니메이션/UI 구현 지원. Godot 프로젝트 작업 시 사용."

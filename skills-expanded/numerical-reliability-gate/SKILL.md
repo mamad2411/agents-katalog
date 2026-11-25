@@ -1,0 +1,485 @@
+---
+name: numerical-reliability-gate
+description: "Convergence and reliability gate for NUMERICAL results in any field, including fits, optimizations, integrals, eigenvalues, roots, poles, zeros, ODE/PDE solutions, Monte-Carlo estimates, and downstream feature extraction. Use before a RESULT-BEARING computed number — one a conclusion or durable artifact will rest on — is trusted, compared, published, or folded into durable research artifacts; numbers that exist only to exercise code (test fixtures, internal tooling values) are covered by ordinary tests, not this gate. Stops at the needed accuracy; requires resolution convergence, independent-confirmation checks, regression anchors, post-correction downstream recomputation, method-precondition checks, configuration-threading audits, gate-discrimination (negative-control) audits of purpose-built validation chains, accelerated/heuristic fast-path scoping, and honest uncertainty/reporting. Emits an auditable reliability matrix. Sibling to derivation-verify for symbolic claims and julia-perf for speed claims."
+---
+
+# Numerical Reliability Gate
+
+A reusable gate for the question *"is this computed number actually converged and real, or an
+artifact of the discretization / the method / the wrong configuration?"*
+It enforces the standing rule: **fold only converged, method-cross-checked numbers into the durable
+record; a value that moves when you refine the resolution, or that one method finds and another does
+not, is not a result yet — it is a candidate.**
+
+This is the numerical sibling of `derivation-verify`. That skill certifies a **symbolic** answer by
+re-deriving it `>=2` independent ways; this one certifies a **numerical** answer by proving it is stable
+under refinement, agreed across independent constructions, and anchored to a known reference. Different failure
+modes: a derivation is wrong because the algebra is wrong; a number is wrong because the grid was too
+coarse, the continuation was unstable, the search seeded the wrong basin, or the run was built on a
+superseded configuration.
+
+## When to use
+
+Use when a **result-bearing computed number** — one a conclusion or durable artifact (a contract, a
+paper, a headline claim) will rest on — is about to be trusted, compared, or written in. The
+durable-record condition governs all three verbs: a number whose only consumer is a test, a fixture,
+or internal tooling is exercised by ordinary tests and does not enter this gate. Domain-neutral —
+only the caller's context carries the domain.
+Example quantities (illustrative, not a fixed list):
+
+- a fit result (a χ²/dof, a best-fit parameter, an error bar) from a nonlinear optimization,
+- an integral / quadrature / high-dimensional sum,
+- an eigenvalue, a pole / root / zero, a threshold / branch point,
+- an ODE/PDE solution sampled at a point, a Monte-Carlo estimate, a continuation to a new regime.
+
+## When NOT to use (use a sibling instead)
+
+- **Certifying a symbolic DERIVATION** (a closed form, an identity, a sign/branch choice) →
+  [`derivation-verify`](../derivation-verify/SKILL.md). *Different verb:* it re-derives the answer `N`
+  ways and reconciles by mathematical equivalence; this gate proves a *number* is converged and real.
+- **Proving SPEED / detecting a performance regression** → [`julia-perf`](../julia-perf/SKILL.md)
+  (benchmark evidence gate). Speed and reliability are orthogonal in BOTH directions: a fast wrong number
+  still fails here, and — the easy trap — a CORRECT-but-wasteful number PASSES every check here (this gate
+  does not surface performance waste: a value can be right and still computed orders of magnitude more
+  expensively than needed, e.g. the whole result formed when only a part was used). So treat efficiency as
+  a deliverable in its own right, gated by `julia-perf` **once a computational kernel exists and its
+  cost matters, or a speedup is claimed** — a green reliability matrix says nothing about whether the
+  computation was efficient. The time-scoping matters in both directions: efficiency is not an
+  afterthought bolted on after the science ships, and it is also never a gate placed *before*
+  correctness work — a performance target contracted before a correct kernel exists blocks the
+  science behind a gate that cannot yet be evaluated.
+- **Reviewing an existing artifact** (a diff, a draft) against a contract →
+  [`review-swarm`](../review-swarm/SKILL.md).
+- **Surviving the long, kill-prone COMPUTE that produces the numbers** (checkpoint / heartbeat / resume)
+  → [`research-harness`](../research-harness/SKILL.md) owns that. This gate runs *after* the numbers exist.
+- **Verifying the TOOL/ENV itself runs and its docs match reality** → the three-layer readiness
+  validation (import → seeded witness → agent-follows-doc) under Long-Running Compute Jobs in
+  [`research-harness`](../research-harness/SKILL.md); this gate then certifies the numbers it produces.
+
+## Output — the reliability matrix
+
+Emit one auditable record per gated quantity, conforming to
+[`references/contract.md`](references/contract.md): an artifact named
+`numerical_reliability_matrix_v1.json` (ART-01) with, per quantity, the G0 required accuracy with the uses
+it serves and the error budget naming the dominant source and the total error, the refinement ladder (setting →
+value), the independently constructed check values and whether they agree, any invariant check, the regression-anchor
+result, a degeneracy note, the recorded converged value, and a `verdict ∈ reliable | mirage |
+unconverged | method_disagreement | fragile_method | anchor_failed | degenerate | stale_artifact |
+heterogeneous_series | precondition_violated | reference_mismatch | circular_validation | overclaimed_heuristic`
+(`reliable` requires every *applicable* G0–G10 check to pass — including the G0 total error at or below the required accuracy, the G4 anchor, G6 non-staleness and connected-series fingerprint homogeneity, the G7 production-scale precondition, the G8 reference-match when a published-value match is claimed, the G9 gate-discrimination audit when trust rests on a purpose-built validation chain, and the G10 fast-path scoping when the value comes from an accelerated/heuristic path,
+not only G1–G3). Only `reliable` rows may be folded into the durable record; everything else is a labeled
+candidate or is discarded. Gate evidence is keyed **per quantity** to the evaluator fingerprint that
+produced it: a later change re-opens only the checks whose fingerprint inputs it altered, and every
+other row's evidence remains valid without re-execution or re-review — the matrix is not globally
+invalidated by unrelated edits.
+
+## Host-aware execution (quality first)
+
+The checks are a discipline you apply with whatever your host exposes, not a single script (G1–G3 are
+inherently model/tool-specific — there is no one generic runner for "refine the grid of arbitrary
+code"). Run the independently constructed checks (G2) and any independent re-computation natively where you can; for
+a cross-*model* independent reproduction of a full numerical result, pair this with an independent
+backend via [`review-swarm`](../review-swarm/SKILL.md). Spend your *maximum* reasoning — and scale the *number* of independent cross-checks — with stakes: a routine
+anchor needs the `>=2` independent-evidence floor; a load-bearing number (a contested pole, a χ² that selects a model)
+warrants more independent evidence and targeted checks of shared failure modes and — when a second LLM family exists — the cross-LLM re-implementation
+ceiling, while a trivial anchor warrants neither a tie-break nor a second engine. When the underlying compute is long and kill-prone, run it under
+[`research-harness`](../research-harness/SKILL.md) (checkpoint/heartbeat/resume) and gate the *results*
+here.
+
+## The gate
+
+Apply the checks that fit the quantity; a result is **reliable** only when every applicable one passes.
+Each check names its own minimum disconfirming test — never accept a number because it "looks reasonable".
+G0 comes first because it sets how far every later check is run.
+
+- **G0 — Required accuracy first; refine only the dominant error; stop when the total meets it.** Before any
+  refinement, write down the **required accuracy** of the quantity and where it comes from. List every
+  use the quantity serves — the digits it will be displayed with (about half the last displayed digit,
+  tighter when the value sits near a rounding boundary), how far a downstream conclusion moves when the
+  value moves, the uncertainty it will be compared against — and take the **strictest** of them. What
+  the method could achieve is never a source. State the required accuracy on the quantity a conclusion
+  uses, not on raw internal parameters in mixed units, whose spread need not reach that quantity at all.
+  **Budget the error by source.** List the error sources with their estimated sizes — discretization or
+  integration, representation or basis truncation, model or scheme choice, statistical — name the
+  dominant one, and combine them into a **total error** by a stated rule: a linear sum by default, a sum
+  in quadrature only with a one-line reason the sources are independent. Refine **only the dominant
+  source**: tightening a subdominant one (more quadrature digits while a truncated representation
+  leaves a residual orders of magnitude larger, say) changes nothing the result depends on and is not
+  progress.
+  **Stop when the total error is at or below the required accuracy.** Refinement past that point needs
+  explicit authorization from the project owner. A tolerance placed on the quantity itself — a ladder
+  plateau, a cross-check agreement — is set from the required accuracy and no tighter; a stricter one
+  may be kept as an informational record but may not block acceptance: **an over-tight gate is a
+  defect, just as a loose one is** — it spends computation and review rounds, and it can hold a correct
+  result out of the record. A **diagnostic threshold** is different: a residual, an invariant's integer
+  residual, a conservation or symmetry check, or a method precondition is set by what it must detect
+  or by how its defect propagates into the quantity, and stays blocking where that is what it takes to
+  bound the quantity's error or to validate the method. It carries a one-line rationale of that kind, recorded in
+  the matrix as `threshold_basis`; G0 never demotes it, and G3/G7/G9 keep their thresholds. When the required accuracy is not yet known,
+  the first deliverable is that accuracy and its source, not more digits.
+- **G1 — Discretization convergence (mirage check).** Vary *every* resolution/size knob independently —
+  integration grid, continuation/interpolation node count, step size, contour density, sample count,
+  **domain size / number of grid points / domain extent, truncation order, grid parity (even–odd)** —
+  and confirm the value stops moving as you refine. Report the value **only at the converged setting**,
+  with the setting recorded. **A candidate optimum found at a coarse setting that does not survive
+  re-evaluation at the converged setting is a MIRAGE** — re-evaluate every coarse-grid optimum at the
+  converged grid before trusting it. Convergence is a *measured* plateau (e.g. stable to a stated
+  tolerance across a 2–3× range of the knob), never assumed from a single setting.
+  **A ladder is evidence only if the knob demonstrably changed what was computed.** Bit-identical values
+  across nominally different settings mean the knob is **not threading** — read once at load time, frozen in
+  a cached configuration, or silently overridden by a default in the stage that consumes it — so treat
+  identical values across a ladder step as a **threading failure to diagnose, not as convergence**: a
+  plateau is values that *stop moving*, never values that never moved. The cheap positive control is to
+  confirm that the intermediate quantity most sensitive to the knob actually differs between ladder steps,
+  before the ladder is read at all.
+  For **sensitive**
+  quantities also escalate floating-point precision and check the residual / backward error / condition
+  number (or use interval / arbitrary-precision arithmetic) — a grid-refined value can still be wrong from
+  cancellation or roundoff. For a **stochastic** estimate (Monte Carlo / sampling), "converged" is not a
+  frozen value but *shrinking uncertainty*: use independent seeds/chains, an effective sample size and
+  autocorrelation check, sensitivity to rare events, and report a confidence/credible interval — not a
+  single point that "stopped moving".
+  **The ladder runs to the G0 required accuracy, not to the last digit.** A plateau measured to the
+  required accuracy is convergence; escalating precision or refining a knob beyond it is owed only when
+  that knob is the dominant error source and the total error is still above the required accuracy.
+- **G2 — Independent-confirmation cross-check.** Recompute with `>=2` independently constructed and executed checks. Method diversity is a separate risk dimension; same/similar methods can qualify after substantive applicability and diagnostic checks. They must **agree** within a stated tolerance, set from the G0 required accuracy and no tighter than it. **Declare each
+  check's resolution** — the smallest discrepancy it could detect — and *what it cannot resolve*; an
+  agreement within a tolerance **coarser** than the property/effect you are certifying is **non-diagnostic**
+  (record it as "agree, but cannot resolve `<X>`"), not a pass for that property. The same applies to a G3
+  invariant and a G7 precondition residual: a check whose resolution exceeds the effect it must catch is
+  exploratory context, not a gate.
+  Disagreement means *unresolved* — the value is **unpromotable until the discrepancy is explained**; do
+  **not** silently pick one (a method may be disqualified by an independent conditioning / error analysis,
+  or a rigorous certified error bound may provide an evidence anchor while the independent-evidence floor remains). Prefer a method that stays well
+  conditioned as resolution grows; flag any method known to be fragile beyond a regime (e.g. a
+  continued-fraction interpolation that destabilizes past `~N` nodes) and do not report its value past
+  that regime without the robust method confirming it.
+  **Independence is structural, not nominal.** A second computation counts as a cross-check only when it
+  evaluates the *same* quantity under the *same* model by an independently constructed and executed route. A solver/engine that
+  implements a structurally *different* model (a different governing relation, a different approximation, a
+  different set of modeling assumptions), or a check that holds only in a degenerate / limiting regime, is a
+  **different-scientific-model (or limit-regime) comparison, not an apples-to-apples cross-check** — record its outcome
+  labeled as such, never as a G2 pass. When *no* apples-to-apples independent method is reachable, record
+  that **absence as an explicit stated limitation**: do not let an established cross-check pattern silently
+  lapse, and do not let a different-scientific-model or limit-regime check stand in for the missing one (an
+  unrecorded lapse reads as "cross-checked" when nothing comparable was ever run).
+  **Independence must also hold in the setting under suspicion.** When a specific setting is what is in
+  doubt — an under-resolved knob, a truncation order, an extraction window — a cross-check that inherits
+  that same setting is **non-diagnostic for it**, however different the two implementations are: both routes
+  presuppose the quantity in question, so their agreement measures the shared setting rather than testing
+  it. Vary the suspect setting in at least one route, or record the check as "agree, but cannot resolve
+  `<the setting under suspicion>`".
+  **Analytic-layer decisions are invisible to every discretization axis.** An evaluator that makes a
+  piecewise *analytic* decision — a branch of a multivalued function, a contour or sheet selection, a
+  window/domain classification — can be wrong on one side of the decision while every resolution axis
+  (quadrature order, mesh, node count) and every table/cache source agrees perfectly: the decision is
+  identical at all refinements, so refinement-based convergence and any cross-check sharing the decision
+  logic are **structurally blind** to it. Two consequences are mandatory. (1) For any evaluator containing
+  such decisions, run a **continuation-parameter continuity scan** as a standing falsification gate: sweep
+  the physical continuation variable (energy, coupling, kinematic invariant) densely across the declared
+  domain and fail on any step exceeding the local smoothness scale — an isolated jump localizes a wrong
+  branch to the step's position even when every other check passes. Anchor the correct branch at a point
+  where the decision is unambiguous (a threshold, a limit where the multivaluedness degenerates) and
+  demand continuity from that anchor. (2) An identity gate whose two sides *share* the decision (both
+  evaluate the same expression at the decision point) is **blind by construction** and must not be counted
+  as evidence about the branch; only a decision-free reference (direct quadrature along the parameterized
+  path, a marched continuation with no per-point choices) can arbitrate.
+  **A many-knob invariance test is evidence only about what the varied knobs do NOT share.** Varying
+  many numerical knobs (grids, orders, tolerances, window placements) and finding the value invariant
+  under all of them reads as broad robustness, but if every varied knob feeds the same underlying
+  decision, subtraction, or model element, invariance under all of them is structurally consistent with
+  that shared element being wrong — no setting of any knob ever perturbed it. Record with every
+  knob-invariance result an explicit statement of what it CANNOT see (the elements all varied knobs
+  share), and probe those elements through an axis that actually varies them — the continuity scan
+  above, a decision-free reference, or the transcription audit below. (Distinct from **G1**'s threading
+  failure: there the knob never reached the computation; here every knob genuinely moved what it
+  controls and the shared element is untouched by construction — confirm threading first, then read the
+  blind spot.)
+  **The model definition is the largest shared setting of all — transcription is a separate
+  verification axis.** "The implementation solves its declared model correctly" and "the declared model
+  IS the source's model" are independent claims, and every internal gate — the convergence ladder, the
+  orthogonal methods, the regression anchors to internally adopted values — certifies only the former,
+  because all internal routes share the model definition: a mistranscribed element is invisible to each
+  of them (even an external published-value anchor tests the net number only — compensating
+  transcription errors pass it). Before claiming to solve or reproduce an external source's own
+  prescription (a manuscript's, a predecessor code's), build an exact element-level embedding of that
+  prescription into the current framework (a frame map) and gate the transcription itself with an
+  elementwise identity test; and run the source's exact prescription **as printed**, as a falsification
+  instrument in its own right — the source's numbers are candidates to test against, never input truths
+  to calibrate to. The axis binds exactly that claim class: a comparison that does not assert the
+  source's prescription — against a structurally different scientific model (labeled under the
+  different-scientific-model rule above), or against measured/experimental data, which is a measurement
+  comparison rather than a model reproduction — owes no frame map; and when the source prints no
+  complete prescription, record the as-printed run as unavailable, a stated limitation rather than a
+  silent skip. (G8 then governs the number-level comparison; without this axis a numerical match can
+  conceal compensating transcription errors, and a mismatch cannot be attributed — a genuine model
+  difference and a transcription slip read the same.)
+  Independent confirmation requires at least two evidence lanes independently constructed or derived and executed from a neutral question and raw inputs. Record method diversity, model-family diversity, execution independence and input independence separately. Same or similar methods, the same algorithm name, matching hashes or shared legitimate libraries do not by themselves disqualify a lane. Agent names, seeds, reworded prompts, copied answers and simple reruns of the original implementation do not establish independence. Different methods with contaminated input framing still fail. A fresh assessor must substantively inspect the actual steps, method preconditions, known defects and diagnostic power with exact source spans and reasons; a self-filled no-defect checkbox is insufficient. Missing, rejected, stale or non-diagnostic evidence does not count. Keep an explicit project-specific different-method risk requirement when that requirement tests a known shared failure mode.
+
+- **G3 — Invariant / topological validation (prefer it over heuristics).** For presence/absence and
+  counting (zeros, roots, poles, eigenvalues, modes), prefer a **method-agnostic invariant** over a
+  **fixed-seed search** or a **magnitude threshold**, both of which give false negatives (the feature
+  moved away from the seed) and false positives (a coarse-grid floor never reaches the true zero). Such
+  invariants are field-specific but ubiquitous — a Sturm sequence or Descartes' rule of signs for
+  real-root counts, Gershgorin disks or matrix inertia (Sylvester's law) for how many eigenvalues lie in
+  a region, a conservation law / sum rule for a total that must balance, a degree / winding / topological
+  index for any count that must come out an integer. G3 is that *general* move — replace a seed/threshold
+  guess with a quantity the answer cannot violate — in whatever form your problem admits; it is **not**
+  tied to complex analysis. The fullest worked example below happens to be the **argument principle**
+  (complex-analytic zero/pole counting), used only because it shows every moving part: for `F` meromorphic
+  inside and on a positively-oriented
+  simple closed contour `Γ`, with **no zero or pole on `Γ` itself**,
+  `(1/2πi)∮_Γ F'/F dz = Z − P` — the number of **zeros minus poles** inside `Γ`, each with multiplicity
+  (equivalently the winding number of `F(Γ)` about 0). So it counts **zeros** only when `F` is pole-free
+  in the region, and counts **poles** only when applied to a denominator / reciprocal whose zeros encode
+  them. Validate its preconditions before trusting the integer: meromorphicity, no near-zero/near-pole on
+  the contour, the correct Riemann sheet/branch, and that the numerical `∮` rounds to an integer within a
+  stated residual (not e.g. `0.97`). Treat a seed-based or threshold-based hit as a *candidate* that the
+  invariant then confirms or refutes.
+  **Evaluate a cheap exact identity on every call, not once.** Where an exact identity relates two
+  admissible configurations of the same computation — a reordering, a relabelling, an equivalent
+  parameterization that must return the same answer — and evaluating it is cheap, evaluate it on **every
+  call** and carry its residual with the result as a **per-evaluation certificate**. Checked once at
+  development time it certifies one configuration on one day; carried per evaluation it catches the run
+  where the identity lapses (a code path that flips, a setting that fails to thread) at the moment it
+  lapses, on the value actually recorded.
+  **Rule out the discretization's own look-alikes before accepting a feature.** Before a discrete feature —
+  a root, a mode, a peak — is accepted as real, enumerate the **artifact family the discretization itself
+  can generate**: the spurious features a finite basis, a truncation order, a sampling grid, or a boundary
+  treatment produce on their own, with their characteristic positions and spacings. Then show the accepted
+  feature is **not a member of it** — canonically by demonstrating it survives when the discretization that
+  generates those look-alikes is changed. A discretization that admits look-alikes must be shown not to have
+  produced this one; "an invariant found it" does not settle the question when the invariant is computed on
+  that same discretization.
+- **G4 — Regression anchor before any variation.** Before trusting a variation — a bug fix, a new
+  cutoff/regime, a scheme swap — assert the **default / reference configuration reproduces a KNOWN
+  reference result** (a published value, a prior converged anchor). Two corollaries: reproduce the
+  *original* (even buggy) result before claiming a fix changes it; and if a change that *should* move a
+  reference observable leaves it unchanged (or vice versa), the change is not doing what you think —
+  stop. (Pairs with `research-harness` "anchor on the final adopted version".)
+- **G5 — Degeneracy honesty.** In a many-parameter fit with flat directions (individual parameters
+  unconstrained, the Hessian not positive-definite), do **not** quote individual parameter values or
+  their covariance intervals as if determined. Quote only the **identifiable combinations / observables
+  robust to the degeneracy** (e.g., in a fit, the χ², a pole position, a lineshape, a residue) and mark
+  flat-direction parameters "not individually determined".
+- **G6 — Report only converged values, with provenance.** Fold into the durable record only values that
+  passed every applicable G0–G10 check at the converged setting, each tagged with its
+  grid/node/method/contour. A coarse, intermediate, or non-converged number is **labeled as such or
+  discarded** — never silently reused. Before trusting a reused artifact, check that the **evaluator
+  fingerprint** that produced it (code/model version, solver settings, source and dependency identity —
+  the same fingerprint the connected-series check below records) still matches what the current record
+  would produce; a stale artifact from a since-fixed bug reads as current truth otherwise. Fingerprint,
+  not timestamp, is the staleness key: an unrelated commit does not invalidate gate evidence whose
+  fingerprint inputs it provably did not touch, so a change re-opens only the checks whose inputs it
+  altered — untouched evidence remains valid without re-execution or re-review.
+  **Certification is domain-scoped — record the certified domain with the construction.** A derivation,
+  a fix, or an evaluator construction is certified only on the explicit domain its gates actually
+  covered (a real slice of a complex domain, a parameter subrange, one regime of a continuation
+  parameter). Evaluating it outside that domain is an uncertified act even when the code happily
+  returns numbers: either extend the gate evidence to the new domain first, or route the task through
+  an instrument whose own certification covers the use — e.g. determine an off-domain quantity from
+  certified-domain data via a validated rational continuation rather than evaluating the construction
+  directly at uncertified points. Record the certified domain explicitly alongside the construction and
+  its gate evidence — in the matrix, in the quantity's `recorded_setting`/`notes` — so a later consumer
+  can tell use from misuse (the symbolic-side counterpart is `derivation-verify`'s domain-scoped green
+  matrix). (Distinct from **G7**, which owns the *scale/configuration* a precondition is tested at, and
+  from **G9**'s layer/path rule: this clause owns the *domain of the argument* — the region of
+  parameter/complex space on which the certification applies at all.)
+  **After a correction, recompute downstream — never relabel.** When a defect is found in anything upstream
+  of already-accepted results, every downstream result — table rows, folded numbers, rendered figures — must
+  be **recomputed**, not relabelled, caveated, or annotated in place. The record then states explicitly
+  **which results were recomputed after the fix and which were provably unaffected, with the reason** each
+  was unaffected. A results table that mixes pre-fix and post-fix rows without saying which is which fails
+  closed (`stale_artifact`): the caveat stays with the prose while the number travels on alone, and the
+  reader cannot tell the two apart. (Distinct from **G4**, which anchors the reference configuration
+  *before* a variation; this is the obligation that falls due *after* one.)
+  The instrument that makes "recomputed vs provably unaffected" honest is a **defect impact map**:
+  enumerate every downstream artifact — quoted numbers, table rows, rendered figures, stored grids —
+  whose inputs intersect the affected domain, and **measure** each cell's status as immune (an exact
+  identity), bounded (a deviation measured, and small against its use's stated tolerance), or
+  superseded (recomputed) — never argued small from the cell's position in the domain. An `immune` or
+  `bounded` cell discharges the **provably unaffected** branch of the record above — the identity, or
+  the measured bound against the stated tolerance, is its recorded reason; every cell with neither
+  status is recomputed. The region where the defect is mildest needs its own probe, not an exemption: a
+  mild upstream deviation can be amplified downstream (a response function near a resonance or steep
+  feature), so the mildest-affected zone can be largest in effect. And every probe is
+  **self-validating**: pair each in-question point with a control point whose expected outcome is a
+  strict identity (bit-level agreement, or a known small class); a probe whose control fails is invalid
+  regardless of what the in-question point shows — the control is also what separates defect signal
+  from instrument differences (direct evaluation vs a cached/interpolated table). Superseded stored
+  values stay on disk but marked do-not-quote; the map closes only when every still-quoted number
+  either demonstrably rests on rows outside the affected domain or carries a measured terminal status —
+  immune, bounded within its stated tolerance, or superseded and recomputed post-fix.
+  **Connected-series homogeneity: missing evidence fails the check.** Before joining points from several runs into one line,
+  trajectory, interpolation, fit, or downstream summary, require every joined point to carry the same
+  complete evaluator fingerprint. The fingerprint covers the scientific model and branch/sheet choice,
+  all integration/discretization and solver settings (including nested/defaulted settings), source and
+  dependency hashes, and the transformation that produced the plotted quantity. Matching a few visible
+  knobs or a human-readable method label is not enough. If fingerprints differ or any point lacks one,
+  do not connect or pool the points: recompute under one fingerprint, or present the configurations as
+  separate/faceted series with the difference stated. A smooth insensitive observable does not validate
+  a heterogeneous series; audit every plotted/output component because a more sensitive component can
+  expose the mismatch. The deterministic per-point check lives in the `figure-hygiene` skill
+  (`scripts/bin/check_series_provenance.py`), runnable on any table exposing series and fingerprint columns.
+- **G7 — Method-precondition at the production setting.** When a result's validity rests on a structural
+  property of the operator/method — an operator commuting with a projector or symmetrizer, Hermiticity,
+  self-adjointness, idempotency, unitarity, positivity, a variational/Galerkin subspace being invariant
+  under the operator — record a **disconfirming residual** of that property **evaluated at the exact
+  setting/configuration that produced the recorded value**, not only where it is cheapest. A property that
+  holds at the smallest/cheapest setting can break at the production setting (aliasing, grid parity, and
+  periodic wrapping first appear above the minimal size), so a value can be perfectly G1-converged and
+  still be meaningless because its method precondition fails there. **Corollary** for any eigenvalue /
+  variational result obtained via a projected or effective operator: report the **true-operator residual**
+  `‖Oψ − λψ‖ / ‖Oψ‖` (documented norm; guard a near-zero `‖Oψ‖` with a fixed reference scale) and the
+  variance — not merely that ψ has the assumed symmetry; if the precondition
+  residual is non-negligible the value is `precondition_violated`, labeled **invalid** (not "approximate").
+- **G8 — Reference-number reproduction (a claimed match is computed, not asserted).** When a result is
+  reported as *reproducing / matching / agreeing with* a **published reference value**, the gate is to
+  **compute the claimed observable on a comparable state / regime / configuration and compare to the
+  published number numerically** — not to assert a qualitative "same order of magnitude / same sign"
+  agreement, and not to cite the source as if citing it established the match. Reproduce on the same
+  regime the reference used (or the nearest reachable one, recorded as such, with the gap to the
+  reference's regime stated); where the claim is term-by-term, compare term by term, since a net total
+  can agree while individual contributions are suppressed or sign-flipped. **An order-of-magnitude
+  same-direction discrepancy, or a sign reversal, between the computed value and the published one is a
+  finding (`reference_mismatch`), not a pass** — a magnitude or sign gap is exactly what a qualitative
+  "in scale" match conceals. Record the published value with its source locator, the computed value on
+  the comparable regime, and the ratio / signed difference. (Distinct from **G4**: G4 anchors your *own
+  pipeline* on a known result before you trust a variation; G8 tests whether a *headline external-match
+  claim* actually holds when the observable is recomputed on the comparable state — a result can pass
+  G1–G7 and still misstate how it relates to the literature.) A claim that the source's *own
+  prescription* was solved additionally presupposes the transcription axis (G2): the frame-map identity
+  test and the as-printed falsification run certify that the model being solved IS the source's — only
+  then does the number-level comparison here test agreement rather than coincidence. State in `notes`,
+  alongside the `reference_match` record, whether that axis was gated; an ungated axis is a stated
+  limitation there, never a silent pass. The **strongest execution form** of this gate is the opt-in
+  independent reproduction check in [`research-harness`](../research-harness/SKILL.md): it reruns the
+  project's declared reproduction entry in a fresh, isolated checkout of committed state and
+  machine-compares each declared expected value under an explicit absolute/relative tolerance,
+  default-deny. It is adopted per project and changes no default workflow.
+
+- **G9 — Gate discrimination: a validation must be able to fail (independent reference, negative
+  controls).** When a value's trust rests on a purpose-built consistency check — "it reduces to a
+  known object", "it matches the reference implementation", "it was validated N-way" — audit the
+  gate itself before crediting the pass. Four requirements:
+  **(i) Reference independence.** The reference the gate compares against must have been derived
+  independently of the assumption under test. A reference that was reverse-engineered to reproduce
+  the object it now validates, or that was built under the same structural assumption (the same
+  operator/numerator form, the same approximation, the same convention), makes the gate a tautology
+  — A-against-A: it can pass indefinitely while the shared assumption is wrong. (The sharpest form
+  of G2's "co-invocation is not independence", lifted from shared *code* to shared *assumptions*.)
+  **(ii) Disputed structure left in.** The comparison must run in a mode that retains the degree of
+  freedom in dispute. A stripped/simplified comparison limit in which all competing hypotheses
+  collapse to the same object (a limit that projects out the disputed operator / structure / term
+  before comparing) is structurally non-discriminating regardless of how precisely it agrees —
+  record such a check as skeleton-only, never as a validation of the disputed structure. (The
+  structural analogue of G2's non-diagnostic tolerance: there the check is too *coarse* to see the
+  effect; here it is *blind* to it by construction.)
+  **(iii) Negative controls.** Demonstrate — never assume — that the gate rejects the known-wrong
+  alternatives: run the gate on each rejected/competing variant and record its failure margin. A
+  gate that has never rejected anything is unproven; the pass of the adopted variant is meaningful
+  exactly in proportion to how loudly the wrong variants fail. As a bonus, the failure *pattern* of
+  the negative controls localizes errors that symbolic review cannot.
+  **(iv) Production path, and no validation transfer.** The gate must run on (or directly against)
+  the code path and configuration that actually produce the recorded value — validating a
+  sibling/reference implementation that the production path never invokes validates nothing about
+  the production path (the path-level analogue of G7's production-*setting* rule). And a validation
+  certifies only the quantity/layer it actually compared (e.g. the denominator/singularity skeleton
+  of an integral, not its numerator/operator structure): annotate every "validated" claim with the
+  layer it covers, and never let it transfer to an orthogonal layer.
+
+- **G10 — Accelerated / heuristic fast path: scope the guarantee, keep the unconditional escape hatch.**
+  When a fast path is a **heuristic** whose *local* success certificate does not entail the *global*
+  answer — the archetype is a fixed-start Krylov/subspace iteration (e.g. a restarted Arnoldi) for a
+  dominant eigenvalue/quantity, where a small residual certifies *an* eigenpair (a local optimum),
+  **not** that it is the dominant one, so a target mode nearly orthogonal to the deterministic start is
+  silently missed — its output is correct only under a **precondition**, and the gate is to make that
+  precondition explicit, validated, and escapable, never to assert a correctness the method does not
+  carry. Five obligations, each with its disconfirming test:
+  **(i) No false guarantee.** Do **not** write into a docstring / comment / README a guarantee the method
+  does not deliver ("never returns a wrong value", "always finds the dominant mode"). Overclaiming the
+  method's scope is a **scientific-integrity defect in its own right — even if the wrong output never
+  arises in the actual production use** — because the claim is false as written and a later caller will
+  lean on it in a regime where it fails. *Test:* try to construct one input that breaks the stated
+  guarantee; for a fixed-start heuristic you almost always can, which proves the guarantee false and
+  forces it to be narrowed to the precondition under which it actually holds.
+  **(ii) Document the precondition and its failure mode.** State the condition under which the fast path
+  is correct (the sought mode has nonzero, bounded-below overlap with the start; the search begins in the
+  correct basin) **and** the blind spot when it is violated — that it can return a *wrong* value, and how
+  a defeating input is constructed (a target eigenvector orthogonal to every deterministic start). A
+  precondition recorded without its failure mode is half the truth. *Test:* grep the docstring / comment /
+  README (and the reliability-matrix note) for BOTH the precondition and the constructed failure mode;
+  either absent → fail.
+  **(iii) Keep the unconditional path, auto-selected where cheap.** Retain the slow-but-provably-correct
+  routine (a dense/direct solve, an exhaustive enumeration) and route to it automatically wherever it is
+  affordable — e.g. below a size threshold — so the heuristic runs only where the exact path is genuinely
+  too expensive. A fast path with no unconditional fallback is a single point of silent failure. *Test:*
+  confirm the unconditional routine exists in the code and is actually selected below the stated size/cost
+  threshold; if none exists, or the heuristic runs unconditionally, → fail.
+  **(iv) Validate — do not assert — the precondition at (or as near as feasible to) the production
+  setting.** Prove or empirically demonstrate that the *actual* operator/input meets the precondition. If
+  the unconditional path is affordable at the production value, run the fast-path ≡ unconditional-path
+  cross-check *there*, to a stated tolerance (and if it is cheap enough, obligation (iii) already routes
+  you to the exact value directly). If the unconditional path is infeasible at production scale, the
+  load-bearing evidence is a **structural argument** that the precondition holds for the real operator at
+  production scale (e.g. a positivity / Perron-type structure forcing the dominant mode to keep a
+  bounded-below overlap with the start) **plus, as corroboration only**, a fast ≡ exact cross-check on **at
+  least one — ideally the largest — affordable case in the production regime**, with the extrapolation gap
+  to the true production scale recorded — a smaller-scale cross-check never substitutes for the
+  production-scale structural argument, and a structural argument with *zero* affordable cross-check
+  available is **uncorroborated** — record that absence explicitly rather than treat the structural
+  argument as numerically confirmed. "It surely holds
+  here" is exactly the gap this closes — this is G2's independent cross-check and G7's production-setting
+  rule applied to the fast/exact split: validate where the value is produced, or as near as feasible with
+  the gap stated, never only where it is cheapest.
+  **(v) An adversarial counterexample tests the CLAIM, not the use — answer with honest scoping.** A
+  reviewer who constructs an input that breaks the fast path but **never arises in the production use** is
+  refuting the *stated guarantee* (i), not the *production result* (iv). The correct response is (i)–(iv)
+  — narrow the claim, document the blind spot, keep the escape hatch, validate the real use — **not** (a)
+  rewording to fake a guarantee, (b) tuning a seed/parameter to hide that one case, nor (c) chasing an
+  impossible cheap *universal* guarantee (e.g. reimplementing a heavy general-purpose library to defend
+  against an adversarial-only input). *Test:* inspect the change made in response to the counterexample
+  and confirm it (1) **narrowed the public/stated guarantee** rather than reworded it to still overclaim,
+  (2) did **not** merely tune a seed/parameter so that one case passes while the blind spot survives, and
+  (3) left the unconditional escape hatch and the production-precondition evidence intact — a response
+  that fails any of these has *hidden* the defect, not scoped it. Where a **fundamental limit** exists,
+  state it: e.g. no fixed-start Krylov/subspace method certifies global dominance (the genuine limit), so a
+  global guarantee requires a whole-operator routine — canonically a full dense eigensolve, or another
+  globally certified path (a dense/direct solve, an exhaustive enumeration, a certified enclosure) — and
+  the honest artifact is "heuristic + validated precondition + exact escape hatch", not a universal
+  guarantee that cannot exist.
+  **Complements G3, does not repeat it:** where replacing the heuristic with a method-agnostic
+  invariant / robust method is affordable, G3 says prefer it; **G10 governs the case where the heuristic
+  is deliberately kept as a performance-motivated fast path** and must be scoped honestly rather than
+  papered over. Verdict `overclaimed_heuristic` when a fast/accelerated path is folded in as if
+  unconditional while its stated guarantee claims correctness beyond the validated precondition, its
+  failure mode / unconditional escape hatch is absent, or its **fast-vs-exact agreement precondition** (start-overlap /
+  basin membership) was asserted rather than validated at the production setting. **Precedence vs G7:** a
+  structural property that makes the *method itself* valid (commutation with a projector/symmetrizer,
+  Hermiticity, …) failing is `precondition_violated` (G7); the *fast-vs-exact agreement* precondition
+  failing, or a guarantee / escape-hatch defect, is `overclaimed_heuristic` (G10) — there the exact method
+  stays valid and only its acceleration is in doubt.
+
+## Reliable vs. fragile methods (quick reference)
+
+| Task | Fragile (false ±) | Reliable |
+|---|---|---|
+| "Is it accurate enough?" | refine until nothing moves; one strict tolerance for every quantity | required accuracy from the strictest use of the quantity + error budget by source; refine the dominant source; stop when the total error meets it |
+| Presence/absence, counting | fixed-seed search; `|F| < ε` threshold | topological invariant (argument-principle winding) |
+| Analytic continuation | a continuation unstable past `~N` nodes | a continuation well conditioned as nodes grow + cross-check |
+| "It converged" | a single setting that "looks flat" | a measured plateau across a 2–3× knob range + independently constructed check |
+| Best fit | one optimizer run from one start | multi-start + the converged grid (coarse-grid optima are mirages) |
+| Dominant eigenvalue/quantity (fast path) | a fixed-start Krylov/subspace iteration sold as a "never wrong" guarantee | the same heuristic scoped to its overlap precondition + an unconditional dense solve as escape hatch (validated ≡ at production scale) |
+
+The principle: a heuristic that depends on a seed, a threshold, or a single discretization is easily
+fooled when the feature moves or the resolution is too coarse; a method-agnostic invariant or a measured
+refinement plateau is **much harder to fool — once its preconditions and numerical-error controls are
+validated**. It is not infallible: a common-mode discretization bias, roundoff/cancellation, a false
+plateau, an invalid sheet or near-contour singularity, or a net zero–pole cancellation can still defeat
+it, which is why G3 requires checking the invariant's preconditions and G2 requires a second independently constructed and executed evidence lane. And when such a heuristic is nonetheless *kept* — because it is the
+performance-motivated fast path and the robust method is too expensive to run everywhere — G10 governs
+how to keep it honestly: scope the guarantee to its precondition, document the blind spot, validate the
+precondition at production scale, and keep the unconditional path as an auto-selected escape hatch,
+rather than paper the blind spot over with a guarantee the method cannot deliver.
+
+Read [`references/provenance.md`](references/provenance.md) when you need the originating failure episodes behind the G-checks (the `## Provenance` section, moved there verbatim).

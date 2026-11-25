@@ -1,0 +1,86 @@
+---
+name: ozel-kanun-kabahatleri
+description: "Trafik, belediye-zabıta, tütün, çevre, gıda, iş sağlığı gibi özel kanunlardaki kabahatlerde özel hüküm ile 5326 genel hükümleri arasındaki ilişkiyi kurmak ve sektöre özgü usulü uygulamak gerektiğinde kullanılır."
+---
+
+# Özel Kanun Kabahatleri ve Sektörel Uygulama
+
+## Görev
+Özel kanunla düzenlenmiş bir kabahatte (KTK, belediye/zabıta, tütün, çevre vb.), özel hükmün önceliğini ve 5326 genel hükümlerinin tamamlayıcı uygulamasını kurarak doğru usulü işletmek.
+
+## Soğuk başlangıç (intake)
+- Hangi özel kanun ve hangi madde uygulanmış?
+- Özel kanun başvuru yolunu/süreyi ayrıca düzenlemiş mi?
+- Yaptırımı veren idare özel kanunda yetkili kılınmış mı?
+- Tutanak/karar özel kanunun aradığı şekil şartlarını taşıyor mu?
+
+## Denetim şeması
+1. **Genel-özel ilişkisi (5326 m.3):** Tanım, miktar ve usul özel kanunda varsa o uygulanır; boşluk kalan her noktada 5326 genel hükümleri (kast-taksir m.9, içtima m.15, zamanaşımı m.20-21, başvuru m.27) tamamlar.
+2. **Trafik (2918 KTK):** İdari para cezası tutanağı; başvuru yolu kural olarak sulh ceza hâkimliği (5326 m.27), ancak sürücü belgesi geri alma gibi işlemlerde idari yargı görev ayrımını kontrol et.
+3. **Belediye/zabıta (5393, 1608):** Zabıta tutanaklarına dayanan idari yaptırımlar; encümen/belediye yetkisi ve tebligat denetlenir.
+4. **Çevre (2872):** İdari para cezaları ve idari tedbirler; bazı işlemler idari yargının görev alanına girebilir (5326 m.27/8 ayrımı belirleyici).
+5. **Tütün (4207), gıda, İSG (6331):** Özel kanundaki miktar ve nispi/maktu yapı esas alınır; takdir ölçütleri (5326 m.17/2) gösterilmeli.
+6. **Yargı yolu kontrolü:** Özel kanun aksini öngörmedikçe başvuru sulh ceza hâkimliğine; idari işlemle bütünleşen yaptırımlarda idari yargı. Ara sonuç olarak doğru mercii sabitle.
+
+İspat yükü idarede; sektöre özgü teknik tespitlerin (cihaz, numune) usulü ayrıca denetlenir.
+
+## Çıktı modülleri
+- Özel kanun + 5326 eşleştirme tablosu.
+- Yargı yolu tespiti (sulh ceza mı / idari yargı mı).
+- Sektörel şekil-şart kontrol listesi.
+
+## Plugin bağlamı
+
+Bu beceri `kabahatler-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

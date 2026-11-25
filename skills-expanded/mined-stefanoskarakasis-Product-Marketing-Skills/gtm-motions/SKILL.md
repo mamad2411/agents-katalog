@@ -1,0 +1,240 @@
+---
+name: gtm-motions
+version: 1.2.0
+description: >
+  Scores your GTM motion stack (Inbound, Outbound, Paid, Community, Partner, ABM, PLG)
+  against ICP deal economics with blocking gates, then selects one primary and at most one
+  secondary motion. Trigger with "which GTM motions should we use", "inbound vs outbound",
+  "PLG vs sales-led", or any request to select or sequence acquisition channels.
+metadata:
+  author: Stefanos Karakasis
+  context: brain-dependent
+  quality_gate: true
+last_updated: 2026-10-10
+---
+
+# GTM Motions
+
+## Overview
+
+Scores the 7 acquisition motions against your ICP's deal economics and
+forces a stack decision — one primary motion, at most one secondary,
+with a named rejection reason for every motion not selected. A motion
+mix picked because it "sounds right" is a budget guess with a launch
+attached to it; this skill replaces that guess with gates and scores.
+
+---
+
+## Trigger
+
+- **When:** Choosing which acquisition motion(s) to invest in for a launch, a segment, or a company-wide GTM model.
+- **Not for:** Launch tier + full GTM brief → `go-to-market-strategy` (this skill feeds its Channel Strategy section). Choosing the target segment → `beachhead-segment`, run first. Messaging within a chosen motion → `positioning-messaging`, run after.
+- **Example prompts:**
+  - "Which GTM motions should we use for this launch?"
+  - "Inbound vs outbound — which is right for us?"
+  - "Should this be PLG or sales-led?"
+
+---
+
+## Inputs
+
+- **Args:** Initiative/segment, ACV band, target sales-cycle length, current motion if any. Free format — Step 1 fills gaps conversationally.
+- **Defaults:** If ACV and sales-cycle length are both unknown, block scoring and ask for a rough band first — motion fit runs on deal economics, not preference.
+- **Context keys:**
+  - `/foundation/brain.md` — optional, sharper with it. Sections 2 (ICP), 3 (Alternatives & Positioning). Without it, Step 0 asks two Quick-Brain questions.
+  - `/context/meta-patterns.md` — optional; guardrails from prior motion decisions.
+  - **Brain contract:** Reads Sections 2, 3. Writes: a Section 2 stub, only when the Quick-Brain ran and the user says yes in Step 5b. Never the motion stack.
+
+---
+
+## Connectors (Optional)
+
+| Connector | What it adds |
+|---|---|
+| `~~CRM` | Which motions closed deals |
+| `~~email marketing` | Lifecycle motion performance |
+| `~~marketing analytics` | Channel performance |
+
+> **No connectors?** Paste the material and I'll work from that. The output has the same shape.
+> Pulled facts are drafts: each is tagged with category, tool and date, and nothing is written until you confirm.
+
+---
+
+## Pre-flight
+
+- Load `/foundation/brain.md` Sections 2, 3 if present — see Step 0.
+- Load `/context/meta-patterns.md` if present; surface any guardrail fired 2+ times.
+- **Brain absent or Section 2 (ICP) empty: continue, don't block.** Say once: "No PMM brain found, so I'll score against two quick answers. Run `product-marketing-context` (a separate plugin) later to build one." Step 0 asks the two questions. Nothing is written to the brain unless the user says yes in Step 5b.
+
+---
+
+## Steps
+
+### Step 0 — Load Context & Surface Guardrails
+
+Load brain Sections 2–3, the confirmed beachhead if `beachhead-segment` already wrote one, and any guardrail from `/context/meta-patterns.md` that has fired 2+ times.
+
+**No brain, or Section 2 empty:** ask the two Quick-Brain questions in one message, then continue to Step 1:
+> "1. Who is your best-fit buyer (title), and what kind and size of company?
+> 2. Can a buyer start and get value on their own (self-serve), or does it take a sales conversation?"
+
+Echo the answers back in one line. Use them as the ICP input for buyer reachability and the self-serve gate. They live in this session only, unless the user chooses to keep them in Step 5b. Label the output "Built from Quick-Brain answers, not a full brain". Deal size and cycle length still come from Step 1.
+
+### Step 1 — Intake (One Round)
+
+Ask in one message, never score before it's answered:
+> "1. Segment or initiative? (uses confirmed beachhead if one exists)
+> 2. ACV / deal size band?
+> 3. Target sales-cycle length?
+> 4. Current motion, if any — working or not?"
+
+Reflect back in one sentence, then score.
+
+### Step 2 — Score Each Motion
+
+Score all 7 motions — Inbound, Outbound, Paid Digital, Community,
+Partner, ABM, PLG — on 4 signals, 1–5 each (five-point, not ten, to
+force real spread):
+
+| Signal | What it measures |
+|---|---|
+| **Deal economics fit** | Does ACV/sales-cycle match what this motion is built to close? |
+| **Buyer reachability** | Does this ICP actually gather, search, or get sold to in this channel? |
+| **Team/tool readiness** | Do you have — or can get in 30 days — what this motion needs to run credibly? |
+| **Time-to-signal** | Weeks or quarters until you know it's working? |
+
+Score against real bands, not gut feel: Outbound needs $10K+ ACV to
+clear cost-per-meeting; ABM needs $25K+ to clear cost-per-account; PLG
+needs sub-$10K ACV or a self-serve entry tier; Partner needs $5K+ to
+absorb revenue share. Inbound and Community work at any ACV but compound
+slowly; Paid compresses fast below ~$1K ACV without a self-serve close.
+
+### Step 3 — Apply Blocking Gates
+
+A motion that fails its gate is excluded regardless of score — never
+average a gate failure away.
+
+- **ABM:** ACV < $25K → exclude.
+- **PLG:** no self-serve signup/trial (none planned in 90 days) → exclude.
+- **Outbound:** no dedicated SDR/BDR capacity → exclude as primary (secondary still allowed if a founder/PMM runs it part-time — flag the constraint).
+- **Readiness floor:** any motion scoring 1/5 on Team/tool readiness is excluded from primary consideration.
+
+State every gate fired and what it excluded before Step 4.
+
+### Step 4 — Select the Stack
+
+Sum each surviving motion's 4 scores (max 20), rank them.
+
+- **Primary** — highest-scoring survivor. Gets the majority of the plan and budget.
+- **Secondary (max 1)** — only if within 3 points of primary AND funnel-distinct from it (e.g. PLG + Community for expansion, not PLG + Paid fighting the same top-of-funnel).
+- **Rejected** — one sentence each: gate failure, or lowest-scoring signal and why it matters here.
+
+```markdown
+## Motion Stack — [Initiative/Segment]
+**Primary:** [Motion] — [score]/20 — [why]
+**Secondary:** [Motion or "None"] — [score]/20 — [why]
+### Rejected
+- **[Motion]** — [gate or signal reason]
+### Sequencing
+[If one motion should precede another, say so and why.]
+```
+
+### Step 5 — 90-Day Activation Plan
+
+Selected motion(s) only — a plan covering rejected motions signals the
+rejection wasn't real.
+
+```markdown
+### 90-Day Activation — [Primary Motion]
+| Weeks | Milestone | Owner | Leading indicator |
+|---|---|---|---|
+| 1–2 | [Foundation work] | [Function] | N/A |
+| 3–6 | [First execution wave] | [Function] | [Earliest signal] |
+| 7–10 | [Iterate on signal] | [Function] | [Signal] |
+| 11–13 | [Scale or cut] | [Function] | [Decision metric] |
+**Kill criteria:** [Number, by week 13, below which this motion is cut.]
+```
+
+If a secondary was selected, repeat at roughly half scope.
+
+### Step 5b — Offer to keep the answers (Quick-Brain runs only)
+
+If Step 0 used the Quick-Brain, ask once, after the plan: "Keep these two answers as the start of your brain, so the next skill doesn't ask again? (yes / no)". On no, write nothing. On yes:
+
+- No `/foundation/brain.md`: create it with the block below.
+- A brain exists with no Section 2: add this Section 2 only.
+- Section 2 already has content: write nothing and say why. Never overwrite a Section 2.
+- Files cannot be written: show the block and tell the user to save it as `brain.md`. Never say it was saved unless the write succeeded.
+
+```markdown
+# PMM Brain — [product name, or "not set"]
+🟡 Cold start — built via gtm-motions on [date]. Run `product-marketing-context` to build the other sections.
+
+## Section 2: ICP Definition
+Quick-Brain answers, user-stated, not researched.
+- Best-fit buyer: [title]
+- Company type and size: [..]
+- Buying path: [self-serve / sales conversation]
+```
+
+### Step 6 — Learning Close
+
+Append one entry to `/context/skill-sessions.md`, in the format defined in
+`product-marketing-context/.claude-plugin/skill-sessions-format.md`
+(Type A — execution session):
+
+````yaml
+type: execution
+skill: gtm-motions
+session_date: [YYYY-MM-DD]
+pattern: [one falsifiable statement about this session, or "none"]
+source: [surprised / wrong / missing / N/A]
+````
+
+Write directly, no permission needed. Not a brain write — still needs
+separate confirmation if the user wants the stack saved elsewhere.
+
+---
+
+## Outputs
+
+- **Files written:** `/context/skill-sessions.md` — one row per session. N/A otherwise; no brain write except the optional Section 2 stub in Step 5b. Stack goes into `go-to-market-strategy`'s brief if the user wants it saved.
+- **Chat output format:** Motion Stack block, then 90-Day Activation table(s) — always together.
+- **External side effects:** N/A
+
+## Verification
+
+- All 7 motions scored on all 4 signals before any gate applied.
+- Every fired gate named with what it excluded.
+- With no brain, the two Quick-Brain answers were shown back, the output is labeled as built from them, and nothing was written to the brain unless the user said yes in Step 5b.
+- Exactly one primary; ≤1 secondary; every rejection has a stated reason.
+- 90-day plan covers only selected motion(s) and includes a numeric kill criterion.
+
+## Do Not Use For
+
+- **`go-to-market-strategy`** — tier assignment and full GTM brief. Run this skill first for real Channel Strategy backing.
+- **`beachhead-segment`** — segment selection. Run before this skill if no beachhead is confirmed.
+- **`positioning-messaging`** — messaging within a chosen motion.
+- N/A
+
+---
+
+## Operating Rules
+
+- **Score all 7 before gating.** A motion excluded pre-score gets a guess dressed as a gate.
+- **Deal-economics gates are hard.** ACV < $25K blocks ABM regardless of other scores; no self-serve blocks PLG regardless of enthusiasm. Override only on explicit user request, stated back before proceeding.
+- **Max one secondary.** A 4-motion "portfolio" at partial resourcing funds nothing enough to produce a signal.
+- **Every rejection gets one sentence.** Silence invites relitigating later with no anchor.
+- **The 90-day plan always carries a numeric kill criterion.** Milestones alone are a calendar, not a plan.
+- **Never write the stack to `/foundation/brain.md`. Only the optional Quick-Brain Section 2 stub (Step 5b) may be written, and only after a yes.** Motion choice is initiative-specific and can legitimately change per launch — writing it as a brain fact would drift the brain every time a new motion is tried.
+
+## Quality Gate
+
+| Check | Standard | Pass = |
+|---|---|---|
+| All 7 motions scored | Every motion scored on all 4 signals before Step 3 | Yes |
+| Gates applied explicitly | Every fired gate named with excluded motion(s) | Yes |
+| Single primary, ≤1 secondary | Exactly one primary; secondary only if within 3 pts and funnel-distinct | Yes |
+| Every rejection has a reason | No motion in "Rejected" without a named cause | Yes |
+| Kill criterion present | 90-day plan states a numeric cut threshold | Yes |
+| Learning Close ran | `/context/skill-sessions.md` has a new row for this session | Yes |

@@ -1,0 +1,105 @@
+---
+name: email
+description: email
+version: 1.0.0
+category: email
+signature: 'email -> email: 电子邮件管理 — Himalaya CLI邮件收发、搜索。'
+author: Synthos
+license: MIT
+triggers:
+- 需要执行email下的子技能
+metadata:
+  synthos:
+    priority: P2
+    atom_type: parent-skill
+    description: 父级技能 — 电子邮件管理 — Himalaya CLI邮件收发、搜索。
+    signature: 'email -> sub-skills: [himalaya]'
+    related_skills:
+    - himalaya
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `email_action: str, email_account: str` — 用户请求描述、上下文信息
+- **output**: `result: dict — 邮件操作结果`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# email
+
+> 父级技能目录，包含 1 个子技能。
+> 子技能通过Hermes技能加载机制自动发现，无需显式调用。
+
+## 子技能
+
+- `himalaya`
+
+## 使用方式
+
+直接调用子技能名称即可：
+
+## 验证清单 · VERIFICATION
+
+- [ ] Himalaya CLI 已安装且认证配置有效（`himalaya envelope list --page-size 1` 能返回结果）
+- [ ] 子技能 `himalaya` 已通过 `skill_view(name='himalaya')` 成功加载
+- [ ] 邮件操作（发送/接收/搜索）的输入参数（邮箱账号、操作类型）完整且有效
+- [ ] 发送操作前确认收件人地址格式正确，避免误发
+- [ ] 搜索操作指定了明确的时间范围或条件，避免全量扫描导致超时
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+```
+skill_view(name='himalaya')  # 加载第一个子技能
+```
+
+父级SKILL.md仅作为目录索引，实际执行由子技能完成。
+
+# Email
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[EMAI-001]** 输入参数不完整或无效 → 立即执行输入验证并拒绝执行，确保参数类型、范围及格式符合契约
+- **[EMAI-002]** 执行核心邮件操作前 → 确认输入参数完整且有效，避免基于错误上下文执行 Himalaya CLI 命令
+- **[EMAI-003]** 操作执行过程中 → 验证中间步骤、转换及计算的正确性，确保邮件处理逻辑无误
+- **[EMAI-004]** 生成最终输出时 → 严格校验输出格式、内容及结构一致性，确保符合 IO_CONTRACT 定义的字典结构
+- **[EMAI-005]** 遇到空输入、极大值或异常场景 → 执行边界验证，确保系统能正确处理极端情况而不崩溃
+- **[EMAI-006]** 操作失败或发生错误时 → 提供包含上下文信息和明确恢复建议的错误提示，并记录失败原因
+- **[EMAI-007]** 涉及代码执行或状态暴露时 → 遵循安全约束，拒绝执行未验证的任意代码且不暴露内部状态

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/virgoC0der/awesome-claude-code (path: skills/codex/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Execute Codex CLI for code analysis, refactoring, and automated code changes. Use when you need to delegate complex code tasks to Codex AI with file references (@syntax) and structured output.

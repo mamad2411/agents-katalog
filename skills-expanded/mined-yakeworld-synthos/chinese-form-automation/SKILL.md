@@ -1,0 +1,107 @@
+---
+name: chinese-form-automation
+description: chinese-form-automation
+version: 1.0.0
+category: productivity
+signature: 'chinese-form-automation -> productivity: 中文表格自动化：自动化处理中文表格/表单的录入、导出和数据校验'
+license: MIT
+author: Synthos
+metadata:
+  synthos:
+    signature: 'form_type: str, data: dict -> filled_form: dict (pdf, fields, completeness,
+      errors)'
+    atom_type: skill
+    priority: P1
+    related_skills: []
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `request: str, context: dict` — 用户请求描述、上下文信息
+- **output**: `result: dict — 技能执行结果（结构因技能而异）`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# Chinese Form Automation
+
+自动填写中文政府/教育/学术申请表 — docx+xlsx模板填充。
+
+详细内容请加载对应 references/ 目录下的参考文件。
+
+## Environment Pitfalls
+
+- **python-docx sandbox**: In Hermes sandbox (Python 3.12), `pip install python-docx` requires `--break-system-packages` flag (PEP 668). Python 3.11 environments do NOT need this flag. Always check Python version before pip install. If sandbox fails, use `terminal` tool directly.
+- **markitdown docx**: Also requires `markitdown[docx]` extra for .docx conversion. Prefer direct `python-docx` library for reliability.
+
+## User Preference Pitfalls
+
+- User explicitly prefers **特色介绍** (highlight-based feature showcase) over **平台架构** (platform architecture). When asked to introduce Synthos or research capabilities, focus on distinctive/unique capabilities, not comprehensive platform overview. Do NOT create PPT unless explicitly requested — document (docx) is the default format.
+- For file sending: Feishu requires specific chat_id format `feishu:oc_<id>` for direct messages, not bare `feishu`.
+- NJJK (神经网络科技/脑机接口) 摸底模板：科技局标准调查表，按框架逐项填写。收到模板文件后直接按框架填充，不额外创建 PPT。
+
+## References
+
+- `templates/njjk-survey-template.md` — NJJK 摸底调查框架模板及 Synthos 填充指南
+- `references/competition-application-workflow-2026-05-30.md`
+- `references/competition-data-source-audit-2026-05-30.md`
+- `references/hangzhou-medical-college-industry-mentor-2026.md`
+- `references/researcher-profiling-via-notebooklm.md`
+
+## 验证清单 · VERIFICATION
+
+- [ ] 目标 docx/xlsx 模板文件存在且路径有效，python-docx 可直接打开解析
+- [ ] 填写字段与数据键一一对应，无遗漏、无串位（逐项核对模板框架）
+- [ ] NJJK/申报类模板按标准框架逐项填充完成，未额外生成 PPT
+- [ ] 输出文档可重新打开，关键单元格内容与源数据一致（抽查校验）
+- [ ] 文件经飞书发送时使用 `feishu:oc_<id>` 格式 chat_id，非裸 `feishu` 标识
+- [ ] Python 3.12 环境下 pip 安装 python-docx 已带 `--break-system-packages`，未静默失败
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[CHIN-001]** 处理中文表格/表单自动化任务 → 优先使用 `python-docx` 库直接操作以确保可靠性，避免依赖 `markitdown` 转换
+- **[CHIN-002]** 在 Python 3.12 沙箱环境安装 `python-docx` → 必须添加 `--break-system-packages` 标志以绕过 PEP 668 限制
+- **[CHIN-003]** 用户请求介绍 Synthos 或研究能力 → 聚焦“特色介绍”（独特能力展示）而非“平台架构”，且默认输出 docx 文档而非 PPT
+- **[CHIN-004]** 接收 NJJK（神经网络科技/脑机接口）摸底模板 → 直接按科技局标准框架逐项填充数据，不额外创建 PPT
+- **[CHIN-005]** 通过飞书发送文件 → 必须使用 `feishu:oc_<id>` 格式的 chat_id 进行私聊发送，禁止使用裸 `feishu` 标识
+- **[CHIN-006]** 执行核心操作前 → 严格校验输入参数、文件路径及上下文的完整性与有效性
+- **[CHIN-007]** 处理异常或失败场景 → 错误信息必须包含具体上下文和明确的恢复指引，确保可复现和可记录

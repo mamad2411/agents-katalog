@@ -1,0 +1,98 @@
+---
+name: runtime-gate
+description: On an app-dev-team project, use before advancing a wave past QA and before any release — builds and launches the app (iOS, Android or web), then drives the P0 journey where UI automation exists. Run by /app-build and /app-ship; used by qa-engineer and verification-engineer.
+---
+
+# Runtime gate
+
+Every other gate in this plugin verifies that the **process** was followed. `verify-done.sh` checks
+the branch exists and the test command exited zero. `board-doctor` checks the board is coherent.
+`ship-gate.sh` checks nothing is in flight and no S1/S2 is open. `code-reviewer` checks the diff
+reads correctly. A sprint can run green through all four on an app that does not compile in Xcode,
+does not launch, or launches to a blank screen — because nothing ever ran it.
+
+This is `defect-hunting` §2 — *never certify by reading, execute it* — pointed at the app itself.
+
+## Run it
+
+```bash
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/runtime-gate.sh" --project-root . --record \
+  [--platform ios|android|web|auto] [--scheme <name>]
+```
+
+**Always pass `--record`.** It writes the verdict to `docs/team/runtime-result.json`, the file the
+readiness reducer (`orchestrator ship`) reads; a run without it leaves readiness CANNOT EVALUATE no
+matter what the gate found. It is opt-in in the script only so the plugin's own fixture runs do not
+grow a `docs/team/`. `--scheme` names the shipping Xcode scheme when the project has more than one
+shared scheme — without it an ambiguous project is CANNOT EVALUATE, never a guess.
+
+| Exit | Meaning | What to do |
+|---|---|---|
+| `0` | PASS — built **and** launched (web: built, `test` script green, then the e2e suite or the served build answering `GET /` with a body) | Record the evidence path. Continue. |
+| `1` | FAIL — does not build, or does not launch | **Blocks the row.** Re-spawn the developer with the compiler output the gate printed, verbatim. |
+| `2` | CANNOT EVALUATE — the toolchain is not on this machine | **Not a pass.** Report it as CANNOT EVALUATE in the standup and in the verdict block. |
+
+**Exit 2 is the point of the script.** A machine without Xcode is a normal state — a CI runner, a
+Linux box, an Android-only project. It is not an error and it is not a pass. The gate prints what
+was missing and what would make it evaluable; surface those lines rather than paraphrasing them.
+A wave that ends CANNOT EVALUATE is never recorded as launched, and `/app-ship` re-runs the gate on
+the release candidate. `backend-service`, `cli` and `library` are outside its detection: record
+`N/A` and run the type's equivalent, as `/app-ship` step 1b describes.
+
+Two traps it already closes, so do not re-open them by hand: `command -v xcodebuild` succeeds on a
+Command-Line-Tools-only Mac where every invocation fails, and a build that compiles is **not** a
+pass — "BUILDS, but launch UNKNOWN" is exit 2. Timeouts are stated and enforced; a hung simulator
+produces CANNOT EVALUATE, never an infinite wait.
+
+## Escalate past the script when the toolchain allows
+
+The script is the floor — it proves the app starts. On iOS the Axiom toolchain, when installed,
+gives far more, and you should route to it:
+
+- `axiom:simulator-tester` — drives the running app, captures screenshots, reads the log for
+  crashes and errors. This is what turns "it launched" into "the journey works".
+- `axiom:test-runner` — runs XCUITests and parses the `.xcresult` for real failure detail.
+- XcodeBuildMCP (a user-level `xcodebuildmcp` skill, if installed) — build, install, launch and UI
+  automation as tools.
+
+All three are **external and optional** — another plugin or a user-level skill, not this one's
+`skills/`. Their absence
+is normal; it is never a defect to file. They give diagnosis, not a verdict: only
+`journey-gate.mjs` with the plugin's `drivers/ios.sh` (AXe on a booted simulator) records a
+journey PASS, so declare the journey and run the gate.
+
+Absent toolchain → **degrade to the plain script and say so**. Never silently skip a step: an
+unavailable capability produces a stated CANNOT EVALUATE for that step, never a quiet pass. An
+unstated gap reads as a cleared one.
+
+## Drive the P0 flow, not just the launch
+
+Building and launching is the floor. Where UI automation is available, exercise the **primary user
+journey** and capture evidence at each step.
+
+Pick the flow this way:
+
+1. `docs/10-prd.md` — take the P0 features in priority order. The first P0 journey is the one that,
+   if broken, makes the release pointless.
+2. The ticket's acceptance criteria — the `Given / When / Then` rows are already the script. Drive
+   them literally: the `When` is the interaction, the `Then` is what the screenshot must show.
+3. `docs/50-test-plan.md` — qa-engineer's rows for those tickets, if the plan exists.
+
+A journey that cannot be driven is stated as not driven, with the reason.
+
+## Evidence discipline
+
+The script writes `docs/54-evidence/runtime/runtime-<date>-<platform>.png` on a successful launch. Anything
+you drive beyond that writes its own artifact to `docs/54-evidence/runtime/` too — a screenshot, or a log
+excerpt for a step with nothing visual to show.
+
+**Reference the artifact by path in the DONE report, the QA verdict, or the ship summary.** A claim
+with no artifact behind it is exactly the class of self-report this whole system exists to distrust
+— and per `defect-hunting` §4, a finding with no evidence and no owner is one that gets silently
+skipped.
+
+## Never
+
+- Never report a pass for a platform the gate could not evaluate.
+- Never treat "it compiles" as "it works". They are different exit codes for a reason.
+- Never paraphrase a failure. The compiler already said exactly what is wrong; pass it through.

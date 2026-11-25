@@ -1,0 +1,85 @@
+---
+name: record-demo
+description: >
+  Produce a short (30-60s) narrated, captioned product demo video with the aidemo
+  engine, via the aidemo MCP server. Use when the user says "record a demo of X",
+  "make a demo video", "demo this feature", or points at a flow (e.g. a shopping
+  flow inside a ChatGPT app) and wants a shareable MP4 with voiceover + captions.
+  The skill authors a storyboard.json (script + per-scene voice/music plan +
+  browser action-spec) and renders it with the engine. Also covers native
+  iOS/Android apps and store media: "make an App Store preview", "Play promo
+  video", "store screenshots" — record the iOS Simulator / Android emulator
+  with Maestro flows and export App Store / Google Play videos and screenshot
+  sets (guide topic `store`). Do NOT use for: live screen-sharing, editing an
+  already-rendered MP4 you have no project for, or physical devices
+  (simulators/emulators only).
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+---
+
+# record-demo
+
+You are the **demo director**. Turn a feature + loose directions into a polished
+browser demo video using the `aidemo` engine.
+
+This file is a thin adapter. **The authoring knowledge lives in the engine** —
+fetch it first, then follow it:
+
+1. **Preferred — the `aidemo` MCP server** (registered by `aidemo repo-init`,
+   or bundled automatically if you installed the Claude Code plugin): call the
+   **`get_authoring_guide`** tool
+   and follow the guide (`topic: "store"` for native apps / App Store / Google
+   Play media). Pipeline operations (`probe`, `render`, `voice`,
+   `captions`, `compose`, `gif`) are **jobs**: they return a `jobId`
+   immediately — poll **`job_status`** for progress, results, and failure
+   artifacts. Discover selectors with **`inspect`** (unique selectors per
+   visible element — no guessing) before writing targets; validate storyboard
+   edits with **`validate_storyboard`** and **`lint_storyboard`** (pacing
+   forecast: which scenes will freeze or be cut) before rendering; read
+   `output/report.json` after. Pass **absolute** demo directories.
+2. **Fallback — no MCP server registered**: run `aidemo guide` and follow the
+   same document using the CLI commands it maps out.
+3. **Watch it as a viewer before you call it done.** Play it at 1x, muted,
+   as a stranger on a phone would see it, and answer the checklist in the guide's
+   "Watch it as a viewer first". A valid report is not a watchable video. The
+   usual misses are the ones a viewer notices at once:
+   - too many scenes for the runtime (aim for 5–6 s per captioned scene, and
+     drop scenes rather than speeding up);
+   - results and captions gone before they can be read;
+   - the key moment flashing past;
+   - captions sitting on the app's own text.
+
+   Put what you watched in your report. Never hand a cut over unwatched.
+4. **After verifying the final video** (per the guide's "Verify before
+   declaring done"): if you hit any engine bug, surprise, or workaround this
+   session, file it now — the MCP **`feedback`** tool (`title` + `body`;
+   environment/log context is auto-attached) or `aidemo feedback <dir>` on the
+   CLI (falls back to a local `docs/feedback-*.md` offline). If nothing came
+   up, skip this step.
+
+## Invoking the engine (`aidemo`)
+
+**`aidemo <cmd>`** means whichever of these applies:
+- **In the aidemo repo itself** (a full checkout): `node bin/aidemo.mjs <cmd>`.
+- **In a product repo** where this skill was installed via `aidemo repo-init`
+  (the engine is *not* vendored here): `npx -y github:tandryukha/aidemo#stable <cmd>`.
+
+If unsure, run `aidemo doctor` (or the MCP `doctor` tool) — it prints the
+engine version and checks prereqs (ffmpeg, Chrome, `OPENAI_API_KEY` — or
+`OPENAI_BASE_URL` pointing at a local OpenAI-compatible server, or
+`AIDEMO_TTS_PROVIDER=local` for in-process TTS + offline captions; in both
+cases no key is needed and doctor reports what's in effect).
+
+## Distribution & updates
+
+This skill is a **versioned copy** of the source in the
+[aidemo](https://github.com/tandryukha/aidemo) repo. In a product repo
+it arrived via `aidemo repo-init`, which also added a `SessionStart` hook that
+runs `aidemo skill check` and prints a notice when a newer version is out.
+(The authoring guide itself never goes stale — it is served by the engine at
+render time.)
+- **Update the skill** (when notified, or any time): `aidemo skill update --dir .`
+  — rewrites this file and bumps `.claude/skills/record-demo/installed.json`.
+  Installed as a Claude Code plugin instead? Update it with `/plugin` (the
+  marketplace flow), not `aidemo skill update`.
+- **Send feedback upstream**: see step 4 above.
+- **Bootstrap a new repo**: `npx -y github:tandryukha/aidemo#stable repo-init --dir .`

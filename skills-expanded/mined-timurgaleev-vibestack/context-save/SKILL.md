@@ -1,0 +1,398 @@
+---
+name: context-save
+description: |
+  Save working context (git state, decisions, remaining work) so a later session can pick up where you left off.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Glob
+  - Grep
+  - AskUserQuestion
+triggers:
+  - save progress
+  - save state
+  - save my work
+  - context save
+---
+
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
+## When to invoke
+
+Use when asked to "save progress", "save state", "context save", or "save my work". Pair with /context-restore to resume later. Formerly /checkpoint — renamed because Claude Code treats /checkpoint as a native rewind alias in current environments, which was shadowing this skill.
+
+## Preamble
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+  echo "LEARNINGS: $_LEARN_COUNT entries loaded"
+  if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
+  fi
+else
+  echo "LEARNINGS: none yet"
+fi
+```
+
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
+{{include lib/snippets/working-protocols.md}}
+
+{{include lib/snippets/state-protocols.md}}
+
+# /context-save — Save Working Context
+
+You are a **Staff Engineer who keeps meticulous session notes**. Your job is to
+capture the full working context — what's being done, what decisions were made,
+what's left — so that any future session (even on a different branch or workspace)
+can resume without losing a beat via `/context-restore`.
+
+**HARD GATE:** Do NOT implement code changes. This skill captures state only.
+
+---
+
+## Detect command
+
+Parse the user's input to determine the mode:
+
+- `/context-save`, `/context-save <title>` or
+  `/context-save <title> -- <next focus>` → **Save**
+- `/context-save list` → **List**
+
+If the user provides a title after the command (e.g., `/context-save auth refactor`),
+use it as the title. Otherwise, infer a title from the current work. Text after
+` -- ` is what the next session should start on; save it as the Next Focus.
+
+If the user types `/context-save resume` or `/context-save restore`, tell them:
+"Use `/context-restore` instead — save and restore are separate skills now."
+
+---
+
+## Save flow
+
+### Step 1: Gather state
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+```
+
+Collect the current working state:
+
+```bash
+echo "=== BRANCH ==="
+git rev-parse --abbrev-ref HEAD 2>/dev/null
+echo "=== STATUS ==="
+git status --short 2>/dev/null
+echo "=== DIFF STAT ==="
+git diff --stat 2>/dev/null
+echo "=== STAGED DIFF STAT ==="
+git diff --cached --stat 2>/dev/null
+echo "=== RECENT LOG ==="
+git log --oneline -10 2>/dev/null
+```
+
+### Step 2: Summarize context
+
+Using the gathered state plus your conversation history, produce a summary covering:
+
+1. **What's being worked on** — the high-level goal or feature
+2. **Decisions made** — architectural choices, trade-offs, approaches chosen and why
+3. **Remaining work** — concrete next steps, in priority order, each marked with
+   how this session knows it (see the provenance table below)
+4. **Notes** — anything a future session needs to know (gotchas, blocked items,
+   open questions, things that were tried and didn't work)
+
+**Remaining Work provenance.** A resumed session cannot tell a command you ran
+from one you guessed unless the item says so. Every item starts with the status
+`Open.` — never with a completion token such as `[done]` or `[executed]` — and
+ends with the marker from the first row that applies:
+
+| # | The item is... | Marker | Use when this session... |
+|---|----------------|--------|--------------------------|
+| 1 | a writing step (migration, sync, insert, import, deploy, a dialog that writes), with or without a concrete path | `(target state checked)` | inspected the target's schema or state (for example its unique key) |
+| | | `(code read)` | read the writer but not the target |
+| | | `(path assumed)` | inferred the write without reading either |
+| 2 | otherwise, names a concrete path: a runnable command, CLI flag or switch, config key or value, or file or directory path | `(path run)` | executed it and observed the outcome; state the outcome in the item, before the marker (`exit 0`, `failed: <reason>`) |
+| | | `(path read)` | read the code or file but did not execute it |
+| | | `(path assumed)` | inferred it without running or reading it, however confident |
+| 3 | anything else | none | (`Open.` alone) |
+
+Writing steps get their own markers because whether a write is safe to repeat
+depends on the target's state, not on the code that performs it. Examples:
+`Open. Run the suite with CONFIG=staging, exit 0. (path run)` and
+`Open. Switch B reads config key Y. (path assumed)`.
+
+Markers are English literals, whatever language the session used: restore
+matches them by exact text. Before writing, check every item's final
+parenthesised token, and rewrite any that is not one of the five as
+`(path assumed)`; the Marker scan below catches what slips through.
+
+**Decisions Made claims are backed.** A decision that states what a file
+contains ("the config sets X", "only two callers") must rest on a grep, wc or
+Read of that file in this session; otherwise end it with `(path assumed)`.
+
+If the user provided a title, use it. Otherwise, infer a concise title (3-6 words)
+from the work being done.
+
+### Step 3: Compute session duration
+
+Try to determine how long this session has been active:
+
+```bash
+if [ -n "$_TEL_START" ]; then
+  START_EPOCH="$_TEL_START"
+elif [ -n "$PPID" ]; then
+  _LSTART=$(ps -o lstart= -p "$PPID" 2>/dev/null)
+  # BSD date (macOS) parses with -jf, GNU date (Linux) with -d. Never parse an
+  # empty start: GNU `date -d ""` means today at midnight.
+  [ -n "$_LSTART" ] && START_EPOCH=$(date -jf "%c" "$_LSTART" "+%s" 2>/dev/null || date -d "$_LSTART" "+%s" 2>/dev/null || echo "")
+fi
+if [ -n "$START_EPOCH" ]; then
+  NOW=$(date +%s)
+  DURATION=$((NOW - START_EPOCH))
+  echo "SESSION_DURATION_S=$DURATION"
+else
+  echo "SESSION_DURATION_S=unknown"
+fi
+```
+
+If the duration cannot be determined, omit the `session_duration_s` field from the
+saved file.
+
+### Step 4: Write saved-context file
+
+Compute the path in bash (NOT in the LLM prompt) so user-supplied titles can't
+inject shell metacharacters into any subsequent command. The sanitizer is an
+allowlist: only `a-z 0-9 - .` survive.
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
+mkdir -p "$CHECKPOINT_DIR"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+# Bash-side title sanitize. Pass the raw title in TITLE_RAW when running this block.
+# Example: TITLE_RAW="wintermute progress" bash -c '...'
+RAW="${TITLE_RAW:-untitled}"
+# Lowercase, collapse whitespace to hyphens, strip to allowlist, cap length.
+TITLE_SLUG=$(printf '%s' "$RAW" | tr '[:upper:]' '[:lower:]' | tr -s ' \t' '-' | tr -cd 'a-z0-9.-' | cut -c1-60)
+TITLE_SLUG="${TITLE_SLUG:-untitled}"
+# Collision-safe filename: if ${TIMESTAMP}-${SLUG}.md already exists (same-second
+# double save with same title), append a short random suffix. Filenames are
+# append-only — never overwrite.
+FILE="${CHECKPOINT_DIR}/${TIMESTAMP}-${TITLE_SLUG}.md"
+if [ -e "$FILE" ]; then
+  SUFFIX=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom 2>/dev/null | head -c 4 || printf '%04x' "$$")
+  FILE="${CHECKPOINT_DIR}/${TIMESTAMP}-${TITLE_SLUG}-${SUFFIX}.md"
+fi
+echo "CHECKPOINT_DIR=$CHECKPOINT_DIR"
+echo "TIMESTAMP=$TIMESTAMP"
+echo "FILE=$FILE"
+```
+
+The on-disk directory name is `checkpoints/` (not `contexts/`) — this is a legacy
+path kept so existing saved files remain loadable. Users never see it.
+
+Write the file to the `$FILE` path printed above (use the exact string — do not
+reconstruct it in the LLM layer).
+
+The file format:
+
+```markdown
+---
+status: in-progress
+branch: {current branch name}
+timestamp: {ISO-8601 timestamp, e.g. 2026-04-18T14:30:00-07:00}
+session_duration_s: {computed duration, omit if unknown}
+files_modified:
+  - path/to/file1
+  - path/to/file2
+---
+
+## Working on: {title}
+
+### Summary
+
+{1-3 sentences describing the high-level goal and current progress}
+
+### Decisions Made
+
+{Bulleted list of architectural choices, trade-offs, and reasoning}
+
+### Next Focus
+
+{The text after ` -- `, verbatim; omit the section when none was given}
+
+### Remaining Work
+
+{Numbered list of concrete next steps, in priority order. Each item starts with `Open.` and ends with its provenance marker from Step 2, or no marker under row 3.}
+
+### Notes
+
+{Gotchas, blocked items, open questions, things tried that didn't work}
+
+### Suggested skills
+
+{Slash commands that fit the next step (`/investigate`, `/review`, `/ship`), one line each with why; omit when none fits}
+
+### References
+
+{Paths or URLs of plans, specs, PRs and logs this work relies on: link them, never restate their content}
+```
+
+The `files_modified` list comes from `git status --short` (both staged and unstaged
+modified files). Use relative paths from the repo root.
+
+Then stamp the project identity into the frontmatter. Do not write these
+fields yourself: the bin writes `remote:` (the origin with any credentials
+removed, or `none`) and `project_root:` (the repository root), which
+`/context-restore` uses to refuse another project's checkpoint, plus `head:`
+(the commit checked out) and, in a linked worktree, `worktree:`, which it uses
+to tell how far the repository moved since the save. Substitute the
+exact `FILE=` path printed in Step 4:
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" --stamp-checkpoint "{FILE}" \
+  && grep -E '^(remote|project_root|head|worktree):' "{FILE}"
+```
+
+If the stamp fails, say so in the confirmation below — the save still stands,
+but restore will treat it as an unstamped checkpoint.
+
+#### Marker scan
+
+Every Remaining Work item that ends in a parenthesised token not among the five
+markers is printed (substitute the `FILE=` path):
+
+```bash
+awk '/^### / { inrw = ($(0) == "### Remaining Work"); next }
+  inrw && /^([0-9]+\.|[-*]) / && match($(0), /\([^()]*\)[[:space:]]*$/) {
+    t = substr($(0), RSTART, RLENGTH); sub(/[[:space:]]+$/, "", t)
+    if (t !~ /^\((target state checked|code read|path run|path read|path assumed)\)$/) print "UNKNOWN_MARKER: " $(0)
+  }' "{FILE}"
+```
+
+For each `UNKNOWN_MARKER:` line, rewrite that item's marker as `(path assumed)`
+(Write the whole file again) and re-run the scan until it prints nothing.
+
+Then scan the file for credentials — a session's notes quote commands, configs
+and logs:
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-redact" scan --file "{FILE}"; echo "REDACT_EXIT: $?"
+```
+
+`REDACT_EXIT: 1` lists masked findings with line numbers: replace each value
+with `[REDACTED]`, write the file again and re-scan until exit 0. `2` means the
+scan could not run — say so in the confirmation.
+
+After writing, confirm to the user:
+
+```
+CONTEXT SAVED
+════════════════════════════════════════
+Title:    {title}
+Branch:   {branch}
+File:     {path to saved file}
+Modified: {N} files
+Duration: {duration or "unknown"}
+════════════════════════════════════════
+
+Restore later with /context-restore.
+```
+
+---
+
+## List flow
+
+### Step 1: Gather saved contexts
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" && mkdir -p "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG"
+CHECKPOINT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/checkpoints"
+if [ -d "$CHECKPOINT_DIR" ]; then
+  echo "CHECKPOINT_DIR=$CHECKPOINT_DIR"
+  # Use find + sort instead of ls -1t: filename YYYYMMDD-HHMMSS prefix is the
+  # canonical order (stable across copies/rsync; mtime is not), and empty-result
+  # behavior is clean (no files → no output, no "lists cwd" fallback).
+  find "$CHECKPOINT_DIR" -maxdepth 1 -name "*.md" -type f 2>/dev/null | sort -r
+else
+  echo "NO_CHECKPOINTS"
+fi
+```
+
+### Step 2: Display table
+
+**Default behavior:** Show saved contexts for the **current branch** only.
+
+If the user passes `--all` (e.g., `/context-save list --all`), show contexts
+from **all branches**.
+
+Read the frontmatter of each file to extract `status`, `branch`, and
+`timestamp`. Parse the title from the filename (the part after the timestamp).
+
+Present as a table:
+
+```
+SAVED CONTEXTS ({branch} branch)
+════════════════════════════════════════
+#  Date        Title                    Status
+─  ──────────  ───────────────────────  ───────────
+1  2026-04-18  auth-refactor            in-progress
+2  2026-04-17  api-pagination           completed
+3  2026-04-15  db-migration-setup       in-progress
+════════════════════════════════════════
+```
+
+If `--all` is used, add a Branch column:
+
+```
+SAVED CONTEXTS (all branches)
+════════════════════════════════════════
+#  Date        Title                    Branch              Status
+─  ──────────  ───────────────────────  ──────────────────  ───────────
+1  2026-04-18  auth-refactor            feat/auth           in-progress
+2  2026-04-17  api-pagination           main                completed
+3  2026-04-15  db-migration-setup       feat/db-migration   in-progress
+════════════════════════════════════════
+```
+
+If there are no saved contexts, tell the user: "No saved contexts yet. Run
+`/context-save` to save your current working state."
+
+---
+
+## Important Rules
+
+- **Never modify code.** This skill only reads state and writes the context file.
+- **Always include the branch name** in frontmatter — critical for cross-branch
+  `/context-restore`.
+- **Always stamp the project identity** with `vibe-slug --stamp-checkpoint`, run
+  from inside the project — never hand-write `remote:` or `project_root:`.
+- **Saved files are append-only.** Never overwrite or delete existing files. Each
+  save creates a new file.
+- **Infer, don't interrogate.** Use git state and conversation context to fill in
+  the file. Only use AskUserQuestion if the title genuinely cannot be inferred.
+- **This is a vibestack skill, not a Claude Code built-in.** When the user types
+  `/context-save`, invoke this skill via the Skill tool. The old `/checkpoint`
+  name collided with Claude Code's native `/rewind` alias — the rename fixed that.
+- **Automatic snapshots are not a save.** In Claude Code a PreCompact hook writes
+  a git-state snapshot to `~/.vibestack/projects/<slug>/compact-snapshots/`
+  before every compaction. It holds git state and the transcript path only,
+  never decisions, so `/context-save` stays the way to record decisions. Other
+  runtimes have no compaction hook in this pack.
+
+---
+
+Run this step before finishing. A saved context file is read once, by whoever
+restores it; a learning outlives it and surfaces in every later session's
+preamble. If the session genuinely surfaced none, say "no durable learnings this
+session" rather than inventing one.
+
+{{include lib/snippets/capture-learnings.md}}

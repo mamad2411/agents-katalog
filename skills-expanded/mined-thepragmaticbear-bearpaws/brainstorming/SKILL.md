@@ -1,0 +1,51 @@
+---
+name: brainstorming
+description: Use when about to create or change features, components, or behavior and the design has not been agreed yet
+---
+
+<skill>
+
+  <purpose>
+    Turn ideas into fully formed designs through collaborative dialogue. Understand the project context, ask questions one at a time, present the design, get user approval.
+  </purpose>
+
+  <triggers>
+    <rule>Use before any creative work: new features, components, modifications.</rule>
+    <rule>Use before any implementation skill — brainstorming produces the spec.</rule>
+    <rule>If the prompt has a project context (existing codebase) and you haven't onboarded this session, invoke `bp:onboarding-to-a-project` first. Standard flow: onboarding identifies key files & stack → brainstorming designs against those conventions → implementation. For purely abstract design questions with no specific project, brainstorming is the entry point.</rule>
+  </triggers>
+
+  <gate name="no-implementation">
+    Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+  </gate>
+
+  <antipattern>
+    "This is too simple to need a design." Every project goes through this process — a todo list, a single-function utility, a config change. "Simple" projects are where unexamined assumptions cause the most wasted work. The design can be short, but you MUST present it and get approval.
+  </antipattern>
+
+  <process>
+    <step>**Explore project context** — check files, docs, recent commits.</step>
+    <step>**Ask clarifying questions** — one at a time. Multiple choice preferred. Understand purpose, constraints, success criteria.</step>
+    <step>**Scope check** — if the request spans multiple independent subsystems, flag it. Decompose into sub-projects before refining details. Each sub-project gets its own spec → plan → implementation cycle.</step>
+    <step>**Propose 2-3 approaches** — with trade-offs and your recommendation. Lead with recommended option.</step>
+    <step>**Present design** — scale each section to complexity. Ask after each section if it looks right; revise until it does. Cover: architecture, components, data flow, error handling, testing.</step>
+    <step>**Write design doc** — save to `docs/bearpaws/plans/YYYY-MM-DD-{topic}-design.md` (user prefs override). Commit it if the user or project allows commits without asking; otherwise leave it uncommitted and say so.</step>
+    <step>**Spec self-review** — scan for placeholders/TBD, internal contradictions, scope creep, ambiguity. Fix inline. If the design covers elevated-risk work (see bp:using-bearpaws), dispatch a fresh subagent with ./builder-check-prompt.md, wait for its result, and answer or fold in each question before the user review. Routine designs skip it.</step>
+    <step>**User reviews spec** — ask user to review before proceeding. Wait for approval; if they request changes, update the spec and self-review again.</step>
+    <step>**Transition** — invoke bp:writing-plans. That is the ONLY next skill.</step>
+  </process>
+
+  <warning level="hard">
+    The terminal state is invoking bp:writing-plans. Do NOT invoke frontend-design, mcp-builder, or any other implementation skill directly from brainstorming.
+  </warning>
+
+  <rules>
+    <rule>**One question at a time** — don't overwhelm with multiple questions.</rule>
+    <rule>**YAGNI ruthlessly** — remove unnecessary features from all designs.</rule>
+    <rule>**Design for isolation** — smaller units with clear boundaries and well-defined interfaces. Each unit has one purpose, can be understood and tested independently.</rule>
+    <rule>**Follow existing patterns** in existing codebases. Only propose improvements that serve the current goal.</rule>
+  </rules>
+
+  <see file="builder-check-prompt.md"/>
+
+</skill>

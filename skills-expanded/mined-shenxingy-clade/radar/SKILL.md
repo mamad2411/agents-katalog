@@ -1,0 +1,418 @@
+---
+name: radar
+description: "Autonomous discovery of concepts, methods, and vocabulary we have NOT heard of yet — sweeps broadly, diffs against a known-concepts ledger, and reports only what is genuinely new plus whether it names a gap in this stack. A fixed topic list can only refresh what you already named; radar surfaces what you did not know to look for."
+when_to_use: "periodic/scheduled discovery of unknown-unknowns, concept sweeps, what's new in agent engineering, what are we missing, 新概念, 我们没听过的, 有什么没跟上的 — NOT for a named topic (/research), model releases (/model-research), or internal priorities (/next)"
+user_invocable: true
+---
+
+# Radar — find what we didn't know to look for
+
+`/research` answers a question you can already phrase. Radar exists for the
+other failure: **you cannot search for a word you have never heard.**
+
+The motivating miss is concrete. "Graph engineering" — the successor framing to
+loop engineering — reached this stack because a human mentioned it, not because
+anything here noticed. Every scheduled-research design that starts from a topic
+list would have missed it identically, because the list would have contained
+"agents", "RAG", "context engineering", and not the term that had yet to exist.
+
+So the unit of work is not *a topic*. It is **the delta between what the field
+is saying and what this stack's ledger says it knows.**
+
+## The ledger is the mechanism
+
+`~/.claude/research/known-concepts.md` records every concept this stack has
+already encountered — one per line, lowercase, with the date first seen.
+
+It lives in `~/.claude/`, not a project: the field does not change per
+repository, and a per-repo ledger would relearn the same terms N times.
+
+Novelty is defined mechanically: **a term not in the ledger is a candidate.**
+That is the entire trick, and it is why the ledger must be seeded honestly and
+appended to on every run. A ledger that is not updated re-reports the same
+findings forever; a ledger that is padded with terms nobody actually understood
+suppresses real discoveries.
+
+## Procedure
+
+Four lanes feed the sweep. Running only the first is the common failure — the
+web tells you what the field says, never what *you* keep tripping over.
+
+| Lane | Source | Already exists? |
+|---|---|---|
+| A. The field | Broad web probes (§1) | No — this skill adds it |
+| B. Named practitioners | `docs/who-to-learn-from.md` | Yes, but manual + quarterly |
+| C. Your own usage | `~/.claude/corrections/history.jsonl` | Yes, but unmined |
+| D. The harness's verdicts | Session transcripts, via `friction-rank.py` | Yes, since 2026-11-06 |
+
+**Lane B** — do not rebuild the roster. Read `docs/who-to-learn-from.md`, take
+the Tier-1 entries whose canonical piece has changed since `Last reviewed`, and
+run them through the same triage. Append genuinely new names *to that file*,
+not to the ledger; the ledger is for concepts, that file is for people.
+
+**Lane C — the one nobody runs.** The correction history is a record of where
+this stack actually failed *you*, which no amount of web sweeping can supply.
+It is mined for a different question than the rule-promoter asks: not "should
+this one become a rule" but **"what do I get corrected about repeatedly, and
+what does that pattern say is structurally missing?"**
+
+Read it as a JSON stream (`jq -c '.'`), and cluster on:
+
+- Recurring `project` + `type` pairs, and recurring language in `prompt` — three
+  corrections of the same class is a design signal, not three mistakes.
+- Entries carrying `reverted_files` — a rejected diff is the strongest evidence
+  available; the words may be vague, the diff never is. Read the caveat below
+  before trusting this field.
+- `repeat: true` — flagged recurrence, already computed.
+
+**Know the schema before you grep it.** Every `history.jsonl` record has
+`{timestamp, prompt, project, type}`. The rest depends on `type` and on when
+the record was written:
+
+- `type: "explicit"` (`correction-detector.sh`) adds `domain` from 2026-09-02.
+- `type: "implicit-revert"` (`revert-detector.sh`) adds `reverted_files` and
+  `repeat`, except on the oldest records, which carry neither. From 2026-09-02
+  it also adds `session_files`, `revert_scope` and `revert_paths`. Only a `revert_scope: "paths"` record is evidence of a
+  rejected file; `"probe"` is the agent's own mutation test.
+- Both types add `session_id` and `transcript_path` in records written since
+  2026-11; older records lack both keys. `transcript_path` is the session
+  transcript the correction happened in. It is `<session_id>.jsonl` under a
+  `projects/<slug>/` directory of the Claude config directory. Either field is
+  `null` when the hook input lacked it. A path holding a control character, or
+  longer than 1,024 characters, is also written as `null`.
+- Records without a session link can only be clustered by `project` and
+  `timestamp`. Claude Code deletes transcripts after 30 days by default
+  (`cleanupPeriodDays`), so a `transcript_path` may name a file that is gone.
+
+There is no `root_cause` field. This spec asked for one until 2026-08-31, which
+sent three runs looking for a field that was never written.
+
+**Two serialization styles, one file.** Records written up to 2026-08-14 are
+spaced (`{"timestamp": "..."`), records from 2026-08-15 on are compact
+(`{"timestamp":"..."`). At the 2026-08-31 sweep that was 853 spaced and 110
+compact out of 963. Any pattern keyed to one style silently drops the other —
+grepping `'"prompt":"'` returns 110 and reads like the whole file. Parse with
+`jq`, which handles both; never line-grep this file for a count.
+`configs/scripts/session-scorecard.sh` had exactly this bug and was worse than
+latent: its awk matched only the compact form AND used gawk's 3-argument
+`match()`, which errors out on mawk — the default `awk` here — where a trailing
+`|| echo 0` turned the error into a plausible zero. Both correction counters had
+therefore been structurally 0 for the life of the file. It now parses with `jq`,
+which is style-agnostic by construction, and `tests/test-session-scorecard.sh`
+pins it.
+
+**`reverted_files` means what it says, but only since 2026-09-02.** The field is
+now the intersection of the shadow with the revert command's *own pathspec*, and
+the loose session list it used to hold lives under its true name `session_files`.
+`repeat` is meaningful only when `revert_scope` is `paths`: `git revert` takes no
+pathspec, `git reset --hard` cannot take one, and the hook is async, so for those
+forms the file set is not knowable at hook time — `reverted_files` is `[]` and
+`repeat` is `null`, which is honest rather than a substituted guess.
+
+**Exclude `revert_scope:"probe"` from any rejection cluster — and do not trust
+its absence.** The marker has been installed since 2026-10-10, yet 0 of the 115
+records written 2026-10-05 → 10-12 carried it. It marks a mutation test — the
+practice the global CLAUDE.md *requires* — but only recognised the round-trip
+(`git apply`/`git stash pop` after the revert) and the label `MUTATION`, and the
+dominant real shape has neither: `sed -i X` or `python3 - "$f" <<'EOF'`, then
+the tests, then `git checkout -- X`. The same-command-edit signal (landed
+2026-10-16 in #124) now covers that shape: 5 of the 40 implicit-revert records
+of 2026-10-12 → 10-19 came out `probe`. Since 2026-11-17, when the 2026-10-26
+sweep's change landed, three more shapes are handled in the hook:
+- a shell redirect or `tee` into the reverted file (`git show REV:f > f`,
+  `echo … >> f`) is a `probe`;
+- a diff the command saved and applied elsewhere before cleaning this checkout
+  (a move to another worktree) is a `probe`;
+- an index-only `git restore --staged` writes no record at all: 37 of them
+  2026-09-02 → 10-26, 34 filed as `paths`.
+
+For records written before that, discount all three by hand. Two shapes still
+read as `paths` either way: a generator run and then discarded (`npx tsx
+gen.mjs; git diff out.json; git checkout -- out.json`; 3 in 2026-10-12 → 10-19),
+and a mutation made in an EARLIER tool call than the revert. On 2026-09-23 seven
+consecutive records were probes, two with `repeat:true`; across all 103
+`paths`-scoped records then, 3 of the 6 `repeat:true` were probes.
+
+**Discount a subagent's revert in records written before 2026-10-23.**
+`revert-detector.sh` now writes nothing for a call whose hook input carries
+`agent_id` (a subagent) or that runs under `CLADE_WORKER_TASK_ID` (a dispatched
+worker), once that change is installed. Before it, 172 of the 220
+implicit-revert records of 2026-09-22 → 10-22 on the author's machine were
+issued by Workflow subagents inside their own runs — 157 of them from a
+worktree or `/tmp` working directory — and no field marks them. For older
+records, set aside any whose `project` is a worktree or scratch path before
+clustering, and confirm the rest against the session transcript.
+
+**Discount a record whose only revert sits inside a heredoc body.** Agents write
+files through `python3 - <<'EOF'`, and prose about git inside the body used to
+trigger the hook and choose its `project` (a `cd` in a README became the
+project key). Of 386 implicit-revert records up to 2026-10-05, 16 of the 323
+unclipped ones contain no revert outside a heredoc body, and up to 43 clipped
+ones may be the same. The hook strips heredoc bodies only once the 2026-10-05
+change is installed. Before that, re-check any record whose prompt contains
+`<<`.
+
+Records written **before 2026-09-02** carry the old semantics: `reverted_files`
+is the last 20 files touched in the session, never intersected with anything, and
+`repeat` largely measured session length and overlap. When a cluster spans that
+boundary, check the record for `revert_scope` — its absence dates the record —
+and confirm the older half against the actual diff before calling it evidence.
+
+A cluster that keeps recurring despite an existing rule means the rule is the
+wrong instrument. Escalate it to something structural — a hook, a CI gate, a
+test — rather than rewording the prose. The `/generate-hook` skill exists for
+exactly that conversion. `configs/hooks/lib/rule-effectiveness.sh` was meant to
+track which rules keep getting missed, but it cannot fire: a miss needs a
+`rules.md` rule whose domain equals the correction's, and the two vocabularies
+are disjoint (13 fixed technical domains vs 224 free-form ones across 681 rules
+in 58 `rules.md` files, 0 shared — measured 2026-10-12). On the author's machine
+`rule-effectiveness.json` has been `{}` since 2026-04-15. Until that is fixed,
+find recurrence by clustering `history.jsonl` yourself, as above.
+
+**Lane D — the harness's own verdicts.** Corrections are slow and yield
+generic rules. What the harness told the agent at the moment of failure is
+faster and names a repair (Gorokh, 2026-10-08, one operator's fleet: the
+correction channel adopted 1 rule in 11 weeks). Run, every sweep:
+
+```bash
+python3 ~/.claude/scripts/friction-rank.py --top 15 --holdout-weeks 2   # 30 days, main thread, every profile
+```
+
+It ranks errors, PreToolUse hook denials, permission refusals, timeouts,
+unchanged retries after one of those, and `hook_non_blocking_error`, by
+distinct sessions and then count, on discovery weeks, with the last two ISO
+weeks held out: early in a week the current one alone holds hours, so the
+report prints the held-out span and warns below 7 days. Each family carries its
+most common verdict text in full and that text's latest occurrence: provenance
+and the next 3 calls after it. A second table regroups hook denials,
+permission refusals and hook errors by their first sentence across families.
+An unattended run cannot start `python3 <script>` (it waits for an approval
+nobody is there to give), so `radar-cron.sh` runs it before the sweep with the
+same flags and names the report file in the prompt; read that.
+
+Grade what it ranks, do not transcribe it:
+
+- **Friction is not a defect.** A refusal can be a guard doing its job; a family
+  near the top is where the harness said no most often, not where it is wrong.
+  Read the refusal text and the next 3 calls. A guard is suspect when the
+  calls after it reach the same end by another path, or when its text names no
+  supported path.
+- **A family that is not held out again is a burst, not a pattern**, when the
+  held-out weeks span 7 days or more. Below that the report says so, and an
+  empty held-out column is no evidence either way. Prefer families with
+  sessions in both columns.
+- **Test a reworded refusal before keeping it.** Gorokh records a guard whose
+  added recovery guidance bought nothing (recovery took 2 calls before the
+  change and 3 after). A rule A/B runs real sessions, so it stays opt-in (the
+  paid-API rule).
+
+This supersedes the hand tally of `hook_non_blocking_error` that lived here,
+which clipped stderr to 90 characters — the text is the thing to read — for
+the main thread only. That tally grepped every transcript under `projects/`,
+subagents' included. Lane D reads subagent transcripts only with
+`--subagents`, because one Workflow fan-out can repeat a refusal a hundred
+times, so a hook that fails only inside subagents is missing from its report
+and from the cron sweep's. When a hook's health is the question, also run
+`friction-rank.py --subagents --holdout-weeks 2` and read its `hook:` rows.
+The old tally found two dead hooks on 2026-10-19, both with green suites,
+because each suite read the hook's output and never what Claude Code did with
+it: `skill-suggest.sh` (309 rejections since 2026-08-26, no `hookEventName`)
+and the rewrites in `pre-tool-guardian.sh` (41, a top-level
+`decision:"allow"`). A hook
+whose output Claude Code rejects still runs, exits 0 and passes its tests, and
+delivers nothing; the attachment is the only record, and Lane D reads it.
+
+**Then read what the hooks DID deliver.** An accepted hook can still be wrong
+by volume or by text, and no refusal tally sees either. The
+`hook_additional_context` attachments hold the delivered text. Tally them by
+`hookName`, dedupe on the record's `uuid` (profiles can share transcripts), and
+read the payloads of the largest groups and of any hook whose output becomes
+instructions after compaction:
+
+```bash
+grep -rh --include='*.jsonl' '"type":"hook_additional_context"' ~/.claude/projects \
+  | jq -sc '[.[] | select(.attachment.type? == "hook_additional_context")
+      | {u: .uuid, h: .attachment.hookName, c: (.attachment.content | tostring)}]
+      | unique_by(.u) | group_by(.h)
+      | map({hook: .[0].h, n: length, chars: (map(.c | length) | add)}) | sort_by(-.n)'
+```
+
+Per hook, check three things:
+
+- **Repeats.** A hint the same thread already received tells the model nothing.
+- **Literal escapes.** Look for the two characters backslash and n inside
+  `.attachment.content`. A `"…\n"` string built in bash and handed to
+  `jq --arg` arrives as that text, not as a line break.
+- **Size.** Compare the largest payload with Claude Code's 10,000-character
+  cap. Past it, Claude sees a 2,000-character preview.
+
+Two sweeps found real defects this way:
+
+- 2026-10-26: `post-tool-use-failure.sh` sent 1,788 hints in six days, 47% of
+  them byte-identical to one the same thread already had. All 25
+  post-compaction restores on record recorded no task, and 19 of them offered
+  the TODO backlog as "your task state … resume from it".
+- 2026-11-02: in `session-context.sh`, 131 of 155 payloads carried a literal
+  `\n`, and the largest was 9,821 characters while its warning fired only above
+  12,000. An assignment that overwrote the auto-pull notice was found by
+  reading the same payloads: not one of them carried it. `skill-suggest.sh`
+  had the escape defect too.
+
+### 1. Sweep broadly — probes, not topics
+
+Run searches whose shape invites unfamiliar vocabulary. Rotate them; do not
+narrow to what you already track:
+
+- Succession framings: `"X is the new Y" AI agents`, `beyond <current paradigm>`,
+  `successor to <known term>`, `what replaced <known term>`
+- Vocabulary shifts: `new term AI engineering <current month year>`,
+  `stopped calling it <known term>`
+- Practitioner surfaces: arXiv recent-and-cited, named practitioner blogs,
+  framework changelogs and their *rationale* sections
+- Negative space: `why <known approach> doesn't work`, `limitations of <known term>`
+- Attention: what practitioners upvoted, fetched rather than searched for (below)
+
+Bias toward the last 90 days. Prefer sources that argue rather than announce —
+a post explaining why a paradigm broke names its successor.
+
+**The attention pass.** A probe only finds what its query can phrase. Whatever
+the field is reading this month may carry a name that no probe contains. So
+also fetch what was upvoted, ranked by points.
+
+On 2026-11-16, Hacker News had ranked three Claude Code security reports at
+1,616, 1,014 and 627 points. That morning's probe sweep had not surfaced any of
+them. The ledger held 8 of 40 high-attention coding-agent stories from the
+30 days before. The list and its limits are in
+`docs/research/2026-11-16-attention-pass.md`.
+
+For each of `agent`, `Claude`, `Codex`, `LLM`, `MCP`, `OpenAI`, `Anthropic` and
+`Gemini`, WebFetch:
+
+    https://hn.algolia.com/api/v1/search_by_date?query=<q>&tags=story&numericFilters=points%3E150&hitsPerPage=50&attributesToRetrieve=title,url,points,num_comments,created_at&attributesToHighlight=none
+
+Ask for every hit as `points | comments | date | title | url`, and use the
+result as follows:
+
+- **The window.** `search_by_date` returns the newest stories above the points
+  floor, so no timestamp has to be computed. Drop anything older than 30 days.
+  If a query's 50th hit is still inside the window, fetch the next page too
+  (add `&page=1`). `Codex` needed one on 2026-11-16.
+- **The noise.** Most hits are general technology news, and the search is
+  typo-tolerant: `MCP` also matches "map", and `Codex` matches "code". Keep
+  the typo tolerance, because it is how stories about code and coders arrive.
+  Turning it off lost 5 of the 40. Filter by topic instead:
+  - keep stories about coding agents, their harnesses, tools and security, and
+    model releases;
+  - count each incident once.
+- **What to do with the rest.** Send each kept story through §2–§4.
+- **The coverage figure.** Report the attention recall: how many of the kept
+  stories the ledger already held. A miss says something about the probes, not
+  only about the field.
+
+### 2. Extract candidate terms
+
+Pull every named concept, method, architecture, or piece of vocabulary. Keep
+the term, a one-line definition **in the source's words**, and the URL.
+
+Do not filter for relevance yet. Filtering before diffing is how a genuinely
+novel idea gets discarded for looking irrelevant.
+
+### 3. Diff against the ledger
+
+Drop anything already listed. What remains is the discovery set.
+
+If the discovery set is empty, say so plainly and stop. A quiet week is a real
+result; manufacturing a finding to justify the run is worse than silence.
+
+### 4. Triage each survivor against this stack
+
+For each new concept, answer three questions, in this order:
+
+1. **What is it, in one sentence?** Source's claim, not your paraphrase of the hype.
+2. **Do we already have it under another name?** Compare *mechanism*, not
+   vocabulary. `/loop` ≈ Ralph; a declared state graph ≠ an agent graph. Most
+   "gaps" die here, and that is the point.
+3. **If we genuinely lack it — is it a deficiency or a difference?** Name the
+   concrete thing it would let us do that we cannot do today. If you cannot
+   name one, it is a difference. Say so and move on.
+
+Never mark something as a gap on step 1 alone. That rule exists in `CLAUDE.md`
+for exactly this workflow.
+
+### 5. Report, bounded
+
+At most 5 findings, ranked by "would this have changed a decision we made".
+Each gets: term, one-line definition, our status (`have it` / `different` /
+`genuine gap`), and one line of evidence for that status — a file path, a
+module, a command. Assertions without a locator are not findings.
+
+### 6. Append to the ledger
+
+Add every candidate examined — including the ones judged irrelevant. The ledger
+records *encountered*, not *adopted*; otherwise the same dead end resurfaces
+every run.
+
+Format: `- YYYY-MM-DD  <term>  — <one-line definition>`
+
+## Scheduling
+
+Radar is worth running unattended. Weekly is the natural cadence — fast enough
+that a shift is caught within a cycle, slow enough that the discovery set is
+not noise.
+
+Wire it with the `schedule` skill (cloud cron) or a local `crontab` entry
+invoking Claude Code headless. Whatever runs it must be able to write
+`~/.claude/research/`.
+
+## 7. Close the loop — a digest nobody acts on is theatre
+
+Discovery is only the first third. The pattern that actually moved this stack
+was *found gap → built it → verified → committed*, inside one session. A weekly
+file accumulating in `~/.claude/research/` while nothing changes is worse than
+not running: it produces the feeling of keeping up without the fact of it.
+
+So every finding graded **genuine gap** must leave a durable, actionable trace
+before the run ends:
+
+- **Small and unambiguous** (a missing check, a one-file addition): build it now,
+  with a test, and say so. Do not file a TODO for work that takes ten minutes —
+  identified is not the same as executed.
+- **Large or a real architectural fork**: append one line to the project's
+  `TODO.md` (or `BRAINSTORM.md` if the shape is still open), naming the gap, the
+  concrete capability we lack, and the evidence locator. Then say plainly that
+  it is queued and why it was not built now.
+
+Findings graded `have it` or `different` need no trace beyond the ledger. Say
+which of ours already covers it, with a locator — that sentence is what stops
+the same idea being re-litigated next quarter.
+
+## Output
+
+Write the digest to `~/.claude/research/radar-YYYY-MM-DD.md` and print the
+ranked findings. If run interactively, print only — the human decides whether
+it is worth a file.
+
+**When the harness refuses the write** — it treats `~/.claude/**` as a
+sensitive path in every mode short of bypass, so an unattended `acceptEdits`
+run cannot reach its own ledger — stage the two files under exactly these
+names: `radar-YYYY-MM-DD.md` and `known-concepts-append-YYYY-MM-DD.md`, in the
+directory the cron prompt names (`.radar-staged/` inside the run's worktree;
+older runs used `$HOME`). `radar-cron.sh` folds both into place before and
+after each sweep. Do not end the run by asking a human to `cat >>` them: four
+such requests sat unactioned for five weeks (2026-08-17 → 2026-09-21) while
+every sweep in between diffed the field against a ledger missing its
+predecessors' findings.
+
+**Code edits in an unattended run** go only into the worktree the cron gives
+you as your working directory, on its own `radar/<date>` branch. You cannot run
+bash or git there, and you do not need to: the wrapper runs `bash -n` and the
+affected shell suites in a no-network sandbox, commits to that local branch
+with the results, and leaves it for review — it never pushes. Do not edit any
+other checkout (you cannot reach one), and do not call an edit verified. Until
+2026-10-20 the agent edited whichever Clade checkout was open: the 10-12 run's
+edits sat on `fix/warm-pace` for four days and the 10-19 run's on `main`.
+
+Close with one line that is honest about coverage: which probe families ran,
+how many candidates were examined, the attention recall (ledger held N of the M
+stories kept), and what was NOT swept. A radar that hides its blind spots reads
+as completeness it does not have.

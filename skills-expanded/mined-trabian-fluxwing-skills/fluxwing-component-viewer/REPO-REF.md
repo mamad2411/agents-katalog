@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trabian/fluxwing-skills (path: skills/fluxwing-component-viewer/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: View detailed information about a specific uxscii component including metadata, states, props, and ASCII preview. Use when working with .uxm files, when user wants to see, view, inspect, or get detail

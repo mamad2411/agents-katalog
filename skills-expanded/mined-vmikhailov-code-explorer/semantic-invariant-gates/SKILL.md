@@ -1,0 +1,339 @@
+---
+name: semantic-invariant-gates
+description: Use this skill when authoring, reviewing, testing, or updating Semantic Invariant Gates (SIG), defining architectural rules in OpenCypher, configuring ratchet baselines, or inspecting technical debt violations in CodeExplorer.
+---
+
+# Semantic Invariant Gates (SIG) Authoring Guide
+
+This skill guides developers and AI agents in authoring, verifying, and maintaining **Semantic Invariant Gates (SIG)** in CodeExplorer.
+
+---
+
+## When to Use This Skill
+
+Use this skill when:
+- Defining new architectural invariants (e.g. boundary rules, layer purity, interface abstractions).
+- Writing and testing OpenCypher queries against the codebase property graph.
+- Creating gate manifests (`.codeexplorer/gates/*.yaml`) or adding built-in gates to `BuiltInGateCatalog.cs`.
+- Setting up baseline snapshots for legacy technical debt (`ce gate ratchet --update`).
+- Inspecting, filtering, or grouping gate violations (`ce gate violations`).
+- Reviewing code changes against architectural standards before merging.
+
+---
+
+## Core Foundations
+
+### 1. Fractal Orthogonal Invariant Matrix (FOIM)
+
+Every invariant lives at a coordinate `[Scope, Dimension]` in the FOIM space:
+
+| Code | Scope | Granularity | Example Entities |
+| :--- | :--- | :--- | :--- |
+| **A** | **System** | Entire distributed topology | Cross-service flows, external ingress/egress, cloud resources |
+| **S** | **Service** | Executable / deployment unit | `Service`, `App`, `Worker`, `CliTool`, message topics, DBs |
+| **P** | **Module** | Compilation unit / Project | `Project`, `Library`, package dependencies, layers |
+| **C** | **Class** | Type / Interface / Struct | `Type`, inheritance trees, class dependencies, visitor purity |
+| **M** | **Method** | Function / Procedure / Endpoint | `Function`, `Endpoint`, `CallLiteral`, parameter rules |
+
+| Code | Dimension | Architectural Focus | Question Answered |
+| :--- | :--- | :--- | :--- |
+| **C** | **Contract** | Typing, interfaces, API protocol fidelity | Are contracts explicit, valid, and type-safe? |
+| **I** | **Rules** | Implementation constraints & hygiene | Are constants hardcoded? Are visitors IO-pure? |
+| **R** | **Resources** | Resource & complexity control, metrics | Are methods within complexity limits? Are resources bounded? |
+| **B** | **Boundaries** | Scope boundaries, encapsulation, layer isolation | Who may talk to whom? (No direct DB calls from UI) |
+
+**Identifier Convention**:
+`SIG-<ScopeCode>-<DimensionCode>-<Index3Digits>`
+Examples:
+- `SIG-P-B-001`: Module Scope $\times$ Boundaries Dimension (Layer hierarchy)
+- `SIG-M-I-001`: Method Scope $\times$ Rules Dimension (Disallow hardcoded call arguments)
+- `SIG-C-I-001`: Class Scope $\times$ Rules Dimension (In-Memory AST Visitor IO Purity)
+
+---
+
+### 2. Architectural vs. Platform Categorization
+
+Every invariant belongs to one of two categories:
+
+1. **`category: Architectural` (`platform: agnostic`)**:
+   - Universal structural rules and design principles applicable regardless of language or framework.
+   - Examples: Unidirectional layer hierarchy, clean architecture transport purity, package acyclicity, in-memory AST visitor I/O purity.
+   - Directory: `.codeexplorer/gates/architectural/*.yaml`
+   - *Cross-Language Best Practice*: For general architectural rules (like I/O purity in AST visitors), design Cypher queries to match standard I/O abstractions across all supported ecosystems (.NET `File`/`Directory`, Node `fs`, Go `os`/`ioutil`, Python `pathlib`, Java `Files`).
+
+2. **`category: Platform` (`platform: <ecosystem>`)**:
+   - Runtime, framework, or technology-specific rules.
+   - Examples: Prohibiting domain coupling to SQLite drivers (`SqliteGraphClient`, `SqliteConnection`) rather than `IGraphClient` (`platform: dotnet`).
+   - Directory: `.codeexplorer/gates/platform/<platform>/*.yaml` (e.g. `.codeexplorer/gates/platform/dotnet/`).
+
+#### Category & Platform Filtering:
+```bash
+# List only architectural gates
+ce gate list --category architectural
+
+# List only dotnet platform gates
+ce gate list --platform dotnet
+
+# Evaluate only platform gates
+ce gate check --category platform
+```
+
+---
+
+### 3. The Zero-Match Contract & v2 Node-First / Edge-Aware Extraction
+
+A Semantic Invariant Gate operates on a strict **Zero-Match Contract**:
+- **0 rows returned** $\implies$ **PASS** (Invariant holds across the codebase).
+- **$\ge 1$ rows returned** $\implies$ **VIOLATION** (Each row returned is a violation, evaluated against `thresholds` and `ratchet`).
+
+#### Preferred v2 Contract — Node-First & Edge-Aware `RETURN`:
+Instead of manually projecting scalar columns (`AS file`, `AS line`, `AS symbol`, `AS target`, `AS message`), return the matched graph nodes and relationship directly and declare `message` (and optional `target`) templates on the gate manifest:
+
+```yaml
+target: "{target.name}" # optional override for single-node or aggregate queries
+message: "Prohibited call from '{caller.name}' to '{target.name}' at {location}"
+thresholds:
+  warning: 1
+  error: 5
+query: |
+  MATCH (caller:Function)-[r:CALLS]->(target:Function)
+  WHERE caller.path CONTAINS 'Domain/' AND target.path CONTAINS 'Infrastructure/'
+  RETURN caller, r, target
+```
+
+`GateExecutionEngine` automatically extracts:
+1. **Source Node** (`caller`, `fn`, `src`, `p`, `c`, `t`, etc.): extracts `file` (`file_path` / `path`), `line` (`start_line`), `column` (`start_col`), `symbol` (`name`), and `nodeId` (`id`).
+2. **Relationship Edge** (`r`, `rel`, `edge`, `call`): extracts exact call-site `line` and `column` (overriding the declaration line of the caller function) and automatically **unrolls `r.call_sites`** (`["45:12", "88:9"]`) when a function invokes a forbidden target multiple times!
+3. **Target Node** (`target`, `tgt`, `pkg`, `d`, `ep`, etc.): extracts `target` (`name` / `full_name`) and `targetNodeId` (`id`).
+4. **Template Interpolation (`message` & `target`)**: supports `{fn.name}`, `{r.line}`, `{node.label}`, `{node.id}`, `{location}`, flat scalar columns (`{loc}`), and default fallback values (`{d.engine|unknown}`).
+
+> [!NOTE]
+> Legacy v1 scalar projections (`RETURN ... AS file, AS line, AS column, AS symbol, AS target, AS message`) remain 100% supported as an explicit override.
+
+---
+
+### 4. Line-Shift Immune Fingerprinting
+
+CodeExplorer calculates violation fingerprints without depending on volatile line numbers:
+$$\text{Fingerprint} = \text{SHA256}(\text{GateId} \parallel \text{FilePath} \parallel \text{Symbol} \parallel \text{Target} \parallel \text{Occurrence})$$
+
+* **Why**: Adding comments, reformatting, or inserting code above a violation shifts line numbers but must **never** invalidate the baseline snapshot.
+* **Multi-Call-Site Unrolling**: When a single `(File, Symbol, Target)` pair occurs multiple times (either as multiple rows or unrolled from `r.call_sites`), `GateExecutionEngine` assigns deterministic occurrence indices (`#1`, `#2`, ...), ensuring every call site gets its own unique fingerprint.
+
+---
+
+## Step-by-Step Gate Creation Workflow
+
+```
+1. Formulate Rule ──> 2. Test in Cypher ──> 3. Create Manifest ──> 4. Run Check ──> 5. Ratchet Baseline
+   (FOIM Coordinates)   (ce query "...")      (.codeexplorer/gates)   (ce gate check)   (ce gate ratchet)
+```
+
+### Step 1: Formulate the Rule
+1. Clearly state what is forbidden.
+2. Select the FOIM `Scope` and `Dimension`.
+3. Determine category (`Architectural` vs `Platform`) and target `platform` (`agnostic` vs `<platform>`).
+4. Pick the next available ID: `SIG-<Scope>-<Dimension>-NNN`.
+
+### Step 2: Prototype and Test the Cypher Query
+Run your query interactively using `ce query` to test against the current workspace:
+```bash
+ce query "MATCH (l:Library)-[r:DEPENDS_ON]->(pkg:Package) WHERE pkg.name = 'Microsoft.Data.Sqlite' RETURN l, r, pkg"
+```
+Verify that:
+- Clean code returns **0 rows**.
+- Real violations are caught.
+- Test projects/files are appropriately excluded if not subject to the rule:
+  ```cypher
+  WHERE NOT coalesce(fn.is_test, false)
+  ```
+
+### Step 3: Create Gate Manifest YAML
+Place the YAML manifest in the appropriate categorized directory:
+- Architectural gates: `.codeexplorer/gates/architectural/<gate-id-in-kebab-case>.yaml`
+- Platform-specific gates: `.codeexplorer/gates/platform/<platform>/<gate-id-in-kebab-case>.yaml`
+
+```yaml
+id: SIG-P-B-004
+category: Architectural
+platform: agnostic
+scope: Module
+dimension: Boundaries
+name: "Disallow Direct Database Packages in Domain Libraries"
+severity: Error # Error | Warning
+description: "Domain and Core libraries must remain storage-agnostic. Direct references to database drivers violate Clean Architecture."
+remediation: "Move database drivers and EF Core dependencies to Infrastructure/Data layer projects."
+message: "Core library '{l.name}' must not depend on database driver '{pkg.name}'"
+thresholds:
+  warning: 1
+  error: 1
+query: |
+  MATCH (l:Library)-[r:DEPENDS_ON]->(pkg:Package)
+  WHERE (l.name CONTAINS 'Core' OR l.name CONTAINS 'Domain')
+    AND pkg.name IN ['Microsoft.Data.Sqlite', 'Npgsql', 'System.Data.SqlClient', 'MySqlConnector', 'better-sqlite3', 'pg', 'mysql2']
+  RETURN l, r, pkg
+ratchet:
+  enabled: true
+  baseline: baselines/SIG-P-B-004.json
+```
+
+### Step 4: Verify Gate via CLI
+Run the gate evaluator (returns clean summary table only):
+```bash
+# Check single gate (summary only)
+ce gate check -g SIG-P-B-004
+
+# Run all gates (summary only)
+ce gate check
+
+# Run only architectural gates
+ce gate check --category architectural
+
+# Run only platform gates for dotnet
+ce gate check --platform dotnet
+```
+
+To view complete failure details, rules, remediations, and individual violation listings:
+```bash
+# View full failure details across evaluated gates
+ce gate details
+
+# View details and violations for a specific gate
+ce gate details -g SIG-P-B-004
+```
+
+### Step 5: Freeze Existing Debt into Baseline
+If the codebase already contains legacy violations that cannot be fixed immediately:
+```bash
+# Update baseline snapshot for this specific gate
+ce gate ratchet --update -g SIG-P-B-004
+```
+This generates `.codeexplorer/gates/baselines/SIG-P-B-004.json`. From this point forward:
+- Legacy violations are **tolerated** (`[TOLERATED]`).
+- Any **new** violation introduced in a PR immediately fails the gate (`[FAIL]`).
+- When debt is fixed, `ce gate ratchet --update` lowers the ceiling (monotonic ratchet).
+
+### Step 6: Inspect and Group Violations
+```bash
+# Aggregated summary by file
+ce gate violations -g SIG-P-B-004 --group-by file
+
+# Filter by specific file
+ce gate violations -g SIG-P-B-004 --file Core/Analysis
+
+# Export to JSON
+ce gate violations -g SIG-P-B-004 -f json
+```
+
+---
+
+## Ontology Reference Cheatsheet
+
+### 1. High-Level Architecture Nodes
+| Label | Description | Key Properties |
+| :--- | :--- | :--- |
+| `Service` | Backend microservice or API | `name`, `path`, `project_type` |
+| `App` | Frontend or client application | `name`, `path`, `project_type` |
+| `Worker` | Background queue consumer / daemon | `name`, `path` |
+| `Library` | Shared package or class library | `name`, `path` |
+| `CliTool` | Command-line tool executable | `name`, `path` |
+| `Database` | Logical database or storage instance | `name`, `db_type` |
+| `Topic` | Message queue or pub/sub topic | `name`, `broker_type` |
+
+### 2. Code-Level Nodes
+| Label | Description | Key Properties |
+| :--- | :--- | :--- |
+| `Type` | Class, interface, struct, enum | `name`, `symbol`, `file_path`, `line` |
+| `Function` | Method, constructor, function | `name`, `symbol`, `file_path`, `line` |
+| `CallLiteral` | Hardcoded literal argument in method call | `value`, `callee`, `arg_index`, `file_path`, `line` |
+| `Endpoint` | HTTP route / REST handler | `path`, `method`, `route` |
+| `Query` | SQL query extracted from AST | `raw_sql`, `operation_type` |
+| `Package` | External dependency (NuGet, npm) | `name`, `version` |
+
+### 3. Key Relationships
+| Relationship | From $\to$ To | Meaning |
+| :--- | :--- | :--- |
+| `DEPENDS_ON` | `Project/Library` $\to$ `Package` | Project references external package |
+| `SERVICE_CALL` | `Service` $\to$ `Service/Endpoint` | Network invocation (REST, gRPC) |
+| `PUBLISHES_TO` | `Service` $\to$ `Topic` | Publishes events to message queue |
+| `SUBSCRIBES_TO` | `Worker` $\to$ `Topic` | Consumes events from message queue |
+| `USES_DB` | `Service` $\to$ `Database` | Service accesses database |
+| `CALLS` | `Function` $\to$ `Function` | AST call graph invocation |
+| `PASSES_LITERAL` | `Function/Type` $\to$ `CallLiteral` | Function passes literal string argument |
+| `CONTAINS` | Parent $\to$ Child | Structural containment (Project $\to$ Type $\to$ Method) |
+| `IMPLEMENTS` | `Type` $\to$ `Type` | Interface implementation |
+
+---
+
+## Catalog of Real-World Gate Patterns
+
+### Pattern A: Clean Architecture Layer Purity (Boundaries)
+Prohibit Domain/Application layer from referencing UI or Infrastructure packages:
+```cypher
+MATCH (p:Project)-[:DEPENDS_ON]->(pkg:Package)
+WHERE p.path CONTAINS 'src/Domain'
+  AND (pkg.name STARTS WITH 'Microsoft.AspNetCore' OR pkg.name STARTS WITH 'EntityFramework')
+RETURN 
+  p.path AS file,
+  0 AS line,
+  p.name AS symbol,
+  pkg.name AS target,
+  'Domain layer project ' + p.name + ' cannot reference infrastructure package ' + pkg.name AS message
+```
+
+### Pattern B: Circular Package Dependencies (Topology)
+Detect circular references between workspace projects:
+```cypher
+MATCH (a:Project)-[:DEPENDS_ON]->(b:Project)-[:DEPENDS_ON]->(a)
+WHERE a.name < b.name
+RETURN 
+  a.path AS file,
+  0 AS line,
+  a.name AS symbol,
+  b.name AS target,
+  'Circular dependency detected between projects ' + a.name + ' and ' + b.name AS message
+```
+
+### Pattern C: In-Memory Visitor IO Purity (Implementation Rules)
+Ensure AST visitors and in-memory processors do not invoke filesystem or network IO:
+```cypher
+MATCH (cls:Type)-[:CONTAINS]->(fn:Function)-[:CALLS]->(ioTarget:Function)
+WHERE cls.name CONTAINS 'Visitor'
+  AND (ioTarget.name STARTS WITH 'File.' OR ioTarget.name STARTS WITH 'Directory.' OR ioTarget.name STARTS WITH 'HttpClient.')
+RETURN 
+  cls.file_path AS file,
+  fn.line AS line,
+  cls.name + '.' + fn.name AS symbol,
+  ioTarget.name AS target,
+  'AST Visitor method ' + fn.name + ' performs prohibited IO call ' + ioTarget.name AS message
+```
+
+### Pattern D: Disallow Hardcoded Call Arguments (Implementation Rules)
+Flag raw string literals passed into business methods:
+```cypher
+MATCH (caller)-[:PASSES_LITERAL]->(lit:CallLiteral)
+WHERE NOT (coalesce(caller.symbol, '') CONTAINS 'Test' 
+       OR coalesce(caller.file_path, '') CONTAINS 'Test' 
+       OR coalesce(caller.file_path, '') CONTAINS 'test')
+RETURN 
+  lit.file_path AS file,
+  lit.line AS line,
+  coalesce(caller.name, 'unknown') AS symbol,
+  lit.callee + '(' + lit.value + ')' AS target,
+  'Hardcoded string literal "' + lit.value + '" passed to ' + lit.callee AS message
+```
+
+---
+
+## Best Practices & Pitfalls
+
+1. **Avoid Volatile Symbols in `target`**:
+   - Don't put line numbers or timestamps into `target`.
+   - Use stable identifiers like method names, package names, or typed constants so the SHA-256 fingerprint remains deterministic.
+2. **Exclude Test Code**:
+   - Always add `WHERE NOT (file CONTAINS 'test' OR file CONTAINS 'Test')` unless the gate specifically targets testing practices.
+3. **Always Provide Remediation**:
+   - Every gate should include actionable instructions in the `remediation` field explaining *how* the developer or AI agent should fix the issue.
+4. **Use Baselines to Avoid Blocking Existing Work**:
+   - When introducing a new gate to an established repository, *never* break the build for existing debt.
+   - Always run `ce gate ratchet --update -g <id>` to record existing violations in the baseline.

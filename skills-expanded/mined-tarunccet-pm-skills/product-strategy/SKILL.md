@@ -1,0 +1,127 @@
+---
+name: product-strategy
+description: "Create a comprehensive product strategy using the 9-section Product Strategy Canvas — vision, segments, costs, value propositions, trade-offs, metrics, growth, capabilities, and defensibility. Use when building a product strategy, creating a strategic plan, or defining product direction."
+---
+# Product Strategy Canvas
+
+### What You'll Need
+| Input | Required? | Example |
+|-------|-----------|---------|
+| Product description and current state | ✅ Required | B2B project management tool, 2 years old, 15k paying customers |
+| Target market and competitive landscape | ✅ Required | Mid-market teams, competing with Asana and Linear |
+| Business objectives | 🟡 Recommended | "Reach $10M ARR in 18 months" |
+| Existing customer research / data | 🟡 Recommended | NPS scores, churn reasons, top customer segments |
+| Current strengths and constraints | ⚪ Optional | Engineering team size, existing partnerships |
+
+> **Don't have everything?** Start anyway — the skill will work with what you provide and flag where richer input would improve the output.
+
+## Metadata
+- **Name**: product-strategy
+- **Description**: Generate a comprehensive product strategy using the 9-section Product Strategy Canvas. Covers vision, market segments, costs, value propositions, trade-offs, metrics, growth, capabilities, and defensibility.
+- **Triggers**: product strategy, strategy canvas, strategic plan, product strategy document
+
+## Instructions
+
+You are an experienced product strategist developing a comprehensive product strategy for $ARGUMENTS.
+
+Your task is to create a detailed Product Strategy Canvas that outlines how the product will compete, win, and grow in the market.
+
+### Phase 0: Context Confirmation
+
+Before proceeding, review what's been provided in $ARGUMENTS and the conversation context. **Only ask about what's missing — don't re-ask what's already clear.**
+
+1. **Summarize** what you understand from the provided context — restate the product, market, or situation back to the user in 2-3 sentences.
+2. **Identify gaps** — if any of the following are unclear, ask:
+   - What product is this strategy for?
+   - What is the current state (stage, metrics, team)?
+   - What is the strategic question or goal driving this work?
+3. **Confirm**: _"Here's my understanding: [summary]. I plan to [brief description of what the skill will produce]. Does this look right, or would you like to adjust anything before I proceed?"_
+
+If the user provides additional context, incorporate it. If the user confirms, proceed.
+
+## Input Requirements
+- Product description and current positioning
+- Market context, competitors, and customer insights
+- Company resources, constraints, and priorities
+- Any relevant business or market data
+
+## Product Strategy Canvas Template
+
+### 1. Vision
+- How can we inspire people?
+- What are we aspiring to achieve?
+- What values do we uphold?
+
+### 2. Market Segments
+- Market defined by people's problems (not demographics)
+- Jobs to Be Done (JTBD), desired outcomes, constraints
+- Who is our first segment?
+- Why this segment first?
+
+### 3. Relative Costs
+- Do we optimize for low cost (like Southwest Airlines)?
+- Or do we emphasize unique value (like Starbucks)?
+- What's our cost position relative to competitors?
+
+### 4. Value Proposition
+For each target segment:
+- **What before**: The customer's current situation, pain, or need
+- **How**: How your product delivers the solution
+- **What after**: The improved outcome or future state
+- **Alternatives**: What customers use today instead
+
+### 5. Trade-offs
+- What will we NOT do?
+- What features or markets are out of scope?
+- How does saying "no" create focus and amplify our value?
+
+### 6. Key Metrics
+- **North Star Metric**: Single metric that drives overall business success
+- **OMTM (One Metric That Matters)**: The one metric we optimize for this quarter
+
+### 7. Growth
+- Sales-Led Growth or Product-Led Growth?
+- Primary acquisition channels
+- How do we scale?
+- What's our unit economics?
+
+### 8. Capabilities
+- What competencies and resources do we need?
+- What do we build vs. partner for?
+- What capabilities must we develop to win?
+- **For AI products**: Do we have the data, ML engineering, and AI safety expertise needed? What is our AI model sourcing strategy (API, fine-tune, custom)?
+
+### 9. Can't/Won't
+- Why can't competitors easily copy this?
+- What defensibility do we have (network effects, switching costs, IP)?
+- What barriers to entry exist for new competitors?
+- **For AI products**: Consider data moats (proprietary training data), model moats (fine-tuned or custom models), and distribution moats (embedded AI in existing workflows).
+
+## Output Process
+1. Define the vision and aspirational impact
+2. Identify 2-3 target market segments with their JTBD
+3. Establish cost positioning (low cost vs. premium value)
+4. Develop value propositions for each segment
+5. List explicit trade-offs (what we won't do)
+6. Set North Star and quarterly OMTM
+7. Outline growth strategy and channels
+8. Document required capabilities and partnerships
+9. Explain defensibility and barriers to competition
+10. Validate strategy coherence: ensure elements reinforce each other
+11. Surface critical hypotheses that must be true for success
+12. Suggest low-effort experiments to test key assumptions
+
+## Notes
+- Ensure all 9 elements fit together logically
+- Identify what must be true for this strategy to work (hypotheses)
+- Propose validation experiments with minimal effort
+- Strategy guides decisions; clarity enables faster execution
+- Revisit quarterly as market conditions change
+
+---
+
+### Templates
+
+- [Product Strategy Canvas (PPTX)](https://docs.google.com/presentation/d/1xRBqSOISvAKzwM_z5tC8fiuO5O2YhboB/edit?usp=sharing&ouid=111307342557889008106&rtpof=true&sd=true)
+
+---

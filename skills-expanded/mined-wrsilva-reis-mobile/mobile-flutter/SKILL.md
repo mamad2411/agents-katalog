@@ -1,0 +1,34 @@
+---
+name: mobile-flutter
+description: Builds Flutter apps — layouts, responsive UI, forms, animations, theming, go_router and home screen widgets; HTTP, JSON, databases and caching; plugins and platform channels; isolates and app size; accessibility and localization; Effective Dart and Dart 3. Use for any Flutter or Dart code, even if the topic is not named.
+intents: [design, review, performance, accessibility, migration]
+stacks: [flutter]
+---
+
+# Mobile Flutter
+
+Guides for building Flutter apps. Cross-platform topics live in their own skills and have Flutter references there: architecture and state management in `mobile-architecture`, tests in `mobile-test`, debugging in `mobile-debug`, code review in `mobile-code-review`, security in `mobile-security` and Firebase in `mobile-firebase`.
+
+## Pick the topic
+
+| Topic | Read |
+|---|---|
+| UI, layout and navigation | [references/ui.md](references/ui.md) |
+| Data and networking | [references/data.md](references/data.md) |
+| Native code and plugins | [references/native.md](references/native.md) |
+| Performance and size | [references/performance.md](references/performance.md) |
+| Accessibility and internationalization | [references/accessibility-i18n.md](references/accessibility-i18n.md) |
+| Dart language | [references/dart.md](references/dart.md) |
+| Environment | [references/setup.md](references/setup.md) |
+
+Each topic file lists its guides; open only the ones the task needs.
+
+## Before writing code
+
+- Follow the project: its state management, folder structure, lints and packages already in `pubspec.yaml`.
+- Check the Flutter SDK pin (`.fvmrc`, toolchain config or CI) and the installed `flutter --version` before using newer APIs; `pubspec.lock` records resolved packages, not the exact Flutter SDK version.
+- Prefer packages the project already depends on over adding new ones; when adding one, check that it supports every platform the app targets.
+
+## Interface design
+
+For UI/UX reviews, wireframes, design systems and screen redesigns, use [mobile-ui-ux](../mobile-ui-ux/SKILL.md) and its reference for this stack. For Apple targets, also consult its [Apple design workflow](../mobile-ui-ux/references/apple-design.md); validate platform claims against current official guidance and the installed toolkit.

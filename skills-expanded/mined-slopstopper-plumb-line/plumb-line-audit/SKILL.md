@@ -1,0 +1,329 @@
+---
+name: plumb-line-audit
+description: Use when auditing a diff or repository against the plumb-line principles — finds laundered uncertainty, boundary leaks, hardcoded priors, overstated maturity, outputs lacking recorded lineage, and baseline drift with no explanation. Read-only: it reports, never auto-fixes.
+---
+
+# Audit against the plumb-line principles
+
+REQUIRED READING FIRST: `reference/portable-principles.md` (plugin root).
+If this file cannot be read, stop immediately and report: "Cannot audit: `reference/portable-principles.md` is missing or unreadable. Do not proceed from memory — the principles file is the source of truth for this audit."
+
+Scope the audit to the diff if one is given, else the whole repo. For broad
+sweeps, dispatch read-only subagents and keep only their findings.
+
+**Declared architecture first (stop before auditing blind).** Several checks
+(P1 — Source-truth layer, P2 — One-way layering, the omission pass's adoption calibration) are
+only as good as the audit's knowledge of what the project *declares*. Resolve
+it, in order: (1) supplied in the invocation/prompt by the builder; (2) the
+project's ruleset file (`AGENTS.md`, `CLAUDE.md`, or equivalent) and boundary
+config. If neither yields a source-truth layer and layer direction:
+
+- **Builder present** — stop before the traversal plan and say what is missing.
+  Offer to invoke `plumb-line-bootstrap` in its **declaration-only entry** (a
+  two-minute detour: it asks only the three declaration questions, writes the
+  ruleset so the next audit never hits this stop, installs nothing, and returns
+  the baton); on yes, invoke it naming that entry, then resume the audit using
+  the freshly declared architecture. On no, proceed as below.
+- **Builder absent, or declined** — proceed, calibrated to adopted principles
+  only (see "Calibrate to adopted principles"), and record the gap in the
+  report: an undeclared architecture is itself an advisory under P6 — Maturity vocabulary (the
+  project's rules exist only as vibes), and the audit's coverage of P1 — Source-truth layer and P2 — One-way layering is
+  correspondingly `partial`, which the coverage map must say.
+
+Never infer a source-truth layer the project did not declare — an invented
+layer would turn findings under P1 — Source-truth layer and P2 — One-way
+layering into artifacts of the audit's own assumptions.
+
+**Coverage honesty (emit a traversal plan first).** Before reading, list the
+in-scope files — the diff's touched files, or the repo's source tree — and state
+which you will read, sample, or skip. Test files are in scope: a test that
+states a requirement is read against the product code it exercises (check 10). That list is the audit's **denominator**.
+Track `read` / `partial` / `not-read` as you go and report it in the coverage map
+(Report §4). On anything larger than a small diff you will NOT read every file;
+say so up front rather than at the end. Never state or imply full coverage unless
+every in-scope file is marked `read` — an unread file with no finding is *not* a
+clean file, and claiming otherwise is the laundered-uncertainty / overstated-
+maturity failure this audit exists to catch (P8 — State-first lineage, and the
+honest-denominator discipline), turned on the audit itself.
+
+## Check catalogue (each finding cites the principle it violates)
+
+1. Laundered uncertainty (P3 — Confidence + provenance) — a value that lost its confidence/provenance as it flowed downstream; a mock/approximate value treated as clean truth.
+   - If the project uses the plumb-line provenance primitive: flag code that hand-builds provenance metadata bypassing combineProvenance/derive, and any value given a clean source while derived from a tainted input. Runtime complement: auditMeta().
+2. Boundary leak (P2 — One-way layering) — an import or call crossing layers against the declared direction; symbolic/derived/mock logic inside the source-truth layer (P1 — Source-truth layer).
+3. Hardcoded prior (P5 — Injectable priors) — a magic number encoding a judgment call, not injected/versioned config.
+4. Overstated maturity (P6 — Maturity vocabulary) — code or docs claiming current/done for something partial/mock/planned.
+5. Missing lineage (P8 — State-first lineage) — an output stored without the inputs needed to reproduce it.
+   - If the project uses the provenance primitive: flag derived values that are never marked or carry no lineage; recommend a test asserting auditMeta(metaOf(value)) is empty (`.toEqual([])` or length 0 in JS; `== []` in Python).
+6. Unexplained drift (P9 — Golden baseline + explain-the-drift) — a changed golden-baseline value with no recorded reason.
+7. Suppressed null result (spine) — a code path that cannot express "no structure/no effect/inconclusive". Confirmed only where rejection is a declared or practiced concern; where rejection is adopted nowhere, an always-accept/always-success stub is an advisory adoption gap, not a violation (see "Calibrate to adopted principles" below).
+8. Escaped fakery (P4 — Quarantined fakery) — mock/approximate/fallback/cached data that left its container: not labelled (e.g. missing a derivedFromMock-style marker), or flowing into an export/output path that should exclude it unless explicitly opted in.
+9. Uncontracted output (P7 — Contracted outputs) — a public output shape with no versioned, validated contract: missing a validator, a version constant, or a canonical key list.
+10. Test changed to pass (spine; P4 — Quarantined fakery for a substitution) — a test changed so that an unmet requirement reads as met: the unavailable dependency substituted in the requirement's own test (a mock, a stubbed global such as `fetch`, a local fake server, an injected fixture client) so it passes against a stand-in; the test skipped, deleted, commented out, or marked as an expected failure without `strict`; its assertion rewritten to expect what the code now returns; its threshold or gate loosened; or retries and longer timeouts added to hide a failure nobody has explained. A failing test is a null result about the project, and this erases it where CI can no longer see it.
+   - **Flag it unless a recorded decision stands behind it, or it is an honest deferral.** A decision is one the owner, a spec or a ticket made about this expectation, recorded where the change can be traced (a commit message, a comment, a ticket or spec citation). A stated reason alone is not a decision: "stub it because the API is unreachable" says why, not on whose decision the requirement can wait, and a request to get CI green is not a decision either. An honest deferral is a strict expected-failure marker with its reason and the assertion unchanged; one with `run=False`, or over a rewritten assertion, is not.
+   - **Never flag the carve-outs** (`plumb-line-method`, "What this does not forbid"): a test updated for behaviour changed on purpose, a wrong test fixed with its reason stated, a labelled stub added alongside the requirement's own test, mocks in a unit test of a unit's own logic alongside the requirement's own test (not in place of it), or a change a recorded decision stands behind.
+   - A test double is not acceptable because it sits in a test file. Ask two things. First, does this test state the requirement: it is named or described as a requirement or integration test, cites the requirement, was changed from calling the real dependency, or is the requirement's only test while the product path it exercises calls the real dependency (read that path). A unit test that mocks its own transport or collaborator to test the unit's logic is ordinary testing when it sits alongside a test that states the requirement (that one may be red, or strictly deferred), never in place of it; a citation or a name alone does not make such a unit test the requirement's test. Second, is there evidence that the requirement is unmet where the suite runs (its real path cannot run there, or does not pass), recorded in the repo: a comment, skip reason, ticket or commit saying the dependency is unavailable there or the real call fails, or the test changed from the real call while that call was failing or unavailable (the change, its message or the run before it shows it). A key the code reads but the CI configuration does not supply is not evidence on its own, and neither is a working real call replaced by a stand-in (a slow or rate-limited test swapped for speed). When both are established, it is a violation, not a matter of doubt, whatever the test is named: the stand-in turns an unmet requirement green. With no evidence that the requirement is unmet, it is not this finding: at most an advisory that the requirement has no test against the real dependency, not `needs-review`. `needs-review` is for what cannot be established from the repo: whether another test states the requirement, or whether the product path reaches the dependency.
+   - A decision cited but not findable (a ticket, a spec change or an owner's instruction the audit cannot find in the repo or its history): `needs-review`, naming the citation, not accepted on sight.
+   - The spine calibration does not govern check 10: whether or not the project adopts rejection elsewhere, a test changed to pass is judged by the rules above.
+   - Name it as this finding, not as evidence for a product defect (a missing mock gate, an unlabelled value), though those may be reported beside it. Give the honest paths: record the decision that allows it, mark the test as a strict expected failure with its reason and hand the decision back, or stay red.
+   - The outcome: a violation when the requirement is unmet and the test now passes (for a stand-in, when both questions above are established; for the other forms, when the code as it stands cannot meet the requirement); an advisory, not `needs-review`, for a stand-in with no evidence that the requirement is unmet; `needs-review` only for the unknowns named above and a decision cited but not findable.
+
+## Method
+
+Run two passes — they catch different failure modes, and some checks need both.
+
+**Presence pass — things wrongly present.** A bad thing IS in the code: an upward
+import (P2 — One-way layering), a magic number (P5 — Injectable priors), an escaped/unlabelled mock (P4 — Quarantined fakery), a mock value
+treated as clean truth (P3 — Confidence + provenance), overstated maturity (P6 — Maturity vocabulary), a changed baseline value
+(P9 — Golden baseline + explain-the-drift), a test changed to pass (check 10). Grep/read for the smell, then confirm by reading context — never
+report on a keyword match alone.
+
+**Omission pass — things wrongly absent.** A good thing is MISSING, and an
+absence has no smell to grep. Enumerate instead — and put the enumeration in your
+report as a table, one row per output-producing function / public output shape.
+Give each question below its OWN column — do not collapse them. This table is a
+REQUIRED artifact: the dropped field is invisible unless you walk every output,
+and skipping the table is how the omission gets missed. For each output ask —
+
+- does it carry **provenance** (where the value came from) where it influences a decision? (P3 — Confidence + provenance)
+- does it carry **confidence** where it influences a decision? (P3 — Confidence + provenance)
+- does it record **lineage** — the inputs needed to *reproduce* it (source, record/row count, field names, config/version used)? (P8 — State-first lineage)
+- does it have a versioned, validated contract? (P7 — Contracted outputs)
+- can it express a null / "no effect" / rejection outcome? (spine)
+- is there a golden baseline pinning it? (P9 — Golden baseline + explain-the-drift)
+
+The table's header row, in this order (a header may go on to inline-name its
+principle, e.g. `Lineage (P8 — State-first lineage)`, but must start with these
+words):
+
+| Output | Provenance | Confidence | Lineage | Contract | Null-expressible | Baseline |
+| ------ | ---------- | ---------- | ------- | -------- | ---------------- | -------- |
+
+Provenance and lineage are SEPARATE columns and a present provenance string does
+NOT satisfy lineage: a free-text `provenance` ("stub source: …") or a
+`weights_version` answers *where from / which config*, but lineage answers *can I
+regenerate this exact output* — which usually needs the record count, the field
+names, and the source identity that a provenance string omits. If the
+lineage-bearing layer's output has provenance but no field recording those
+reproduction inputs, that is a missing-lineage (P8 — State-first lineage) violation, not a pass.
+
+The failure this pass exists to prevent is a `lineage`, `confidence`, or
+`provenance` field silently dropped from ONE output while a declared rule (or a
+sibling output) says it should be there — invisible to grep, caught only by the
+table. The most common miss is treating provenance-present as lineage-present;
+the dedicated lineage column is what forces the check.
+
+**Calibrate to adopted principles (governs the omission pass).** A principle is
+_adopted_ when EITHER the project's declared ruleset/architecture requires it
+(the primary signal — e.g. "service outputs are lineage-bearing", a declared
+contract convention) OR sibling code already practices it (the fallback signal —
+another output records lineage, other shapes ship a contract). An omission of an
+adopted principle is a **violation** — and the declaration alone is enough: a
+service output with no lineage violates a declared "services are lineage-bearing"
+rule even if NO other output happens to carry lineage (the field may have been
+removed from the only place it lived — its absence cannot also be its alibi).
+Only where a principle is neither declared nor practiced anywhere — adopted
+nowhere — do you refrain from flagging each output: report it ONCE as an advisory
+adoption gap (a maturity note under P6 — Maturity vocabulary), not as N violations. This keeps the audit
+honest on small or early repos while still catching the dropped-field regression.
+
+**The spine obeys this calibration too.** An always-`true` / always-success stub
+(e.g. a `submitPayment` that can only return `accepted: true`) suppresses the
+null/rejection outcome — but whether that is a **violation** or merely an
+**adoption gap** turns on the same test. If rejection is declared in the
+architecture or practiced by sibling code, the missing reject path is a confirmed
+spine violation. If rejection is adopted nowhere — neither declared nor practiced
+anywhere — a deliberate stub on a layer that never claims to reject is the
+under-claim case: report it once as an adoption gap with Status `advisory`,
+never as a confirmed violation.
+
+- Default to under-claiming: if unsure a finding is real, set its Status to
+  `needs-review`, not `violation`.
+
+## Report (audit format) — report-format v4
+
+Every report has five parts in this order: **header**, **glossary**, **findings
+table**, **omission-pass table**, **coverage map**. The shape is fixed — same input, same shape, every run
+(the audit owes its own output the reproducibility it demands of the code it
+reviews).
+
+**1. Header block** — verbatim keys, so a stored report is reproducible. The
+header block is the **first thing in the report**: no title line, heading, or
+prose above it, whether the report is a chat message or a saved file — the
+checker (`scripts/check_report_format.py`) reads the first line as the contract
+key and fails a report that opens with anything else:
+
+```
+report-format: v4
+scope:               <path, diff range, or "repository">
+principles-revision: <the "Principles revision" from reference/portable-principles.md>
+date:                <YYYY-MM-DD>
+commit:              <git SHA of the audited tree, or "working tree (uncommitted)", or "no repository (not version-controlled)">
+```
+
+`commit` is **exactly one** of those three forms — a git SHA, the literal
+`working tree (uncommitted)`, or the literal `no repository (not
+version-controlled)`. Do not compose a hybrid or add an explanation inside the
+value (an audited directory that is not a git repository is `no repository (not
+version-controlled)`, nothing more); the checker rejects any other string.
+
+**2. Principle glossary** — one line per principle *referenced anywhere in this
+report*, emitted before the findings, so a reader never meets a bare code
+(explain before use). Names come from `reference/portable-principles.md` — do not
+paraphrase. Omit principles this report does not cite; on a clean run the glossary
+may be empty — unless the omission-pass table's headers or cells name a
+principle, which is a citation like any other and goes in the glossary too. Example (include only the rows you cite):
+
+```
+P1 — Source-truth layer      P4 — Quarantined fakery   P7 — Contracted outputs
+P2 — One-way layering        P5 — Injectable priors    P8 — State-first lineage
+P3 — Confidence + provenance P6 — Maturity vocabulary  P9 — Golden baseline + explain-the-drift
+spine — null-result expressibility
+```
+
+Every `P#` reference elsewhere in the report renders with its name inline
+(`P3 — Confidence + provenance`), never a bare `P3` — and "elsewhere" means
+everywhere outside the glossary block: prose sections you add (a declared-
+architecture recap, a summary), table column headers (`Provenance (P3 —
+Confidence + provenance)`, not `Provenance (P3)`), parenthetical asides, and
+the omission-pass table. The checker scans the whole report for bare codes.
+
+**3. Findings table** — ALWAYS this table, never freeform prose. One row per
+finding, columns in this exact order:
+
+| Path | Line | Function | Status | Issue | Suggested Fix | Principle |
+| ---- | ---- | -------- | ------ | ----- | ------------- | --------- |
+| `src/foo.py` | 42 | `load_scores` | violation | mock value given a `real` source | tag via `derive`, keep `derivedFromMock` | P3 — Confidence + provenance |
+
+- **Path** — repo-relative (never a bare basename; large repos have same-named files).
+- **Line** — line or range; `—` if not line-anchored.
+- **Function** — enclosing function/symbol, or `—`.
+- **Status** — exactly one of three words, and nothing else in the cell:
+  `violation` (a confirmed finding), `needs-review` (a finding you are not sure
+  is real: the default when in doubt), or `advisory` (reported once and not
+  counted as a violation, such as an adoption gap under the calibration
+  above). The checker refuses any other word; say more in the Issue cell.
+- **Issue** — one-line description. The status is its own column; do not
+  repeat it here.
+- **Suggested Fix** — a direction, not a patch.
+- **Principle** — the inline-named principle (`P# — <name>`).
+
+**4. Omission-pass table** — REQUIRED on every run: the enumeration table
+defined in the Method section, one row per output-producing unit. Its rules are
+below the coverage map.
+
+**5. Coverage map** — the audit's honest denominator, so a reader can tell what
+was actually examined. List every in-scope file (or directory, for a large tree)
+marked `read` / `partial` / `not-read`, then state the count and an explicit
+no-completeness caveat:
+
+```
+coverage: 12/47 files read, 3 partial, 32 not-read (32%)
+scope note: findings are drawn from the read set only; a not-read file with no
+finding is not a clean file. This audit does not claim completeness.
+```
+
+For a diff-scoped run the denominator is the diff's touched files and coverage is
+normally 100% — say so explicitly rather than omitting the map. The map is
+REQUIRED on every run: it is the artifact that stops the audit from implying it
+found everything when it only sampled.
+
+End with a one-line summary count, counted from the Status column (e.g.
+`4 findings: 2 violations, 1 needs-review, 1 advisory`).
+A clean repo still emits the header, an empty/omitted glossary, an explicit
+`No findings.` line in place of table rows, the omission-pass table, and the
+coverage map — a clean result
+is a valid result, but only over the files the coverage map lists as `read`.
+
+The omission-pass enumeration table (defined in the Method section) is a separate,
+REQUIRED report artifact with its own columns, emitted after the findings table
+and before the coverage map on every run, including clean ones. If the scope
+holds no output-producing unit at all, write `No output-producing units in
+scope.` on its own line in its place. The checker (v3 onward) fails a v3 or later report
+with neither; a table whose columns are not those question words in that order;
+a table with no rows; or a row with the wrong number of cells or a blank cell. Its principle references are inline-named too, exactly like the
+findings table above. A worked
+cell, to pin the form: write `NO — declared bearer (P8 — State-first lineage)`,
+never `(P8 finding)` — a bare code inside any table cell is exactly the drift
+the checker flags, and it was the one live format FAIL in an otherwise-clean
+six-run validation (#293).
+
+**Validate the report against its own contract before emitting it.** P7 — Contracted outputs applies
+to this skill's own output: a contract with a version and a key list but no
+check is a claim, not a contract. The checker ships inside this plugin: run
+`python3 <plugin root>/scripts/check_report_format.py <report>` (or
+`scripts/check_report_format.py` inside the plumb-line repo) — writing the
+report to a temp file if it has not been saved — and fix any violation before
+printing. Only when it genuinely cannot run (no shell, no Python, the plugin
+root unknown, a host rule forbidding it) say so in one line rather than
+implying the report was mechanically checked:
+
+```
+format-validation: scripts/check_report_format.py v<N> — clean
+format-validation: not run (checker unavailable in this repo)
+```
+
+`<N>` is the checker version the checker prints on its first line (`check_report_format v<N> — ...`); copy it, so a stored "clean" says which rule set it was earned under. The checker judges every `format-validation:` line: an unfilled `v<N>`, a stamp newer than the checker, or a line in any other form (a different dash, trailing text, a list bullet) is rejected; an unstamped clean line passes with a "checker version unrecorded" note.
+
+Put this line **below the coverage map**, and note the key is
+`format-validation:`, *not* `report-format:` — a second `report-format:` line
+would be read as a duplicate header key, and re-running the checker on the saved
+report would then fail it on its own validation marker.
+
+The `— clean` form is earned, never asserted: emit it only when the command
+actually executed this run, on the exact text being returned. *Anything* that
+prevents executing it — the script missing, no shell, a host rule forbidding
+file writes — is the `not run` case; state the reason in the line. This is not
+a formality: a verdict claimed without an execution is laundered uncertainty
+in the audit's own report, and it happened live — one auditor, barred from
+writing a temp file, printed `— clean` over a report the checker fails (#293).
+
+**The message is the text the checker passed.** Write the report to a
+temp file (or use the saved one), run the checker on that file, then print the file's text as your
+message, unchanged: nothing above the header (no summary, heading or
+preamble), and no edit between the check and the message. If you change
+anything after the check, however small, re-run the checker on the changed
+text before printing it. Anything else you want to say (a summary, the save question, the handoff offer) goes
+below the report, after its last line. A `— clean` stamp is true only of
+the exact text it was run on: two 2026-09-30 eval audits delivered a
+message that opens with a prose summary above the header, one whose body
+also fails, under a `— clean` stamp, and the checker names both stamps as
+not earned (#581).
+
+Never suppress a finding to make the report validate — the contract describes the
+report's *shape*, and a shape violation is fixed by fixing the shape.
+
+**Report file — always offer, never auto-write.** Print the full report
+(header + glossary + findings table + omission-pass table + coverage map +
+summary) to the conversation every run. Then, and
+only then, ask whether to save it to `plumb-line-audit.md`; write the file solely
+on an explicit yes. Never write it without asking — repeated runs on the same
+input MUST produce the same file-write behavior.
+
+## After the report — hand the baton (read-only; invoke on yes, never apply)
+
+The audit reports; it does not fix. After the report is printed and the file
+question is settled, present the next steps as ONE short offer — and when the
+builder accepts one, **invoke that skill directly** (via the host's skill
+mechanism) rather than telling them to go run it; a handoff that ends in "you
+could run X" drops the baton. The auditor itself still applies nothing — the
+invoked skill owns its own actions and its own consent gates.
+
+- **Apply the findings** (the default next step when there are findings) —
+  invoke `plumb-line-remediate`, pointing it at this report (the saved
+  `plumb-line-audit.md` if the builder said yes to the file, else the printed
+  findings table). Remediate classifies, shows a diff per finding, and keeps
+  its own honesty guardrail — the read-only boundary moves with the baton.
+- **Plan the fixes first** — hand the findings to a planning skill (superpowers
+  `writing-plans`, or plan mode) for a fix-plan the builder works through. This
+  produces a plan, not edits.
+- **Close a provenance/enforcement gap** — when findings include missing
+  provenance or lineage, laundered taint, or a layer boundary nothing enforces
+  (P3 — Confidence + provenance, P4 — Quarantined fakery, P8 — State-first
+  lineage, P2 — One-way layering), offer `plumb-line-bootstrap` to wire the
+  discipline in (host rule file + git hooks). Offer this only when such a gap
+  actually appears, not on every run.
+
+Declined, or no builder present to answer: stop after the report — never
+auto-invoke anything that edits files. On a clean run (no findings), skip the
+remediate offer entirely; offer bootstrap only under the gap condition above.

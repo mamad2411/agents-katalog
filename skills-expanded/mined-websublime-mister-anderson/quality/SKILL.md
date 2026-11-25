@@ -1,0 +1,188 @@
+---
+name: quality
+description: QA finalization gate — validates spec conformity, runs tests/build/lint, produces a structured QA report. Auto-dispatches the supervisor for rework on FAIL. Last gate before human merge.
+user_invocable: true
+---
+
+# Quality
+
+Dispatch QA validation for a code-review-approved implementation. Last gate before merge.
+
+---
+
+<on-init>
+If the user provides $ARGUMENTS, check if it contains a bead ID (e.g., `bd-a3f`, `bd-001.2`).
+
+**If bead ID provided:** use it directly.
+
+**If no bead ID provided:**
+1. Run `bd list --label approved --json` to get beads that passed code review
+2. Present the list showing: ID, title, priority, and labels
+3. If no beads with `approved` label found, inform the user and stop
+4. Ask the user which task to QA
+</on-init>
+
+<on-check>
+1. **Bead must exist and have `approved` label.** Validate with `bd show {BEAD_ID} --json`.
+2. **REVIEW comment with APPROVE verdict must exist.** Read `bd comments {BEAD_ID}`.
+3. **Implementation branch must exist.** Check with `git branch -a | grep {BEAD_ID}`.
+</on-check>
+
+<on-check-fail if="bead">
+Bead does not exist. Inform the user and stop.
+</on-check-fail>
+
+<on-check-fail if="approved">
+This task hasn't passed code review yet. Recommend running `/review {BEAD_ID}` first.
+</on-check-fail>
+
+<on-execute>
+
+### Step 1: Read Bead Context
+
+1. Parse bead JSON. Extract: `description`, `acceptance`, `design`, `notes`, `status`, `labels`, `parent`
+2. Read bead comments: `bd comments {BEAD_ID}`
+3. Locate the spec/design doc from the bead's `design` field or parent epic
+4. If spec references a Source PRD, note the path
+5. Identify the implementation branch
+
+### Step 2: Dispatch QA Gate
+
+Dispatch using **exactly** these parameters — no more, no less:
+
+```python
+Agent(
+    subagent_type="qa-gate",
+    prompt="QA validate BEAD {BEAD_ID} on branch {branch-name}. Spec: {spec_path}. PRD: {prd_path}. Read the bead (bd show {BEAD_ID}) and comments (bd comments {BEAD_ID}) for full context — description, acceptance criteria, design notes, COMPLETED, DECISION, DEVIATION, and REVIEW comments. Run tests, build, and lint. Log a structured QA comment to the bead."
+)
+```
+
+**Do NOT add extra parameters** unless the user explicitly requests it.
+
+### Step 3: Present QA Results
+
+After the QA agent completes:
+
+1. Read the QA comment: `bd comments {BEAD_ID}`
+2. Extract verdict: `PASS` or `FAIL`
+3. Present the QA summary
+
+**If PASS:**
+- Update labels: `bd label add {BEAD_ID} qa-passed`
+- Ask: "Do you want to close this bead?"
+  - If yes: `bd close {BEAD_ID}`
+  - If no: leave open for manual merge workflow
+
+**If FAIL:**
+- Present specific failure reasons
+- Ask how to proceed:
+  - **Rework**: address gaps — auto-dispatches supervisor
+  - **Follow-up**: create new bead for gaps, merge as-is
+  - **Override**: merge anyway — user's decision
+- Update labels:
+  ```bash
+  # If rework:
+  bd label remove {BEAD_ID} approved
+  bd label add {BEAD_ID} needs-rework
+  bd update {BEAD_ID} --status in_progress
+
+  # If follow-up or override:
+  bd label add {BEAD_ID} qa-override
+  ```
+- If rework: resolve branch instruction (continue existing or fresh)
+
+### Step 4: Track QA Findings
+
+Extract actionable findings from the QA comment and apply the **severity threshold policy**:
+
+| Severity | Action |
+|---|---|
+| **BLOCKER** | Addressed by rework (same bead) — never tracked separately |
+| **MAJOR** | Individual bead — justifies its own pipeline |
+| **MINOR** | Batched into a single "QA cleanup" bead per epic |
+| **EXTRA** | Comment on the epic — deferred backlog, not a bead |
+| **RISK** | Comment on the epic — deferred backlog, not a bead |
+
+**Filtering rules:**
+- **PASS:** track MAJORs as individual beads, batch MINORs into one bead, log EXTRA/RISK as epic comments
+- **FAIL + rework:** BLOCKER/MAJOR addressed by rework; batch MINORs, log EXTRA/RISK as comments
+- **FAIL + follow-up/override:** same as PASS policy
+- **If no MAJORs or MINORs exist:** log EXTRA/RISK as epic comments only — do NOT dispatch Fernando for bead creation
+- **Findings beads** (bead has any `finding:*` label): the QA verdict (PASS / FAIL) and rework cycle operate normally — BLOCKERs and MAJORs are still fixed via rework on the same bead. However, Step 4 tracking is skipped: MINORs found during QA of a findings bead are reported in the QA comment for transparency but do NOT generate new beads. This breaks the recursive cycle where findings create findings indefinitely.
+
+**Log EXTRA/RISK as epic comments** (deferred backlog — not beads):
+```bash
+bd comments add {TARGET_EPIC_ID} "DEFERRED from QA of {BEAD_ID}:
+- [EXTRA] {description}
+- [RISK] {description}"
+```
+
+**Resolve the target epic** — findings go to the parent epic:
+```bash
+bd show {BEAD_ID} --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0].get('parent',''))"
+```
+- **If `parent` is not empty:** use it as `{TARGET_EPIC_ID}`
+- **ONLY if `parent` is empty:** fall back to a "Review Findings" epic
+
+**Before dispatching Fernando**, check what findings were already tracked from the review gate:
+```bash
+bd list --parent {TARGET_EPIC_ID} --json | python3 -c "import json,sys; issues=json.load(sys.stdin); tracked=[i for i in issues if any('discovered-from:{BEAD_ID}' in str(d) for d in i.get('deps',[]))]; print('\n'.join(f\"{i['id']}: {i['title']}\" for i in tracked))"
+```
+Include this list in Fernando's dispatch prompt so he can deduplicate across gates.
+
+**Only dispatch Fernando if MAJORs or MINORs exist.** Use **exactly** these parameters — no more, no less:
+```python
+Agent(
+    subagent_type="beads-owner",
+    prompt="Create beads issues for the following QA findings from BEAD {BEAD_ID} QA validation. IMPORTANT: Each issue MUST use --parent {TARGET_EPIC_ID} flag to place it inside the epic, and --deps 'discovered-from:{BEAD_ID}' to link back to the validated task. Do NOT use 'bd dep add' to link tasks to epics — only --parent does that. Use label 'finding:{type}' (lowercase) for each. Include relevant context from QA report. BATCHING RULE: Create individual beads for MAJOR findings only. Batch ALL MINOR findings into a single bead titled 'QA cleanup: {BEAD_ID}' with each item as a checklist in the description. Do NOT create beads for EXTRA or RISK — those are already logged as epic comments. DEDUP CONTEXT: The following findings were already tracked from the review gate — deduplicate against them before creating new issues:\n{EXISTING_REVIEW_FINDINGS}\n\nFindings:\n\n{FINDINGS_LIST}"
+)
+```
+**Do NOT add extra parameters** unless the user explicitly requests it.
+
+### Step 5: Auto-Dispatch Supervisor (FAIL + rework only)
+
+**Skip when verdict is PASS, or user chose follow-up/override.**
+
+1. Resolve supervisor from `assignee` field (same as `/do` Step 2)
+2. Confirm before dispatch:
+   ```
+   Ready to dispatch {resolved-supervisor} for QA rework of {BEAD_ID}: "{bead title}"
+     Branch: {REWORK_BRANCH_INSTRUCTION summary}
+     Failures to address: {N} BLOCKER + {M} MAJOR
+
+   Proceed? [y/n]
+   ```
+3. **If confirmed**, dispatch using **exactly** these parameters — no more, no less:
+   ```python
+   Agent(
+       subagent_type="{resolved-supervisor}",
+       prompt="QA rework for BEAD {BEAD_ID}. {REWORK_BRANCH_INSTRUCTION} Read the bead (bd show {BEAD_ID}) and comments (bd comments {BEAD_ID}) for full context. The latest QA comment contains BLOCKER and MAJOR failures that MUST be addressed — MINOR, EXTRA, RISK findings have been tracked as separate issues. After addressing failures, log a COMPLETED comment summarizing what was fixed."
+   )
+   ```
+   **Do NOT add extra parameters** unless the user explicitly requests it.
+4. **If declined:** inform "Run `/do {BEAD_ID}` when ready." and stop.
+
+</on-execute>
+
+<on-complete>
+Present the result following the **Presenting to the User** guidelines:
+
+1. **Headline**: verdict in plain language — "QA passed — all checks green, ready to merge" or "QA found {N} issues: {brief summary}"
+2. **What was found**:
+   - If PASS: brief summary of what was validated (conformity, tests, build, lint). Highlight any EXTRA or RISK items logged as deferred backlog.
+   - If FAIL: for each BLOCKER/MAJOR, explain in natural language what failed, why it matters, and what needs to happen. Use a ASCII diagram if failures involve multi-component interactions.
+3. **Findings tracked**: if Fernando created beads, list with plain-language descriptions. If EXTRA/RISK items were logged to the epic, mention them.
+4. **Repercussions**: what breaks if FAIL findings aren't addressed
+5. **Next step**: close and merge (PASS) or confirm rework dispatch (FAIL)
+6. **Technical details**: raw QA comment, test/build/lint output, and conformity details in a `<details>` block
+</on-complete>
+
+<on-complete if="verdict=PASS">
+Inform: "QA passed. All checks green. Ready for merge."
+</on-complete>
+
+<on-next>
+- If PASS → close bead and merge
+- If FAIL + rework → supervisor dispatched (or user deferred to `/do`)
+- If FAIL + follow-up → new bead created for gaps
+</on-next>

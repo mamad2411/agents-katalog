@@ -1,0 +1,398 @@
+---
+name: oh-my-coding-maas-gateway
+description: Operational companion for the oh-my-coding-maas-gateway LiteLLM proxy stack. Provides context and commands for health checks, validation, upgrades, key/model management, debug routing, metrics, and recovery.
+---
+
+# oh-my-coding-maas-gateway — Operational Companion
+
+Operational companion for a self-hosted LiteLLM proxy routing Huawei MaaS
+models to opencode, Codex CLI, Claude Code CLI, and Pi agent with virtual
+keys, multi-key load balancing, and Prometheus + Grafana observability.
+
+## When Invoked
+
+Present this menu. Default (just press Enter) loads context without action:
+
+```
+What would you like to do?
+
+  1) Health check      — quick status of all services
+  2) Run validation    — full end-to-end validation
+  3) Upgrade           — check for and apply updates
+  4) Uninstall         — remove all or part of the gateway
+  5) Install skill     — install a new skill into all agents
+  6) Mint new keys     — add MaaS or virtual keys
+
+  Choice [1-6] or Enter for context only:
+```
+
+After completing an action, ask if they need anything else. For anything
+not in the menu (model management, debug routing, metrics), respond using
+the reference sections below.
+
+## Project Location
+
+The gateway is at `/home/oh-my-coding-maas-gateway` (the default install
+location). `cd` there first:
+
+```bash
+cd /home/oh-my-coding-maas-gateway
+```
+
+If installed elsewhere, locate the repo by finding the directory that
+contains `scripts/05_validate.sh`.
+
+## Available Scripts
+
+| Script | Purpose | Key flags |
+|--------|---------|-----------|
+| `scripts/bootstrap.sh` | Install or upgrade the entire stack | `--tool=`, `--virtual-key=`, `--api-key=`, `-y`/`--yes`, `--dry-run`, `--no-skill`, `--no-bundles` |
+| `scripts/update.sh` | Check and update individual components (tools + infrastructure); shows project + component versions | `--check`, `--all`, `--dry-run` |
+| `scripts/04_skills_mcps.sh` | Install THIS companion skill + agent tool bundles (REA, drawio) into agents | `--yes`, `--dry-run`, `--no-skill`, `--no-rea`, `--no-drawio`, `--refresh-only`, `--strict`, `--skip-<tool>` |
+| `scripts/05_validate.sh` | End-to-end validation (run anytime) | `--litellm-only`, `--opencode-only`, `--codex-only`, `--claude-code-only`, `--pi-only`, `--skip-opencode`, `--skip-codex`, `--skip-claude-code`, `--skip-pi`, `--skip-bundles`, `--dry-run` |
+| `scripts/06_backup.sh` | Dump/restore the LiteLLM PostgreSQL DB (spend history, virtual keys, budgets) | `--restore FILE`, `--keep N`, `--dry-run`, `--yes` |
+| `scripts/07_dashboard_shots.sh` | Capture dashboard screenshots for visual verification | `--out=`, `--dry-run` |
+| `scripts/install-skill.sh` | Install ANY skill into all detected agents | `--name=`, `--source=`, `--dry-run` |
+| `scripts/uninstall.sh` | Remove all or part of the gateway | `--tool=`, `--docker`, `--repo`, `--all`, `--dry-run`, `--yes`, `--bundles` |
+| `scripts/02_litellm.sh` | Regenerate LiteLLM config + restart (after editing `.env` or `models.sh`) | `--routing-strategy=`, `--dry-run` |
+| `scripts/01_env.sh` | Regenerate `.env` (after key changes) | `--force` |
+
+## Services
+
+| Service | URL | Auth |
+|---------|-----|------|
+| LiteLLM Proxy | `http://127.0.0.1:4000` | Virtual key |
+| LiteLLM Admin UI | `http://127.0.0.1:4000/ui` | admin account (created via /user/update; password recorded in .env as LITELLM_UI_PASSWORD, Proxy Auth section) |
+| Grafana Dashboard | `http://127.0.0.1:3000` | admin password (from .env) |
+| Prometheus | `http://127.0.0.1:9090` | None |
+
+---
+
+## Option 1: Health Check
+
+```bash
+docker compose ps
+curl -sf http://127.0.0.1:4000/health/liveliness && echo "LiteLLM: healthy" || echo "LiteLLM: unhealthy"
+curl -sf http://127.0.0.1:3000/api/health && echo "Grafana: healthy" || echo "Grafana: unhealthy"
+```
+
+Report: how many containers are running, which are healthy, any issues.
+If problems found, suggest fixes from the Recovery table below.
+
+## Option 2: Run Validation
+
+```bash
+./scripts/05_validate.sh
+```
+
+If failures occur, match them against the Recovery table, suggest the fix,
+and offer to run it. WARN messages are advisory only.
+
+## Option 3: Upgrade
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wallacelw/oh-my-coding-maas-gateway/main/scripts/bootstrap.sh | bash
+```
+
+After upgrade, remind user to restart any running coding tools.
+If Grafana looks stale: `docker compose restart grafana`.
+
+### Update coding tools only
+
+To check and update individual components without re-running the full
+pipeline. Components are grouped into two categories:
+
+- **Coding Tools** — opencode, oh-my-opencode-slim, Codex CLI, Claude
+  Code, Pi agent, plus display-only bundle-pin drift rows (`rea-agents`,
+  `@drawio/mcp` — never auto-updated; pins move via repo releases)
+- **Infrastructure** — LiteLLM, Grafana, Prometheus (active docker-method
+  updates); PostgreSQL (pinned, display-only — never auto-updated)
+
+```bash
+./scripts/update.sh              # interactive: show grouped table, select which to update
+./scripts/update.sh --check      # show version table only
+./scripts/update.sh --all        # update all components with updates available
+./scripts/update.sh --dry-run    # show what would be updated
+```
+
+The script detects installed components, checks current vs latest
+versions, and offers selective updates. It does NOT touch passwords,
+API keys, or virtual keys — only updates binaries, npm packages, and
+Docker images; the slim and docker methods also bump pinned versions
+in tracked files and commit those changes. After updating Docker
+images, the affected service is automatically pulled and restarted.
+
+## Option 4: Uninstall
+
+Ask what to remove:
+
+```bash
+./scripts/uninstall.sh --all --dry-run   # preview
+./scripts/uninstall.sh --tool=opencode   # one agent
+./scripts/uninstall.sh --all             # everything
+```
+
+## Option 5: Install Skill
+
+Install a **new** skill (not this companion) into all detected coding agents.
+
+**Step 1**: Ask the user for:
+- **Skill name** — a short directory name (e.g. `my-deploy-skill`)
+- **Source** — a local file path or URL to a SKILL.md file
+
+**Step 2**: Preview what would be installed:
+```bash
+./scripts/install-skill.sh --name=<name> --source=<source> --dry-run
+```
+
+**Step 3**: If the user confirms, install:
+```bash
+./scripts/install-skill.sh --name=<name> --source=<source>
+```
+
+This installs into all detected agents:
+- opencode: `~/.config/opencode/skills/<name>/SKILL.md`
+- codex: `~/.codex/skills/<name>/SKILL.md`
+- pi: `~/.pi/agent/skills/<name>/SKILL.md`
+- claude: `~/.claude/skills/<name>/SKILL.md`
+
+**Step 4**: Remind the user to restart their coding agents for the new
+skill to be discovered.
+
+## Option 6: Mint New Keys
+
+Ask the user which type of key:
+
+**a) Add a MaaS load-balancing key**
+
+This adds another Huawei MaaS API key for load balancing across multiple
+keys, increasing throughput.
+
+**Step 1**: Ask the user for the new MaaS API key (from Huawei cloud
+console, region ap-southeast-1, starts with `sk-`).
+
+**Step 2**: Read the current key count from `.env`:
+```bash
+CURRENT_COUNT=$(grep '^HUAWEI_MAAS_API_KEY_COUNT=' .env | cut -d= -f2 | tr -d '"')
+NEW_INDEX=$CURRENT_COUNT
+NEW_COUNT=$((CURRENT_COUNT + 1))
+```
+
+**Step 3**: Append the new key to `.env` and update the count:
+```bash
+echo "HUAWEI_MAAS_API_KEY_${NEW_INDEX}=\"sk-the-new-key\"" >> .env
+sed -i "s/^HUAWEI_MAAS_API_KEY_COUNT=.*/HUAWEI_MAAS_API_KEY_COUNT=\"${NEW_COUNT}\"/" .env
+```
+
+**Step 4**: Regenerate LiteLLM config and restart (this creates
+deployments for all models across all keys including the new one):
+```bash
+./scripts/02_litellm.sh
+```
+
+**Step 5**: Verify:
+```bash
+./scripts/05_validate.sh
+```
+
+**b) Mint a LiteLLM virtual key**
+
+This creates a new virtual key for an additional coding tool or custom
+integration. Each virtual key has its own budget and access control.
+
+**Step 1**: Ask the user for:
+- **Key alias** — a name for the key (e.g. `my-tool`)
+- **Budget** — max spend in USD, or 0 for unlimited
+
+**Step 2**: Read the master key from `.env`:
+```bash
+MASTER_KEY=$(grep '^LITELLM_MASTER_KEY=' .env | cut -d= -f2 | tr -d '"')
+```
+
+**Step 3**: Mint the key (omitting `models` grants access to all models,
+matching `scripts/helpers/keys.sh`):
+```bash
+curl -X POST http://127.0.0.1:4000/key/generate \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"key_alias": "<alias>", "max_budget": <budget>}'
+```
+
+Note: unlike `keys.sh`, this raw curl does not rotate — re-minting an
+existing alias leaves the previous key active. Disable the old key via
+the Admin UI (`http://127.0.0.1:4000/ui`) if rotating.
+
+**Step 4**: Show the returned key to the user and tell them to use it as
+the API key in their tool's config.
+
+**Step 5**: Remind the user they can view all keys at
+`http://127.0.0.1:4000/ui` (login: the admin account created via /user/update — password recorded in .env as LITELLM_UI_PASSWORD, Proxy Auth section; env-credential login is disabled, the master key cannot sign in).
+
+---
+
+## Model Management
+
+Models are in `scripts/helpers/models.sh`. Format:
+```
+model_name:tpm:rpm:max_tokens:max_input:max_output:input_cost:output_cost:cache_read_cost:cache_creation_cost
+```
+`cache_read_cost` and `cache_creation_cost` are 0 for models without
+cache support.
+Off-peak pricing is configured separately in the `OFF_PEAK_PRICING` array
+(format: `model_name|hours_utc|input_cost|output_cost|cache_read_cost`).
+Only models with off-peak pricing are listed; rates are absolute values.
+
+Current models: `glm-5.3`, `deepseek-v4.1-flash-1017`.
+
+**List models**:
+```bash
+sed -n '/^MODELS=(/,/^)/p' scripts/helpers/models.sh | grep -E '^[[:space:]]*"' | sed 's/^[[:space:]]*"//; s/:.*//' | sort
+```
+
+**Add a model**: add a line to the `MODELS` array in `scripts/helpers/models.sh`,
+then update `configs/litellm/config.yaml.template`, `configs/opencode/opencode.json.template`,
+and `configs/codex/model_catalog.json` with the new model. If the model surfaces
+reasoning (`reasoning_effort` pass-through or thinking mode), add it to the
+`REASONING_MODELS` array. If it has off-peak
+pricing, add it to the `OFF_PEAK_PRICING` array. If it accepts image input,
+add it to the `VISION_MODELS` array and set `modalities` to include
+`image` in `input` on its `opencode.json.template` entries. Update
+`configs/opencode/oh-my-opencode-slim.json.template` only if agents should be
+assigned the new model. Then regenerate (this creates 2N deployments per model,
+two per API key — one per format):
+```bash
+./scripts/02_litellm.sh
+./scripts/05_validate.sh
+```
+
+**Remove a model**: delete the line from `MODELS`, then same regenerate +
+validate.
+
+## Debug Routing
+
+**401 errors**:
+```bash
+docker compose logs litellm --tail 100 | grep 401
+```
+
+**Slow/no response**:
+```bash
+curl -sf http://127.0.0.1:4000/health/liveliness
+docker compose logs litellm --tail 100 | grep -i error
+curl -sf 'http://127.0.0.1:9090/api/v1/query?query=litellm_request_total_latency_metric_sum' | jq .
+```
+
+**Inference smoke test**:
+```bash
+MASTER_KEY=$(grep '^LITELLM_MASTER_KEY=' .env | cut -d= -f2 | tr -d '"')
+curl -X POST http://127.0.0.1:4000/v1/chat/completions \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "deepseek-v4.1-flash-1017", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}'
+```
+
+## View Metrics
+
+```bash
+curl -sf 'http://127.0.0.1:9090/api/v1/query?query=litellm_proxy_total_requests_metric_total' | jq .
+curl -sf 'http://127.0.0.1:9090/api/v1/query?query=litellm_spend_metric_total' | jq .
+curl -sf 'http://127.0.0.1:9090/api/v1/query?query=rate(litellm_deployment_failure_responses_total[5m])' | jq .
+```
+
+Grafana: `http://127.0.0.1:3000` — 44-panel dashboard (7 row headers + 37 visualization panels).
+
+### Visual dashboard verification
+
+After any change to `configs/grafana/dashboards/main.json`, capture the
+rendered dashboard and review it visually — JSON validity says nothing
+about layout, colors, or broken queries.
+
+```bash
+./scripts/07_dashboard_shots.sh   # writes full.png + band-NN.png to /tmp/dashboard-shots
+```
+
+Feed the bands to a vision-capable agent and have it check them against
+the design intent: row order, panel alignment, color semantics, units in
+titles, and empty or broken panels. Fix defects, re-run the script, and
+re-verify until clean. `05_validate.sh` reports whether the capture
+capability is installed (pass/skip — optional, no hard dependency).
+One-time setup:
+
+```bash
+pip3 install --user --break-system-packages playwright && python3 -m playwright install chromium
+```
+
+## Verify Spend and Off-Peak Discount
+
+LiteLLM tracks per-request spend in its database. Fetch recent requests with
+the master key:
+
+```bash
+MASTER_KEY=$(grep '^LITELLM_MASTER_KEY=' .env | cut -d= -f2 | tr -d '"')
+curl -s "http://127.0.0.1:4000/spend/logs" -H "Authorization: Bearer $MASTER_KEY" \
+  | jq '[.[] | {model: .model_group, start: .startTime, spend: .spend,
+                tokens_in: .prompt_tokens, tokens_out: .completion_tokens}] | .[0:10]'
+```
+
+The response is a bare JSON array, newest first, up to 10000 entries. A
+`limit` query param is ignored — slice with jq as above. Each entry's
+`startTime` is an ISO 8601 UTC string; `spend` is USD; `cache_hit` is a
+string (`"True"`/`"False"`/`"None"`), not a boolean.
+
+**Off-peak window**: deepseek-v4.1-flash-1017 bills at 50% of peak rates,
+from 13:00 to 00:00 UTC (21:00–07:59 Beijing). glm-5.3 has flat pricing
+(no off-peak discount). LiteLLM checks the window when the request
+completes, so a request started at 23:59 UTC bills at peak if it finishes
+after 00:00 UTC.
+
+**Verify the discount**: recompute a request's cost from the peak rates and
+compare — off-peak spend is exactly 50% (deepseek-v4.1-flash-1017) of the
+peak cost for the same tokens. Worked example (small request, no cache):
+
+```text
+peak:      01:39 UTC  deepseek-v4.1-flash-1017  13 in / 38 out   → $0.0000495 = 13×$0.3/M  + 38×$1.2/M
+off-peak:  23:58 UTC  deepseek-v4.1-flash-1017  13 in / 252 out  → $0.0001532 = 13×$0.15/M + 252×$0.6/M
+```
+
+Large requests rarely match the simple formula — cached input tokens are
+billed at the (also discount-scaled) cache-hit rate. To verify the discount,
+use small requests or compare spend-per-token across the window boundary.
+
+If a request inside the off-peak window bills at 100% of peak, the running
+container may have loaded a config without `off_peak_pricing` blocks — check
+`configs/litellm/config.yaml` and `docker compose restart litellm`.
+
+---
+
+## Recovery
+
+| Symptom | Fix |
+|---------|-----|
+| `.env not found` / `placeholder value` | `./scripts/01_env.sh` |
+| Fewer than 4 containers running | `docker compose up -d`, wait 30s |
+| LiteLLM liveness probe fails | `docker compose logs litellm --tail 50` |
+| Inference smoke test fails | Check MaaS key in `.env`; `docker compose logs litellm --tail 100` |
+| `opencode not found` / config issues | `./scripts/03a_opencode.sh` |
+| `codex not found` / config issues | `./scripts/03b_codex.sh` |
+| `claude not found` / config issues | `./scripts/03c_claude_code.sh` |
+| `pi not found` / config issues | `./scripts/03d_pi.sh` |
+| Prometheus not reachable | `docker compose up -d prometheus`, wait 10s |
+| `/metrics` endpoint not responding | `docker compose restart litellm`, wait 15s |
+| Grafana not reachable | `docker compose up -d grafana`, wait 20s |
+| Docker daemon not running | `systemctl start docker` |
+| Port 4000/3000/9090 in use | `lsof -i :<port>`, stop conflicting process |
+| Need to preserve spend history before a reset | `./scripts/06_backup.sh` first — then `docker compose down -v` is safe |
+| `git pull` conflicts on upgrade | `git stash && git pull && git stash pop` |
+| Coding tool outdated version | `./scripts/update.sh --check` to see available updates, then `./scripts/update.sh` to update |
+| Background orchestration env var missing from `~/.bashrc` (validation fails on it) | `./scripts/03a_opencode.sh` (re-persists `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`) |
+| Stale models in tool configs after a catalog change | `./scripts/03a_opencode.sh && ./scripts/03d_pi.sh` to regenerate configs from current catalog |
+
+## Remote Access
+
+**SSH forwarding (recommended):**
+```bash
+ssh -L 4000:127.0.0.1:4000 -L 3000:127.0.0.1:3000 -L 9090:127.0.0.1:9090 user@vm
+```
+
+**Bind to all interfaces:** set `BIND_ADDRESS="0.0.0.0"` in `.env`, then
+`docker compose up -d`.

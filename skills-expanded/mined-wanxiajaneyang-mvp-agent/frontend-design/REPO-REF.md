@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wanxiajaneyang/mvp-agent (path: .agents/skills/frontend-design/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples inclu

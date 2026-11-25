@@ -1,0 +1,106 @@
+---
+name: plain-language-audit
+description: >
+  Sweeps comments, docstrings, docs, and UI copy for jargon, AI writing tells, and wordy text.
+  Auto-fixes clear swaps and surfaces judgment calls. Prose and tone only. Trigger on: "plain
+  language audit", "find jargon", "sounds like AI wrote this", "too wordy".
+---
+
+# Plain Language Audit
+
+A sweep for text that's harder to read than it needs to be — jargon standing in for a plainer word, AI writing tells that make prose sound generated instead of written, and verbosity that says less in more words. Covers code comments, docstrings, markdown docs, and user-facing UI copy/strings.
+
+It's prose and tone only. For code correctness or structure problems (fake fallbacks, dead logic), use `dead-code-cleanup` or `code-health-audit` instead.
+
+This is the prose counterpart to `doc-rot` (which fixes docs that are *wrong*) and `code-health-audit` (which fixes code that's *overengineered*) — this one fixes text that's *hard to read*, whether or not it's accurate.
+
+**Developer-facing text** (comments, docstrings, internal docs, PR/issue prose) gets the full treatment: plain language, AI-tell removal, tightening, and — where genuinely a rewrite rather than a mechanical swap — the user's own writing style (apply their style skill or config if they have one).
+
+**User-facing UI copy** (button labels, error messages, empty states, in-app strings) gets plain language, AI-tell removal, and tightening only — never the developer-voice rewrite. It's a different audience with its own conventions (see the `design:ux-copy` skill if one's installed); don't impose "sounds like Jack" on a "Forgot password?" link. UI copy findings always go in the judgment-call bucket below, never auto-fixed.
+
+**This skill is for auditing text that already lives in a repo.** If the actual ask is "make this pasted paragraph more concise" or "tighten my last reply" with no file/repo target, that's a direct edit to the text in front of you — just do it. Don't run git pre-flight, don't create or touch an audit-memory file, don't treat a standalone rewrite request as a repo sweep.
+
+## Pre-flight
+
+Per the user's git workflow: `git fetch && git status`, confirm the right base branch and that it's synced. Then scope it — don't boil the ocean. State what's in range (a directory, a domain, recently-touched files) and confirm before sweeping a whole repo. Keep that confirmed scope as a variable through the rest of the run — every search below runs against it, not the whole tree.
+
+Check for an existing audit-memory file (`docs/audit-memory.md` or `.audit-memory.md` — the same file `code-health-audit` uses, just a different section). It records what was already flagged and declined; don't re-surface rejected findings. Create the file at the end if it doesn't exist.
+
+## The three lenses
+
+### 1. Jargon / plain language
+
+If `vale` is installed (`command -v vale`), run it first — Vale can absorb style packages ported from [proselint](https://github.com/amperser/proselint) and [write-good](https://github.com/btford/write-good), which already cover jargon, wordiness, clichés, and hedging mechanically. It's a real deterministic pass, cheap to run before spending a semantic read on the same ground. If it's not installed, don't ask the user to add a new per-project dependency for this — just skip straight to the read.
+
+Either way, follow with a read: unexplained internal jargon (acronyms, domain terms used without context), and technical phrasing where a plainer word does the same job. Vale won't catch project-specific jargon on its own — that's a judgment call regardless of tooling.
+
+### 2. AI tells / tropes
+
+Cheap grep-first pass, then verify each hit in context (a real technical term isn't a tell just because it's on a list). Run every pass against the confirmed scope from Pre-flight, never a bare `.` — an unscoped recursive grep walks `.git`, `node_modules`, `dist`, vendored code, and the installed skill's own pattern list, none of which should get "fixed":
+
+```bash
+# Set once from the confirmed Pre-flight scope, e.g. SCOPE=docs or SCOPE="README.md CLAUDE.md"
+SCOPE="${SCOPE:?set to the confirmed scope, not the whole repo}"
+EXCLUDES=(--exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build --exclude-dir=vendor -I)  # -I skips binary files
+
+# Overused AI vocabulary (source: "Why does ChatGPT delve so much?" + 2026 AI-tell trackers)
+grep -rniE "${EXCLUDES[@]}" '\b(delve|intricate|meticulous|elevate|foster|tapestry|realm|navigate[sd]?|landscape|pivotal|resonate[sd]?|testament|underscore[sd]?|showcas(e|ing)|paramount|unwavering|commendable|compelling)\b' "$SCOPE"
+
+# Metaphor-noun pileups
+grep -rniE "${EXCLUDES[@]}" '\b(tapestry|mosaic|ecosystem|symphony|labyrinth|beacon|cornerstone|kaleidoscope|odyssey|cacophony)\b' "$SCOPE"
+
+# Hedge-phrase templates
+grep -rniE "${EXCLUDES[@]}" "(it is important to note that|in today's fast-paced|navigating the complexities of|plays a crucial role in|a wide range of)" "$SCOPE"
+
+# Em-dash overuse (a handful in a whole file is normal prose; a cluster per paragraph is a tell)
+```
+
+Canon, in priority order:
+1. The project's or user's own style guide or "AI smell" list, if one exists — read it, don't copy its contents into this shared skill file.
+2. This skill's own built-in list above, seeded from current (2026) AI-tell trackers, for projects/users without one.
+
+**Stay current:** do one `WebSearch` per run for recent AI-tell discussion (the trackers that seeded the list above are themselves living pages, worth a re-check) rather than trusting a frozen list indefinitely. If it surfaces a pattern not already on file, propose appending it to the user's own list if they keep one — ask before editing it, it's outside this repo.
+
+### 3. Verbosity
+
+Semantic read pass — no reliable grep for "says less in more words." Measure against the project's or user's length guidance where it exists (per-artifact word/paragraph targets); otherwise look for redundant qualifier stacking, filler ("in order to," "it's important to note that," "due to the fact that"), and sentences that could lose a third of their words without losing meaning.
+
+## Categorize and act
+
+**Auto-fix** (unambiguous, meaning fully preserved):
+- Mechanical AI-tell phrase removal/swap (e.g. delete "It is important to note that," swap "utilize" → "use").
+- Clear redundant filler removal.
+
+**Judgment calls** (propose and confirm):
+- Jargon rewrites — picking the plainer word is a judgment call, not mechanical.
+- Verbosity trims that risk losing nuance.
+- Any tone/voice rewrite that requires rephrasing rather than deletion.
+- **All UI copy changes**, regardless of confidence — user-facing, higher-risk to touch unattended.
+
+Present judgment calls as a triaged list — `file:line`, what's wrong, proposed fix — then apply what's approved.
+
+## Verify and commit
+
+Re-run the grep checks after edits to confirm the flagged patterns are actually gone. If the project lints prose (Vale, markdownlint) or comments (eslint jsdoc rules, etc.), run it. Focused commits by category, in the user's writing style (apply their style skill or config if they have one):
+- `docs: cut AI-tell phrasing and filler from README`
+- `docs: plain-language pass on <module> docstrings`
+
+Update the audit-memory file with what shipped and what was declined, so the next run doesn't re-flag it.
+
+## Periodic / scheduled runs
+
+The behavior above is for interactive, on-demand runs — auto-fix is fine because someone's watching. A scheduled/cron run has no one watching, but that no longer means *no* auto-fix — it means no auto-fix on anything that requires judgment. The bucket split from "Categorize and act" already draws that line:
+
+- **Auto-fix bucket** (mechanical AI-tell swaps, redundant filler removal): apply on every run, scheduled or not. Nothing in this bucket involves picking among options — it's a deletion or a fixed phrase swap, the same edit a human reviewer would make without discussion. Withholding it just because no one's watching adds a review step with nothing to review.
+- **Judgment-call bucket** (jargon rewrites, verbosity trims, tone rewrites, all UI copy): stays report-only on scheduled runs — file for review, never guess, exactly as before.
+
+Where the fix lands depends on the target. Against a real filesystem checkout (e.g. a throwaway clone of the source), route mechanical fixes through a small dedicated branch and PR rather than pushing straight to the base branch unattended, then report the PR link alongside the judgment-call findings issue. Against an API-only target with no filesystem checkout (e.g. editing GitHub issue text via `gh issue edit`), apply the mechanical fix directly — there's no branch/PR step to route it through, and issue text isn't code review's job.
+
+Either way, report the same way: rank the judgment-call findings, file one GitHub issue, supersede the prior run's issue — and now also list what was auto-fixed this run (file:line or issue link, old → new) in that same issue, so it shows the complete picture, not just what's left to review. Set this up per project via the `schedule` skill once the on-demand skill's been proven on a manual run against that project — don't stamp out a cron task blind.
+
+## Don't
+
+- Don't rewrite UI copy into developer voice — different audience, different conventions.
+- Don't flag a technical term as jargon just because it's technical; flag it when a plainer word exists and loses nothing.
+- Don't auto-fix a verbosity trim that changes what a sentence actually claims — that's a judgment call.
+- Don't add a Vale dependency to a project that doesn't already have it — use it opportunistically, not as a new requirement.

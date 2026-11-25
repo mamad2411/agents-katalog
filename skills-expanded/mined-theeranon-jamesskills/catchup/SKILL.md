@@ -1,0 +1,65 @@
+---
+name: catchup
+license: CC-BY-NC-4.0
+metadata:
+  kind: workflow
+  version: 2.4.3
+description: Remind the owner what has been done: reconstruct the verified state of one project after a gap and return it as one HTML page with no metacopy, the way an executive is briefed, so they can decide, instruct, continue, measure or inspect. Writes nothing else. Use for where are we, ถึงไหนแล้ว, ทวนให้หน่อยว่าทำอะไรไปแล้ว.
+---
+
+# Catchup
+
+Work out what is actually true right now and brief it on one page so the owner can decide.
+
+## Scope
+
+- Kind: workflow
+- Owns: the verified current state of one project or workstream after a continuity gap, rendered into the standard catchup page.
+- Boundary: read-only on the project, and never activated for ordinary progress inside an active task. Never repairs files, cleans, stashes, resets, continues implementation, updates external systems, or rewrites a stale status document. It writes only its own report during reconstruction. If the same request also authorizes repair or continuation, preserve the findings and continue that work under its workflow; this read-only boundary does not cancel the user's execution instruction. Use JamesOS or another live-context adapter only when the requested state genuinely depends on current cross-channel commitments, people, queues, or an explicit request for that system.
+
+## Do not use this when
+
+- Ordinary progress inside an active task is being reported; let the primary workflow report it -> `done-for-me`
+- The dispute is one isolated completion claim needing verification at its boundary -> `dev-are-you-sure`
+- The direction rather than the state is what is unclear -> `zoom-out`
+- The source is a meeting rather than a repository -> `sum-meet`
+
+## Procedure
+
+1. Identify the target and the comparison point: project root or workstream, branch and environment where relevant, and the last known checkpoint. Do not treat the current branch, upstream, environment, account, or deployed version as obvious; identify the target the evidence actually covers. Never invent a baseline; record `comparison point not established` when one cannot be recovered cheaply. If durable project truth is missing or contradictory, finish the best evidence-backed catchup first, then recommend `project-standard` as a separate repair workflow.
+2. Take the fast path first. When the request and the accepted project sources already carry fresh, sufficient state, answer from them without excavating history. Build the report from the supplied facts, not from template headings: omit a recently-done section when no delta is established. Preserve exact state words such as dirty, tested and deployed; do not silently expand them into untracked, complete or verified.
+3. Gather the smallest sufficient evidence. For a local project run `python3 scripts/project_snapshot.py <project-root> --checkpoint <known-checkpoint>` from this skill directory, omitting the checkpoint rather than inventing one. Read the contract and status owners that actually exist. Inspect runtime, provider receipts, or recent history only where a material state claim depends on it.
+4. Reconcile four truth classes without merging them. Keep the evidence resolution intact: source presence is not feature completeness; passing tests cover only their stated cases; a deployed revision is not a verified user journey. Claim a change since the checkpoint only when both states show that difference. Unknown history is not proof that no history or backup exists.
+   - **Intended:** accepted requirements and decisions say what should exist.
+   - **Actual:** source, git, tests, runtime, and provider evidence say what currently exists.
+   - **Active:** dirty work, running tasks, blockers, and current owner state say what is moving now.
+   - **Historical:** prior chat and old reports explain a delta only when current sources cannot.
+5. Preserve dirty and untracked user work exactly as found. When a status document is stale, report it as stale rather than correcting it; correcting it is a separate authorised job. Do not widen a bounded status question into a full audit when the supplied evidence already answers it.
+6. Follow an explicit chat-only or text-only request directly; keep the same factual coverage without creating a file or claiming rendering. Otherwise render the report by duplicating [assets/catchup-report.html](assets/catchup-report.html) and replacing every token. The template is fixed so that every project's catchup page looks identical and can be read at a glance; adapt content, never the shape. Write it as an executive is briefed: what was done, what is true now, what is open, what needs a decision, and the one next action; no narration of how the page was made, no progress notes, no placeholder left in.
+7. When delivering a page, inspect the rendered page in print emulation before delivering. Deliver HTML; produce a PDF only when it is explicitly requested.
+
+## Stop when
+
+The report names the exact target, states current truth against a named comparison point or says none is established, lists what is open with its blocker and owner, keeps conflicts and unknowns visible, and ends in one safe next action or an explicit verdict that nothing remains in scope. Return `ไม่มี action เพิ่มใน scope นี้` when the bounded work is genuinely closed, rather than inventing a follow-up; say the same thing in the user's language when the conversation is not in Thai.
+
+On Windows invoke the same helper with `python` when `python3` is not on PATH.
+
+## Principles
+
+**Evidence outranks the status document** — Trust git, runtime, and provider receipts over any file claiming readiness, because a stale label is the failure mode this skill exists to catch. Source: standing rule in this library
+**Separate intended from actual** — Report the gap between what should exist and what does, rather than resolving it in either direction. Source: standing rule in this library
+**Read-only until authorised** — Preserve the evidence while reconstructing state. Once reconstruction is sufficient, separately authorized implementation may proceed without asking again. Source: forensic soundness principle, ACPO digital evidence guidelines, 1999
+**One target at a time** — Reconstruct a single project per report, because blending two workstreams produces a state that describes neither. Source: standing rule in this library
+
+## Counter-case
+
+- The user asks how the current build is going while the agent is mid-task. The active workflow reports its own progress; `done-for-me` owns it and reconstruction would be noise.
+- The user asks whether yesterday's deployment actually went live. That is one claim at one boundary, so `dev-are-you-sure` owns it rather than a whole-project reconstruction.
+
+## Hand back
+
+The requested chat report or rendered page: target and comparison point, current evidence, material conflict or blocker, and one safe next action. Include history, checklist and last-task state only where established and useful; do not repeat current facts under multiple headings.
+
+## Sources
+
+ACPO 1999, Good Practice Guide for Digital Evidence, on preserving evidence before analysis.

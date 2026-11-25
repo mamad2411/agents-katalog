@@ -1,0 +1,106 @@
+---
+name: red-teaming
+description: red-teaming
+version: 1.0.0
+category: devops
+signature: 'red-teaming -> devops: 红队测试 — LLM越狱攻击（Parseltongue、GODMODE、ULTRAPLINIAN）。'
+author: Synthos
+license: MIT
+triggers:
+- 需要执行red-teaming下的子技能
+metadata:
+  synthos:
+    priority: P2
+    atom_type: parent-skill
+    description: 父级技能 — 红队测试 — LLM越狱攻击（Parseltongue、GODMODE、ULTRAPLINIAN）。
+    signature: 'red-teaming -> sub-skills: [godmode]'
+    related_skills:
+    - godmode
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `request: str, context: dict` — 用户请求描述、上下文信息
+- **output**: `result: dict — 技能执行结果（结构因技能而异）`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# red-teaming
+
+> 父级技能目录，包含 1 个子技能。
+> 子技能通过Hermes技能加载机制自动发现，无需显式调用。
+
+## 子技能
+
+- `godmode`
+
+## 使用方式
+
+直接调用子技能名称即可：
+
+## 验证清单 · VERIFICATION
+
+- [ ] 执行前已确认输入（request, context）符合 IO 契约
+- [ ] 子技能目录仅列出 `godmode`，且可通过 Hermes 技能加载机制自动发现
+- [ ] 已按指示加载子技能（`skill_view(name='godmode')`），确认实际执行由子技能完成而非父级 SKILL.md
+- [ ] 针对 LLM 越狱攻击（Parseltongue、GODMODE、ULTRAPLINIAN）选择了特定防御/模拟策略，未依赖通用方案
+- [ ] 子技能输出格式与内容符合其契约，且已按 Golden 集合复现验证
+- [ ] 未验证代码已被拒绝/隔离，内部状态未对外暴露
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+```
+skill_view(name='godmode')  # 加载第一个子技能
+```
+
+父级SKILL.md仅作为目录索引，实际执行由子技能完成。
+
+# Red Teaming
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[RED-001]** 执行红队测试前 → 必须确认输入参数（request, context）完整且符合 IO 契约
+- **[RED-002]** 处理用户请求时 → 需针对 LLM 越狱攻击（如 Parseltongue、GODMODE、ULTRAPLINIAN）进行特定防御或模拟
+- **[RED-003]** 执行核心操作时 → 必须参考本目录下的 scripts/ 或 references/ 以确保操作规范
+- **[RED-004]** 生成输出结果时 → 需验证输出格式与内容是否符合预期契约
+- **[RED-005]** 遇到异常或边界场景（空输入、极大值）时 → 必须提供包含上下文和恢复建议的明确错误信息
+- **[RED-006]** 执行未验证代码或暴露内部状态时 → 视为不安全操作，必须拒绝或隔离
+- **[RED-007]** 进行技能改进或验证时 → 必须通过 Golden 集合（标准输入/输出/错误）作为单一真理来源进行复现

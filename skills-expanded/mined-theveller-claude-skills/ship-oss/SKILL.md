@@ -1,0 +1,125 @@
+---
+name: ship-oss
+version: 0.2.0
+description: >
+  General OSS-readiness pass for a repo before it goes public: sweep the full tree
+  (not just README) for secrets and internal/personal references, verify LICENSE and
+  .gitignore, run a fail-closed secret scan, delegate README polish to readme-commit,
+  then flip GitHub visibility to public and push. Use when the user says "prepara este
+  repo para open source", "hazlo público", "ship this as OSS", "publica este repo",
+  "make this repo public", "ready this for GitHub", or "/ship-oss".
+argument-hint: "[optional owner/repo] [--dry-run|--publish]"
+category: engineering
+---
+
+# ship-oss
+
+Repo-wide open-sourcing pass. Sibling to `readme-commit` (same commit-at-the-end shape) but
+scoped one layer up: **is the whole repo safe and complete to expose**, not just the README.
+
+**Do not reimplement what already exists** — this skill is glue:
+
+| Concern | Owner |
+|---|---|
+| README structure/taste/Excalidraw flow | `readme-commit` |
+| Dependency / supply-chain risk | `supply-chain-audit` — only if the repo has a package manifest |
+
+## Modes
+
+| Mode | What runs | Visibility flip / push |
+|---|---|---|
+| **dry-run** (default) | Full sweep below, report findings | never |
+| **publish** | Same sweep, fixes applied, gates green | only on explicit user order |
+
+Never flip a repo to public or push as a side effect of "looks done" — this is a
+hard-to-reverse, externally-visible action. Always state the target `owner/repo` and get
+explicit confirmation before step 6.
+
+## Workflow
+
+### 1. Scope
+
+Resolve target: `$ARGUMENTS` if given, else current repo's `origin`. State the intended
+owner (personal account vs an org) explicitly and confirm it with the user before doing
+anything else — never assume.
+
+### 2. Sanitization sweep (full tracked tree, not just README)
+
+Scan `git ls-files` output for content that leaks internal/personal context:
+
+- Issue-tracker refs meant to stay internal: `MAK-\d+`, private Linear workspace URLs
+- Absolute local paths: `/Users/<name>/`, Google Drive sync paths (`CloudStorage/...`)
+- Fixture/example data that is actually real (real journal notes, real emails, real
+  transcripts)
+- Vendored/bulk-installed content with unclear provenance — a `license:` frontmatter key,
+  an `AUTO-GENERATED` header, or a bulk "add N files" commit means it's third-party:
+  exclude it or credit it in an Attribution section, never claim it as own-authored
+
+Report every hit with file:line before touching anything. Fix by redacting/removing —
+never by explaining the leak away.
+
+### 3. LICENSE
+
+- Missing → ask which license (MIT is a safe default for most personal/OSS repos) and add it.
+- Present → confirm it matches what the README/footer claims.
+
+### 4. `.gitignore`
+
+Confirm it covers: `.env*` (except `.env.example`), `secrets.local.json`,
+`credentials.json`, `node_modules/`, build output, OS cruft (`.DS_Store`). Add missing
+lines; don't rewrite an already-adequate file.
+
+### 5. Hygiene gate (fail closed)
+
+Tracked-files-only scan (`git ls-files`) — pair it with the manual sweep in step 2, which
+catches internal-context leaks a pattern scan isn't built to see.
+
+```bash
+# Filename denylist — secret-shaped paths, allow .env.example
+git ls-files | grep -E \
+  '(^|/)\.env($|\.)|(^|/)secrets\.local\.json$|(^|/)credentials\.json$|service-account.*\.json$' \
+  | grep -vE '(^|/)\.env\.example$'
+
+# Content patterns over tracked files only
+git ls-files -z | xargs -0 rg -n --hidden \
+  -e 'BEGIN PRIVATE KEY' \
+  -e 'ghp_[A-Za-z0-9]{20,}' \
+  -e 'sk-[A-Za-z0-9]{20,}' \
+  -e 'xoxb-[A-Za-z0-9-]+' \
+  -e 'AKIA[0-9A-Z]{16}' \
+  -e '(?i)api[_-]?key\s*=\s*\S+'
+
+# Origin owner check — confirm before any push
+git remote get-url origin
+```
+
+Any hit on the first two commands → stop, report, do not proceed to step 6 until fixed and
+re-scanned. Confirm the printed origin URL's owner matches what was agreed in step 1 before
+any push.
+
+If the repo has a dependency manifest (`package.json`, `requirements.txt`, `go.mod`, …),
+offer the `supply-chain-audit` skill for a deeper third-party dependency pass — don't run
+it silently, it's a separate skill with its own scope.
+
+### 6. README polish
+
+Delegate to `readme-commit` for structure, taste bar, and the diagram flow if the repo
+needs one. Don't duplicate its checklist.
+
+### 7. Publish (human-confirmed, `--publish` mode only)
+
+1. All of steps 2–5 green, target owner confirmed with the user.
+2. Visibility: `gh repo edit <owner>/<repo> --visibility public` (repo must already exist
+   on GitHub under that owner).
+3. Verify: `gh repo view <owner>/<repo> --json visibility,isPrivate`.
+4. Push only after visibility is confirmed public and the user has explicitly said to ship.
+
+## Done when
+
+- [ ] Full-tree sanitization sweep run and clean (or fixes applied + re-swept)
+- [ ] LICENSE present and correct
+- [ ] `.gitignore` covers secrets/env/build noise
+- [ ] Filename + content secret scan clean, origin owner confirmed
+- [ ] README passed through `readme-commit`
+- [ ] Visibility confirmed public via `gh repo view` (publish mode only)
+- [ ] Push done **or** dry-run documented — no silent push

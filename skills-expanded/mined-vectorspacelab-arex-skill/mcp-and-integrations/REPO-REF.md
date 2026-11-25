@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vectorspacelab/arex-skill (path: skills/repositories/repo-skills/rocketride-server/sub-skills/mcp-and-integrations/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Expose RocketRide pipelines through MCP assistants and n8n/webhook

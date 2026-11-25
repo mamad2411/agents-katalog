@@ -1,0 +1,90 @@
+---
+name: wrapup
+description: Internal close-pipeline invoked by sprint complete — quality checks, code review, cleanup. Not for direct use; a normal/high-risk sprint's own "sprint complete" step calls this automatically.
+category: dev
+tags: [code-quality, workflow, orchestration, refactoring, security]
+hidden: true
+---
+
+# Wrapup
+
+Called automatically by sprint complete — do not invoke directly.
+
+Runs after a session, feature, bug fix, or ticket closes. Skip steps that do not apply.
+
+Every `Read skills/...` reference below is a plain relative path inside canon's own repo. In a
+consumer project, resolve via `.claude/skills/...` (Claude Code) or `.agents/skills/...`
+(Codex/Pi) instead — canon's install symlinks into its real `skills/` tree. Known gap: if
+`.claude/skills` already existed as a real directory before `skills.sh add` ran, this file itself
+(a hidden sub-skill) may not be reachable via `.claude/skills` — `.agents/skills` is unaffected
+(`t-1b2c`).
+
+## Pipeline
+
+```
+code-simplifier → code-reviewer → doc-audit → refresh docs
+```
+
+`security-review` is not in this line: `sprint complete` runs it last, after the advisory reviewer and its fixes, on the final diff (`complete.md` step 1, "Security review runs last"). Its gate file and skip rule below are unchanged.
+
+Commit & Push belongs to `sprint complete`'s own step 10, not this pipeline — see
+`skills/sprint/reference/complete.md`.
+
+`code-simplifier`/`code-reviewer` run inline, in-session — scope is "code touched this session" from working memory, no git command needed. `security-review` also runs inline but derives scope from git: an explicit `Base ref` (headless CI dispatch grading an existing PR/diff) uses `git diff --name-only <base-ref> HEAD`; otherwise (normal interactive close) `git diff --name-only $(sprint base-ref) HEAD` — same branching as `shared-gate-protocol.md ## Base-ref derivation` and `security-review.md`'s own Scope section. `reviewer`/`evaluator` (fresh-subagent gates in `skills/sprint/reference/complete.md`, not this pipeline) always derive from git — they have no session memory at all.
+
+## Skip Logic
+
+**Trivial change** (single-line, doc-only, mechanical rename): skip all steps except Refresh docs (Commit & Push isn't part of this pipeline — see above). This global clause overrides every per-gate skip criterion below — e.g. a one-line rename in a user-facing doc skips `doc-audit` via this clause.
+
+**`Tier: bugfix` and `demo: true`** also override the per-gate criteria below wholesale, the same way — they are defined in `skills/sprint/reference/complete.md`, not here, and this file has no independent knowledge of them: `bugfix` (`complete.md`'s "Bugfix tier — lighter wrapup") keeps `security-review`/inline `code-reviewer`, may skip `code-simplifier`/`doc-audit`; `demo` (`complete.md`'s "Demo mode") keeps only `security-review`, skips every other gate in this pipeline. Reading this file in isolation without checking `plan.md`'s `Tier:` or `ticket.md`'s `demo:` first will apply the wrong gate set on either path.
+
+Before each step, assess and skip if criteria apply — state why in one line, naming which clause justified it (global override or the gate's own criteria) when the two could seem to conflict.
+
+### Skip code-simplifier if:
+- Change is a single line or a trivial rename
+- Change is docs, comments, or config only
+
+### Skip code-reviewer if:
+- Change is a single-line fix with no design implications
+- Change is purely mechanical (rename, format, move file)
+
+### Skip security-review if:
+- No security-sensitive files or patterns changed
+- Security-sensitive means: authentication, authorization, DB queries, externally-facing/untrusted input handling (web forms, API payloads, network requests — not trusted local CLI args a single developer runs against their own machine), file I/O, API endpoints, crypto, session management, environment/secret access, MCP server config or agent tool/permission definitions, CI workflow / GitHub Actions config (`.github/workflows/*`, or a workflow template the project generates), hardcoded credential/secret access, destructive/irreversible client-side actions (delete-all, bulk clear, cache flush), third-party data egress (adding an analytics/tracking pixel, a third-party script/tag/SDK, or any code that sends PII/credentials/tokens to a third-party endpoint — including from inside an authenticated flow)
+
+### Skip doc-audit if:
+- No user-facing docs changed and no skill/standards frontmatter changed (so the model pass and `tools/doc-check` both skip) — matches `doc-audit/SKILL.md`'s own scope: README, `docs/*.md`, `tools/*.md`, or `description`/`summary` frontmatter in `skills/*/SKILL.md`/`standards/*.md`
+
+## Steps
+
+1. Read `skills/wrapup/gates/simplifier.md`, then apply the simplifier to code touched in this session.
+2. Read `skills/wrapup/gates/reviewer.md`, then apply the code-reviewer across all eight dimensions; defer deep security analysis to Step 3.
+3. (Run by `sprint complete` after the reviewer, not here.) Read `skills/wrapup/gates/security-review.md`, then apply the security review. Optional scanners can inform the review, but their absence does not skip the gate.
+4. Read `skills/doc-audit/SKILL.md`, then apply the doc audit (`tools/doc-check` first, then the judgment pass). Do not write to `doc-findings.md` without explicit confirmation. Fix command accuracy issues before committing. A file this step edits must be listed in `plan.md ## Files` in the same step — the reviewer grades scope against that list, and a close-time doc edit missing from it was flagged in four sprints (`t-b999`, `t-533f`, `t-824e`, `t-bdce`).
+5. Read `tools/handoff.md` — plain relative path inside the canon repo itself, or via `command -v sprint`'s containing directory inside a consumer project where `tools/` isn't symlinked in (or `where sprint` on Windows if `command -v` returns nothing) — then refresh docs:
+
+Review every documentation file touched or referenced during this session and patch anything stale.
+
+Scope (check each that exists):
+- `DECISIONS.md` — any new decisions made this session not yet logged?
+- `HANDOFF.md` — refresh the narrative per the handoff protocol: Current Focus, In Progress, and Next Steps. `## Discoveries` is owned by capture — leave it. Decisions belong in `DECISIONS.md`, not here. Then check size **within the `<!-- canon:handoff:BEGIN -->`/`<!-- canon:handoff:END -->` markers only** — anything outside them may be the user's own content and must never be read, counted, or edited by this step. **First confirm both markers actually exist** (`grep -c '<!-- canon:handoff:BEGIN -->' HANDOFF.md` and the same for `:END`, each must be ≥1) — the range `awk` silently returns 0 lines (a false "under budget") when a marker is missing, so a count without this guard is meaningless; if either marker is absent, restore the pair around the canon-managed block before counting. Then: `awk '/<!-- canon:handoff:BEGIN -->/,/<!-- canon:handoff:END -->/' HANDOFF.md | wc -l`. If over 80, prune per `tools/handoff.md`'s "When to Prune" section before finishing this step.
+- `AGENTS.md` / `CLAUDE.md` — any convention-level learnings to surface? (propose + confirm before writing)
+- `README` — does it document any changed APIs, behaviors, or install steps?
+- `plan.md` (sprint tickets only) — is the whole doc still within the ~500-word budget noted at the top of the file? If it grew past budget during implementation, compress the prose (short bullets, `file:line` references, no restated history) before closing.
+- Any other `.md` files explicitly opened or modified during the session
+
+Patch stale lines only. Skip files where nothing changed.
+
+## Final Output
+
+Report only what matters:
+
+- Changed files and user-visible impact
+- Tests run and result
+- Critical findings, if any
+- Follow-up captured in `HANDOFF.md`, if any
+
+Address criticals before committing. Improvements are discretionary.
+
+Committing and closing the ticket are the caller's job, not this pipeline's — see the Pipeline
+note above.

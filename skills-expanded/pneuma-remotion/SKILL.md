@@ -1,0 +1,418 @@
+---
+name: pneuma-remotion
+description: Create and edit React video compositions in the Pneuma Remotion workspace. Use for composition code, animation timing, playback, and export tasks rendered in the live video viewer.
+---
+
+# Remotion Video Creation
+
+Create programmatic videos with React and Remotion inside the Pneuma workspace. The viewer compiles and previews compositions in real-time as files are edited.
+
+## Working with the viewer
+
+The Pneuma viewer for Remotion is a Player panel with frame-accurate scrubbing. It compiles your `src/` files in-browser within ~1 second of every Edit/Write, exposes the current composition and playback state to you, and accepts navigation/control commands. Everything below is how you read what the user sees, point them at moments, and drive the player.
+
+Frame math (relevant to every channel below): frames are 0-based and `frame = seconds × fps`. Default fps is 30, so 2 seconds = frame 60.
+
+### Reading what the user sees
+
+User messages may include a `<viewer-context mode="remotion">` block carrying:
+
+- **Active composition** — the composition ID currently mounted in the Player (matches an entry in `src/Root.tsx`).
+- **Playback state** — current frame, timecode, duration, playing/paused, playback rate.
+- **Compositions** — IDs parsed from `Root.tsx` (the dropdown list).
+- **Project files** — source file list under `src/`.
+
+The same block also surfaces `<user-actions>` — recent things the user did in the Player: seeks, composition switches, in/out point set/clear, playback rate changes. Use both together to resolve references like "this part", "the animation here", "around 2 seconds" — translate them through `frame = seconds × fps` against the composition's fps.
+
+### ViewerAddress — naming an object in the player
+
+Remotion has **one** vocabulary for "which object in the viewer". The same
+shape — a **ViewerAddress** — is what a `<viewer-locator>` card points at and
+what the `Address:` line of a `<viewer-context>` reports back to you.
+
+| Key | Half | Meaning |
+|---|---|---|
+| `file` | coarse | Composition ID from `Root.tsx`. |
+| `frame` | fine | A specific frame within the composition (reported in `<viewer-context>`). |
+| `inFrame` / `outFrame` | fine | A loop range — when both are set the Player loops over that span. |
+
+When the user is watching a composition, the `Address:` line in
+`<viewer-context>` hands you a ready-made `{file, frame}` ViewerAddress — copy
+that JSON straight back into a `<viewer-locator>` card.
+
+### Locator cards
+
+After creating or editing compositions, embed locator cards in your reply so the user can jump straight to what changed. The `address` attribute is a ViewerAddress:
+
+- `file` — composition ID from `Root.tsx` (required).
+- `inFrame` / `outFrame` — optional pair; when both are set, the Player sets in/out points and starts loop playback over that range.
+
+Open a composition:
+
+```
+<viewer-locator label="Open MyComposition" address='{"file":"MyComposition"}' />
+```
+
+Loop a specific range (example: a hero shot from 3s to 5s at 30fps → frames 90-150):
+
+```
+<viewer-locator label="Loop hero shot" address='{"file":"MyComposition","inFrame":90,"outFrame":150}' />
+```
+
+Reach for the loop variant whenever you modified timing in a specific section, added a new scene, or changed a transition — it lets the user see exactly what changed without scrubbing.
+
+### Viewer actions
+
+The viewer exposes 4 agent-callable actions for driving the Player. Invoke them with `POST $PNEUMA_API/api/viewer/action`.
+
+| Action | Purpose | Params |
+|---|---|---|
+| `get-playback-state` | Query current composition, frame, duration, playing, speed, all compositions list | — |
+| `seek-to-frame` | Navigate to a specific frame | `{ frame: number }` (0-based) |
+| `set-playback-rate` | Change playback speed | `{ rate: number }` (0.25 – 4) |
+| `set-composition` | Switch the active composition in the viewer | `{ compositionId: string }` |
+
+Example — seek to the start of the hero shot (frame 90 = 3s at 30fps):
+
+```bash
+curl -X POST "$PNEUMA_API/api/viewer/action" \
+  -H "Content-Type: application/json" \
+  -d '{"actionId":"seek-to-frame","params":{"frame":90}}'
+```
+
+Prefer locator cards for "look at this" — they're cheaper and the user controls the click. Reach for actions when you need to drive the Player synchronously (e.g. confirm a composition exists by switching to it, or read playback state before computing a frame range).
+
+### Native desktop APIs
+
+When running in the Electron desktop client, `$PNEUMA_API/api/native/*` exposes file-system and OS bridges (open path, reveal in finder, etc.). Web sessions return `{ available: false }` — always handle that case.
+
+## Canvas
+
+- Default composition size: {{compositionWidth}}×{{compositionHeight}}px (set when the session was created).
+- Design to fill the frame — sparse layouts read as unfinished. Treat each frame as a poster.
+- When creating new compositions, use `width={{{compositionWidth}}}` `height={{{compositionHeight}}}` unless the user requests otherwise.
+
+## Constraints
+
+- Do not modify `.claude/`, `.pneuma/`, or `node_modules/`.
+- Keep compositions in the `src/` directory.
+- Use descriptive composition IDs — they appear in the viewer dropdown and in locator cards.
+
+## Workflow
+
+Video creation follows three stages. The goal is to ensure the content is worth expressing before any code is written — animation is expression, not decoration.
+
+### Stage 1: Research & Content Discovery
+
+A compelling video requires understanding the subject with enough breadth and depth to find the angle worth expressing. A 60-second video can only say one thing well, so choosing the right thing matters more than how it's animated.
+
+1. **Research the full landscape** — explore the topic broadly. Look at adjacent ideas, context, history, counterarguments. Don't settle on the first angle.
+2. **Find tension or insight** — what's counterintuitive? What do most people get wrong? What's the most interesting lens?
+3. **Choose the projection** — from the full understanding, identify the specific slice that translates well to visual storytelling.
+
+Deliver a short creative brief: what the video is about and why this angle is compelling.
+
+### Stage 2: Motion Intent
+
+Not everything should move. Plan which ideas benefit from animation and which work better as static composition. This prevents the common trap of animating everything uniformly.
+
+For each section of content, assign a motion intent:
+
+| Intent | When to use | Example |
+|--------|------------|---------|
+| **static** | The idea is clear as text/image | A definition, a quote |
+| **subtle** | Light emphasis helps | A fade-in, a gentle scale |
+| **animated** | Motion carries meaning | A data comparison, a process flow |
+| **hero** | The memorable moment | The key insight, the reveal |
+
+Every video needs one **hero moment** — the scene that gets the most animation investment and makes the video memorable.
+
+Guidelines for motion intent:
+- Data comparison → animated chart or visual transformation
+- Process/flow → sequential reveal with spatial movement
+- Scale/magnitude → size or count animation
+- Before/after → transition or morph
+- Emphasis → kinetic typography or focal pull
+
+### Stage 3: Content Design Outline
+
+Assemble the full plan before writing code:
+
+1. **Creative brief** (from Stage 1) — one paragraph: what and why
+2. **Scene breakdown** — each scene with: content, duration estimate, motion intent
+3. **Aesthetic direction** — mood, palette, typography, pacing. These should emerge from the content (a data story feels different from a philosophical essay), not be chosen arbitrarily. See [Design Guidance](#design-guidance) for how to make distinctive choices.
+4. **Hero moment** — which scene, what animation, why it matters
+
+Present this outline and wait for confirmation before coding. Changing direction mid-implementation is expensive.
+
+**When to compress this process:**
+- User provides a detailed brief or storyboard → start at Stage 2
+- User says "just make it" with a simple, clear request → quick outline, confirm, build
+- Iterating on existing compositions → go straight to code
+
+---
+
+## Pneuma Environment
+
+### Live Preview
+
+The Pneuma viewer automatically compiles and previews compositions as files are edited (1-second debounce). No dev server startup needed.
+
+**Supported in preview:** All core `remotion` APIs (`useCurrentFrame`, `interpolate`, `spring`, `AbsoluteFill`, `Sequence`, `Series`, etc.) and local file imports within `src/`.
+
+**Static assets** go in `public/` and are referenced with `staticFile()`:
+```tsx
+import { Img, staticFile } from "remotion";
+<Img src={staticFile("logo.png")} />  // → public/logo.png
+```
+
+**Not supported in preview:** External packages like `@remotion/google-fonts`, `@remotion/three`, `@remotion/motion-blur`. These require running `npx remotion studio` separately.
+
+### Project Structure
+
+| File | Purpose |
+|------|---------|
+| `src/index.ts` | Entry point (`registerRoot()`) |
+| `src/Root.tsx` | Composition registry — all `<Composition>` elements declared here |
+| `src/<Name>.tsx` | One file per video composition |
+| `public/` | Static assets (reference with `staticFile()`) |
+| `remotion.config.ts` | CLI configuration |
+
+Keep one composition per file. Register every new composition in `src/Root.tsx`.
+
+### Canonical skeleton — read before writing anything new
+
+When a Pneuma Remotion session opens fresh (no `src/`), this is the minimum shape that compiles and previews. Use it as the anchor for new projects — adapt the aesthetic, but don't invent a different file layout or skip the registration pattern.
+
+```tsx
+// src/index.ts — only runs in the Remotion CLI; the in-browser preview
+// imports Root.tsx directly and is allowed to be absent here.
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root";
+registerRoot(RemotionRoot);
+```
+
+```tsx
+// src/Root.tsx — the ONE file the viewer parses to discover compositions.
+// Every <Composition id> becomes a tab in the player's composition switcher.
+// durationInFrames must be an integer; compute it from your timing plan
+// (frame = seconds × fps) rather than hard-coding round numbers that don't
+// match the inner Sequence layout.
+import { Composition } from "remotion";
+import { Intro } from "./Intro";
+
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition
+      id="Intro"
+      component={Intro}
+      durationInFrames={180}  // 6s at 30fps
+      fps={30}
+      width={1280}
+      height={720}
+    />
+  </>
+);
+```
+
+```tsx
+// src/Intro.tsx — one composition per file. Common idioms in one place:
+// AbsoluteFill for the canvas, Sequence for time segments, useCurrentFrame
+// + interpolate for tweens, spring for organic motion. Tokens hoisted to
+// the top of the file so they're easy to scan and tune.
+import React from "react";
+import {
+  AbsoluteFill,
+  Sequence,
+  useCurrentFrame,
+  useVideoConfig,
+  interpolate,
+  spring,
+  Easing,
+} from "remotion";
+
+// Tokens hoisted so palette + type live near the top of the file.
+const C = { bg: "#f4efe8", fg: "#2d2621", accent: "#b85c3a" };
+const FONT_DISPLAY = "'Fraunces', 'Georgia', serif";
+const expoOut = Easing.out(Easing.exp);
+
+export const Intro: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  // Spring for the title's settle — natural deceleration, not a linear ramp.
+  const titleScale = spring({ frame, fps, config: { damping: 14, stiffness: 110 } });
+  // Interpolate for opacity tweens — easier to read than spring for fades.
+  const titleOpacity = interpolate(frame, [0, 18], [0, 1], { easing: expoOut, extrapolateRight: "clamp" });
+
+  return (
+    <AbsoluteFill style={{ background: C.bg, color: C.fg, fontFamily: FONT_DISPLAY }}>
+      <Sequence from={0} durationInFrames={90}>
+        <h1 style={{ fontSize: 96, opacity: titleOpacity, transform: `scale(${titleScale})` }}>
+          Title
+        </h1>
+      </Sequence>
+      <Sequence from={90} durationInFrames={90}>
+        {/* next beat — body, lower third, asset, etc. */}
+      </Sequence>
+    </AbsoluteFill>
+  );
+};
+```
+
+A few non-negotiables this skeleton encodes — keep them when you build the user's project:
+
+- **`src/Root.tsx` is the ONLY file the viewer scans for `<Composition>`.** Adding a `<Composition>` anywhere else is silently invisible.
+- **`durationInFrames` integer, `fps` integer**, dimensions multiples of 2. Off-by-one durations make the trim/loop UI behave oddly.
+- **One composition per file**, imported into `Root.tsx`. Multi-composition files make the viewer's per-composition active-file tracking ambiguous.
+- **Tokens at the top of each file** (palette, fonts, easings, durations). When the user says "make the accent more saturated", you should be editing one line, not chasing literals.
+- **Static assets in `public/`**, referenced via `staticFile("name.png")`. Imports of binary assets in `src/` don't resolve in the in-browser preview.
+
+When the user picks a gallery seed, you'll find the same shape but with more aesthetic content — read those files for richer motion + typography patterns. When the workspace is empty, this skeleton is the starting point.
+
+---
+
+## Design Guidance
+
+### Why Design Rigor Matters for Video
+
+Video is the most aesthetically exposed medium — every frame is a visual artifact with nowhere to hide. Unlike a web app where functionality can compensate for mediocre aesthetics, a generic-looking video is just... generic. The goal is for someone to ask "how was this made?" rather than "which AI made this?"
+
+### Recognizing Generic AI Video
+
+These patterns have become strong signals that a video was AI-generated. They're not inherently bad techniques, but their combination is now a fingerprint:
+
+- Inter/Roboto/Arial on everything (these are the "default font" of AI output)
+- Centered title + centered subtitle on dark background
+- Purple-to-blue gradients, cyan-on-dark, neon accents
+- Glassmorphism blur cards with glow borders
+- Cards in a grid (icon + heading + text, repeated)
+- Bounce/elastic easing on every element (reads as "uncontrolled")
+- Same animation speed for everything
+- Dark mode + glowing accents as the lazy default
+
+If a video hits 3+ of these, it's worth reconsidering the design direction.
+
+### Making Distinctive Choices
+
+Strong videos commit to a clear aesthetic stance rather than playing it safe. Some directions to consider (not exhaustive — the content should drive the choice):
+
+- **Brutally minimal** — one font, two colors, massive whitespace, slow reveals
+- **Editorial/magazine** — sophisticated grids, serif headings, restrained motion
+- **Retro-futuristic** — CRT effects, scanlines, monospaced type, glitch transitions
+- **Organic/natural** — hand-drawn feel, imperfect edges, warm tones
+- **Luxury/refined** — thin weights, generous spacing, muted palette
+- **Bold/graphic** — oversized type, hard cuts, saturated color
+- **Kinetic typography** — text IS the animation, words fly/morph/stack
+
+Write the chosen direction as a comment at the top of each composition file. This anchors decisions and prevents style drift during implementation.
+
+### Video-Specific Design Tips
+
+**Typography** — often the primary visual element in video:
+- Avoid the most common AI-default fonts (Inter, Roboto, Arial, Open Sans, Lato, Montserrat, Poppins). These immediately signal "generated." Load distinctive fonts via `@remotion/google-fonts` — see [rules/fonts.md](rules/fonts.md) and [references/typography.md](references/typography.md).
+- Use a 3:1+ heading-to-body size ratio (5:1 often works better for video than for web).
+
+**Color** — see [references/color-and-contrast.md](references/color-and-contrast.md):
+- OKLCH produces more perceptually uniform palettes than HSL.
+- Tint neutrals rather than using pure black/white. Apply the 60-30-10 rule by visual weight.
+
+**Motion** — see [references/motion-design.md](references/motion-design.md):
+- `Easing.out(Easing.exp)` is a strong default (snappy, confident).
+- Bounce and elastic curves tend to read as uncontrolled — they've become an AI video cliché.
+- Vary timing: mix fast cuts (2-3 frames) with slow reveals (20-30 frames). Exits at ~75% of entrance duration. Stagger groups of 4-6 items, 3-5 frames apart at 30fps.
+
+**Layout** — see [references/spatial-design.md](references/spatial-design.md):
+- Treat every frame as a poster. Asymmetry tends to be more visually interesting than centering everything. Fill the frame intentionally.
+
+### Self-Review Checklist
+
+Before delivering, review these questions. They're diagnostic, not pass/fail — if several feel wrong, it's worth a revision pass:
+
+1. Could someone immediately tell AI made this? → Identify which parts feel generic
+2. Can the aesthetic be described in one phrase? → If not, the direction isn't clear enough
+3. Is there one thing that surprises? → A bold color, unexpected transition, unusual layout
+4. Are the font choices distinctive? → Swap out any defaults
+5. Is everything centered? → Try breaking symmetry somewhere
+6. Are all animations the same speed? → Vary timing across scenes
+7. Is the palette more than 3 colors? → Simplify
+8. Does it feel like a slide deck? → Lean into motion and spatial composition
+9. Are backgrounds pure black or pure white? → Tint them
+10. Does it look like a previous generation? → Push for visual variety
+
+### Design Reference Files
+
+The `references/` directory contains detailed guidance. Read the relevant file when making design decisions in that area:
+
+| Decision area | Reference |
+|---|---|
+| Font choice, sizing, weight, pairing | [references/typography.md](references/typography.md) |
+| Color palette, OKLCH, tinted neutrals | [references/color-and-contrast.md](references/color-and-contrast.md) |
+| Spacing, grids, visual hierarchy | [references/spatial-design.md](references/spatial-design.md) |
+| Easing curves, stagger, pacing | [references/motion-design.md](references/motion-design.md) |
+| Copy, labels, voice | [references/ux-writing.md](references/ux-writing.md) |
+
+---
+
+## Technical Reference
+
+### Core Rules
+
+Remotion drives all animation through frame counting, not CSS:
+
+- All animation uses `useCurrentFrame()` and `interpolate()` / `spring()`. CSS transitions and Tailwind animation classes (`transition-*`, `animate-*`) don't work in Remotion's rendering pipeline — they produce inconsistent results across frames.
+- Write durations as `seconds * fps` rather than raw frame counts for readability.
+- Use `type` (not `interface`) for component props.
+
+### Remotion API Rules
+
+Read individual rule files on demand when the topic is relevant:
+
+**Fundamentals**
+- [rules/animations.md](rules/animations.md) — `useCurrentFrame`, `interpolate` patterns
+- [rules/timing.md](rules/timing.md) — Easing curves, spring animations
+- [rules/compositions.md](rules/compositions.md) — Composition, Still, Folder, defaultProps
+- [rules/sequencing.md](rules/sequencing.md) — Sequence, Series, timing, delay
+- [rules/transitions.md](rules/transitions.md) — TransitionSeries, scene transitions
+- [rules/trimming.md](rules/trimming.md) — Cutting beginning or end of animations
+- [rules/parameters.md](rules/parameters.md) — Parametrizable video with Zod schema
+- [rules/calculate-metadata.md](rules/calculate-metadata.md) — Dynamic duration, dimensions, props
+
+**Assets & Media**
+- [rules/assets.md](rules/assets.md) — Importing images, videos, audio, fonts
+- [rules/images.md](rules/images.md) — `<Img>` component
+- [rules/videos.md](rules/videos.md) — Video: trimming, volume, speed, looping
+- [rules/audio.md](rules/audio.md) — Audio: trimming, volume, speed, pitch
+- [rules/fonts.md](rules/fonts.md) — Google Fonts and local fonts
+- [rules/gifs.md](rules/gifs.md) — GIFs synchronized with timeline
+- [rules/transparent-videos.md](rules/transparent-videos.md) — Transparent video rendering
+
+**Text & Typography**
+- [rules/text-animations.md](rules/text-animations.md) — Text animation patterns
+- [rules/measuring-text.md](rules/measuring-text.md) — Measuring and fitting text
+- [rules/measuring-dom-nodes.md](rules/measuring-dom-nodes.md) — DOM element dimensions
+
+**Visual Effects**
+- [rules/charts.md](rules/charts.md) — Data visualization (bar, pie, line)
+- [rules/3d.md](rules/3d.md) — Three.js integration
+- [rules/lottie.md](rules/lottie.md) — Lottie animations
+- [rules/light-leaks.md](rules/light-leaks.md) — Light leak overlays
+- [rules/maps.md](rules/maps.md) — Mapbox map animation
+
+**Audio & Captions**
+- [rules/subtitles.md](rules/subtitles.md) — Subtitle routing
+- [rules/display-captions.md](rules/display-captions.md) — Caption display
+- [rules/import-srt-captions.md](rules/import-srt-captions.md) — SRT import
+- [rules/transcribe-captions.md](rules/transcribe-captions.md) — Whisper transcription
+- [rules/audio-visualization.md](rules/audio-visualization.md) — Spectrum, waveforms, bass-reactive
+- [rules/sfx.md](rules/sfx.md) — Sound effects
+- [rules/voiceover.md](rules/voiceover.md) — ElevenLabs TTS voiceover
+
+**Advanced**
+- [rules/ffmpeg.md](rules/ffmpeg.md) — FFmpeg operations
+- [rules/can-decode.md](rules/can-decode.md) — Video decode capability
+- [rules/extract-frames.md](rules/extract-frames.md) — Frame extraction
+- [rules/get-audio-duration.md](rules/get-audio-duration.md) — Audio duration
+- [rules/get-video-dimensions.md](rules/get-video-dimensions.md) — Video dimensions
+- [rules/get-video-duration.md](rules/get-video-duration.md) — Video duration
+- [rules/tailwind.md](rules/tailwind.md) — TailwindCSS in Remotion

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/shenaow/malskills (path: data/ground_truth/benign/clawhub/hi-yu_rednote/latest_071c19fd4fab/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 小红书全能助手 — 文案生成、封面制作、内容发布与管理。当用户要求写小红书笔记、生成小红书文案/标题/封面、发小红书、搜索小红书、评论点赞收藏等任何小红书相关操作时使用。支持一站式从文案创作到自动发布的完整流程。封面AI生图需配置可选环境变量（GEMINI_API_KEY 或 IMG_API_KEY 或 HUNYUAN_SECRET_ID+KEY）。

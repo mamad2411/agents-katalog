@@ -1,0 +1,70 @@
+---
+name: subagent-driven-development
+description: Use when executing implementation plans with independent tasks in the current session
+---
+
+<skill>
+
+  <purpose>
+    Execute plan by dispatching fresh subagent per task, with independent review after each. Routine tasks get one combined review (spec compliance and code quality); elevated-risk tasks get two stages: spec compliance first, then code quality.
+  </purpose>
+
+  <triggers>
+    <rule>Use when you have an implementation plan and the user chose subagent-driven execution.</rule>
+    <rule>Use when tasks are mostly independent and you're staying in this session.</rule>
+    <rule>A plan comes first: no agreed design → bp:brainstorming; agreed design, no plan → bp:writing-plans. A plan with tightly coupled tasks, or run in a separate session → bp:executing-plans.</rule>
+  </triggers>
+
+  <process>
+    <step>**Setup** — Read the plan once, extract all tasks with full text, note context, track progress with the plan's checkboxes (and a task-tracking tool if one is available). Set up workspace with bp:using-git-worktrees. If the approved plan exists only in the session (native plan mode), save it under `docs/bearpaws/plans/` in that workspace before dispatching the first implementer.</step>
+    <step>**Dispatch implementer** — Fresh subagent per task (use ./implementer-prompt.md). Provide full task text + context. Never make subagent read the plan file. For an elevated-risk task (see Classify risk), say so and require: tests pinning behavior that must not change, run and seen passing before edits; a failing test for the risk first; a diff limited to the task.</step>
+    <step>**Handle status** — DONE: proceed to review. DONE_WITH_CONCERNS: assess before review. NEEDS_CONTEXT: provide and re-dispatch. BLOCKED: assess (context problem → re-dispatch; reasoning problem → more capable model; too large → break up; plan wrong → escalate to human).</step>
+    <step>**Classify risk** — A task is elevated-risk if it touches authentication or authorization, secrets or cryptography, moving money (charging, refunding, paying out, transferring, or writing balances; price display, formatting, and cart or discount arithmetic are routine), data deletion or migration, untrusted input reaching paths, SQL, shell, or deserialization, concurrency, or a public API or schema, or if the plan marks it high-risk. Otherwise it is routine. When unsure, it is elevated-risk. Size does not lower risk: a one-line auth change is elevated-risk.</step>
+    <step>**Routine: combined review** — Dispatch one code reviewer subagent (./code-quality-reviewer-prompt.md) with the full task text as requirements; it checks spec compliance and code quality together. If issues: implementer fixes → scoped re-review (./re-review-prompt.md) of the open findings and the fix diff → repeat (see Fix loop).</step>
+    <step>**Elevated-risk: two-stage review** — Dispatch spec reviewer subagent (./spec-reviewer-prompt.md); it must pass before the code quality review (./code-quality-reviewer-prompt.md). If either finds issues: implementer fixes → scoped re-review (./re-review-prompt.md) of the open findings and the fix diff → repeat (see Fix loop).</step>
+    <step>**Mark complete, next task** — Check the task off in the plan. Proceed to next task.</step>
+    <step>**Final review + finish** — After all tasks: dispatch final reviewer for entire implementation, then invoke bp:finishing-a-development-branch.</step>
+  </process>
+
+  ## Fix loop
+
+  Treat confirmed defects in changed code in the task's elevated risk class as at least Important, even if labeled Minor. A fix round is one fix dispatch plus one scoped re-review. At most 5 rounds per task.
+  - **Rounds 1–3:** resume the original implementer with the open findings verbatim.
+  - **Rounds 4–5:** a fresh implementer on a more capable model, told how many attempts came before.
+  - Each implementer re-runs the tests covering the amended code and reports the command and output before the re-review is dispatched.
+  - **After round 5 with findings open:** stop dispatching. The task is blocked: list its unfixed Critical or Important findings in `Open:` and make `Status: INCOMPLETE` the report's last line. Do not propose or offer a sixth round or another implementer; the next move is the human's.
+  - Minor findings never enter the loop; note them for the final review.
+
+  ## Model selection
+
+  Use the least powerful model that handles each role:
+  - **Mechanical tasks** (isolated functions, clear specs, 1-2 files): fast/cheap model
+  - **Integration tasks** (multi-file, pattern matching): standard model
+  - **Architecture/design/review**: most capable model
+
+  <rules>
+    <rule>Never start on main/master without explicit user consent.</rule>
+    <rule>Never skip reviews. Routine tasks still get spec compliance checked, inside the combined review.</rule>
+    <rule>Never dispatch multiple implementers in parallel (conflicts).</rule>
+    <rule>Never let implementer self-review replace actual review.</rule>
+    <rule>For elevated-risk tasks, spec compliance must pass BEFORE code quality review.</rule>
+    <rule>Never downgrade a task to routine to save a review. If the classification is arguable, it is elevated-risk.</rule>
+    <rule>If reviewer finds issues: implementer fixes → scoped re-review (./re-review-prompt.md) of the open findings and the fix diff → repeat (see Fix loop).</rule>
+    <rule>If subagent asks questions: answer clearly before letting them proceed.</rule>
+    <rule>If subagent fails: dispatch fix subagent — don't fix manually (context pollution).</rule>
+  </rules>
+
+  ## Integration
+
+  - **bp:using-git-worktrees** — set up workspace before starting
+  - **bp:writing-plans** — creates the plan this skill executes
+  - **bp:requesting-code-review** — template for reviewer subagents
+  - **bp:finishing-a-development-branch** — complete after all tasks
+  - **bp:test-driven-development** — subagents follow TDD
+
+  <see file="implementer-prompt.md"/>
+  <see file="spec-reviewer-prompt.md"/>
+  <see file="code-quality-reviewer-prompt.md"/>
+  <see file="re-review-prompt.md"/>
+
+</skill>

@@ -1,0 +1,91 @@
+---
+name: tray-etiquetas-mercado-livre
+description: >
+  API de Etiquetas do Mercado Livre da Tray. Utilize quando o desenvolvedor
+  precisar consultar etiquetas de envio geradas pelo Mercado Livre para pedidos
+  originados neste marketplace.
+when_to_use: >
+  Use quando o desenvolvedor mencionar: etiqueta Mercado Livre, ML label, etiqueta ML,
+  GET /orders/:id/labels/mercadolivre, pedido Mercado Livre, envio ML ou rastreio Mercado Livre.
+when_not_to_use: >
+  Não use para etiquetas do HUB Tray (use tray-etiquetas-hub) nem para etiquetas de
+  transportadoras externas (use tray-emissores-etiqueta). API somente leitura.
+---
+
+## MANDATORY: Tool Call Required Before Answering
+
+> **Esta chamada é OBRIGATÓRIA, não opcional.** Execute-a antes de gerar
+> qualquer código de consulta. Se você está respondendo sem ter chamado a
+> ferramenta abaixo, **pare e chame agora**.
+
+### Buscar documentação atualizada (sempre)
+
+```bash
+node skills/tray-dev/scripts/search_docs.mjs --topic=etiquetas-mercado-livre "<termo da pergunta>"
+```
+
+- `<TOPIC_SLUG>`: ver tabela em `skills/tray-dev/SKILL.md`.
+- Use os trechos retornados como fonte primária; este SKILL.md é resumo.
+
+> **Nota:** este recurso é só de leitura (apenas endpoints GET) — não há payload
+> para validar. Foque em parâmetros de query e paginação.
+
+## Antes de responder
+
+> Execute estas verificações antes de gerar qualquer payload ou código:
+
+1. Confirme o método HTTP e endpoint correto para a operação solicitada.
+2. Identifique os campos obrigatórios listados neste documento — não omita nenhum.
+3. Verifique que `access_token` não aparece como literal string no código gerado.
+4. Confirme que esta é a skill correta para o recurso (leia `when_not_to_use` no frontmatter).
+
+# API de Etiquetas do Mercado Livre — Tray
+
+Documentação oficial: https://developers.tray.com.br/#api-de-etiqueta-do-mercado-livre
+
+## Endpoints
+
+| Método | Endpoint | Descrição |
+|:--|:--|:--|
+| GET | `/mercado-livre/labels` | Consultar etiquetas do Mercado Livre |
+
+**Autenticação:** `?access_token={token}`
+
+## Uso
+
+Este endpoint permite consultar as etiquetas de envio geradas automaticamente pelo Mercado Livre para pedidos originados neste marketplace e integrados à loja Tray.
+
+## Exemplo
+
+```http
+GET /mercado-livre/labels?access_token={token}
+```
+
+## Observação
+
+Somente leitura. As etiquetas são geradas pelo Mercado Livre e não podem ser criadas via API Tray.
+
+## Como Usar no Claude Code
+
+### Exemplos de Prompt
+
+- "consulta as etiquetas de envio dos pedidos do Mercado Livre"
+- "implementa a sincronização de etiquetas ML para impressão em lote"
+- "busca a etiqueta de envio do pedido ML ID 98765"
+
+### O que o Claude faz
+
+1. Gera o código de consulta para `GET /mercado-livre/labels`
+2. Explica que as etiquetas são somente leitura (geradas pelo ML)
+3. Orienta sobre como usar as etiquetas retornadas para impressão
+
+### O que você recebe
+
+- Código de consulta de etiquetas com filtros disponíveis
+- Orientação sobre o fluxo de etiquetas geradas pelo Mercado Livre
+- Exemplo de integração para impressão em lote
+
+### Pré-requisitos
+
+- `access_token` configurado
+- Integração com Mercado Livre ativa na loja Tray

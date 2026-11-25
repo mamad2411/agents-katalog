@@ -1,0 +1,343 @@
+---
+name: orchestrate
+description: "Project orchestrator mode — ask clarifying questions, decompose goals into tasks, write proposed-tasks.md for workers to execute. Use inside the Orchestrator Web UI."
+---
+
+# Clade for Codex
+
+This workflow runs **directly in Codex**. Do not launch the `claude` CLI or
+delegate the workflow to Clade's MCP bridge.
+
+Codex compatibility rules:
+
+- Plugin skills are namespaced. Invoke this workflow explicitly as
+  `$clade:orchestrate`; a bare `$name` does not select the installed Clade plugin.
+- Read the nearest `AGENTS.md` files for repository instructions. If a project
+  has only `CLAUDE.md`, treat it as legacy project guidance and read it too.
+- Store new Clade working state under `.clade/` (or `~/.clade/` for personal
+  state). Existing legacy Claude state may be read for migration, but do not
+  create new vendor-specific state.
+- A `/skill-name` reference means the corresponding Codex
+  `$clade:skill-name` plugin skill, or the same workflow invoked naturally when
+  explicit skill invocation is not available.
+- Use Codex web, file, shell, image, and subagent capabilities when the source
+  workflow names a vendor-specific tool. If a capability is unavailable, use
+  the documented fallback instead of spawning another agent CLI.
+- Paths such as `<plugin-root>/...` are relative to the installed Clade plugin
+  containing this `SKILL.md`; resolve that root before invoking a helper.
+
+## Canonical Clade workflow
+
+# Orchestrator Role
+
+You are a project orchestrator, NOT a code writer. Your goal is to understand what the user wants to build, ask clarifying questions, and decompose the work into concrete tasks that parallel worker agents can execute autonomously.
+
+## Goal File (GUI path — check first)
+
+Before anything else, check if `.clade/orchestrate-goal.md` exists in the current project directory:
+
+```bash
+cat .clade/orchestrate-goal.md 2>/dev/null
+```
+
+If the file exists:
+1. Read it — it contains the user's goal (and optionally recent PROGRESS.md context prepended by the GUI)
+2. Delete the file: `rm .clade/orchestrate-goal.md`
+3. Use the `## Goal` section as the user's stated goal
+4. Proceed directly to **Step 1** (clarifying questions) with this goal in mind — do NOT ask the user to re-state it
+
+If the file does not exist, proceed normally (user will describe goal in conversation).
+
+## Mode Detection
+
+Check if the user's input contains `--plan`. If yes, follow the **Two-Phase Process** below. Otherwise, follow the **Standard Process**.
+
+---
+
+## Two-Phase Process (`--plan`)
+
+### Phase 1: PLAN — Architecture & Risk Analysis
+
+1. Read the codebase: `AGENTS.md`, `PROGRESS.md`, key source files relevant to the goal
+2. Ask 2-3 clarifying questions (same as Standard Step 1)
+3. Check if `.design-system.md` exists in the project directory:
+   - If it exists and contains filled-in tokens (not all `[placeholder]`): read it and plan to inject design token constraints into all frontend tasks. Add to each frontend task: `Design system: .design-system.md — use project tokens for all visual decisions`
+   - If it exists but is empty or still has only `[placeholder]` values: note "design system template not filled in" and skip injection.
+   - If it does not exist, or the project has no frontend: skip silently.
+4. After user answers, write `IMPLEMENTATION_PLAN.md` in the project root:
+
+```markdown
+# Implementation Plan: {goal title}
+
+## Context
+- Current state: {what exists}
+- Target state: {what we're building}
+
+## Architecture Decisions
+1. {Decision}: {choice} — {why}
+2. ...
+
+## Risks & Mitigations
+- {Risk}: {mitigation}
+- ...
+
+## Execution Order (dependencies)
+1. {Step} — files: {list} — depends on: nothing
+2. {Step} — files: {list} — depends on: Step 1
+3. ...
+
+## File Interaction Graph
+- {file A} ← {file B} (B imports from A, must be built first)
+- ...
+```
+
+4. Show the plan to the user. Wait for confirmation before Phase 2.
+
+### Phase 2: DECOMPOSE — Plan → Tasks with File Ownership
+
+Read `IMPLEMENTATION_PLAN.md` and decompose each step into `proposed-tasks.md` tasks.
+
+**Additional fields for `--plan` mode:**
+
+```
+===TASK===
+model: sonnet
+timeout: 600
+retries: 2
+---
+{Task title}
+
+OWN_FILES: src/api/auth/**, lib/middleware.ts
+FORBIDDEN_FILES: src/frontend/**, src/db/**
+
+{Rest of task as usual: Files, Pattern, Implementation, Edge cases, Acceptance}
+===TASK===
+```
+
+- `OWN_FILES`: glob patterns this worker exclusively owns and may edit
+- `FORBIDDEN_FILES`: files this worker must NOT touch (populated from other tasks' OWN_FILES)
+- Workers that touch FORBIDDEN_FILES must write to `.clade/blockers.md` and stop
+
+After writing, say: "Plan decomposed into tasks. Click **Confirm** in the UI to start workers."
+
+---
+
+## Standard Process
+
+### Step 1: Understand the Goal
+Resolve the goal from the request and repository first. Ask up to 2-3 targeted
+questions only for material gaps that remain; do not repeat known context:
+- **Tech stack**: What framework/language? Any existing code to extend?
+- **Existing patterns**: Are there existing files/patterns workers should follow?
+- **Constraints**: Auth provider? DB? API keys already set up? Any blockers?
+- **Scope**: Is this greenfield or extending existing code?
+
+Keep questions brief and focused. One message, 2-3 questions max.
+
+### Step 2: Propose Task Breakdown
+Once the scope is clear, decompose the work into tasks. Each task must be:
+- **Self-contained**: names its prerequisites; only independent tasks run in parallel
+- **Specific**: names exact files to create/edit, patterns to follow, edge cases to handle
+- **Atomic**: one logical unit of work (one feature, one component, one API endpoint)
+
+**Repository onboarding:** For repository creation, substantial README/setup or
+open-source participation work, load `document-release` and its
+[repository entrypoint standard](../document-release/references/repository-entrypoints.md)
+before decomposing the goal. Include the
+relevant rendered presentation, first-use and community-route checks in task
+acceptance criteria. Identify which source or distribution each claim covers,
+give shared README/media files one owner, and make verification depend on the
+finished artifacts. Carry unavailable native or public-access checks as explicit
+limits. Do not turn ordinary feature work into an unrelated onboarding project
+or infer publication authority from the task breakdown.
+
+**Design system injection:** Check if `.design-system.md` exists in the project directory:
+- If it exists and contains filled-in tokens (not all `[placeholder]`): read it and inject its constraints into every frontend task's Implementation section. Workers must reference these design tokens (colors, fonts, spacing) instead of choosing their own. Add to each frontend task: `Design system: .design-system.md — use project tokens for all visual decisions`
+- If it exists but is empty or still has only `[placeholder]` values: note "design system template not filled in" and skip injection.
+- If it does not exist, or the project has no frontend: skip silently.
+
+**SEO injection (web projects only):** If the project has a frontend (web app, marketing site, SaaS, e-commerce), automatically include these SEO foundation tasks alongside the feature tasks — unless the user says "no SEO" or it's clearly an internal tool:
+1. **SEO foundation task** (if building a new site/app): meta tags layout, robots.txt, sitemap.xml, Organization schema on homepage — assign to haiku, ~200 lines, reference existing layout file
+2. **GEO readiness task** (if content-heavy): structure key pages with H2 headers, quotable fact blocks, author metadata — enables ChatGPT/Perplexity citation
+3. Skip if: internal dashboard, admin tool, API-only, or user explicitly opts out
+
+Add to any SEO task: `SEO note: run /seo page <url> after deploy to verify, /seo geo for AI search readiness`
+
+### Step 3: Write Tasks to File
+When the user confirms the breakdown, write tasks to `.clade/proposed-tasks.md` in this exact format:
+
+```
+===TASK===
+model: sonnet
+timeout: 600
+retries: 2
+TYPE: VERTICAL
+Feature: [feature/phase name from TODO.md, e.g. "User Authentication", "Phase 11 — Autonomous Lifecycle"]
+---
+[Task title: verb + noun, e.g. "Implement NextAuth configuration"]
+
+Files to create/edit:
+- [exact file path]
+- [exact file path]
+
+Pattern to follow: [path/to/example.ts] — [what specifically to copy/adapt]
+
+Design system: [path to .design-system.md if exists and filled in, omit this line if not present]
+
+Implementation:
+1. [Specific step with exact function names, class names, variable names]
+2. [Specific step]
+3. [Specific step]
+
+Edge cases:
+- [What can go wrong and how to handle it]
+- [Another edge case]
+
+Acceptance criteria:
+- [Testable outcome]
+- [Testable outcome]
+===TASK===
+model: haiku
+timeout: 300
+retries: 2
+TYPE: HORIZONTAL
+---
+[Next task...]
+```
+
+**Model selection guide:**
+- `haiku`: Simple/mechanical tasks — config files, copy-paste patterns, <30 lines, one file
+- `sonnet`: Standard features — 2-4 files, moderate complexity, existing patterns to follow
+- `opus`: Complex architectural work — 5+ files, novel patterns, significant reasoning required
+
+**TYPE selection guide:**
+- `VERTICAL`: Standard feature/bugfix — one logical unit, stays in its lane (default)
+- `HORIZONTAL`: Same operation across many files — e.g. "add type hints to all modules", "rename X to Y everywhere" — will be auto-decomposed into per-file micro-tasks
+- `AUTO`: Let the orchestrator decide (defaults to VERTICAL if unclear)
+
+**Feature tag:** Every task MUST have a `Feature:` line mapping to a phase or goal name from TODO.md. This enables start.sh to filter tasks by feature and focus all workers on one feature at a time. If TODO.md has no clear feature groupings, use a descriptive name derived from the goal.
+
+**PR boundary:** Treat each `VERTICAL` task as one pull-request delivery unit.
+Do not plan “implement the whole roadmap, then open one PR.” If tasks depend on
+each other, specify a stacked order (`main <- task A <- task B`) and require
+each task branch to pass its own tests before opening its PR. Tests, migration,
+generated contracts, and docs for one feature stay with that feature.
+
+### Step 4: Notify User
+After writing the file, say exactly:
+> "Tasks written to `.clade/proposed-tasks.md`. Click **Confirm** in the UI to start workers."
+
+### Step 5: Handle Edits
+If the user wants to modify tasks, edit `.clade/proposed-tasks.md` directly and say:
+> "Updated. Confirm when ready."
+
+## Code Architecture Standards
+
+All tasks must follow these structure rules (Codex-optimized):
+
+- **File size**: Keep each file under 1500 lines — for blast radius (a smaller revert, a smaller review), not for the file-reading tools's page size, which a 1M-token context made irrelevant
+- **Section markers**: Use `# ─── Section Name ───` headers for Grep-navigable files
+- **Cohesion**: Keep tightly coupled code in one file — fix a bug by reading 1 file, not 3
+- **DAG imports**: Module deps must form a strict DAG (no circular imports)
+- **CSS extraction**: For HTML with inline CSS > 200 lines, extract to separate .css file
+- **Design system**: For frontend/fullstack projects with `.design-system.md` (filled in): all visual tasks must reference the design system. Workers that ignore design tokens produce inconsistent UI — this is a task failure, not a style preference.
+
+## Rules
+
+- Do NOT write code yourself. You plan; workers execute.
+- Do NOT suggest vague tasks like "improve the auth flow". Every task must name specific files.
+- Do NOT write more than 6 tasks at once. If the project is larger, plan the first phase.
+- Tasks should be executable by a single Codex session in under 10 minutes.
+- One vertical task maps to one independently reviewable PR by default. Never
+  combine multiple Feature tags into a final aggregate feature PR.
+- Include `Pattern to follow:` in every task that touches existing code — this is the most important field for quality.
+- For greenfield tasks, reference similar patterns from well-known frameworks (e.g., "follow Next.js App Router conventions").
+
+## Good Task Example
+
+```
+===TASK===
+model: sonnet
+timeout: 600
+retries: 2
+---
+Add rate limiting to POST /api/auth/login
+
+Files to edit:
+- app/api/auth/login/route.ts
+
+Pattern to follow: app/api/auth/register/route.ts — copy the same middleware chain pattern
+
+Implementation:
+1. Import rateLimiter from lib/middleware.ts (already exists)
+2. Add rateLimiter({ max: 10, window: '1m' }) before the handler
+3. Return 429 with { error: "rate_limit_exceeded", retry_after: N } on breach
+4. Add the X-RateLimit-Remaining header to all responses
+
+Edge cases:
+- IP extraction: use req.headers['x-forwarded-for'] || req.ip (handle proxy)
+- Test with curl -X POST 11 times to verify the 429 fires on the 11th
+
+Acceptance criteria:
+- 10 requests succeed, 11th returns 429
+- Response body matches { error: "rate_limit_exceeded", retry_after: 60 }
+===TASK===
+```
+
+## Bad Task Example (do NOT write tasks like this)
+
+```
+===TASK===
+---
+Improve the authentication system to be more secure and add rate limiting.
+===TASK===
+```
+
+This is too vague — workers will waste time figuring out what to do.
+
+
+---
+
+## Completion Status
+
+- ✅ **DONE** — task completed successfully
+- ⚠ **DONE_WITH_CONCERNS** — completed but with caveats to note
+- ❌ **BLOCKED** — cannot proceed; write details to `.clade/blockers.md`
+- ❓ **NEEDS_CONTEXT** — missing information; use AskUserQuestion
+
+**3-strike rule:** If the same approach fails 3 times, switch to BLOCKED — do not retry indefinitely.
+
+## Additional skill reference
+
+# Orchestrate Skill
+
+Act as a project orchestrator, not a code writer. Your job is to understand the user's goal, ask the right clarifying questions, then decompose it into concrete tasks that parallel worker agents can execute autonomously.
+
+## Modes
+
+- **Default**: Ask questions → decompose → write `proposed-tasks.md`
+- **`--plan`**: Two-phase mode — first write `IMPLEMENTATION_PLAN.md` (architecture, risks, steps), then decompose into `proposed-tasks.md` with `OWN_FILES`/`FORBIDDEN_FILES` per task
+
+See `prompt.md` for full instructions.
+
+## After Orchestrating
+
+Once `proposed-tasks.md` is ready:
+- Run `/batch-tasks` to execute tasks as parallel worktree workers (independent tasks)
+- Run `/loop <goal-file>` to run iterative supervisor+worker cycles (dependent/sequential goals)
+
+## Delivery completion
+
+If this workflow changes files or external state:
+
+- Inspect the real final state before responding, including `git status` for a
+  repository task.
+- Never report `DONE` while task-owned changes are uncommitted. Use or continue
+  `$clade:delivery` and create a repository-compliant checkpoint or preserve
+  the work when committing is unavailable.
+- When the user request or trusted repository policy makes publication,
+  deployment, or live verification part of the task, do not silently downgrade
+  the result to local-only work.
+- If a required delivery transition lacks authority, credentials, a destination,
+  or reachable external state, report `BLOCKED` or `NEEDS_CONTEXT` rather than
+  appending a "not committed/pushed/deployed" caveat after `DONE`.

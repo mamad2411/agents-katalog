@@ -1,0 +1,42 @@
+---
+name: act-bug
+description: Use when a bug is reported, something is broken, or asked to debug or fix specific behavior. Ends with the fix proven by a test that fails before and passes after. Not for cleanup or refactoring found along the way.
+---
+
+# Fix a bug
+
+Fixes a bug with unambiguous evidence: a test that shows it before the fix and not after. Not for
+cleanup found along the way, and not for a fix nobody could actually trigger.
+
+1. **Reproduce first.** Search only once the bug triggers — locally, as a test case, or from a log
+   excerpt the human gives. No reproduction yet: skip straight to the report below.
+2. **Localize.** Affected layer, since when (`git log`, `git bisect` between known-good and current).
+   Locating it across more than three files or in an unknown spot goes to `explorer` as a whole
+   (`R-cost-delegate`); the explorer also greps `docs/project/learnings/` (headers `area:`, `tags:`)
+   for the area and symptom keywords and reads only the hits; a note whose `retire_when` is met gets
+   reported, not followed. Cause not obvious after a quick look: delegate the hypothesis search to
+   the `debugger` role instead of guessing.
+3. **Name the cause**, not just where it surfaces. Several candidates: check the likeliest first.
+4. **Pick the seam.** Before writing the test, decide which interface it will exercise — one seam
+   per cycle, not an implementation detail. That's what keeps the test from re-breaking on the next
+   refactor.
+5. **Red test at that seam**, before touching the fix. Already green: reproduction was incomplete or
+   the cause was named wrong — back to step 1 or 3.
+6. **Fix.** Smallest change at the named cause, no surrounding rebuild.
+7. **Green test plus the project's required checks** (`docs/ai/config.md` § commands).
+8. **Capture what the code doesn't carry.** Ask: would someone who reads only the finished code
+   repeat the mistake or redo the search? Only on yes, write a note
+   `docs/project/learnings/<topic>.md` (folder created on first use) — header `area:`, `tags:`,
+   `retire_when:` (the condition that makes it obsolete), then sections Problem, What didn't work,
+   Solution, Prevention; at most about 30 lines, in `language-docs`. A note on the same topic
+   exists: extend it, don't add a second. Keep it relevant, atomic, evidenced and time-stable; no
+   secrets, no personal data; then `act-commit`. `act-perf` and `act-refactor` end with this step
+   too. A pitfall every coding session must know also becomes one imperative line under "Own rules" in
+   `docs/project/coding_rules.md`; incident, evidence and identifiers stay in the note, never in that line.
+
+Can't reproduce it: document what was reported, what was tried, and where reproduction failed
+instead of fixing on suspicion; ask the human when something's missing (credentials, test data, a
+specific environment). Anything else noticed along the way goes to the backlog, not into this
+assignment — booked with its open decisions per `inbox-decisions` (`R-human-ask`).
+`R-role-escalate` applies unchanged — two failed rounds at the same thing, then the expert role,
+never a third identical attempt.

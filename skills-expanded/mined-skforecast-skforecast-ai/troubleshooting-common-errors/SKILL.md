@@ -1,0 +1,301 @@
+---
+name: troubleshooting-common-errors
+description: >
+  Diagnoses and fixes common errors when using skforecast, especially mistakes
+  frequently made by LLMs generating skforecast code. Covers deprecated imports,
+  wrong function names, missing parameters, and data format issues.
+  Use when generated code produces errors or unexpected results.
+---
+
+# Troubleshooting Common Errors
+
+## When to Use
+
+Use this skill when generated skforecast code raises an error, produces unexpected
+results, or uses an import path, class name or function that no longer exists. It is
+the full pitfall catalog; the highest-risk skills also carry a focused
+`## Stop Conditions` table that points back here.
+
+### Related skills
+
+- **Alongside**: every skill — this is the canonical pitfall catalog their `## Stop Conditions` tables point back to
+- **Related**: `complete-api-reference` (confirm the exact signature before assuming a bug)
+- **Related**: `choosing-a-forecaster` (many errors come from using the wrong forecaster for the data shape)
+
+## Deprecated Import Paths
+
+The most frequent LLM error. Old import paths no longer exist.
+
+| Wrong (Deprecated) | Correct (v0.14.0+) |
+|-------|---------|
+| `from skforecast.ForecasterAutoreg import ForecasterAutoreg` | `from skforecast.recursive import ForecasterRecursive` |
+| `from skforecast.ForecasterAutoregMultiSeries import ForecasterAutoregMultiSeries` | `from skforecast.recursive import ForecasterRecursiveMultiSeries` |
+| `from skforecast.ForecasterAutoregDirect import ForecasterAutoregDirect` | `from skforecast.direct import ForecasterDirect` |
+| `from skforecast.ForecasterAutoregMultiVariate import ForecasterAutoregMultiVariate` | `from skforecast.direct import ForecasterDirectMultiVariate` |
+| `from skforecast.model_selection_multiseries import backtesting_forecaster_multiseries` | `from skforecast.model_selection import backtesting_forecaster_multiseries` |
+
+## Wrong Class/Function Names
+
+| Wrong | Correct |
+|-------|---------|
+| `ForecasterAutoreg` | `ForecasterRecursive` |
+| `ForecasterAutoregMultiSeries` | `ForecasterRecursiveMultiSeries` |
+| `ForecasterAutoregDirect` | `ForecasterDirect` |
+| `ForecasterAutoregMultiVariate` | `ForecasterDirectMultiVariate` |
+| `ForecasterSarimax` | `ForecasterStats(estimator=Sarimax(...))` |
+
+## Removed Arguments
+
+| Removed (v0.22.0+) | Replacement |
+|---------------------|-------------|
+| `regressor=...` | `estimator=...` (in all Forecasters) |
+
+## Categorical Exogenous Variables
+
+```python
+# ❌ WRONG: setting categorical features directly on the estimator
+forecaster = ForecasterRecursive(
+    estimator=LGBMRegressor(categorical_feature=[0, 1]),
+    lags=24,
+)
+
+# ✅ CORRECT: use categorical_features parameter on the forecaster
+forecaster = ForecasterRecursive(
+    estimator=LGBMRegressor(),
+    lags=24,
+    categorical_features='auto',  # or ['col_name_1', 'col_name_2']
+)
+```
+
+## Data Issues
+
+### "ValueError: The index of the series must be a DatetimeIndex with frequency"
+
+```python
+# Fix: set the frequency
+data = data.asfreq('h')       # Hourly
+data = data.asfreq('D')       # Daily
+data = data.asfreq('MS')      # Monthly start
+data = data.asfreq('QS')      # Quarterly start
+```
+
+### "ValueError: y contains NaN values"
+
+```python
+# Fix 1 (recommended for NaN-tolerant estimators): keep NaN rows
+forecaster = ForecasterRecursive(
+    estimator=LGBMRegressor(verbose=-1),  # LightGBM handles NaN natively
+    lags=14,
+    dropna_from_series=False,  # Default — NaN rows kept in training matrices
+)
+forecaster.fit(y=data['target'], suppress_warnings=True)
+
+# Fix 2: drop rows with NaN from training matrices
+forecaster = ForecasterRecursive(
+    estimator=RandomForestRegressor(),
+    lags=14,
+    dropna_from_series=True,  # Drop NaN rows before fitting
+)
+
+# Fix 3: impute missing values before fitting
+data = data.ffill()                      # Forward fill
+data = data.interpolate(method='linear') # Linear interpolation
+```
+
+### "ValueError: Input X contains NaN" when predicting or backtesting
+
+A predictor has a missing value when predicting and the estimator does not
+accept them. Usually a gap in `exog` in the forecast horizon, or in the last
+window.
+
+- Linear models of scikit-learn (`LinearRegression`, `Ridge`, `Lasso`...):
+  `Input X contains NaN in the predictors ['x'] ... at step 6 (2020-04-05)`,
+  with the predictor, the step, the date and, in
+  `ForecasterRecursiveMultiSeries`, the series.
+- Other estimators that reject NaN (SVR, KNN...): scikit-learn's own
+  `Input X contains NaN.`, without those details.
+
+If the predictor is `_level_skforecast`, the NaN is not in the data: a series
+not seen during training gets NaN with an ordinal encoding. Predict it with
+`encoding='onehot'` or `encoding=None`, or with an estimator that accepts NaN.
+
+```python
+# Fix 1: fill the gaps of exog before predicting or backtesting
+exog = exog.interpolate(method='linear')
+
+# Fix 2: use an estimator that accepts missing values
+forecaster = ForecasterRecursive(
+    estimator=HistGradientBoostingRegressor(),  # or LGBMRegressor(verbose=-1)
+    lags=14,
+)
+```
+
+With `differentiation`, any estimator (also HistGradientBoostingRegressor)
+raises `The series (or last_window) has missing values (NaN) at [...]` when
+one of the last `differentiation` values of the series or of `last_window` is
+missing: the predictions are reverted to the original scale from them, so all
+of them would be NaN. Fill that value (an estimator that accepts NaN does not
+help).
+
+Backtesting does not raise these errors: the dates that cannot be predicted
+get NaN predictions, so a missing value that only affects the discarded steps
+of the `gap` does not matter. If NaN predictions reach the scored dates:
+
+- `backtesting_forecaster` (one series) raises
+  `N backtesting predictions are NaN at dates with observed values ...`,
+  with the first date, the likely causes and the remedy (same fixes as above).
+- `backtesting_forecaster_multiseries` leaves them out of the metrics with a
+  `MissingValuesWarning` that gives their number per series. Read it: the
+  metrics use fewer values than predicted.
+
+### "ValueError: exog must have the same index as y" / "exog does not cover forecast horizon"
+
+```python
+# Fix: exog for prediction must cover ALL future steps
+# If predicting 10 steps ahead, exog_test must have at least 10 rows
+# with dates matching the expected forecast dates
+exog_test = exog.loc[forecast_start:forecast_end]
+predictions = forecaster.predict(steps=10, exog=exog_test)
+```
+
+## Wrong Backtesting Function
+
+```python
+# ❌ WRONG: using backtesting_forecaster with ForecasterStats
+from skforecast.model_selection import backtesting_forecaster
+backtesting_forecaster(forecaster=forecaster_stats, y=y, cv=cv, metric=metric)  # Error!
+
+# ✅ CORRECT: use backtesting_stats for statistical models
+from skforecast.model_selection import backtesting_stats
+backtesting_stats(forecaster=forecaster_stats, y=y, cv=cv, metric=metric)
+
+# ❌ WRONG: using backtesting_forecaster with ForecasterRecursiveMultiSeries
+backtesting_forecaster(forecaster=forecaster_multi, y=y, cv=cv, metric=metric)  # Error!
+
+# ✅ CORRECT: use backtesting_forecaster_multiseries
+from skforecast.model_selection import backtesting_forecaster_multiseries
+backtesting_forecaster_multiseries(
+    forecaster=forecaster_multi, series=series, cv=cv, metric=metric
+)
+```
+
+## Wrong Search Function
+
+```python
+# ❌ WRONG: grid_search_forecaster with ForecasterStats
+grid_search_forecaster(forecaster=forecaster_stats, y=y, cv=cv, param_grid=param_grid)
+
+# ✅ CORRECT: grid_search_stats for statistical models
+from skforecast.model_selection import grid_search_stats
+grid_search_stats(forecaster=forecaster_stats, y=y, cv=cv, param_grid=param_grid)
+
+# ❌ WRONG: grid_search_forecaster with ForecasterEquivalentDate
+grid_search_forecaster(forecaster=forecaster_baseline, y=y, cv=cv, param_grid=param_grid)
+
+# ✅ CORRECT: grid_search_equivalent_date for baselines (offset/n_offsets are coupled;
+#            agg_func is also searchable; pass a list of dicts to test explicit
+#            configs, optional 'alias' label)
+from skforecast.model_selection import grid_search_equivalent_date
+grid_search_equivalent_date(
+    forecaster=forecaster_baseline, y=y, cv=cv,
+    param_grid=[{'offset': 1, 'n_offsets': 7}, {'offset': 7, 'n_offsets': 2}],
+    metric='mean_absolute_error',
+)
+
+# ❌ WRONG: grid_search_forecaster with ForecasterRecursiveMultiSeries
+grid_search_forecaster(forecaster=forecaster_multi, y=y, cv=cv, param_grid=param_grid)
+
+# ✅ CORRECT: grid_search_forecaster_multiseries
+from skforecast.model_selection import grid_search_forecaster_multiseries
+grid_search_forecaster_multiseries(
+    forecaster=forecaster_multi, series=series, cv=cv, param_grid=param_grid
+)
+
+# ❌ WRONG: bayesian_search_forecaster with ForecasterFoundation
+bayesian_search_forecaster(forecaster=forecaster_foundation, y=y, cv=cv, search_space=search_space)
+
+# ✅ CORRECT: bayesian_search_foundation (TimeSeriesFold only, no 'lags' in search_space)
+from skforecast.model_selection import bayesian_search_foundation
+bayesian_search_foundation(
+    forecaster=forecaster_foundation, series=series, cv=cv,
+    search_space=lambda trial: {
+        'context_length': trial.suggest_categorical('context_length', [512, 2048])
+    },
+    metric='mean_absolute_error',
+)
+```
+
+## Prediction Interval Errors
+
+### "No in-sample residuals stored"
+
+```python
+# ❌ WRONG: fit without residuals, then call predict_interval
+forecaster.fit(y=y_train)
+forecaster.predict_interval(steps=10, method='bootstrapping')
+
+# ✅ CORRECT: store residuals during fit
+forecaster.fit(y=y_train, store_in_sample_residuals=True)
+forecaster.predict_interval(steps=10, method='bootstrapping')
+```
+
+### Wrong interval method for a forecaster
+
+| Forecaster | Supported Methods |
+|------------|-------------------|
+| `ForecasterRecursive` | `'bootstrapping'`, `'conformal'` |
+| `ForecasterDirect` | `'bootstrapping'`, `'conformal'` |
+| `ForecasterRecursiveMultiSeries` | `'bootstrapping'`, `'conformal'` (default: `'conformal'`) |
+| `ForecasterDirectMultiVariate` | `'bootstrapping'`, `'conformal'` (default: `'conformal'`) |
+| `ForecasterEquivalentDate` | `'conformal'` only |
+| `ForecasterRnn` | `'conformal'` only |
+| `ForecasterStats` | Built-in (uses `alpha` or `interval` parameter, no `method`) |
+| `ForecasterRecursiveClassifier` | Not available — use `predict_proba()` |
+
+## ETS Model API Confusion
+
+```python
+# ❌ WRONG (deprecated Ets API)
+ets_model = Ets(error='add', trend='add', seasonal='add', seasonal_periods=12)
+
+# ✅ CORRECT (current API)
+ets_model = Ets(model='AAA', m=12)
+# Model string: 1st char=Error, 2nd=Trend, 3rd=Seasonal
+# A=Additive, M=Multiplicative, N=None. Automatic selection only as model='ZZZ'
+# (partial specs like 'ZZN' raise an error: use 'ZZZ' with seasonal=False, trend=...)
+```
+
+## Function Mapping Reference
+
+| Task | Single Series | Multi-Series | Statistical |
+|------|--------------|-------------|-------------|
+| **Backtesting** | `backtesting_forecaster` | `backtesting_forecaster_multiseries` | `backtesting_stats` |
+| **Grid Search** | `grid_search_forecaster` | `grid_search_forecaster_multiseries` | `grid_search_stats` |
+| **Random Search** | `random_search_forecaster` | `random_search_forecaster_multiseries` | `random_search_stats` |
+| **Bayesian Search** | `bayesian_search_forecaster` | `bayesian_search_forecaster_multiseries` | N/A |
+| **Feature Selection** | `select_features` | `select_features_multiseries` | N/A |
+
+## Loading Serialized Forecasters from Older Versions
+
+Forecasters saved (pickled/joblib) with older skforecast versions may fail to load or behave unexpectedly after upgrading. Internal attributes, class structures, and default values change between releases.
+
+```python
+# ❌ Common error when loading a forecaster saved with an older version
+import joblib
+forecaster = joblib.load('forecaster_v0.13.pkl')
+# AttributeError: 'ForecasterRecursive' object has no attribute 'new_attribute'
+# or: ModuleNotFoundError: No module named 'skforecast.ForecasterAutoreg'
+
+# ✅ CORRECT: retrain the forecaster with the current version
+forecaster = ForecasterRecursive(
+    estimator=LGBMRegressor(),
+    lags=24,
+)
+forecaster.fit(y=y_train)
+joblib.dump(forecaster, 'forecaster_v0.22.pkl')
+```
+
+**Best practices:**
+- Always retrain and re-save forecasters after upgrading skforecast.
+- Store training code (not just the serialized object) so models can be reproduced.
+- Pin skforecast version in `requirements.txt` for production deployments.

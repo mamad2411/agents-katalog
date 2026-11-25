@@ -1,0 +1,87 @@
+---
+name: analyze
+description: "[oh-my-agy] Read-only deep repository analysis with ranked synthesis, confidence, file references, and evidence-vs-inference boundaries. Use for 'analyze', 'investigate', 'why does', stack traces, or cross-file root causes."
+---
+
+# Analyze — Read-Only Deep Analysis
+
+Use `$analyze` to answer a repository question with grounded, read-only evidence. Explain what the code most likely says; do not turn analysis into implementation or generic fix planning.
+
+Shared operating, delegation, state, and verification invariants live in the oh-my-agy rules (`rules/AGENTS.md`).
+
+## Use when
+
+- The user needs a causal, architectural, behavioral, impact, or tradeoff explanation (including diagnosing a pasted stack trace or runtime error log).
+- The answer requires tracing multiple files or boundaries, or ranking plausible explanations.
+- The user needs confidence and concrete evidence before changing anything.
+
+Do not use it for edits, implementation, a new product plan, a simple one-file lookup, or `$team` orchestration.
+
+## Inputs and method
+
+1. Restate the question and define the evidence-backed scope.
+2. Identify the smallest files, tests, configs, and docs likely to answer it.
+3. Read direct code paths and contracts first; trace boundaries only as far as needed.
+4. Compare competing explanations across distinct frames (code path, config/env/orchestration, measurement/artifact mismatch), rank them by the **6-tier Evidence Strength Hierarchy**, and run a **Rebuttal Pass** against the leading explanation before synthesis.
+5. For `--deep` or high-ambiguity multi-subsystem mysteries, dispatch up to 3 parallel `tracer` subagents via `invoke_subagent` (one per causal frame: Code-path, Config/env/orchestration, Measurement/artifact mismatch) and synthesize their findings after cross-rebuttal.
+6. **Whole-Repo Quality & Lean Audit Mode (`--audit [path]`)**: when invoked with `--audit [path]`, map the codebase first (`sh <plugin>/hooks/run.sh codebase-map <workspace>` and `sh <plugin>/hooks/run.sh scan-debt <workspace>`, plus read-only `coverage-map`, `docs-drift`, and `mcp-audit` probes when test gaps, doc drift, or MCP configs matter), identify entry points, end-to-end data flows, and expected load (`single-user script` vs `concurrent multi-user/process service`), then inspect for (1) **Bug** (edge cases, caller disagreements), (2) **Risk** (security, data loss — escalate full STRIDE/agentic attack surfaces to `$threat-model`), (3) **Scale** (races, unbounded memory, $O(n^2)$ paths relative to assumed load), (4) **Missing test** on risky logic, (5) **Speed**, and (6) **Lean** (`delete` dead code/options, `reuse` existing repo helpers, `stdlib/native` replacement, `yagni` single-implementation wrappers, `merge` near-copies, `split` multi-job functions). Treat `shortcut: <ceiling>, <upgrade>` comments as intentional decisions unless expected load crosses the ceiling. Output at most 20 numbered findings grouped under **Must fix**, **Should fix**, and **Nice to have**, each with 4 concise parts (`What this is`, `Problem` with concrete input case, `Fix` preferring deletion, `If we skip it`), ending with `Verdict:`, `Lean: -<N> lines, -<M> dependencies possible.`, `Shortcut debt: <N> markers (<M> no-trigger)`, and `Not checked:`.
+7. **Blast-Radius (`--blast-radius <symbolOrFile>`), Statechart (`--statechart <moduleOrFlow>`) & Architecture-Depth Surveys**:
+   - **`$analyze --blast-radius <symbolOrFile>`**: load [references/blast-radius-and-statechart.md](references/blast-radius-and-statechart.md), run the 1-call `codegraph_explore` fast path (when indexed) plus `grep` / dirty-worktree fallback, and classify dependents into **Direct Callers**, **Transitive Entrypoints / Routes / CLI**, **Shared State / Schema Coupling**, and **Missing Regression Coverage** (`certain | likely | unlikely | unverified` with `file:line`).
+   - **`$analyze --statechart <moduleOrFlow>`**: load [references/blast-radius-and-statechart.md](references/blast-radius-and-statechart.md), extract explicit and implicit state transitions into a valid GitHub-flavored Mermaid `stateDiagram-v2` diagram (quoted labels), and emit the **Dead / Unreachable / Missing-Transition Audit Table** (`file:line`).
+   - When surveying module architecture generally, classify structural friction into 3 concrete buckets: (1) **Shallow modules** (pass-through wrappers whose interface is as complex as their body), (2) **Hypothetical seams** (abstractions/interfaces with only a single implementation), and (3) **Logic behind the wrong seam** (callers forced to know internal sequencing or state of a dependency).
+8. Stop when the question is answered with sufficient evidence, or name the smallest read-only probe that would resolve the remaining uncertainty.
+
+## Evidence discipline
+
+Label every material claim as one of:
+
+- **Evidence** — directly shown by code, tests, generated artifacts, configuration, or docs.
+- **Inference** — a reasoned conclusion drawn from cited evidence.
+- **Unknown** — not settled by the repository evidence.
+
+Rank evidence using the **6-tier Evidence Strength Hierarchy** (strongest to weakest):
+1. **Tier 1**: Controlled reproduction, direct test/probe output, or source-of-truth artifact that uniquely discriminates between hypotheses.
+2. **Tier 2**: Primary artifact with tight provenance (`file:line` behavior, timestamped logs, git history, config snapshot).
+3. **Tier 3**: Multiple independent sources converging on the same mechanism.
+4. **Tier 4**: Single-source code-path inference that fits the symptom but is not uniquely discriminating.
+5. **Tier 5**: Weak circumstantial clues (naming, temporal proximity, stack order).
+6. **Tier 6**: Intuition, analogy, or speculation.
+
+Prefer direct paths and higher-tier corroboration over lower-tier clues. Never present guesses as evidence or inference, and never overclaim certainty.
+
+## Output contract
+
+Answer the asked question first and use this shape:
+
+### Question
+Restated question, briefly.
+
+### Ranked synthesis
+| Rank | Explanation | Confidence | Basis |
+|------|-------------|------------|-------|
+| 1 | ... | High / Medium / Low | strongest supporting evidence |
+| 2 | ... | High / Medium / Low | why it trails |
+| 3 | ... | High / Medium / Low | why it remains possible |
+
+### Evidence
+- `path/to/file:line-line` — direct observation.
+- `path/to/file:line-line` — corroborating observation.
+
+### Inference
+- What the evidence most strongly implies.
+- Why weaker alternatives were down-ranked.
+
+### Intent-vs-Reality Diff (include when auditing docs, specs, or expected vs actual behavior)
+| Surface / Claim | Expected / Documented (`source`) | Actual Code Behavior (`file:line`) | Drift Classification |
+|-----------------|----------------------------------|------------------------------------|----------------------|
+| ... | ... | ... | `Match` / `Undocumented` / `Broken` / `Stale` |
+
+### Unknowns / limits
+- What the repository does not establish.
+- The next discriminating read-only probe, when useful.
+
+## Stop conditions
+
+- Do not edit files, run an implementation lane, or make recommendations the evidence cannot support.
+- Do not continue searching after the answer and confidence boundary are grounded.
+- If evidence is insufficient, report the limit explicitly rather than manufacturing certainty.

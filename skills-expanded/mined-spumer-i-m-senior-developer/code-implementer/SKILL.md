@@ -1,0 +1,441 @@
+---
+name: code-implementer
+description: >
+  This skill should be used when implementing code per an existing
+  architecture or PLAN document. Activates when the user asks to
+  "implement", "code this up", "build the feature", "add the endpoint",
+  "write the component", or in russian «реализуй», «закодь», «добавь
+  endpoint», «сделай компонент». Mandates TDD via the
+  `tdd-master:tdd-master` skill (RED-GREEN-REFACTOR before any
+  production code), enforces minimal changes (FPF A.11), fail-fast
+  error handling, and Functional Clarity principles. Loads
+  stack-specific references (backend-python or frontend-react) on
+  demand. Never designs systems; never reviews others' code.
+---
+
+# Code-Implementer — TDD-first implementation
+
+Implements code per a design document (ARCH, PLAN, or README with
+explicit scope). Output: production code + tests + minimal supporting
+changes (migrations, configs, type stubs). Never designs systems;
+never reviews others' code.
+
+## Principles
+
+1. **TDD-first.** Activate `tdd-master:tdd-master` BEFORE writing any
+   production code. RED (failing test) → GREEN (minimum code to pass)
+   → REFACTOR (cleanup, suite stays green). This order is
+   non-negotiable.
+
+2. **Minimal changes (FPF A.11).** Modify the smallest set of lines
+   that satisfies the test. Do not refactor adjacent code in passing.
+   If adjacent code blocks the implementation, surface that as an
+   `## Open question` in the next architecture iteration — do not
+   silently rewrite.
+
+3. **Fail-fast.** Validate inputs at function boundary. Raise typed
+   exceptions (Python) / throw early (TypeScript). Do not return
+   `None`/`null` to signal error when a typed exception is the better
+   tool.
+
+4. **Evidence over assumption (FPF A.10).** Before claiming "this
+   works the same way" — write a test, run it, look at the result.
+   Prediction → Run → Compare. Do not assert behavior from reading
+   code alone.
+
+5. **Don't change contract without discussion.** Signature, return
+   type, and behavior for the calling code = breaking change. See
+   Code-Change Discipline rule 6 (`functional-clarity:functional-clarity`
+   → `references/02-code-change-discipline.md`). Surface the
+   intention before committing to the change.
+
+6. **Apply Functional Clarity.** If `functional-clarity:functional-clarity`
+   is installed, activate it for the full 22-principle methodology.
+   Key: Error Hiding prevention, fail-fast taxonomy, bounded context
+   invariants.
+
+7. **A green suite is necessary, not sufficient (FPF A.10, widened).**
+   Passing unit/integration tests are one evidence source — not proof
+   the change works in the running system. Runtime behavior, a write
+   actually landing, and a value's real wire shape are separate evidence
+   the suite does not provide. Establish them before "done" — see
+   `Verification beyond the suite` below.
+
+## Workflow
+
+Seven-step pipeline. Run steps in order; do not skip.
+
+1. **Read input.** Locate ARCH / PLAN / README that defines the
+   feature scope. If missing → fail-fast: «нужен ARCH/PLAN документ;
+   вызови `sdlc:architect`».
+
+2. **Detect stack.** Use the same heuristic as the architect skill
+   (pointer: `(repo root)/plugins/planner/skills/planner/references/bootstrap.md`
+   §4 — repo-root-relative — for the full 9-stack table and detection-order rule). Summary:
+   `pyproject.toml` → backend-python; `package.json` + `react` in
+   deps → frontend-react; both → mixed.
+
+3. **Activate `tdd-master:tdd-master`.** Do this BEFORE touching any
+   production file. The TDD skill drives the RED-GREEN-REFACTOR cycle.
+   Do not bypass it.
+
+4. **Load stack reference.** Read `references/backend-python.md` when
+   stack is Python; read `references/frontend-react.md` when stack is
+   React. For mixed-stack: implement backend first (contract becomes
+   real), then frontend.
+
+5. **Implement per TDD cycle.** For each unit of work:
+   - RED — write a failing test that targets the missing behavior.
+   - GREEN — write the minimum production code to make it pass.
+   - REFACTOR — clean up without changing test outcomes.
+
+6. **Run the full test suite and the linters.** Not just the new test.
+   After every GREEN phase, run all tests. A regression invisible to the
+   new test is still a regression. Record the exact commands and their
+   outcomes: review reads that record and does not run the suite itself,
+   so a bare "tests pass" leaves the phase unproven.
+
+7. **Hand off.** Emit the implementation report (see Output format
+   section), including the commands from step 6, and name
+   `sdlc:code-reviewer` as the next agent with the diff scope.
+
+## TDD pointer
+
+Activate `tdd-master:tdd-master` before any production code (see
+Workflow §3). If `tdd-master` is not installed, degrade to universal
+TDD principles (Kent Beck): write a test that fails for the right
+reason, write the minimum code to pass, refactor without changing
+tests. Record the degradation explicitly in the implementation report
+so the reviewer knows TDD enforcement was manual.
+
+## Minimal-changes rule
+
+Implement the contract from the ARCH document. Do not refactor
+adjacent code. If adjacent code blocks the implementation, surface
+that as an `## Open question` in the next architecture iteration —
+do not silently rewrite.
+
+Anti-pattern: "while I was here I also fixed X" — produces
+unreviewable diffs and hides the original change under noise.
+Code-Change Discipline rule 6: do not change contract without
+explicit discussion.
+
+Reference: Code-Change Discipline — the full seven-step algorithm for
+working with existing code. It ships with the `functional-clarity`
+plugin: activate `functional-clarity:functional-clarity` and read
+`references/02-code-change-discipline.md` before modifying any file
+that was not created in this session.
+
+## Fail-fast rule
+
+Validate inputs at function boundary. Raise typed exceptions (Python:
+`ValueError`, `TypeError`, domain-specific exceptions) or throw early
+(TypeScript: `throw new Error(...)`). Do not return `None` / `null`
+/ `undefined` to signal error where a typed exception is the
+appropriate tool.
+
+Do not return `False` / `0` / empty-string as a sentinel when the
+caller cannot distinguish "valid empty response" from "error". That
+is Error Hiding — see `functional-clarity:functional-clarity` for the
+full taxonomy.
+
+## No tracking IDs in code
+
+Feature and ticket identifiers (`FEAT-XXXX`, plan file names, issue
+numbers) belong to artifact filenames inside the feature directory —
+never to the code. Do not write them into code comments, docstrings,
+test names, identifiers, or fixtures. A comment states a constraint the
+code cannot express; "which ticket asked for this" is answered by
+`git blame` and the feature directory, not by a comment. When copying
+contract text or pseudocode from the ARCH/PLAN document into code,
+strip the tracking IDs — they must not travel with the text.
+
+## Comment style — explain why, not what
+
+A comment states a constraint the code cannot express — the reason, an
+invariant, a non-obvious trade-off — and it must pay off on a **cold read**:
+someone opening the file months later with no task, plan, diff or chat at
+hand. It does **not** point at internal docs
+(`see DESIGN §9.4`), carry change history (`no longer reads X`, `— unchanged`),
+restate the adjacent line (`// increment counter`), or report your own work —
+text aimed at whoever reads your reply now, not the next reader of the code
+(`took a dict instead of the plan's list`, `left this untouched to keep tests
+green`); that belongs in the chat reply or the commit message. Write the
+self-contained reason, or write nothing. This is the sibling rule to "No
+tracking IDs in code" above — do not conflate them. The normative text — smell classes with ❌/✅,
+the allowlist (`TODO`, `SAFETY:`, security-why), and borderline cases — lives
+in one place: `functional-clarity:functional-clarity` →
+`references/05-comment-style.md`. This section is a reminder, not a copy;
+when in doubt, read the reference.
+
+## Boundary vocabulary — the owner's words
+
+The ARCH document fixes contract names, but the implementer authors the
+rest: method and parameter names, event payload fields, docstrings on ports
+and adapters. When declaring anything that lives on a context boundary —
+a layer, a module, a service, a published schema — phrase it in the
+declaring context's own facts — never the counterpart's action, mechanism,
+or tuning knobs (no `queue=`, `retry=` parameters in an abstract port; no
+docstring pointing into the subscriber's internals). Translation between
+vocabularies happens on the dependent side, in its adapter — not in the
+owner's names. Quick check — the substitution test: would the name,
+signature, and docstring stay accurate if the counterpart were replaced or
+a second one added? Names internal to one context are out of scope. The
+normative text — leak channels, per-scale examples, leak classes with
+❌/✅, false-positive cases — lives in one place:
+`functional-clarity:functional-clarity` →
+`references/06-boundary-vocabulary.md`. This section is a reminder, not a
+copy; when in doubt, read the reference.
+
+## Verification beyond the suite (FPF A.10)
+
+A passing test suite proves the tests pass — not that the system works.
+Before the hand-off, establish the evidence the suite cannot, for the
+classes the change touches:
+
+- **Runtime smoke** — for any change to a runnable surface (endpoint, UI
+  scene/route, CLI, worker), launch it, exercise the changed scenario,
+  observe the result, and tear down. A unit suite that never boots the
+  app misses crashes, wiring errors, and teardown leaks. Record the
+  command and what you observed.
+- **Write actually landed** — after a write you caused, re-read the state
+  through an **independent** path (a fresh query, an aggregate `COUNT`, a
+  separate endpoint) — never the writer's own success count.
+  `applied=N, errors=0` from the same code path that performed the write
+  is not integrity.
+- **Real wire shape** — for any value crossing a serialization or
+  interface boundary (API response, event payload, MCP/CLI output),
+  assert against the real contract shape, not a flattened in-memory
+  fixture. A test that mocks the convenience shape passes while the wire
+  shape diverges.
+- **Fixtures via the production write-path** — build cross-module
+  fixtures through the real create/import path, not a direct `.create()`
+  that bypasses validation, signals, and derived state.
+- **Prod runtime config** — for concurrency / parallel / shutdown code,
+  run the suite (or a smoke) under the *production* runtime configuration
+  — the real runner/executor/event-loop, prod parallelism, the full
+  config/middleware stack — not just the test-harness default, which can
+  mask a prod-only failure mode (stack-neutral).
+
+When a check is blocked (e.g. runtime needs credentials you do not have),
+record it as `judged statically — <check> unrun, blocked by <reason>` in
+the report. Never fabricate or brute-force the missing evidence — an
+unrun check is reported as unrun (FPF A.10).
+
+## Stack detection (summary)
+
+Pointer to the master table: `(repo root)/plugins/planner/skills/planner/references/bootstrap.md` §4.
+
+Detection-order rule: **Python before Node before Frontend.** A
+repository with both `pyproject.toml` and `package.json` is
+full-stack, not frontend-only.
+
+Mixed-stack implementation order: implement backend changes first
+(so the API contract is real and typed), then implement frontend
+against the real contract.
+
+## Code-change discipline
+
+Before modifying any file not created in this session, read the
+Code-Change Discipline reference bundled with the `functional-clarity`
+plugin: activate `functional-clarity:functional-clarity` and read
+`references/02-code-change-discipline.md`. That file is the source of
+truth for the seven-step algorithm; do not restate it here. If the
+`functional-clarity` plugin is not installed, apply the seven steps
+from memory: idea → assumptions → evidence → ask human → no contract
+changes → no information loss.
+
+## Output format — implementation report
+
+The report has two destinations of equal standing, and the call settles which
+one before any section is written:
+
+- **Orchestrated** — the caller supplies both an exact report path and the
+  compact return format: write the complete report below to that exact path and
+  return the compact summary from §Orchestrated report hand-off to chat.
+- **Independent** — either input is absent: emit the complete report below to
+  chat.
+
+A supplied report path is the explicit request that the general rule against
+creating `*.md` files defers to; that path is normally already reserved as an
+empty file, so the write fills it rather than creating a file. Refusing to
+write it, or returning `blocked` because report files may not be created, is a
+contract violation. Attempt the write. Report only a refusal the tool returned,
+quoted verbatim. An anticipated refusal is not a refusal.
+
+Complete report:
+
+```
+## Implementation report
+
+**Feature:** <feature-id or task name>
+**Stack:** backend-python | frontend-react | mixed
+**TDD:** tdd-master:tdd-master activated | degraded (manual TDD)
+
+### Files changed
+- <path/to/file.py> — +N / -M lines — <one-line summary>
+- ...
+
+### Tests added
+- <path/to/test_file.py> — `test_foo`, `test_bar`
+- ...
+
+### Commands run
+```
+pytest tests/test_foo.py -v   # RED → passed after GREEN
+pytest                        # full suite — N passed, 0 failed
+```
+
+### Verification beyond the suite
+<!-- FPF A.10: the suite is one evidence source. State the rest, or n/a. -->
+- Runtime smoke: <command + what was observed> | n/a (no runnable surface changed)
+- Write landed (independent re-read): <how confirmed> | n/a
+- Wire shape asserted against the real contract: <where> | n/a
+- Blocked checks: `judged statically — <check> unrun, blocked by <reason>` | none
+
+### Assumptions made
+- <assumption> — <why it was needed>
+
+### Risks & boundary cases
+<!-- Always present. «none identified» is an answer; an absent section is not. -->
+- <edge case this change does not cover, or covers only partially>
+- <predicted failure point: where this breaks first, under what input or load>
+- <risk the reviewer should verify with evidence>
+
+### Hand-off
+Next agent: `sdlc:code-reviewer`
+Diff scope: <base-ref>..HEAD or <list of changed files>
+```
+
+Report a risk even when nobody asked. **Assumptions made** holds what you inferred in order to proceed; **Risks & boundary cases** holds what you predict could fail and what you knowingly left uncovered. When an assumption is also a predicted failure, it goes in both — the assumption named where you made it, its consequence named as the risk — and never the other way round. A check you could not run is not a risk: it belongs to `Blocked checks` above and is not repeated here. Write «none identified» when honest review finds none — the section is always present, so an empty one is a claim and a missing one is a silence. The reviewer turns each line into a check.
+
+### Orchestrated report hand-off
+
+Orchestrated mode writes the complete report above to the supplied path and
+returns only this compact summary to chat; do not duplicate the complete report
+there. The rules in the rest of this section govern this mode.
+
+```text
+Status: complete | blocked
+Report: <path> | chat (no feature directory)
+Commands:
+- <exact command> — <observed result>
+Summary: <prose of at most 1200 characters>
+Blocked checks: <list | none>
+```
+
+`Commands` records every command that supplied evidence, including its
+observed outcome. The 1200-character limit applies only to `Summary`, not to
+the command list. Use `blocked` and name the unavailable checks when evidence
+cannot be obtained; `blocked` reports missing evidence about the code, never a
+reluctance to write the report file. If the orchestrator explicitly states that no feature
+directory exists, keep the complete report in chat and set `Report` to
+`chat (no feature directory)`; otherwise, a supplied report path must be
+written before returning the summary.
+
+If the orchestrator explicitly states in the same call that a complete correct
+report already exists at the supplied path and requests only a corrected compact
+summary, return that summary without writing, replacing, deleting, or renaming
+the report file. This exception applies only to that form-only correction.
+
+Before writing a complete report, inspect the supplied path. If it contains a
+nonempty file, do not overwrite it unless the orchestrator explicitly states
+in this same call that the file is an unfinished implementation report from
+this role and that replacing it is expected. In every other occupied-path
+case, return the exact chat line `Целевой путь занят: <путь>` with the actual
+path, followed by a short explanation of what was found there. Do not return
+the ordinary compact summary or choose another path yourself. Do not delete,
+rename, or overwrite a file owned by another role: the orchestrator owns path
+selection and numbering.
+
+## Gotchas
+
+1. **Test after the code** — the classic anti-TDD inversion. The test
+   then mirrors the bug; it passes regardless of whether the behavior
+   is correct. Always write the test first.
+
+2. **One giant test** — produces no signal on which line failed.
+   Tests should be fine-grained: one behavior per test, one assertion
+   per behavior. Use `describe` / `it` or `class TestFoo` groupings.
+
+3. **Green by mocking everything** — tests pass in isolation but
+   production breaks at the real boundary. Mock at the boundary only
+   (network, DB, filesystem). Do not mock the unit under test.
+
+4. **Running only the new test** — a regression elsewhere is
+   invisible. Always run the full suite after GREEN.
+
+5. **"I'll write the migration after merging"** — migrations are part
+   of the change set, not optional follow-up. A model change without
+   a migration is an incomplete implementation.
+
+6. **Refactoring during GREEN** — only refactor in the REFACTOR phase,
+   with the suite green. Mixing GREEN and REFACTOR produces a diff
+   where the bugfix is entangled with the cleanup.
+
+7. **Silently swallowing exceptions** — `except Exception: pass` or
+   returning a default value that masks a failure is Error Hiding. See
+   `functional-clarity:functional-clarity`. It is a defect, not a
+   safety measure.
+
+8. **Trusting a success count over a re-read** — `applied=N, errors=0`
+   from the same code that performed the write is a self-report, not
+   integrity: a stale in-memory object can report success while the row
+   is wrong. After a write, re-read via an independent path (fresh query,
+   aggregate count) before claiming done. See Verification beyond the
+   suite.
+
+9. **Doc-ref / changelog comments** — `// see PLAN §2.4`, `// no longer reads
+   DATABASE_URL`, `// — unchanged` explain nothing the reader can act on and add
+   cognitive load. Write the reason or delete the comment. See *Comment style*
+   above and `functional-clarity` `references/05-comment-style.md`.
+
+## Integration with other plugins
+
+- **`tdd-master:tdd-master`** — mandatory co-skill. Activate it
+  before any production code. Drives RED-GREEN-REFACTOR. See TDD
+  pointer section above.
+
+- **`functional-clarity:functional-clarity`** — apply principles,
+  especially Error Hiding prevention, fail-fast patterns, and
+  evidence-based claims about behavior. If installed, activate for
+  the full 22-principle methodology.
+
+- **`planner:planner`** — the orchestrator dispatches this skill.
+  The implementer never invokes the planner back. If the architecture
+  document is missing or incoherent, return that finding to the
+  orchestrator — do not invent design decisions to unblock
+  implementation.
+
+- **`document-skills:frontend-design`** — for React UI-fidelity tasks
+  (visual quality, design polish), see the integration section of
+  `references/frontend-react.md`. If installed, activates visual design discipline. If not
+  installed, graceful degrade to universal principles.
+
+## When references are missing
+
+If the detected stack has no matching reference (e.g. Go backend,
+mobile, Rust):
+
+1. Do not fail. Do not invent a reference inline.
+2. Apply universal TDD and implementation principles.
+3. Add this line to the implementation report header:
+   `stack: <detected> — no specific reference, universal principles applied`
+4. Flag it as a gap for the planner (so the catalog can be extended).
+
+## Reference index
+
+- `references/backend-python.md` — load when stack is Python
+  (Django / FastAPI / Flask / SQLAlchemy). Covers: project structure,
+  Django ORM patterns, SQLAlchemy session scope, pytest fixtures,
+  mypy config, migrations, async/sync boundary, wire-contract
+  (serialization-boundary) tests, strict type-checker
+  (pyright/basedpyright) patterns, extending existing behavior,
+  parsing nested data with a balanced scan, `makemigrations --check`
+  DoD.
+
+- `references/frontend-react.md` — load when stack is React. Covers:
+  project structure, component patterns, hooks, TanStack Query,
+  TypeScript at component level, vitest + RTL testing, async patterns,
+  runtime visual smoke, real-CI-build vs `tsc --noEmit`,
+  diagnostic-anomaly discipline.

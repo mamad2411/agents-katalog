@@ -1,0 +1,88 @@
+---
+name: route
+description: Analyze an enriched note and route to the best vault destination. Stage 3 of the processing pipeline.
+allowed-tools:
+  - Read(~/.claude/vaults/**/CLAUDE.md)
+  - Read(~/.claude/vaults/**/*.md)
+  - Read(~/.claude/vaults/**/.routing-memory.md)
+  - Write(~/.claude/vaults/**/.routing-memory.md)
+  - Edit(~/.claude/vaults/**/.routing-memory.md)
+  - Bash(npx @techpickles/sb:*)
+---
+
+# Route Stage
+
+Analyze an enriched note against routing memory, vault rules, and generic signals. Move to destination or mark for review.
+
+See `../obsidian/references/pipeline.md` for stage definitions and status flow.
+See `../obsidian/references/routing.md` for the scoring algorithm.
+See `../obsidian/references/para.md` and `../obsidian/references/johnny-decimal.md` for the two folder systems a vault may use (often both, mid-migration).
+See `../obsidian/references/routing-memory.md` for the correction and learning loop.
+
+## Input
+
+An enriched note in the inbox with `status: enriched`, or a finished note
+with a vault status (`seedling`, `filed`, ...) or none. For a finished note,
+skip every `status` write below: move it or leave it, and its status stays.
+See "Status Values" in `../obsidian/references/pipeline.md`.
+
+## Process
+
+1. Load routing context:
+   - Read `.routing-memory.md` from vault root (create with defaults if missing)
+   - Read vault CLAUDE.md for disambiguation rules
+   - Run `sb vault structure` for available destinations
+   - Run `sb note context --note "{note-path}"` for keywords and signals
+
+2. Score destinations (priority order):
+   a. Check `.routing-memory.md` corrections for matching topics/keywords
+   b. Check `.routing-memory.md` learned patterns
+   c. Apply vault CLAUDE.md disambiguation rules
+   d. Apply generic signal scoring (per `../obsidian/references/routing.md`)
+
+   Each destination from `sb vault structure` carries a `type`. For Johnny Decimal destinations (`type: 'jd'`) also use `area` and `code` when scoring: match the note's topic to the `area`, and prefer an ID `code` (e.g. `67.01`) for a specific note or its parent category `code` (e.g. `67`) for a loose note. See `../obsidian/references/johnny-decimal.md`.
+
+3. Apply threshold:
+   - Score >= `auto-route-threshold`: auto-route, move file, set `status: routed`
+   - Score < threshold: set `status: pending-review`, return without moving
+
+4. Before moving, Glob the destination for a note on the same subject (its
+   title's words all in the other's, at least two words unless the titles
+   match exactly). If one is there,
+   don't move: present it like a pending-review note, with "merge into
+   {existing}" as the first option.
+
+5. If auto-routing, move the file:
+   ```bash
+   npx @techpickles/sb note move --from "{note-path}" --to "{destination}/"
+   ```
+   Update frontmatter: `status: routed`
+
+6. If pending-review, present suggestions to human (when called by orchestrator):
+   - Show top 2-3 destinations with scores and reasoning
+   - Include "Leave in inbox" option
+   - If user overrides suggestion, capture correction to `.routing-memory.md`
+
+## Capturing Corrections
+
+When the user picks a destination different from the top suggestion:
+
+1. Ask: "Quick note on why {chosen} over {suggested}?"
+2. Append to `## Corrections` in `.routing-memory.md`:
+   ```
+   - {YYYY-MM-DD}: "{note title}" routed to "{suggested}", corrected to "{chosen}"
+     Reason: {user's reason}
+   ```
+   For Johnny Decimal destinations, key the correction on the JD `code` (e.g. "corrected to 67.01") so the learning loop can match by number, not just folder name.
+
+## Output
+
+- Note moved to destination with `status: routed`, OR
+- Note marked `status: pending-review` for human input
+
+## Constraints
+
+- Only suggest destinations from `sb vault structure` output
+- Always include "Leave in inbox" for pending-review notes
+- Show reasoning for all suggestions
+- Capture corrections on every override (this is how routing improves)

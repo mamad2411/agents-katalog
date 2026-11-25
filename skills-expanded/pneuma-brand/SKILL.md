@@ -1,0 +1,141 @@
+---
+name: pneuma-brand
+description: Define a brand's visual system, core assets and representative applications in Brand Studio. Use when creating, extending or reviewing a brand that downstream makers will adapt.
+---
+
+# Brand Studio
+
+## Scene
+
+You and the user are designing a brand. The brand itself is the deliverable:
+a recognizable point of view, visual rules, core assets, and examples showing
+how the system behaves in different contexts. The user sees these together in
+the workbench. Downstream designers and application builders use this system
+to produce their own materials. A polished example is evidence of a direction,
+not a promise that every production asset or application has already been built.
+
+## Viewer contract
+
+Each project lives in a directory with `brand.json` and local artifacts. The
+viewer groups work into references, identity, core assets and application
+examples. Application-context filters answer “where will this brand live?”
+Inspecting a work exposes its references, generation brief and optional image
+regions. Compare opens the first reference alongside the selected work.
+
+### ViewerAddress vocabulary
+
+| Key | Kind | Meaning |
+|---|---|---|
+| `contentSet` | Framework reserved | Project directory prefix |
+| `item` | Coarse | Stable work ID from `brand.json`, independent of order or filename |
+| `region` | Optional fine | ID of a declared normalized image rectangle |
+
+Use `navigate-to` with `{ address: { contentSet: "morrow", item: "brand-world" } }`.
+Use `compare` for a work with references. Reuse the address in a viewer locator
+or framework `capture`. A region highlights that portion of the image; capture
+still shows the work with the highlighted region, not a cropped asset.
+
+A viewer locator is a card in your reply that takes the user to a work. Write it
+exactly in this form, with the address JSON in single quotes:
+
+```
+<viewer-locator label="Open the tab icons" address='{"contentSet":"morrow","item":"tab-icons"}' />
+```
+
+Any other form, such as JSON between `<viewer-locator>` tags, reaches the user
+as raw text.
+File changes update the viewer. The viewer does not generate images or write
+brand decisions itself. Read-only sharing hides agent controls.
+
+## Core rules
+
+- Define the audience, promise, personality and intended application contexts
+  before expanding the visual language. A mascot is optional, not a brand prerequisite.
+- Separate invariants from flexibility: wordmark geometry, character proportions,
+  palette roles, type hierarchy, composition, photography, voice, and usage limits.
+- Explain what an example demonstrates and what the downstream maker must adapt.
+  Do not default to building an App, business website, complete campaign or print run.
+- Read actual reference images. Record the role of each reference; a layout example
+  is not permission to replace the brand's identity with that reference's identity.
+- Prefer the installed shared scripts through OpenRouter for raster art. New
+  images use GPT Image 2.6 Flare; edits use Sunburst. Add `--model sunburst`
+  to upgrade a generation. See the image workflow for the commands and key setup.
+  Keep consistent anchors for character identity. Do not redraw a detailed mascot
+  with approximate CSS geometry in downstream examples.
+- Generate vector assets with `generate_svg.mjs` (GPT Image 2.6 on fal) when
+  downstream makers must scale and recolour them: icon sets, pictograms, simple
+  geometric marks, pattern tiles and graphic devices. Each SVG is a new drawing
+  from a description: it takes no references, so it cannot vectorise an approved
+  raster mark, and its lettering is unreliable, so wordmarks stay in real type.
+  Render each result and look at it, then read the script's report before
+  recording the `.svg`; one run takes about a minute. Without a fal key, keep
+  that work planned; never hand-write an SVG and present it as the generated asset.
+- Before each paid call, tell the user in the chat what it will make and about how
+  long it takes (an SVG about a minute). fal reports no cost for an SVG, so say
+  that none can be quoted rather than guessing a figure. Keep within any budget
+  the user gave: say how many calls you plan, and ask before making more.
+- Keep core source assets separate from their application mockups. A character on
+  a poster is not a transparent reusable cutout; a mockup is not a print-ready dieline.
+- Preserve versions when exploring. Stable IDs and `referenceIds` retain lineage.
+  Never overwrite a source reference just to make a comparison look successful.
+- Only mark work `ready` after the file exists and has been inspected. `generating`
+  means a real request is in progress. `failed` records a useful error. A timeout
+  leaves remote completion uncertain; do not blindly repeat a paid request.
+- Paths are relative to the project. Keep assets local and do not depend on expiring
+  URLs, absolute filesystem paths, or undocumented external rendering services.
+  Keep working files (renders, previews, split pieces) inside the project too, for
+  example in `work/`, never in `/tmp`: the chat cannot preview files outside the
+  workspace, so the user could not see what you looked at.
+
+## Workflow
+
+1. Read the project, current references and existing user decisions. Ask only for
+   missing facts that would change the brand: audience, promise, character, use scenes.
+2. Write the brief, application contexts and initial work plan into `brand.json` so
+   the user can see the direction before every asset is finished.
+3. Develop a coherent identity: mark, palette roles, typography, graphic language,
+   image treatment, and optional character rules. Explore meaningful alternatives;
+   explain their tradeoffs, and preserve the chosen rules.
+4. Create core reusable assets and representative applications. For each context,
+   state what stays fixed, what may change, and what its example demonstrates.
+   App onboarding, packaging, social posts and retail can be examples of one brand;
+   none requires implementing a complete product inside this mode.
+5. Review images at full size and the assembled brand book. Check legibility,
+   consistency, factual copy and whether another maker could apply the rules.
+   Use capture or browser evidence; text-only inspection cannot verify visual fidelity.
+6. Validate with `bun "<SKILL_DIR>/scripts/check.ts" <project-directory>`.
+   On a fresh installed skill, first run `bun install --cwd "<SKILL_DIR>/scripts"`
+   to install the declared validation dependency. Substitute the actual skill path.
+7. Prepare handoff: `brand.json`, original core assets, examples, and their guidance.
+   Run `bun "<SKILL_DIR>/scripts/export-site.ts" <project-directory>` to produce
+   a self-contained `brand-book.html` with an A4 landscape print layout. PDF is the
+   primary reading deliverable: open **Export book → Print / Save PDF** and choose
+   **Save as PDF** in the browser dialog, with background graphics enabled and
+   browser headers/footers disabled. The book includes its own page numbers.
+   Inspect the actual PDF pages for clipping and readable images before handoff.
+   The shared WebCraft export workbench also offers **Screenshot PNG**, HTML,
+   a source ZIP, viewport previews, and Vercel / Cloudflare Pages deployment.
+   PNG captures the full book; PDF preserves selectable text and page breaks.
+   Both wait for images and fonts; resolve any missing assets before exporting.
+   Refresh the book after changes; it is a generated deliverable, not another
+   source of identity rules. Deliver original core assets alongside the PDF so
+   downstream makers can reuse them without extracting images from a page.
+8. Point to the work with a viewer locator, and distinguish the brand system delivered
+   from the downstream production work still needed.
+
+## Commands
+
+| ID | Response |
+|---|---|
+| `define` | Resolve the brand promise and use contexts; update brief and rules. |
+| `generate` | Develop identity or core assets from the selected references. |
+| `apply` | Produce a representative application that tests the brand in a named context. |
+| `audit` | Review identity consistency, asset reuse and clarity of downstream guidance. |
+
+## References
+
+| When | Read |
+|---|---|
+| Authoring or repairing project data | [Project format](references/project-format.md) |
+| Planning identity and applications | [Brand development](references/brand-development.md) |
+| Generating core assets, vector assets and examples | [Image workflow](references/image-workflow.md) |

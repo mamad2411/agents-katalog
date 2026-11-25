@@ -1,0 +1,379 @@
+---
+name: orchestrator-lanes
+description: "Terminal Lane Stack Claude Code `dev-orchestrator` only (run-controller harness: score, DAG, run-supervisor, L0/L1/L2, wt-merge-main). Use when the session runs that terminal harness, or when `$ARGUMENTS` is exactly `info`. SKIP: Lane Pilot / BB chats (dispatch there is `lane_pilot_dispatch_writer`, `LANE_PILOT_AGENT_TYPE` set); Grok, Codex, Kimi, Qwen, AGY, Cursor writer CLIs and any default coding agent — do not load, do not wt-create."
+argument-hint: "[info]"
+---
+
+# Orchestrator lanes — solo operator
+
+> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) do not follow this file: it is the terminal harness. Dispatch with `lane_pilot_dispatch_writer` (the whole plan at once, order through `depends_on`), poll with `lane_pilot_wait_writer`; Lane Pilot runs plan critique, acceptance and the merge into main itself, so `run-init`, `run-controller`, `run-supervisor`, `lane-ctl`, `wt-create` and `wt-merge-main` are not yours to call (the guard refuses them). Only `references/decomposition.md` still applies there.
+
+## Info
+
+If `$ARGUMENTS` is exactly `info`, print `references/info.md` verbatim (Russian), then stop. Do not score. Do not `run-init`.
+
+Load: **karpathy-guidelines**, **lane-contract**, **project-life**, **resume-project**, **project-design**, **ui-ux-pro-max**.
+Before filling `tasks/*.yaml`: Read this skill's `references/task-yaml.md`.
+
+Docs: `FILE-CONTRACT.md`, `ROUTING.md`, `SOLO-ORCHESTRATION.md`,
+`PLATFORM-CAPABILITIES.md` (Claude Code + Codex features we use),
+`docs/decisions/ADR-codex-effort.md` under the lane-stack / `~/.agents/docs/`.
+
+You are the **only** person who merges to `main`. Human never merges.
+
+---
+
+## Planning vs run
+
+If the user is in a **planning session** (`project-life`: «планируем /
+не запускай / спланируй / обсудим / пока план») or has **not** said
+«делай / реализуй / в работу / запускай ран»:
+
+- Do **not** announce score, `run-init`, or dispatch writers.
+- Follow **project-life → Planning session**. Write `.agents/plans/` only.
+- New app or service talk («архитектор / новое приложение / новый сервис»):
+  load **app-architect**. Same draft plan, living `artifacts/`. Still no run.
+- Claude Code Plan mode is not this. Do not write `~/.claude/plans/`.
+  If the host is in Plan mode, tell the user to switch to default.
+
+Phase 0 starts only after «делай / реализуй / в работу».
+
+**UI / visual initiative:** root `docs/DESIGN.md` plus the **full**
+`apps/<name>/docs/DESIGN.md` for every UI app you touch. If any of those
+are missing, spawn **design-lead** before `run-init`. UI task `read_first`
+lists both root and that app's DESIGN.md. Do not put them in writer
+`owns_paths` unless the outcome is tokens/docs.
+
+---
+
+## Phase 0 — Score (announce once)
+
++2 multi-problem · +2 UI/state/auth/pay · +2 backend/API · +2 multi-surface · +2 needs verify · +3 prod/billing/security
+
+| Score | Path |
+|------:|------|
+| 0–2 | Micro: 1 short contract, **commit main** |
+| 3–6 | Express: 1 task, dispatch, verify, **commit/merge main** |
+| 7–8 | Brief: 2–4 tasks, **filled** PLAN + SPEC; workspace per `adoc` profile |
+| 9–10 | Full: rich SPEC + DAG; workspace per `adoc` profile |
+| 11+ | Split feature; ask user |
+
+**Writer source of truth = `adoc` / `agents-doctor`** → `.agents/routing.profile.yaml`
+(`lanes.main_write`, `writer.model`, `writer.reasoning_effort`, **`workspace.mode`**).
+
+- Every task YAML **must** set `lane: <main_write>` exactly (e.g. `lane: codex`).
+- Never hardcode `lane: kimi` unless adoc says so. `run-validate` rejects mismatch.
+- `run-controller` defaults `--provider` / model / effort from the same profile.
+- Selectable writers: kimi / qwen / grok / agy / **codex**. Codex Sol remains recovery + night review / onboard / docs.
+- **Workspace** (adoc tab **Work**): `in_place` | `worktree` | `auto` — see Phase 2.
+
+---
+
+## Task decomposition
+
+Rules (one outcome per task, disjoint `owns_paths`, real `depends_on` only, size budgets) live in `references/decomposition.md`. Read it before `run-init` and before filling YAML; skipping it is how multi-task runs stall.
+
+---
+
+## Phase 1 — Files
+
+**Not** `.agents/plans/` for coding execution. Strategy stays in `.agents/plans/`; promote to a run when implementing.
+
+```bash
+run-init "$(pwd)" <slug> --score <score>
+# Fill PLAN.md, SPEC.md (required content when score≥7 or ≥2 tasks), tasks/*.yaml
+# YAML is technical: objective=outcome, read_first=existing files,
+# context_selectors=line windows, interfaces=signatures or [].
+# Do not copy writer recovery (git checkout, edit tool, CONTINUATION) into the task.
+plan-critique --run-dir "$(pwd)/.agents/runs/<slug>"   # stages.plan_critique (adoc)
+# Every error/warn id → artifacts/critique-reply.json (take | skip+note)
+run-validate --run-dir "$(pwd)/.agents/runs/<slug>" --phase pre-dispatch
+run-board "$(pwd)"
+```
+
+**Plan critique** (configure in `adoc` → **Stages**):
+
+1. Structural coverage + independent LLM review (agy uses `LanePlanCritique` JSON schema).
+2. Writes `artifacts/critique.json` + `critique.md`. Findings with `error`/`warn` are **inbox**.
+3. PM **must** reply before `run-controller` / writers (advisory and gate):
+
+```json
+{"schema_version":1,"items":[{"id":"structural:verify_heavy:003","verdict":"skip","note":"L1 is enough"}]}
+```
+
+| `verdict` | Meaning |
+|-----------|---------|
+| `take` | You edited PLAN/SPEC/tasks for that id; re-run `plan-critique` |
+| `skip` | Leave as-is; **note required** |
+
+Bulk skip: `plan-critique --ack --note 'reason'`.  
+`run-validate --phase pre-dispatch` and `run-controller start` refuse unreplied ids.  
+`wiki/` `TODO/` `.agents/plans/` (and legacy `docs/plans/`) owns_gap is `info` — no reply.
+
+### PLAN.md
+
+DAG table, goals, out-of-scope, verification plan (L1 vs L2), risk notes.
+
+### SPEC.md (professional, not a stub)
+
+Required when **score ≥ 7** or **≥ 2 tasks**. Must include, in English:
+
+1. **Goal** — one paragraph  
+2. **Interfaces** — stable exports/routes/types the writer must honor  
+3. **Invariants** — what must not break  
+4. **Out of scope** — explicit non-goals  
+5. **Definition of done** — observable, testable  
+
+Reject template-only text (“Record interfaces, invariants…”). `run-validate` enforces this.
+
+### Task YAML
+
+**Before writing `tasks/*.yaml`, Read `references/task-yaml.md` in this skill.**
+That file is the field map + good/bad examples. `lane-contract` is the schema/gate
+sibling; do not skip the reference and invent a novel in `interfaces`.
+
+Where the TZ lives:
+
+| Put here | Not here |
+|----------|----------|
+| `objective` + `acceptance` | `interfaces` as a briefing |
+| `read_first` = existing files | `section C4` / `lines 10-20 ONLY` |
+| `context_selectors` = line windows | notes inside `read_first` |
+| `interfaces` = signatures or `[]` | CONTINUATION / Gaps / git status |
+| `invariants` = product or `[]` | HARD RULE / edit tool / `wc -l` / checkout |
+
+Immutable after first start. `verification[]` = **L1 focused** only (see below).
+`run-validate --phase pre-dispatch` rejects the bad column.
+
+Repeated correction rule: if you retype the same path/command fix twice in a project, persist it as a rule first (`lane-memory lesson "<rule>" --for pm|writer|both`, kept on the hub), then regenerate the plan.
+
+---
+
+## Phase 2 — Isolation (workspace from adoc)
+
+This skill is **Claude Code `dev-orchestrator` only**. Codex / Grok / Kimi / Qwen / AGY
+must **not** load it and must **not** `wt-create` / `git worktree add`.
+
+Read `.agents/routing.profile.yaml` → `workspace.mode` (default **auto** if missing).
+**`in_place` wins over score, risk, and multi-write.** Never override adoc In-place.
+
+| `workspace.mode` | Action |
+|------------------|--------|
+| **in_place** | `project_cwd` = repo; **no** `wt-create`; PM **commits main** |
+| **worktree** | always `wt-create` → `project_cwd` = `.worktrees/<slug>`; PM `wt-merge-main` |
+| **auto** | worktree when `score ≥ worktree_min_score` (default 4) **or** (`worktree_on_multi_write` and ≥2 write tasks); else in-place |
+
+Also: high-risk write → prefer worktree even under auto; avoid parallel writers on overlapping blast radius.
+
+---
+
+## Phase 3 — Dispatch (durable, bounded)
+
+```text
+run-controller start → one run-supervisor watches
+provider slots (default 5) release ready DAG tasks
+complete → owns → L1 verify → accept (progressive)
+retry once only if `recovery.retry_ok`; eligible 2nd failure → Codex Sol
+trusted STATUS:partial / `provider_partial` → block + replace task (not retry, not Sol)
+task blocked → siblings continue; dependents of blocked upstream cascade-blocked
+```
+
+**Never** one Claude subagent per writer. Writers = durable processes (kimi/…).  
+**Never** PM `run-controller start|watch|status` — only `Agent(run-supervisor)`.  
+**Never** PM nohup/async ad-hoc monitors.
+
+| Lane | Who |
+|------|-----|
+| kimi / qwen / agy / grok / codex / cursor / opencode | process writer via controller (`adoc` `main_write`) |
+| codex Sol fallback | one Sol **high** after two eligible writer availability failures |
+| `emergency-writer` | manual emergency after terminal block |
+| `night-reviewer` | nightly (sol **high**; xhigh only escalate) |
+
+**Claude agent names are roles, not brands.** Daytime coder = process from adoc.
+Roster: `agents/claude/README.md`.
+
+---
+
+## Verification tiers (L0 / L1 / L2)
+
+| Tier | Owner | Scope | When |
+|------|-------|-------|------|
+| **L0** | Writer | Code only; do not run tests/typecheck | During implement |
+| **L1** | Controller | Task `verification[]` — **focused** paths/suites only | After report → accept |
+| **L2** | PM pre-merge / CI | **One** full or affected suite for the whole run | After all accepted |
+
+### L1 rules (PM when authoring YAML)
+
+- Prefer: `npm run test:unit -- path/to/spec --silent`, single-package typecheck, path-scoped vitest/jest.  
+- **Do not** put bare monorepo `npm run build` / root `npm test` on every task when the run has ≥2 tasks — that is L2.  
+- Multi-task + full-package build in L1 → `run-validate` warns or rejects (score≥7).  
+- Acceptance = **behavior**, not “entire monorepo green”.
+
+### L1 paths under worktree (temples-admin class bugs)
+
+`verification[].cwd` is almost always **`project_cwd`** (the worktree). Relative
+script args resolve **there**, not in the main checkout.
+
+| Wrong | Right |
+|-------|--------|
+| `cwd: worktree` + `python3 .agents/runs/X/artifacts/001/check.py` when check exists only on **main** | **Before** `run-controller start`: copy check into worktree at that relative path (recovery lane / PM shell allowed paths), **or** |
+| Absolute path to main `.agents/...` | Forbidden (escapes worktree) |
+| “Writer will create check.py under `.agents`” | Forbidden — writers must not author `.agents`; pre-author checks |
+
+**Canonical patterns:**
+
+1. **Product test under owns** (best): `tests/test_foo.py` +  
+   `python3 -m unittest discover -s tests -p test_foo.py` with `cwd: project_cwd`.  
+2. **Worktree-local pre-authored check**:  
+   `worktree/.agents/runs/<slug>/artifacts/<id>/check.py` exists on disk **before**  
+   pre-dispatch validate; command uses that **relative** path.  
+   PM **may** `Write` only basename `check.py` under  
+   `.agents/runs/<slug>/[artifacts/<id>/]check.py` (or under `.worktrees/...` same
+   shape) — not `helper.py`, not `state.json` / reports.  
+3. **in_place** (`adoc` Work → In-place): one tree — main `.agents/runs/...` paths work.
+
+`run-validate --phase pre-dispatch` **rejects** missing script files under
+verification cwd. Fix paths **before** first lane start (YAML is sha-pinned).
+
+### L2
+
+After all accepted: `run-validate --phase pre-merge`, then **one** build/test pass, then merge.
+
+---
+
+## Phase 4 — Accept (progressive)
+
+When A verifies while B runs: **accept A now**. Done only with `acceptance.json`.  
+No daytime LLM review; medium/high → nightly tier.
+
+---
+
+## Phase 5 — Stall & owns recovery
+
+```bash
+lane-stall-check "$(pwd)" --minutes 5
+```
+
+### Owns blocked — diagnose before “rewrite the task”
+
+1. Read `artifacts/<id>/owns-check.json` (`violations`, `foreign_ignored`, `baseline_used`).  
+2. If violations are **only** package caches (`.npm-cache`, `node_modules`, `.pnpm-store`, …) → gate bug/noise: **do not** add caches to `owns_paths`. Re-run owns/verify after stack ignore fix / clean cache.  
+3. If violations are **product files** outside owns → contract bug: add missing companion to owns (replacement task) or revert OFF-SPEC.  
+4. If upstream blocked only for noise → after fix, siblings/dependents can proceed (partial-block controller).  
+5. **Never** recommend “add `.npm-cache` to owns_paths”.
+
+---
+
+## Phase 6 — Ship
+
+All accepted → pre-merge validate → L2 once → `wt-merge-main` or commit main → push if remote.
+
+---
+
+## Phase 7 — Context budget
+
+After ~6 tasks or heavy transcripts: handoff to PROGRESS; fresh orchestrator session if needed.
+
+---
+
+## Recovery ladder (typed only)
+
+**Before retry or fallback — re-check.** Read `lane-ctl status --json`:
+`report.status`, `recovery.next`, `recovery.retry_ok`, `recovery.fallback_ok`,
+`provider.fallback_eligible`. Two same `last_failure_class` values are not
+enough. Trusted `STATUS: partial` / `provider_partial` is a contract or
+sandbox block (often `.agents` in owns), not a writer crash.
+
+1. Recheck status JSON + `report.md` STATUS  
+2. Same-provider retry only if `recovery.retry_ok` (controller / `lane-ctl retry` via **lane-supervisor**)  
+3. Codex Sol **high** fallback only if `recovery.fallback_ok` **and** `fallback_eligible`  
+4. `recovery.next: replace_task` → replacement YAML (drop `.agents/**` from owns; PM applies playbooks)  
+5. `lane-supervisor` one-shot (status / retry / accept / verify — **one** typed action)  
+6. `emergency-writer` after **terminal** block only (ADR-codex-effort)  
+7. Human only for business / irreversible  
+
+Silence protocol: UI «Teammate @rs-… finished» ≠ digest. Same turn: read
+`controller.json`. No `DONE accepted|blocked|failed` + stage still live →
+re-dispatch one `run-supervisor`. Stage already `blocked`/`failed` → recover
+now; do not wait for the human. Host hook `pm_stop_sentinel` pokes the PM
+if it tries to idle mid-run or after a fresh terminal stage. Host hook `pm_stop_sentinel` pokes the PM
+if it tries to idle mid-run or after a fresh terminal stage.
+
+### Mode XOR — TEAM vs WRITE
+
+| Mode | For | Not for |
+|------|-----|---------|
+| **TEAM** | Research/audit teammates | Same-goal product write via `run-supervisor` |
+| **WRITE** | `run-supervisor` + durable writer | Same-goal research team spawn |
+
+Close TEAM before WRITE (and vice versa) on one human goal. Announce «режим: TEAM|WRITE».
+
+### Claude Agent / teams close — Claude Code 2.1.22x
+
+| State | Meaning |
+|-------|---------|
+| **working** | Still running a turn |
+| **done** | One-shot Agent finished with a final result |
+| **idle** | Parked for resume — **normal after** `DONE`/`FAILED`/`WAIT`; not a failure |
+
+| Mode | Rule |
+|------|------|
+| **Agent team teammate** | Each turn ends with `DONE <path>` / `FAILED <reason>` / `WAIT <why>` (TeammateIdle hook). Report under `.agents/team/…`. Idle = read last message + file. Next ask = `SendMessage`. No nag «you went idle» |
+| **Stack one-shot** (`run-supervisor`, …) | One job → `DONE`/`FAILED` + evidence → end as **done**. Next action = new `Agent(...)`, not SendMessage-resume after DONE |
+
+Also:
+
+1. **Deploy / long jobs** — Bash + log (or `lane-bg`), not a teammate that only tails deploy.
+2. **Disk is truth** for conveyor — `acceptance.json` / controller stage; idle chips are not stage.
+3. **`TaskStop`** — hung **working** Agents or intentional abort; not the happy path after `DONE`.
+4. **Lane product work** — only `run-supervisor` / `lane-supervisor` (teams ≠ writers).
+
+### `SendMessage` / `ListAgents`
+
+Claude Code ≥ **2.1.224** (Remote Control **start-by-name** in **2.1.225**).
+
+| Where | What |
+|-------|------|
+| Lead ↔ teammate | Normal team dialogue (questions, clarifications, final ask) |
+| `run-supervisor` → PM | Mid-run `SendMessage` to the **unique** session `--name` (`<4chars>-<folder>-DD-MM-YYYY`). Never bare `dev-orchestrator` |
+| PM → operator Remote Control (optional) | On terminal `blocked`/`failed` or ship: `ListAgents` → `SendMessage` to `name [ref]` |
+| Not for | Writer start/accept/verify, replacing `controller.json`, secrets in peer text, accusing idle teammates of failure |
+
+Control plane stays file-based. Peer messages are short status + paths only.
+
+### Forbidden bypasses (control-plane integrity)
+
+While a run has `controller.json` stage in `running` / `degraded` / `dispatching`
+**or** a live `run-controller` process:
+
+| Forbidden for PM | Do instead |
+|------------------|------------|
+| Run task `verification[]` yourself in Bash and call it accept | Let controller L1 run; or `lane-supervisor` typed `verify`/`accept` |
+| Hand-write `acceptance.json` / `report.md` / forge receipts | `lane-ctl accept` only after owns+verify evidence |
+| `emergency-writer` to “just finish” a still-runnable lane | Only after terminal `blocked`/`failed` with no retry left |
+| Parallel Claude coder subagents for the same task | One durable writer via controller |
+| Restart controller mid-flight without reading `runtime.json` | Diagnose protocol/owns first; fix stack or retry typed |
+
+**Done** for a task = `artifacts/<id>/acceptance.json` from the control plane — not
+“tests green in chat”. Product may be correct and still not shipped until accept.
+
+Protocol failures (`protocol_error` in `runtime.json`, e.g. report envelope): treat
+as **provider protocol**, not “rewrite product”. Prefer retry after stack fix;
+do not re-implement the feature as Claude.
+
+---
+
+## Hard rules
+
+1. No production Edit/Write — only `.agents/**` (plans, decisions drafts, research, reports), PROGRESS, and dotenv (`.env`, `.env.*`) for secrets (keep keys out of writer prompts).  
+2. No task MCP queue.  
+3. Parallel = disjoint owns only.  
+4. You merge main when green; workers never push/merge main.  
+5. Provider pool ≤10; verification pool separate.  
+6. Done = report + owns + L1 verify + `acceptance.json`.  
+7. English for all run/docs files; Russian OK in chat with human.  
+8. Progressive accept; partial block; L0/L1/L2.  
+9. **Decompose** before dispatch; **SPEC** real when score≥7 or ≥2 tasks.  
+10. Never Claude-subagent-per-writer; never PM nohup; never cache-in-owns.  
+11. **Never bypass the controller** for L1 verify/accept while the run is live — see Recovery.  
+

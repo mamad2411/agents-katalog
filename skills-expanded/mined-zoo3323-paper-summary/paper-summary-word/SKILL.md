@@ -1,0 +1,162 @@
+---
+name: paper-summary-word
+description: 현재 폴더의 PDF 논문(또는 paper-summary 가 만든 결과물)에서 전문 용어·약어를 뽑아 한국어 정의와 함께 정리한 검색 가능한 용어 사전 HTML(`용어사전.html`)을 만든다. 같은 `korean/` 폴더에 저장하고, 이미 있는 번역본·요약본의 네비게이션에 용어 사전 탭을 끼워 넣어 서로 클릭 이동되게 한다. 사용자가 /paper-summary-word 라고 하거나 "논문 용어/약어 사전 만들어줘"라고 할 때 사용.
+---
+
+# paper-summary-word
+
+논문에 등장하는 **전문 용어·약어·고유명사**(모델명·데이터셋·평가지표·수학 기호 포함)를 한국어 정의와 함께 정리한 **용어 사전 HTML 1개**(`용어사전.html`)를 만든다. 실시간 검색 필터가 내장돼 있다.
+
+`paper-summary` 스킬의 동반 스킬이다. 보통 `paper-summary` 로 번역본·요약본을 먼저 만든 뒤 실행하지만, 단독으로도(PDF만 있어도) 동작한다.
+
+## 폴더 구조 (현재 폴더 기준)
+
+```
+./korean/                  ← 결과물 폴더 (paper-summary 와 공유)
+   ├─ 번역본.html           ← (있으면) 네비게이션에 용어사전 탭을 끼워 넣는다
+   ├─ 요약본.html           ← (있으면) 네비게이션에 용어사전 탭을 끼워 넣는다
+   ├─ 용어사전.html         ← ★ 조립기가 생성 (직접 쓰지 않는다)
+   ├─ images/
+   └─ .work/               ← 숨김. 지워도 되는 찌꺼기가 아니다 (원고가 여기 있다)
+       ├─ fulltext.txt
+       └─ src/             ← ★ 네가 직접 쓰는 원고
+           ├─ meta.json
+           └─ glossary.html
+```
+
+---
+
+## 번역 원칙 — 음차(발음만 한글로 옮기기) 금지 ★
+
+동반 스킬 `paper-summary` 와 같은 원칙을 따른다. 용어 사전은 **뜻을 알려주는 문서**이므로
+음차 표제어는 특히 치명적이다 — "하네스: 하네스는 …" 같은 항목은 아무것도 설명하지 못한다.
+
+1. **표제어(`<dt>`)는 뜻이 드러나는 한국어**로 짓고, 영어 원어는 `<span class="en">` 으로 병기한다.
+   발음만 한글로 옮긴 표제어를 쓰지 않는다.
+   - 나쁨: `<dt>하네스 <span class="en">Harness</span></dt>`
+   - 좋음: `<dt>제어 장치 <span class="en">Harness</span></dt>`
+2. **정의문(`<dd>`)에도 같은 원칙을 적용한다.** 정의 안에서 다른 음차를 끌어다 쓰면
+   설명이 되지 않는다. (예: "궤적" 이라고 쓰고 "트래젝토리" 라고 쓰지 않는다)
+3. **마땅한 한국어가 없으면 음차 대신 영어 원문을 그대로 둔다.**
+   우선순위는 `한국어 번역 > 영어 원문 유지 > 음차`.
+4. **고유명사는 번역하지 않는다.** 모델명(GPT-5, DeepSeek-V3), 데이터셋·벤치마크명(SWE-bench, MMLU),
+   기법 고유명(LoRA, Transformer)은 영문 그대로 표제어로 쓰고 정의만 한국어로 쓴다.
+5. **음차형은 검색 키워드로만 살린다.** 독자가 "하네스"로 검색할 수 있으므로,
+   `data-terms` 에는 음차형을 **포함**시킨다. 보이는 표제어에는 쓰지 않는다.
+   ```html
+   <div class="term" data-terms="harness 제어 장치 하네스 실행 통제">
+     <dt>제어 장치 <span class="en">Harness</span></dt>
+     <dd>에이전트의 실행 궤적에 개입해 …</dd>
+   </div>
+   ```
+6. **번역본·요약본이 이미 있으면 그 문서의 대역어를 그대로 따른다.** 사전과 본문이
+   다른 말을 쓰면 서로 오갈 때 연결이 끊긴다.
+
+판단 기준과 대역어 참고표는 `paper-summary` 스킬의 「번역 원칙」 절과 동일하다.
+그대로 써도 되는 예외: 모델, 데이터, 데이터셋, 토큰, 프롬프트, 알고리즘, 파라미터,
+벡터, 네트워크, 에이전트, 벤치마크, 베이스라인, 워크플로, 파이프라인.
+
+---
+
+## 실행 절차
+
+### 0. 대상 PDF / 결과 폴더 찾기
+- 인자(`$ARGUMENTS`)로 PDF 경로가 주어지면 그것을 사용.
+- 없으면 현재 폴더의 `*.pdf` 를 찾는다. 여러 개면 사용자에게 묻고, 0개면 — 단 `korean/.work/fulltext.txt` 가 이미 있으면 그걸 텍스트 소스로 쓴다.
+- `korean/` 폴더가 이미 있는지 확인한다(번역본·요약본 존재 여부 파악용). 없으면 `mkdir -p korean`.
+
+### 1. 논문 텍스트 확보
+다음 우선순위로 본문 텍스트를 얻는다:
+1. `korean/.work/fulltext.txt` 가 있으면 그대로 읽어 쓴다(이미 paper-summary 가 추출해 둔 것).
+2. 없으면 추출 스크립트로 만든다. 스크립트 경로는 **스킬 호출 시 표시되는 "Base directory for this skill" 기준** `scripts/extract_pdf.py` 이다(`~/.claude/skills/...` 로 추측하지 말 것). PyMuPDF 확인 후 실행:
+   ```bash
+   python3 -c "import fitz" 2>/dev/null \
+     || pip3 install --quiet pymupdf \
+     || pip3 install --quiet --user pymupdf
+   mkdir -p korean/.work/src
+   python3 "<base-dir>/scripts/extract_pdf.py" \
+     "<PDF경로>" "korean/.work" "korean/images"
+   ```
+   - `korean/.work/fulltext.txt` 와 `manifest.json` 이 생성된다. (이미지는 사전엔 보통 불필요하니 무시해도 된다.)
+- 더 정확히 하려면 **Read 툴로 PDF 를 직접 읽어** 용어의 정확한 의미·맥락을 확인한다.
+
+### 2. `korean/.work/src/glossary.html` 작성 — 항목만
+**항목 조각만 쓴다.** `<html>`·`<head>`·`<style>`·네비게이션·검색창은 조립기가 붙인다.
+CSS 를 새로 쓰거나 인라인 `style=` 을 덧붙이지 않는다.
+
+규칙:
+- 논문에 나온 전문 용어·약어를 **빠짐없이** 모은다. 보통 15~40개.
+- 표제어는 음차 금지 (위 「번역 원칙」). `data-terms` 에만 음차형을 검색어로 넣는다.
+- **중요도 순** 또는 가나다/알파벳 순으로 일관되게 정렬한다.
+- 각 항목은 `<div class="term" data-terms="...">` 로 감싸고 안에 `<dt>`/`<dd>` 를 둔다:
+  ```html
+  <div class="term" data-terms="attention 어텐션 self-attention 셀프어텐션">
+    <dt>셀프 어텐션 <span class="en">Self-Attention</span></dt>
+    <dd>한 시퀀스 내 서로 다른 위치들을 연관 지어 표현을 계산하는 어텐션 메커니즘. …</dd>
+  </div>
+  ```
+- 약어는 `<dt>` 안에 `<span class="abbr">약어</span>` 배지로 표시.
+  예: `<dt>장단기 메모리 <span class="en">Long Short-Term Memory</span> <span class="abbr">LSTM</span></dt>`
+- 영어 원어는 `<span class="en">…</span>` 로 감싼다.
+- **`data-terms` 속성에 검색 키워드(한글·영어·약어)를 모두 공백으로 나열**한다. 검색 필터가 이 값을 사용한다. 비우면 항목 텍스트로 대체된다.
+- 정의는 1~3문장, 이 논문의 맥락에 맞게. 수식 기호는 MathJax 인라인(`\( ... \)`)으로.
+- 이모지를 항목 앞에 붙이지 않는다. 항목마다 상자를 두르지도 않는다 — 스타일은 이미 정해져 있다.
+- 함께 `korean/.work/src/meta.json` 을 쓴다 (이미 `paper-summary` 가 만들어 두었으면 그대로 쓴다):
+  ```json
+  {"TITLE_KO":"번역한 제목","TITLE_ORIGINAL":"원제",
+   "AUTHORS":"저자 · 소속","VENUE_YEAR":"학회/저널 · 연도 (모르면 —)"}
+  ```
+
+### 2.5. 조립
+```bash
+python3 "<base-dir>/scripts/build_glossary.py" "<base-dir>" "korean/.work/src" "korean"
+```
+번역본·요약본이 **없으면** 끝에 `--standalone` 을 붙인다 — 깨질 링크를 알아서 걷어낸다.
+경고가 나오면 원고를 고치고 다시 실행한다.
+
+### 3. 번역본·요약본 네비게이션에 용어사전 탭 끼워 넣기
+`korean/번역본.html`, `korean/요약본.html` 이 **존재하면** 아래를 실행한다.
+각 파일의 요약본 링크 바로 뒤에, 아직 없을 때만 용어사전 탭을 넣는다:
+
+```bash
+python3 - <<'EOF'
+import re, os
+tab = '    <a href="용어사전.html">용어 사전</a>\n'
+for f in ["korean/번역본.html", "korean/요약본.html"]:
+    if not os.path.isfile(f):
+        continue
+    s = open(f, encoding="utf-8").read()
+    if "용어사전.html" in s:
+        print("이미 있음:", f); continue
+    s2 = re.sub(r'(    <a href="요약본\.html"[^>]*>.*?</a>\n)', r'\1' + tab, s, count=1)
+    if s2 == s:
+        print("경고: 네비게이션을 찾지 못함:", f); continue
+    open(f, "w", encoding="utf-8").write(s2)
+    print("탭 추가:", f)
+EOF
+```
+
+원고(`korean/.work/src/`)가 남아 있다면 번역본·요약본을 다시 조립할 때 탭이 사라지므로,
+재조립한 경우 이 단계를 다시 실행한다.
+
+### 4. 마무리 보고
+- 생성한 파일 경로(`korean/용어사전.html`)와 정리한 용어 수를 알린다.
+- 번역본·요약본 네비게이션을 갱신했는지 보고한다.
+- 원고를 고쳐 다시 조립할 수 있음을 알린다. 숨김 폴더이므로 경로를 그대로 적어 준다:
+  `korean/.work/src/glossary.html` 수정 후 2.5 재실행.
+- 여는 법: `open korean/용어사전.html` (macOS).
+
+---
+
+## 품질 기준
+- **완전성**: 본문의 주요 약어·전문용어를 빠뜨리지 않는다.
+- **검색성**: 각 `.term` 의 `data-terms` 에 한/영/약어 키워드를 충분히 넣는다.
+- **충실성**: 정의는 이 논문의 맥락에 맞게, 수식·기호를 임의로 바꾸지 않는다.
+- **음차 금지**: 표제어·정의문 모두 발음만 옮긴 표기를 쓰지 않는다. 음차형은 `data-terms` 에만 둔다.
+- **본문과 용어 일치**: 번역본·요약본이 있으면 거기서 쓴 대역어를 그대로 쓴다.
+- **네비게이션 일관성**: 번역본·요약본이 있으면 세 HTML 이 서로 클릭 이동돼야 한다. 용어사전의 active 탭은 자기 자신(`class="active"`)이어야 한다.
+
+## 주의
+- 이름은 정확히 이대로 쓴다 — 폴더는 영어(`korean`, `.work`, `src`),
+  결과 파일은 한글(`용어사전.html`). 임의로 바꾸면 네비게이션 링크가 깨진다.
+- `용어사전.html` 이 이미 있으면 덮어쓰기 전에 사용자에게 확인한다.

@@ -1,0 +1,185 @@
+---
+name: mini-spec
+description: Create a compact, reference-first SPEC.md that defines the task-specific delta, non-goals, likely failure modes, spec ceiling, and verification target without paraphrasing richer authoritative sources.
+---
+
+# Mini Spec
+
+## Purpose
+
+Create the smallest useful `SPEC.md` that clarifies intent, names the likely failure mode, and gives the agent a verifiable target before planning or implementation.
+
+The spec is both a floor and a ceiling: acceptance criteria define what must happen; non-goals, constraints, and invalid-if rules bound what must not be added.
+
+When a high-fidelity reference already expresses behavior well, point to it instead of rewriting it into a weaker prose summary. The spec should capture the task-specific delta, authority boundary, and proof target around that reference.
+
+## When to use
+
+Use when a project or feature is clear enough to define before implementation.
+
+## Inputs
+
+- Clarified request
+- `CONTEXT.md` if available
+- Constraints
+- Known commands
+- Acceptance criteria or desired behavior
+- Authoritative references when available: existing tests, code, schemas, HTML/mockups, rubrics, external specs, or a source implementation to port
+- An accepted implementation-size expectation when one genuinely exists
+
+## Reference-first rule
+
+Prefer the richest authoritative source that already expresses the intended behavior.
+
+For each reference, record:
+
+- the exact file, test, artifact, URL, or symbol
+- what behavior or decision it governs
+- the task-specific delta, if this slice intentionally differs
+
+Do not restate a detailed test suite, implementation, mockup, or rubric line by line merely to make the spec self-contained. Keep the reference available and write only the interpretation needed to bound this task.
+
+If the user request and an authoritative reference conflict, surface the conflict as an explicit decision or open question. Do not silently reconcile them.
+
+## Workflow
+
+1. State the objective.
+2. Identify the user or use case.
+3. Identify authoritative references and what each one governs.
+4. Record the task-specific delta from those references; use `none` when the reference is the intended contract as-is.
+5. Define observable acceptance criteria, pointing to authoritative references where they already encode the behavior precisely.
+6. Record non-goals.
+7. Define the spec ceiling: do not add behavior, interfaces, refactors, dependencies, or adjacent cleanup beyond what is required to satisfy the acceptance criteria and reference-backed delta.
+8. List likely failure modes and name the primary failure mode for this slice.
+9. Record constraints.
+10. List only non-obvious run, test, build, and verification commands that matter to the slice.
+11. Define the smallest verification demo.
+12. Record open questions and reference conflicts instead of inventing a resolution.
+13. When applicable, name compatibility seams that must remain import-compatible or output-compatible.
+14. Choose a compatibility probe requirement before implementation:
+    `REQUIRED` when the slice can affect a named public API/import, CLI/flag,
+    config, schema/output, or established edge/no-match seam; otherwise
+    `NOT_APPLICABLE`. For each required probe, record a stable Probe ID, the
+    seam, the baseline command, its observed baseline result and evidence, and the expected
+    invariant. Capture the baseline before implementation begins.
+15. When the slice intentionally changes an observable behavior, decide whether a before/after change proof materially improves verification. Use `REQUIRED` only when a stable probe can be run before and after implementation. Record a Change ID, baseline commit, exact baseline command, baseline exit code/evidence, and expected delta before implementation begins. Otherwise use `NOT_APPLICABLE`.
+16. Decide whether an implementation diff budget is meaningful. Use `ENFORCED` only when the accepted slice or explicit scope supports defensible limits for max changed files and max added lines. Use `NOT_APPLICABLE` when no meaningful numeric expectation exists; do not invent arbitrary limits for ceremony.
+17. When applicable, record invalid-if constraints that would make the slice non-viable.
+18. For delegated, autonomous, multi-session, or replanned work, optionally record a contract ID, parent ID, base commit, issue time, and replan reason.
+19. If satisfying the task requires behavior outside the ceiling or contradicts an authoritative reference, update or renegotiate the spec before implementing that expansion.
+
+## Outputs
+
+- `SPEC.md`
+- Authoritative references + what they govern
+- Task-specific delta
+- Explicit acceptance criteria
+- Explicit non-goals
+- Explicit spec ceiling
+- Likely failure modes
+- Verification demo
+- Compatibility probe requirement and pre-change baseline evidence when applicable
+- Optional change-proof requirement with before-state evidence and expected delta
+- Optional implementation diff budget with explicit `ENFORCED | NOT_APPLICABLE` choice
+- Optional contract identity when traceability buys back safety
+
+## Compatibility seams to preserve
+
+When applicable, list behavior that must remain import-compatible or output-compatible.
+
+- Public imports / APIs: _TBD_
+- CLI commands / flags: _TBD_
+- Config files / defaults: _TBD_
+- JSON/schema/output contracts: _TBD_
+- Existing tests whose meaning must remain valid: _TBD_
+- Data/fixture semantics: _TBD_
+
+## Compatibility probe gate
+
+Compatibility probe requirement: `REQUIRED | NOT_APPLICABLE`
+
+Use `REQUIRED` when the planned change can affect a named compatibility seam.
+Capture the baseline before implementation begins. Each required probe should use
+a stable ID so verification can match the post-change evidence without guessing.
+
+- Probe ID: _TBD_
+  - Seam: _TBD_
+  - Baseline command: _TBD_
+  - Baseline result: PASS
+  - Baseline evidence: _TBD_
+  - Expected invariant: _TBD_
+
+Use `NOT_APPLICABLE` instead of inventing a probe for work with no relevant
+public compatibility seam.
+
+## Change proof gate
+
+Change proof requirement: `REQUIRED | NOT_APPLICABLE`
+
+Use `REQUIRED` when this slice intentionally changes an observable behavior and
+a stable probe can show the before state and the intended after state.
+
+- Change ID: _TBD_
+  - Baseline commit: _TBD_
+  - Baseline command: _TBD_
+  - Baseline exit code: _TBD_
+  - Baseline evidence: _TBD_
+  - Expected delta: _TBD_
+
+Capture the baseline before implementation begins. Once implementation starts,
+do not rewrite the baseline evidence to make the completed change easier to prove.
+The post-change proof must rerun the same command. Use compatibility probes for
+behavior that must remain unchanged; use change proof for behavior intended to
+change.
+
+## Implementation diff budget
+
+Diff budget requirement: `ENFORCED | NOT_APPLICABLE`
+
+Use `ENFORCED` only when the accepted slice has a meaningful implementation-size
+expectation. Record both:
+
+- Max changed files
+- Max added lines
+
+The budget is a review tripwire, not a correctness proof. Workflow-control
+artifacts do not consume the implementation budget. If the implementation exceeds
+an enforced budget, verification becomes `REVIEW_REQUIRED` until the expansion is
+reviewed and either reduced or explicitly accepted.
+
+Do not reverse-engineer a larger budget from the completed diff merely to make
+verification pass.
+
+## Invalid if
+
+- breaks a named compatibility seam
+- implements an explicit non-goal or adds adjacent behavior not required by an acceptance criterion
+- silently contradicts an authoritative reference without recording the intended delta
+- weakens or rewrites existing tests merely to fit the implementation
+- changes fixture/source data without explicit approval
+- preserves behavior only through a new alternate path while breaking the old path
+- changes forbidden/protected files
+- adds dependencies or framework changes outside scope
+
+## Stop conditions
+
+- The spec is under 100 lines unless risk justifies more.
+- The next implementation slice is clear.
+- Reference authority and any task-specific delta are explicit when references exist.
+- The behavioral ceiling is clear enough to distinguish necessary support work from optional extras.
+- Unresolved questions are recorded instead of hidden.
+- Required compatibility probes have a pre-change baseline before implementation starts.
+- Required change proofs have baseline commit, command, observed evidence, and expected delta recorded before implementation starts.
+- An enforced diff budget, when used, was chosen before implementation expansion rather than fitted to the completed patch.
+
+## Anti-patterns
+
+- Turning a small POC into a full product requirements document.
+- Rewriting a high-fidelity test, implementation, mockup, or rubric into a lossy prose duplicate.
+- Sketching repository structure the agent can inspect directly unless the structure itself is a task constraint.
+- Adding speculative future features.
+- Treating unrequested "helpful" behavior as bonus work instead of scope expansion.
+- Writing vague acceptance criteria that cannot be verified.
+- Assigning contract identifiers to tiny edits merely to create process metadata.
+- Inventing arbitrary file/line budgets or increasing them after the patch grows just to manufacture compliance.
+- Capturing or rewriting change-proof baseline evidence after implementation to manufacture a clean before/after story.

@@ -1,0 +1,403 @@
+---
+name: wikipoke-ingest
+description: "Take code into the wiki. Seeds the wiki when it does not exist yet; reconciles it with what changed since the last checkpoint; or, given a path or a topic (a flow, a decision), ingests a part of the repository no pass has covered. Use when: (1) the user invokes /wikipoke-ingest, (2) the wiki notifier says the wiki is behind or a page is stale, (3) the user says 'update the wiki', 'seed the wiki', 'create the wiki', 'document <subsystem>', typically when closing a feature, or 'document everything', 'keep going until it is done' (that is `all`)."
+argument-hint: "[<path> | <topic> | all]"
+---
+<!-- managed by wikipoke: `wikipoke init` rewrites this file. Project rules go in {{WIKI}}/CONVENTIONS.md. -->
+
+# wikipoke-ingest: take the code into the wiki
+
+One verb, three ways in. Two are decided for you; the third is the one you aim.
+Whichever it is, **the inbox is drained first** (below); a seed drains it once the avenues exist.
+
+```
+{{WIKI}}/.inbox/ holds notes? ──► DRAIN them into decision pages, then:
+
+argument given?
+   │
+   ├── yes ──► INGEST A PART   that path or topic, whether or not it ever changed
+   │           (`all` = every part of the backlog, one after another)
+   │
+   └── no ──► {{WIKI}}/.wikipoke-state.json exists?
+                 ├── no  ──► SEED       the avenues, once per repository
+                 └── yes ──► RECONCILE  only what changed since the checkpoint
+```
+
+**Read `{{WIKI}}/CONVENTIONS.md` first.** The layout, the page types, the template,
+`confidence:`, the writing rules and the checkpoint contract live there, not here.
+
+`wikipoke` below is the CLI: `node_modules/.bin/wikipoke` when the project depends
+on it, `wikipoke` when it is installed globally. It only measures; you write the
+pages yourself, directly under `{{WIKI}}/`.
+
+Two boundaries, in every mode: **never modify code** (touch `{{WIKI}}/**` and nothing
+else; running the project's builds, generators or scripts counts, so read them
+instead), and **never re-stamp `synced:` on a page you did not re-read against the
+code**.
+
+**Mark what you did to each page.** Every page you write or rewrite gets `generated:`;
+every page you re-read and found still true gets `verified:` instead, and its
+`generated:` stays. Both are `{ by: <you>, at: <now> }`, as "The one template" in
+`CONVENTIONS.md` says: the four cases and the actor are there. A page you only re-point
+citations on was re-read, so it is `verified:`. A link or a typo is neither.
+
+**Write as you go.** Read what one page needs, write that page, then move on to the
+next. Never study the whole repository before writing: reading you are not about to
+turn into a page is spent twice, once now and again when you have forgotten it. If
+you notice you are reading for pages you have not started, stop and write the one in
+hand. A page written early and corrected later beats a perfect plan that never
+reaches the disk.
+
+**Each page type has its own evidence, and coverage only sees `entity`.** What goes in a page of
+each type, and where to look for it, is "Where each type comes from" in `CONVENTIONS.md`, under
+"Page types". Read it with the rest of the file: a project that added a type (a `runbook`, an
+`incident`) says there what one holds, and you write those pages from that evidence like any
+other. If the file has no such section (a wiki installed before it), use the five built-in types:
+
+| type | where it comes from |
+| --- | --- |
+| `entity` | a folder: the module and what it owns |
+| `flow` | an entry point (a route, a command, a job, a webhook, a listener), followed across modules until the sequence ends |
+| `decision` | the notes in `{{WIKI}}/.inbox/` first; then the history and the prose: `git log` (a fix that changed the design, an "instead of", a revert) and the docs, plans and ADRs the ignore list keeps out of coverage but not out of reading |
+| `concept` | a pattern that three or more modules repeat |
+
+A type in the table with no entry and no row here has no evidence to go by: write none of it,
+and say so in the report.
+
+Coverage counts files, so following it alone writes `entity` pages and nothing else.
+A concept is a pattern, not a place for the folders left over: tests, config and
+tooling go in the ignore list or on the page of what they serve.
+
+---
+
+## First, in every mode but SEED · DRAIN THE INBOX
+
+`{{WIKI}}/.inbox/` holds decision notes an agent wrote while implementing (the `decisions` hook
+or `wikipoke-implement`); `wikipoke check drift` counts them as `pending`. They are the only
+place the discarded alternative survives, and they live only in this working copy, so they go
+before anything else. A seed drains them too, after its avenues are written, so the pages have
+something to link to. No notes, or no folder: skip this.
+
+```
+each note ──► clears the bar in CONVENTIONS.md "Decisions worth recording"?
+                 ├── no  ──► delete it, name it in the log entry as dropped
+                 └── yes ──► read the files it names: does the code say what the note claims?
+                                ├── code says otherwise      ──► write what the code says, or ask
+                                ├── no decision page on it   ──► new decisions/<slug>.md
+                                ├── one already, compatible  ──► extend it
+                                └── one already, contradicted ─► supersede it: status: deprecated on the old
+                             ──► delete the note
+```
+
+1. **Apply the bar again.** The note was written in seconds by an agent in the middle of
+   other work. Re-read the project's "Decisions worth recording" section and drop a note that
+   does not clear it. A note that bundles several decisions is judged one decision at a time:
+   each clears the bar or is dropped on its own, and one already written in the spec, the plan
+   or the wiki is dropped however well it reads. A dropped note is deleted, never kept "just in case".
+2. **Check it against the code.** Open the files the note names. A note is a lead, not a fact
+   to copy: when the code says otherwise, the code wins, and if the reason itself is in doubt,
+   ask the person or write the page `confidence: inferred`. If a file the note names has
+   uncommitted changes, ask the person to commit first, or leave the note for the next pass:
+   `synced:` has to name a commit that holds the code the page describes.
+3. **Write the page** with the template: `sources:` the files the decision constrains, so drift
+   flags it when they change; `synced:` is `git rev-parse --short HEAD`, and `sources_key:` comes
+   from `wikipoke key` at the end of the pass; `related:` and inbound links
+   to the components and flows it touches, found by reading the wiki; `reversible:` carried
+   over from the note as `true` or `false`, and `decided_by:` too. The discarded alternative and why
+   is the body's centre. Superseding a page follows "Decisions worth recording" in CONVENTIONS.md.
+4. **Delete each note right after its page is written**, so a pass cut short never integrates
+   one twice. Leave the inbox's `.gitignore` in place.
+5. **Log it and say it**: in the log entry of this pass and in your close to the person, the
+   pages written or extended from notes, and the notes dropped with the reason in a few words.
+
+Then go on to the mode the argument decides.
+
+---
+
+## Mode A · SEED (no `.wikipoke-state.json`)
+
+```
+CODE @ HEAD
+   │  survey: the tree, manifests, READMEs, `git log --oneline`   (no source files yet)
+   ▼
+tailor .wikipokeignore ──► write architecture.md now, from the survey
+   ▼
+one avenue at a time:  read what its page needs ──► write the page ──► next
+   ▼
+drain the inbox, if it holds notes
+   ▼
+index.md · log.md (first entry) · .wikipoke-state.json { last_indexed_commit: HEAD }
+   ▼
+wikipoke check must pass without errors before you are done
+```
+
+1. **Record the base SHA:** `git rev-parse --short HEAD` for every page's `synced:`,
+   copied from the command's output. The full form goes into the checkpoint at the
+   end, written by a command rather than by hand (step 9). Its companion
+   `sources_key:` is hashed from the files rather than from a commit, so it comes
+   from `wikipoke key` once the pages exist. Read `git log --oneline`: the history
+   explains why the code looks like this and lives in no file.
+2. **Survey without reading the sources.** `git ls-files`, the manifests, the
+   READMEs and the project's agent instructions are enough to name the layers and
+   the entry points. Source files come later, one page at a time.
+3. **Tailor `{{WIKI}}/.wikipokeignore`, in both directions.** It starts generic. Add what
+   in this repository is not code worth documenting: tests, fixtures, generated
+   files, vendored code, build plumbing. Then run `wikipoke check coverage -v` and
+   read **both** ends of it: the clusters still uncovered, and the last line, which
+   says how many files the ignore list took out. The starting list ignores `*.md`,
+   so in a repository whose product is prose — prompts, skills, agent instructions,
+   a spec — it has just hidden the very thing to document. Bring those back with a
+   `!` line (`!prompts/**`), which wins wherever it appears. Ignoring is a conscious
+   call in both directions: say in the log what you ignored and what you brought back.
+4. **Write `architecture.md` now**, from the survey: the map, the layers, the entry
+   points. Mark what you have not read in the code yet `confidence: inferred`. Every
+   other page links from it, and it gets corrected as later pages teach you more.
+5. **Then one avenue at a time.** Pick the next avenue, read only the files its page
+   needs, write the page, link it from `architecture.md`, and move on. The avenues,
+   at the altitude of the page types and never one page per file:
+   - `flows/`: the sequences that cross files and that no single file tells.
+     These are the highest-value pages; do not ship a seed with only one.
+   - `components/`: one **module** page per subsystem. Finer pages only for units
+     that hide a mechanism; the rest grow later.
+   - `concepts/`: the cross-cutting patterns and conventions.
+   - `decisions/`: the choices behind the code, with the discarded alternative.
+     A seeded decision page has no `decided_by:`: the code, the specs and the history
+     tell what was chosen, never who chose it. Only a note or a person says that.
+   - Any type the project added: from the evidence its entry names.
+6. **Every page** uses the template with **narrow, verified** `sources:` covering
+   what you actually read; never claim a whole package or a folder like `src/`, and
+   never list a file you only named — coverage is how the next pass finds it, and a
+   claim hides it from that pass. Read the "Never a source" list in `CONVENTIONS.md`
+   first (lock files, when it has none): a lock file or a registry changes with every
+   commit, so cite the files the claim rests on unless the page is about that file. Mark anything you
+   reconstructed rather than read with `confidence: inferred`. Link only to pages
+   that already exist. **Cite only files you opened in this pass**, and take every
+   line number (`path:line`, or a `#L42` link) from that file alone, as you write the page — a number carried over
+   from a listing of several files is wrong by however many lines came before it.
+   A claim about code you did not open (from a README, a commit message, a file
+   name) is `confidence: inferred` and carries no `path:line`: a line number you
+   never read is a guess that lands on real code, and no check can tell it apart
+   from a true one.
+7. **Drain the inbox** now, if it holds notes (see above): the avenues exist, so the decision
+   pages have something to link to.
+8. **Write `index.md`** grouped by type, one line per page (its `responsibility`). It
+   opens with a frontmatter holding `okf_version: "0.2"` and nothing else.
+9. **Write the first `log.md` entry, then the checkpoint**. The entry is
+   `* **wikipoke-ingest (seed)**: …` under today's `## YYYY-MM-DD` (the log's shape is
+   below, under "Every mode ends here"). The checkpoint goes with this exact command —
+   never type the sha yourself; a hand-copied sha keeps its first seven characters
+   and invents the rest:
+   ```sh
+   printf '{"version":1,"last_indexed_commit":"%s"}\n' "$(git rev-parse HEAD)" > {{WIKI}}/.wikipoke-state.json
+   ```
+
+**Seeding stops at the avenues, on purpose**: the map, two or three flows, one page
+per main subsystem — a dozen or so pages in a single package, one or two more per
+workspace in a monorepo. Then let Mode C fill in the
+neighbourhoods one at a time. Coverage will list exactly what you left, and that
+list being long is fine: it is the backlog, not a failure. Say so when you close
+(see the end of this skill): a seed that does not say what it left reads as done.
+
+---
+
+## Mode B · RECONCILE (`.wikipoke-state.json` exists)
+
+Reconcile, don't accumulate: the code moved, bring the pages back in line.
+
+```
+wikipoke check drift --json
+   │  repo: commits since the checkpoint
+   │  stale[]: pages whose sources moved past their own synced:
+   │           + citations[]: their pointers the code moved
+   │  moved[]: fresh pages whose pointers the code moved anyway
+   ▼
+   read ONLY each stale page's diff ──► rewrite the stale sections
+   re-point every moved citation, stale page or not ──► re-stamp synced:
+   new code → propose a page  ·  moved/deleted code → fix or retire the page
+   ▼
+index.md · log.md entry · advance .wikipoke-state.json to HEAD (after the check passes)
+```
+
+1. **Detect.** `wikipoke check drift --json` gives `repo` (commits since the
+   checkpoint), `pending[]` (the inbox notes, drained above) and `stale[]` (the pages
+   whose sources changed since their own `synced:`). Nothing stale and the repository
+   current (the notes were drained above): **say so and stop**; do not invent work.
+   When `repo` carries `fallback`, the checkpoint names a commit a squash or rebase
+   merge threw away (a pass that ran on a branch), and drift counted from `fallback`
+   instead: the last commit that wrote `.wikipoke-state.json`, after a squash the
+   squash itself. Then **never say so and stop**, even with `repo` current: use
+   `fallback` as the checkpoint for this pass, re-read against the code every page
+   `wikipoke check lint --json` flags with `"squash": true` and re-stamp it (the
+   "Read the code again" row in `CONVENTIONS.md`: `verified:`, `synced:`, and
+   `sources_key:`), and seal: step 7 re-stamps `last_indexed_commit` to HEAD. Never
+   copy the missing sha anywhere. Known limit: after a squash, code committed on the
+   branch after its last pass reads as indexed; a page with `sources_key:` still
+   catches its own sources changing.
+2. **Read the diff, not the repository.** For each stale page, read only its own
+   diff: `git diff <its synced> HEAD -- <its sources>`. Anything in `skipped[]` has
+   a broken contract; fix that first.
+   A page whose entry says `"by": "sources_key"` is the exception: its `synced:`
+   commit is gone (a squash or rebase merge), so there is no diff to read and
+   `files[]` and `citations[]` come back empty. Do not run `git diff` against that
+   sha — it fails. **Read the page's `sources:` as they are now** and check the page
+   against them, then re-stamp both `synced:` and `sources_key:`. That is more
+   reading than a diff, and it is the price of the merge style; it is still bounded
+   by the page's own sources.
+3. **Reconcile.** Rewrite only the stale sections, so hand-written notes survive.
+   When the change **contradicts** what the page claimed, say what it used to be and
+   what changed it, with the SHA. Re-check `confidence:` while you are there. A stale
+   decision page with `planned: true` is usually the code catching up: if the diff
+   carries the decision out, drop the key, add the new files to `sources:` and say
+   from which SHA; if it only goes part of the way, keep it and say what is left.
+   When the page that lands reverses another, mark that one `status: deprecated` now
+   and turn its opening line from "will reverse" into "reversed", with the SHA.
+   The code that carries one out can land in a file the page does not cite, so read
+   every `planned: true` page, stale or not, against the commits since the
+   checkpoint (`grep -rl '^planned: true' {{WIKI}}/decisions`): a handful of pages,
+   and the only way a plan the page could not foresee is ever marked done.
+4. **Re-point the citations, then re-stamp.** Each stale page's `citations[]`, and
+   each page in `moved[]`, lists the pointers the code moved since they were
+   written, `path:line` and `#L42` links alike, with `raw` as the page writes it
+   (update a line number repeated in the link text too). `now` is the line each
+   points at today; `now: null` means the cited line itself was edited or deleted,
+   so open the file and find what the sentence was about. Then set `synced:` to
+   `git rev-parse --short HEAD`, `sources_key:` to what `wikipoke key` prints for
+   the page (see "Every mode ends here"), with `generated:` on a page whose claims you
+   rewrote and `verified:` on one that was still true. Re-stamping does not hide a pointer you skipped —
+   drift dates each citation by the commit that wrote it and reports the page under
+   `moved[]` — and one you already re-pointed is current, committed or not.
+5. **New and moved code.** Changed files no page covers: propose a page, or leave
+   them to coverage. Sources pointing at moved or deleted files: fix or retire the
+   page.
+6. **Refresh `index.md`** for any page added, retitled or with a new
+   `responsibility`.
+7. **Seal.** Add a `* **wikipoke-ingest**: …` entry to `log.md` (its shape is under
+   "Every mode ends here"). Then, **only after the final check passes**,
+   advance the checkpoint with the same command as a seed — never by typing the sha:
+   ```sh
+   printf '{"version":1,"last_indexed_commit":"%s"}\n' "$(git rev-parse HEAD)" > {{WIKI}}/.wikipoke-state.json
+   ```
+
+---
+
+## Mode C · INGEST A PART (an argument was given)
+
+Aimed, not reactive. The target is a path (`src/billing`), a topic
+(`the guides unlock flow`, often one a `wikipoke-lint --deep` pass proposed), or `all`
+for everything still outstanding. A topic is a flow or a decision, not a folder:
+start from its entry point or its history, and skip the coverage step.
+
+```
+wikipoke check coverage -v   the backlog, grouped by folder
+      │
+      ▼
+pick ONE cluster ──► read that code ──► write the pages it earns
+      ▼
+index.md · inbound links · log.md      (checkpoint untouched)
+```
+
+1. **Scope it.** With a path, work only inside it. With `all`, run the loop below.
+2. **Decide what earns a page from the file list, then read for one page at a
+   time.** A module page per subsystem, plus the flows that cross its files. Never a
+   page per file: a cluster of 19 files is usually two pages, not nineteen.
+3. **Write each page as soon as you have read for it**, with the template, narrow
+   `sources:` covering exactly what you read, and `synced:` set to
+   `git rev-parse --short HEAD`. `sources_key:` comes from `wikipoke key` at the end
+   of the pass.
+4. **Link them in.** Every new page needs an inbound link from a page that already
+   exists (usually `architecture.md` or its module page) and its line in `index.md`.
+5. **Do not advance `.wikipoke-state.json`.** Closing a coverage gap says nothing about the
+   repository being indexed up to HEAD. Only Mode B moves the checkpoint.
+6. **Log it** as `* **wikipoke-ingest <target>**: …` at the top of today's heading.
+
+### `all`: every part gets its pass
+
+`all` is the person saying they want the whole repository, tokens and all ("document
+everything", "don't stop until it's done"). Do not stop to ask between parts:
+
+```
+wikipoke check coverage ──► its clusters are the parts
+      ▼
+next cluster with no `all` entry in log.md ──► steps 2–6 on it ──► wikipoke check
+      (an entry is `**wikipoke-ingest all: <cluster>**`, or `## <date> · wikipoke-ingest all: <cluster>` in an old log)
+      ▼
+every cluster has its entry ──► the flows and decisions ──► done
+```
+
+- **Done means every part had its pass, not that coverage reads zero.** Emptying it
+  honestly means reading every file. What you did not open stays uncovered, and the
+  close says how much.
+- **Never widen a source to make the number drop**: not to a folder you skimmed, not
+  on a page already written. Listing a file's classes and functions is not reading it.
+- **One cluster, one part, one entry**, `* **wikipoke-ingest all: <cluster>**: …`,
+  naming the pages written and what stayed uncovered. The entries are how the person
+  reviews the run part by part, and how a run cut short by the context or the session
+  resumes: `wikipoke-ingest all` again takes the clusters with no entry.
+- **Code that earns no page** (tests, migrations, translations) gets a
+  `.wikipokeignore` line with the reason in the log. When it is worth explaining, add
+  a page that cites a few representative files and name that page in the reason: the
+  schema, not ninety migrations.
+- **Then the pages no folder asks for.** Coverage counts files, so the loop only
+  writes module pages. Before closing, write the flows the log noted as deferred and
+  the decisions `git log` explains: a fix that changed the design, a "why not X".
+- When it ends, say how many pages it wrote, by type and by part.
+
+---
+
+## Every mode ends here
+
+**The log.** `log.md` is newest first, one `## YYYY-MM-DD` heading per day, and each
+pass one entry at the top of its day:
+
+```
+## 2026-09-25
+
+* **wikipoke-ingest**: reconciled 3 commits since `f00ba47`.
+  - components/billing.md: invoices now round per line (a1b2c3d)
+```
+
+If the log still has the old shape, one `## <date> · <skill>` heading per pass, oldest
+first, rewrite it before adding your entry. Each old heading becomes an entry under its
+date: `## 2026-09-12 · wikipoke-ingest (reconcile)` becomes
+`* **wikipoke-ingest (reconcile)**:`, followed by the entry's first paragraph, or by
+nothing when it opened with a list. Its lists and paragraphs follow as they were,
+indented two spaces under it. Days go newest first, and so do the entries within a day.
+Say in your own entry that you rewrote it. Never change what an old entry says.
+
+**Stamp the pages.** Every page you wrote or re-read in this pass carries `synced:`
+(`git rev-parse --short HEAD`) and, next to it, the key those same sources hash to:
+
+```sh
+wikipoke key            # every page, one `<key>  <page>` line each; name pages to narrow it
+```
+
+Copy each key into its page's `sources_key:`. One run at the end of the pass covers
+them all. This is not bookkeeping: `synced:` names a commit on the branch you are
+working on, and a squash or rebase merge throws that commit away, after which nothing
+can tell whether the page is still true. The key survives the merge. Never type or
+guess one, and never move `sources_key:` on a page whose `synced:` you did not move —
+the pair is the claim "I read this page against this code".
+
+**Verify:** `wikipoke check`. Fix every error. Warnings about orphans, the index,
+over-broad sources or citations are yours to fix too. Coverage and staleness left
+over are debt: report them, do not chase them in the same pass (unless the pass is `all`).
+
+**Close with what is left.** Run `wikipoke check coverage` and tell the person, in
+numbers: the code files the wiki now covers out of the total, the largest clusters still
+uncovered, how many files the ignore list hides, and the pages by type. Name the flows
+and decisions you saw and did not write. Fewer flows than one per three module pages, or
+no decision once the wiki has a dozen pages, is a wiki that only followed the folders:
+say so, and propose the two or three that matter most. Then the next step, as a command
+they can type: `wikipoke-ingest <largest cluster>` or `wikipoke-ingest "<a flow or
+decision you named>"` for the next part, or `wikipoke-ingest all` to give every
+remaining part its pass, whatever it costs.
+
+## Notes
+
+- On a large job, log what you deferred so it does not read as "covered everything".
+- This never runs from a hook. The hooks only notify; a person launches this skill.
+- wikipoke itself was upgraded? `wikipoke update` refreshes these skills and the hooks
+  already installed. A hook changes what the person's terminal or agent does: ask
+  before running it. Never copy templates by hand.
+- Found a bug in the code? Note it on the page and tell the person. Don't fix it.
+- Close by summarising **what the wiki now knows that it didn't**, not a file list.

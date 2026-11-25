@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/smartworldarafath/rea_skill (path: .agents/skills/offensive-initial-access/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: External perimeter and attack-surface auditing covering internet-facing asset discovery, VPN/ZTNA multi-factor authentication enforcement, exposed administrative interfaces, and edge appliance patch v

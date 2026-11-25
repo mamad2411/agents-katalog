@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/sairammahadevan/thought-to-excalidraw/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Visualizes Product Manager thoughts (Why, What, How, User Journey) into an editable Excalidraw diagram. Use when the user asks to "visualize specs", "create a PM diagram", or "map out product thoughts

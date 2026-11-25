@@ -1,0 +1,83 @@
+---
+name: agent-manager
+description: Run a fleet of AI coding agents as live tmux sessions with agent-manager. Use when a developer is running more than one coding agent, needs to see which one is working or blocked, wants to spawn another on an independent task, or wants to review an agent's diff without leaving the terminal.
+license: Apache-2.0
+homepage: https://agent-manager.dev
+repository: https://github.com/wainmann/agent-manager
+---
+
+<!--
+Why this skill exists: it packages the operating procedure for agent-manager (spawn,
+status, answer-without-attaching, diff review) so an AI agent can install the knowledge
+once instead of re-deriving it from the docs on every session. The site serves this file,
+digest-sealed, at https://agent-manager.dev/skills/agent-manager/SKILL.md; the copy in
+this repository is what makes it installable through skills.sh.
+-->
+
+# Run a fleet of coding agents with agent-manager
+
+agent-manager is a single Go binary on top of tmux. Every row in its list is a real tmux
+session running a real coding CLI: the developer's own installation, login, config and MCP
+servers. It never wraps or re-implements an agent; it reads the same pane a human would and
+colours the row by what that pane is doing.
+
+## When to use this
+
+- The developer is running more than one coding agent and cannot tell which is blocked.
+- They want to spawn an agent on an independent task without losing the one already running.
+- They want an agent's conversation to survive a crash, a reboot, or a closed terminal.
+- They want to review a diff and send line comments back into the agent's prompt.
+
+Do not reach for it to *replace* a coding CLI. It starts the CLIs that are already installed.
+
+## Install
+
+macOS and Linux, amd64 and arm64. Windows runs it inside WSL2. Needs tmux 3.1+ and git.
+
+```bash
+brew install agent-manager
+```
+
+Other routes: the install script, the AUR (`yay -S agent-manager-bin`), `mise use -g
+github:wainmann/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
+prebuilt binary from the releases page.
+
+## The keys that matter
+
+| Key | What it does |
+| --- | --- |
+| `space` | Opens quick prompt mode, a prompt bar docked in the footer. On a group row it spawns a new agent with that prompt; on a session row it answers the agent already running there. |
+| `tab` / `alt+m` | Cycles which CLI the next spawn starts. |
+| `shift+tab` | Steps the CLI back one. |
+| `ctrl+l` / `ctrl+x` / `ctrl+y` | Picks the spawn's model, reasoning effort and profile from the ones the CLI reports. |
+| `ctrl+g` | Steps the environment profile the spawn launches under, starting from the target group's. |
+| `ctrl+t` / `alt+w` | Toggles spawning the agent into a fresh git worktree and branch. |
+| `ctrl+r` | Opens a full-screen whole-file diff whose line comments go back to the agent as one review prompt. |
+| `v` | Revives a dead session on the conversation it held. |
+| `y` | Copies the selected session's newest reply to the system clipboard, without attaching. |
+
+## Status colours
+
+A row is coloured `working`, `waiting`, `finished`, `idle` or `errored`. Claude Code
+reports through hook events; every other CLI is read from its pane with regexes. Fourteen
+CLIs ship with working profiles: Claude Code, OpenCode, Codex, Grok Build, Gemini CLI,
+Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, Cursor CLI, Kiro CLI and GitHub Copilot CLI. Every profile
+ships in the binary, so an upgrade brings the current rules for all of them. A CLI
+outside that list is a feature request, and the `CLIs` row in Settings ends with
+`request CLI support`, which opens one prefilled.
+
+## Driving it from inside an agent
+
+Sessions of MCP-capable CLIs carry agent-manager's own MCP server over stdio, so an agent can
+`create_session` to spawn a peer, `send_session` to message one, `wait_for_session` to block
+on one, `task` to claim shared work, and `reserve_files` to declare what it is editing. Once a
+peer's work is saved, `delete_session` (or `agent-manager delete <id>`) removes it with its
+worktree and branch. A worktree with uncommitted or unpushed work, or one another session
+still uses, stays with its branch, and the result's notice says so.
+
+## Reference
+
+- Documentation: https://agent-manager.dev/docs/
+- Every page as Markdown: https://agent-manager.dev/llms.txt
+- Reference API: https://agent-manager.dev/openapi.json
+- Documentation MCP server: https://agent-manager.dev/mcp

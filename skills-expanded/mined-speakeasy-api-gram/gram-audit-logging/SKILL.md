@@ -1,0 +1,222 @@
+---
+name: gram-audit-logging
+description: Use when recording or exposing audit events, changing audit coverage, introducing an audited subject or action, classifying internal staff activity, asserting audit events in tests, or changing audit display, filtering, or outbox publication.
+---
+
+Audit logging is how Speakeasy records _who did what to which resource_. Every meaningful mutation on a project- or org-scoped resource is expected to produce one audit entry per affected row, written inside the same database transaction as the mutation so events can't drift from the state they describe. Non-internal entries are exposed to Speakeasy users through the `auditlogs` management API; staff activity includes both classifications.
+
+## Concepts and terminology
+
+**Actor.** The principal that caused the event — a `urn.Principal` carrying a type (user, role, service account) and an id, with optional display name and slug for human rendering.
+
+**Subject.** The resource the event is about — identified by a subject type (e.g. `remote_mcp_server`, `access_role`) and a subject id.
+
+**Action.** What happened to the subject. Each subject declares its own set of actions, typically one per mutating verb on the subject's life cycle.
+
+**Before/after snapshot.** Optional opaque JSON payloads describing the subject's state. Populated on updates, left empty on creates and deletes unless the snapshot is independently useful.
+
+**Metadata.** Optional JSON bag for contextual fields that are not part of the subject's state.
+
+**Scoping.** Every entry belongs to exactly one organization and zero or one projects. Org-scoped subjects (roles, members) carry no project id; project-scoped subjects carry the project UUID.
+
+**Atomicity.** Audit entries are written inside the same database transaction as the mutation they describe, so the state and the record of the state commit together or not at all.
+
+**Configuration log and security log.** Entries go to one of two tables, and the caller decides which by the package it calls. Both are returned by the staff admin activity view; only non-internal entries are readable by customers. Non-internal entries written through either package normally publish webhooks (the payload's `category` says which log). Rows written directly, such as demo seed rows and backfills, publish none. The audit log page shows the configuration log by default and the security log on request. Before adding an event, decide which it is:
+
+- **Configuration** (`audit` package, `audit_logs`): a person or the Speakeasy team changed the platform's configuration — created, updated or deleted a resource, granted or revoked access, admitted or withdrew a workload, registered a credential or trust relationship.
+- **Security** (`audit/securityevent` package, `security_audit_logs`): machine access or other security-relevant activity that is not a configuration decision. Its frequency follows traffic rather than decisions, which is why it has its own table. Customer-relevant security activity is kept and delivered rather than dropped; explicit internal classification still suppresses customer visibility and publication.
+- **Neither**: internal plumbing whose entries only mirror runtime churn and tell a reader nothing they can act on. A Kit runtime admits and withdraws its own workload on every process start and teardown; those entries flooded the security log and are no longer recorded. The runtime's shared issuer (created once per project) and any person's withdrawal of it are still configuration changes, and that withdrawal records one entry per runtime admission it removes, in the configuration log unless the admission's admit is already in the security log. A runtime whose admit was logged before this change still writes its teardown withdraw to the security log. Before adding a security event, ask whether a customer would ever look for that entry.
+- An event written by a system actor must still name what acted. Prefer attributing it to the agent or person it acts for; a bare system principal with no display name renders as "Speakeasy" in the dashboard.
+
+The same action can belong in either log depending on who caused it, so `securityevent` writers take the `audit` package's event structs. Once customers have seen an action in a log, moving it is a visible change, so choose before shipping rather than after.
+
+**Outbox event.** A non-internal audit entry written through the logger normally publishes a typed webhook event to the outbox (same transaction), unless `WithoutOutbox` is set. Internal entries never publish to ANY outbox consumer, including internal growth signals. The event type is subject-specific — e.g. `audit_log.deployment_event_v1` for deployment actions, `audit_log.project_event_v1` for project actions — allowing webhook subscribers to filter by subject domain rather than receiving all audit activity under the single legacy `audit_log.created` type. The `_v1` suffix signals the version; new event definitions must use this suffix. All subject event vars are declared in `server/internal/outbox/events/audit_log.go`. Operator backfills construct their logger with `audit.NewLogger(audit.WithoutOutbox())`, which records audit rows but publishes no webhook events, so bulk system writes do not flood customer webhooks. Non-internal security events publish the same event types with `category: "security"`, so subscribers separate the two logs by that field.
+
+## Internal activity classification
+
+`is_internal BOOLEAN NOT NULL DEFAULT false` is persisted in **both** `audit_logs` and `security_audit_logs`; classification is independent of log category. Set `IsInternal: true` in the writer's insert params for staff-only operational activity. Keep ordinary writers explicitly false (including complete struct literals required by `exhaustruct`). Never infer this flag from staff identity, actor type, or subject type in live reads/writes: staff changes to customer resources usually remain customer-relevant and non-internal.
+
+The initial internal actions are `catalog-promotion:archive`, `catalog-promotion:reject`, `catalog-promotion:restore`, `catalog-promotion:retry-docs`, and `mcp-server:promote-catalogue`. The last has subject `mcp_server`, not `catalog_promotion`; ordinary MCP-server create/update/delete remain non-internal. Keep existing outbox event definitions intact.
+
+| Classification / option    | Durable row | Customer lists/facets | Any outbox consumer |
+| -------------------------- | ----------- | --------------------- | ------------------- |
+| Ordinary event             | Yes         | Eligible              | Normally published  |
+| `IsInternal: true`         | Yes         | Never                 | Never               |
+| Ordinary + `WithoutOutbox` | Yes         | Eligible              | Never               |
+
+Internal rows still commit atomically with the mutation. `Logger.log` skips publication and the shared exported `audit.PublishWebhook` guard also protects the direct security-event path. Do not replace this with special logger construction at service call sites. `WithoutOutbox` remains an independent option for operator writes; it neither sets classification nor changes visibility.
+
+Keep mirrored SQLc insert/read contracts aligned and preserve `is_internal` when moving rows between logs. Customer list and actor/action/surface facet predicates exclude internal rows even with explicit subject/action filters; no customer opt-in exists. Only authorized staff reads enable the server-side inclusion switch. The staff API exposes required `is_internal` (SDK `isInternal`); both Admin MCP read tools return an explicit boolean, including false. Staff Activity displays the **Internal** badge only for true, without a toggle or separate route.
+
+### Verification and historical rows
+
+Cover all five writers (persist true, zero outbox rows), ordinary publication, independent `WithoutOutbox`, direct security publication, and log-move preservation. Test both tables with mixed classifications sharing a subject, all customer facets/explicit filters, staff inclusion/pagination, required API/MCP true and false, and mixed/ordinary-only badge rendering. Do not test only subject exclusion.
+
+Ship generated schema DDL separately before application deployment. Historical rows stay visible until manually classified: after old writers drain, use `server/cmd/internal-audit-events-backfill/README.md` for bounded count-only dry-run, approved apply, and verification/rerun. Its predicate targets historical `catalog_promotion` subjects OR exact `mcp-server:promote-catalogue`, in both tables; it is not live classification inference. Preserve timestamps/data, emit nothing, and test rerun idempotence and unchanged unrelated rows/outbox counts. Never run this backfill automatically in migrations/startup or against a shared database as a test. Already-published outbox events and delivered webhooks are not retracted.
+
+## Server
+
+Audit logging lives in `server/internal/audit/` with its management-API surface defined in `server/design/auditlogs/`. Callers are other services whose handlers emit events; the `auditlogs` Goa service reads them back.
+
+### Conventions
+
+**Where types live.** The package-private `subjectType` string type and every `subjectType*` constant live in `server/internal/audit/events.go`. The public `Action` string type and the `marshalAuditPayload` snapshot helper live in the same file. The subject-type const block is kept alphabetised.
+
+**Subject type naming.** Subject type values are short snake_case strings (e.g. `remote_mcp_server`, `access_role`). Constants follow the `subjectType<Name>` pattern.
+
+**Action naming.** Values follow `<subject-slug>:<verb>` (e.g. `remote-mcp:create`, `access_role:update`). Verbs are typically `create` / `update` / `delete`; subjects may add feature-specific verbs (`toolset:attach_oauth_proxy`).
+
+**Subject files.** One Go file per subject under `server/internal/audit/`, named after the subject in plural form (e.g. `remotemcpservers.go`, `toolsets.go`). Each file owns that subject's `Action*` constants, its `Log*Event` payload structs, and its `Log*` functions. Do not merge subjects into a shared file.
+
+**`Log*Event` and `Log*` naming.** One `Log<Verb>Event` struct plus one `Log<Verb>` function per action, declared in the subject file. `Log*` functions take `(ctx, dbtx repo.DBTX, event Log*Event) error` so the audit insert is atomic with the caller's mutation. Internally each `Log*` function constructs a `repo.InsertAuditLogParams` and then calls `l.log(ctx, dbtx, auditEntry{Params: entry, OutboxEvent: events.<Subject>})` — it does not call `repo.New(dbtx).InsertAuditLog` directly.
+
+**Subject identifier fields.** Event structs carry the subject's identifier as a URN type, not a raw `uuid.UUID`. Field name is `<Subject>URN` (e.g. `KeyURN urn.APIKey`, `McpServerURN urn.McpServer`), and the `Log*` function populates `SubjectID` from `event.<Subject>URN.ID.String()`. If no URN type exists yet, add one under `server/internal/urn/` before introducing the event struct — see `server/internal/urn/api_key.go` for the template.
+
+**Snapshot fields.** Update event structs declare snapshot fields as `<Subject>SnapshotBefore` / `<Subject>SnapshotAfter` with concrete pointer types (e.g. `*types.Toolset`, `*types.McpServer`). Do not use `any` or bare `SnapshotBefore` / `SnapshotAfter` — the typed form keeps `marshalAuditPayload` callers honest about the shape being persisted. Pass the view through directly unless a specific field on the type needs stripping for size or sensitivity reasons (see `toolsets.go` for the one clone-and-strip case).
+
+**Per-row events for bulk mutations.** A single bulk SQL statement that touches N rows of an audited subject produces N audit entries — one per row — not one entry that covers the batch. This is what makes the audit log a faithful reconstruction of each subject's life cycle and what lets `auditlogs.list` filter to a specific subject id. The most common place this gets missed is cascading soft-deletes that fan out from a parent delete; see "How to audit a cascading delete of child resources" under "Jobs to be done".
+
+### Non-generated files
+
+| File                                                                 | Purpose                                                                                                                                                                                                                |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/design/auditlogs/design.go`                                  | Goa design for the `auditlogs` service. Regenerates `server/gen/auditlogs/` and `server/gen/http/auditlogs/` via `mise run gen:goa-server`.                                                                            |
+| `server/internal/audit/<subject>.go`                                 | One file per subject (e.g. `access.go`, `remotemcpservers.go`, `toolsets.go`).                                                                                                                                         |
+| `server/internal/audit/audittest/helpers.go`                         | Test helpers other packages use to assert audit events.                                                                                                                                                                |
+| `server/internal/audit/audittest/queries.sql`                        | SQLc queries backing the test helpers. Regenerates `server/internal/audit/audittest/repo/` via `mise run gen:sqlc-server`.                                                                                             |
+| `server/internal/audit/events.go`                                    | Top-level declarations shared across every subject.                                                                                                                                                                    |
+| `server/internal/audit/logger.go`                                    | `Logger` type, the `WithoutOutbox` option, `auditEntry` struct, and the internal `l.log()` method that inserts the DB row then calls `PublishWebhook` unless internal or `WithoutOutbox` is set.                       |
+| `server/internal/audit/outbox.go`                                    | `PublishWebhook` — rejects internal publication from either log, then translates the inserted audit row into an `AuditLogCreatedPayload` and publishes to the outbox under the subject-specific event def.             |
+| `server/internal/auditapi/impl.go`                                   | Implementation of the `/rpc/auditlogs.*` Goa service (reads). Lives in its own package to keep the `audit` writer surface free of `auth/sessions` and `mv` so any service can call `audit.Log*` without import cycles. |
+| `server/internal/audit/queries.sql`                                  | SQLc queries for the audit log table. Regenerates `server/internal/audit/repo/` via `mise run gen:sqlc-server`.                                                                                                        |
+| `server/internal/audit/securityevent/`                               | Security log writers and readers over `security_audit_logs`, with their own `queries.sql` (regenerates `securityevent/repo/`).                                                                                         |
+| `server/internal/auditapi/{setup_test,list_test,listfacets_test}.go` | Tests for the `auditlogs` management API.                                                                                                                                                                              |
+| `server/internal/outbox/events/audit_log.go`                         | Per-subject `*outbox.EventDef` vars (e.g. `events.Deployment`, `events.Project`). Add a new var here when introducing a new audited subject.                                                                           |
+
+### Generated files
+
+Files under `server/gen/**` and any `repo/` subdirectory carry a `DO NOT EDIT` header.
+
+| Path                                                               | Generator                                                                                                                              |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/gen/auditlogs/`, `server/gen/http/auditlogs/`              | `mise run gen:goa-server` from `server/design/auditlogs/design.go`.                                                                    |
+| `server/internal/audit/audittest/repo/`                            | `mise run gen:sqlc-server` from `server/internal/audit/audittest/queries.sql` (separate stanza in `server/database/sqlc.yaml`).        |
+| `server/internal/audit/repo/`                                      | `mise run gen:sqlc-server` from `server/internal/audit/queries.sql` (via the `audit` stanza in `server/database/sqlc.yaml`).           |
+| `server/internal/audit/securityevent/repo/`                        | `mise run gen:sqlc-server` from `server/internal/audit/securityevent/queries.sql` (via its own stanza in `server/database/sqlc.yaml`). |
+| `server/internal/outbox/events/catalog_gen.go`, `catalog_gen.yaml` | `mise run gen:webhooks-server` from `server/cmd/gen-webhooks`. Run after adding a new event def to `audit_log.go`.                     |
+
+## Server-client contract
+
+Non-internal audit entries are surfaced to Speakeasy users through a small, fixed set of endpoints. New visible actions and subject types appear automatically — facets are computed from eligible non-internal rows, so there is no registration step outside the Go code.
+
+**HTTP routes** (design: `server/design/auditlogs/design.go`):
+
+- `GET /rpc/auditlogs.list` — paginated list; supports cursor, `project_slug`, `actor_id`, `action` and `category` filters. Returns one category, `configuration` by default, whatever the other filters. Each entry carries its `category`.
+- `GET /rpc/auditlogs.listFacets` — returns the set of actors and actions that actually appear, for UI facet pickers. Computed from the requested `category`, `configuration` by default.
+
+`auditlogs.list` and `auditlogs.listFacets` read `audit_logs` for `configuration` and `security_audit_logs` for `security`, and the dashboard's audit log switches between them. The staff admin activity view (`internal/admin`) merges both logs newest first; each table pages by its own `seq`, so its cursor carries a position in each. `securityevent.List` and the facet readers take and return the `audit/repo` types: the `securityevent` queries mirror the `audit` ones column for column, so the conversions compile only while the two stay in step.
+
+**Generated client surfaces** — regenerated by `mise run gen:goa-server` then `mise run gen:sdk`:
+
+- TypeScript SDK: `client/dashboard/src/sdk/src/funcs/auditlogs*.ts`, `client/dashboard/src/sdk/src/react-query/auditlogs*.ts`, plus models under `client/dashboard/src/sdk/src/models/`.
+- CLI bindings: `server/gen/http/cli/gram/cli.go`.
+
+## Jobs to be done
+
+### How to audit a handler in a service
+
+When a handler mutates a resource whose subject already has `Action*`/`Log*` definitions, the handler opts in by calling the existing `Log*` function. The call has to happen inside the same `dbtx` as the mutation so the audit row and the state it describes commit together.
+
+1. Open the service's `impl.go` and locate the handler. Confirm the handler already uses a transaction; if not, wrap the repo calls in `s.db.Begin(ctx)` → `defer o11y.NoLogDefer(rollback)` → `dbtx.Commit(ctx)`.
+2. After the primary repo writes succeed and before `Commit`, call the subject's `audit.Log<Verb>` with a populated `Log<Verb>Event`. Pass the same `dbtx` the repo writes used so the audit row commits atomically with them.
+3. Build the actor from `contextvalues.GetAuthContext(ctx)` — typically `urn.NewPrincipal(urn.PrincipalTypeUser, authCtx.UserID)`, plus `authCtx.Email` for `ActorDisplayName`. Principal types live in `server/internal/urn`. Fill in the subject-specific identifier fields (subject id, display name, slug) from the repo row you just wrote.
+4. For updates, populate the typed snapshot fields (`<Subject>SnapshotBefore` / `<Subject>SnapshotAfter`) with the pre- and post-mutation state. For creates and deletes, leave them nil unless the snapshot is independently useful.
+5. Treat audit-log failures as `oops.CodeUnexpected`. Audit logging is not optional — if it fails, fail the request.
+6. Add a test that asserts the event was recorded (see "How to assert audit events in tests" below).
+
+### How to record a security event
+
+Use this when a system component records machine access it performs on its own and repeatedly — see **Configuration log and security log** for how to tell.
+
+1. In `server/internal/audit/securityevent/`, add a `Log<Subject><Verb>` function taking the `audit` package's `Log<Subject><Verb>Event` struct, so the human and system call sites share one event shape. Build `repo.InsertSecurityAuditLogParams` and pass it to `record` with the subject's outbox event def.
+2. Call it from the system call site; human call sites keep calling `audit.Logger`.
+3. When a person's action cascades to entries the system created, route each cascaded entry to the log its subject's history is in. `securityevent.RuntimeAdmittedSubjects` is the precedent: withdrawing an issuer sends a cascaded withdrawal to the security log only when that admission's admit is there. It reads the audit trail, never customer-editable fields such as tags.
+4. Test it with `audittest.LatestSecurityAuditLogByAction` / `SecurityAuditLogCountByAction`, check the configuration log did not grow, and decode the outbox payload (`GetLatestOutboxPayloadByOrg`) to check its `category`.
+5. Rows written to `audit_logs` before the change stay there. Move them with an application-data backfill under `server/cmd/tools/migrations/` (see `AUDIT_KIT_RUNTIME_SECURITY_BACKFILL.md`), never in a migration file.
+
+### How to audit a cascading delete of child resources
+
+Use this when deleting a parent resource also soft-deletes child rows of an independently audited subject (e.g. deleting an `mcp_server` cascades to its `mcp_endpoints`). The parent's `Log<Verb>` is not enough — every affected child row must produce its own audit entry under the child subject's action.
+
+1. Make the cascade query return the affected rows. SQLc queries scoped by parent id should be `:many` with `RETURNING *` so the caller can iterate the deleted children. If the existing query is `:exec`, change it and regenerate (`mise run gen:sqlc-server`).
+2. In the parent handler, after the cascade query succeeds and inside the same `dbtx`, loop over the returned rows and call the child subject's `audit.Log<Verb>` once per row. Populate the child's URN, display name, and slug from the returned row — not from the parent.
+3. Emit the parent's `audit.Log<Verb>` after the per-child loop so cause precedes effect in the timeline. Both still commit atomically with the cascade.
+4. In tests, capture baseline counts for both the parent and the child action, exercise the handler, and assert the child count grew by exactly the number of cascaded rows. A single +1 assertion on the parent action will not catch a regression where the per-child events stop being emitted.
+
+### How to add a new action to an existing subject
+
+Use this when the subject already has a file but you're introducing a new verb.
+
+1. In the subject's file, add an `Action<Subject><Verb>` constant alongside the existing ones.
+2. Add a `Log<Subject><Verb>Event` struct with the fields the caller needs to supply. At minimum: `OrganizationID`, `ProjectID` (zero value for org-scoped subjects), `Actor`, `ActorDisplayName`, `ActorSlug`, plus the subject URN (`<Subject>URN urn.<Subject>`) and any additional display name / slug fields the subject needs. Updates additionally carry typed snapshot fields (`<Subject>SnapshotBefore` / `<Subject>SnapshotAfter` with concrete pointer types — e.g. `*types.<Subject>`).
+3. Add a `Log<Subject><Verb>` function that translates the event into `repo.InsertAuditLogParams`, passes any snapshots through `marshalAuditPayload` (which handles nil internally), then calls `l.log(ctx, dbtx, auditEntry{Params: entry, OutboxEvent: events.<Subject>})`. Do not call `repo.New(dbtx).InsertAuditLog` directly — `l.log` does that and also handles the outbox publication.
+4. Call the new function from the handler as described under "How to audit a handler in a service".
+
+No schema change, no codegen step — facet queries pick up new non-internal actions automatically. Internal actions must never appear in customer facets.
+
+### How to add a new audited subject
+
+Use this when introducing an entirely new kind of resource that doesn't map onto any existing subject file.
+
+1. Add a `subjectType<Name>` constant to `events.go`.
+2. Add a new `var <Subject> = outbox.NewEventDef[events.AuditLogCreatedPayload]("audit_log.<subject>_event_v1", "...")` to `server/internal/outbox/events/audit_log.go`. Use the `_v1` suffix. Then run `mise run gen:webhooks-server` to update `catalog_gen.go` and `catalog_gen.yaml`.
+3. Create `server/internal/audit/<subject>.go` following the subject-file convention, and populate it with the `Action*` constants, `Log*Event` structs, and `Log*` functions. Each `Log*` function passes `auditEntry{Params: entry, OutboxEvent: events.<Subject>}` to `l.log`.
+4. Call the new `Log*` functions from the owning service's handlers.
+
+### How to update an existing action or subject
+
+1. **Renaming an `Action` value is a breaking change** for consumers of `auditlogs.list` that filter on action strings. Avoid it; add a new action and dual-write if a behaviour rename is needed.
+2. Adding a new field to a `Log*Event` struct is safe — update every call site (`exhaustruct` will flag missed ones).
+3. Changing the shape of the snapshot payload (the concrete type referenced by `<Subject>SnapshotBefore` / `<Subject>SnapshotAfter`) is safe for new rows only; old rows retain the old shape. If consumers parse snapshots, version the payload inside the JSON.
+4. Do not edit the string values of `subjectType*` constants; the same breakage argument as action renames applies.
+
+### How to assert audit events in tests
+
+Use `audittest` helpers in the service's test package — do not query the audit tables directly.
+
+1. Capture a baseline count with `audittest.AuditLogCountByAction(ctx, conn, audit.Action<Foo>)`.
+2. Exercise the handler.
+3. Assert `after == before + 1` (or the expected delta).
+4. For snapshot correctness, fetch the row with `audittest.LatestAuditLogByAction` and decode `Metadata`, `BeforeSnapshot`, or `AfterSnapshot` with `audittest.DecodeAuditData`.
+
+## Relevant mise tasks
+
+| Task                           | Purpose                                                                                                                                                                                                                                   |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mise run gen:goa-server`      | Regenerate `server/gen/auditlogs/**` whenever you edit `server/design/auditlogs/design.go`.                                                                                                                                               |
+| `mise run gen:sdk`             | Regenerate the TypeScript SDK and CLI bindings after a Goa design change.                                                                                                                                                                 |
+| `mise run gen:sqlc-server`     | Regenerate `server/internal/audit/repo/`, `audittest/repo/` and `securityevent/repo/`. Run whenever you change `queries.sql` in any of them. Requires `mise run infra:start` (sqlc connects to the local Postgres to type-check queries). |
+| `mise run gen:webhooks-server` | Regenerate `catalog_gen.go` and `catalog_gen.yaml` after adding a new event def to `server/internal/outbox/events/audit_log.go`.                                                                                                          |
+| `mise run lint:server`         | `golangci-lint` including `exhaustruct` — keep struct literals complete when adding fields to `Log*Event`.                                                                                                                                |
+| `mise run test:server`         | Runs the full server test suite. Takes the same arguments as `go test` (e.g. `./internal/audit/... ./internal/remotemcp/...`).                                                                                                            |
+
+## Maintaining this skill
+
+This file documents conventions that evolve over time. Adding a new action, subject, or filter is already covered by "Jobs to be done" — those don't require skill edits. Structural changes do. Update this skill in the same commit when you make any of the following kinds of changes:
+
+- Reorganising per-subject files (moving away from one-file-per-subject, merging subjects, renaming the plural convention).
+- Renaming or reshaping `Log*Event` fields, or changing the `Log*` function signature.
+- Replacing `marshalAuditPayload` or changing how snapshots are encoded.
+- Moving audit code out of `server/internal/audit/`.
+- Changing how facets are computed — today they derive from row data with no registration; if that changes, the "no registration step" claim stops being true.
+- Adding a new audit-relevant mise task that belongs on the cheat sheet.
+- Introducing a new top-level concept (a new principal type for actors, a new kind of subject scoping beyond org/project, etc.).
+- Moving an action between the configuration and security logs, adding another log, or changing which readers show which log.
+
+## Cross-references
+
+- `gram-management-api` — the `auditlogs` service is itself a management API; adding a new endpoint or filter follows that skill's flow.
+- `gram-rbac` — `access_role`, `access_member`, and other RBAC mutations are audited via `server/internal/audit/access.go`.
+- `golang` — `oops` error wrapping, `slog` logging, transaction patterns, and the black-box `setup_test.go` convention used by audit tests and service tests.
+- `postgresql` — when adding or changing SQLc queries in `audit/queries.sql` or `audittest/queries.sql`.
+- `mise-tasks` — when modifying the generator scripts under `.mise-tasks/gen/`.

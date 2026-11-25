@@ -1,0 +1,257 @@
+---
+name: author
+# Two lines deciding who finds this skill: the long text is what the model
+# matches an invocation against, so it names the moment the skill answers —
+# "create a plugin for me" — not what a scaffold is.
+description: Guides creating a uze plugin end to end — marketplace create or select, plugin scaffold, capability flags, check before install, install from the linked marketplace, iterate, publish by pushing — and writing what it carries, a declared extension included (its `extension.kdl`, its `.uze` components of a view and a script, a program, a resident script, grants, tests, consent). Use when someone asks to create, author or scaffold a plugin, set up a marketplace of plugins, add an extension to a plugin, write or debug an extension's script, program, source, action or key, when `uze agent plugin check` refuses an extension, or when one draws "needs consent", "needs enabling in this project" or "`<program>` not found".
+invoke:
+  model: true
+  user: true
+---
+
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
+Creating a plugin with uze is a loop of four deterministic verbs. Run them
+in this order; every one is non-interactive and fails with a reason, so a
+failure is an answer, not a dead end.
+
+## 1. The marketplace — create or select
+
+Ask `uze market list` first. If a marketplace already fits, use its name in
+every later step; nothing new is created.
+
+Otherwise choose the frontier, and name it explicitly — the verb has one
+spelling for each:
+
+**Global — the marketplace has a checkout of its own** (the default choice
+when the person has not said where it belongs):
+
+```bash
+uze agent market create <name> --at <directory> [--description "…"]
+```
+
+Choose `--at` outside every checkout — the operator's home (say
+`~/marketplace-<name>`) is the natural place. A marketplace is machine
+state, shared by every project on it; one created inside a worktree slot
+dies with the slot, and one created inside any repository is a nested
+repository that dirties that checkout's status.
+
+This scaffolds the directory as a Git repository (`marketplace.json`,
+`plugins/`, an initial commit), registers it with the machine, and links
+it — the link is the point: installs read the working tree, including
+files not committed yet, so authoring needs no publish step. If Git has no
+identity configured the command says so with the two `git config` lines to
+set; have the person run them (or run them with their consent), then
+repeat the command.
+
+**Local — the project is itself the marketplace** (only when the person
+wants the marketplace versioned with this repository):
+
+```bash
+uze agent market create <name> --local [--plugins-dir <dir>]
+```
+
+This writes `marketplace.json` at the project root and the plugins in
+`--plugins-dir` (default `plugins/`) — the layout this repository itself is
+one in. A directory other than the default is recorded in the manifest, so
+every later `plugin create` puts its plugin there too. The project needs a
+commit first: the marketplace is linked to it, and a link reads a
+repository with at least one revision. No Git state is written and no
+commit is made: the project's own flow carries them, so an author working
+in an isolated checkout reaches the marketplace through delivery, like
+every other piece of project content. A project that
+already carries a `marketplace.json` is refused with that fact — add the
+plugin to it directly.
+
+## 2. The plugin
+
+```bash
+uze agent plugin create <name> --market <market> [--description "…"] \
+    [--category <word>] [--hook] [--mcp] [--agent] [--rules] \
+    [--extension <id>]
+```
+
+Each field has one file that owns it. `plugin.json` describes the plugin:
+`--description` is written there, and so are `keywords`, `author`,
+`homepage`, `repository` and `license` when you add them — the listing
+reads them from there and from nowhere else. The `marketplace.json` entry
+only locates and files it: `name`, `source`, and `--category`, the one
+word a catalogue is browsed by (`productivity`, `development`,
+`security`, ...); reuse a category the marketplace already has before
+inventing one.
+
+Every name here (the marketplace's, the plugin's, each skill's) is
+lowercase kebab-case: `a-z`, `0-9` and single `-` between them, at most
+64 characters, the one spelling every harness accepts. A skill's `name`
+equals its directory. The verbs and both checks refuse anything else and
+say the name you meant; a display casing never goes in the name, and
+`plugin.json` has no field for one, so say it in `description`.
+
+The default is a skill plugin: `plugin.json` plus
+`skills/<name>/SKILL.md` — edit the skill body, and choose the
+`invoke:` policy deliberately (who may trigger it). `--hook` adds a
+portable `hooks.json` and a handler stub obeying the `HOOK_*`/exit-code
+contract, once per shell: `scripts/guard` (`sh`) and `scripts/guard.ps1`
+(Windows PowerShell), named once as an exec-form handler
+(`"command": "scripts/guard", "args": []`): Linux and macOS run
+`scripts/guard`, Windows its `.ps1` twin. Prefer that form, or one script
+in a language both platforms run (`.py`, `.js`), over a
+`{"posix": …, "windows": …}` pair, and keep a hook's plain `command`
+string for POSIX-only lines. A handler with nothing to run on
+Windows is not delivered there, and a guard (`deny`, `ask`) without one
+is refused there, the package with it — `uze agent plugin check` names
+each; `--mcp` adds an `mcp.json` and a working stdio server stub under
+`scripts/` (keep its stdout for the protocol alone — log to stderr);
+`--agent` adds an agent definition under `agents/<name>.md`;
+`--rules` adds `rules/` with one example rule (see below);
+`--extension <id>` adds a declared extension under `extensions/<id>/`: an
+`extension.kdl` declaring a `view` and a sidebar `section`, the
+`board.uze` component both draw (its `<view>`, and the `<script>` the live source runs), the `fixtures/board.json` it is bound to, and
+`tests/board.test.kdl` with the snapshot its first test takes (the id is
+lowercase with single hyphens, and `code`, `architect`, `spec` and `uze`
+are taken). The first extension also adds `*.uze linguist-language=KDL` to
+the marketplace's `.gitattributes`, so forges highlight components as KDL;
+a file that already names `*.uze` is left as it is. Writing the extension itself (its manifest, a script or a
+program, its grants, its tests, and the consent it needs before it runs)
+is in [references/extension.md](references/extension.md): read it when
+the plugin carries one, and come back here for check, install and
+update. There is no
+`--instructions`: a plugin's own `AGENTS.md` reaches no project, and the
+flag is refused naming an `always_on` rule. Every generated file carries commented field
+documentation. A file the plugin ships is named `${PLUGIN_ROOT}/…` in
+`hooks.json`, `mcp.json`, a `SKILL.md` and an agent definition alike — UZE
+resolves it to the installed copy for every harness; anything else is
+reached through `PATH`.
+
+The scaffold is also a valid Agent Plugins 1.0 plugin, the open standard
+Codex, Copilot, Cursor and Kiro load unchanged: keep `plugin.json`'s
+`$schema`, only the standard's manifest fields at its top level (uze's
+own namespace is `extensions["sh.uze"]`), and in `mcp.json` its
+`$schema` and a `type` on every server. In `mcp.json` a bundled
+executable is `"command": "./bin/server"`, never `${PLUGIN_ROOT}` in
+`command`. `agents/`, `hooks.json`, `AGENTS.md`, `invoke:` and `harness:`
+are uze's own surfaces, which the standard's clients ignore.
+
+An agent is `agents/<name>.md`: frontmatter with `name` and `description`,
+and its prompt as the body. Every harness offers it as
+`<plugin>:<subdirectories>:<name>` — `agents/review/security.md` in plugin
+`flow` is `flow:review:security`, and the frontmatter `name` replaces only
+the last part — so a skill that dispatches it names it that way. `name`
+and `description` are what every harness reads the same way. A model, a tool
+list or a reasoning effort is one harness's vocabulary, so write it under
+`harness`, one entry per harness (`claude-code`, `codex`, `opencode`,
+`antigravity`), in that harness's own spelling:
+
+```yaml
+harness:
+  claude-code: { model: haiku, tools: [Read, Grep] }
+  opencode: { model: anthropic/claude-haiku-4-5 }
+```
+
+Each harness receives only its own entry; the block is never delivered. The
+same block works in a `SKILL.md`. The check below validates it for every
+harness: a value a harness would reject fails it, and a field a harness
+would not receive is named.
+
+### Rules: a plugin's conventions, per project
+
+A rule is a Markdown file directly under `rules/`, in the format a project's
+own `.agents/rules/` uses (the `uze:rules` Skill covers writing one:
+whether it is a rule at all, the trigger, the glob dialect, the wording).
+Patterns are matched against paths relative to the root of the project
+that receives the rule, so write them for that project, not for the plugin.
+
+Rules are the one capability that is never delivered machine-wide: a rule
+fires whenever a path matches, so delivered for every project it would
+govern code in projects that never asked for it. Instead `uze add
+<name>@<market>` in a project, and `uze install` there, copy each rule
+byte for byte into that project's checkout as
+`.agents/rules/<name>@<market>/<rule>.md`,
+registering that folder in `.agents/rules.json`, and the consumer commits
+the copies and the manifest beside `agents.lock`. Every harness reads
+them from there, Antigravity natively and the others through the rules
+engine, and a clone has them without running UZE. `uze add -m`
+reports them as delivered per project only. An update of the plugin is a
+reviewable diff of those files in the consumer's pull request, and a copy
+the consumer edited is reported as drift and never overwritten.
+
+An `always_on` rule is how a plugin speaks to every agent of a project that
+declares it: it reaches every session there, from its start, on every
+harness. It replaces the `AGENTS.md` a plugin once shipped, which
+`uze agent plugin check` now reports as not delivered: move that text into
+an `always_on` rule and delete the file. Keep it short, since every session
+in every declaring project pays for it. A rule that
+only matters under one path is a `glob` rule instead.
+
+`uze agent plugin check` validates every rule with the same validator as
+`uze agent rules check`, and fails on one no harness would deliver.
+
+## 3. Check, always before install
+
+```bash
+uze agent plugin check <the plugin's directory>
+uze agent market check <market directory>
+```
+
+This runs the same parsers an install runs, offline. A clean check is the
+licence to install; a finding names the file and the reason — fix the file,
+check again. Never skip it: the feedback an install would have surfaced
+arrives here, before anything is delivered. Its `Agent Plugins 1.0`
+section says whether the plugin is a valid plugin of the standard or names
+what keeps it from being one; that is advice, never a reason the check
+fails.
+
+Each extension the plugin carries is compiled with the rules the
+workspace hosts it with; what is wrong is said under `extension <id>` as
+`file:line:column: message (suggestion)`, and fails the check. Each
+surface's view is then bound to its source's fixture, and a field the view
+names that the fixture lacks is a warning placed in the view: add the
+field to the fixture, or stop naming it.
+What a view can draw, how to test an extension and how to point an editor
+at the language server are in
+[references/extension.md](references/extension.md).
+
+A warning does not fail the check, but it is still yours to resolve: each
+one names the file and the one change that clears it. A marketplace
+written before `plugin.json` owned the describing fields is brought over
+this way — `market check` warns on every `description` or `keywords` left
+on an entry and says whether to move it into the plugin's `plugin.json`,
+delete it because `plugin.json` already says the same, or keep one of two
+values that differ. Apply each, then check again until no warning is left.
+
+## 4. Install and iterate
+
+```bash
+uze add -m <name>@<market>
+```
+
+The first install is `add`. Because the marketplace was born linked,
+it reads the working tree — but the Store is idempotent by origin: a
+*repeated* `add` of a package it already holds hands back the stored
+bytes without re-reading the source. So the loop's re-delivery verb is
+**`update`**:
+
+```bash
+uze update <name> -m
+```
+
+Re-resolves the package from the linked marketplace, replaces the stored
+bytes, asks the trust question against the revision it replaces, and puts
+the old revision back if the new one cannot be delivered. Loop: edit →
+check → `update -m`.
+
+## Publishing
+
+The marketplace is a normal Git repository the moment it is born. When it
+is worth sharing, `git push` it to a host and `uze market add
+<url>` on another machine — nothing about the workflow changes.
+
+## Reference
+
+The person-facing guide to this loop is
+[uze.sh/docs/plugins/creating](https://uze.sh/docs/plugins/creating), and
+everything a plugin may contain (skills, agents, MCP servers, hooks,
+`${PLUGIN_ROOT}`) is specified at
+[uze.sh/docs/reference/plugin-format](https://uze.sh/docs/reference/plugin-format).
+Point the person there when they ask what a plugin can hold or how the
+loop works without an agent.

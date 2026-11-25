@@ -1,0 +1,348 @@
+---
+name: evm-rpc
+description: Query EVM JSON-RPC methods for transaction debugging and endpoint
+  triage, including eth_getTransactionReceipt and debug_traceTransaction. Use
+  when the user asks to inspect tx status, retrieve receipts, run tracers,
+  compare EVM vs Cosmos outcomes, choose between EVM RPC and Comet RPC
+  endpoints, or batch many Nibiru balance and contract reads into one eth_call
+  with Multicall3 and Nibiru precompiles.
+---
+
+# EVM RPC: Receipt and Trace Playbook
+
+Use this skill for EVM transaction debugging with JSON-RPC.
+
+For many reads in one request on Nibiru (ERC20 and bank balances, native
+NIBI, Wasm queries), read [nibiru-multicall.md](./nibiru-multicall.md).
+
+## Quick Start
+
+Set a hash and endpoint, then run receipt first and trace second.
+
+```bash
+evm_tx="0xYOUR_evm_tx"
+EVM_RPC="https://evm-rpc.archive.testnet-2.nibiru.fi"
+
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$evm_tx\"],\"id\":1}" \
+  "$EVM_RPC" | jq
+
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"debug_traceTransaction\",\"params\":[\"$evm_tx\",{\"tracer\":\"callTracer\"}],\"id\":1}" \
+  "$EVM_RPC" | jq
+```
+
+## Endpoint Map - Nibiru Examples
+
+Chain-agnostic rule: methods determine endpoint family.
+
+| Purpose | Example endpoint | Methods |
+|---|---|---|
+| EVM JSON-RPC (mainnet) | `https://evm-rpc.nibiru.fi` | `eth_*`, `debug_*`, `net_*`, `web3_*` |
+| EVM JSON-RPC archive (mainnet) | `https://evm-rpc.archive.nibiru.fi` | historical reads, tracing |
+| EVM JSON-RPC archive (testnet) | `https://evm-rpc.archive.testnet-2.nibiru.fi` | testnet tracing and historical reads |
+| Comet RPC archive (mainnet) | `https://rpc.archive.nibiru.fi` | `/block_results`, `/consensus_params` |
+| Comet RPC archive (testnet) | `https://rpc.archive.testnet-2.nibiru.fi` | `/block_results`, `/consensus_params` |
+
+Rules:
+- Run `eth_*` and `debug_*` only on EVM RPC endpoints.
+- Run `/block_results` and `/consensus_params` only on Comet RPC endpoints.
+- Prefer archive endpoints for old heights/hashes and tracing workflows.
+
+## Basic Queries (Health / Identity)
+
+### web3_clientVersion
+
+Queries the traceability info like the client name, version, Git commit, Go version,
+runtime architecture, and build tags.
+
+```bash
+curl -X POST https://evm-rpc.nibiru.fi \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "web3_clientVersion",
+    "params": [],
+    "id": 1
+  }'
+```
+
+The response looks like this: "Nibiru 2.6.0: Compiled at Git commit 3cf97e3468f8ce922c8760f839f8f336ca0c37f4 using Go go1.24.5, arch amd64, and build tags (netgo osusergo ledger static rocksdb pebbledb muslc)"
+
+### eth_chainId
+
+Queries the EIP-155 replay-protection chain id for the current ethereum blockchain (Nibiru).
+
+```bash
+curl -X POST https://evm-rpc.nibiru.fi \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "eth_chainId",
+    "params": [],
+    "id": 1
+  }'
+```
+
+## Transaction Triage Workflow
+
+Use this sequence to avoid false conclusions:
+
+1. `eth_getTransactionByHash`
+   - Confirms the tx exists and gives gas fields, type, input, and block refs.
+2. `eth_getTransactionReceipt`
+   - Authoritative EVM execution result.
+3. `debug_traceTransaction` (usually `callTracer`)
+   - Explains internal call path and where execution diverged.
+4. Optional cross-layer checks on Comet RPC
+   - `block_results?height=...`, `consensus_params?height=...`.
+
+## Concrete Command Cookbook
+
+### 1 - Get Transaction by Hash
+
+```bash
+evm_tx="0xYOUR_evm_tx"
+EVM_RPC="https://evm-rpc.archive.testnet-2.nibiru.fi"
+
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionByHash\",\"params\":[\"$evm_tx\"],\"id\":1}" \
+  "$EVM_RPC" | jq
+```
+
+### 2 - Get Transaction Receipt - Authoritative Status
+
+```bash
+evm_tx="0xYOUR_evm_tx"
+EVM_RPC="https://evm-rpc.archive.testnet-2.nibiru.fi"
+
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$evm_tx\"],\"id\":1}" \
+  "$EVM_RPC" | jq
+```
+
+Interpretation:
+- `result == null`: **Not mined** or rejected. Either the tx is still in the mempool, it was dropped, or it failed consensus/validation (e.g., bad nonce, invalid signature, insufficient funds for gas). It is not in any block.
+- `status == "0x1"`: **Full Success**. The transaction was executed successfully, and all state changes were applied.
+- `status == "0x0"`: **Execution Failure (Revert)**. The transaction was successfully mined and included in a block (consuming gas), but the EVM execution was reverted. No state changes occurred except for the gas fee deduction from the sender.
+- `blockNumber` present: Mined/included in a block.
+- `logs` present: Events emitted (decode by `address`, `topics`, `data`). Note that a reverted tx (`0x0`) will generally have an empty `logs` array, even if it attempted to emit them before reverting.
+
+### 3 - Run Debug Tracer - Call Tree View
+
+```bash
+evm_tx="0xYOUR_evm_tx"
+EVM_RPC="https://evm-rpc.archive.testnet-2.nibiru.fi"
+
+curl -s -X POST \
+  -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"debug_traceTransaction\",\"params\":[\"$evm_tx\",{\"tracer\":\"callTracer\"}],\"id\":1}" \
+  "$EVM_RPC" | jq
+```
+
+Interpretation:
+- Inspect top-level `from`, `to`, `gas`, `gasUsed`.
+- Walk `calls[]` for internal call chain and outputs.
+- Use trace to explain behavior; use receipt status to decide success/failure.
+
+### 4 - Cross-Layer Checks with Comet RPC
+
+```bash
+HEIGHT="5959008"
+TM_RPC="https://rpc.archive.testnet-2.nibiru.fi"
+
+curl -s "$TM_RPC/block_results?height=$HEIGHT" | jq
+curl -s "$TM_RPC/consensus_params?height=$HEIGHT" | jq
+```
+
+Use when EVM and Cosmos observations appear inconsistent.
+
+### 5 - Check Deployed Bytecode for an ABI Mismatch
+
+Use this when a transaction reverts very early, the trace only shows a top-level
+`execution reverted`, and the calldata targets a function that may not exist in
+the deployed runtime bytecode. This catches frontend ABI or artifact drift, such
+as calling a newly added function against an older deployed contract.
+
+The method is:
+
+1. Compute the 4-byte selector from the canonical function signature.
+2. Fetch runtime bytecode with `eth_getCode`.
+3. Search the runtime bytecode for the selector without the `0x` prefix.
+4. Compare against known selectors that should exist on the same contract.
+
+```bash
+CONTRACT_ADDR="0xCONTRACT_ADDR"
+FUNCTION_SIG="claimReferrerRewardsToEvm(uint256[])"
+EVM_RPC="https://evm-rpc.archive.nibiru.fi"
+BLOCK_TAG="latest" # or a hex block number like "0x273e1fa"
+
+bun - <<'TS'
+import { id } from "ethers"
+
+const contractAddr = process.env.CONTRACT_ADDR
+const functionSig = process.env.FUNCTION_SIG
+const rpc = process.env.EVM_RPC
+const blockTag = process.env.BLOCK_TAG ?? "latest"
+
+if (!contractAddr || !functionSig || !rpc) {
+  throw new Error("set CONTRACT_ADDR, FUNCTION_SIG, and EVM_RPC")
+}
+
+const selector = id(functionSig).slice(0, 10)
+const resp = await fetch(rpc, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    method: "eth_getCode",
+    params: [contractAddr, blockTag],
+    id: 1,
+  }),
+})
+const json = await resp.json()
+if (json.error) {
+  throw new Error(JSON.stringify(json.error))
+}
+
+const code = String(json.result ?? "0x").toLowerCase()
+const selectorNoPrefix = selector.slice(2).toLowerCase()
+console.log({
+  contractAddr,
+  blockTag,
+  functionSig,
+  selector,
+  byteLength: Math.max(0, (code.length - 2) / 2),
+  selectorPresent: code.includes(selectorNoPrefix),
+})
+TS
+```
+
+To compare multiple selectors, use the same runtime bytecode and check a list.
+This is useful when one new selector is missing but older selectors are present.
+
+```bash
+CONTRACT_ADDR="0xCONTRACT_ADDR"
+EVM_RPC="https://evm-rpc.archive.nibiru.fi"
+BLOCK_TAG="latest"
+
+bun - <<'TS'
+import { id } from "ethers"
+
+const contractAddr = process.env.CONTRACT_ADDR
+const rpc = process.env.EVM_RPC
+const blockTag = process.env.BLOCK_TAG ?? "latest"
+const signatures = [
+  "claimReferrerRewardsToEvm(uint256[])",
+  "executeSimpleFunctions(bytes)",
+  "getDenomOfCollateralIndex(uint256)",
+]
+
+if (!contractAddr || !rpc) {
+  throw new Error("set CONTRACT_ADDR and EVM_RPC")
+}
+
+const resp = await fetch(rpc, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    method: "eth_getCode",
+    params: [contractAddr, blockTag],
+    id: 1,
+  }),
+})
+const json = await resp.json()
+if (json.error) {
+  throw new Error(JSON.stringify(json.error))
+}
+
+const code = String(json.result ?? "0x").toLowerCase()
+for (const sig of signatures) {
+  const selector = id(sig).slice(0, 10)
+  console.log({
+    sig,
+    selector,
+    present: code.includes(selector.slice(2).toLowerCase()),
+  })
+}
+TS
+```
+
+Interpretation:
+
+- `selectorPresent: true`: The runtime bytecode likely has a dispatcher entry
+  for that function. Continue debugging arguments, require checks, internal
+  calls, and traces.
+- `selectorPresent: false` while older selectors are present: The deployed
+  contract likely does not implement the ABI function being called. Update the
+  address, deploy the newer contract, or call an older available function.
+- Very low `gasUsed` with `status: "0x0"` and a missing selector often means
+  the call hit the dispatcher fallback/revert before meaningful contract logic.
+- For proxies, minimal proxies, diamonds, or custom fallback dispatchers, the
+  selector may be absent from the proxy runtime bytecode. Check the implementation
+  address or facet bytecode instead.
+
+## Receipt and Trace Rules of Thumb
+
+- **Receipt status is the authoritative EVM truth** for success vs. failure.
+- **Mined does not mean successful**: A transaction can be in a block and consume gas (`0x0`), but have zero effect on state. Always check the `status` field.
+- **Null receipt implies non-existence**: If `eth_getTransactionReceipt` returns `null`, the transaction was never mined. This is usually due to a consensus/mempool error (invalid signature, wrong chain ID, bad nonce, or insufficient funds to cover the max gas cost).
+- **Consensus failures don't have receipts**: Errors like "insufficient funds" or "bad nonce" prevent a transaction from even entering a block, so no EVM status is ever generated.
+- **A non-empty `logs` array** (at the receipt level) generally only exists for successful transactions (`0x1`).
+- **Gas consumption**: Even in failure (`0x0`), the `gasUsed` is still charged to the sender up to the point of reversion.
+- **Gas Comparison**: Compare receipt `gasUsed` with the `gas` (limit) from `eth_getTransactionByHash` to see if the transaction ran out of gas.
+- **Tracing Failures**: If tracing fails, verify the provider supports the `debug` namespace and retry on an archive endpoint.
+
+## Endpoint Selection Guide
+
+Choose endpoint by method and historical depth:
+
+- Latest, simple reads (`eth_blockNumber`, recent receipt):
+  - Standard EVM RPC is usually enough.
+- Historical receipts, old block state, trace/debug:
+  - Prefer archive EVM RPC.
+- Tendermint/Comet block metadata and app-level event correlation:
+  - Use Comet RPC endpoints.
+
+## Common Pitfalls
+
+- Calling Comet paths on EVM RPC host (or the reverse).
+- Using the wrong network endpoint for a valid tx hash.
+- Assuming `result == null` always means pending; it may be wrong chain/provider.
+- Treating trace output alone as final status without reading receipt.
+- Ignoring timeout/retry behavior for freshly broadcast transactions.
+
+## Reusable Triage Template
+
+```bash
+evm_tx="0xYOUR_evm_tx"
+EVM_RPC="https://evm-rpc.archive.testnet-2.nibiru.fi"
+TM_RPC="https://rpc.archive.testnet-2.nibiru.fi"
+
+# 1) tx details
+curl -s -X POST -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionByHash\",\"params\":[\"$evm_tx\"],\"id\":1}" \
+  "$EVM_RPC" | jq
+
+# 2) receipt status
+curl -s -X POST -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$evm_tx\"],\"id\":1}" \
+  "$EVM_RPC" | jq
+
+# 3) call trace
+curl -s -X POST -H "Content-Type: application/json" \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"debug_traceTransaction\",\"params\":[\"$evm_tx\",{\"tracer\":\"callTracer\"}],\"id\":1}" \
+  "$EVM_RPC" | jq
+```
+
+## Additional Resources
+
+- Zero-gas debug walkthrough:
+  `~/boku/epics/26-02-zero-gas/26-02-10-zero-gas-debug.md`
+- Existing endpoint conventions:
+  `~/boku/nibi/cook/src/core.ts`

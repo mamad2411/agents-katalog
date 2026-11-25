@@ -1,0 +1,470 @@
+---
+name: leitura-analitica-severino
+description: >
+  Use esta skill sempre que o usuário pedir um "fichamento", "leitura
+  analítica", "ficha de leitura", "resumo crítico de texto acadêmico",
+  "análise de texto" filosófico/científico, ou pedir ajuda para estudar,
+  resumir ou tirar notas estruturadas de um texto acadêmico — mesmo sem
+  citar "Severino" ou "fichamento" (ex.: "resume esse capítulo de forma
+  acadêmica", "preciso estudar esse texto pra prova"). Aplica o método de
+  leitura analítica de Antônio Joaquim Severino (Metodologia do Trabalho
+  Científico) e sempre entrega um arquivo .md para download. Diferente de
+  tutor-de-texto (sessão interativa que reorganiza o conteúdo) e
+  leitura-guiada (acompanhamento sequencial, sem método formal de
+  análise): esta skill entrega um documento de análise estruturado. Se o
+  pedido for só "me ajuda a entender esse artigo", sem indicar documento
+  formal, considere tutor-de-texto ou leitura-guiada antes. Se o texto
+  não estiver digitalizado, use leitura-livro-didatico-sem-digitalizacao.
+---
+
+# Leitura Analítica e Fichamento — Método Severino
+
+Esta skill guia a leitura analítica de um texto acadêmico e a produção de um
+fichamento, seguindo o roteiro proposto por Antônio Joaquim Severino em
+*Metodologia do Trabalho Científico*. O processo interno é sempre o mesmo
+(as cinco etapas abaixo); o que muda é o **formato de saída**, que o usuário
+escolhe.
+
+**Referência bibliográfica do método (ABNT):**
+SEVERINO, Antônio Joaquim. *Metodologia do trabalho científico*. 24. ed.
+rev. e ampl. São Paulo: Cortez, 2017.
+
+## Fluxo de trabalho
+
+1. **Obtenha o texto.** Se o usuário não colou ou anexou o texto, peça que
+   envie (cole o trecho, anexe um PDF/DOCX ou indique o link). Não invente
+   conteúdo de um texto que não foi fornecido. Se o texto não estiver em
+   português, pergunte o nível de compreensão do usuário no idioma original
+   (nada, muito pouco, pouco, razoável, bom, ótimo) e ajuste a densidade das
+   paráfrases no fichamento a esse nível — nunca produza uma tradução
+   completa do texto (ver "Cuidados").
+2. **Delimite a unidade de leitura.** Se o texto for longo (mais que um
+   capítulo curto), pergunte se o usuário quer fichar o texto inteiro ou uma
+   unidade específica (um capítulo, uma seção, um conjunto de parágrafos).
+   Um fichamento por unidades menores tende a ser mais fiel ao método.
+3. **Pergunte o formato de saída desejado** (se o usuário não tiver
+   especificado), oferecendo as opções da seção "Tipos de fichamento"
+   abaixo. Na dúvida ou se o usuário pedir "um fichamento" sem mais detalhes,
+   use o **fichamento analítico integral** como padrão.
+4. **Pergunte se o usuário também quer um mapa conceitual** (arquivo .txt
+   no formato de importação do CmapTools) como entregável extra — ver seção
+   "Mapa conceitual (formato CmapTools)" abaixo. É opcional e independente
+   do tipo de fichamento escolhido.
+5. **Se o formato escolhido for resenha completa (e) ou analítico integral
+   (f)**, pergunte também qual **modo de condução** o usuário prefere para
+   as etapas 3, 4 e 5 — diálogo ou sugestões no documento —
+   ver seção "Modo de condução das etapas 3, 4 e 5" abaixo. O documento
+   final é sempre o documento completo com as cinco etapas, independente do
+   modo escolhido. Os demais formatos (bibliográfico, citações, resumo
+   indicativo, resumo informativo) pulam essa pergunta.
+   Depois de definidos unidade, formato e modo, dê uma única vez o aviso
+   sobre limites de uso descrito em "Pausa e retomada".
+6. **Execute as etapas 1 e 2 (textual e temática) sempre internamente**,
+   independentemente do formato de saída — são a base de compreensão do
+   texto que sustenta qualquer formato.
+7. **Conduza as etapas 3, 4 e 5 conforme o modo escolhido** no passo 5,
+   quando aplicável.
+8. **Gere o arquivo .md** no formato escolhido, incorporando o que foi
+   produzido em todas as etapas conduzidas.
+9. **Se solicitado, gere também o arquivo .txt do mapa conceitual**, como
+   arquivo separado do .md.
+10. **Entregue sempre como arquivo(s) para download** (nunca só como texto
+    na conversa) — use as ferramentas de criação de arquivo e disponibilize
+    o(s) arquivo(s) gerado(s). O formato é sempre `.md` (e `.txt` para o
+    mapa conceitual, se pedido): não ofereça nem gere Word (.docx), PDF ou
+    Google Docs, mesmo que o ambiente sugira. Se não for possível criar os
+    arquivos (a criação de arquivos pode estar desativada no ambiente),
+    entregue o conteúdo completo de cada um em blocos de código separados
+    (`.md` e, se pedido, `.txt` do mapa conceitual) e peça que a pessoa os
+    salve; vale também para os fichamentos parciais.
+
+## As cinco etapas da leitura analítica
+
+### 1. Análise textual
+Primeiro contato com o texto: uma leitura atenta, mas ainda corrida, sem
+buscar esgotar a compreensão. Nesta etapa, levante e registre:
+- **Dados sobre o autor** (formação, época, escola de pensamento, obra em
+  que o texto se insere).
+- **Vocabulário e conceitos-chave** que precisam de esclarecimento para a
+  compreensão do texto. Esteja atento ao vocabulário técnico e específico
+  da área de conhecimento do texto e considere que a pessoa é sempre
+  uma iniciante no tema.
+- **Referências** a fatos históricos, outros autores ou doutrinas
+  mencionados que exigem contextualização.
+
+**Técnica auxiliar para textos longos ou muito técnicos:** quando útil,
+monte um glossário dos termos técnicos ou menos comuns do texto (formato
+`termo; significado conciso`, pelo menos vinte termos se o texto permitir)
+e uma lista da ideia central de cada parágrafo (formato `número; ideia
+central em texto conciso`). Como modelos de linguagem costumam errar a
+contagem de parágrafos, se o usuário souber o total aproximado, peça essa
+informação antes de gerar a lista (ex.: "considere que o texto tem
+aproximadamente 50 parágrafos"). Inclua esses materiais como anexo do
+fichamento quando forem produzidos.
+
+### 2. Análise temática
+Busca entender **do que o texto trata e o que o autor afirma**, portanto registre:
+- Tema central da unidade de leitura.
+- Problema que o autor está respondendo.
+- Tese defendida.
+- Argumentos principais: aqueles que demonstram diretamente que a tese é
+  verdadeira.
+- Argumentos secundários: aqueles que ajudam a compreender o problema, a
+  solução, e explicam os argumentos principais, mas que poderiam não estar
+  no texto.
+- Conclusão a que o autor chega.
+
+As etapas 3, 4 e 5 abaixo dependem do **modo de condução** escolhido pelo
+usuário (ver seção específica mais adiante) — o conteúdo pode vir de uma
+entrevista com o usuário ou ser apresentado como sugestões para o próprio
+usuário desenvolver.
+
+### 3. Análise interpretativa
+Vai além do que está explícito no texto — é a chamada **crítica externa**:
+o texto avaliado a partir de fora dele mesmo. Devem ser registrados:
+- Pressupostos teóricos e filosóficos que o autor assume: princípios que
+  podemos inferir do texto, mas que não estão explicitados.
+- Com que hipóteses ou doutrinas o autor se identifica, e a quais se
+  contrapõe.
+- Em que debate ou tradição de pensamento o texto se situa (história das
+  ideias/da área de pesquisa em questão).
+- Comparação com posições afins ou opostas de outros autores/correntes
+  (quando pertinente e sem inventar atribuições).
+
+### 4. Problematização
+Levantamento de questionamentos próprios sobre o texto, devem ser registrados:
+- Pontos que ficaram em aberto, lacunas ou tensões internas.
+- Perguntas que o texto suscita e que mereceriam mais discussão.
+- Que novos problemas de pesquisa a leitura desse texto faz perceber.
+- Não confundir com a "determinação do problema" da etapa 2 — aqui o
+  questionamento é da pessoa sobre o texto, não do autor sobre o mundo.
+
+### 5. Síntese pessoal
+Fechamento crítico do processo. A avaliação de coerência interna é a
+**crítica interna**: o texto avaliado por seus próprios critérios. Devem
+ser registrados:
+- **Coerência interna** (crítica interna), com perguntas concretas:
+  - O problema da unidade foi bem formulado, ou há falhas na formulação?
+  - A tese apresentada é, de fato, uma solução para o problema proposto?
+  - Os argumentos demonstram a solução defendida?
+  - Os argumentos são válidos e as informações apresentadas são
+    verdadeiras ou, no mínimo, verificáveis?
+- **Originalidade e contribuição**: o texto traz algo além da retomada de
+  ideias de outros autores?
+- **Posição pessoal** diante do que foi lido.
+
+## Modo de condução das etapas 3, 4 e 5
+
+As etapas de análise interpretativa, problematização e síntese pessoal
+dependem do posicionamento da própria pessoa — não são algo que o Claude
+deva simplesmente inventar em nome do usuário. Quando o formato de saída
+for resenha completa (e) ou analítico integral (f), pergunte ao usuário
+qual dos dois modos prefere. Em qualquer um dos dois, **o documento final
+entregue é sempre o documento completo, com as cinco etapas** — o que muda
+entre os modos é apenas como o conteúdo das etapas 3, 4 e 5 é obtido, nunca
+a estrutura do arquivo final.
+
+### Modo 1 — Diálogo (entrevista)
+O Claude conduz uma conversa com o usuário para ajudá-lo a construir sua
+própria análise, apoiando com sugestões — mas registrando no fichamento a
+posição elaborada pelo usuário, não uma posição fabricada pelo Claude.
+Nessa conversa, o Claude pode:
+- sugerir possíveis pressupostos teóricos do autor para o usuário avaliar;
+- apontar o estado da arte do debate externo ao texto (outras posições na
+  literatura sobre o tema, pesquisando quando necessário);
+- sugerir autores ou correntes para comparação;
+- propor questionamentos que poderiam alimentar a problematização;
+- apontar possíveis "furos" ou tensões na coerência interna do argumento,
+  para o usuário confirmar, refutar ou completar;
+- levantar pontos de originalidade a considerar;
+- sugerir itens/eixos para o posicionamento pessoal (concordância,
+  discordância, aplicação prática, limites do argumento, etc.).
+O fichamento final registra as respostas e escolhas do usuário, não as
+sugestões do Claude tomadas como se fossem a opinião dele.
+
+### Modo 2 — Sugestões no documento
+Em vez de dialogar, o Claude conclui sozinho as etapas 1 e 2 (textual e
+temática) e, no próprio arquivo .md, lista as sugestões que orientariam a
+sequência reflexiva das etapas 3, 4 e 5 — nos mesmos eixos do Modo 1
+(pressupostos, estado da arte, autores para comparação, questionamentos,
+possíveis furos na coerência interna, pontos de originalidade, sugestões de
+posicionamento pessoal) — deixando claro que são sugestões de orientação, e
+não a análise pronta, para o usuário desenvolver por conta própria depois.
+
+Se o usuário não indicar preferência, pergunte diretamente; não presuma um
+modo por padrão, já que mudam bastante o resultado final.
+
+### Seção "Orientações para resenha/resumo crítico" — sempre presente
+
+Independentemente do modo escolhido, o arquivo .md final de uma resenha
+completa ou de um fichamento analítico integral deve manter uma seção
+própria chamada **"Orientações para resenha/resumo crítico"**, com as
+sugestões nos eixos listados acima (pressupostos, estado da arte do debate,
+autores para comparação, questionamentos, possíveis furos na coerência
+interna, pontos de originalidade, eixos de posicionamento pessoal).
+
+
+- **No Modo 1 (diálogo):** essa seção registra as sugestões que o Claude
+  ofereceu durante a conversa, como referência — mantida junto (não em
+  lugar) da posição final que o usuário efetivamente construiu nas etapas
+  3, 4 e 5.
+- **No Modo 2 (sugestões no documento):** essa seção é o próprio conteúdo
+  gerado pelo Claude, com espaço logo abaixo de cada item para o usuário
+  preencher depois com sua posição.
+
+Essa seção nunca substitui as etapas 3, 4 e 5 do template — ela é
+complementar, um registro do apoio oferecido à pessoa.
+
+## Pausa e retomada
+
+O leitor pode precisar parar a qualquer momento — por uma urgência, por
+cansaço ou por qualquer outro motivo — sem ter chegado ao fim da sessão.
+A pausa nunca é falha, e nenhuma pergunta em andamento impede de pausar.
+
+**Como reconhecer o pedido.** Pedido explícito ("quero pausar", "continuo
+depois") ou sinal de urgência sem a palavra "pausa" ("preciso sair agora",
+"surgiu um imprevisto", "tenho que ir"). Na dúvida, trate como pausa.
+
+**O que fazer na hora.**
+- Gere imediatamente o fichamento parcial (.md), sem pedir confirmação, sem
+  fazer mais perguntas e sem insistir em terminar o ponto em andamento.
+  Responda com uma ou duas frases acolhedoras e entregue o arquivo.
+- Use o mesmo template do relatório final, preenchido só com o que de fato
+  aconteceu. Inclua o formato escolhido, se há mapa conceitual, o modo de
+  condução e a unidade delimitada, o que já foi produzido nas etapas 1 e 2 e
+  as respostas do usuário nas etapas 3, 4 e 5 já conduzidas, preservando a
+  voz dele. O que não foi alcançado fica marcado como "não iniciado" — nunca
+  preenchido por antecipação nem inventado.
+- Termine o nome do arquivo em `_PARCIAL.md` e coloque no topo o bloco
+  "Sessão pausada", com: (1) a skill usada; (2) o ponto exato em que parou;
+  (3) a pergunta pendente, copiada literalmente, se houver; (4) o que falta
+  percorrer; (5) o contexto combinado na abertura (motivo, nível, escopo e
+  escolhas de método); (6) como retomar (abaixo).
+
+**Como retomar (diga à pessoa ao entregar o arquivo).** A retomada pode
+acontecer horas ou dias depois, em outra conversa, onde o Claude não terá
+memória desta sessão. Para retomar: abrir uma nova conversa, pedir esta
+mesma skill e anexar o relatório parcial e o texto-fonte.
+
+**Ao retomar.** Se a pessoa anexar um relatório parcial (ou disser que está
+retomando uma sessão):
+- Se a pessoa disser que quer retomar mas **não anexou** o relatório
+  parcial, peça-o antes de qualquer outra coisa ("para continuar de onde
+  paramos, anexe aqui o arquivo `_PARCIAL.md` da sessão anterior"). Não
+  prossiga de memória nem tente adivinhar onde parou. Se ela não tiver
+  mais o arquivo, explique que não é possível retomar com fidelidade e
+  ofereça começar do início, ou de um ponto que ela mesma indique.
+- Leia o bloco "Sessão pausada" e **não refaça** a entrevista, a orientação
+  inicial nem a escolha de método; confirme em uma linha o que entendeu do
+  contexto e do escopo.
+- Se o texto-fonte não estiver anexado de novo, peça-o antes de continuar;
+  não retome de memória nem reconstrua o texto a partir do que o parcial
+  registra. As etapas 1 e 2 podem ser refeitas internamente a partir do
+  texto.
+- Recapitule em duas ou três linhas em que etapa da análise parou. Em
+  seguida, repita a pergunta pendente e siga.
+- Trate o relatório parcial como registro do que a pessoa disse e fez, não
+  como fonte sobre o conteúdo do texto, que vem só do texto-fonte.
+- Ao final, entregue um único relatório final cumulativo (sessão anterior
+  + atual), preservando literalmente o que a pessoa registrou no parcial.
+  Se ela precisar pausar de novo, repita o procedimento.
+
+**Salvamento intermediário (sessões longas).** Para que a pessoa não perca o
+trabalho se a sessão for interrompida de repente (por limite de uso, queda
+de conexão ou imprevisto), gere por conta própria, sem perguntar, um
+relatório parcial de segurança e anexe-o à mensagem que já termina com a sua
+pergunta ao leitor, com uma linha de aviso (por exemplo: "segue um relatório
+parcial de segurança; guarde o arquivo e vamos seguindo"). Aplique no Modo 1
+(diálogo): gere uma vez ao concluir a etapa 3. No Modo 2 e nos formatos sem
+diálogo não se aplica, pois o documento é gerado de uma vez. Não abra um
+turno extra nem espere resposta. A pergunta em andamento pode ficar em
+aberto: ela vai registrada no bloco "Sessão pausada". Se a pessoa disser que
+não quer esses arquivos, pare de gerá-los. Não gere em sessões curtas.
+
+**Aviso sobre limites de uso (uma única vez, logo após definir unidade de
+leitura, formato e modo de condução).** Diga em uma ou duas frases que, em
+planos gratuitos de IA, o chat pode pausar por limite de uso no meio de uma
+sessão longa; que se isso acontecer a pessoa pode voltar depois e retomar
+com o relatório parcial (anexando-o junto com o texto-fonte); e que, se
+perceber que está perto do limite, pode pedir o relatório parcial antes.
+Acrescente que, em sessões longas, você entregará, sem interromper, um
+relatório parcial de segurança no meio do percurso, para ela guardar. Não
+cite números nem nomes de planos (variam e mudam) e não repita o aviso
+depois. Se a pessoa disser que está perto do limite, gere o relatório
+parcial na hora.
+
+## Tipos de fichamento (formatos de saída)
+
+Ofereça estas opções ao usuário quando o formato não estiver claro:
+
+### a) Fichamento bibliográfico
+Registro enxuto: referência completa (ABNT), tema/objetivo da obra e
+estrutura geral (capítulos/seções). Bom para catalogar um texto rapidamente.
+
+### b) Fichamento de citações (transcrição)
+Trechos literais mais relevantes do texto, cada um com a página de origem,
+organizados na ordem em que aparecem. Use aspas e nunca reproduza passagens
+muito longas — no máximo frases curtas por trecho selecionado.
+
+### c) Resumo indicativo (NBR 6028)
+Destaca apenas os pontos principais do texto (assunto, problema e tese),
+se possível em um único parágrafo, sem apresentar dados qualitativos ou
+quantitativos nem resultados detalhados. Não dispensa a consulta ao texto
+original — serve para a pessoa decidir se vale a pena lê-lo na íntegra.
+Baseia-se nas etapas 1 e 2.
+
+### d) Resumo informativo (NBR 6028)
+Mais completo que o indicativo: em até 500 palavras, apresenta finalidade,
+metodologia (quando aplicável), resultados e conclusões do texto, de forma
+que possa, em algum grau, dispensar a consulta ao original. Ainda assim,
+sem opinião da pessoa e sem citações diretas. Baseia-se nas etapas 1 e 2.
+
+### e) Resenha completa / Resumo crítico (NBR 6028)
+Resumo do conteúdo **mais** avaliação crítica da pessoa — equivale, na
+prática, a apresentar as etapas 2, 3 e 5 de forma corrida e em prosa. Por
+depender da manifestação da pessoa (etapas 3 a 5), só deve ser produzido
+depois de conduzir o modo de condução escolhido (ver seção acima) — não é
+possível gerar um resumo crítico legítimo sem essa etapa de posicionamento.
+
+### f) Fichamento analítico integral (padrão)
+Apresenta as cinco etapas de forma explícita e separada, uma a uma, com a
+referência bibliográfica completa no topo. É o formato mais completo e o
+que melhor documenta o processo de leitura analítica de Severino.
+
+## Mapa conceitual (formato CmapTools)
+
+Entregável opcional, independente do tipo de fichamento escolhido: um
+arquivo `.txt` com proposições no formato de importação de mapas conceituais
+do CmapTools, cobrindo os principais termos/conceitos do texto.
+
+**Formato:** cada linha é uma proposição com três campos separados por
+tabulação (`\t`), sem cabeçalho:
+
+```
+CONCEITO 1<TAB>frase de ligação/verbo<TAB>CONCEITO 2
+```
+
+Exemplo (ilustrativo, não literal de nenhum texto específico):
+```
+LEITURA ANALÍTICA	organiza-se em	CINCO ETAPAS
+ANÁLISE TEXTUAL	precede	ANÁLISE TEMÁTICA
+PROBLEMATIZAÇÃO	depende de	POSICIONAMENTO DA PESSOA
+```
+
+**Como construir:**
+- Extraia os conceitos principais do texto a partir do que já foi levantado
+  nas etapas 1 e 2 (vocabulário-chave, tema, problema, tese, argumentos).
+- Escreva os conceitos como substantivos ou expressões nominais curtas
+  (não frases completas); por convenção do CmapTools, é comum usar
+  caixa alta, mas isso é apenas estético — mantenha a formatação legível.
+- A frase de ligação deve ser curta (um verbo ou expressão verbal) e
+  expressar a relação real entre os dois conceitos, em suas próprias
+  palavras — nunca copie frases inteiras do texto original.
+- Cubra as relações mais importantes da unidade de leitura; para um
+  capítulo ou artigo típico, algo entre 15 e 30 proposições costuma ser
+  suficiente para capturar a estrutura conceitual sem sobrecarregar o mapa.
+- Evite conceitos redundantes ou triplas que apenas repitam a mesma
+  relação com sinônimos.
+- **Use sempre o mesmo rótulo para o mesmo conceito** em todas as
+  proposições (mesma grafia, mesma forma) — variações como "alfabetização"
+  em uma linha e "alfabetização de adultos" em outra criam dois nós
+  diferentes onde deveria haver um só, fragmentando o mapa sem necessidade.
+- **Antes de salvar, verifique a conectividade do grafo**: organize as
+  proposições em torno de 3 a 5 conceitos-eixo (tema central, tese,
+  autor, problema), e confirme que todo conceito tem pelo menos um
+  caminho até algum desses eixos. Um mapa conceitual deve formar um
+  único grafo conectado — evite blocos temáticos que fiquem isolados uns
+  dos outros (ex.: uma cadeia de comparações com outros autores que não
+  se liga a nenhum conceito central).
+- Salve como arquivo `.txt` separado (não misture com o `.md` do
+  fichamento), com um nome como `mapa-conceitual-[título].txt`.
+
+## Template do arquivo .md
+
+Adapte conforme o tipo de fichamento escolhido, mas sempre inclua a
+referência no topo:
+
+```markdown
+# Fichamento — [Título do texto]
+
+**Referência (ABNT):** SOBRENOME, Nome. *Título*. Edição. Cidade: Editora, Ano.
+**Unidade de leitura:** [capítulo/seção/páginas fichadas]
+
+## 1. Análise textual
+- Autor:
+- Vocabulário/conceitos-chave:
+- Referências a esclarecer:
+
+## 2. Análise temática
+- Tema:
+- Problema:
+- Tese:
+- Argumentos principais:
+- Argumentos secundários:
+- Conclusão:
+
+## 3. Análise interpretativa (crítica externa)
+- Pressupostos do texto:
+- Hipóteses/doutrinas com que se identifica ou a que se contrapõe:
+- Situação no debate/tradição de pensamento:
+- Comparações com outras(os) autoras(es) (se houver):
+
+## 4. Problematização
+- Questionamentos levantados:
+- Novos problemas percebidos a partir da leitura:
+
+## 5. Síntese pessoal (crítica interna + avaliação)
+- O problema foi bem formulado?
+- A tese é, de fato, solução do problema proposto?
+- Os argumentos demonstram a solução?
+- Os argumentos são válidos e as informações verificáveis?
+- Originalidade e contribuição:
+- Posição pessoal:
+
+## Orientações para resenha/resumo crítico
+*(apenas nos formatos e/f — resenha completa e analítico integral)*
+- Pressupostos possíveis para avaliar:
+- Estado da arte / debate externo ao texto:
+- Autores ou correntes para comparação:
+- Questionamentos sugeridos:
+- Possíveis furos na coerência interna:
+- Pontos de originalidade a considerar:
+- Eixos sugeridos para posicionamento pessoal:
+```
+
+Para o formato (a), (b), (c) e (d), use apenas as seções correspondentes
+do template (bibliográfico → só a referência e a estrutura da obra;
+citações → lista de trechos com página; resumo indicativo → assunto,
+problema e tese em texto conciso; resumo informativo → finalidade,
+metodologia, resultados e conclusões), mas ainda assim baseie o conteúdo no
+que foi levantado nas etapas 1 e 2. A seção "Orientações para
+resenha/resumo crítico" não entra nesses formatos.
+
+Para os formatos (e) e (f), preencha as seções 3, 4 e 5 e a seção de
+Orientações conforme o modo de condução escolhido — o documento gerado
+segue sempre a estrutura completa das cinco etapas, mudando apenas a
+origem do conteúdo:
+- **Modo 1 (diálogo):** as seções 3, 4 e 5 registram as respostas e
+  posições que o usuário deu durante a entrevista; a seção de Orientações
+  registra as sugestões que o Claude ofereceu ao longo da conversa, como
+  referência de apoio.
+- **Modo 2 (sugestões):** a seção de Orientações é o conteúdo principal
+  gerado pelo Claude, com espaço logo abaixo de cada item para o usuário
+  preencher; as seções 3, 4 e 5 ficam como campos em aberto para o usuário
+  desenvolver depois, a partir dessas orientações.
+
+## Cuidados
+
+- Nunca reproduza passagens longas do texto original (respeite limites de
+  citação — poucas palavras por trecho, uma citação por fonte quando
+  possível). Prefira parafrasear.
+- Não invente dados biográficos do autor ou conteúdo que não esteja no
+  texto fornecido; se não souber, deixe o campo em aberto, pesquise antes
+  de preencher, ou registre sua dúvida ou lacuna no relatório final.
+- Sempre confirme o nome do arquivo/título antes de gerar, se o usuário não
+  tiver indicado um.
+- Se o texto original não estiver em português, nunca produza uma tradução
+  completa dele como parte do fichamento — isso reproduziria uma obra
+  protegida por direitos autorais. O apoio ao usuário vem da densidade da
+  paráfrase em português (ajustada ao nível de compreensão declarado), não
+  de uma tradução à parte.

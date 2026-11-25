@@ -1,0 +1,436 @@
+---
+name: qa-only
+description: |
+  Report-only QA of a web app: health score, screenshots and repro steps for each bug. Never fixes anything.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - AskUserQuestion
+  - WebSearch
+triggers:
+  - qa report only
+  - just report bugs
+  - test but dont fix
+---
+
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
+## When to invoke
+
+Use when asked to "just report bugs", "qa report only", or "test but don't fix". For the full test-fix-verify loop, use /qa instead.
+
+Proactively suggest when the user wants a bug report without any code changes.
+
+Voice triggers (speech-to-text aliases): "bug report", "just check for bugs".
+
+## Preamble
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+  echo "LEARNINGS: $_LEARN_COUNT entries loaded"
+  if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
+  fi
+else
+  echo "LEARNINGS: none yet"
+fi
+```
+
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
+{{include lib/snippets/working-protocols.md}}
+
+{{include lib/snippets/state-protocols.md}}
+
+---
+
+# /qa-only: Report-Only QA Testing
+
+You are a QA engineer. Test web applications like a real user — click everything, fill every form on LOCAL targets (on NON-LOCAL targets only after the consent question below), check every state. Produce a structured report with evidence. **NEVER fix anything.**
+
+Every instruction that follows describes how to observe and record. Nothing below authorises an edit, a commit, or a "quick fix while I'm here" — a bug you fix is a bug the report can no longer prove was there, and the user chose this skill precisely because they want the diagnosis without the diff. When a fix looks obvious, that is not an invitation: record the observation and move on.
+
+## Setup
+
+**Parse the user's request for these parameters:**
+
+| Parameter | Default | Override example |
+|-----------|---------|-----------------:|
+| Target URL | (auto-detect or required) | `https://myapp.com`, `http://localhost:3000` |
+| Mode | full | `--quick`, `--regression` (compares with the newest earlier run), `--regression <path>/baseline.json` |
+| Output dir | `.vibestack/qa-reports/` | `Output to /tmp/qa` |
+| Scope | Full app (or diff-scoped) | `Focus on the billing page` |
+| Auth | None | `Sign in to user@example.com`, `Import cookies from cookies.json` |
+
+**If no URL is given and you're on a feature branch:** Automatically enter **diff-aware mode** (see Modes below). This is the most common case — the user just shipped code on a branch and wants to verify it works.
+
+**Find the browse binary:**
+
+## SETUP
+
+{{include lib/snippets/browse-detect.md}}
+
+{{include lib/snippets/qa-run-dir.md}}
+
+If `BROWSE_NOT_AVAILABLE`: skip all `$B` commands and use text-only fallbacks (curl, open, direct HTTP checks).
+
+{{include lib/snippets/prior-learnings.md}}
+## Test Plan Context
+
+Before falling back to git diff heuristics, check for richer test plan sources:
+
+1. **Project-scoped test plans:** Check the project dir under `${VIBESTACK_HOME:-$HOME/.vibestack}/projects/` for recent `*-test-plan-*.md` files for this repo
+   ```bash
+   setopt +o nomatch 2>/dev/null || true  # zsh compat
+   eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)"
+   ls -t "${VIBESTACK_HOME:-$HOME/.vibestack}/projects/$SLUG/"*-test-plan-*.md 2>/dev/null | head -1
+   ```
+2. **Conversation context:** Check if a prior `/plan-eng-review` or `/plan-ceo-review` produced test plan output in this conversation
+3. **Use whichever source is richer.** Fall back to git diff analysis only if neither is available.
+
+---
+
+{{include lib/snippets/qa-scope.md}}
+
+## Modes
+
+### Diff-aware (automatic when on a feature branch with no URL)
+
+This is the **primary mode** for developers verifying their work. When the user says `/qa` without a URL and the repo is on a feature branch, automatically:
+
+1. **Analyze the branch diff** to understand what changed:
+   ```bash
+   git diff main...HEAD --name-only
+   git log main..HEAD --oneline
+   ```
+
+2. **Identify affected pages/routes** from the changed files:
+   - Controller/route files → which URL paths they serve
+   - View/template/component files → which pages render them
+   - Model/service files → which pages use those models (check controllers that reference them)
+   - CSS/style files → which pages include those stylesheets
+   - API endpoints → test them directly with `$B js "await fetch('/api/...')"`
+   - Static pages (markdown, HTML) → navigate to them directly
+
+   **If no obvious pages/routes are identified from the diff:** the change still gets tested — on the surface "Choosing the surface" selects. A CLI, library, job or API-only change is a functional surface: follow "Functional surface", not a homepage smoke test. When the app has pages that run on the changed backend, config or infrastructure, the surface is mixed: probe the changed behavior functionally, and run Quick mode in the browser (homepage, top 5 navigation targets, console, interactive elements) to verify the app still works.
+
+3. **Detect the running app** — probe common local dev ports for a real HTTP answer (a browse `goto` is not a liveness check: it can exit 0 on a refused connection):
+   ```bash
+   for p in 3000 4000 8080; do curl -sI --max-time 3 "http://localhost:$p" >/dev/null 2>&1 && echo "APP_PORT: $p"; done; echo PORT_SCAN_DONE
+   ```
+   Use the port on the first `APP_PORT:` line. No `APP_PORT:` line before `PORT_SCAN_DONE` means no local app is running. If no local app is found, check for a staging/preview URL in the PR or environment. If nothing works, ask the user for the URL.
+
+4. **Test each affected page/route:**
+   - Navigate to the page
+   - Take a screenshot
+   - Check console for errors
+   - If the change was interactive (forms, buttons, flows), test the interaction end-to-end
+   - Use `snapshot -D` before and after actions to verify the change had the expected effect
+
+5. **Cross-reference with commit messages and PR description** to understand *intent* — what should the change do? Verify it actually does that.
+
+6. **Check TODOS.md** (if it exists) for known bugs or issues related to the changed files. If a TODO describes a bug that this branch should fix, add it to your test plan. If you find a new bug during QA that isn't in TODOS.md, note it in the report.
+
+7. **Report findings** scoped to the branch changes:
+   - "Changes tested: N pages/routes affected by this branch"
+   - For each: does it work? Screenshot evidence.
+   - Any regressions on adjacent pages?
+
+**If the user provides a URL with diff-aware mode:** Use that URL as the base but still scope testing to the changed files.
+
+### Full (default when URL is provided)
+Systematic exploration. Visit every reachable page. Document 5-10 well-evidenced issues. Produce health score. Takes 5-15 minutes depending on app size.
+
+### Quick (`--quick`)
+Smoke test on a soft 3-minute budget, timed from the first `$B goto`. Visit homepage + top 5 navigation targets. Check: page loads? Console errors? Broken links? At the cap, start nothing new and list the unfinished coverage (targets not visited, checks not run) in the report. Produce a health score labelled partial coverage: the accessibility checks do not run, so Accessibility is `not run`. No detailed issue documentation.
+
+### Regression (`--regression <baseline>`)
+Run full mode, then compare with the prior baseline resolved at setup — `prior-baseline.json` in this run's directory, copied from the `--regression` path or the newest earlier run. Diff: which issues are fixed? Which are new? What's the score delta? Append regression section to report.
+
+---
+
+{{include lib/snippets/qa-probe-consent.md}}
+
+{{include lib/snippets/qa-functional.md}}
+
+---
+
+## Workflow
+
+### Phase 1: Initialize
+
+1. Find browse binary (see Setup above)
+2. Create this run's report directory (see Setup above)
+3. Copy report template from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/templates/qa-report-template.md` to `$REPORT_DIR`. If the template cannot be read (another host, a partial install), write the report without it: metadata, health score table, Top 3, console health, severity counts, then one entry per issue with severity, category, URL, repro steps and the fields in "Assemble the report from evidence".
+4. Start timer for duration tracking
+
+### Phase 2: Authenticate (if needed)
+
+**If the user gave credentials for a throwaway test account on a LOCAL target:**
+
+```bash
+B='<BROWSE_BIN>'
+$B goto <login-url>
+$B snapshot -i                    # find the login form
+$B fill @e3 "user@example.com"
+$B fill @e4 "[REDACTED]"         # NEVER include real passwords in report
+$B click @e5                      # submit
+$B snapshot -D                    # verify login succeeded
+```
+
+**If the user provided a cookie file:**
+
+```bash
+B='<BROWSE_BIN>'
+$B cookie-import cookies.json
+$B goto <target-url>
+```
+
+**On a NON-LOCAL target:** never type credentials. Ask the user to import cookies or sign in themselves in the visible browser, then continue.
+
+**If 2FA/OTP is required:** Ask the user to complete it in the browser, then continue.
+
+**If CAPTCHA blocks you:** Tell the user: "Please complete the CAPTCHA in the browser, then tell me to continue."
+
+### Phase 3: Orient
+
+Get a map of the application:
+
+```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
+$B goto <target-url>
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/initial.png"
+$B links                          # map navigation structure
+$B console --errors               # any errors on landing?
+```
+
+**Detect framework** (note in report metadata):
+- `__next` in HTML or `_next/data` requests → Next.js
+- `csrf-token` meta tag → Rails
+- `wp-content` in URLs → WordPress
+- Client-side routing with no page reloads → SPA
+
+**For SPAs:** The `links` command may return few results because navigation is client-side. Use `snapshot -i` to find nav elements (buttons, menu items) instead.
+
+### Phase 4: Explore
+
+Visit pages systematically. At each page:
+
+```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
+$B goto <page-url>
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/page-name.png"
+$B console --errors
+```
+
+Then follow the **per-page exploration checklist** (see `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/references/issue-taxonomy.md`; the list below stands on its own when that file cannot be read):
+
+1. **Visual scan** — Look at the annotated screenshot for layout issues
+2. **Interactive elements** — Click buttons, links, controls. Do they work? (NON-LOCAL: consent first; never the logout/delete link class)
+3. **Forms** — Fill and submit. Test empty, invalid, edge cases (NON-LOCAL: consent first; never the logout/delete link class)
+4. **Navigation** — Check all paths in and out
+5. **States** — Empty state, loading, error, overflow
+6. **Console** — Any new JS errors after interactions?
+7. **Responsiveness** — Check mobile viewport if relevant:
+   ```bash
+   B='<BROWSE_BIN>'
+   REPORT_DIR='<REPORT_DIR>'
+   $B viewport 375x812
+   $B screenshot "$REPORT_DIR/screenshots/page-mobile.png"
+   $B viewport 1280x720
+   ```
+8. **Accessibility (manual, mandatory)** — outside quick mode, run the "Accessibility checks" in the Health Score Rubric below on every page.
+
+**Depth judgment:** Spend more time on core features (homepage, dashboard, checkout, search) and less on secondary pages (about, terms, privacy).
+
+**Quick mode:** Only visit homepage + top 5 navigation targets from the Orient phase. Skip the per-page checklist — just check: loads? Console errors? Broken links visible?
+
+### Phase 5: Document
+
+Document each issue **immediately when found** — don't batch them.
+
+**Two evidence tiers:**
+
+**Interactive bugs** (broken flows, dead buttons, form failures):
+1. Take a screenshot before the action
+2. Perform the action
+3. Take a screenshot showing the result
+4. Use `snapshot -D` to show what changed
+5. Write repro steps referencing screenshots
+
+```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
+$B screenshot "$REPORT_DIR/screenshots/issue-001-step-1.png"
+$B click @e5
+$B screenshot "$REPORT_DIR/screenshots/issue-001-result.png"
+$B snapshot -D
+```
+
+**Static bugs** (typos, layout issues, missing images):
+1. Take a single annotated screenshot showing the problem
+2. Describe what's wrong
+
+```bash
+B='<BROWSE_BIN>'
+REPORT_DIR='<REPORT_DIR>'
+$B snapshot -i -a -o "$REPORT_DIR/screenshots/issue-002.png"
+```
+
+**Write each issue to the report immediately** using the template format from `${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/qa-only}/../qa/templates/qa-report-template.md`.
+
+**Proposed regression test (functional and console issues only).** Under the issue, name the test `/qa` should write to lock the fix in, held to the bar below:
+
+{{include lib/snippets/test-value-bar.md}}
+
+From the browser alone you can answer `protects` (the user-visible behavior) and `fails_when` (the repro). This skill reads source only as rules 5 and 11 allow, never to check coverage, so write `why_new=unchecked` and `seam=unchecked`; `/qa` answers those before writing the test. Propose nothing for a purely visual or content issue.
+
+### Assemble the report from evidence
+
+Before Phase 6, rebuild every issue entry from what this run recorded — screenshots, `snapshot -D` diffs, console lines, command output — not from memory of the session:
+
+- **Observed** — one sentence of what happened, in the evidence's own terms: the console message verbatim, the status code, the text on screen.
+- **Expected** — what should have happened, and where that expectation comes from (the PR description, the page's own label, the contract map).
+- **Evidence** — the screenshot paths and the exact output lines that show it.
+- **Confirmation** — `replayed` when rule 2's replay failed the same way; otherwise `observed once`.
+- **Hypothesis** — optional, a guess at the cause from what the browser showed, labelled as a guess and kept out of Observed.
+
+Top 3, the severity summary and any one-line summary quote each issue's Observed sentence verbatim, so no summary states more than its issue entry does. A proposed regression test asserts on the channel the bug was seen on — the console error, the response, the rendered element — because a test on another channel can pass while the bug is still there.
+
+Last, scrub the report: a claim of frequency ("always", "intermittent", "3 of 5") or of a check having run ("no console errors", "all links work") that no command in this run backs is backed now by running the command, rewritten to what did run, or marked `not run`.
+
+### Phase 6: Wrap Up
+
+1. **Compute health score** using the rubric below
+2. **Write "Top 3 Things to Fix"** — the 3 highest-severity issues
+3. **Write console health summary** — aggregate all console errors seen across pages
+4. **Update severity counts** in the summary table
+5. **Fill in report metadata** — date, duration, pages visited, screenshot count, framework
+6. **Save baseline** — write `$REPORT_DIR/baseline.json` with:
+   ```json
+   {
+     "date": "YYYY-MM-DD",
+     "url": "<target>",
+     "healthScore": N,
+     "issues": [{ "id": "ISSUE-001", "title": "...", "severity": "...", "category": "..." }],
+     "categoryScores": { "console": N, "links": N, ... }
+   }
+   ```
+
+**Regression mode:** After writing the report, load `$REPORT_DIR/prior-baseline.json` — never the `baseline.json` this run just wrote, so the run never compares with itself. With `PRIOR_BASELINE: none` or `BASELINE_MISSING`, skip the comparison and say why in the report. Compare:
+- Health score delta — only when both runs scored the same categories; otherwise report the per-category deltas and say which category was `not run`, since a change in what could be checked is not a change in the app
+- Issues fixed (in baseline but not current)
+- New issues (in current but not baseline)
+- Append the regression section to the report
+
+---
+
+{{include lib/snippets/qa-health-rubric.md}}
+
+---
+
+## Framework-Specific Guidance
+
+### Next.js
+- Check console for hydration errors (`Hydration failed`, `Text content did not match`)
+- Monitor `_next/data` requests in network — 404s indicate broken data fetching
+- Test client-side navigation (click links, don't just `goto`) — catches routing issues
+- Check for CLS (Cumulative Layout Shift) on pages with dynamic content
+
+### Rails
+- Check for N+1 query warnings in console (if development mode)
+- Verify CSRF token presence in forms
+- Test Turbo/Stimulus integration — do page transitions work smoothly?
+- Check for flash messages appearing and dismissing correctly
+
+### WordPress
+- Check for plugin conflicts (JS errors from different plugins)
+- Verify admin bar visibility for logged-in users
+- Test REST API endpoints (`/wp-json/`)
+- Check for mixed content warnings (common with WP)
+
+### General SPA (React, Vue, Angular)
+- Use `snapshot -i` for navigation — `links` command misses client-side routes
+- Check for stale state (navigate away and back — does data refresh?)
+- Test browser back/forward — does the app handle history correctly?
+- Check for memory leaks (monitor console after extended use)
+
+---
+
+## Important Rules
+
+1. **Repro is everything.** Every browser issue needs at least one screenshot; on a functional surface, the probe transcript (command, exit code, output, read-back) is the evidence instead. No exceptions.
+2. **Verify before documenting.** Replay the exact command or interaction from the same starting state (same URL, auth and inputs, after a reload) to confirm it is reproducible, not a fluke. It fails the same way → `replayed`; it does not → the issue stays `observed once`, never confirmed. Never replay a non-idempotent action (a submit, send, purchase or delete) on a non-local target: a reload restores the page, not the server state, so the replay repeats the action. Such an issue stays `observed once`.
+3. **Never include credentials.** Write `[REDACTED]` for passwords in repro steps.
+4. **Write incrementally.** Append each issue to the report as you find it. Don't batch.
+5. **Test as a user, not a developer.** The one exception is diff-aware mode: read the branch diff and the route, controller and view files it names only to work out which pages to test. The other is the contract map rule 11 allows on a functional surface. Never read source to explain, diagnose or fix a bug.
+6. **Check console after every interaction.** JS errors that don't surface visually are still bugs.
+7. **Test like a user.** Use realistic data. Walk through complete workflows end-to-end.
+8. **Depth over breadth.** 5-10 well-documented issues with evidence > 20 vague descriptions.
+9. **Never delete output files.** Screenshots and reports accumulate — that's intentional.
+10. **Use `snapshot -C` for tricky UIs.** Finds clickable divs that the accessibility tree misses.
+11. **Show screenshots to the user.** After every `$B screenshot`, `$B snapshot -a -o`, or `$B responsive` command, use the Read tool on the output file(s) so the user can see them inline. For `responsive` (3 files), Read all three. This is critical — without it, screenshots are invisible to the user.
+12. **Never refuse to use the browser on a selected browser surface.** When the surface is browser or mixed, open the browser and test — never suggest evals, unit tests, or other alternatives as a substitute, even if the diff appears to have no UI changes. On a functional surface the contract-map probes are the test, and a unit-test run does not replace them either.
+
+---
+
+## Output
+
+Write the report to both local and project-scoped locations:
+
+**Local:** `$REPORT_DIR/qa-report.md` — `.vibestack/qa-reports/run-<UTC>/{qa-report.md, functional-report.md (functional or mixed surface), baseline.json, prior-baseline.json, screenshots/}`
+
+**Project-scoped:** Write test outcome artifact for cross-session context:
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+PROJECT_DIR="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}"
+mkdir -p "$PROJECT_DIR"
+_user="$(printf '%s' "$(id -un 2>/dev/null)" | tr -c '[:alnum:]-' '-')"
+[ -n "$_user" ] || _user="unknown-user"
+_branch="$(printf '%s' "$(git symbolic-ref --short -q HEAD 2>/dev/null)" | tr -c '[:alnum:]-' '-')"
+[ -n "$_branch" ] || _branch="detached"
+_base="$PROJECT_DIR/${_user}-${_branch}-test-outcome-$(date -u +%Y%m%dT%H%M%SZ)"
+OUTCOME_FILE="$_base.md"; _n=2
+# Reserve the name (noclobber create), so a run in the same second cannot take it too.
+while ! ( set -C; : > "$OUTCOME_FILE" ) 2>/dev/null; do
+  [ -e "$OUTCOME_FILE" ] || { echo "ERROR: cannot create $OUTCOME_FILE" >&2; exit 1; }
+  OUTCOME_FILE="$_base-$_n.md"; _n=$((_n + 1))
+done
+echo "OUTCOME_FILE: $OUTCOME_FILE"
+```
+Write the test outcome to the path printed on the `OUTCOME_FILE:` line.
+
+### Output Structure
+
+```
+.vibestack/qa-reports/
+└── run-<UTC>/                             # One directory per run, never overwritten
+    ├── qa-report.md                       # Structured report
+    ├── functional-report.md               # Contract-map rows (functional or mixed surface only)
+    ├── baseline.json                      # This run's baseline, for later runs
+    ├── prior-baseline.json                # The baseline this run compares with (if any)
+    └── screenshots/
+        ├── initial.png                    # Landing page annotated screenshot
+        ├── issue-001-step-1.png           # Per-issue evidence
+        ├── issue-001-result.png
+        └── ...
+```
+
+`<UTC>` is the run's start time, e.g. `run-20260312T141500Z`.
+
+---
+
+{{include lib/snippets/capture-learnings.md}}
+## Additional Rules (qa-only specific)
+
+11. **Never fix bugs.** Find and document only. Do not edit files or suggest fixes in the report, and read source only as rule 5 allows — or, on a functional surface, read-only to build the contract map (entry points, `--help`, handler signatures, existing tests), never to explain or diagnose a bug. Your job is to report what's broken, not to fix it. Use `/qa` for the test-fix-verify loop.
+12. **No test framework detected?** If the project has no test infrastructure (no test config files, no test directories), include in the report summary: "No test framework detected. Run `/qa` to bootstrap one and enable regression test generation."

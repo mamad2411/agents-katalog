@@ -1,0 +1,49 @@
+---
+name: chorus-parallel-review
+description: Parallel code review of the current git diff from multiple agents. Use when the user says "parallel review", "review with all agents", "chorus review", or "review from multiple angles".
+---
+
+# Chorus: Parallel Code Review
+
+## When to use
+
+- User wants code reviewed from multiple angles simultaneously
+- User says "parallel review", "all agents review", "chorus review"
+
+## Your role
+
+You review for **MAINTAINABILITY**: readability, naming clarity, long-term tech debt.
+
+## Invocation
+
+```bash
+git diff HEAD > /tmp/chorus_diff.txt
+
+claude --print "Review for CORRECTNESS AND SECURITY. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" --dangerously-skip-permissions &
+CLAUDE_PID=$!
+
+gemini --prompt "Review for EDGE CASES AND ROBUSTNESS. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" --yolo --output-format text &
+GEMINI_PID=$!
+
+codex exec "Review for SCOPE AND SIMPLICITY. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" &
+CODEX_PID=$!
+
+agent -p --force "Review for CODEBASE INTEGRATION. Numbered findings.\n\n$(cat /tmp/chorus_diff.txt)" &
+CURSOR_PID=$!
+
+wait $CLAUDE_PID $GEMINI_PID $CODEX_PID $CURSOR_PID
+```
+
+**Graceful degradation:** Check each agent with `command -v <binary>` before spawning. Skip missing agents and warn the user. Proceed as long as at least 2 agents (including yourself) are available.
+
+## Output handling
+
+Synthesize all available reviews (up to four agents + your maintainability review):
+
+```
+## Parallel Review Summary
+**Critical findings** (2+ agents): …
+**Verdict**: <proceed / needs revision>
+```
+
+Review-only — do not apply patches.

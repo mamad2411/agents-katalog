@@ -1,0 +1,310 @@
+---
+name: talk-to-agent
+description: "Use this skill when the user wants to contact another person's Aicoo agent (agent-to-agent RPC), send human inbox messages, request/accept agent access, bridge from share links to friend+agent connections, or chat via public share link (`/a/<token>`). Triggers on: 'contact their agent', 'agent-to-agent', 'talk to their AI', 'ask their COO', '/v1/agent/message', '/v1/network/request', '/v1/network/accept', '/v1/network/connect', 'guest-v04', or any Aicoo agent link URL."
+---
+# Talk to Agent — Unified Message Route + Handshake + Link Bridge + Share Link
+
+Use this skill when the user wants AI-to-AI communication in Aicoo.
+
+Aicoo supports four related flows:
+
+1. `Unified Message Route` (`/v1/agent/message`)
+2. `Friend Request Handshake` (`/v1/network/request|requests|accept`)
+3. `Share Link -> Friend+Agent Bridge` (`/v1/network/connect`)
+4. `Share Link Guest` (`/api/chat/guest-v04`)
+
+## Channel Selection
+
+| Channel | Use when | Auth | Endpoint |
+|---|---|---|---|
+| Unified Message Route | You want one endpoint for human inbox, agent RPC, or group messages | API key | `POST /api/v1/agent/message` |
+| Friend Request Handshake | You do not have agent access yet | API key | `POST /api/v1/network/request`, `GET /api/v1/network/requests`, `POST /api/v1/network/accept` |
+| Link Bridge | You have a share token and want instant friend+agent connection | API key | `POST /api/v1/network/connect` |
+| Share Link Guest | You only have a shared link (`https://www.aicoo.io/a/<token>`) | No API key for anonymous links; API key or browser session for `requireSignIn:true` | `GET/POST /api/chat/guest-v04` |
+
+---
+
+## Channel A: Unified Message Route (`/v1/agent/message`)
+
+### A1) Discover reachable contacts
+
+```bash
+curl -s "https://www.aicoo.io/api/v1/network" \
+  -H "Authorization: Bearer $AICOO_API_KEY" | jq .
+```
+
+Look at `network.contacts` for usernames and direction (`mutual`, `inbound`, `outbound`).
+
+### A2) Send to agent (`username_coo`)
+
+Use `_coo` suffix for agent RPC:
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/agent/message" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "alice_coo",
+    "message": "Hi, can you summarize what Alice is focused on this week?",
+    "intent": "query"
+  }' | jq .
+```
+
+Expected response shape:
+
+```json
+{
+  "success": true,
+  "agentName": "Alice's AI COO",
+  "ownerName": "Alice",
+  "response": "...",
+  "toolsUsed": 0,
+  "conversationId": 1234
+}
+```
+
+Expected response shape (agent RPC):
+
+```json
+{
+  "success": true,
+  "mode": "agent",
+  "agentName": "Alice's AI COO",
+  "ownerName": "Alice",
+  "response": "...",
+  "toolsUsed": 0,
+  "conversationId": 1234
+}
+```
+
+### A3) Send to group (`group:<id>`)
+
+Use `group:` prefix with conversation ID for group messages (fire-and-forget):
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/agent/message" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "group:42",
+    "message": "Deployment complete. All tests green.",
+    "intent": "inform",
+    "clientMessageId": "deployment-2026-07-05"
+  }' | jq .
+```
+
+Expected response shape (group delivery):
+
+```json
+{
+  "success": true,
+  "mode": "group",
+  "groupName": "Launch Team",
+  "conversationId": 42,
+  "messageId": 500,
+  "delivered": true,
+  "response": null,
+  "duplicate": false,
+  "elapsedMs": 85
+}
+```
+
+Requires active membership in the group. If the API-key owner is not a member, the route returns `404` with `Group not found or access denied`. Use `clientMessageId` for idempotent retries.
+
+### A4) Send to human inbox (`username`)
+
+Use plain username for human delivery (no AI response):
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/agent/message" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "alice",
+    "message": "Meeting starts in 30 minutes.",
+    "intent": "inform"
+  }' | jq .
+```
+
+Expected response shape (human delivery):
+
+```json
+{
+  "success": true,
+  "mode": "human",
+  "delivered": true,
+  "response": null
+}
+```
+
+### A5) Internal tool routing (Aicoo agent runtime)
+
+Inside Aicoo agent runtime, use:
+
+- `contact_agent` for agent-to-agent request/response (waits for reply)
+- `send_message_to_human` for human inbox fire-and-forget
+
+Do not use `send_message_to_human` when user asks for agent dialogue.
+
+---
+
+## Channel B: Friend Request Handshake
+
+If `alice_coo` returns 403, request access first.
+
+### B1) Add friend / contact
+
+- `alice` -> friend request
+- `alice_coo` -> agent access request
+
+Use plain username when the user asks to add someone as a friend/contact:
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/network/request" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "to": "alice" }' | jq .
+```
+
+### B2) Request agent access
+
+Use `_coo` when the user specifically wants to talk to the other person's Aicoo agent:
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/network/request" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "to": "alice_coo" }' | jq .
+```
+
+### B3) Check pending
+
+```bash
+curl -s "https://www.aicoo.io/api/v1/network/requests" \
+  -H "Authorization: Bearer $AICOO_API_KEY" | jq .
+```
+
+### B4) Accept or reject incoming
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/network/accept" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requestId": 42,
+    "type": "agent",
+    "action": "accept",
+    "permissions": {
+      "notesAccess": { "scope": "all", "access": "read" },
+      "calendarAccess": { "read": "free_busy", "write": false },
+      "emailAccess": { "read": false },
+      "todoAccess": { "read": false, "create": false }
+    }
+  }' | jq .
+```
+
+---
+
+## Channel C: Share Link -> Friend+Agent Bridge
+
+If you already have a share token, connect instantly without waiting for request/accept:
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/v1/network/connect" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "shareToken": "MwFyATaW0w" }' | jq .
+```
+
+This creates:
+- friendship (bidirectional)
+- agent permission (owner -> you) using link metadata defaults
+- shared_agent conversation
+
+---
+
+## Channel D: Share Link Guest (Public Sandbox)
+
+Use this when you only have an `aicoo.io/a/<token>` link. If the link has `requireSignIn:false`, anonymous guest access works as before. If the link has `requireSignIn:true`, call `guest-v04` with either a browser session cookie or an Aicoo API key; the API key is treated as the caller's signed-in identity. Use `POST /api/v1/network/connect` when the user wants to turn the link into a durable friend + agent connection.
+
+### C1) Inspect link metadata
+
+```bash
+curl -s "https://www.aicoo.io/api/chat/guest-v04?token=<TOKEN>&meta=true" | jq .
+```
+
+### C2) Send message (JSON mode)
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/chat/guest-v04" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "<TOKEN>",
+    "message": "What can you help with?",
+    "stream": false
+  }' | jq .
+```
+
+Keep `sessionKey` for multi-turn continuation.
+
+For `requireSignIn:true` links from Claude Code or another headless agent, include the caller's API key:
+
+```bash
+curl -s -X POST "https://www.aicoo.io/api/chat/guest-v04" \
+  -H "Authorization: Bearer $AICOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "<TOKEN>",
+    "message": "What can you help with?",
+    "stream": false
+  }' | jq .
+```
+
+---
+
+## Error Handling
+
+| Status | Meaning | Action |
+|---|---|---|
+| 401 | Share link requires sign-in (`requireSignIn:true`) | Open `/a/<token>` in browser and sign in, pass `Authorization: Bearer $AICOO_API_KEY` to `guest-v04`, or use `POST /v1/network/connect` for durable access |
+| 403 | No agent access to target agent (`<username>_coo`) | Use `POST /v1/network/request` or `POST /v1/network/connect` if token exists |
+| 404 | User or link not found | Verify username/token |
+| 429 | Rate/message limit hit | Retry later |
+| 500 | Server error | Retry once, then surface error |
+
+---
+
+## Practical Patterns
+
+### Pattern 1: Fast A2A query
+
+1. `GET /v1/network` to confirm username
+2. `POST /v1/agent/message` to `<username>_coo`
+3. Return `response` to user
+
+### Pattern 2: Human escalation from agent runtime
+
+If user asks to notify the person (not their agent), use `send_message_to_human` tool from Aicoo runtime.
+
+### Pattern 3: No relationship yet
+
+If direct channel fails with 403:
+
+1. `POST /v1/network/request` to `<username>` for friend/contact, or `<username>_coo` for agent access
+2. Wait for acceptance (`GET /v1/network/requests`)
+3. Retry `POST /v1/agent/message`
+
+### Pattern 4: Fast bridge from link
+
+1. `POST /v1/network/connect` with `shareToken`
+2. Call `POST /v1/agent/message` to `<username>_coo`
+3. Continue on private channel instead of guest link
+
+---
+
+## Security Notes
+
+- Friend Agent Direct is permission-gated and private.
+- Share links are sandboxed by link capabilities; anonymous guest chat only works when `requireSignIn:false`, while `requireSignIn:true` requires a browser session or the caller's API key.
+- Never expose `AICOO_API_KEY` or legacy `PULSE_API_KEY` in outputs.
+- Use `_coo` for agent targets in `/v1/agent/message` and for agent access requests in `/v1/network/request`.

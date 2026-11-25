@@ -1,0 +1,1304 @@
+---
+name: dayz-pbo-build
+description: >
+  Pre-build validation and packaging pipeline for DayZ mod addons. Validates config.cpp
+  syntax and class inheritance, checks all texture/material paths exist, verifies .p3d
+  LOD structure, validates model.cfg skeleton and animation references, checks stringtable.csv
+  completeness, and generates correct $PBOPREFIX$ and folder structure for AddonBuilder.
+  Use when user mentions: PBO, build, pack, addon, AddonBuilder, validate mod, pre-build check,
+  deploy mod, release mod, config.cpp errors, missing textures, broken references, or
+  any DayZ mod packaging workflow. Also trigger when user says "check my mod" or "is my mod ready".
+---
+
+# DayZ PBO Build Validator
+
+Complete pre-build validation pipeline for DayZ mod addons. Catches configuration errors, missing assets, and structural problems BEFORE packing into PBOs—avoiding in-game crashes and deployment failures.
+(until 1.29: the folder structure, stringtable.csv, include-list, and "Duplicate class names" check below remain the 1.29 contract.) (since 1.30: binarizer also **stops** if a member is defined multiple times in one class; unpacked `-mod` is a diag iteration path, not a shipping substitute. Details: [dayz-1-30-pbo-build.md](references/dayz-1-30-pbo-build.md).)
+
+## Overview
+
+This skill runs seven validation checks in sequence on a DayZ addon folder structure:
+
+1. **Folder Structure** – Required files ($PBOPREFIX$, config.cpp), naming conventions, stale files
+2. **config.cpp Syntax** – Brace balance, semicolons, class hierarchy, hiddenSelections matching
+3. **model.cfg Validation** – Skeleton bones, named selections, animation references
+4. **Texture/Material Paths** – Every .paa and .rvmat exists and is accessible
+5. **.p3d LOD Structure** – LOD types, geometry mass, vertex budgets, named selections consistency
+6. **Stringtable Completeness** – All #STR_ keys present and accounted for
+7. **Script Validation** – Enforce Script syntax, #include paths, common pitfalls
+
+Each check reports **PASS**, **WARN**, or **FAIL** status. The final summary shows all blockers before packing.
+
+---
+
+## Validation Checks (Detailed)
+
+### 1. Folder Structure Validation
+
+**Checks performed:**
+- **REQUIRED:** `config.cpp` exists at addon root (a 1.30 `gui`-prefix shadow PBO holding only layouts loaded without one on 1.30.164289: `references/dayz-1-30-pbo-build.md`)
+- **REQUIRED:** `$PBOPREFIX$` file exists (single line: `mymod\myaddon` format)
+- **RECOMMENDED:** `data/` folder (for textures, .rvmat, .p3d files)
+- **RECOMMENDED:** `scripts/` folder (for .c, .cpp, .h files)
+- **REQUIRED:** No spaces in folder names (DayZ tools reject these)
+- **REQUIRED:** No uppercase file extensions (.PAA, .CPP are flagged)
+- **FAIL:** Stale files found (.bak, .blend, .psd, .xcf, .tmp, .swp—these bloat PBOs)
+- **WARN:** Large asset files > 10MB (texture atlases, unoptimized meshes)
+- **Release package (manual; the checks above do not run it):** every class a player places, or that otherwise
+  persists in the world, has an entry with an explicit lifetime in the `types.xml` the release ships. Without
+  one it runs out after 30 to 60 minutes of server time (`dayz-persistence`, SP-459).
+- **Publishing to the Workshop (manual):** signing with DsUtils, what `verifySignatures = 2` does without the
+  `.bikey`, the item folder, creating an item with SteamCMD and updating it with the Publisher, and why a manual
+  SteamCMD login with the Steam client's account kicked that client off: `references/workshop-publish.md`.
+  On Linux (dayzmake, `meta.cpp`, Workshop tags, the `workshop` uploader): `references/dayzmake-linux.md`.
+- **REQUIRED (the mod folder, after the build):** every PBO sits in `@Mod/addons/`. A PBO at the mod folder root
+  (`@MyMod/MyMod.pbo`) is silently ignored: no config, no scripts, no error, while the folder still shows in the
+  boot log's `ANIMATION (E): Can't load @MyMod/...` pass, which is not loading. Its `modded class` overrides then
+  silently never run, and an A/B test of a fix reads as "the fix did not work". Measured by bzed on the native
+  Linux 1.30 server (`bzed/dayz-dev-plugin@6112ac5` `systems/mod-structure.md`, PBO Packaging); the probe that
+  proves it is in `dayz-test-ingame/references/linux-native-server.md`, section 4. The Workshop Publisher also
+  refuses an upload with PBOs outside `addons/`.
+
+**Example output:**
+```
+[PASS] config.cpp found at addon root
+[PASS] $PBOPREFIX$ file present: mymod\myaddon
+[WARN] .blend file found: data\model_source.blend (should not be packed)
+[PASS] Folder names follow conventions (lowercase, no spaces)
+```
+
+---
+
+### 2. config.cpp Syntax Validation
+
+This check is critical—most DayZ mod failures start here.
+
+**Checks performed:**
+- **Brace balance:** Count `{` and `}` to detect unclosed classes
+- **Semicolons:** Every class property and array must end with `;`
+- **Required CfgPatches class:**
+  - Must exist with at least one patch subclass
+  - Each patch requires: `units[]`, `weapons[]`, `requiredVersion`, `requiredAddons[]`
+- **Class inheritance verification:**
+  - Validate parent classes exist (e.g., Inventory_Base, Container_Base, Land_Stone_*)
+  - Warn if parent class is not a known DayZ base (may not exist in vanilla)
+- **hiddenSelections matching:**
+  - `hiddenSelectionsTextures[]` and `hiddenSelectionsMaterials[]` are each aligned index-by-index with `hiddenSelections[]` — each array (when present) must have the SAME length as `hiddenSelections[]`, not a combined total
+  - Example: `hiddenSelections[] = {"skin1", "skin2", "metal"}` (3 items) → `hiddenSelectionsTextures[]` has 3 entries and `hiddenSelectionsMaterials[]` has 3 entries
+- **AnimationSources reference check:**
+  - Any AnimationSource defined here must be referenced in model.cfg (if model.cfg exists)
+- **Duplicate class names:** Same class cannot be defined twice
+- **Duplicate members (since 1.30 [CHANGELOG]):** Same member cannot be defined twice inside one class body — binarizer **stops** (`work\changelog-1.30-exp-modding.md:19`). Not the same as `class Foo;` forward + `class Foo: Bar {}` definition. See `references/common-validation-failures.md` and `references/dayz-1-30-pbo-build.md`.
+- **No syntax helpers:** Reject obvious Python/macro syntax in .cpp (these get missed at compile time)
+
+**Example output:**
+```
+[FAIL] config.cpp line 15: Unclosed brace (expected 0, found 1 extra {)
+[FAIL] config.cpp line 42: Missing semicolon after property "units[]"
+[PASS] CfgPatches structure valid (1 patch: MyMod_Item01)
+[WARN] Class inheritance: parent "CustomBase_Broken" not recognized (may not exist)
+[PASS] hiddenSelections arrays aligned (3 selections, 3 textures, 3 materials)
+[FAIL] Duplicate class name "Item_Torch" defined at lines 28 and 105
+[FAIL] Duplicate member "scope" defined twice in class "MyItem" (1.30 binarizer stop)
+```
+
+---
+
+### 3. model.cfg Validation
+
+Only checked if `model.cfg` exists in the addon.
+
+**Checks performed:**
+- **CfgSkeletons section:**
+  - Every bone listed in `skeletonBones[]` must exist
+  - Check that bone names follow DayZ naming conventions (lowercase with underscores)
+  - Verify no circular parent references
+- **CfgModels section:**
+  - Class name must match the .p3d filename (case-sensitive: `Item_Compass` class → `Item_Compass.p3d`). **Mismatch is silent and severe:** the engine falls back to `CfgModels.Default` (no skeleton/sections) for that model, so a WEAPON's attachment proxies stop rendering — attachments still attach (visible in slots) and the standalone item still renders in the world, but are INVISIBLE on the weapon (in-hands, inventory preview, ground), with NO RPT error. Common trigger: renaming a model `.p3d` (e.g. `body.p3d`→`body_raised.p3d` for a grip tweak) without updating CfgModels. Fix: `class <new>: <old> {};`. Re-run this check after ANY model rename. (Origin: A6_SR2M 2026-06-25.)
+  - Type must be valid: `ArmaModel`, `BaseMiliHeliModel`, etc.
+- **Animations within CfgModels:**
+  - `selection` must exist as a named selection in the corresponding .p3d
+  - `axis` must exist as a memory point pair in the p3d (e.g., `axis_lever`, `axis_lever_end`)
+  - `source` must match an AnimationSource name from config.cpp
+  - `speed` values should be reasonable (1.0 = 1 second)
+- **Memory point pairs:** Any animation with `axis` requires matching memory points in p3d
+
+**Example output:**
+```
+[PASS] Skeletons defined correctly (5 bones)
+[FAIL] model.cfg class "Item_Watch" doesn't match .p3d filename (found: Item_WatchGold.p3d)
+[WARN] Animation "door_open": selection "door_frame" not found in named selections
+[FAIL] Animation "lever_rotate" references axis "lever_axis_end" (axis endpoint not found in p3d)
+[PASS] Animation source "click_anim" matches config.cpp AnimationSources
+```
+
+---
+
+### 4. Texture/Material Path Validation
+
+Scans all texture references and verifies files exist.
+
+**Checks performed:**
+- **Scan sources:**
+  - config.cpp: `hiddenSelectionsTextures[]`, `hiddenSelectionsMaterials[]`, any quoted `.paa` or `.rvmat`
+  - .rvmat files: extract referenced texture paths
+  - .p3d face textures (if py3d available)
+- **Path existence:**
+  - Every referenced `.paa` file MUST exist relative to addon root
+  - Every referenced `.rvmat` file MUST exist
+  - Paths are case-sensitive on Linux/server (always check capitalization)
+- **File format checks:**
+  - WARN if `.png` file referenced (should be `.paa` for DayZ)
+  - WARN if `.dds` file referenced (use `.paa` instead)
+  - .rvmat must reference valid texture paths within the addon or from common DayZ paths
+- **Texture atlas validation:**
+  - If multiple selections reference the same texture, verify texture has enough area for all UVs
+
+**Example output:**
+```
+[FAIL] Texture not found: data\textures\body_co.paa (referenced in config.cpp line 45, class Item_Shirt)
+[WARN] PNG file detected: data\textures\logo.png (convert to PAA for better compression)
+[PASS] All 12 texture references validated and found
+[WARN] Texture path capitalization: referenced as "Textures\Cloth_Co.paa" but file is "textures\cloth_co.paa"
+[PASS] .rvmat materials reference valid texture paths
+```
+
+---
+
+### 5. .p3d LOD Structure Validation
+
+Only checked if py3d is available and .p3d files exist.
+
+**Checks performed:**
+- **LOD types present:**
+  - REQUIRED: At least 1 Resolution LOD (LOD 0.0) for in-game appearance
+  - REQUIRED: Geometry LOD for collision/physics
+  - REQUIRED: Memory LOD (named selections + memory points)
+- **Geometry LOD integrity:**
+  - All components must have mass > 0 (0 mass = ignored by engine)
+  - Faces must not be zero-area (degenerate triangles)
+  - Warn if geometry LOD vertices > 3000 for small items (performance impact)
+- **Memory LOD:**
+  - Must have at least `ce_center` memory point (center of mass)
+  - Warn if missing `ce_geom` or `ca_` collision points
+- **Named selections:**
+  - Consistent across LODs (if named_sel exists in LOD0, should exist in LOD2)
+  - Warn if asymmetric (e.g., "Left_Arm" exists but no "Right_Arm")
+- **Vertex count budgeting:**
+  - LOD0: up to 5000 vertices (warn if higher for small objects)
+  - LOD1: 40-60% of LOD0
+  - LOD2 (far): 10-20% of LOD0
+
+**Example output:**
+```
+[PASS] All required LOD types present (Resolution + Geometry + Memory)
+[PASS] Geometry LOD mass valid (all components > 0)
+[FAIL] Memory LOD missing ce_center point (required for physics)
+[WARN] LOD0 vertex count: 4200 (high for small item, consider optimization)
+[PASS] Named selections consistent across LODs (8 selections)
+[WARN] No collision points (ce_geom) in Memory LOD—object may not collide properly
+```
+
+---
+
+### 6. Stringtable Validation
+
+DayZ uses **`stringtable.csv`**, not the `stringtable.xml` of Arma 3. Corrected
+2026-08-21 after measuring this workspace: zero `stringtable.xml` anywhere in the DayZ
+project tree, 38 `stringtable.csv`, and the two deployed PBOs checked (`LFPowerGrid`,
+`LFGungame`) each carry `stringtable.csv` and no XML. Following the XML form produces a
+file the engine never reads, and the engine does not complain — an unresolved key prints
+its own name and logs **nothing** (measured: zero RPT lines for a missing key across a
+49,340-byte client log), so this fails silently all the way to the player's screen.
+
+**Format**, verified against two shipping mods (`AP_equipment_PUBLIC/stringtable.csv:1`,
+`lfhelicore/stringtable.csv:1`): a header row `"Language","original","english",…` followed
+by one row per key. The key sits in column 1 **without the leading `#`** — the `#` belongs
+only to the reference in code, config or `.layout`. UTF-8, no BOM, LF.
+
+**An unresolved stringtable is a CSV-header problem, not an addon-size problem.** Two
+in-game bisection ladders (measured 2026-08-21) closed this: a three-file addon
+(`$PBOPREFIX$` + minimal config.cpp + stringtable.csv) resolves its keys, and two data
+rows are enough — provided the CSV carries the full 7-column reference header
+(`"Language","original","english","spanish","german","russian","chinesesimp"`). With a
+4-column header (no german/russian/chinesesimp) every key stays unresolved at any corpus
+size, even though the PBO mounts and serves files and the client's own language column is
+present with text. Fill untranslated columns with the english text. Earlier same-day probes
+that blamed addon minimality were measuring a degenerate CSV. Full rule and evidence:
+dayz-ui-development skill, LOCALIZATION section.
+
+**Checks performed:**
+- **Scan all script files (.c, .cpp) for `#STR_` references**
+- **Scan config.cpp and every `.layout` for `#STR_` references** (displayName, description,
+  and widget `text` alike)
+- **`stringtable.csv` existence:**
+  - If `#STR_` found but no `stringtable.csv` → FAIL
+  - If it exists, check the header row and that every data row has the same column count
+- **Key coverage:**
+  - Every `#STR_KEY` referenced must appear in column 1 of some `stringtable.csv`, minus the `#`
+  - WARN about orphaned keys (defined in stringtable but never used)
+  - Prefer a mod-specific key prefix: names like `STR_UI_YES` invite collisions with other mods
+- **Language completeness:**
+  - Check that all languages (English, Russian, etc.) have values for each key
+  - WARN if translation is missing or empty
+
+**Example output:**
+```
+[FAIL] stringtable.csv not found, but 5 #STR_ references in config.cpp
+[PASS] stringtable.csv header valid (4 columns, every row matches)
+[FAIL] Missing key: #STR_MYMOD_DEVICE_NAME (used in config.cpp line 23)
+[WARN] Orphaned key: #STR_OLD_DESCRIPTION (defined in stringtable but never referenced)
+[WARN] Incomplete translation: Russian text missing for #STR_ITEM_DESC (only English present)
+[PASS] All 12 #STR_ references have stringtable entries
+```
+
+---
+
+### 7. Script Validation (Basic)
+
+**Run the REAL linter first: it exists, lives in this same pack, and is not optional before
+packaging a PBO.**
+
+```
+python <KNOWLEDGE_PACK>/tools/dayz-script-validator/scripts/script_validator.py <addon_root>
+```
+
+Covers Enforce `.c`, `.layout`, `config.cpp`, `inputs.xml`, and `.rvmat`, and outputs JSON. Path is
+**relative to the root of the Knowledge Pack**, not your project: from a mod directory you must
+give the absolute path of YOUR checkout, or command dies with `No such file or directory` and reads
+as "not installed".
+
+- The report keys are **`errors` and `warnings` at root**, not `findings`.
+- ⚠ **`status` is `WARN` even if `errors` is 0**, and the exit code is `0 PASS / 1 FAIL / 2 WARN`:
+  a clean tree with warnings exits with **2**. Gate on `len(errors)`, never on `status` nor on
+  the wrapper exit.
+- **Compare against a base** (the base commit in a worktree): the delta is what attributes a new
+  error to your change; an absolute number does not.
+- **It is not a compiler.** Enforce only compiles upon loading the world. It does catch dangling
+  references after a deletion, which is what a symbol grep misses. Measured 2026-09-08 on LFPowerGrid:
+  271 files in ~60 s; removing 8 left them at 263, with 0 errors on both sides.
+- ⚠ **And it has a blind spot that costs a startup: it does not see an undeclared variable.** Detail,
+  measured case, and the sweep that does catch it, in `dayz-test-ingame` §Step 0.
+
+The heuristics below are the fallback when the validator is not available, and a useful
+second pass when it is.
+
+Checked if scripts exist in `scripts/` folder.
+
+**Checks performed:**
+- **Enforce Script (real gotchas — the language SUPPORTS ternary, `++`/`--`, `foreach`):**
+  - Add to arrays with `.Insert()` / `.InsertAll()` (no array `+=` concatenation operator)
+  - No bare function calls without assignment or statement context
+- **#include path resolution:**
+  - Every `#include "path/file.h"` must point to existing file
+  - Check both relative and absolute paths
+- **Common pitfalls:**
+  - `GetGame()` used in destructors without null check
+  - `Print()` left in debug code (warn, not fail)
+  - Infinite loops detected (while true without break)
+  - Missing return statements in non-void functions
+- **Syntax basics:**
+  - Unclosed strings, invalid escape sequences
+  - Invalid class declarations or stray tokens
+
+**Example output:**
+```
+[WARN] scripts/Item_Base.c line 42: array '+=' concatenation not supported - use .InsertAll()
+[PASS] No #include path errors (5 includes resolved)
+[PASS] No unsupported array '+=' concatenation
+[WARN] scripts/Item_Base.c line 103: GetGame() called in destructor without null check
+[FAIL] #include "scripts\missing.h" not found
+[PASS] Script syntax valid (no orphaned braces or quotes)
+```
+
+---
+
+### 8. Wheeled-vehicle wheel-slot <-> FireGeometry consistency (P1, release-blocking)
+
+Vehicles only. For PhysX to seat a wheel (`WheelCountPresent() > 0`), the selection
+named by `config.cpp > CfgSlots > <wheel-slot>.selection` MUST exist in the body's
+**FireGeometry LOD**. A selection present only in visual LODs binds the slot as
+inventory but the wheel never simulates: `WheelCountPresent()=0`, no traction, no
+spin, NO RPT error - a silent killer (see `enforce-script-reference` wheel-attachment
+rule, `dayz-model-pipeline` Rule 20).
+
+This check lives in the `dayz-p3d-audit` validator (SP-017). Run it pre-build and
+treat a CRITICAL as release-blocking:
+
+```
+python <dayz-p3d-audit>/scripts/audit_p3d.py --scan-dir P:\<Mod>
+```
+
+`--scan-dir` auto-discovers the mod's `config.cpp` and cross-checks every wheel
+slot's selection against the body FireGeometry. Outcomes:
+- `CRITICAL: SP-017: wheel-slot selection '<n>' ... ABSENT from the FireGeometry`
+  -> the wheel will not simulate. **BLOCK the release**; apply the additive py3d fix
+  (alias the FireGeo wheel-proxy face into selection `<n>`) before packing.
+- `NOTE: SP-017 ... mapping unresolved (no CfgSlots ...)` -> verify manually
+  (vanilla auto-registration configs that omit `CfgSlots`).
+
+`audit_p3d.py` exits 1 on any CRITICAL, so wiring `--scan-dir` into the pre-build
+gate (alongside the config/texture/LOD checks above) blocks a silently-broken
+vehicle from being packed. PARITY note: `class=vehicle` on the Geometry LOD (SP-027)
+is also reported, but it is parity only - NOT the wheel-sim gate.
+
+---
+## Output Format
+
+After all checks complete, the skill generates a structured report:
+
+```
+=================================
+DayZ Addon Validation Report
+=================================
+
+Addon: mymod\myaddon
+Path: C:\Mods\mymod\myaddon
+Date: 2026-03-28
+
+--- VALIDATION RESULTS ---
+
+[PASS] Folder structure valid
+  └─ config.cpp found
+  └─ $PBOPREFIX$ correct (mymod\myaddon)
+  └─ No stale files detected
+
+[PASS] config.cpp syntax OK
+  └─ 12 classes, 3 patches (CfgPatches valid)
+  └─ All braces balanced, semicolons correct
+  └─ hiddenSelections count matches textures
+
+[WARN] model.cfg: animation "lever_rotate" references axis "lever_axis"
+  └─ Verify this axis exists as memory point pair in Item_Watch.p3d
+
+[FAIL] Texture not found: data\textures\body_co.paa
+  └─ Referenced in config.cpp line 45, class Item_Shirt
+  └─ Expected at: C:\Mods\mymod\myaddon\data\textures\body_co.paa
+
+[FAIL] stringtable.csv: missing key #STR_MYMOD_DEVICE_NAME
+  └─ Used in config.cpp line 23, class Item_Device displayName
+  └─ Add entry: <Key ID="STR_MYMOD_DEVICE_NAME"><Original>Device Name</Original>...
+
+[PASS] All textures and materials found (8 references)
+
+[PASS] .p3d LOD structure valid
+  └─ Item_Watch.p3d: LOD0 (2104 verts), LOD1 (800 verts), Geometry, Memory
+  └─ All named selections consistent across LODs
+  └─ Memory LOD has ce_center
+
+[PASS] Scripts: no Enforce violations found (3 files checked)
+
+--- SUMMARY ---
+✓ 5 PASS
+⚠ 1 WARN
+✗ 2 FAIL
+
+Status: BLOCKED - Fix 2 critical errors before packing
+  1. Add data\textures\body_co.paa
+  2. Add STR_MYMOD_DEVICE_NAME to stringtable.csv (column 1, no leading #)
+
+Next: Run AddonBuilder after corrections are complete
+```
+
+---
+
+## Quick Commands
+
+Use these prompts to trigger specific validation paths:
+
+| User Says | Checks Run |
+|-----------|-----------|
+| "validate my mod" | All 7 checks |
+| "check config.cpp" | Check 2 only |
+| "check textures" | Check 4 only |
+| "check my p3d" | Check 5 only |
+| "is my mod ready for PBO?" | All checks, focused summary on blockers |
+| "what's missing?" | All checks, emphasize FAILs |
+| "validate for AddonBuilder" | All checks, suggest next steps |
+| "I have config errors" | Check 2 with detailed line numbers |
+
+---
+
+## Understanding $PBOPREFIX$
+
+The `$PBOPREFIX$` file is critical for DayZ's mod loading system.
+
+**File location:** Addon root (same folder as config.cpp)
+**File contents:** Single line, e.g.:
+```
+mymod\myaddon
+```
+
+**Rules:**
+- Use backslashes `\` (not forward slashes)
+- No trailing backslash
+- No quotes or extra whitespace
+- Must be unique across all addons (namespace collision = invisible mod), unless the PBO sets the 1.30 header property `fsShadowing=1` to shadow vanilla files on purpose (`references/dayz-1-30-pbo-build.md`)
+
+**Example folder structure:**
+```
+DayZ_Addons\
+  mymod\
+    myaddon\
+      config.cpp
+      $PBOPREFIX$
+      data\
+        model.p3d
+        texture.paa
+      scripts\
+        Item_Custom.c
+```
+
+With `$PBOPREFIX$` containing: `mymod\myaddon`
+
+When packed, this becomes `mymod\myaddon.pbo` in the mod directory.
+
+---
+
+## AddonBuilder Workflow
+
+After validation passes, use AddonBuilder to pack and binarize.
+
+**Location:** DayZ Tools (included with game)
+```
+C:\Program Files (x86)\Steam\steamapps\common\DayZ Tools\Bin\AddonBuilder\
+```
+
+### Locate the authoritative build source before validation (SP-343)
+
+Do not infer the source tree from the checkout that is easiest to find. Before basing a fix,
+audit, or rebuild on a mod tree:
+
+1. Read `build_*.ps1` and resolve the value assigned to `$source`; that is the tree the build
+   script actually feeds to AddonBuilder.
+2. Compare a known byte-stable payload artifact from that tree (for example, a `.c` entry),
+   by content hash, with the corresponding entry in the deployed PBO. A matching path or
+   timestamp is not evidence of identity.
+3. Reject trees marked as display-only, archived, or not-for-build, even when their folder
+   names look canonical.
+
+A matching artifact locates the candidate source; it does not prove release closure. Before
+release, apply the full-tree provenance gate in LL-367: canonical commit/source tree ->
+complete build tree -> PBO.
+
+**Command line (canonical invocation — see DAYZ_INFRA.md §Canonical invocation commands):**
+```batch
+AddonBuilder.exe P:\<ModName> P:\Mods\@<ModName>\Addons -prefix=<ModName> -temp=P:\temp\<ModName> [-clear]
+```
+
+**Command line (pack only, skip binarization):**
+```batch
+AddonBuilder.exe P:\<ModName> P:\Mods\@<ModName>\Addons -prefix=<ModName> -temp=P:\temp\<ModName> -clear -packonly
+```
+
+**Temp-stale trap:** without `-clear` the `-temp` sync is INCREMENTAL and can serve stale
+source — a changed `.c` may not be re-copied, so the PBO keeps packing old code while the
+build reports success. If the PBO does not reflect your changes, wipe `P:\temp\<ModName>`
+(or pass `-clear`) before rebuilding. Never place staging or sources under `P:\temp\*`:
+AddonBuilder clears its `-temp` before copying.
+
+**Binarized-build preflight rules (SP-155, verified 2026-08-03 ArmorHneck build; rule 1 corrected
+2026-10-03 from measurements of 2026-09-27 and 2026-10-01; rule 5 added the same day; rules 1, 3
+and 5 extended 2026-10-24, SP-468):**
+
+1. **Staging is mandatory for binarized builds, and binarize looks for everything under the
+   staging folder.**
+   AddonBuilder passes binarize `-addon="<parent of the source folder>"` (the `[Arguments]=`
+   lines of `DayZ Tools\Bin\Logs\AddonBuilder.rpt`): `P:\<Mod>` gives `-addon="P:"`, a staged
+   `…\src\<Mod>` gives `-addon="…\src"`. Under that folder binarize:
+   - **parses every `config.cpp`, recursively and through junctions**, and aborts on the first
+     broken one. The canonical `AddonBuilder P:\<Mod> …` therefore dies on any broken foreign
+     config on `P:\` (e.g. `P:\temp\Utopia_PC\…\legacy_generic_attempt\config.cpp`, or another
+     project's test fixture). A broken `config.cpp` in a folder beside the staged mod, or behind
+     a junction beside it, stops the build the same way (binarize exit 1, no PBO).
+   - **resolves every file the p3d cite (`dz\…`, another mod's prefix) under that folder, never
+     under `P:\`.** A face material it cannot find is embedded EMPTY in the ODOL: no shader, no
+     stage texture, no `.bisurf`. A section with an alpha-cutout texture also loses bit `0x200`
+     of its special flags (`0x24200` → `0x24000`). The build still says "Build Successful", and
+     AddonBuilder's log carries no line about the missing material, so grepping it finds
+     nothing.
+
+   AddonBuilder.exe exits 0 when the build fails (`Build finished. [ResultCode]=1` in the rpt)
+   and does not name the culprit (with `-noLogs -silent` the path never appears). Judge a build
+   by the rpt's `[ResultCode]` or by the PBO (present, and rebuilt), never by the exit code.
+
+   **Rule:** stage the mod in a dedicated folder that holds nothing else:
+   `%TEMP%\<mod>_build_<stamp>\src\<Mod>`, plus every file its p3d cite outside its own prefix.
+   Copy each at its cited path (`src\dz\data\data\penetration\metalplate.rvmat`, taken from the
+   files the game loads), or reach the vanilla ones through a junction `src\DZ` → the extracted
+   vanilla data. A junction target is parsed too, so it must hold no broken `config.cpp`. These
+   files only feed binarize: AddonBuilder packs the source folder alone. Check them before and
+   after the build (rule 5). `CocaLab_dev\tools\build.py` does all three (staging, cited files,
+   ODOL check);
+   `ArmorHneck_dev\tools\build.ps1` stages but does not provide the cited files.
+   - `-project=<source>` narrows `-addon` to the source itself and is not a way out: the PBO came
+     out with no `.paa`, no `.rvmat` and no `texHeaders.bin` ("no textures found"; 606 KB
+     against 16.5 MB).
+   - Cost: `-addon` over a whole projects folder took 249-251 s; the dedicated folder 6-13 s.
+   - Measured with AddonBuilder 1.0.240639 and BINARIZE rev.163709. DayZ MCP v1.3.1 spike,
+     SimpleGroup, 11 builds (2026-10-01): with the mod alone in its folder, `T1_FlagKit.p3d`
+     came out 43,376 B, with `dz\gear\consumables\data\rags_bandages.rvmat` (visual LOD) and
+     `dz\data\data\penetration\wood.rvmat` (collision LODs) embedded empty. With a `DZ` junction
+     beside it, it came out 55,221 B with both resolved, byte-identical to the build whose
+     `-addon` was the whole projects folder. CocaLab (2026-09-27): a staged build embedded
+     `dz\data\data\penetration\metalplate.rvmat`, present on `P:\dz`, and a DrugsPLUS leaf
+     material empty. With the cited files staged there were none, and the gate's control
+     without them failed (6 failures).
+   - Not measured: what an empty material does in game.
+   - **A direct `binarize.exe` call needs a dedicated `-addon` folder too** (SP-468, the H2R
+     import, 2026-10, source outside `P:\`; claim: CLAIM-BINARIZE-DIRECT-ADDON-STALL), as the
+     pack's direct-call templates have it (`dayz-model-pipeline` SKILL.md and
+     `references/py3d-direct-generation.md`, `dayz-p3d-audit` `references/vehicle-killers.md`).
+     Without it (BINARIZE 1.30.164078.38) the first model loaded about 5 min after launch on
+     2026-10-16; on 2026-10-19 none had come out after 30 min (a timeout; right after it, other
+     processes held more than 10 of the 16 threads) or after 13 (stopped by hand). With
+     `-addon=<parent of the staged source>` the first model loaded within a second of the start
+     (one run timed), and all six builds with it converted their 8 models, each log spanning
+     under 3.5 min. Why the wait grew is not established: by birth time, under 0.3 % of the
+     drive's folders, files and `config.cpp` were created between the two runs. Over 10 s a
+     stalled run read nothing, held a flat working set of about 15 MB and did about 183,000
+     other I/O operations (Windows `OtherOperationCount`); the `-addon` run did about 100,000,
+     with reads and a growing working set. That binarize walks `P:` meanwhile is inferred, not
+     traced, and one fact cuts against it: vanilla penetration `.rvmat` present on `P:\dz` still
+     failed to load without `-addon` (rule 5). Signal: binarize alive, no reads, a flat working
+     set, an empty output folder.
+
+   *(corrected 2026-10-03)* This rule used to end: «"Material not loaded" / "Note: creating
+   empty class" messages from the staging are tolerable (verified: HH-60G heli and ArmorHneck
+   clothing both build and work). Validated end-to-end template: `ArmorHneck_dev\tools\build.ps1`.»
+   For materials cited by p3d faces that is false: they are embedded empty (above). The
+   ArmorHneck ODOL deployed on 2026-08-04 carries its Fire Geometry material
+   `dz\data\data\penetration\armor_5mm_plate.rvmat` empty. "Work" meant the item loads and
+   renders; its penetration was not tested. "Creating empty class" was not measured on its own.
+
+2. **RVMATs referenced only from config.cpp do NOT enter the PBO.** The binarize whitelist
+   (`*.p3d;*.paa`) + face-reference scan only pulls materials referenced by p3d FACES. An rvmat
+   referenced solely from config.cpp (healthLevels damage/destruct, hiddenSelectionsMaterials
+   on variants) is silently omitted, and the build still prints "Build Successful". Deferred
+   in-game symptom: no visual damage swap / RPT "Material not loaded" when the item breaks.
+   **Rule:** after the build, parse the PBO ENTRIES and compare against the full rvmat list
+   from config.cpp (not just a classname grep). Copy any missing rvmat into
+   `abtemp\<mod>\data\` and re-package with `-packonly` — use a SEPARATE `-temp` path
+   (with `-clear`, the temp is wiped before the copy lands).
+
+3. **Parallelism.** Binarize without high `-maxProcesses` is slow on dense skinned p3d
+   (>5 min for 3 models at 18k pts in series). Use AddonBuilder's default parallelism and
+   run in background; an apparent hang may just be serial + skinning, or, on a direct
+   `binarize.exe` call, the wait before the first model seen without `-addon` (rule 1).
+
+4. **config.bin may silently fail to register in the engine (most severe).** The mod mounts
+   (engine reads the dir, zero RPT errors) but `CreateObjectEx` returns `unknown_type` and the
+   item does not exist for VPP. The SAME PBO re-packaged with config.cpp as TEXT registers and
+   spawns (bisection with control vanilla Armband_Pink). Correlated symptom: `unRap` exit 255
+   on that config.bin. **Rule:** (a) pack config.cpp as TEXT in local PBOs (the full-build
+   binarize is only exploited for p3d ODOL); (b) the "it actually mounts" gate is an in-game
+   spawn (world_spawn from the bridge or console), NEVER just strings/entries of the PBO —
+   static analysis of config.bin reported "healthy" while the engine ignored it.
+
+5. **Check that binarize can find every file the p3d cite: before the build, and in the ODOL
+   after it** (added 2026-10-03; CocaLab's build since 2026-09-27).
+   - **Before — the gate.** List every path the faces cite, in every LOD: `face.texture` and
+     `face.material` with py3d (`tools/py3d/py3d/__init__.py:1855-1856`; CocaLab scans the MLOD
+     bytes for `*.paa`/`*.rvmat` paths). Stop if one does not exist under the staging folder:
+     rule 1 says binarize looks for it there and nowhere else. Stage each cited `.rvmat` with
+     the textures it names (CocaLab staged the DrugsPLUS `.rvmat` with its three `.paa`; a
+     texture missing on its own was not tested).
+   - **After — the control.** Read the ODOL with the ODOL reader of
+     an external ODOL->MLOD converter (not distributed with this pack). Every unresolved material read
+     so far showed, in every LOD that cites it: `pixel_shader == 0`, `vertex_shader == 0`,
+     `surface_file == ""`, no stage texture (the thermal `StageTI`, `stage_ti`, included) and
+     the engine's default colours (diffuse and ambient 1,1,1,1, emissive 0,0,0,1). A match is a
+     lead, not a verdict: bare vanilla materials match most of those fields in Bohemia's own
+     ODOLs — `dz\data\data\half_lighted_default.rvmat` in `dz\data\cl_feathers2.p3d`,
+     `dz\water\streambed\data\streambed_leaves.rvmat` in `water.pbo`'s
+     `Streambed\streambed_leaf_short_straight.p3d` — and `dz\data\data\default_2pass.rvmat`
+     in `dz\data\data\penetration\impact_test_object.p3d` matches all of them. Confirm a lead
+     against the material's text `.rvmat`: an extracted copy, or a binarized one (`raP`)
+     decoded first. CfgConvert decoded `dz.pbo`'s `wood.rvmat` with `CfgConvert.exe -txt -dst
+     <name>.cpp <name>.bin`, run from the file's folder; given the `.rvmat` name it exited 0
+     and wrote nothing. A file you cannot read as text confirms nothing. Run the control once:
+     the same build without the cited files must turn their materials into leads.
+   - Compare ODOLs by those fields, not by hash: three SimpleGroup flagpoles varied by up to
+     67 B across five builds that resolved the same files (2026-10-01; same trap in
+     `tools/py3d/KNOWN-ISSUES.md`).
+   - **The H2R import is a confounded case of a texture missing on its own** (SP-468, 2026-10;
+     claim: CLAIM-BINARIZE-DIRECT-MATERIALS-EMPTY). Its direct `binarize.exe` calls (BINARIZE
+     1.30.164078.38, source outside `P:\`) logged `Material not loaded` for the same 65 `.rvmat`
+     with a dedicated `-addon` folder as without one (plus one added that day), and the control
+     above reads every material entry of both builds' 8 ODOLs empty (189 of 189 and 190 of 190;
+     the same reader finds shaders and stage textures in vanilla `Motorbike_02`), confirmed for
+     three against their text `.rvmat`. The mod's own sat at their cited path under `-addon`,
+     but each names a vanilla texture that was not staged (`dz\data\data\env_land_co.paa` or
+     `env_land_optic_co.paa`); the other 7 are vanilla penetration `.rvmat`, not staged either
+     (rule 1), and they failed without `-addon` too, though present on `P:\dz`. Not measured
+     which keeps them from loading: the unstaged texture, the source outside `P:\`
+     (`dayz-model-pipeline` `references/py3d-direct-generation.md`, LFQuad), or what the direct
+     call lacks against AddonBuilder 1.0.240639 (`-binpath`, `-textures`, `-exclude`,
+     `-maxProcesses`, `-targetBonesInterval`, `-silent`, and the `-addon` folder as working
+     directory, per its rpt of 2026-10-23). AddonBuilder builds staged outside `P:\` resolved
+     their files (rule 1). What these entries do in the kit that packs these ODOLs is rule 1's
+     open point.
+   - **On a direct `binarize.exe` call, the working directory decides where cited files are
+     found** (LFQuad v1.0.2 body, 2026-11-03, BINARIZE 1.30.164289.70, source outside `P:\`;
+     claim: CLAIM-BINARIZE-DIRECT-CWD). Two runs with the same staged source and the same
+     arguments AddonBuilder passes (`-targetBonesInterval=56 -maxProcesses=16 -always
+     -addon=<src> -textures=<dir> -binpath=<Binarize folder>`) differed only in the working
+     directory. Started from another folder, binarize read the mod's `.rvmat` from
+     `<working dir>\lfquad\data\mat\` (the `…rvmat->` lines of its log) and logged `Material not
+     loaded` for `dz\data\data\penetration\metalplate.rvmat`, although it was staged under
+     `<src>`; the ODOL carried that material with no `.bisurf` in its three collision LODs.
+     Started from `<src>`, it took all 16 `.rvmat` from `<src>`, logged no `Material not
+     loaded`, and embedded `metalplate.bisurf`. **Rule:** start a direct call with the `-addon`
+     folder as working directory, as AddonBuilder does, and read the `…rvmat->` lines of its
+     log to see where each material came from. For a direct call, rule 1's "under that folder"
+     means that working directory. This is the most likely answer to the H2R open point above,
+     not measured on the H2R models. Not measured either: whether the working directory is
+     enough without AddonBuilder's other arguments.
+   - **The ODOL reader above does not parse a 1.30 binarize; embedded strings are a provisional stand-in (INCONCLUSIVE)**
+     (Mag6L31, 2026-11-23, AddonBuilder of DayZ Tools 1.30; claim: CLAIM-ODOL-V56-READER). The ODOL
+     it wrote is version 56 (`ODOL` + `38 00 00 00`), like the 1.30 vanilla models (`dayz-vehicles`
+     `references/dayz-1-30-vehicles.md`, CLAIM-ODOL-V56-130); the external converter's reader, which
+     reads the v54 vanilla models, stops with `scan fallback: LOD address table not found`, so the
+     "after" control cannot run as written until that reader reads v56. A material binarize
+     resolved still leaves its stage textures and its `.bisurf` in the ODOL as plain strings: that
+     build showed the mod's `.rvmat` with its `_nohq`, `_as` and `_smdi`, the procedural DT and MC,
+     `fresnel(2.86,0.01)` and `dz\data\data\env_land_co.paa`, and the Fire Geometry's
+     `armor_1mm_plate.rvmat` with `armor_1mm_plate.bisurf`. Check those names per material. That
+     an empty material leaves only its own name follows from the fields listed above. This does not
+     replace the after-build control; the control without the staged files was not run (INCONCLUSIVE).
+
+The orchestrated build path (temp wipe + deploy + launch) lives in dayz-test-ingame's
+`dayz-test.ps1` template.
+
+
+**Binarize via AddonBuilder CLI (SP-069, LFHeli OH-1 2026-07-19):**
+
+1. **`-temp` for binarize: `P:\` is the habit, not a measured requirement.** On 2026-07-19,
+   with `-temp` outside `P:\`, the "Binarizing" step died in ~4 s with "Process ended with
+   non-zero code. Exit code: 1", empty stderr and zero p3d produced — AddonBuilder still
+   exited 0 ("Build failed" only in its log) — and `-temp` took the blame. That explanation
+   did not reproduce in four later builds with `-temp` outside `P:\` and the work drive mounted
+   (`references/build-appendices.md`, item 6), nor in nine binarized builds with `-temp` in a
+   local folder on 2026-10-01, all with their ODOL (SP-155 rule 1). A binarize exit 1 within a
+   second is also what a broken `config.cpp` under `-addon` gives, so rule that out first.
+   Keeping `-temp` on `P:\` (canonical: `-temp=P:\temp\<ModName>`) costs nothing; none of
+   those builds ran with the work drive unmounted. *(corrected 2026-10-03: the heading said
+   «**`-temp` for binarize must stay under `P:\`.**»)*
+   `-packonly` still accepts local folders outside `P:\`, so local staging remains valid.
+
+2. **ODOL output is neither the source nor the target.** It lands in
+   `<temp>\<prefix>\...` (e.g. `-temp=P:\x\temp -prefix=LFHeli` → ODOL in
+   `P:\x\temp\LFHeli\models\`). The PBO AddonBuilder leaves in the target in binarize
+   mode can be a tiny-PBO (~1 KB) that still prints "Build Successful".
+
+3. **Verified release pattern** (binarized assets + scripts in a separate mod):
+   binarize → collect ODOL from `<temp>\<prefix>\` → stage ODOL + raw `config.cpp` →
+   `-packonly -prefix=<prefix>` → content gate (`config.cpp` present, no `config.bin`,
+   N ODOL magics, prefix correct).
+
+4. **Binarizing, name the source folder exactly as its single-segment `$PBOPREFIX$`
+   (measured 2026-10-09, AddonBuilder 1.0.240639, DayZ-MCP 222d acceptance).** With source
+   folder `LFHeli_OH1` and `-prefix=LFHeli`, binarize wrote the ODOL to
+   `<temp>\LFHeli\` (temp + prefix) while FileBank packed `<temp>\lfheli_oh1\` (temp + the
+   lowercased folder name). The PBO had the right prefix, the textures, the rvmat files and
+   `config.bin`, but none of the 7 models, and the log still said "Build Successful". With the
+   prefix equal to the folder name (SimpleGroup) the same build packed everything. If the
+   folder cannot carry the prefix's name, build `-packonly` or use the release pattern above.
+   Either way, accept a binarized build only when the PBO has one ODOL entry per `.p3d`, never
+   by its log. Pipeline inbox fb-20261010-150630-25af.
+
+**What AddonBuilder does:**
+1. Reads $PBOPREFIX$ → creates output filename (mymod\myaddon.pbo)
+2. Binarizes config.cpp (text → binary, ~90% smaller, faster load)
+3. Optimizes .p3d files (binary format, LOD structure intact)
+4. Packs all files into .pbo container
+5. Generates PBO header with prefix
+
+**Output:** `mymod\myaddon.pbo` ready to place in `@YourMod/addons/`
+
+
+**Comparison builds: match the mode to the reference artifact.** AddonBuilder has two modes and both produce a PBO that loads:
+- **with `-packonly`**: packs raw, does not binarize `.p3d`. Large PBO.
+- **without `-packonly`**: binarizes `.p3d` to ODOL. Much smaller PBO.
+
+When the PBO is going to be used as a comparison term (compile gate, module measurement, A/B footprint, RED/GREEN of fixtures), **it must be built with the SAME mode as the artifact it is compared against**. Verify by size before deploying: a PBO that differs from the reference by a factor of 3–4× is not a variation of your code, it is a different build mode.
+
+---
+
+## Post-build check — confirm the PBO actually contains your scripts (binarize drops `.c`)
+
+AddonBuilder's default binarize mode does **not** copy `.c` script files — they aren't in its
+binarize/copy include-list. A scripts-heavy or scripts-only addon built with a plain
+`AddonBuilder src dst -clear` can pack to a **config-only PBO** (`config.bin` + the CfgMods
+path strings, nothing else) while still printing `Build Successful`. In-game the mod *mounts*
+(its CfgPatches name appears in the server `script.log` `defines:` list) but **no script runs**:
+no modded class merges, no hook fires. Verified 2026-06-03 — a scripts mod packed to 662 bytes
+under binarize; `-packonly` produced the correct 124 KB PBO with all its `.c`.
+
+Pack mode by addon type:
+- **Scripts-only** (no `.p3d`/`.paa`): build with `-packonly` (copies everything as-is;
+  `config.cpp` stays text, which DayZ loads fine).
+
+`.c` is not the only casualty of the include-list: **`.csv` is dropped too**. Measured
+2026-08-20 on a two-file addon — the binarizing pass produced a PBO with `config.bin` and
+**no `stringtable.csv`**, while `-packonly` on the same source kept it. An addon whose only
+job is to carry a stringtable therefore packs to something that mounts and translates
+nothing. Same silent shape as the scripts case: `Build Successful`, mod mounts, feature
+absent.
+- **Mixed — models + scripts** (vehicles, items): you still need binarize for the `.p3d`, so
+  `-packonly` is wrong. Confirm AddonBuilder's include-list copies `*.c`/`*.h`, or the scripts
+  vanish silently — a CarScript vehicle would then load but never simulate.
+
+### `-include` is not the final PBO manifest (SP-177)
+
+AddonBuilder has two input paths. Its native binarization/discovery path handles `config.cpp`,
+`.p3d`, and face-referenced `.rvmat`; these can enter the PBO even when their suffix is absent
+from `-include`. The ordinary sync path carries `.c`, `.paa`, `.ogg`, `.layout`, and `.csv`;
+with a fresh temp, an omitted suffix is silently dropped. This scopes LL-213's "exclusive
+filter" rule to the ordinary sync pass, not the final PBO contents.
+
+Measured case: an `.rvmat` omitted from `include.lst` still entered and was binarized because
+three `.p3d` files referenced it. This does not override the config-only-rvmat rule above:
+an `.rvmat` referenced only by `config.cpp` may still be absent.
+
+Do not add material suffixes to `include.lst` as a precaution and treat that as proof.
+List, count, and name the built PBO entries. Compare ordinary payload against the source tree,
+and check the complete config-referenced rvmat set separately. Presence in the list does not
+prove that an entry was packed; absence from the list does not prove that a native input was
+dropped.
+
+Always verify after packing (cheap; catches it instantly):
+```powershell
+$txt = [System.IO.File]::ReadAllText($pbo, [System.Text.Encoding]::GetEncoding('ISO-8859-1'))
+$txt.Contains('YourKnownClassName')   # must be True; also sanity-check the PBO byte size
+```
+Debugging heuristic — when "the mod loads but no script runs", grep the deployed PBO for a
+known class string **before** chasing the script logic, the mission class, or server checks.
+
+**Script-footprint caveat:** PBO byte shrink is NOT evidence of script-arena reduction. When the goal is script memory footprint, do not adjudicate capacity from source bytes, line counts, or PBO container size — the container size is a sanity/identity check, not a proxy for compiled memory. Measure control and candidate with DayZDiag under frozen stack/order/mission/config; report Game, World, Mission, and total separately, along with files/classes and hashes. Only the repeated engine delta sustains a causality or capacity claim.
+
+### Post-build check — deployed-artifact reconciliation and exception-safe gates
+
+- **A portable return is a deployment boundary (LL-293).** A source pack does not bring Steam `!Workshop` or `_server\profiles`. Before the first in-game test, inventory those external dependencies and profiles, extract a census of the deployed PBO entries, and compare each expected entry with the current compilable tree by content hash. Whole-PBO byte equality is not a substitute for per-entry comparison; rebuild and deploy on any unresolved divergence. Run source-sync steps only in a mode that cannot overwrite restored sources with stale assembly output (`oh1-build-deploy.ps1` without `-SkipSourceSync` overwrites MLOD with stale `assemble_out`; `powershell -File x.ps1 -Array a,b` passes one string — gate FAIL without deploy, use `&`).
+
+### Content gate: derived manifest, extras check, and negative control (SP-171)
+
+A content gate built on a hand-maintained closed file list goes stale in both directions
+simultaneously: it names files that have since been deleted (killing the build at
+startup) and omits files the PBO actually ships (a PASS then proves nothing about half
+the payload). The correct construction:
+
+- **Manifest = enumerate the source tree.** The expected file set is derived from what
+  exists in the addon source directory at build time, not from a static list. A derived
+  manifest cannot omit what is present.
+- **Extras check on the PBO.** After packing, list the PBO entries and flag any file
+  that is NOT in the derived manifest. This is what a closed list was actually buying:
+  catching files that should not be there.
+- **Exclude AddonBuilder-generated metadata from the extras check.** `$PBOPREFIX$.txt`
+  and `texHeaders.bin` (the .paa index) are produced by AddonBuilder and have no source
+  counterpart by design; they are expected in the PBO and must not trigger a flag.
+
+**Negative control (mandatory).** A gate that only asserts presences cannot detect that
+you failed to remove something you thought you removed. For every line or file the build
+is supposed to have eliminated, the gate must assert that it is ABSENT from the PBO.
+Presence-only checks pass even when stale content remains.
+
+**Payload anchors go stale just like the manifest.** Before treating an absent anchor
+(e.g. a `CreateAttachment("…")` call) as a regression you introduced: extract the
+DEPLOYED PBO and check whether it contains the anchor. If it is absent from the deployed
+PBO as well, the anchor is stale — there is no regression. Only an anchor present in the
+deployed PBO but missing from your new build is a true regression.
+
+
+### AddonBuilder non-determinism: byte identity is valid within a build, invalid between builds (SP-194)
+
+Measured 2026-08-07 (SUB_BRZ s48, LFPowerGrid F4-S3): with the same source MLOD and the same
+`-include`, two AddonBuilder runs produce different `.p3d` bytes. The payload (vertices, normals,
+UVs, named selections, textures, material set) hashes identically; only the ORDER of `faces`,
+`sections`, and the material array changes. Of 10 byte-different entries in the first measurement,
+8 were pure reordering and 2 were the real change.
+
+**Within a build**, byte identity is valid and must be enforced: the binarized temp output must be
+byte-exact against the PBO entry (both come from the same run). This is the gate already used by
+`forza_build_identity.py` (stage↔PBO) and GATE A of `pbo_verify_s48.py`; SP-194 does not
+invalidate it.
+
+**Between builds**, comparing bytes or sizes gives false positives. A "only X should have changed"
+gate against the deployed PBO will flag ~8 of 11 untouched entries. The correct between-builds gate
+is an **unordered multiset** per LOD keyed on `(material, texture, vertex-index, lit_bit)`,
+constructed by walking `sections` and mapping each face to its material. Vertex indices are
+comparable because vertex order IS stable (its hash matches across runs). Reference implementation:
+`pbo_verify_s48.py` GATE C (`canonical()`); diagnostic triple: `s48_diag_delta.py` /
+`_content.py` / `_canonical.py` (counts → payload → canonical).
+
+**Mandatory self-check:** if the sections do not cover ALL faces of the LOD, the multiset is
+incomplete and the gate must declare itself **VOID** rather than pass.
+
+**Addendum (LFPowerGrid F4-S3):** the non-determinism is in the ODOL binarization of `.p3d` only.
+`.c` script entries are byte-stable between builds (measured: 1 of 147 `.c` entries changed size,
+and it was exactly the file that was edited; all 50 `.p3d` sources were byte-identical between the
+two trees). Therefore **comparing script entries between two PBOs IS a valid change detector** —
+the "do not compare bytes between builds" rule applies to `.p3d` only; applying it to scripts
+discards the cheapest gate available.
+
+**SHA-pinned artifacts are irrepeatable.** If a qualification is pinned to a PBO SHA, rebuilding
+"to regenerate it" produces a different hash from an identical tree and breaks the pin silently.
+In a project with release or audit anchored to a hash, "do not rebuild the PBO" is a hard
+invariant: the file is a unique artifact and must be backed up by hash.
+
+- **Every expected difference needs a pinned base (LL-326).** Audit gate code for `continue`, `pass`, `ok += 1` and allowlists. A file known to differ because a delta/merge is not yet promoted cannot receive an unconditional OK: store the `SHA-256` of the exact source base at derivation time in an `enforce-base.json`, mark the artifact `STALE` if that base moved, and force the merge to be rebuilt. Separately, a proximity check for words such as "retired" or "obsolete" answers an adjacent question; require the live identifier beside each retired reference.
+
+### Compare the entries of two builds
+
+After a rebuild, check that only the entries you meant to change differ:
+
+```
+python <KNOWLEDGE_PACK>/tools/dayz-pbo-diff/pbo_diff.py --old <old.pbo> --new <new.pbo> --out <diff.json>
+```
+
+It compares the SHA-256 of every entry's payload and the header properties; `differing` lists every
+entry that changed or is on one side only. Read it with SP-194 above: between two builds a
+different `.p3d` entry proves nothing by itself, while a different script, config, material or
+texture entry does (§"Binarize is not byte-deterministic" below). `--ignore-prefix <prefix>` drops
+a prefix from `differing_not_ignored`, never from `differing`. A compressed entry is refused
+(exit 1); see `tools/dayz-pbo-diff/README.md`.
+
+### Two silent no-load causes to check BEFORE blaming the engine (SP-347)
+
+Both produce the same symptom as the binarize/`.c` case above — the mod mounts, nothing
+runs, the log is empty — and both are decidable offline in seconds. Check them before
+spending an in-game session interpreting silence, and before concluding "this API does not
+work" from a log line that was never going to exist.
+
+**1. The script-module name selects the compile stage. A wrong name loads nothing.**
+`CfgMods.<Mod>.defs` must map each source folder to its own stage: `3_Game` ->
+`gameScriptModule`, `4_World` -> `worldScriptModule`, `5_Mission` -> `missionScriptModule`.
+Declaring `4_World` files under `gameScriptModule` is accepted by the packer and produces no
+warning, but the code never reaches the stage where its base classes exist. Measured
+2026-08-24: a bench mod declared `files[]={"<Mod>/scripts/4_world"}` under `gameScriptModule`
+and emitted nothing at all; two mods that load on the same machine (`DayZ_MCP/config.cpp`,
+`A6_MK47/config.cpp`) both use `worldScriptModule` for `4_World`. The correct shape already
+appears in `dayz-aviation/SKILL.md:363-389` and `dayz-vehicles/references/rip-import.md:522`;
+what none of them state is the failure mode, which is silence rather than an error.
+
+Match the **case** of the folder too, on disk and in `config.cpp`. Working mods ship
+`4_World`/`5_Mission` capitalized; a lowercase tree packs lowercase paths into the PBO while
+`config.cpp` asks for the capitalized ones, and Windows will not tell you.
+
+```powershell
+# Declared modules vs. what is actually on disk
+$cfg = Get-Content "$mod\config.cpp" -Raw
+[regex]::Matches($cfg,'class\s+(\w+ScriptModule)') | % { $_.Groups[1].Value }
+[regex]::Matches($cfg,'"([^"]*scripts/[^"]+)"') | % {
+  $p = Join-Path $mod ($_.Groups[1].Value -replace '^[^/]+/','' -replace '/','\')
+  "{0} -> on disk: {1}" -f $_.Groups[1].Value, (Test-Path $p) }
+```
+
+**2. Every vanilla PBO ends in a 21-byte trailer; hand-rolled packers omit it.** The trailer
+is one `0x00` separator followed by the SHA-1 of everything before it:
+
+```
+trailer == b"\x00" + sha1(data[:-21]).digest()
+```
+
+Measured 2026-08-24 on 6 vanilla PBOs (`ai`, `ai_bliss`, `animals`, `animals_bliss`,
+`anims_anm_infected`, `anims_anm_player`), 6/6 match, 10 KB to 350 MB. AddonBuilder writes it;
+a custom Python/Node packer usually does not, because a PBO without it still parses correctly
+with any reader you write yourself — the omission is invisible to a round-trip test, which
+compares the packer against its own output.
+
+Whether the engine *rejects* a PBO lacking the trailer is **not established**, and in the
+measured case it was not the cause. Write it anyway: it is an idempotent append that removes
+the variable instead of leaving it to be investigated later under time pressure.
+
+```python
+data = open(pbo, "rb").read()
+if not (len(data) > 21 and data[-21] == 0
+        and hashlib.sha1(data[:-21]).digest() == data[-20:]):
+    open(pbo, "ab").write(b"\x00" + hashlib.sha1(data).digest())
+```
+
+**Gate ordering.** A build step that reports success without checking `$LASTEXITCODE` after
+each AddonBuilder invocation, and a deploy step that accepts a PBO on `Test-Path` alone, will
+both hand you a stale artifact and call it fresh. Check the return code after *every*
+invocation — and for AddonBuilder, whose exit code is 0 even when the build fails (SP-155
+rule 1), read the rpt's `[ResultCode]` and check that the PBO exists and was rebuilt — and
+print a `SHA-256` build-id at pack time that a boot sentinel inside the mod
+can be checked against — otherwise an old PBO is indistinguishable from a new one that does
+nothing.
+
+---
+
+## Common Validation Failures & Fixes
+
+Symptom -> cause -> fix catalog moved to `references/common-validation-failures.md` (fire-mode stub, unclosed brace, missing semicolon, texture-not-found, #STR_ key missing, ce_center, hiddenSelections count mismatch).
+
+---
+
+## Advanced: Scripting Validation
+
+Enforce Script **supports** ternary (`x ? a : b`), `++`/`--`, and `foreach (Type t : collection)` —
+they appear throughout vanilla, so a validator must NOT flag them. The one real array caveat:
+
+```enforce_script
+// Arrays: no '+=' concatenation operator. Add elements with Insert()/InsertAll():
+selections.Insert("newSelection");    // append one
+selections.InsertAll(otherArray);     // append many
+
+// Supported and idiomatic (do NOT flag):
+int x = condition ? 1 : 0;            // ternary
+i++;  --i;                            // increment / decrement
+foreach (string s : selections) { }   // foreach over a collection
+```
+
+For the authoritative Enforce Script rule set, see the `enforce-script-reference` skill.
+
+---
+
+## Offline script linter (pre-PBO)
+
+**Blocking gate — run before packing, not after.**
+
+```
+python tools/dayz-script-validator/scripts/script_validator.py <addon_root>
+```
+
+Exit `0` PASS / `1` FAIL / `2` WARN. **Do not build a PBO on exit 1**: the errors it catches (`Unknown type`, local redeclaration, override of an absent method, `delete`, item declared under the wrong `CfgXxx`) only surface when the script module compiles at boot, so packing first turns a one-second check into a full in-game cycle. Add `ui_reconcile.py <addon_root>` when the mod ships UI.
+
+Green here means the module should COMPILE and the asset should LOAD. It says nothing about engine behaviour — see `dayz-mod-workflow` §"Gates offline" for the full contract and the known coverage limits.
+
+### The linter scans the WHOLE addon_root and blames the mod for all of it
+
+It walks `<addon_root>` recursively and every finding is reported as the mod's,
+whatever subtree it came from. If anything that is not your shippable source
+lives under that root — a read-only copy of vanilla for reference, a `_source_*`
+rip, a `_recovered` tree, a vendored dependency, an isolated build scratch — its
+findings land in your numbers.
+
+Measured: mounting five vanilla files under an addon root for a delegate to read
+added **19 errors and 23 warnings** that belonged to Bohemia, not to the mod, and
+turned a clean tree into exit `1`. Vanilla legitimately uses `delete`,
+`ProcessDirectDamage` aliases and patterns this ruleset forbids for mods, so the
+errors are correct — they are just not yours.
+
+Both failure directions cost a cycle, and the second is the dangerous one:
+
+- **Inflated**: a clean mod reads FAIL, and the natural next move is to "fix"
+  code you must not touch. Editing a reference tree to make a gate go green
+  neutralises the instrument instead of passing it.
+- **Masked**: if the *baseline* of a before/after comparison was taken with the
+  contamination present, a real new finding can hide inside the noise. This is
+  the one that ships a defect.
+
+Rule: **attribute by path before believing any count.** Split findings into the
+mod's own source and everything else, compare only the mod's set against the
+mod's baseline, and quote both numbers when reporting. Never reduce a delta to
+the process exit code: the code is computed over the whole root, so it is red
+whenever any foreign subtree is dirty, and it cannot distinguish "my change
+broke something" from "the reference copy was always like that".
+
+Corollary for delegation: if you mount reference sources inside the workspace so
+a worker can read them, say in the brief that their findings are not the
+worker's and are not to be fixed. Without that line, a diligent worker will try
+to clean them.
+
+Two more traps around the same instrument:
+
+- More than one snapshot of the validator can be installed, and their rulesets
+  differ — two copies reproduced identical *warning* sets while disagreeing on
+  errors. Pin one path for baseline and delta, or the comparison is meaningless.
+- Do not capture its JSON with a PowerShell `>` redirect: PS 5.1 prepends a
+  UTF-8 BOM and `json.load` rejects the file. Read stdout via `subprocess`, or
+  decode `utf-8-sig`.
+
+### A deployed PBO with the right version does not prove it compiles
+
+Offline-green plus a correct deploy is still not a compile. Measured 2026-08-29: `@DayZ_MCP`
+was rebuilt and deployed with the source bumped v9 to v10, the deployed PBO byte-scanned
+clean (version string present, all new verbs present, negative control against the previous
+build), and the server still died with `Can't compile "Mission" script module!`.
+
+Cause: a **partial sync between the repo addon tree and the `P:\<Mod>` build tree**. The
+feature was two files -- a field in one, its consumer in the other. The sync copied the file
+that declares the field (dropping it, because that feature is deliberately unpublished) but
+not the file that reads it, leaving an orphaned consumer:
+
+    P:\<Mod>\scripts\5_Mission\Bridge.c:1340   if (a.dest == "hands" || a.hands)   <- consumer
+    <Mod>_dev\addon\...\Messages.c            string hands;  ABSENT               <- field
+
+Enforce fails the WHOLE module on one unresolved symbol, so the log also shows errors from
+unrelated mods loaded in the same run. The FIRST error names the real culprit; the rest are
+collateral. Do not debug the second error first.
+
+**Gate after any deploy:** boot the server with ONLY that mod and grep the fresh script log
+for its module line. Cheap, decisive, and it isolates the mod from co-loaded ones:
+
+    Module: Mission; loaded 217x files; 508x classes
+
+Zero `Can't compile` / `Can't find variable` / `Failed to load mission scripts` is the pass.
+Read the log from THIS boot: a stale `script_*.log` from an earlier day carries a green
+module line and answers the question with old data.
+
+**Diff the trees before packing** whenever a mod keeps a `_dev` repo tree beside a
+`P:\<Mod>` build tree: `diff -rq` over the addon subtree. One line of drift there is
+invisible to every byte-level PBO check, because the PBO faithfully contains the broken
+source.
+
+**And do not use mtime as the freshness signal.** `shutil.copy2`, `robocopy` and `xcopy`
+preserve the source timestamp by design, so a file that was synced into the build tree one
+minute ago can carry a timestamp from days earlier. Measured 2026-08-29: a source file fixed
+and copied into `P:` at 03:51 still reported an mtime of 24-Aug 18:29, identical to its
+origin, while its content and its byte size both proved the edit had landed.
+
+That breaks the obvious build-debt check. Comparing a deployed PBO's mtime against the newest
+source in the build tree can report NO DEBT while a freshly-synced source sits under a stale
+PBO, because the sync handed the source an old timestamp. Adjudicate build debt by CONTENT:
+sha256 the deployed PBO against a rebuild, or compare per-file hashes of the packed entries
+against the tree. Treat mtime as a hint that orders events, never as the fact that decides
+whether an artifact is current.
+
+## Integration with CI/CD
+
+For automated builds, run validation before packing. Note: the validators are
+reference code blocks in `references/validation-scripts.md` — adapt them to your
+pipeline; there is no bundled `validate.py`.
+
+**Example build script (after extracting a validator from the reference):**
+```batch
+@echo off
+echo Validating addon...
+python config_cpp_validator.py "P:\MyMod\config.cpp"
+if %ERRORLEVEL% NEQ 0 (
+    echo Validation failed, skipping pack
+    exit /b 1
+)
+echo Validation passed, packing...
+AddonBuilder.exe P:\MyMod P:\Mods\@MyMod\Addons -prefix=MyMod -temp=P:\temp\MyMod -clear
+```
+
+The reference validators return exit code 0 on PASS, 1 on FAIL, 2 on WARN (configurable).
+
+---
+
+## Reference Scripts
+
+See `references/validation-scripts.md` for standalone Python validators that can be integrated into build pipelines.
+
+- `config_cpp_validator.py` – Parse and check config.cpp syntax
+- `texture_path_checker.py` – Verify texture existence
+- `stringtable_validator.py` – Check string key coverage. **Broken for DayZ**: it
+  parses `stringtable.xml`. Do not run as-is; see `references/validation-scripts.md` section 3.
+- `p3d_lod_checker.py` – Validate .p3d LOD structure
+
+Each outputs machine-readable JSON for CI/CD integration.
+---
+
+## Build appendices (session findings)
+
+Dated 2026-06-11 session appendices moved to `references/build-appendices.md`: post-build PBO verification checklist (size/content/name/staging) and the model-path resolution gate (validate what the engine RESOLVES in the deployed PBO).
+
+## Rules promoted from the lessons corpus (added 2026-07-27)
+
+Promoted from `AI/20_Knowledge/lessons-learned.md` so that they arrive via trigger instead
+of relying on someone remembering to look them up. Each rule cites its source `LL-NNN`;
+the full entry (symptom, origin, evidence) lives there. Do not remove the citation: the index
+`lessons-index.md` detects promotion by searching for that reference inside the skills.
+
+- **LL-084** — Facing `quoted string not closed`, EOF or a line pointed out in vanilla, treat file and line as possible module cascade and inspect BOM/upstream truncation first. Perform diagnosis and byte-level correction from authoritative host, not from stale mount.
+- **LL-213** — Treat `-include` as exclusive filter and always validate from an empty temp. Separate `.p3d` sync from step binarizing them to ODOL; fail if entries are missing or size indicates MLOD copied as-is.
+- **LL-290** — A pin by sha256 or size breaks on its own going through git: with `core.autocrlf=true` (default on Windows) `git add` normalizes to LF and `git checkout` rewrites with CRLF, so blob and working tree cease to match pinned values (measured: LICENSE 1577 B pinned vs 1548 B in blob, and 8 reds on a Windows clone). Run gate on **freshly checked-out clone**, not on a copy exported with robocopy: copy preserves original bytes and gives green on a tree that no one receives. And put `.gitattributes` with `* text=auto eol=lf` from first commit, plus `-text` on whatever is compared byte-by-byte. It is the same axis as AddonBuilder byte identity section above: before comparing hashes, ensure you compare the tree that gets published.
+- **LL-367** — A release artifact is traced to commit by hash of its ENTIRE source tree, not touched files. Pre-release provenance gate: commit/canonical source ↔ full build tree ↔ PBO. An incremental "verified" sync only verifies its own delta.
+
+## A mod can have TWO PBOs, and the one your gate validates may not be the one the game loads (added 2026-09-02)
+
+Measured on LFQuad on 2026-09-01, investigating why a freshness gate gave a reading
+that did not add up:
+
+| path | size | date | model inside |
+|---|---:|---|---|
+| `<Mod>\<Mod>.pbo` (in source tree) | 5.92 MB | 22-Jun | **binarized** `.p3d` (ODOL, 2,036,911 B) |
+| `P:\Mods\@<Mod>\Addons\<Mod>.pbo` (the deployed one) | 17.22 MB | 21-Jun | **unbinarized MLOD** (10,914,580 B) |
+
+Two builds via two different paths, with **73 entries, 5 `.c`, 36 `.paa` and 23 `.rvmat`
+both** — meaning both complete, neither obviously broken. The visible difference is
+size, and size is explained by binarization, not by anything missing.
+
+**The one the game loads is the one in `Mods\@<Mod>\Addons\`, and it was the older of the two.**
+
+Consequence for any packaging gate: **check all packages that
+exist for that mod**, not one chosen by hand. The complementary way avoids having to
+guess which pipeline is authoritative — if any of them does not carry what the model
+requires, or is older than the sources, the verdict is red. A gate pointed only to the source
+tree one can turn green on a deployment that never received the work.
+
+Two instrumentation details that came out of the same place:
+
+- **The presence of `.p3d` is checked by NAME, never by size**: one path
+  binarizes it and the other does not, and the same model weighs 5.4x different in each package.
+- A freshness gate traversing the source tree must exclude `*.pbo`, `*.bisign`,
+  `*.bak*` and temp files. A backup is written **after** what it
+  copies, so counting it as source leaves the gate red forever for a reason that
+  has nothing to do with package being stale.
+
+## "Build Successful" does not say it packaged YOUR sources: the `-temp` tree can survive (added 2026-09-06)
+
+Sister to previous section. That one says you may be validating the wrong
+PBO; this one, that you may be building the **correct PBO from the
+wrong sources**. Measured on LFPowerGrid on 2026-09-06, after a week of
+in-game measurements taken on a ghost package.
+
+**The mechanism.** AddonBuilder receives `-temp=<dir>` and works there. It is common for the
+project wrapper to clean it with `shutil.rmtree(temp, ignore_errors=True)`. That
+flag swallows the failure: if anything locks the directory (explorer, an antivirus, an
+open game), the old tree **survives**. AddonBuilder then regenerates only what
+it produces itself —`config.bin` from your `config.cpp`, and `texHeaders.bin`—,
+packs the `gui/`, `scripts/` and `data/` that were already there, and reports
+**`Build Successful` with code 0**.
+
+**The footprint that gives it away**, inside the `-temp` tree, is unmistakable:
+
+| file | mtime |
+|---|---|
+| `config.bin`, `texHeaders.bin` | from one minute ago |
+| `gui/`, `scripts/`, `data/` | from days or weeks ago |
+
+In the measured case, deployed package carried sources from 2026-08-29 while repo
+was a week ahead: 14 different files, an entire missing `.layout`, ~8,500 B
+less in a single view, and `config.cpp` not copied (replaced by regenerated
+`config.bin`). Each "rebuild" moved the `.pbo` mtime and did not move its content.
+
+**Two traps when checking it, both measured:**
+
+- **Counting loose version mentions does not discriminate.** The old package gave 80
+  occurrences of `"1.2.3"` and 1 of `"1.2.4"`, but those numbers mix comments,
+  changelogs, and legacy migrations. What decides is the **exact literal** of the
+  constant: `grep -c -a -F 'LFPG_VERSION_STR = "1.2.4"'`. One against zero, without noise.
+- **Larger is not more complete.** The correct package came out **8.4 MB smaller**
+  than the ghost (99.6 MB against 108.0 MB), because the never-cleaned `-temp` tree
+  had been accumulating debris from previous builds that got packed with everything else.
+  A gate watching "that it does not shrink" would have blocked the good package.
+
+**The check that does catch it** comes with mandatory positive control: choose a marker
+that exists **only** in new sources and another that must exist in both. If the
+second does not appear either, your grep is broken and the first result means nothing.
+
+```bash
+grep -c -a -F "<new marker>"      <path>/Addons/<Mod>.pbo   # must be >= 1
+grep -c -a -F "<control marker>" <path>/Addons/<Mod>.pbo   # must be >= 1 always
+```
+
+**The fix in the wrapper** is four lines and is fail-closed: delete, **verify
+that it was deleted**, and abort with own code if it survives. Never let an
+`ignore_errors=True` decide for you what gets packed.
+
+```python
+shutil.rmtree(temp, ignore_errors=True)
+if os.path.exists(temp):
+    print("ABORT: temp dir survived removal: %s" % temp)
+    raise SystemExit(4)
+```
+
+Verified with positive control: pointing `--temp` to a file (so `rmtree` fails and the
+flag swallows it), guard aborts with `RC=4` without ever invoking AddonBuilder, and the
+wrapper's `finally` block continues running — important if, as here, it puts configs
+from other projects in quarantine while the build lasts.
+
+<!-- corpus-stardz-2026-09-07 -->
+
+### Cross-link: load order + thin lower layers (historical)
+
+`requiredAddons[]` dependency graph orders cross-mod compile within each script module layer (see dayz-mod-workflow). Prefer not inventing 1_Core/2_GameLib content unless you truly need that surface — default shared data to 3_Game.
+
+Source: https://github.com/StarDZ-Team/DayZ-Modding-Wiki/blob/main/en/02-mod-structure/01-five-layers.md
+
+## Binarize is not byte-deterministic (added 2026-09-08)
+
+Measured 2026-09-07 on LFSecure with AddonBuilder 1.29 (`build_pbo.py`, staging outside `P:\`, `-temp` under `P:\`): two consecutive builds of the SAME assembled tree (MLOD `lfs_door.p3d` and `lfs_room.p3d` byte-identical by sha256) produced different ODOL entries — door 339,554 vs 339,551 B, room 2,597,078 vs 2,598,395 B — while every script, config, rvmat, paa and csv entry hashed the same. Consequences for a release or A/B gate:
+
+- **Per-entry PBO hashes are an identity gate for scripts, config, materials and textures only.** A changed `.p3d` entry between two builds proves nothing by itself.
+- **A binarized model is accredited by the hash of its MLOD input plus the engine check** (render + raycast), never by ODOL bytes. Keep the MLOD hashes next to the PBO hash in the evidence.
+- **Do not chase a byte diff in a `.p3d` entry** when the MLOD did not change; rebuild twice and compare before opening a debinarizer.
+- When the doubt is already open (a test PBO whose ten `.p3d` all hash differently and whose body is ~33 KB smaller, SUB_BRZ s96, 2026-09-18), close it by CONTENT: extract the ODOL from inside each PBO and compare what matters — baked animations, bones, face counts, dimensions — against the stage (measured identical there, `pbo_diff.py`: 127 entries equal, the 10 `.p3d` different). Size and hash differences between builds of the same stage are expected binarize noise, not evidence of a geometry change. [EXACT] (measured, SP-410]
+
+## A content gate string that BASE also contains cannot turn red (SP-390, added 2026-09-10)
+
+`core-build-deploy.ps1 -RequireString <cadena>` checks that text is inside packaged
+and deployed PBO, and is a good gate: catches build that packaged an
+old version of tree. Fails silently when chosen string **is not exclusive
+to the change**.
+
+Measured on 2026-09-10 on LFHeliCore. To test a variant that enabled client
+smoothing only with `ClientPresentMode == 1`, the gate was closed with:
+
+```
+core-build-deploy.ps1 -RequireString "ClientPresentMode == 1"
+```
+
+and passed. But BASE already contained that substring, in a function that has nothing to
+do with the variant:
+
+```c
+// LFHeliOwnerWakeEnabled(), present since before the change
+return m_Tuning.ClientPresentMode == 0 || m_Tuning.ClientPresentMode == 1;
+```
+
+Meaning that gate **would have passed just the same on the build without the variant**. It could not
+turn red, and therefore proved nothing: throughout entire run it seemed as though it
+verified that change traveled to PBO, and only verified that file was still there.
+
+**How the string is chosen.** Let it be unique to the change, not to change area. A
+new constant name (`REST_PROBE_ARM_MPS`) or a new log tag
+(`[LFHELI-REST]`) are good: they do not exist before. An expression fragment on an
+already-used field, no.
+
+**And the check that closes it, taking one minute**: before trusting the gate,
+**run it against the artifact WITHOUT the change and see that it FAILS**. A gate for which you have
+only seen green is not calibrated; proving it can turn red is the half that
+is almost never done. In the same run, two strings on new symbols did
+discriminate and one on a pre-existing symbol did not, with the same command.
+
+Sibling to what this section already says about gates proving form and not
+compilation: there gate measures what it shouldn't, here it measures something already there.
+
+## On Windows: dayzmake beside AddonBuilder (not tested)
+
+dayzmake has a Windows release (`dayzmake-v3.1.0-windows-x86_64.zip`, same pin and the same signed `SHA256SUMS`;
+the Gpg4win check is in [`references/dayzmake-linux.md`](references/dayzmake-linux.md), "Download and verify the
+release binary"). **None of this has been run on Windows for the Pack**; the behaviour below is what dayzmake's
+`README.md` (v3.1.0) documents, and it is the same code as on Linux. AddonBuilder stays the build of the Windows
+workflow above. Where dayzmake earns its place there is as a second, scriptable instrument:
+
+- **Signature gate after the build:** `dayzmake verify keys\<Name>.bikey addons\<x>.pbo` recomputes the PBO's SHA-1
+  (since `v3.0.0`), while BI's `DSCheckSignatures` trusts the stored trailer (dayzmake's `README.md`, #46; not
+  re-measured here), so a PBO changed after signing fails here even when DSCheckSignatures says OK (`references/dayzmake-linux.md`, the "Do not commit `build/`" paragraph).
+- **What the PBO really contains**, without extracting it: `dayzmake inspect <x.pbo>` lists the header extensions
+  (`prefix=`) and every entry, the quickest form of "Post-build check — confirm the PBO actually contains your
+  scripts"; `dayzmake cat <x.pbo> config.bin | dayzmake derapify` shows the config that shipped.
+- **Config errors with the right line:** `dayzmake preprocess config.cpp` shows what the parser sees, with include
+  cycles, runaway macros and missing includes reported by name (pass `-i <folder>` for include folders: since
+  `v3.0.0` the working directory is only checked directly).
+- **Third-party PBOs:** `dayzmake unpack` with the 3.0.x checks (unsafe entry names skipped, every Windows device
+  name such as `CON` or `COM1` recognised, existing files only replaced with `--force`) instead of a GUI unpacker;
+  see `dayz-pbo-reverse-engineering`.
+- **Textures in batch:** `dayzmake img2paa` / `paa2img` from a script instead of the ImageToPAA GUI.
+- **API look-ups:** `dayzmake api class|find|src <Name>` reads the installed game's scripts (found through Steam
+  and the registry, or `--dayz <dir>`), without the `P:` drive.
+- **A headless build:** `dayzmake build` binarizes models on Windows through `binarize_x64.exe`, which it finds through
+  `HKCU\Software\Bohemia Interactive\binarize` (DayZ Tools must be installed; v3.0.2 `crates/dayzmake-core/src/binarize.rs:28-32`), and signs with `-k`. This is the route
+  for CI without AddonBuilder; compare its PBO with AddonBuilder's (`Compare the entries of two builds`) before
+  relying on it.
+
+## On Linux
+
+Everything above is the Windows workflow and stays valid there. On Linux, the Proton setup, the measured tool matrix and the pitfalls are in [`_shared/linux-proton.md`](../_shared/linux-proton.md); this section only says what changes for this skill.
+
+- Build with dayzmake >= 3.1.0, bzed's DayZ fork of armake2 (https://github.com/bzed/dayzmake), pinned to `v3.1.0`; dayzmake 3.x fixes a lot of security and file-handling issues of the earlier releases (unpacking untrusted PBOs, `verify` recomputing the PBO checksum, atomic outputs, hostile-config limits, key checks), so do not use an older build. Install the release binary `dayzmake-v3.1.0-debian-trixie-x86_64.tar.gz` from https://github.com/bzed/dayzmake/releases/tag/v3.1.0 only after verifying it against the release's GPG-signed `SHA256SUMS` (key fingerprint `6624 41B3 6A57 85AD 18FB  8667 DF75 3D99 D064 EB7E`; commands and the full list of fixes in [`references/dayzmake-linux.md`](references/dayzmake-linux.md), "Get the right dayzmake"), or `cargo install --locked --git https://github.com/bzed/dayzmake --tag v3.1.0`: use `dayzmake build`, `keygen` and `sign`; Upstream armake2 is no substitute: it is built for Arma, its V3 file hash omits `*.c` files (dayzmake includes them) and lacks the DayZ-only functions dayzmake keeps adding. Check an installed binary with `dayzmake -h | grep -- --proton-binarize` (no hit: not the fork) and `dayzmake --version`; `build --proton-binarize` invokes BI binarize under Proton. `skills/_shared/scripts/dayz-mod-pack.sh` wraps keygen, build, sign, check and the Workshop upload commands; the whole Linux route (signatures, `meta.cpp`, tags, `workshop` uploader) is in [`references/dayzmake-linux.md`](references/dayzmake-linux.md). The validation checks of this skill (prefix, `config.cpp`, `$PBOPREFIX$`, duplicates, stringtable) do not depend on the packer and apply unchanged.
+- `--proton-binarize` keeps texture alpha from fork commit `0a0ce3b` on (verified 2026-11-03; every release from `v1.0.0` contains it); older pre-rename `armake2` builds lose it, and `--version` prints `v0.3.0` for both. Install the pinned `v3.1.0` when in doubt.
+- To compare against BI's AddonBuilder, it runs under Proton: `dayz-proton.sh tool AddonBuilder <P-root>/<Mod> <out> -prefix=<Mod>` (`-packonly` and full builds measured, `-clear` too). The binarize rules above hold: build from `P:\<Mod>`, never from a path whose parent is a large Linux directory, because binarize scans the parent. AddonBuilder exits 0 on a failed build; `dayz-proton.sh` returns the `[ResultCode]` from `DayZ Tools/Bin/Logs/AddonBuilder.rpt` instead.
+- `build_*.ps1`, `robocopy` and junctions: read the script for the source tree, then do the same with `sh`, `rsync` and symlinks. Do not run the `.ps1` under `pwsh`: it calls Windows programs and the registry.
+- Publishing: the `workshop` uploader (nozwock/steam-workshop-uploader) by itself instead of Publisher, its command left to its own `--help`; the author-local `dayz-mod-pack.sh` wrapper is not part of this Pack.
+- Linux host support in dayz-mcp was merged into `main` on 2026-11-14 in https://github.com/willy92wins/dayz-mcp/pull/411 (successor to closed PR #353); these managed-cycle observations were measured on the `linux-port` branch before #411 merged and were not re-measured on `main`. They do not verify managed binarization with assets. `dayz_test_run build=true` on Linux drives the pinned dayzmake `v1.0.0` release binary from `PATH` and refuses any other build (`dayzmake_pin_mismatch`); the 2026-11-06 run on `linux-port` used the fork under its old name armake2. It writes `@Mod/Addons/<Mod>.pbo`; both the native server and `DayZDiag` load that spelling (measured 2026-11-06).
+
+## The rest of the mod loop
+
+Building is one step of the loop in [`dayz-mod-dev`](../dayz-mod-dev/SKILL.md) (look up, write, build, boot on a local server, verify, publish), the Pack's entry point for mod development.

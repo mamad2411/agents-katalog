@@ -1,0 +1,256 @@
+---
+name: musts
+description: Use the `musts` CLI to validate that your changes are done. Run `musts validate` to get the validation todo list; for deterministic checks (cargo/*, bazel/build, bazel/test) run `musts run <task-id>` to let musts execute and record them for you; for judgment checks (agent, mav) do the work and record evidence with `musts evidence`; then re-run `musts validate` until it is empty. Use after any code change in a repo that has a `MUSTS.yml`. Also covers adding a `.mustsignore` (gitignore-style file) when local artefacts are making the validation loop noisier than it should be.
+---
+
+# Musts
+
+`musts` is the validation loop. The task is not done until `musts validate`
+exits clean.
+
+## When to use this skill
+
+- After making code changes in a repo with a `MUSTS.yml` at the root.
+- Before declaring work complete, opening a PR, or asking for review.
+- Whenever the user asks "is it ready?" / "is this validated?".
+
+If `musts validate` prints "No MUSTS.yml files found.", this skill does not
+apply.
+
+## The loop
+
+```bash
+musts validate
+# → prints every pending task, exit code 1 if pending, 0 if clean
+```
+
+1. Run `musts validate`. It emits **every** dirty task (no batching), so it
+   is idempotent — re-running it never invalidates the ids it just issued.
+2. Close each task:
+   - **Runnable checks** (`do:` is a plain command — `cargo/*`,
+     `bazel/build`, `bazel/test`): just `musts run <task-id>`. musts executes the
+     command itself, checks the real exit code, and records the evidence
+     for you. You never re-run the build to satisfy the loop.
+   - **Judgment checks** (`agent`, `mav` — verify facts, drive a UI): do
+     the work yourself, then `musts evidence <task-id>` (see below).
+   - **Judged checks** (`jev` — musts asks a model the question itself):
+     `musts run <task-id>`, same as a deterministic check. Needs an API
+     key — see below.
+3. Re-run `musts validate`.
+4. Repeat until exit code `0`.
+
+A task shown as `(unchanged since last validate …)` is one you already saw —
+its full body isn't reprinted; act on it the same way.
+
+## Reading a task
+
+Each task in the report tells you:
+
+- **Task id** — passed to `musts run` or `musts evidence`.
+- **do** — exactly what to run.
+- **evidence** — what to attach when recording (judgment checks only).
+- **submit** — the `musts evidence` command shape for that task.
+
+Do not invent extra steps. Do not skip required evidence.
+
+## `musts run` — the fast path for deterministic checks
+
+```bash
+musts run cargo-test-root
+```
+
+- Executes the task's command from the workspace root, captures the log
+  outside the workspace, and — on exit 0 — records evidence automatically.
+- On a non-zero exit it prints the output and records nothing: fix the
+  failure and re-run.
+- Refuses judgment tasks (`agent`, `mav`) and any check provided by an
+  installed extension — use `musts evidence` for those.
+
+## `musts record` — a `bazel test` you already ran
+
+```bash
+musts record bazel-test-root
+```
+
+- If you just ran `bazel test` over every target of a `bazel/test` check and
+  have not edited since, record that run instead of `musts run`, which would
+  run the same tests again. Needs the repo's `.bazelrc` to write the stamped
+  build event file (`.musts/bep.json`); see `docs/record.md` in the musts repo.
+- Records the check only if every target passed (not flaky, not filtered)
+  and nothing in its scope changed since the run started.
+- "Not recorded" (exit 1) names the reason: test again on the final tree,
+  run the missing targets, or `musts run <task-id>`. Never pass
+  `--test_filter` or test tag/size filters to a run you mean to record.
+
+## Dispatching to subagents
+
+When the report has multiple independent judgment tasks:
+
+- Dispatch each to its own subagent in a single batch.
+- Each subagent runs **one** task's work, captures any asset, and returns
+  the asset path back to you.
+- After the batch finishes, **you** record evidence for every task with
+  `musts evidence`.
+
+If two tasks share a single resource the report cannot know about (a
+simulator, a database, a port), run them sequentially. Deterministic checks
+are simpler: just `musts run` them (in parallel is fine unless they contend
+on a build lock).
+
+## `uses: jev` — set the API key first
+
+A `uses: jev` check asks a model a yes/no question about the change. It
+needs an API key of its own, once per machine:
+
+```bash
+musts-jev set-key < key.txt
+```
+
+It reads the key from stdin so it never reaches the shell history, and
+stores it in the macOS keychain (service `musts-jev`) where there is one.
+
+musts looks for the key in this order: the `MUSTS_JEV_API_KEY` environment
+variable (that is the CI form: `export MUSTS_JEV_API_KEY=...`), the system
+keychain, then `~/.config/bitomule/musts/config.json`. It never borrows
+another tool's key.
+
+With no key the check fails **red**, naming all three places it looked. It
+never passes quietly — a check that cannot judge must not look like a check
+that judged.
+
+## Recording evidence (judgment checks)
+
+```bash
+musts evidence <task-id> \
+  --text "<one-line summary of the result>" \
+  --asset <path-to-log-or-screenshot>
+```
+
+- `--asset` repeats. Attach every file the report's `evidence:` line asks for.
+- The asset is validated **in place** and not copied anywhere — musts no
+  longer archives evidence under `.musts/evidence/`. The ledger
+  (`.musts/ledger.lock.yaml`) is the record.
+- Prefer asset files **outside the workspace** (e.g. `$TMPDIR`): a log
+  written inside the workspace mutates the scope hash and can invalidate
+  the task you're closing.
+- Submit one `musts evidence` call per task. If it fails, fix the missing
+  evidence and call it again.
+
+## After recording
+
+- Run `musts validate` again.
+- If the report is empty, you are done.
+- If a task comes back "stale", files it covers changed after it was
+  issued — re-run `musts validate` and act on the fresh id.
+
+## Don'ts
+
+- Don't skip the loop because "the change is trivial". Every task in the
+  report is dirty per the ledger; run it, submit evidence, or fix the
+  underlying issue.
+- Don't hand-edit `.musts/ledger.lock.yaml`. `musts run` / `musts evidence`
+  are the only writers.
+
+## Writing or editing a `MUSTS.yml`
+
+Run `musts lint` afterwards — it enforces everything below and reports each
+glob against the files actually in the tree.
+
+If a finding is deliberate, silence that one rule for the file with a
+comment; do not delete the check or widen the glob to make lint quiet:
+
+```yaml
+# This check covers one directory level on purpose; the subtree
+# belongs to the sibling check.
+# musts-lint: allow glob-star-stops-at-slash
+```
+
+Scope is the whole manifest, and it is per-rule — other rules keep
+reporting. Several rules: `# musts-lint: allow rule-a, rule-b`.
+
+One question decides where a check goes: **does satisfying it need judgment,
+or does it need a command run?**
+
+| Don't write this | Write this instead |
+|---|---|
+| ``uses: agent`` with ``Run `bazelisk test //T:T` and confirm it exited 0`` | ``uses: bazel/test`` with ``targets: ["//T:T"]`` — then `musts run` executes it and records the real exit code, and no agent reads the log |
+| A fact saying "If changes touch `src/Foo/**` …" | `paths: ["src/Foo/**"]` — the check then does not fire at all on unrelated changes |
+| A fact saying "if unrelated, this is trivially satisfied" | Delete it; that sentence *is* a missing `paths:` filter |
+| `"build_number was not edited manually"` | Nothing. Automation edits that file on every release, so the check reopens forever and can never fail. Enforce it in CI against the diff |
+| One broad `paths:` with `exclude_paths:` carved out | Two disjoint sets of positive globs |
+
+No `paths:` means the check fires on **every** change under the manifest's
+folder. Fine for a runnable capability; expensive under `uses: agent`.
+
+### Glob semantics — these are not `.gitignore` rules
+
+- **Relative to the manifest's own folder**, not the workspace root. A
+  `MUSTS.yml` in `App/macOSUI/MainWindow/` writes `MacOSMainView.swift`
+  for the file beside it — never `App/macOSUI/MainWindow/MacOSMainView.swift`,
+  which repeats the folder and matches nothing.
+- **Case-insensitive.** `*View.swift` also matches `RequestReview.swift`.
+- **`*` stops at `/`; only `**` descends**, as in `.gitignore`.
+  `UI/*View.swift` covers `UI/HomeView.swift` and not
+  `UI/Deep/FooView.swift` — write `UI/**/*View.swift` for the subtree.
+  Before 0.4 `*` crossed `/` too, so older patterns cover less than their
+  author meant; `musts lint` names every file they lost.
+- **Leading `!` is rejected** at parse time. Use `exclude_paths:`.
+
+If `paths:` match nothing, `validate` says so under **Ignored checks** —
+a check that cannot fire is never hidden. Treat that line as a bug in the
+manifest, not as "nothing to do".
+
+### Auditing an existing manifest
+
+`musts stats` lists each check's reopens and how often it was ever red. A
+check with many reopens and zero reds costs validation work and has never
+objected to anything — rewrite it or delete it.
+
+## Adding a `.mustsignore`
+
+`.mustsignore` is `.gitignore` for musts: files it matches are excluded
+from the walker that builds each check's scope hash, so editing them
+never re-invalidates the ledger.
+
+Reach for it when a file is making the loop noisier than it should:
+
+- canonical fixtures the user wants committed but doesn't want gating
+  validation;
+- local artefacts that aren't gitignored (logs in a vendored sub-repo,
+  IDE state outside the standard ignore list);
+- generated files that change far more often than the underlying source.
+
+Don't reach for it to silence a failing check — that's the extension's
+call, not yours.
+
+```bash
+# at the workspace root (or any subdirectory — applies to that subtree,
+# same as nested .gitignore):
+cat > .mustsignore <<'EOF'
+*.log
+scratch/
+!scratch/keep-this.log    # negation works on file patterns
+EOF
+git add .mustsignore
+```
+
+**Commit `.mustsignore`.** If it isn't committed, two clones produce
+different scope hashes for the same code and the lock stops
+reproducing. After adding patterns, run `musts validate` once: any
+check whose scope contents change re-opens, so submit evidence for
+those tasks, then commit the refreshed `.musts/ledger.lock.yaml`.
+
+Gotcha: standard gitignore rule. If you ignore a directory (`fixtures/`),
+you cannot re-include children with `!fixtures/keep`. Use a file-pattern
+(`*.junk` / `!keep.junk`) or ignore the directory's *contents*
+(`fixtures/*` / `!fixtures/keep`).
+
+## Installing the skill
+
+```bash
+musts skill install
+```
+
+Installs this skill globally for every detected agent runner. Requires
+`npx` (Node.js) on `PATH`. Pass `--agent claude-code` (or `cursor`,
+`windsurf`, …) to restrict the install to one runner.

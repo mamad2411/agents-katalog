@@ -1,0 +1,127 @@
+---
+name: erase
+description: Guided cleanup of CodeEraser findings — read the reports, verify every candidate against the actual code, delete safely, and prove convergence with ce check. Invoke when the user asks to clean up duplication, dead code, or act on CodeEraser findings.
+---
+
+# erase — from findings to deletions, safely
+
+CodeEraser finds entropy; this skill is the OTHER half — acting on it
+without breaking anything. The contract: **never delete what you have
+not read, and never claim convergence without re-running the gates.**
+
+## 0. Snapshot first
+
+```sh
+ce check .          # the before-score and the current ratchet state
+```
+
+Record the score line. Every deletion below must leave `ce check`
+passing. The score is the share of lines no finding names, so removing
+a clean unreferenced file can lower it while the unreferenced axis is
+off (the default); compare the `findings on E of L lines` part of the
+line: E must not grow.
+
+## 1. The deterministic pass FIRST — `ce erase`
+
+```sh
+ce erase .            # dry-run plan: what is PROVABLY safe to remove
+ce erase . --apply    # act on it (git repo + clean worktree required)
+ce erase . --log      # the audit trail every apply appended (.ce/erase-log.ndjson)
+```
+
+One class erases without judgment: verbatim doc duplicates (of two
+byte-identical segments, the copy fewer links' fragments land on; a
+copy whose section a link lands on is advisory, `linked_section`) —
+an erased copy leaves its heading in place, so remove the heading or
+put a link to the surviving copy. The tool plans
+them deterministically, applies behind preconditions, and proves its
+own convergence (contract: docs/reference/erase.md); the trail it
+leaves is the same document the MCP tool `erase_log` and the GUI erase
+screen's audit-log section show, and a record the reader cannot parse
+is named by line. Do NOT hand-delete anything the plan already
+covers. Everything it prints as `advisory` is YOUR half — that is
+where the judgment below begins. Unreferenced files and whole-unit
+twins in them are always advisory (`reachable_by_name`,
+`language_unresolved` or `public_surface`): nothing in the tree
+references them, which is not proof that nothing uses them.
+
+## 2. Collect the advisory candidates (three signals, JSON faces)
+
+```sh
+ce dedup . --format json      # T1/T2 clone blocks
+ce deadcode . --format json   # unreferenced files under their roots, each file's state
+ce join . --days 14 --format json   # similarity × position × churn
+```
+
+`ce join` ranks the strongest deletion candidates: high similarity,
+weak graph position, low churn. Start from the top of that list.
+
+Four more families help where they apply (all advisory, the same
+documents the MCP tools and the GUI show):
+
+```sh
+ce merge . --format json      # a clone group as ONE function: its parameters, the member kept, lines saved
+ce flow . --format json       # dead code INSIDE functions: unreachable statements, dead stores, unused locals
+ce similar --unit <name/arity> . --format json   # same-role twins of the unit you are about to keep
+ce query 'dead(F)' . --format json   # ask the index directly; `ce rules .` lists the rule violations
+```
+
+Read `merge` before collapsing a clone family (it says whether one
+function can take the members' differences as parameters), `flow` for
+deletions smaller than a unit, `similar` to find the copies a clone
+gate misses because the wording drifted, and `query` / `rules` to
+check a deletion against the architecture rules the project declared
+(`ce.rules`, `[rules.pack]` in ce.toml).
+
+## 3. Verify each candidate — no exceptions
+
+For every candidate pair or unreferenced file:
+
+1. **Read both sides in full** (the whole function/section, not the
+   matched span). Tool-reported similarity is a lead, not a verdict.
+2. Check callers/references: prefer deleting the copy with fewer
+   references; re-point the survivors.
+3. Respect exemptions: a `.ceignore` entry means a human already
+   ruled — skip it. For docdup candidates the same is true of an
+   adjacent `ce:allow(docdup) -- <why>` line — one grammar
+   (`cli/src/allow.rs`), also read by deadcode (`ce:allow(deadcode)`
+   claims liveness for a whole file) and by the unmentioned advisory
+   (`ce:allow(unmentioned)`); a bare marker with no why claims
+   nothing, and dedup exemptions go through `.ceignore`.
+4. An unreferenced file whose verdict is `unref_public` /
+   `unreach_public` (it exports names) may be a public API: confirm
+   before removing; if it is an entry, declare it in
+   `[graph] entry_globs` instead of deleting it.
+5. Act on roots: a dependent (its `under` names its roots) falls with
+   them, so judge the root first. Every unreferenced file has a
+   `state`, root or dependent: `born` or `orphaned` is this change's
+   own; `standing` was there before (inventory); `untold` means
+   `ce-baseline.json` holds no comparison point, so it says nothing
+   about whether the file is new. A row with `blocking` true fails the
+   gate, a dependent as much as a root. The listing fails nothing by default, and no row is a
+   deletion licence: an unreferenced FILE may be used by its name:
+   run as a script or by a command (Makefile, CI workflow, package
+   script, README instructions), found by a tool's convention
+   (`setup.py`, `docs/conf.py`, `package-info.java`, a test data
+   directory), or served or read by its path. Search the repository
+   for its basename and stem before deleting it, and name what you
+   searched in the report.
+
+## 4. Delete in small batches, re-gate each batch
+
+```sh
+ce dedup . --check    # when [dedup] budget is declared: the clone budget must not grow
+ce dedup .            # without one: compare the block count with step 2's
+<project test suite>  # the code must still work
+```
+
+## 5. Prove convergence
+
+```sh
+ce check .            # must pass; E (findings on E of L lines) must not exceed step 0
+```
+
+If the ratchet reports `removed`, run `ce baseline` to bank the
+improvement (the violation set only shrinks without extra flags).
+Report to the user: what was deleted, what was kept and why, and the
+before/after score lines.

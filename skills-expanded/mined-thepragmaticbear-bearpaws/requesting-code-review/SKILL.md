@@ -1,0 +1,40 @@
+---
+name: requesting-code-review
+description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
+---
+
+<skill>
+
+  <purpose>
+    Dispatch bp:code-reviewer subagent to catch issues before they cascade. The reviewer gets crafted context for evaluation — never your session's history.
+  </purpose>
+
+  <triggers>
+    <rule>Use after each task in subagent-driven development.</rule>
+    <rule>Use after completing a major feature or before merge to main.</rule>
+    <rule>Use when stuck (fresh perspective) or after fixing complex bugs.</rule>
+  </triggers>
+
+  <process>
+    <step>**Get git SHAs** — `BASE_SHA=$(git rev-parse HEAD~1)` (or `origin/main`), `HEAD_SHA=$(git rev-parse HEAD)`.</step>
+    <step>**Dispatch bp:code-reviewer subagent** — Use the Agent tool (formerly Task) with code-reviewer type. Fill placeholders: `{WHAT_WAS_IMPLEMENTED}`, `{PLAN_OR_REQUIREMENTS}`, `{PROJECT_CONVENTIONS}` (the project rules found during onboarding: test command, required patterns, banned patterns), `{BASE_SHA}`, `{HEAD_SHA}`, `{DESCRIPTION}`, `{CHANGED_FILE_DIFF}`, `{VERIFICATION_EVIDENCE}`, `{KNOWN_DECISIONS}`, `{UNRESOLVED_CONCERNS}`.</step>
+    <step>**Validate adversarial structure** — Review MUST contain all four named gates: (1) **Failure Mode Enumeration** with ≥3 concrete scenarios, (2) **What would have to be true for this to be wrong** steel-manning, (3) **What I didn't check and why** mapping blind spots, (4) **Break Attempts** documented as "Tried: [executed|reasoned] X — Y". Vague is rejection-worthy: a "Tried" line without an `[executed]`/`[reasoned]` label, a `—` separator, and an outcome; or a failure mode without a specific code reference. If any gate is missing or vague, send back: "Review incomplete — missing [gate]. Redo." unless it was the third review.</step>
+    <step>**Act on feedback** — Treat confirmed defects in changed code in the task's elevated risk class as at least Important, even if labeled Minor. After the third review of a change (redos and scoped re-reviews count), edit nothing: an invalid review, or an unfixed Critical or Important finding listed in `Open:`, means `Status: INCOMPLETE`. Before that: fix Critical immediately. Fix Important before proceeding. Note Minor for later. Push back if reviewer is wrong (with technical reasoning). For elevated work, after fixing, re-verify with the scoped re-review (bp:subagent-driven-development's re-review-prompt.md) rather than a second full review; routine work needs no re-review, and the final whole-branch review stays full. The four-gate validation above applies to full reviews; the scoped re-review returns its own sections (Finding Verdicts, New Breakage, Break Attempts, Out-of-Scope Observations, Verdict).</step>
+  </process>
+
+  <rules>
+    <rule>Never skip review because "it's simple".</rule>
+    <rule>Never proceed with unfixed Critical or Important issues.</rule>
+    <rule>Never accept a review missing adversarial gates — a review without break attempts is not a review.</rule>
+    <rule>If reviewer is wrong: push back with code/tests that prove it.</rule>
+  </rules>
+
+  ## Integration
+
+  - **Subagent-Driven Development** — review after EACH task
+  - **Executing Plans** — review after each batch (3 tasks)
+  - **Ad-hoc** — review before merge or when stuck
+
+  <see file="code-reviewer.md"/>
+
+</skill>

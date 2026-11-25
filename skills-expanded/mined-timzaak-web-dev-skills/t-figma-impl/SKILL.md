@@ -1,0 +1,38 @@
+---
+name: t-figma-impl
+description: Implement a Figma UI in an existing frontend file, block by block; leave pending assets empty, bind prepared assets, and hand over for manual acceptance. Does not prepare media assets.
+argument-hint: "<figma-url> <target-file> <preview-url>"
+allowed-tools:
+  - AskUserQuestion
+  - Read
+  - Glob
+  - Grep
+  - Agent
+  - Write
+  - Bash
+  - mcp__figma__get_metadata
+  - mcp__figma__get_design_context
+  - mcp__figma__get_screenshot
+  - mcp__figma__get_variable_defs
+---
+
+# Figma 整页实现
+
+按人确认的本轮范围重建 Figma UI 并实现到既有前端文件；遵循工作流契约的「协作范围」，不补全未确认设计，不下载、转换素材。还原方法见 `${CLAUDE_PLUGIN_ROOT}/guides/figma/reconstruction.md`（分块前读），manifest 与交付规则见 `${CLAUDE_PLUGIN_ROOT}/protocols/figma-workflow-contract.md`，agent 派发遵循 `${CLAUDE_PLUGIN_ROOT}/protocols/subagent-dispatch.md`。
+
+## 前置
+
+校验 URL 与 target-file；`<preview-url>` 可选，仅用于交付报告回显。工作目录为 `.ai/figma/<fileKey>-<nodeId>/`。读取目标文件、邻近模块与项目 token/组件/动效模式；按工作流契约的「布局决策」在分块后写入本轮 `context.md`（每轮重写）。栈无法确定时询问。
+
+按工作流契约的「工作目录」检查素材就绪情况：已就绪素材按块内资产节点 id 对照 manifest 绑定；manifest 缺失、部分条目缺失或产物未就绪时，对应位置跳过留空，继续实现其它内容。位图、SVG、视频均交给 `t-figma-assets` 准备，impl 不补做素材。绑定遵循契约的「素材类型保真」。
+
+## 还原与实现
+
+1. 在 MCP 窗口内为主节点和各视觉块保存 baseline 截图到 `source/`，供分块、agent 实现与人工验收比对；metadata、design context 和 variables 只在窗口内消费，不整页落盘。
+2. 按 reconstruction 指南分块：截图定结构、节点树补精确数值与显式布局属性，块清单与观测数值写入本轮 context。有裁决需求时按影响范围询问，不将候选写成已采用规则。
+3. 逐块委派 `figma-impl` agent：每次一个块或少量相邻小块，给出该块的 baseline 与 context。按契约消费 agent 输出；汇总 `layout_questions` 询问用户，答复写入本轮 context 后继续受影响部分，其它独立部分不停等。执行失败先处理原因再重试该块，布局待裁决不走失败重试。
+
+## 交付
+
+4. 按契约检查本轮块进度与待裁决项，存在未完成部分时如实报告，不宣称完成。存在留空素材时按本轮节点树与 manifest 对照得出留空清单并报告，提示以同一主稿 URL 运行 `t-figma-assets`，本轮以待绑定状态结束。素材补齐后重跑 impl：重读 manifest，按「素材类型保真」绑定并核对目标代码实际引用，重跑栈验证；已实现布局不重做。
+5. 按契约核对本轮进度与素材绑定，再在目标项目根运行 `python ${CLAUDE_PLUGIN_ROOT}/scripts/figma-assets.py verify <工作目录>/assets-plan.json`；plan/manifest 缺失、旧产物缺少验证证据或复验失败时交回 assets 修复，保留布局。栈验证和素材门禁均通过才按契约「验收」交付范围、布局调整依据、preview URL（如有）和 baseline 位置，并列出本轮人工检查项；未做页面比对不报告视觉验收通过。

@@ -1,0 +1,76 @@
+---
+name: grill-me
+license: CC-BY-NC-4.0
+metadata:
+  kind: workflow
+  version: 2.4.3
+description: Interview the user one question at a time until their own goal and requirement are sharp, then proceed. Use before building, as in grill me, ask me questions first, ถามให้เคลียร์ก่อน, ซักมาเลย, ยังคิดไม่ตก. Not to coach the person and not to research the answer.
+---
+
+# Grill Me
+
+Keep asking until the requirement is sharp enough to build from.
+
+## Scope
+
+- Kind: workflow
+- Owns: extracting and sharpening what the user actually wants — the goal, the requirement, and whatever is nagging at them — through a focused interview that resolves the decisions needed to proceed.
+- Boundary: asks questions and records decisions. Finds every fact available from files and tools itself. Uses existing implementation authorization; an instruction to start ends the interview when no material decision remains.
+
+## Do not use this when
+
+- The block is the person's own hesitation rather than an unclear requirement -> `coach-me`
+- The requirement is clear and options must now be compared -> `give-me-solutions`
+- The requirement is clear and the answer lies in outside evidence -> `research-it`
+- The requirement is clear and the job is to build it -> `done-for-me`
+- The problem is that the work is aimed at the wrong layer entirely -> `zoom-out`
+
+## Procedure
+
+1. **Reconstruct before asking.** Reconstruct the live interview: the user's goal, accepted decisions in their own terms, the last unanswered question, and any interruption or correction. Treat the latest user correction as stronger than your earlier proposal; a draft or your own recommendation is not user approval. Use relevant conversation and already-authorized decision notes. If context is missing, retrieve it before inventing a fresh questionnaire.
+2. **Begin in this reply, with the goal.** Start or resume the interview in this reply: use the existing conversation to identify the first unresolved goal or decision, then call the available in-app question tool (step 6) with one self-contained question and selectable choices. A plain-text question is not a substitute for a working native question tool. Before the first question, state the user's goal privately in one sentence from evidence: what should change for whom, in their real work. If you cannot, the first question asks about that goal or the real work it serves, never about data structure, screens, features or automation. Do not open with a design choice the user has not yet motivated. The visible text of every question says in plain words why it is asked now and which part of the goal its answer settles. An invocation such as "Grill Me กัน" is a request to begin, not an answer to earlier questions. Never respond only with acknowledgement, instructions to answer above, or a promise to ask later. If a previous question was broad or compound, narrow it instead of repeating the burden.
+3. **Separate outcome from solution.** When the goal is unclear, ask what needs to change, why it matters now, or for a concrete recent incident. Do not require a polished vision, complete requirements, or a list of pain points to begin. If the user has already established the goal, start at the unresolved decision rather than reopening it. A named solution is not proof that its underlying goal is clear; an explicitly settled choice is not an invitation to relitigate it.
+4. **Find the facts yourself.** Keep a private decision tree of goals, evidence, user decisions and unresolved assumptions. Read relevant available files and tools for factual answers; do not make the user repeat them or perform an exhaustive audit before the first useful question. A fact about the current system does not establish what the user wants next.
+5. **Stay on the thread.** Continue the unresolved thread before opening another topic. After an authorized side task such as saving notes or answering a factual question, return to the interview in the same turn when possible. Completing that side task does not complete discovery. When changing topics, put a short bridge inside the next question: what is settled, what remains, and why this next decision matters. Do not reopen settled choices or jump to a generic checklist item. Keep routine rounds, branch counts and method explanations internal unless requested.
+6. **Ask through the native control.** Use the host's available, permitted native question control for every interview question, including the opening goal question. Inspect tool availability rather than guessing from the host name. For example, use `request_user_input_async` when available in the current mode, `request_user_input` when that tool is permitted in the current mode, or `AskUserQuestion` when exposed by the host. These are capability examples, not assumed universal APIs. In Default mode, use an available asynchronous question tool rather than a Plan-only tool. Do not ask the user to switch modes just to obtain a popup when a permitted route already exists. Do not output a chat question, HTML page, or promised popup when the native tool is callable. An explicit user request for text-only questions overrides the popup default.
+7. **One question, real choices.** Present exactly one focused, self-contained question per in-app popup, chosen for how much its answer changes what comes next, with 2-3 short, distinct choices plus the host's free-text escape. The visible title/body must contain the actual decision and necessary context; never send a bare topic label or omit the options field. Batch only if the user explicitly requests it. Do not hide several dependent questions inside one sentence. Build choices from this conversation, not generic goals that ignore established needs. Compare alternatives on ONE decision axis at the same level: do not mix data structure, interface convenience and reporting scope into competing options. If two choices can both be true, ask which unresolved dimension to settle or separate the questions; do not force a false either/or. Do not make the recommended choice attractive by bundling it with good UX while making another choice artificially cumbersome. For an unclear goal, choices are tentative directions, not facts or a diagnosis; preserve free-text correction. Narrow an abstract question into a concrete choice instead of dropping the choices.
+8. **Wait for the real answer.** Tool names, discovery lists, and accepted=true are not proof of a visible answered popup. For asynchronous input, a successful call means delivery was accepted, not that an answer exists or the popup was visible. Keep that question pending and use the host's supported interruptible wait/yield mechanism (short enough to remain responsive). Do not immediately end the turn with a final response saying the popup was asked; a final response is not a wait operation. Do not set up a scheduled task to wait. If the host cannot keep the question active, state that concrete limitation instead of claiming successful visible delivery. Wait for the user's answer before opening the next popup; do not queue a second question or treat a preselected choice or elapsed time as a submitted answer.
+9. **Recover instead of restarting.** Treat "จบแล้ว?" as a request to check what remains, not a stop instruction. If the user says it while a question is pending, treat it as a possible delivery problem: preserve the same unresolved decision, check whether the prior question is still active using available state, and recover that question rather than inventing a different one or replying only with status. Re-present it only when the user reports it missing or the host establishes it is no longer actionable; never claim to have cancelled a request without a supported cancellation operation. If one native tool call fails, report that exact error and check the remaining permitted question tools before falling back; one failed call is not proof that the host lacks popups. Only when no permitted native route remains, state the specific limitation once and use one chat question with lettered choices and room for free text; do not claim a popup appeared.
+10. **Recommend only on evidence.** Offer a specific recommendation and reason only when evidence supports one, labelled `(แนะนำ)` in a structured control. Ask neutrally about goals or preferences only the user can choose. Do not infer complexity, cost or impact solely from frequency or urgency. Name material uncertainty in a provisional recommendation. Interpret a selected label together with its explanation, uncertainty and corrections. A tentative "B เพราะคงต้องตามระบบเดิมไหม" is not firm agreement with every assumption inside B: clarify the uncertain premise rather than affirming it as fact. A free-text detail qualifies or overrides a selected option; intentional multi-selection is different from no selection. Never treat a default, silence or agreement with your wording as a decision the user has not made.
+11. **Follow the answer.** Follow it, not a questionnaire. Briefly reflect the part that changes your understanding, then probe its consequence, a concrete example, a trade-off, a success criterion or an apparent contradiction, whichever unlocks the next decision. Use the user's words and make a possible insight a hypothesis they can correct. Challenge unsupported assumptions with a reason; do not manufacture disagreement, psychological labels or adversarial pressure. State conflicts with earlier decisions explicitly and preserve unresolved branches.
+12. **Repair confusion by shrinking.** When the user says the choices are confusing, first repair your framing: identify overlap, explain the single practical difference and ask a smaller contextual question through the permitted native tool. Do not respond with a larger schema, a long architecture lecture or a new unrelated topic. When the user says "I don't know", reduce the abstraction: ask about one recent event or offer a small contrast grounded in what they said. If talking cannot establish the answer, identify the missing evidence or smallest useful trial instead of repeatedly rephrasing. Preserve that uncertainty; carry out a trial only within existing authorization. Do not turn an interview into an unsolicited research project or prototype build.
+
+For an explicitly requested HTML questionnaire only, read [the optional rendering contract](references/interactive-html.md).
+
+Before sending each question, check privately: it advances an unresolved decision, preserves accepted context, offers distinguishable choices, includes a bridge if the topic changed, and uses the permitted question route. After an answer, update only what it actually settled.
+
+There is no question quota or fixed sequence of topics. Depth comes from what each answer reveals, not from exhausting every imaginable branch. Keep going while a material uncertainty can usefully be resolved through conversation.
+
+## Stop when
+
+The goal, meaningful success criteria and decisions needed for the next authorized step are clear, or the user tells you to stop or start. Do not demand implementation details that do not affect that step. A request to start is authorization already given, not a reason to ask for a confirmation word. Summarize material decisions only when useful; proceed with authorized work. Ask further only for an unresolved decision that materially changes the outcome, authority or commitment.
+
+## Principles
+
+**Socratic elicitation** — Draw the requirement out of the person through questions rather than proposing it, because a requirement they articulated is one they will recognise as wrong when it is. Source: Socratic method, as recorded by Plato
+**Recognition over recall** — Offer choices to select from rather than asking the person to compose an answer from nothing; recognising is far cheaper than retrieving. Source: Jakob Nielsen, usability heuristics, 1994
+**Value of information** — Ask next whatever answer would change the most downstream decisions, and skip anything whose answer changes nothing. Source: Ronald A. Howard, Information Value Theory, 1966
+**Never fill a silence with an assumption** — An unanswered branch stays open and visible; quietly adopting the recommendation converts a question into a fabricated decision. Source: standing rule in this library
+
+## Counter-case
+
+- The user says they know exactly what they want but cannot start. The requirement is already sharp and the obstacle is personal, so `coach-me` owns it.
+- The user has already settled the goal and says "start building the agreed draft". Proceed within that scope; do not restart discovery or demand another confirmation.
+- The user asks to be challenged on whether a claimed best practice is real. That needs outside evidence rather than their own preferences, so `research-it` owns it.
+
+## Hand back
+
+During the interview, deliver the next question through the native question tool with choices, then wait. Put the necessary context inside the question so the user need not reread chat. A text-only answer is a failed interview turn when a permitted native control exists, except when the user explicitly requested text-only. At a useful stopping point, briefly capture the goal, settled choices and reasons, and material unknowns or risks; allow correction without requiring a ritual approval round. When instructed to proceed, deliver the authorized work. Keep routine interview bookkeeping internal.
+
+## Sources
+
+Plato, Socratic dialogues. Nielsen 1994, Ten Usability Heuristics. Howard 1966, Information Value Theory.
+
+Design reference: Matt Pocock, [The /grill-me Skill](https://www.aihero.dev/skills-grill-me), updated 2026-08-24, reviewed 2026-09-10. Used for dependency-aware inquiry and recognizing questions that need a trial. This James adaptation uses original wording: immediate conversational entry, one-question default, native choice-based discovery, and existing execution authority. The article is a design source, not an instruction to install its package or adopt its full workflow.
+
+Implementation source checked 2026-09-10: [grill-me entrypoint](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md) delegates to [grilling](https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md), which specifies text rounds with recommendations. The native popup with one question and choices is the owner-required James interaction, not a claim about upstream behavior.

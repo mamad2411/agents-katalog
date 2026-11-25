@@ -1,0 +1,70 @@
+---
+name: ccg-build
+description: "Explicit-only graph ingestion for building, updating, migrating, and postprocessing code-context-graph graphs from source visible to the CCG runtime. Use only when the user explicitly names the ccg-build skill in the current request. Do not invoke merely because a graph is missing or stale, annotations need reindexing, or another workflow would benefit from a refresh."
+disable-model-invocation: true
+metadata:
+  version: 1.1.0
+  openclaw:
+    category: "code-intelligence"
+    domain: "build"
+  requires:
+    bins:
+      - ccg
+  cliHelp: "ccg build --help"
+---
+
+# ccg-build — Graph Ingestion
+
+Build or refresh graph state only from source paths the executing CCG runtime
+can read.
+
+## Invocation Gate
+
+Proceed only when the user explicitly names `ccg-build` in the current request.
+A stale or missing graph, a requested scoped update, another skill's suggestion,
+or an applicable task description is not invocation. If the name was not
+explicitly provided, do not load the maintenance reference and do not perform or
+plan a graph write; report that the user may invoke `ccg-build` explicitly.
+
+## Mandatory Contract
+
+Before any graph write, read
+[`references/graph-maintenance.md`](references/graph-maintenance.md) completely.
+Resolve the server-visible source path, namespace, update mode, scoped
+replacement behavior, and required postprocessing before invoking a write.
+
+## Ingestion Boundary
+
+- Local CLI and stdio MCP may build from a local source path.
+- A remote HTTP server ingests repositories through its configured Git
+  webhook/sync path by default. Treat Git as the transport and source of truth.
+- Do not invent or attempt database upload, graph-bundle upload, streaming
+  upload, or client-filesystem transfer. MCP graph-write tools operate on paths
+  already visible to the server; they are not upload APIs.
+- If a remote server cannot access the source and no admitted Git sync path is
+  available, report the limitation instead of trying a client-local path.
+
+## Command Selection
+
+```bash
+ccg update <dir>  # Ordinary source edits; incremental synchronization
+ccg build <dir>   # First use, intentional full rebuild, or recovery
+ccg migrate       # Existing database schema upgrade when required
+```
+
+Over MCP:
+
+- Use `build_or_update_graph` with `full_rebuild=false` for an incremental update.
+- Use `build_or_update_graph` with `full_rebuild=true` for a full rebuild.
+- `parse_project` writes parsed graph state without search postprocessing.
+- `run_postprocess` refreshes selected derived artifacts after graph changes.
+
+Do not call a write tool merely because it is registered. Confirm that the
+user authorized graph mutation and that the target path and namespace are the
+intended ones.
+
+## Completion
+
+Report the resolved source path, namespace, Git sync or local ingestion mode,
+full versus incremental choice, scoped `replace` behavior, and every failed or
+skipped postprocess step. State which verification was not run.

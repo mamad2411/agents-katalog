@@ -1,0 +1,80 @@
+---
+name: discuss-mission-goal
+description: Analyze an overall goal description and ask clarifying questions to make the mission goal crisp, complete, and ready for formal definition.
+---
+
+# discuss-mission-goal
+
+Facilitates a structured conversation to sharpen a vague or incomplete mission goal into a clear, actionable statement ready for `/define-mission-goal`. The output is a refined goal description and the one directory the mission is placed at — not a document yet: this skill is purely conversational and creates no files, and both proposals are the user's to confirm.
+
+## Usage
+
+```
+/discuss-mission-goal <overall_goal_description>
+```
+
+- `<overall_goal_description>`: a free-form description of what you want the mission to accomplish.
+
+**Example:**
+```
+/discuss-mission-goal add a getting-started guide that walks a new user through their first session
+```
+
+## Workflow
+
+### 1. Read project context
+
+In the same turn, as two independent tool calls, read `AGENTS.md` for the project's domain context and overview, and run, from the workspace root, the plugin's missions tool for the project's whole record — what past missions built and which missions are live:
+
+```
+python3 ${PLUGIN_ROOT}/tools/missions.py record .
+```
+
+It prints one tab-separated line per mission at column 0 (`live` or `finished`, the finish date or `-` for a live one, the mission's path, and its title; the live ones first, then the finished ones newest first), with that mission's summary bullets, or a live one's goal, and its completed tasks indented beneath it, and prints nothing when the project has no mission yet, which is no failure. Run it once on every invocation, before the conversation opens, whatever the goal names. If the call fails, tell the user in prose that the record read failed, quoting its one `Error: <reason>` line from stderr verbatim, and carry on from the context file, printing no fixed line. Together the two reads ground all questions in the real project state.
+
+### 2. Analyze the goal
+
+Identify what is clear, what is ambiguous, and what is missing. Look for:
+
+- **Scope ambiguity** — what exactly is in vs. out?
+- **Dependency gaps** — does this assume systems that don't exist yet?
+- **Success criteria** — how would you know the mission is done?
+- **Conflicts** — does anything in the goal conflict with the current architecture or existing missions?
+
+### 3. Open with a crisp framing
+
+Restate the goal in one sentence to show you understood it. Then immediately surface the most important ambiguities as direct questions. Do not pad with preamble or list every possible concern — focus on the two or three questions whose answers would most change the scope.
+
+Format as:
+
+**Understood goal:** one sentence.
+
+**Questions:**
+1. ...
+2. ...
+3. (optional) ...
+
+### 4. Continue the conversation
+
+After each user answer, either:
+- Ask the next most important clarifying question, or
+- Confirm that the goal is now clear enough to define
+
+Ask questions one at a time when the user seems overwhelmed; batch them when context is thin and answers are likely short. Keep each response short after the opening — the conversation should move fast. Do not ask questions for their own sake. Stop when the goal is specific enough that `/define-mission-goal` could fill `requirements.md` without further guessing.
+
+### 5. Propose the refined goal
+
+When the conversation reaches a natural close, present a refined goal statement:
+
+**Proposed mission goal:**
+> <one to three sentences that could go directly into the `## Goal` section of requirements.md>
+
+Invite the user to adjust the wording, then go on to the placement.
+
+### 6. Propose the placement
+
+From the refined goal, name the one directory that holds the core of the work — the code, module, or package the mission is about — reading the project's actual layout to find it. Go as deep in the tree as the core allows, and propose the root, `.`, only when the core is the project itself. Work the mission also needs outside that directory (documentation kept elsewhere, a shared configuration file, a test tree beside the package) is adjacent and does not widen the proposal: never move up to cover it, or to the root for safety, since a mission placed higher overlaps every mission placed beneath it and so runs one at a time with all of them. The directory must already exist in the working tree, because the definition refuses one that does not; when the core does not exist yet, propose its nearest existing ancestor, or say that the user can create the directory first. That one directory is the whole proposal, and the refined goal does not restate it.
+
+**Proposed placement:** `<scope>`, the directory's path relative to the workspace root.
+
+Invite the user to adjust it. Once both the goal and the placement are confirmed, suggest invoking `/define-mission-goal --at <scope> <refined goal>` to create the mission; the definition takes the placement as given.

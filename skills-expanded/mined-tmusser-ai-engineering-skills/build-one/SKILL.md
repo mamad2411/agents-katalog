@@ -1,0 +1,99 @@
+---
+name: build-one
+description: Implement exactly one planned slice after scope is frozen, without exceeding the spec ceiling or carrying known analysis debt into the build.
+---
+
+# Build One
+
+## Purpose
+
+Implement exactly one planned slice without expanding the behavioral contract or building through a known stale/required analysis checkpoint.
+
+## When to use
+
+Use after a task is selected and scope is frozen.
+
+## Inputs
+
+- `SPEC.md`
+- `PLAN.md`
+- `TODO.md`
+- `SCOPE.md` or the active scope boundary
+- Current repo status and frozen Git base
+- Analysis checkpoint when present in `HANDOFF.md` or other current state
+
+## Workflow
+
+1. Read `SPEC.md`, `PLAN.md`, and `TODO.md`.
+2. Select one task.
+3. Confirm the scope boundary. When `SCOPE.md` and `scripts/scope_gate.py` exist, run the scope gate against the frozen base before the first new implementation write. Existing `FAIL` or unresolved `REVIEW_REQUIRED` state blocks further edits.
+4. Perform the cheap `analyze-mini` eligibility check using artifacts already loaded for this build:
+   - `REQUIRED` or `STALE` checkpoint -> invoke `analyze-mini` before editing.
+   - `FRESH` checkpoint -> confirm its task-defining inputs still match current state; if not, mark it `STALE` and invoke `analyze-mini`.
+   - missing checkpoint or `NOT_NEEDED` -> invoke `analyze-mini` only when a current trigger exists.
+   - **Missing prior analysis alone does not require `analyze-mini`.**
+   - Do not broaden discovery merely to prove that analysis is unnecessary.
+5. If full analysis returns `BLOCKED`, stop before implementation and resolve the contradiction or decision.
+6. Confirm the spec ceiling: each intended behavior change must satisfy an acceptance criterion or be necessary support for one. Explicit non-goals remain out of scope.
+7. If the implementation needs behavior outside that ceiling, stop and renegotiate or update the spec before making that expansion.
+8. If SPEC.md has `Change proof requirement: REQUIRED`, confirm every declared baseline was captured before the first implementation write and against the frozen base. Treat the baseline command/evidence as immutable during the build; if it was missed or is wrong, stop and review rather than reconstructing the before state after the fact.
+9. If SPEC.md has an `ENFORCED` implementation diff budget, treat it as an early warning boundary while building. Do not knowingly grow past the declared file/added-line limits without surfacing the expansion; do not edit the budget after the fact merely to fit the patch.
+10. Make the minimum useful change.
+11. Run relevant verification.
+12. Run the scope gate before declaring the slice complete when `SCOPE.md` and the helper exist:
+
+    ```bash
+    python scripts/scope_gate.py --base <frozen-base>
+    ```
+
+    A scope-gate `FAIL` blocks completion and requires a revert or pre-write scope renegotiation. `REVIEW_REQUIRED` must be surfaced and resolved; it is not permission to continue silently.
+13. Update `VERIFY.md` or `HANDOFF.md` with a compact build note:
+    - Selected slice
+    - Files touched
+    - Why each file was touched
+    - Compatibility seams preserved
+    - Change proof: `PASS | FAIL | REVIEW_REQUIRED | NOT_APPLICABLE`
+    - Analysis checkpoint: `FRESH | NOT_NEEDED`
+    - Scope gate: `PASS | FAIL | REVIEW_REQUIRED`
+    - Diff budget: `PASS | REVIEW_REQUIRED | NOT_APPLICABLE`
+    - Spec ceiling respected: yes/no
+    - Unexpected behavior added: none | describe
+    - Tests changed: yes/no
+    - Verification run
+    - Stop reason
+14. Update task status.
+15. Stop after one task.
+16. Summarize changed files and result.
+
+## Outputs
+
+- One implemented slice
+- Changed file summary
+- Verification result
+- Scope-gate result when a persisted scope contract exists
+- Build note
+- Updated `TODO.md` if appropriate
+
+## Stop conditions
+
+- The selected task is complete, verified, and inside the frozen write boundary.
+- The task needs a scope or spec change.
+- Scope gate returns `FAIL` or unresolved `REVIEW_REQUIRED`.
+- The implementation exceeds an enforced diff budget and the expansion has not been reviewed.
+- A required change-proof baseline was not captured before implementation or no longer matches the frozen base.
+- Analysis is `REQUIRED`, `STALE`, or `BLOCKED` and must be resolved before editing.
+- Verification fails and diagnosis is needed.
+- A useful adjacent improvement is discovered but is not required by the current acceptance criteria.
+
+## Anti-patterns
+
+- Running `analyze-mini` before every build as a ritual.
+- Treating absence of an analysis checkpoint as a blocker by itself.
+- Changing `SCOPE.md` after an out-of-scope edit to make the final diff look compliant.
+- Continuing after a scope-gate failure because the changed code appears useful.
+- Continuing into the next task without approval.
+- Refactoring unrelated code.
+- Adding "helpful" behavior beyond the acceptance criteria because it is nearby or easy.
+- Enlarging a declared diff budget after implementation grows instead of reviewing the expansion.
+- Reconstructing or editing a change-proof baseline after implementation to make the delta look cleaner.
+- Treating partial infrastructure as a completed slice.

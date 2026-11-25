@@ -1,0 +1,101 @@
+---
+name: multi-model-review
+description: Pre-PR multi-model review, parallel opus and codex exec adversarial lanes, then adversarial verification of merged findings. Read-only. Use before shipping nontrivial diffs.
+---
+
+# Multi-Model Review
+
+Two independent review lanes run in parallel, then every merged finding is
+adversarially verified against the actual code. Replaces the retired
+`multi-model-review` workflow: there is **no Claude shim** - the
+main loop (Root) runs the codex lane itself via direct background Bash.
+
+Inputs: `repo` (absolute path, required), `base` (default `main`), `focus`
+(default: correctness, security, edge cases, API contracts, maintainability).
+
+Shared review contract (put in BOTH lane prompts):
+
+> Repo: `<repo>`. Review the diff `git diff <base>...HEAD`; if that diff is
+> empty, review staged+unstaged changes instead. Focus: `<focus>`.
+> You are READ-ONLY: do not edit any file. Read the changed files fully - not
+> just the diff hunks. Report findings with file:line, why each matters, and
+> the precise fix. If the change is clean, use verdict "ship" with zero
+> findings - do not invent issues.
+
+## Phase 1 - launch both lanes in parallel (same message)
+
+**Opus lane** - `Agent(model: 'opus', effort: 'high', run_in_background: true)`.
+
+This lane needs shell access to collect the diff, so its read-only-ness is **prompt compliance,
+not tool scope**: the shared contract forbids edits, nothing enforces it. Say so in the report
+rather than claiming an enforced read-only review. Do not substitute one of the
+`subagents/claude` interface roles here - they require a named interface domain, evidence-lane
+candidates, and `better-interface`'s schema, none of which a generic diff review supplies.
+Prompt = shared contract + "You are the Claude reviewer lane. Set reviewer to
+\"opus-5\". Return ONLY a JSON object matching
+`<skill-dir>/references/findings-schema.json`
+(read it first) - no prose around it."
+
+`<skill-dir>` throughout means this skill's base directory (provided when the
+skill is invoked) - substitute the real absolute path in every prompt/command.
+
+**Codex lane** - direct `codex exec`, no relay agent:
+1. Fill `<skill-dir>/references/adversarial-prompt.md` (this skill's own
+   template - its output contract matches findings-schema.json):
+   `TARGET_LABEL` = "diff vs <base> in <repo>", `USER_FOCUS` = focus,
+   `REVIEW_COLLECTION_GUIDANCE` = "Collect the diff yourself with git
+   (git diff <base>...HEAD, falling back to uncommitted changes if empty) and
+   read changed files fully.", `REVIEW_INPUT` = "Use git and file reads in the
+   repo working directory." Write it to `<scratchpad>/mmr-prompt.md`.
+2. Run ONE bare background Bash command (600000ms timeout):
+
+```bash
+codex exec -m gpt-6-astra -c model_reasoning_effort="max" -s read-only --cd <repo> --output-schema <skill-dir>/references/findings-schema.json --output-last-message <scratchpad>/mmr-codex-findings.json - < <scratchpad>/mmr-prompt.md
+```
+
+This lane exists to be an *independent* second
+opinion, so it pins `gpt-6-astra` at `"max"` - the maximum-intelligence tier,
+reserved for exactly this adversarial-check shape. Use `gpt-6-sol` at `"max"`
+instead when `gpt-6-astra` is unavailable or the diff is routine; never a lite
+worker tier, which is retired.
+
+1. On completion, read `mmr-codex-findings.json`; set reviewer to
+   "gpt-6-astra" if absent.
+
+## Phase 2 - lane failure semantics (never skip)
+
+- A lane that errored or returned unusable output = **degraded coverage**: say so explicitly
+  in the final report. The surviving lane's *findings* stand, but its clean bill of health does
+  not - a single-lane review cannot conclude "ship", because the whole point of two lanes is
+  that each sees what the other misses.
+- BOTH lanes failed = **no verdict**. Report the failure and stop - a total
+  lane failure must never read as a clean "ship".
+- Zero raw findings across **both live** lanes = verdict "ship"; skip Phase 3.
+- Zero findings but a degraded lane = **never "ship"**. Half a review that found nothing
+  is not evidence of nothing to find. Report the surviving lane's result explicitly as
+  partial coverage and name the lane that failed.
+
+## Phase 3 - adversarial verify
+
+Spawn one verify agent - `Agent(model: 'opus', effort: 'high')` - with the
+shared contract, the merged lane JSON, and:
+
+> Adversarially VERIFY each finding against the actual code: open the cited
+> file:line, confirm the claim is real on THIS diff (not stale, hypothetical,
+> or about pre-existing code), dedupe overlapping findings across lanes (set
+> confirmedBy to "both" when lanes agree - that raises confidence), and reject
+> false positives with concrete evidence. Order confirmed findings by
+> severity. Overall verdict: "blocker" if any confirmed critical/high,
+> "changes-recommended" if any confirmed finding remains, else "ship".
+> Return ONLY a JSON object matching
+> `<skill-dir>/references/verified-schema.json`.
+
+For a tiny finding set (≤3), Root may verify inline instead of spawning.
+
+## Presenting results
+
+- Lead with the overall verdict, then confirmed findings ranked by severity,
+  verbatim in substance; list rejected findings with their rejection reasons.
+- Flag degraded coverage prominently if a lane failed.
+- **Never auto-apply fixes.** The main loop applies fixes only when the user
+  asks or an approved implementation task already covers them.

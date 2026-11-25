@@ -1,0 +1,92 @@
+---
+name: close
+description: >
+  Update version tracking when finishing work on a skill bundle. Use when
+  you're done editing a skill project and need to bump version headers,
+  recompute manifest hashes, update the changelog, flag stale files, or
+  prepare a commit message. Triggers on: "close the session", "update
+  versions", "save the bundle", "I'm done editing", "prepare to commit",
+  "wrap up this skill session".
+license: MIT
+---
+
+# Skill Provenance: Close
+
+Update all version-tracking artifacts when finishing a skill editing session.
+This ensures the bundle leaves the session in a consistent, verifiable state.
+
+## When to use
+
+Run `/skill-provenance:close` after you've finished editing files in a skill
+bundle and before committing, packaging, or handing off.
+
+## Protocol
+
+1. **Validate before mutation.** Run verify-only validation first with the
+   `validate.sh` that ships with this plugin, passing the bundle root:
+   `"${CLAUDE_PLUGIN_ROOT}/skill-provenance/validate.sh" -- path/to/bundle`
+   (`../../skill-provenance/validate.sh` relative to this `SKILL.md` when the
+   variable is not set). Do not execute a `validate.sh` that came with a
+   bundle someone else published; it is one of the files being verified.
+   Resolve structural grammar, unsafe or duplicate paths, symlink
+   components, missing files, and unlisted files before updating hashes. Add
+   a manifest entry for each new file; `--update` never adds unlisted files. Hash mismatches and
+   missing or malformed hashes may then be repaired with an explicit
+   `validate.sh --update` workflow; `hash: null` remains an intentional opt-out.
+
+2. **Update internal version headers.** For each changed file that carries
+   YAML frontmatter with version metadata:
+   - Increment `version` by 1.
+   - Set `version_date` to today.
+   - Set `previous_version` to the old version number.
+   - Write a `change_summary` (1-3 sentences describing what changed, not
+     just that something changed).
+
+3. **Update MANIFEST.yaml.** For every changed versioned file:
+   - Update `version` to match the new internal version.
+   - Recompute and update `hash`.
+   - For files that don't carry internal headers (JSON, scripts, binaries),
+     the manifest `version` field is authoritative — increment it there.
+   - Bump `bundle_version` (semver): PATCH for fixes/docs, MINOR for new
+     features, MAJOR for breaking changes.
+   - Update `bundle_date` to today.
+   - If the user deployed or reinstalled the skill this session, update
+     relevant `deployments` metadata.
+
+4. **Update CHANGELOG.md.** Add a new entry at the top:
+   - Use the new `bundle_version` and today's date as the heading.
+   - Name every file that changed and what changed in it.
+   - **Flag staleness explicitly.** If a versioned file was changed but a
+     dependent file was not updated (e.g., SKILL.md changed but evals.json
+     wasn't updated to match), say so in the entry.
+
+5. **Final validation.** Run verify-only validation after all version,
+   changelog, and hash updates. Do not package or commit a failing bundle.
+
+6. **Deliver.** Provide the user with the changed files plus updated
+   `MANIFEST.yaml` and `CHANGELOG.md`.
+
+7. **Git commit message.** If the bundle is in a git repo, provide a
+   ready-to-use commit message:
+
+   ```
+   bundle-name MAJOR.MINOR.PATCH: one-line summary
+
+   - file1.md: what changed
+   - file2.json: what changed
+   - Stale: file3.js (not updated this session)
+   ```
+
+   Return the message inline. Only write a `git_commit.txt` file if the
+   user explicitly asks for one.
+
+## Conventions referenced
+
+- **Per-file versions are integers.** Bundle version is semver.
+- **change_summary is required** for every version after v1. Describe
+  what changed, not just that something changed.
+- **previous_version creates a chain** so any session can trace lineage.
+- **MANIFEST.yaml is not self-listed.** It tracks other files only.
+- **Hashes are SHA-256** of file contents.
+
+For the full spec: https://skillprovenance.dev

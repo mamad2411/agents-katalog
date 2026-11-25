@@ -1,0 +1,642 @@
+---
+name: open-benchmark-methodology
+description: "Mandatory for VerilogEval, VerilogEval-v2, VerilogEval-Human, CVDP, RTLLM, PyHDL-Eval, RTL-Repo, MetRex, ResBench, ChipAgentsBench, benchmark, pass@1, benchmark floor/defect, run/rerun/score benchmark, or interpreting benchmark results. Enforces one general product entry, clean-room blind evaluation, Program First plus independent AI review/backup, official host scoring, evidence-backed triage, and capture of general enhancements."
+---
+
+# Open-Benchmark Methodology
+
+The benchmark measures the Vibe-IC product path, not a benchmark-tuned agent.
+Every runnable RTL evaluation uses the same solve core as an ordinary IC-design
+request. Dataset differences are allowed only at the input/output boundary.
+
+## Rule 0 — one product entry
+
+For the open RTL suites in `benchmark/BENCHMARK_REGISTRY.json`, the only
+authoring path is:
+
+```text
+benchmark_dispatch.py <bench> --solve
+  -> benchmark_io_adapter.stage           (input translation only)
+  -> task_nature_route                     (input-only advisory proposal)
+  -> needs_ai_routing.jsonl                (AI judges task nature before runner)
+  -> benchmark_dispatch.py <bench> --resume (hash-bound AI route validation)
+  -> vibe_ic_one_shot_runner
+       --entry-step <Router entry> --exit-step <Router exit>
+       --execution-mode default             (normal product runner)
+  -> Program candidate or declared AI backup
+  -> independent hash-bound AI review
+  -> benchmark_dispatch.py <bench> --resume
+  -> accepted candidate
+  -> benchmark_dispatch.py <bench> --score
+  -> official host scorer
+```
+
+For whole-IC `benchmark_clean`, use `/vibe-ic-all` through
+`vibe_ic_one_shot_runner.py`, then use `benchmark-verify`. The public entry
+always executes `flow_engine.py` against `flow/steps.json`; the Router controls
+its evidence window. A benchmark name never selects a solver. Report canonical
+YAML positions and step names; historical IDs remain execution details.
+
+Forbidden alternatives include:
+
+- benchmark-name or problem-id routers, task loops, tier pipelines, solve
+  pipelines, Phase-1 wrappers, prompt exporters, or free-hand authoring loops;
+- choosing a route from a CVDP `cid`, benchmark label, problem name, expected
+  answer, prior score, or hidden harness;
+- writing scoreable RTL directly and then calling a gate/scorer;
+- publishing a partial previous-failure run as a benchmark result.
+
+`benchmark/benchmark_entry_surface_check.py` enforces the shipped entry surface
+and is called by `--solve`. If it fails, stop and repair the product entry before
+running a benchmark.
+
+## GENERAL-CORE / THIN-ADAPTER
+
+Benchmark-specific code may only translate formats or invoke the official
+scorer. A thin adapter may:
+
+- stage the current record's visible prompt and supplied context into a normal
+  project;
+- collect an already-produced candidate;
+- package exact accepted bytes into the scorer's required envelope;
+- run image/tool preflight and translate official verdict files.
+
+It may not classify the task, author or repair RTL, choose a product step,
+infer hidden interface facts, assign PASS/FAIL, or use reference values. Logic
+that works from ordinary prose/RTL belongs in a neutrally named general program
+and must be reachable from a non-benchmark Phase-1/project flow.
+
+For CVDP, `output.context` values are hidden golden data. At the post-acceptance
+host packaging boundary only, the adapter may read its path keys to construct
+the official multi-file response envelope. It must never expose values to the
+solver or reviewer and must refuse ambiguous file/module mappings.
+
+## Program First, AI Backup, AI authority
+
+This is a sequence, not two independent racing solvers:
+
+1. AI confirms or overrides the input-only task routing before any design
+   runner executes. Routing does not author RTL or replace a Program gate.
+2. Program runs first for RTL through the normal runner.
+3. If Program emits a candidate, an independent AI reviews the exact frozen RTL
+   hash against the visible prompt/context.
+4. If Program declares a supported WAIVE or route-level AI backup, AI may author
+   the missing candidate into the runner-owned RTL directory; `--resume`
+   re-enters the same product gates.
+5. If AI agrees with Program, record acceptance for that exact hash.
+   When Program lacks PASS functional evidence, the AI's current challenge plus
+   every active inherited challenge must cover every block-eligible structural
+   item emitted in `program_review_obligations`; `spec_coverage_check.py`
+   measures this, and an uncovered item blocks acceptance.
+6. If AI disagrees, it must identify the prompt requirement and provide a
+   prompt-derived executable test that fails on the frozen Program candidate.
+   Prose disagreement alone cannot replace the candidate.
+7. A repair must pass that immutable challenge, the same runner gates, and a
+   fresh independent AI review. AI is the final semantic authority only after
+   this evidence chain is complete.
+
+Reject only for explicit visible-input obligations; quote the clause imposing each rejected check.
+General defaults guide authors; reviewer preferences add no unstated latency, reset,
+full-threshold or clock-phase duties. If several readings satisfy the explicit contract,
+record an engineering interpretation without rejecting other compatible choices for
+extra restrictions. Positive examples alone do not imply iff; test clocks and stimulus
+must obey input assumptions. Rigorously verify every explicit duty and required proof.
+Compatible choices do not justify blanket acceptance, skipped validation or human clarification.
+
+A structural-only rejection still requires the frozen candidate to PASS the
+prompt-derived functional challenge. Supplied-RTL tasks retain the existing
+source-bound structural contract and Program functional PASS requirement. A
+source-verified `spec_generation` or `completion` task using original input may instead declare
+`vibeic.prompt_structural_contract.v1`: name its exact relative `candidate_path`,
+bind the candidate hash and a unique exact prompt quote, and use the task's
+immutable native image. Every active functional challenge must PASS and cover
+all blocking obligations before native `STRUCTURAL_CONTRACT_VIOLATION` permits
+repair. The repair record carries `vibeic.prompt_structural_completion.v1` and
+the unchanged structural declaration, rebinding only its candidate hash; normal
+completion replays it before a fresh independent review. Only structures
+retained at `RTLIL_AFTER_PROC_OPT` are supported. Functional equivalence cannot
+prove source syntax such as assign versus always, and an unsupported abstraction
+remains NOT_MEASURED.
+
+No public RTL files does not mean no supplied RTL: the authoritative original
+prompt may contain it. Source facts distinguish absent RTL from a single
+complete header with no body. The latter requires `prompt_header_preservation`
+in the structural payload, of schema `vibeic.prompt_header_preservation.v1`,
+with `prompt_sha256`, `module`, exact original `header` and `header_sha256`.
+The candidate must preserve the header's significant tokens; only whitespace
+and comments may vary. The same binding survives native repair replay. This
+narrow structural exception does not allow a functional-only repair to omit its
+source contract. Embedded bodies, multiple modules, unsupported source context,
+incomplete extraction and malformed public manifests never become text-only.
+
+A functional rejection on a header-only input may use the distinct repair
+wrapper `vibeic.prompt_header_completion.v1`. It binds `prompt_sha256`,
+`parent_rtl_sha256`, whole-bundle `candidate_sha256`, `challenge_sha256`, the
+same attributed `author` and `oracle_accessed: false`, plus an exact relative
+`candidate_path`, its byte hash `candidate_file_sha256`, and the unchanged
+`prompt_header_preservation`. Normal completion replays that header proof;
+ordinary native gates, the immutable functional challenge and fresh hash-bound
+AI review remain mandatory. Header fidelity alone is not functional PASS.
+An active structural contract must keep its original structural wrapper and
+cannot be replaced by HeaderCompletion. Supplied bodies, multiple/ambiguous
+modules and unverified source authority retain their strict source obligations.
+
+Every candidate therefore has two required checks: deterministic product gates
+and semantic AI review. `program_first_ai_acceptance.json` must be `COMPLETE`
+before scoring.
+
+### A required Step 4 needs its reference model
+
+When a route's evidence window includes Step 4 and Program cannot derive the
+reference, the required `sim` gate fails on the unfilled hook, and an independent
+semantic PASS does not discharge that failure. The AI backup task names the
+model in `reference_model_handoff`; an independent IC expert derives it from the
+visible input and fills it before `--resume`. A model filled or replaced later is
+measured by the next `--resume` on the same RTL bytes, followed by a fresh review.
+Editing the RTL is not a way back to the runner without a proven failure.
+
+### Autonomous evaluation: IC-expert adjudication of ambiguity
+
+In an autonomous evaluation, the IC expert owns engineering adjudication of
+the supplied contract. Do not make the human owner solve each benchmark case
+when a review asks a source question. First route that question to an
+independent IC expert with the entire visible input, including prose, tables,
+diagrams, interface declarations and timing examples. The expert records the
+conflicting clauses, derives the best defensible interpretation of the complete
+functional contract, and explains why alternative readings conflict with it.
+Preserve the original discrepancy; do not invent a human clarification or
+rewrite the frozen input. There is no blanket rule that prose overrides a
+diagram, a majority of statements wins, or a familiar circuit supplies missing
+behavior. Hidden references, testbenches and scorer results provide no authority.
+
+When that source-bound adjudication establishes that the prior review question
+should be corrected, use the existing `--resume --review-correction` boundary
+below, followed by a fresh independent review and all normal proof obligations.
+The adjudication itself is neither acceptance nor an RTL repair permit. If the
+whole visible contract still cannot support a defensible interpretation, retain
+the source question and honest `NOT_MEASURED`; do not fabricate certainty. A
+genuine input amendment retains the ordinary fresh-input workflow.
+
+*why_not_bucket_a*: deciding whether contextual hardware requirements support a
+defensible interpretation of conflicting clauses requires IC design judgment;
+no generic regex, clause vote or source-type priority can decide it. The
+deterministic handoff and immutable review boundary remain program-owned.
+
+### Correcting an immutable review question
+
+An incorrect source-bound review question must not be overwritten, and correct
+RTL must not be changed just to obtain a new review key. The normal coordinator
+may apply `--resume --review-correction <REQUEST>` to an unaccepted, unpublished
+task. Its `vibeic.benchmark.ai_review_correction.v1` request binds the current
+task digest, prompt, candidate, review and challenge hashes, an attributed blind
+AI author, and a rationale of at least 80 characters. This is a fresh-review
+operation, not an acceptance, repair permit or challenge supersession.
+
+A `NEEDS_CLARIFICATION` review without `verification_test` is eligible only if
+the ordinary review validator confirms a valid source question. The request must
+include `challenge_sha256` explicitly: the exact supplemental file hash when the
+task's challenge path exists, or `null` when absent. The archive records existing
+uncontracted diagnostics as `PRESERVED_UNCONTRACTED_SUPPLEMENTAL_NOT_PROMOTED`,
+and absence as `ABSENT_NO_VERIFICATION_OBLIGATION`. Neither invents an executable
+contract the prior question did not claim. Every already-active inherited
+challenge remains unchanged and binding; an existing `verification_test` keeps
+its ordinary validation and inheritance rules. Stale material, invalid questions
+and file-presence changes are refused. Original evidence remains immutable and
+the new review/test paths must receive fresh independent evidence.
+
+When a correction proposes a typed witness, its rationale does not attach it.
+The fresh independent reviewer must assess the entire witness against the full
+visible source and bind only a source-qualified witness as the current
+`verification_test`, with its exact hash and source evidence, at the actual newly
+issued `task.challenge_path`; preview paths provide no authority. Preserve and
+execute every active inherited challenge and require ordinary native proof and
+combined coverage. Reusing the prior current test does not establish the proposed
+witness's binding; file presence does not qualify an uncontracted diagnostic.
+
+*why_not_bucket_a*: `benchmark_dispatch.py` enforces hashes, paths and inheritance;
+selecting a semantically valid witness requires IC-expert judgment.
+
+## Blind clean-room evaluation
+
+A canonical run is a fresh full-dataset run. Do not read or inherit:
+
+- prior samples, run artifacts, result files, or agent memory;
+- sibling problems' solutions, testbenches, build scripts, or conventions;
+- hidden harnesses, reference/golden outputs, or the host scorer during solve,
+  review, repair, or optimization;
+- prior failing IDs as a way to narrow the evaluation.
+
+Codex launchers that inject workspace memory must disable `memories` for blind
+actors, for example `codex exec --disable memories --disable multi_agent`.
+Verify the actual native developer context; `fork_turns=none` alone does not
+establish a clean room. An injected historical memory summary is disqualifying.
+Preserve native per-content provenance in the unfiltered export. A text banner
+alone cannot establish which provider supplied that context.
+
+`--solve` owns run-directory creation, writes clean-room metadata, pre-creates
+the transcript directory, and processes every current dataset case. Separate
+scaffolding, benchmark-local authoring, and partial prior-failure evaluation are
+not entry points. `--limit` is diagnostic only and its run is ineligible for
+canonical scoring.
+
+Export author/reviewer transcripts to `<run>/transcripts/`. The score front
+door runs `benchmark_clean_room_check.py` and `blindness_audit.py`. Missing
+transcripts require an explicit disclosure; a detected oracle access blocks
+the score.
+
+**Batch-dispatch ORCHESTRATION RULES — Shapes B/C (ORGANIC-20260605,
+REQUIRED):** these bind every shape whose AI worklists fan out over more than
+one agent — Shape C and Shape B alike; Shape D is a single project with no
+fan-out and is exempt. Batch granularity (one agent per worklist slice, never
+per problem), disk truth (progress is read from the run directory, never
+from agent returns; resume = `--resume`), transcript export by default, and
+the rate-limit resilience ladder (1-agent CANARY, then 2–4 concurrent with
+completion-driven dispatch) are stated in
+`benchmark/blind_instructions_shape_c.md` § ORCHESTRATION RULES and bound
+into Shape B by `benchmark/blind_instructions_shape_b.md`.
+
+Blind evaluation is the exam. Do not loop against official verdicts. Post-score
+analysis may diagnose and capture a general enhancement, but the resulting
+plugin change is measured only in a new clean-room run.
+
+## Canonical commands
+
+```bash
+python3 programs/benchmark_dispatch.py <bench> \
+  --solve --dataset <DATASET> --run <FRESH_RUN>
+
+# Complete needs_ai_routing.jsonl from the visible input only. Then --resume
+# validates ALL issued route records and starts the normal Program runner.
+# If even one route is missing, invalid, or needs clarification, zero design
+# runners start; correct only that response and repeat --resume without
+# restaging inputs or re-authoring completed route responses:
+python3 programs/benchmark_dispatch.py <bench> \
+  --resume --dataset <DATASET> --run <FRESH_RUN>
+
+# Complete only the resulting runner-declared AI backup/review/repair worklists:
+python3 programs/benchmark_dispatch.py <bench> \
+  --resume --dataset <DATASET> --run <FRESH_RUN>
+
+# Repeat --resume until program_first_ai_acceptance.json is COMPLETE.
+python3 programs/benchmark_dispatch.py <bench> \
+  --score --dataset <DATASET> --run <FRESH_RUN>
+```
+
+CVDP scoring additionally requires `--scorer-root <official-cvdp-root>` (or
+`CVDP_BENCHMARK_ROOT`) and the exact official simulation images. Run the shipped
+EDA image preflight before scoring. Do not substitute tools silently.
+
+### The Program re-entry: re-running a FIXED Program on a preserved signed input
+
+When a Program gate transformed an AI repair into different bytes, the existing
+`AI_REPAIR_FINAL_PROVENANCE_REQUIRED` refusal remains authoritative. An upgraded
+Program can be re-entered against the preserved, originally signed input with
+the ONE Program re-entry operation:
+
+```bash
+python3 programs/benchmark_dispatch.py <bench> --resume \
+  --dataset <DATASET> --run <RUN> --worker-threads 1 \
+  --program-regate <RUN>/program_regate_request.json
+```
+
+`--program-retry` is a DEPRECATED alias of `--program-regate`: it runs the same
+merged operation and prints a deprecation line on stderr. That line names the
+removal window, and it reads the version from the plugin's own manifest rather
+than a literal typed here — the merge's landing version is assigned at landing,
+so any number written into this page would be a guess that the plugin itself
+could contradict. Run `--program-retry`, or `benchmark_dispatch.py --help`, to
+see which version applies to the plugin you are actually running. Giving both
+names in one resume is refused, not ordered.
+
+Before the merge these were TWO operations (`--program-regate`, landed v1.17.63,
+and `--program-retry`, landed v1.17.71) for one job; issue #2047 merged them.
+Those two numbers are history — where each operation actually landed — and stay
+written down; the removal window is a forward claim and is not.
+
+**BOTH identities, always.** The merged operation refuses unless the Program
+moved in BOTH senses, because neither is necessary or sufficient for the other:
+a real fix can land with no version bump, and a version can move with the
+executable sources untouched.
+
+* the declared VERSION pair — `program_version_before` must be the version that
+  produced the preserved input, `program_version_after` must be the running
+  Program, and the two must differ (an unchanged version is a loop, not a fix);
+* the executable SOURCE TREE — `program_identity`, which fingerprints installed
+  runtime source and configuration including dirty edits, must equal the running
+  fingerprint, and must differ from the identity of any prior re-entry on this
+  task. It is checked again after the runner.
+
+Unaccepted PROGRAM candidates with a valid current review use common request fields
+after an upgrade, without signed-input fields. Ordinary workers regenerate unchanged
+public input, retain prior projects and challenges, and require fresh AI review.
+
+The following signed-input rules apply only to an unaccepted, unpublished
+`AI_REPAIR` task with a valid signed input snapshot. It does not authorize AI
+edits, refresh a signature, supersede a test, or accept a result. The normal
+repair boundary automatically saves both `repair_input_candidate_snapshot` and
+the `pre_gate_input` manifest before running gates; the request must name a
+candidate manifest whose exact RTL hash matches the unchanged signed repair
+record and whose `source_rtl_paths` exactly match the task's working RTL paths,
+and the task's own pre-gate manifest must describe the same signed bytes.
+Reconstructing an unsigned input, supplying arbitrary RTL files, and other
+candidate origins are unsupported and refused.
+
+The request is a JSON object with these fields:
+
+| Field | Required binding |
+| --- | --- |
+| `schema` | `vibeic.benchmark.program_regate.v1` (the legacy `...program_retry.v1` is still accepted) |
+| `id` | Exact pending task ID |
+| `task_sha256` | SHA-256 of `json.dumps(task, ensure_ascii=False, sort_keys=True)` |
+| `prompt_sha256` | Task's current prompt hash |
+| `stale_output_sha256` | Task's frozen output hash (legacy spelling `rtl_sha256` also accepted) |
+| `signed_input_sha256` | Preserved input hash, equal to signed `repaired_rtl_sha256` (legacy spelling `input_rtl_sha256` also accepted) |
+| `repair_record_sha256` | SHA-256 of the unchanged signed record's exact file bytes |
+| `input_manifest_path`, `input_manifest_sha256` | Preserved input manifest and its exact file hash |
+| `program_version_before`, `program_version_after` | The declared version pair; `_after` must be the running Program |
+| `program_identity` | Current `benchmark_dispatch._program_source_identity()` object |
+| `author`, `blind` | Attributed blind AI author (`kind: "AI"`, a named `model`, `oracle_accessed: false`) |
+| `rationale` | Explanation of the re-entry, at least 80 characters (legacy spelling `reason` also accepted) |
+| `review_sha256`, `challenge_sha256` | Exact current proof file hashes if a current review/test exists; otherwise omit or use null |
+
+Where the two front doors spelled one field differently, both spellings are
+accepted so no caller breaks; supplying both under CONFLICTING values is refused,
+because an ambiguous identity is not an identity.
+
+**What it refuses.** A wrong request or task schema; a missing or duplicate task
+id; a candidate outside `PROGRAM`/`AI_REPAIR`; a stale `task_sha256`, `prompt_sha256`,
+`stale_output_sha256`, repair record, input manifest or Program identity; a
+request naming no source identity at all; an absent, too-short or unattributed
+rationale or author; an unchanged, unnamed or non-running version pair; a signed
+input that is not the hash the author signed, or that the gates never changed; a
+preserved input that is missing, drifted, internally inconsistent, made by a
+different Program version, or that does not cover the working RTL file set; a
+work tree that drifted from the frozen gate output (a hand edit cannot be
+smuggled through a re-entry); prompt or Phase-1 provenance drift; a task already
+accepted in either `solve_report.json` or the acceptance report, or already
+published; a non-canonical response path or a project that is not the
+runner-owned one; a missing, drifted or non-inherited challenge; a task that also
+has a pending AI backup; an occupied archive or fresh review/test path; any
+source changing during preparation; and a request, snapshot or evidence file that
+is not a regular file inside the run, including any symlink traversal. Normal
+relative project links to locations inside the same project are preserved,
+including missing optional targets; absolute or escaping project links are
+refused.
+
+Under the existing coordinator lock, the operation runs the ordinary supplied-RTL
+validation entry (`2`) with the original declared exit, in a staged project.
+Collection uses the normal runner predicate; the exact return code and raw
+reports remain available. It preserves the complete prior project, prior task,
+solve/acceptance/worklist bytes, and any current review/test under
+`program_regates/<id>/<request-sha>/`. Staged gate outputs remain at their
+original paths so references in reports remain usable. Current and inherited
+challenges remain obligations of the fresh independent review. Program actions
+are recorded separately from the original AI repair author: the transition
+records `attributed_to: "PROGRAM"`, `author_signature_unchanged: true` and
+`repair_authorized: false`, and the author's signature is bound to the preserved
+signed INPUT rather than to the Program's output.
+
+A successful re-entry freezes a candidate in a fresh request-addressed snapshot,
+creates unoccupied review/test paths, and returns `2` with `PENDING`. Complete
+the fresh independent review and invoke ordinary `--resume` afterward. If the new
+output still differs from the signed input, the unchanged final-provenance check
+still refuses acceptance. Existing signatures and historical challenges cannot be
+automatically rebound to the new output.
+
+Runner failures preserve the original project/task and write a bound failure
+record. An interrupted operation without a valid terminal record emits
+`PROGRAM_REGATE_REFUSED` and blocks ordinary resume. A replayed request over a
+journalled re-entry is REFUSED, never reported as already-applied. Reconcile the
+immutable intent, staged output, preserved prior project, and transition before
+continuing; automatic rollback and guessed recovery are deliberately unsupported.
+Do not delete a journal or overwrite owner edits to make resume advance.
+
+Before invoking any official host scorer, run the deterministic cwd guard over
+the exact design and scorer working directory (and testbench when applicable):
+
+Run the existing official scorer from its documented working directory and preserve actor isolation. A separate working-directory receipt is not a scoring result.
+
+A non-zero guard verdict blocks scoring; do not treat it as advisory.
+
+## Four-stage attribution
+
+Record every problem, including failures, in a per-problem table:
+
+1. Routing — AI semantic decision plus the prompt/context evidence, selected
+   nature, general entry step, evidence class, and exit step.
+2. Solving — Program, declared AI backup, or evidence-backed AI repair; name the
+   emitted candidate hash and reason for any handoff.
+3. Verifying — deterministic runner gates and independent AI review; neither
+   substitutes for the other.
+4. Looping — no loop, AI backup, AI challenge/repair/re-review, optimization/PPA,
+   or unresolved tool/dataset defect. State who acted and what evidence closed
+   the loop.
+
+The aggregate counts must reconcile exactly to the dataset denominator.
+
+## Module-name source priority when prose and directory disagree (#482)
+
+Dataset-agnostic authoring rule. When the prompt's stated module name and the
+problem's directory / file leaf name DISAGREE, author the module under the
+**directory-leaf name** as the **TB-facing module name**. Hidden testbenches
+are generated against the file layout, and prose typos are common, so the
+literal prose name will fail to elaborate. Keep the prose name only when no
+directory/file convention exists, and note the conflict in the sample header
+comment.
+
+Close-loop and re-author actors **MUST NOT** "fix" a passing directory-leaf
+module name back to the **prose typo**. A re-author regressed exactly this way,
+turning a passing problem into a failing one while believing it was correcting
+a mistake.
+
+*why_not_bucket_a*: distinguishing a typo from a genuine intended wrapper name
+requires contextual judgment — reading the prose against the file layout — and
+no regex separates the two. The deterministic half is the priority order above;
+the judgment is which of the two the disagreement is.
+
+## Official scoring and tool disclosure
+
+Scoring is a host-only post-generation step. Use the benchmark's official
+testbench, image, command, cwd, module naming, and response format. Report:
+
+- dataset identity/hash and exact denominator;
+- plugin version/commit, MCP/EDA image digest and tool versions;
+- official scorer command and substitutions (or `none`);
+- raw PASS/FAIL/NOT_MEASURED counts and official logs;
+- Program/AI routing, solving, verifying, and looping totals.
+
+Never rewrite the official score to compensate for suspected bad goldens. Keep
+the official number and separately disclose evidence-backed dataset defects.
+
+## Failure triage
+
+For every non-PASS, separate:
+
+- product defect: Program/AI/gate/adapter behavior is wrong;
+- tool gap: required official capability is absent or incompatible;
+- incomplete/ambiguous public specification;
+- suspected defective dataset/golden;
+- host failure or NOT_MEASURED.
+
+A dataset-defect or floor claim needs a prompt quote, official failure evidence,
+and a control showing the prompt-correct interpretation cannot satisfy the
+official oracle. A known-systematic tool blocker must cite its tracking issue
+number. Never infer a floor merely because one attempt failed.
+
+After writing the per-problem triage record, validate both its internal
+consistency and whether every general recovery was absorbed into the product:
+
+Retain the failed case, native evidence, diagnosed cause, fix location and verification scope in the benchmark report. An unresolved case remains visible in the result population.
+
+Review every triage entry against its actual failed input, tool output and implemented fix. Do not let a record schema or status label replace that evidence.
+
+Either non-zero verdict blocks the result handoff.
+
+## Category D — a tool-substitution gap is FORK-FIXABLE, not a floor
+
+When the official testbench uses a simulator-only construct, or a language
+feature our open-source substitute cannot yet run, that is **FORK-FIXABLE — not
+a terminal floor.** We fork the EDA tools and ship them as `vibeic-eda`, so
+"our tool cannot do X" is an engineering backlog item against the fork, routed
+to `tools/vibeic-eda/FIX_STATUS.md`.
+
+The mechanical half of the detection is a program, not a judgement: `programs/
+tb_vcs_only_construct_detect.py` scans the failing testbench for the
+iverilog-rejecting VCS/Xcelium-only constructs — array-aggregate `'{...}` init,
+`break;` / `continue;`, `std::randomize`, `$urandom_range`, `unique`/`priority
+case`, `join_none`, queue ops — and reports the offending line, the
+`FORK-FIXABLE` disposition and the `FIX_STATUS.md` route. Use it to
+auto-classify D; A/B/C and E-H stay judgement.
+
+**Mandatory before you may even LABEL a residual Category D** — this is the
+`asyn_fifo` lesson: run the FLOOR-proof below. Build and run the GOLDEN under a
+tool that DOES support the missing feature.
+
+* If the golden PASSES there, it is a confirmed genuine tool gap: open or
+  update the `FIX_STATUS.md` row and add the feature to the fork.
+* If the golden ALSO fails under the supporting tool, it was never a pure tool
+  gap. Re-triage it as a dataset/RTL floor, not D.
+
+Worked example: the RTLLM `asyn_fifo` official testbench uses `break;`, which
+stock iverilog 12 rejects. The golden compiles and passes under Verilator with
+`--timing` and under the forked iverilog, so it was a confirmed tool gap and is
+now fork-closed.
+
+**Never patch a tool to "pass benchmark X".** That is the over-fit prohibition:
+the fork dissolves a CAPABILITY floor, never the honesty boundary. A genuine
+algorithm-hard port that is honestly DEFERRED in `FIX_STATUS.md` is a
+known-deferred engineering item, and still not an unfixable floor.
+
+**A plain tool-substitution gap is NO LONGER T5 by default.** Since we fork the
+tools it is Category D FORK-FIXABLE; it may be recorded as a real floor ONLY
+once it carries the deferred `FIX_STATUS.md` entry AND has passed the
+FLOOR-proof. Never "AI cannot".
+
+## FLOOR-proof: never declare a floor without the original-RTL-also-fails run (#724)
+
+Across one campaign FIVE residuals were labelled "benchmark defect" and ALL
+FIVE were later overturned and PASSED — each was our own off-by-one, interface
+or reset-boundary bug. A floor claim is almost always a misread, and the
+asymmetry is severe: **a false floor ships an unfixed real bug**, while the
+disproving run is cheap.
+
+A residual may be labelled FLOOR only after this three-step **FLOOR-proof**, in
+order:
+
+1. **Run the exact official scorer** on the candidate RTL — the real harness,
+   the real toolchain, the required env image — and read the real failing
+   assertion. Not a paraphrase, not your own testbench.
+2. **Run the ORIGINAL, unmodified reference/golden RTL through the SAME
+   scorer.** If the **original** also fails, it is a genuine benchmark/oracle
+   defect and a floor. **If the original passes, the defect is ours** — an
+   authoring or extraction bug. It is not a floor; go and fix it.
+3. **Only then confirm FLOOR**, and only when you can quote BOTH (a) the exact
+   harness assertion that fails AND (b) the exact prompt line mandating two
+   **mutually-exclusive** values for identical stimulus, AND you have shown in
+   step 2 that the original RTL also fails.
+
+Variant — the harness contradicts the given context itself. When the
+contradiction is provable from the given input alone, the floor-proof is (a) a
+cross-round expected-vs-got table, the testbench's asserted value for a
+stimulus against what the given mapping mandates, shown stable across at least
+two independent authoring rounds so it is not a one-off; and (b) a replay under
+the design's OWN testbench confirming the given behaviour is internally
+consistent while only the hidden oracle disagrees. The given context is then
+the whole evidence and no external information is needed.
+
+*why_not_bucket_a*: deciding whether two assertions are truly mutually
+exclusive for identical stimulus is an open-ended meaning judgment no regex
+makes. The deterministic half — a floor claim MUST carry the
+original-RTL-also-fails scorer evidence — is the gate condition.
+
+## Capture enhancement
+
+Post-score recovery is not part of the blind score. When AI finds a correct
+repair that Program missed:
+
+1. isolate the general discriminator from prompt and RTL evidence;
+2. add a benchmark-agnostic program rule/check/fix at the normal product
+   enforcement point;
+3. prove the new test fails on the unfixed product and passes after the fix;
+4. run no-leak and false-positive controls on non-benchmark/general inputs;
+5. issue a version-less PR and wait for it to land;
+6. upgrade the installed plugin/MCP and run a new full clean-room benchmark.
+
+Do not encode problem IDs, dataset labels, hidden expected values, or a lookup
+table. Capture is successful only when the next ordinary Program First run
+produces the right behavior without benchmark-specific knowledge.
+
+## RESULT requirements
+
+Every result must include:
+
+- Summary/status and exact official score;
+- clean-room/blindness statement;
+- environment and official scorer evidence;
+- full per-problem four-stage CSV/JSON path and reconciled aggregates;
+- all failures with evidence-backed triage;
+- captured enhancements/PRs and what they do not claim;
+- reproducible next action.
+
+**No RESULT means the run FAILED.** Never publish a number without the result
+that backs it. The load-bearing failure is the launch-and-idle abandon bug: the
+scorer or runner finished, a verdict and artefacts exist, and no RESULT was
+ever written because the turn ended while the run was detached. To keep your
+**turn alive to completion**, drive the long run through the BLOCKING
+supervised waiter that returns only on exit or stall — never a detached
+fire-and-forget.
+
+**Why the instruction alone loses to a plausible model (#558).** An agent ended
+its turn on a still-running flow, saying "I'll yield until the harness
+re-invokes me when it exits". Nothing did. `claude -p` is one-shot, so the
+three beliefs that justified it are each impossible:
+
+* *"the harness **re-invokes** me when the background job exits"* — nothing
+  re-invokes a finished turn. There is no such mechanism.
+* *"a background waiter is armed to fire"* — a waiter can only wake a turn that
+  is **still alive**. It cannot start a new one.
+* *"the monitor will fire"* — a monitor **notifies the DISPATCHER**, not you.
+  It cannot resume you.
+
+Yielding does not pause your turn; it ENDS it, and the "then write the result"
+step never runs. The rule above is not a preference about style — it is the
+only way the deliverable gets written.
+## Handoff
+
+End with `## Summary` or `## Verdict`, followed by a clear `Next:` statement.
+
+### Common product input
+
+Stage visible design documents and supplied RTL through the thin IO adapter.
+The unchanged Router decides the task's native entry and evidence exit. A
+supplied-RTL continuation resumes at validation within that same evidence
+window. The public entry always executes the native step table.
+
+```bash
+python3 programs/benchmark_dispatch.py BENCH --solve --dataset VISIBLE_INPUTS --run FRESH_RUN
+python3 programs/benchmark_dispatch.py BENCH --resume --dataset VISIBLE_INPUTS --run FRESH_RUN
+```
+
+Confirm input-only AI routing before Program authoring. Preserve independent
+blind review, prompt-derived challenges, AI backup, and official scoring.
+Native measurements and reaching a boundary alone are not a benchmark score.

@@ -1,0 +1,202 @@
+---
+name: new-provider
+description: 用于在 cc-router 仓库新增一个 LLM provider（即在 src-tauri/providers/ 下添加 YAML 描述符并完成配套的同步改动）。当用户说「加 provider」「接入 XX 厂商」「新增订阅源」「provider YAML」「让 cc-router 支持 OpenRouter/Together/Groq/Ollama 之类」时必须触发本 skill；即便用户只甩了一个厂商名或一个文档 URL，只要看起来在 cc-router 仓库内做新增 provider，就走本 skill 的工作流，不要绕过。本 skill 只覆盖「描述符层」扩展（YAML + 配置 + 测试 + 文档），不涉及调度/状态机的 Rust 改动。
+---
+
+# 新增 Provider 工作流
+
+## 这个 skill 在做什么
+
+cc-router 的 Provider 抽象 = 「YAML 描述符」。把一个新厂商接入路由层不需要写 Rust——只需要一份遵循 `providers/_schema.json` 的 YAML，放进 `providers/` 即自动内嵌进二进制；唯一的同步改动是可选的品牌图标。
+
+这份 skill 的价值在于：
+
+1. **决策清单**：哪些字段是「研究上游文档才能填对」的关键字段（auth、base_url、/models 端点）
+2. **同步检查清单**：配套改动一处不漏（漏一处会导致 release 包加载失败 / 测试断言失败 / 文档失同步）
+3. **常见陷阱**：哪些上游 API 设计会让默认假设崩塌（无 /models、key 被忽略、messages 与 /models 不同域）
+
+## 触发条件
+
+走本 skill 当且仅当用户在 cc-router 仓库内做「新增 provider」类工作。如果只是改既有 YAML 字段（如调 endpoint 顺序、改 description）则不必走完整流程，直接编辑即可。
+
+## 三步工作流（顺序执行）
+
+### Step 1：研究上游文档，决定 YAML 字段
+
+**先查清楚 6 件事**（用 WebFetch 或问用户）：
+
+| 字段 | 关键问题 |
+|---|---|
+| `endpoints[].base_url` + `messages_path` | Anthropic 兼容端点完整 URL？是否多区域/多 endpoint？ |
+| `auth.header_format` | `x-api-key` raw（仅 Anthropic 系）还是 `Authorization: Bearer`？ |
+| `auth.header_name` | 多数家是 `Authorization`，少数是 `x-api-key`/自定义 |
+| `required_headers` | 是否要 `anthropic-version`？是否要其他厂商专属 header？ |
+| `model_discovery` | 是否有 Anthropic 风格 `/v1/models` 端点？路径？是否与 messages **同域**？需要独立 URL 时用 `model_discovery.url` 字段（完整 URL 覆盖，不走 base_url 拼接） |
+| 是否需 API Key | 极少数厂商（如 Ollama 本地）不校验 key——仍要保留字段，文档里说明 |
+
+**判断 `compatibility` 字段**：
+- `verified`：自己跑通过实际请求 + SSE 流式
+- `partial`：有限制（如无 /models、流式有兼容 quirks）
+- `untested`：仅按文档接入未实测
+
+### Step 2：写 YAML 文件
+
+**位置**：`src-tauri/providers/<id>.yaml`
+
+**id 命名**：小写英文/数字/下划线（schema 强制 `^[a-z0-9_]+$`）。优先用厂商英文短名（`anthropic`、`deepseek`、`zhipu`），不要带版本号或地域后缀。
+
+**模板骨架**：
+
+```yaml
+id: <provider_id>
+display_name: "<厂商展示名>"   # 纯品牌名 (四语相同) 写字符串; 含中文就写成下面 description 的四语形式
+icon: ""  # 没有 lucide brand icon 时留空走 Bot 兜底; 有则填 BRAND_MAP key
+description:
+  zh: "<一句话描述>"
+  zh-Hant: "<繁體中文（台灣用語）>"
+  en: "<English>"
+  ja: "<日本語>"
+homepage: "<主页 URL>"
+docs_url: "<API 文档 URL>"
+api_key_url: "<控制台密钥页面 URL>"
+
+compatibility: untested  # 或 partial/verified
+compatibility_notes:
+  zh: |
+    <需要用户知道的限制：流式 quirks、模型列表问题、特殊计费等>
+  zh-Hant: |
+    <繁體中文>
+  en: |
+    <English>
+  ja: |
+    <日本語>
+
+endpoints:
+  - id: <endpoint_id>
+    label:
+      zh: "<UI 显示的人话名称, 如「国内版 · 按量付费 API」>"
+      zh-Hant: "<如 中國版 · 按量計費 API>"
+      en: "<如 China · Pay-as-you-go API>"
+      ja: "<如 中国版 · 従量課金 API>"
+    description:
+      zh: "<细节说明>"
+      zh-Hant: "<繁體中文>"
+      en: "<English>"
+      ja: "<日本語>"
+    base_url: "<https://...>"
+    messages_path: "/v1/messages"
+    region: <china|global|eu|local>   # 订阅列表页据此显示「中国 / 全球 / 欧洲」标签, local 不显示
+    billing: <subscription|pay_as_you_go|free>
+
+default_endpoint: <endpoint_id>  # 必须是上面 endpoints[].id 之一
+
+auth:
+  type: api_key
+  header_name: "Authorization"      # 或 "x-api-key"
+  header_format: bearer             # 或 raw
+
+required_headers:
+  anthropic-version: "2023-06-01"   # 大部分厂商都接受这个 header
+
+forward_headers: []
+
+model_discovery:
+  enabled: true                     # 无 /models 接口则填 false
+  path: "/v1/models"                # 或 url: "https://..." 完整覆盖
+  cache_ttl_hours: 24
+  example_models:                   # enabled: false 时作为 UI 输入提示
+    - "<示例模型 ID>"
+```
+
+**关键决策点（写之前对照参考表）**：
+
+```
+auth.header_format 选哪个？
+├─ x-api-key raw → 仅 anthropic / ollama 这种「Anthropic 同款」
+└─ Authorization bearer → 其余几乎所有第三方
+
+model_discovery.enabled?
+├─ true（path 同 base_url 域）→ alibaba / anthropic
+├─ true（url 完整覆盖, 跨域）→ deepseek / zhipu / moonshot / xiaomi
+└─ false（无端点, 手动输入）→ minimax / ollama
+
+endpoints 数量？
+├─ 1 个 → 只有单一访问入口（anthropic / ollama）
+├─ 2-4 个 → 区分订阅 vs 按量、国内 vs 国际、不同区域集群
+```
+
+**上屏文字必须四语齐全**（`display_name` / `description` / `compatibility_notes` / 端点 `label` / `description`）：
+
+- 两种写法：纯字符串 = 四语相同，只用于 `DeepSeek`、`OpenRouter` 这类纯品牌名；其余写成 `{zh, zh-Hant, en, ja}`，少一个键 yaml 就解析失败。界面上**没有回退**，缺翻译不会显示中文兜底。
+- 含中文的字段不许用纯字符串写法，`en` 里不许有中日文、`ja` 不许照抄 `zh`、`zh-Hant` 里不许有简体专用字（`src/i18n/simplified-only.txt`）—— `loader.rs::tests::cjk_text_is_translated` 锁住。
+- `zh-Hant` 按 `src/i18n/zh-Hant-glossary.md` 用台湾用语；简繁同形的文字（如「月之暗面」）可以与 `zh` 相同。
+- 用语与已有 yaml 保持一致：国内版 / 国际版 / 全球 → `中國版` / `國際版` / `全球`、`China` / `International` / `Global`、`中国版` / `国際版` / `グローバル`；按量付费 → `按量計費`、`Pay-as-you-go`、`従量課金`；订阅 → `訂閱`、`subscription`、`サブスクリプション`；端点 → `端點`、`endpoint`、`エンドポイント`；官方 → `官方`、`Official`、`公式`。
+- 中文厂商的英日文名用官方国际名、前面带厂商名（如 `Alibaba Cloud Model Studio`、`Baidu AI Cloud Qianfan`）；日文里品牌名保留英文写法；繁中用简中名的繁体写法（如「智譜 GLM」「阿里雲百鍊」），不改成英文名。
+- 列表按英文名排序（`list_providers`），不用关心中文名的排序。
+
+**已有 provider 是最好的参考**：写之前先 `Read` 一个最相似的现有 YAML（按 auth + model_discovery 组合匹配），照葫芦画瓢比从模板硬写更可靠。
+
+### 不需要登记任何清单
+
+YAML 在**编译期内嵌进二进制**：`src-tauri/build.rs` 扫描 `providers/*.yaml` 生成 `include_str!` 表，`provider/loader.rs` 用 `include!` 引入，并且对目录声明了 `rerun-if-changed`。所以 Step 2 把文件放进 `providers/` 就已经完成了「注册」。
+
+- **不要**去改 `src-tauri/tauri.conf.json::bundle.resources`（现在只剩 `../LICENSE`；往里加 yaml 是 2026-09 之前的旧流程）。
+- **没有**白名单 / 总数 assert 要同步——`tests/proxy_e2e.rs` 早已删除。取而代之的是 `loader.rs::tests::every_embedded_provider_parses_and_ids_are_unique`：自动遍历所有内嵌 yaml，拦住解析失败、`id` 冲突、`default_endpoint` 不在 `endpoints[].id` 里这三类错误。
+
+### Step 3：可选图标
+
+**README 不用改**：README 已不再维护 provider 表格（2026-09 删除），「入口与出口」章节只按协议家族分类并点名主要厂商，完整清单以 app 内「添加订阅」页为准。只有当新厂商是知名品牌、值得在出口章节的点名列表里露脸时才加一个名字，普通中转站不加。
+
+**ProviderIcon BRAND_MAP**（仅当 `@lobehub/icons` 有该品牌图标时）：
+
+位置：`src/components/ProviderIcon.tsx`
+
+```tsx
+import NewBrand from "@lobehub/icons/es/NewBrand";
+const BRAND_MAP: Record<string, BrandIcon> = {
+  ...
+  <new_id>: NewBrand as unknown as BrandIcon,
+};
+```
+
+并把 YAML 的 `icon: ""` 改成 `icon: <new_id>`（必须和 BRAND_MAP key 一致）。
+
+`@lobehub/icons` 没有的品牌（如小厂中转）保持 `icon: ""`，UI 自动用 `Bot` lucide 图标兜底——不要为了好看强行映射到不相关的图标。知名品牌确实需要 logo 时可以照 `src/components/RequestyIcon.tsx` 手画一个简化内联 SVG（彩色 + 单色两套，单色给小票黑白主题）。
+
+## 验证
+
+执行最小验证集：
+
+```bash
+cd src-tauri && cargo test --lib provider::loader
+```
+
+通过 = 新 yaml 能被解析、`id` 不与现有 provider 冲突、`default_endpoint` 合法、上屏文字四语齐全。失败信息会直接点名出错的文件和字段。
+
+可选：`pnpm tsc --noEmit` 确认 BRAND_MAP 导入没拼错（Step 3 改动时）。
+
+## 不做什么
+
+下面这些**都不需要为新 provider 做改动**——cc-router 的 Provider 抽象就是为了避免这些工作而存在的：
+
+- 改调度器（`virtual_model/scheduler.rs`）
+- 改状态机（`virtual_model/state_machine.rs`）
+- 改 SSE 流式处理（`proxy/sse.rs`）
+- 改 reqwest 上游调用（`proxy/upstream.rs`）
+- 加 migration（`db/migrations/`）
+
+如果你发现确实需要改这些地方，那说明这个 provider 不是简单的 Anthropic 兼容端点——先停下来跟用户对齐，可能是 schema 设计有缺口（例如某厂商需要特殊请求体改写、或非标准认证流程），需要扩展 `_schema.json` 而非绕过。
+
+## 决策提示词
+
+写完 YAML 草稿、执行 Step 3 之前，主动向用户确认这 3 件事——它们没有客观正确答案：
+
+1. **endpoints 数量**：单端点够还是要列国内/国际/订阅/按量多组？
+2. **API Key 字段**：厂商是否真的需要 key？某些（如 Ollama）不校验，要在 `compatibility_notes` 写清楚
+3. **example_models**：当 `model_discovery.enabled: false` 时这是 UI 唯一提示，常用模型放前面
+
+不要替用户拍板这些决策——它们关系到用户的实际使用偏好。
+
+## 流程结束
+
+3 步走完 + `cargo test` 通过 = 工作完成。**不要**主动提议提交 commit / 发 PR——cc-router 维护者偏好确认改动后自己提交。如果用户明确要求 commit，再走 commit 流程。

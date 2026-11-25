@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tryboy869/dojutsu-for-ai (path: senjutsu/skills/pylint/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: [Applies to: **/*.py] Definitive guidelines for configuring and using pylint for deep semantic analysis and code quality in Python projects."

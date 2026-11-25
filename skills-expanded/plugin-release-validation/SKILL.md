@@ -1,0 +1,16 @@
+---
+name: plugin-release-validation
+description: "Validate a MemForge memory plugin change or release for Codex and Claude Code through the remote marketplace install path: RC tags, an isolated Claude Code profile, cache, MCP and hook checks, and release gates. Use when changing, cutting or testing the plugin."
+---
+
+# Plugin Release Validation
+
+- Test MemForge plugin changes through the same remote plugin install/update path that users use. Do not hand-edit files under `~/.codex/plugins/cache`, and do not add a manual MCP server entry as a workaround.
+- For pre-release validation, publish or install a dev/RC plugin artifact from the remote GitHub marketplace source (`dodo-labs-ai/mem-forge`), such as `0.1.17-rc.1`, then promote the same commit/tag to the final release after validation.
+- When cutting an MCP plugin version, commit the version bump and integration copies first, push the branch, then create a remote tag that names the plugin version, for example `memforge-memory-v0.1.21-rc.4`. Point Codex at that tag with `codex plugin marketplace add https://github.com/dodo-labs-ai/mem-forge.git --ref <tag>` and install with `codex plugin add memory@memforge`.
+- After installing, verify `codex plugin list --json --marketplace memforge --available`, `codex mcp list`, the marketplace checkout commit/tag, and the cache directory under `~/.codex/plugins/cache/memforge/memory/<version>`. Restart Codex and repeat the version and MCP cwd checks; a restart must not fall back to an older cache.
+- Keep the long-lived Claude Code `memforge` marketplace on the unpinned GitHub source `dodo-labs-ai/mem-forge` with auto-update enabled. Its user-level source in `~/.claude/settings.json` and `~/.claude/plugins/known_marketplaces.json` must not contain `ref`; otherwise each marketplace refresh remains locked to that branch or tag and cannot discover later plugin versions.
+- Run Claude Code RC, branch, or release-tag installation tests under a disposable `CLAUDE_CONFIG_DIR` (or an equivalently isolated validation profile), never against the long-lived user configuration. Perform the marketplace add/install/update and restart checks inside that isolated profile, discard it after validation, and verify before release closure that the normal user marketplace still has no `ref`. Do not copy the isolated marketplace registry or plugin cache back into `~/.claude`.
+- Keep Codex and Claude Code on the same remote plugin source. Neither client should reference a local checkout of this repository as a marketplace or plugin source, because local path installs hide packaging and cache drift.
+- If Codex Desktop still falls back after a restart, check for workspace plugin sources such as `.agents/plugins/marketplace.json` in saved workspace roots. A local checkout can silently reinstall `memory@memforge` from its own `integrations/codex/memforge-memory` tree even when the configured marketplace points at the remote tag.
+- Release gates for plugin changes should include unit tests, lint, package/install parity, MCP `initialize` and `tools/list` version/tool checks after restart, a SessionStart hook smoke (guidance, no network, no `~/.memforge-agent` queue), a check that no MemForge hook runs at Stop or PreCompact, and at least one harmless read/write MCP smoke in a test workspace when write tools change.

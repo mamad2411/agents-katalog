@@ -1,0 +1,200 @@
+---
+name: statistical-models
+description: >
+  Forecasts time series using classical statistical models (ARIMA, SARIMAX, ETS,
+  ARAR) wrapped in ForecasterStats. Covers model selection, Auto-ARIMA,
+  backtesting statistical models, and parameter tuning.
+  Use when the user wants traditional statistical forecasting methods.
+---
+
+# Statistical Models (ARIMA, ETS, SARIMAX, ARAR)
+
+## When to Use
+
+Use statistical models when:
+- The series is short (< 200 observations)
+- Interpretability is important (ARIMA coefficients, ETS components)
+- You need built-in prediction intervals without residual bootstrapping
+- As a baseline to compare against ML models
+
+### Related skills
+
+- **Prerequisite**: `autocorrelation-and-lag-selection` (read ACF/PACF to identify ARIMA orders `p`, `d`, `q` before fitting)
+- **Alongside**: `baseline-forecasting` (the other benchmark family: naive equivalent-date baselines)
+- **Next**: `prediction-intervals` (`ForecasterStats` provides built-in parametric intervals via the `interval_method` argument)
+- **Next**: `hyperparameter-optimization` (tune ARIMA `order` / `seasonal_order` via grid search)
+
+## Stop Conditions
+
+Scan before writing code. Each row lists a rule, the symptom when it is broken, and the recovery. Full pitfall catalog: the `troubleshooting-common-errors` skill.
+
+| Rule | Symptom | Recovery |
+|------|---------|----------|
+| Backtest and tune with `backtesting_stats` and `grid_search_stats`, not the ML variants | `backtesting_forecaster` / `grid_search_forecaster` raises on `ForecasterStats` | Call `backtesting_stats` / `grid_search_stats` |
+| `Arima` takes a 3-tuple `seasonal_order=(P, D, Q)` plus `m`; `Sarimax` takes a 4-tuple `(P, D, Q, m)` | Wrong model order or `TypeError` | Use `Arima(order=(p,d,q), seasonal_order=(P,D,Q), m=12)` |
+| `Ets` uses `model='AAA'` + `m`, not `error=` / `trend=` / `seasonal=` | Deprecated-argument error | Use `Ets(model='AAA', m=12)` (A/M/N/Z per position) |
+| Seasonal models require `m` | Seasonality silently ignored | Pass `m=<seasonal period>` to `Arima` / `Ets` |
+
+## Available Models
+
+| Model | Class | Description |
+|-------|-------|-------------|
+| **ARIMA** | `Arima` | AutoRegressive Integrated Moving Average |
+| **Auto-ARIMA** | `Arima(order=None)` | Automatic order selection |
+| **SARIMAX** | `Sarimax` | ARIMA with exogenous variables (seasonal) |
+| **ETS** | `Ets` | Exponential Smoothing (Error-Trend-Seasonal) |
+| **ARAR** | `Arar` | Autoregressive model with memory shortening |
+
+## Complete Workflow: ARIMA
+
+```python
+import pandas as pd
+from skforecast.recursive import ForecasterStats
+from skforecast.stats import Arima
+from skforecast.model_selection import backtesting_stats, TimeSeriesFold
+
+# 1. Load data
+data = pd.read_csv('data.csv', index_col='date', parse_dates=True)
+data = data.asfreq('MS')  # Monthly Start frequency
+
+# 2. Manual ARIMA: specify order and seasonal_order
+arima_model = Arima(
+    order=(1, 1, 1),              # (p, d, q)
+    seasonal_order=(1, 1, 1),     # (P, D, Q)
+    m=12,                         # Seasonal period
+)
+forecaster = ForecasterStats(estimator=arima_model)
+forecaster.fit(y=data['target'])
+predictions = forecaster.predict(steps=12)
+
+# 3. Prediction intervals (all stat models support this natively,
+#    no bootstrapping needed). Default (no `interval` nor `alpha`): 95%.
+predictions_interval = forecaster.predict_interval(
+    steps=12,
+    interval=[0.1, 0.9],  # symmetric quantiles (0-1), or its alias alpha=0.2
+)
+```
+
+## Auto-ARIMA (Automatic Order Selection)
+
+```python
+# Set order=None and seasonal_order=None to enable automatic order selection
+auto_arima = Arima(order=None, seasonal_order=None, m=12)
+forecaster = ForecasterStats(estimator=auto_arima)
+forecaster.fit(y=data['target'])
+
+# Check the selected model (fitted estimators are stored in `estimators_`)
+print(forecaster.estimators_[0].best_params_)
+# {'order': ..., 'seasonal_order': ..., 'm': 12, 'fit_intercept': ...,
+#  'include_drift': ..., 'lambda_bc': ...}
+
+predictions = forecaster.predict(steps=12)
+```
+
+## ETS (Exponential Smoothing)
+
+```python
+from skforecast.stats import Ets
+
+# Model string: 1st=Error, 2nd=Trend, 3rd=Seasonal
+# A=Additive, M=Multiplicative, N=None. Automatic selection only as model='ZZZ'
+# (partial specs like 'ZZN' raise an error: use 'ZZZ' with seasonal=False, trend=...)
+ets_model = Ets(model='AAA', m=12)
+forecaster = ForecasterStats(estimator=ets_model)
+forecaster.fit(y=data['target'])
+predictions = forecaster.predict(steps=12)
+```
+
+## Auto-ETS (Automatic Model Selection)
+
+```python
+# Use model='ZZZ' (or model=None) to let ETS automatically select
+# the best Error, Trend, and Seasonal components
+auto_ets = Ets(model='ZZZ', m=12)
+forecaster = ForecasterStats(estimator=auto_ets)
+forecaster.fit(y=data['target'])
+
+# Check the selected model configuration
+print(forecaster.estimators_[0].best_params_)
+
+predictions = forecaster.predict(steps=12)
+```
+
+## SARIMAX (with Exogenous Variables)
+
+```python
+from skforecast.stats import Sarimax
+
+sarimax_model = Sarimax(
+    order=(1, 1, 1),
+    seasonal_order=(1, 1, 1, 12),  # (P, D, Q, seasonal_period)
+)
+forecaster = ForecasterStats(estimator=sarimax_model)
+forecaster.fit(y=data['target'], exog=exog_train)
+
+# For prediction, exog must cover the forecast horizon
+predictions = forecaster.predict(steps=12, exog=exog_test)
+```
+
+## ARAR
+
+```python
+from skforecast.stats import Arar
+
+arar_model = Arar()
+forecaster = ForecasterStats(estimator=arar_model)
+forecaster.fit(y=data['target'])
+predictions = forecaster.predict(steps=12)
+```
+
+## Backtesting Statistical Models
+
+```python
+cv = TimeSeriesFold(
+    steps=12,
+    initial_train_size=len(data) - 60,
+    refit=False,
+)
+
+metric, predictions_bt = backtesting_stats(
+    forecaster=forecaster,
+    y=data['target'],
+    cv=cv,
+    metric='mean_absolute_error',
+    freeze_params=True,  # Model selected in the first fit reused in refits (auto selection runs once)
+)
+# If freeze_params=False, auto selection runs independently each fold and output
+# includes an extra 'estimator_params' column with the parameters selected per fold.
+```
+
+## Multiple Models Simultaneously
+
+```python
+# ForecasterStats accepts a list of models — fits each independently
+from skforecast.stats import Arima, Ets
+
+models = [
+    Arima(order=(1, 1, 1), seasonal_order=(1, 1, 1), m=12),
+    Ets(model='AAA', m=12),
+]
+forecaster = ForecasterStats(estimator=models)
+forecaster.fit(y=data['target'])
+
+# predict returns DataFrame with one column per model
+predictions = forecaster.predict(steps=12)
+```
+
+## Common Mistakes
+
+1. **Using deprecated `Ets(error=, trend=, seasonal=)` syntax**: Use `Ets(model='AAA', m=12)` with a model string instead.
+2. **Forgetting `m` parameter**: ARIMA and ETS seasonal models require `m` (seasonal period).
+3. **Not using `backtesting_stats`**: Use `backtesting_stats()` for statistical models, NOT `backtesting_forecaster()`.
+4. **Using grid_search_forecaster for stats**: Use `grid_search_stats()` or `random_search_stats()` instead.
+5. **Passing `seasonal_order=(1,1,1,12)` to `Arima`**: `Arima` uses a 3-tuple `seasonal_order=(P,D,Q)` plus a separate `m=12` parameter. The 4-tuple `(P,D,Q,s)` format is only for `Sarimax`.
+
+## References
+
+See [references/model-parameters.md](references/model-parameters.md) for
+complete constructor signatures of all statistical models (Arima, Sarimax,
+Ets, Arar), the Ets model string format, Auto-ARIMA parameters, seasonal_order
+differences between Arima and Sarimax, and grid search param_grid examples.

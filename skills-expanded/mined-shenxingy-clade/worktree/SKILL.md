@@ -1,0 +1,149 @@
+---
+name: worktree
+description: "Create or inspect runtime-adaptive isolated Git workspaces with explicit ownership and delivery routing"
+---
+
+# Clade for Codex
+
+This package composes the provider-neutral Clade core contract with the native
+Codex surface adapter. Run the workflow directly in Codex; do not launch
+another agent CLI or route it through Clade MCP.
+
+Package provenance:
+
+- core contract: `clade.delivery/v1`
+- surface adapter: `codex/v1`
+- explicit invocation: `$clade:worktree`
+- generated from: `configs/skills/<name>`
+
+## Canonical Clade workflow
+
+You are the Worktree skill. Use the shared `delivery` context/state controller
+and the current runtime surface overlay.
+
+## Invariants
+
+- One mutable branch per live session; one branch cannot be checked out in two
+  worktrees.
+- Parallel writers receive separate worktrees/clones/containers/detached
+  snapshots and non-overlapping delivery units.
+- Do not write tracked `TASK.md` or other Clade bookkeeping into an arbitrary
+  repository. Delivery ownership lives in Git-common state; shared task
+  ownership and dependencies live in the bound Beads service when `/tasks` is used.
+- Completion publishes/reviews through repository policy; it does not locally
+  merge every worktree into whichever branch happens to be active.
+- Remove only a worktree and branch owned by the selected terminal delivery.
+
+## Create
+
+1. Run `delivery context` and inspect `git worktree list --porcelain`.
+2. Resolve the real base/default branch and ensure the source tree has no
+   unrelated dirty changes.
+3. Choose the runtime-native isolation:
+   - normal local Git: explicit worktree path plus owned topic branch;
+   - Codex-managed worktree: detached start is valid; attach a branch only for
+     preservation/publication;
+   - cloud/CI: runtime-provided clone/container;
+   - unsupported client: report required isolation instead of sharing a branch.
+4. Create a delivery record containing task source, base SHA, owner, optional
+   stack parent, runtime, surface, and publication authorities.
+   For a shared task, verify the live claim first and pass `--project-id`,
+   `--task-id` and `--session-id` together. Worktrees share the Git-common task
+   binding; never initialize a separate task database inside each worktree.
+5. Pass the task through runtime-native context/handoff, not a tracked project
+   file.
+
+Before filesystem creation, resolve an explicit safe destination outside the
+repository root. Never derive a destructive target from an empty variable,
+home directory, workspace root, or broad glob.
+
+## List
+
+Combine:
+
+- `git worktree list --porcelain`;
+- active `delivery list`;
+- each worktree's branch/detached HEAD, dirty state, owner, delivery state,
+  base/head SHA, and last checkpoint.
+
+Mark stale/prunable/unknown ownership; do not mutate it during list.
+
+## Preserve/handoff
+
+Before runtime termination, context switch, compaction, or provider handoff:
+
+- commit coherent work and record focused checkpoint evidence;
+- for detached committed work, run `delivery preserve-ref`;
+- when commits are prohibited, run `delivery export-patch`;
+- record reduced-fidelity handoff when native session resume is unavailable.
+
+No worktree may be auto-removed while its head is unreachable or dirty state
+lacks a patch/blocker.
+
+## Integrate
+
+Route the worktree's independently reviewable result through `$clade:create-pr`,
+`$clade:review-pr`, and `$clade:merge-pr`. A throw-away integration worktree may test
+several candidate heads, but durable work must never be based on it and it is
+never itself merged as a product change.
+
+For explicit stacks, record parent relationships, merge bottom-up, and restack
+each child after parent ancestry changes.
+
+## Clean
+
+1. Re-probe worktrees and active delivery state.
+2. Require the target delivery to be merged/abandoned or explicitly preserved.
+3. Verify no dirty/unreachable work and no other live owner.
+4. Remove the exact worktree path.
+5. Delete only its exact owned local branch; delete remote only with authority.
+6. prune stale metadata and run delivery cleanup verification where applicable.
+
+Never use broad `--clean all`, branch-prefix glob deletion, or force removal
+without resolving every target and its recovery state.
+
+## Codex surface adapter
+
+# Codex surface adapter
+
+- Installed Clade plugin skills are namespaced. Invoke this workflow as
+  `$clade:delivery`, and use `$clade:<skill-name>` for companion workflows.
+- Read the closest applicable agent instructions. Codex probes
+  `AGENTS.override.md` before `AGENTS.md` at each scope and does not merge
+  them, so where an override exists that scope's `AGENTS.md` is not in effect.
+  `CLAUDE.md` is Clade's legacy fallback rather than a filename Codex resolves;
+  read it only when it is trusted repository guidance.
+- Codex-managed worktrees may begin at detached HEAD. A local detached commit
+  is valid, but create/attach an owned branch or preserve a reachable Clade ref
+  before the runtime deletes the worktree.
+- Inspect `git worktree list --porcelain` before checkout, rewrite, or cleanup:
+  one branch cannot be checked out by multiple worktrees.
+- Use Codex native review/worktree/handoff capabilities where available. Do
+  not launch Claude Code or a nested Codex CLI to emulate the workflow.
+- Project configuration is trust-gated. Provider credentials and user
+  connections remain user-scoped and cannot be donated by repository files.
+
+## Additional skill reference
+
+# Worktree
+
+Create or manage isolated agent workspaces without assuming every runtime uses
+a sibling directory plus immediate branch. Worktree ownership is recorded in
+the shared `$clade:delivery` state; independently reviewable work integrates through
+the target repository's PR/queue policy, not an arbitrary local merge.
+
+## Delivery completion
+
+If this workflow changes files or external state:
+
+- Inspect the real final state before responding, including `git status` for a
+  repository task.
+- Never report `DONE` while task-owned changes are uncommitted. Use or continue
+  `$clade:delivery` and create a repository-compliant checkpoint or preserve
+  the work when committing is unavailable.
+- When the user request or trusted repository policy makes publication,
+  deployment, or live verification part of the task, do not silently downgrade
+  the result to local-only work.
+- If a required delivery transition lacks authority, credentials, a destination,
+  or reachable external state, report `BLOCKED` or `NEEDS_CONTEXT` rather than
+  appending a "not committed/pushed/deployed" caveat after `DONE`.

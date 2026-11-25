@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trilwu/secskills (path: secskills-core/skills/analyzing-binaries/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Reverse engineer compiled binaries, firmware, and mobile app packages using triage, static disassembly, decompilation, and dynamic instrumentation. Use when analyzing an executable, ELF/PE/Mach-O file

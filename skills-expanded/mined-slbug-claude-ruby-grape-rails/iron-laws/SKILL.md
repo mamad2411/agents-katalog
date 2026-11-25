@@ -1,0 +1,75 @@
+---
+name: iron-laws
+description: "Iron Laws of Ruby/Rails/Grape (AR, Sidekiq, security, Ruby, Hotwire, verify). Non-negotiable rules. Triggers: \"iron law\", \"non-negotiable rule\", \"iron-law-judge\"."
+effort: medium
+---
+# Iron Laws
+
+## Overview
+
+These 22 rules are NEVER violated. If code would violate them, STOP and explain before proceeding.
+
+### Active Record (7 laws)
+
+1. **Decimal for Money** — NEVER use float for money — use decimal or integer (cents)
+2. **Parameterized Queries** — ALWAYS use parameterized queries — never interpolate user input into SQL strings
+3. **Eager Loading** — USE includes/preload for associations — avoids N+1 queries
+4. **Commit-Safe Enqueueing in Active Record** — IN Active Record code, use after_commit not after_save when enqueueing jobs that depend on committed data
+5. **Transaction Boundaries** — WRAP multi-step operations in transactions — use ActiveRecord::Base.transaction
+6. **No Validation Bypass** — NO update_columns, update_column, or save(validate: false) in normal flows
+7. **No default_scope** — NO default_scope — use explicit named scopes only
+
+### Sidekiq (4 laws)
+
+8. **Idempotent Jobs** — Jobs MUST be idempotent — safe to retry
+9. **JSON-Safe Arguments** — Args use JSON-safe types only — no symbols, no Ruby objects, no procs
+10. **No ORM Objects in Args** — NEVER store ORM objects in args — store IDs, not records
+11. **Commit-Safe Enqueueing** — ALWAYS enqueue jobs after commit using the active ORM or transaction hook — not after_save or inline before commit
+
+### Security (4 laws)
+
+12. **No Ruby Eval** — NO Ruby `eval`/`instance_eval`/`class_eval` with user input — code injection vulnerability. Shell `eval` of trusted helper output is out of scope
+13. **Explicit Authorization** — AUTHORIZE in EVERY controller action — do not trust before_action alone
+14. **No Unsafe HTML** — NEVER use html_safe or raw with untrusted content — XSS vulnerability
+15. **No SQL Concatenation** — NO SQL string concatenation — always use parameterized queries
+
+### Ruby (3 laws)
+
+16. **method_missing Requires respond_to_missing?** — NO method_missing without respond_to_missing? — breaks introspection
+17. **Supervise Background Processes** — SUPERVISE ALL BACKGROUND PROCESSES — use proper process managers in production
+18. **No Rescue Exception** — DON'T rescue `Exception` (in `begin/rescue` or Rails `rescue_from`) — catches `SystemExit`/`SignalException`. Bare `rescue` defaults to `StandardError`, not a Law 18 violation.
+
+### Hotwire/Turbo (2 laws)
+
+19. **No DB Queries in Turbo Streams** — NEVER query DB in Turbo Stream responses — pre-compute everything before broadcast
+20. **Use turbo_frame_tag** — ALWAYS use turbo_frame_tag for partial updates — prevents full page reloads
+
+### Verification & Discipline (2 laws)
+
+21. **Verify Before Claiming Done** — VERIFY BEFORE CLAIMING DONE — never say 'should work' or 'this fixes it.' Run bundle exec rspec or bin/rails test and show the result
+22. **Surgical Changes Only** — Every changed line should trace directly to the user's request. Don't "improve" adjacent code, comments, or formatting you weren't asked to touch.
+
+## Response Format
+
+When detecting a violation:
+
+```
+STOP: This code would violate Iron Law [number]: [description]
+
+What you wrote:
+[problematic code]
+
+Correct pattern:
+[fixed code]
+
+Should I apply this fix?
+```
+
+## References
+
+- `references/canonical-registry.md` — Generated full registry from
+  `${CLAUDE_PLUGIN_ROOT}/references/iron-laws.yml`. Read when the user
+  asks for the complete law list, per-law rationale, or enforcement
+  tiers.
+- `references/violation-patterns.md` — Detailed detection patterns and grep commands
+- `references/fix-priority.md` — All 22 Iron Law violations are Blockers; Laws 1-20 = violation rules, Laws 21 + 22 = discipline rules

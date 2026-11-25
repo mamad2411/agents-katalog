@@ -1,0 +1,103 @@
+---
+name: game-setup
+description: Holds the procedure in which the lead agent of the `setup game` command makes the game repo, game settings and the `id-registry` branch, saves the human's request, gets the reference game and gameplay video, gets the banned word list, and tells the resource types that this host cannot make. Read when receiving `setup game`
+---
+
+# game setup
+
+`setup game` is a command outside the loop. What is not known is asked of the human with a recommendation.
+
+## procedure
+
+1. Decide the `<game>` name in kebab-case. When the human gave no name, decide it from the request and get the human's confirmation
+2. Run `ogw game init <game>`. The tool makes the game repo structure, the branch `id-registry` and a game settings draft that holds `coreVersion`, `postgresqlMajor` and the values that `ogw game derive` of step 7 fills. When it ends, immediately start fetching the core release of `coreVersion` with `ogw core fetch <game> --background`
+3. Keep the human's request in `records/setup/request.md` as the original text
+4. Fill with `ogw settings set game <game>` only the required items of the game settings schema and the items that become required by condition. `ogw settings list game <game> --missing` gives the items to fill. `--missing` does not give build stage values: the items whose `x-stage` is `build` in the game settings schema. The loop does not use them, and the lead agent of `build` asks the missing ones (`build` step 1). Of the build stage values, `setup game` asks only the decisions of step 5. When a human gives a build stage value first, fill it. Do not fill items that have a default, `core`, or the values that `ogw game init` and `ogw game derive` fill. In this step, fill only the values that are decided without asking the human
+   - A value that can be decided from the request is decided from the request. e.g. engine, supported languages
+   - Decide `sourceLanguage` from the request and fill it only when the default is not in `supportedLanguages`
+   - Fill `coreModules` with the core modules that the game needs according to the request. The content agent edits it in the loop
+   - Set every item that is a resource key of a scene or prefab (e.g. `titleScene`, `agePopup`) to the name that the content agent will make in the loop
+   - Fill `pixelRatio` of every `uiCheckScreens` item, in the same `ogw settings set` call that writes the item, with the pixel ratio of the device that item models, as `ogw settings describe game <game> uiCheckScreens.0.pixelRatio` defines it
+5. Send the questions for the human at once, split by the topics below. Ask the items that the answers make new to ask (items newly listed by `--missing`, decisions whose `asked when` newly holds) again the same way
+   - game settings: the items that step 4 could not fill, and the decisions of the table below whatever their stage. Ask the decisions grouped by `topic`, each with a recommendation, and only those whose `asked when` holds. With each item show its meaning and current value: for a game settings item, the `description` that `ogw settings describe game <game> <path>` gives; for a core settings key, its line of `ogw game check <game> --defaults`. A core settings key is written at `core.<key>`
+
+     | topic | decision | asked when | the question also holds |
+     |---|---|---|---|
+     | languages | `supportedLanguages`, `sourceLanguage` | always | the values step 4 decided from the request |
+     | modules | `coreModules` | always | the modules step 4 chose, and what each of `iap`, `ads-reward`, `gacha`, `chat`, `guild`, `friend` among the modules the game uses brings: `iap` store payments, `ads-reward` rewarded ads through AdMob, `gacha` paid random draws whose probabilities the game discloses, `chat` messages between users, `guild` user groups, `friend` friend lists. `chat` and `friend` also bring reports and blocks between users (`block-report`) |
+     | app ID | `appId` | always | |
+     | nickname | `nicknameUnique` | always | |
+     | nickname | core settings `nickname.allowedScripts` | `nickname` is a module the game uses | the Unicode scripts in which the languages of `supportedLanguages` are written, compared with the current value |
+     | game day | `dailyResetOffsetMs` | always | the value as the time zone whose local midnight is the game day boundary. e.g. `00:00 UTC+9` |
+     | age and consent | `consent.ageConfirmation`, `consent.privacyChoices`, `consent.trackingRequest` | always | |
+     | age and consent | `consent.minimumAge` | `consent.ageConfirmation` is `true` | |
+     | age and consent | core settings `auth.childAgeYears`, `auth.digitalConsentAgeYears` | always | the ages that the law of the regions the game is released in sets. An age that `consent.ageBandBoundaries` does not hold is added to it |
+     | age and consent | core settings `chat.allowChild` | `chat` is a module the game uses | |
+     | payment | `purchaseLimits` | `iap` is a module the game uses | |
+     | push | `pushConsent.adPush` | `push` is a module the game uses | |
+     | user data | core settings `auth.inactiveGuestDeleteAfterMs` | always | the value in days |
+     | admin access | `adminAllowedCidrs` of each environment | always | |
+     | realtime | core settings `BootstrapCore.realtimeRelayOnly`, `p2p-signaling.stunUrls` | `p2p-signaling` is a module the game uses | relay-only keeps each player's network address from the other players, and sends all match traffic through the TURN relay of `adapters.turn`, whose traffic costs its operator. Without relay-only, players connect directly when the STUN servers of `p2p-signaling.stunUrls` let them |
+
+     - Get `buildPlatforms` confirmed with a recommendation
+     - When `buildPlatforms` has one of `windows`, `macos`, `linux`, `web`, ask with a recommendation whether every screen is to be operated with a gamepad. When a human decides so, fill `gamepadSupported` with `true`
+     - Ask the other values that cannot be decided from the request with a recommendation. e.g. `baseResolution`, `termsDocuments`
+     - build stage values: the rules below apply to the build stage values that a human gives first and to the missing ones that the lead agent of `build` asks
+       - For `signing`, ask only for the `signing.<platform>` that came out as missing values. A DEV build makes android, macos and windows that have no `signing.<platform>` with free signing (`## platform build` of [`build`](../build/SKILL.md)), so while only DEV builds are made, `signing` of those three is not asked. When a human says DEV builds are to be signed too, fill it. The keys of `signing.<platform>` are all the keys of that platform in the signing table of `skills/build/engines/<engine>.md`
+       - When filling `signing.android`, also ask for `androidKeyAlias`; when filling `signing.ios`, `appleTeamId`; when filling `signing.windows`, `trustedSigning`; when filling `signing.macos`, `macosNotary` and `appleTeamId`
+       - What a human prepares for `signing`, `trustedSigning`, `appleTeamId`, `androidKeyAlias`, `macosNotary` is defined by `## signing` of `skills/build/engines/<engine>.md`
+       - Ask the values that cannot be decided from the request with a recommendation. e.g. `serverUrl` and `trustedProxyCount` per environment, `serverImage.repository`, `deploy` of DEV and STG, secret names, adapter
+       - The host of `deploy` and everything else a human prepares are defined by `## deploy` of [`build`](../build/SKILL.md)
+       - Fill `deploy.hostKey` with the value that a human read directly on the host and gave. The agent does not fetch the host key over the network to fill it
+       - Ask the names and roles of the human operators of `adminOperators`. `privacy` is given only to the human operators who answer users' requests to view their personal data
+       - Do not ask secret values. Ask only secret names. The values are put in the secret store of this host in step 10
+       - For each environment whose `adapters.cdn` is `cdn-r2`, ask for `cdnR2` and the name of `secrets.cdn`
+       - When `buildPlatforms` has `web`, ask for the CIDR list of the client IPs that will use cheats, to put in DEV `devAllowedCidrs`
+   - art direction: ask for the style of the game's art (e.g. painterly fantasy illustration, pixel art), palette (hex of the main colors) and mood. The recommendation is decided from the request and the reference game, and no proposal that copies the art, characters or logo of the reference game is given. Use what the human revised as it is. When the style is built from primitive shapes (e.g. low-poly, voxel) and the game has characters or creatures, also ask whether they are built from primitive shapes too (`primitive`) or modeled with a body form (`sculpted`), with a recommendation
+   - game name: ask for the display name of the game (reserved string `[app_name]`) per language of `supportedLanguages`. The recommendation is the name decided from the request. When a human gives only one name, use that name for every language
+   - reference game: when the request has no reference game, show three candidate commercial games that fit the genre and platform of the request, with the reasons they were chosen, and have the human pick one. Get one or more gameplay videos of that game and, for each moment below, one video that has that moment and the start ms and end ms within that video. A moment that is in no video is `none`. The human gives a video as a file or a YouTube URL. For a URL, start fetching it into `records/setup/reference/` with `ogw game reference <game> <URL> --background` and wait with `ogw job wait <id>`. The job result is the path of the fetched file. Source and license are not examined (the human decided them). When a moment is `none`, tell the human on the spot that the judge agent does not compare with the reference game the fun element that it looks at through that moment, and suggest, with a recommendation, another video that has that moment. When the human gives that video, use it as well; when the human says to use what there is, leave it `none`. When every moment is `none`, tell the human that the loop does not stop with `success`. Another video is suggested only at this time, and is not asked for during the loop
+
+     | moment | meaning |
+     |---|---|
+     | `first 30000ms` | 30000ms from the first launch screen |
+     | `core action` | The moment the core action is done for the first time |
+     | `first failure` | The moment of the first failure |
+     | `first reward` | The moment a reward is received for the first time |
+     | `restart` | The moment of starting again after a failure |
+     | `lobby` | The screen where the player starts a play, with its panels and buttons |
+     | `hud` | The play screen with all of its HUD |
+     | `reward popup` | A popup that gives or picks a reward |
+     | `result` | The screen that shows the result of a play |
+
+   - presentation game: the moments `lobby`, `hud`, `reward popup`, `result` judge how commercial the screens look. First ask, for each of these four screens, whether the game will have that screen, with a recommendation decided from the request. The moment of a screen the game will not have is `none`, and no video is asked for or suggested for it. Then ask for one commercial game of the same genre and platform whose screens are made at a high level, with a recommendation of three candidates and the reasons, and its videos as for the reference game. Those four moments are taken from its videos. When the human gives none, they are taken from the videos of the reference game. Tell the human that without it the judge compares the screens with the reference game, and the UI quality check still holds the screens to its numbers
+
+   - banned word list: ask only when the modules that the game uses (`## module` of [`core`](../core/SKILL.md)) include at least one of `nickname`, `guild`, `chat`. Get, per language of `supportedLanguages`, a banned word list file that comes with a usage license. The agent does not make or download a list
+6. While waiting for the human's answers, check the host capability
+   - Extract from the request the resource types that the game needs. e.g. for a 3D game, `model`, `rig`, `animation_3d`
+   - When the number needed per type can be estimated from the request, also decide the number
+   - Run `ogw generation check <game> --types <type,...> [--counts <type>=<n>,...]`. The tool writes `records/setup/host-check.md`, which classifies each type as `ok`, `unmeasured` or `missing` and, with `--counts`, holds the total duration
+7. Fill game settings from the answers
+   - Write the value of every game settings path that an answer of step 5 decided, also a value that equals the default, and add that path to `humanDecided` in the same `ogw settings set` call. Add `coreModules` only when the human gave a module list other than the recommendation or said to keep the list; otherwise the content agent adds and removes modules in the loop
+   - When filling or changing `buildPlatforms` or `cdnR2`, run `ogw game derive <game>` right away. The tool decides the operator `ogw` of `adminOperators`, `adapters.cdn` and `corsAllowedOrigins` again from the current game settings and writes them
+   - When `buildPlatforms` has `android` or `ios`, fill `keyboard` of the `uiCheckScreens` items that model those devices with the on-screen keyboard height of that device (window pixels)
+   - When `buildPlatforms` has `ios`, and `login-google` is filled in `adapters` of an environment, also fill `login-apple` in the same environment
+   - When `--missing` gives an empty list, wait for the `ogw core fetch` of step 2 with `ogw job wait <id>`. `ogw game check` at this point passes even when build stage values are empty. `ogw game check <game> --build` also checks those values. When the fetch fails, stop and tell the human. Then check with `ogw game check <game>` that the game settings pass the game settings schema and, when `core` exists, that they pass the core settings schema of that core version and keep the settings constraints. Whether a secret value exists is checked on the host that uses that secret. `build` checks the build host, and the server checks the server host when it starts. When `ogw game check` prints failures, fill or correct the values it names, and ask the human for a value that a human decides
+8. Write the game name received in step 5 into `records/setup/name.md` as one line `<language tag>: <name>` per language. `<language tag>` is the language tag of `supportedLanguages` as it is. Write the art direction received in step 5 into `records/setup/art-direction.md`, under the headings `## style`, `## palette`, `## mood`, `## character models` (`primitive`, `sculpted`, or `none` when it was not asked) respectively. Put the received videos in `records/setup/reference/` and write `records/setup/reference/reference.md`. Its headings are `## game` (name), `## presentation game` (the name of the presentation game, or the name of `## game` when the human gave none), `## reason` (the reasons it was chosen, the platform each video was recorded on, and the YouTube URL of each video fetched with `ogw game reference`), `## video`, `## moments`
+   - The videos are third-party works and are not committed, so only the hosts they are put on have them
+   - `## video` is one line per video put in `records/setup/reference/`, holding only its file name
+   - `## moments` is a table with the columns `moment`, `video`, `start ms`, `end ms`. It has one row per moment of the table in step 5; `moment` is the moment name of the table in step 5, `video` is the `## video` file name of the video that has that moment, and `start ms` and `end ms` are the integers of the start ms and end ms within that video. For a moment that is in no video, the three cells are `none`
+9. When step 5 asked for banned word lists, organize the received lists
+   - Put each received list per language at `records/setup/banned-words/<language>.txt` (UTF-8, one word per line). `<language>` is the language tag of `supportedLanguages` as it is
+   - In `records/setup/banned-words/sources.md`, write the source and license per language. For a language whose list was not received, write `none`
+   - When no list at all was received, tell the human that STG and PROD builds are blocked by the build-time check `banned word`
+10. Show the human the game settings and `host-check.md` and get confirmation. When there is `unmeasured` or `missing`, ask whether to go on as is or to run `update env` first. When there is a total duration, show it as well
+    - Also show, in `humanLanguage`, the list that `ogw game check <game> --defaults` gives: the values the game uses that no human chose (the defaults of the game settings schema, the core settings defaults of the modules the game uses, and PROD `adapters.cdn`, which `ogw game derive` wrote), each with its meaning. Tell the human to read its group `values to know`, which holds the values that change what players experience, how long user data is kept, or the work of the loop and build; the groups after it are for reference. These values are not asked; tell the human to edit `games/<game>/settings.json` directly to change them
+    - Tell the human that after `setup game`, the human may change the row of `lobby`, `hud`, `reward popup` or `result` in `## moments` of `records/setup/reference/reference.md` to `none` when the game will not have that screen
+    - Tell the human that the content agent fills `privacy.contentData` (the data that content collects) in the loop, and that `build` makes the store privacy disclosure drafts from it together with the data core collects (`## store privacy disclosure` of [`build`](../build/SKILL.md)). It is not asked
+    - Tell the human that resources of `unmeasured` and `missing` types stay placeholder resources, so the loop end report becomes failure and STG and PROD builds are blocked
+    - Show the per-environment list that `ogw game check <game> --human-prep` gave (the items, among what a human prepares in `## deploy` of `build`, that apply to these game settings)
+    - When `buildPlatforms` has `web`, tell the human that, per environment, the web address of that environment is the entry page that `## web hosting` of [`build`](../build/SKILL.md) defines
+    - When the human confirms the game settings, run `ogw secret generate <game> <env>` per environment. Among the generated secrets, the tool makes and puts in the ones whose names are in the game settings of that environment and that are not in the secret store of this host, and adds the public key of `updateSigningKey` to `updatePublicKeys` of that environment. The generated secrets are `secrets.accessTokenKey`, `secrets.updateSigningKey`, `secrets.iapAccountToken`, `secrets.turn`, `secrets.dbPassword`, `secrets.devAccess`, `secret` of `adminOperators`, and `secrets.db` of the environments that have `deploy`
+    - Tell the human that `ogw deploy` writes secret files on the `deploy` host of DEV and STG (the secret file rule of `## deploy` of [`build`](../build/SKILL.md)). For the other hosts that use secrets (PROD server host, coturn server), a human moves the values from the secret store of this host. The human views a value with `ogw secret show <game> <env> <secret name>` in a terminal of this host. Tell the human that a human makes the secrets of `secrets` that are not generated secrets and the secrets of `signing`. The human saves each on this host with `ogw secret set <game> <env> <secret name>` (for a secret of `signing`, `signing` in place of `<env>`), putting a non-empty value on stdin. As the value format, show the `description` of that secret in the game settings schema together with the signing table of `skills/build/engines/<engine>.md`
+    - Tell the human that the value of DEV `secrets.devAccess` goes into DEV builds, so whoever received a DEV build can use the cheats of the DEV server. When `buildPlatforms` has `web`, anyone who knows the address of the DEV web build gets that value, so tell the human that the DEV server blocks cheat requests from IPs outside DEV `devAllowedCidrs`
+11. Commit game settings with `ogw settings commit game <game>`, then the other files. The static check failures that it prints are content code that the game does not have yet (e.g. the option entry that a second language of `supportedLanguages` needs), which the content agent makes in the loop of `create game`

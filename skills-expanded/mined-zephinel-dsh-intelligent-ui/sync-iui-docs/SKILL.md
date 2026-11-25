@@ -1,0 +1,185 @@
+---
+name: sync-iui-docs
+description: "Keeps the dsh-intelligent-ui extension's as-built documentation truthful to the current implementation, while leaving as-planned and historical docs alone. Use in this repository after behavior, UI copy, counts, dependencies, install or release-state changes; when a docs or consistency check fails; or when asked whether the extension's docs are still accurate. Not for prose polish, code review, or writing new docs."
+whenToUse: "同步扩展文档, 更新扩展文档, 检查扩展文档, 文档落后了, 文档和实现一致吗, README 对不对, Agent Skill 文档, references 文档, 发布前检查文档, docs out of date, update docs, check docs, docs drift, docs audit"
+---
+
+# Sync IUI Docs
+
+Scope: the `dsh-intelligent-ui` repository — the Intelligent UI extension for DeepSeek Harness (DSH). It ships a Node Host half (`lib/index.js`), a browser Client half (`lib/client.js`), and a model-facing Agent Skill (`skills/intelligent-ui/`). Its docs describe all three plus the DSH services they need, and keep the release history in `CHANGELOG.md`; DSH shell docs are out of scope.
+
+Docs split into two contracts. **As-built** docs describe what the extension does now and must match the code. **As-planned** docs (roadmaps, proposals, specs, future checklists) and **historical** docs (verification logs, decisions already made) may differ on purpose. Classify first, then sync only the as-built set.
+
+This skill works on documentation only — editing when sync is authorized, reporting otherwise. It does not change behavior to match documentation, and it does not rewrite plans, history, generated files, or vendored files.
+
+## When to Use
+
+- After changing behavior, user-visible copy, counts, dependencies, requirements, install steps, or release state under `src/`, `skills/intelligent-ui/`, `locale/`, `package.json`, `scripts/`, or the docs guards in `test/` — including appending or moving entries in `CHANGELOG.md`.
+- When `npm run check`, a docs-consistency test, or a link check fails.
+- When asked to check, sync, or update the extension's README pair, the detailed docs under `docs/`, Agent Skill references, locale meta, test/renderer README, or release/ship-status claims.
+- Before release (load the `release-iui` skill first; this skill only syncs the docs), or after a DSH version or dependency upgrade.
+
+Near misses: prose polish belongs to `write`; code review to `check`; roadmap or proposal writing to a planning workflow; implementing behavior a doc promises is normal implementation, not this skill.
+
+## Modes and Authorization
+
+Decide both before reading docs; each defaults from the request.
+
+**Mode**
+
+- **Delta** — a change is in scope (working tree, diff, commit, or the user's description). Audit the claims that change touches, plus docs that quote them. Default whenever anything under the repo's behavior, copy, metadata, or guards changed.
+- **Full audit** — no change; the ask is "are the extension's docs current?". Audit drift-prone claims across every as-built doc in [`references/doc-map.md`](references/doc-map.md). Cover the README pair, the detailed docs and the Agent Skill first, then the smaller docs; state coverage.
+
+**Authorization**
+
+- **Audit (read-only)** — "检查 / 核对 / verify / check / audit" without edit intent. Report stale claims and the proposed fix; do not edit. If fixes are wanted, the user asks, or you ask once.
+- **Sync (edit)** — "同步 / 更新 / sync / update", or an implementation task that owns its doc updates. Edit as-built docs minimally.
+
+An ambiguous request defaults to audit, then one question. Documentation authorization never extends to code changes; code fixes need their own request. An ambiguous doc class is left alone and flagged.
+
+## Outcome Contract
+
+- Outcome: as-built docs proven current or corrected; as-planned, historical, generated/vendored/legal docs deliberately left alone; work bounded by the chosen mode and authorization.
+- Done when: every audited claim has an evidence pointer; every edit maps to one; every untouched doc is listed with its class and reason; full audits state coverage; the repo guards pass or their failures are explained.
+- Output: mode + authorization, coverage, changed or proposed claims with evidence, untouched docs with reason, unguarded drift, and open questions.
+- Scope: docs only. Roadmap authoring, new-feature proposals, behavior changes, and test/index publishing are out of scope unless the owner asks.
+
+## Steps
+
+### 1. Set the frame and run the guards
+
+Load [`references/verification.md`](references/verification.md). Run `npm run check` when feasible (it rebuilds first) or at least `node --test test/packaging/*.test.mjs`, and record the outputs — test counts, renderer results, and `npm run pack:check` sizes become evidence. Read the repo's agent instructions if any. Name the mode, the authorization, and the delta evidence or the full-audit coverage boundary.
+
+Completion criterion: mode and authorization are named; guard output is recorded; every claim in scope has an evidence pointer or is explicitly marked unverifiable.
+
+### 2. Inventory and classify
+
+Load [`references/doc-map.md`](references/doc-map.md). Tag each file and section with its class, including new docs that appeared since the map was written (e.g. `docs/architecture*.md`, `docs/development*.md`, `docs/roadmap*`, `docs/plans/`, `.agents/notes/`, `CHANGELOG`). Split mixed files: README's as-built sections versus `docs/verification*.md` (historical).
+
+Completion criterion: every doc in scope is tagged; mixed files have their sections split; every as-planned doc either carries a visible plan marker or is flagged.
+
+### 3. Audit as-built claims
+
+Check each as-built claim against its truth source from [`references/doc-map.md`](references/doc-map.md), using the claim groups below. Record stale, incorrect, missing, and unverifiable claims. In full audit, track coverage per doc.
+
+Claim groups for this extension:
+
+- **Product state and requirements**: default off, three scopes, `/iui` syntax, DSH 0.2.2 (validated on `0.2.2-rc.5`; inline UI needs `0.2.2-rc.2+`), Node 24, pnpm for `dsh plugin` CLI installs, browser half requiring `dsh-client-locale`, published on GitHub and npm (`0.7.0`), no `engines.dsh`.
+- **Install and release state**: every documented CLI install pins `@<package.json version>` (guard: `npm run check:docs-install`, which also rejects marketplace current-version claims); the pinned command is verified after publish with `npm run check:published-install`; marketplace/DSH Desktop state is never asserted as current — docs state the index refresh policy and point to the pinned command or GitHub `main` for immediate use. Bare package installs are invalid because pnpm 11/12's default 24-hour `minimumReleaseAge` resolves them to the previous release on release day. Version pins, install commands, CHANGELOG and release notes are deterministic future facts written in the release commit before the tag; marketplace versions, Desktop availability and npm propagation are asynchronous and verified after publish.
+- **Tool contract**: `render_ui` (standalone deliverable only), `edit_ui_blocks` (targeted block edits), and the inline `openui` fence contract (one complete program per fence; no Host preflight), `{ program, style, title?, styleId? | temporaryStyle?, editRequestId? }`, success `{ statements, style, styleSource?, styleId?, document?, warnings? }`, model-visible result line, exact error strings (the troubleshooting reference also carries the document-mode rejection and the inline-render fallback notes).
+- **Card and renderer**: turn-tail placement for standalone page artifacts, process-row title, default card title, fallbacks (recoverable diagnostics such as excess args still render without a false banner), map/code/timer chrome, chart aria, the experimental document answer rendered as a chrome-less `section.dsh-iui-document`, and inline UI (the default for explanations) rendered by the `openui` layer of `conversation.chat.markdown.fence` (streaming keeps the code block; invalid programs keep the renderer fallback).
+- **UI copy**: zh/en labels and menu text from `src/shared/locales.ts`; zh docs quote zh labels, English docs quote English labels.
+- **Vocabulary and counts**: derive component/function/action counts from `vendor/spec.json` (`test/packaging/references.test.mjs`) and prompt size from `wc -c src/generated/prompt.txt`.
+- **Verification and packaging**: derive all test totals, Host/Client/packaging splits, browser-suite counts, build sizes, packed file counts, and `nonBuildUnpackedBytes` from `docs/current-facts.json` and fresh `npm run check` / `npm run pack:check` output (never copy cached numbers from memory). The 36 shipped screenshot assets are guarded by `test/packaging/manifest.test.mjs` (language-matched captures belong to their own README, shared fixtures to both), and packed manifest facts are guarded by `npm run check:pack-facts`. The staged update prompt is as-built (Host caches npm `latest` + tag-pinned `release-notes/<version>.md`, optional `.en.md`; bottom-right `shell.overlay` prompt; `publish.yml` gates on `check:release-notes` and the tagged commit's `Release-Notes-Review: sha256=<hash>` approval).
+- **Detailed docs**: `docs/architecture*.md` expands the component tree, full switch semantics, the delivery policy (inline UI for explanations, cards for deliverables), document mode and the `openui` fence layer; `docs/development*.md` expands install/uninstall, development commands, restart tips, the Config fields (including `documentMode`), the release layout and the tag-driven Trusted Publishing release flow. The READMEs link both with absolute GitHub URLs because `docs/` is not shipped in npm.
+- **Repository and contribution**: the README clone URL is the HTTPS equivalent of `git config remote.origin.url`; GitHub Issues is the contribution channel; `npm run check` is the local gate and `.github/workflows/ci.yml` runs it on PRs and main; non-packed docs-only diffs (CHANGELOG/PRODUCT/docs/.agents) take a fast path while README edits take the full gate, browser suites run on main only in two shards, and `check:release` is not in CI yet; releases are published by the tag-triggered GitHub Actions Trusted Publishing workflow (`.github/workflows/publish.yml`, OIDC + provenance); docs changes follow `.agents/skills/sync-iui-docs/SKILL.md`.
+- **Release status**: published to GitHub and npm as `@zephinel/dsh-intelligent-ui@0.7.0`; the README current-status line, the package name/homepage/repository metadata in `package.json`, and the `latest` dist-tag.
+- **Release history**: `CHANGELOG.md` (English-only) mirrors the published versions (`package.json` version plus npm publish time); `Unreleased` collects the current main-branch delta; released sections are append-only, and the file is repo-only (not in `package.json` `files`).
+
+Completion criterion: every audited claim is verified, corrected, or listed unresolved; full audits state which docs and claim groups were not covered.
+
+**Freshness contract (anti-rot).** Classify every risky claim as either a deterministic fact or an asynchronous external state:
+- Deterministic release facts — `package.json` version, install pins, CHANGELOG section, release-notes, README status — are written **before** the tag in the release commit. Do not leave them to a later docs commit and do not describe them as pending.
+- Asynchronous external states — marketplace index versions, DSH Desktop marketplace availability, npm propagation, third-party listing text — must **not** be written as `currently <version>` or `当前 <version>`. Write the refresh policy ("indexes refresh on their own schedule; the previous release may still show") and verify the observed state after publish.
+- Never document a bare `dsh plugin add @zephinel/dsh-intelligent-ui`: pin the version (`check:docs-install`) because pnpm 11/12's default 24-hour `minimumReleaseAge` resolves the bare name to the previous release on release day.
+- If a claim cannot be verified mechanically or by observation, qualify it with its source and date, or remove it from the as-built set.
+
+### 4. Edit minimally, only when authorized
+
+In audit mode, stop and propose; do not edit. In sync mode, change only claims proven wrong or missing. Update both `README.md` / `README.en.md`, both sides of a `docs/*.md` / `docs/*.en.md` pair, and the matching `CHANGELOG.md` section in the same edit, keeping them structurally and factually aligned. Take UI copy from `src/shared/locales.ts` (and `locale/*.json` for display metadata), not from older docs. Take counts and sizes from command output, never from arithmetic on memory. Match each document's language and tone.
+
+Generated and vendored content is off-limits: `vendor/**`, `src/generated/prompt.txt`, `lib/**`, lockfiles, `LICENSE`/`NOTICE`/`licenses/`. Regenerate through the build (`npm run build`, which runs `scripts/generate-prompt.mjs`) instead of editing.
+
+When an as-built doc advertises planned behavior: qualify it as planned, or move it to the plan doc — ask the owner before deleting it. When a plan was implemented: leave the plan as history and update the as-built docs instead.
+
+Completion criterion: read-only runs have zero edits; every changed line traces to an evidence pointer; no plan, history, generated, or vendored text was rewritten; no unrelated prose or formatting churned.
+
+### 5. Guard the claims that will drift again
+
+Where a claim is mechanically checkable, extend an existing guard instead of adding a new mechanism: `test/packaging/manifest.test.mjs` (manifest, files, README pair and changelog, screenshots, locale meta), `test/packaging/references.test.mjs` (Agent Skill catalog and counts), a renderer/i18n test, or the docs link/pair and changelog checks in [`references/verification.md`](references/verification.md). When behavior changes, update the guard's expected values together with the docs.
+
+Completion criterion: each riskiest corrected claim is now covered by a guard, or the report says why no guard is feasible and what to watch instead.
+
+### 6. Verify and report
+
+Re-run the guards after edits (`npm run check`; `npm run pack:check`; the README, changelog and detailed-docs checks in [`references/verification.md`](references/verification.md)). Report mode, authorization, coverage, and the lists in the template below.
+
+Completion criterion: guards pass or their failures are explained; the report lets the owner see which decisions were theirs.
+
+## Doc-Specific Gotchas
+
+- **The README pair and each doc pair are updated together.** Heading depth, language switcher, back link, facts, and screenshot references must mirror; a one-sided edit is drift by construction. Keep the README an index, not a manual — see the **README index contract (anti-rot)** below.
+- **`CHANGELOG.md` is append-only history (English only).** Both READMEs link it from their documentation section; add entries under `## [Unreleased]`; move them under the released version when publishing. Never rewrite a released section. Repo-only: not in `package.json` `files`; the packaging test asserts the file exists, is linked from both READMEs, carries `Unreleased`, and stays out of the tarball.
+- **`docs/verification*.md` is not as-built truth.** Keep the verification record as history; don't rewrite past verification. Refresh only live subclaims (test counts, pack sizes, DSH version). Release planning is intentionally not part of the shipped READMEs — don't re-add a release checklist to public docs.
+- **Docs live in `docs/`, screenshots live in `assets/`.** The npm package excludes `docs/`, so the READMEs link to the detailed docs with absolute GitHub URLs; keep that if docs stay out of `files`.
+- **The README license line names the map data sources.** `NOTICE`/`licenses/` cover bundled libraries only; OpenFreeMap / OpenMapTiles / OpenStreetMap (ODbL), Esri and OSRM are remote map/routing data attributed in-map. Keep the README attribution sentence and the matching source list in `docs/limitations*.md`; do not collapse them back into a generic "NOTICE covers everything" pointer.
+- **Version-skew examples quote an old Host on purpose.** Troubleshooting and "Host/Client 版本错位" describe a stale host (`Usage: /iui [on|off]`, "already off for this session"); do not "fix" those quotes to the current host.
+- **UI copy has two languages and two layers.** Client chrome is bilingual through `src/shared/locales.ts`; model-facing text (tool description, prompt, Agent Skill body) stays English. Host `/iui` replies and command-palette descriptions are English by DSH platform behavior, not untranslated drift.
+- **Screenshots use language-matched captures plus shared English component fixtures.** Language-matched overview/generation/editing/inline captures (`-zh.webp` / `-en.webp`) belong to their own README while shared component-tour captures appear in both, all guarded by `test/packaging/manifest.test.mjs`. `npm run capture:readme` rebuilds the deterministic component/menu/editor fixtures and bento composites; real-session captures (`inline-*`, `real-*`) require a live DSH session — never hand-edit an image.
+- **Generated and vendored files are caches.** `src/generated/prompt.txt` comes from `vendor/system-prompt.txt` via `scripts/generate-prompt.mjs`; `vendor/spec.json` drives the validator and `references/components.md` is hand-maintained against it. Never hand-edit the generated side.
+- **`lib/` is gitignored but packaged.** Build before `npm run pack:check` or any claim about artifacts; the browser half and host bundle sizes are build outputs.
+- **`npm run typecheck` is wired** through `tsconfig.json` and `npm run check`; it excludes `src/client` because DSH platform packages are runtime-provided. Do not claim the browser half is type-checked.
+- **`references/components.md` has no generator script.** It is hand-maintained and guarded by `references.test.mjs`; update both in the same change.
+
+## README index contract (anti-rot)
+
+The README pair is a **landing page plus docs index**, not a manual. Before the 2026-11-17 cleanup it had drifted to 286 lines / ~35 KB (zh) and ~38 KB (en); the detailed copy already lived in `docs/`, so most of that length was duplication. Keep the shape by routing new detail to the docs and touching the README only when a newcomer's first screen changes.
+
+**What belongs in the README pair**
+- One-liner + example ask, the current-status note (version, market listing, the guarded compact verification line), install quick start (one Web block + Desktop steps), the four visual sections, the documentation index table, clone/prerequisites/local-dev block (one code block), contributing, license/attribution. The Web install command pins the release version; the Desktop sentence states the index refresh policy, never a market current version.
+- Nothing else. Switch/style semantics, editing walkthroughs, command tables, CI/release details, FAQ, market rules, known-limitation bullets, release summaries and third-party credits belong in `docs/usage*.md`, `docs/development*.md`, `docs/architecture*.md`, `docs/limitations*.md`, `CHANGELOG.md`, `NOTICE`/`licenses/`.
+
+**Routing rule for a normal feature/doc change**
+1. Detailed change → the matching `docs/` pair + `CHANGELOG.md`.
+2. README only if the change alters the first screen or the index: update the status/verification line, an existing sentence, or one index row — never add a section for it.
+3. A new `docs/` file → add exactly one document-level row to the index table in both READMEs, with an absolute GitHub URL and a language-matched target.
+4. Never split the index into task-level rows for sub-sections; group by document (~6 rows). The table answers "which document"; the document's own headings answer "which section".
+5. Run `npm run check:docs-install` after touching an install command; a bare package name fails the guard.
+
+**Budget and drift signals**
+- Aim for ~110–120 lines / ~10–12 KB per README; above ~130 lines or ~13 KB, move detail out instead of extending.
+- Banned regrowth (all removed on 2026-11-17): the capabilities table, build/test command table, full FAQ, market list, per-feature editing walkthroughs, release highlights, credits list.
+- Keep the CI sentence precise (docs-only diffs take the docs checks; the README is packaged and takes the full gate) and keep the map-data attribution sentence.
+- Any README edit changes packed bytes: refresh `docs/current-facts.json`, the CHANGELOG gate line, the current-verification line in `docs/architecture*.md`, the newest `docs/verification*.md` record, and `references/verification.md` in the same change (see the pack-facts workflow).
+
+**Re-read before you commit a README edit**
+- First screen cold: what it is, how to try it, where to read more — all within a few lines.
+- `README.md` and `README.en.md` still share the heading depth sequence and the same index rows (localized targets).
+- Run the anti-rot and structural checks in `references/verification.md`, then the normal gates.
+
+## Ask the Owner Before
+
+- A doc or section could be a plan or an as-built claim (for example a future release step versus the current packaging behavior).
+- An as-built doc promises a feature that does not exist (qualify, move, implement, or delete — the owner chooses).
+- Screenshots, marketing copy, or user-visible wording need a product decision or a new capture.
+- Release state, npm dist-tag, version, or `engines.dsh` may change — this includes moving `Unreleased` entries under a new version and deciding whether the changelog should stay repo-only or ship in the npm package.
+- Code and a plan/spec disagree, and the plan may be authoritative.
+
+## Report Template
+
+```
+Mode: <delta | full audit> — <read-only audit | sync authorized>
+Guards: npm run check <result>; npm run pack:check <files/size>; docs links <result>
+Coverage: <audited docs/claim groups; for full audit, what was not covered and why>
+
+Changed (as-built) / Proposed (read-only):
+- <path> — <stale claim> → <now says> (evidence: <file:line | command output>)
+
+Untouched (classified):
+- <path> — as-planned | historical | generated/vendored/legal | external — <reason>
+
+Unguarded drift:
+- <claim> — no mechanical check; suggested: <guard>
+
+Questions:
+- <decision the owner must make>
+```
+
+## References
+
+- [`references/doc-map.md`](references/doc-map.md) — per-doc class, truth source, and existing guard for this repository. Load in step 2.
+- [`references/verification.md`](references/verification.md) — guard commands, expected outputs, README structural checks, and known non-bugs. Load in step 1 and before reporting.
+
+These two references describe the repo as of 2026-11-17, when the README pair became an index (see the anti-rot contract above). When the doc inventory, guards, scripts, or expected counts change, update them in the same change — they are maintenance metadata, not shipped docs.
+
+This skill lives at `.agents/skills/sync-iui-docs/` for project-local discovery. It is not listed in `package.json` `files` and is not shipped to npm.

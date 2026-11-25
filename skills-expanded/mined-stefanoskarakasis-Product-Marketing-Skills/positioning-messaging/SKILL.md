@@ -1,0 +1,404 @@
+---
+name: positioning-messaging
+description: >
+  Builds or audits positioning statements, messaging hierarchies, homepage copy and persona cards
+  using April Dunford's Obviously Awesome framework, in five modes (build, audit, fletch,
+  sales-enablement, homepage). Refuses to generate without a named primary persona and 3+
+  alternatives including status quo, and blocks output until a 7-point verification gate passes.
+---
+
+# positioning-messaging
+
+Built on Dunford's Obviously Awesome framework. Delivers sharp, defensible
+positioning through a 6-phase discovery and stress-test process.
+
+---
+
+## Onboarding
+
+Run once at the start of every new session, before any discovery. One question at a time, no output until it is complete. Read `references/onboarding.md` and follow its five steps: check the brain, select the mode, confirm the persona, confirm the alternatives (3 minimum), and parse any attached images. Then state the session setup back in one paragraph and wait for confirmation before Phase 1.
+
+A missing brain never stops this skill. Say once: "No brain found, so output will be less precise. Run `product-marketing-context` (a separate plugin) for sharper results. Continuing."
+
+---
+
+## Trigger
+
+- **When:** Positioning, messaging, value prop, sales copy, competitive messaging,
+  homepage copy, messaging audit, or any request involving how a product should
+  be described to buyers
+
+- **Not for:** Product specification → use `prd`. Building the ICP itself
+  — demographics, behaviors, JTBD, needs — before positioning work
+  → `ideal-customer-profile`, run first if Section 2 is still
+  firmographic-only. Mapping the buying committee or building persona
+  cards → `buyer-personas`, run first for a real primary-persona pick
+  instead of guessing. The "why now" narrative → `market-context`, run
+  first if Section 5 is thin. How the brand should sound → `brand-voice`,
+  run first if Section 4 is thin.
+
+- **Example prompts:**
+  - "Build positioning for [product]"
+  - "Our messaging sounds like everyone else"
+  - "Help me position against [competitor]"
+  - "Write our homepage headline and pillars"
+  - "Audit this messaging for coherence"
+  - "We can't explain what we do to sales"
+  - "Is this positioning working?"
+
+---
+
+## Inputs
+
+- **Args:** Product/market context, target persona (required), alternatives (3+
+  minimum, must include status quo + do-nothing), customer evidence or win/loss
+  signals
+
+- **Defaults:** If no persona named, surface from brain or ask. If fewer than 3
+  alternatives, block and ask before proceeding.
+
+- **Context keys:**
+  - `/foundation/brain.md` — preferred. Sections 1 (product), 2 (ICP), 3 (alternatives, including `switching_forces` and `objections`), 4 (voice, including `customer_phrases`) if available; 6 (proof points) for SALES-ENABLEMENT mode's proof and "never say" components — see Pre-flight.
+
+---
+
+## Connectors (Optional)
+
+| Connector | What it adds |
+|---|---|
+| `~~call recordings` | Buyer language to ground the positioning |
+| `~~CRM` | Win/loss reasons |
+| `~~market data` | Competitor and market signals |
+| `~~knowledge base` | Existing positioning docs |
+| `~~cloud storage` | Existing decks and messaging in Drive |
+
+> **No connectors?** Paste the material and I'll work from that. The output has the same shape.
+> Pulled facts are drafts: each is tagged with category, tool and date, and nothing is written until you confirm.
+
+---
+
+## Pre-flight
+
+- **Gap capture** (see the gap capture rule in `SKILL-SPEC.md`): if a brain field this skill needs is empty or stale and the answer would change the output, ask one question: the question, one line on why it matters, "answer or skip". Answer: use it for this run and offer it as a brain update. Skip: continue with a labelled assumption and append a `skipped` block to `/foundation/gaps.md` (format in `product-marketing-context/references/gaps-format.md`). At most one gap question per run. This is the only write to `/foundation/gaps.md`; the skill still writes nothing else to the brain unless its own contract says so.
+- **Personal context** (see the personal context rule in `SKILL-SPEC.md`): if `/foundation/me.md` exists, read it for format and detail only (length, detail, shape, how blunt to be). Never take a company fact from it; the current request wins. Do not ask for it if it is missing.
+- Load `/foundation/brain.md` if it exists. Extract Section 1 (Product Context),
+     Section 2 (ICP), and Section 3 (Alternatives & Positioning) silently.
+
+- If mode is `SALES-ENABLEMENT`: also extract Section 6 (Proof Points Registry)
+     silently. Use only entries with a confirmed source for the persona cards'
+     "proof" field and the competitive playbook's claims — never cite a
+     `[NEEDS PROOF]` or `[NEEDS APPROVAL]` entry as if it were approved. Populate
+     the "never say" column from Section 6's Forbidden Claims list, each with its
+     stated reason. If Section 6 is empty, thin, or every relevant entry is still
+     flagged: note it once — "Proof points registry is thin or unsourced. Persona
+     cards will ship without a proof field / competitive playbook will ship without
+     a 'never say' column until `proof-points` sources these claims." — and proceed
+     without blocking; SALES-ENABLEMENT is still useful without proof, just weaker.
+
+- If `/context/meta-patterns.md` exists in the user's workspace: if a pattern
+  has actually fired 2+ times in prior positioning runs logged there, surface
+  it now. If it doesn't exist, skip this step silently.
+
+- If brain exists but Section 3 (Alternatives) is empty or marked 🔴 Placeholder:
+   surface: `"⚠️ Your alternatives map is incomplete. Run alternatives-map
+  (same plugin) to build it from real win/loss data, or name your 3 alternatives
+  now (including status quo) and I will continue."`
+
+- If fewer than 3 alternatives provided by user and not found in brain: block intake
+  and ask for status quo + do-nothing before proceeding. Hard stop.
+
+- If no brain found: surface once, non-blocking. Continue.
+
+---
+
+## Steps
+
+> All modes run all 6 phases unless noted. Shortcuts produce weak output.
+
+### Phase 1: Discovery
+
+Run as a conversation. One question at a time. Never generate on the first message.
+
+**Hard floor — all four required before Phase 2:**
+
+- [ ] Product: what it does today (not roadmap)
+- [ ] Buyer: one primary (title, company type, triggering situation)
+- [ ] Alternatives: 3+ including status quo and do-nothing
+- [ ] Outcome: single most important buyer result in one sentence
+
+**Ideal additions:** T1 customer quotes · win/loss transcripts ·
+sales objections · win reasons · pricing model · company stage
+
+**Evidence tier on input:**
+
+- Verbatim quotes, win/loss transcripts, NPS verbatims → **T1** (anchor a pillar)
+- Usage data, churn rates, win rates, A/B results → **T2** (support a pillar claim)
+- Product descriptions, PMM assertions, founder hypotheses → **T3** (must carry
+  `[T3 — NEEDS VALIDATION]`; cannot headline a pillar)
+
+**Exit:** Summarise all four hard-floor items back to user. Await confirmation.
+
+---
+
+### Phase 2A: Market Energy Check
+
+Identify primary segment energy state before mapping competitors.
+
+| State | Buyer situation | Messaging job |
+|---|---|---|
+| **M1 — Potential** | No solution; desire blocked by barriers | Remove barriers; unlock demand |
+| **M2 — Kinetic** | Doing it badly (spreadsheets, manual) | Redirect effort to the better path |
+| **M3 — Captured** | Already using a solution of this type | Win share on one specific dimension |
+
+Confirm with user. Primary positioning serves one state only. Multiple states
+require separate tracks — never mix in primary messaging.
+
+---
+
+### Phase 2B: Competitive Mapping
+
+Map all five alternative types honestly:
+
+1. Direct competitors (same category)
+2. Adjacent competitors (overlapping use case)
+3. Status quo (spreadsheets, legacy tools, manual process)
+4. Build in-house
+5. Do nothing
+
+For each: what it does well / what it fails / what the buyer must believe to choose it.
+
+**Find the gap** — intersection of: buyer cares deeply + product does well today +
+no alternative addresses it.
+
+**Exit — cannot proceed without completing this sentence:**
+
+> "For buyers who need [outcome], alternatives fail because [gap], and we address
+> this with [specific capability today]."
+
+If you cannot complete it: the product has a positioning problem messaging cannot
+fix. Stop and surface this to the user.
+
+---
+
+### Phase 2C: Options-First
+
+Generate 3–4 distinct positioning bets before committing to one direction.
+
+Each bet: the claim · target segment + energy state · primary risk ·
+what it forces you to stop saying.
+
+Present to user. Await selection. Do not proceed to Phase 3 without a chosen direction.
+
+---
+
+### Phase 3: Positioning Development
+
+Follow the Dunford sequence:
+
+1. Competitive alternatives (from Phase 2B)
+2. Unique attributes — specific only ("3-click onboarding" not "better UX")
+3. Value translation — "So what?" × 3 levels; Level 3 belongs in messaging
+4. Who cares most — narrow to trigger-event segment, not demographic
+5. Market category — frame that makes strengths obvious, not odd
+6. Positioning statement × 3 versions:
+   > "For [segment] who [situation], [product] is the [category] that
+   > [differentiator], unlike [alternative] which [limitation]."
+
+Pick sharpest version. **Exit:** Statement cannot be said honestly by any
+named competitor. If it can, rewrite.
+
+---
+
+### Phase 4: Messaging Hierarchy
+
+Build top-down. Layer 3 claims must trace to Layer 1. Cannot trace → remove.
+
+**Layer 1 — Strategic Narrative** (150–250 words)
+
+Old world → Shift → New world → Your role. Product appears after the problem
+is fully established.
+
+**Layer 2 — Core Positioning**
+
+Tagline 5–8 words · One-liner 15–25 · Elevator pitch 50–75 · Boilerplate 75–100
+
+**Layer 3 — Key Message Pillars** (exactly 3–4, MECE)
+
+Each: headline claim + 2–3 sentence explanation + 2–3 proof points
+
+**Layer 4 — Persona Cards** (1–3 max)
+
+Each: pain in their language · promise tied to their metric · 3 proof points ·
+one objection pre-handled verbatim · stage-appropriate CTA
+
+**Exit:** All layers complete. Persona CTAs match actual sales motion.
+
+---
+
+### Phase 5: Differentiation Stress-Test
+
+4-question test per differentiator. YES or NO only:
+
+1. **TRUE?** — Provable with evidence a skeptical buyer accepts
+2. **RELEVANT?** — Buyer cares enough to switch or pay more
+3. **UNIQUE?** — 2+ competitors cannot honestly claim the same
+4. **SUSTAINABLE?** — Still true in 12–18 months
+
+Scoring (no exceptions):
+
+- 4/4 → Layer 3 pillar headline
+- 3/4 → supporting proof point only
+- ≤ 2/4 → removed entirely
+
+---
+
+### Phase 6: Output Packaging
+
+**Self-Verification Gate** — binary pass/fail, 7 checks. Re-enter named phase on
+any failure. Do not deliver with a caveat instead of a fix.
+
+| Check | Pass condition | Fail → |
+|---|---|---|
+| Proof coverage | Every claim has T1/T2 or carries `[T3]` flag | Phase 4 |
+| Narrative coherence | Layers 1→4 read as one story | Phase 4 |
+| Competitor specificity | Statement cannot be said by any named competitor | Phase 3 |
+| Stress-test integrity | All pillar headlines 4/4 | Phase 5 |
+| Persona count | ≤ 3 | Phase 4 |
+| Jargon | Zero: leverage, seamless, best-in-class, robust, turnkey, holistic, enterprise-grade, disruptive, synergy, game-changing, "powered by AI" as standalone claim | Fix inline |
+| Vision flags | All `[VISION FLAG]` items addressed or documented as rejected | Positioning Traps section |
+
+Before delivering, state: `"Self-verification passed. [N]/7 checks clear."`
+
+**Mode outputs:**
+
+`BUILD` — All 4 layers + stress-test table + approved/forbidden language +
+channel usage guide + positioning traps rejected + validation plan
+
+`AUDIT` — 5-dimension score (specificity / differentiation / coherence / proof /
+buyer language) + P1/P2/P3 rewrite queue + before/after for P1 items
+
+`FLETCH` — 6 slides: segment + trigger · alternatives map · gap ·
+positioning statement · pillars + proof · homepage wireframe with copy
+
+`SALES-ENABLEMENT` — Persona cards (pain / promise / proof / objection / CTA) + competitive playbook with "never say" column. Proof field sourced from brain Section 6 (approved claims only); "never say" column sourced from Section 6's Forbidden Claims list. If Section 6 is thin, both ship with a flagged gap instead of an invented or unsourced claim.
+
+`HOMEPAGE` — Hero headline <8 words · subhead <20 words · 3 pillar headlines
++ 1-sentence descriptions · primary + secondary CTA · 2 proof strip options.
+No placeholders.
+
+**All modes include:** Approved language · Forbidden language + reason ·
+Version + review date · Next steps
+
+---
+
+### Phase 7: Learning Close
+
+End every completed session by appending one entry to `/context/skill-sessions.md`,
+in the format defined in `product-marketing-context/.claude-plugin/skill-sessions-format.md`
+(Type A — execution session):
+
+````yaml
+type: execution
+skill: positioning-messaging
+session_date: [YYYY-MM-DD]
+pattern: [one falsifiable statement about what happened this session, or "none"]
+source: [surprised / wrong / missing / N/A]
+````
+
+Write this row directly — do not ask the user for permission. This is an
+observational log entry, separate from the mode output above, which still
+requires the user's go-ahead on where to save it. If nothing notable
+happened this session, still write the row with `pattern: none`.
+
+---
+
+## Outputs
+
+- **Files written:** `/context/skill-sessions.md` — one appended row per
+  session, per Phase 7. Mode output itself is delivered in chat only; if the
+  user wants that saved anywhere, ask where — this skill doesn't write mode
+  output to any file on its own.
+- **Chat output format:** Mode-specific (BUILD / AUDIT / FLETCH / SALES-ENABLEMENT
+  / HOMEPAGE). All modes include approved/forbidden language list, version, review
+  date, and next steps
+- **External side effects:** N/A
+- **Next skill:** After BUILD or FLETCH mode delivers output, check `next-skill-map.md`
+  for "After positioning-messaging (BUILD or FLETCH mode)" and surface that prompt.
+  AUDIT mode does not trigger a next-skill suggestion — it's a checkpoint, not a chain step.
+
+---
+
+## Do Not Use For
+
+Routes to `ideal-customer-profile`, `product-marketing-context`, `alternatives-map`, `buyer-personas`, `market-context`, `brand-voice`, `proof-points`, `value-prop-statements`, `experiment-doc` and `product-messaging-playbook`, each with the reason, are in `references/not-for.md`. Read it when the request is not clearly positioning or messaging output.
+
+---
+
+## Commands
+
+### /build [product name or context]
+Run full BUILD mode: Onboarding → all 6 phases → 4-layer messaging document.
+
+### /audit [existing copy or landing page]
+Run AUDIT mode: score existing messaging + rewrite queue.
+
+### /fletch [product name]
+Run FLETCH mode: 6-slide internal deck + homepage wireframe.
+
+### /sales [product name]
+Run SALES-ENABLEMENT mode: persona cards + competitive playbook.
+
+### /homepage [product name]
+Run HOMEPAGE mode: production-ready hero + subhead + pillars + CTA.
+
+### /settings
+Re-run the Onboarding block. Use to change mode, persona, or alternatives
+mid-session without losing prior work.
+
+---
+
+## Operating Rules
+
+1. **Run Onboarding before everything.** Mode, persona, and alternatives must be
+   confirmed before Phase 1 starts. No exceptions.
+
+2. **Load brain first.** Context changes which energy state (M1/M2/M3) applies.
+
+3. **Parse attached images before asking discovery questions.** Every explicit
+   claim and visual signal tells you something.
+
+4. **No positioning without 3+ alternatives — status quo mandatory.** If you can't
+   name it, you don't understand the choice.
+
+5. **Never skip phases.** All 6 phases run for every mode. Shortcuts produce
+   weak output.
+
+6. **Primary persona must be ranked.** Ask: who has this problem worst, right now?
+
+7. **Stress-test all pillars before delivery.** 4/4 or remove. No exceptions.
+
+8. **Layer 3 claims must trace to Layer 1.** Cannot trace = doesn't belong.
+
+9. **Evidence tier is binding.** T3 claims must be flagged. Don't hide assumptions.
+
+10. **`/settings` resets Onboarding only.** Prior session work is preserved.
+
+---
+
+## Quality Gate
+
+Runs after output generation, before delivery. Surface failures — do not deliver
+incomplete output.
+
+| Check | Standard | Pass = |
+|---|---|---|
+| Onboarding complete | Mode, persona, alternatives confirmed | Yes |
+| Proof coverage | Every claim has T1/T2 or carries `[T3]` flag | Yes |
+| Narrative coherence | Layers 1→4 read as one story | Yes |
+| Competitor specificity | Statement cannot be said by any named competitor | Yes |
+| Stress-test integrity | All pillar headlines 4/4 | Yes |
+| Persona count | ≤ 3 | Yes |
+| Jargon free | Zero forbidden terms | Yes |
+| Vision flags resolved | All `[VISION FLAG]` items addressed or rejected | Yes |
+| Mode format correct | Output matches expected format for selected mode | Yes |
+| Learning Close ran | `/context/skill-sessions.md` has a new row for this session | Yes |

@@ -1,0 +1,262 @@
+---
+name: devlog
+description: Use when finishing a feature, fixing a notable bug, wrapping up a work session, or discovering something non-obvious (a gotcha, undocumented behavior, a workaround that took several tries, a constraint you only noticed after hitting it). Write the entry immediately, in the same turn - don't ask permission, don't offer, just do it. Do NOT use for routing, connecting, or moving notes (that's process-inbox), and do NOT use for one-off external-source capture (that's second-brain:capture).
+allowed-tools:
+  - Read(~/.claude/vaults/**/CLAUDE.md)
+  - Read(~/.claude/vaults/**/*.md)
+  - Write(~/.claude/vaults/**/*.md)
+  - Edit(~/.claude/vaults/**/*.md)
+  - Bash(npx @techpickles/sb:*)
+  - Bash(${CLAUDE_PLUGIN_ROOT}/scripts/diagnose-sb.sh)
+  - Bash(${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh:*)
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "python3 \"${CLAUDE_PLUGIN_ROOT}\"/hooks/check-sb-before-call.py"
+---
+
+# Devlog
+
+## Overview
+
+Devlog is continuous, point-in-time work commentary: what happened, why,
+and anything surprising, captured as it happens instead of reconstructed
+from memory at the end of a session. One narrative session note
+accumulates every entry from the current session — no separate
+"learnings" system, no til/cursed split, everything worth remembering goes
+in the same place.
+
+Processing (routing, connecting, daily-linking) happens later via
+`/second-brain:process-inbox`. This skill only ever appends to the inbox.
+
+**Write the entry now, in the same turn as whatever triggered it.** Don't
+ask "should I log this?" and don't offer to — just write it. Asking is
+exactly the failure mode that made the old `distill-conversation` flow get
+skipped: by the time a session ends, you're mentally done, and a skip-able
+step gets skipped.
+
+## When to write
+
+- Finished a feature or fixed a notable bug
+- Wrapping up a work session
+- Discovered something non-obvious: a gotcha, undocumented behavior, a
+  workaround that took several tries, a constraint you only noticed after
+  hitting it
+
+## When not to write
+
+- Routing, connecting, or moving existing notes — that's
+  `/second-brain:process-inbox`
+- Reading an external source and writing it up — that's
+  `second-brain:capture`
+- Trivially obvious or one-off details you'd never reach for again
+- A bare project-specific fact (a config value, a repo convention) with
+  no story behind it — that belongs in Claude Code's own memory system
+  alone, not the vault
+
+## Step 1: Load Configuration
+
+Don't preflight-check sb availability — just run it:
+
+```bash
+npx @techpickles/sb config default && npx @techpickles/sb config vaults
+```
+
+If this fails, run `${CLAUDE_PLUGIN_ROOT}/scripts/diagnose-sb.sh` and follow
+its guidance rather than re-deriving the checks by hand.
+
+Then pick the vault for this session's note:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/resolve-vault.sh
+```
+
+It prints a vault name, or nothing. Use that name as `--vault <name>` on every
+`sb` call below that takes it (`note create`, `vault obsidian`, `inbox list`).
+When it prints nothing, omit `--vault` and let sb use its default. The name comes
+from `SB_NOTE_VAULT` if set (a per-project override), else from whichever
+registered vault contains the working directory. Never write a session's note
+to a different vault than the one the session is working in or for: a vault can
+have rules about what may be written to it.
+
+If no default vault is configured:
+```
+Second brain not configured. Run /second-brain:setup first.
+```
+
+## Step 2: Find or create this session's devlog note
+
+Every entry from the current session lands in ONE note. Never create a
+second devlog note for a session that already has one.
+
+1. Collect session context:
+   - Current repo and branch, if in a worktree
+   - Current work item, if any (see [Work items](#work-items) below)
+   - Short session id (first 8 characters of the session UUID)
+   - Source string format: `claude-code session {short-id} ({repo}, branch {branch}, {tracker} {id})`
+     (omit fields that don't apply)
+
+### Work items
+
+This plugin doesn't know or assume an issue tracker. If your context names
+a tracked work item for this session (a ticket, issue, or task ID), record
+it; otherwise leave it out. It can arrive two ways:
+
+- **Your instructions** (CLAUDE.md, the user's own words) say what tracker
+  they use and which item is current.
+- **A hook** injects candidates when this skill loads, in this shape:
+  ```
+  Work items this session ({tracker}):
+  - {id} ({status}): {title}
+  ```
+  A `PreToolUse` hook on the `Skill` tool can emit this as
+  `additionalContext` for `second-brain:devlog`.
+
+If there are several candidates, pick the one(s) this entry is actually
+about. A follow-up item filed during the session is usually not what the
+session was about. If none fit, or nothing names a work item, omit it.
+Don't guess one from the branch name.
+
+2. **Check your own memory first.** If you already created or appended to
+   this session's devlog note earlier in this same conversation, you
+   already have its path in context — go straight to Step 2a and append.
+   No CLI search needed: this is the same mechanism
+   `second-brain:insight` uses for its own accumulating session note
+   ("if the session file already exists, was created in an earlier call
+   in this same conversation, append").
+
+3. **If this is the first devlog entry this session,** go to Step 2b to
+   create the note, and keep its path in mind for the rest of the
+   session.
+
+4. **Fallback, only if you've genuinely lost track of the note's path**
+   (e.g. a context compaction wiped your memory of this session) —
+   resolve a real path instead of guessing:
+   - `npx @techpickles/sb vault obsidian` (add `--vault <name>` when step 1 picked one) — parse the JSON for the
+     top-level `inbox` field (the inbox subfolder name, e.g. `📫 Inbox`).
+     This is the precomputed field `sb note create` itself resolves the
+     inbox folder from — don't parse `app.newFileFolderPath` directly,
+     since that skips the Zettelkasten Prefixer plugin's folder override
+     (`inbox` is `zkPrefixer?.folder ?? app?.newFileFolderPath`) and can
+     point at the wrong folder.
+   - `npx @techpickles/sb inbox list --detail` — parse the JSON, look for
+     the entry with `type: session-notes` whose `source` field contains
+     the current short session id, and take its `filename`
+   - Combine: `~/.claude/vaults/{vault-name}/{inbox}/{filename}` is the
+     real, readable/editable path. `inbox list --detail` only ever
+     returns a bare filename, never a resolvable path on its own.
+   - With the resolved path in hand, go to Step 2a and append. If the
+     `inbox list --detail` search finds no entry matching the current
+     session id (genuinely nothing to recover), fall through to Step 2b
+     and create the note instead.
+
+### Step 2a: Append to the existing note
+
+Read the note, append one new bullet to the end of its body (format
+below) using the Edit tool. Don't touch its frontmatter.
+
+### Step 2b: Create the note
+
+Staged and written in one Bash call:
+
+```bash
+VAULT={vault name from resolve-vault.sh, or empty}
+STAGE=$(mktemp)
+cat > "$STAGE" <<'EOF'
+- {HH:MM} {entry}
+EOF
+npx @techpickles/sb note create \
+  ${VAULT:+--vault "$VAULT"} \
+  --title "Session: {topic}" \
+  --source "claude-code session {short-id} ({repo}, branch {branch}, {tracker} {id})" \
+  --content "$(cat "$STAGE")"
+rm -f "$STAGE"
+```
+
+Run it sandboxed first. It works sandboxed when the vault's real path is in
+the sandbox's `allowWrite` (for example `~/Vaults/<vault>/**/*.md`). Name
+the real directory, not a symlink to it: the sandbox matches the resolved
+path. If the call fails with `Operation not permitted` on the vault path,
+the vault isn't allowlisted. Re-run the *whole* call with the Bash tool's
+`dangerouslyDisableSandbox: true`, not just the `sb` line: `$TMPDIR`
+resolves to a *different path* unsandboxed, so staging and reading have to
+happen in the same call under the same mode or the read can miss the file.
+Either way, the staged file must be a fresh `mktemp` path,
+not a fixed filename: `$TMPDIR` is shared across every Claude Code
+session on the machine, and a fixed-name file can be overwritten or read
+by a stale write from a different session.
+
+`sb note create` prints JSON with a `path` field. If stdout has anything
+before the `{` (e.g. a stray `npm warn ...` line from the caller's own
+`.npmrc`), extract the JSON substring starting at the first `{` rather
+than parsing the whole stdout blob.
+
+`sb note create` only ever writes `captured`, `source`, `repo`, `branch`,
+`commit` to frontmatter — it has no `--type`/`--status` flag, and `repo`/
+`branch` come out as the literal `none`/`none` (devlog's `--source` format
+doesn't match `sb`'s own `conversation:repo=...,branch=...` parsing
+convention). Read the file back at the path just parsed to preserve the
+exact frontmatter sb wrote, then Edit it:
+- add `status: raw`
+- add `type: session-notes`
+- replace the `repo: none` line sb wrote with `repo: {repo-name}` (from
+  git context if available) — don't add a second `repo:` line
+- replace the `branch: none` line sb wrote with `branch: {branch-name}`
+  (from git context if available) — don't add a second `branch:` line
+- add `issue: {id}` if there's a current work item (see
+  [Work items](#work-items)); a YAML list if the entry covers several.
+  Omit the line entirely otherwise
+- keep `source` as sb wrote it — the `claude-code session ...` string
+  already covers provenance for devlog's format
+- keep `captured` as sb wrote it
+
+Without this fixup, the note is invisible both to this skill's own
+"check memory / find existing note" logic (Step 2, above) and to
+`process-inbox`'s stage 3a filter, which requires exactly `status: raw` +
+`type: session-notes` to ever pick the note up.
+
+## Entry format
+
+One bullet per entry, each with a wall-clock timestamp:
+
+```markdown
+- {HH:MM} {what happened, why, anything surprising — one to three
+  sentences, standalone enough to make sense without the surrounding
+  conversation}
+```
+
+Prose, not a title. Write it like a short journal line, not a commit
+message.
+
+### Also saved somewhere else?
+
+A record somewhere else doesn't replace the devlog entry. Claude Code's
+memory is what future sessions act on, an issue or ticket is the tracked
+work, and the devlog is the vault's record of what happened. When the
+discovery was also saved to one of those, write the entry anyway and say
+where it went:
+
+```markdown
+- 14:05 The VM's guest DNS drifts off its DHCP lease after the host
+  sleeps, so image pulls time out until it's reset. Saved as a memory
+  (`~/.claude/projects/<project>/memory/reference_vm_dns_drift.md`).
+```
+
+Point at it, don't paste it: one or two sentences of what happened,
+then the pointer. The other record holds the details. Which trackers
+count beyond memory (and how to cite them) is up to your own
+instructions or the hook that nudged you here; this skill doesn't
+assume any.
+
+## Constraints
+
+- One note per session — append, never create a second one for the same
+  session.
+- Never ask before writing, never present a summary and wait for a
+  selection.
+- Don't route, connect, move the note, or touch the daily note. That's
+  entirely `process-inbox`'s job, later.
+- Frontmatter stays `status: raw`, `type: session-notes` for the life of
+  the session. `process-inbox` owns every status transition after that.

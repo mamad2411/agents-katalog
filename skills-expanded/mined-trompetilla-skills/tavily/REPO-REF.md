@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/bert-builder/tavily/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: AI-optimized web search using Tavily Search API. Use when you need comprehensive web research, current events lookup, domain-specific search, or AI-generated answer summaries. Tavily is optimized for 

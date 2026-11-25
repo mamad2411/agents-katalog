@@ -1,0 +1,653 @@
+---
+name: graph-my-task
+description: Generate an Untangle workflow graph — decompose a task into the flowchart of how Claude would execute it with ZERO helpers (no skills, plugins, connectors, or MCP servers), written as a validated .workflow.json. Use when the user runs /graph-my-task or /untangle:graph-my-task, or asks to graph, flowchart, or map a task, workflow, or pipeline, or asks to install a workflow's suggested resources.
+---
+
+# Graph My Task
+
+Turn the user's task description into a **vanilla workflow graph**: an honest flowchart of how Claude would accomplish the task using ONLY built-in abilities (reasoning, reading/writing files, running commands, browsing if available). Pretend no skills, plugins, connectors, or MCP servers exist.
+
+## Rules of decomposition
+
+1. **Be honest, not flattering.** Include the tedious parts: manual data gathering, format wrangling, retry loops after failures, human review gates, copy-paste steps. The pain is the point — the knowledge-base stage below shows how helpers erase it.
+2. **6–16 nodes.** Fewer means you're summarizing; more means you're micro-stepping.
+3. **Exactly one `input` node** (gathering requirements/materials from the user) and **at least one `output` node** (the delivered result).
+4. **Node kinds:** `input`, `process`, `decision` (branching judgment), `loop` (bounded iteration over items), `review` (human-in-the-loop gate), `output`.
+5. **painLevel rubric (1–5):** 1 = trivial/instant · 2 = easy but attention-consuming · 3 = moderate effort or fiddly formatting · 4 = slow, error-prone, or many manual sub-steps · 5 = heavy manual work across multiple tools/sessions.
+6. **Edges:** `sequence` for normal flow, `branch` out of decisions (label each branch), `retry` for backward loops (label the failure reason). The graph must be connected; every non-input node is reachable from the input node.
+7. **ids** are kebab-case (`^[a-z0-9][a-z0-9-]*$`), short and descriptive.
+
+## ROOT
+
+This skill has two homes: a checkout of its own repository (invoked `/graph-my-task`), and the installed `untangle` plugin (invoked `/untangle:graph-my-task`), where these files live in the plugin's install directory while the working directory is the user's own project. One derivation covers both: **ROOT is the directory three levels up from this SKILL.md** — SKILL.md → `graph-my-task/` → `skills/` → `.claude/` → ROOT. The harness names this SKILL.md's directory when it loads the skill; derive ROOT from that path, never from where the session happens to be. In a checkout that lands on the repo root; installed as the plugin it lands on a versioned install directory (e.g. `…/cache/untangle/untangle/1.0.0/`). Wherever `<ROOT>` appears below, write out that absolute path. `schema/`, `scripts/`, and `kb/` always resolve from ROOT and never from the working directory — the working directory gets the output file and tier 2's deleted-after scratch, nothing more. And one honest caveat: some harnesses install this SKILL.md alone — no `schema/`, `scripts/`, or `kb/` beside it — which is survivable: when the ROOT files are missing, the validation ladder, KB tier 2.7, and the hand-over's drop-page fallback below cover every dependency, and nothing else in this skill needs ROOT.
+
+## Output
+
+Write to `out/<slug>.workflow.json` — under the **current working directory**, the project the user is running in — where `<slug>` is a kebab-case slug of the title. The alternative `gallery/<slug>.workflow.json` (when the user says it's a gallery/showcase piece) only makes sense in a checkout of this repo: `gallery/` lives at ROOT.
+
+### Document shape
+
+This reference mirrors `<ROOT>/schema/workflow.schema.json`, which stays authoritative whenever it exists — read it before authoring. When it does not (some harnesses install this SKILL.md alone), author from this reference: every cap, enum, and pattern below is transcribed from that schema, not summarized. Two facts hold everywhere: the schema sets `additionalProperties: false` at every level, so an unknown key anywhere is a rejection; and "non-empty" below means `minLength: 1`, so an empty string is one too.
+
+The document is an object with exactly four keys, all required:
+
+- **`meta`** — required: `task`, `title`, `generatedAt`, `model`, `kbSource`.
+  - `task` — the user's words; non-empty string
+  - `title` — your concise name; non-empty string
+  - `generatedAt` — ISO 8601 UTC date-time string (the schema's `format: date-time`)
+  - `model` — your model id; non-empty string
+  - `kbSource` — exactly `"airtable"` or `"none"` (the knowledge-base stage below decides which)
+  - `promptIntro` — optional; non-empty when present (see "The optimized prompt" below)
+- **`nodes`** — array of node objects, **at least 3**. A node — required: `id`, `label`, `kind`, `description`, `painLevel`.
+  - `id` — kebab-case: `^[a-z0-9][a-z0-9-]*$`
+  - `label` — string, 1–60 characters
+  - `kind` — `input` | `process` | `decision` | `loop` | `review` | `output`
+  - `description` — non-empty string
+  - `painLevel` — integer, 1 to 5 (the rubric above)
+  - `lane` — optional string
+- **`edges`** — array of edge objects, **at least 2**. An edge — required: `from`, `to`, `kind`.
+  - `from`, `to` — node ids, same kebab pattern (the schema checks only the pattern; the validator's integrity pass — rung 1's bundle, or you on rungs 2–3 — checks they name real nodes)
+  - `kind` — `sequence` | `branch` | `retry`
+  - `label` — optional string, at most 60 characters
+- **`suggestions`** — array, filled by the knowledge-base stage below; `[]` when no knowledge base is linked or nothing matched. A suggestion — required: `nodeId`, `airtableRecordId`, `name`, `url`, `category`, `claim`, `effect`.
+  - `nodeId` — a node id, same kebab pattern (and it must exist in `nodes`)
+  - `airtableRecordId` — `^rec[A-Za-z0-9]{14}$`
+  - `name` — non-empty string
+  - `url` — string matching `^https?://`
+  - `category` — `Claude Skill` | `Claude Plugin` | `MCP Server` | `Connector` | `Other`
+  - `claim` — non-empty string
+  - `install` — optional string (the one string the schema gives no length floor; step 5 still says omit the key when blank)
+  - `promptFragment` — optional; non-empty when present
+  - `effect` — required object; required inside it: `removeNodes`, `mergeNodes`, `newEdges`, `metrics`.
+    - `removeNodes`, `mergeNodes` — arrays of node ids; each may be empty
+    - `replaceWith` — optional; one full node, all five required node fields, same caps and enums
+    - `newEdges` — array of edges, may be empty; same shape as `edges` items
+    - `metrics` — all four fields required, each an integer ≥ 0: `stepsSaved`, `estTimeSavedMin`, `estTokensSaved`, `manualInterventionsRemoved`
+
+## Knowledge base (suggestions)
+
+This stage attaches real, existing helpers — Claude skills, plugins, and MCP servers from a curated Airtable knowledge base — to the nodes they would collapse. Run it once the nodes and edges are settled and **before** the validation loop; the suggestions belong in the same file (if you already wrote the file, update it in place).
+
+**HARD RULES — no exceptions, no judgment calls:**
+
+> Suggestions may ONLY reference rows that exist in the Airtable response. Never invent, remember, or import resources from anywhere else.
+
+> At most ONE suggestion per Airtable row per graph — the same row must never be attached to two nodes. `airtableRecordId` is the viewer's identity key, so a repeat is not a cosmetic slip: the viewer disables the ENTIRE suggestion layer for the file (a SUGGESTIONS DISABLED notice), not just the duplicate cards.
+
+A resource you know about from training, from another repo, from your own memory of this session, or from a web search is **not** eligible. If it is not in the response you fetched, it does not exist for this graph. (The reverse is fine: one node may carry several suggestions, as long as each comes from a different row.)
+
+### 1. Which knowledge base? Five tiers, in order
+
+There are five ways this stage can end up with rows. Try them strictly in order and stop at the first one that hands you rows — you never climb back up a tier.
+
+| Tier | Condition | Source | `meta.kbSource` |
+| --- | --- | --- | --- |
+| 1 | `AIRTABLE_API_KEY` is set | Airtable REST, straight from the base (step 2 · tier 1) | `"airtable"` |
+| 2 | tier 1 handed you no rows (no key set, **or** the key path failed) | the public feed — no token, no setup (step 2 · tier 2) | `"airtable"` |
+| 2.5 | tier 2 handed you no rows (feed unreachable, non-200, or empty) | the bundled snapshot — `<ROOT>/kb/kb.json` (step 2 · tier 2.5) | `"airtable"` |
+| 2.7 | tier 2.5 handed you no rows (no snapshot on disk, unparseable, or empty) | that same snapshot, fetched from the repo — GitHub raw (step 2 · tier 2.7) | `"airtable"` |
+| 3 | no source returned rows | nothing — the vanilla graph | `"none"` |
+
+Tiers 1, 2, 2.5, and 2.7 are the same table read four ways — live, mirrored, mirrored to disk, and that disk copy fetched from its repo — so all four are `"airtable"`. And in a session behind an egress proxy, a `403` / `host_not_allowed` on any of these hosts is a normal tier exit, not an error to fight: move down a tier and say so in one line.
+
+Start by checking the `AIRTABLE_API_KEY` environment variable. Probe it, don't assume — and print only whether it is there, never the key itself:
+
+```powershell
+if ($env:AIRTABLE_API_KEY) { 'set' } else { 'missing' }
+```
+
+```bash
+echo ${AIRTABLE_API_KEY:+set}
+```
+
+(the bash form prints an empty line when the variable is unset or empty)
+
+- **Set → tier 1**, fetch from Airtable (step 2 · tier 1). If that fetch fails (401, 404, network error) or returns zero rows, do not retry more than once and do not fabricate anything: drop to tier 2 and **say so in the report**. Tier 2 serves the *public* feed, not the base the key pointed at, so the mandated one-line failure report must name the substitution — `Airtable fetch failed (401); used the public feed instead`. Someone running their own base has to know the suggestions came from the default knowledge base rather than from their rows.
+- **Unset or empty → tier 2**, fetch the public feed (step 2 · tier 2). A missing key does **not** end this stage and does **not** mean a vanilla graph — the feed needs no key at all.
+- **Tier 2 unusable too → tier 2.5**, read the bundled snapshot (step 2 · tier 2.5) — a daily CI mirror of that same feed, committed to this repo, so it is on disk even when the network is not. Rows from it carry one extra duty: the report must state the snapshot's age (step 2 · tier 2.5 says how).
+- **No snapshot on disk — missing, unparseable, or empty → tier 2.7**, fetch that same snapshot from the repo it is committed to (step 2 · tier 2.7). Some harnesses install this SKILL.md alone, with no `kb/` beside it — the raw GitHub copy is the same file from a different host, which may also be the one host a proxy still allows. Its rows carry tier 2.5's age duty unchanged.
+- **Tier 2.7 empty-handed too — non-200, unparseable, or empty → tier 3.** Skip the rest of this stage: set `meta.kbSource: "none"`, leave `suggestions: []`, and tell the user "KB not linked" in the report. This is normal, not a failure: the vanilla graph is the deliverable.
+
+### 2. Fetch every row
+
+Four sources, one job: end up holding every row of the knowledge-base table. Read only the tier step 1 sent you to.
+
+#### Tier 1 — straight from Airtable (`AIRTABLE_API_KEY` is set)
+
+Resolve the base and table from the environment, with Tahir's base as the default so a fork can point elsewhere:
+
+| Variable | Default |
+| --- | --- |
+| `UNTANGLE_AIRTABLE_BASE` | `appRSePRgk4jlaRUc` |
+| `UNTANGLE_AIRTABLE_TABLE` | `tblOJzSLHAW7lbBWv` |
+
+Endpoint: `https://api.airtable.com/v0/<base>/<table>` · Header: `Authorization: Bearer $AIRTABLE_API_KEY`
+
+**Pagination is mandatory.** Airtable returns at most 100 records per request as `{ "records": [...], "offset": "..." }`. An `offset` in the response means more rows exist; request again with that exact `offset` value. Repeat until a response comes back with **no** `offset` key. Never stop after the first page.
+
+Use whichever of these fits the session. All three do the same thing.
+
+**Node (any platform, walks all pages by itself, prints `id` + fields per row):**
+
+```bash
+node -e "(async()=>{const B=process.env.UNTANGLE_AIRTABLE_BASE||'appRSePRgk4jlaRUc',T=process.env.UNTANGLE_AIRTABLE_TABLE||'tblOJzSLHAW7lbBWv';let out=[],offset;do{const u=new URL('https://api.airtable.com/v0/'+B+'/'+T);u.searchParams.set('pageSize','100');if(offset)u.searchParams.set('offset',offset);const r=await fetch(u,{headers:{Authorization:'Bearer '+process.env.AIRTABLE_API_KEY}});if(!r.ok){console.error('airtable',r.status,await r.text());process.exitCode=1;return}const j=await r.json();out=out.concat(j.records);offset=j.offset}while(offset);console.log(JSON.stringify(out.map(r=>Object.assign({id:r.id},r.fields)),null,1))})()"
+```
+
+**curl (bash / Git Bash) — page 1:**
+
+```bash
+curl -sS -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+  "https://api.airtable.com/v0/${UNTANGLE_AIRTABLE_BASE:-appRSePRgk4jlaRUc}/${UNTANGLE_AIRTABLE_TABLE:-tblOJzSLHAW7lbBWv}?pageSize=100"
+```
+
+**curl — every page after the first** (paste the previous response's `offset` value verbatim; `-G` + `--data-urlencode` escapes it safely):
+
+```bash
+curl -sS -G -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+  --data-urlencode "pageSize=100" \
+  --data-urlencode "offset=PASTE_OFFSET_FROM_PREVIOUS_RESPONSE" \
+  "https://api.airtable.com/v0/${UNTANGLE_AIRTABLE_BASE:-appRSePRgk4jlaRUc}/${UNTANGLE_AIRTABLE_TABLE:-tblOJzSLHAW7lbBWv}"
+```
+
+**PowerShell** (in PowerShell 5.1 `curl` is an alias for `Invoke-WebRequest`, so the bash flags above fail — use this instead; it walks all pages):
+
+```powershell
+$base = if ($env:UNTANGLE_AIRTABLE_BASE) { $env:UNTANGLE_AIRTABLE_BASE } else { 'appRSePRgk4jlaRUc' }
+$table = if ($env:UNTANGLE_AIRTABLE_TABLE) { $env:UNTANGLE_AIRTABLE_TABLE } else { 'tblOJzSLHAW7lbBWv' }
+$headers = @{ Authorization = "Bearer $env:AIRTABLE_API_KEY" }
+$rows = @(); $offset = $null
+do {
+  $uri = "https://api.airtable.com/v0/$base/$table" + '?pageSize=100'
+  if ($offset) { $uri += '&offset=' + [uri]::EscapeDataString($offset) }
+  $page = Invoke-RestMethod -Uri $uri -Headers $headers
+  $rows += $page.records
+  $offset = $page.offset
+} while ($offset)
+$rows | ConvertTo-Json -Depth 6
+```
+
+A bad or missing key surfaces as an `AUTHENTICATION_REQUIRED` JSON body (curl, node) or a thrown `(401) Unauthorized` (PowerShell). Either way, step 1's fallback applies — do not paper over it.
+
+Two things about the response shape, both of which matter later:
+
+- Each record is `{ "id": "recXXXXXXXXXXXXXX", "createdTime": "...", "fields": { ... } }`. The `id` is the only legal source of `airtableRecordId`.
+- **Airtable omits empty fields entirely.** An absent key in `fields` means blank — not an error, and not something to guess at.
+
+#### Tier 2 — the public feed (tier 1 handed you no rows: no key set, **or** the key path failed)
+
+A cached public mirror of that same Airtable table, served by tahirlone.com. Plain `GET`, **no authentication header of any kind**, and **no pagination** — one request returns the entire knowledge base.
+
+This is the tier for both keyless runs and runs whose Airtable fetch broke. If you arrived here from a failed tier 1, the rows below come from the public base, not the one the key pointed at — the report must say so (step 1).
+
+| Variable | Default |
+| --- | --- |
+| `UNTANGLE_KB_URL` | `https://tahirlone.com/api/untangle/kb` |
+
+**curl (bash / Git Bash)** — body to a file, status to the terminal. Keep it that way: a failing feed answers with a full HTML error page, and dumping that into the session costs thousands of tokens for nothing.
+
+```bash
+curl -sS -o untangle-kb-scratch.json -w 'HTTP %{http_code}\n' "${UNTANGLE_KB_URL:-https://tahirlone.com/api/untangle/kb}"
+```
+
+Read `untangle-kb-scratch.json` **only** when that line printed `HTTP 200`; on any other status leave the file unopened (it holds an error body or a site error page) and go to tier 2.5. Delete `untangle-kb-scratch.json` once the suggestions are authored — it is scratch, not a project artifact. (The awkward name is deliberate: this file lands in the working directory — in plugin mode, the user's own project — and a scratch write must never overwrite a file of theirs.)
+
+**PowerShell** (`Invoke-RestMethod` parses the JSON for you and *throws* on any non-200 — that throw is your signal to go to tier 2.5):
+
+```powershell
+$kbUrl = if ($env:UNTANGLE_KB_URL) { $env:UNTANGLE_KB_URL } else { 'https://tahirlone.com/api/untangle/kb' }
+$feed = Invoke-RestMethod -Uri $kbUrl
+$feed.records | ConvertTo-Json -Depth 6
+```
+
+A **200** response is this envelope and nothing else (the `recXXXX…` ids below are placeholders for shape only — never copy one into a graph):
+
+```json
+{
+  "updatedAt": "2026-07-30T14:05:00.000Z",
+  "recordCount": 2,
+  "records": [
+    {
+      "id": "recXXXXXXXXXXXXXX",
+      "name": "owner/example-mcp",
+      "url": "https://github.com/owner/example-mcp",
+      "category": "MCP Server",
+      "description": "Runs SQL against a warehouse and returns typed results.",
+      "language": "TypeScript",
+      "stars": 1840,
+      "dateFirstSeen": "2026-06-02",
+      "capabilityTags": ["data-etl", "api-integration"],
+      "stepArchetypes": ["data-etl", "research"],
+      "improvementClaim": "Replaces hand-written export scripts with one query call.",
+      "install": "claude mcp add example-mcp"
+    },
+    {
+      "id": "recYYYYYYYYYYYYYY",
+      "name": "owner/plain-repo",
+      "url": "https://github.com/owner/plain-repo",
+      "category": "GitHub Trending"
+    }
+  ]
+}
+```
+
+- `updatedAt` — ISO 8601 timestamp of the mirror's last refresh from Airtable. Informational; never write it into the graph.
+- `recordCount` — how many objects are in `records`.
+- `records` — the rows themselves. This array **is** the whole knowledge base: there is no `offset`, no `next` link, and no second page to request.
+
+**Anything else means tier 2 is unusable.** Do not retry more than once, do not fabricate rows — report the failure in one line and go to tier 2.5:
+
+| Response | What it means |
+| --- | --- |
+| `503` `{ "error": "kb_unavailable" }` | the feed is not configured on the server |
+| `502` `{ "error": "upstream_failed" }` | the feed could not reach Airtable |
+| any other non-200 status, a network/DNS error, a timeout, or `records: []` | nothing usable came back |
+
+**Record shape.** Each element of `records` is a flat object: the fields sit at the top level, *not* nested under a `fields` key, and their names are camelCase. **Absent fields are omitted entirely**, exactly as Airtable does it — an absent key means blank, not an error, and not something to guess at (see `owner/plain-repo` above, which carries no enrichment fields and is therefore not a candidate under step 3).
+
+The omission spares nothing: `name`, `url`, and `category` can be missing too. `id` is the only key guaranteed on every record. So — **a candidate row with no `name` or no `url` cannot become a suggestion at all**: the schema requires both, and `url` must match `^https?://`. Skip such a row silently and never invent a value to fill the hole. (A missing `category` is harmless — step 5 already writes `Other` for anything outside the schema's enum.)
+
+Steps 3–5 are written against the Airtable field names, and they apply here **unchanged**: this feed is that Airtable table, one feed record per Airtable row. Translate the names with this table; nothing else about those steps changes.
+
+| Feed key | Airtable field | Type | Read by |
+| --- | --- | --- | --- |
+| `id` | the record id itself | string, `^rec[A-Za-z0-9]{14}$` | **the only legal source of `airtableRecordId`** — copy it verbatim, character for character |
+| `name` | `Name` | string | step 5 → `name` |
+| `url` | `URL` | string | step 5 → `url` |
+| `category` | `Category` | string | step 3 candidate filter · step 5 → `category` |
+| `description` | `Description` | string | step 4 matching · step 5 claim fallback |
+| `capabilityTags` | `Capability Tags` | array of strings | step 3 candidate filter · step 4 matching |
+| `stepArchetypes` | `Step Archetypes` | array of strings | step 4 matching (strongest signal) |
+| `improvementClaim` | `Improvement Claim` | string | step 5 → `claim` |
+| `install` | `Install` | string | step 5 → `install` |
+| `language` | `Language` | string | nothing |
+| `stars` | `Stars` | number | nothing |
+| `dateFirstSeen` | `Date First Seen` | string | nothing |
+
+One gap to hold on to: **the feed does not carry `Why Noteworthy`.** Step 5's claim fallback names `Description` / `Why Noteworthy`; on this tier only `description` exists, so a row with no `improvementClaim` gets its one line written from that row's own `description` alone — never from anywhere else.
+
+The feed is a cached snapshot: an edit made in the source base reaches it typically within ~30 minutes (server cache + background refresh); during upstream outages the feed serves the last good copy and `updatedAt` shows its age. Neither case is a failure and neither needs working around: use exactly the rows the feed returned. Rows from tier 2 count fully as reading the knowledge base — `meta.kbSource` is `"airtable"`, same as tier 1 (step 7).
+
+The knowledge-base table's fields and select choices are documented in `<ROOT>/kb/airtable-template.md`. Read it if a row's shape surprises you, or if the user is setting up their own base.
+
+#### Tier 2.5 — the bundled snapshot (tier 2 unusable)
+
+`<ROOT>/kb/kb.json`, resolved from the root this skill ships in — the checkout or the plugin install directory, whichever home this SKILL.md was read from. It is a daily CI mirror of the very feed tier 2 just failed to reach, committed by the `KB snapshot` workflow, so it is a tracked file that is always there: not tier 2's scratch `untangle-kb-scratch.json`, and never deleted. No network, no request — just read it from disk.
+
+The file is the tier-2 envelope on disk with one addition: `fetchedAt`, the ISO 8601 timestamp of the run that took the snapshot. That field is the snapshot's age; hold on to it for the report.
+
+**PowerShell** (set `$root` to the absolute ROOT first; an error from the read — no file, or a file that is not JSON — is your signal to go to tier 3):
+
+```powershell
+$root = '<ROOT>'
+$snap = Get-Content (Join-Path $root 'kb/kb.json') -Raw | ConvertFrom-Json
+"mirrored $($snap.fetchedAt) — $($snap.records.Count) records"
+$snap.records | ConvertTo-Json -Depth 6
+```
+
+**Node (any platform)** — same signal, a thrown error means tier 3; the trailing argument is the snapshot's ROOT-resolved path:
+
+```bash
+node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));console.log('mirrored '+s.fetchedAt+' — '+s.records.length+' records');console.log(JSON.stringify(s.records,null,1))" "<ROOT>/kb/kb.json"
+```
+
+Present, parseable, and `records` non-empty → those records **are** the rows: the same flat camelCase shape as tier 2, so the key-translation table above and steps 3–5 apply unchanged, and `meta.kbSource` is `"airtable"` (step 7). One extra duty comes with them: these rows are a mirror, not the live feed, so the report's knowledge-base line (`## Report`, item 4) must carry the staleness note — `KB snapshot — last mirrored <date>`, the date read from `fetchedAt`. (A hand-rolled snapshot might lack that field; then the file's last commit date stands in: `git -C "<ROOT>" log -1 --format=%cs -- kb/kb.json`.)
+
+Missing, unparseable, or `records: []` → tier 2.7: the snapshot is a committed file, so the repo it lives in can serve it when the disk cannot — a different host than tier 2's feed, and its own turn at the network.
+
+#### Tier 2.7 — the snapshot from its repo (no snapshot on disk)
+
+The same `kb/kb.json` tier 2.5 just looked for, fetched from the repository it is committed to — for the harnesses that ship this SKILL.md with no `kb/` beside it. Plain `GET`, no auth, one URL: `https://raw.githubusercontent.com/tahirzlone/untangle/main/kb/kb.json`
+
+**curl (bash / Git Bash)** — tier 2's scratch discipline, unchanged: body to the same scratch file, status to the terminal, read only on `HTTP 200`, delete once the suggestions are authored:
+
+```bash
+curl -sS -o untangle-kb-scratch.json -w 'HTTP %{http_code}\n' https://raw.githubusercontent.com/tahirzlone/untangle/main/kb/kb.json
+```
+
+**PowerShell** (a throw means non-200 — that throw is your signal to go to tier 3):
+
+```powershell
+$snap = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/tahirzlone/untangle/main/kb/kb.json'
+"mirrored $($snap.fetchedAt) — $($snap.records.Count) records"
+$snap.records | ConvertTo-Json -Depth 6
+```
+
+What comes back is tier 2.5's file, byte for byte: the tier-2 envelope plus `fetchedAt`. Everything tier 2.5 says applies unchanged — the flat camelCase records, the key-translation table and steps 3–5, `meta.kbSource: "airtable"` (step 7), and the report's staleness duty: `KB snapshot — last mirrored <date>`, the date read from `fetchedAt`. Non-200, a network error, an unparseable body, or `records: []` → tier 3.
+
+### 3. Candidate filter
+
+A row is a candidate if **either** condition holds:
+
+- its `Category` is `Claude Skill`, `Claude Plugin`, or `MCP Server`; **or**
+- its `Capability Tags` is non-empty (present with at least one value) — whatever the `Category`, including `GitHub Trending` and `Other`.
+
+Every other row (typically a `GitHub Trending` row nobody has enriched yet) is not a candidate. Ignore it silently; unenriched rows are not defects.
+
+### 4. Match candidates to nodes
+
+For each node, compare the node's `kind` + `label` + `description` against each candidate's `Step Archetypes` + `Capability Tags` + `Description`.
+
+`Step Archetypes` is the strongest signal — it names the kind of step the resource upgrades (`research`, `scaffold`, `code`, `test`, `browser-verify`, `deploy`, `document`, `data-etl`, `review`, `orchestrate`). Node `kind` alone never decides a match: a `process` node might be research, ETL, or deployment work. The label and description say which.
+
+A match is worth keeping only when the resource would **actually erase or collapse the work that node describes** — not merely sit in the same topic area. Prefer the highest-`painLevel` nodes; that is where a helper is visibly worth installing.
+
+- **0–3 suggestions per graph is NORMAL.** A forced match is worse than none.
+- Fetched the knowledge base and nothing matched? That is a legitimate result: `meta.kbSource: "airtable"`, `suggestions: []`, and say so plainly in the report.
+
+### 5. Author each suggestion
+
+One object per match, in `suggestions`:
+
+| Field | Value |
+| --- | --- |
+| `nodeId` | the id of the node this upgrades — must be an id that exists in `nodes`. This is where the suggestion badge appears, so it is normally the painful node the resource takes over (usually one of the nodes the effect removes or merges) |
+| `airtableRecordId` | the row's real `id` from the response, copied exactly (`^rec[A-Za-z0-9]{14}$`). Never type one from memory, never edit one, never make one up — this field is what proves the resource is real |
+| `name` | the row's `Name`, verbatim |
+| `url` | the row's `URL`, verbatim (must start with `http://` or `https://`) |
+| `category` | the row's `Category`, verbatim — **except** that the schema's enum is `Claude Skill`, `Claude Plugin`, `MCP Server`, `Connector`, `Other`. Airtable's `GitHub Trending` choice is not in that enum: write `Other` for those rows. Any other value outside the enum also becomes `Other` |
+| `claim` | the row's `Improvement Claim`, verbatim. Blank or absent → write one line yourself in the same plain style, grounded ONLY in that row's own `Description` / `Why Noteworthy`. Never invent a repo, a feature, or a capability the row does not support |
+| `install` | the row's `Install`, verbatim. Blank or absent → **omit the key entirely** rather than writing an empty string |
+| `promptFragment` | optional — the instructions for using this resource at this step, written by you. See "The optimized prompt" below; omit the key when you have nothing grounded to say |
+| `effect` | the patch — see step 6 |
+
+### 6. The `effect` patch
+
+`effect` is not decoration; the viewer executes it. Applying suggestion S to workflow W does exactly this, in order:
+
+1. Delete every node in `S.effect.removeNodes` and `S.effect.mergeNodes`.
+2. If `S.effect.replaceWith` exists, add it as a new node.
+3. Drop every edge touching a deleted node; add `S.effect.newEdges` verbatim.
+4. Remove S from `suggestions`, along with any OTHER suggestion whose `nodeId` or effect references a deleted node (its target is gone).
+5. Add `S.effect.metrics` to the session totals.
+
+The result is re-validated. A patch that breaks the graph is refused and the card renders as un-appliable — a wasted suggestion.
+
+Fields:
+
+- **`removeNodes`** (required array, may be empty) — nodes the resource makes unnecessary outright.
+- **`mergeNodes`** (required array, may be empty) — nodes that collapse into `replaceWith`. Deleted exactly like `removeNodes`; the distinction is only how the UI narrates it. **A node id must never appear in both arrays.**
+- **`replaceWith`** (optional, a single full node: `id`, `label`, `kind`, `description`, `painLevel`) — the one step that stands in for what was removed. Its `id` must be new kebab-case, must not collide with any surviving node id, **and must not equal any OTHER suggestion's `replaceWith.id` — each replacement node id must be unique across the whole `suggestions` array.** (Two suggestions introducing the same id both validate, but once one is applied the other collides with the node it just created and is permanently un-appliable.) Its `painLevel` is the eased work, so it belongs at the bottom of the rubric (1–2) — a replacement as painful as what it replaced is not an improvement.
+- **`newEdges`** (required array, may be empty) — edges to add after the deletions. Every endpoint must be a surviving node id or `replaceWith.id`. **An endpoint this same effect deletes is a hard error.**
+- **`metrics`** (required) — `stepsSaved`, `estTimeSavedMin`, `estTokensSaved`, `manualInterventionsRemoved`, all integers ≥ 0.
+
+Every effect must eliminate or replace at least one node. An effect that deletes nothing passes the schema and still fails on screen: with empty `removeNodes` and empty `mergeNodes` the user clicks APPLY and watches an identical graph, and adding a `replaceWith` on its own only makes it worse — the graph grows a node and `stepsSaved` computes negative. If a resource eliminates nothing, it is not load-bearing; drop the suggestion instead. A real effect takes one of two shapes:
+
+- **Collapse:** `removeNodes` (and/or `mergeNodes`) with `newEdges` closing the gap — steps disappear entirely.
+- **Substitute:** `mergeNodes` listing the painful steps plus a low-pain `replaceWith` and `newEdges` wiring it in — several manual steps become one helper-driven step.
+
+Two traps to author around:
+
+- **Rewire what you cut.** Because step 3 drops every edge touching a deleted node, removing a node from the middle of the flow leaves its upstream and downstream disconnected. Supply `newEdges` reconnecting them (upstream → `replaceWith` → downstream, or upstream → downstream directly). **Nothing downstream checks connectivity** — no validator and no reducer will catch a missed rewire; the patch applies happily and strands an orphaned node on screen. YOU are the only gate: after authoring the effect, re-walk every surviving node and confirm it still has a path from the input node.
+- **Respect the size floor.** The schema requires **at least 3 nodes and at least 2 edges**, and the graph is re-validated AFTER the patch applies. Count it before you write it: `nodes − (removeNodes + mergeNodes) + (replaceWith ? 1 : 0) ≥ 3`, and surviving edges + `newEdges` ≥ 2. On a small graph, keep effects modest — one or two nodes. Never author an effect that would shrink the graph below the floor.
+
+Metrics, estimated **conservatively** — this number is on screen next to a real resource, so it has to survive scrutiny:
+
+- `stepsSaved` — the count of nodes this effect actually eliminates: `removeNodes + mergeNodes − (replaceWith ? 1 : 0)`. Never more than that.
+- `estTimeSavedMin` — minutes the eliminated steps genuinely cost, read off their `painLevel` (a pain-2 node is a few minutes, not an hour).
+- `estTokensSaved` — `0` unless you have a real basis for a number. `0` is honest; a rounded guess is not.
+- `manualInterventionsRemoved` — count only eliminated `review` nodes and explicit human hand-offs. Usually `0` or `1`.
+
+If two suggestions target overlapping nodes, that is allowed but understand the consequence: applying the first deletes the second's target, so the second disappears (step 4). Prefer suggestions with disjoint targets so the user can apply them all.
+
+### 7. Set `meta.kbSource`
+
+- `"airtable"` — you fetched the knowledge base, whatever the match count (including zero). Tiers 1, 2, 2.5, and 2.7 all count: the public feed is Airtable data too, and the snapshot is that feed on disk — or fetched back off its repo.
+- `"none"` — tier 3: no source returned rows. Then `suggestions` must be `[]`.
+
+### 8. Self-check before validating
+
+Walk the list; the validator catches most of it, but a caught error costs a round trip:
+
+- [ ] every `nodeId` exists in `nodes`
+- [ ] every `airtableRecordId` matches `^rec[A-Za-z0-9]{14}$` **and** appears in a response you actually fetched
+- [ ] no `airtableRecordId` appears twice in `suggestions`
+- [ ] every `category` is one of the schema's five values
+- [ ] `install` present only when it has real content
+- [ ] all `removeNodes` / `mergeNodes` ids exist; no id in both
+- [ ] no effect is a no-op — each one removes, merges, or substitutes at least one node
+- [ ] every `newEdges` endpoint is a surviving node id or `replaceWith.id`
+- [ ] every `replaceWith.id` is unique across the whole `suggestions` array (no two suggestions introduce the same replacement id)
+- [ ] every surviving node still has a path from the input node after each patch — you are the only connectivity check
+- [ ] post-patch counts still ≥ 3 nodes and ≥ 2 edges
+- [ ] `metrics` are four non-negative integers
+- [ ] `meta.kbSource` matches what you actually did
+- [ ] every `promptFragment` is 2–4 imperative sentences that name the resource, say when in the flow to use it, and say what it replaces
+- [ ] no `promptFragment` asserts a capability its row does not claim, and none leans on another suggestion being applied
+- [ ] no `promptFragment` mentions installing at all — the viewer's setup block states every install
+- [ ] `meta.promptIntro` keeps every requirement the user stated, adds none, and names no resources
+- [ ] neither prompt field is an empty string — the key is omitted instead
+
+## The optimized prompt
+
+The viewer assembles an **optimized prompt** the user can paste straight into Claude: `meta.promptIntro` first, then the `promptFragment` of every suggestion they applied, in flow order, then a **setup block** — one line reading "Before you start, install what the steps above rely on:", and under it the `install` of every applied resource that has one, one backticked command per line. A resource with nothing to install contributes no line, and neither does an install string still carrying a line break after trimming — the line is the unit the reader ticks out, so the install kit takes that string instead, into its commented read-it-yourself section. The installs are the viewer's to state and yours to leave alone: the user can tick a resource out of that block, and a command written into your prose could not be taken back out with it. Both fields are optional prose that you write — without them the viewer templates a serviceable line per suggestion out of `name` / `category` / `claim`, so a file that omits them still works. Author them last: after the suggestions and effects are settled, before the validation loop.
+
+These fields are prose about rows you already fetched, so the HARD RULES above cover them unchanged — a fragment may not name a resource that is not a suggestion in this graph, and it may not describe a capability its row does not claim. **Never write an empty string:** the schema rejects `""`. Nothing grounded to say → omit the key.
+
+### `meta.promptIntro` — the opening
+
+One paragraph, 2–4 sentences, rewriting `meta.task` as the opening of a prompt addressed to Claude instead of a description of what the user wants.
+
+- Imperative, second person: "Build the weekly issue…", never "The user would like…".
+- Carry over every requirement the user actually stated, and add none. No stack, deadline, tone, or acceptance criterion they did not give you.
+- One sentence may frame the shape of the work the graph found — the phases, the review gate, the delivered artifact. No more than one.
+- Name **no** resources. The fragments introduce those one at a time, each at the step where it belongs.
+- Write it whatever the knowledge base did: a vanilla graph with `kbSource: "none"` still deserves a clean opening.
+- Can't beat `meta.task` verbatim? Omit the key — the viewer falls back to the user's own words, which is never wrong.
+
+### `suggestions[].promptFragment` — one instruction per resource
+
+Per suggestion, 2–4 sentences telling Claude to use THAT resource at THAT point in the work. Four things every fragment does:
+
+1. **Names the resource** exactly as the suggestion's `name`.
+2. **Says when in the flow** to reach for it — anchored to the work the target node describes, in the task's own vocabulary ("before you rank anything", "once the tests exist"), so the fragments read as a sequence when the viewer concatenates them.
+3. **Says what it replaces** — the manual work this effect removes or merges, named as work rather than as node ids.
+4. **Stays inside the row's claim.** Every capability it asserts must be supported by that row's `Improvement Claim`, `Description`, or `Capability Tags`. No flags, subcommands, config keys, or API shapes you have not seen in the row — inventing one is the same offence as inventing a resource.
+
+And three things a fragment never does:
+
+- **Mention installing.** Not the row's `Install`, not a paraphrase of it, not "add it first" — nothing. The viewer's setup block already states every applied install under a line of its own, where the user can tick one back out again; a command written into your sentence is one they cannot. Nothing is lost by leaving it out, and a fragment that says it anyway says it twice.
+- **Talk about the graph.** This is instruction for doing the work, not a tour of the diagram: no "this node", "the suggestion above", "as the graph shows".
+- **Lean on its neighbours.** The user may apply this suggestion and no other, so the fragment has to read correctly as the only one in the prompt. Never refer to another fragment or another resource.
+
+Grounded in a row named `example/rss-mcp`, claim *"Fetches and filters feeds in one tool call instead of manual parsing."*, install `claude mcp add rss -- npx rss-mcp`:
+
+> **Write this** — "Use the example/rss-mcp server to gather the articles instead of fetching each feed and parsing the XML by hand. Call it once with the feed list and a 7-day window before you rank anything, then work from what it returns."
+
+> **Not this** — "example/rss-mcp is a fast, powerful RSS tool that handles all your feed needs." It names no moment in the flow, replaces nothing the user can point at, and "handles all your feed needs" is a capability the row never claimed.
+
+> **Nor this** — the same good fragment with "Add it first with `claude mcp add rss -- npx rss-mcp`." on the end. The instruction is right; the install is not yours to state. The viewer lists that command in the setup block, where the user can take it out again.
+
+## Validation loop (mandatory)
+
+Validation is a ladder: three rungs, in order, and the first rung the environment can offer is the one that runs. Every run validates on some rung and says which, in one status line — never skip validation silently, and never claim the official validator passed when a lower rung did the checking.
+
+1. **Rung 1 — the bundled validator.** `<ROOT>/scripts/validate.bundle.mjs` exists → run: `node "<ROOT>/scripts/validate.bundle.mjs" <path-you-wrote>` (e.g. `out/<slug>.workflow.json` or `gallery/<slug>.workflow.json`) — from wherever you are. The bundle is dependency-free and resolves its schema relative to itself, so there is no npm-install step and no repo-root cwd to arrange. Only report success after seeing `OK:` — that line is this rung's status line.
+2. **Rung 2 — the fetched schema.** No validator on disk → fetch `https://raw.githubusercontent.com/tahirzlone/untangle/main/schema/workflow.schema.json` (curl, or whatever fetch the environment offers) and check the document against it clause by clause — every required list, cap, enum, and pattern — plus the integrity checks the bundle would have run: no duplicate node ids; every `edges[].from`/`to`, `suggestions[].nodeId`, and effect node id names a real node (`newEdges` endpoints may also be that effect's `replaceWith.id`). Status line: `checked against the fetched schema; the official validator isn't available here.`
+3. **Rung 3 — this skill's own reference.** No validator and no fetch either → run the same clause-by-clause check from the "Document shape" reference above plus the authoring checklists (the decomposition rules, KB step 8). Status line: `structurally checked from this skill's own reference; schema and validator unavailable here.`
+
+Whichever rung ran, the loop is the same: a failed check means fix the listed errors and re-run the same rung. If it still fails after one fix attempt, STOP and show the user the errors instead of looping. On rungs 2 and 3 you are the validator, so name failing clauses as concretely as the bundle would (`edges[3].to "review" is not a node id`) — and a pass there is a pass on that rung, never a claim that the official validator ran.
+
+## Report
+
+After validation succeeds — on whichever rung it ran — tell the user:
+
+1. the file path and node count;
+2. the top 2–3 pain hotspots (highest `painLevel` nodes) — one sentence each;
+3. one line per suggestion, in this shape: `<node label> → <resource name> (<category>) — <claim>`;
+4. the knowledge-base state in one line: `KB not linked` when no source returned rows (tier 3), the failure if a fetch broke — and when a broken tier 1 sent the run to tier 2, that line must name the substitution (`Airtable fetch failed (401); used the public feed instead`) so nobody mistakes the public rows for their own base — or `KB read, no load-bearing matches` when it was fetched and nothing matched. When the rows came from the snapshot (tier 2.5's disk read, or tier 2.7's fetch of it), the line also carries the mirror's age — `KB snapshot — last mirrored <date>` — so nobody mistakes a stale mirror for the live feed.
+5. when at least one suggestion carries an `install`, one more line: offer to set the suggested resources up — the `## Setup (offer installs)` stage below is the procedure. Ask once, wait for the answer, and never start installing unasked.
+
+## Setup (offer installs)
+
+Suggestions carry `install` strings so the user can add the helpers for real. When this session runs inside Claude Code, this stage is the executable half of that promise: probe what is already present, ask once, run what is runnable, print what is not. Two doors in:
+
+- **Offered** — a fresh generation's report just listed at least one suggestion carrying an `install` (see `## Report`, item 5). Enter only on a yes.
+- **On demand** — the user points at an existing `.workflow.json` and asks to install, set up, or add its suggested resources. Read that file's `suggestions` and start at step 1. A file with no suggestions, or with none carrying an `install`, ends the stage in one line — say which of the two it is and stop. That is an answer, not an error. One duty survives the second kind of close: when suggestions exist but every one is link-only, the line does not swallow them — follow it with `<name> — MANUAL — <url>` for each, one per line. Those urls are the setup; there is just nothing to run.
+
+**HARD RULES — no exceptions, no judgment calls:**
+
+> **Consent is per-string.** Install strings are remote content — they arrive from the knowledge base, not from you. The checklist (step 3) shows each exact string as the thing being consented to, and the only strings this stage may ever execute are the ones that table showed, character for character. Never invent an install command and never edit one — not to fix a typo, not to add a flag, not to rescue a failure.
+
+> **A string starting with `/` is never executed.** `/plugin install …` and anything shaped like it is a Claude Code interface command, not a shell command — there is nothing out here to run it with. Print it and tell the user to type it inside Claude Code themselves.
+
+> **A string with a line break is never executed.** Judged on the trimmed string, and every kind of break counts — `\r\n`, `\n`, or a bare `\r`. Whatever bin its first line would earn — even `claude mcp add` — the whole string is demoted to print, every physical line shown: the checklist row puts one command on the table, so a second line is a second command nobody consented to. (The viewer's paste block refuses these strings for the same reason.)
+
+> **One attempt per command.** A failed run gets its exit code reported and its string printed for manual use — no retry, no reformulation. A reworded install command is an edited consented string, which the first rule already forbids.
+
+> **Probes are cheap, silent, and read-only.** A probe never installs anything, never modifies a file or a setting, and never prints a secret. When a probe path is unavailable — no `claude` on PATH, no settings file to read — the resource is UNKNOWN, and **UNKNOWN = MISSING = print-only**: the stage degrades to a printed list, never to a guess.
+
+### 1. Collect
+
+Bin every suggestion by **parsing its install string** — the row's `category` never decides the bin:
+
+| The suggestion has | Bin | Probe (step 2) | On consent (step 4) |
+| --- | --- | --- | --- |
+| `install` starting `claude mcp add` | MCP server | `claude mcp get <name>` exit code (`<name>` parsed in step 2) | **run** |
+| `install` starting `/` | slash command | settings-file grep, when it is `/plugin install <name>` | **print** |
+| any other `install` | unclassifiable | none — MISSING by definition | **print** verbatim, never run |
+| no `install` key | link-only | none — never probed, never guessed | shown as `MANUAL — <url>` |
+
+Two demotions are possible, and both happen before the checklist is drawn, so the table the user consents to already shows the row as `print:`. First, right here at binning: an install string still carrying a line break after trimming (`\r\n`, `\n`, or a bare `\r`) goes to the **print** bin whatever its first line says — the line-break HARD RULE above. Second, in step 2: a `claude mcp add` whose `<name>` will not parse moves there too.
+
+Dedupe before going further: **identical install strings collapse to one row** — two suggestions sharing a resource get one checklist line, one consent, one run (name both resources on the line).
+
+### 2. Probe
+
+Establish what is already present before asking for anything.
+
+**MCP servers.** The CLI's shape is `claude mcp add [flags] <name> <commandOrUrl> [args…]`, so parse for the name: starting at the token after `add`, drop each `-`-leading token together with the one token that follows it, and the first token left standing is `<name>` — `claude mcp add --transport http sentry https://mcp.sentry.dev/mcp` parses to `sentry`; `claude mcp add my-server -- npx my-mcp-server` to `my-server`. If no token survives, or the survivor does not read as a server name (an `=`, a `://`, a stray quote), or anything else leaves doubt, do not guess: **demote the row to the print bin** — step 3 writes it `print:`, step 4 prints it untouched, and the re-probe never asks after it. With a name in hand, check the exit code — it is stable where parsing `claude mcp list` text is not, and the probe command is identical in both shells:
+
+```powershell
+claude mcp get <name> *> $null; $LASTEXITCODE
+```
+
+```bash
+claude mcp get <name> >/dev/null 2>&1; echo $?
+```
+
+(`0` = INSTALLED; anything else = MISSING. No `claude` on PATH → every MCP row is UNKNOWN = MISSING.)
+
+**Plugins** — `/plugin install <name>` rows only. `<name>` is the token after `/plugin install`; if it carries an `@marketplace` suffix, probe with the part before the `@`. An enabled plugin appears as a `"<name>@<marketplace>"` key under `enabledPlugins` in the settings files — user-level and the project's — so ask, quietly, whether that key opening exists. The probe answers yes or no and never echoes the line it matched: a settings file's contents stay out of the transcript.
+
+```powershell
+(Get-ChildItem "$HOME\.claude\settings.json", ".claude\settings*.json" -ErrorAction SilentlyContinue | Select-String -Pattern '"<name>@' -SimpleMatch -Quiet) -contains $true
+```
+
+```bash
+grep -q '"<name>@' ~/.claude/settings.json .claude/settings*.json 2>/dev/null; echo $?
+```
+
+(run from the project root; PowerShell answers `True`, bash answers `0`, when the plugin is enabled — anything else, including no output at all, is MISSING. The `Get-ChildItem` front end is load-bearing, not style: in PowerShell 5.1, `Select-String -Path` aborts loudly when the project has no `.claude` directory, `-ErrorAction` notwithstanding, and a probe that errors on screen is not silent. That key layout is observed, not a contract — one more reason a plugin is only ever printed, never run. No settings file at all → UNKNOWN = MISSING.)
+
+Link-only rows, unclassifiable strings, and demoted rows — the line-break kind from step 1 and the unparseable-name kind from this step alike — are never probed. Their statuses are fixed: MANUAL for link-only, MISSING for all the rest.
+
+### 3. Checklist — the consent gate
+
+One table, one row per deduped install string plus one per link-only resource. The Action column carries the **exact string** — this table is the consent artifact, and step 4 may act on precisely what it shows, nothing else:
+
+| Resource | Category | Status | Action |
+| --- | --- | --- | --- |
+| the suggestion's `name` | its `category` | `INSTALLED` / `MISSING` / `MANUAL` | `run:` or `print:` followed by the verbatim install string — `print: (2 lines, below)` for a line-break demotion — or `MANUAL — <url>` |
+
+That `(2 lines, below)` cell is the medium bowing to the rule, not the rule bending: a markdown cell cannot carry a line break, and the line-break-demoted string is exactly the one whose every physical line must be on this table. So the cell states the true line count and points down, and the string itself stands directly beneath the table in a fenced code block — verbatim, every line, one fence per demoted row, introduced by the resource's `name` so row and fence cannot be mismatched. The fence is part of the consent artifact: what step 4 prints for that row is what its fence showed.
+
+Count the table — N is every row, K the INSTALLED rows, M the MISSING rows (MANUAL rows are neither: they carry nothing to install) — and ask:
+
+> N suggested, K already installed — install the remaining M? **all / pick / none**
+
+When the table carries MANUAL rows, N alone would not reconcile with K + M — so the question gains one clause naming where the difference went, count and pointer both:
+
+> N suggested, K already installed — 2 link-only, listed above — install the remaining M? **all / pick / none**
+
+- **Act only on an answer.** No answer, an ambiguous answer, a changed subject: nothing runs and nothing is printed as done. Silence is never consent, and there are no "obvious ones" to pre-run.
+- `all` = every MISSING row · `pick` = exactly the rows the user names · `none` = close; the checklist itself already delivered every string and url.
+- M = 0 → nothing to ask. Say the K resources are already in place (and that the MANUAL urls are on the table), then close.
+
+### 4. Execute & print
+
+Consented rows only, in checklist order:
+
+- **Run rows** (the MCP-server bin, and only it — no runnable string starts with `/`, but lacking the `/` is not what makes a string runnable: anything unrecognized stayed a print row in step 1, any string still carrying a line break after trimming was demoted to one there too, and a `claude mcp add` whose name would not parse followed in step 2): run the string **verbatim, once**, and capture the exit code. Non-zero → one line naming the code, the string printed back for manual use, and straight on to the next row — no retry, no rewording. Worth one passing note to the user: `claude mcp add` installs at **local scope by default**, so the server lands in this project unless the string itself says otherwise.
+- **Print rows** (slash commands, unclassifiable strings, and both classes of demoted row — line-break and unparseable-name): print the string verbatim — every physical line of it, when it has more than one — plus one line of instruction. A slash command is typed inside Claude Code by the user; an unclassifiable string is handed over as-is, for the user to run where it belongs; a line-break demotion says why nothing ran: a second line is a second command nobody consented to.
+
+### 5. Re-probe what ran, then report
+
+Re-probe **only the strings that actually ran** — the same probes as step 2, nothing new, nothing broader. A printed string is not re-probed (nothing has happened yet), a MANUAL row is not re-probed (there is nothing to probe), and rows the user declined are left alone. Then close with one line per consented row:
+
+- `<name> — installed` · the run succeeded and the re-probe proves it.
+- `<name> — still missing (exit <code>); run it yourself: <string>` · the run failed, or the re-probe still cannot see the result. On either path `<code>` is the exit code the run itself returned — on the second that is its `0`, reported as exactly that: the command exited 0 and the re-probe still cannot see it. The printed string is the fallback, and this line is the last thing the stage does about it.
+- `<name> — printed for you: <string>` · a print row the user consented to.
+
+That is the whole close. No advice loop, no second pass, no "want me to try again?" — the one attempt happened and the honest state is on screen.
+
+### 6. Self-check before closing
+
+Walk the list; every miss here is a consent or honesty bug, not a formatting one:
+
+- [ ] everything run or printed appeared in the checklist first, string-for-string — nothing acted on that the table, or a demoted row's fence beneath it, did not show
+- [ ] no string starting with `/` was executed — slash rows were printed only
+- [ ] no string with a line break (post-trim) was executed — demoted rows were printed whole, every line of them
+- [ ] every run row got exactly one attempt — no retries, no reworded commands
+- [ ] nothing ran before an explicit `all` / `pick` / `none`
+- [ ] the re-probe covered only what actually ran
+- [ ] link-only rows were never probed and never guessed at — `MANUAL — <url>` and nothing more
+- [ ] no probe modified anything, and no output printed a secret
+
+## Hand over the graph
+
+The final stage of every run that validated — every environment, every KB tier, every validation rung. Deliver it with the report, in the same message: `## Report` item 5 may leave the install question standing, and the link never waits on the answer (a Setup pass that follows takes nothing back). The file is the artifact, but a file still leaves the user work; the link does not. Print two things:
+
+1. **The file's path** — the `out/<slug>.workflow.json` (or `gallery/…`) you wrote.
+2. **The link** — local, always, and minted by one command:
+
+```bash
+node "<ROOT>/scripts/serve.mjs" <path-to-the-file>
+```
+
+Identical in both shells. It serves the viewer build this repo ships (`<ROOT>/viewer/dist` — committed, so there is nothing to install and nothing to build) on `127.0.0.1`, on the first free port from 4173 to 4199, and prints exactly one stdout line: `http://localhost:<port>/#g=<fragment>` — the graph gzipped into the address of a viewer that is already running. Every status line goes to stderr, so in bash `url=$(node "<ROOT>/scripts/serve.mjs" <path-to-the-file>)` captures the link and nothing else. That printed link is this stage's status line — the same discipline as the validation loop.
+
+And by the time the command returns, it has already done the conveniences: written the link to `<slug>.link.txt` beside the graph, offered it to the clipboard, and attempted to open the browser — each guarded so that none of them can fail a run that already printed its link. **Re-do none of that by hand.** No inline gzip one-liner, no clipboard probe, no `start` / `open` — the script owns those steps; your whole job is the one command, then relaying what its stderr said happened: which port, whether a copy landed, whether a browser launch was attempted. "Attempted" is the honest verb — never promise the tab is open.
+
+Hand the link over with one sentence saying what it is: the interactive graph — open it to apply the suggested upgrades, run OPTIMIZE, and leave with the task rewritten as a prompt.
+
+Server facts, once: the server binds `127.0.0.1` only, so the link works on this machine and nowhere else — a working link, never a shareable or durable one. A repeated run REUSES the running server (same version, same checkout) instead of stacking a second; `node "<ROOT>/scripts/serve.mjs" --stop` ends it. And the link lives exactly as long as the server does: the `<slug>.link.txt` beside the graph is how a later session picks the thread back up — re-run the same command, and the script overwrites that file with a fresh link on a live port.
+
+### Share — when the user asks
+
+The local link cannot leave the machine, so a link for someone else is a different mint, and an on-request one: both commands below carry the graph's bytes off this machine, which makes them the user's call — **never run either unasked.** The shared link is the durable, shareable one; the local link above stays the working one. Two rungs, in order, and the first that hands you a link is the one to give; say which, in one status line. One rule binds both: **the command that mints the link writes it to `out/<slug>.link.txt`** (`gallery/<slug>.link.txt` for a gallery graph) **in the same flow that prints it — the link is never typed twice.** A terminal clips and wraps where a file does not: retyping a four-thousand-character link is how one arrives missing the colon after `https`. Each command is guarded so a failed rung writes nothing — and a success overwrites the local link serve.mjs put in that file, which is the right outcome: the durable link is the one worth keeping on disk.
+
+**Rung 1 — the short link.** POST the validated file's raw bytes to `https://tahirlone.com/api/untangle/share`. A **201** answers `{ "url": "https://tahirlone.com/g/<id>", "id": "…" }`, and that `url` is the link — a handful of characters where the long form runs to thousands, so it survives a terminal copy whole; opening it lands on the hosted viewer, no server of the user's involved. Anything else is rung 2's cue: an unreachable host, any non-201 answer (the endpoint says 413 to a body past its 128KB cap, 400 to bytes that are not JSON, 422 to JSON that is not a workflow), or a body without a `url`. The printed `url` is this rung's status line — seeing it is the only success.
+
+**bash / Git Bash** (curl POSTs, node reads the `url` back out — jq is never assumed; anything that is not a 201 body leaves the capture exiting non-zero, and that exit is your signal — the `&&` short-circuits, so `tee` never opens the file. On failure it prints the answer's first 200 characters only — a failing route can answer with a whole HTML error page, and tier 2's rule holds here too: never dump one into the session):
+
+```bash
+url=$(curl -sS -X POST --data-binary @<path-to-the-file> -H "Content-Type: application/json" https://tahirlone.com/api/untangle/share | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const u=JSON.parse(d).url;if(!u)throw 0;console.log(u)}catch(e){console.error((d||'no response').slice(0,200));process.exit(1)}})") && printf '%s\n' "$url" | tee out/<slug>.link.txt
+```
+
+**PowerShell** (`Invoke-RestMethod` throws on any non-2xx — that throw is your signal. The `$null` first line is load-bearing in a shell that keeps state: a throw skips the assignment, so without it `$url` could still hold an earlier run's link and the guard would write a stale file):
+
+```powershell
+$url = $null
+$url = Invoke-RestMethod -Method Post -ContentType "application/json" -InFile <path-to-the-file> -Uri https://tahirlone.com/api/untangle/share | Select-Object -ExpandProperty url
+if ($url) { Set-Content -Path out/<slug>.link.txt -Value $url; $url }
+```
+
+**Rung 2 — the long link.** An unreachable share API is a normal rung exit, not an error to fight — this link is the same graph, the payload riding in the fragment itself, no server asked. Generated by the same node one-liner in both shells; only the capture-and-write around it is shell-specific:
+
+```bash
+url=$(node -e "const z=require('zlib'),f=require('fs');console.log('https://tahirzlone.github.io/untangle/#g='+z.gzipSync(f.readFileSync(process.argv[1]),{level:9}).toString('base64url'))" <path-to-the-file>) && printf '%s\n' "$url" | tee out/<slug>.link.txt
+```
+
+```powershell
+$url = $null
+$url = node -e "const z=require('zlib'),f=require('fs');console.log('https://tahirzlone.github.io/untangle/#g='+z.gzipSync(f.readFileSync(process.argv[1]),{level:9}).toString('base64url'))" <path-to-the-file>
+if ($url) { Set-Content -Path out/<slug>.link.txt -Value $url; $url }
+```
+
+Status line: `long link; the share API wasn't reachable from here.` — naming the exit rung 1 actually took (the status it answered with, or the tool that was missing).
+
+Hand the minted link over — whichever rung produced it — named for what it is: the durable link, the one that can leave the machine; the localhost link stays the working copy.
+
+### Fallback — the drop page
+
+No `node` on the machine, no `scripts/serve.mjs` under ROOT (some harnesses install this SKILL.md alone), a deleted viewer build (the command exits 1 naming the path it expected), or the command denied → print `https://tahirzlone.github.io/untangle/` instead and tell the user to drop the workflow file onto that page — the same graph, one drag. That is the hosted demo's one remaining role in the default flow. This path minted no link, so it writes no `.link.txt` — and if an earlier run left a `<slug>.link.txt` beside the file, delete it: serve.mjs overwrites that file on every run precisely so it never outlives its link, and a path that minted nothing must not leave one standing to claim otherwise. One of the two — the served local link or the drop-page line — ends every validated run; this stage never silently ends one without either. (A run the validation loop stopped at REJECTED has nothing to hand over — there, the honest error report is the ending.)

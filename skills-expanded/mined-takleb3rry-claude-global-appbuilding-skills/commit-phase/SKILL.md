@@ -1,0 +1,86 @@
+---
+name: commit-phase
+description: Complete git workflow for a phase - branch, commit, merge, cleanup
+argument-hint: <phase-number>
+---
+
+# Commit Phase
+
+Complete git workflow for Phase $ARGUMENTS:
+
+## Step 0: Pre-Commit Checks
+
+Run the following checks before committing.
+
+> **If you're thinking...** | **Do this instead**
+> ---|---
+> "Naming conventions are fine, I followed them during build" | That's what the check verifies. If you followed them, it takes 5 seconds.
+> "I'll merge to main, staging is overkill for this" | Ask the user. Merge target is their decision, not yours.
+> "The plan file is still useful, I'll keep it" | Used plans are noise. Delete it. The implementation plan and git history are the record.
+
+### 0a: Naming Convention Check
+
+If `naming_conventions.md` exists in project root:
+
+1. Identify the project's primary language/framework from project files
+2. Get changed source files relevant to that stack: `git diff --name-only HEAD`
+3. For each changed file, verify it follows the conventions documented in naming_conventions.md
+   - Focus on naming consistency, test selectors, and patterns defined in the conventions
+   - Use judgment about which conventions apply to which file types
+4. Report findings:
+   - **BLOCKING**: Issues that will likely break tests or cause runtime errors
+   - **WARNING**: Inconsistencies that deviate from documented conventions
+5. If issues found, ask: "Fix now or proceed anyway?"
+6. If proceeding with issues, append to commit message:
+   "Note: Convention issues deferred - see harmonize-report.md"
+
+### 0b: DB Integration Check
+
+If staged files touch `src/lib/db/schema/` or `drizzle/migrations/`:
+
+1. Run: `npx vitest run src/lib/db/integration.test.ts`
+2. Report findings:
+   - **BLOCKING**: Any table missing from the live DB (migration not applied)
+   - **BLOCKING**: DATABASE_URL not set or DB unreachable
+   - **PASS**: All expected tables found — report the count and proceed
+3. If BLOCKING issues found, ask: "Apply pending migrations first, or proceed anyway?"
+4. If proceeding with issues, note it in the commit message
+
+## Steps 1-5: Git Workflow
+
+1. Check current branch: If on main or staging, create feature branch:
+   `git checkout -b phase-$ARGUMENTS-implementation`
+2. Stage all changes: `git add .`
+3. Commit with message: "Phase $ARGUMENTS: [brief description of phase deliverables]"
+4. Push branch: `git push -u origin phase-$ARGUMENTS-implementation`
+5. **Merge target — ask user before merging:**
+   - Check if a `staging` branch exists: `git branch -a | grep staging`
+   - If staging exists, ask: "Merge to **staging** (preview/test) or **main** (production)?"
+   - If no staging branch exists, merge to main (current behavior)
+   - Execute:
+     - If **staging**: `git checkout staging && git merge phase-$ARGUMENTS-implementation && git push`
+     - If **main**: `git checkout main && git merge phase-$ARGUMENTS-implementation && git push`
+   - Return to the feature branch after merge: `git checkout phase-$ARGUMENTS-implementation`
+
+Use implementation_plan.md to reference what this phase delivered for the commit message.
+
+## Step 6: Clean Up Plan File
+
+After merge is complete, delete `phase{$ARGUMENTS}_plan.md` if it exists. Just delete it locally - do NOT commit or push this deletion separately. It will be included in the next phase's commit naturally.
+
+## Benefits of This Workflow
+- Traceability: Each phase has its own branch in git history
+- Rollback capability: Can revert the merge commit if needed
+- Clear audit trail: Feature branches document what changed per phase
+- Quality gate: Naming conventions checked before merge
+
+## When to Use
+- Phase implementation is complete and tested
+- User says "commit phase X", "finish phase X", "wrap up phase X"
+- User says "phase X is done", "let's commit this phase", "finish up phase X"
+- Ready to merge completed work to main
+
+## When NOT to Use
+- Work is incomplete or tests are failing
+- Still in the middle of implementing (continue with `/execute-phase`)
+- Just want a regular commit (use git directly)

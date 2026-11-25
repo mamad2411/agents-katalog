@@ -1,0 +1,51 @@
+---
+name: tentaflake-repo-guidance
+description: Locate owning sources, guides and checks before changing Tentaflake.
+version: 3.1.0
+---
+
+# Repository guidance
+
+Read `AGENTS.md` and `CONTRIBUTING.md`, then inspect only the relevant owners:
+
+| Area | Source | Guide |
+|---|---|---|
+| Runtime definition | `adapters/<id>.nix`, `lib/mkAgent.nix`, `lib/runtimeContract.nix` | [Adapters](../../../docs/agent-adapters.md) |
+| Onboarding/inventory | `lib/systemFromData.nix`, `lib/agentPlan.nix`, CLI | [Configuration](../../../docs/08-agent-cli.md) |
+| Containment | `lib/containerSecurity.nix`, `modules/security.nix` | [Profiles](../../../docs/10-security-profiles.md) |
+| Host services | `modules/{broker,research,worker,workspace-quota,backup}.nix` | [Operations](../../../docs/07-operations.md) and linked policy guides |
+| Management | `modules/management.nix`, `modules/tailscale.nix` | [Management](../../../docs/11-tailscale-management.md) |
+| CLI/API | `crates/tentaflake-cli/`, `host-api/` | [CLI](../../../docs/06-shell.md), [API](../../../docs/19-web-ui.md) |
+| Installer/builds | `installer/disk.sh`, `lib/mkRustPackage.nix`, `scripts/eval_flake.py` | [Install](../../../docs/00-install.md), [Builds](../../../docs/17-builds.md) |
+
+Define instances only in `tentaflake.toml`; public `systemFromData` accepts only
+`{ file = ./tentaflake.toml; }`. Keep the public inventory empty and commented.
+Load real TOML from the consumer/fork's tracked Git source, never an upstream
+template fallback or `path:.` filtering bypass; see the configuration guide.
+Refuse legacy `agents.toml`/`agents.json` and missing/Git-filtered desired sources.
+`mkAgent` and adapter builds are internal. Keep
+native behavior in the selected adapter and host authority in Nix policy,
+which may consume metadata but must not define more instances.
+Public TOML accepts only descriptor-defined fields; internal adapter arguments
+such as `settings` and `seedDir` are not a second public configuration path.
+Adapter `preset` facts are the editable source;
+`python3 scripts/runtime-catalog-docs.py` regenerates the JSON/docs projections.
+Names are globally unique and host IDs are `agent-<name>`. Use metadata for
+paths/owners; never move existing data or reset budgets implicitly.
+
+Preserve balanced startup gates, host-held secrets, exact read-only Research
+mounts, offline workers and quota/backup ownership. No native tool mediation or
+vendor acceptance follows from a declaration or synthetic fixture. Scaffolds
+stay non-runnable without OCI/state/credentials. Generic custom OCI grants no
+accepted model/Research integration. For authority changes read the
+[threat model](../../../docs/15-threat-model.md).
+
+Choose checks through the build guide: `just fast` includes pure catalog drift
+and documentation inventory checks; local host evaluation/build/runtime evidence
+remains separate, while CI runs every affected gate. Update owning guides and
+examples with behavior, keep skills short, and report actual checks and
+remaining evidence gaps. Evaluation does not authorize activation.
+
+`docs/` is product documentation only (see its guide inventory). Write plans,
+notes, prompts and investigation results to the ignored `.scratch/`; never
+commit them or private deployment facts.

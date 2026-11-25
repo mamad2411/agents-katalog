@@ -1,0 +1,37 @@
+---
+name: opencode
+description: 自动化的底层自治智能体，专门用于处理复杂的编码任务、终端命令执行和多文件重构
+---
+
+# OpenCode 智能体技能 (opencode-Agent Skill)
+
+此技能提供了一个通向 OpenCode 底层智能体的委派（Delegation）接口。在一个多智能体（Swarm）架构中，它扮演着高级“执行者（Worker）”节点的角色。
+
+与执行原子级的文件读写不同，此技能接收高层次、复杂的工程指令，并在其自身的智能体循环（思考 -> 行动 -> 观察 -> 修复）中自主执行，直到任务完成或彻底失败。
+
+## 核心能力 (Capabilities)
+
+- **自主多文件重构**: 在整个项目目录中自主跨文件编写、修改和重构代码。
+- **终端命令执行**: 安全地运行 shell 命令（例如 `npm install`、`pytest`、`cargo build`）来配置环境、编译或测试代码。
+- **迭代式 Debug**: 自动读取终端的报错日志，分析根本原因，并自动尝试修复，无需频繁打扰主智能体。
+- **实时 Swarm 遥测**: 通过旁路状态报告器（status reporter），将其内部状态转译为标准 Swarm UI 事件（init, chunk, finish, fail），实时无缝在前端渲染执行过程，不包含任何 emoji 表情符号。
+- **上下文压缩**: 执行结束后，仅向主智能体返回高度浓缩的“执行轨迹 (Execution Trace)”报告，防止 Ciri 主模型的上下文窗口爆炸（Token Bloat）。
+
+## 工具边界：何时使用此技能 vs `file_editor`？
+
+- **优先使用 `file_editor` 的场景**: 当你确切知道要在哪个特定文件中修改哪几行代码时，或者你只需要读取某个文件的内容来回答用户问题。
+- **必须使用 `opencode` 的场景**: 当用户要求开发一个新功能（需要创建多个文件、运行测试、安装依赖），或者需要修复一个你还不完全确定根本原因的复杂 Bug 时。请果断将这种耗时的试错任务委派给本工具！
+
+## 报错提示
+
+- **报错时一定要提示**：如果报错必须向用户提示仔细检查 opencode.json的内容，尤其是该文件的第二行"model": **"provider/model"**配置。**提示用户opencode.json内不能写注释符号//**
+- **正确配置如下：** "model": "nvidia/minimaxai/minimax-m2.5"  或者 "model": "nvidia/qwen/qwen3.5-397b-a17b" 或者 "model": "local-deepseek/deepseek-chat"
+- **报错时必须提示**：让用户检查opencode 服务后台的打印日志，
+```如下很明显就是provider/model配置错误导致的
+  ProviderModelNotFoundError: ProviderModelNotFoundError
+ data: {
+  providerID: "minimaxai",
+  modelID: "minimax-m2.5",
+  suggestions: [],
+},
+```

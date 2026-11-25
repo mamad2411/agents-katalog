@@ -1,0 +1,8 @@
+---
+name: long-desc
+description: A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line. A deliberately long description line.
+---
+
+# long-desc
+
+A long description is not noise.

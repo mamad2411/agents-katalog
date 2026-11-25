@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/xyaz1313/xyskill (path: skills/xy-mp-layout/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 【公众号排版】把 Markdown 文稿转成能直接粘进微信公众号后台、粘完不散版的 HTML；内置 15 种排版风格，可生成 1 个 / 6 个推荐 / 全部 15 个并出总览页。用户说「转成公众号版」「做个公众号排版」「生成公众号 HTML」「这篇发公众号怎么排」「微信排版」时触发。只管排版，不改内容。｜小爷出品

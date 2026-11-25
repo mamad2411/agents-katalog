@@ -1,0 +1,98 @@
+---
+name: hylo-editor
+description: "How to use Hylo's live editor tools (editor_type, editor_read, editor_rewrite), so the user watches the text being typed. Read it before any editor_* call, or when they ask for writing to happen in the editor ('write it in my note', '写到编辑器里'). What and how to write is the hylo-writing skill's job. Also covers Hylo's markdown dialect."
+---
+
+# Hylo Editor — live writing through MCP
+
+The editor tools drive the Hylo editor the user has open: the note opens in front of them, a purple "Agent" caret types in human rhythm, and each call is **one undo step** (Cmd/Ctrl+Z). They need the Hylo app open.
+
+## Environment check
+
+You need `editor_type`, `editor_read` and `editor_rewrite` (maybe shown as `mcp__hylo__editor_type` or `hylo_editor_type`). If they aren't in your tool list, search your deferred tools for "hylo editor". If they still aren't there, live editing is unavailable: do what the skill that sent you here says (`hylo-writing` writes the file and says so in one line); otherwise ask the user whether to write the file directly.
+
+## Which note
+
+"This note", "here", "where my cursor is": the note open in the editor. Omit `path` and the tools act on it; every result returns its `path`. Pass that `path` on every later call for the same request, so a tab switch mid-request doesn't move the writing. If nothing is open, the call fails without writing: ask which note.
+
+## When to use it
+
+Use the editor for writing the user is there to see: whatever `hylo-writing` writes or revises in a conversation, or when they ask to watch. Use the note tools for bulk or background work: many files, imports, a trigger running on its own, notes the user isn't looking at.
+
+**Commit to the editor.** Once something for a request is written through the editor, every later write for it goes through the editor too. If an editor call fails, report it and let the user decide; never finish with `create`, `append` or another file write, which would race the editor still typing and duplicate text. The exception is "no editor is open in Hylo": it comes before anything is written.
+
+## Tools
+
+### editor_type: insert new text
+
+| Param | Meaning |
+| ----- | ------- |
+| `path` | Vault-absolute path, e.g. `/journal/2026-10-10.md`. A missing note is created empty. Omit it for the note the user has open. |
+| `content` | Markdown to type; trailing whitespace is trimmed. |
+| `at` | `end` (default), or `cursor` for the user's caret. |
+| `heading` | Types at the end of that section instead (case-insensitive, with or without `#`). Wins over `at`. |
+| `speed` | `slow` (short showcase), `normal` (default), `fast` (long sections) or `instant` (large reference material, tables, or what they want right away). |
+
+- Content lands as its own block, with blank lines added around it, so don't pad it with newlines. The exception is `at: "cursor"` mid-line, which inserts inline.
+- A new path fails if a note with that file name exists anywhere in the vault, because wikilinks resolve by name. Pick a distinct name.
+
+### editor_read: see what the user sees
+
+Pass `path`, or omit it for the note the user has open. Returns the note as it is **in the editor**, unsaved edits included:
+
+- `path`: the note read.
+- `blocks`: `[{id, kind, text}]` in document order, frontmatter excluded. `kind` is `heading`, `paragraph`, `list`, `code`, `quote`, `table`, `rule` or `htmlblock`; `text` is raw markdown.
+- `selection`: `{text, blocks}` when the user has text selected.
+
+A block id such as `b4k2x7` comes from the block's text: it stays valid until **that block** is edited, by you or the user, and edits elsewhere in the note don't affect it, except adding or removing another copy of the same text. Use ids exactly as read; never guess or compute one.
+
+### editor_rewrite: replace or delete a region
+
+Highlights the region, deletes it, and types `content` in its place; empty `content` deletes it. Point at the region with exactly one of:
+
+| Target | How |
+| ------ | --- |
+| `target: "selection"` | What the user has selected *at the moment of the call*. |
+| `target: "b4k2x7"` or `"b4k2x7-b9x0m3"` | Whole blocks from `editor_read`; a range runs from the first id through the second, top to bottom. |
+| `from_text` (+ `to_text`) | Exact raw text where the region starts, occurring **once** in the note; with `to_text`, the region runs through its end. |
+
+For block targets, `content` is trimmed, and deleting whole blocks also removes the blank line between them.
+
+## Results and errors
+
+| You get | Do |
+| ------- | -- |
+| `interrupted: true` | The user typed or cancelled and took over. Don't retype the rest or finish the job unasked; say where you stopped and ask how to proceed. After an interrupted rewrite, `editor_read` first: the region may be half-written. |
+| "no editor is open in Hylo" | Nothing was written. If the user asked to watch, ask them to open Hylo, then retry. Coming from `hylo-writing`, write the file as its `references/surface.md` says. |
+| "the editor disconnected…" or "the editor stopped responding…" | Part of the text may be in the note. `editor_read` (once the editor is back) and continue from what's there. Never fall back to writing the file. |
+| "block … is not in the note" | That block was edited since your read. `editor_read` again and use the fresh ids. |
+| "heading not found" | `editor_read` for the real headings; use the exact text, or drop `heading`. |
+| "from_text occurs more than once" | Quote more surrounding text. |
+| "nothing is selected in the editor" | Ask them to select it, or target it by block or `from_text`. |
+| "the note would start with `---`…" | That would create frontmatter. Start with a heading or text. |
+| "editor switched to another note" | An interruption: ask before resuming. |
+
+## Workflows
+
+- **Write a new note.** `editor_type` the title and first section, then one `editor_type` at `end` per further section.
+- **Add to a section.** `editor_type` with `heading`. A new section: include its heading line in `content`, at `end` or under its parent via `heading`.
+- **Continue where the user is.** `editor_type` with `at: "cursor"`, after an `editor_read` if you need the surrounding text.
+- **Revise blocks.** `editor_read`, pick the blocks, `editor_rewrite` with their id or an id range as `target`.
+- **Rewrite the selection.** `editor_read` for `selection.text`, then `target: "selection"` right away. If other calls come in between, the selection may have moved: use `from_text`/`to_text` copied from `selection.text`.
+- **Several edits in one note.** One `editor_read` serves them all: a rewrite only changes the ids of the blocks it replaced, and of any block it wrote a second copy of. Read again only to target text you just wrote.
+
+## Best practices
+
+- **One call at a time.** Ops run in order; wait for each result.
+- **Chunk long writing by section.** A call always finishes within about 40 seconds: `normal` types around 25 characters a second, and longer content is typed faster to fit, so past roughly 1,000 characters it rushes. Sections keep the natural pace, show progress and make interruptions cheap.
+- **Typing steals focus.** Every op opens its note and scrolls to the caret. Stay on the note the user is in unless asked, and don't hop between notes.
+- **Write complete constructs.** Close every code fence (the editor auto-closes one as you open it), give tables their separator row, and put a blank line before a `---` rule, or it turns the paragraph above into a heading.
+- **Link with care.** Links to missing notes render broken; check a target with `resolve` or `search` first, unless it's a placeholder for a note to write later.
+
+## Frontmatter
+
+The editor tools never touch frontmatter: `editor_read` leaves it out, inserts land below it, rewrites refuse regions inside it, and content that would start a note with `---` is rejected. Never put frontmatter in `content`; for metadata changes, tell the user the editor tools don't touch them. Tags can be written inline as `#tag` in the body: add or remove them only when the user asks; a tag in the frontmatter can't be changed from here.
+
+## Markdown dialect
+
+Hylo renders GFM plus wiki syntax live. `references/formats.md` covers wikilinks, wiki images, mindmap blocks, embed cards, tasks, tables, code languages, quotes and what to avoid. Load it when the content goes beyond paragraphs, headings and lists, and **always** before typing a mindmap or an embed card.

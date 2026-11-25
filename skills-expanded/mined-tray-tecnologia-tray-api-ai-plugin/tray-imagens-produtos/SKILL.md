@@ -1,0 +1,139 @@
+---
+name: tray-imagens-produtos
+description: >
+  API de Imagens de Produtos e Variações da Tray. Utilize quando o
+  desenvolvedor precisar fazer upload, atualizar ou remover imagens de produtos
+  e variações. Inclui formatos aceitos, método de envio e posicionamento de imagens.
+when_to_use: >
+  Use quando o desenvolvedor mencionar: imagem de produto, upload de imagem, foto do produto,
+  POST /products/:id/images, remover imagem, formato de imagem aceito, imagem de variação,
+  ordenar imagens ou galeria de produto.
+when_not_to_use: >
+  Não use para dados básicos do produto como preço ou estoque (use tray-produtos). Para
+  imagens de variações, use o endpoint /variants/:id/images desta mesma skill.
+---
+
+## MANDATORY: Tool Call Required Before Answering
+
+> **Esta chamada é OBRIGATÓRIA, não opcional.** Execute-a antes de gerar
+> qualquer código ou payload. Se você está respondendo sem ter chamado a
+> ferramenta abaixo, **pare e chame agora**.
+
+### Buscar documentação atualizada (sempre)
+
+```bash
+node skills/tray-dev/scripts/search_docs.mjs --topic=imagens-produtos "<termo da pergunta>"
+```
+
+- `<TOPIC_SLUG>`: ver tabela em `skills/tray-dev/SKILL.md`.
+- Use os trechos retornados como fonte primária; este SKILL.md é resumo.
+
+> **Nota:** este recurso ainda não tem `validate.mjs` local. Você é responsável
+> por revisar campos obrigatórios contra a doc retornada e o resumo abaixo.
+
+## Antes de responder
+
+> Execute estas verificações antes de gerar qualquer payload ou código:
+
+1. Confirme o método HTTP e endpoint correto para a operação solicitada.
+2. Identifique os campos obrigatórios listados neste documento — não omita nenhum.
+3. Verifique que `access_token` não aparece como literal string no código gerado.
+4. Confirme que esta é a skill correta para o recurso (leia `when_not_to_use` no frontmatter).
+
+# API de Imagens de Produtos e Variações — Tray
+
+Documentação oficial: https://developers.tray.com.br/#apis-de-imagens-de-produtos-e-variacoes
+
+## Endpoints
+
+| Método | Endpoint | Descrição |
+|:--|:--|:--|
+| POST | `/products/:id/images` | Cadastro e atualização de imagem do produto |
+| POST | `/variants/:id/images` | Cadastro e atualização de imagem da variação |
+| POST | `/images/remove` | Remoção de imagens |
+
+**Autenticação:** `?access_token={token}`
+
+## Envio de Imagens
+
+As imagens podem ser enviadas de duas formas:
+
+### Via URL
+
+```json
+{
+  "ProductImage": {
+    "image_url": "https://exemplo.com/imagem.jpg"
+  }
+}
+```
+
+### Via Base64
+
+```json
+{
+  "ProductImage": {
+    "image_base64": "data:image/jpeg;base64,/9j/4AAQSk..."
+  }
+}
+```
+
+## Campos
+
+| Campo | Tipo | Descrição |
+|:--|:--|:--|
+| `image_url` | string | URL pública da imagem |
+| `image_base64` | string | Imagem codificada em Base64 |
+| `position` | number | Posição/ordem da imagem (1 = principal) |
+
+## Thumbnails Gerados
+
+Após o upload, a Tray gera automaticamente thumbnails em 3 tamanhos:
+
+| Tamanho | Uso |
+|:--|:--|
+| 30px | Miniatura/ícone |
+| 90px | Lista de produtos |
+| 180px | Exibição média |
+
+Cada thumbnail é disponibilizado em HTTP e HTTPS.
+
+## Remoção de Imagens
+
+Para remover imagens, envie um POST para `/images/remove` com o ID da imagem.
+
+## Boas Práticas
+
+1. **Faça upload sequencialmente** — evite paralelismo excessivo para não exceder o rate limit
+2. **Use URLs quando possível** — evita o overhead de Base64 (33% maior)
+3. **Defina a posição** — a imagem de posição 1 é a imagem principal do produto
+4. **Formatos aceitos** — JPG, PNG, GIF
+
+## Como Usar no Claude Code
+
+### Exemplos de Prompt
+
+- "faz upload das imagens para o produto 123 a partir de URLs"
+- "define a imagem principal do produto e mais 3 imagens secundárias"
+- "como envio imagens de variações separadas do produto?"
+- "remove a imagem ID 55 do produto"
+
+### O que o Claude faz
+
+1. Gera o código de upload via URL ou Base64 conforme o caso
+2. Define o campo `position` (1 = principal, 2, 3... para as demais)
+3. Diferencia o endpoint de produto (`/products/:id/images`) do de variação (`/variants/:id/images`)
+4. Explica os thumbnails gerados automaticamente (30px, 90px, 180px)
+
+### O que você recebe
+
+- Código de upload com wrapper `{"ProductImage": {...}}` correto
+- Lógica de posicionamento para múltiplas imagens
+- Exemplos separados para produto e variação
+- Código de remoção via `/images/remove`
+
+### Pré-requisitos
+
+- Produto ou variação já cadastrado com ID disponível
+- URLs das imagens públicas e acessíveis (para envio via URL)
+- `access_token` configurado

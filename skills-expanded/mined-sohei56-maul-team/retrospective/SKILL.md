@@ -1,0 +1,216 @@
+---
+name: retrospective
+description: Sprint Retrospective — record improvements for the next cycle
+disable-model-invocation: false
+---
+
+## Inputs
+
+- state.json → phase: sprint_review
+- improvements.json (existing improvements + last_consolidation_sprint)
+- sprint.json (Sprint id)
+
+## Outputs
+
+- improvements.json → entries[] appended; every 3 Sprints the
+  consolidation pass archives stale entries (see Step 4)
+- state.json → phase: retrospective
+- sprint.json → status: "complete"
+- `.scrum/framework-issues/<sprint-id>-NN.md` (+ `.meta` sidecar) —
+  only when Step 4b fires; the `.md` is the postable body and nothing
+  is published without a human's explicit permission
+
+**Output discipline.** Follow `../../rules/scrum-context.md` § Output
+discipline — lead with the outcome, no preamble, no closing recap.
+
+## Preconditions
+
+- state.json phase: "sprint_review"
+- sprint.json exists
+
+## PO Mode (po_mode: "agent")
+
+When `.scrum/config.json.po_mode == "agent"`, every PO-approval prompt
+below re-targets to the `product-owner` teammate per
+`../../rules/scrum-context.md` § PO seat resolution; the ceremony shape is
+unchanged. Skill-specific: with no human at the keyboard, the Step 7
+"recommend `/clear` or session restart to the user" line cannot be
+acted on by anyone in-session (human mode keeps that recommendation
+bit-for-bit).
+
+Overrides in agent mode:
+
+- **Sprint-continuation handshake (replaces Step 7).** Skip the
+  user-facing `/clear` recommendation. The retrospective is **not**
+  the end of the workflow — leaving `state.json.phase` at
+  `retrospective` is a dead end: nothing advances it, and the
+  autonomy watchdog reads an unchanged phase as `no_progress` and
+  trips the failure circuit breaker. After the retrospective Exit
+  Criteria are met, the SM must obtain a Product-Owner
+  **`sprint_continuation`** decision and advance the phase itself
+  (Step 8 below). The PO — not the SM and not the watchdog — owns
+  the call of whether another Sprint is warranted, because it turns
+  on Product-Goal completion. Only once the phase has advanced to
+  `backlog_created`, `integration_sprint`, or `complete` does the
+  SM end the turn.
+- **Improvement-action extraction (Step 2 / Step 3 reflection).**
+  Where the reflection would normally surface "ask the user
+  whether <process change> is acceptable" items, route the same
+  question as `[sprint-<N>] PO_DECISION_REQUEST kind=change_request
+  options=[adopt,defer,reject] recommendation=<sm-preferred>` to
+  the `product-owner` teammate before recording the improvement,
+  so the improvements.json entry carries the matching `dec_id`. If
+  no such "ask the user" prompt exists in your current reflection,
+  this rule is a no-op.
+- **Assumption-flagged Sprint Review decisions feed improvements.**
+  Any `PO_DECISION` from the current Sprint whose rationale begins
+  with `ASSUMPTION:` (or which sets the wrapper's `assumption=true`
+  flag — see `../../agents/product-owner.md` § Anti-loop rules) is a
+  candidate improvement: record an entry pointing to the `dec_id`
+  so the next refinement / planning cycle revisits the unverified
+  premise.
+
+## Steps
+
+1. state.json → phase: "retrospective":
+   ```bash
+   .scrum/scripts/update-state-phase.sh retrospective
+   ```
+2. Reflect on Sprint: what went well, what to improve (process, communication, tooling, code quality)
+3. Record ≥1 improvement → call `.scrum/scripts/append-improvement.sh --sprint <sprint-id> --description "<what to improve>"` for each item. The wrapper auto-assigns `id` (`imp-NNNN`), stamps `created_at`, sets `status: "active"`, and validates against `improvements.schema.json`. In `po_mode=agent`, when the entry derives from a `PO_DECISION_REQUEST` round-trip, pass `--dec-id dec-NNNN` to link the entry to the decision record. Direct edits to `.scrum/improvements.json` are blocked by `pre-tool-use-scrum-state-guard.sh`.
+4. **Consolidation check (every 3 Sprints)**: read
+   `improvements.json.last_consolidation_sprint`. Consolidation is
+   DUE when it is `null` and entries span ≥3 Sprints, or when the
+   current Sprint number is ≥3 ahead of it. When due:
+   1. Review every `status: "active"` entry and decide which are
+      stale — addressed (the improvement landed), obsolete (the
+      process/tool it targets no longer exists), or superseded by a
+      newer entry. Left unconsolidated, the active list grows
+      unbounded and stops being readable (a target project reached
+      150+ entries with consolidation 20+ Sprints overdue).
+   2. Execute the decision in one atomic call:
+      ```bash
+      .scrum/scripts/consolidate-improvements.sh --sprint <sprint-id> \
+        --archive imp-NNNN --archive imp-NNNN
+      ```
+      Zero `--archive` flags is valid ("reviewed, nothing stale") and
+      still bumps `last_consolidation_sprint`. Direct edits to
+      `.scrum/improvements.json` remain blocked by
+      `pre-tool-use-scrum-state-guard.sh` — the wrapper is the only
+      sanctioned path.
+4b. **Framework-attributable upstream drafts.** For each improvement
+   recorded in Step 3, ask where its fix would land. Deployed framework
+   files qualify — `.claude/agents|skills|rules|hooks/**`,
+   `.scrum/scripts/**`, deployed `docs/contracts/scrum-state/*.schema.json`,
+   `scrum-start.sh` behavior. This project's own source, tests, and docs do
+   not; nor does a value the team chose in `.scrum/config.json` (**unless**
+   the framework's default or its missing validation is what misled you —
+   then the issue is about the default); nor "we should have communicated
+   more". Zero drafts is a normal outcome; this step is not a quota.
+
+   **Write it clean** — the draft is destined for a public repo: keep counts,
+   drop identifiers ("recurred across 3 Sprints", never the Sprint ID);
+   describe the *framework's* behavior, never this project's use of it; if a
+   domain term is unavoidable, it is not framework-attributable — drop it.
+
+   ```bash
+   .scrum/scripts/draft-framework-issue.sh \
+     --sprint <sprint-id> --identity <area>::<failure-mode> \
+     --title "<what is wrong, framework-level>" \
+     --summary "<one generic paragraph>" \
+     --where "<deployed path → its framework-source path>" \
+     --why "<observed failure and its consequence>" \
+     --improvement "<what should change>"
+   ```
+
+   It prints the draft path on stdout and a ready-to-run `gh` line on
+   stderr, rejects leaks naming **every** violation at once (fix them all,
+   re-run), and bumps a repeat `--identity` instead of drafting twice.
+
+   **Human mode.** Render the **full draft body inline in chat** — a path is
+   not reviewable. Then ask exactly one question and **stop**: "May I post
+   this to the public framework repo `<origin>`? (yes / edit first / no)".
+   **Never post without an explicit `yes` in the same session.** On `yes`,
+   run the printed command yourself only if `command -v gh` succeeds, then
+   `--record-posted <draft-path> --url <issue-url>`; otherwise hand the
+   command over and record the URL the user reports. The approval covers
+   that one draft only. On `no` or no answer the draft stays on disk; a
+   later recurrence only bumps its count.
+
+   **Agent mode.** The wrapper has already queued the draft in
+   `.scrum/po/attention.md` for a human. Do not ask the PO, do not post,
+   continue.
+5. Present retrospective report: went well, to improve, (when
+   Step 4 ran) the archived-items summary, and (when Step 4b produced
+   drafts) their paths and titles
+6. sprint.json → status: "complete":
+   ```bash
+   .scrum/scripts/update-sprint-status.sh complete
+   ```
+
+Ref: FR-012
+
+### 7. Session reset recommendation
+
+After Sprint deliverables are committed and Retrospective is complete, recommend session reset to the user:
+
+> "Sprint N complete. All state persisted to .scrum/ JSON files. Recommend `/clear` or session restart to free context for next Sprint. Session-context hook will restore phase automatically on restart."
+
+**Rationale**: Scrum Master context accumulates across phases (requirements, design discussions, review findings). By Sprint end, context is near capacity. All durable state lives in `.scrum/` files — session-context.sh restores phase on restart.
+
+### 8. Sprint-continuation handshake (po_mode: "agent" only)
+
+**Human mode skips this step** (Step 7's `/clear` recommendation
+applies instead; the user drives the next Sprint manually, and
+`sprint-planning` accepts `phase: retrospective` as its entry).
+
+In agent mode, once Steps 1–6 are complete, the SM asks the PO what
+comes next and advances the workflow:
+
+1. Send the Product Owner teammate:
+
+   ```
+   [sprint-<N>] PO_DECISION_REQUEST kind=sprint_continuation
+   options=[next_sprint,integration_sprint,complete]
+   recommendation=<sm-preferred>
+   payload: product_goal_status=<met|not_met>,
+   refined_pbis_remaining=<count>,
+   sprints_this_launch=<history_len - sprint_baseline>/<max_sprints>
+   ```
+
+   The `recommendation` follows the same precedence the PO uses
+   (see `../../agents/product-owner.md` § Sprint continuation): default
+   `next_sprint` while feature PBIs remain and Sprints are left.
+
+2. On `PO_DECISION ... decision=choice:<label> dec_id=dec-NNNN`,
+   advance `state.json.phase` to match — this is the step that
+   unblocks the autonomy watchdog:
+
+   | PO decision | Phase transition |
+   |---|---|
+   | `choice:next_sprint` | `.scrum/scripts/update-state-phase.sh backlog_created` |
+   | `choice:integration_sprint` | `.scrum/scripts/update-state-phase.sh integration_sprint` |
+   | `choice:complete` | `.scrum/scripts/update-state-phase.sh complete` |
+
+   The decision is already audit-logged by the PO via
+   `append-po-decision.sh`; the SM only performs the phase write.
+
+3. End the turn. The watchdog's completion-gate treats a
+   `backlog_created` phase that follows a recorded Sprint
+   (sprint-history non-empty) as a recycle checkpoint, so the next
+   session starts fresh on Sprint Planning. `integration_sprint`
+   and `complete` are likewise clean stop points.
+
+**Do not** end the turn while `phase` is still `retrospective` in
+agent mode — that is the dead end this step exists to prevent.
+
+## Exit Criteria
+
+- ≥1 improvement recorded (all fields set)
+- sprint.json status: "complete"
+- **Human mode:** state.json phase: "retrospective"; session reset
+  recommended to user.
+- **Agent mode (po_mode: "agent"):** a `sprint_continuation`
+  PO decision is recorded and state.json phase has advanced to
+  `backlog_created`, `integration_sprint`, or `complete` (never left
+  at `retrospective`).

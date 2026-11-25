@@ -1,0 +1,807 @@
+---
+name: outreach-leads
+description: "Build the lead list by actually querying the sources this repository supports: the Basile API for French B2B, where an ICP becomes a plan of several queries (adjacent job titles, size bands, zones, sources), each counted for free with countOnly before a single record is extracted, then merged, deduplicated and cut of what is obviously off target before any enrichment credit is spent; a LinkedIn Sales Navigator search collected through the Emelia LinkedIn scraper; or a CSV the user already has (encoding, separator and column mapping handled). Writes outreach/leads.csv with a fixed 26 column schema that every other skill in this repository reads, including a source and a source_url column on every row. Reads outreach/icp.json, a Sales Navigator URL or a file path. Triggers on: build a list, lead list, source leads, find companies, find prospects, Basile, api.basile.cc, docs.basile.cc, French companies, SIREN, NAF, activity filter, count before extracting, Sales Navigator, LinkedIn search, LinkedIn scraper, scrape LinkedIn, import CSV, upload a list, column mapping, leads.csv, export contacts."
+license: MIT
+metadata:
+  author: Emelia
+  version: "0.1.0"
+  category: sales
+---
+
+# Build the lead list
+
+## What this does
+
+Turns a targeting spec into `outreach/leads.csv`, one row per contact, by querying
+Basile, a LinkedIn Sales Navigator search, or a CSV the user already has. The output
+schema is fixed and is the contract every other skill in this repository reads, so the
+mapping work happens here once and nowhere else.
+
+On Basile it runs a **plan of several queries**, not one. An ICP written in prose
+becomes four or five queries that approach the same target from different sides:
+neighbouring job titles, size bands, zones, one source at a time. Every query is
+counted for free before anything is extracted, the plan is shown with its numbers, the
+results are merged and deduplicated, and rows that are obviously off target are cut
+here, on a file you already have, so that no Emelia credit is spent on them later.
+
+Basile counting is free and always happens before extraction. Basile extraction costs
+Basile credits (1 per record returned), so it is announced and confirmed. No Emelia
+credits are spent here: finding and verifying emails happens later, after
+[outreach-filter](../outreach-filter/SKILL.md) has cut the list down.
+
+## When to use it
+
+Use it after [outreach-icp](../outreach-icp/SKILL.md) has produced a spec you agreed to,
+or when the user arrives with a CSV or a Sales Navigator URL and wants it turned into a
+workable list.
+
+Use a different skill when:
+
+- The list exists and needs cleaning, deduplicating or segmenting: `outreach-filter`.
+- The list exists and needs email addresses: `outreach-enrich`. Filter first.
+- You do not yet know who you are targeting: go back to `outreach-icp`. Sourcing before
+  targeting produces a large list nobody can write to.
+
+## Inputs
+
+| Input | Required | If missing |
+|---|---|---|
+| `outreach/icp.json` | for Basile and LinkedIn | Ask, or accept a plain description and write a throwaway spec first. Do not source from a one line brief. |
+| `BASILE_API_KEY` | for Basile | Say Basile is unavailable, offer LinkedIn or a CSV. Do not fall back to guessing French company data. |
+| A Sales Navigator URL, or a seat to build one | for LinkedIn | Ask the user to build the search and paste the URL. You cannot construct the opaque ids yourself. |
+| `EMELIA_API_KEY` or the Emelia MCP server | to collect a LinkedIn scrape | Ask the user to export the list as CSV from the Emelia app and treat it as a CSV source. |
+| A CSV path | for the CSV route | Ask for the path. |
+| Target volume | recommended | Default to the whole segment, but state the count and the credit cost before extracting. |
+
+## How to do it
+
+### 0. Source five times what you need
+
+Decide the target first, then multiply it by five before writing a single query. Wanting
+a hundred contacts to email means pulling five hundred from the source.
+
+The attrition is not a worst case, it is the normal path:
+
+| Stage | Typical survival | 500 sourced becomes |
+|---|---|---|
+| Off target rows you cut yourself | 70 to 85% | about 400 |
+| Rows carrying enough context to be usable | 80 to 90% | about 340 |
+| Email actually found by the finder | 50 to 65% | about 190 |
+| Sendable after the routing rules | 90% | about 170 |
+
+Source a hundred for a hundred and you finish with thirty, discover it after paying for
+the enrichment, and start again. The extra sourcing is cheap: counting is free, and the
+credits go on enrichment, not on rows.
+
+**Do not be stingy with credits at this stage.** Overshooting by a few dozen enrichments
+costs a few euros. Undershooting costs a rebuild of the whole run.
+
+**When you overshoot, ask rather than discard.** Finishing with 170 sendable rows for a
+target of 100 is a good problem: say so, and let the user decide between keeping the
+hundred best, running the whole set, or keeping the rest for the next wave. Never throw
+away rows that were already paid for without saying it.
+
+
+### 0. The column contract
+
+`outreach/leads.csv` has exactly these 26 columns, in this order, always, whatever the
+source. This is a contract: `outreach-filter`, `outreach-enrich`, `outreach-personalize`
+and `outreach-campaign` all read these names.
+
+```
+lead_id, first_name, last_name, full_name, job_title, seniority,
+email, email_status, phone, phone_status, linkedin_url,
+company_name, company_domain, company_website, company_linkedin_url,
+company_headcount, company_industry, company_naf, company_siren,
+city, country_code, segment, signal, source, source_url, collected_at
+```
+
+File rules:
+
+- UTF-8 without BOM, comma separated, RFC 4180 quoting (double the quote inside a
+  quoted field), LF line endings, header on line 1.
+- An empty cell means unknown. Never write `N/A`, `null`, `-` or `unknown`.
+- The 26 are never renamed, reordered or removed. Later skills append their own columns
+  after `collected_at` (the enrichment step adds `send_decision`, the phone step adds
+  `phone_country` and `phone_type`, the personalization step adds its icebreakers), and
+  that is expected. Prefix a column `x_` when it is a source specific or diagnostic
+  detail, so it cannot collide with a column a later step wants to own.
+
+Field rules:
+
+- `lead_id`: `<source>:<id at the source>`, for example `basile:64f0a...` or
+  `linkedin:jane-doe-1a2b`. For a CSV without an id, use `csv:<line number>`. It must be
+  stable across re-runs so a second pass can be merged rather than duplicated.
+- `first_name`, `last_name`: normalise the case. Registry and scraped exports often carry
+  names in capitals (`JEAN`, `MARIE CLAIRE`), and "Bonjour JEAN" ruins an email. The
+  recommended rule: one capital per part and the rest in lowercase, where a part is what
+  a space, a hyphen or an apostrophe separates. `JEAN` becomes `Jean`, `jean-pierre`
+  becomes `Jean-Pierre`, `d'angelo` becomes `D'Angelo`. The rule also turns `MacDonald`
+  into `Macdonald` and `de la Fontaine` into `De La Fontaine`, so keep the raw value in
+  an `x_` column (`x_first_name_raw`, `x_last_name_raw`).
+- `full_name`: fill it even when you have first and last, because the Emelia email
+  finder takes `fullname`, not the parts. Build it from the normalised parts.
+- `email_status`: empty, `found`, `not_found`, `valid` or `invalid`. Leave it empty at
+  this stage. Emelia's finder qualifies an address `valid`, `risky` or `invalid`, and the
+  enrichment skills record that when they run: do not invent `risky` or `catch_all`
+  values here while sourcing.
+- `phone_status`: empty, `found` or `not_found`. The phone step may write a more precise
+  reason in place of `not_found` (for example `no_linkedin_url`, since the phone finder
+  needs one); treat any value other than `found` as "no usable number".
+- `company_domain`: the registrable domain, lowercased, no scheme, no `www.`, no path.
+  This is the dedup and exclusion key, so it matters more than `company_website`.
+- `company_headcount`: an integer number of employees. When the source only gives a
+  band, write the lower bound and put the band in `x_headcount_band`.
+- `x_trade_name`: not one of the 26, but fill it whenever the source gives a trading
+  name, an `enseigne` or a Google listing name that differs from `company_name`. The
+  email finder uses it as its third attempt and recovers rows the legal name misses.
+- `country_code`: ISO 3166-1 alpha-2, uppercase.
+- `segment`: the `id` of the segment in `icp.json` this row belongs to. Never empty when
+  an ICP exists.
+- `signal`: short free text, the reason this row is timely, if any.
+- `source`: exactly one of `basile`, `linkedin`, `csv`, `manual`.
+- `source_url`: the URL that lets a human re-check this row. Basile:
+  `https://api.basile.cc/people/<id>`. LinkedIn: the Sales Navigator search URL the row
+  came from. CSV: `file:<path of the original file>`.
+- `collected_at`: ISO date of the extraction.
+
+**How the contract maps onto Emelia**, so you can see why these names exist. When the
+contacts are loaded, each column goes under its Emelia key, not under its contract name.
+Emelia resolves a key it does not know by alias, then by what its value looks like,
+before it ever creates a custom variable, so a value sent under the wrong name can land
+in the wrong field. The full resolution order is in
+[outreach-campaign](../outreach-campaign/SKILL.md), section 2.
+
+| Contract column | Emelia key |
+|---|---|
+| `first_name` | `firstName` |
+| `last_name` | `lastName` |
+| `full_name` | `fullName` |
+| `job_title` | `jobTitle` |
+| `seniority` | `seniority` |
+| `email` | `email` |
+| `phone` | `phone`, never `mobilePhone`, or the list shows zero phones and deduplication ignores the number |
+| `linkedin_url` | `linkedinUrlProfile` |
+| `company_name` | `companyName` |
+| `company_domain` | `companyDomain` |
+| `company_website` | `websiteUrl` |
+| `company_linkedin_url` | `linkedinCompanyUrl` |
+| `company_headcount` | `employeeCount`, a number field: send the integer, never a band like `11-50`, which fails the row |
+| `x_headcount_band` | `companySize`, a text field, where a band belongs |
+| `company_industry` | `industry` |
+| `city` | `city` |
+| `country_code` | `country` |
+| `company_siren`, `company_naf`, `segment`, `signal`, and any other column the campaign needs | a custom variable under the same name, **declared first** |
+
+Declaring is one call per variable, `POST /lists/custom-variable` with
+`{"technicalName": "company_siren", "schema": "lead", "displayName": "SIREN"}`. It
+answers 201 when it creates the variable and 422 when it already exists, so it is safe
+to run before every load. A declared name keeps its underscores, and the copy spells it
+as declared: `{{company_siren}}`. Skip the declaration and a SIREN sent as
+`company_siren` lands in `phone`, because the phone pattern is loose enough to take nine
+digits. The bookkeeping columns (`lead_id`, `email_status`, `phone_status`, `source`,
+`source_url`, `collected_at`) stay in the CSV unless the campaign needs them, and then
+they are declared like the rest.
+
+`full_name` plus `company_name` is what the email finder needs; `linkedin_url` is what
+the phone finder needs.
+
+### 1. Basile, for France
+
+Basile is the source, so go and query it. This step is not a description of what Basile
+holds, it is a sequence of calls: several queries that cover the target from several
+angles, a free count on each one before anything is extracted, one export per query,
+a merge, and your own cut of what is obviously off target. One query is one angle, and
+one angle never covers an ICP.
+
+Base `https://api.basile.cc`. Header `Authorization: <your key>` with the raw key and
+**no `Bearer` prefix**, plus `Content-Type: application/json`.
+
+#### 1a. The documentation, and what to do when a query is refused
+
+- Human documentation: **https://docs.basile.cc**
+- Full machine readable spec, every filter with its type and its traps:
+  **https://docs.basile.cc/openapi.yaml**
+
+**When a call is rejected, open the spec. Do not guess another filter name.** A `400`
+means the body did not match the schema, and the schema is published: a filter that
+does not exist, a text filter sent as a bare array instead of
+`{"include": [...]}`, a range sent as a number, or a request with no filter at all
+(the API answers `At least one filter is required`). Fetch the YAML, find the filter
+under `FindPeopleFilters` or `FindCompaniesFilters`, read its description, fix the
+body. Guessing a second name after the first was refused is how you end up with a
+query that is accepted and silently means something else.
+
+The same applies to values. Four lookups are free and unlimited, and they exist so you
+stop inventing values:
+
+```bash
+curl -s "https://api.basile.cc/companies/activity-suggest?q=logiciel" -H "Authorization: $BASILE_API_KEY"
+curl -s "https://api.basile.cc/people/roles/suggest?q=directeur"      -H "Authorization: $BASILE_API_KEY"
+curl -s "https://api.basile.cc/people/cities/suggest?q=saint-et"      -H "Authorization: $BASILE_API_KEY"
+curl -s "https://api.basile.cc/companies/legal-form-suggest?q=SAS"    -H "Authorization: $BASILE_API_KEY"
+```
+
+`activity-suggest` returns the concept ids that the `activity` filter expects, across
+NAF, LinkedIn and Google in one taxonomy. Resolve the sector before you write the
+query, not after it returns something odd.
+
+**Write the filters.** Every text filter has the same shape:
+
+```json
+{ "include": ["Directeur Technique", "CTO"], "exclude": ["adjoint", "assistant"] }
+```
+
+`include` is OR between its values, `exclude` removes anything matching, and two
+different filters combine with AND. Numeric filters use bounds:
+`{ ">=": 20, "<=": 200 }`.
+
+People filters worth knowing, from the public spec (the spec has more, read it):
+
+| Filter | Type | Note |
+|---|---|---|
+| `result_role` | text | Free text job title. Put every variant from the ICP here |
+| `activity` | text | Sector, unified across NAF, LinkedIn and Google. The best sector filter |
+| `company_headcount` | range | Size of the contact's **current** employer, multi source |
+| `result_country_code`, `result_city` | text | Where the person is |
+| `employer` | text | Current employer. A value in quotes is an exact match, bare is contains |
+| `siren` | text | Every officer and LinkedIn employee of that company |
+| `hide_legal_entities` | boolean | Set `true`. Hides companies listed as people, without excluding LinkedIn |
+| `result_is_current` | boolean | Registry only. Current mandate only |
+| `mandate_role` | text | Registry only. Fixed codes: `gerant`, `president`, `dg`, `dgd`, `administrateur`, `commissaire_comptes`, `associe`, `directeur_non_dg`, `autre` |
+| `current_seniority`, `current_job_functions` | text | LinkedIn only |
+| `current_tenure_years` | range | LinkedIn only. Years in the current role, the new-in-seat signal |
+| `past_employer`, `past_title`, `skills`, `education` | text | LinkedIn only |
+
+**The trap that costs the most.** Basile merges two people sources, the legal registry
+and LinkedIn. A filter that only one source can satisfy restricts the query to that
+source: a registry-only filter (`mandate_role`, `result_is_current`, `nationality`,
+`age`) drops every LinkedIn profile, and a LinkedIn-only filter (`current_seniority`,
+`skills`, `languages`, `education` and the like) drops every officer from the registry.
+So adding `result_is_current` to a title search silently halves a market. Put a filter
+from each source in the same query and you do not get zero: both sources run, each
+filtered only by its own filters, and the answer is their union, with an inflated total
+and a notice in the response (verified on 29 September 2026). `mandate_role` with
+`current_seniority` therefore returns the registry officers of any seniority plus the
+LinkedIn profiles of any mandate, which is neither of the lists you meant. Pick one
+source per query when you need source-specific filters, and run two queries if you need
+both. `siren` restricts nothing: it returns the officers and the employees.
+
+**Two filters that save a detour.** `activity` and `company_headcount` both work
+directly on `/people/find`, meaning sector and size of the employer without querying
+companies first. The public documentation says so explicitly: do not chain
+`/companies/find` then `/people/find` to filter by sector or size. Go through companies
+only when you start from named accounts or from Google listings. Note that
+`company_headcount` excludes records with no known headcount, around 21% on a French
+sample per the same documentation, so it is a real cut and not a free refinement.
+
+The `activity` filter also accepts raw `naf:`, `lki:` and `gmb:` prefixes when you
+already know the code, but the concept id from `activity-suggest` is the one that
+covers all three sources at once.
+
+Company filters, when you do need them: `naf_code` (accepts a prefix such as `62.x` or
+an exact `62.01Z`), `headquarters_postal_code` (the reliable geographic filter, takes
+long lists), `headquarters_city` (case and accent insensitive, matches by prefix, so one
+spelling is enough), `headquarters_country_code`, `company_ceased` (set `false`),
+`headcount_min` and `headcount_max`, `created_since_months` for companies created in the
+last N months, `creation_date_min` and `creation_date_max`, `domain`, `legal_form`,
+`rating_min` and `reviews_min` for Google data.
+
+Two documented traps: `headquarters_region_code` is stripped at validation and restricts
+nothing, so use `headquarters_postal_code` or the `region` name in its canonical spelling
+instead; and `creation_date_min` takes a **year** (`2015`), a full date being silently
+ignored, which returns an unfiltered result that looks filtered.
+
+#### 1b. Turn one ICP into a query plan
+
+An ICP is a description. A query is a set of exact values. The translation loses
+people, and the way you get them back is to run several queries that approach the same
+target from different sides, not one query with everything in it.
+
+Write the plan as a table before you call anything, one line per query, and show it to
+the user. Build the angles from these:
+
+| Angle | What varies | Why it finds people one query does not |
+|---|---|---|
+| **Title variants** | `result_role.include` | The same job is written five ways in France: `CTO`, `Directeur Technique`, `Directeur des Systemes d'Information`, `VP Engineering`, `Responsable Technique`. Put every spelling in one query, and check each with `roles/suggest` first. |
+| **Adjacent job families** | a second `result_role` set | The person who buys is not always the person with the title in the brief. Around a CTO sit `Head of Platform`, `Lead Dev`, `DSI`, and in a 20 person company the CEO. One query per family, because you will want to write to them differently. |
+| **Size bands** | `company_headcount` | `{">=":20,"<=":49}` and `{">=":50,"<=":200}` are two markets with two messages. Splitting also keeps each export under the plan's ceiling. |
+| **Sector granularity** | `activity.include` | One broad concept, then the two or three narrower ones that matter. Count all of them: a narrow concept sometimes holds most of the volume. |
+| **Geography** | `result_city`, or `headquarters_postal_code` on companies | Split by department when a national count is too large to export in one call. Departments do not overlap, which is worth a lot at merge time. |
+| **Source** | registry only vs LinkedIn only | The registry knows officers and SIREN, LinkedIn knows employees and job titles. When you need a registry-only filter and a LinkedIn-only filter, that is two queries, never one. See the trap above. |
+| **Signal** | `current_tenure_years`, `created_since_months` | New in the seat, or a company created in the last N months. A timely subset worth its own message. |
+
+Make the queries **disjoint on purpose** wherever you can. Size bands and departments
+partition naturally. For title angles, put the previous query's titles in the next
+query's `result_role.exclude`. Overlap is not a data problem, it is a bill: every
+export charges per record returned, so a person matched by three queries is paid for
+three times.
+
+A plan for "CTOs of French SaaS companies, 20 to 200 people" looks like this:
+
+```
+Q1  core titles, 20-49    role[CTO, Directeur Technique, VP Engineering] + activity[software] + headcount 20-49
+Q2  core titles, 50-200   same, headcount 50-200
+Q3  adjacent titles       role[Head of Platform, Lead Developer, DSI] exclude[the Q1 titles] + same activity + 20-200
+Q4  small company CEOs    role[CEO, President, Directeur General] + same activity + headcount 20-49
+Q5  registry officers     mandate_role[president, dg] + activity[software] + headcount 20-200, registry only
+```
+
+#### 1c. Count every query, for free, before you extract anything
+
+Counting is free and unlimited. It is the only free thing here, so use it a lot.
+
+```bash
+curl -s https://api.basile.cc/people/find \
+  -H "Authorization: $BASILE_API_KEY" -H "Content-Type: application/json" \
+  -d '{"countOnly":true,"filters":{
+        "result_role":{"include":["CTO","Directeur Technique","VP Engineering"]},
+        "activity":{"include":["<concept id from activity-suggest>"]},
+        "company_headcount":{">=":20,"<=":200},
+        "result_country_code":{"include":["FR"]},
+        "hide_legal_entities":true}}'
+```
+
+The response has `total` and an empty `leads` array, and nothing is charged. Never
+count with `limit: 1`: that returns one record, so it costs one credit and tells you
+nothing.
+
+**Count the ladder, not just the query.** Start from the broadest single filter and
+add one filter at a time, recording the count at every rung. The ladder is what tells
+you which filter is doing the work:
+
+```
+activity[software] + FR + hide_legal_entities        412,900
+  + result_role[CTO, Directeur Technique, VP Eng]      8,140
+  + company_headcount 20-200                           3,082
+  + result_city[Paris]                                   611
+```
+
+- **A rung that does not move the number is a filter that is not working.** It was
+  accepted and ignored (the spec documents two such filters, see the traps above), or
+  it is implied by another filter. Go back to the spec for that one filter.
+- **A rung that divides the count by more than ten** is a filter that is stricter than
+  the ICP says. `company_headcount` is the usual culprit, because it also removes every
+  record with no known headcount, around 21% of a French sample per the documentation.
+  That is a real cut, not a refinement.
+
+**Reading a total, and knowing when to stop.**
+
+| What you see | What it means | What to do |
+|---|---|---|
+| Six figures on a niche ICP | Too broad. Your title terms are matching text inside longer titles, or the sector concept is a catch all | Add `result_role.exclude` (`assistant`, `adjoint`, `stagiaire`, `alternant`, `freelance`), narrow the activity concept, then recount |
+| Adding the title filter barely moved the number | The titles are not filtering. Either they match everything, or the filter is on a source that is not answering | Check the terms with `roles/suggest`, and check you have not mixed a registry-only and a LinkedIn-only filter |
+| Under a few hundred for a national market | Too narrow, usually a single-source filter that dropped the other source (`result_is_current` drops every LinkedIn profile) or an over strict size band | Remove one filter at a time and recount to find the rung that collapsed it |
+| A total far above what the market can hold, and a notice in the response | A registry-only and a LinkedIn-only filter in the same query: both sources ran, each with its own filters only, and the total is their union | Split into two queries, one per source |
+| Zero, on a query that looks reasonable | A value that matches nothing (a title, a city or a concept id written from memory), or `source`, `with_legal_data` and `with_linkedin_profile` restrictions that between them exclude every source | Check each value with the suggest endpoints, then remove the source restrictions one at a time and recount |
+
+Aim for a plan whose union is roughly **twice** the number of contacts you intend to
+send to. Filtering and enrichment eat the difference: expect to lose rows at your own
+cut in 1e, then to find an address for 55 to 75% of what survives. That multiplier is
+a rule of thumb, not a measured Basile figure.
+
+**Measure the overlap between two queries for free.** `include` is OR, so one query
+holding both value sets is exactly the union of the two. Count A, count B, count the
+merged query, and the overlap is `A + B - union`. When the overlap is large, make the
+queries disjoint with `exclude` before you spend anything.
+
+Present the whole plan with its counts, the union, and the total credit cost, then
+wait for an explicit yes. One number per query, not a lump sum.
+
+#### 1d. Extract, once per query, and merge
+
+State the count and the cost (1 Basile credit per record returned) and wait for the
+yes before the first export.
+
+`POST /people/export` with the same `filters` returns a CSV of 79 columns: 22 on the
+person, 18 on their LinkedIn company, 18 on their company at the legal registry, 11 from
+Google Maps and 6 presence flags. It is streamed, so one call covers the whole result up
+to the plan's per-export ceiling. Read the response headers: `X-Export-Max-Rows` is the
+ceiling and `X-Export-Capped: true` means results were cut off. When capped, split that
+one query along an axis that partitions (department, NAF code, creation year) and export
+each piece. Do not re-run the same export hoping for more rows: you would pay again for
+the rows you already have.
+
+Use `POST /people/find` instead only when you want JSON. Be aware of how little it
+returns: the person, their role, their LinkedIn URL and the **name** of their employer.
+Registry rows add the legal name, the SIREN and the legal form; LinkedIn rows add the
+company's LinkedIn page and industry. No website, no domain, no NAF, no headcount, no
+Google data. If you build `leads.csv` from `/find`, most company columns stay empty.
+Paginate with `paginationToken` from `pagination.nextToken`; page 2 and beyond require
+an active subscription. `idsOnly: true` returns only `{_id, source}` and allows `limit`
+up to 5000 on people, which is the cheap way to collect ids before a
+`POST /people/export` with `{"ids": [...]}`. Treat those ids as returned records for billing, because they are:
+`countOnly` is the free mode, `idsOnly` is not a second one.
+
+`POST /companies/find` is the mirror for companies and already merges all three sources
+into `x_legal`, `x_lki` and `x_gmb` on each result, so no export is needed just to see
+them. `total` is deduplicated companies and `establishmentsTotal` counts sites.
+
+**Deduplicate as you merge, in this order.** Keep a `x_queries` column listing the
+queries a row came from, so a merge can be explained afterwards.
+
+1. **Same `lead_id` twice.** Exact duplicate, same record from two overlapping
+   queries. Merge into one row, append the query id to `x_queries`. Count these and
+   report the number: it is the money your overlapping plan cost you, and it tells you
+   how to write the plan better next time.
+2. **Same human, two source records.** The people total is the sum of the sources with
+   no cross source deduplication, per the spec, so one person can arrive once from the
+   registry and once from LinkedIn with two different ids. Key them on normalised full
+   name (lowercased, accents kept, punctuation stripped) plus `company_siren`, and on
+   normalised full name plus `company_domain` when there is no SIREN. Keep the row
+   that has the LinkedIn URL, because that is the one the phone finder needs, fill its
+   empty SIREN and NAF from the other one, and put both ids in `x_merged_ids`.
+3. **Same human, two companies.** Not a duplicate. A director sits on several boards,
+   and each row is a real relationship. Keep both, and let `outreach-filter` decide
+   which one you write to, because that is a targeting question, not a merge question.
+
+Never resolve a duplicate by deleting the row with more data. Merge, then keep the
+identifiers of both.
+
+#### 1e. Cut what is obviously off target, before any credit is spent at Emelia
+
+This is your own filtering pass and it is free, because it runs on a CSV you already
+paid for. Every row you cut here is a credit not spent on the email finder, so it
+happens now, not after enrichment.
+
+Cut, or set aside with a reason:
+
+- **Titles that matched a substring.** `assistant du directeur technique` matched
+  `directeur technique`. Also `adjoint`, `stagiaire`, `alternant`, `apprenti`,
+  `ancien`, `retraite`. Fix it in the query with `result_role.exclude` too, so the
+  next run does not pay for them at all.
+- **Rows outside the geography or the size band**, when the filter you used could not
+  express the rule exactly. You have the real values in the export now, so apply the
+  ICP as written.
+- **Companies that are ceased**, or whose legal form is not a company at all when the
+  ICP targets businesses.
+- **Your own customers, prospects in the CRM, competitors and suppliers.** Match on
+  `company_domain` and on SIREN. If the user has no exclusion list, ask for one now:
+  it is cheaper than an apology email later.
+- **Rows with no usable person.** No first name, or initials only (`J. Martin`). The
+  email finder needs a real first and last name, and you cannot write "Hi J." either.
+- **Consumer domains in `company_domain`** (`gmail.com`, `orange.fr`, `free.fr`).
+  These are sole traders using a personal mailbox: the finder will mostly miss, and
+  the ICP usually did not mean them.
+
+Do not delete cut rows. Move them to `outreach/leads-unusable.csv` with a `reason`
+column, count them by reason, and say the numbers. The rest of the cleaning, the
+blacklist, the segmentation and the harder deduplication belong to `outreach-filter`.
+
+#### 1f. Rows with no headcount, and rows with no description
+
+Both are common and neither is a reason to drop a row silently.
+
+**No headcount.** Basile has no size for that company, which is not the same as the
+company being small. Two consequences. First, `company_headcount` as a filter removes
+those rows from the count entirely, so a size filtered query silently excludes them:
+when the ICP allows it, run the query without the size filter and cut on the exported
+column instead, which keeps the unknowns visible. Second, never infer a size from
+anything else (capital, legal form, one Google review) and write it into
+`company_headcount`. Leave the cell empty, put `unknown` in `x_headcount_source`, and
+decide explicitly: keep them as their own segment, or drop them and say how many.
+
+**No description, and no company data at all.** A row from `/people/find` carries
+almost no company columns by construction (the employer's name, and a SIREN on registry
+rows), and a row whose company matched only one source can arrive with no sector text
+and no description. Targeting still works, because the
+sector came from the NAF code or the concept id, not from prose. Personalisation does
+not: `outreach-personalize` needs something true to say about the company, and it must
+not invent it. Mark them `x_no_company_context`, count them, and route them to the non
+personalised variant of the sequence rather than dropping them.
+
+**Errors.** `401` bad or missing key. `402` `subscription_required` on pagination, or
+`quota_exhausted`, which is returned before any record so nothing is delivered and
+nothing is charged. `429` `rate_limit_exceeded`, respect the `Retry-After` header, or
+`export_limit_reached` when the monthly export quota is gone. On any `400`, go back to
+https://docs.basile.cc/openapi.yaml rather than trying another filter name.
+
+**Map to the contract.** Read the header line of the export and map by name. Do not
+hardcode column positions, and do not assume a column exists. The export starts with a
+UTF-8 byte order mark, so decode it as `utf-8-sig` or the first column name will not
+match. A value that starts with `=`, `+`, `-`, `@`, a tab or a carriage return comes back
+prefixed with a single quote, a guard against spreadsheet formulas, so a phone reads
+`'+33...`: strip that quote when you map it. Fill `source` with `basile`, `source_url`
+with `https://api.basile.cc/people/<id>`, `lead_id` with `basile:<id>`, and `segment`
+with the segment id from `icp.json`. Keep the trade name if the export carries one that
+differs from the legal name, in `x_trade_name`: the email finder uses it as its third
+attempt, and it recovers rows the legal name misses.
+
+### 2. LinkedIn, through Sales Navigator
+
+**Build the search URL.** A lead search URL is
+`https://www.linkedin.com/sales/search/people?query=(...)` where the query is a
+structured expression:
+
+```
+https://www.linkedin.com/sales/search/people?query=(spellCorrectionEnabled:true,filters:List(
+ (type:CURRENT_TITLE,values:List((text:CTO,selectionType:INCLUDED),
+                                 (text:Directeur Technique,selectionType:INCLUDED),
+                                 (text:assistant,selectionType:EXCLUDED))),
+ (type:COMPANY_HEADCOUNT,values:List((id:C,text:11-50,selectionType:INCLUDED),
+                                     (id:D,text:51-200,selectionType:INCLUDED))),
+ (type:REGION,values:List((id:<LinkedIn geo id>,text:France,selectionType:INCLUDED)))))
+```
+
+Filter types that map onto the ICP: `CURRENT_TITLE` and `PAST_TITLE` from
+`titles.include`, the same types with `selectionType:EXCLUDED` from `titles.exclude`,
+`SENIORITY_LEVEL` and `FUNCTION`, `COMPANY_HEADCOUNT` from the headcount band, `REGION`
+from geography, `INDUSTRY` from the industry, `CURRENT_COMPANY` and `PAST_COMPANY` for
+named accounts and alumni, `YEARS_IN_CURRENT_POSITION` for the new-in-seat signal.
+
+Headcount ids are letters: `A` self employed, `B` 1-10, `C` 11-50, `D` 51-200,
+`E` 201-500, `F` 501-1000, `G` 1001-5000, `H` 5001-10000, `I` 10001 and above.
+
+**The rule that keeps this honest:** any value written as `text:` you may type yourself;
+any value carrying an `id:` (region, industry, company, school) is an opaque LinkedIn
+identifier that is not publicly documented and does change. Never guess one. Build the
+search in the Sales Navigator interface, copy the URL from the address bar, then edit
+only the `text:` values by hand. Store the URL verbatim, parentheses and commas included.
+
+The result count above the list is free and is the ground truth. Read it back to the
+user before collecting anything, and compare it against the ICP estimate.
+
+**Start the scrape.** It can be started for the user: `create_linkedin_scraper` on the
+MCP server, or `POST /linkedin-scrappers` over REST ([reference](https://docs.emelia.io/docs/linkedin-scraper/start-extraction)). Both need
+the id of a LinkedIn account connected to Emelia (`authes`), so read the declared input
+schema before calling, and get an explicit yes first: it runs on the user's LinkedIn
+account, and without a subscription it is paid in credits. Follow it with
+`get_linkedin_scraper`. The user can also start it in the Emelia app, with the LinkedIn
+Scraper, by pasting the Sales Navigator URL.
+
+**Collect the results.** Once the scrape has finished, pick up the result:
+
+1. `list_lists` with `source: "linkedin_scrap"` finds the list the scrape produced.
+   Add `search` to narrow by name, and `sortBy: "createdAt"` with `sortDir: "desc"` to
+   put the newest first.
+2. `get_list` with the `listId` gives the counters: leads, emails, phones, linkedins.
+   Report them as they are.
+3. `get_list_contacts` with the `listId` pages through the rows: `page` starting at 1
+   and `pageSize` up to 100. Loop until you have them all.
+4. Map each row onto the contract. `source` is `linkedin`, `source_url` is the Sales
+   Navigator URL, `lead_id` is `linkedin:<the profile slug>`.
+
+Without the MCP server, the same reads go through REST: `GET /lists/list` with
+`?source=linkedin_scrap` (and `search`) finds the list, and
+`GET /lists/list/{listId}/rows` pages through it, 100 rows at a time. Exporting the list
+to CSV from the Emelia app and running the CSV route below works too.
+
+### 3. A CSV the user already has
+
+**Detect the encoding, in this order.** Check the first bytes for a byte order mark:
+`EF BB BF` is UTF-8, `FF FE` is UTF-16LE, `FE FF` is UTF-16BE. With no BOM, try a strict
+UTF-8 decode; if it raises, try `cp1252`, then `iso-8859-1` last, since that one never
+raises and will happily produce nonsense. The tell that you guessed wrong is mojibake in
+accented names: `Ã©` where `é` belongs, or `â€™` where an apostrophe belongs. Excel on a
+French Windows machine writes cp1252 by default, so this is common, not exotic.
+
+**Detect the separator.** Count `,`, `;`, tab and `|` outside quotes on the first five
+non-empty lines. The winner is the one whose count is both highest and identical on
+every line. French Excel writes `;`. If two candidates tie, or the count varies by line,
+stop and ask rather than shredding the file.
+
+**Detect the header.** If line 1 contains cells that look like data (an address, a
+digit-only cell) rather than labels, ask whether the file has a header.
+
+**Map the columns.** Compare lowercased, accent-stripped, punctuation-stripped names:
+
+| Contract column | Accepted aliases |
+|---|---|
+| `first_name` | first name, firstname, prenom, given name, fname |
+| `last_name` | last name, lastname, nom, nom de famille, surname, family name |
+| `full_name` | name, full name, nom complet, contact, contact name |
+| `email` | email, e-mail, mail, courriel, adresse email, work email, professional email |
+| `phone` | phone, telephone, mobile, portable, tel, phone number, direct dial |
+| `job_title` | title, job title, position, poste, fonction, intitule, role |
+| `linkedin_url` | linkedin, linkedin url, linkedin profile, profil linkedin, li url |
+| `company_name` | company, company name, societe, entreprise, organisation, account, employer, raison sociale |
+| `company_website` | website, site, site web, url, company url |
+| `company_headcount` | employees, headcount, size, effectif, taille, employee count |
+| `company_siren` | siren, siret |
+| `x_trade_name` | trade name, trading name, commercial name, enseigne, nom commercial, brand, dba |
+| `city` | city, ville, town, localite |
+| `country_code` | country, pays, country code |
+
+Anything unmapped is kept as `x_<original name>`, never dropped. Show the user the
+mapping you inferred and the columns you could not place, and let them correct it.
+
+**Decide which rows are usable.** A row survives if it has at least one of:
+
+- an `email`, which is enough to send to;
+- a `full_name` (or first plus last) **and** a `company_name` or `company_domain`, which
+  is what the email finder needs;
+- a `linkedin_url`, which is enough for a LinkedIn campaign and for the phone finder.
+
+Rows with none of the three go to `outreach/leads-unusable.csv` with a `reason` column.
+Count them and say the number. Do not delete them silently.
+
+**Five things that go wrong in real files.**
+
+- Splitting `full_name` is guesswork with compound names. Split only when there is no
+  first or last column: take the first token as the first name and the rest as the last
+  name, then set `x_name_split` to `guessed`.
+- Registry exports often put the surname first and in capitals. If most first tokens are
+  all caps, the columns are probably reversed. Ask, do not swap on your own.
+- Excel eats leading zeros. A `company_siren` with 8 digits lost one, and a French
+  postal code `01000` becomes `1000`. Left pad to 9 and 5. A SIRET is 14 digits and its
+  first 9 are the SIREN.
+- A phone column stored as a number (`3.36e+10`) has lost digits and cannot be repaired.
+  Report the count and leave the cells empty.
+- Duplicate rows are normal at this stage. Leave them: `outreach-filter` removes them and
+  reports what it removed.
+
+Fill `source` with `csv`, `source_url` with `file:<path>`, `lead_id` with
+`csv:<line number>`, and `collected_at` with today.
+
+### 4. Several sources at once, in parallel
+
+Sourcing divides cleanly, so it runs as parallel agents rather than as a loop. One
+`outreach-lead-sourcer` per **disjoint** slice, launched in the same message: one per
+source when the user wants France plus another market, one per segment when the ICP has
+several, one per city or per department when a single segment is too big to pull in one
+call. Give each agent its own output file and merge afterwards.
+
+Disjoint is the word that matters. Two agents pulling overlapping filters pay twice for
+the same rows and then hand you a file that looks bigger than it is. Split on something
+the source itself can filter, a city, a NAF code, a headcount band, and count each slice
+for free before you extract it so you know what you are about to spend.
+
+Keep `source` and `lead_id` intact through the merge: they are what makes the merge
+reversible and what lets `outreach-filter` explain a removal. Deduplicate on `lead_id`
+first, then on the company domain if you want one decision maker per company.
+
+Tell the user what you launched and report each slice as it lands, with its count. A
+sourcing run that goes silent for ten minutes looks broken even when it is working.
+
+## Output
+
+`outreach/leads.csv`, and `outreach/leads-unusable.csv` when rows were rejected. If
+`leads.csv` already exists, say so and either merge on `lead_id` or write
+`outreach/leads-<name>.csv`.
+
+```csv
+lead_id,first_name,last_name,full_name,job_title,seniority,email,email_status,phone,phone_status,linkedin_url,company_name,company_domain,company_website,company_linkedin_url,company_headcount,company_industry,company_naf,company_siren,city,country_code,segment,signal,source,source_url,collected_at
+basile:66f1a4c2e8,Camille,Rousseau,Camille Rousseau,Directrice Technique,C-Level,,,,,https://www.linkedin.com/in/camille-rousseau-dev,Netvia,netvia.fr,https://www.netvia.fr,https://www.linkedin.com/company/netvia,64,Edition de logiciels,62.01Z,824503917,Lyon,FR,fr-saas-cto,in role since 7 months,basile,https://api.basile.cc/people/66f1a4c2e8,2026-09-08
+basile:66f1a4d071,Marc,Bettan,Marc Bettan,VP Engineering,VP,,,,,https://www.linkedin.com/in/marcbettan,Prismeo,prismeo.io,https://prismeo.io,https://www.linkedin.com/company/prismeo,110,Edition de logiciels,58.29C,910447226,Paris,FR,fr-saas-cto,,basile,https://api.basile.cc/people/66f1a4d071,2026-09-08
+linkedin:sofia-kandel,Sofia,Kandel,Sofia Kandel,Head of Platform,Head,,,,,https://www.linkedin.com/in/sofia-kandel,Arboris,arboris.com,https://arboris.com,,145,Software Development,,,Bordeaux,FR,fr-saas-cto,,linkedin,https://www.linkedin.com/sales/search/people?query=(spellCorrectionEnabled:true...),2026-09-08
+csv:412,Tom,Vasseur,Tom Vasseur,CTO,C-Level,tom.vasseur@lumenda.fr,,,,,"Lumenda",lumenda.fr,https://lumenda.fr,,,,,,Nantes,FR,fr-saas-cto,from Q2 webinar,csv,file:./exports/webinar-q2.csv,2026-09-08
+```
+
+Then report, in this shape and with real numbers. Basile gets one line per query,
+because a lump sum hides which angle worked:
+
+```
+1,284 rows written to outreach/leads.csv
+
+  basile, 5 queries counted for free, 4 extracted
+
+    Q1  core titles 20-49      counted 1,204   extracted 1,204
+    Q2  core titles 50-199     counted   878   extracted   878
+    Q3  adjacent titles        counted   402   extracted   402
+    Q4  small company CEOs     counted   611   extracted     0   you said skip
+    Q5  registry officers      counted   233   extracted   233
+                               union     2,584 (overlap 133 measured before extracting)
+
+    2,717 records returned, 133 exact duplicates merged, 92 same person from two
+    sources merged, 442 cut as off target      -> 2,050 rows kept
+
+  linkedin     198   from one Sales Navigator search, 212 in the list, 14 without a name
+  csv           36   from exports/webinar-q2.csv, 41 rows, 5 unusable
+
+  emails already present   36 of 1,284  (3%)
+  LinkedIn URLs present  1,248 of 1,284 (97%)
+  company domain present 1,190 of 1,284 (93%)
+  no headcount             211 of 1,284 (16%)  kept, own segment, size unknown
+  no company context        88 of 1,284  (7%)  kept, not personalisable
+
+  cut before enrichment: 442 rows
+    substring title match     186   assistant, adjoint, stagiaire
+    outside the size band      97
+    consumer mail domain       74
+    no usable first name       51
+    existing customer          34
+
+Basile credits used: 2,717. Emelia credits used: 0.
+The 442 rows cut here would have cost about 442 Emelia credits to enrich.
+Nothing has been enriched or verified. Next: /outreach filter
+```
+
+## Checks before finishing
+
+- `leads.csv` has exactly the 26 contract columns, in order, with any extras appended
+  and prefixed `x_`.
+- Every row has a non empty `lead_id`, `source`, `source_url` and `collected_at`.
+- `lead_id` values are unique within the file.
+- `source` is one of `basile`, `linkedin`, `csv`, `manual` on every row.
+- `country_code` is two uppercase letters wherever it is filled.
+- `company_domain` has no scheme, no `www.`, no path, and is lowercase.
+- `segment` is filled on every row when `icp.json` exists.
+- For Basile: **every** query in the plan was counted with `countOnly` and its `total`
+  reported before any extraction, and the total credit cost was confirmed by the user.
+  One query counted and four extracted is a failed run.
+- The plan had more than one query, or you can say in one sentence why one angle was
+  enough for this ICP.
+- The overlap between queries was measured before extracting, and exact duplicates
+  were merged and counted after.
+- Rows obviously off target were cut here, before enrichment, and the report says how
+  many and why.
+- Rows with no headcount and rows with no company context were counted and given a
+  decision, not dropped in silence.
+- The row count in the file matches the number you reported, and rejected rows are in
+  `leads-unusable.csv` rather than gone.
+- No Emelia credit was spent.
+
+## Failure modes
+
+**Basile returns far fewer people than the company count suggested.** Usually a
+single-source filter: a registry-only one (`result_is_current`, `mandate_role`) drops
+every LinkedIn profile, a LinkedIn-only one drops every registry officer. Remove it, or
+run the other source as a second query. Mixing a filter from each source is not the
+cause: that returns the union of both sources, with an inflated total and a notice in
+the response.
+
+**Basile returns everything, unfiltered.** A filter was accepted and ignored. The two
+documented cases are `headquarters_region_code`, which is removed at validation, and a
+full date in `creation_date_min`, which takes a year only. Recount after each filter is
+added and watch for the rung that does not move the number.
+
+**A Basile export comes back short.** Check `X-Export-Capped`. If it is `true` you hit
+the plan ceiling in `X-Export-Max-Rows`, and you need to segment the search and export
+each piece.
+
+**`402 quota_exhausted`.** The Basile quota is gone. Nothing was delivered and nothing
+was charged. Say so and stop; do not retry in a loop.
+
+**The Sales Navigator URL returns a different count than yesterday.** LinkedIn ids and
+result sets move. Re-read the count in the interface rather than trusting a stored
+number, and record the date in `collected_at`.
+
+**The scraped LinkedIn list has fewer contacts than the search showed.** Normal. Report
+both numbers, the search count and the list count, and never present the smaller one as
+the market.
+
+**The CSV looks fine but the accents are broken.** You decoded as `iso-8859-1` a file
+that was cp1252 or UTF-8. Re-decode before writing anything downstream: a mangled name
+in a first line is worse than no personalization.
+
+**Two sources returned the same person.** Expected: the people total is the sum of the
+sources with no cross source deduplication. Merge them on name plus SIREN or name plus
+domain, keep the row carrying the LinkedIn URL, keep both ids in `x_merged_ids`, and
+report the count. A person on two different boards is not this case, and both rows
+stay.
+
+**One query was written, and the list is small.** The most common failure of this
+step, and it looks like a clean run. One query is one spelling of one job in one size
+band. Go back to 1b, add the adjacent titles and the second size band, and count them:
+counting costs nothing and the plan usually doubles.
+
+**The plan overlapped and the bill was double.** Two queries whose title sets share
+values return the same people twice, and an export charges per record returned. Measure
+the overlap for free with the merged count, then make the queries disjoint with
+`exclude` before extracting.
+
+**Everything was extracted, then filtered.** Backwards, but only expensive at the next
+step: it is Emelia credits, not Basile ones, that are wasted on rows you were always
+going to cut. Do the obvious cuts of 1e on the CSV before `outreach-enrich` runs, and
+say how many rows it saved.
+
+**A filter name was invented after a 400.** The spec is published at
+https://docs.basile.cc/openapi.yaml. A guessed name either fails again or, worse, gets
+accepted and means something else. Read the filter, then rewrite the body.
+
+## Limits
+
+This skill sources contacts, it does not find or verify email addresses, and it spends
+no Emelia credits. Basile covers France only. It cannot start a LinkedIn scrape by
+itself, because no documented Emelia endpoint or MCP tool does, so that one step happens
+in the Emelia app and this skill says so instead of pretending otherwise. It does not
+guess LinkedIn's internal ids, it does not scrape LinkedIn outside the official
+integration, and it does not buy data from brokers. Coverage of any source is partial:
+report the counts you actually got, never an extrapolation.
+
+A Basile people total is the sum of its sources with no cross source deduplication, so
+it is an upper bound on distinct humans, not a market size. Say "2,584 records" and
+"2,050 people after merging", never one number pretending to be both. And a query plan
+is only as good as the ICP it came from: if the titles are wrong, five queries return
+five times the wrong people. When the counts look nothing like the market the user
+described, the answer is `outreach-icp`, not a sixth query.

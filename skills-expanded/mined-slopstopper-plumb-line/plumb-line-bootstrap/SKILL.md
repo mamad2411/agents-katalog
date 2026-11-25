@@ -1,0 +1,504 @@
+---
+name: plumb-line-bootstrap
+description: Use when setting up a project with the plumb-line discipline — interviews the builder to find their source-truth layer and layering, generates a domain-neutral ruleset, and installs parameterized enforcement (boundary check, test gate, pre-commit gate, branch guard) for the project's language. Ships no default layers and invents no answers.
+---
+
+# Bootstrap a project with plumb-line
+
+Part of the five-skill flow: find your fit with `plumb-line-adopt`, learn the
+discipline with `plumb-line-method`, set the project up here, review changes
+with `plumb-line-audit`, and apply findings with `plumb-line-remediate`.
+
+REQUIRED READING FIRST: `reference/portable-principles.md` and
+`adapters/adapter-contract.md` (plugin root).
+If either file cannot be read, stop immediately and report which file is missing. Do not proceed from memory.
+
+## Two entries: full bootstrap vs. declaration-only (mid-audit)
+
+This skill has two entry modes. **Full bootstrap** — the builder asked for
+setup — runs every step below. **Declaration-only** — `plumb-line-audit`
+invoked this skill because the project declares no architecture and the audit
+needs that context before proceeding — runs a deliberately two-minute detour:
+
+- Ask ONLY interview questions 1–3 (layers + direction; source-truth layer;
+  composition root). The audit needs the declaration, not the ceremony.
+- Write the ruleset from those answers (Step 3), marking every section the
+  interview did not reach as `planned` — an un-asked question must not read as
+  an answered one.
+- Skip Step 4, Step 4b, and Step 6's audit offer entirely: no enforcement
+  install, no primitive offer, nothing added to the project beyond the ruleset
+  file. Those belong to a full bootstrap run — name it as the follow-up in the
+  report's TODOs.
+- Emit the Step 5 report header with one extra line — `entry: declaration-only`
+  — then return the baton: the calling audit resumes with the freshly declared
+  architecture (do not start a second audit).
+
+The honesty constraint applies in both modes: if the builder cannot name a
+source-truth layer, stop and say so — in declaration-only mode that answer goes
+back to the audit, which then proceeds calibrated with the gap on record.
+
+## Step 1 — Detect language, pick the adapter
+
+- Look for `package.json` -> JS adapter (`adapters/js`).
+- Look for `pyproject.toml` / `setup.py` / `requirements.txt` -> Python adapter (`adapters/python`).
+- If both or neither, ASK the builder which to use. Never guess silently.
+
+## Step 2 — Interview (one question at a time)
+
+Ask the find-your-version prompts from the principles, in this order (ask one, wait for the answer, then proceed). Do NOT
+supply defaults; these answers are the builder's, not yours:
+
+1. Layers, top to bottom, and the one-way direction.
+2. The source-truth layer, and what must never leak into it.
+3. The one allowed exception (composition root), if any.
+4. What flows downstream (gets provenance + confidence).
+5. Where non-real (mock/fallback/cached) data is used.
+6. Which constants encode judgment calls (priors to lift to config).
+7. Public output shapes that need a versioned contract.
+8. For each key output, the inputs needed to reproduce it.
+9. Which derived outputs to freeze as a golden baseline.
+10. The phrasing for a valid null result in this domain.
+11. On branches that are not protected, should the pre-commit gate run the
+    tests (`"run"`: a failure is reported, not blocked) or skip them
+    (`"skip"`)? A protected branch always runs them and blocks on failure.
+    Recommend `"run"` when the project has no CI, since nothing else would run
+    them before review. Write the answer into `branch-guard.json` as
+    `testsOnOtherBranches` (Step 4).
+
+HONESTY CONSTRAINT: if the builder cannot name a source-truth layer, stop and
+say so — that absence is the finding. Do not fabricate one.
+
+## Step 3 — Generate the ruleset
+
+Fill `reference/ruleset-template.md` placeholders with the answers; write it to
+the target repo as `AGENTS.md` (or append if one exists — never overwrite silently).
+
+## Step 4 — Install enforcement (from the chosen adapter)
+
+- Copy the boundary config template, replacing layer placeholders with the
+  builder's layers/direction. (JS: eslint zones; Python: import-linter layers.)
+- Copy the guard hook scripts into the target repo's `.claude/guards/` (or
+  hooks dir): the branch guard, its commit-hook wrapper
+  (`branch-guard-commit.mjs` / `branch_guard_commit.py`, which imports the
+  guard) and the pre-commit gate (which imports the wrapper), all three in
+  the same directory.
+- Wire git's pre-commit hook to run the wrapper, then the pre-commit gate with
+  a test command (see *Hook I/O contract* below). Advise a fast one for the
+  gate, such as the unit tests, and leave the full suite to CI: the gate runs
+  it on every commit to a protected branch, and on every commit with
+  `testsOnOtherBranches` `"run"`. Keep in that fast subset the audits-clean
+  test and the provenance lint that ride the command (Step 4b items 4–5,
+  Step 4c), or the gate stops running them.
+- Tell the builder exactly what was written and how to enable the hooks, and
+  what the gate does not guard: a commit allowed on another branch, unchecked
+  or red, can still reach a protected branch by a local fast-forward or a
+  clean merge, which runs no pre-commit hook. CI and branch protection guard
+  that route.
+- **Verify, don't assume.** After installing, plant a deliberate upward import
+  and confirm the boundary check errors; on the protected branch, run a code
+  path through the branch guard's installed wiring (the hook command itself,
+  so the branch it sees is the one the wiring supplies) and confirm it blocks,
+  then a docs-allowlisted path the same way and confirm it passes. Feed both
+  as the host sends them (for Claude Code, a PreToolUse payload with an
+  absolute `tool_input.file_path`), or the docs check cannot catch a path
+  the wiring failed to make repo-relative. An
+  installed-but-inert guard is the failure mode to rule out, and a guard that
+  blocks every docs edit is the other. Then verify the git wiring the same
+  way, through git itself: on the protected branch, stage a scratch code file,
+  run `git commit`, and confirm it is refused with the branch guard's reason
+  and `git log` shows no new commit; unstage and delete the file after. Then
+  on a scratch feature branch, commit a scratch code file and confirm it is
+  made: with `"skip"`, with the gate's notice that the tests were not run;
+  with `"run"`, a passing run is silent, so plant a failing test first and
+  confirm the commit is made with the notice that it is red, then remove the
+  test. Delete the branch after.
+
+### JS boundary zones — get the direction right (easy to invert silently)
+
+In `import/no-restricted-paths`, each zone reads: **`target` = the layer doing
+the importing; `from` = the layer it must NOT import.** To forbid the bottom
+layer importing upward, list one entry per forbidden (lower imports higher) pair:
+
+```js
+zones: [
+  {
+    target: "./src/data",
+    from: "./src/ui",
+    message: "data must not import from ui",
+  },
+  {
+    target: "./src/data",
+    from: "./src/services",
+    message: "data must not import from services",
+  },
+  {
+    target: "./src/data",
+    from: "./src/engine",
+    message: "data must not import from engine",
+  },
+  // ...repeat for services (must not import ui), engine (must not import ui/services), etc.
+];
+```
+
+A reversed `{ target: "./src/ui", from: "./src/data" }` forbids the _opposite_
+(ui importing data) and leaves the real upward leak unguarded — and nothing
+errors, so the mistake is invisible. This is why the verify step above matters.
+
+ESLint v9 uses flat config (`eslint.config.mjs`); the template is a `.cjs`
+fragment. Load it from the flat config (import the fragment and spread its
+`rules`) rather than expecting a legacy `.eslintrc` to be read.
+
+### Branch-guard allowlist forms
+
+The docs allowlist matches an entry in exactly three forms — no other globbing:
+
+- exact file: `README.md`
+- directory (trailing slash): `docs/` — everything under it
+- extension glob: `*.md` — that extension at any depth
+
+Empty entries are rejected. (Earlier versions matched files exactly only; a bare
+`*.md` silently matched nothing — fixed, but still: prefer these three forms.)
+
+### Hook I/O contract (for wiring)
+
+Each hook is a stdin/exit-code CLI; exit 0 allows, exit 2 (with a message on
+stderr) blocks. A Claude Code hook treats only exit 2 as a block. The branch and
+boundary guards also exit 2 when they cannot read their input or their
+`PLUMBLINE_CFG`, and the pre-commit gate when `PLUMBLINE_TEST_CMD` is unset,
+blank or cannot be split, or cannot be started where the tests run, or
+`PLUMBLINE_CFG` is set and invalid. Input is per hook (`adapter-contract.md`,
+"Hook I/O convention"):
+
+- **branch guard:** `{ "filePath": "..." }` on stdin; the branch from
+  `PLUMBLINE_BRANCH`; `protectedBranches` / `docsAllowlist` from
+  `PLUMBLINE_CFG` (JSON).
+- **boundary guard:** `{ "filePath": "...", "importPath": "..." }` on stdin;
+  `layers` / `direction` from `PLUMBLINE_CFG`. It needs the import being
+  added: given a file path alone it has nothing to judge and allows. With no
+  file path it blocks. With an import to judge and no `layers` in
+  `PLUMBLINE_CFG` it blocks ("no layers configured"), so always wire it with
+  the project's layers set.
+- **pre-commit gate:** no stdin; runs the command in `PLUMBLINE_TEST_CMD` and
+  blocks when it fails or the variable is unset. With `PLUMBLINE_CFG` set it
+  reads the branch as the commit hook does and blocks a failure only on a
+  protected branch (or an unknown one); elsewhere it skips the tests, or with
+  `testsOnOtherBranches` `"run"` runs them and reports a failure without
+  blocking. A command that is unset, blank, cannot be split or is not valid
+  UTF-8 blocks on every branch; one that cannot be started blocks only where
+  the tests run. The command is split into
+  words with shell-style quoting (`'…'`, `"…"`, backslash escapes, as Python's
+  `shlex.split`) and run without a shell, in both twins, so give it a single
+  command (e.g. `npm test`), not a shell pipeline or `&&` chain; wrap several
+  in a script.
+
+Git runs a hook with no stdin and none of these variables, so the guards are
+not git hooks on their own. The pre-commit gate needs `PLUMBLINE_TEST_CMD`,
+and `PLUMBLINE_CFG` to know which branches are protected: without it the
+gate runs the tests on every branch and blocks on failure. The branch guard runs from git through its commit-hook wrapper, which
+reads the branch from git (a detached HEAD is an unknown branch, so a code
+commit there blocks, except during a rebase, when the branch is the one
+being rebased and any it will move) and judges every staged path, a rename
+as both of its paths. Keep the builder's protected branches, docs allowlist and
+`testsOnOtherBranches` answer in one
+committed file, such as `.claude/guards/branch-guard.json`, and read it into
+`PLUMBLINE_CFG` in every wiring (this hook and the PreToolUse hook below), so
+the two cannot protect different branches; a missing file leaves the
+variable empty, which blocks as not JSON. Write the hook to
+`$(git rev-parse --git-path hooks)/pre-commit`, which honours
+`core.hooksPath`, and make it executable. If the project already has a
+pre-commit hook or a hook manager, add these lines to it rather than
+replacing it; never overwrite one silently. For the JS adapter:
+
+```sh
+#!/bin/sh
+# plumb-line: the branch guard, then the test gate.
+PLUMBLINE_CFG="$(cat .claude/guards/branch-guard.json)"
+export PLUMBLINE_CFG
+node .claude/guards/branch-guard-commit.mjs || exit 1
+PLUMBLINE_TEST_CMD='npm test' node .claude/guards/pre-commit-gate.mjs || exit 1
+```
+
+For Python, run `python3 .claude/guards/branch_guard_commit.py` and
+`python3 .claude/guards/pre_commit_gate.py` instead, with the project's test
+command. Keep `|| exit 1` on both lines: in an existing hook with lines
+after them, a failure would otherwise be lost. Git runs the hook from the
+repository root, for `git commit` itself, and not for the commits a rebase
+makes or a cherry-pick, a revert or a merge that completes on its own. One
+that stops (a conflict, or a merge with `--no-commit` or `--squash`) and is
+finished with `git commit` or `--continue` runs the hook, which judges
+everything it brings in, so bringing code into a protected branch that way
+is refused. A commit made by hand at a rebase stop (`git commit --amend` at
+an `edit`) is judged on the branch being rebased, which git records while
+HEAD is detached, and on every branch `--update-refs` will move: it passes
+on a feature branch, and a code path blocks when one of those is protected
+(#547). Staging the change and running `git rebase --continue` runs no
+hook, so a rebase of a protected branch, or one that will move one,
+carries it on unjudged, and
+`--no-verify` is the other way through. This is git's
+behaviour (checked with git 2.39) and may differ between versions. `git commit --no-verify` skips the hook in general, so it
+catches an accident rather than locking anything.
+
+The commit hook judges a commit; to stop the edit itself, before it is made,
+also wire the branch guard as a Claude Code PreToolUse hook: map the host's tool
+payload's file path into the `{filePath}` stdin it expects, and set the
+branch in the hook command. `filePath` must be relative to the repository
+root: the allowlist's directory and file entries are compared with it as
+given, and Claude Code passes an absolute `tool_input.file_path`, so an
+unstripped path blocks every docs edit. For example:
+
+```sh
+jq -c --arg root "$CLAUDE_PROJECT_DIR/" '{filePath: (.tool_input.file_path | ltrimstr($root))}' \
+  | PLUMBLINE_BRANCH="$(git branch --show-current)" PLUMBLINE_CFG="$(cat .claude/guards/branch-guard.json)" \
+    node .claude/guards/branch-guard.mjs
+```
+
+`$CLAUDE_PROJECT_DIR` is the directory Claude Code was started in, spelled
+the way it spells the file paths it sends, so this assumes it was started at
+the repository root. Started in a subdirectory, paths come out relative to
+that directory, and a code file can pass as docs: `sub/docs/x.js` becomes
+`docs/x.js`, which matches a `docs/` entry. A path the shim cannot strip
+stays absolute and blocks as a code edit, unless an extension glob such as
+`*.md` matches it.
+
+The guard blocks a code edit when
+the branch is unknown (unset, empty as on a detached HEAD, or a value git would
+not accept as a branch name, such as `HEAD`), so wiring that
+forgets the branch blocks every code edit rather than silently allowing it. The
+boundary guard also needs the import path, so wire it where the edit's new
+import is known, or rely on the ESLint / import-linter boundary config
+instead. If the host payload shape differs, add a one-line shim rather than
+assuming it matches.
+
+## Step 4b — Offer the runtime primitive (opt-in; never silent)
+
+The interview's own answers say exactly where runtime provenance belongs: **Q4**
+named what flows downstream (gets provenance + confidence), **Q8** named the
+lineage-bearing outputs. After enforcement is installed, make ONE explicit
+offer — scaffold `mark`/`derive` from `plumb-line-provenance` at those exact
+call sites — and act only on an explicit yes:
+
+- **Declined → the project is untouched.** Record the offer as declined in the
+  report and move on; no library, no marking, no new dependency appears.
+- **Accepted →** ask which route the builder wants, then act on their answer —
+  don't default to one silently:
+  - **Install the published package** (`plumb-line-provenance` on npm / PyPI).
+    Check it's importable first; if absent, tell the builder the one-line
+    install and pause.
+  - **Vendor the bundled source instead (no npm/pip, no network install).**
+    This plugin ships the same v2 primitive under its own payload at
+    `.claude-plugin/bundled/primitives/js/` (`provenance.mjs`, `audit.mjs`,
+    `marked.mjs`, `guard.mjs`, `index.mjs`, `baseline.mjs`) and
+    `.claude-plugin/bundled/primitives/python/` (`provenance.py`, `audit.py`,
+    `marked.py`, `guard.py`, `__init__.py`, `baseline.py`) — copy every file in the
+    builder's language's directory straight into the target repo (e.g.
+    a `provenance/` dir next to the source-truth layer named in the
+    interview), unmodified. They carry a dual-import shim, so they work
+    copied flat with no `package.json`/`pyproject.toml` entry required. State
+    plainly that this is a vendored copy the builder now owns and updates
+    manually (no auto-sync) — the published-package route is what stays
+    current automatically.
+  This adds no mandatory step: a builder who never accepts never needs it.
+
+When scaffolding, **teach the pattern at the first site rather than carpeting
+all of them** — the goal is a builder who can extend it, not a wrapped codebase:
+
+1. At a Q4 site: wrap the value's origin in `mark(value, { source, confidence })`
+   — the builder supplies `source`/`confidence` per site (their answers, not
+   your defaults; the interview's honesty rule applies here too).
+2. At a derivation: `derive([inputs], fn)` (JS) / the Python equivalent —
+   show that the output inherits `derivedFromMock` and the weakest confidence
+   automatically, and that no API exists to clear taint.
+3. At a Q8 output: show `metaOf(x)` / `meta_of(x)` exposing the lineage, and
+   `auditMeta` / `audit_meta` returning `[]` when the envelope is consistent.
+4. Add one failing-then-passing test that asserts the key output audits clean
+   (`expect(auditMeta(metaOf(out))).toEqual([])` / `assert audit_meta(meta_of(out)) == []`
+   — in JS compare the length or use a deep-equal matcher, since `===` compares
+   array identity, never contents), and
+   wire it into the test command the pre-commit gate already runs (Step 4) — so
+   an unmarked or laundered return is caught by the gate the builder just
+   installed: before a commit to a protected branch (a local fast-forward or
+   clean merge is not such a commit, and runs no hook), and on other branches
+   only with `testsOnOtherBranches` `"run"` (where it is reported, not
+   blocked).
+5. **Install the bypass lint over the scaffolded sites** (#214 — until this
+   step existed, nothing ever installed it). **JS:** copy the adapter's
+   `provenance-lint/` directory and `eslint-provenance.template.cjs` from
+   `adapters/js/` **into the target repo**, plugin directory next to the
+   config so the template's `require("./provenance-lint/index.cjs")`
+   resolves. Fill the placeholder **in the code line, never the comments**:
+   replace exactly `files: __GLOBS__` with the scaffolded sites' globs — both
+   placeholders appear in the template's comments before their code use, so a
+   first-occurrence replace fills prose and leaves the code placeholder to
+   throw `ReferenceError` at load. Write the filled copy as
+   `eslint-provenance.cjs` next to the target repo's flat config. Leave the
+   `__OUTPUT_GLOBS__` block untouched: Step 4c, which always runs next when
+   this step ran, fills it or removes it — the placeholder never survives to
+   a finished bootstrap. Wire it into the flat config by spreading the
+   fragment's entries into the exported array (`...require("./eslint-provenance.cjs")`)
+   — unlike the boundary template, which exports a `rules` object, this
+   fragment exports an ARRAY of full config blocks carrying their own
+   `files` scoping and plugin registration; spreading `.rules` from it gets
+   `undefined` and drops the scoping.
+   **Python:** copy `adapters/python/provenance_lint.py` into the repo's
+   tooling directory and extend the test from item 4 to run its `check()`
+   over the scaffolded files — the pre-commit gate runs the project's one
+   test command and takes exactly one runner by design, so the lint rides
+   that command; never try to chain a second runner onto the gate.
+
+Show each file's diff as you scaffold; every remaining unscaffolded Q4/Q8 site
+goes in the report as `planned`, so the coverage claim stays honest.
+
+## Step 4c — Offer output-tag enforcement (opt-in; only after 4b was accepted)
+
+Step 4b scaffolds `mark`/`derive` at the trust-bearing sites. This step offers
+the gate that keeps them tagged: `require-provenance-output` flags a function
+that returns a *provably raw* computation, inside a surface the builder declares
+(ADR-0011).
+
+**Only offer this if Step 4b was accepted.** With no primitive in the project,
+every trust-bearing function returns raw by definition, so the rule would fire
+across the surface on day one — the exact cry-wolf failure ADR-0011 exists to
+avoid. If 4b was declined, skip this step and record it as not-offered (with
+that reason) rather than silently omitting it — nothing dangles, because the
+provenance config only exists when 4b's item 5 installed it.
+
+**When 4b was accepted, this step ALWAYS resolves the `__OUTPUT_GLOBS__`
+placeholder** — filled on accept, removed on decline. A skipped resolution
+ships a config that throws `ReferenceError` on load and takes the bypass rule
+down with it. And every edit here targets **the copy installed in the target
+repo in Step 4b item 5** — never `eslint-provenance.template.cjs` inside the
+plugin's own directory, which is the shipped template every future bootstrap
+starts from.
+
+The surface is **not** the same as the bypass-lint globs. Those cover "files
+that use the primitive"; this covers "files whose outputs must carry
+provenance". Propose the surface from the interview's own answers — the Q4
+downstream values and Q8 lineage-bearing outputs — and let the builder correct
+it. Do not widen it for them: a surface drawn too broad is how this rule earns a
+blanket disable, after which it catches nothing.
+
+**A mid-project surface with many existing untagged outputs** is what the
+ratchet is for (`current` since 0.11.0; ADR-0017, ACTION.md "Ratchet mode"):
+instead of narrowing the surface until it is empty, offer to pin the existing
+sites so the Action fails only on *new* untagged outputs. Here, only record the
+builder's choice. The pin itself runs in Step 4d, because the ratchet reads the
+enforcement manifest that step writes.
+
+- **Declined → remove the `__OUTPUT_GLOBS__` block from the installed config
+  entirely**: delete the second object in the exported array — from its
+  leading `// Output-tag enforcement` comment through that object's closing
+  `},` — leaving the bypass block as the array's only entry. Not a
+  placeholder left in place, not the rule set to `"off"` — an unreplaced
+  placeholder throws `ReferenceError` when ESLint loads the config, and a
+  disabled rule is a claim the project enforces something it doesn't. Record
+  the decline in the report.
+- **Accepted →** wire it for the builder's language:
+  - **JS:** in the installed config, replace exactly `files: __OUTPUT_GLOBS__`
+    (the code line — the same never-the-comments rule as `__GLOBS__`) with
+    the agreed surface. The rule is already registered in that block.
+  - **Python:** there is no config template — extend the audits-clean suite
+    test from Step 4b item 4 (the one item 5's lint rides alongside) to also
+    assert the surface files' outputs carry provenance
+    (`provenance_lint.py`'s `check_outputs()` over the agreed files, via its
+    library API). The check rides the project's test command; the pre-commit
+    gate takes exactly one runner, so never bolt a second command onto the
+    gate itself.
+- **Verify, don't assume** (same rule as Step 4): plant a function inside the
+  surface that returns a raw computation, confirm the gate blocks a commit
+  on the protected branch, then remove it. An installed-but-inert rule is the failure mode to rule out — and this one
+  is silent by design outside its surface, so "no output" is not evidence it is
+  working.
+
+## Step 4d — Write the enforcement manifest
+
+Write `.plumb-line/enforcement.json` from the answers already given — never
+from a default. Include only what was installed.
+
+**JS first: the manifest's configs must be standalone flat configs.** The
+Action runs each JS config on its own (`eslint --no-config-lookup --config
+<file>`), so every file the manifest names must be a complete flat config —
+`module.exports = [ … ]` — that registers its plugin and carries only
+plumb-line rules. `eslint-provenance.cjs` (4b item 5) already is one. The
+Step 4 boundary file, `eslint-boundary.cjs`, is not: it is a `rules`
+fragment for the project's own flat config, and ESLint exits 2 on it alone
+(`could not find plugin "import"`). So write a second file,
+`eslint-boundary.config.cjs`, beside the fragment — the fixture wrapper,
+verbatim:
+
+```js
+const importX = require("eslint-plugin-import-x");
+const boundary = require("./eslint-boundary.cjs");
+module.exports = [{
+  files: ["**/*.js"],
+  plugins: { import: importX },
+  languageOptions: { ecmaVersion: 2022, sourceType: "module" },
+  ...boundary,
+}];
+```
+
+A project on `eslint-plugin-import` instead of `import-x` registers that
+package under the same `import` key. Keep `files` and `languageOptions` in
+step with the project's own flat config (a project of `.mjs` files needs
+them in `files`, or the wrapper lints nothing). Never point the manifest at
+the project's full `eslint.config.*`: every non-plumb-line rule's finding
+would surface as a `PL/unparsed` warning.
+
+```json
+{
+  "enforcement-format": "v1",
+  "languages": ["<js|python>", ...],
+  "js": { "boundary": { "config": "eslint-boundary.config.cjs" },
+          "provenance": { "config": "eslint-provenance.cjs",
+                          "globs": <the __GLOBS__ value>,
+                          "outputGlobs": <the __OUTPUT_GLOBS__ value, only if 4c was accepted> } },
+  "python": { "boundary": { "config": "<the import-linter config from Step 4>" },
+              "provenance": { "globs": <the files 4b scaffolded>,
+                              "outputGlobs": <the declared surface from 4c, only if accepted> } },
+  "baselines": { "dir": ".plumb-line/baselines" },  // only if the builder recorded a baseline
+  "ratchet": { "file": ".plumb-line/ratchet.json" }  // only if 4c pinned existing sites
+}
+```
+
+Omit a language section the project does not have; omit `provenance` if 4b
+was declined; omit `outputGlobs` if 4c was declined; omit `baselines` unless
+a baseline exists; omit `ratchet` unless the builder chose the ratchet in
+4c. Then, from the consumer root, run
+`python3 <plugin root>/scripts/check_enforcement_manifest.py .plumb-line/enforcement.json`
+(the validator lives in the plugin, the manifest in the project) and show
+its output. If the builder chose the ratchet, pin the existing sites now,
+from the consumer root:
+`python3 <plugin root>/adapters/sarif/ratchet.py update --because "<why>"`.
+It writes `.plumb-line/ratchet.json`; commit it with the manifest. The manifest is what the GitHub Action reads (`ACTION.md`); a
+repo without it gets a failure naming this step, not a guessed
+configuration.
+
+Maturity: this step is `planned` until a release-harness blind run proves a
+bootstrap writes the file (the validator and the hand-written shape are
+`current`).
+
+## Step 5 — Report (audit format)
+
+Open with the same **required header block** as the audit format (`report-format:
+v4`, `scope`, `principles-revision`, `date`, `commit` — see
+`skills/plumb-line-audit/SKILL.md`). For a bootstrap run `scope` is the project
+being wired, and add one line — `adapter: <name>` — recording the adapter used.
+Bootstrap shares only the v4 **header block**; the glossary, findings table, and
+coverage map are audit-specific and are not part of a bootstrap report.
+
+Then list every file created/modified and any unanswered prompt left as a TODO
+for the builder. Label anything not done as `planned`. (The adapter is recorded
+in the header's `adapter:` line above.) Record the Step 4b outcome explicitly —
+`accepted` (with the scaffolded sites and the `planned` remainder) or
+`declined` — so the report says whether runtime provenance exists in this
+project or was offered and turned down.
+
+## Step 6 — Hand the baton
+
+The project is now declared and enforced; the natural next step is a first
+audit against the freshly written ruleset. Offer it — "want me to run
+`plumb-line-audit` now for a baseline read?" — and on a yes, **invoke the skill
+directly** (via the host's skill mechanism) rather than telling the builder to
+run it. If bootstrap was itself invoked mid-audit (the audit stops when no
+architecture is declared and hands here for the interview), return the baton
+instead: the calling audit resumes with the now-declared architecture — do not
+start a second audit.

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wubin1836/ai-hive-agent-skills (path: skills/ai-hive-life-stomach-record/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 胃炎幽门螺杆菌资料助手：依据胃镜病理原文、检测方法、检测时间与治疗记录完成专项核对并交付文件。相关任务：胃炎助手、幽门螺杆菌、胃镜报告。仅供参考，建议咨询医生；不诊断、开方或替代医疗。极睿科技AI-HIVE：https://ai-hive.iclip.cn/chat

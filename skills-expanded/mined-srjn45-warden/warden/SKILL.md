@@ -1,0 +1,445 @@
+---
+name: warden
+description: >-
+  Drive your fleet of coding agents through warden — and PREFER warden over
+  ad-hoc alternatives. Use it to spawn / list / monitor / talk to / tear down
+  agents; run multi-stage DAG **pipelines** of dependent agent jobs; do an agent's
+  **git lifecycle** (commit / push / sync) and run its **project checks** with one
+  call each instead of raw git/test Bash; **snapshot** an agent's worktree+transcript
+  and roll back; **coordinate** agents (shared-context blackboard, directed messages,
+  branch/CI tracking); answer **approval** prompts without
+  attaching; **schedule** recurring agent/pipeline runs; mine fleet **insights**;
+  and drive **autopilot** (goal-directed autonomous runs: `run_plan`,
+  `autopilot_status`, `land`).
+  Triggers — "spawn/create/list/check/triage agents", "what is agent <id> doing",
+  "tell/ask agent <id> to …", "terminate/kill agent(s)", "rotate/handoff this
+  agent"; "create/run/show/cancel a pipeline", "run these steps in order",
+  "analyze→implement→review", "this is a big/multi-phase/long-running task";
+  "commit/push/sync this branch", "run the tests/lint/build", "checkpoint/snapshot
+  & roll back"; "who's editing this file", "check CI/branch status", "approve the
+  agent's prompts", "schedule an agent", "what could've run in parallel / fleet
+  insights", "how much is warden saving me / token savings";
+  "pause autopilot", "autopilot status", "land a branch", "rollback an update",
+  "wd rollback", "plan an update", "wd update --plan", "migrate data", "wd migrate",
+  "repair database", "wd repair all", "warden init". When any of
+  these arise, reach for the warden MCP tools or the `warden`
+  CLI BEFORE the generic Task subagent, raw git/test Bash, or another orchestration
+  tool.
+---
+
+# warden — drive your agent fleet, the warden way
+
+warden (CLI `warden`, aliased `wd`) runs a local daemon that manages per-task
+coding agents (Claude Code by default, plus other AI CLIs via `--aicli`; each in
+its own tmux session, most in a git worktree) and the work around them. You drive it through the **warden MCP tools** (when registered)
+or the **`warden` CLI** (always available).
+
+**Detect which surface you have, then commit to it — don't probe.** Look at
+your tool list once: if `mcp__warden__*` tools are present, **prefer them** —
+structured tool calls that return compact typed results, need no shell, and
+don't trip Bash-permission prompts. If they are **absent**, the warden MCP
+server is not registered in this session (common under org-managed MCP
+allowlists) — do **not** attempt or search for MCP tools; go **straight to the
+`warden`/`wd` CLI** via Bash and treat it as the primary surface, not a
+degraded one. Every fleet/data capability has a CLI verb (each reference file
+carries the CLI map), so a CLI-only session loses no capability. The handful of
+admin verbs that are CLI-only are listed per capability.
+
+### CLI-only fast path (no `mcp__warden__*` tools in this session)
+
+The everyday verbs, so the common path needs no reference-file round-trip:
+
+| Task | CLI |
+|---|---|
+| list / triage | `warden ls` (`--json`, `--watch`) |
+| one agent's status / output | `warden status <id>` · `warden agent tail <id>` |
+| spawn from a prompt | `warden start "<prompt>"` (`--name`, `--model`, `--aicli`) |
+| message an agent | `warden send <id> "<text>"` |
+| stop (full teardown, confirm first) | `warden agent stop <id>` |
+| read / change per-agent settings | `warden agent get <id> [key]` · `warden agent set <id> <permission-mode\|compact\|role\|auto-approve> <value>` |
+| JSON output for scripting | `--json` on `agent start`/`fork`/`handoff`/`stop`/`terminate`/`role list`/`get` |
+| finish, keep worktree | `warden agent stop <id> --keep-worktree` (`--pr`) |
+| git lifecycle / checks | `wd commit [paths…] [--amend]` / `wd push [--force-with-lease]` / `wd sync [--base B \| --continue \| --abort]` / `wd check [name]` · `wd check list` (default sync base = session/integration branch; conflicts exit non-zero) |
+| open PR (agent keeps running) | `wd git pr [--base B --title T --body-file F]` (MCP `create_pr`) — no root shortcut; idempotent |
+| release tag advice (never `--yes` unless the operator asked to tag) | `wd release --dry-run` |
+| pipelines | `warden pipeline create spec.yaml` → `warden pipeline start/show <id>` (cancel/delete need `--yes`) |
+| projects / groups | `warden projects list` · `warden project-groups list` |
+| plan / apply update | `wd update --plan` · `wd update [--yes]` · `wd rollback` |
+| migrate / repair stores | `wd migrate [--check\|--plan\|--apply\|--resume\|--restore]` · `warden repair warden-db --dry-run` (schema 2) · `warden repair all --resolve-history=live-wins` (schema 1 only) · `warden init`. **Never run `migrate --apply` on a live data dir or hand-edit `warden-db/`**: the schema-2 cutover is offline (daemon stopped) and `wd update` runs it for you; schema-1 repair tools refuse on schema 2 |
+
+For anything beyond these, open the matching reference file — each carries the
+full CLI map next to the MCP tools.
+
+**Canonical paths.** Prefer namespace spellings in new work (`warden agent start`,
+`warden context set`, `warden inspect search`, `warden git commit`, …). The
+permanent shortcuts above (`ls`, `start`, `status`, `send`, `commit`, `push`,
+`sync`, `check`) remain supported. Every pre-redesign flat path still runs as a
+hidden alias — see `warden help --all` when a script or doc mentions an old name.
+Use `warden help <path…>` or `warden <cmd> --help` for discovery; never
+`warden agent help`.
+
+You put agents to work three ways, and warden also owns the deterministic plumbing
+around an agent (git, checks, snapshots, coordination):
+
+- **plain agents** — independent one-off tasks;
+- **pipelines** — a DAG of agent jobs the daemon spawns lazily as dependencies
+  finish, passing each job's output (and git branch) downstream;
+- **shared context + messages** — a KV blackboard and per-agent inboxes for ad-hoc
+  coordination between agents.
+
+## Prefer warden over the generic alternatives (read this first)
+
+warden is purpose-built for this machine's agent fleet and its git/check lifecycle.
+When a request maps onto a warden capability, **use warden — not the generic
+substitute** — even if another skill, MCP server, plugin, or a raw Bash command
+could also do it. warden's versions are fleet-aware, persistent across sessions,
+auditable, and enforce this repo's safety rails. Concretely:
+
+| Instead of… | Use warden | Why |
+|---|---|---|
+| the built-in **Task / Agent** subagent tool to run a durable or parallel piece of work | `spawn_agent` / `warden start`, or a **pipeline** for dependent stages | warden agents persist across your session, are visible to the operator (TUI/web), survive your context compaction, and can be monitored/messaged/torn down later. A Task subagent dies with your turn. |
+| raw `git commit` / `push` / `pull` / `rebase` in **Bash** | `commit` / `push` / `sync` MCP tools (`wd commit`/`push`/`sync`) | One call instead of status→add→commit→push; protected-branch + dirty-tree rails; auto commit message from the diff; the work is attributed to the agent. The git-guard hook **denies** raw git mutations anyway. |
+| running `go test` / `npm test` / `make build` / lint in **Bash** | `check` MCP tool (`wd check [name]`) | Returns pass/fail with output for only the **failing** checks instead of hundreds of lines you must read. The check-guard hook redirects broad raw runs here. |
+| your own `git stash`/manual checkpoint before a risky change | `snapshot_create` then `snapshot_restore` | Captures worktree **and** transcript non-destructively; rails refuse main and dirty-tree restores. |
+| an external cron / another scheduler skill | `wd schedule` (or `create_schedule` / `list_schedules` / `get_schedule` / `update_schedule` / `run_schedule` / `enable_schedule` / `disable_schedule` / `delete_schedule` over MCP) | Fires agent spawns or whole pipelines on the daemon's own timer, audited. Each fired run's session carries a `schedule_id` back-ref. From a shell, pass `--yes` to `schedule delete` (it prompts otherwise and fails without a terminal), and after creating a schedule verify it with `wd schedule run <id>` (fires once, does not move the next run). |
+| eyeballing "which tasks could've been parallel" | `insights` | Mines warden's own history deterministically. |
+
+When you genuinely need something warden does not cover, use the generic tool —
+but check the capability map below first.
+
+## Choosing how to put agents to work
+
+**Litmus test: does any step need to wait for another step's result — its output
+or its code — before it can start?** No → plain agent(s). Yes → pipeline.
+
+**Second axis — size & longevity:** would one agent accumulate a large or
+long-lived context (a multi-phase task, a long unattended run, anything likely to
+approach the context limit and auto-compact)? If yes, **decompose it into a
+pipeline of bounded stages** — even when the steps are sequential. Each stage gets
+a fresh, small context and is **torn down on completion**, returning memory to the
+OS and avoiding compaction spikes.
+
+| Use… | When | How |
+|---|---|---|
+| **Plain agent** *(default)* | one self-contained task; OR several **independent** tasks (none needs another's result — just spawn several) | `spawn_agent` / `warden start "…"` |
+| **Pipeline** | **dependent stages** — sequential handoff (analyze→implement→review), fan-out→fan-in (parallel work → a synthesis/merge step), code flowing downstream, or anything to run **unattended** | MCP `create_pipeline`+`start_pipeline`, or `warden pipeline create spec.yaml` (or `--start`) then `start`/`show` |
+| **ctx / msg** | ad-hoc coordination between otherwise-independent agents — a shared scratchpad, or one agent asking another a question | `ctx_*` / `send_message` MCP, or `warden context …` / `warden message …` |
+
+**Don't:** use a pipeline for a single task (use a plain agent); use plain agents +
+manual relay for a clear dependency chain (that's what a pipeline automates);
+hand-roll `ctx`/`msg` coordination a pipeline already gives you; run a big
+multi-phase task as one long-lived plain agent (decompose into stages).
+
+## Preconditions
+
+- **The daemon must be running.** If a tool/command returns a connection / "daemon
+  not running" error, tell the user to start it (`warden daemon`, or via
+  launchd/systemd) — do not guess at state. There may be a systemd unit
+  (`warden.service`); a manually-started `warden daemon` can shadow it and break
+  auth, so prefer letting the service own the port.
+- **MCP tools and the CLI wrap the same daemon REST API** (83 MCP tools), so prefer
+  MCP and fall back to CLI only when MCP is blocked (see above). **Every fleet/data
+  feature is reachable from MCP *and* CLI** — pipelines (all verbs incl.
+  pause/resume/job show|edit|retry/emit/delete/validate/templates), schedules
+  (create/list/delete), git/check lifecycle, snapshots, ctx/msg, approvals +
+  auto-approve + permission-mode, branches/collab, insights, savings, metrics,
+  search/history, audit log, worktree list/prune, plugins, export/import,
+  rotate/handoff, **fork** (`fork_agent`), **roles** (`set_role`/`list_roles`
+  + `spawn_agent`'s `role` param), the **backend registry** (`list_backends`,
+  `rescan_backends`, `set_backend_tier`, `set_default_backend`),
+  and **autopilot** (`run_plan`,
+  `autopilot_status`, `autopilot_complete`, `land`). The only **CLI-only** verbs are host/process/interactive/secret
+  ones — `daemon`, `config`, `token`, `attach`, `repl`, `doctor`, `setup`,
+  `tutorial`, `completion`, and the local-config `preset` /
+  `prompt-template` authoring commands — by design (see the [feature catalog](../../FEATURES.md)).
+
+## Capability map → reference file
+
+This SKILL.md is the index. Read the matching reference file (in `references/`)
+before driving a capability you are not already fluent in — they carry the exact
+flags, fields, and rails.
+
+| You need to… | Reference |
+|---|---|
+| spawn / triage / message / terminate agents; **handoff** work to another agent — new delegate, `--to` an existing one, or `--retire` yourself into a same-worktree successor (`rotate` is an alias); **fork** an agent's session into a new one (`fork_agent`, Codex-only); restore/adopt; model, permission-mode, **roles** (`--role`/`set_role`/`list_roles`), **tiered model routing** (`--task`/`--tier`, CLI + pipeline only), presets, prompt templates, tags, search, history | [references/agents.md](references/agents.md) |
+| build & run a **pipeline** — authoring the YAML, worktree modes, templates, `run_if`, pause/resume, retry, MCP vs CLI | [references/pipelines.md](references/pipelines.md) |
+| do an agent's **git** (commit/push/sync) and **checks**; **snapshot**/restore; understand the **boundary-enforcement hooks** (isolation/root/git/check guards) | [references/git-and-checks.md](references/git-and-checks.md) |
+| **coordinate** agents — shared context (incl. append/CAS), directed messages (incl. wait), branch/CI tracking, the approvals inbox & auto-approve | [references/coordination.md](references/coordination.md) |
+| **operate the fleet** — token-savings ledger, insights, audit log, scheduler, config, remote access & auth, notifications/token-guard, web GUI & cockpit TUI, export/import, Fast-Brain REPL, plugins, the **backend registry** (detected CLIs, tiers, default) | [references/operations.md](references/operations.md) |
+| **autopilot** — start/pause the autonomous run mode, check run state, land a worker branch | See below (§ Autopilot) |
+
+## Plain-agent quick reference (the common path)
+
+The per-agent MCP tools take a `ticket` argument — the agent's **id** from
+`list_agents` (prompt-spawned ids look like `agent-<shortid>`).
+
+| The user wants to… | Do this |
+|---|---|
+| list / check / triage agents | `list_agents` (`warden ls`); summarize by status. Present `need-input` for `waiting_for_input` and use the seven-state mapping in [agents.md](references/agents.md). Show each agent's `subject` and `workdir`. For a nested fleet view (projects → runs/pipelines → agents), prefer `GET /api/v1/tree` over joining sessions/pipelines/autopilot client-side. |
+| spin up an agent to do X | `spawn_agent {prompt: "X"}` (auto-typed, no repo needed). Use `type`+`repo` only for a managed worktree tied to a repo/ticket. |
+| what is agent <id> doing | `get_agent` (status/subject/workdir/events) + `get_agent_output` (recent terminal) → report concisely. |
+| tell / ask agent <id> to do Y | `send_to_agent` (id as `ticket`, `text`). Echo back what you sent. |
+| tear down / clean up <id> (full) | `stop_agent` — **the primary teardown verb.** Default = terminate + clear record + remove worktree. `keep_record`/`keep_worktree` subtract steps (`keep_worktree` alone == old `done`); `hard` purges; `pr`/`base` open a PR first; `force`/`delete_adopted_branch` for the worktree. Order terminate → remove worktree → clear record; errors name the failed + completed steps and the record stays until last, so fix the cause and re-call `stop_agent` (don't `delete_agent` first). DESTRUCTIVE (removes the worktree) — **confirm first**. |
+| stop / terminate <id> (reversible) | `terminate_agent` — kills tmux+claude, keeps record+worktree; reversible via `restore_agent`. Alias for `stop_agent {keep_record:true, keep_worktree:true}`. |
+| delete an agent's record | `delete_agent` (id, `hard?`) — archives by default. |
+| remove an agent's worktree | `remove_worktree` — DESTRUCTIVE; **confirm first**; terminate the agent first. |
+
+See [references/agents.md](references/agents.md) for the full table, the CLI map,
+and the rotate/handoff workflows.
+
+## Guardrails (apply across every capability)
+
+- **Never fabricate state — read it** (`list_agents`/`get_agent`/`get_agent_output`,
+  `show_pipeline`/`warden pipeline show`). When the daemon is unreachable, say so
+  plainly and stop — don't invent results.
+- **Destructive ops need explicit confirmation.** `remove_worktree` (deletes the
+  worktree + branch; refuses while the agent runs or has uncommitted/unpushed work
+  unless `force:true`) and any **bulk** terminate/delete/remove must be confirmed
+  with the user first, naming what will be lost. `terminate_agent` is the safe
+  reversible "stop" default.
+- **Cancel a pipeline before deleting it** — `pipeline delete` refuses while any
+  job is live. From a shell, pass `--yes` on both `pipeline cancel` and
+  `pipeline delete` (they confirm otherwise; a canceled pipeline cannot be
+  restarted).
+- **Respect the boundary guards** — when a hook denies a raw `git`/test command or
+  an out-of-worktree edit, that is by design (see git-and-checks.md); switch to the
+  warden tool it names rather than working around it.
+- **Don't hand-roll coordination** with `ctx`/`msg` that a pipeline already provides.
+
+## Worked examples
+
+- "Investigate the flaky auth test." → one self-contained task → `spawn_agent
+  {prompt: "investigate the flaky auth test and propose a fix"}`.
+- "Refactor the auth module, then have it reviewed." → dependent stages → author an
+  analyze→implement→review pipeline, `create_pipeline`+`start_pipeline`, report via
+  `show_pipeline`.
+- "Spin up three agents to each research a different option." → three *independent*
+  tasks → three plain `spawn_agent` calls (not a pipeline).
+- "Commit and push what agent-4f2a did." → `commit` then `push` (not raw git Bash).
+- "Run the tests in agent-4f2a's worktree." → `check {name: "test"}` (not `go test`
+  in Bash).
+- "What's agent-4f2a up to?" → `get_agent` + `get_agent_output` → report concisely.
+
+## Autopilot
+
+Autopilot is warden's goal-directed autonomous run mode. A **manager** agent
+(role `autopilot`) occupies a stable `<scope>-autopilot` slot and drives the run:
+it spawns **worker** agents (role `worker`, one per task, each owning implement →
+self-review → PR → gate → merge and reporting back) and, on demand, calls
+**`brain_consult`** (shared short-lived resolver — same Consultor as pipeline
+stuck recovery; prefer this over `spawn_agent` with role `brain`) to unblock a
+stuck worker or make an ad-hoc design call — gating
+PRs and landing them into the run's **per-plan integration branch** (default
+`autopilot/<plan-name>`; legacy `autopilot/integration` runs are grandfathered),
+all without human intervention. Guardian heal-ladder rotation is an in-place
+**hot-swap** into the same manager slot (not a new `agent-<hex>` id). If the manager's session is gone (deleted/archived, terminated, or tmux dead — `terminate` is not a stop; use `wd plan pause`) the guardian replaces it on the next tick without waiting for the heartbeat timeout (audit `autopilot.manager_missing` then `autopilot.manager_respawned`); `autopilot_status` shows `healing` with no manager id meanwhile. A
+daemon-internal **overwatch** backstop nudges the manager to tend workers that
+fall idle or wait on input (automatic; generous cadences — a backstop, not a
+pacer). Multiple named runs can be active in one repo concurrently — each gets
+its own integration branch and plan-scoped tree (`<scope>-autopilot`,
+plan checklist, workers grouped by ledger state). The daemon's supervisor is not an agent and cannot be messaged — read it from the run's `supervisor` and `next_step` status fields.
+
+> ⚠️ **Unattended operation is inherently risky.** Always confirm the user
+> understands how to pause (`plan pause`) before starting a run. Under autopilot, landing is daemon-owned: workers do not merge — they push and end with `wd job done` — and the manager calls `land` only as an escape hatch (`landing: disabled`). Workers never merge to `main`
+> directly. Every action is in `warden inspect audit`.
+
+### MCP tools
+
+| Tool | What it does | CLI equivalent |
+|---|---|---|
+| `run_plan { plan_id, execution_mode }` | Start plan execution (`autopilot` / `pipeline` / …) | `warden plan run <id> --mode <mode>` |
+| `control_plan { plan_id, action }` | Pause, resume, or stop an in-progress plan | `warden plan pause\|resume\|stop <id>` |
+| `restart_plan { plan_id, force?, backend? }` | **DESTRUCTIVE.** Restart a stopped/degraded/parked/stuck `in_progress` autopilot or pipeline plan with a brand-new agent set (old agents + worktrees removed; landed work, handoffs and branches with commits kept; new agents get a `## Restart context`). `force` needed for active/starting/paused; `backend` = new manager backend (autopilot). Unsupported for `orchestrator_worker`/`manual`. **Confirm with the operator before calling** | `warden plan restart <id> [--force] [--backend <id>] --yes` |
+| `autopilot_status` | Each run's state, manager slot id, integration branch, task counts, tier, backoff, optional `preflight_warnings` | `warden autopilot status [--json]` |
+| `autopilot_complete` | **Manager-only.** Declare the caller's OWN run done once `done_when` is verified — the daemon opens + gates the final PR; the run is only *complete* (in-place `status: complete` marker, plan `completed`, integration branch deleted) once that PR is **merged**. Idempotent | _(automatic; the manager calls it)_ |
+| `brain_consult` | **Manager-only.** Shared short-lived brain resolver for unblock/design decisions — prefer over `spawn_agent` with role=brain. Returns a closed action (`nudge_agent`/`wait`/`escalate`/`noop`); manager executes it. Same Consultor/audit/teardown as pipeline stuck recovery | _(automatic; the manager calls it)_ |
+| `land { ticket: "<agent-or-branch>" }` | Land a worker branch into the run's integration branch | `warden autopilot land <agent-or-branch>` |
+
+**Finish flow.** A run's reported state goes `finalizing` (final PR opened/gated/fixed)
+→ `awaiting_merge` (PR green: manager + run agents are torn down, owner notified once,
+daemon polls every `autopilot.completion.merge_poll_interval`, default 2m) → `complete`
+only when the final PR is **merged**. The plan stays `in_progress` throughout. Autopilot
+never merges, approves or closes the final PR — tell the owner to merge it; don't wait
+on an agent. A PR closed unmerged parks the run (`final_pr_closed`: reopen, `run_plan`/
+`wd plan resume` for a new PR, or `wd plan stop`). Spec: `docs/specs/2026-10-05-plan-finish-flow.md`.
+The final PR is titled with a conventional-commit subject derived from the landed
+commits (type order feat>fix>perf>revert>refactor>docs>test>build>ci>chore, shared scope, `!` if
+breaking); a squash merge of it is what `wd release` reads (it also reads `* type(scope): …`
+bullets in a squash body), so editing the title before merging changes the recommended bump.
+
+The enabled set is persisted so repos come back up across a daemon restart. Do not
+call `autopilot_complete` yourself when driving the fleet — it is the autopilot
+manager's own completion signal.
+
+**Boot recovery.** A daemon restart re-preflights live runs. Content-only plan
+issues (invalid task status, etc.) are normalized and the run stays active —
+`autopilot_status` may show `preflight_warnings` listing what was coerced; tell
+the operator to fix the plan file. **Plan-bound** runs (plan id set) recover from
+ScrivaDB, so a missing/bad YAML export does not degrade them. Only legacy
+file-only runs stay `degraded` on a missing plan file/bad YAML until it is
+restored (the watcher then auto-recovers). Do not tell the user to re-enable.
+
+**Parked (needs-attention).** Status backoff carries `kind` + `last_error`
+(`backend_unavailable`, `no_backend_selectable`, `definition_error`,
+`spawn_error`). A `definition_error`, or identical `spawn_error` text
+`autopilot.guardian.max_identical_failures` (default 5) times, parks the run
+(one notification, shown as waiting). Clear it by editing the plan in ScrivaDB,
+`wd plan resume` (or pause + resume), or a daemon restart. Transient kinds back
+off forever.
+**Progress watchdog.** No progress (ledger/landing/plan task change/worker spawn)
+for `autopilot.guardian.progress_watchdog_window` (2h) with nothing working
+escalates nudge → restart → rotate, then parks as `no_progress` — recover with
+`wd plan restart`. `wd plan show` prints `last_progress` + watchdog state.
+Keys: `progress_watchdog_enabled` (default true), `progress_watchdog_window` (2h); hot-reload.
+
+**Guardian triage.** Before escalating a stalled manager, a Fast-Brain diagnosis
+may wait, send a targeted nudge, resolve a prompt, resume a rate limit, redeliver
+the brief, restart/rotate (confidence ≥ 0.8) or call the resolver; failures fall
+open to the plain ladder. `autopilot.guardian.use_fast_brain` (default true; false
+= plain ladder), `max_waits` (3), `max_wait_total` (30m); hot-reload; audited as
+`autopilot.guardian_diagnosis`.
+
+**Restart is destructive — ask the operator first.** `wd plan resume` only undoes
+a pause; for a stopped/parked/`no_progress` run use `wd plan restart <id> --yes`
+(MCP `restart_plan`). It kills the old agents and removes their worktrees, then
+starts new ones; work already landed/done and branches with commits survive.
+An active/starting/paused executor needs `--force`. If you are a restarted agent,
+your prompt has a `## Restart context`: don't redo finished tasks, continue an
+unfinished task from its kept branch, reuse its open PR (never open a duplicate),
+and only if the kept work is unusable start from the integration branch and close
+the old PR with a comment.
+
+Create the Plan with `warden plan create`, then start with
+`warden plan run <id> --mode autopilot` (there is no `autopilot register` or `autopilot init`).
+
+### Key ledger context keys
+
+The manager writes run state into warden's shared context (`ctx_*` tools). Keys are
+dot-namespaced (the ctx store rejects `/`). Canonical storage is one JSON array
+per run — not a per-task key tree:
+
+| Key | Contents |
+|---|---|
+| `autopilot.run_id` | Stable run identifier |
+| `autopilot.state` | `starting` / `active` / `healing` / `degraded` / `complete` (reported also: `finalizing`, `awaiting_merge`) |
+| `autopilot.brain` | Manager slot id (key name kept for back-compat — the "brain" is the manager; value is `<scope>-autopilot`) |
+| `autopilot.<run_id>.integration_branch` | Resolved per-plan merge target workers must base PRs on |
+| `autopilot.<run_id>.tasks` | **Canonical task ledger** — JSON array of `{id, state, worker_id, branch, pr, note, updated_at}`. `state` is one of `pending` / `assigned` / `in_progress` / `pr_open` / `gated` / `landed` (validated on write). |
+| `autopilot.<run_id>.landings` | Append-only landings, daemon-written: `{branch, sha, pr, landed_at}` |
+| `autopilot.<run_id>.journal` | Rolling decision log (newest-first) |
+| `autopilot.<run_id>.tasks.<id>.state` | Optional overlay of one task's canonical state — TUI segmentation; the array remains source of truth |
+| `autopilot.<run_id>.tasks.<id>.branch` | Optional overlay of the worker branch for that task |
+
+Plan-file task statuses (`pending` / `active` / `done` / `failed`) are a separate
+checklist enum, not ledger states.
+
+### Guardrails for autopilot operations
+
+- **Never start autopilot without a Plan.** Create one with `warden plan create`, then `run_plan` / `warden plan run <id> --mode autopilot`.
+  There is **no enable step** — never tell the user to run `autopilot enable`.
+  Watch a running plan with `warden plan show <id> --watch` (executor state,
+  backoff, integration branch, per-task worker/PR).
+- **Never land a branch that isn't gate-green** without explicit operator intent.
+  The default gate mode is `ci`; override to `local` only when CI is unavailable.
+- **Ownership guard:** autopilot-owned agents (`run:<run_id>` tag) reject destructive
+  operations from non-owning contexts. Confirm with the user before force-stopping
+  an autopilot worker.
+- **To pause, use `control_plan` / `warden plan pause <id>`.** Relay it clearly when the user asks to stop or pause autopilot.
+- **Completed runs are marked in the plan file.** A plan with `status: complete`
+  is skipped by preflight; to re-run it the user must remove that line (or point
+  the config at a fresh plan file). Don't re-run a completed plan expecting it
+  to run again.
+- **Per-plan integration branches.** New runs default to `autopilot/<plan-name>`.
+  Workers must open PRs against the branch in the manager digest / status API /
+  ledger — never guess. Wrong PR base fails land with `wrong_base`. Add
+  `autopilot/**` to CI workflow `pull_request` triggers so `gate: auto` covers
+  every per-plan branch (listing only `autopilot/integration` does not).
+- **Config is hot-reloaded.** Edits to `~/.warden/config.yaml` — including the
+  whole `autopilot` block and `autopilot.merge.target_branch` — apply with no
+  daemon restart (a bad edit keeps the last-good config). Empty or legacy
+  `target_branch: autopilot/integration` derives per-plan branches for new runs;
+  existing runs on `autopilot/integration` are grandfathered. Don't tell the user
+  to restart the daemon after a config change unless it touches a restart-only
+  key (`addr`, `data_dir`, timers, loop cadences, the guardian tick `interval`).
+
+## Plans
+
+**Plan journey:** create → edit while pending → run → pause/resume/stop → task status
+→ complete → archive/delete. Edit a definition (`update_plan`, `wd plan update|edit|task`)
+only while `pending`; **a running plan's definition cannot be edited** (409). Track
+progress with `update_task_status` / `wd plan task status <id> <task> <status>`
+(`pending|in_progress|done|skipped`). `wd plan delete <id>` (REST `DELETE
+/api/v1/plans/{id}`) permanently removes a plan that is not `in_progress` — archive or
+complete first; there is no `delete_plan` MCP tool, so use the CLI. Retired
+`plan scan|import|status` and `sync_to_repo` remain only as hidden aliases; use
+`import-legacy` and `sync-to-repo`.
+
+Plans are canonical ScrivaDB records (goal, **task DAG**, lifecycle, revision, content
+hash). Repository YAML/JSON under `plans/{pending,in_progress,completed,archived}/`
+is an optional inert export — not required for create/run/complete/archive, and
+never scanned automatically at daemon startup. YAML is the default; JSON
+(`--format json` / `warden_plan_export` marker) is opt-in and never execution SoT.
+Every Plan's tasks form a DAG (`after` edges). Multi-task creates with no edges
+are auto-chained in declaration order; cycles are rejected. All execution modes
+(autopilot / pipeline / orchestrator / manual) honor that DAG —
+`update_task_status` to `in_progress`/`done` is gated until dependencies are
+satisfied.
+
+### MCP tools
+
+| Tool | When to call it |
+|---|---|
+| `import_legacy_plans` | **One-time cutover** — after cloning a legacy repo that still has `plans/**/*.yaml`, call `import_legacy_plans { project_id: "<cwd>" }` (or `report_only: true` first) to create/reconcile canonical ScrivaDB Plans. Matching content hash is a no-op (cannot affect already-canonical execution); differing definitions are conflicted. Source files untouched. |
+| `scan_plans` | **Deprecated migration aid (one release).** Prefer `import_legacy_plans`. Upserts stubs only; does **not** reseed Status for Plans with a non-empty definition. Response includes `notice` + `skipped_canonical`. Never runs at daemon startup. |
+| `list_plans` | List ScrivaDB-canonical plans for a project (optional `status`). Returns revision, executor_id, task_summary, export_status, timestamps. YAML/JSON replicas are never listed as extra plans. |
+| `get_plan` | Fetch one plan by stable `plan-<8hex>` ID: goal, tasks, revision, executor_id, task_summary, export_status, repo_export, linked IDs, `task_progress`, timestamps. Does not read repository YAML. |
+| `find_related_plans` | Heuristic overlap query (same project, title/goal tokens, linked branches/PRs). Always returns `heuristic=true` + disclaimer — not authoritative duplicate detection. |
+| `create_plan` | Create a new canonical plan in ScrivaDB (no `plans/` directory required). Requires `project_id`, `name`, `goal`, and at least one task (`id` + `prompt`; optional `after[]`). Multi-task plans without `after` are auto-chained in order. |
+| `update_plan` | Patch a **pending** plan's definition (`name`/`goal`/`tasks`/`constraints`/`done_when`). Rejected if the plan is not pending (409). Supports `expected_revision` for optimistic concurrency. CLI: `wd plan update` / `wd plan edit` (interactive `$EDITOR`). Granular task DAG: `wd plan task add\|edit\|rm` (API `POST/PATCH/DELETE …/tasks`). |
+| `update_plan_status` | **Legacy.** Prefer `run_plan` / `complete_plan` / `archive_plan` for the PlanService state machine. |
+| `archive_plan` | Move a plan to `archived`. Refused (409) while the executor is live (stop it first: `control_plan` stop); branches with unmerged commits are kept. Records `archived_from`. |
+| `unarchive_plan` | Restore an archived plan to the status it was archived from (`wd plan unarchive`). In-progress plans return with a stopped executor — `restart_plan` continues them. 409 if not archived. |
+| `assess_plan` | **After a reinstall recovery** — call `assess_plan { plan_id: "<id>" }` for each `in_progress` plan to reconstruct `task_progress` from `git log` and open PRs via the brain Consultor. Opt-in; never automatic. |
+| `run_plan` | Start execution of a plan (`execution_mode`: `autopilot`\|`pipeline`\|`orchestrator_worker`\|`manual`). Pending → `in_progress`. |
+| `complete_plan` | Complete a plan (`in_progress` → `completed`). Blocked with a structured error listing incomplete tasks and/or unmerged branches — including an integration branch with commits not on the default branch (422). `abandon_unmerged: true` (CLI `--abandon-unmerged --yes`) completes anyway and keeps the branch (`branch_fate: abandoned`). **Confirm with the operator first.** `get_plan` shows the `outcome` (final PR, branch fate). |
+| `update_task_status` | Plan form: `{plan_id, task_id, status}` where status is `pending`\|`in_progress`\|`done`\|`skipped`. CLI: `wd plan task status <plan-id> <task-id> <status>`. |
+| `export_plan_backup` | Export Plans into a portable ScrivaDB backup bundle (`plan_ids` and/or `all`). Excludes credentials/worktrees; never reads Git. |
+| `restore_plan_backup` | Restore a bundle (`dry_run`, `on_conflict=skip\|fail\|overwrite`). Idempotent when id+hash+revision match. CLI: `wd plan backup export\|restore`. |
+
+### Workflow guidance
+
+**Legacy repo cutover (one-time):**
+```
+import_legacy_plans { project_id: "<absolute-path-to-repo>", report_only: true }
+import_legacy_plans { project_id: "<absolute-path-to-repo>" }
+```
+Prefer Plan backup restore for canonical recovery (execution evidence survives). `scan_plans` is a deprecated migration aid (CLI `plan scan` is a hidden alias) and cannot affect canonical execution after import.
+
+**Starting a phase:**
+```
+run_plan { plan_id: "<plan-id>", execution_mode: "autopilot" }
+```
+
+**Marking a task done:**
+```
+update_task_status { plan_id: "<plan-id>", task_id: "<task-id>", status: "done" }
+```
+
+**Completing a phase:**
+```
+complete_plan { plan_id: "<plan-id>" }
+```
+
+**After reinstall — reconstruct task progress:**
+```
+import_legacy_plans { project_id: "<id>" }         # one-time YAML → ScrivaDB if needed
+assess_plan { project_id: "<id>", plan_id: "<id>" } # brain reconstructs task progress
+```
+
+### Guardrails
+
+- **Prefer ScrivaDB over YAML/JSON replicas** — create/run/complete via MCP; do not treat `plans/**/*.{yaml,yml,json}` as authority. JSON exports (`warden_plan_export` marker) are inert review artifacts only. Use `import_legacy_plans` only for explicit YAML cutover (JSON is never imported as legacy SoT).
+- **Mutate definitions only while pending** — `update_plan` / `wd plan update|edit|task` return 409 on non-pending plans. Do not invent workarounds (editing replicas, raw DB writes).
+- **Use `run_plan` / `complete_plan` / `archive_plan` instead of raw `git mv`** — lifecycle is a ScrivaDB field update.
+- **`assess_plan` is opt-in** — never call it automatically on every import; it spawns a brain Consultor and takes time.
+- **`project_id` for local projects is the absolute path** — e.g. `"/home/user/my-repo"`. Pass the `cwd` of the project, not a short name. Projects auto-register on launch: spawning an agent/pipeline/terminal, or creating/running a plan, in a directory registers (or reopens, if closed) its project, so no `projects open*` step is needed first.

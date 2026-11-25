@@ -1,0 +1,191 @@
+---
+name: geotask-core
+description: Generate, validate, execute, and recover verifiable spatial tasks with GeoTask Core without inventing missing evidence.
+---
+
+# GeoTask Core Agent Skill
+
+Use this skill when a request contains spatial objects, routes, zones, time windows, altitude intervals, distances, containment, intersections, or evidence-gated operational decisions.
+
+## Boundary
+
+GeoTask Core is the deterministic protocol and validation layer. You are responsible for understanding intent and requesting evidence. Do not pretend GeoTask Core is a hosted-model client, a source of real-world facts, or an authorization system.
+
+Never:
+
+- invent coordinates, schedules, authorities, document versions, source references, source digests, audit references, or verification times;
+- treat geographic longitude/latitude or unknown-CRS coordinates as planar Euclidean coordinates;
+- reorder axes, convert units, reconcile vertical datums, or change open/closed boundary semantics implicitly;
+- convert `unverifiable`, `need_data`, or unknown into `true` or `false`;
+- bypass `blocked_outputs` in prose or another tool call;
+- execute `next_action` unless a separate authorized Runtime explicitly supports it;
+- replace deterministic operator output with model judgment;
+- treat declared provenance or `evidence_refs` as proof that a source was fetched, authenticated, independently verified, or human-reviewed;
+- treat a valid `geotask.world-state` Artifact as proof of external truth, an Observation merge, a State Transition, task re-execution, or action authorization;
+- treat a valid `geotask.observation-merge-result` Artifact or a `require_equal` conflict resolution as proof that sources independently corroborate one another, that a selected source is authoritative, that precedence was justified, or that external truth was verified; never invent an `explicit_precedence` order—use only a complete caller-, Runtime-, or Domain-Pack-declared policy;
+- treat a valid `geotask.state-transition` Artifact as proof that snapshot bindings were checked, a diff was calculated, changes were applied, a new state was materialized, or action was authorized;
+- treat a valid `geotask.verification-session` Artifact as proof that its World State or file bindings were checked, linked Artifact semantics were validated, tasks or rechecks ran, external truth was established, or action was authorized;
+- treat a valid `geotask.discrepancy-report` Artifact as proof that sources were compared, a discrepancy is true, impact was propagated, a Correction Request was created, correction was applied, state was materialized, a recheck ran, or action was authorized;
+- treat a valid `geotask.correction-request` Artifact as proof that bindings or correction scope were verified, changes were applied, a successor World State was materialized, acceptance criteria were met, discrepancies were resolved, outputs were released, or actions were authorized;
+- treat a valid `geotask.impact-graph` Artifact as proof that bindings or source entities were verified, impact was discovered, propagation ran, corrections were applied, a successor World State was materialized, reevaluation ran, outputs were released, or actions were authorized;
+- treat a valid `geotask.world-state-materialization-result` Artifact as proof that exact bindings were checked, the materializer ran, recompute values were derived correctly, external truth was verified, reevaluation ran, outputs were released, or actions were authorized or executed;
+- treat a valid `geotask.incremental-reevaluation-result` Artifact as proof that exact bindings were verified, reevaluation executed, a successor World State was generated, acceptance criteria were evaluated, discrepancies were resolved, production outputs were released, or an action was authorized or executed;
+- compare benchmark timing from different hardware as a ranking, production SLA, or model-quality result.
+
+## Required Workflow
+
+1. Discover contracts:
+
+   ```bash
+   geotask agent inspect --format json
+   geotask inspect schemas --format json
+   ```
+
+2. Create or receive a native GeoTask v1 document.
+
+3. Prepare Agent-generated drafts before trusting them:
+
+   ```bash
+   geotask agent prepare <generated.yaml> \
+     --repaired-output prepared.yaml \
+     --output preparation-report.json
+   ```
+
+   Accept only `valid` or `repaired`. When the report is `blocked`, use `revision_request.required_changes` to revise the returned `prepared_document`, then run:
+
+   ```bash
+   geotask agent retry preparation-report.json revised.yaml \
+     --verification-output revision-verification.json \
+     --prepared-output prepared.yaml \
+     --output retry-report.json
+   ```
+
+   `candidate_values` are inventories only: never treat them as selected answers. `agent retry` must accept the revision before execution. Do not bypass its changed-path check, revision-base fingerprint, or reconstructed revision request. Never change coordinates, evidence, task goals, domain policy, or other fields unless the request explicitly names them.
+
+   Treat preparation and retry traces as registered Artifacts. Validate the report you retain for audit:
+
+   ```bash
+   geotask artifact validate geotask.agent-generation-preparation preparation-report.json --format json
+   geotask artifact validate geotask.agent-revision-retry retry-report.json --format json
+   ```
+
+   A structurally valid report may still record `blocked` or `rejected`; do not reinterpret Artifact validity as workflow acceptance.
+
+4. Validate the prepared document:
+
+   ```bash
+   geotask artifact validate geotask.document prepared.yaml --format json
+   ```
+
+5. Execute deterministic assertions:
+
+   ```bash
+   geotask run prepared.yaml --format v1-json --output execution-result.json
+   ```
+
+6. Validate the execution result:
+
+   ```bash
+   geotask artifact validate geotask.execution-result execution-result.json --format json
+   ```
+
+7. When the document declares `geotask.control/1.0`, evaluate controls with explicit state:
+
+   ```bash
+   geotask control evaluate <task.yaml> \
+     --result execution-result.json \
+     --state state.yaml \
+     --output control-evaluation.json
+   ```
+
+8. If a required assertion is `unverifiable`, surface the declared evidence request exactly. Ask for every item in `required_fields`; do not ask vaguely for “more information.”
+
+9. After evidence arrives, use fail-closed recovery:
+
+   ```bash
+   geotask agent recover <task.yaml> \
+     --evidence <verified-state.yaml> \
+     --output recovery-report.json
+
+   geotask artifact validate \
+     geotask.agent-evidence-recovery \
+     recovery-report.json \
+     --format json
+   ```
+
+   A structurally valid recovery Artifact may still record `state=blocked`; do not treat Artifact validity as proof that recovery succeeded.
+
+10. Use the final decision only after the affected assertion has been rerun and the control evaluation no longer blocks the output.
+
+11. Route nonlocal execution, external evidence, or production actions only through an explicitly inspected external Runtime:
+
+    ```bash
+    geotask runtime inspect --profile --format json
+    geotask runtime inspect runtime-descriptor.json --format json
+    geotask artifact validate geotask.runtime-descriptor runtime-descriptor.json --format json
+    geotask artifact validate geotask.runtime-request runtime-request.json --format json
+    geotask runtime check runtime-descriptor.json runtime-request.json --format json
+    ```
+
+    Read the Runtime Descriptor before constructing a Request. Do not assume that a standard operation ID is supported. Treat `runtime check` as an offline compatibility preflight only: it must report `submitted=false` and `side_effects_executed=false`, and it does not prove reachability, authorization, or trustworthiness. After submission, require the Response to remain bound to the inspected Descriptor and submitted Request: IDs must match, completed outputs must exactly match the declared output contract, a synchronous operation cannot return `accepted`, and side-effect or audit claims must not contradict the Descriptor. The public `geotask.reference.fail-closed` Runtime is not production ready and supports only read-only Artifact validation. The public HTTP JSON Adapter and loopback Endpoint examples are transport-only: they do not discover a Descriptor online, resolve authorization, retry, call a model, fetch evidence, or execute an action. Keep transport failures separate from Runtime states: malformed HTTP or JSON must not become `failed` or `rejected`, while a valid Request refused by the Runtime should return a contract-valid `rejected` Response. Treat output from a model Adapter as model-generated even when the Runtime state is `completed` and the Artifact is valid. Require `model_only`, `executor=model`, `deterministic=false`, and model-scoped or unverified assurance; never promote it to `verified`, `local_deterministic`, independent verification, or human review without a separate verifier or review step. Never place passwords, bearer tokens, private keys, or connector credentials in endpoint URLs, HTTP headers, `authorization_ref`, metadata, diagnostics, or audit references. A `rejected`, `blocked`, or `failed` Runtime Response may be a structurally valid Artifact; inspect its state and diagnostics instead of treating Artifact validity as operation success.
+
+    For the public OpenAI Responses Provider package, require a caller-inspected external Descriptor, a pinned model snapshot unless an explicit compatibility override is documented, an opaque authorization reference bound to an externally authenticated official SDK client, `store=false`, no tools or conversation state, and SDK retries disabled. Do not treat offline fake-client tests as proof of account access, model availability, quota, billing, or live-provider compatibility. A live smoke test requires explicit authorization and must remain outside Core and normal public CI.
+
+12. Before a Core release, run and retain the public offline benchmark:
+
+    ```bash
+    geotask benchmark core --enforce-performance --output core-benchmark.json
+    geotask artifact validate geotask.core-benchmark-report core-benchmark.json --format json
+    ```
+
+    Require all fixed conformance cases to pass. Interpret the p95 threshold only as a controlled local regression guardrail; retain environment metadata and never infer cross-hardware superiority or production capacity from it.
+
+## Status Handling
+
+- `verified`: use the computed value subject to control gates.
+- `contradicted`: preserve the contradiction and explain which expectation failed.
+- `unverifiable`: request declared evidence; do not guess.
+- `need_data`: request or route the named data dependency.
+- `execution_error`: report the failure; do not reinterpret it as a domain answer.
+- blocked control: keep outputs blocked and state the exact `resume_when` condition.
+
+## GT08 Recovery Example
+
+Initial result:
+
+```text
+route_intersects_zone = true
+altitude_conflict = true
+temporal_conflict = unverifiable
+```
+
+Required response:
+
+```text
+state = blocked
+next_action = request_evidence
+blocked_outputs = full_conflict, automatic_approval
+```
+
+Do not answer `full_conflict=true` merely because the two known conditions are true.
+
+After all required schedule evidence is present and `restricted_schedule_verified == true`, run:
+
+```bash
+geotask agent recover examples/core/evidence_request_plan.yaml \
+  --evidence examples/core/evidence_request_verified_state.yaml \
+  --output recovery-report.json
+```
+
+A successful report must show:
+
+```text
+state = recovered
+task_reexecuted = true
+next_action_executed = false
+model_guess_used = false
+```
+
+## Public and Private Boundary
+
+Keep real regulatory sources, customer data, connector credentials, source-ranking policies, approvals, and production actions in a private Runtime or Domain Pack. Public Core examples must use fictional evidence.

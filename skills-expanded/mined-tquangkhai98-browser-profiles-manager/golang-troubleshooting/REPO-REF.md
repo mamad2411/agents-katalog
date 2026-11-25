@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tquangkhai98/browser-profiles-manager (path: .agents/skills/golang-troubleshooting/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Troubleshoot Golang programs systematically - find and fix the root cause. Use when encountering bugs, crashes, deadlocks, or unexpected behavior in Go code. Covers debugging methodology, common Go pi

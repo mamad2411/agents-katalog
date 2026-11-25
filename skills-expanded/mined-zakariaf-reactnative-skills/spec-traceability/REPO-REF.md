@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/zakariaf/reactnative-skills (path: skills/spec-traceability/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Keeps spec IDs traced in tests, code, commits and reports; flags dangling or untraced IDs. Use when a task cites a spec ID (REQ-4, SCR-2), asks what is required or in scope, or hits a spec gap. Not fo

@@ -1,0 +1,376 @@
+---
+name: research-hub
+description: Operate research-hub workflows for local source metadata, literature discovery, optional Zotero/Obsidian/NotebookLM ingest, dashboard inspection, and vault maintenance. Use when the user asks to find papers and organize them, save native research to Hub, build a knowledge base, ingest a folder of PDFs, upload to NotebookLM, generate research briefs, inspect clusters, or maintain a research vault. NOT for auditing or cleaning up an existing Zotero library — that's `zotero-library-curator` (read-only audit) plus `zotero-skills` (for CRUD).
+---
+
+# research-hub
+
+research-hub provides an AI-operable local research workspace with optional Zotero, Obsidian,
+and NotebookLM integrations. Host-native research remains useful without Hub or
+any integration account; choose a destination before its setup or write steps.
+
+## Runtime contract (do this first)
+
+This skill pairs host capabilities with the `research-hub` runtime. A
+capable host can do multi-round search, browsing, citation chaining, and
+evidence reasoning with its native tools. When Hub is selected, it can save
+source metadata locally or hand bibliographic records to the separate ingest
+pipeline. The CLI provides deterministic
+ingest/storage, vault and library maintenance, NotebookLM workflows,
+dashboard, and MCP/REST tools;
+scholarly search adapters are optional.
+
+For native-only research, skip Hub-specific describe, doctor and setup checks;
+inventory host-native capabilities and follow the shared research contract
+below. Before running a selected Hub CLI workflow, check that interface:
+
+```bash
+research-hub describe --json
+```
+
+For Hub-only metadata, inspect `research-hub project record --help` for the
+installed batch interface. Use `research-hub doctor` only when setup is relevant
+and uncertain for a selected integration/vault workflow; missing integration
+credentials do not block the local metadata route in step 3.
+
+If `research-hub` is **not found**, this executor cannot invoke that CLI route.
+This can happen after a skill-only install or with a different environment/PATH;
+it does not prove the product or another supported MCP/native interface is absent.
+Do not attempt unavailable CLI commands. Continue available host-native search,
+reading, citation chaining and evidence reasoning within the user's scope, and
+inventory any other supported interface before claiming overall unavailability.
+Existing access and write permissions still apply. If the user needs the CLI
+route, its setup path is (not an automatic installation requirement):
+
+```bash
+pip install research-hub-pipeline
+research-hub setup --persona researcher   # or analyst | humanities | internal
+```
+
+Do not invent CLI output or report an ingest. A missing CLI route does not block
+native-only research, comparison, topic vetting, or project/paper memory work.
+
+For a selected integration workflow, act only on missing capabilities needed
+for that selected destination. If `doctor` reports relevant missing Zotero
+credentials, NotebookLM auth, or a supported LLM CLI, adapt instead of
+pretending the full path is ready:
+
+- Missing Zotero: use `import-folder`, sample/dashboard mode, or ask
+  the user to set `ZOTERO_API_KEY` / `ZOTERO_LIBRARY_ID`.
+- Missing NotebookLM auth: run the first search with `--no-nlm`, then
+  ask the user to complete `research-hub notebooklm login --auto-detect`.
+- Missing LLM CLI for the relevance judge: either install/configure a
+  supported CLI (`claude`, `codex`, `gemini`, `opencode`, `aichat`,
+  `cursor`, or a custom adapter) or add `--no-fit-check` and clearly
+  state that relevance filtering was skipped.
+
+Do **not** invent or simulate `research-hub` output if the CLI is
+missing.
+
+Default language policy: answer the user in their language. Generate durable research notes, metadata, and citations in English unless the user explicitly asks for another language.
+
+## Shared research contract
+
+Read `references/research-protocol.md` before substantive discovery and
+`references/source-claim-audit.md` before source-supported synthesis. Preserve
+the user's exact scope; map material needs to actual search paths; distinguish
+core/closest/classic/contrary roles; and report unresolved evidence and bounded
+completion. Neither a successful search nor a valid ingest certifies coverage,
+novelty or scientific sufficiency. Use optional source-audit sidecars only when
+local binding checks help; strict ResearchEvidencePacket v1 stays unchanged.
+For an optional portable Stage1 observation handoff and local byte-check/save,
+read `references/native-discovery-export.md`; native research stays useful
+without Hub persistence, and no Stage2 or external write is implied.
+
+## Agent preflight protocol
+
+For AI hosts such as Claude Code, Codex, Gemini CLI, Cursor, OpenClaw,
+Hermes, or generic API clients, use this sequence unless the user gives
+a narrower command:
+
+1. Inventory the actual host-native search, deep-research (if present), reading,
+   citation and relevant skill capabilities using the Stage 1 procedure in
+   `references/research-protocol.md`. Record used versus untested/unavailable
+   paths. Do not infer availability from the host name. For native-only
+   research, skip Hub-specific preflight and Hub-only steps 3–7 unless a Hub
+   operation is selected. For a selected Hub operation, check the available
+   installed interface separately:
+
+   ```bash
+   research-hub describe --json
+   ```
+
+   Inspect `research-hub project record --help` for a Hub-only metadata save;
+   reserve doctor/setup and credential checks for selected integration workflows.
+
+2. If the host has native research tools and the user wants multi-round
+   discovery, use those tools for search, browsing, citation chaining,
+   and evidence reasoning. Follow the shared needs-to-query map and record
+   visible tool outcomes; planned queries and unavailable payloads do not
+   count as executed searches or zero results. For native-only research, default
+   to readable inline bibliographic records with title, authors and year when
+   known, source identity and locator, publication version or unknown, actual
+   reading level and access limits. Honor the user's explicitly requested output
+   format over this default; distinguish assessed claims from leads and
+   unverified claims. Preserve the
+   source and claim audit boundaries in `references/research-protocol.md` and
+   `references/source-claim-audit.md`; do not invent missing evidence or receipts.
+   Native-only research does not inherently require JSON or the Hub CLI.
+
+   Prepare `papers` JSON only for a selected Hub ingest or an explicit request
+   for that structured handoff, using the shape in `docs/papers_input_schema.md`
+   with optional `provenance` and `source_records`. The separate
+   `research-discovery-observations/1.0` export remains optional. Do not pass a
+   `ResearchEvidencePacket` directly as papers input; it is a separate
+   evidence-validation contract. This path needs neither a second agent
+   nor a dedicated deep-search API.
+
+   That `papers` shape is for the optional ingest pipeline, not the local source
+   batch route below. The agent prepares structured handoffs; the researcher
+   should not have to author JSON to use either route.
+
+3. Before any real ingest or metadata save, choose the requested destination:
+
+   **Native-only research**: deliver the requested readable research result;
+   this needs no Hub installation, JSON, integration account or destination write.
+   Do not turn search or summarization into a Hub setup prerequisite.
+
+   **Hub-only metadata save**: use the existing, explicitly selected root and
+   project. The agent prepares and safely quotes SOURCE_BATCH_JSON; never ask
+   the researcher to handwrite JSON. It is an array of source data objects, not
+   a `papers` wrapper or ResearchEvidencePacket. Each needs a stable batch_id,
+   upstream id, title and locator; Hub owns the separate outer record ID.
+   Do not run doctor or setup for a Hub-only metadata save. Inspect the installed
+   batch flags before using these examples; placeholders are filled by the agent.
+
+   ```bash
+   research-hub project record --root SELECTED_ROOT --project selected-project --kind source --batch --dry-run --data SOURCE_BATCH_JSON
+   research-hub project record --root SELECTED_ROOT --project selected-project --kind source --batch --apply --data SOURCE_BATCH_JSON
+   ```
+
+   First preview, inspect the plan, and retain the same batch/source IDs and data.
+   A dry-run does not open the root or check live storage; an optional explicitly
+   project-bound `--existing-records` snapshot is still not live storage evidence.
+   Only run --apply after the user has authorized this selected local metadata
+   write. Apply reads current storage and requires an already existing project.
+   An exact replay can reuse existing Hub IDs; a conflict rolls the entire batch
+   back. For an uncertain Hub result, use only the identical authorized batch,
+   not per-row legacy writes or newly invented IDs. This is not cross-batch
+   bibliographic deduplication or a transaction across providers.
+
+   Preserve reading_level/reading_scope, unknown versions, missing receipts and
+   prior-batch matches. Do not promote abstract-snippet to abstract or full text.
+   Keep identity_status=unverified and human_acceptance=pending; role candidates
+   are not confirmed classifications. Do not turn relevance into a summary or
+   generated prose into an original abstract. A metadata save does not verify
+   the paper, summary, source version or actual reading; report registration and
+   source-bound summary display remain separate existing operations. Report
+   created/reused/conflict results honestly; Zotero, Obsidian and NotebookLM
+   remain `not-performed`. See `docs/contracts/source-batch-handoff-preview.md`.
+
+   **Optional external destinations**: use separate authorization and receipts
+   for each selected destination. A Hub receipt is not a Zotero, Obsidian or
+   NotebookLM receipt. Unattempted external writes stay `not-performed`;
+   uncertain outcomes stay unknown and require reconciliation before retry.
+   For a selected bibliographic ingest, inspect the configured vault and Zotero
+   destination/collection with `research-hub doctor` only when relevant and
+   uncertain. Its separate preview is:
+
+   ```bash
+   research-hub ingest --input ./handoff.json --cluster project-topic --dry-run
+   ```
+
+   `research-hub run --input PATH --dry-run` is also supported. A preview
+   leaves canonical notes, manifest, dedup index, labels, and pipeline
+   log/output unchanged. Run a real `ingest` or `run` only when the user
+   has authorized those writes; host research alone does not authorize
+   Zotero/library or vault changes.
+
+4. Use CLI-managed literature discovery only when it fits the request:
+
+   ```bash
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm
+   ```
+
+5. If the CLI-managed run stops before search because no relevance judge is on
+   PATH, choose one of these explicit paths:
+
+   ```bash
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm --no-fit-check
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm --llm-cli codex
+   research-hub auto "TOPIC" --max-papers 3 --no-nlm --llm-cli gemini
+   ```
+
+6. If NotebookLM is selected, use its existing workflow after the selected input
+   is ready. It is not a requirement to connect all three tools. Login, upload
+   and destination writes need their own authorization and observed receipts:
+
+   ```bash
+   research-hub notebooklm login --auto-detect
+   research-hub notebooklm bundle --cluster <slug>
+   research-hub notebooklm upload --cluster <slug>
+   research-hub notebooklm generate --cluster <slug> --type brief
+   research-hub notebooklm download --cluster <slug>
+   ```
+
+7. For machine-readable automation, prefer commands with `--json` when
+   available, or use the MCP/REST surfaces exposed by `research-hub serve`.
+
+This protocol separates host-native discovery from the deterministic
+ingest step. When using CLI-managed discovery, stage a small cluster first
+and add browser-dependent NotebookLM work last.
+
+## Pick The Right Entry Point
+
+| User setup | Recommended path |
+|---|---|
+| Read-only native research | Host-native search/reading and readable results; no Hub, JSON or account required |
+| Hub only, no integration accounts | Agent-prepared source batch in step 3: preview first, then an authorized selected-project metadata save |
+| Zotero + Obsidian + NotebookLM | `research-hub auto "topic"` |
+| Zotero + Obsidian only | `research-hub auto "topic" --no-nlm`, `zotero backfill`, Obsidian dashboard output |
+| Obsidian + NotebookLM only | `research-hub import-folder <folder> --cluster <slug>`, then NotebookLM bundle/upload |
+| Zotero + NotebookLM only | Zotero-backed search and NotebookLM operations |
+| No accounts yet | Use available host-native search/reading with [research-protocol.md](references/research-protocol.md); optionally preserve observations/readers with [native-discovery-export.md](references/native-discovery-export.md) |
+
+Native-only research does not require a Hub installation, setup/doctor run,
+integration account, or dashboard launch. If the user separately selects a Hub
+sample preview, `research-hub dashboard --sample` remains an optional demo;
+sample data is not the user's research result or an acceptance test.
+
+## Setup Commands
+
+Use these only for selected Hub-backed operations when the needed setup is
+authorized. They are not prerequisites for native-only research.
+
+```bash
+pip install research-hub-pipeline[playwright,secrets]
+research-hub setup
+research-hub doctor
+```
+
+For local files without Zotero:
+
+```bash
+pip install research-hub-pipeline[import,secrets]
+research-hub setup --persona analyst
+research-hub import-folder ./papers --cluster my-local-review
+```
+
+## Core Workflows
+
+### Preview
+
+```bash
+research-hub dashboard --sample
+```
+
+### Research Topic
+
+```bash
+research-hub plan "TOPIC"
+research-hub auto "TOPIC" --no-nlm
+research-hub serve --dashboard
+```
+
+Use `--no-nlm` for first-run smoke tests or when NotebookLM browser automation is not configured.
+
+### Discover (search + AI fit-check)
+
+Two-phase interactive flow when you want a human / AI in the loop on which papers actually belong in a cluster. Replaces the `auto` one-shot ingest when topic boundaries are fuzzy.
+
+```bash
+research-hub discover new --cluster project-topic --query "agent-based modeling flood adaptation"
+# → emits search results + a fit-check scoring prompt; stashes state
+
+# Run the fit-check prompt through your AI of choice, paste the scores back
+research-hub discover continue --cluster project-topic --scores scores.json
+# → applies scores, emits papers_input.json for ingest
+```
+
+`research-hub fit-check {emit|apply|audit|drift}` exposes the underlying gates separately when you want to re-score an existing cluster or audit drift over time. `discover variants` emits a query-variation prompt to widen recall before fit-check narrows it.
+
+### Local Source Folder
+
+```bash
+research-hub import-folder ./sources --cluster project-topic
+research-hub serve --dashboard
+research-hub crystal emit --cluster project-topic
+```
+
+### NotebookLM
+
+```bash
+research-hub notebooklm login --auto-detect
+research-hub notebooklm bundle --cluster project-topic
+research-hub notebooklm upload --cluster project-topic
+research-hub notebooklm generate --cluster project-topic --type brief
+research-hub notebooklm download --cluster project-topic
+```
+
+### Synthesize cluster pages
+
+Generate or refresh per-cluster synthesis pages in the Obsidian vault (uses cluster memory + paper summaries to produce a navigable overview note).
+
+```bash
+research-hub synthesize --cluster project-topic
+research-hub synthesize --cluster project-topic --graph-colors  # also paint the graph view
+```
+
+Run `synthesize` after `paper-summarize` has filled the per-paper notes; the synthesis page reads from those.
+
+### Cluster memory
+
+Maintain a structured memory registry per cluster — durable notes the AI can reload across sessions without re-reading every paper.
+
+```bash
+research-hub memory list --cluster project-topic
+research-hub memory read --cluster project-topic
+research-hub memory emit --cluster project-topic   # AI extraction prompt
+research-hub memory apply --cluster project-topic --payload memory.json
+```
+
+Use `memory emit/apply` to refresh the registry after a major round of new papers; use `read` from another session to reload context cheaply.
+
+### Maintenance
+
+```bash
+research-hub doctor --autofix
+research-hub tidy
+research-hub clusters rebind --emit
+research-hub cleanup --all
+```
+
+## MCP Integration
+
+For MCP hosts:
+
+```json
+{ "mcpServers": { "research-hub": { "command": "research-hub", "args": ["serve"] } } }
+```
+
+Install host-specific files for hosts with known default skill directories:
+
+```bash
+research-hub install --platform claude-code
+research-hub install --platform cursor
+research-hub install --platform codex
+research-hub install --platform gemini
+```
+
+For Hermes, OpenClaw, or other hosts with `SKILL.md`/rules support,
+copy the relevant `skills/<name>/` directories manually or inline this
+file into the host's instructions. Use MCP/REST for tool calls when no
+installer target exists.
+
+## Guardrails
+
+- For a selected Hub CLI operation, check runtime availability; installing
+  `ai-research-skills` or copying `SKILL.md` does not install that CLI.
+- Use `research-hub doctor` only when the available CLI's setup state is relevant
+  and uncertain for the selected Hub operation. Native-only research needs no doctor run.
+- Do not invent DOIs, citations, or paper metadata; use authoritative sources
+  and available verification tools within the user's scope.
+- Do not delete clusters without reviewing cascade impact.
+- Treat the vault as user-owned local data; avoid overwriting notes unless asked.
+- Prefer `import-folder` for non-academic or internal documents.
+- Prefer Zotero-backed workflows for DOI/arXiv-heavy academic literature.

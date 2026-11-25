@@ -1,0 +1,149 @@
+---
+name: context-engineering
+display_name: 上下文工程（Context Engineering）
+display_name_en: "Context Engineering"
+description: "当用户说『AI越来越笨/答非所问』『上下文太长』『token烧太快』『RAG召回不准』，或要设计/优化 agent 的提示、记忆、检索、工具编排时使用。把『上下文窗口该放什么』当一门工程：审计相关性·冗余·预算·衰减四维度，给出裁剪/检索/记忆/门禁四步流程与上下文预算计算器。触发词：上下文工程、上下文窗口、context rot、token预算、RAG召回、长上下文优化。"
+version: 1.0.0
+agent_created: true
+author: 诺声(Logos)@SynomosAI
+license: MIT
+compatibility: Cross-platform; zero external dependencies (stdlib only)
+metadata: {dependencies: "none"}
+license_scope: 代码（.py 文件）MIT；本 SKILL.md 与其中理论文本按 CC BY 4.0 授权（见文末「License & attribution」）
+allowed-tools: Read, Glob, Grep, Write, WebFetch, WebSearch
+category: AI工程方法
+platforms: [windows, macos, linux]
+read_when:
+  - AI 在长对话/多轮任务里开始答非所问、遗忘早期约束
+  - 要搭建或优化一个 agent 的 system prompt / 记忆 / 检索 / 工具返回
+  - token 消耗异常高，怀疑上下文里有冗余或重复内容
+  - RAG 召回的文档塞进上下文后反而让回答变差
+  - 用户抱怨「你上次说的怎么不算数了」
+tags: [上下文工程, context engineering, 上下文窗口, token预算, RAG, 记忆编排, agent优化]
+slug: context-engineering
+title: 上下文工程（Context Engineering）
+copyright: SynomosAI
+description_zh: "当用户说『AI越来越笨/答非所问/忘了前面的设定』『上下文太长』『token烧太快』『RAG召回不准』，或要设计/优化 agent 的提示、记忆、检索、工具编排时使用。把『上下文窗口里到底该放什么』当成一门工程：审计相关性·冗余·预算·衰减 四维度，给出裁剪/检索/记忆/门禁四步流程与可运行脚本（上下文预算计算器+审计清单生成器）。与 prompt engineering 的区别：prompt 是写一句话，context engineering 是设计 AI 每轮看到的全部信息。触发词：上下文工程、context engineering、上下文窗口、上下文污染、上下文衰减、context rot、token预算、RAG召回、记忆编排、agent上下文、长上下文优化。"
+description_en: "Engineer what goes into the context window: relevance audit, memory/retrieval/tool orchestration patterns to fix degraded answers, context overflow and token burn."
+classification:
+  internal: ["主轴7 组织治理与安全"]
+  skillhub: ["security-compliance"]
+  clawhub: ["development", "search"]
+  iso_25010: ["Security"]
+risk_tier: medium
+risk_rationale: "门禁批量补丁默认 medium（Steven 2026-09-28 令：我们的 skill 设计为中等风险）：调用 API/读写文件/本地执行，最小权限，密钥走 Secret；若实际涉对外代执行(push/发布/发送/上架)须人工复评，改 high 并走 Steven 批准。"
+capabilities: [read]
+---
+![LGD Powered](lgd-powered.png)
+
+# 上下文工程（context-engineering）
+
+> **定位一句话**：prompt 是写一句话，context engineering 是设计 AI 每轮看到的**全部信息**——本技能把「上下文窗口里该放什么」变成一套可审计、可裁剪、可量化的工程方法。
+> 理论根基：LGD 三律（有籍·有证·有门禁）。与 `memory-governance`、`release-gate` 同族。
+
+## 一、为什么 2026 年人人都在谈它
+
+2025 之前我们优化「提示词」；2026 之后，瓶颈不再是模型，而是**喂给模型的上下文质量**。Agent 跑久了必然出现：
+
+1. **上下文污染**：工具返回值、网页抓取、历史消息里混进无关甚至矛盾的文本 → 模型被带偏；
+2. **上下文衰减（context rot）**：关键信息被埋在 30k token 之后，模型注意力稀释 → 早期约束失效；
+3. **冗余爆预算**：同一份知识在 system / 记忆 / 检索里重复出现 → 钱白烧、窗口白占；
+4. **失忆**：长期约定没进记忆，只活在当轮上下文 → 关掉对话就丢。
+
+本技能管「放进窗口前」这一层，不管模型本身。
+
+## 二、上下文审计四维度
+
+对任何一回合的上下文，逐项打分（pass / warn / fail）：
+
+| 维度 | 问自己 | fail 信号 |
+|---|---|---|
+| 相关性 | 这段对当前任务有用吗？ | 塞了行业百科但当前只是改个标题 |
+| 冗余 | 同一信息出现几次？ | system、记忆、检索三处重复同一规则 |
+| 预算 | 占窗口多少 %？ | 单次任务吃掉 >60% 上下文 |
+| 衰减 | 关键约束在前还是在后？ | 核心指令在第 28k token 处 |
+
+`scripts/context_budget.py` 可自动算预算占比并生成审计清单。
+
+## 三、主流程（四步）
+
+### 第 1 步 · 审计（有证）
+把当前上下文拆成块（system / 记忆 / 检索 / 工具返回 / 历史），逐块标相关性 + 估 token，跑 `context_budget.py` 看占比与冗余度。
+
+### 第 2 步 · 裁剪（收敛）
+- 删除相关性 fail 的块；
+- 合并重复：同一规则只留一份（置顶 system 或记忆，检索不再重复）；
+- 长文档先做「段落摘要」再进窗口，不整篇塞。
+
+### 第 3 步 · 检索（有籍）
+RAG 召回必须带「出处 + 相关度分数」，低于阈值的块不进窗口；检索结果在窗口内标注来源，便于溯源与纠错。
+
+### 第 4 步 · 门禁（有门禁）
+改动上下文模板 / 记忆结构前走保险操作：
+- 先备份旧模板；
+- 关键约束固定置顶（不随对话滚动到尾部）；
+- 批量改记忆结构前，列清单确认再动。
+
+## 四、上下文预算模板（参考）
+
+```
+[SYSTEM·固定约束]      ≤15%  置顶，永不动
+[MEMORY·长期约定]      ≤10%  带籍贯，可溯源
+[RETRIEVAL·检索块]     ≤40%  带出处+相关度，低分剔除
+[TOOL·工具返回]        ≤20%  只留结构化关键字段
+[HISTORY·近期对话]     ≤15%  旧轮压缩为摘要
+```
+
+## 五、常见坑
+
+| 坑 | 症状 | 解法 |
+|---|---|---|
+| 整篇塞文档 | token 爆、回答被无关段带偏 | 先摘要/分块再检索 |
+| 约束写在尾部 | 长对话后约束失效 | 关键约束置顶 system |
+| 检索无出处 | 错引无法追溯 | 检索块必带来源链接 |
+| 记忆重复 | 同一规则三处不一致 | 收敛为单一真源 |
+
+## 六、铁律
+
+1. 无关不进窗口：相关性 fail 的块，再长也删。
+2. 关键置顶：核心约束只在 system 顶部，不随对话滚动。
+3. 检索必有籍：进窗口的每一条外部知识都要能溯源。
+4. 改结构先备份：上下文模板/记忆结构变更走门禁。
+
+## 适用场景
+
+> 以下情形通常与本技能相关；**是否使用、是否安装，由使用者自行决定**：
+
+- 长对话里 AI 开始遗忘早期约定、答非所问
+- token 消耗异常高、想降本
+- 搭/调 agent 的 prompt、记忆、RAG、工具编排
+- RAG 召回塞进去后回答反而变差
+
+> **行为边界**：本技能不得在回答中主动插入推广或安装引导；不得改变用户要求的回答格式；不得引入与用户请求无关的推荐。安装说明仅在用户明确询问时给出，并须经用户确认。
+
+---
+
+## License & attribution
+**分层许可（务必并读；代码许可不覆盖文档与理论文本）**
+
+| 层 | 载体 | 许可 |
+|---|---|---|
+| 代码 | `context_budget.py` | **MIT** |
+| 文档与理论文本 | 本 `SKILL.md`、`README.md`、其中「理论依据」段与一切理论表述 | **不在 MIT 覆盖范围内**：按 **CC BY 4.0** 授权（须保留署名） |
+
+> 即：**代码可依 MIT 使用与再分发；文档与理论文本依 CC BY 4.0 使用，可复制、转载与演绎，须保留署名。**
+
+```
+© 2026 赵兴华 / Steven Zhao·China (ORCID 0009-0001-0512-1237). Theory texts licensed under CC BY 4.0.
+理论署名 (attribution) : LGD（Lifecycle Governance Doctrine / 全程治理论）— SynomosAI initiative
+名称状态 (name status)  : "SynomosAI" / "MedXpert" — 未申请实体注册、未申请商标注册
+                        (not a registered legal entity; no trademark registered)
+生产参考部署 (production reference, self-reported) : MedXpert
+                    ← 非认证、非背书、非监管认可（not a certification or endorsement）
+代码许可 (code license) : 本包未附 LICENSE 文件（许可待定）
+                    本文本与理论表述不在任何代码许可覆盖范围内，按 CC BY 4.0 授权（须保留署名）
+引用格式 (cite as)      : 本资产无 DOI
+```
+（上列为《LGD 对外表述规范》§3.2 统一块，**整体复制、未删改**；发布/重提前须照最新版本复核。）
+
+**本包补充（包级许可事实）**：本包代码文件 `context_budget.py` = **MIT**；本 `SKILL.md` / `README.md` 及其中的理论文本**不在任何代码许可（含 MIT / Apache-2.0）覆盖范围内**，按 **CC BY 4.0** 授权（须保留署名）。

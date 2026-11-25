@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/strategic-automation/arachne (path: src/arachne/skills/default/media/songsee/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Generate spectrograms and audio feature visualizations (mel, chroma, MFCC, tempogram, etc.) from audio files via CLI. Useful for audio analysis, music production debugging, and visual documentation.

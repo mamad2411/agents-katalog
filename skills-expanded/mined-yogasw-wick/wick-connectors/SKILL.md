@@ -1,0 +1,111 @@
+---
+name: wick-connectors
+description: Use when the user asks to look something up or act on an external system through wick — check a ticket, query a database, read logs, search Slack, call an API — or asks which connectors are available. Covers the list → drill → schema → execute discovery cycle over MCP, session workspaces for throwaway credentials, and what to do when a connector reports needs_setup.
+---
+
+# Using wick connectors
+
+A **connector** is wick's bridge to an external system (Slack, Notion, a database, an HTTP API). Each connector instance holds its own credentials and exposes a set of **operations**. You reach them over MCP.
+
+Never invent a `tool_id` or a parameter name. Use one you were given, or discover it.
+
+## Fastest path: ops you already know
+
+- A Team agent's prompt carries a **Frequent ops** block: its most used and pinned ops as `conn:<id>/<op>(param: type, opt?: type)`. Call those with `wick_execute` directly — no `wick_list`, no `wick_get`.
+- `wick_get({id})` also returns `frequent` for that connector (tool_id + `signature` + `note`).
+- A param that does not fit the op is refused **before anything runs**; the error carries the full `input_schema`. Fix it and retry once.
+- **Destructive ops** (⚠) always get their schema fetched first, even when you think you know the params.
+- An op's `note` is a curated pitfall (pagination, id formats, what the response drops). Follow it.
+
+## The discovery cycle
+
+Four tools, used in order:
+
+| Tool | Purpose |
+|---|---|
+| `wick_list` | Every connector instance visible to you. Returns `id`, `connector`, `description`, `total_tools`, `status`, `kind`. |
+| `wick_search` | Substring search over label, name, description. Faster when you know roughly what you want. |
+| `wick_get` | Operations for one connector, then the input schema for one operation. |
+| `wick_execute` | Run an operation by `tool_id` + `params`. |
+
+`wick_list` / `wick_search` skip instances the user chose to **hide for themselves**. When some are hidden the reply carries `hidden_count` and `hidden_note`; call again with `include_hidden: true` before telling the user a connector does not exist. A hidden instance still works by id (`wick_get` / `wick_execute`).
+
+`wick_list` deliberately does **not** return per-operation input schemas — you only pay that token cost when you commit to a specific operation via `wick_get`.
+
+```
+wick_list()                          → find the connector, note its id
+wick_get({id})                       → groups (+ what each can do) and frequent ops
+wick_get({id, selector: group})      → the group's operations
+wick_get({id, selector: op_key})     → input schema for the one you want
+wick_execute({tool_id, params})      → run it
+```
+
+A connector with few ops (≤ 15) lists every op at the first `wick_get`, skipping the group step. A group's `summary` ("list · get · logs · rollback · delete⚠") names every op it holds, so an op nobody has used yet is still visible without opening the group.
+
+## Curating ops (pins, notes, grouping)
+
+Through the `custom-connector` connector:
+
+| Op | Use |
+|---|---|
+| `op_pref_set` | Pin / mute an op for Frequent, set its one-line `note` or search `keywords` (any connector; admins, or the creator of a custom connector). |
+| `op_prefs_list` | Every op's 30-day usage, prefs, the current Frequent pick and orphaned prefs. |
+| `grouping_suggest` → `grouping_preview` → `grouping_set` | Group a large MCP connector's tools by pins, regex rules and `{group}` templates; tools no rule catches land in `Other`. Show the preview to the user before `grouping_set`. |
+
+When you learn a pitfall about an op (a format, a pagination rule), store it with `op_pref_set note=…` instead of a private notes file: every agent then sees it next to the op.
+
+Shortcut when you already know roughly what you need:
+
+```
+wick_search({query: "loki query"})   → matched tool_id
+wick_execute({tool_id, params})
+```
+
+## Reading the list
+
+Entries come in two kinds, and the difference is *whose identity you act as*:
+
+- `kind: "connector"` — shared or bot credentials.
+- `kind: "account"` — a specific user's connected OAuth account.
+
+When several users have connected personal accounts to one instance, you see one `connector` entry plus one `account` entry per user. Pass a composite `connectorID/accountID` to `wick_get` and the returned `tool_id`s carry an `@accountID` suffix; `wick_execute` then injects that account's token automatically.
+
+Pick `account` when the action should be attributable to that person, `connector` when it is the system acting.
+
+## Status: needs_setup
+
+A connector whose required config fields are empty reports `needs_setup`. It appears in the list but cannot execute.
+
+Do not try to work around this by guessing credentials or calling the op anyway. Tell the user which connector needs configuring and let them fill it in — the config UI is the only place credentials are entered.
+
+## Session workspaces
+
+`wick_session_workspace` creates throwaway connector instances scoped to one session — useful to point at staging, or to use a different key without touching the shared instance.
+
+The division of labour matters: **you create the blank instance, the user fills in the config through a UI form.** You never see the values. The instance shows up in `wick_list` for that session only and dies with the session.
+
+Some config fields are locked for you: they come back in the instance's `locked_keys` and `set_config` / `add values` refuse them. Only a human can change them, in the **Session Workspace tab** of this session; until then they run with the default. So when the work needs one changed (e.g. `mode` → `write` to unlock write ops): create the session instance, fill everything else yourself, then ask the user to switch that field in the Session Workspace tab and tell you when done. Do not reach for a saved instance or an admin unlock for this, and do not try another route around the lock.
+
+## Operations switched off by config
+
+An instance's own config can switch an operation off (e.g. a `mode` field set to `read` turns the write ops off). `wick_get` still lists such an op, with an `unavailable` reason and no `tool_id`; a category shows them as `unavailable_tools`. You cannot call it — executing it fails with the same reason. Tell the user which config value it needs. On a session instance where that field is in `locked_keys`, the user switches it in the Session Workspace tab; on a saved instance, on its Connectors page.
+
+## Batch execution
+
+`wick_execute` accepts a `calls` array instead of a single `tool_id`/`params`, running several operations in one round-trip. Use it when the calls are independent — it saves latency, not correctness. Sequential work that depends on earlier results still needs separate calls.
+
+## Access is re-checked every call
+
+`wick_execute` and `wick_get` re-validate visibility and per-operation enable state on every call; they never trust a list-time cache. If a user's tag is removed or an op is disabled, the very next call fails. Treat an authorization error as current truth, not a glitch to retry.
+
+## Plugins calling connectors
+
+A wick plugin (not you) can also run a connector operation, through the Host API scope `connectors.execute` — but only the connector ops it declared in its manifest (`host_resources.connectors`, e.g. `slack` → `lookup_user_by_email`), and always **as a user**: the person who triggered the plugin, else the owner of the plugin's `wick_pat`. It sees only the instances that user may see, and an admin can block any single op on Plugins → Host access. So when a plugin reports `PermissionDenied` on a connector op, the op is undeclared or blocked — it is not a connector outage.
+
+## The Wick Manager exception
+
+The `wickmanager` connector is surfaced differently: its operations appear directly in `tools/list` as `wick_manager_<op>` (e.g. `wick_manager_app_list`, `wick_manager_job_run_now`). Call them without the discovery cycle. It is excluded from `wick_list` / `wick_search` to avoid double-exposure.
+
+## Encrypted values
+
+Some connector responses carry `wick_enc_<...>` tokens. These are ciphertext handles — you can pass them to another operation, but you cannot read them and must not try. That is the point: credentials flow between operations without ever entering the conversation.

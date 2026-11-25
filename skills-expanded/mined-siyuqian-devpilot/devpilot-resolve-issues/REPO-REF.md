@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/siyuqian/devpilot (path: skills/devpilot-resolve-issues/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when the user wants to resolve, fix, work through, or burn down open GitHub issues in a repository — "fix all the issues", "resolve these tickets", "work through the repo-scan issues", "clear the 

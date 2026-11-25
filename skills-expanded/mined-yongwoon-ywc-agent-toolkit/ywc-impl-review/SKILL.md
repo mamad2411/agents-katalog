@@ -1,0 +1,395 @@
+---
+name: ywc-impl-review
+description: >-
+  (ywc) Pre-PR quality review and completed implementation conformance to an approved spec, including comprehensive implementation validation. Triggers: "구현 검증", "impl review", "코드 리뷰", "実装レビュー", "ywc-impl-review". Not active generation (ywc-code-gen), spec-only review before code (ywc-spec-validate), product/business review (ywc-product-review), review learnings (ywc-review-learnings), or UI-only live audits (ywc-ui-ux-review).
+---
+
+# ywc-impl-review
+
+**Announce at start:** "I'm using the ywc-impl-review skill to run a five-axis (architecture / design / devex / security / QA) implementation review."
+
+Implementation conformance review skill. Runs five parallel Codex review workers (Phase 1) and escalates only ambiguous findings to a short higher-capability advisor pass (Phase 2). The four code-review aspects (architecture / design / devex / security) stay separate so each worker has a bounded review surface. QA stays as a separate axis because coverage analysis is mostly mechanical. See [Advisor Pattern](../references/advisor-pattern.md) for why this shape is used.
+
+Before Phase 1, the selected target passes a deterministic scope guardrail. After
+Phase 1 aggregation, every eligible Critical or High finding is independently
+verified by a blind reviewer. Independent verifier calls are separate from the
+Phase 2 advisor budget and never reduce it.
+
+## Rationalization Defense
+
+When tempted to skip a step, check this table first:
+
+| Excuse | Reality |
+|---|---|
+| "Phase 1 had no findings, the spec is satisfied" | Absence of findings ≠ proof of conformance. State what was checked, not what was missing. |
+| "This finding looks ambiguous, send it all to the advisor" | Phase 2 budget is 5. Reserve for genuinely ambiguous cases — not first-pass uncertainty. |
+| "Forwarding the full spec gives the advisor better context" | Never forward full files or full project context. Only the finding text + bounded snippet + spec excerpt. |
+| "Severity feels somewhere between High and Medium" | Pick based on impact, not feeling. If truly between, that is a Phase 2 candidate. |
+| "`--no-advisor` saves time on this review" | Skip Phase 2 only on throwaway/prototype code. Production review needs ambiguity escalation. |
+| "Reviewer workers agree, so the finding is correct" | Multiple workers drawing the same wrong conclusion is still wrong. Escalate when stakes are high. |
+| "A Phase 1 Critical/High finding is enough to report as fact" | Every eligible high-severity finding must pass the blind independent-verification step first. |
+| "The verifier needs the original rationale to be useful" | The verifier is intentionally blind: send only `file:line` and claimed severity so it derives the defect independently. |
+| "User wants a quick review, severity ratings are optional" | Without severity, the user cannot triage. Always rate Critical / High / Medium / Low. |
+| "Surface every nitpick to be thorough" | A review that buries one real bug under ten style nits trains the reader to ignore all of them. `chill` is the default: suppress the Style/Docs/polish tail unless `--profile assertive`. |
+| "This finding is plausible, surface it with a 'might be'" | Verify-before-surface: a finding without primary evidence (file:line, traced symbol, command output) is dropped, not hedged. |
+| "There's a `docs/review-learnings.md` FALSE-POSITIVE entry but I'll flag it anyway to be safe" | A `FALSE-POSITIVE` learning carries the team's reason it is a non-issue here. Re-raising it reintroduces the exact noise the learning was created to stop. |
+
+**Violating the letter of these rules is violating the spirit.** Review without honest severity is theater.
+
+## Arguments
+
+| Parameter | Format | Example | Description |
+|-----------|--------|---------|-------------|
+| `--spec` | `--spec <path>` | `--spec docs/outline/02-api.md` | Specification file path (required) |
+| `--base` | `--base <ref>` | `--base main` | Fixed-point review from `git merge-base <ref> HEAD` through `HEAD`. Exactly one review target is required; mutually exclusive with all other target modes |
+| `--code` | `--code <path>` | `--code api/src/routes/` | Code path to review. Exactly one of `--base` / `--code` / `--git-range` / `--working-tree` is required; they are mutually exclusive |
+| `--git-range` | `--git-range <sha>..<sha>` | `--git-range abc1234..HEAD` | Explicit two-endpoint range. Run `git diff --name-only <range>` to obtain the changed-file list. Mutually exclusive with every other target mode |
+| `--working-tree` | flag | | Review the current repository's staged, unstaged, and untracked source changes without creating a commit. Mutually exclusive with every other target mode |
+| `--no-advisor` | flag | | Skip Phase 2 entirely. Use when running on throwaway or prototype code where higher-capability advisor judgment on ambiguous findings is not worth the latency |
+| `--profile` | `--profile chill\|assertive` | | Verbosity dial (default `chill`). `chill` surfaces correctness / security / logic / runtime-risk findings and suppresses Style/Docs/Devex-polish `Low`/`Info` nits; `assertive` emits those too. Critical/High/Medium are never suppressed. See [coderabbit-methodology.md §1](./references/coderabbit-methodology.md) |
+| `--skip-learnings` | flag | | Skip Step 0 (loading `docs/review-learnings.md`). Use when no learnings file exists or a clean-room review is wanted |
+| `--advisor-budget` | `--advisor-budget <n>` | `--advisor-budget 3` | Maximum number of Phase 2 advisor calls. Default: 5. Applies across all categories combined |
+| `--format` | `--format markdown\|html` | `--format html` | Output format. Default `markdown`. With `html`, writes a self-contained HTML report to `claudedocs/`. See [html-output.md](../references/html-output.md) |
+| `--manifest` | `--manifest <path>` | | Optional repository-relative architecture contract; root discovery is allowed only when omitted |
+| `--architecture-evidence` | `--architecture-evidence <path>` | | Optional normalized evidence artifact; must be paired with a resolved valid manifest |
+
+## Advisor Pattern
+
+This skill uses **Pattern B (Two-Phase Review)** from [advisor-pattern.md](../references/advisor-pattern.md). The rationale: review findings range from mechanical (hardcoded secret, missing null check, trivial OWASP match) to genuinely ambiguous (architectural judgment call, severity debate between two OWASP categories, spec-conformance question with more than one reasonable reading). Running every reviewer at maximum reasoning depth wastes advisor capacity on the mechanical cases; running every reviewer at ordinary depth undersells the ambiguous ones. Phase 1 handles the mechanical cases with bounded Codex workers; Phase 2 escalates only the ambiguous ones to a higher-capability advisor with tightly bounded context.
+
+Budget discipline (see advisor-pattern.md §6): default cap is 5 advisor calls per invocation, shared across all categories. Use fewer when possible. Independent verifier calls are not advisor calls and do not consume this budget. Never forward full files or full project context to the Phase 2 advisor — only the finding text, a bounded snippet, and the relevant spec excerpt.
+
+## Execution Steps
+
+0. **Load Review Learnings** (skip if `--skip-learnings`) — Invoke `ywc-review-learnings --mode read --target <changed files / --code path>` to load the project's accumulated review preferences from `docs/review-learnings.md`. `DO` / `DO-NOT` entries become extra checks injected into the matching reviewer worker; `FALSE-POSITIVE` entries tell that worker to stop raising a known non-issue. If the file is absent, proceed with an empty set — never block a review on missing learnings. See [coderabbit-methodology.md §7](./references/coderabbit-methodology.md).
+
+1. **Collect Project Context** — Read `AGENTS.md`, `CODEX.md`, `CLAUDE.md`, and `package.json` where present to identify conventions, tech stack, and PR gate conditions. If `docs/ubiquitous-language.md` exists, read it — the Design worker must flag identifiers that match a "Synonyms to Avoid" entry instead of the canonical term. Per [coderabbit-methodology.md §3](./references/coderabbit-methodology.md), treat the spec / PR description as the statement of intent and trace each changed symbol to its callers/callees before judging it.
+
+2. **Read Spec + Code** — Select exactly one review target:
+   - `--base`: resolve `<ref>^{commit}` with `git rev-parse --verify`, compute
+     `git merge-base <ref> HEAD`, and require a non-empty
+     `git diff --name-only <merge-base>...HEAD`. Use the identical three-dot
+     boundary for the file list, patch, and final contents sent to every Phase
+     1 worker. Return `NEEDS_CONTEXT` before reading review files when ref
+     resolution or merge-base calculation fails, or when the resulting diff is
+     empty. Record the supplied ref and resolved merge-base in the report.
+   - `--code`: read the supplied path.
+   - `--git-range`: run `git diff --name-only <range>` to obtain the changed-file list.
+   - `--working-tree`: derive the changed-file list without committing: combine `git diff --name-only --diff-filter=ACMRDT`, `git diff --cached --name-only --diff-filter=ACMRDT`, and `git ls-files --others --exclude-standard`; deduplicate paths; then apply the repository's ignore / generated-path rules to the **combined** list, so a tracked-but-ignored generated file is excluded exactly like an untracked one (`--exclude-standard` covers only the untracked leg). Capture the staged and unstaged diffs for tracked files, and treat each untracked file's full contents as its patch. **`D` (deletion) is included deliberately**: a deleted file is a reviewable change, and dropping it would let the removal of a critical-path module (auth, payment, crypto) pass the gate unseen. **`T` (type change) is included deliberately too**: a tracked path turning into a symlink is a reviewable change that `ACMRD` alone would silently drop, letting it bypass the gate. For a deleted path, forward the deletion diff and the pre-deletion contents.
+
+   Reject missing or mixed target modes with `NEEDS_CONTEXT` before reading the
+   spec or review files. If the selected target has no reviewable source files,
+   return `NEEDS_CONTEXT` and do not report an all-clear review. Read the
+   specification file and every target code file. For base, range, and
+   working-tree targets, provide the bounded relevant diff plus final file
+   contents to workers so they can judge both correctness and scope. For a
+   deleted path in any of these three targets, forward the deletion diff and
+   the pre-deletion contents instead of final contents — a deletion is a
+   reviewable change in its own right, and passing only a nonexistent file's
+   final contents would let it slip past the gate unseen. This context stays
+   with the parent; do not forward it wholesale to Phase 2.
+
+2.5. **Review Scope Guardrail** — Apply this gate after target resolution and
+before any Phase 1 worker dispatch. If the selected target contains no
+reviewable source files, return `NEEDS_CONTEXT` with an action to narrow or
+correct the target. Count unique reviewable files after the existing ignore and
+generated-path filtering rules have been applied.
+
+   - Every target mode is limited to **200 files**. A count above 200 returns
+     `NEEDS_CONTEXT` and reports the exact count plus the five largest files by
+     reviewable size.
+   - For `--base`, `--git-range`, and `--working-tree`, also calculate the
+     exact added-plus-removed line count from the selected diff. A count above
+     **5,000 changed lines** returns `NEEDS_CONTEXT` and reports the exact
+     count plus the five files with the largest changed-line counts.
+   - `--code` has no intrinsic diff line count. Enforce only the 200-file
+     limit and report `changed lines: N/A — path-only target`; never fabricate
+     a line metric from file size or guessed history.
+   - Exactly 200 files and exactly 5,000 changed lines are permitted. The
+     guardrail is a refusal gate, not a sampling or truncation mechanism, so
+     no Phase 1 dispatch occurs after a failed check.
+
+2.6. **Architecture Contract Packet** — If `--manifest` or
+`--architecture-evidence` is supplied, resolve the pair through the shared
+`../scripts/architecture-invariants.py` helper after the bounded changed-file
+list is known and before worker dispatch. A supplied manifest is
+repository-relative; invalid or missing input returns `NEEDS_CONTEXT` without
+discovery fallback. Evidence without a valid manifest is `NEEDS_CONTEXT`. A
+valid manifest without evidence preserves the existing review flow and supplies
+no packet. Derive `--changed-path` only from the selected diff/code file list,
+never from a broad scan.
+
+Forward only this sanitized packet to the Architecture worker and retain the
+same packet boundary for sibling workers when relevant:
+
+```text
+Architecture Contract Packet:
+- contract_state: <VALIDATED | N/A — no architecture contract | NEEDS_CONTEXT>
+- component_ids: <affected component ids>
+- rule_ids: <affected rule ids>
+- invariant_verdict: <MAINTAINED | VIOLATED | N/A | NEEDS_CONTEXT>
+- evidence_artifact_path: <repository-relative path or N/A>
+```
+
+Do not conflate the helper result with the packet: helper `status` is the
+bounded dispatch status; helper `aggregate_verdict` is projected as
+`invariant_verdict`; and `rule_results[].rule_id` is projected as `rule_ids`.
+Use only sanitized `rule_results[].evidence_paths` as source citations for an
+Architecture finding. They are not `contract_state` and are not the artifact
+path. A successful audit uses `contract_state: VALIDATED`, while no-manifest
+fallback uses `N/A — no architecture contract`.
+
+Before dispatch, require the helper integration to provide the complete
+projection, reading each field off the helper's own audit result:
+`component_ids` from its `component_ids` (bounded changed-path mapping),
+`contract_state` from its `contract_state` (`VALIDATED` on a successful audit),
+and `evidence_artifact_path` from its returned `evidence_artifact_path` — the
+normalized artifact path the helper wrote. Do not require or assume any
+particular artifact filename here, and do not confuse this artifact path with
+the `--architecture-evidence` input path, which may be any repository-relative
+path the helper accepts. Missing projection fields are `NEEDS_CONTEXT`; do not
+derive them from raw manifest/evidence contents or forward those contents to any
+worker.
+
+Do not forward manifest/evidence contents, raw verifier data, command-like
+fields, transcripts, full diffs, or inferred edges. Propagate `NEEDS_CONTEXT`
+before dispatch. Treat `VIOLATED` as an Architecture finding with the supplied
+rule and evidence paths; `N/A` and `MAINTAINED` do not block the existing
+review. This packet is advisory evidence only and cannot escalate reviewer or
+merge authority.
+
+3. **Phase 1 — Parallel Executor Review** — When a quality-gate packet is present, validate it in this parent skill **before dispatching any of the five Phase 1 workers**: reject a packet with a missing/contradictory required field, an unverifiable digest, a changed-symbol boundary violation, a non-repository-relative evidence path, or a sanitization failure as `NEEDS_CONTEXT`, and halt all Phase 1 dispatch — do not let Architecture/Design/Devex/Security start while the packet is still unvalidated. Only a packet that passes this check is forwarded (in its bounded, sanitized form) to the QA worker below. Use Codex subagent delegation to run five read-only review workers in parallel. Each successful dispatch must use the returned canonical target with [`subagent-async-monitoring.md`](../references/subagent-async-monitoring.md); do not pass Claude Code-only `model` fields. When a dispatch succeeds but returns no usable canonical target, exclude it from the active roster, do not infer a target to call `status`/`interrupt` on, and treat it as a non-terminal `BLOCKED` outcome per the reference's failed-dispatch handling — never as a success or a skip. Each worker receives its role from the prompt and matching reference file:
+   - **Architecture worker** — Module boundaries, layering, structural patterns, dependency direction, simplicity / over-abstraction, structural spec conformance. Reference: `references/architecture-agent.md`. When the diff touches DB schema or migrations, also apply the shared schema review checklist ([../references/schema/core.md](../references/schema/core.md) Part C); raise cascade ↔ API status and multi-tenant scope gaps as one-line cross-references to the Security worker rather than duplicating them.
+   - **Design worker** — API/interface design, naming, signatures, error models, return shapes, public-surface discipline, contract spec conformance. Reference: `references/design-agent.md`.
+   - **Devex worker** — Readability, error messages, logging, documentation, debuggability, config UX. The operator-experience dimension. Reference: `references/devex-agent.md`.
+   - **Security worker** — OWASP Top 10 analysis. Reference: `references/security-agent.md`.
+   - **QA worker** — Test coverage gaps, missing test cases, and sanitized quality-gate evidence. Reference: `references/qa-agent.md`. Coverage-gap detection is largely mechanical (file enumeration, assertion counting, branch enumeration), so keep the prompt narrow and evidence-based. When a quality-gate packet is present, pass only its bounded contract state, Ownership symbols, approved command IDs/digests, sanitized evidence paths, normalized results, unavailable-tool gaps, and residual survivors; never pass raw commands, output, secrets, transcripts, or full diffs.
+     Supply covered AC IDs and their verification file/scenario mappings (including documented existing-test mappings); require the QA lane to name unverified applicable ACs using `references/qa-agent.md`.
+
+
+   **Inject the Step 0 learnings** into each worker prompt, filtered to that aspect's category. **Apply the `--profile` dial**: in `chill` (default), suppress Style/Docs/Devex-polish `Low`/`Info` nits and surface only correctness/security/logic/runtime-risk findings; `assertive` emits the tail too. **Verify before surfacing** ([coderabbit-methodology.md §2](./references/coderabbit-methodology.md)): every finding must cite primary evidence — exact `file:line`, a traced symbol, or fresh command output — and a finding that cannot be substantiated is dropped, not hedged. Where the project ships linters/scanners, run them and feed output to the relevant worker as evidence to triage, not as the verdict ([§4](./references/coderabbit-methodology.md)).
+
+   Each worker must return two inline result sets — bounded per the Phase 1 read-only exception in [`subagent-status-actions.md`](../references/subagent-status-actions.md) (0–5 confirmed findings, 0–2 advisor candidates), never written to a file:
+   - **Confirmed findings** — issues the executor is confident about (Phase 1 complete, no escalation needed).
+   - **Advisor candidates** — findings the executor flags for Phase 2 review. Each candidate must include: the finding text, a bounded code snippet (≤100 lines), the relevant spec excerpt (if any), and a one-sentence reason the executor wants a second opinion.
+
+   Each reference file (`references/*-agent.md`) explains what "confident" vs "needs advisor" means for that category. The four code-review aspects (architecture / design / devex / security) stay in their own lanes: an Architecture finding does not include naming polish (Design) or error-message wording (Devex). Cross-aspect concerns surface as one-line cross-references, never as duplicated findings.
+
+   **Language-specific depth via Codex custom agents** — When the Codex custom-agent catalog at `codex/agents/` is installed, route language-dominant or performance-sensitive review packets to the matching read-only specialist:
+
+   | Signal in changed-file list or evidence packet | Specialist | Packet boundary |
+   |---|---|---|
+   | TypeScript / TSX / JavaScript dominates | `ywc-typescript-reviewer` | changed TS/JS files, relevant diff, tsconfig/framework excerpt, forwarded `tsc`/lint output if available |
+   | Python dominates | `ywc-python-reviewer` | changed Python files, relevant diff, Python/framework version, forwarded mypy/pyright/pytest/ruff output if available |
+   | Go dominates | `ywc-go-reviewer` | changed Go files, relevant diff, go.mod/go.sum excerpt, forwarded vet/staticcheck/test/race output if available |
+   | Performance budget, profiler, Lighthouse, query plan, or bundle evidence is central | `ywc-performance-engineer` | bounded code/diff plus the measurement, budget, trace, query plan, or bundle report |
+
+   Do not import Claude Code named-agent syntax (`subagent_type: ...`) or rely on `claude-code/agents/`; those are Claude Code-only surfaces. If Codex custom-agent dispatch is unavailable, keep the worker generic and pass the same specialist checklist explicitly in the bounded prompt.
+
+4. **Aggregate and Select Phase 2 Candidates** — Combine candidate lists from all five workers:
+   - Deduplicate findings that share `{file}:{line}` across categories.
+   - Cap the total at `--advisor-budget` (default 5). If candidates exceed the cap, prioritize: Critical > High > Medium, and within the same severity prefer Security > Architecture > Design > Devex > QA. (Architecture / Design / Devex order reflects irreversibility — structural decisions are hardest to walk back, then contracts, then operator UX.)
+   - Log the candidates that were dropped due to the cap in the final report so the user can see what was not escalated.
+
+4.5. **Independent Verification Pass** — Before presenting a Phase 1
+**Confirmed** Critical or High finding as fact, dispatch one independent Codex
+reviewer for that finding. The verifier receives only a blind packet containing
+the cited `file:line` and claimed severity. Do not forward the original finding
+description, rationale, full worker transcript, or full diff; the verifier must
+derive the defect independently.
+
+   - Dispatch at most **20** findings per invocation. Order Critical findings
+     before High findings, preserving Phase 1 discovery order within each tier.
+     Items beyond the cap remain in the report as `cap-unverified`; they are
+     never emitted as plain Confirmed findings.
+   - A verifier that independently reproduces the defect returns `reproduced`;
+     retain its evidence and mark the finding `✅ Verified`.
+   - A verifier that runs successfully but cannot reproduce the defect returns
+     `verification-failed`. Keep the finding, but add it to the Phase 2
+     candidate pool ahead of ordinary candidates at the same severity.
+   - A timeout, tool error, malformed response, or missing result returns
+     `verification-error`, a distinct outcome from `verification-failed`. Route
+     it into the same prioritized Phase 2 candidate pool when the advisor is
+     enabled.
+   - Re-apply the existing Phase 2 priority and budget selection after failed
+     or error outcomes are added. Verifier calls do not consume or reduce
+     `--advisor-budget`. Under `--no-advisor`, `verification-failed` and
+     `verification-error` findings remain explicitly unverified with the
+     reason `Phase 2 disabled via --no-advisor`; they are not silently
+     dropped or presented as confirmed. Cap-skipped findings always keep the
+     `cap-unverified` status regardless of `--no-advisor` — the cap is a
+     dispatch-time limit independent of whether Phase 2 is enabled, so the
+     `--no-advisor` reason never overwrites it.
+   - The report must count `reproduced`, `verification-failed`,
+     `verification-error`, and `cap-unverified` separately. A verification
+     result is an additional trust dimension and does not replace `[P1]` /
+     `[P2]` provenance or the severity symbol.
+
+**Phase 1 monitor/output precedence:** a possibly-live lane returns `BLOCKED` and is a non-terminal blocker for the entire downstream lifecycle — cleanup, next-wave dispatch, normal reporting, review aggregation, the Completion Report, and `DONE` — until terminal evidence or proven quiescence is established; a quiescent unavailable lane returns `DONE_WITH_CONCERNS` with bounded raw evidence; only clean attributable terminal outputs enter the existing aggregation and Phase 2 flow. Unavailable lanes may use a generic read-only reviewer fallback only when explicitly selected by the executor; never redispatch the same lane or allow Phase 1 writes.
+
+5. **Phase 2 — Advisor Pass** (skip entirely if `--no-advisor`) — For each surviving candidate, run a short higher-capability advisor pass:
+   - **Context payload**: only the candidate's finding text, the bounded snippet, the spec excerpt, and the category-specific severity rubric from the matching reference file. Do **not** forward the full spec, the full file, or the Phase 1 transcripts.
+   - **Expected output**: a short verdict (≤200 words) containing: confirmed severity, a one-line rationale, and either "confirmed" or "adjusted" (with the adjustment if any). The 200-word cap is tighter than [advisor-pattern.md §3](../references/advisor-pattern.md)'s observed ceiling of "typically <500 words" — 200 is an operational choice for this skill. If a genuinely complex candidate needs more room, invoke the §6 override: exceed the cap and justify the overrun in the final report's `Advisor Budget Report` section.
+   - Advisor calls are sequential, not parallel — each is small and fast, and sequential execution keeps the budget enforcement simple and auditable.
+
+6. **Merge and Output Report** — Combine Phase 1 confirmed findings with Phase 2 verdicts. Mark each finding in the final report with its provenance (Phase 1 vs Phase 2) so the user can see which decisions involved higher-capability advisor judgment.
+
+7. **Capture Learnings** (skip if `--skip-learnings`) — After the report, offer to promote durable lessons into `docs/review-learnings.md` via `ywc-review-learnings --mode update --source review`: recurring confirmed findings become `DO`/`DO-NOT` learnings, and findings the user dismisses as false positives become `FALSE-POSITIVE` learnings with the dismissal reason. Do not write learnings without the user-confirmation CHANGESET that `ywc-review-learnings` enforces.
+
+## Output Format
+
+```text
+## Implementation Review Result: {spec} vs {code}
+
+For `--base`, include `Supplied base: <ref>` and
+`Resolved merge-base: <sha>` in the report header.
+
+### Summary
+- Phase 1 findings: Architecture A, Design D, Devex V, Security M, QA K
+- Independent verification: R reproduced, F verification-failed, E verification-error, U cap-unverified (of Y eligible Critical/High findings)
+- Phase 2 advisor calls: X of Y budget used
+- Phase 2 adjustments: N confirmed as-is, M severity-adjusted
+
+### Architecture
+1. [severity] [P1|P2] {file}:{line} — Description
+   (if P2) Advisor verdict: {one-line rationale}
+   (if Critical/High) Verification: {✅ Reproduced independently at {file}:{line} | ❌ verification-failed — escalated to Phase 2 | ⚠️ verification-error — escalated to Phase 2 | ⚠️ Unverified — cap-unverified | ⚠️ Unverified — Phase 2 disabled via --no-advisor}
+
+### Design
+1. [severity] [P1|P2] {file}:{line} — Description
+   (if P2) Advisor verdict: {one-line rationale}
+   (if Critical/High) Verification: {✅ Reproduced independently at {file}:{line} | ❌ verification-failed — escalated to Phase 2 | ⚠️ verification-error — escalated to Phase 2 | ⚠️ Unverified — cap-unverified | ⚠️ Unverified — Phase 2 disabled via --no-advisor}
+
+### Developer Experience (Devex)
+1. [severity] [P1|P2] {file}:{line} — Description
+   (if P2) Advisor verdict: {one-line rationale}
+   (if Critical/High) Verification: {✅ Reproduced independently at {file}:{line} | ❌ verification-failed — escalated to Phase 2 | ⚠️ verification-error — escalated to Phase 2 | ⚠️ Unverified — cap-unverified | ⚠️ Unverified — Phase 2 disabled via --no-advisor}
+
+### Security
+1. [severity] [P1|P2] {file}:{line} — Description
+   (if P2) Advisor verdict: {one-line rationale}
+   (if Critical/High) Verification: {✅ Reproduced independently at {file}:{line} | ❌ verification-failed — escalated to Phase 2 | ⚠️ verification-error — escalated to Phase 2 | ⚠️ Unverified — cap-unverified | ⚠️ Unverified — Phase 2 disabled via --no-advisor}
+
+### Testing (QA)
+1. [severity] [P1|P2] — Description
+   (if P2) Advisor verdict: {one-line rationale}
+   (if Critical/High) Verification: {✅ Reproduced independently at {file}:{line} | ❌ verification-failed — escalated to Phase 2 | ⚠️ verification-error — escalated to Phase 2 | ⚠️ Unverified — cap-unverified | ⚠️ Unverified — Phase 2 disabled via --no-advisor}
+
+### Fix Priority
+1. (Sorted by Critical first, with [P1|P2] markers preserved)
+
+### Advisor Budget Report
+- Used: X of Y calls
+- Dropped (over budget): {list, if any}
+
+### Completion Status
+(One of: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT)
+```
+
+**Reporting Symbols**: Replace the bracketed `[severity]` placeholder above with the corresponding symbol from [symbols.md](../references/symbols.md). Severity vocabulary is shared across all `ywc-*` review skills — use the same symbol for the same tier.
+
+| Symbol | Severity | Replaces |
+|--------|----------|----------|
+| `🚨` | Critical | `[Critical]` |
+| `🔴` | High | `[High]` |
+| `🟡` | Medium | `[Medium]` |
+| `🔵` | Low | `[Low]` |
+| `ℹ️` | Info | `[Info]` |
+
+Example finding line:
+
+```
+🚨 [P2] src/api/users.ts:42 — SQL injection: input concatenated into query.
+   Advisor verdict: confirm Critical; remediation requires parameterization.
+```
+
+The `[P1]` / `[P2]` marker is preserved unchanged — it describes Phase 1 vs Phase 2 escalation history, while the severity symbol describes finding impact. Both pieces of information are needed; do not collapse them.
+
+For the Confidence Gate score in the report header, use the band marker from [symbols.md](../references/symbols.md): `✅` for PROCEED, `⚠️` for REVIEW, `❌` for STOP.
+
+**Completion Status rules:**
+
+| Status | When to use |
+|--------|------------|
+| `DONE` | Review complete, no Critical or High findings |
+| `DONE_WITH_CONCERNS` | Review complete but Critical/High findings were identified — the report details them; human action required before merging |
+| `BLOCKED` | Review cannot proceed — spec file missing, code unreadable, or a Phase 2 escalation returned an inconclusive verdict |
+| `NEEDS_CONTEXT` | Spec and code paths are ambiguous; cannot determine what conformance means without clarification |
+
+`[P1]` marks findings confirmed entirely by the Phase 1 executor. `[P2]` marks findings that went through the Phase 2 advisor. This distinction matters when the user calibrates trust in the output — Phase 2 items represent the decisions the executor deemed genuinely ambiguous.
+
+> **HTML mode (`--format html`)** — emits the same findings as a self-contained HTML report: severity color coding, tab navigation, and a `Copy as Markdown` button. Structure and conventions follow [html-output.md](../references/html-output.md). The Markdown surface is preserved inside the file, so downstream integration is unaffected.
+
+## Worker Prompt References
+
+Read the corresponding reference file when spawning each worker and include the relevant section in the worker prompt. The reference files describe both the standard review dimensions **and** the "advisor candidate" criteria specific to each category:
+
+- `references/architecture-agent.md` — Architecture's review dimensions (structural spec conformance, pattern consistency, module interface, simplicity, surgical changes) + advisor triggers
+- `references/design-agent.md` — Design's review dimensions (contract spec conformance, naming, signatures, error model, return shapes, public-surface discipline) + advisor triggers
+- `references/devex-agent.md` — Devex's review dimensions (readability, error messages, logging, documentation, debuggability, config UX) + advisor triggers
+- `references/security-agent.md` — Security's OWASP Top 10 checklist and advisor-escalation triggers
+- `references/qa-agent.md` — QA's coverage analysis and advisor-escalation triggers
+
+If a reference file does not yet contain an "Advisor Candidate Criteria" section, fall back to the three-property test in [advisor-pattern.md §5](../references/advisor-pattern.md): objective trigger, irreversibility, ambiguity. A finding must satisfy all three to be a Phase 2 candidate.
+
+**CodeRabbit-derived methodology** — the verbosity dial (`--profile`), verify-before-surface precision gate, intent/context phase, static-analysis-as-evidence, and per-project learnings loop are specified in [`references/coderabbit-methodology.md`](./references/coderabbit-methodology.md). SDK-specific exception findings also require the Devex version-grounded hierarchy evidence gate; missing primary evidence remains uncertainty. These techniques raise review quality toward bot-reviewer parity without depending on CodeRabbit runtime. The learnings half pairs with `ywc-review-learnings`, which owns `docs/review-learnings.md`.
+
+**Recurring real-world defects catalog** — every reviewer worker additionally consults [`references/recurring-defects.md`](./references/recurring-defects.md), a derived-from-data catalog of the defect classes that production bot reviewers (CodeRabbit, Codex Review) flag most often: data-layer access-boundary (ownership / tenant isolation), data-integrity / `NULL` handling, race condition / concurrent write safety, transaction boundary / partial write prevention, durable idempotency for retryable side effects, error-swallowing, external-call resilience, validation / fail-fast, HTTP-status semantics, and test fidelity. Each worker's "High-frequency real-world checks" section points at its catalog slice. Appended **A-005** (checkout credential persistence), **A-006** (unawaited/boolean Promise), and **A-007** (discarded errors) include provenance and severity rationale; use the [installed targeted rules](./references/coderabbit-methodology.md#targeted-rules-for-recurring-defects) as candidates subject to verify-before-surface. The catalog tells the reviewer *where real bugs cluster*; the per-aspect rubric still governs severity and escalation.
+
+## Confidence Gate
+
+This skill applies the [Confidence Gate](../references/confidence-gate.md) to the aggregated review output before emitting the final report. The gate sits between Phase 2 advisor consolidation and report emission.
+
+**Quality-gate evidence boundary** — When review receives an executor
+quality-gate packet, the QA lane applies [`references/qa-agent.md`](./references/qa-agent.md)
+and the canonical [`../references/quality-gates.md`](../references/quality-gates.md).
+It consumes only sanitized contract state, exact changed-symbol Ownership,
+approved command identities/digests, bounded sanitized artifact paths,
+normalized gate results, and residual/unavailable evidence. The reviewer does
+not execute Cleaner, Hardener, or any gate and cannot authorize staging,
+commit, push, PR, merge, delivery, or delegation. `N/A — no quality gate
+contract` preserves the existing no-contract path; `report-only` records
+bounded evidence without dispatch. Missing or contradictory packet fields,
+invalid digests, out-of-Ownership paths/symbols, raw-data fields, or
+unverifiable evidence boundaries produce `NEEDS_CONTEXT` and never an inferred
+pass. Apply the canonical `BLOCKED > NEEDS_CONTEXT > DONE_WITH_CONCERNS > DONE`
+precedence so later clean results cannot mask earlier concerns, unavailable
+tools, or residual survivors. Every survivor remains reportable and unresolved;
+no equivalence judgment is allowed. An unavailable authorized tool follows the
+packet state-specific rule, while missing required evidence downgrades the
+report confidence/status according to the canonical contract.
+
+In addition, when the report's gate band lands in **PROCEED** and findings include a `DONE` (or `DONE_WITH_CONCERNS`) completion claim against the implementation, the surface must follow `ywc-verify-done`: the verification block (command, output excerpt, exit code) appears before the status line, no `should` / `probably` / `seems` wording appears in the conclusion, and any "this finding's fix was verified" claim cites the fresh command output that proves it. A report that reads "all clear, looks good" without an evidence block is not a Confidence-Gate PROCEED — downgrade to REVIEW until the evidence is attached.
+
+**Required dimensions** (must each score ≥ 70):
+
+- **Evidence quality** — Every finding must cite a verified source: file path, line number, or sanitized artifact path. Findings phrased as "this *might* be wrong" without primary evidence reduce the score even if the finding itself is plausible. For quality-gate evidence, approved command identity/digest and normalized result facts are acceptable; raw command text, raw output, secrets, transcripts, and full diffs are never acceptable evidence.
+- **Root cause identified** — A finding that names only the symptom ("test fails") without identifying the underlying cause ("test fixture is shared across cases") cannot be remediated correctly. The reviewer must reach root cause before recording the finding.
+
+**Band-to-status mapping** for this skill:
+
+| Gate band | Completion status | Action |
+|-----------|-------------------|--------|
+| PROCEED (≥ 90) | DONE or DONE_WITH_CONCERNS | Emit the report; status follows from the existing Critical/High count rule. |
+| REVIEW (70 – 89) | NEEDS_CONTEXT | Emit the report with the gate score and weakest dimension flagged at the top. Reviewer judgment required before merge. |
+| STOP (< 70) | BLOCKED | Do not emit findings as authoritative. Report which dimensions failed and what additional Phase 2 advisor calls would be needed to raise the score. |
+
+The gate score must appear in the report header. Per-finding `[P1]` / `[P2]` markers remain unchanged — they describe escalation history, while the gate describes overall report confidence.
+
+## Validation
+
+Before returning the report, verify that every finding includes source evidence, Phase 2 advisor usage is counted against the budget, the Confidence Gate band maps to the final status, and any "verified" claim includes the fresh command output required by `ywc-verify-done`.
+
+When a quality-gate packet is present, also verify that the report includes the
+sanitized boundary outcome, preserves all residual survivors and unavailable-tool
+gaps, applies monotonic status precedence, and contains no gate execution or
+delivery claim. A missing required evidence field must lower confidence and
+return `NEEDS_CONTEXT` when the boundary is unverifiable; it must never become a
+clean pass through inference.
+
+## Integration
+
+- **upstream**: `ywc-sequential-executor` or `ywc-parallel-executor` (auto-invoked via `--review` flag)
+- **downstream**: PR creation
+- **pairs with**: `ywc-review-learnings` — loaded in Step 0 (`read`) to apply accumulated review preferences and called in Step 7 (`update --source review`) to capture new ones
+- **pattern source**: [`references/advisor-pattern.md`](../references/advisor-pattern.md), [`references/coderabbit-methodology.md`](./references/coderabbit-methodology.md)

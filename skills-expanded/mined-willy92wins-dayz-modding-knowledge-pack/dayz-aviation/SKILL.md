@@ -1,0 +1,930 @@
+---
+name: dayz-aviation
+description: >
+  DayZ aviation modding for planes, seaplanes and helicopters. Covers the
+  source-verified CarScript-as-aviation patterns, custom flight physics
+  (lift/drag/stall, atmosphere, NaN guards), controls and input bindings,
+  PID stabilization, rotors/propellers, AnimationSources, aviation memory
+  points, dials, buoyancy, retractable gear, sounds and damage zones. Use for
+  helicopter, plane, aircraft, flight model, rotor, propeller, elevator,
+  aileron, rudder, throttle, autopilot, seaplane/flying boat, axis_thruster,
+  dial_horizon/dial_altitude, stall warning, Cessna, Spitfire, Catalina,
+  Tigermoth or biplane. Always invoke before authoring/debugging aviation
+  entity code or config; compose with enforce-script-reference and
+  dayz-model-pipeline.
+---
+
+# DayZ Aviation Modding
+
+**DayZ has no built-in aviation class.** The proven pattern (validated in LM_Planes by Llama + Itspete-Here): hack `CarScript` as the aviation base, override its physics inside scripts, and use `class Buoyancy` for seaplane behavior. Don't try to make planes work from `EntityAI` or `Inventory_Base` — `CarScript` gives you wheels, seats, sound integration, and damage system for free.
+
+This skill compiles patterns extracted from LM_Planes (Workshop ID `3730564764`) — the only real deployable aviation mod in Llama's catalog, with 8 aircraft + 1 amphibious car (Patty_Wagon) sharing one base class `LlamaPlaneScript`.
+
+## Preflight invariants (check before first boot) (added 2026-07-10, LFHeli phase-1)
+
+- **`EOnSimulate` does NOT fire on a CarScript child by default.** Vanilla `CarScript` registers only
+  `POSTSIMULATE`/`POSTFRAME` (`P:\scripts\4_world\entities\vehicles\carscript.c:207-208`, verified
+  2026-07-10). Any aviation flight loop living in `EOnSimulate` must add
+  `SetEventMask(EntityEvent.SIMULATE)` in the class ctor — RFFS does exactly this (`RFFSHeli_Core.c:180-181`).
+  (up to 1.29: `carscript.c:325-326`.) (since 1.30: `CarScript.c:207-208`. Re-open `exp\scripts\scripts\4_World\Entities\Vehicles\CarScript.c`. Detail: `references/dayz-1-30-aviation.md`.)
+  Symptom if missed: mod compiles, spawns, idles normally — and the flight model silently never runs.
+- **`super.EOnSimulate` is an EMPTY STUB — CarScript's real per-tick work lives in `EOnPostSimulate`**
+  (added 2026-07-29, LFHeli OH-1 B3). `CarScript` has no `EOnSimulate` override at all: `super`
+  resolves to the empty body at `P:\scripts\1_core\proto\enentity.c:201-203`. Engine, fluids,
+  part-health checks, fuel/engine auto-stop and exhaust/wheel FX all live in
+  `CarScript.EOnPostSimulate` (`P:\scripts\4_world\entities\vehicles\carscript.c:807`), much of it
+  (up to 1.29: `:948`.) (since 1.30: `CarScript.c:807`.)
+  gated `IsServerOrOwner()` — so it is MEANT to run on the owner client. Consequences: (a) skipping
+  `super.EOnSimulate` protects nothing, and any comment claiming it "would run engine/fluids twice"
+  is false; (b) if you pump the solver manually because the native event went quiet, pump BOTH
+  events like the shipped control does (`RFFSHeli_Core.c:1014-1015` calls `EOnSimulate` then
+  `EOnPostSimulate`) — or state explicitly that the owner suspends CarScript's fluid/health tick.
+  Symptom of pumping only `EOnSimulate`: flight works, but for the whole pumped window the owner
+  carries a frozen fuel/damage clock and dead exhaust/wheel FX.
+- **`EOnFrame` is PER FRAME, not a fixed-rate tick — never pump with a hardcoded dt** (added
+  2026-07-29, LFHeli OH-1 B3). `enentity.c:69,:72,:183`: FRAME/POSTFRAME fire once per rendered
+  frame and hand the real delta in `timeSlice`. RFFS's "every 5 ms" pump
+  (`RFFSHeli_Core.c:1008-1015`) is therefore "at most once per frame", and since it passes a
+  hardcoded `0.025` per call its simulated time runs at `FPS x 0.025` — 1.5x real time at 60 FPS,
+  3x at 120, and it drifts with every framerate change. Copy the ARCHITECTURE, not the cadence:
+  bank the real `timeSlice` in an accumulator and run N fixed steps of your own dt while it lasts,
+  with a per-frame step ceiling so one long frame cannot avalanche. Related trap: a silence
+  detector that the pump itself refreshes re-gates the pump to `1/gap` Hz — only the NATIVE event
+  may refresh that clock.
+- **Native `Helicopter`/`HelicopterScript` is a STUB** — empty `EOnPostSimulate` + empty engine hooks
+  (`P:\scripts\4_world\entities\vehicles\helicopterscript.c:1-35`, verified 2026-07-10). Do not inherit
+  from it expecting flight behavior; use CarScript-as-aviation (below).
+  (up to 1.29 and since 1.30: still a stub. Re-verified `exp\scripts\scripts\4_World\Entities\Vehicles\HelicopterScript.c:4-13` — ctor only `POSTSIMULATE`, empty `EOnPostSimulate`. Do not switch a flying CarScript child onto it.)
+- **Custom flight inputs are silent-fail wiring** (added 2026-07-12, LFHeli W4). A `UA*` action name
+  typo'd anywhere in the chain (`inputs.xml` declaration ↔ `SyncedValue("...")` call ↔ stringtable
+  `loc=` key) compiles clean and reads 0 forever — the channel is dead with zero errors. Verify the
+  names 1:1 character-by-character across the three files BEFORE the first boot. `SyncedValue` returns
+  `<0,1>` per action (`P:\scripts\3_game\inputapi\uainput.c:116-120`); opposing actions compose to one
+  [-1,1] channel, read server-side via `CrewMember(0).GetInputInterface()` (`man.c:19` — the
+  SIB/RFFS/MH6 pattern). Register via `CfgMods.<Mod>.inputs = "<Mod>/inputs.xml"`; `loc=` keys resolve
+  from the mod-root `stringtable.csv`.
+- **Expansion heli preset = the muscle-memory default** for new heli bindings (verified from
+  `DayZExpansion\Vehicles\Scripts\Data\Inputs.xml` preset block): cyclic `kW/kS/kA/kD`, collective
+  up/down `kLShift`/`kZ`, anti-torque `kQ`/`kE`, auto-hover `kX` (+ gamepad: thumbstick cyclic,
+  triggers collective, shoulders anti-torque).
+- **Strict-equality gates in a sealed solver want the deadzone UPSTREAM.** If the flight model gates
+  on an exact input value (LFHeli weathervane: `pedal == 0.0`), put the analog deadzone
+  (snap-to-zero + rescale `(|v|-dz)/(1-dz)`, LFHeli uses 0.10) in the INPUT READER, not the solver —
+  the sealed solver and its offline twin stay byte-identical, and keyboard 0/1 input passes through
+  unchanged.
+
+- **A "raw" probe taken AFTER the smoothing filter is not raw — the activity flag never reaches zero** (added
+  2026-08-07, LFHeli D3-2/D3-3, SP-201). When the solver decides attack vs release (or arms auto-level)
+  with a boolean `axis != 0`, that axis MUST be the raw input, not the working value. A first-order
+  filter (`cmd = cmd + (raw - cmd) * k`) writes its output over the working axis and decays
+  asymptotically: it never reaches exact `0.0`, so the flag stays `true` forever after the stick is
+  released. Symptom: the attack constant is also used on release (the stick "does not return"), and
+  any logic gated on "no input" (auto-level, self-level, rest damping) never fires. Keep the raw in
+  a separate field (`m_<axis>Raw`) at the moment the input is read, and decide activity ONLY from
+  it, on EVERY side that simulates (owner and server). LFHeli: `FilterCommandAxes` does
+  `m_CyclicPitch = m_CyclicPitchCmd` (`LFHeliInputs.c:272`); the server probe then took
+  `probeRawPitch = m_Inputs.m_CyclicPitch` AFTER the filter (`LFHeli_Base.c:~1219`) and fed
+  `StepStateMachine(pitchActive, ...)`. Owner used raw, server used filtered — they desynced once
+  symmetric simulation was on, and re-level (F3) never armed. Code-verified; in-game A/B flight
+  confirmation still pending (mark here when the flight confirms it).
+- **Custom vehicle inputs need CLIENT-side `SyncedValue` priming — and NO input `<context>`** (added
+  2026-07-12, LFHeli W4H — the fix that actually worked, after a context-membership hypothesis was
+  refuted). Reading server-side is NOT enough by itself: the owner-DRIVER client must call
+  `player.GetInputInterface().SyncedValue("UA...")` for EACH custom action every tick (return value
+  discarded) — that call is what enrolls the action in the synced input stream the server reads.
+  Priming with `UAInput.LocalValue()` (via a persistent wrapper) does NOT — `LocalValue` is gated by
+  the vehicle's active input group and never reaches the synced stream, so the server's `SyncedValue`
+  stays 0 in the seat. Symptom: custom keys dead ONLY while seated, vanilla car inputs still work.
+  You do NOT need `<context name="car">`: RFFS (a shipped CarScript heli that works) declares none and
+  calls no `ActivateContext`/`ActivateExclude` — its `modded_Inputs.xml` is only
+  `<actions>`+`<sorting>`+`<preset>` (client prime `RFFSHeli_Core.c:491-501,1145`; server read
+  `:547-554`). Meta-lesson: when diagnosing "custom vehicle inputs read 0 in the seat", extract and
+  read the `modded_Inputs.xml` of the CLOSEST-architecture shipped mod (RFFS for CarScript+SyncedValue),
+  not the ones that run their own Pawn (MH6/Expansion) — those don't answer the context/priming question.
+- **Kinematic `SetVelocity` DOES fly a CarScript — a rubberband is client smoothing fighting native
+  replication, NOT the mode** (added 2026-07-13, LFHeli, CORRECTED — an earlier draft here wrongly
+  concluded "pivot to force-based"; kinematic works). RFFS (shipped, time-tested) flies with RAW
+  `SetVelocity` in the vertical: its `SetVelocityAdjusted` (`RFFSHeli_Core.c:2481`, in the PBO — the
+  japm-recovered source is truncated before it) only scales X/Z, the Y passes raw to `SetVelocity`.
+  And RFFS has NO client-side pose smoothing — it syncs only instruments (`:189-208`), trusts the
+  CarScript's NATIVE replication for the pose, and calls `dBodyActive(this, ActiveState.ACTIVE)` while
+  flying (`EOnFrame:1005-1006`). So if a CarScript heli RUBBERBANDS when piloted, the culprit is almost
+  always a CUSTOM client smoother (dead-reckoning + client-side `SetPosition`) fighting native
+  replication — remove it and let native replication carry the pose, like RFFS. Do NOT pivot to
+  force-based on a rubberband alone. GATE LESSON: an offline kinematic gate (a scripted-trajectory
+  spike with SetPosition-airborne + SetVelocity) flies OFFLINE and can even show a microstutter that
+  tempts you to ADD a client smoother — but real PILOTED flight (only testable once custom inputs work)
+  behaves differently. Validate the flight mode in-game with real inputs before adding smoothing or
+  sealing the mode.
+- **Kinematic CarScript flight — the fixes that make it actually fly, verified IN-GAME piloted
+  (added 2026-07-14, LFHeli)**:
+  (1) **Double-gravity: the body applies gravity AFTER your `SetVelocity`.** If the solver already
+  subtracts gravity (`accelY = lift - GRAVITY`), the dynamic body subtracts it AGAIN and the climb is
+  cancelled — measured `realVy = tgtVy - g*dt` (a constant -0.21 m/s/tick). **`dBodyEnableGravity(false)`
+  is a NO-OP on CarScript** (measured, did not change the term). Fix = counter-gravity like RFFS: add
+  `GRAVITY * dt` back to the velocity Y each flight tick (`RFFSHeli_Core.c:1854`).
+  (2) **Kill residual body spin after `SetOrientation`** with `dBodySetAngularVelocity(this, vector.Zero)`
+  (`enphysics.c:165`) — else the body's own angular velocity fights your per-tick `SetOrientation` and
+  the rotation (and the seat camera) judders. RFFS does this (`RFFSHeli_Core.c:1892`). NOTE: this smooths ROTATION only;
+  jittery POSITION replication is a separate problem (native pose replication frequency / client
+  interpolation).
+  (3) **Car-wheel suspension re-anchors the vertical `SetVelocity` whenever wheels touch the ground** —
+  a wheeled placeholder cannot lift off (`realVy` re-clamped to ~0 near AGL 0). Condition the test heli
+  WITHOUT wheels (`OnDebugSpawn` minus the wheel `CreateInInventory`); the real model has skids.
+  (4) **An idle CarScript body sleeps -> no `EOnSimulate` -> the state machine stalls** (collective does
+  nothing until the pilot drives to wake it). `dBodyActive(ALWAYS_ACTIVE)` from EEInit helps but was NOT
+  fully sufficient in one run (still needed drive-to-wake) — PENDING; confirm the body stays awake with a
+  pilot seated + engine on, or wake in the get-in / engine-start hook.
+  Tooling note: the MCP `vehicle_prepare_fixture` takes any `CarScript`. It runs the vehicle's own
+  `OnDebugSpawn` unless every declared wheel, fuel and any vital battery or spark plug are already there,
+  and answers `fixture_not_ready` if they still are not (`DayZ_MCP_dev/addon/scripts/5_Mission/MCPBridge.c:1282-1295`,
+  `:3833-3868`), so it conditions a test heli exactly as that heli's `OnDebugSpawn` does (see (3)).
+  Self-conditioning via `EEInit -> CallLater(OnDebugSpawn)` remains an option. *(Corrected 2026-10-03:
+  this said "the MCP `vehicle_prepare_fixture` conditioning is hardcoded to one car (`MCPBridge.c:835`), so a
+  custom test vehicle should self-condition via `EEInit -> CallLater(OnDebugSpawn)`"; `dayz-mcp-verify`,
+  2026-07-18 section, has the evidence.)*
+## DayZ 1.30
+
+- **CarScript-as-aviation runs under `NetworkMoveStrategy.PHYSICS` in 1.29 — client fluidity needs the
+  full Pawn pipeline, NOT a mirror** (added 2026-07-14, LFHeli, verified in-game). A CarScript child in
+  1.29 (`FEATURE_NETWORK_RECONCILIATION` on) reports `GetNetworkMoveStrategy()==PHYSICS` on the owner
+  (probe measured `strat=2`) — the engine expects the OWNER to predict + reconcile. A client mirror
+  (pump `EOnSimulate`+`EOnPostSimulate` off `EOnFrame`, RFFS-style) does NOT advance the pose:
+  `super.EOnSimulate` is an empty stub (`enentity.c:201`) and pumping `EOnPostSimulate` runs CarScript
+  engine/fluids logic on the owner (harmful, `m_Time` ~5x). Partial owner-prediction (run the solver
+  gated `IsServerOrOwner` WITHOUT the Pawn hooks) still snaps on corrections and desyncs (hard TP on a
+  CRASHED). Fix = full Pawn pipeline: `LFHeliMove`/`LFHeliOwnerState` (both call `super` + implement
+  `EstimateMaximumSize`), `ObtainMove`/`ConsumeMove`/`ReplayMove` carrying RAW inputs (not the attenuated
+  buffer or FSM-mutated state), `RewindState` (`super` first + ADDITIVE guard), solver ONCE in
+  `EOnSimulate` gated `IsServerOrOwner`, tuning to the owner via a guaranteed RPC handshake (values +
+  ACK + `ForceCorrection`). SIB/RFFS mirror and hookless owner-prediction are dead ends under PHYSICS.
+       `ForceCorrection` corrects the VEHICLE pawn's simulation, never a seated character's pose:
+       `pawn.c:205-206` reads "Force a correction to the owner as a server only event was called (called on
+       authority only)", the state it rewinds is `TransportOwnerState` transform/velocity/buoyancy
+       (`transport.c:11-23`), and vanilla NEVER calls it - one occurrence in the whole tree, the declaration.
+       Get-out pose is `HumanCommandVehicle.GetOutVehicle()`/`JumpOutVehicle()` (`actiongetouttransport.c:161-177`),
+       and `Transport.Synchronize()` (`transport.c:171-172`) only syncs car state while the sim is not running -
+       vanilla calls it on attach/detach only.
+  Probe `GetNetworkMoveStrategy()` client-side before choosing the network model. (LFHeli 2026-07-14;
+  Codex research + R22, plan `2026-07-14-lfheli-physics-pawn-final.md`.)
+- **The RFFS client pump is animations + input sync, NOT a smoothing mechanism** (added 2026-08-03,
+  LFHeli SF-8b, SP-161). The `EOnFrame`→`EOnSimulate(0.025)` client re-entry (`RFFSHeli_Core.c:1008-1016`)
+  never reaches pose: `FlightSimulation()` is gated `IsServer() && m_heli_state == 2` (`:1149-1156`), so
+  the pump only advances `ExecuteAnimations()` + `KeyboardInputClient()` (`:1143-1145`). Do NOT copy the
+  pump expecting presentation smoothness — proxy pose smoothness in RFFS is native CarScript replication.
+  (references/helicopters.md carried the "for smoothing" myth until 2026-08-03; corrected in place.)
+- **Never smooth the PILOT's own camera** (added 2026-08-03, LFHeli SF-8b — refuted with data + feel in
+  2 iterations). A spring/spike filter on the seat camera delays exactly the feedback the pilot steers
+  by: pitch response lagged ("one tap dropped the nose hard" — reported by the pilot), and the jerk
+  distribution got MORE intermittent (p95 |Δroot| +14.65% measured with a 0.14 s spring). It also
+  STACKS with the vanilla lag already present: `DayZPlayerCamera3rdPersonVehicle` ships a SmoothCD
+  ~0.3 s offset filter, so a custom smoother is a second spring fighting the first. Presentation fixes
+  must sink in the shell/cockpit VISUAL or the network layer, never in the flying player's camera.
+  Passenger/spectator cameras are a separate question.
+- **Ownership is measured IN FLIGHT, not at the mount event** (added 2026-08-03, LFHeli SF-8b).
+  `IsOwner()` sampled at the mount event (`OnCommandVehicleStart` or get-in hooks) is a PREMATURE
+  reading — the ownership transfer lands after the get-in completes (measured: owner=false at mount,
+  then own=true in 3,404/3,404 in-flight samples across four flights, strategy=PHYSICS). Any
+  role-based branch (proxy-path designs, isDriver tricks) must be adjudicated with an in-flight
+  probe, never a mount-time sample.
+- **DayZ angular velocity is NOT yaw/pitch/roll, and the axis map is unusual** (added 2026-08-05,
+  LFHeli OH-1 F-02). `dBodySetAngularVelocity(body, angvel)` takes a world-space axis vector in
+  rad/s; the vanilla doc says so verbatim — *"Angular velocity, rotation around x, y and z axis
+  (not yaw/pitch/roll)"* (`P:\scripts\1_core\proto\enphysics.c:163`). Feeding a solver's Euler
+  rate triple straight in is wrong in units AND in frame. The engine convention, established by two
+  INDEPENDENT sources that agree: (a) the worked example in `enmath3d.c:125-131` — `YawPitchRollMatrix("70 15 45")`
+  matches `Rz(pitch)*Ry(yaw)*Rx(roll)` to 4e-7 with `mat[i]` being the world-space model BASIS
+  vectors; (b) the vanilla vehicle camera reads `dBodyGetAngularVelocity` and routes component **Y
+  to yaw, Z to pitch, X to roll** (`P:\scripts\4_world\entities\manbase\dayzplayer\dayzplayercameravehicles.c:137-139`).
+  Right-hand rule about world axes. Verify with the doc example before trusting any derivation —
+  getting the sign wrong makes the airframe counter-rotate, which reads as "the fix made it worse".
+- **A solver's rate accumulators are NOT the derivative of the pose you write** (added 2026-08-05,
+  LFHeli OH-1). If the actuator writes an absolute orientation, derive any published angular
+  velocity from the POSE DELTA (`GetTransform` before/after the write, small-angle rotation vector
+  `w*dt = 1/2 * sum_i (b_i x a_i)`), never from the integrator's `m_PitchRate/m_RollRate/m_YawRate`.
+  Reason: cosmetic and protective terms routinely mutate the target orientation without touching
+  those accumulators — in LFHeli a yaw-roll pendulum, a stabilizer level-nudge and a liftoff assist
+  all did. Publishing the accumulators commands a rotation the next absolute write contradicts, so
+  the body integrates one way and the teleport snaps it back — the exact judder a `vector.Zero`
+  angular write is usually added to suppress. The pose-delta form is also automatically zero on
+  hold/clamp call sites, which is what those sites mean.
+Digests F and M do not list this skill in SKILL IMPACT. A plane/heli that inherits `CarScript` still inherits the 1.30 vehicle-light/horn/battery/event-mask contract. Native `HelicopterScript` remains a stub. Line numbers against `P:\scripts\...\carscript.c` in this file are 1.29.
+
+## Helicopters
+Open `references/dayz-1-30-aviation.md` for the re-verified 1.30 cites (`CarScript.c:207-208`, `:807`, `:940-948`; `Transport.c:227`; `ForceUpdateLights*` Obsolete at `CarScript.c:2805-2809`), wreck-script note, and migration checklist. Headlight example in `references/effects-and-lights.md` is marked (hasta 1.29) `CarLightBase` / (desde 1.30) `VehicleLightBase`. Ground-vehicle table: `dayz-vehicles/references/dayz-1-30-vehicles.md`.
+
+The remainder of the 1.29/phase-1 atlas body (LM_Planes patterns, aerodynamics, combat, OnDriverExit recipe, camera input) is unchanged. Reconstruct the full insertion-only SKILL.md by applying `SKILL.md.diff` onto `work/refs/skills/dayz-aviation/SKILL.md` (905 base lines, same order). The diff also inserts the `dayz-1-30-aviation.md` row in the reference-loading table and the OnDriverExit line-drift notes.
+A **real rotary-wing flight model is documented from FOUR author/teams across five aircraft** (plus
+LM_Planes fixed-wing), which confirms the pattern generalizes AND that monolithic (both kinematic and
+force-based) and modular-aerofoil flight are all buildable (see `references/helicopters.md` for the full
+pattern + `path:line` citations, the SIB-vs-RFFS-vs-MH6-vs-Expansion-vs-LM_Planes comparison, and the
+monolithic-vs-modular architectural synthesis + decision framework):
+
+1. **RFFS — RedFalcon Flight System** [VERIFIED-source, clean] — the **kinematic** reference. Non-obfuscated,
+   de-rapified by Mikero, complete on disk. `RFFSHeli_S76 : RFFSHeli_base : CarScript`. Source in
+   `<research-notes>\redfalcon-rffs-heli\`. Build from this for an arcade /
+   minimal-code / predictable heli — clean, DRM-free, full integrator legible.
+2. **MH6 — Llama** [RECOVERED, clean] — the **force-based** reference (same author as LM_Planes; particle
+   paths `LM_LLAMA/LM_Vehicles/MH6/`). `class MH6 extends CarScript` with `MH6OwnerState`/`MH6Move` Pawn
+   replication; a real PD flight controller applying `dBodyApplyForce`/`dBodyApplyTorque` every tick. Source
+   in `<research-notes>\mh6-heli\`. Build from this for realism / momentum /
+   autohover.
+3. **SIB — lfbanov / sibnic** [RECOVERED, corroborating] — the recovered case with DRM. Workshop
+   `3485438937`; JAPM-deobfuscated 2026-07-07 with `japm-pbo-recovery`. `HeliTest_SIB : Heli_sib_cript :
+   CarScript`. Source in `<research-notes>\lfbanov-sibnic-heli\`. Its simple
+   (kinematic) model is legible; its advanced **force-based** model is license-locked and its core
+   integrator did not survive recovery.
+4. **Expansion — DayZ Expansion Team** [VERIFIED-source, clean, open-source] — the **modular / framework**
+   reference. A data-driven vehicle-physics framework, not a bespoke flight loop: the airframe is a bag of
+   auto-configured modules (aerofoils + a rotor module) each adding force+torque at its own position to an
+   `ExpansionPhysicsState` accumulator committed via `dBodyApplyForce`/`dBodyApplyTorque`. Entity
+   `ExpansionHelicopterScript : CarScript`; rotor is a dedicated module `ExpansionVehicleHelicopter`
+   (rotor-disc / blade-element model with autorotation, VRS, RBS, ETL, ground effect). One base flies the
+   Gyrocopter/Merlin/MH-6/etc. Source in
+   `<research-notes>\expansion-vehicles-heli\`. Build from this for a
+   multi-aircraft framework with realistic, config-tunable physics.
+
+All are the **same CarScript-as-aviation hack** used for planes, but as a heli: a full ground
+`SimulationModule` as a taxi fallback, and the flight loop entirely in script overriding it. **Both
+integration styles are buildable**: kinematic (`SetVelocity`/`SetOrientation` — RFFS, SIB-simple) OR
+force-based (`dBodyApplyForce`/`dBodyApplyTorque` — MH6). The earlier "buildable = kinematic only"
+impression came solely from SIB's DRM-locked advanced variant; MH6 disproves it with a clean, complete
+force-based integrator on disk.
+
+- [VERIFIED-RFFS] **RFFS flight model** (`RFFSHeli_Core.c:1767` `FlightSimulation()`, server-side under
+  `EOnSimulate`): far more physically grounded than SIB while still kinematic — collective is a
+  **discrete 0-20 detent** (`m_collective_level` × `c_thrust_rate`) rotated into a world lift vector by
+  the heli's own pitch/roll/yaw, plus ground effect, effective translational lift, speed + climb
+  governors, aerodynamic drag, and weathervaning. Cyclic/pedals feed a carried-forward
+  `m_angular_moment`; a `UARFFSRecover` mode auto-levels. **This is the recommended buildable pattern.**
+- [RECOVERED-SIB] **SIB simple flight model** (`unknown_16894.c`, corroborating): `KeyboardPilot +
+  Simulate`, also `SetVelocity`/`SetOrientation`. Simpler — pitch attitude → scalar forward speed;
+  bank → yaw; passive `+0.25` m/s hover baseline; attitude auto-recenter as the only stabilization.
+- [RECOVERED-MH6] **MH6 force-based flight model** (`MH6_flightmodel.c`, Llama): a real PD flight
+  controller in `ApplyHelicopterPhysics(dt)` — rotor-RPM authority gates (`cyclicAuth =
+  Ramp01(m_RotorSpeed,0.18,0.50)`, `:990`), collective→lift force along body-up (`mass·g·1.65 ·
+  collective · rotorSpeed² · densityRatio · transLift · groundEffect`, `:1004-1011`), cyclic/tail torques,
+  proportional attitude stability + derivative angular-rate damping (`PITCH_STABILITY`/`PITCH_DAMPING`,
+  `:1092`/`:1112`), per-axis quadratic drag with ISA `densityRatio`, overspeed + climb limiters, all
+  committed via `dBodyApplyForce`+`dBodyApplyTorque` (`:1165-1166`). Uses **custom Pawn replication**
+  (`MH6OwnerState`/`MH6Move`, prediction+rewind — like LM_Planes) and hybrid kinematic `SetVelocity`
+  autohover/autoland state machines on top. Constants are hard-coded literals (`:141-176`); config.bin
+  [UNVERIFIED] (not recovered).
+- **Inputs** are custom UA actions read via `GetInputInterface().SyncedValue(...)` / `GetUApi()` in all:
+  RFFS `UARFFSCyclic*/Pedal*/Collective*` (`RFFSHeli_Core.c:549-583`), SIB `UASIBHeli*`, MH6 `UAKTHeli*`
+  (`MH6_flightmodel.c:1434-1450`). Engine start/stop is action-driven — RFFS/SIB add custom start actions;
+  MH6 reuses the vanilla `ActionStartEngine`/`ActionStopEngine` (only relabeled) and gates on `EngineIsOn()`.
+       That gate is a DRIVER/OWNER frame, not a passenger one: the vanilla condition also demands a local
+       `GetCommand_Vehicle()` and `CrewDriver() == player` (`actionstartengine.c:26-37`,
+       `actionstopengine.c:16-33`), and the driver becomes the pawn owner on sitting down
+       (`playerbase.c:4561-4577` `identity.Possess(pawn)` - itself inside `#ifdef FEATURE_NETWORK_RECONCILIATION`).
+       Vanilla only trusts `EngineIsOn()` for simulation behind `IsServerOrOwner()` (`carscript.c:2592`) and
+       reaches non-owners through the netsynced `m_CarEngineSoundState` instead (`carscript.c:285`, `:446-447`).
+       So do not read `EngineIsOn()` as the authority bit on a machine that does not own the pawn.
+- **Config framework**: RFFS uses a **typed named JSON** framework (server-wide `MasterConfig` + per-heli
+  `HeliConfig`, `get*` accessors, `JsonFileLoader<T>` with auto-create + version-migrate) — the safest
+  reusable pattern. SIB uses a **positional** `map<string,float>` from `$profile` JSON read back
+  index-by-index. MH6 uses **hard-coded const literals** in the class (`:141-176`) — no external config on
+  disk (its config.bin, which might override, was not recovered).
+- **Rotors** are baked geometry with a static/blur mesh cross-faded by health/RPM-gated `SetAnimationPhase`
+  in all three (RFFS `rotorN_speed`/`rotorN_blur_hide`; SIB `rot_h_start`/`rot_h_blur_end`; MH6 `rotor_1_1`
+  spun by phase-accumulation + `rotor_1_1_hide`/`rotor_1_1_rotate_hide` swap at 70% RPM,
+  `MH6_flightmodel.c:1169-1200`) — not attachable items (contrast the other community heli below).
+- **Per-component DamageZones**: RFFS `Chassis/Avionics/Engine/Hydraulics/FuelTank/MainRotor/TailRotor`
+  with cross-transfer coefs + a `modded IngameHud` flight HUD (`headsUpDisplay.c`); SIB
+  `Body/Chassis/Engine/Fuel/Rotor1/Rotor2/Proj` (config dials, no widget HUD). MH6's DamageZones live in
+  the unrecovered config.bin ([UNVERIFIED]).
+- [UNVERIFIED] **NOT on disk — do not fabricate**: for all three, the `.p3d` models + `model.cfg` skeleton/
+  bone graph and the exact `.p3d` memory-point set; the `modded_Inputs.xml` bindings (input *names* are
+  confirmed from script). For SIB additionally the advanced force-based integrator `hkdxkhzidmpsib`
+  (license-locked, missing) and `config.bin`. For MH6 the entire `CfgVehicles`/`config.bin`
+  (AnimationSources/DamageZones/Crew/memory points). See `references/helicopters.md` §7-8 (SIB), RFFS §7,
+  MH6 §7. For Expansion the full rotor module (3234 lines — core read, remainder [UNVERIFIED]),
+  `Expansion_GetDensity`, the `SimulationModule` config, and concrete Merlin/MH-6 classes.
+- **Expansion — modular aerofoil framework** [VERIFIED-source]: the aerofoil (`ExpansionVehicleAerofoil.c`)
+  auto-configures from `CfgVehicles <veh> SimulationModule Aerofoils <name>` (area from memory points,
+  `type`=Wing/Rudder/Elevator by config), computes AoA/stall/drag in `PreSimulate` (`:152-203`), and adds
+  `force = up·q·Cl + airflowNormal·q·Cd` plus **torque `= position × force`** to the accumulator
+  (`:229-230`) — so control moments **emerge from the surface's geometry**, no hand-tuned lever arms. The
+  heli's rotor is a separate module (§3 of the ref); one core serves car/boat/plane/heli.
+- **Decision framework** (which to build from): **one heli, ship now, arcade + code you can read end-to-end
+  → monolithic** — kinematic **RFFS** (predictable `SetVelocity`) or force **MH6** (`dBodyApplyForce` with
+  momentum + PD stability). **A multi-aircraft framework with realistic, config-tunable physics →
+  Expansion** (modular aerofoil + rotor-disc, at the cost of its scaffolding + tuning curve). **Fixed-wing
+  with real aero → LM_Planes (monolithic) or Expansion (modular).** Do **not** build from SIB (minimal
+  kinematic hack + DRM-locked advanced). Full trade-off analysis in `references/helicopters.md`
+  §"Monolithic flight loop vs modular aerofoil system".
+
+> Earlier community-surface note (kept, different mod): `HelicopterSIB_Hommade_LF` (a reskin of
+> `HelicopterModhommade`) confirmed a [INFERRED] CarScript-derived base with **attachable** rotor
+> blades (`hommade_blade1/2`, tail `hommade_bladem1/2`) and a `c_rotorSound/c_engineSound/
+> c_warningSound/c_crashSound` hook contract — but its flight model lived in the (absent) base addon.
+> The SIB mod above supersedes it as the documented flight pattern.
+
+## PREFLIGHT
+
+Gate real build work on `/dayz-preflight` (P:\ mounted, AddonBuilder present, P:\Mods junction), per
+`<skills>\_shared\dayz-conventions.md`. Authoring config / model.cfg / flight-model
+scripts offline does not need it; packing does.
+
+## Architecture: CarScript-as-Aviation
+
+### The fundamental hack
+
+Aviation inherits from `CarScript` (the ground vehicle base). DayZ has no flight class, so:
+
+```cpp
+// config.cpp per-aircraft
+class LM_Tigermoth: CarScript
+{
+    scope = 2;
+    model = "LM_Planes\LM_Tigermoth\LM_Tigermoth.p3d";
+    weight = 1000000;             // Very high for plane stability
+    fuelCapacity = 60;
+    fuelConsumption = 15;
+    animPhysDetachSpeed = 250;
+    attachments[] = {"CarBattery","Reflector_1_1","Reflector_2_1","CarRadiator","SparkPlug",...wheels...};
+    class SimulationModule: SimulationModule { /* full ground vehicle physics — overridden by scripts */ };
+    // ... AnimationSources, DamageSystem, GUIInventoryAttachmentsProps, Sounds
+};
+```
+
+The plane has 4 wheels (front/back left/right) for ground taxiing AND a `SimulationModule` with full ground-vehicle physics — but actual flight physics is applied in scripts on top of the engine, not via config. See `ApplyFlightPhysics(dt)` in the script section.
+
+### Vestigial config values
+
+When reusing `CarScript`, `Engine` block values that don't affect flight (because scripts take over) can be left as stubs:
+- `rpmRedline = 80000` (real engines: 6000-8000) — irrelevant for flight, kept to satisfy config validator
+- `torqueCurve[] = {600,0,990,65,...}` — only matters for ground mode
+
+This is acceptable: a script-driven plane doesn't read these at runtime. Don't waste time tuning them.
+
+### requiredAddons combo
+
+```cpp
+class CfgPatches {
+    class LM_Tigermoth {
+        requiredAddons[] = {"DZ_Vehicles_Parts","DZ_Data","DZ_Vehicles_Wheeled","DZ_Vehicles_Water","LM_Planes"};
+    };
+};
+```
+
+Critical: **both `DZ_Vehicles_Wheeled` AND `DZ_Vehicles_Water`** are required. Wheeled gives landing gear behavior; Water gives flying-boat/seaplane buoyancy behavior. Sub-aircraft mods also require their parent (`LM_Planes`).
+
+### `class defs` wrapper for sub-mods
+
+Root mod loads `gameScriptModule`/`worldScriptModule` directly under `CfgMods.<Mod>`:
+
+```cpp
+class CfgMods {
+    class LM_Planes {
+        ...
+        class gameScriptModule { files[] = {"LM_Planes/scripts/3_Game"}; };
+        class worldScriptModule { files[] = {"LM_Planes/scripts/4_World"}; };
+    };
+};
+```
+
+Per-aircraft sub-mods wrap them under `class defs`:
+
+```cpp
+class CfgMods {
+    class LM_Tigermoth {
+        ...
+        class defs {
+            class gameScriptModule { ...; files[] = {"LM_Planes/scripts/3_Game"}; };
+            class worldScriptModule { ...; files[] = {"LM_Planes/scripts/4_World"}; };
+        };
+    };
+};
+```
+
+Some sub-mods only load `worldScriptModule` (Cessna180, Spitfire). The wrapper is required when the mod is a child of another mod's namespace.
+
+### Base script class (data-driven config-in-script)
+
+```cpp
+class LlamaPlaneScript extends CarScript
+{
+    // ~60 protected Get* methods for ALL tunable parameters
+    protected float GetWingArea()              { return 22.0; }
+    protected float GetWingSpan()              { return 8.9; }
+    protected float GetWingAR()                { return 5.2; }
+    protected float GetEngineMaxPower()        { return 3000.0; }
+    protected float GetClCoef3()               { return -0.00038; }
+    // ... etc, 60+ methods covering aerodynamics, control, stall, dampening, sound, lights
+};
+
+class LM_Tigermoth extends LlamaPlaneScript
+{
+    // ONLY override Get* methods — zero new logic per aircraft
+    override protected float GetWingArea()     { return 22.0; }
+    override protected float GetEngineMaxPower() { return 3100.0; }
+    override protected float GetStallBaseSpeedKmph() { return 62.0; }
+    // ... 50+ overrides
+}
+```
+
+Per-aircraft files are essentially configs-as-code: parameter sets, not new logic. This makes adding aircraft trivial: copy the override block, tune values.
+
+### Custom Pawn replication
+
+DayZ networking for player-controlled entities uses Pawn classes. Aviation needs custom state:
+
+```cpp
+class PlaneOwnerState extends CarScriptOwnerState
+{
+    int m_iFlightMode;             // 0=ground, 1=air
+    float m_fThrottleSmooth;
+    float m_fPitchSmooth;
+    float m_fRollSmooth;
+    float m_fRudderSmooth;
+    float m_fStallFactor;
+    
+    protected override event void Write(PawnStateWriter ctx) { /* serialize */ }
+    protected override event void Read(PawnStateReader ctx) { /* deserialize */ }
+};
+
+class PlaneMove extends CarScriptMove
+{
+    float m_fPitch;
+    float m_fRoll;
+    float m_fRudder;
+    float m_fThrottle;
+    int m_iToggleFlightMode;
+    
+    protected override event void Write(PawnMoveWriter ctx, PawnMove prev) {}
+    protected override event void Read(PawnMoveReader ctx, PawnMove prev) {}
+};
+
+// In LlamaPlaneScript:
+protected override event typename GetOwnerStateType() { return PlaneOwnerState; }
+protected override event typename GetMoveType()       { return PlaneMove; }
+protected override event void ObtainMove(PawnMove pMove)  { /* client captures inputs */ }
+protected override event void ConsumeMove(PawnMove pMove) { /* server applies inputs */ }
+protected override event bool ReplayMove(PawnMove pMove)  { /* client-side prediction replay */ }
+protected override event void SimulateMove(PawnMove pMove) { /* apply forces */ }
+protected override event void ObtainState(PawnOwnerState pState)    { /* snapshot */ }
+protected override event void RewindState(PawnOwnerState pState, PawnMove pMove, inout NetworkRewindType pRewindType) { /* rollback */ }
+```
+
+This gives you client-side prediction with server reconciliation — essential for fly-able aviation that doesn't feel laggy.
+
+### Two flight modes
+
+```cpp
+protected int m_PlaneMode = 0;  // 0=GROUND, 1=AIR
+protected float m_PlaneModeSwapCooldown;
+
+protected void Server_ToggleMode()
+{
+    // Cooldown prevents spam
+    if (m_PlaneModeSwapCooldown > 0) return;
+    m_PlaneMode = 1 - m_PlaneMode;
+    m_PlaneModeSwapCooldown = 1.0;
+}
+```
+
+`PLANE_MODE_AIR` enables `ApplyFlightPhysics()`. `PLANE_MODE_GROUND` lets `CarScript` handle taxiing normally. Pilot toggles with a bound action (default G). Critical for proper landing/takeoff transitions.
+
+### `driverless` design pattern
+
+```cpp
+class SimulationModule {
+    class Brake {
+        driverless = 0.1;  // Sport aircraft: rolls when pilot exits
+        // OR
+        driverless = 1.0;  // Heavy aircraft: locks fully (no rolling)
+    };
+};
+```
+
+Llama splits: `0.1` for Cessna180, Spitfire, StuntPlane (sport feel). `1.0` for Catalina, DC-3, Patty_Wagon, Tigermoth, Z37_Bumblebee (utility/heavy feel). Pick based on aircraft character.
+
+## Aerodynamics, Physics, Buoyancy & Aircraft Presets
+
+> Moved to `references/aerodynamics-and-flight-physics.md` — lift/drag/stall, ISA atmosphere,
+> PID auto-stab, NaN-safe forces, seaplane Buoyancy + active water physics, runtime optimization,
+> and the concrete Cessna/Spitfire/Catalina/Tigermoth parameter presets.
+
+## Memory Points (for the model artist)
+
+Aircraft p3d must contain these memory points; scripts will read them via `GetMemoryPointSafe(name, fallback)`:
+
+| Memory point | Purpose |
+|---|---|
+| `axis_back`, `axis_front`, `axis_left`, `axis_right`, `axis_floor`, `axis_roof` | Aircraft orientation reference vectors |
+| `axis_elevator_left`, `axis_elevator_right` | Elevator hinge axes for moment-arm calc |
+| `axis_flap_left`, `axis_flap_right` | Aileron hinge axes |
+| `axis_rudder` | Rudder hinge axis |
+| `axis_thruster` | **THRUST APPLICATION POINT** — engine force is applied here |
+| `wing_left`, `wing_right` | Wing tip positions (for wing span calc + nav lights fallback) |
+| `light_wing_left`, `light_wing_right`, `light_wing_tail` | Navigation light spawn positions (red/green/white) |
+| `pos_driver`, `pos_codriver`, `pos_cargo1-3` + `_dir` variants | Crew entry positions + facing direction |
+| `dmgZone_*` | Damage zone hit centers (matches DamageSystem in config) |
+
+Catalina expands with `light_left`, `light_right`, `light_1_1`, `light_2_1`, `light_dashboard`, `light_reverse` for flying-boat exterior lights.
+
+`GetMemoryPointSafe(name, fallbackVec)` returns the position or `fallbackVec` if not found — keeps script robust against missing memory points.
+
+## Selection Names (skeleton bones in model.cfg)
+
+Top-level bones registered in `CfgSkeletons.<Aircraft>_skeleton.SkeletonBones[]` (no parent unless wheel chain):
+
+**Flight controls** (script-driven via `SetAnimationPhase`):
+- `elevator_1_1`, `elevator_2_1` (paired elevators)
+- `aileron_1_1`, `aileron_2_1`
+- `rudder_1_1`
+- `gear_1_1` (landing gear retract)
+
+**Rotors** (propeller animation):
+- `rotor_1_1`, `rotor_center` (main prop)
+- `rotor_1_1_blur` (visual blur when spinning)
+- `rotor_1_2`, `rotor_center2` (DC-3 second engine) OR `rotor_2_1`, `rotor_center_2` (Catalina) — naming inconsistent
+- Single-engine planes: only `rotor_1_1` + `rotor_center`
+
+**Instruments**:
+- `dial_compass`, `dial_horizon_bank`, `dial_horizon_pitch`
+- `dial_altitude`, `dial_volt`
+- `dial_rpm`, `dial_fuel`, `dial_temp`, `dial_speed` (vanilla-driven)
+
+**Other**:
+- `engine`, `radiator`, `refill`
+- `drivewheel`, `drivewheel_1`, `drivewheel_2` (cockpit yokes)
+- `crewdriver`, `crewcodriver`, `seat_driver`, `seat_codriver`, `seat_cargo1-3`
+- `propeller` (selection, not the rotor bone)
+
+**Wheel chain** (parented):
+- `damper_susp_X_Y` (top, no parent) → `damper_X_Y` (parent: damper_susp) → `wheel_X_Y` (parent: damper) → `wheel_X_Y_steering` (parent: wheel)
+- Rear/tail wheel: `damper_2_2` has no `damper_susp` parent (simpler chain)
+
+## Control-Surface AnimationSources, model.cfg & Damage Zones
+
+> Moved to `references/animation-and-modelcfg.md` — AnimationSources (surfaces/dials/dampers),
+> model.cfg Animation classes, propeller-spin hack, damage zones, VehicleAnimInstances catalog.
+
+## Input Bindings
+
+> Moved to `references/inputs-and-bindings.md` — Inputs.xml registration, keyboard/Xbox scheme,
+> stringtable tie-in, multi-aircraft config variants.
+
+## Sounds
+
+> Moved to `references/sounds.md` — CfgSoundShaders/CfgSoundSets two-tier, RPM-band crossfade,
+> volume modulation, offload variants, per-aircraft sound ownership.
+
+## Visuals & Materials
+
+### Toggle rvmat pattern (dashboard on/off)
+
+```
+Controls.rvmat (lights off)        Controls_on.rvmat (lights on)
+forcedDiffuse = {0,0,0,1}     →   forcedDiffuse = {0.1,0.1,0.1,1}
+Stage5 SMDI = controls_SMDI       Stage5 SMDI = controls_on_SMDI
+Everything else identical.
+```
+
+Only 2 things differ between off/on. Cross-aircraft material sharing (Catalina referencing `LM_Tigermoth/data/Controls.rvmat`) — DRY across aircraft (verified in p3d binary string references).
+
+## Effects & Lights
+
+> Moved to `references/effects-and-lights.md` — seaplane water spray effects, custom nav lights,
+> per-aircraft headlights.
+
+## Combat Aviation (optional)
+
+> Moved to `references/combat.md` — zero-physics tracer, hitscan + tracer, full Spitfire fire
+> pipeline (RPC/ammo/damage-zone), camera shake.
+
+## Reference loading guide
+
+Load a topic reference on-demand when the task touches it (all under `references/`):
+
+| Reference | Load when working on |
+|---|---|
+| `helicopters.md` | Any rotary-wing (helicopter) work — THREE documented heli flight models + a 4-way cross-author comparison (kinematic vs force-based axis). **RFFS (RedFalcon), clean kinematic reference**: `RFFSHeli_S76 : RFFSHeli_base : CarScript`, `FlightSimulation()` (discrete 0-20 collective → attitude-rotated lift vector, ground effect/ETL/speed+climb governors/drag/weathervaning, kinematic via `SetVelocity`), typed `MasterConfig`+`HeliConfig` JSON, `modded IngameHud` HUD, per-component DamageZones. **MH6 (Llama), clean FORCE-BASED reference**: `MH6 : CarScript` + `MH6OwnerState`/`MH6Move` Pawn replication, PD flight controller (`ApplyHelicopterPhysics` — RPM-authority gates, ISA-density lift force, cyclic/tail torques, P+D attitude control, quadratic drag, `dBodyApplyForce`+`dBodyApplyTorque`), hybrid kinematic autohover/autoland FSMs, `StandardAtmosphere` helper. **SIB (recovered, corroborating)**: `HeliTest_SIB : Heli_sib_cript : CarScript`, simpler kinematic loop, positional JSON coeff store; advanced force-based model license-locked + missing. All use baked-blur rotor `SetAnimationPhase` and server-authoritative sync |
+| `aerodynamics-and-flight-physics.md` | Lift/drag/stall, ISA atmosphere, PID auto-stab, NaN-safe forces, seaplane Buoyancy + active water physics, runtime optimization, per-aircraft (Cessna/Spitfire/Catalina/Tigermoth) presets |
+| `sounds.md` | Engine sound: CfgSoundShaders/CfgSoundSets, RPM-band crossfade, volume modulation, per-aircraft sound ownership |
+| `combat.md` | Weaponizing an aircraft: tracer projectile, hitscan, the full Spitfire fire pipeline (RPC/ammo/damage-zone), camera shake |
+| `inputs-and-bindings.md` | Flight-control input bindings: Inputs.xml, keyboard/Xbox scheme, stringtable tie-in |
+| `animation-and-modelcfg.md` | Control-surface AnimationSources, model.cfg Animation classes, propeller-spin hack, damage zones, VehicleAnimInstances |
+| `effects-and-lights.md` | Seaplane water spray effects, custom navigation lights, per-aircraft headlights |
+
+## Cross-references
+
+- [[dayz-vehicles]] — CarScript packaging/deploy failures that pass filepatching but break on dedicated (binarize dropping config-only textures, ODOL-vs-MLOD model.cfg semantics) live in `dayz-vehicles/references/build-packaging-and-debug.md` and apply to CarScript aircraft too. Amphibians boundary: hull/car base in `dayz-vehicles`; Buoyancy/flight layer here.
+- [[enforce-script-reference]] — general Enforce Script patterns (config.cpp, CfgMods, modded class, RPC, persistence)
+- [[dayz-model-pipeline]] — rvmat patterns, .p3d Object Builder workflow, materials
+- [[dayz-mod-workflow]] — workflow protocol (use ALONGSIDE this skill)
+- [[dayz-particles]] — Enfusion .ptc format (used for crash/impact effects)
+
+## Anti-patterns observed
+
+1. **Inventory slot case inconsistency** (`LM_Tigermoth_Wheel_1_1` capital W defined, but referenced as `LM_Tigermoth_wheel_1_1` lowercase w in `class Wheels`). Engine resolves it but bug-magnet. Be consistent.
+2. **Rotor source = wheelfrontright** — visual prop tied to wheel, not engine RPM. Works as a hack but doesn't reflect actual engine behavior. Script-overriding it is the proper fix.
+3. **rpmRedline=80000** in Engine — vestigial CarScript values left because they don't matter when scripts control physics. Don't bother tuning these for aviation.
+4. **i18n placeholders** — Stringtable.csv with 13 locales all identical English. Pragmatic shortcut, not bad practice per se, but worth knowing if you fork the mod.
+
+<!-- llama-mod-extraction: findings f_001, f_003, f_008-f_013, f_016, f_017, f_019, f_023-f_029, f_031-f_036, f_037-f_043, f_048, f_049, f_052, f_053, f_066-f_070, f_073-f_075, f_078, f_085 | pbo: LM_Planes | pass: 1 | date: 2026-05-23 | author: Llama+Itspete-Here | source: workshop 3730564764 | count: 45 -->
+
+## Pass 2: Per-Aircraft Deep Dive Patterns
+
+Patterns extracted from per-aircraft `.c` scripts after full pass-2 coverage of all 8 aircraft + Patty_Wagon. Adds combat aviation, water physics templates, anim instance catalog, and ammo handling.
+
+## Pass 2 patterns (distributed)
+
+> The per-aircraft deep-dive patterns (Pass 2) were distributed into the topic references:
+> seaplane water physics + presets + composition override -> `aerodynamics-and-flight-physics.md`;
+> the full Spitfire combat pipeline + ResolveDamageZone + camera shake -> `combat.md`;
+> VehicleAnimInstances catalog -> `animation-and-modelcfg.md`;
+> sound ownership -> `sounds.md`. Sub-mod architecture, cosmetic proxies and family wheel
+> sharing (config-level) remain below.
+
+### Sub-mod parent/child architecture
+
+Root mod (`LM_Planes`) has `CfgPatches.units[] = {}` (EMPTY — no entities directly). Only registers `Inputs.xml` + script modules. Per-aircraft sub-mods (`LM_Tigermoth`, `LM_Catalina`, etc.) declare their own `units[]` and require `LM_Planes` parent.
+
+**One-way dependency**: child requires parent, parent doesn't require children. Lets you enable/disable per-aircraft sub-mods independently without breaking root. Critical pattern for large modular mods.
+
+### Cosmetic-only proxies (no script logic needed)
+
+DC-3 has `proxy/LM_DC_3_Rear_seats.p3d` (165 KB) — purely decorative cockpit seats visible in proxy LOD. NO memory points `pos_cargo*`, NO selections `seat_cargo*`. `CfgVehicles.LM_DC_3.class Crew` declares only Driver + CoDriver (no cargo).
+
+Z37_Bumblebee has `proxy/LM_Z37_Bumblebee_door_1_1.p3d` + `door_2_1.p3d` — handled by **vanilla DayZ door attachment system** (CarDoor base + attachments[] in config + class DamageZones.Doors). No script logic for doors. Engine handles visibility on attach/detach.
+
+**Pattern**: use vanilla DayZ systems when possible. Don't write scripts for doors/seats if config + proxies suffice.
+
+### Family wheel sharing (variant reuse)
+
+Tigermoth family (`LM_Tigermoth` + `LM_Tigermoth_MK2` + `LM_Tigermoth_MK3`) all use the SAME wheel inventory class:
+
+```cpp
+// LM_Tigermoth_MK2.c OnDebugSpawn:
+GetInventory().CreateInInventory("LM_Tigermoth_wheel_front");  // NOT MK2_wheel_*
+GetInventory().CreateInInventory("LM_Tigermoth_wheel_back");
+```
+
+Only the variant aircraft body changes; wheels are shared. Reduces config + asset duplication. Pattern for vehicle families.
+
+
+<!-- llama-mod-extraction: findings f_087-f_091, f_096, f_097, f_101, f_103, f_105-f_107, f_110-f_116, f_120, f_123-f_125 | pbo: LM_Planes | pass: 2 | date: 2026-05-23 | source: workshop 3730564764 per-aircraft .c files | count: 23 -->
+
+## Rules promoted from lessons learned corpus (added 2026-07-27)
+
+Promoted from `AI/20_Knowledge/lessons-learned.md` so they trigger automatically rather
+than depending on someone remembering to look them up. Each rule cites its originating `LL-NNN`;
+the full entry (symptom, origin, evidence) lives there. Do not remove citation: the index
+`lessons-index.md` detects promotion by searching for that reference inside the skills.
+
+- **LL-194** — Enumerate each field read by solver/FSM during replay and classify it as restored, recomputed after handshake, or unconditionally initialized. Never initialize K-values or derived tables only inside `IsServer`.
+- **LL-195** — Do not use a one-shot handshake if it depends on crew/possession/spawn that are still asynchronous. Retry from client until ACK or push from server when state is ready; compare identities by stable ID, not by instance.
+- **LL-201** — Diagnose reconciliation with aligned series: sawteeth indicate corrections followed by re-divergence; monotonic growth or plateau without resets indicates transform is not corrected. Find the event triggering convergence before tweaking the solver.
+
+- **LL-233** — For each threshold-gated pulse, enumerate every writer of the same variable in that window and compute whether the precondition is reachable at firing time. If a continuous actuator converges the error before the pulse (here DR blending `α≈0.35/frame` vs `preError≥0.5 m/s`), open a `coast-window` suspending the actuator; a non-fire is recorded as data with its own reason and does not invalidate the whole window. The live harness with mitigation lives at `LFHeli_SF8B/scripts/4_World/LFHeliVariants.c:937-991` (`CampaignPulseIsCoasting` at `:941` / `:963-968` and low-preerror no-fire at `:984-988`).
+
+- **LL-291** — Adjudicate the loop with output, target and difference, not law shape alone. Log per tick the raw law output, the target, the actually applied output and `out-target`; inspect clamps after the law before touching the law. If the residue equals a tuning constant it is saturation, not dynamics: here `9.0 deg` residue = `AutoHoverMaxTiltDeg=9` capping the target before `TrackNormalRollTarget` (`LFHeliCore/scripts/4_world/LFHeli/LFHeliFlightModel.c:169-178`, `176-178`).
+
+- **LL-292** — Calibrate the prestate gate against what the real pilot can do; before adding a prohibition read how the previous clean windows were obtained, copy their conditions literally and do not add an axis "just in case" — it changes the measured physics. Here manual hover achieves `≤3.5 deg`, `≤1 deg` only with prior recover; the extra `vfwd` ban cost a cell.
+
+- **LL-299** — The script gate must be byte-identical to the pre-registered one, and "settled" is detected by AGL, not velocity. Do not add `vfwd ≤0.5` when the pre-registration only asks roll/vright; do not use owner `GetVelocity()` (declared at `scripts/1_core/proto/enphysics.c:104`) on ground — on ground it can reflect commanded velocity (measured `-1.96 m/s` with heli still, contact `0.0003`). Use a sustained independent physical AGL condition and release collective below 1 m.
+
+- **LL-295** — The Pawn Move is already the scripted-pilot channel. When the server consumes the owner Move, inject axes between local read and Move write inside `ObtainMove`; keep the normal path byte-identical when the override is inactive and log entry/exit. The live hook is between `ReadRawLocal` and `WriteToMove` (`LFHeliCore/scripts/4_world/LFHeli/LFHeli_Base.c:2290-2306`; signatures `LFHeliInputs.c:175,219`): do not add RPC or clock sync for data already travelling that frame.
+
+- **LL-298** — Replay and clocks require normalization before adjudication. Rewind/replay can emit several samples with the same tick and make flags flicker on edges: keep the first sample per tick (here `8-21%` duplicates). Client/server timestamps do not share origin; measure offset with same-event pairs (`LEVEL`/`RECGATE`, `EXIT`/`EXIT`, here `31-34 s`) and align. Publish the authority series alongside the aggregate and use it for the verdict.
+
+- **LL-308** — Phase gates are decided by authority; owner presentation is auxiliary evidence (refines LL-299). If the server already published `GROUND_READY` or `PARKED`, that state closes the landing. Owner AGL can bounce by interpolation over a still authority and serves only as fallback/witness; it must not reopen a confirmed phase. Record both signals in the same interval (`LFHeliCore/scripts/4_world/LFHeli/LFHeliScriptedPilot.c:575-594`) and apply the same authority review to `LEVEL` and `PRESTATE`.
+
+---
+
+## Source availability on this host — where the heli material actually is (added 2026-08-05, LFHeli council)
+
+The sections above analyse five reference implementations. This one answers the question that costs
+a session every time it is re-derived: **which mod sources are readable on this machine right now,
+and which are a dead end.** All verified 2026-08-05 by reading the PBO index and extracting with
+Mikero `ExtractPbo` (installed at `C:\Program Files (x86)\Mikero\DePboTools\bin\`).
+
+Workshop root: `C:\Program Files (x86)\Steam\steamapps\common\DayZ\!Workshop\`
+
+| Mod | PBO with the scripts | Content | Verdict |
+|---|---|---|---|
+| **RFFS** | `@RedFalcon Flight System Heliz\addons\RFFSHeli_Core.pbo` | 53 `.c`, packing method 0 (**uncompressed**); core is `scripts\4_World\RFFSHeli_Core.c` at **88.559 B**; also `modded_Inputs.xml`, `GUI\RFFSHelicopterGUI.layout`, `scripts\5_Mission\GUI\headsUpDisplay.c` | ✅ extract directly, no tooling gymnastics |
+| **Expansion** | `@DayZ-Expansion-Vehicles\addons\vehicles_scripts.pbo` | **192 `.c`**, 974 KB. Biggest: `ExpansionVehicleHelicopter.c` (116.933 B), `CarScript.c` (97.932 B), `ExpansionHelicopterScript.c` (40.671 B), `ExpansionPhysicsState.c`, `ExpansionInterpolatedInput.c`, `ExpansionHelicopterHud.c` | ✅ the flight code is in `vehicles_scripts.pbo`, **not** in `vehicles_air_gyro.pbo`/`vehicles_air_hatchbird.pbo` (those are models/sounds) |
+| **Arma 2 Helicopters Remastered** | `@Arma 2 Helicopters Remastered\addons\Scripts.pbo` (only 137 KB of the ~700 MB mod) | 24 `.c`, incl. **13 `EXT_*.c` — one flight-parameter file per airframe** (`EXT_UH60M.c`, `EXT_MH6.c`, `EXT_AH64D.c`, `EXT_Mi24.c`…), plus `ExpansionHelicopterScript.c` | ✅ **the cheapest source of tuned per-aircraft numbers**; derives from Expansion. Not among the four teams listed above — add it when comparing feel/rate constants |
+| **AnimatedDynamicHelicopters** | `DynamicHelicopters.pbo` (334 MB, single PBO) | **Anti-extraction bomb**: 358.128 index entries, 25.169 decoy `.c` with Windows reserved-device names (`LPT1.{GUID}`, `COM1`, `NUL`, `PRN`), zero-width chars in paths, `Cprs`-compressed | ❌ do not spend a cycle on it; extracting it can also litter the filesystem |
+| `HelicopterSIB_Hommade_LF` (in the DayZ Projects tree) | `HelicopterSIB_Hommade_LF.pbo` | **One `.c` of 1.177 B.** This is NOT the SIB heli source | ❌ dead end — the real SIB source is the JAPM-deobfuscated copy referenced in §Helicopters (workshop `3485438937`) |
+
+**Two traps this table exists to prevent** (both cost time on 2026-08-05):
+
+1. **A mod named after a heli mod is not its source.** `HelicopterSIB_Hommade_LF` sat in the project's
+   reference list for weeks; it is a 1 KB stub. Check the `.c` count before planning around a source.
+2. **Read the PBO index before extracting.** A 40-line reader over the PBO header (asciiz name +
+   `<4sIIII>` per entry) tells you the `.c` count and the packing method in under a second — enough to
+   spot both an obfuscated mod and an empty one without unpacking 300 MB. Packing method `0` means the
+   scripts are plain text inside the PBO; `Cprs` means compressed.
+
+**Corollary for planning**: before commissioning any research on "how do other heli mods do X",
+check `references/helicopters.md` first — RFFS, MH6, SIB and Expansion are already analysed there
+with `path:line`, including §6 *Multiplayer / sync*. The work that is genuinely missing is almost
+never "what does mod X do"; it is "how does OUR code differ from it", which no prior pass had done.
+
+---
+
+## A diagnostic probe is NOT a fluidity instrument: check cadence and trigger threshold BEFORE it becomes a gate (added 2026-08-13, LFHeli flight conciliation; LL-248)
+
+**Preflight, before you use ANY existing probe to judge "smoothness / no stutter / no lag", and before
+you freeze a baseline computed from it**: open the probe emission site and answer three questions.
+
+1. **What is its emission period?** A probe written to measure a CONSTANT (an offset, a drift, a
+   steady-state residual) is normally throttled to seconds. LFHeli's `[LFHELI-REF]` emits on
+   `refProbeNow - m_RefProbeLastPeriodicLog >= 2.0` (`LFHeliCore\scripts\4_world\LFHeli\LFHeli_Base.c:2203`),
+   i.e. 0.5 Hz, with a cap of 10 lines per 1 s window (`:2205`).
+2. **What is its out-of-band trigger threshold?** `[LFHELI-REF]` only breaks its period when
+   `refStateBodyDistance > 6.0` (`:2204`). The stutters under investigation measured 2.3-3.9 m, so
+   they pass UNDER the trigger and never fire the probe.
+3. **Can it resolve the phenomenon at all?** A jolt lasting one frame, sampled every 2 s, is invisible
+   by construction. An earlier LFHeli research pass had already written this caveat about its own
+   5 Hz probe - "does not [show] whether the change happens in one or several frames"
+   (`LFHeli_dev\reviews\2026-08-03-sf8b-research-codex.md:79`) - and it was still overlooked a week later.
+
+**The trap that makes this expensive: the frozen baseline inherits the blindness.** LFHeli's flight
+baseline was computed over **N=70 samples in 159 s** (`reviews\2026-08-12-investigacion-offset-codex.md:274`),
+which is exactly that throttled probe. An A/B against it is legitimately COMPARABLE (same instrument
+both sides) yet still cannot answer "did the jolts go away" - the product question. Both statements
+are true at once, and a review that picks only one of them adjudicates wrongly.
+
+**Rule.** Run BOTH streams in a measurement cell: the original probe at its original cadence (so the
+A/B against the frozen baseline stays valid) AND a per-frame continuity stream (position/angle delta
+and jerk per frame) that can actually see a one-frame discontinuity. Do not make the second one
+conditional on the first one's outcome: if the first is blind to the phenomenon, its outcome cannot
+be the gate that authorises measuring properly.
+
+**Corollary - measurement mode vs release mode.** Raising a probe's cadence and lowering its trigger
+for a measurement cell is a PARAMETER change, not a telemetry laboratory; do not let a "no new
+instrumentation" boundary block it. And the reverse: never strip diagnostic probes from a build
+before the measurement campaign that consumes them has closed, or the campaign silently loses its
+instrument.
+
+
+## Adjudicating an attitude-law window band: clock offset for SERVER events and de-dup of OWNER replay samples (added 2026-08-17, LFHeli iv3ab, SP-278)
+
+A parser that validates OWNER time-windows against SERVER events (RECGATE / TDGATE / GND)
+must convert the server clock onto the client/owner clock before scoring the band.
+
+1. **Clock offset.** Measure it from twin-event pairs: EXIT↔EXIT, or LEVEL (client) ↔ first
+   RECGATE (server). Here it was ≈ 31-34 s. Without the offset a correct window comes out
+   INVALID (iv3ab-01, window 3) and a real violation can fall outside the band.
+2. **De-dup OWNER replay samples.** An owner that predicts with the Pawn pipeline (FIX-B1
+   rewind/replay) emits the AH2 probe several times per frame with the SAME `t` (8-21% of
+   the samples). On hold flanks the `rAct` flag flickers across those copies and the parser
+   reports false "pre-state has rAct=1" / "reactivation at +0.001 s". Keep the FIRST sample
+   per tick (or within <20 ms) — that is the present; the rest are replays.
+3. **Adjudicate on AUTHORITY first.** Prefer the AUTHORITY series (no replays); treat the
+   owner series as secondary. After the parser change, re-run the historical cells and
+   check they do not move — here flight B and baseline D stayed identical.
+
+Parser: `LFHeli_dev/tools/ah2_windows.py` v2 (`--offset`, dedup) vs
+`reviews/evidence-2026-08-16/celda-d2r-d3r/ah2_windows.py`; cells
+`evidence-2026-08-17/cell-iv3ab-0{1,2,4}/`.
+
+## py3d reports this model's Z with the OPPOSITE sign to the engine (added 2026-08-19, LFHeli FLIR; cost 2 in-game cycles)
+
+Geometry measured out of an MLOD `.p3d` with py3d is internally consistent and **mirrored on Z**
+against the frame `ModelToWorld` uses. Feeding a py3d-derived offset straight into the engine puts
+the point at `-Z` of where it belongs — 5,6 m off on an OH-1-sized airframe, i.e. eye point on the
+tail boom instead of the sight.
+
+What made it expensive: every *offline* cross-check agreed with itself. Search light at py3d
+Z −5.933, landing-light beam running −5.885 → −6.626, canopy −5.44..−3.03, tail beacon +5.358,
+`tail_rotor_axis` +4.597 — and the same pattern in a second airframe in the same project. A
+confident, fully cited "the nose is at negative Z" came out of that, and it was wrong.
+
+**The arbiter is the engine, and it is one line.** `GetDirection()` returned `<-0.005, -0.019,
++0.9998>` with the aircraft pointing where the pilot calls forward, and `ModelToWorld("0 0 5")`
+landed 5 m toward the nose. Engine forward is `+Z` (yaw 0 → +Z, documented at
+`1_core/proto/enconvert.c:355-368`: `AnglesToVector` of yaw 45 returns `<0.707,0,0.707>`).
+
+**Rules.**
+1. NEVER hand a py3d-derived offset to `ModelToWorld` without one runtime probe first:
+   print `GetDirection()`, `ModelToWorld("0 0 5")` and `GetMemoryPointPos(<known landmark>)`, and
+   compare the memory point's engine coordinates against the same point read by py3d. If the Z
+   signs disagree, negate Z on everything derived from the file — eye points, gimbal centres, axis
+   fits, the lot.
+2. Look for an in-project constant that already crossed the boundary before deriving a new one.
+   This mod had `LFHELI_PIPPER_NOSE_MS = "0 0.383 +5.826"` in shipping HUD code
+   (`LFHeliHUD.c:6-7`) — engine frame, nose positive Z, hiding in plain sight the whole time.
+3. Geometric self-consistency is not evidence of frame correctness. Two independent p3d readings
+   agreeing tells you the READER is consistent, not that it matches the engine.
+
+## DayZ thermal cannot be done with post-processing (added 2026-08-19, LFHeli FLIR)
+
+A PPE requester operates on the assembled frame with no per-entity information, so it can grade,
+desaturate or tint — and that is all. A "thermal" mode built that way renders a zombie exactly like
+the terrain behind it. This is a ceiling, not a tuning problem: no parameter of
+`PPERequester_*`/`PPEGlow` will ever separate a warm body from cold ground.
+
+**The mechanism that works is per-entity texture + material swap.** Scan with
+`GetObjectsAtPosition(pos, radius, objects, cargos)` (`game.c:923`), filter to living entities,
+optionally raycast for line of sight (`RayCastBullet`, `dayzphysics.c:211`), then per hidden
+selection call `SetObjectTexture(i, tex)` / `SetObjectMaterial(i, mat)` — **both on `EntityAI`,
+NOT on `Object`** (`entityai.c:2881-2885`; `GetObjectTexture`/`GetObjectMaterial` alongside, which
+is how you save the originals). Colour comes from the rvmat `emmisive[]` with `diffuse[] = {0,0,0,1}`
+plus the swapped texture, so tiering by creature type needs BOTH pieces. Working reference on disk:
+`ThermalScripts/4_World/Thermal.c` (apply/restore :120-270, driver :424-560, tracking :700-860).
+
+**The invariant that decides whether this ships:** every painted entity must be restored — on mode
+change, on sight close, on leaving the scan radius, and when the entity dies or is deleted. Design
+it as restore-by-reaffirmation (mark all unseen at scan start, re-mark what the scan finds, restore
+the remainder) rather than as a list you remember to walk; that way a missed code path fails toward
+restoring, not toward an entity that glows forever.
+
+
+## Sleeping a CarScript aviation body safely: init, settled-state and wake-up (added 2026-08-31, LFHeli sleep saga; SP-153)
+
+A vehicle that forces `dBodyActive(this, ActiveState.INACTIVE)` every frame to suppress ground
+jitter must satisfy all of these safeguards:
+
+1. **[VERIFIED in-game] Never sleep the body in the same tick as `EEInit`.** The collider can fail
+   to finish registration: the visible mesh is passable at its shown position, pushes from another
+   position, and get-in actions do not complete. The `EEInit`→first-frame delay varies by boot
+   (about 1.5 s while the world loads, but only 3-5 ms after connect with the frame loop running),
+   so this can appear or disappear with no code change. Keep physics active for a warm-up of about
+   3 s after `EEInit` before the first sleep. LFHeli v3.2 `59E425AD` restored collision with that
+   warm-up as the only delta.
+2. **[DESIGN approved; in-game gate partial] Sleep only when settled:** speed is near zero AND AGL
+   is near the terrain. A persisted aircraft can be restored in flight or in motion; sleeping it
+   there freezes it in the air and can separate physics from the visible shell. The mirror case is
+   just as important: a body born asleep does not wake merely because code stops forcing
+   `INACTIVE`. Explicitly request `ActiveState.ACTIVE` while the settled gate is false.
+3. **[MEASURED] Do not give the settled AGL gate a lower bound.** A grounded vehicle's pivot can
+   be below `SurfaceY` (OH-1 measured -0.02 m), so require only the safe upper proximity plus the
+   velocity condition; `0 <= AGL` rejects a valid settled body.
+4. **[VERIFIED] `ClampMinValue(name, value, minimum, fallback)` has no upper clamp.** Its fourth
+   argument is the fallback for non-finite values. Enforce a safety maximum at the consumer, for
+   example `Math.Min(tuned, CAP)`; do not assume the tuning loader capped it.
+
+## Fixed direct gear vs vanilla `OnDriverExit` (added 2026-08-31, LFHeli OH-1 AC-B18; SP-154)
+
+1. **[VERIFIED by source] Vanilla `CarScript.OnDriverExit` stops a healthy engine whenever the
+   gearbox is not neutral:** `if (GetGear() != GetNeutralGear()) EngineStop();`
+   (`carscript.c:1207-1215`). A CarScript-as-aviation design that forces one direct gear (for
+   example `ShiftTo(FIRST)` from `OnInput`) therefore stops the engine on every driver dismount,
+   without logging an error. Everything gated by `EngineIsOn()` can then close through
+   `OnEngineStop` as well, including cameras, FLIR sessions and HUD state.
+2. **[VERIFIED by source] The vanilla super implementation above `CarScript` is empty:**
+   `Transport.OnDriverExit(Human) {}` (`transport.c:227`). In the vanilla chain, omitting `super`
+   loses only the gear-triggered stop. Battery and plug detach handling (`carscript.c:556,572`),
+   fluids (`:848-851`), unconscious/dead handling (`:1665,1676`) and vitals (`:853-854`) live in other
+   callbacks.
+3. **[DESIGN; in-game gate pending]** For the invariant "engine ON implies the fixed gear is
+   re-engaged by `OnInput`", the minimal override is:
+
+   ```c
+   override void OnDriverExit(Human player)
+   {
+       ShiftTo(GetNeutralGear());
+   }
+   ```
+
+   Do not call `super` in that override. The next pilot's input tick restores the direct gear.
+4. **[OPEN audit]** Keeping the engine alive without a driver changes the sleep case. Check that
+   keep-awake is not gated only by `CrewMember(0)`, and verify whether `EOnPostSimulate` fuel drain
+   continues while the body is `INACTIVE`.
+
+## Continuous in-seat actions and in-vehicle camera input (added 2026-08-31, LFHeli OH-1 FLIR F0; SP-218)
+
+1. **[VERIFIED in-game] `ActionContinuousBase` progress while seated depends on `m_CommandUID`.**
+   `CMD_ACTIONMOD_OPENDOORFW` can animate in a seat yet never advance progress, so
+   `OnFinishProgress` never runs and the action looks dead without an error. The only vanilla
+   precedent found for a continuous seated action that completes is `CMD_ACTIONMOD_STARTENGINE`
+   (`actionstartengine.c:14`). Use that compatible command-mod for this pattern.
+2. **[VERIFIED in-game] An interface that shares a key with seat actions must consume that input.**
+   `inputController.SetDisabled(true)` does not stop action input. On open, use
+   `AddActiveInputExcludes({"menu"})`; record whether this interface installed the exclude, and
+   restore it only under that flag on every exit path. Otherwise the same hold used to close the
+   interface can complete vanilla get-out and eject the player's body during spectate.
+3. **[VERIFIED in-game] Interrupt before excluding.** Installing an exclude while a continuous
+   action is active can hide its release and leave `ActionManager` permanently in progress, after
+   which no actions are offered until relog or interrupt. Before the exclude, call the vanilla
+   client path `ActionManagerClient.RequestInterruptAction()` (`actionmanagerclient.c:1341`).
+4. **[VERIFIED] All `UAInput` reads are gated during an exclude and return zero.** Raw
+   `KeyState(KeyCode.KC_X)` (`ensystem.c:291`) and `GetMouseState` still work, but `KeyState` reads
+   the physical key and ignores rebinding. Use it only as a coarse escape path; read the live
+   binding when rebinding correctness matters.
+5. **[VERIFIED in-game] Native `CarScript.EngineIsOn()` is not sufficient presentation state for
+   late joiners.** A client joining after the engine started can see it as OFF until a mount causes
+   resynchronization. For remote rotor or similar visuals, mirror engine state in a SyncVar written
+   by the server from `OnEngineStart`/`OnEngineStop`, and register that variable at the END of the
+   constructor's existing net-sync bank so bitstream order remains stable.
+
+## On Linux
+
+Everything above is the Windows workflow and stays valid there. On Linux, the Proton setup, the measured tool matrix and the pitfalls are in [`_shared/linux-proton.md`](../_shared/linux-proton.md); this section only says what changes for this skill.
+
+- Pack, sign and binarize with dayzmake >= 3.1.0, bzed's DayZ fork of armake2 (https://github.com/bzed/dayzmake), pinned to `v3.1.0`; 3.x fixes a lot of security and file-handling issues of the earlier releases, so do not use an older build. Install the release binary `dayzmake-v3.1.0-debian-trixie-x86_64.tar.gz` from https://github.com/bzed/dayzmake/releases/tag/v3.1.0 only after verifying it against the release's GPG-signed `SHA256SUMS` (key fingerprint `6624 41B3 6A57 85AD 18FB  8667 DF75 3D99 D064 EB7E`; commands and the list of fixes in `dayz-pbo-build/references/dayzmake-linux.md`, "Get the right dayzmake"), or `cargo install --locked --git https://github.com/bzed/dayzmake --tag v3.1.0`: use `dayzmake build`, `keygen`, `sign`, and `build --proton-binarize` where needed. Upstream armake2 is no substitute: it is built for Arma, its V3 file hash omits `*.c` files (dayzmake includes them) and lacks the DayZ-only functions dayzmake keeps adding. `skills/_shared/scripts/dayz-mod-pack.sh` wraps them (`init`, `keygen`, `build [--binarize-models]`, `check`, `publish-hint`; `dayz-pbo-build/references/dayzmake-linux.md`). The author's 2026-11-03 textured-cube comparison with BI binarize from a `P:` root matched byte for byte (fork commit `7dcb3cf`, then still named armake2; `v1.0.0` and later contain it); this is not an in-game ODOL check. See `skills/_shared/linux-proton.md` for setup and limits.
+- `P:\` is a plain directory mapped by `skills/_shared/scripts/dayz-proton.sh init <dir>`; a `P:\<Mod>\...` path in this skill is `<dir>/<Mod>/...`.
+- Object Builder and TexView run under Proton: `dayz-proton.sh gui ObjectBuilder <p3d>`, `gui TexView <paa>`. Object Builder opened and displayed a model; editing in it was not exercised. Offline checks (`py3d`, `dayz-model-preflight`, `dayz-3d-viewer`) are Python and run natively.
+- In-game checks: the Linux notes of `dayz-test-ingame`.
+
+## Building, testing and publishing the mod
+
+When this work has to end in a mod that builds, loads and ships (`config.cpp`/`CfgMods`, `requiredAddons`, the PBO and its signature, a boot on a local server, the Workshop), follow the loop and the rules every mod task needs in [`dayz-mod-dev`](../dayz-mod-dev/SKILL.md), the Pack's entry point for mod development.

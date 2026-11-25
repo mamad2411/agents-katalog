@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/wlshlad85/clawl-register/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Register this AI agent on Clawl — the agent search engine. Generates a clawl.json discovery file and pings clawl.co.uk for indexing. Use when an agent wants to be discoverable, get ranked on the Clawl

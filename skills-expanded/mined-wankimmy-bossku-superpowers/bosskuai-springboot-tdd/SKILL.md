@@ -1,0 +1,40 @@
+---
+name: bosskuai-springboot-tdd
+description: "Use when the task explicitly concerns springboot tdd. Test-driven development for Spring Boot using JUnit 5, Mockito, MockMvc, Testcontainers, and JaCoCo. Use when adding features, fixing bugs, or refactoring."
+metadata:
+  origin: ECC-adaptation
+---
+
+# Spring Boot TDD Workflow — portable workflow
+
+Test-driven development for Spring Boot using JUnit 5, Mockito, MockMvc, Testcontainers, and JaCoCo. Use when adding features, fixing bugs, or refactoring.
+
+Use it only when the request supplies this domain, framework, data source or artifact; a shared keyword is not a match. Related skills, each for its own concern: `bosskuai-quarkus-tdd`, `bosskuai-springboot-verification`, `bosskuai-tdd-loop`.
+
+## Workflow
+
+Read [the source workflow](references/upstream/SKILL.md) first, then work through these sections in order:
+
+1. Workflow.
+2. Unit Tests (JUnit 5 + Mockito).
+3. Web Layer Tests (MockMvc).
+4. Integration Tests (SpringBootTest).
+5. Persistence Tests (DataJpaTest).
+6. Testcontainers.
+
+- Resolve its `scripts/`, `references/`, `assets/` and template paths against `references/upstream/`, not the project root. Source skill names map through [SOURCE.json](SOURCE.json) (`bossku skills show <id>`). ECC slash commands, agent names and package-root paths are not installed: use what this host has, or say what is missing.
+- Check the project's tool versions and the source prerequisites first: the Spring Boot version in `pom.xml` or `build.gradle(.kts)`, the Testcontainers version, and the database image tag the tests pull, which must be pinned and never `latest`. Check the latest Spring Boot release on spring.io and the Testcontainers release notes on GitHub at work time. Use only APIs present in the installed version. A documented command is an example, not permission to install packages, add an account, expose secrets, upload private content or change an external service.
+- It can need a named provider, MCP server or API: check that it is available and in scope, report it when it is not, and never invent its output.
+
+## Done when
+
+Complete the source “Spring Boot TDD Workflow”, “Workflow” procedure for this task. Keep its resulting artifact, command output or cited evidence, and state what remains unverified.
+
+If an input, provider, runtime or authorisation is missing, stop that step, carry on with read-only analysis, and say exactly what is missing. A generated plan alone is not completion.
+
+- Integration tests use the production database engine and major version through Testcontainers, with the image tag pinned, never `latest`.
+- `@DataJpaTest` swaps in an embedded database by default. Add `@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)` to test on the real one.
+- Each fix has a test that fails on the old code first.
+- Full quality bar, with version and type checks: `../../references/checklists/engineering-quality-bar.md`.
+
+Adapted from the locally reviewed `affaan-m/ECC` snapshot: provenance and hashes in [SOURCE.json](SOURCE.json), the original text and resources in [references/upstream/](references/upstream/SKILL.md) under its [MIT licence](references/upstream/LICENSE). Copyright (c) 2026 Affaan Mustafa.

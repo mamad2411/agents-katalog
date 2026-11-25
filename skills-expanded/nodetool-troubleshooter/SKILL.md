@@ -1,0 +1,370 @@
+---
+name: nodetool-troubleshooter
+description: "Diagnose a failing NodeTool run on any surface: workflows, mini apps, timelines, sketches, scripts, storyboards, stuck media generations, provider keys and server auth errors."
+featured: true
+---
+
+You are a NodeTool troubleshooter. Diagnose issues systematically using this guide.
+
+# Read the run summary first
+
+For an app operation, workflow job or chat turn with a recorded run, start
+with `get_run`. In `execute_code`, call `nodetool.runs.get(run_id)`. When the
+id is unknown, use `nodetool.runs.list({kind, status, app_id, workflow_id,
+thread_id})` with the relevant filters.
+
+Read the summary's first failed span and ancestor path before replaying work.
+For saved app inputs and outputs, call `nodetool.runs.get(run_id,
+{include_content: true})` after the summary identifies the relevant run.
+Inspect that span with `nodetool.runs.trace(run_id, {focus_span_id,
+include_content: true})`, then read its events with
+`nodetool.runs.logs(run_id, {span_id, include_content: true})`. The same tools
+read runs that a person started and runs that an agent started. A failed run
+is a readable outcome. Expired, excluded or truncated content is reported by
+the reader, so do not recover it from older job logs.
+
+With shell access, use the same readers:
+
+```bash
+nodetool runs list --status failed --json
+nodetool runs show <run_id> --json
+nodetool runs trace <run_id> --focus <span_id> --include-content --json
+nodetool runs logs <run_id> --span <span_id> --include-content --json
+nodetool runs tail <run_id>
+```
+
+Resource ids accept the full id or its exact 12-character prefix. Keep trace
+and span ids in full. Use the checks and replay harnesses below after the
+stored trace identifies the failing surface, or when an older execution has
+no run trace.
+
+# Name the surface first
+
+A failure belongs to one document kind, and each kind has its own static check
+and its own replay harness. Checking the wrong one wastes the run.
+
+| Symptom sits in | Static check | Replay | Skill for the fix |
+|---|---|---|---|
+| A workflow graph | `validate_workflow` | `debug_workflow` | `nodetool-workflow-builder` |
+| A mini app: dead button, blank widget | `debug_app {run: false}` | `debug_app {interact}` | `nodetool-app-builder` |
+| A timeline: wrong length, missing clip, bad font | `validate_timeline` | `timeline debug` | `timeline-edit-ops` |
+| A sketch: empty layer, wrong blend | `validate_sketch` | `sketch debug` | `nodetool-sketch` |
+| A JS script or Code node | `validate_js_script`, `validate_code` | `run_js_script`, `test_js_script` | `nodetool-js-scripting` |
+| A 3D model | `validate_model3d` | `render_model3d` | `nodetool-3d-scene` |
+| A storyboard: a shot that will not render | `get_storyboard` | re-render one target | `storyboard-core` |
+| A media call that never came back | `generations get` | `generations await` | below, under **Stuck generation** |
+
+A run that spans surfaces fails at one of them. A mini app over a broken
+workflow reports that the app is broken: debug the graph as a graph first.
+
+# CLI Debug Harnesses
+
+These run in the user's shell. The in-product agent uses the tools in the table
+above instead. From a NodeTool checkout the same commands run as
+`npm run dev:nodetool -- <command>`. Escalate in cost order:
+
+```bash
+# 1. Static check (<1s, no run, no DB for file targets): unknown node types,
+#    missing required props, unselected models, dangling/mis-typed edges
+nodetool validate <workflow_id|workflow.json|workflow.ts>
+
+# 2. Single node in isolation — no workflow authoring needed
+nodetool node run nodetool.text.Concat --props '{"a":"hi"}' --no-secrets
+
+# 3. Full server-side run → self-contained debug bundle (messages, logs,
+#    outputs, errors) + agent-friendly verdict. --json prints the full report.
+nodetool debug <workflow_id|workflow.json> --params '{"prompt":"hi"}'
+nodetool debug workflow.json --watch     # re-run on save, print verdict diff
+
+# 4. Opt-in expensive surfaces
+nodetool debug <id> --trace              # OTel spans: timing, tokens, cost
+nodetool debug <id> --browser --stages   # real browser + per-stage screenshots
+
+# Mini apps: binding validation, then a headless run of every operation
+nodetool app debug <id> --no-run     # free wiring check
+nodetool app debug <id> --json
+
+# The other document surfaces — same shape: validate, then replay a scripted session
+nodetool timeline validate <timeline_id|sequence.json> --json
+nodetool sketch validate <image_document_id|sketch.json> --json
+nodetool jsscript validate <id|file.json> --json
+nodetool timeline debug <id> --interact '[…]'
+nodetool sketch debug <id> --interact '[…]'
+nodetool jsscript debug <id> --interact '[…]'
+```
+
+For every one of these, a path that exists on disk wins over an id, and a file
+target needs no database. Each `debug` writes a bundle under `nodetool-debug/`
+and exits non-zero on a bad verdict. Read the report's `notSimulated` list
+before concluding that a green verdict means the surface works.
+
+The bundle lands in `nodetool-debug/<id>-<ts>/` (`report.md`, `server/messages.jsonl`, …). Loop: run `debug` → read the verdict → edit → re-run. Against a running server, agents can use the `validate_workflow` and `debug_workflow` tools instead.
+
+For an older agent execution without stored spans, an external trace can help
+inspect timing and cost. External copies exclude prompts and responses by
+default. Use the owned run readers above for recorded content.
+
+```bash
+NODETOOL_TRACE_FILE=/tmp/trace.jsonl nodetool chat
+nodetool --trace-file trace.jsonl run workflow.ts
+```
+
+# Quick Diagnostic Checklist
+
+When a user reports a problem, work through this in order:
+
+- [ ] **Connections**: Are all required inputs connected? `validate_workflow` reports the missing ones
+- [ ] **Types**: Do connected types match? `validate_workflow` reports mis-typed edges
+- [ ] **Preview nodes**: Add Preview nodes at each stage to inspect data
+- [ ] **Error messages**: Read red node error text carefully
+- [ ] **Model availability**: Is the model downloaded, and is its provider key set?
+- [ ] **File paths**: Do referenced files exist and have correct permissions?
+- [ ] **API keys**: `list_secrets` shows which keys are configured
+- [ ] **Logs**: The desktop log file (§ Log Inspection), or a server started with `NODETOOL_LOG_LEVEL=debug`
+
+# Node Status Colors
+
+| Color | Status | Action |
+|-------|--------|--------|
+| **Gray** | Not started | Waiting for inputs or not yet reached |
+| **Yellow** | Running | Currently processing, wait |
+| **Green** | Completed | Working correctly |
+| **Red** | Failed | Click node to see error message |
+
+# Common Issues & Solutions
+
+## Workflow Stuck / Not Progressing
+
+**Symptoms**: Yellow nodes that never turn green, no output
+
+**Check**:
+1. Is a model downloading? (first run can be slow)
+2. Is there an infinite loop? (check for cycles in connections)
+3. Is a node waiting on an input whose upstream never emits?
+4. Is the server running? (`nodetool serve` in the user's shell)
+5. Network timeout on API call?
+
+**Fix**: Add Preview nodes before stuck node. Check server logs. Kill and restart if needed.
+
+## Type Mismatch
+
+**Symptoms**: Red edge, error about incompatible types
+
+**Fix**:
+- Hover over the edge to see source/target types
+- Insert a conversion node (`search_nodes` finds one for the type pair), or a `nodetool.code.Code` node for anything else
+- Check `metadataOutputTypes` of source node matches expected input type
+
+## Empty / Null Output
+
+**Symptoms**: Downstream nodes receive nothing, Preview shows null
+
+**Check**:
+1. Add Preview node immediately after the suspect node
+2. Is the upstream node actually completing? (should be green)
+3. Are optional inputs that are actually needed left unconnected?
+4. Is the node returning the correct output key?
+
+## Stuck Generation
+
+**Symptoms**: An image, video, audio or 3D call never returns. The surface shows
+a pending take with no error.
+
+Every provider media call is one `predictions` row, opened before the call and
+closed with its outcome, so a hung call is visible without reading logs.
+
+```bash
+nodetool generations list --status running --json
+nodetool generations get <generation_id> --json
+nodetool generations await <generation_id> --timeout 300   # exit 1 while running
+nodetool generations cancel <generation_id>
+nodetool generations sweep        # close orphaned rows after a restart
+nodetool generations reconcile <generation_id>   # ask the provider what it billed
+```
+
+A row reading `interrupted` means a restart orphaned it, not that the provider
+failed. `provider-list` and `provider-get` ask the provider's own record instead
+of the local table, for a run started on another machine. Agents reach the same
+record through `list_generations`, `get_generation`, `await_generation`,
+`cancel_generation` and `reconcile_generation`.
+
+## Mini App Shows Nothing
+
+**Symptoms**: The button does nothing, or a widget stays blank after a run.
+
+**Check**, in this order:
+
+1. `debug_app {application_id, run: false}` — free. A binding pointing at a
+   missing input, output or variable is the usual answer.
+2. Does the app have a run trigger at all? A Button needs a `run` action.
+3. Is anything bound to `op:<id>/exec#error`? A failed operation with no error
+   binding leaves the app looking idle.
+4. Did the run actually complete? `debug_app {interact}` reports each widget's
+   final state and each invocation's policy decision, so a run that was
+   replaced, queued or timed out says so.
+5. Is the widget bound to the right kind? A Sketch or Timeline reference bound
+   to an Image or Video widget renders nothing.
+
+## Timeline Renders Wrong
+
+**Symptoms**: The cut runs longer than planned, a font differs from the editor,
+an animation does not play.
+
+1. `validate_timeline` first. It catches overlaps, fades longer than their clip,
+   unknown presets, incomplete bindings and non-portable fonts.
+2. A shot is as long as its render, not as long as its directed duration. Check
+   `retimed_shots` from the assembly call.
+3. A CSS generic family (`sans-serif`, `serif`, `system-ui`) is refused where a
+   clip is authored, because the editor, the render and the frame preview would
+   each pick a different typeface. Use a bundled family.
+4. `preview_timeline_frame` before `render_timeline`. Rendering to check an edit
+   is the expensive way to be wrong.
+
+## LLM Poor Quality
+
+**Symptoms**: Agent output is wrong, irrelevant, or garbled
+
+**Fix**:
+- Improve the prompt (be specific, add examples)
+- Use a more capable model (`find_model`, or the ids the provider registry lists)
+- Lower temperature for factual tasks (0.0–0.3)
+- Add few-shot examples in system prompt
+- Use RAG to ground answers in source documents
+
+## RAG / Vector Search Returns Nothing
+
+**Symptoms**: HybridSearch or TextSearch returns empty results
+
+**Check**:
+1. Was the collection actually indexed? Inspect it with a `vector.Count` / `vector.Peek` node, or the editor's collection view.
+2. Does the embedding model match between indexing and search?
+3. Test search directly with a simple query
+4. Review chunking — very small or very large chunks reduce quality
+
+## API Key Errors
+
+**Symptoms**: 401, 403, "API key invalid", "authentication failed"
+
+**Fix**: call `list_secrets` to see which keys are set, then `request_secret`
+with the missing name. It opens a dialog where the user types the value, so
+never ask for a key in chat. From a shell, the user can run
+`nodetool secrets store OPENAI_API_KEY` or export the variable instead.
+
+**Provider key names**: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `HF_TOKEN`, `FAL_API_KEY`
+
+A `401` from the NodeTool server itself, not from a provider, is server auth
+(§ Server Returns 401).
+
+## Model Not Found
+
+**Symptoms**: "Model not found", "model does not exist"
+
+**Check**:
+1. For local models: Is the model downloaded? (Models → Model Manager)
+2. For Ollama: Is Ollama running? (`ollama list`)
+3. For cloud: Is the model ID real? Take ids from `find_model` or `list_provider_models`, never from memory
+4. For HuggingFace gated models: Accept terms on HF Hub
+
+## Memory Issues
+
+**Symptoms**: OOM errors, slow processing, system unresponsive
+
+**Fix**:
+- Use quantized models (INT4/FP4) for local inference
+- Enable CPU offload for large models
+- Reduce batch sizes
+- Use smaller model variants
+- For Docker: increase `--memory` limit
+
+## Server Returns 401
+
+**Symptoms**: The UI loads but API or WebSocket calls fail with `401`, or a
+client gets "Remote access requires authentication".
+
+The server picks its auth mode from `SUPABASE_URL` and `SUPABASE_KEY` alone. It
+reads neither `AUTH_PROVIDER` nor `NODETOOL_SERVER_MODE`.
+
+| Mode | Enabled by | Accepted credentials |
+|------|------------|----------------------|
+| Local | Default, with the Supabase variables unset | Loopback connections run as user `"1"` with no token. `NODETOOL_TRUST_LOCALHOST=false` turns that off. Sources in `NODETOOL_TRUST_LOCAL_NETWORKS` (comma-separated CIDRs) also run as user `"1"` with no token. A bearer equal to `SERVER_AUTH_TOKEN` runs as user `"1"`. A token minted by `nodetool deploy users-add` runs as that API user. Anything else gets `401`. |
+| Supabase | `SUPABASE_URL` and `SUPABASE_KEY` both set | Every non-public request needs a valid Supabase JWT. `SERVER_AUTH_TOKEN`, `NODETOOL_TRUST_LOCAL_NETWORKS` and API-user tokens are ignored. Loopback is trusted only with `NODETOOL_TRUST_LOCALHOST=true`. |
+
+In both modes, an access token (`ntk_…`) created in **Settings → MCP → Connect
+an agent remotely** authenticates as the person who created it. Send any token
+as `Authorization: Bearer <token>`. A WebSocket client that cannot set headers
+passes `?api_key=<token>` on the `/ws` URL.
+
+In Docker, the published port arrives from the bridge gateway, not loopback, so
+Local mode refuses it until that range is in `NODETOOL_TRUST_LOCAL_NETWORKS` or
+the client sends a token. Setup steps are in `nodetool-deployment`.
+
+## Deployment Failures
+
+**Symptoms**: Deploy command fails, server won't start
+
+**Check** (the user runs these in their shell):
+1. `nodetool deploy show <name>` parses `deployment.yaml` without a remote call
+2. `nodetool deploy plan <name>` before `apply`
+3. Docker running on the host? (`docker ps`)
+4. Port already in use? (`lsof -i :7777`)
+5. Volume mount paths exist?
+6. SSH key permissions correct? (600)
+
+# Debugging Techniques
+
+## Preview Node Strategy
+```
+Input → Preview(1) → Transform → Preview(2) → LLM → Preview(3) → Output
+```
+Add Preview nodes at each stage to isolate where data breaks.
+
+## Log Inspection
+
+The desktop app writes `nodetool.log` to `~/.local/share/nodetool/logs/` on
+macOS and Linux, and to `%LOCALAPPDATA%\nodetool\logs\` on Windows.
+
+In the user's shell, `NODETOOL_LOG_LEVEL=debug nodetool serve` starts a server
+with verbose logs. Logging is set by that env var, not a `serve` flag. Browser
+errors are in the DevTools console (View → Developer Tools).
+
+## JSON Export
+Export workflow as JSON (`File → Export`) to inspect:
+- Node `data` fields for property values
+- Edge `sourceHandle`/`targetHandle` names
+- Node `type` strings for correctness
+
+## Network Debugging
+
+In the user's shell:
+
+```bash
+# Check server health
+curl http://localhost:7777/health
+
+# Test API auth
+curl -H "Authorization: Bearer TOKEN" http://localhost:7777/v1/models
+
+# Check WebSocket
+wscat -c ws://localhost:7777/ws
+```
+
+# Performance Optimization
+
+| Issue | Solution |
+|-------|----------|
+| Slow LLM responses | Use local models for simple tasks, cloud for complex |
+| Large file processing | Batch processing, stream with `genProcess` |
+| Multiple independent tasks | Use parallel execution paths in workflow |
+| Repeated computations | Cache results, avoid redundant nodes |
+| Model loading time | Keep models in memory (server mode), pre-download |
+| High memory usage | Right-size models, use quantized variants |
+| Slow vector search | Optimize chunk size (200-500 tokens) |
+
+# Error Recovery Patterns
+
+1. **Read the error message carefully** — most errors are self-explanatory
+2. **Check the simplest explanation first** — missing connection, wrong type, no API key
+3. **Isolate with Preview nodes** — find exactly where data breaks
+4. **Check logs** — server logs have full stack traces
+5. **Restart if stuck** — kill server, clear cache, restart
+6. **Reduce complexity** — test with a minimal workflow first, then add nodes

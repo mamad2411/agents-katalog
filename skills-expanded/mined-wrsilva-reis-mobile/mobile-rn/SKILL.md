@@ -1,0 +1,30 @@
+---
+name: mobile-rn
+description: Builds React Native and Expo apps in TypeScript — React Navigation or Expo Router, lists, forms, Reanimated and accessibility; TanStack Query, MMKV, SQLite and secure storage; push, deep links, native modules and config plugins; Hermes performance; EAS Build, Submit and Update. Use for any React Native or Expo code, even if the library is not named.
+intents: [design, performance, release, accessibility]
+stacks: [react-native]
+---
+
+# Mobile React Native
+
+Guides for building React Native and Expo apps. Cross-platform topics live in their own skills and have React Native references there: architecture and state in `mobile-architecture`, tests in `mobile-test`, debugging (Metro, native modules, builds) in `mobile-debug`, code review in `mobile-code-review`, security in `mobile-security` and Firebase in `mobile-firebase`.
+
+## Pick the topic
+
+| Topic | Read |
+|---|---|
+| Navigation, lists, forms, styling, gestures, animations, accessibility, localization | [references/ui-navigation.md](references/ui-navigation.md) |
+| Networking, server state, validation, persistence, offline | [references/data-networking.md](references/data-networking.md) |
+| Permissions, push, deep links, background work, native modules, config plugins | [references/platform-features.md](references/platform-features.md) |
+| Performance, bundle, EAS Build, store submission and over-the-air updates | [references/performance-release.md](references/performance-release.md) |
+
+## Before writing code
+
+- Detect the setup: Expo (managed with Continuous Native Generation, or with committed `android/` and `ios/`) or bare React Native; the React Native and Expo SDK versions; whether the New Architecture is enabled.
+- Install libraries with `npx expo install` in Expo projects, so versions match the SDK.
+- Libraries with native code need a new native build (a development build in Expo); they do not work in Expo Go unless the Expo SDK includes them.
+- Native requirements of each platform still apply; see `mobile-ios` and `mobile-android` for store and platform specifics.
+
+## Interface design
+
+For UI/UX reviews, wireframes, design systems and screen redesigns, use [mobile-ui-ux](../mobile-ui-ux/SKILL.md) and its reference for this stack. For Apple targets, also consult its [Apple design workflow](../mobile-ui-ux/references/apple-design.md); validate platform claims against current official guidance and the installed toolkit.

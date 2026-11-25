@@ -1,0 +1,49 @@
+---
+name: email-deliverability
+description: >-
+  Audits and fixes email deliverability: spam placement, blocklisted domains or IPs, dropping open
+  rates, SPF/DKIM/DMARC, secondary sending domains, mailboxes and warmup, with a severity-ranked
+  audit or recovery plan. Use when emails go to spam, open rates dropped, a domain got
+  blocklisted, warming up a domain, or sizing how many domains to send from. Not for writing the
+  emails (use cold-email).
+metadata:
+  version: 1.0.0
+  adapted_from: swan-gtm/joshua-waldman/email-deliverability
+---
+
+Run this when email performance breaks, or before it gets the chance to. It produces either a severity-ranked audit of the sending setup or a root-cause diagnosis with a dated recovery plan.
+
+## The play
+
+1. Pick the mode. Proactive review → audit the setup top to bottom. Active fire ("we're in spam") → diagnose.
+2. Scope first. Pull send volume, open rates by mailbox provider, shared vs dedicated IPs, and what changed right before the drop. A low tracked-open rate is an investigation signal, not confirmation of a deliverability problem. Check pixel/tracking changes, image blocking and privacy behavior; corroborate with SMTP responses, authentication results, provider dashboards where available, complaints and verified engagement. If tracking is disabled, mark open rate unavailable.
+3. Walk the four pillars, in order:
+   - Infrastructure. SPF, DKIM, DMARC present and verified recently — whole zone files disappear during migrations. Inspect forward/reverse DNS and HELO/EHLO consistency against the receiving provider's requirements. A mismatch is a configuration concern; establish actual rejection or blocklisting from provider responses or a verified listing, not from the mismatch alone.
+   - Data. Hard bounces above 0.5% mean stop and clean. Soft bounces above 2% mean investigate before removing anything: Microsoft graylists legitimate senders heavily and ProofPoint soft-bounces on send rate, so both inflate the number with no list-quality problem behind it. Retry soft bounces three times across 72 hours, then treat what still fails as hard. After an ESP migration, check whether old bounces were accidentally re-imported.
+   - Content. Ask: how is this email distinguishable from a scam? Missing branding, HTML-only sends, bloated code, and mismatched sender identity all read as scam patterns to filters.
+   - Traffic shape. The big one — solving it at the pipe solves most of the problem. Throttle per provider, never raise volume more than 50% week over week, and spread large sends across 3-4 days.
+4. Classify and prescribe. Blocklisted → delist, but fix the root cause first or the listing comes back. Content filtered → pause that provider for 24-48 hours, fix, retest on an engaged segment. Broken authentication → fix DNS, wait for propagation before resuming. New or damaged sender → run the ramp in references/warmup-playbook.md.
+5. Define monitoring. Set thresholds that trigger a pause, not a postmortem: bounce spikes, complaint rate above 0.3%, one provider dropping while the others hold.
+
+When the work goes deep, read references/warmup-playbook.md (week-by-week recovery ramp with per-provider volumes), references/shared-pool-management.md (pool contamination, compliance rails, high-risk verticals), references/provider-specific-tactics.md (Gmail, Microsoft, Yahoo, iCloud, ProofPoint), and references/cold-sending-infrastructure.md (cold-outbound domain and mailbox sizing, per-mailbox limits, authentication checklist, DMARC rollout).
+
+## What good looks like
+
+- The best operators diagnose by provider, not in aggregate. A Gmail-only drop and an everywhere drop are different diseases with different cures.
+- The mediocre version blames "spam trigger words" and rewrites subject lines. Content is the least common root cause; infrastructure, data quality, and traffic shape break far more often.
+- A real diagnosis names the broken pillar and the change that broke it, with a date. "Improve engagement" is not a diagnosis.
+- Honesty beats comfort. A sender at 2-4% opens needs to hear that recovery takes weeks and may cost 10-20% of the list. Fully inboxing typically returns 10x the engagement, so frame the pause as an investment.
+- The output is good when the plan has dates, per-provider daily ceilings, and explicit stop conditions.
+
+## Rules
+
+- MUST report audit findings by severity: critical (causing spam placement or blocks right now), warning (fix this week), improvement (fix when able).
+- MUST inspect provider-specific delivery evidence and tracking reliability before proposing a fix. Use open rates only when available and interpretable; their absence does not block a diagnosis based on verified failures.
+- MUST fix the root cause before resuming volume on any IP, new or old — a fresh IP with the same practices just burns the fresh IP.
+- Set provider-specific ramp ceilings from reliable delivery, bounce, complaint and engagement evidence. Do not derive a sending ceiling solely from tracked opens or assume reliability from mailbox provider alone. Record the chosen ceiling and stop conditions.
+- NEVER recommend purchased lists or mailing contacts who never opted in.
+- NEVER let a damaged sender blast a full list in one day — spread it or stop it.
+
+---
+
+*Adapted from [swan-gtm/gtm-skills](https://github.com/swan-gtm/gtm-skills) (`joshua-waldman/email-deliverability`), MIT.*

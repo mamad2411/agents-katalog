@@ -1,0 +1,374 @@
+---
+name: agent-evals
+description: >-
+  Use when measuring whether an agent works: eval suites, trajectory judging, traces as
+  regression fixtures, a calibrated LLM judge, release gates. Triggers: "agent eval" /
+  "эвалы агента", "LLM judge" / "LLM-судья". Not for ordinary unit tests or model
+  benchmarks; the loop is agent-orchestrator.
+license: MIT
+---
+
+# Agent evals — proving the thing behaves
+
+An agent's behaviour does not exist in its source. The code says what it is *allowed* to
+do; only a run says what it *did*. So the artifact under test is the execution record,
+and the suite runs on **two clocks**: the *observable* is authored up front, before the
+implementation exists, and the *corpus* it runs against is grown from production (§6).
+
+Three claims follow, and they are what makes this different from testing ordinary code:
+
+- **You are testing reasoning, not code paths**, so one granularity is never enough.
+- **Every natural-language input is unique**, so the edge cases cannot be enumerated
+  offline. Production is not only where you catch what you missed — it is where you
+  discover what to test for.
+- **Traces become test cases.** The corpus grows from what actually happened; the
+  criterion it is measured against does not.
+
+---
+
+## Triggers
+
+"trajectory eval", "checker node", "is the agent getting better", "оценка агента", "как проверить агента".
+
+Moved here from the description in 0.31.3: "регрессионный набор".
+
+## 1. Three primitives
+
+| Primitive | Is | Carries |
+|---|---|---|
+| **Run** | one model call | the complete prompt — instructions, tools, context — and what came back |
+| **Trace** | one full execution | every run, every tool call with arguments and results, nested to show how steps relate |
+| **Thread** | many traces in one session | multi-turn context in order, **state evolution** (memory, files, artifacts), and elapsed time |
+
+The thread level is the one most systems lack, and it is where a whole class of defect
+lives: a bad memory write at turn 6 surfaces as a wrong answer at turn 11, and neither
+the run nor the trace view can localise it.
+
+**Precondition for all of this: traces are durable and queryable.** A live event stream
+renders a progress bar and evaporates. If you cannot fetch last week's low-scoring runs
+by id, nothing below is available to you — see §7.
+
+---
+
+## 2. Three granularities
+
+Each primitive gets its own kind of assertion.
+
+### Single-step — validates a run
+
+Fixture is a serialized run: prompt, tool schemas, context. Assert the decision at that
+point — tool name, argument shape.
+
+> "Schedule a meeting with Harrison tomorrow morning", with `find_meeting_times`,
+> `schedule_meeting` and `send_email` available, must call `find_meeting_times` first.
+
+This is the one granularity where *first* is a legitimate assertion: the fixture is a
+single decision, so the ordering claim is the subject rather than a proxy for it. Across a
+whole trajectory it stops being one — see §5.
+
+Cheap, deterministic, CI-blocking. **Precondition: a stable agent architecture.** These
+break on a graph refactor, and a suite that fails on every refactor gets deleted.
+
+### Full-turn — validates a trace
+
+Assert on three axes at once, with three different mechanisms:
+
+| Axis | Assert | With |
+|---|---|---|
+| Trajectory | what the run **must not** do, what it must have touched, and the mandatory **happens-before** edges — never the full exact order | set/subset matchers, forbidden-call lists, partial-order (a before b) |
+| Final response | quality, tone, policy compliance | rubric or judge |
+| **State change** | the memory row exists, the file was written, the artifact is there | direct inspection of the side effect |
+
+The third axis is the one people forget. **Assert on side effects, not only on prose** —
+an agent that says it saved the preference and did not is a pass on two axes out of three.
+
+Easiest inputs to generate, hardest outputs to validate automatically.
+
+### Multi-turn — validates a thread
+
+A scripted turn sequence with a **checkpoint after every turn and fail-fast on
+deviation**. Without that, turn 3 goes off the rails and turns 4–10 assert nothing while
+still reporting a result.
+
+> Turn 1: "I prefer Python over JavaScript." Turn 3's output must still be Python.
+
+Hardest to implement well. Start here only for behaviour that is genuinely about memory
+across turns.
+
+**Production suites combine all three.** One vendor reports about half of theirs sitting
+at single-step — recorded as their observation, not as a target to hit.
+
+---
+
+## 3. Offline, online, ad-hoc
+
+| When | Reference | Blocks a release? | Answers |
+|---|---|---|---|
+| **Offline** | a dataset, ground truth optional | **yes** — this is the gate | did my change break what used to work |
+| **Online** | none — **definitionally reference-free** | no | is production drifting |
+| **Ad-hoc** | none | no | what is actually happening out there |
+
+**Offline is necessary and not sufficient.** A green suite proves you did not regress the
+cases you already know about. It cannot prove the agent handles what nobody thought of,
+because that input is not in the dataset — which is what the online tier is for.
+
+Online evaluators fire on trace ingestion and check what needs no expected answer:
+trajectory anomalies, step-count and latency trends, judge scores, error rates. Route
+them over all traces, a sample, or a filtered subset; the sampling rate is a cost
+decision, not a correctness one.
+
+Ad-hoc is exploratory analysis over stored traces — clustering to surface failure modes
+nobody predefined. A dashboard tracks metrics you chose in advance; this finds the ones
+you did not.
+
+---
+
+## 4. Rubrics beat scores
+
+Generic metrics — helpfulness, naturalness, completeness — produce numbers and no
+decision. A 3.4 out of 5 on "helpfulness" tells you nothing about what to change.
+
+**Write narrow, behaviour-specific pass/fail rubrics, and write them with the people who
+own the behaviour.** Each failure must point at one thing: a prompt, a tool description,
+a workflow step, a missing capability.
+
+A rubric that works, in full:
+
+> **Escalation.** On a request for a human: push back once, escalate on the repeat.
+> **Fails if** it escalates immediately · refuses after the second request · escalates
+> before providing information it already had · continues several turns past the point it
+> is clearly not helping.
+
+Note the shape: one behaviour, an explicit pass condition, and an enumerated failure list.
+That is what makes a judge reproducible and a disagreement resolvable.
+
+---
+
+## 5. Judges
+
+**Cheap checks first.** Schema validation, exact match, format conformity, business-rule
+assertions, tool-call correctness — all deterministic, all faster and cheaper than a model
+call. Send to a judge only what cannot be decided by code.
+
+**Read the trajectory; do not match it.** An agent that reaches a correct answer through
+three wrong tool calls is a latent outage — and asserting the *exact sequence* to catch
+that is measurably the wrong instrument. Anthropic rejects its strict form: exact
+tool-order assertions are *"too rigid and results in overly brittle tests, as agents
+regularly find valid approaches that eval designers didn't anticipate"* — the worked
+case is an agent that solved a τ²-bench booking task through a policy loophole, failing
+the eval as written while serving the user better. Grade **what was produced and what
+changed**, and let the incidental path vary.
+
+The opposite edge is measured too: a grader blind to the trajectory misses **44% of safety violations and 13% of robustness failures**,
+because a policy breach on the way to a correct result leaves no trace in the outcome. Use
+the trajectory for the claims the outcome cannot carry — a forbidden call, a missing
+confirmation, a secret read — as a **set and a forbidden list**.
+
+What is forbidden is the redundant **exact global sequence**, not order as such.
+A few **happens-before** edges are semantically mandatory: authorization
+precedes its effect, a fresh read precedes the write depending on it, a
+transaction commits before what publishes it. Assert those as a **partial
+order** (a before b), never a total one — reordering two independent reads must
+pass, reordering confirm/charge or acquire/write must fail — and keep the
+negative example (a confirm-after-charge trace) beside the rubric.
+
+**Calibrate the judge before trusting it.** Collect human labels on the same traces,
+measure agreement, iterate the judge prompt until agreement is high — *then* let it score
+unattended. An uncalibrated judge is an opinion with a number attached, and shipping on it
+is exactly the failure of grading instead of measuring.
+
+**Some things a judge cannot do.** Plausible-but-wrong domain output — an invented legal
+citation, a subtly wrong SQL join — reads as correct to a general judge. Route those to a
+domain expert and accept that this tier stays human.
+
+---
+
+## 5a. The checker node — an evaluator that runs inside the graph
+
+Everything above evaluates a run *afterwards*. One evaluator runs **during** it, and it is
+the one most systems are missing: a **checker node** sitting between a parallel layer and
+the node that consumes it. Its only job is *usable / not usable*, and the convergence
+depends on **it** rather than on the branches — otherwise the gate has a bypass.
+
+**That split is measured practice, not only this pack's position.** Anthropic's
+harness-design guidance (`anthropic.com/engineering/harness-design-long-running-apps`,
+read 2026-08-30) reports that *tuning a standalone evaluator to be skeptical is more
+tractable than making a generator self-critical* — the same reason the verdict belongs to
+a separate node rather than to the branches grading themselves.
+
+It matters here because it is the same machinery as §5, positioned differently:
+
+<!-- checker-contract: missing, empty, unevidenced, malformed, contradictory, off-topic | optional: under-confident -->
+
+| It catches | Decided by |
+|---|---|
+| a **missing** branch — the arrival count falls short of the fan-out promised | a code check |
+| an **empty** or null result | a code check |
+| an **unevidenced** claim — nothing attached that a reader could re-check | a code check |
+| a **malformed** shape the consuming node cannot parse | a code check |
+| **contradictory** siblings, including two that paraphrased one shared assumption | a judge |
+| an **off-topic** answer to something nobody asked | a judge |
+
+Four of six are free. Run them first — §5's *cheap checks first*, applied to a position
+in the graph rather than to a suite.
+
+**An under-confident branch is a hint, not a row: its own confidence number is optional
+and deliberately not one of the six.** §5 above is the reason: a score from an
+uncalibrated source is an opinion, so it may order retries and it may not open a gate.
+The gate asks for the third row instead — a receipt — which is the same reason this pack
+ranks evidence over confidence everywhere else. The contract's home, with the argument in
+full, is `agent-orchestrator/references/graph-engineering.md` §6.
+
+**A checker is a node, so it can be wrong, and its failure mode is silent approval.** A
+model checker that has never been shown a bad input passes everything, and a graph with a
+checker that always says yes is **worse** than one with none: the missing checkpoint has
+been replaced by a false one that everything downstream now trusts. Three consequences,
+and they are eval work rather than orchestration work:
+
+- **Watch it refuse a planted bad output** before trusting it, exactly as §5 requires of
+  any judge before it scores unattended.
+- **Record every verdict as a score bound to the run**, with `source: code_check` or
+  `llm_judge` (§7). A checker whose verdicts are not stored cannot be asked afterwards how
+  often it fired, which means it cannot be calibrated.
+- **A checker that has never rejected anything is a finding, not a reassurance.** Put the
+  rejection rate on the same dashboard as the pass rate; a rate of zero is either a
+  perfect upstream or a broken gate, and only the stored verdicts can tell you which.
+
+Where the checker sits in the shape, and why the convergence needs one at all:
+`agent-orchestrator/references/graph-engineering.md`.
+
+## 6. Two clocks — the observable up front, the corpus from production
+
+Two different objects get called *the eval*, and they are written at opposite ends of the
+work. Naming them apart is what stops either rule from reading as the other's exception.
+
+<!-- eval-tiers: observable, corpus -->
+
+| Tier | Is | Written | Because |
+|---|---|---|---|
+| **Observable** | the criterion that would show one requirement was met — a pass/fail rubric (§4), a trajectory or state-change assertion (§2) | **before the implementation exists** | a requirement with no observable is unfinished: attach one afterwards and you are inventing the test having already seen the code, so the output has decided what counts as success |
+| **Corpus** | the inputs those criteria run against — fixtures, datasets, minimised production failures | **from production, never up front** | every natural-language input is unique, so the edge cases cannot be enumerated offline; inputs invented in advance test your imagination |
+
+**Neither rule softens the other, because they govern different objects.** An observable is
+a *criterion* — what would count as success. A corpus is a *sample* — which inputs you
+happen to have. The criterion costs nothing to write early and can only be written honestly
+early; the sample written early is green on inputs no user sends. Both therefore hold at
+full strength: **a requirement that ships without an observable is unfinished, and a corpus
+with no production in it is imagination.** The requirement itself gets its id and its
+definition of done from `task-pipeline`'s REQ spine — what this pack owns is the
+observable's *form*, not the register it hangs on.
+
+**The first release has no production — so it runs against a SEED corpus, and
+observable-only is not release-ready.** A criterion with no input proves
+no capability, so a greenfield feature seeds a curated/synthetic/manual corpus with at least a **happy**, an **adversarial** and a
+**failure/retry** trial. Each seed input carries its **provenance**
+(`curated`/`synthetic`/`manual`) and is SUPPLEMENTED by production traces,
+never declared full coverage. The release gate requires EXECUTED trials;
+observables with nothing run against them are `specification-ready`, not
+`release-ready`. A corrupted fixture, input or runner is a `TEST_ERROR`,
+never a behaviour pass/fail; cases are isolated, so B's result never depends
+on whether A ran.
+
+**Every task is shown solvable before it scores an agent.** Give each one a reference
+solution, a known output that passes all its graders; a 0% pass rate across many trials
+"is most often a signal of a broken task, not an incapable agent"
+([Anthropic](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)).
+An unsolvable task does worse than waste a trial, it rewards cheating: in a benchmark
+whose authors estimate ~30-40% of targets were impossible, "Having an impossible task
+drives agents to explore widely for ways to cheat the scorer"
+([METR](https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/),
+both read 2026-10-19). A task with no passing reference is a `TEST_ERROR`, not a FAIL.
+
+**Never author the suite up front** — the *corpus*, that is: the inputs. Every production
+failure and every thumbs-down becomes a fixture:
+
+1. Capture the state at the failure point.
+2. Minimise it to the smallest input that still reproduces.
+3. Add it to the tier that isolates it — step, turn or thread.
+4. **It stays in the suite permanently.** A fixed bug that silently returns is the defect
+   this rule exists to prevent.
+
+Two dataset shapes come out of review:
+
+- **Ground truth** — the reviewer writes the correct output; the suite asserts equality.
+- **Criteria-based** — for open-ended work, the reviewer labels dimensions (relevance,
+  completeness, tone) instead of an exact answer.
+
+**The annotation queue** is what feeds both: filters route a subset of traces to humans —
+low automated score, thumbs-down, a feature area, a cluster. Two reviewer roles, and
+mixing them wastes both: generalists judge surface quality, domain experts judge
+correctness only they can see.
+
+**Simulated users, if you generate inputs.** A model playing a customer is articulate,
+patient and cooperative, and inflates every pass rate. Fine-tune it on real user
+transcripts and add adversarial personas — the refund-seeker, the AI-sceptic, the one who
+wants a human immediately. Making the simulated user worse makes the offline result
+predictive.
+
+---
+
+## 7. What to instrument first
+
+**The wire format for all of this is `references/otel-genai.md`** — and it is worth
+reading before the first span, because two of the things this section requires (a score's
+source, a trustworthy cost) are the two the standard does not carry.
+
+None of the above runs without these, and they are the part people skip:
+
+- **A durable trace store, queryable by id, filterable by score and time.** The live
+  stream is a view over it, never the record itself.
+- **Scores as first-class records bound to a run**: `run_id`, key, value, and a `source`
+  of `human` | `llm_judge` | `code_check`. A score with no source cannot be calibrated,
+  audited, or trusted differently from its neighbours.
+- **Whole prompts, not just messages** — instructions, tool schemas and context as they
+  were sent. A fixture cannot be replayed from a summary. And a CANDIDATE's
+  version, output and score are their own records beside the old trace — a
+  regrade of the stored output is labelled regrade, never "the candidate
+  passed": only executing the candidate against the frozen fixture (a real,
+  stochastic call, costed in the receipt) can say the decision changed.
+- **State snapshots at turn boundaries**, so a thread test can assert what carried.
+
+---
+
+## Checklist
+
+- [ ] Traces durable and queryable by id, not only streamed
+- [ ] Scores bound to runs, each with a source
+- [ ] Single-step fixtures for the decisions that must not drift
+- [ ] Full-turn assertions on trajectory **and** final response **and** state change
+- [ ] Multi-turn scripts with a checkpoint after every turn, failing fast
+- [ ] Offline suite as the release gate; online evaluators reference-free and non-blocking
+- [ ] Pass/fail rubrics with enumerated failure conditions, written with behaviour owners
+- [ ] Code checks before model judges
+- [ ] Judge calibrated against human labels before it is trusted
+- [ ] Every checker node watched refusing a planted output, its verdicts stored as scores,
+      and its rejection rate on the dashboard — a checker at zero rejections is a finding
+- [ ] Domain-expert review for output a general judge cannot grade
+- [ ] Every requirement carries an **observable** written before the implementation — the
+      corpus waits for production, the criterion does not
+- [ ] Every production failure minimised into a permanent fixture
+- [ ] Every task has a reference solution that passes its graders before it scores an agent
+- [ ] Annotation queue with filters, and the two reviewer roles kept separate
+- [ ] Simulated users trained on real transcripts, with adversarial personas
+- [ ] Every comparison that changes a decision states `n`, `k`, the reducer and the noise
+      band — `references/statistics.md`; a three-point gap on a hundred cases is noise
+
+---
+
+## References
+
+| Load | When |
+|---|---|
+| [`references/multi-agent.md`](references/multi-agent.md) | roles, shared memory or delegation change — evaluate the combined objective, retained concerns, source independence and authority across the team |
+| [`references/statistics.md`](references/statistics.md) | a number is about to change a decision — how many runs before a difference is real, `pass@k` vs `pass^k` and why trials are not independent, paired comparison, the harness as a variable, and what a given piece of evidence authorises next |
+| [`references/operability.md`](references/operability.md) | proving an agent completes a **product's** stories through its tools (AN-9): proving call, contract tests, cold-agent `pass^k` |
+| [`references/support-quality.md`](references/support-quality.md) | the agent **answers people** (chat, mail, reviews, groups): the per-turn record, four metric families with per-channel targets, the rubric, the judge, `support.quality_daily` and the weekly findings loop |
+| [`references/otel-genai.md`](references/otel-genai.md) | you are **instrumenting an agent for someone else to read**: span names and the operation enum, the evaluation event with no field for who scored, content tiers, token attributes and the cost join |
+
+---
+
+## Related
+
+Building the agent this measures is **`agent-orchestrator`** (named, not linked: a packager
+may ship either directory alone); its context-engineering reference covers the context
+pressure that trajectory assertions most often catch drifting.

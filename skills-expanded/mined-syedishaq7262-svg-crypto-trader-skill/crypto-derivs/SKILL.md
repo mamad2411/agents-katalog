@@ -1,0 +1,164 @@
+---
+name: crypto-derivs
+description: >-
+  Derivatives Radar for crypto perpetuals: funding rates, open interest,
+  long/short positioning, taker flow, basis, cross-venue funding (Binance vs
+  Bybit vs Hyperliquid) and the overall market regime (BTC trend and
+  volatility, breadth, median funding, Fear & Greed). Flags crowded longs
+  (squeeze-down risk), crowded shorts (short-squeeze fuel), extreme funding,
+  and reads price against open interest (new longs, short covering, new
+  shorts, long unwinding). Writes crypto/derivs.json and crypto/regime.json.
+  Use when the user asks "what is funding on X", "is BTC crowded", "where
+  are the shorts", "short squeeze candidates", "open interest", "long short
+  ratio", "who is paying funding", "funding arbitrage", "basis", "is the
+  market overheated", "fear and greed", "market regime", "risk on or risk
+  off", "what's the mood", or before trading a coin with high funding.
+argument-hint: "[radar | coin <COIN> | regime] [--table]"
+---
+
+# crypto-derivs
+
+Perpetual futures have a cost of holding: funding, paid every 1, 4 or 8
+hours by one side to the other. Together with open interest (how many
+contracts are open) and the long/short split, it shows who is crowded into
+a trade and paying to stay there. This skill reads all of it, free and with
+no key, and says it in plain words. Positioning is context, not a signal:
+crowded trades can stay crowded for days.
+
+`${CLAUDE_SKILL_DIR}` below is this skill's folder (where this SKILL.md lives).
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/derivs.py"                 # radar: the 40 busiest coins -> crypto/derivs.json
+python3 "${CLAUDE_SKILL_DIR}/derivs.py" radar --table   # plus every coin in one table
+python3 "${CLAUDE_SKILL_DIR}/derivs.py" coin SOL        # one coin in depth
+python3 "${CLAUDE_SKILL_DIR}/derivs.py" regime          # the market's weather -> crypto/regime.json
+```
+
+Flags: `--top N`, `--symbols`, `--min-volume`, `--min-spread 20` (points a
+year before a cross-venue gap is listed), `--venue`, `--now`, `--offline`,
+`--record`, `--json`, `--no-write`, `--stats`.
+
+## What it reads and writes
+
+| file | what |
+| --- | --- |
+| `crypto/derivs.json` | radar rows: funding (per payment and a year), open interest and its 24h and 7d change, long share, taker ratio, crowding, flow, cross-venue spreads |
+| `crypto/regime.json` | BTC trend, 7d and 30d moves, realized volatility, breadth, median funding, Fear & Greed, a label and one line on what it means |
+
+## How to read it
+
+**Funding** is shown per payment and as a yearly rate, so a 1-hour
+Hyperliquid rate and an 8-hour Binance rate compare directly. The usual
+resting rate is about +11% a year (0.01% every 8 hours). Positive: longs
+pay shorts. Negative: shorts pay longs.
+
+**Crowding** (all from the tool):
+- *crowded longs*: funding at least +30% a year, open interest up at least
+  10% in 24h, at least 60% of accounts long, and price within 5%: longs
+  are paying to hold a trade that is not moving. A drop can cascade
+  through their stops.
+- *crowded shorts*: funding at or below -10% a year, open interest up at
+  least 10%, at most 50% of accounts long: shorts are paying while new
+  positions pile in. A push up can force them to buy.
+- *hot funding* (+60% a year or more) and *deeply negative funding* (-30%
+  or less) without the rest. The read says whether most accounts sit on the
+  paying side too; when they do not, the payers are likely fewer and
+  bigger.
+
+**Flow** (price against open interest over 24h, moves of at least 1.5% and
+5%): new longs, short covering, new shorts, long unwinding, plus *shorts
+adding into a rise* or *longs adding into a drop* when funding says the
+new money is on the other side.
+
+**Across venues**: one public Hyperliquid request returns the next funding
+on Binance, Bybit and Hyperliquid for every coin. A large gap is the raw
+material of a funding carry trade; the radar lists gaps of 20 points a year
+or more. It does not account for fees, transfer time or price risk.
+Hyperliquid still quotes coins it has delisted, at 0%: those are dropped.
+
+**The market line** gives the median funding across the radar's coins and
+the change in open interest across the 10 busiest, added up in dollars, so
+one small coin doubling its open interest cannot move it.
+
+**Regime**: BTC above a rising 20-day average or below a falling one,
+breadth (share of the 30 busiest coins above their own 20-day average),
+median funding and Fear & Greed give one label: Risk-on, Risk-off, Mixed,
+Overheated or Fearful, with one line on what it means for day trades. A
+rough read of conditions, never a forecast.
+
+Hyperliquid publishes no open-interest history and no long/short ratio, so
+those columns are blank there. Bybit open interest is in coins; the 24h
+change is still exact.
+
+## Steps
+
+1. For "what is the market doing" run `regime`, then the radar.
+2. For one coin run `coin <COIN>`. Report funding (now, yearly, rank in 30
+   days, next payment), open interest and its changes, positioning, basis,
+   other venues and the Read line, as printed.
+3. For crowding or squeeze questions run the radar and report the Crowded
+   trades block first, with the one-line reads exactly as printed.
+4. Funding paid over a long hold is a real cost. When the user is planning a
+   trade on a coin with hot funding, say what holding costs per day at their
+   size, from the yearly rate.
+
+## Example
+
+From the pack's offline test market (synthetic prices and positioning, not
+real data). The radar:
+
+```
+Derivatives radar | Binance USD-M futures | 2026-10-21 15:15 UTC | 26 coins
+Market: median funding +4% a year (normal); open interest -2.0% in 24h across the 10 busiest coins, in dollars.
+
+Crowded trades
+  FUNDX    crowded longs            funding +104% a year, open interest +27.4% in 24h, 74% of accounts long, price -0.4%
+           Longs pay to hold while price goes nowhere. A drop can cascade through their stops (squeeze-down risk).
+  SHRTX    crowded shorts           funding -68% a year, open interest +30.1% in 24h, 36% of accounts long, price +2.5%
+           Shorts pay to hold while open interest grows. A push up can force them to buy (short-squeeze fuel).
+
+Price against open interest, 24h
+  new longs                 (price up, open interest up): LINK +7.2%/+6.9%, INJ +4.5%/+5.1%
+  new shorts                (price down, open interest up): NEAR -2.2%/+14.1%
+  long unwinding            (price down, open interest down): SOL -7.4%/-9.9%, RSIX -3.5%/-5.6%
+
+Funding, a year: highest  FUNDX +104%  LINK +39%  ARB +34%  INJ +27%  WIF +24%
+                 lowest   SHRTX -68%  BONK -29%  SOL -26%  RSIX -9%  TIA -9%
+
+Same coin, different venues (next funding, a year)
+  FUNDX    Binance +109% | Bybit +99% | Hyperliquid +26%   spread 83 points
+
+Positioning is context, not a signal. Crowded trades can stay crowded for days.
+```
+
+One coin, `coin SOL`:
+
+```
+SOL derivatives | Binance USD-M futures SOLUSDT | 2026-10-21 15:15 UTC
+Funding    -0.0237%/8h (-26.0% a year) now. Next payment in 45m (16:00 UTC).
+           30 days: average +14% a year; today is in the bottom 2% of 90 payments; 7-day average +17%; negative 19 times.
+Open interest  $798.9M, -9.9% in 24h, -2.9% in 7 days. Last 48h: ▁▂▄▄▅▆▅▅▅▆█▇▆▄▃▂▂▂▂▂▂▃▂▁
+Positioning  58% of accounts long (a day ago 58%); top traders 58% long; taker buy/sell 1.13.
+Basis  mark 171.809 vs index 171.774 (+0.020%).
+Across venues (next funding, a year): Binance -27%, Bybit -25%, Hyperliquid -26%.
+Read: long unwinding (price down, open interest down).
+```
+
+## Rules
+
+- Every number comes from the tool; repeat the reads, do not embellish them.
+- Never present crowding as a timing signal. "Crowded" says who is exposed,
+  not when it breaks.
+- A cross-venue gap is not free money. Say so whenever you mention one.
+
+## What it never does
+
+It never places an order, never sizes a position, never says buy or sell.
+
+## Safety
+
+- Education and tooling, not financial advice. The pack does not know the user's situation or the future. Most people who day trade lose money, and leverage makes losses arrive faster.
+- Paper trading by default (`"paper": true`): simulated fills at live prices against the real order book. Going live is the user's own decision, in their own config.
+- Nothing in this pack places an order except crypto-broker, and only when all of these hold: crypto-risk passed that exact order, the user typed an explicit yes for that one order in the chat, and, for a live order, the user's own keys are in environment variables. Never ask for keys in the chat.
+- Every order carries a stop. Isolated margin and a 3x leverage cap by default; cross margin stays off unless the user turns it on.
+- Claude reports what the tools print. It never invents a price, a level, a probability or a funding rate, and never calls a setup a sure thing.

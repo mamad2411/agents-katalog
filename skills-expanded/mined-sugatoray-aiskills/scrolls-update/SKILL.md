@@ -1,0 +1,142 @@
+---
+name: scrolls-update
+description: "Updates an existing docs/.scrolls/ project-memory system (STARTER.md, SPEC.md, HANDOFF.md, GAP_ANALYSIS.md, GAP_CONTEXT.md, PLAN.md, WISDOM.md, and any project-specific scrolls beyond that core set) to reflect what actually happened in the current session, following each file's own update rule instead of appending blindly. Also backfills SCROLLS.md/CLAUDE.md/AGENTS.md if the project predates them (idempotent — safe every run, never overwrites existing CLAUDE.md content). Use this whenever the user runs /scrolls-update, or asks to update the scrolls, refresh HANDOFF.md, write session handoff notes, record what was just done, close out or wrap up a session, log a new gap or trap, or update project memory / STARTER.md's docs. This is the counterpart to /scrolls-setup (which creates the system once) — use this one for every session afterward. Supports -p/--path for a custom docs location, -t/--reporoot to look under the git repository's top level regardless of which subdirectory you're in, -l/--local to look explicitly in the current directory, and -r/--recurse to search recursively for the scrolls folder if it isn't at the obvious exact location. Defaults to the current directory, but warns first if that differs from the repo root so a subdirectory invocation doesn't silently miss the real scrolls. Works on macOS, Linux, and Windows (bash or PowerShell). If no scrolls folder is found, say so and point at /scrolls-setup instead of inventing files here."
+license: MIT
+compatibility: "bash (macOS/Linux/WSL) or PowerShell 7+ (pwsh) or PowerShell (older versions: powershell.exe); Python 3.9+ (stdlib only, no dependencies)"
+disable-model-invocation: true
+metadata:
+  name: scrolls-update
+  type: skill
+  author: sugatoray
+  version: "2.7.0"
+  source_url: "https://github.com/sugatoray/aiskills/tree/master/skills/scrolls/scrolls-update"
+---
+
+# Updating docs/.scrolls/
+
+`docs/.scrolls/` only stays useful if it reflects reality. This skill applies the update rules `STARTER.md` already defines for each file — it does not invent new conventions. The point isn't to touch every file every time; it's to touch exactly the files that something actually happened to, using the update discipline that file's own convention calls for (overwrite vs. append vs. add/remove in lockstep).
+
+It also idempotently backfills `SCROLLS.md`, `CLAUDE.md`, and `AGENTS.md` for a project set up before those existed — this is the command people run every session, so it's the one that closes that gap automatically, not just the one-time `/scrolls-setup`. See step 2.
+
+## Cross-platform
+
+The two bundled scripts (steps 4 and 5) each ship in two forms: `session_diff.sh`/`route.sh` (bash — macOS, Linux, or Windows with Git Bash/WSL) and `session_diff.ps1`/`route.ps1` (PowerShell 7+ — Windows, or macOS/Linux with `pwsh` installed). `route.sh`/`route.ps1` are thin launchers for `route.py` (Python 3.9+, standard library only), so the two can't drift apart. Everything else in this skill — the flags, `BASE_DIR` resolution, locating the scrolls folder — is plain prose you follow directly; it only ever invokes `git`, which behaves identically regardless of which shell is running it, so none of that needs a shell-specific variant. Pick the script by what's actually available: try `bash --version`; if that succeeds, use the `.sh` script; otherwise use the `.ps1` script via `pwsh` (preferred — install from https://aka.ms/powershell if missing) or, only if `pwsh` genuinely isn't available, the built-in Windows PowerShell `powershell.exe` (untested against that older version; `pwsh` is what this was written and verified against).
+
+## Options
+
+Read the invocation text for these, in any order — there's no real argv parser here, so pull them out of the plain text yourself:
+
+- **`-p <path>` / `--path=<path>` / `--path <path>`** — a custom docs folder to look in, relative to the current working directory unless given as an absolute path.
+- **`-t` / `--reporoot`** — look under the git repository's top level (`$(git rev-parse --show-toplevel)`) regardless of which subdirectory you actually invoked this from. Fails with a clear message if the current directory isn't inside a git repository.
+- **`-l` / `--local`** — look explicitly in the current working directory. This is what happens by default anyway when none of `-p`/`-t`/`-l` are given — the flag exists to say so on purpose, e.g. to skip the mismatch check below.
+- **`-r` / `--recurse`** — if the scrolls folder isn't at the obvious exact location (`BASE_DIR/docs/.scrolls` or `BASE_DIR/docs/scrolls`), search recursively under `BASE_DIR` for one instead of giving up. Off by default — matches the usual meaning of `-r` on tools like `grep`/`cp`/`rm`.
+
+There's no `-u`/`--unhide` option here — this skill locates whichever scrolls folder already exists rather than choosing between them (see step 1). `-p`, `-t`, and `-l` are three different ways to answer the same question ("where's the docs folder?") — pass at most one; if more than one is given, ask which was meant. `-r` is independent and combines freely with any of them (or with none).
+
+## Steps
+
+### 1. Resolve BASE_DIR, then locate the scrolls, trying both names
+
+Compute `BASE_DIR`:
+
+- **`-t`/`--reporoot` given**: `BASE_DIR = $(git rev-parse --show-toplevel)`. If that fails (not inside a git repository), stop and tell the user — suggest `--path` instead.
+- **`-l`/`--local` given**: `BASE_DIR = $(pwd)`.
+- **Nothing given** (the common case): `BASE_DIR = $(pwd)`. But first, if the current directory is inside a git repository, run `git rev-parse --show-toplevel` and compare it to `$(pwd)`. If they're the same, or this isn't a git repo, proceed with cwd as usual. If they differ, mention it before searching — running from here will only look under `$(pwd)/docs`, and a scrolls folder that lives at the repository root (`<repo-root>`) instead would be missed entirely (not just skipped — it'll look like the project was never set up). Ask if that's intended, defaulting to proceeding with cwd (this skill's documented default) if there's no strong preference.
+
+Then let `DOCS_BASE` be the `--path` value if `-p` was given, else `${BASE_DIR}/docs`. The scrolls folder under it may be named either `.scrolls` (hidden, the default from `/scrolls-setup`) or `scrolls` (after `/scrolls-unhide`, or `--unhide` at setup time) — check for `DOCS_BASE/.scrolls` first, then `DOCS_BASE/scrolls`. Whichever exists is `SCROLLS_PATH` for the rest of this skill.
+
+If neither exists at that exact spot:
+
+- **`-r`/`--recurse` was given**: search recursively under `BASE_DIR` instead — a bounded number of levels deep, pruning the same heavy/vendor directories `/scrolls-hide`/`/scrolls-unhide` prune (`node_modules`, `.git`, `vendor`, `dist`, `build`, `.venv`, `venv`, `__pycache__`, `target`, `.next`, `.cache`), for a directory named `.scrolls` or `scrolls` containing a `STARTER.md`. If exactly one turns up, that's `SCROLLS_PATH`. If more than one turns up and they are **nested** (one sits inside the folder another covers), take the outermost as `SCROLLS_PATH`: it is the top level, and step 5 routes work down to the nested ones. If they are **siblings** (a monorepo with several independent scrolls setups under this `BASE_DIR`, none inside another), list them and ask the user which one this session's update is actually about — don't guess, and don't update more than one, since a session's narrative belongs to a specific project, not every project it happens to be nested near.
+- **`-r` wasn't given, or the recursive search above also found nothing**: don't create one here. Tell the user this project (or this path) hasn't been set up yet and point them at `/scrolls-setup` — and if you resolved `BASE_DIR` to cwd (by default or `-l`) rather than the repo root, mention `-t`/`--reporoot` as something to try, and mention `-r`/`--recurse` if you haven't already used it, in case the scrolls live somewhere other than the exact expected spot.
+
+If somehow *both* `.scrolls` and `scrolls` exist at the exact `DOCS_BASE`, stop and ask the user which one is current — that's an inconsistent state this skill shouldn't silently paper over.
+
+### 2. Backfill SCROLLS.md, CLAUDE.md, and AGENTS.md if this project predates them
+
+A project set up by a `/scrolls-setup` older than `2.0.0` may have no `SCROLLS.md`, no `AGENTS.md`, and a `CLAUDE.md` (if any) that embeds the scrolls path directly instead of pointing at `SCROLLS.md`. Since `/scrolls-update` is the command people actually run every session — not the one-time `/scrolls-setup` — this is the point where such a project catches up, automatically, every time.
+
+This is a one-time-per-file, idempotent backfill: safe to run on *every* `/scrolls-update` invocation, since each of the three files below gets the same create-if-missing / insert-if-not-already-referencing / leave-alone-if-already-correct treatment `/scrolls-setup` step 4 uses — **never overwrite or reorder anything already in any of these files.** It only ever touches the one location for the `SCROLLS_PATH` this run resolved (even with `-r`) — nested scroll sets that step 5 routes to are left as they are here; run `/scrolls-update` against one of them to backfill its pointer files.
+
+Compute where these three files belong, the same way `/scrolls-hide`/`/scrolls-unhide` already do (`CLAUDE.md` is always an exact, direct sibling of the `docs` folder by construction):
+
+```
+PTR_DIR    = dirname(DOCS_BASE)                          # e.g. "packages/api" for DOCS_BASE "packages/api/docs"
+DOCS_NAME  = basename(DOCS_BASE)                          # normally "docs"
+SCROLLS_DIR_NAME = basename(SCROLLS_PATH)                 # ".scrolls" or "scrolls", whichever was found
+SHORT_SCROLLS_PATH = "${DOCS_NAME}/${SCROLLS_DIR_NAME}"    # e.g. "docs/.scrolls" — always correct relative to PTR_DIR
+```
+
+The three shared pointer templates live in exactly one place — `/scrolls-setup`'s own `assets/templates/` — and are read from there, not duplicated here, so a future change to their content never needs a synchronized edit in two skills:
+
+- **`SCROLLS.md`**: read `<scrolls-setup-skill-dir>/assets/templates/SCROLLS_MD_BLOCK.md` and substitute `{{SCROLLS_PATH}}` with `SHORT_SCROLLS_PATH`. If `${PTR_DIR}/SCROLLS.md` doesn't exist, create it. If it exists but doesn't already reference `SCROLLS_PATH/STARTER.md` (in either short or full form), insert the block near the top, separated by blank lines — matching heading level to the file's own structure if it already opens with a top-level heading. If it already references it, leave it alone.
+- **`CLAUDE.md`**: read `<scrolls-setup-skill-dir>/assets/templates/CLAUDE_MD_BLOCK.md` verbatim — a fixed two-line pointer, no substitution needed. If `${PTR_DIR}/CLAUDE.md` doesn't exist, create it containing exactly that block. If it exists but doesn't already reference `SCROLLS.md`, insert the block near the top of the file (before other instructions, since "read this first" only works if it's read first), separated by blank lines from surrounding content — even if the file already points straight at `SCROLLS_PATH/STARTER.md` itself, from before this file split existed. That's a real, common case (a project set up by a pre-`1.2.0` version of `/scrolls-setup`), and it's exactly the case this backfill exists to catch: insert the stub anyway, so `CLAUDE.md` ends up pointing at `SCROLLS.md` regardless of what it already said. This is additive only — never remove or rewrite what was already there, even if that leaves both an old direct reference and the new stub in the same file. If it already references `SCROLLS.md`, leave it alone.
+- **`AGENTS.md`**: read `<scrolls-setup-skill-dir>/assets/templates/AGENTS_MD_BLOCK.md` verbatim. Same three-way handling, referencing `CLAUDE.md`.
+
+Mention in step 8's report whether any of the three were created or updated this way, alongside the scroll files themselves.
+
+### 3. Read STARTER.md as the authoritative map
+
+Don't assume the minimal six-file set from `/scrolls-setup` is still the whole story — `STARTER.md` says explicitly that projects grow additional scrolls over time (architecture decisions, security reviews, subsystem deep-dives), each listed with its own read/update rule. Read the current `STARTER.md` in full and use *its* numbered list and "When to update" section as the source of truth for what files exist and how each one wants to be updated. If a file's update convention differs from the generic rules below (e.g. an append-only dated log that must never be edited in place, like this repo's own `SECURITY_ANALYSIS.md`), follow that file's specific convention over the generic one.
+
+### 4. Establish what actually happened this session
+
+Conversation context is the primary source — you were there. But don't rely on it alone, especially if context has been compacted, the session was resumed, or you're being asked to update scrolls for work that happened before this conversation started. Run the bundled script to cross-check against git — pick whichever of the two ships in `<skill-dir>/scripts/` matches the current environment (see "Cross-platform" below):
+
+```
+bash <skill-dir>/scripts/session_diff.sh SCROLLS_PATH
+pwsh <skill-dir>/scripts/session_diff.ps1 -ScrollsDir SCROLLS_PATH
+```
+
+It shows uncommitted changes, commits since `docs/.scrolls/` was last touched, and a stat summary of what files changed — enough to catch things conversation memory missed, without dumping full diffs into context. Pull specific `git diff`/`git log -p` slices yourself if you need more detail on a particular change.
+
+### 5. Route the work to the scroll set that covers it
+
+A scroll set can have others nested below it: a package in a monorepo with its own memory, or a family whose memory lives in another folder. The top-level set is then a **router**: work in a folder covered by a nested set is recorded in *that* set, and the top level keeps at most a one-line pointer to it (progressive disclosure: an agent reads the top level, then follows the pointer down). Run the bundled script to see where each change belongs:
+
+```
+bash <skill-dir>/scripts/route.sh SCROLLS_PATH
+pwsh <skill-dir>/scripts/route.ps1 SCROLLS_PATH
+```
+
+It finds the scroll sets nested under `SCROLLS_PATH`'s folder, reads the `## Where memory lives` table in their `STARTER.md` (rows map a covered folder, in `backticks` ending in `/`, to a scroll set, for memory kept outside the folder it covers), and lists every changed file under the set that covers it (the deepest match wins; anything uncovered stays with `SCROLLS_PATH`). `--since REV` changes the starting commit. Then:
+
+- **For each set that got changes, apply step 6 to that set** (read its own `STARTER.md` first, as in step 3). One piece of work can belong in several sets: record each part where it belongs.
+- **In the top-level set, record only what is repo-wide** (cross-cutting conventions, tooling, releases), plus at most a one-line pointer per nested set that changed. Don't copy the nested sets' detail up.
+- **"Not in the router table"**: add a row for each listed set to `SCROLLS_PATH/STARTER.md`'s `## Where memory lives` table (create the section, as in `/scrolls-setup`'s `STARTER.md` template, if it's missing), so the next agent can find it.
+- **"Listed but missing"**: the table names a set that has no `STARTER.md`; fix or remove the row.
+
+With no nested sets, everything stays in `SCROLLS_PATH` and this step changes nothing.
+
+### 6. Update each file that needs it, following its own rule
+
+The core six's generic rules (from `STARTER.md`):
+
+- **`HANDOFF.md`** — **overwrite**, don't append. It's a snapshot: current state, what just happened, known issues/open threads. If nothing meaningfully changed this session, it's fine to leave it as-is rather than padding it with a no-op entry.
+- **`SPEC.md`** — append a section only for features that actually **shipped** (working, not just started). Describe what it does for a user, not how it's implemented.
+- **`GAP_ANALYSIS.md` + `GAP_CONTEXT.md`** — keep these two in lockstep. Closed a gap → delete its `GAP_ANALYSIS.md` line (don't mark it done, remove it) and its `GAP_CONTEXT.md` entry. Found a new gap → add a terse line to `GAP_ANALYSIS.md` and the reasoning (deliberate cut / oversight / blocker) to `GAP_CONTEXT.md`.
+- **`PLAN.md`** — flip `[ ]`→`[x]` for completed tickets, re-prioritize if new requests changed the order, add new tickets for newly surfaced work.
+- **`WISDOM.md`** — add an entry under the right section (**Constraints** / **Traps** / **Ditches** / **Wisdom**) only when something genuinely new was learned — a bug that bit you, a pattern worth reusing, a hard constraint discovered. Don't force an entry if the session didn't teach anything new.
+
+For any project-specific scrolls beyond this core set, use the convention `STARTER.md` documents for that specific file — don't default to the generic rules above for a file that says it works differently.
+
+Leave `COMPACT.md` and the `compacted/` folder alone, if they exist. Only `/scrolls-compact` writes them. A condensed `## Compacted features` block or a `<!-- scrolls-compact: … -->` marker in another file is history, not something to update; keep it as it is.
+
+### 7. Don't fabricate or over-claim
+
+If it's unclear whether something shipped versus just started, treat it as unshipped — note it in `HANDOFF.md`'s "known issues / open threads" or `PLAN.md`, not as a finished `SPEC.md` entry. When genuinely ambiguous (e.g. whether a gap was actually closed or just worked around), ask rather than guessing — these files are load-bearing for every future session.
+
+### 8. Report what changed
+
+List which scrolls files were touched, grouped by scroll set when step 5 routed work to more than one, and a one-line reason for each. If a file was deliberately left alone despite session activity (e.g. nothing shipped, so `SPEC.md` didn't need a new entry), it's fine to just not mention it — no need to enumerate every file that wasn't touched. Include `SCROLLS.md`/`CLAUDE.md`/`AGENTS.md` only if step 2 actually created or updated one of them — silent when all three were already correct, same as any other untouched file.
+
+## Examples
+
+Worked examples are in `assets/EXAMPLES.md`. Each example has a premise, the usage, caveats, and the expected output. Read that file only when you need it: for example, when a request does not map clearly to the flags above, or when the user asks for an example.
+
+## Development
+
+See `meta/MAINTAINERS.md` for layout, running the `tests/` regression
+suite, and versioning notes. Neither is read as part of carrying out a
+user's `/scrolls-update` request — don't act on `meta/MAINTAINERS.md` or
+`tests/` while answering one.

@@ -1,0 +1,1529 @@
+---
+name: mulmoterminal-shared-app
+description: Build something several people use together — a survey, a sign-up sheet, a booking form, a shared list, a form on a link — where the answers are kept in one place rather than on this machine. Use when the user asks for anything other people will fill in or read, and when they later say show it to someone, invite an address, publish it, or take it down. Turns the request into a shared app in this repository and drives publish / unpublish. Works in whatever language the user writes in.
+---
+
+# Something other people use
+
+A request like "make a survey for my talk", "I need a sign-up sheet", "let people book a slot",
+"a form I can send a link to" is asking for a SHARED APP — a thing that lives on the web, keeps
+its answers in one place, and can be handed to people who do not have this repository or this
+machine.
+
+**Do not offer a printable page, a Google Form, or a stand-alone HTML form as the answer.** They
+are what this looked like before there was anywhere to keep the answers, and each of them leaves
+the user to solve the actual problem — where the responses go — by themselves. Offer them only if
+the user turns this down.
+
+## What a shared app is
+
+- **One repository is one app.** The folder this session is open in becomes the app; its
+  declaration is `app.json` at the root.
+- **The definition is committed; the answers are not.** Schemas and views are files in the
+  repository. Records live in the app's cloud store, so everyone sees the same rows.
+- **Who may do what is a list of email addresses** in `app.json`. Inviting somebody is adding a
+  line and publishing — they need no account here and no repository.
+
+## Start from a template when one fits
+
+These shapes are written out in full — declaration, schemas, and the reasoning behind each key:
+
+- **[templates/salon.md](./templates/salon.md)** — a request that a NAMED PERSON approves, and only
+  their own (a salon's bookings, interviews, repairs, review assignments). This is what `assignee`
+  is for.
+- **[templates/gym.md](./templates/gym.md)** — **first come, first served**, with a waiting list and
+  a per-class opening time (a gym class, a workshop, a slot booking). This is what `stampField` and
+  `window.fromField` are for, and it explains why the capacity lives in the VIEW and not in the
+  rules.
+- **[templates/survey.md](./templates/survey.md)** — **collecting answers**, with nothing to run out
+  of (a survey, a quiz, an application form, a sign-up with no cap). The shortest declaration of
+  them all, and the shape most often written with a public page and nothing else — so this one is built
+  around its `member` page, which is where the answers are read. It also spells out the three-way
+  trade above, and what a tally may and may not claim about values a respondent typed.
+- **[templates/meeting-room.md](./templates/meeting-room.md)** — a bookable unit you can LIST IN
+  ADVANCE, taken on the spot with no approval (a meeting room, a desk, equipment on loan, a parking
+  space). This is what `idFrom: "field"` and `mirror` are for, and it is the one that spells out who
+  refills the slots, and what a cancellation does NOT do.
+- **[templates/class-seats.md](./templates/class-seats.md)** — a class with a CAPACITY whose
+  visitors see "N left" and never who booked (a dance class, a workshop, a trial lesson). The
+  meeting-room shape once per PLACE: a class of 20 is 20 seat records, each taken like a slot, and
+  the page counts the open ones — the rules cannot count, so the capacity is the number of seats.
+  Read it for why the booking window points at the SEAT and not at the class.
+- **[templates/schedule-poll.md](./templates/schedule-poll.md)** — a SCHEDULING POLL (調整さん /
+  Doodle): candidate dates, ○△× per date, everyone sees the table, a participant corrects their own
+  answer with `view.correct`, and the organiser closes it by moving `closesAt`. Names are meant to be
+  seen here, which is the opposite of class-seats.
+- **[templates/question-box.md](./templates/question-box.md)** — a QUESTION BOX: anyone sends a
+  question with no sign-in, the owner answers on `/m/`, and only the rows the owner chose to publish
+  reach the public page (a talk's Q&A, a shop's FAQ, an anonymous question box). This is what
+  `public.readPublished` + `publishField` are for: the rules, not the page, keep the rest away, and
+  publishing is the owner's switch on `/m/{slug}/records/{cid}` — never a page's write, because
+  `view.correct` sends strings and the flag is a boolean.
+- **[templates/tally.md](./templates/tally.md)** — ONLY THE TOTALS: visitors see how many chose each
+  answer and nothing else (a "which do you like?" result, a quiz's spread, an event's preference
+  poll). Not a key but a split: the counted field lives in `votes` (`public.read`, nothing else in
+  it), names and comments in `notes` (nobody's to read but the owner's), joined by the same per-app pseudonym, and
+  the page counts. It is also the template that sends TWO records as two presses — one write per
+  press, or the second loses the gesture mark and the preview drops it.
+- **[templates/survey-results.md](./templates/survey-results.md)** — a SURVEY WHOSE CHOICE TOTALS
+  ARE PUBLIC: the survey.md form, plus per-question counts and shares shown to a respondent after
+  they answer, while the address, name and free text stay with the owner. The tally split again:
+  the chosen answers in `tallies` (`public.read`, `answers` + `status` only, no `emailField`), the
+  rest in `responses` (private), joined by pseudonym. Read it for why the public page counts only
+  declared questions and choices and never draws a string it read from a tally — `answers` is free
+  text anyone can write. Showing results is the author's choice; survey.md stays the default.
+- **[templates/live-poll.md](./templates/live-poll.md)** — a page that MOVES while people are looking
+  at it (a live stream, a lecture, a stand-up quiz). This is what `views[].live` is for, and the only
+  one whose declaration is decided by FAN-OUT: the audience may watch the questions, only the desk may
+  watch the votes, and the shape that would let both is refused by publish. **In English**, because
+  the strings in its pages are what a stranger reads.
+- **[templates/project-board.md](./templates/project-board.md)** — the same work-claiming board with
+  a ROSTER and an owner's desk: people register a name once (`names`, `idFrom: "pseudonym"`), then
+  take work; the owner adds and removes tasks and frees an abandoned one from `/m/`. This is what
+  `writerDelete` is for, and the one that spells out `view.mine()`'s three states — "you have not
+  registered" and "nobody looked" are different answers, and treating them alike shows the
+  registration form to somebody who has already registered. It also shows the owner-only form: a
+  `public.submit` declaration whose window is CLOSED, which is how a page gets a create form that
+  only a writer may send.
+- **[templates/append-feed.md](./templates/append-feed.md)** — a record a CLOSED GROUP writes to and
+  nobody rewrites: rows are only ever added, and only their author may remove one (a shift handover
+  note, an incident timeline, a team log, a class's question board, a chat room). This is what
+  `views[].limit` is for — the one shape whose collection grows with the app's AGE rather than with
+  the thing being booked — and the one where `writerDelete` is deliberately ABSENT, which is
+  `project-board.md` turned over: an owner pressing delete on somebody else's row is refused by
+  Firestore. It is also the only sample showing `public.enabled: false` beside a populated
+  `public.submit`, which is the pair the naming makes look contradictory.
+- **[templates/ai-council.md](./templates/ai-council.md)** — a discussion the participants are AI
+  AGENTS rather than people, held in public, which a human host can END (a debate, a design review
+  by several models, a red-team panel). This is what **`agents[]`** is for — the app publishes the
+  JOB beside the pages, so an agent at another MulmoTerminal takes a seat from the slug alone, with
+  no copy of your repository. It is also the only sample that has to bind its own OWNER: every agent
+  here signs in as the owner, so the host's close is enforced by `refIn`, a `transitions` map with no
+  exit, and `sealed` together — any one alone is walked around in two writes. Read it for what a
+  declaration can and cannot hold when the writer is an agent you handed your sign-in to.
+- **[templates/magazine.md](./templates/magazine.md)** — several writers publishing things to READ,
+  each at its own URL, each signing their own and editing nobody else's (a team blog, a newsletter's
+  back issues, a research log, release notes, a review column). This is what **`views[].article`**
+  is for — the platform draws the article page, so the app declares which fields are the title, the
+  body and the byline, and `idFrom: "slug"` makes the writer's chosen name the document id and
+  freezes it. It is the article-view sample, so its `protocol` floor is at least `2.0.0` (its pseudonym byline makes it `3.0.0`); the only one whose `limit`
+  is a COST — publish works it out in bytes and refuses the declaration when it is too large — and
+  the one that explains why the owner has to hold
+  `participant` on their own collection — `audience` forces `submitOnly`, `submitOnly` closes the
+  writer branch, and an owner who skips it cannot publish at all. Read it before any app where a
+  record is something a stranger is meant to sit and read.
+
+Read the matching one before writing `app.json` by hand. All of them are checked against the real
+publish gate by this repository's tests, so what they show is what publishes — and they spend most
+of their length on the traps, which is the part you cannot recover by guessing.
+
+They also show what the page should LOOK like, and that is not decoration. The page is the only
+thing a visitor ever sees — nobody reads `app.json` — so one that arrives as unstyled boxes does
+not read as plain, it reads as unfinished, and an unfinished-looking booking form is one people
+close. **[templates/design.md](./templates/design.md)** is the rules: a palette derived from one
+hue you choose for this app, fluid type, a radius and a shadow that descend with the nesting, and
+what to do about the fact that you can load no stylesheet, no webfont and no image. Read it before
+you write the pages, and **change `--hue`** — every template ships a different one so that copying
+a template does not make every app the same colour, and a page left in the template's colours is a
+page nobody chose.
+
+## The path
+
+Say what you are doing in the user's words ("作っています", "みんなが見えるようにしました"). The
+words below are for you, not for them: an author does not need to know what a `cid` is.
+
+### 1. Start the app
+
+`manageSharedApp` with `action: "init"`, and `name` (and `slug`, if you have one worth wanting).
+
+**Do not compose `app.json` yourself.** The declaration names its owner by EMAIL and it has to be
+the address this machine is SIGNED IN with — you cannot read that, and the address the user tells
+you is the one that fails at publish. `init` writes it, generates the `aid`, and refuses if the
+repository already declares an app.
+
+`init` also TAKES the `aid` on the server before it writes the file, so it needs a connected
+session and reports a refusal instead of leaving a half-started app. That is not bookkeeping: the
+id lives on a shelf shared by everyone using this deployment, `app.json` is meant to be committed,
+and an id that is written down but not yet taken can be taken by whoever reads the file first — and
+an app id can never be freed. If the reservation is refused, nothing was written and `init` can
+just be run again.
+
+`slug` is the name in the URL people will be given. Take it from what the thing IS
+(`aug-talk-survey`), lowercase with hyphens. It is a wish: if it is taken, a number is appended and
+written back. **`init` RESERVES it** along with the app id, so the address is fixed from the start —
+and the reservation can never be freed, which is why it follows a name the user wanted rather than
+one you invent. The name resolves for the app's own roster immediately (`/m/{slug}`) and for
+everybody when you publish.
+
+The file is an ordinary committed declaration afterwards — you may read it, and the user may edit
+it in a pull request. What you should not do is REWRITE it: `invite` changes one roster entry, and
+`check` tells you whether what is there would publish.
+
+#### The repository is a CLONE of somebody else's app
+
+`manageSharedApp` with `action: "fork"` — not `init`, which refuses here, and above all not by
+editing `app.json` yourself.
+
+A cloned repository already carries a declaration, and the schemas beside it are exactly what the
+user cloned it FOR. `fork` mints a new `aid`, makes the signed-in address the only member, and
+carries `collections` and `public` over unchanged. It does not touch `.claude/skills/`.
+
+The signals are a user saying this is a clone, someone else's address in `members`, or `init`
+telling you an app is already declared. Ask for a `name` and a `slug` before you run it — the
+cloned app's URL name is deliberately NOT carried, because kept it would be honoured as a wish and
+come back as `their-name-2`, which is a name nobody chose.
+
+What the user must be told, in their words: the app they cloned is untouched, and **its answers do
+not come across.** They are getting the same form, empty. And the people on the old roster are not
+on theirs.
+
+`fork` refuses when the signed-in address already owns the app — that is not a clone, and forking
+it would abandon the existing app and every record in it.
+
+### 2. Write the collection
+
+One collection per kind of record — a survey has one (`responses`), a booking app might have two
+(`bookings`, `services`).
+
+**A NEW collection is created by writing the files**: `SKILL.md` and `schema.json` under
+`.claude/skills/<slug>/`. `putSchema` is EDIT-ONLY and refuses a collection that does not exist
+yet ("unknown collection … create it by writing SKILL.md + schema.json"), so do not try to create
+one with it. Use it afterwards, to CHANGE a schema.
+
+**Read the shape first**: `manageCollection` with `action: "schemaDocs"`, and
+`topic: "Shared storage (firestore)"` for this part specifically. The shape is not what a
+reasonable person guesses — `fields` is an OBJECT keyed by field name (not a list), `primaryKey`
+and `icon` are required, and the key for a field's human name is `label`. A schema in the shape
+you would design does not parse, and a collection whose schema fails validation is **skipped
+silently**: nothing errors, it simply never appears.
+
+That topic covers the STORAGE key and not the field types, and the two are asked for separately:
+`topic: "Field types"` is where a `datetime`'s exact format lives, and it is the one a seeded
+collection gets wrong (step 2b).
+
+The one thing that differs from an ordinary collection:
+
+```json
+{ "storage": { "type": "firestore" } }
+```
+
+That is what makes the records shared. Declare no `dataPath` beside it — exactly one of the two.
+
+**The app already has its `aid`** — `init` wrote it in step 1 — so a shared collection you write
+correctly is discovered straight away. If `getSchema` says "unknown collection" after you have
+written the files, that is the schema FAILING VALIDATION, not something publishing will fix: read it
+back against `schemaDocs` (`primaryKey` naming a field flagged `primary: true`, `icon` present,
+exactly one of `dataPath` / `dataSource` / `storage`). Publishing past it produces an app with the
+collection missing and no error anywhere.
+
+**Everything in the folder is shared or nothing is.** Do not mix a shared collection and a local
+one in an app's repository.
+
+### 2b. Load the inventory, if the app needs rows before anybody arrives
+
+Some apps have nothing to show until rows exist: bookable slots, a timetable, a menu of services.
+Nothing generates them — the platform runs no code of its own — so they are written with
+`manageCollection` `putItems` before the app opens, and topped up later (the meeting room's
+[枠の補充](./templates/meeting-room.md) covers the weekly refill task).
+
+**Prove ONE batch before you generate thousands.** Write a single day, read it back with
+`getItems`, then run `check` (step 4b). `putItems` REFUSES a row missing a required field or
+carrying an unknown `enum` value (and, under `mode: "create"`, an id that already exists) — that is
+what it refuses, and it is not everything it checks. The SHAPE of a typed value (a real date, a
+numeric `number`, a `datetime`'s exact format) is **written and reported**: the answer carries a
+`lint` block beside `written`, and the same rows are **refused at publish**. So an empty `rejected`
+is not proof — 720 accepted rows are not 720 valid rows — and one day first is one round trip
+against one regeneration per batch.
+
+**That proof needs a session.** `check` answers offline, and offline it does NOT read the records —
+it says so in as many words ("the live records were NOT scanned"). A `check` that has not scanned
+them proves nothing about the batch you just wrote, so connect first, and read what it says about the
+records. Exactly one answer is a proof: the scan RAN, over every shared collection in this
+repository, and found nothing.
+Everything else is repaired first, and the rest are not degrees of that one — they are different
+repairs, and more than one can be reported at once (a collection that could not be read does not
+stop the others being scanned):
+
+- **rows that do not fit** — named, and a MIGRATION. `confirm` at publish is the decision to break
+  them for everybody, not a way past this.
+- **UNKNOWN** — a collection could not be READ, so nothing at all is known about the rows behind it.
+  That is access, not data.
+- **not scanned** — the line says which: no session, or an `app.json` that does not parse.
+
+**`datetime` is a wall clock, not an instant.** `YYYY-MM-DDTHH:MM`, seconds optional, **no timezone
+suffix**. `new Date(...).toISOString()` is the reflex and it is wrong twice: the `Z` is refused at
+publish, and the time SHIFTS into whatever timezone this machine is in — a Tokyo court's 08:00
+becomes `15:00Z` when the script runs in Seattle, and `16:00Z` for the same 08:00 in winter, because
+the offset moves too. Had the format been accepted, the app would have published with every row
+seven hours out — eight, on the dates the other side of the change. Build the string from its parts
+(`` `${dateKey}T${hh}:00` ``). A `stampField`'s `…Z` (step "limited number of places") is the one
+`datetime` shaped that way (nine fractional digits), and the rules write it — no script does.
+`putItems` flags the wrong shape in `lint` as it writes, so the reflex is caught on the first batch
+rather than at publish — if you read the answer.
+
+**Generate with a deterministic script, and do not write the rows out yourself.** Dates, month ends
+and daylight saving are what an LLM gets wrong, and a few hundred inline rows are tens of KB emitted
+a token at a time. Have the script write a bare array of records to a JSON file under the workspace
+and pass its absolute path as `putItems`' `itemsFile` — 1000 rows and 8 MiB per call, and an
+over-limit call writes nothing at all.
+
+**Pass `mode: "create"`.** The default REPLACES a whole record, so a re-run — a retry, a refill that
+overlaps what is already there — silently overwrites fields nothing regenerated, and reading the ids
+first does not save you: another run or a hand edit can create the same id in the gap between the
+read and the write. `create` has the host refuse a colliding row instead.
+
+**And then read `rejected` AND `lint`.** They answer different questions, and only one of them is
+about rows that failed to land. `lint` appears beside `written` when a row WAS written and its
+values are the wrong shape — a `datetime` that is an instant, a `date` that is not a real day, a
+`number` holding text — with `total` (every flagged row) and `rows` (the first ten, as
+`{ id, problem }`). Those rows are in the collection and publish will refuse them, so a `lint` block
+is the generator to fix and the batch to rewrite, now rather than after the other 719. No `lint`
+key at all is the clean answer, and `total` — not the length of `rows` — is how many there are.
+
+Rewriting them is the one place `mode: "create"` is the wrong mode: the rows exist, so `create`
+would refuse every one of them. Fix the generator, regenerate the SAME ids, and send them with the
+default `upsert` — the script produces the whole record, so replacing it whole is exactly right, and
+it is only safe here because these ids are the ones you just wrote in this same batch.
+
+`rejected` is the other half. It is not a count and not only about collisions: `putItems` returns
+`{ written, rejected }` with one `{ id, problem }` per refused row, and the `problem` is as likely
+to be a missing required field or an unknown `enum` value as an id that already existed. So go
+through them: every `problem` that is not "already exists" is a row that was NOT written, and it
+needs fixing and re-sending — just that row. A refusal of the whole CALL (over the row or byte
+limit) is a different thing and does not arrive as `rejected` at all: no `{ written, rejected }`
+comes back, nothing was written, and the fix is to split the file rather than to re-send rows.
+
+And "already exists" says exactly that much: the id was there when the write ran. It does not say
+who put it there — an earlier attempt of this same refill, another run, a hand edit — and it does
+not say the stored row is the row you just generated. `create` cannot correct it either. If that
+matters — a regeneration that changes what a slot should say — read those ids back with `getItems`
+and compare before calling them done.
+
+### 2c. Decide the ENTRANCES. An app with one page is usually unfinished
+
+Three entrances exist, and **only the ones written into `views` are real**:
+
+| `audience` | address | who opens it |
+|---|---|---|
+| `public` | `/a/{slug}` | anybody the app admits |
+| `member` | `/m/{slug}` | anybody holding a role in `members` |
+| `participant` | `/p/{slug}` | anybody LISTED in `members`, seeing their own row |
+
+**An app that collects records gets a `member` page, and you do not ask first.** Without one, the
+only way to read what was collected is the collection pane on the author's own machine — so the
+answers exist but nobody can reach them from a phone, and the author finds this out after handing
+the link around. It is not a feature the author chose to skip; it is one nobody mentioned. Write
+it, and say in their words what it is ("集まった回答はここで見られます").
+
+This is the step that gets missed. The reason is worth knowing: an app built from a template
+inherits that template's pages, while a form-shaped app is written from scratch — so the apps with
+no member page were the ones nobody had a sample for. Every template now shows one, and
+`templates/survey.md` is the one for a form.
+
+**Whether an answerer can see their own answer back is a real question, and it is not "do you want
+a participant page".** Ask **whether the people who answer need to see their own answer later**,
+then pick the route from the three below — only the third one costs an invitation, and it is
+reached for only when a custom public page is also required:
+
+- `/p/{slug}` is readable only by people **on the roster**. A stranger who answers a public form is
+  not on it, so a participant page renders for nobody unless the author invites them one by one.
+- A **generated** public form (an app declaring no `public` view) already shows a visitor their own
+  answer back, roster or not. **Writing a custom public page removes that** — the custom page
+  replaces the generated form, and the data a public page may be handed is limited to
+  `public.read` (every row, to everybody) and the rows the owner published from
+  `public.readPublished` — neither hands a sender back their own answer alone.
+- So "anyone may answer" + "a public page I wrote myself" + "answerers can see their answer" is
+  three things, and **only two of them are available at once**. Drop the middle one and the
+  generated form serves everybody; drop the first and `/p/{slug}` serves a roster. Say so while the
+  shape is still being chosen, not after the page is written.
+
+The rules are not the obstacle here and do not need working around: a submitter may already read
+their own row (`emailField`, or `idFrom: "auth.uid"`). What is missing in that third case is a page
+they are allowed to open. `participantRead` does not fix it.
+
+### 2c-2. If the app publishes ARTICLES, the platform draws ONE page and you draw the rest
+
+An `article` block on the public view says "this collection's records are markdown, and the platform
+draws one of them at **`/a/{slug}/{id}`**":
+
+```json
+{ "id": "public", "audience": "public",
+  "path": "views/home.html",
+  "collections": ["articles"],
+  "article": { "title": "title", "body": "body", "summary": "summary", "byline": "byline" } }
+```
+
+**`path` is still required, and the page it names is the front page.** `/a/{slug}` is yours — the
+index, the masthead, the sections, an About. It is handed the same datasets any public page gets, so
+the list of articles is a loop over records you write however the publication should look. The
+platform draws the article itself because markdown is rendered on the host's own origin without a
+sandbox, which makes the render a security boundary rather than a layout.
+
+**Link an entry to its article with `view.open(cid, id)`.** A published page is
+`sandbox="allow-scripts"` and nothing else, so an `<a href>` out of it is inert — no top navigation,
+no popups. The page names a RECORD and the host builds the address, which is also why a page cannot
+send a reader anywhere but into an article of its own app.
+
+```js
+card.addEventListener("click", () => { view.open("articles", record.id); });
+```
+
+It answers `{ opened, reason }` and **usually does not answer at all**, because a navigation that
+happened took the document with it. `opened: false` with `reason: "no-navigation"` is a host that
+does not navigate — the preview pane, where the log line says the page asked — and there is nothing
+for the page to do about it. Do not `await` it and then act.
+
+Four more things this shape settles:
+
+- **`collection` inside the `article` block**, when the view names more than one collection. With
+  one, it is inferred. `/a/{slug}/{id}` carries nothing that says which collection an id is in.
+- **`summary` is the article's standfirst**, under the title. Your index draws its own summaries out
+  of the records, so the two are not the same line.
+- **`byline` is a string somebody typed**, not an identity the rules hold. Never put an address in
+  it — the field is drawn to the whole world.
+- **`theme.hue` colours the article page.** Your own pages carry their own CSS. The rest of `theme`
+  dresses the page around every app — see 2e.
+
+`type: "article"` is REFUSED. It used to mean "the platform draws this page", and it took the index
+with it — an app that published articles had no public face of its own. If you meet one in an
+existing `app.json`: delete `type`, keep `article`, add `path`.
+
+### 2d. If an AGENT is going to sit at this app, give it a written job
+
+A page tells a person what the app is for. Nothing told an **agent** — an LLM at another
+MulmoTerminal, holding `useSharedApp` — what it is supposed to DO here. That job used to live in
+whichever terminal's prompt somebody typed it into, which is not the app: it does not travel with
+the URL name, it is not reviewed with the declaration, and it is gone on the next machine.
+
+Write it into `app.json`, beside the pages:
+
+```json
+{
+  "agents": [
+    {
+      "id": "desk",
+      "audience": "member",
+      "watch": ["bookings"],
+      "instruction": "pending の予約が来たら、枠が空いていれば承認し、埋まっていれば却下する。予約の削除は、この端末の人に頼まれたときだけ。"
+    }
+  ]
+}
+```
+
+- `audience` is the **same noun as `views[]`** — it decides which document the instruction is
+  published to, and therefore who reads it. A `member` brief lands where only role-holders read; a
+  `public` one lands on the world-readable document, so **never put internal vocabulary in it**
+  (when to approve, when to delete). `check` refuses a public brief that names anything outside
+  `public.read`.
+- **Write the instruction in the user's language.** It is read by an LLM, not parsed.
+- `watch` names the collections the job waits on. The sitting agent is the one that subscribes —
+  `describe` never starts a watch, because a subscription that begins when somebody merely LOOKS
+  bills the app's owner a read per row.
+- **It grants nothing.** "Approve everything" against a transition this reader does not hold is
+  refused exactly as before, and the person at the terminal overrides the brief. Publishing a duty
+  is not publishing a permission.
+- One brief per audience is the shape to reach for. There is no role filter in it: an `owner` and a
+  `viewer` on the member tier read the same brief, as they read the same pages.
+- **Do not leave the playbook only in the HTML.** A page an agent never opens says nothing to it.
+
+Run `check` after writing one. Then run `describe` **as the audience that will sit here** — and
+know that the author's own `describe` is usually the owner's, so it shows the member briefs and not
+what a public visitor would see. That is the identity limit of one signed-in account per machine,
+not a fault in the app.
+
+### 2e. Dress the public page — as loud as the user likes
+
+The platform draws a bar above the app's own page (name, share, account, menu). `theme` dresses it and
+the page around the app, in the spirit of an old mobile site:
+
+```json
+{
+  "theme": {
+    "bar": ["#ff3399", "#ffcc00"],
+    "barText": "#ffffff",
+    "background": ["#fff0f8", "#e0f7ff"],
+    "icon": "🌸",
+    "ticker": "★☆ 本日オープン！ ☆★",
+    "banner": "views/banner.svg"
+  }
+}
+```
+
+- `bar` / `background`: one colour, or a gradient of two or three. **Colours are `#rgb` / `#rrggbb`
+  only** — publish refuses anything else (names, `rgb()`, CSS). Without `barText` the bar's text is
+  chosen dark or light from the bar's brightness.
+- `icon`: one character beside the app's name, and on the share card. `ticker`: a marquee under the
+  bar (at most 120 characters; it stops on a tap and for reduced motion).
+- `banner`: one PNG / JPEG / WebP / **SVG** directly in `views/`, at most 300 kB. Publish checks the
+  bytes really are that picture and writes them for the page, which shows it through `<img>` (an
+  SVG's script never runs there). Write the SVG yourself for a crisp, small banner.
+- The share card takes the bar's colours and the icon too.
+- Inside your own page, draw anything — inline `<svg>` and `data:` images work; the page cannot load
+  outside URLs.
+
+### 3. RUN THE PAGE. Not reading it — running it.
+
+There is no step between writing the app and publishing it. `deploy` — which wrote a copy only the
+roster could see, at `/staging/{aid}` — is gone: an app EXISTS from `init` (its id and its URL name
+are taken, and its records can be written) and everything else is written by `publish`. So this
+step is the only thing standing between what you wrote and what everybody sees.
+
+**A page you have not seen work does not work.** Everything a view does that is broken by the
+sandbox fails the same way: nothing is drawn, nothing throws, and the HTML reads perfectly. You
+cannot find these by looking at your own code, because the code is not wrong — the frame it runs
+in is stricter than the one you pictured. The only thing that finds them is pressing the button.
+
+**You can press it yourself: `manageSharedApp` with `action: "preview"`.** It loads every page the
+declaration names in a real headless browser — the same parent, the same
+`sandbox="allow-scripts"`, the same CSP, the same private-port handshake — hands it the app's real
+records, and presses each control on a freshly loaded copy of the page. It runs to a budget and
+**says what it left out** — pages it did not run, controls it did not press — so read those counts
+rather than reading "ran 6 pages" as "ran the app". What comes back is what
+you would otherwise have to be told by somebody looking at a screen: a page still on its loading
+state (quoted, in the author's own words), a `<form>` in the live document, a button that reached
+nothing, a submission the declaration refused. **Run it after writing or editing any view, and
+again before you publish.** A page that has never been through it is a page nobody has run.
+
+**By default it writes nothing — and that is the mode to use after every edit.** It still loads every
+page, presses every control and reports everything; submissions are simply reported and left
+unwritten. Reach for this one freely.
+
+**`confirm: true` lets it write, and you must ASK THE USER FIRST.** When a press produces a
+submission, the run then makes a real record in the real app and removes it in the same breath — so the report can tell you what the
+**deployed rules** say, which is the one answer an author most wants before publishing and the one
+no amount of reading the declaration produces. Each line says whether the record went in, why it
+was refused if it was, and **whether the removal succeeded** — a booking left standing occupies a
+real slot, so never skip that part when reading the report back.
+
+**Only a submission the runtime marked as caused by the click is written.** A page can submit from a
+timer, from `onState`, or from a promise settling, and no amount of measuring before and after a
+press tells those apart — so the proof comes from the runtime injected into the page, which is in
+the same realm as the event and knows whether `submit()` was called while a real click was being
+dispatched. Everything else is reported as **withheld** and nothing is written for it.
+
+**An `async` click handler that awaits real work is withheld, and this is the one that will confuse
+an author.** These two are identical in shape and land on opposite sides:
+
+```js
+button.onclick = async () => { await Promise.resolve(); view.submit(...) }  // written
+button.onclick = async () => { await validate(); view.submit(...) }         // WITHHELD, if validate yields
+```
+
+The second resumes in a later task, and a later task is not the click however fast it was. So a save
+that checks something first writes nothing in a headless preview. **Say that is the reason** — an
+author told only "nothing was written" will go looking for a bug in a button that works.
+
+An app pinned to `@receptron/sharedapp` older than **0.9.0** lands in `withheld` for every
+submission — that runtime marks nothing, so the run writes nothing at all. It is not a fault in the
+page.
+
+**A control that saves from its own `change` handler — a checkbox, a select — is worse than
+withheld: it is never exercised, and the report will not say so.** Two separate things:
+
+- the run presses button-like controls only (`button`, `[role=button]`, `input[type=submit|button]`),
+  so a page whose only save control is a toggle produces **no press at all** — and with no press
+  there is no `withheld` line to read;
+- while preparing the page the run ticks checkboxes and dispatches `change` itself, BEFORE the press
+  window. A page that saves from that handler therefore submits outside any press, and the runtime
+  would not mark it in any case (activation behaviour runs after the click's dispatch has ended).
+
+So for such a page the report can look completely clean while the save path has never run. **Say
+that plainly to the user rather than reading the silence as success**, and ask them to exercise the
+toggle in the Collections pane.
+
+There is also a **budget** on writes. Over it, a confirmation is declined rather than accepted, and
+the run says how many — read that count before concluding every control was exercised.
+
+**Why the ask, when the record is removed a moment later:** the removal is not the safety boundary.
+While the record exists it is real — a rule, a function or an integration may act on it, a
+notification may already have gone out — and the removal itself can fail (the report has a line for
+exactly that, and in a first-come app a record left standing occupies a real slot). So say what it
+will do and get a yes, the same as for `publish`. Run the default read-only preview as often as you
+like; ask before the writing one.
+
+So the report proves the page draws, the handshake completes, the records arrive, **a press reaches
+the parent as a submission the declaration accepts**, and — for the presses that were written —
+**what the deployed rules said**.
+
+It also **tries to photograph each page**, and gives you the path for every one it managed. Open it
+when the words leave the layout in doubt; that is the one thing prose cannot carry. A page with no
+picture says why in its own line — the capture failed, or there was nowhere to write it — and that
+is a fact about the run rather than about the page.
+
+If no browser can be started it says so, and then the pane below is the whole answer rather than the
+second half of it.
+
+**The Collections pane's preview is the same thing with a person in front of it.** It is not a
+convenience and it is not a rough approximation. Before it existed, an LLM wrote the page and it went to a public URL without
+anybody ever having loaded it once — which is exactly how a sign-up form was published twice with
+a Submit button that did nothing at all. So the preview runs **the same parent as
+`/a/{slug}`** (`@receptron/sharedapp/view`, the code mulmoserver itself runs), with the same
+`sandbox="allow-scripts"`, the same CSP, the same private-port handshake and the same confirmation
+dialog. **It is deliberately not looser than production**: a preview kinder than the real page
+would be a machine for producing "it worked on my machine".
+
+**Ask the user to open it once the headless run is clean** — it is the half you cannot do, because
+it puts a person in front of the page and lets them judge how it LOOKS, and because it exercises the
+controls the headless run never presses (see the toggle case above). What it does NOT add is another
+identity: the pane posts to `/api/shared-app/preview/submit`, which calls the same
+`writePreviewSubmission` as the headless run, so **both write as the author**. Neither preview can
+tell you what the rules would say to a visitor or a participant — only a real session as that person
+does. In
+the cell open on this repository: the **Collections pane** → the **Previews** switch in its header
+→ the page appears, drawn from the working tree, and the **page picker** beside that switch
+(`<id> — <audience>`) chooses which one. In a directory that declares an app the switch starts ON,
+so the pages are usually already there; turning it OFF is what shows the collections underneath
+them. Opening it reads only: nothing is written and no URL name is taken.
+
+**With that switch OFF there is an `Access` button beside it, and it answers the question neither
+preview can.** Both previews run as the AUTHOR, so they show what the author's own session may do;
+`Access` shows, per collection, what a person who never signed in and a person who signed in and was
+never invited may read and write. It is a transcription of `firestore.rules` off the two documents
+those rules read — the app document and its `public` block, projected from the working tree — so it
+needs no Firestore session and writes nothing, and it changes the moment you edit `app.json`.
+
+Read it before every `publish` of an app whose roster is the point, and **say what it shows in your
+own words** rather than only pointing at it: the row to read out is `Signed in, not invited`. A
+`public.submit` declaration is not a statement that the app is open — an invite-only app needs one so
+its own members' pages can write — and reading those two keys as one is what mulmoterminal#1926 was.
+The deployed rules decide; if that panel and the deployment ever disagree, the deployment is right
+and the disagreement is a bug worth reporting.
+
+**Accepting a submission there DOES write a real record**, as the signed-in author, into the live
+app — the pane says so at the button and lists what it made with an Undo beside it. So it is a
+real answer in the app's data, not a rehearsal: tell the user that before they press *Send it*,
+and offer to remove it afterwards. Reaching the CONFIRMATION is what proves the page works;
+accepting is only needed when you want to see the record land.
+
+**Moving a record is the one thing the pane can prove and the headless run cannot.** A page asks for
+a `transition`, an `assign` or a `withdraw`, and the pane **performs it** — as the author, judged
+first against that page's own projection and then by the deployed rules. The headless run refuses
+all three (`read-only`), so it can only show that a control is wired; whether pressing it actually
+moves the record is a question only the pane answers.
+
+**On EVERY page, including the public one.** A visitor who submitted a row may move it along
+`selfTransitions` and take it away along `selfDelete` — both declared inside `public.submit[cid]` —
+with no role and no membership: `ownRow` in the rules asks that they are signed in and nothing more,
+and an anonymous session counts. The public page used to be unable to ask for any of it (the ask was
+dropped and the page waited for ever), which is worth knowing when reading an older page that works
+around it.
+
+**And it moves a REAL record, with no HOST confirmation and no undo.** A submission raises the
+parent's confirmation dialog and lands in the pane's Undo list; a member's move does neither — the
+live desk raises no dialog either, and a move creates no record to take back. So say what a button
+will do before the user presses it, and remember that reopening a poll question or approving a
+booking in the preview is the same event a member would have caused.
+
+**That is about the HOST, and it does not excuse the page.** `withdraw` still has to ask, in the
+page, for the reason below — it deletes a record and hands the slot to whoever clicks next. What
+the pane not confirming means is that pressing the page's own confirm button writes for real; it
+does not mean the page may stop drawing one.
+
+Ask them to confirm, in these terms:
+
+- the page **draws its data** (a grid that stays on "loading…" means `ready()` was never called);
+- pressing the **submit button raises the confirmation dialog**, with the right values in it (no
+  dialog = the message never left the frame — a `<form>`, or a handler that never ran);
+- on a member's page, pressing a **control actually moves the row** — the list redraws with the new
+  status. If it does not, the log below names the refusal: `illegal-transition` is the declared
+  `transitions` table, `not-permitted` is the reader's role, `not-writable` is a missing
+  `statusField` / `assigneeField` / `selfDelete` / `writerDelete`, and `not-in-view` is the page naming a row it was
+  not handed (the preview writes as the OWNER, so it cannot let the rules decide whose row it is);
+- the **error paths** say something: an empty required field, an unchosen option;
+- **cancelling the confirmation leaves the page where it was** — a page that shows the thank-you or
+  the results to somebody who pressed やめる read `submit` returning as sent (see "Which screen the
+  page shows"). This is a press the headless run never makes;
+- **reloading after answering shows the answered screen, not the empty form.** Same section, same
+  cause on the other side: it means the page remembered instead of deriving. The headless run loads
+  each page once, so this is the user's to press too.
+
+Do this **before publish** and again after any change to a page. If the user cannot look right now,
+say plainly what was and was not checked: a clean headless run means the page draws and the button
+reaches the parent, and it does not mean the write goes through.
+
+**When something in the pane does not work, ask for the log rather than for a description.** At the
+bottom of the pane is a count and a **"Copy what happened"** button. It holds the facts that exist
+nowhere else on the screen: what the page submitted and what the parent REFUSED (a refusal is
+answered on the port, so on screen it is a button that did nothing), what the frame reported about
+itself (an uncaught error, a modal the sandbox ignored — `alert`, `confirm` and `prompt` do nothing
+there and nothing on the published page), and **the deployed rules' own refusal** of a write that
+was accepted. That last one is the half a headless run can never reach, and it is why "Missing or
+insufficient permissions" arrives with the field it is about rather than on its own.
+
+It is written in the same words `action: "preview"` uses, so read it the same way. It carries field
+NAMES and never values, so it is not a substitute for asking what the user typed — with one
+exception, marked `page text:` in the block itself. That is a string the PAGE wrote, so it can
+contain anything the page put there, a value out of a record included. Treat it as the page's
+words rather than as the host's, and do not repeat it back anywhere it does not belong.
+
+**Read the tool's `warnings` back to the user too.** `check`, `preview` and `publish` all read the
+pages the declaration names and report what one will probably get wrong — a modal call, a
+`<form>`, an `onState` with no reachable `ready()` — as well as refusing a `path` that names
+nothing. They are hints and they do not stop a publish: a page they are silent about can still be
+broken, which is why they are not a substitute for the paragraph above.
+
+**What the pane's preview does NOT prove**, so do not claim it: the write is made **as the author**, who may write anything in their own app, so a visitor's or a participant's
+permission is untested and a page that works here can still be refused for the person it was built
+for. That holds for a member's move as much as for a submission — the pane refuses one the AUTHOR's
+roles do not carry, which is not the same as testing it for whoever will actually press it. Nobody else exists, so nothing is concurrent. And it cannot tell whether the rules a new
+declaration needs have been deployed at all.
+
+### 4. Invite
+
+`manageSharedApp` with `action: "invite"`, `email`, and `role` (omit `role` to remove them). It
+edits `app.json` and nothing else; the next publish is what makes it real.
+
+| role | what they get |
+|---|---|
+| `owner` | everything, including publishing |
+| `editor` | reads and writes the records |
+| `viewer` | reads the records |
+| `participant` | named on the roster, sees only their OWN rows |
+| `assignee` | reads EVERY row, writes only the rows assigned to them |
+
+`cid` narrows it to one collection instead of the whole app.
+
+`assignee` is the one for "the stylist approves their own bookings, not a colleague's" — and it
+needs two things or it silently grants nothing. It needs a `cid` (it cannot be app-wide: which
+rows are yours is a per-collection question), and the collection needs
+`collections.<cid>.assigneeField` naming the field that holds the member's ADDRESS. Not a `ref` to
+a staff collection — a ref stores that record's primary key, and the rules can only compare an
+address. `check` says so; publish refuses.
+
+Addresses are written in lower case, because the rules compare one exactly and the sign-in token
+carries a lower-cased address. An entry with capitals matches nobody, and once published nothing
+says so — the person is simply refused everything. So `invite` lower-cases a NEW address, and a
+roster edited by hand is checked before publishing: a key with capitals is reported as a problem
+and the publish is refused until it is fixed (the exception is the address you are signed in with, which
+is what the rules compare against whatever its case).
+
+An address the roster already has keeps the spelling it has there, and that entry is changed in
+place — `invite` never migrates a key or writes a second one beside it. If a hand edit has left two
+entries for one person differing only in case, `invite` refuses and names them: merge them by hand.
+
+Publish REPLACES the live roster with app.json's. So an address the live roster has and app.json
+does not loses access at the next publish — whether it was removed with `invite` on purpose, or
+another owner invited that person after this copy of app.json was written. The two look the same on
+disk, so publish names each of them and stops. `confirmRemovals: true` goes past that and nothing
+else; `confirm` does not. Read the names to the user before sending it: if they did not mean to
+remove them, `invite` them back instead of confirming.
+
+### 4b. Check, whenever you have edited `app.json`
+
+`manageSharedApp` with `action: "check"` runs the gate publish runs — the declaration, the
+collections it names, the pages, and the size of the public form — and writes nothing. That much
+needs no connection.
+
+With a session open it also asks publish's questions about what is ALREADY in the app: whether
+the live records still fit these schemas, and whether an identity key moved under them
+(`idFrom`, `idField`, `idIn`, `mirror`, `mirrorOf`). Both refuse a publish, and **`confirm` gets
+past neither of the second kind** — so meeting them here, rather than at publish, is the difference
+between an edit and a collection that has to be emptied. It also names anyone the live roster has
+and app.json no longer lists — the people publish would stop for and ask `confirmRemovals` about. Signed out, `check` says which of those it
+could not run rather than staying silent about them.
+
+Use it after any hand edit, and before telling the user something is ready. The alternative is
+finding out at publish, and a publish that refuses in the middle is where an agent starts editing
+files to recover.
+
+`check` READS the pages the declaration names — it refuses a `path` that names nothing and warns
+about what one usually gets wrong. It does not run them. `action: "preview"` does (step 3), and
+neither replaces the other: a page `check` is silent about can still be a page that draws nothing.
+
+### 5. Publish, when the user asks to open it
+
+Publishing is the one dangerous step: it changes what everybody outside sees, immediately. Do it
+when the user asks for it in those terms, not as the last step of building.
+
+**Do not publish a page nobody has run** (step 3). Publishing is immediate and anonymous: a
+broken page is broken for everybody holding the link, and it stays that way until somebody
+happens to press the button and tell you.
+
+What being public MEANS is declared in `app.json`, and it is worth reading back to the user before
+you publish. This is a survey anyone may answer once they sign in:
+
+```json
+{
+  "collections": {
+    "responses": { "submitOnly": true, "statusField": "status" }
+  },
+  "public": {
+    "enabled": true,
+    "read": [],
+    "submit": {
+      "responses": {
+        "auth": "verifiedEmail",
+        "emailField": "email",
+        "createFields": ["name", "affiliation", "score", "comment", "email", "status"],
+        "initialStatus": "submitted"
+      }
+    }
+  }
+}
+```
+
+Every line of that is load-bearing, and publish refuses the declaration without them:
+
+- **`auth` is `verifiedEmail` or `anonymous`; `none` is REFUSED.** Ask which one the app wants
+  before writing it, because it decides whether people answer at all:
+  - **`verifiedEmail`** — a Google sign-in, address confirmed. Required whenever the app needs an
+    address (`emailField`), sends mail, or admits people from its roster (`audience: "participant"`);
+    publish refuses `anonymous` with any of those, because an anonymous session has no address.
+  - **`anonymous`** — the browser opens a session by itself, no sign-in screen. The uid is real, so
+    `idFrom: "auth.uid"` / `"auth.uid+field"` enforces one row **per anonymous uid — which is a
+    browser profile, not a person**. This is the mode for an audience that must answer in the next
+    ten seconds. Say the limit in those words when you offer it: the same person answers again from
+    their phone, and again in an incognito window, and no address is recorded anywhere.
+  - **`none`** is refused: with no session there is no uid, so `idFrom` can only be `auto` and the
+    same person can submit as often as they can press the button.
+- **If the rows are public, use `idFrom: "pseudonym"` / `"pseudonym+field"` instead of the `auth.uid`
+  pair.** Same one-row-per-uid guarantee, but the id is sha256(uid + ":" + aid): the anonymous uid is
+  the same in every app of this project, so a public row named by it can be joined to the same
+  person's named rows elsewhere. Declare `protocol: "3.0.0"` (readers older than that refuse the app),
+  and no plain `uidField` beside it — publish refuses the pair, since the field would write the uid
+  back. Where the id is spent on something else (a claimed task: `idFrom: "field"`) and identity has
+  to live in `uidField`, add `uidForm: "pseudonym"` so the field holds the pseudonym instead.
+  `templates/schedule-poll.md`, `templates/tally.md`, `templates/survey-results.md`, `templates/project-board.md` and
+  `templates/magazine.md` use them.
+- **`emailField` names the field their address lands in**, and it must be in `createFields`.
+- **`uidField` is the same binding without an address** — the field the rules compare with the
+  submitter's own uid. Reach for it when the DOCUMENT ID is already spent on exclusivity (a claim
+  whose id is the task's) AND the rows are shown to people: publishing a row publishes every field
+  in it, so an `emailField` board hands out addresses and a `uidField` board does not. It costs one
+  thing: the uid is FROZEN after create, so a row is given back and retaken rather than reassigned
+  (nobody, the owner included, can type somebody else's uid into it). Like the address, it goes in
+  `createFields` and is never drawn: the page fills it from the session. See
+  [templates/project-board.md](./templates/project-board.md), whose `assignments` is exactly this.
+- **`submitOnly: true` is required** whenever the submission binds a record to its submitter. The
+  record means "this person said this", and without it an owner or editor could write rows that
+  carry that meaning without having earned it.
+- **`initialStatus` needs `collections.<cid>.statusField`** and that field must be in
+  `createFields`. It is NOT a hole: the rules pin the value to `initialStatus` on create, so a
+  respondent can only write `submitted` — listing it is what lets the rules check it. What
+  `createFields` must NOT contain is anything else you do not want them setting.
+- **Only simple fields go in `createFields`**: `string`, `text`, `markdown`, `number`, `boolean`,
+  `date`, `datetime`, `email`, and `enum` (whose choices travel with it). A `ref`, `table` or
+  `money` field is refused — the public page reads the published form and nothing else, so it has
+  no way to draw one — and so is anything the host computes (`derived`, `embed`, `backlinks`,
+  `rollup`, `toggle`, `flag`), which is a value nobody may submit. Such fields stay in the
+  collection; they are just not what a stranger fills in. `check` names any that slipped in.
+- **`read: []`** — a survey lists nothing publicly. People answer; they do not browse the answers.
+
+### If people are racing for a limited number of places
+
+Two more keys, and one thing the rules cannot do. Read
+[templates/gym.md](./templates/gym.md) before promising anything here.
+
+- **The rules cannot count.** There is no query and no aggregate in them, so "only 8 people" is not
+  something a declaration can enforce — at all. What works is to stop storing the capacity and
+  derive it: order the rows by when they arrived, and the first 8 are in, the next 2 are waiting.
+  Promotion then costs no write at all — the 9th becomes the 8th the moment the 3rd cancels — and
+  a rush at opening time has nothing to contend over. **Say to the user that the limit is drawn,
+  not enforced**, and that nobody is emailed when they are promoted.
+- **`stampField`** names a `datetime` field the rules pin to the server clock on create and freeze
+  afterwards. Without it the order is whatever each submitter typed, and the queue is decoration.
+  It goes in `createFields` (the rules refuse any key outside that list) and is NOT drawn as an
+  input — the page fills it in.
+  **A page receives it as `2026-08-15T23:05:54.605987654Z`** — UTC, nine fractional digits, `Z`.
+  Stored it is a Firestore timestamp, but both hosts normalise at their read boundary, so a page
+  never sees one. Lexicographic order IS chronological order, so **sort it with a plain string
+  compare and do not put it through `new Date()`** — that keeps only milliseconds, and two
+  submissions in the same millisecond then tie and fall back to the order they were read in. Ties
+  at full precision break by document id, which every host reads in.
+  It is also the ONE `datetime` shaped like that: a value you write yourself is a wall clock with
+  no timezone suffix (step 2b), and `toISOString()` is refused at publish.
+- **`window.fromField`** is an opening time that lives on ANOTHER record:
+  `{ "ref": "classId", "collection": "classes", "field": "opensAt" }`. `opensAt` is a **number**,
+  epoch millis, computed by whoever schedules the class — "three days before, at 08:00" is business
+  knowledge, and the rules have no date arithmetic and no local time zone. A `datetime` there is a
+  type error that denies every submission.
+- **Ranking needs READING.** A submitter who can see only their own row cannot be told they are
+  second. That means the members are on the roster (with `peerVisibility: "public"`), and everyone
+  can see who else signed up. Ask before building it.
+
+### If people are racing for ONE thing rather than for a place in a queue
+
+A class has a capacity and the rules cannot count it, so the queue above is drawn rather than
+enforced. **A slot is different: it is one thing, so nothing needs counting.** Put its id into the
+booking's id and the second person to want it is writing a document that already exists — which is
+an update, which the public submission path never allows. Firestore decides that atomically. Read
+[templates/salon.md](./templates/salon.md) before building one.
+
+- **`idFrom: "field"` + `idField`** make the record's id the value of one of its fields. That
+  field cannot be changed afterwards, and the id it produced is what holds the slot.
+- **`idIn`** is REQUIRED with it, and says which collection that id must be found in — with the
+  state it must be in — `"idIn": { "collection": "slots", "where": { "field": "state", "equals": "open" } }`.
+  Without it the id is any string a submitter likes, and the app quietly accepts bookings for
+  things that do not exist. Publish refuses the declaration.
+- **`window.untilField`** is `fromField`'s twin: a per-slot deadline, epoch millis on the same
+  record. A desk that opens per slot and never closes is not a booking desk.
+- **`mirror` (on the submission) and `mirrorOf` (on the collection)** are the two halves of the
+  PUBLIC face. A booking carries a name and a phone number and Firestore cannot hide a field, so
+  the public page must never read bookings — it reads the slot rows, whose `state` is a copy of
+  "does a booking with this id exist". The rules accept the two writes only as one batch, in both
+  directions. **Declare both halves or neither**; publish refuses one on its own.
+- **`selfDelete`** (on the submission) names the statuses the person who booked may take their
+  OWN row away from — the only thing that gives a slot back without the desk. Cancelling does
+  not: the record's id IS the exclusivity, so a booking that is merely `cancelled` goes on
+  holding the slot. Declaring this deletes the row instead, and the rules reopen the mirror in
+  the same write, so a half-freed slot cannot exist.
+  **What it spends is the record**: no history of who withdrew, and no `mail` can be bound to it
+  (the queue rule reads the document after the write, and there is none). An app that wants the
+  record kept names no status and sends its people to the desk. Say which one the user is
+  choosing — it is not a detail they discover later.
+  **And the button belongs on the PUBLIC page.** `/p/` opens only for addresses in `members`, and a
+  visitor who booked from the public page is not one. The public page receives their own rows in
+  `viewer.mine` (matched by `emailField` or `uidField`) — but only the fields they sent and the id,
+  never the status. That is enough where a booking has one status (`meeting-room.md`,
+  `class-seats.md`); where it has several, the page cannot tell which rows may be withdrawn, and the
+  desk cancels instead (`salon.md`).
+  **Do not give a participant both.** `selfTransitions` to `cancelled` alongside
+  `selfDelete: ["booked"]` reads as two ways to cancel and is a one-way trap: the transition
+  lands the row in a status `selfDelete` no longer names, so the person has, with a documented
+  bridge call, turned a slot nobody can free into staff cleanup. Declare one of them per
+  collection — and remember an old published page still reaches whatever the declaration allows,
+  so removing the button is not removing the move.
+- **These five keys freeze once records exist.** `confirm` does not override that, because what
+  breaks is not a visible schema mismatch — it is the exclusivity itself, silently, in an app that
+  goes on working. Say so before an author starts renaming things.
+
+### If a form is not enough to choose from
+
+**Every page you write here goes through step 3 before it is published.** A view is code running
+in a frame stricter than the one you are picturing, and its failures are silent — read the two
+rules below, then have the user press the button in the preview.
+
+A form ANSWERS something. Choosing from what is available — a stylist-by-hour grid — is not the
+far end of a table, so an app may publish HTML pages instead. They are declared in `views`, one
+entry per page, each naming **who it is for**:
+
+```json
+{
+  "views": [
+    { "id": "public", "audience": "public",      "path": "views/booking.html", "collections": ["stylists", "slots"] },
+    { "id": "desk",   "audience": "member",      "path": "views/desk.html",    "collections": ["bookings", "slots"] },
+    { "id": "mine",   "audience": "participant", "path": "views/mine.html",    "collections": ["bookings"] }
+  ]
+}
+```
+
+| `audience` | who reads it | where they go |
+|---|---|---|
+| `public` | anybody, signed out | `/a/{slug}` |
+| `member` | anybody holding a role in the app — the front desk | `/m/{slug}` |
+| `participant` | anybody on the roster, seeing their own row | `/p/{slug}` |
+
+- **Hand these out ABSOLUTE, with `https://mulmoserver.web.app` in front.** Nothing is served
+  from the machine this runs on, and there is no bare `/{slug}` — a path on its own is not
+  something the person you are telling can open, and `/{slug}` is a not-found page. With a `slug`
+  declared, `init` and `publish` print the whole address — say what they print. **Without one
+  there is no address at all**, and they say that instead: an app may publish staff and
+  participant pages while declaring no URL name, and both entrances need one.
+
+- **The two are not exclusive.** An owner who also books is on both, and each address shows one
+  face — so a staff member opening `/p/{slug}` sees their own booking, not the front desk. Write
+  the participant page for everybody on the roster, not only for the people with no role.
+- **`audience` is what decides who can read the page**, and it is a PLACE, not a filter: each one
+  is published to a different document with a different rule. That is also why a staff page must
+  not be declared `public` — the HTML itself carries the app's internal vocabulary (status names,
+  review-note headings, how work is assigned).
+- **`id` becomes the document the page is published at**, so it must be unique in the app and
+  lowercase letters, digits and hyphens (`front-desk`). `config` is reserved. One audience may
+  have as many pages as it needs — the front desk and the stock room — except `public`, which is
+  published at one document and so may have only one.
+- The path is **relative to the repository root** (`views/<name>.html`, one file, no
+  sub-directories) — `app.json` is there.
+- **It is not the host's custom view.** A page written against the collection pane reads
+  `__MC_VIEW.token` and fetches its own data; a published page has neither and is handed its data
+  instead. Publish refuses a file that mentions `__MC_VIEW`, because otherwise it would render
+  blank with nothing to say why.
+- **`collections` is declared, not inferred.** A view fed the wrong data renders perfectly and
+  draws an empty page, which is the one failure nothing reports. Publish refuses a `public` page
+  fed a collection in neither `public.read` nor `public.readPublished`, and a `participant` page fed one a participant cannot
+  reach at all (neither in `participantRead` nor their own row through `public.submit`).
+- **A collection that grows forever needs `limit`, or every reader pays for its whole history.**
+  A view is handed its datasets WHOLE, so a chat room's page fetches every message ever posted to
+  draw the last twenty — a bill and a payload that grow with the app's age, paid by everyone who
+  opens the page. Drawing fewer does not help: the read already happened. Cap the READ instead,
+  per page, over a subset of `collections`:
+
+  ```json
+  { "id": "room", "audience": "member", "path": "views/room.html",
+    "collections": ["messages"], "live": ["messages"], "limit": { "messages": 200 } }
+  ```
+
+  It is the **latest** N, never the first N, and that is what makes the key usable: the cap is
+  ordered by the collection's own `public.submit[cid].stampField`, so **a collection without one is
+  refused the cap** rather than ordered by something a submitter can write. (Unordered, a limit
+  falls back to Firestore's document-id order — an arbitrary N, and a new record never arrives.
+  Nothing errors, and the page looks like it is working.) Two more things to know: the rows arrive
+  **newest first**, so sort them if the page draws oldest-at-the-top; and the older records are
+  still there — this is a window, not a deletion, and nothing pages back to them. A participant's
+  OWN-ROW page cannot be capped (that query is already narrowed by the submitter's address, and
+  ordering it too needs an index no deployment has) — publish says so.
+- **`submit` carries STRINGS and nothing else.** A number, a boolean or a nested object in
+  `values` is not read as a partial submission — the whole message stops being one, and the view
+  is answered `not-a-submission`, which names no field. `attendees: 3` breaks a booking; `"3"`
+  writes it. The reason is not fussiness: the generated form path sends strings, and the rules
+  compare stored values without coercing, so a number would write a record that differs BY TYPE
+  from the identical-looking one a form wrote.
+
+  **The schema does not have to change for that.** A submitted value is stored exactly as it
+  arrives — nothing coerces it on the way in, and the rules check no field's type — while a
+  `number` field accepts a NUMERIC STRING at both check tiers (`"3"` passes; only `"abc"` is
+  reported, and only under `strict`). So `attendees: "3"` against `"type": "number"` writes and
+  validates. What it does affect is anything that later READS the value expecting arithmetic —
+  sort it, add it up, and it is a string.
+- **A submission is CONFIRMED outside the frame, so do not narrate it as sent.** The parent draws
+  the values in a dialog of its own and writes only when the visitor accepts — so between the
+  click and the answer, nothing has been sent and the promise is simply waiting for a person. A
+  page that says 送信中… there is describing a step that has not happened, and reads as stuck.
+- **Paint the page's own background, or the thing it is embedded in paints it for you.** A view is a
+  document inside somebody else's frame: the public site is light, MulmoTerminal's pane is nearly
+  black, and a page that sets `color` and no background is transparent — so the same HTML read
+  black-on-white in one and black-on-black in the other, unreadable, with nothing wrong in it.
+  The runtime now lays white paper under every view (`html { color-scheme: light; background:
+  #ffffff; color: #1c1c20 }`, `@receptron/sharedapp` 0.21.0), which is a FLOOR and not a style —
+  any plain rule of yours beats it. Two things follow, and every template shows both: **say it on
+  `html`**, because a background on the root is what stops the body's from reaching the canvas (a
+  page that paints only `body` gets its colour on the body box and the runtime's white around it);
+  and if the page is to be dark, **say both halves** — a `background` with no `color` leaves dark
+  text on it. What to paint it BEYOND that floor — and every other decision that makes a page
+  look made rather than defaulted — is [templates/design.md](./templates/design.md).
+- **`alert`, `confirm` and `prompt` DO NOTHING.** (`check` and `publish` warn when a page looks
+  like it calls one, and go through anyway — the check reads the page without parsing it, so it
+  is a hint, not a verdict. A page it stays quiet about can still be wrong.) Every view — public, staff, participant — is
+  rendered in `sandbox="allow-scripts"`, and without `allow-modals` the browser ignores the call
+  and logs *"Ignored call to 'prompt()'. The document is sandboxed, and the 'allow-modals'
+  keyword is not set."* Nothing throws, so a page that asks for a name with `prompt` submits an
+  empty one, or looks like a button that does nothing. Ask with an `<input>` in the page and
+  answer in an element of its own; that is the only thing that works here.
+- **A `<form>` CANNOT SUBMIT — draw a `<div>` and a `<button type="button">` instead.** (`check`
+  and `publish` warn about a `<form>` for the same reason they warn about a modal, and go through
+  anyway.) The frame is `sandbox="allow-scripts"` with no `allow-forms`, and the browser blocks the
+  submission **before** it fires the `submit` event — so an `onsubmit` handler never runs at all,
+  `e.preventDefault()` on its first line included, and the only sign is *"Blocked form submission
+  to '' because the form's frame is sandboxed and the 'allow-forms' permission is not set"* in a
+  console nobody is reading. What the author sees is a Submit button that does nothing. The same
+  block takes Enter-in-a-text-field with it, and `required` stops working — constraint validation
+  is part of submitting a form. So: no `<form>` element at all, a `type="button"` whose **click**
+  calls `submit(...)`, and every check the page needs written out in that handler.
+- **What the visitor CHOOSES belongs in an `<input>`, not in a variable a click sets.** A page that
+  collects answers by clicking (buttons that toggle, a `Map` filled on click) works in front of a
+  person and is **untestable by `preview`**: the harness mounts a FRESH document for every control
+  it presses, so anything an earlier press put in a variable is gone before the Submit button is
+  reached — the run then reports a submit that sent nothing, or never reaches Submit at all,
+  because the choice buttons exhaust its six-press budget first. Radios, checkboxes and `<select>`
+  are FILLED by the harness rather than pressed, which leaves Submit as the only control and gets
+  the write actually exercised. (Native inputs also draw their own selected state; a button
+  carrying only `aria-pressed` shows a sighted visitor nothing after the pointer lifts.) Buttons
+  are right for a control that ACTS — one that submits, cancels, filters.
+- The view asks for writes through `window.__MC_APP_VIEW` — see the next section.
+  (`window.__MC_PUBLIC_VIEW` is the same object under its former name, kept for one release.)
+- **`public.view` is the older spelling** of the first row above. It still works and normalizes to
+  `id: "public"`. Declaring both `views` and `public.view` is refused — write one.
+
+**Say this out loud when an author adds a `member` page.** What the public page is handed is data
+any stranger could already fetch, so a view carrying it off costs nothing. A members' page is
+handed the real records — names, phone numbers, who is coming at 3pm — and, for every collection it
+can change, the addresses of the colleagues who may change it. The platform does
+not stop an owner's own page from moving an owner's own data, and does not pretend to; the author
+should know that is what they are writing.
+
+Publish writes the pages the way it writes schemas, into the tier each audience may read. A page
+dropped from `views` is DELETED rather than left behind: the tier is readable by everyone it
+admits, forever, so not writing it again is not enough.
+
+### What a page may WRITE
+
+**`transition`, `assign`, `withdraw` and `correct` need the runtime deployed, and they do not fail softly.** `submit` has
+been on the bridge since public forms; these two and the `/p/{slug}` entrance arrived with the
+shared-app runtime, and on anything older they are simply ABSENT — a page calling one throws
+`__MC_APP_VIEW.transition is not a function`, which in an iframe looks like a page that does
+nothing. So before offering the author these controls, check that the runtime serving `/m/` and
+`/p/` has them.
+
+Draw from `viewer.can` (below) rather than from the method's existence, and this is handled for
+you: an app published before the runtime landed carries no `writers` in its projection, so every
+capability comes back empty and the page draws a read-only view of itself. It stays that way until
+the app is published again — a projection without those lists cannot tell a receptionist from an
+observer, and refuses rather than assuming.
+
+Five calls. Three of them cannot name a field at all; the two that carry values are bounded by the
+declaration instead:
+
+```js
+await window.__MC_APP_VIEW.submit(cid, values);            // a new record
+await window.__MC_APP_VIEW.transition(cid, itemId, to);    // approve, reject, cancel
+await window.__MC_APP_VIEW.assign(cid, itemId, address);   // hand a row to a colleague
+await window.__MC_APP_VIEW.withdraw(cid, itemId);          // take a row away (see the two halves below)
+await window.__MC_APP_VIEW.correct(cid, itemId, values);   // rewrite fields of a row that exists
+```
+
+`correct` is how an article gets a typo fixed without becoming a second article. **Two permissions
+answer it**, and the page asks the capability rather than the audience:
+
+- `can.<cid>.correctFrom` — `{ "<status>": ["<field>", …] }`, the fields the reader may change in a
+  row **they submitted**, while it holds that status.
+- `can.<cid>.correctAny` — **any field of any row**, for an `owner` or `editor`. A boolean and not a
+  list, because the rules answer a writing role with no status condition and no field list — which
+  is why an ordinary blog, which declares no `selfUpdate` at all, still lets its author edit.
+
+**`can.<cid>.frozen` is the list of fields it will refuse whoever asks — draw no input for them.**
+Two kinds are in it:
+
+- **the fields the rules froze when the record was created** — the `stampField`, the field an
+  `idFrom: "field"` / `"slug"` id was built out of, the `uidField`. A record that needs a different
+  id is a NEW record; renaming one would strand every link ever shared.
+- **the two fields the other asks own** — the collection's `statusField`, which moves through
+  `transition` (judged against the declared table, carrying whatever notice the declaration names
+  for that move), and its `assigneeField`, which moves through `assign` (which refuses an address
+  nobody on the roster holds a role at — writing one produces a row nobody may touch afterwards).
+
+Two more refusals:
+
+- **values over `can.<cid>.maxBytes`** — `{ "<field>": <bytes> }`, measured in bytes of UTF-8, and
+  absent where the app declared none. This is the one bound the deployed rules do NOT also make.
+- **an empty `values`** — answered by name rather than ignored, so the button does not hang.
+
+`values` must be an object of **strings**. A number is not coerced: the whole call is refused,
+because half-understanding an edit is worse than declining one.
+
+`withdraw` names no destination because nothing moves — the row is deleted, and where the
+collection has a `mirror` the parent reopens it in the same batch. **Two permissions answer it**
+and the page asks the capability, never the audience: `can.<cid>.withdrawFrom` is the reader's own
+row from the statuses `selfDelete` names, and `can.<cid>.withdrawAny` is any row at all, for an
+`owner` or `editor` where the collection declares `writerDelete`. Like the two above, it also needs
+a runtime that has it.
+
+**Call `ready()` once, after registering `onState` — nothing arrives until you do.** The parent
+holds the app's data until the view answers the handshake, so a page that listens and never says
+`ready()` waits on a send that was never made: it draws its loading line and stays on it forever,
+with no error at either end. (`check` and `publish` warn when a page registers `onState` and
+calls no `ready`.)
+
+```js
+window.__MC_APP_VIEW.onState((data, viewer) => { draw(data); });
+window.__MC_APP_VIEW.ready();   // ← without this, the callback above never fires
+```
+
+Each returns `{ ok, error }`. The page is told **who the reader is and what they may actually do**
+in the second argument to `onState`:
+
+```js
+window.__MC_APP_VIEW.onState((data, viewer) => {
+  const can = viewer.can.bookings ?? {};
+  // can.transitionAny  — may approve any row  (owner / editor)
+  // can.transitionOwn  — may approve the rows assigned to them  (assignee)
+  // can.withdrawFrom   — the statuses this reader may take their OWN row away from
+  // can.withdrawAny    — may take ANY row here away  (owner / editor, where the
+  //                      collection declares `writerDelete`)
+  // can.correctFrom    — { status: [field...] } the reader may edit in their OWN row
+  // can.correctAny     — may rewrite any field of any row here  (owner / editor)
+  // can.frozen         — the fields NO correction may write, whoever asks
+  // can.maxBytes       — { field: bytes } a correction or submission may not exceed
+  // can.assigneeField  — the field a row carries its owner's address in
+  // can.assign         — may hand a row to somebody else
+  // can.assignees      — who may be named
+  // viewer.me          — this reader's own address
+  const mine = (row) => can.transitionAny || (can.transitionOwn && row[can.assigneeField] === viewer.me);
+});
+```
+
+Draw only those buttons, and for `transitionOwn` only on the rows that pass that comparison —
+`transitionOwn` alone cannot say WHICH rows, which is why `me` and `assigneeField` come with it.
+The page never sees a role name: branching on `"editor"` would be the rules written a second time,
+where nobody reviews them. The write applies the same comparison, so a page that ignores this is
+refused rather than obeyed.
+
+`submit` is the visitor's path and **the page confirms with the reader before writing** — the HTML
+is not trusted to have been asked. `transition` and `assign` are the
+roster's, and they do NOT confirm: the person pressing them is on the app's own roster doing
+their own work, and a modal in front of a button used forty times a day is abandoned rather than
+read. The page prints what happened above the frame instead, from what was written.
+
+**`withdraw` is the exception, and the page is what has to ask.** The parent does not confirm it
+either — but it deletes a record and, where there is a `mirror`, hands the slot to whoever clicks
+next, so there is nothing to undo and nothing left to read afterwards. That is not the same kind
+of button as approving a booking for the fortieth time today. Put the confirmation in the page,
+and say what it costs: 取り下げると枠はすぐ他の人が取れるようになります。
+
+**In the page means IN THE PAGE — not `confirm()`**, which the sandbox ignores (above). A
+`if (!confirm(…)) return;` guard is worse than none: the call returns `false`, so the button
+silently does nothing, and the author who tested it once concludes withdrawal is broken. Draw the
+question — a button that arms itself, a row that expands into 「取り下げる / やめる」 — and put
+the cost in the text the reader can see.
+
+- **`transition` moves ONE field** — `collections.<cid>.statusField` — and only along
+  `transitions` (for a member) or `public.submit.<cid>.selfTransitions` (for a participant). Those
+  are different tables, so a staff page and a participant page draw different buttons for the same
+  collection. Ask for a move the record cannot make and the answer names it.
+- **Closing a thread takes THREE declarations, and any one alone is only advice.** The case: a
+  discussion, a submission window, a shift — a parent row whose state is supposed to stop new
+  child rows arriving. `transitions` on the parent is not enough on its own, because nothing
+  connects it to the children; and where the writers are the people to be stopped (an app that
+  seats AI agents hands them the OWNER's sign-in, so Firestore sees every one of them as an
+  `owner`) the writer branch of `create` asks nothing about the row at all.
+  - **`collections.<child>.refIn`** (`@receptron/sharedapp` 0.26.0 and the rules deployed with it)
+    — `{ "ref": "topicId", "collection": "topics", "where":
+    { "field": "status", "equals": "open" } }`. A child may be created only while the record its
+    `ref` field names is in that state. On the COLLECTION, not under `public.submit`, and that is
+    the point: everything under `public.submit` binds the visitor and says nothing to a writer.
+    This one binds the owner. CREATE only — a closed thread takes no new message, but fixing one
+    already in it stays possible.
+  - **No way out of the closing state in `collections.<parent>.transitions`.** `transitions` binds
+    writers on update, so an app that means "closed is final" simply declares no transition out of
+    `closed`. Without this, `refIn` is defeated in two writes: reopen the parent, post, and both
+    writes are legal.
+  - **`collections.<parent>.sealed: ["closed"]`** — the statuses a record may not be DELETED from,
+    by anybody. `deleteWith` asks a writer nothing (`writerDelete` is read by the pages; the rules
+    never look at it), so without this the close is undone by deleting the parent and writing it
+    again in its initial state — and `refIn` then reports a genuinely open parent and is right to.
+
+  Each of the three closes a different two-write bypass, which is why none of them is optional:
+  create into a closed parent (`refIn`), reopen it (`transitions`), delete and recreate it
+  (`sealed`). A fourth is closed by the rules themselves without a declaration: **the reference
+  cannot MOVE**, so a row created in an open parent can never be rewritten to point at a closed
+  one. That is why `refIn` is safe to check on create only — the record stays correctable where it
+  stands, but it cannot change which parent it belongs to, ever.
+
+  Reopening then means posting a NEW parent row, which is usually what the app wanted anyway. Note
+  the limit: this binds an agent through the app's DATA. An agent holding the owner's session can
+  still re-publish the app and rewrite the declarations — see the note on what a shared app can and
+  cannot enforce in [docs/shared-app-principles.md](../../../docs/shared-app-principles.md).
+- **`transitions` says nothing about the OTHER rows.** It judges one record's move, so "only one
+  question is open", "only one item is being served", "only one draft at a time" cannot be declared
+  — no rule keeps them and publish cannot refuse an app that breaks them. Where the app's meaning
+  depends on such a rule, the PAGE performs it: send the move that closes the current row, wait for
+  it to succeed, then send the one that opens the next, and disable the controls in between. A page
+  that only sends the second half is the worst kind of broken — every call succeeds, the rows say
+  what the operator expects, and the screen the audience is looking at does not move. (This is
+  exactly what the live-poll desk does; copy it rather than reinventing the pair.)
+- **`withdraw` takes a row away** and names no destination, because nothing moves. Where the
+  collection has a `mirror`, the parent reopens it in the same batch. **Two different permissions
+  answer it, and a page asks whichever one it was handed:**
+  - `viewer.can.<cid>.withdrawFrom` — the reader's OWN row, from the statuses `selfDelete` declares
+    (`public.submit[cid]`). A LIST, not a boolean: draw the control on the rows actually in one of
+    them. This is the participant's and the public visitor's half.
+  - `viewer.can.<cid>.withdrawAny` — ANY row, in any status, for an `owner` or `editor`, where the
+    collection declares `writerDelete: true`. A boolean, because the rules ask no status of a
+    writer (`deleteWith` opens with `isWriter`). This is the staff half, and it is the one to give
+    an owner who needs to remove a task somebody abandoned or a name registered by mistake.
+  - `viewer.can.<cid>.sealed` — statuses NO delete succeeds from, whichever of the two above the
+    reader holds (`collections.<cid>.sealed`). "Any row" means "any row the RECORD has not sealed":
+    `sealedNow` sits above the `isWriter` branch and refuses the owner too. **A page holding
+    `withdrawAny` must skip the rows whose status is in this list** — the control would only ever
+    fail on them. Empty for the collections that seal nothing, which is nearly all of them.
+
+  The staff half did not exist before `@receptron/sharedapp` 0.20.0, and its absence used to be
+  worked around by publishing the OWNER's page as `audience: "participant"` — which costs
+  assignment, the staff transitions and the roster's answer about who is who, and draws the delete
+  control for every participant. If you meet an app shaped that way, that is why; move the page
+  back to `member` and declare `writerDelete`.
+- **`assign` moves `assigneeField`**, and only to an address holding `owner`, `editor` or
+  `assignee` on that collection (`assignees` in the capability above). Anything else would write a
+  row NOBODY could touch afterwards. An `assignee` cannot hand a row on at all, their own
+  included: the rules require the row to be theirs before AND after.
+- **Being shown the page is not permission.** `/m/{slug}` admits anybody holding a role ANYWHERE in
+  the app, so a `viewer`, or somebody scoped to a different collection, reads the same declaration
+  as the front desk. That is why the capability exists and why it is per reader.
+- **A staff page published before this shipped is READ-ONLY until it is published again.** The
+  capability is computed from lists the projection carries, and a projection without them cannot
+  tell a receptionist from an observer — so it refuses rather than assuming. Re-run
+  `manageSharedApp` with `action: "publish"` and the buttons come back.
+- **The notice is not the page's to choose.** If `collections.<cid>.mail` declares a template for
+  the move being made, it is queued IN THE SAME WRITE, addressed from the record. A page that
+  could name a template could mail "your booking is approved" about one it had just rejected.
+- **Nothing here grants anything.** The rules already decide what this member may write; these
+  calls only let the page ask, and let the refusal say which assumption in the page was wrong.
+
+### Which screen the page shows
+
+A page that collects something has more than one screen — the form, and what somebody who has
+already answered sees instead. **Which one is drawn is a question about the DATA, not about what
+happened while this tab was open.** A page that answers it from an event is wrong in two ways, and
+both of them reached a published survey before anybody noticed:
+
+- the visitor **cancels** the confirmation and the page shows them the results anyway — it read
+  `await submit(...)` RETURNING as "sent", and never looked at the answer;
+- somebody who has already answered **reloads** and gets the empty form back — "I have answered"
+  was a variable in the page, and a reload throws it away.
+
+**Render only from `onState`. `submit`'s answer decides what to SAY, never what to show.** One rule,
+and it repairs both — because the parent re-sends the state once a confirmation is accepted, so the
+callback that draws the reload is the same callback that draws the moment the record lands. Written
+this way the page contains no line that switches screens at all, which is why neither bug can be
+written.
+
+```js
+let latest = null;
+view.onState((data, viewer) => { latest = { data, viewer }; render(); });   // the ONLY renderer
+view.ready();
+
+const render = () => {
+  // `email` here is whatever THIS app declared as its `emailField`; the gym's is `memberEmail`.
+  // An app with no address to compare — `auth: "anonymous"` — derives it from `mine` instead
+  // (the three routes below).
+  const mine = latest.data.responses.find((r) => r.email === latest.viewer.me);
+  show(mine ? "answered" : "form");        // derived every time, remembered never
+};
+
+button.onclick = async () => {
+  const res = await view.submit("responses", values);
+  // Clear it on EVERY outcome that is not a refusal. A page that returns early leaves the
+  // previous "送信できませんでした" on screen, and the visitor reads it as this press's answer.
+  message.textContent = res.ok || res.error === "cancelled" ? "" : `送信できませんでした: ${res.error}`;
+};
+```
+
+**`cancelled` is a THIRD outcome and it is not an error.** Declining the parent's dialog answers the
+view `{ ok: false, error: "cancelled" }` — the same shape a refusal by the rules arrives in. So a
+page that prints `error` blindly tells somebody who deliberately pressed やめる that their
+submission failed, and a page that ignores `ok` thanks them for a record that does not exist. Read
+`ok` first, then separate `cancelled` from the rest: it is the one outcome with nothing to report,
+because the visitor already knows what they did.
+
+(Escape while a write is IN FLIGHT is not a cancel. The parent refuses to answer "cancelled" over a
+record that may still land — there is no recalling a write — and makes the visitor wait for the real
+outcome. So the page is never told both.)
+
+**"Have I already answered?" has THREE routes, and an anonymous visitor is not shut out of it.**
+The comparison above is only the first, and it is the one that needs an address:
+
+- **the reader's own row, in the data the page was handed** — `viewer.me` against `emailField`, as
+  above. It needs the collection to be readable by this audience (for a public page, named in
+  `public.read`) and it needs the reader to HAVE an address, so `auth: "anonymous"` cannot use it.
+- **`viewer.mine`, carried with the state.** The rows this visitor has already submitted, projected
+  beside the data — so a page reads it in `onState` with no call of its own. This is what an
+  `anonymous` + `idFrom: "auth.uid"` app derives from: nobody has an address, and the uid is the id.
+  **Absent is UNKNOWN, and unknown is not "no"** — a host that did not look sends nothing, and a page
+  reading that as "not yet" tells somebody who answered to answer again.
+- **`view.mine(cid, key)`, on demand** — a read the host performs with the visitor's own credentials
+  against an id it builds. It is the half that works where `viewer.mine` cannot: under
+  `idFrom: "auth.uid+field"` the id is `uid_<field>`, which the host cannot know before the page
+  names the key. It answers `{ known, found, record }`, and `known: false` means **nobody looked**.
+  Draw the action and let the refusal explain itself; never draw it as "no".
+
+**All three work in the pane's preview, and the last two did not until 2026-08-19.** The pane
+answered `view.mine()` with `known: false` for ever and sent no `viewer.mine` at all, because the
+parent it wired had nowhere to route the read — so a page that correctly refused to guess drew its
+"please register" branch on top of a registration that existed, and the fault looked like the page's.
+If you are reading a page whose author added a "which one are you?" picker or a `?pretendRegistered`
+switch to get past that, **delete it**: the workaround runs in the preview and the real branch never
+does, which is the preview ceasing to preview anything.
+
+So the question to settle before the page is written is not "is the visitor signed in" but **which
+of the three this page will use** — and being unable to READ the collection does not settle it,
+because the last route is not a read of the collection: the rules grant a submitter the document
+they can name, which is why a `submitOnly` app whose records nobody may list can still tell one
+visitor about their own row. That is the trade in step 2c arriving in a different place.
+
+**[templates/live-poll.md](./templates/live-poll.md) is the third route written out, and it is what
+to copy.** Anonymous voters, `idFrom: "auth.uid+field"` — so `viewer.mine` cannot carry the answer
+(the host has no key until the page says which question it is showing) and the page asks
+`view.mine("votes", question.id)` on load instead, treating `known: false` as unknown and offering
+the vote rather than refusing it.
+
+**Its `Map` is not the fallback for that, and copying only the `Map` is how the reload bug comes
+back.** The map is the bridge WITHIN a visit — the answer to "what did I just send for the question
+still on screen", held while the lookup is in flight and for the questions already answered in this
+session. A reload empties it and the LOOKUP is what refills it. Remembering alone is all there is in
+exactly one place, and live-poll marks it: a runtime with no `view.mine` at all
+(`typeof view.mine !== "function"`). Even there the page does not claim the visitor has not
+answered — it offers the control and lets the refusal be the answer, which is the same rule as
+`known: false`.
+
+**`preview` does not catch either of these.** The run presses controls and accepts what it raises,
+and it loads each page once — so a page with both faults comes back clean. Until the harness presses
+cancel and re-loads, this section is the check: read the page back and ask, of each screen, where it
+learns that it is the one to draw.
+
+The simplest correct survey omits status entirely (`submitOnly` + `verifiedEmail` + `emailField`).
+Add a status only when somebody is going to work through the responses.
+
+Then `manageSharedApp` with `action: "publish"`.
+
+`action: "unpublish"` closes it again and keeps everything, so re-opening it later is one step.
+
+## What the tool refuses, and why it is right
+
+- **Live records that do not fit the schema you are about to write.** It lists them. Migrate them,
+  or pass `confirm: true` — after telling the user what breaks, not before.
+- **`publish` writes THIS working tree**, immediately and for everybody. It used to promote a
+  version the roster had reviewed at `/staging/{aid}`; there is no such copy any more, so `preview`
+  (step 3) is the only thing between what you wrote and what they see.
+
+## Before you ask the user a question
+
+Six things are worth asking and the rest are not:
+
+- **their email address**, if you do not have it — nothing works without it in `members`;
+- **whether people outside the roster should be able to answer** — it decides `public.enabled`,
+  which is the switch that opens the app. NOT whether there is a `public` block: an invite-only app
+  whose pages write records declares `public.submit` and stays closed, so the block being there is
+  no answer to this question. If yes, ask the second half too, because it is the one that decides whether
+  they actually answer: **are they asked to sign in?** `verifiedEmail` means a Google sign-in and a
+  recorded address — the app can write to them, and one row per account. `anonymous` means no screen
+  at all and no address, at the price of one row per browser rather than per person (see the `auth`
+  list above). Put it to the user as what the moment is: a form somebody fills in over a week, or an
+  audience answering in ten seconds;
+- **whether the people who answer need to see their own answer later** (step 2c) — it decides what
+  the PUBLIC page may be, which is not a thing to discover after writing one. Answering yes does
+  not make the app invite-only: leaving the public page generated serves a respondent who is on no
+  roster. Invite-only is what the `/p/{slug}` route costs, and that route is the option to reach
+  for when a custom public page is also required. The AUTHOR'S own page is not on this list: an app
+  that collects records gets one, and asking makes it sound optional.
+- **whether visitors to the public page should see what was sent** — decide it before writing
+  that page, because the answer is a declaration the page is built on, not a page to rewrite later.
+  Offer three, in the author's words:
+  - **nobody sees it** (only the author reads what arrives): the collection is in neither
+    `public.read` nor `public.readPublished`;
+  - **only the ones I choose** (a question box that shows the questions it answered):
+    `collections[cid].publishField: "<a boolean field>"` and `public.readPublished: [cid]`. The owner
+    flips a row public or private with the per-row switch in the list at `/m/{slug}`; the sender
+    cannot set that field, and the rules refuse it if they try;
+  - **everyone sees everything** (a scheduling grid, where seeing every answer is the point):
+    `public.read: [cid]`. Every row reaches every visitor whole, so declare no `emailField` there
+    (the note in `templates/schedule-poll.md` says the same).
+
+  A fourth, **only the totals** (visitors see how many chose each answer, never who or what they
+  wrote), is not a declaration but a DATA SHAPE: keep the counted field in a world-readable
+  collection of its own and everything else in a private one, and let the public page count —
+  [templates/tally.md](./templates/tally.md). It holds up to roughly ten thousand votes, because the
+  page reads them all; say so if the author expects more. A multi-question survey whose totals are
+  public is the same split: [templates/survey-results.md](./templates/survey-results.md).
+
+  Publish refuses: a `readPublished` collection with no `publishField`; a collection in both
+  `public.read` and `readPublished`; a `publishField` listed in `createFields` or `selfUpdate`; and a
+  `publishField` named like the status, assignee, stamp, id, uid or email field. A public page
+  (`audience: "public"`) may list a `readPublished` collection in its `collections`, but a public
+  agent (`agents[]`) can only watch one in `public.read` — it reads without a filter, and the rules
+  refuse an unfiltered read. In production the public page receives only the rows whose field is
+  `true`, enforced by the Firestore rules; the preview shows the same rows as production.
+
+- **whether a visitor may make their own copy** (`"forkable": true`). The public page then offers
+  "make your own": a Google sign-in and a name, and the visitor gets the same app with themselves as
+  owner and no records. Say the cost in the author's words before turning it on: **every page of the
+  app, the staff pages included, becomes readable by anyone**, because the copy is made of them. Off
+  unless asked; a question box, a tally or a public-results survey is where it fits — their templates
+  ship with it on — and a booking or a roster-only app is not. Publish refuses it beside `agents[]` (a copy would run somebody's agent),
+  and refuses while a roster address or the owner's uid is written anywhere in the declaration, a
+  schema or a page — take it out of the text rather than turning `forkable` off.
+
+- **whether people should see it widely on social networks** (`"shareCard": { "collection": cid,
+  "textField": field }`). Ask it in these words, never "spread it on SNS" — nothing is ever posted:
+  > **SNS で多くの人に見てもらう** — オンにすると、X や LINE などにこのページのリンクを貼ったとき、
+  > 内容の一部（お題や質問など）が画像入りのカードとして表示されます。こちらから SNS に投稿することは
+  > ありません。カードになるのは、あなたが公開した項目だけです。一度 SNS に表示されたカードは、
+  > あとから公開をやめても SNS 側に残ることがあります。
+
+  If the request already says it should spread, turn it on without asking. Every card-carrying app gets
+  a card for itself (its `title`, or its name). Name a row field only when one row's text is what a
+  stranger should read (a question box): YOU choose it, the collection must be one visitors read
+  (`public.read` or `public.readPublished`) and the field text — publish refuses anything else. An app
+  that shows totals (tally, public-results survey) declares `"shareCard": {}` or `{ "title": "..." }`.
+  The app then lives at `/s/{slug}`. A booking or a roster has no use for it; the question box, tally and
+  survey-results templates ship with it on.
+
+Do not ask which storage to use, whether to make it "an app", or what to call the collection.
+
+## Where people actually look — say what is true today
+
+- **The roster's entrance exists, but the roster you invited does not reach it until you publish
+  again.** The ADDRESS works from `init` — the URL name is reserved there, and it resolves before
+  anything is public. What `init` puts in Firestore is a roster of ONE: `members: { <your address>:
+  { "*": "owner" } }`, you and nobody else. `invite` edits `app.json` and touches Firestore not at
+  all, so an address you invited is refused at `/m/{slug}` and `/p/{slug}` until the NEXT PUBLISH
+  carries the roster over. Say that when you hand out the link — an invited person who tries it too
+  early sees a page that will not let them in, and reads it as broken.
+- **The public entrance exists too, and works end to end** — `/a/{slug}` renders the app's public
+  view, or the form generated from the declaration when there is none, and a visitor signs in and
+  submits there. It is a link you can promise. (This bullet once said the opposite, from when the
+  page that renders it had not been built. Do not tell an author their public link will not work.)
+- **What is conditional is the RUNTIME, not the page.** `transition`, `assign`, `withdraw` and the
+  `/p/{slug}` entrance arrived later than public forms and are simply absent on an older one — a
+  page calling one throws, which in a frame looks like a page that does nothing. Draw from
+  `viewer.can` rather than from whether the method exists.
+
+Say what an address does at the START, when the user's request implies handing out a link — not
+after they have watched you build it.
+
+## If the tools are not here
+
+`manageSharedApp` and `manageCollection` are only offered in a cell whose directory has the `data`
+tool group — the launcher's switch calls it **Workspace data**. If they are not in your tool list, **do not carry on**: a shared app
+cannot be published from here, and writing `app.json` and a schema by hand produces files nothing
+can act on.
+
+**Register the group yourself rather than handing the user a UI to find.** The launcher's
+tool-group switch does exactly this, and in a Claude Code cell you can do it from here — run this
+in the folder the cell is open in:
+
+```bash
+claude mcp remove mulmoterminal-data -s local   # usually fails with "No MCP server named …" — that is fine
+claude mcp add -s local --transport http mulmoterminal-data 'http://127.0.0.1:${MULMOTERMINAL_PORT}/api/mcp/data/${MULMOTERMINAL_SESSION_ID}'
+```
+
+**Say what you are registering before you run it.** It writes into the user's own Claude Code
+config, and it is theirs to know about — one sentence naming the group and the folder. It is
+undone by the `remove` line alone, so this is a note, not a confirmation gate: stopping to ask is
+what this section exists to remove.
+
+**If the `add` refuses with "Server already exists", the `remove` failed for a real reason** —
+a different scope, or a config it could not write. Read what the remove actually said instead of
+running the pair again; a second attempt fails the same way and the OLD url stays in force.
+
+**Single quotes are load-bearing.** `${MULMOTERMINAL_PORT}` and `${MULMOTERMINAL_SESSION_ID}` are
+stored as LITERAL text: Claude Code expands them when it CONNECTS to the server, and MulmoTerminal
+puts both in the environment of every claude cell. A shell that expanded them here would freeze one
+session's port and id into a permanent registration, and every later session would point at a
+server that is gone. Remove-then-add is what the launcher's switch itself does — the remove repairs
+a registration written against an older URL, and its failure is the normal case.
+
+**Then the user has one thing left to do, and you must ask for it:** the registration is
+per-folder, written into Claude Code's own config, and a session reads it **when it starts**. It
+does nothing for the session you are in. Say so, and ask them to close and reopen this cell — then
+start again from `init`.
+
+This is the `data` group because that is where both tools live, along with the collection store
+they act on. If a cell needs the Canvas as well, that is a SECOND group and **the group name
+appears twice** — in the server id and in the url path:
+
+```bash
+claude mcp remove mulmoterminal-render -s local
+claude mcp add -s local --transport http mulmoterminal-render 'http://127.0.0.1:${MULMOTERMINAL_PORT}/api/mcp/render/${MULMOTERMINAL_SESSION_ID}'
+```
+
+**Both lines, for the reason the `data` pair has both**: a folder that registered Canvas before
+already holds that id, so an `add` on its own is refused and the OLD url stays in force — which is
+the failure this whole section exists to prevent, arriving through the fix for it.
+
+Changing only the id would register a server called `mulmoterminal-render` against the **data**
+endpoint, and the cell would get the data tools again under a name that promises otherwise.
+
+## Two refusals that are NOT your cue to start editing
+
+The run this skill was written from lost several minutes to each of these, and both times the
+repair made things worse — an `aid` was deleted and a second app was created by accident.
+
+- **`getSchema` / `putSchema` says "unknown collection".** The schema was not ACCEPTED. With
+  `init` having written the `aid`, that means it failed validation — read it back against
+  `schemaDocs` rather than publishing past it. (Before `init` existed this could also mean "no aid
+  yet"; it no longer does, and treating it that way publishes an app with the collection missing.)
+- **Anything about permissions on `apps/{aid}`.** The `aid` in `app.json` is the app's identity.
+  Removing it does not reset anything: the next `init` mints a NEW one and the old app stays where
+  it is, owned by nobody who can reach it. `publish` now refuses outright rather than minting one,
+  and that refusal is the answer — put the original value back (it is a committed file:
+  `git show HEAD:app.json`), do not invent one. If a publish is refused, read what it says and fix
+  that; never edit the `aid` by hand.
+- **And never delete the app document.** `apps/{aid}` is the parent the records, the schemas and
+  both page tiers (`member/*`, `roster/*`) are authorized THROUGH, and Firestore does not cascade.
+  Nothing here can delete it — the rules refuse it and this host is an ordinary rules-bound
+  client — but the Firebase console and `firebase firestore:delete --recursive` can, and while the
+  parent is missing every rules-bound reader is denied on them: the app's pages, the Collections
+  pane, these tools. `config/*` is the exception and it is not a comfort — its read is
+  `if true`, so the public projection carries on being served, while its write resolves through
+  the parent, so it cannot be fixed or withdrawn either. The records are still there, and re-creating the document under
+  the SAME aid (which is what publishing again does) reaches them once more — so the thing that
+  turns a scare into a loss is losing the aid, not the delete. To empty an app, delete its
+  records. To stop serving it, `unpublish`.

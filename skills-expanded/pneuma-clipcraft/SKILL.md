@@ -1,0 +1,576 @@
+---
+name: pneuma-clipcraft
+description: AI-orchestrated video production on @pneuma-craft. Use whenever the user wants to generate, edit, or compose video clips, audio tracks, captions, or background music — text-to-video / image-to-video generation, TTS narration, music generation, provenance tracking, timeline composition — or touches the exploded timeline, the dive-in panels, or `project.json` by hand. Do not assume the user knows the schema — they usually don't; read `references/project-json.md` before committing to an edit.
+---
+
+# ClipCraft
+
+In script examples, `<SKILL_DIR>` means the actual directory containing this
+loaded `SKILL.md`. Substitute its full path and keep shell paths quoted. The
+runtime installs it under `.claude/skills` for Claude Code, `.agents/skills` for
+Codex, or `.kimi-code/skills` for Kimi; use the path given in your instructions.
+
+ClipCraft is a video-production mode where the **source of truth is a
+structured domain model**, not a file. The in-memory model is an
+event-sourced craft store from `@pneuma-craft`: an Asset registry, a
+Composition with Tracks and Clips, and a Provenance DAG that tracks
+how each asset was generated (and from what). The file `project.json`
+at the workspace root is a projection of that store — when you edit
+it with Write/Edit, the viewer auto-re-hydrates. No reload, no
+refresh signal.
+
+ClipCraft is built for **AIGC workflows**: assets are generated, not
+uploaded. You orchestrate image / video / TTS / BGM generation by
+running bundled scripts, then record the lineage in `project.json`.
+
+## Working with the viewer
+
+The viewer is the exploded 3D timeline rendering of `project.json`.
+It is the user's source of truth for what's currently selected, what
+the playhead is on, and what they're pointing at. Four channels link
+the three actors (you, the user, the viewer):
+
+### Reading what the user sees
+
+Every user message arrives wrapped in `<viewer-context>` and (if the
+user just clicked / dragged / seeked) `<user-actions>`. Read them
+before you act. Typical clipcraft payloads:
+
+- `<viewer-context>` — `selectedClipId`, `selectedAssetId`,
+  `selectedTrackId`, `playheadTime` (seconds), `composition.duration`,
+  the active asset's metadata. Use this to disambiguate a vague
+  request like "try another take" — there's almost always a clip
+  selected that tells you which one.
+- `<preview-frames>` (nested inside `<viewer-context>`) — summary of
+  the planning layer: `total="N"` attribute + per-track `<track id="..."
+  name="..." count="..." />` lines for tracks that carry preview frames.
+  When `total="0"` (or the tag is absent), the timeline has no
+  planning layer yet — a fresh project. Use this to decide whether
+  to start with sketch overlay (see `references/storyboard-workflow.md`)
+  vs jumping straight to generation.
+- `<user-actions>` — recent UI events: `playhead:seek`
+  (`{time}`), `clip:select` (`{clipId, trackId}`),
+  `asset:select` (`{assetId}`), `clip:drag` (`{clipId, startTime,
+  trackId}`), `track:toggle-mute`, `track:toggle-visible`. Treat
+  these as hints, not commands — the user usually expects you to
+  read them and act, not echo them back.
+
+If both are absent (cold start, command-button click), inspect
+`project.json` directly and ask if intent is ambiguous.
+
+### Locator cards
+
+After creating or editing assets, clips, or moving the playhead,
+embed `<viewer-locator>` cards so the user can jump straight to the
+change. Emit one card per distinct thing you changed — a newly
+generated asset, a clip you just placed, a time beat you built
+around — not one per response. The user sees these as clickable
+chips in chat. Use short concrete labels — "新的 VO 开场",
+"panda clip on Main", "3.5s — punchline beat" — not generic ones
+like "see asset".
+
+#### ViewerAddress — naming an object in the preview
+
+A `<viewer-locator>` carries an **address** — a small JSON object that
+names one referent inside the viewer. clipcraft's address vocabulary
+is timeline-oriented; every key below is **coarse** (each one stands
+alone and drives navigate-then-flash — clipcraft has no element-level
+fine handle):
+
+| Key | Coarse/fine | Names |
+|---|---|---|
+| `clipId` | coarse | a clip on a track — selects it + seeks the playhead to its start |
+| `previewFrameId` | coarse | a planning sketch / anchor frame — selects its asset + seeks to its anchor time |
+| `assetId` | coarse | an entry in the asset library — scrolls + flashes the tile/row |
+| `trackId` | coarse | a track header — scrolls + flashes it |
+| `time` | coarse | a moment on the timeline — seeks the playhead only |
+
+Supply exactly one key per address. `clipId` / `previewFrameId` /
+`assetId` / `trackId` are stable ids (survive move / re-pace), so
+locator references stay valid; `time` is a raw second.
+
+```html
+<!-- assetId — scrolls the asset library to the asset and flashes it. -->
+<viewer-locator address='{"assetId":"asset-vo-tagline"}'>新的 VO 开场</viewer-locator>
+
+<!-- clipId — selects the clip on the timeline AND seeks the playhead
+     to its startTime, so the user lands on the frame you mean. -->
+<viewer-locator address='{"clipId":"clip-shot1-spark"}'>panda clip on Main</viewer-locator>
+
+<!-- time — seeks the playhead only (no selection change). Use for
+     pure "go look at this beat" pointers. -->
+<viewer-locator address='{"time":3.5}'>3.5s — punchline beat</viewer-locator>
+
+<!-- trackId — scrolls and flashes a track header. Use when the
+     change is track-level (mute/solo, reordered, new track). -->
+<viewer-locator address='{"trackId":"track-narration"}'>narration track</viewer-locator>
+
+<!-- previewFrameId — selects the referenced image asset, seeks the
+     playhead to the preview frame's anchor time, and flashes the
+     strip thumbnail on the timeline. Use when pointing at a sketch
+     or anchor on the planning layer (e.g. "I generated 3 sketches
+     for the opening; here's panel 4"). The preview frame's id is
+     stable across move/rebind, so locator references survive
+     re-pacing. -->
+<viewer-locator address='{"previewFrameId":"pf-04"}'>panel 4 — opening sketch</viewer-locator>
+```
+
+### Viewer commands (user → agent)
+
+The viewer toolbar exposes six command buttons. Clicks arrive as
+short natural-language messages in chat — they're hints about what
+the user wants next, usually with a clip or scene pre-selected, not
+rigid tool calls. Read `<viewer-context>` to figure out the target,
+then run the matching workflow. If intent is ambiguous (e.g. a vague
+"generate video"), confirm before spending money on `veo3.1`.
+
+| Command | Typical handling |
+|---|---|
+| Generate image | New image asset for the current selection — read context for scene/clip |
+| Generate video | New video clip; confirm before veo3.1 if vague |
+| Try another take | Variant of the selected clip's asset; register as a derived asset (provenance edge) so the variant switcher shows both options |
+| Add narration | TTS for the selected subtitle clip (or the whole caption track); match audio clip timing to subtitle clip timing |
+| Add BGM | Ask for mood/style if not given; generate, register, place on a new or existing audio track |
+| Export draft | Handled in the viewer — runs ExportEngine with `includePreviewFrames: true` so sketches + anchors bake in. **No agent involvement** for the click. Used during planning to verify pacing before committing to expensive seedance generation. |
+| Export video | Handled in the viewer — runs `@pneuma-craft/video` ExportEngine. **No agent involvement.** |
+
+### Agent → viewer actions (HTTP)
+
+When you need to *drive* the viewer (not just respond), POST to
+`$PNEUMA_API/api/viewer/action`. Reach for this when the user asks
+"show me the part where..." and you want the playhead to land
+there before you explain, or when you've just registered an asset
+and want it pre-selected for the next take.
+
+```bash
+# Seek the playhead to a specific second.
+curl -s -X POST "$PNEUMA_API/api/viewer/action" \
+  -H 'content-type: application/json' \
+  -d '{"action":"playhead:seek","payload":{"time":4.2}}'
+
+# Select a clip on the timeline (also seeks to its start).
+curl -s -X POST "$PNEUMA_API/api/viewer/action" \
+  -H 'content-type: application/json' \
+  -d '{"action":"clip:select","payload":{"clipId":"clip-shot1-spark"}}'
+```
+
+Prefer `<viewer-locator>` cards when the user benefits from a
+clickable hand-off. Use HTTP actions when *you* need the viewer
+state to change before the next step (e.g. taking a screenshot via
+`/api/native/screenshot`).
+
+## The 6-layer technique stack
+
+ClipCraft is more than a thin wrapper over generation APIs. The
+mode encapsulates a **body of techniques** — a way of thinking about
+AIGC video production — organized in six layers. When a brief lands,
+scan top-down and figure out which layers it touches; drill into
+those references and skip the rest. A one-shot 4s clip is Layer 6
+only. A music video exercises all six.
+
+| Layer | Concern | Primary reference(s) |
+|---|---|---|
+| **1. Production Bible** | Lock the world before generating any pixel — characters, settings, project bible | `references/production-bible.md` (+ `craft.md` for principles, `character-consistency.md` for the seedance-filter special case) |
+| **2. Storyboard Paths** | Choose A/B/C generation strategy; structure the shot list | `references/storyboard-design.md` |
+| **3. Direction Notation** | Encode intent precisely in prompts and references — production triggers, annotation color system, FACS, IPA, faithfulness, anti-patterns | `references/direction-notation.md` (+ `reference-directives.md` for `@-addressing`) |
+| **4. Iteration Workflow** | Sketch → anchor → clip on the timeline; draft exports between stages | `references/storyboard-workflow.md` |
+| **5. Provenance Graph** | Lineage as audit trail and "try another take" foundation | `references/project-json.md` (+ `asset-ids.md` for id rules) |
+| **6. Generation Tools** | Run the actual APIs; recover from filter rejections | `references/workflows.md` (worked examples), `references/filter-retries.md` (422 retry tree) |
+
+### Decision tree by brief shape
+
+| Brief shape | Layers to touch |
+|---|---|
+| "make a 4s clip of X" | 6 only |
+| "10s opening, single character" | 1 (light bible) + 4 + 6 |
+| "30s mini-story with a recurring character" | 1 (full bible) + 2 + 4 + 6 |
+| "music video / dance / dialogue-heavy" | 1 + 2 + 3 + 4 + 6 |
+| "60s ad with multiple characters across scenes" | All 6 |
+| Compositing intent into one ref image (Path C, dance, etc.) | 3 (annotation system) heavily |
+| Photoreal human getting rejected by seedance | 1 (`character-consistency.md`) + 6 (`filter-retries.md`) |
+
+### When in doubt — Layer 1 first
+
+The single biggest failure mode in multi-shot AIGC video work is
+**drift across shots**: the character's face changes, the location
+mutates, the palette wanders. Layer 1 reduces the risk of
+regenerating a Path A run because the protagonist looks
+different in panel 5. If a brief has *any* recurring character,
+location, or signature prop, build the bible before the storyboard.
+
+### Layers are not strictly sequential
+
+Plan top-down (1 → 2 → 3 → 4) but execute bottom-up where
+appropriate: you might generate a quick test sketch (Layer 6) to
+calibrate the bible (Layer 1), then redesign. Provenance (Layer 5)
+is recorded continuously, not in a phase. Direction Notation (Layer
+3) is consulted whenever you write a prompt at any other layer.
+
+## Domain vocabulary (2-minute version)
+
+- **Asset** — an addressable piece of media. Has `id`, `type`, `uri`,
+  `name`, `metadata`, `status`, `createdAt`.
+- **Track** — a horizontal lane in the timeline.
+  `type` is `video` / `audio` / `subtitle`.
+- **Clip** — a span on a track that references an asset via
+  `assetId`. Has `startTime`, `duration`, `inPoint`, `outPoint` (all
+  in seconds). Subtitle clips also carry `text` directly.
+- **Scene** — a logical chunk of the composition that groups clips
+  across tracks. Purely a human organization aid.
+- **Provenance edge** — `{ toAssetId, fromAssetId, operation }`.
+  Captures "how was this asset created".
+  `fromAssetId: null` means generated from nothing; a real id means
+  derived from another asset.
+- **Composition** — the top-level container: settings
+  (`width`/`height`/`fps`), tracks, transitions, duration.
+
+Full schema in `references/project-json.md`. Id rules in
+`references/asset-ids.md`.
+
+## Making creative decisions
+
+Most of the work in ClipCraft is judgment, not mechanics. Before
+writing a generation prompt, choosing shots, picking music, or
+deciding what to cut, read `references/craft.md` — a field guide to
+short-video craft. It's principles, not procedures. Reach for it when
+the brief is open ("make something about X"), when a generated clip
+feels close but wrong, or any time you're about to settle for a
+generic answer. The rest of this document tells you *how* to produce;
+`craft.md` tells you *what* is worth producing.
+
+## Generation scripts
+
+Seven CLI scripts wrap the provider APIs. Call them via the Bash tool.
+
+| Script | Purpose | Default model | Env var |
+|---|---|---|---|
+| `scripts/generate_image.mjs` | Text→image; edits via `--image-urls`; 1–10 images per call | GPT Image 2.6 Flare via OpenRouter; `--model sunburst` upgrades generation | `OPENROUTER_API_KEY` |
+| `scripts/edit_image.mjs` | Modify a local image with optional highlighter annotation (multimodal reasoning) | GPT Image 2.6 Sunburst via OpenRouter | `OPENROUTER_API_KEY` |
+| `scripts/generate-video.mjs` | Text→video + image→video + reference-to-video | bytedance `seedance-2.0` (fallback: `veo3.1` via `--model veo3.1`) | `FAL_KEY` |
+| `scripts/generate-tts.mjs` | Text→speech (expressive: inline `[laughing]` / `[sigh]` tags, 30 voices) | fal.ai `gemini-3.1-flash-tts` | `FAL_KEY` |
+| `scripts/generate-bgm.mjs` | Text→background music | OpenRouter `google/lyria-3-pro-preview` | `OPENROUTER_API_KEY` |
+| `scripts/make-character-sheet.mjs` | Photo → photo-body / sketch-head 16:9 character reference sheet (deterministic recovery shortcut for seedance's image-side filter; see `references/filter-retries.md`) | GPT Image 2.6 Sunburst via OpenRouter | `OPENROUTER_API_KEY` |
+| `scripts/storyboard.mjs` | Compose-and-slice: one GPT Image 2.6 call generates an N-cell composite at the target video aspect ratio; ffmpeg slices into N individual panel images with provenance metadata. Engine layer for Path C (see `references/storyboard-workflow.md`). | Flare via OpenRouter, including `--ref`; upgrade with `--model sunburst` | `OPENROUTER_API_KEY` |
+
+`generate_image.mjs` and `edit_image.mjs` share their output shape —
+a JSON object on stdout with `files`, `urls`, and `description`. They
+take `--output-dir` + `--filename-prefix` (NOT `--output`). The prompt
+is a **positional** argument, not a flag. The other four follow the
+older flag-based convention where `--output <path>` is required and
+stdout is just the output path.
+
+All scripts read their API keys from `process.env` or from a `.env`
+file in the skill directory.
+
+### Why GPT Image 2.6 matters for video work
+
+Image generation uses `openai/gpt-image-2.6-flare` via OpenRouter by default,
+including new compositions guided by reference images. Add `--model sunburst`
+when generation needs tighter control. Edits of an existing image use
+`openai/gpt-image-2.6-sunburst`: `edit_image.mjs` selects it automatically;
+with `generate_image.mjs --image-urls`, select `--model sunburst` explicitly
+when the task is an edit. Reference images alone do not select the model. Use
+the image scripts for:
+
+- **First / last frames**. Seedance's `from-image` and first-last-frame
+  video modes inherit the quality of their anchor images. GPT Image 2.6
+  holds a specific aesthetic, character, and composition across paired
+  calls — so the two frames actually look like they belong to the same
+  shot, and the interpolated video doesn't need to fight a stylistic
+  mismatch at the seams.
+- **Complex single-frame compositions** — foreground subject +
+  environment + overlay text all in one image, rendered legibly. Title
+  cards, end cards, lower thirds, memes with baked-in captions, data
+  callouts over b-roll, diagrammed explainers — all viable as
+  standalone assets rather than ffmpeg/post overlays.
+- **Text rendering that actually reads**. "A sign that says X" or "a
+  poster with the headline Y" comes back legible, not glyph soup. Use
+  it for signage, lower-third strap text, brand marks, chyron-style
+  overlays.
+- **Multi-reference stitching via `--image-urls`**. Pass a character
+  portrait plus an environment plate plus a style plate and
+  GPT Image 2.6 composes them coherently — a stronger control surface
+  for prompting first frames and character sheets than free-text alone.
+- **Reference-guided edits**. Pass the source via `--image-urls --model sunburst` and describe
+  what to change and preserve. `edit_image.mjs --annotation` accepts a visual
+  location guide. OpenRouter does not expose a pixel-mask parameter.
+
+Be ambitious with the creative brief: text-heavy frames, multi-layer
+compositions, and explicit character continuity are viable in a single
+generation. See `references/craft.md` for
+the principles that should drive those choices.
+
+### Sizing images for video (critical)
+
+When an image is destined to be a video **first or last frame** (for
+`generate-video.mjs from-image` or the seedance first-last-frame
+mode), its pixel dimensions must match the video output exactly. An
+off-size anchor image gets letterboxed, cropped, or distorted by the
+video model at the seams.
+
+Pass `--image-size WxH` to request the composition dimensions through
+OpenRouter's `size` field. Check the returned image dimensions before using
+it as an anchor: providers may normalize the requested size. `--aspect-ratio`
+only requests proportions.
+
+Composition-to-image-size cheat sheet for the common cases:
+
+| Composition | Seedance output | Use `--image-size` |
+|---|---|---|
+| 9:16 portrait @ 720p | 720×1280 | `720x1280` |
+| 9:16 portrait @ 1080p (veo3.1) | 1080×1920 | `1080x1920` |
+| 16:9 landscape @ 720p | 1280×720 | `1280x720` |
+| 16:9 landscape @ 1080p (veo3.1) | 1920×1080 | `1920x1080` |
+| 1:1 square | depends on resolution | match composition.settings |
+
+For standalone assets that never enter the video pipeline (wallpapers,
+moodboards, illustrations the user just wants to look at),
+`--aspect-ratio` is fine.
+
+### Calling `generate_image.mjs`
+
+```bash
+# Text-to-image (positional prompt)
+node "<SKILL_DIR>/scripts/generate_image.mjs" \
+  "A dimly lit kitchen at 3am, kettle steam catching the overhead bulb, shot on 35mm" \
+  --aspect-ratio 9:16 --quality high \
+  --output-dir assets/image --filename-prefix kitchen-3am
+
+# Reference-guided generation — pass URLs, data URIs, or local files.
+# Uses the same GPT Image 2.6 OpenRouter Images endpoint.
+node "<SKILL_DIR>/scripts/generate_image.mjs" \
+  "Same character, now at a neon-lit ramen counter, back to camera" \
+  --image-urls https://example.com/character-ref.png \
+  --aspect-ratio 9:16 --quality high \
+  --output-dir assets/image --filename-prefix kitchen-to-ramen
+
+# Video first-frame — request the composition dimensions.
+# Verify actual output dimensions before using the image as an anchor.
+node "<SKILL_DIR>/scripts/generate_image.mjs" \
+  "Overhead shot of a desk at 3am: laptop closed, spiral notebook, cold coffee ring, warm tungsten lamp in upper right" \
+  --image-size 720x1280 --quality high \
+  --output-dir assets/image --filename-prefix opening-desk
+
+# Upgrade a new generation when tighter control is needed.
+node "<SKILL_DIR>/scripts/generate_image.mjs" \
+  "A carefully arranged character design sheet with four consistent views" \
+  --model sunburst --aspect-ratio 16:9 \
+  --output-dir assets/image --filename-prefix character-sheet
+
+# Multiple takes in one call — 1–10 per request.
+node "<SKILL_DIR>/scripts/generate_image.mjs" \
+  "Four phone mockups of the app home screen, each with a different colorway" \
+  --num-images 4 --aspect-ratio 9:16 \
+  --output-dir assets/image --filename-prefix colorway-grid
+
+# Sunburst edit with a source image. Requires OPENROUTER_API_KEY.
+node "<SKILL_DIR>/scripts/generate_image.mjs" \
+  "Watercolor of a city at dusk, soft bleeds, visible cold-press texture" \
+  --image-urls assets/image/kitchen-3am.png --model sunburst --aspect-ratio 16:9 \
+  --output-dir assets/image --filename-prefix dusk-watercolor
+```
+
+`edit_image.mjs` is the sibling for *local file + highlighter-
+annotation* edits. Use it when the source is a file on disk (not a
+URL) and the user has circled a region they want changed — the
+highlighter annotation is sent as a second image so the model knows
+*which* part to modify.
+
+### Video subcommands
+
+`generate-video.mjs` has three subcommands — one per scenario:
+
+```bash
+# 1. Text-to-video — default subcommand.
+# Routes to bytedance/seedance-2.0/reference-to-video with zero refs
+# (= pure t2v). Add --model veo3.1 to fall back to Google Veo 3.1.
+node scripts/generate-video.mjs \
+  --prompt "a serene bamboo forest with gentle wind" \
+  --duration 4 --aspect-ratio 16:9 \
+  --output assets/video/forest.mp4
+
+# 2. First / last frame continuity — the `from-image` subcommand.
+# Routes to bytedance/seedance-2.0/image-to-video by default.
+# --image-url is the START frame; --end-image-url (seedance only)
+# is an optional END frame for frame-to-frame interpolation.
+node scripts/generate-video.mjs from-image \
+  --prompt "the panda slowly rolls over and looks at the camera" \
+  --image-url assets/images/panda-rolling.png \
+  --duration 4 --aspect-ratio 16:9 \
+  --output assets/video/panda-rolls.mp4
+
+# 3. Multi-reference — the `reference` subcommand, seedance only.
+# A compositional directing system: each ref is an addressable asset
+# you assign a specific role in the prompt — character, first frame,
+# destination environment, camera motion, style, audio bed.
+# Addressing: 1-indexed by the order of the flag. First --image-url
+# is @image1, second --image-url is @image2; videos and audios are
+# numbered separately (@video1, @audio1, ...).
+# Slots: up to 9 --image-url, 3 --video-url, 3 --audio-url (total ≤12).
+# Audio refs require at least one image or video ref.
+node scripts/generate-video.mjs reference \
+  --prompt "Replace the character in @video1 with @image1, with @image1 as the first frame. Match the camera movement of @video1. Travel into the environment of @image2." \
+  --image-url assets/image/hero.jpg         `# @image1: character` \
+  --image-url assets/image/destination.jpg  `# @image2: destination` \
+  --video-url assets/video/dolly-shot.mp4   `# @video1: camera grammar` \
+  --duration 8 --aspect-ratio 16:9 \
+  --output assets/video/shot.mp4
+```
+
+Full directive vocabulary (character / first frame / destination /
+camera transfer / style / prop / POV / audio) lives in
+`references/reference-directives.md`. Use it whenever more than one
+visual intent needs to be pinned down — a single image plus long
+prose prompt does not constrain seedance enough.
+
+Shared flags across subcommands: `--duration` (required; `4`–`15`
+seconds or `auto`; veo3.1 only allows `4`/`6`/`8`), `--aspect-ratio`
+(seedance: `auto | 21:9 | 16:9 | 4:3 | 1:1 | 3:4 | 9:16`; veo3.1:
+`16:9 | 9:16`), `--resolution` (seedance: `480p | 720p`; veo3.1:
+`720p | 1080p`), `--no-audio` (disables generated audio — use when
+the content policy rejects auto-audio), `--seed` (integer, seedance
+only), `--model seedance | veo3.1`.
+
+**Seedance minimum duration is 4 seconds.** Any beat shorter than
+that — a two-second reaction, a three-second punchline, a half-second
+sting — must still be generated at `--duration 4` and then *trimmed
+on the timeline* by setting `clip.outPoint` lower than the source
+asset's full length. Plan beats in multiples of 4s when possible, and
+treat "I need 2 seconds here" as "I need 4 seconds of which I'll use
+the first 2". Never try to request `--duration 2`; the API will
+reject it, not silently clamp.
+
+### Content-policy retries
+
+Seedance has two distinct content-filter failure modes. The script
+surfaces the full API response to stderr; match the error signature
+and apply the matching recovery:
+
+- `loc:["body","image_urls"]` + `partner_validation_failed` —
+  image-side rejection. A photorealistic human face was detected in
+  a reference. Run `scripts/make-character-sheet.mjs` on the photo
+  to produce a photo-body / sketch-head 16:9 sheet, replace the
+  `--image-url` with the sheet, and retry (add `--no-audio` on the
+  retry too).
+- `loc:["body","generated_video"]` + `"Output audio has sensitive
+  content"` — audio-side rejection. Video frames are fine; just
+  retry the exact same command with `--no-audio` appended.
+
+Full decision tree, fallback to `--model veo3.1`, and hard-limit
+notes (when to stop retrying and surface to the user) are in
+`references/filter-retries.md`. The `character-consistency.md` doc
+covers the sheet anatomy, honest limits, and prompt rules for the
+image-side case.
+
+**Why this shape:** the script only does what a Bash subprocess does
+best — call a provider API and save bytes. Schema knowledge lives in
+this file + `references/project-json.md`, not in the scripts. You
+compose provenance yourself via Edit on `project.json`.
+
+### Audio layering — video tracks carry their own audio
+
+Video tracks play their clips' embedded audio alongside audio-track
+clips. A seedance clip on a video track and a TTS clip on an audio
+track will both be audible at once. One-shot videos (generate once,
+get both picture and sound) work, but you have to *plan* whether a
+video's auto-audio should survive into the mix:
+
+- **Picture only** (common for b-roll where you'll add narration
+  or BGM separately): pass `--no-audio` when generating with
+  `generate-video.mjs`, OR mute the video track after the fact
+  via the eye-beside-speaker icon on the track label (dispatches
+  `composition:toggle-track-mute`, writes `muted: true`).
+- **Picture + ambient** (standalone clip, no competing audio):
+  keep seedance's auto-audio.
+- **Picture + dialogue from seedance**: don't mute, but skip a
+  separate narration track for that segment.
+
+`muted` and `visible` on a track are **orthogonal** — `muted`
+governs audio only, `visible` governs picture only. Hiding a video
+track's picture means `visible: false`; silencing its audio means
+`muted: true`.
+
+## Typical workflow
+
+1. **Read** the current `project.json` to understand the composition.
+2. **Generate** assets by running one of the scripts with Bash.
+3. **Register** each new asset in `project.json`:
+   - Add an entry to `assets[]` with a stable semantic id.
+   - Add a matching edge to `provenance[]` with
+     `operation.type: "generate"` and `operation.params` filled out.
+4. **Place** assets on the timeline by adding clips to the relevant
+   track.
+5. The viewer auto-reflects every edit — no reload needed.
+
+Full worked examples for the three most common flows are in
+`references/workflows.md`. When the user asks for a generation task,
+pattern-match the closest example there first, then adapt.
+
+## Character consistency (photorealistic humans)
+
+When a specific human character appears — especially photorealistic,
+and especially across multiple shots — follow the protocol in
+`references/character-consistency.md`. Do **not** pass a photorealistic
+headshot or all-photo character sheet directly to
+`generate-video.mjs reference`: seedance 2.0's image-side filter
+rejects photorealistic human faces at input with
+`partner_validation_failed`, and prompt-side "virtual character" / "not
+a real person" phrasing does not defeat it (the filter does not read
+the prompt).
+
+The verified-passing shape: a 16:9 sheet of 4 vertical panels, three
+of them photographic full-body views with the **heads replaced by
+white-line pencil sketches**, and a fourth panel holding a detailed
+pencil portrait plus typewriter-style `OUTFIT` / `CHARACTER` notes.
+Pass that sheet as the sole `--image-url`, use plain photorealistic
+prompt words (no "CG render" / "virtual character" — they degrade
+output quality), and always include `--no-audio` (seedance's
+output-audio filter rejects these generations at the second gate).
+Full recipe and honest-limits disclosures in the reference doc.
+
+## Gotchas
+
+- **Metadata is for physical properties only.** Put `width`,
+  `height`, `duration`, `fps`, `codec`, `sampleRate`, `channels` in
+  `asset.metadata`. Put `prompt`, `model`, `seed`, `cost` etc. in
+  `provenance.operation.params`.
+- **`createdAt` must be stable.** When editing an existing asset,
+  keep its `createdAt` unchanged — hydration relies on it.
+- **Empty uri is legal** for `pending` or `generating` assets. Set
+  the uri when the script finishes and the file exists.
+- **Never edit `$schema`.** It's always `"pneuma-craft/project/v1"`.
+- **Time is in seconds.** Not frames. `fps` only matters for
+  playback/export.
+- **`fromAssetId: null` means "from nothing"**, not "no lineage
+  known". If the asset was generated from a text prompt alone, null
+  is the correct value.
+- **Clip ids are unique across all tracks**, not per-track. Use
+  semantic names so collisions are easy to avoid.
+
+## See also
+
+Organized by the 6-layer technique stack:
+
+**Layer 1 — Production Bible** (lock the world before generating)
+- `references/production-bible.md` — character cards (director-grade template), setting cards, project bible
+- `references/character-consistency.md` — *seedance filter recovery*: photo-body / sketch-head sheet for photoreal humans (orthogonal to bible)
+- `references/craft.md` — broader principles of short-video craft
+
+**Layer 2 — Storyboard Paths** (choose A/B/C, structure the shot list)
+- `references/storyboard-design.md` — five-layer pre-pro design + per-panel template + delivery options A/B/C
+
+**Layer 3 — Direction Notation** (precision in prompts and references)
+- `references/direction-notation.md` — production triggers, annotation color system, FACS, IPA, faithfulness directives, anti-patterns
+- `references/reference-directives.md` — `@-addressing`, multi-ref role vocabulary
+
+**Layer 4 — Iteration Workflow** (sketch → anchor → clip)
+- `references/storyboard-workflow.md` — Path A/B/C, density recipes, draft exports, locator cards, atomic-edit rules
+
+**Layer 5 — Provenance Graph** (lineage + audit trail)
+- `references/project-json.md` — full schema
+- `references/asset-ids.md` — id naming and stability rules
+
+**Layer 6 — Generation Tools** (run the APIs, recover from rejection)
+- `references/workflows.md` — three end-to-end worked examples
+- `references/filter-retries.md` — decision tree for the two seedance 422 signatures
+- `scripts/` — the seven bundled generator CLIs (`generate_image.mjs`, `edit_image.mjs`, `generate-video.mjs`, `generate-tts.mjs`, `generate-bgm.mjs`, `make-character-sheet.mjs`, `storyboard.mjs`)

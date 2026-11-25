@@ -1,0 +1,367 @@
+---
+name: recording
+description: Record evidence of a web app — an operation video, screenshots and a runbook — for a pull or merge request, a report, or a hand-off. Use when someone asks for proof that a change works, hands over an MR/PR link, or describes a page and the steps to capture on it.
+---
+
+# webapp-evidence-recording
+
+Record what happens on a web page, as an mp4 of the operation plus screenshots plus a runbook that
+says what happens at each point in the video and how to record it again.
+
+Two kinds of people ask for this, and they arrive with different things in hand:
+
+- **Someone working in the code** wants evidence for a merge request, on the project's local dev
+  environment. They have a repository, an issue, and a change to prove.
+- **Someone who does not write code** wants a page recorded — a URL and a description of what to
+  click, to attach to a report, a hand-off, or a message to a supplier. There is no repository and
+  nothing to build.
+
+The second case needs less, not more: a URL is enough to start (`BASE_URL=<url>`), and there is no
+config file to write. Do not walk someone through project setup they have no use for.
+
+Everything project-specific — the URL, how to bring the environment up, how to log in — lives in
+`evidence.config.js` when there is a project. If a project needs one and has none, build it first
+(see `references/project-setup.md`), then record.
+
+## Talking to the user
+
+Write the recording — captions, `mark()` labels, hotkey labels — in the language the MR reviewer
+reads, which the user tells you or the config pins down. That is a property of the evidence.
+
+Reply to the user in the language they are writing to you in. This document and the runner's output
+are English, but a Vietnamese-speaking user gets a Vietnamese report; the file paths, command lines
+and runner labels inside it stay verbatim, because those are what they will copy and run.
+
+## The path through a recording
+
+1. **Work out the context**: which app, which issue (it names the output directory), which screen,
+   which flow the MR needs to prove.
+2. **Pick the evidence type**: screenshots alone, or video plus screenshots — and whether it can
+   run headless, which is the default and what everything else trades against.
+3. **Probe the screen** with `inspect.js` to get real selectors.
+4. **Choose where the results go** — see `references/output-locations.md`.
+5. **Settle the captions** — on or off, and in which language.
+6. **Ask, if the take needs a screen** — `references/recording-a-screen.md`. Nothing else in
+   the path needs the user's machine; this does.
+7. **Write `steps.js`** — see `references/writing-step-scripts.md`.
+8. **Record**, then hand the user the runner's own output lines.
+
+### Working out the context
+
+| Situation | Where the context comes from |
+|---|---|
+| The user types "get evidence" in the session where the code was just written | The conversation itself: the task just finished, the screen or endpoint just changed. Do not ask again for what is already known |
+| A fresh session, the user hands over an MR/PR link | Read the MR/PR — description plus diff — and derive the screen and the flow from it |
+| The user gives a URL and describes what to show | Take the description as the flow. It is already the answer; do not translate it into a question about which code changed |
+| The app is unknown, or the screen and flow cannot be derived | Ask the user, each question carrying a recommended option. On an agent with a structured question tool (Claude Code's `AskUserQuestion`), use it; otherwise ask in one chat message listing every option, and wait for the answer |
+
+When the recording is for a merge request, the flow has to follow what that MR actually changed.
+Wandering onto other screens makes the video longer without proving anything more. When it is for a
+report or a hand-off, the same rule applies to what the user asked to show.
+
+### When the request is a URL and a description
+
+Someone outside the codebase says something like *"quay giúp tôi màn tìm kiếm ở
+https://app.example.com/search: gõ 'abc', bấm Tìm, chụp lại kết quả"*. Everything needed is already
+there. Work it as follows, and keep the questions to what you genuinely cannot see:
+
+1. **Skip the config.** Pass `BASE_URL=<the url's origin>` to the runner instead of writing an
+   `evidence.config.js`. That is what the fallback is for, and a config file would be a file they
+   have no way to maintain.
+2. **Probe the page** with `inspect.js` exactly as for any other recording — a description in words
+   ("bấm nút Tìm") is not a selector, and the page is the only place the real one exists.
+3. **Ask only about what is closed to you**: a sign-in the page requires and you have no account
+   for, a step whose wording could mean two different buttons, or data you would have to invent.
+   Never ask them to name a CSS selector, a file path, or a config key.
+4. **Choose the output directory yourself** — the current working directory unless they named one —
+   and tell them the full path at the end. See `references/output-locations.md`.
+5. **Report in their words**, not in the runner's: what the video shows, how long it is, where the
+   file is, and what they do next with it.
+
+If the page needs signing in and they can share an account for it, use it for that one run and do
+not write it to `accountStore` unless there is a project config that says where the store lives.
+
+### Picking the evidence type
+
+| The change | The evidence |
+|---|---|
+| A static screen, display-only change, one or two actions | Screenshots are enough |
+| A multi-step flow — filling fields, submitting, modals, moving between screens | Video plus screenshots at the main moments |
+| The change's result is not on the page — a job enqueued, a file written, rows imported, a dialog the operating system drew | Video plus whatever holds that: a shell in the page, or a recording of the browser window. See below |
+| Recording is impossible for a technical reason | Screenshots at minimum, and say plainly in the report why there is no video |
+
+### Probing the screen before writing anything
+
+Do not guess selectors from memory or from reading the template — the running screen is the only
+source that tells the truth, especially for JS-rendered UI.
+
+```bash
+node scripts/inspect.js /path-of-the-screen
+```
+
+Recording drives a real Chrome and encodes the result, so the machine needs Chrome, ffmpeg, Node and
+the runner's own npm dependency, at the exact version its `package.json` pins. When something is
+missing, or that dependency is another version, the command says so. Do not walk the user through
+installing it and do not paste instructions from here — offer to install it yourself, as a question
+whose recommended option is that you install it: with the structured question tool on an agent that
+has one (Claude Code's `AskUserQuestion`), otherwise in one chat message. Wait for the answer, then
+do it with whatever the machine already uses. Their machine, their call.
+
+It prints buttons, inputs, selects (with their real option lists) and links, one usable selector per
+line. Shared navigation chrome is filtered out; `--all` shows everything.
+
+### Headless by default, and what it takes to leave it
+
+A recording runs headless unless there is a reason it cannot. Headless is independent: it does
+not depend on whose machine it runs on, what else is on that screen, or whether anyone touches
+the keyboard for the next minute. Everything else is a trade against that.
+
+| The claim | What it needs |
+|---|---|
+| Anything that happens on the page | headless, the default. Nothing to ask, nothing to arrange |
+| The click reached a worker, wrote a file, moved a row | still headless — `term` opens a real shell inside the page. See `references/terminal-in-the-page.md` |
+| A `<select>` menu, the file picker, `confirm`/`alert`, DevTools — and **seeing** it is the point | a recording of the browser window, which needs a screen, permission, and the machine to itself |
+| Something outside the browser entirely | a recording of the whole display, and everything else on it |
+
+**A `<select>` or a file upload in the flow is not on its own a reason to leave headless.** The
+runner captions what was chosen and why the widget is not in the frame, and a reviewer following
+the flow understands it from that. What justifies a window capture is when the widget *itself* is
+what the MR has to prove — a menu that renders wrong, a dialog whose wording is the change.
+
+### Asking before a take that needs the screen
+
+Recording a screen records what is on someone's screen and takes their machine for a minute, so
+they decide, not you — and they can only decide if they know what it buys.
+
+Ask with the structured question tool where the agent has one, and **name the thing in their own
+flow that raised the question**, not the category:
+
+> Step 3 opens the Status dropdown. Recording the browser window would put that menu in the
+> video; headless would caption it instead.
+
+| Answer | Recommend it when |
+|---|---|
+| Record headless | the widget is incidental — this is the recommendation unless the widget is the evidence |
+| Record the browser window | the widget itself is what the MR proves |
+| Not now | — |
+
+`references/recording-a-screen.md` has the sequence. Nothing checks it afterwards: the runner
+only refuses a capture without `SCREEN_CAPTURE=1`, and that variable is you saying they agreed.
+
+### When the user names the mode
+
+`--screen` on the command asks for the browser window; `--headless` is the default and needs no
+flag.
+
+```
+/webapp-evidence:recording --screen the checkout flow on https://app.example.com
+```
+
+`--screen` is a decision already made: do not ask the question above, put the notice up and go.
+`--headless` on a flow that would have raised the question settles it the other way, also without
+asking. Nothing else in the argument is a flag — it is what they want evidence of.
+
+### Something on screen that should not be
+
+The take records what was on screen, as it was. Whether an API key, a token or a customer's
+details may appear is the user's call, made after watching, not yours made before: do not hide
+anything on your own. When they raise it, the clean fix is fake data in the step script and a new
+take; covering it in the finished take is the other way, below.
+
+### Settling the captions
+
+A caption is a film's subtitle: it says what the frame cannot, and it is gone before it is in the
+way. The runner shows each of its own captions **once** in a take — a form with six dropdowns
+explained six times is six explanations of something understood at the first, and every one of
+them holds the video still while it is read.
+
+Two decisions, and only one of them is usually worth a question.
+
+**On or off.** On, unless the user says otherwise or `evidence.config.js` has settled it.
+
+**Which language.** In this order, and stop at the first that answers:
+
+1. **The user said so** in this conversation — "captions in Japanese", or they are writing the
+   MR description in Vietnamese and asked for evidence of it. Their word ends it.
+2. **The context says so**, clearly: the MR and its comments are in one language, the repository's
+   own documents are in one language, the user has been writing to you in one language. Take it
+   and say which you took, in one line.
+3. **Anything else — ask.** Not sure, two signals disagreeing, an English repository with a
+   Japanese reviewer: that is the case for the question tool, with the likeliest option marked.
+
+Do not reason your way past step 3. A recording costs the user minutes of their machine and your
+own time, and a take whose captions are in the wrong language is re-recorded in full — asking is
+seconds, and is the cheapest thing in the whole path.
+
+Then pass the answers to the recording command: `CAPTIONS=on|off`, `CAPTION_LOCALE=en|ja|vi`.
+
+### Recording
+
+```bash
+OUT_DIR=<the issue's evidence directory> \
+  CAPTIONS=on CAPTION_LOCALE=ja \
+  node scripts/record.js <path to steps.js>
+```
+
+With no project config — a URL handed over by someone outside the codebase — name the site instead:
+
+```bash
+BASE_URL=https://app.example.com \
+  OUT_DIR=<where the results go> \
+  node scripts/record.js <path to steps.js>
+```
+
+The runner brings the environment up (via `prepare` in the config), logs in (via `login`), records,
+trims the page-load wait from the front, and writes the mp4 plus the runbook. Everything it fixed is
+printed as a `FIXED: …` line — pass those lines into the report.
+
+Every script here — `record.js`, `inspect.js`, `edit.js`, `convert.js`, `announce.js` — answers
+`--help` with its arguments and environment variables. Call that instead of reading the source. They are written to be used as black
+boxes: the source is long, it is loaded into context in full when you open it, and it tells you
+nothing `--help` does not.
+
+The login account is handled by the config and remembered in `accountStore`, so from the second run
+onward there is nothing to ask the user. The login step is not part of the video.
+
+### Looking at the take
+
+The screenshots and the page-error log are evidence for the reader. They are also for you.
+
+When this recording happened in the same session as the implementation — the user just built or
+changed the feature, then asked for evidence — read the screenshots and any `PROBLEMS:` log before
+you stop. Look for real failures (not the expected 4xx from an invalid-input screen) and for layout
+that is broken or slipping: overflow, overlap, a screen that clearly does not fit the viewport.
+
+If you see one, say so and propose a fix. Do not apply it unless they ask. If the screenshots look
+fine and the errors are expected, add nothing.
+
+When the user is outside the codebase — a URL and a description, a hand-off, a report — just hand
+over the files. A code fix they cannot apply is noise.
+
+**A take that recorded a screen gets one look before it is handed over** — see
+`references/recording-a-screen.md`.
+
+### Another format
+
+The runner writes mp4, which plays inline in a merge request, an issue and every chat tool, and is
+the smallest of the formats. A README that only renders images needs a gif; a web page you control
+may prefer webm.
+
+If the user asked for one — `-f gif`, `--format webm`, "make it a gif" — convert after recording:
+
+```bash
+node scripts/convert.js <the mp4> --to gif
+```
+
+If they did not, close the report by offering it in one line rather than converting on a hunch: a gif
+of the same take is several times larger and looks worse. See `references/other-formats.md` for what
+each format costs and where each one plays.
+
+### Editing a finished take
+
+A finished take can be edited without recording it again — run `node scripts/edit.js --help` for
+what it can do. The take as recorded is what you hand over, and it stays clean: apply an edit only
+once the user has agreed to that edit. Guessing what matters to them is how a mark nobody asked for
+ends up in the one video meant to show the page working.
+
+On a yes, run it and report the `*-edited.*` paths it prints, and that the recording itself is
+unchanged. The edited runbook lists every mark that was added, so a reviewer reads them as notes,
+not as part of the application.
+
+### Re-recording something that already exists
+
+Every take leaves a `<name>-runbook.md` precisely so this costs nothing:
+
+| Situation | What to do |
+|---|---|
+| Re-record unchanged (data moved on, the old video broke, another MR needs a fresh take) | Open the runbook and run the command in its re-run section |
+| A few steps differ (extra action, different pacing, different timeline wording) | Edit `steps.js`, run the same command again |
+| A selector broke because the UI changed | Probe that screen with `inspect.js` again, fix the selector in `steps.js`, re-run |
+
+Previous takes are moved into `v1`, `v2`… before recording, so re-running loses nothing and does not
+mix last run's screenshots into this one when the step count changes.
+
+## Never write anything into the skill directory
+
+This directory is shared by every project on the machine. Everything a recording produces — config,
+accounts, step scripts, results, and throwaway experiment files — belongs to the project being
+worked on. Litter left here follows every other project that shares the install.
+
+The trap: you need a scratch Playwright script, you notice `node_modules` already sits in `scripts/`,
+so you drop the file there to make `require` work. Keep the file in the project and point
+`NODE_PATH` here instead:
+
+```bash
+NODE_PATH=<this skill directory>/scripts/node_modules node <project directory>/scratch.js
+```
+
+Before writing a scratch script at all, check whether `inspect.js` already answers the question —
+"what is on this page, which selector do I use" is exactly what it is for.
+
+The runner refuses to start if the working directory, `OUT_DIR` or the step script sits inside the
+skill directory, so this surfaces immediately instead of accumulating quietly.
+
+## Closing the report
+
+After the paths, run `node scripts/edit.js --help` and offer at most two edits, each tied to what
+the take is meant to prove — the step that shows the change, a long wait worth speeding up — and
+each one sentence the user can answer yes to. Then one line: other edits are possible without
+recording again, and changing what is on screen — other data, other steps — means re-running the
+step script, whose command the runbook holds.
+
+Once you have handed over the files — or the error, when the take failed — add one line saying
+problems and requests can be reported with `/webapp-evidence:feedback`, and leave it there. Add it
+only when the take failed, when the output falls short of what it was meant to show (a caption that
+read awkwardly, a step that needed a workaround, a limit that got in the way), or when the runner
+printed `FIRST TAKE:`. Do not run it, do not ask them to, and do not add the line to any other run —
+a suggestion that appears every single time is one nobody reads.
+
+When the runner printed `STAR:`, the last thing you do, after the user's request is done, is ask
+once whether to star the repository that line names on GitHub, with "Star it" and "Not now" as the
+options: with the structured question tool on an agent that has one (Claude Code's
+`AskUserQuestion`), otherwise as one closing line naming the repository, without asking. On "Star
+it", run `gh api -X PUT user/starred/<owner>/<repo> --silent` for that repository. The runner has
+already checked in the background and prints the line once per machine: never check yourself, and
+never star without that answer.
+
+## Reference material
+
+Read these when the step calls for them, not upfront:
+
+| File | Read it when |
+|---|---|
+| `references/project-setup.md` | The project has no `evidence.config.js` yet, or the recording needs different pacing, captions or archiving behaviour |
+| `references/writing-step-scripts.md` | Writing or editing `steps.js`: the helpers, how long to pause after each click, captions, keyboard shortcuts, the browser's own dialogs, and what a recording physically cannot capture |
+| `references/terminal-in-the-page.md` | The step script has to show something that happened on the machine rather than in the page — a job that ran, a file that was written |
+| `references/output-locations.md` | Choosing `OUT_DIR`, dealing with the git-ignore check, and reading the runner's output to build the final report |
+| `references/recording-a-screen.md` | The evidence is something a page recording cannot hold: a `<select>` menu, a file picker, a browser dialog, DevTools, anything outside the browser. Covers asking the user first, what each backend does and does not pick up, and which machines can do it at all |
+| `references/other-formats.md` | The take has to be a gif or a webm, and you need to know what that costs |
+
+Some kinds of evidence bring helpers of their own, and a page to read before writing the steps that
+use them. Read the row that matches what has to be proved; a flow that matches none of them needs
+nothing from here.
+
+| Case | Read it when |
+|---|---|
+| `cases/api/CASE.md` | The evidence is an endpoint: the recording has to call it with the session the browser is holding, and show what came back |
+
+In the terminal panel, type the command. `term.script(path, contents)` is for a setup that genuinely
+is a file — nobody writes a shell file to make one request, and a file that appears in the video is
+one that was worth writing.
+
+Templates to copy from: `assets/evidence.config.example.js` and `assets/steps.example.js`.
+
+To look at a take rather than describe it — checking your own recording, finding where a layout
+breaks, locating the moment an error appeared — the `vision` skill beside this one tiles a video into
+timestamped sheets you can read as images.
+
+## Out of scope
+
+- Do not commit, do not push, do not attach anything to the MR/PR yourself.
+- Do not write a password into the report or into any file other than `accountStore`.
+- Do not create, edit or leave behind any file inside the skill directory.
+- Do not edit the project's `.gitignore`, not even to legitimise a place to store results.
+- Do not build a second directory tree for an issue that already has one.
+- Do not delete old takes (`v1`, `v2`…) — suggest it and let the user decide.
+- Do not burn the timeline into the video — the explanation lives in the runbook so it can be fixed
+  without recording again.

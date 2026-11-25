@@ -1,0 +1,142 @@
+---
+name: skein-js
+description: Build or adapt a TypeScript LangGraph.js project with skein-js for a server, desktop app, CLI, or daemon. Use for scaffolding, serving an existing langgraph.json, embedding graphs with memory, SQLite, or Postgres, or connecting Agent Protocol clients.
+license: Apache-2.0
+---
+
+# Build with skein-js
+
+skein-js hosts LangGraph.js graphs. LangGraph defines graph state, nodes, edges, tools, and execution; skein-js supplies the Agent Protocol engine, persistence, background work, and console. The same engine runs in a server or a local application. Use the existing LangGraph APIs and `@langchain/langgraph-sdk` client rather than inventing skein-specific graph or client abstractions.
+
+## Choose the shortest supported path
+
+- **New project:** Inspect workspace markers first, then use `npm create skein-js@latest <name>` in a new directory, or the Nx generator in an Nx workspace. Generated projects recommend Node 26, support `^22.14.0 || ^24.0.0 || ^26.0.0`, and enable ESLint/Prettier by default (`--no-linting` opts out). Keep the keyless echo graph until the first server run succeeds. See [scaffolding](https://skein.js.org/scaffolding).
+- **Existing `langgraph.json`:** Keep the config and graph exports; use the skein CLI in place of the LangGraph CLI. Check [compatibility](https://skein.js.org/langgraph-cli-compat) before changing any config field.
+- **Graph compiled in an existing app:** Pick the adapter for the app's framework and pass either `{ config }` or assembled `{ deps }`. Mount the adapter at the intended URL and set the client's `apiUrl` to that mount root. See [using skein-js](https://skein.js.org/using-skein) and [embedding](https://skein.js.org/embedding).
+- **Desktop app, CLI, or daemon with local persistence:** Scaffold with `npm create skein-js@latest <name> -- --storage sqlite`, or embed graphs through `embedSqliteGraphs` from `@skein-js/local`. Use the existing protocol service directly or an HTTP/SSE adapter with the existing SDK. See [local deployment](https://skein.js.org/local-deployment).
+
+SQLite is an explicit option for Node 22/24/26 with one process owning each database file. Install the upstream SQLite saver as documented, supply an absolute `sqlitePath` when embedding, and let the host start its worker or adapter and stop it before disposing storage. A desktop UI and a separate daemon can use the same protocol; keep database ownership in the backend process. The [Electron](https://github.com/skein-js/skein-js/tree/main/examples/desktop-electron), [Tauri](https://github.com/skein-js/skein-js/tree/main/examples/desktop-tauri), and [CLI](https://github.com/skein-js/skein-js/tree/main/examples/local-cli) examples show supported host integration and native packaging.
+
+Applications choose models, tools, credentials, process lifetime, and recovery behavior. A local app can use a cloud provider or a local model. SQLite records abandoned attempts as failures without automatically replaying input or continuing checkpoints; live stream frames remain process-local. Recover the UI from persisted records and state/history APIs.
+
+Redis workers continue an attributable stalled run from its committed checkpoint without reapplying
+accepted input. Make external effects idempotent: uncommitted work may repeat. Inspect
+`run_recovery_ambiguous` failures before explicitly choosing recovery for older checkpoints.
+Use compatible top-level `webhooks` headers/URL controls together with `skein.webhooks` signing and
+retries. Restrictions intersect; explicit empty domain/port lists deny all. `http.disable_webhooks`
+blocks caller callbacks without disabling host-owned outcomes. Header templates require existing,
+prefix-allowed environment variables. `http.configurable_headers` and `logging_headers` use
+case-insensitive includes/excludes with exclusions winning. Keep credentials out of logs.
+`http.disable_ui` disables graph UI loading/building independently of Console. Preserve auth-first
+dispatch and opt-in CORS. Non-default config checkpointer loaders require programmatic saver injection;
+do not silently accept unapplied security or backend settings.
+
+Scale queued work separately using the [API/background-worker recipe](https://skein.js.org/recipes/split-api-worker).
+Keep wait/stream inline, select maintenance-loop owners explicitly, and stop runtimes before driver
+disposal. Preserve legacy run `reject` and thread-command `enqueue` defaults and documented ordering
+limits. Do not add a CLI role or stronger FIFO promise to assemble an existing deployment pattern.
+
+For a normal model and tool loop, prefer LangChain's `createAgent`; use a custom LangGraph `StateGraph` when the requested workflow needs explicit state or branching. For planning, files, and subagents, export a `createDeepAgent()` graph from the upstream `deepagents` package (support is experimental); give its `StoreBackend` a namespace built from `langgraph_auth_user_id`, use `stream_subgraphs` to stream subagents, and give async subagents an explicit `url`. See the [Deep Agents recipe](https://github.com/skein-js/skein-js/blob/main/docs/recipes/deep-agents.md). Consult the installed LangGraph version and [official LangGraph documentation](https://docs.langchain.com/oss/javascript/langgraph/overview) for graph APIs. When skein manages a served graph, let it inject the checkpointer and store; do not pass them to `.compile()` yourself. See [LangGraph essentials](https://skein.js.org/langgraph-essentials).
+
+## Documentation for the adopter
+
+When documenting the generated application or explaining setup, teach the user's task, commands,
+expected result, and next step. Use the [console guide](https://skein.js.org/console)
+for manual graph checks and [Testing your project](https://skein.js.org/testing-your-project)
+for repeatable assertions and a server smoke test. Keep repository CI and implementation details out
+of the adoption path; preserve public integration requirements and operational limits.
+
+## Complete the project
+
+1. Inspect the user's package manager, framework, existing graph and config, and deployment needs. Preserve existing choices.
+2. Implement the smallest graph and host wiring that meet the request. Use the scaffold or a matching [runnable example](https://github.com/skein-js/skein-js/tree/main/examples) as a starting point when useful.
+3. Run the project's typecheck and tests, plus lint and format checks when those scripts exist. Apply inherited formatting before checking CLI-generated files. Start the host when practical, confirm the graph loads, and exercise one run through the protocol service, console, or SDK. For an interrupt workflow, exercise pause and resume; when local durability is claimed, reopen the SQLite file and verify persisted state. Report any check you could not run.
+4. Choose durability for the host: [SQLite](https://skein.js.org/local-deployment) for one local owner, or [Postgres and Redis](https://skein.js.org/deploy) for a shared server. CLI SQLite selection requires `--store sqlite --queue sqlite`; memory remains the default for `skein dev`.
+
+In a workspace, use a new child directory, preserve root configuration, and leave dependency installation at the root. Root tool declarations are reused independently of configuration inheritance; missing tool dependencies are added to the generated package. New files follow inherited Prettier settings. Workspace-root targets are rejected before writes, including with `--force`. See [workspace tooling](https://skein.js.org/scaffolding).
+
+For an Nx or Turborepo workspace, use the matching skein-js workspace skill if installed. Otherwise follow the workspace's existing task conventions and [monorepo guidance](https://skein.js.org/scaffolding#nx-and-other-monorepos).
+
+## Protocol and hosting compatibility
+
+For retryable native work, use `createProtocolRuntime(deps).createNativeClient` with a stable trusted
+`sourceId` and required `allowedAssistants`. Pass host-verified `authContext` on every call when auth
+is enabled; graph/broker metadata never grants authority. Preserve returned receipt keys, reconcile
+via `getRun`/`getReceipt`/`getResult`, and resume with the expected interrupted run/checkpoint.
+`cancel` reports status separately from confirmed stop; use `wait: true` when shutdown must be complete.
+An optional source `outcomeTarget` enables complete durable terminal outcomes. SQLite process loss
+records failure and an owed outcome without replaying abandoned input. See
+[native access](https://skein.js.org/native-access).
+Native state reads hold the execution lease and can wait behind active work; retry
+`native_state_changed`. Use the [native/BullMQ example](https://github.com/skein-js/skein-js/tree/main/examples/native-transports)
+for maintained host wiring, and read the [security guide](https://skein.js.org/native-access-security).
+Projection covers outcomes/result queries only: raw run/state queries need separate host policy.
+Broker credentials expose retained payloads/return values; configure Redis ACLs/TLS and retention.
+
+For external BullMQ commands/outcomes, compose the optional `@skein-js/bullmq` factory's dispatcher,
+bind its stable `outcomeTarget` on the native source, and explicitly `start`/`stop` consumption.
+Keep caller verification, routing, deadlines and projection host-controlled. Persist receiver event
+deduplication independently of BullMQ job retention. Retrieve missed/large output with authorized
+`result.get` chunks and verify their digest. Preserve Skein's internal execution/delivery queues.
+
+Use the [Agent Server compatibility reference](https://skein.js.org/langgraph-compatibility)
+when choosing clients. Legacy SDK React and dedicated framework packages use different streaming
+contracts. Modern thread subscriptions are separate from run commands: reconnect only reopens the
+subscription. Prefer the official HTTP/SSE SDK and preserve server-owned run admission/cancellation.
+Redis enables cross-instance event replay; SQLite replay is process-local.
+
+Standard `ui`/`ui_config` and Fetch/Hono `http.app` exports are supported. Let `skein build` compile
+UI/custom-app assets and deploy the whole artifact. Custom apps run after common authentication and
+fall through on 404. Browser-injected UI assets need credentials available to browser asset requests
+or an explicit deployment policy permitting those assets. See the configuration compatibility guide.
+
+MCP and A2A reuse authorized run services; do not add another scheduler or task database. For custom
+stores, A2A requires immutable run-result persistence. Diagnostics are `/openapi.json`, `/docs`,
+`/metrics`, and `/threads/{thread_id}/storage`. The API reference is generated from enabled operation
+contracts. `http.disable_docs: true` hides docs and OpenAPI while retaining info and metrics;
+`http.disable_meta: true` hides all four. `/ok` is independent. Metrics require a host-owned collector, and custom
+savers without concrete byte inspectors return 501. Never estimate stored bytes or silently ignore
+requested indexing, explicit no-expiry TTL, or per-read refresh controls.
+
+### Browser clients
+
+For MCP human input, use an official modern client supporting revision `2026-07-28`, enable modern
+negotiation explicitly and declare form/URL elicitation capabilities. Let its registered elicitation
+handler collect the person's answers. Keep the returned state with the same caller/tool/arguments;
+do not turn an uncertain inline submission into a new resume. Legacy ordinary calls remain supported.
+See the [MCP human-input recipe](https://skein.js.org/recipes/mcp-human-input).
+
+Deep Agents 1.16.3 needs compatible peers (LangChain 1.6.2, Core 1.3.5, LangGraph 1.6.1 in the isolated
+candidate). Retain an application's pinned combination until its consumer checks pass. Explicit-URL
+forks, queued updates and media are upstream features; parent wakeups need polling or application-owned
+authorized notification. Use atomic `if_thread_status` to protect busy/waiting parents. Preserve
+caller-scoped credentials and receiving-thread ownership. Sandbox provisioning and disposal belong to
+the application; use upstream remote backends without process-global transport replacement.
+
+For new React frontends, install `@langchain/react` (tested at 1.2.7) and its
+`@langchain/core` peer. Import `useStream` from `@langchain/react`, point `apiUrl` and
+`assistantId` at Skein, submit user messages with `{ role: "user", content }`, and resume
+interrupts with `thread.respond(value)`. The dedicated hook uses thread event subscriptions
+and command envelopes; restoring or reconnecting a subscription must never submit another turn.
+The legacy `@langchain/langgraph-sdk/react` hook remains supported for existing apps.
+See `docs/react-sdk.md` and the three React examples for current usage.
+
+For json-render UI specifications, use its upstream catalog/compiler/renderer and the official SDK
+run stream. Agent Protocol SSE is not raw SpecStream text for `useUIStream`. Keep the bridge and
+action policy in application code, save validated specs in graph state, deduplicate generation
+chunks before compiling, and reconcile checkpoint state after terminal runs or lost history.
+See the [json-render recipe](https://skein.js.org/recipes/json-render) and
+[public example](https://github.com/skein-js/skein-js/tree/main/examples/json-render).
+
+Bundled memory, SQLite and Redis queues dispatch by thread: an occupied execution claim does not
+consume a background execution slot. Keep `maxConcurrency` sized for real work. Custom queues/gates
+can opt into `consumePartitioned`/`tryAcquire`; older implementations retain blocking dispatch.
+Preserve the execution claim, original delay floors and SQLite's no-replay recovery contract.
+
+BullMQ and ioredis 5/6 compatibility is covered independently for internal Redis drivers and the
+external native adapter. When mixing BullMQ 5 with application ioredis 6, use connection options for
+upstream BullMQ queues/workers and lend the supported client to `createBullMqTransport` if desired.
+Borrowed `Redis` and `Cluster` clients are accepted. The transport never closes a borrowed connection
+or outcome queue.
+When annotating options around an application-owned outcome queue, use
+`BullMqTransportOptions<typeof outcomeQueue>` so an independent BullMQ major upgrade retains its type.

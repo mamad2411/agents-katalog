@@ -1,0 +1,91 @@
+---
+name: pitroom-crew
+description: Use when facing two or more independent tasks - questions about different areas, unrelated bugs or failing test files, the same mechanical change in separate modules - to run Pitroom workers in parallel, watch them live and merge their results.
+---
+
+# Running a Pitroom crew
+
+Several workers at once, each with its own session (and, for changes, its own isolated copy of the project): one worker per independent problem domain. You split the work, watch, and merge.
+
+## When to use
+
+- Several questions about different areas of the code.
+- Three or more test files failing with different root causes; subsystems broken independently.
+- The same mechanical change in separate modules.
+
+Don't use it when the failures are related (fixing one might fix the others: investigate them together first), when understanding needs the whole system, when you don't yet know what is broken (exploratory debugging: `pitroom-debugging`), or when workers would edit the same files. The tasks of a written plan run through `pitroom-driven-development`, which has its own rules for parallel tasks.
+
+## 1. Split
+
+Parts must be **independent**: no part needs another's result, and no two parts edit the same file. Start as many workers as there are independent parts: up to 20 run at a time by default (`maxParallel`, 30 at most), the rest queue. Keep dependent or judgment-heavy parts for yourself.
+
+Split by **where**, not by **what**: each worker gets its own part of the project and its brief names it. Three workers asked for "validation bugs", "error-handling bugs" and "security holes" all read the whole project and hand you three answers about the same code to reconcile; when they disagree you end up opening the files yourself, which is the reading the crew was meant to save. Ask the same question once per folder instead. `--over` does that split for you and refuses parts that overlap:
+
+```bash
+pitroom crew -g validation --over src/auth,src/billing,src/uploads \
+  "Find request handlers in {scope} that use input without validating it. file:line for each."
+pitroom crew -g todo --over "packages/*/" "List the TODOs in {scope} that name a missing feature. file:line for each."
+```
+
+A question about how parts connect (a flow that crosses folders) is one brief, not a split.
+
+## 2. Write focused briefs
+
+Each worker sees only its brief, so each brief is:
+1. **Focused:** one problem domain ("fix agent-tool-abort.test.ts", not "fix all the tests").
+2. **Self-contained:** the error messages, test names and file paths it needs.
+3. **Constrained:** what not to change ("do not change production code", "tests only").
+4. **Specific about the answer:** "the root cause and what you changed", "file:line for each".
+
+```text
+Fix the 3 failing tests in src/agents/agent-tool-abort.test.ts:
+1. "should abort tool with partial output capture" - expects 'interrupted at' in message
+2. "should handle mixed completed and aborted tools" - fast tool aborted instead of completed
+3. "should properly track pendingToolCount" - expects 3 results but gets 0
+These look like timing issues. Find the real cause: replace arbitrary timeouts with
+event-based waiting, or fix the abort implementation. Do NOT just increase timeouts.
+Answer with the root cause and what you changed.
+```
+
+`pitroom-research` and `pitroom-implement` have more brief templates.
+
+## 3. Start
+
+```bash
+pitroom crew -g auth-audit \
+  "Map how sessions are created in src/auth; file:line for each step." \
+  "List every place that reads the session cookie outside src/auth; file:line." \
+  "Which tests cover session expiry? List files and what each asserts."
+```
+
+Read-only by default. For changes add `-i` (each worker edits its own isolated copy): `pitroom crew -i -g lint-fix "Fix the lint errors in src/a" "Fix the lint errors in src/b"`. Never parallel `--write`; Pitroom refuses it.
+
+## 4. Watch
+
+Follow the group live without polling:
+- `pitroom watch -g NAME --brief`: one card line when a worker starts and one when it ends, then a total; the user can read it, so prefer it in a host that shows monitor output (Claude Code's Monitor tool).
+- `pitroom watch -g NAME --json`: one JSON line per change (`queued`, `started`, `progress`, `fallback`, `done`/`failed`, then `all-done`). Run it through your host's background or monitor facility so each line reaches you as it happens; it exits by itself when the group is done.
+- No such facility: `pitroom wait -g NAME --timeout 540`, and call it again while it exits with 75.
+- `pitroom status -g NAME`: one table snapshot.
+- Tell the user how to see it live: `pitroom dash --detach` prints the address of a read-only page on 127.0.0.1 with every run. Open it in the app's own built-in browser or preview pane when you have one (not with `--open`, which launches the system browser), and otherwise give the user the address; or `pitroom watch -g NAME` in a terminal.
+
+While workers run, do the parts you kept for yourself.
+
+## 5. Collect, verify and merge
+
+```bash
+pitroom wait -g NAME --brief        # one line per worker: state + SUMMARY
+pitroom show <run>                  # the full report of the ones you need
+```
+
+- Read each summary and understand what changed.
+- Check for conflicts: did two workers touch the same code or contradict each other?
+- Verify what you will rely on (`refs:` lines help), then combine the findings in your own words.
+- For `-i` crews: review each patch (`pitroom review <run>` or `pitroom show <run> --patch`), then `pitroom apply -g NAME`. It applies in order, stops at the first conflict and refuses a patch that deletes files (decide whether the deletion is wanted, then `--allow-delete`); fix that one with `pitroom run --continue <run> "…"` or by hand, then apply the rest.
+- Run the full test suite yourself afterwards, and spot-check: workers make systematic errors.
+
+## When things go wrong
+
+- A worker failed or timed out: retry that part once with a sharper brief, or do it yourself.
+- Rate limits: the fallback chain handles single failures; if many fail at once, lower `maxParallel` (config or `PITROOM_MAX_PARALLEL`) or spread the parts over more than one worker.
+- Stop everything: `pitroom stop -g NAME` (running and queued).

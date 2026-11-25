@@ -1,0 +1,293 @@
+---
+name: google-auth
+description: >-
+  Use when a Node.js or Python server authenticates to Google: OAuth 2.0, ID token
+  checks, service accounts, ADC, Workload Identity, API keys. Not for end-user web
+  sign-in (google-signin). Opt out: no wiring, без обвязки. Triggers -
+  "google-auth-library", "service account", "сервисный аккаунт".
+license: MIT
+---
+
+# Google Authentication for Node.js & Python
+
+## Libraries
+
+### Node.js
+
+- `google-auth-library` — core auth library (OAuth2Client, GoogleAuth, JWT, Compute, Impersonated)
+- `googleapis` — Google API client (wraps google-auth-library)
+
+```bash
+npm install google-auth-library
+npm install googleapis
+```
+
+The `client.fetch()` calls below require google-auth-library **≥ 10.1.0** (the
+fetch-compatible API landed in 10.1.0, 2025-06-12); on 9.x use
+`client.request()` with the same arguments. Checked 2026-08-31: latest is 11.x
+and keeps both methods.
+
+### Python
+
+- `google-auth` — core auth library (google.oauth2, google.auth, credentials, transport)
+- `google-auth-oauthlib` — OAuth 2.0 user-credential flow helpers (Flow, InstalledAppFlow)
+- `google-api-python-client` — Google API client (wraps google-auth)
+
+```bash
+pip install google-auth
+pip install google-auth-oauthlib
+pip install google-api-python-client
+```
+
+## Authentication Methods Overview
+
+| Method | Use Case | Node.js Key Class | Python Key Module / Class |
+|--------|----------|-------------------|---------------------------|
+| **ADC** | Same identity for all users, server-to-server | `GoogleAuth` | `google.auth.default()` |
+| **OAuth 2.0** | Actions on behalf of end users | `OAuth2Client` | `google_auth_oauthlib.flow.Flow` |
+| **Sign In with Google (GIS)** | User sign-in/sign-up on websites — the google-signin skill's ground | GIS JS SDK + `verifyIdToken()` | GIS JS SDK + `id_token.verify_oauth2_token()` |
+| **JWT / Service Account** | Server-to-server, single identity | `JWT` | `service_account.Credentials` |
+| **API Key** | Public data, no user context | `OAuth2Client({ apiKey })` | passed to `googleapiclient.discovery.build(developerKey=)` |
+| **Compute** | On GCP with attached service account | `Compute` | `google.auth.compute_engine.Credentials` |
+| **Workload Identity Federation** | AWS/Azure/OIDC → GCP without SA keys | `ExternalAccountClient` | `google.auth.identity_pool.Credentials` / `google.auth.aws.Credentials` |
+
+## Quick Patterns
+
+### 1. Application Default Credentials (ADC)
+
+**Node.js**
+
+```js
+const {GoogleAuth} = require('google-auth-library');
+
+const auth = new GoogleAuth({
+  scopes: 'https://www.googleapis.com/auth/cloud-platform'
+});
+const client = await auth.getClient();
+const res = await client.fetch('https://dns.googleapis.com/dns/v1/projects/...');
+```
+
+**Python**
+
+```python
+import google.auth
+import google.auth.transport.requests
+
+credentials, project = google.auth.default(
+    scopes=['https://www.googleapis.com/auth/cloud-platform']
+)
+request = google.auth.transport.requests.Request()
+credentials.refresh(request)
+```
+
+ADC search order (env var FIRST — this line was reversed): `GOOGLE_APPLICATION_CREDENTIALS` env var → `gcloud auth application-default login` file → attached service account (metadata). Print the RESOLVED principal and source (no secret) before configuring — with more than one present, only the resolved source names which you are actually using.
+
+For detailed ADC setup and service account usage, see [references/adc-and-service-accounts.md](references/adc-and-service-accounts.md).
+
+### 2. OAuth 2.0 Web Server Flow
+
+**Node.js**
+
+```js
+const {OAuth2Client} = require('google-auth-library');
+
+const client = new OAuth2Client({
+  clientId: CLIENT_ID,
+  clientSecret: CLIENT_SECRET,
+  redirectUri: REDIRECT_URI
+});
+
+const authUrl = client.generateAuthUrl({
+  access_type: 'offline',
+  scope: ['https://www.googleapis.com/auth/userinfo.profile'],
+  state: crypto.randomBytes(32).toString('hex'),
+  include_granted_scopes: true
+});
+
+// After redirect: exchange code for tokens
+const {tokens} = await client.getToken(code);
+client.setCredentials(tokens);
+```
+
+**Python**
+
+```python
+from google_auth_oauthlib.flow import Flow
+
+flow = Flow.from_client_secrets_file(
+    'client_secret.json',
+    scopes=['https://www.googleapis.com/auth/userinfo.profile'],
+    redirect_uri=REDIRECT_URI
+)
+
+authorization_url, state = flow.authorization_url(
+    access_type='offline',
+    include_granted_scopes='true'
+)
+
+# After redirect: exchange code for tokens
+flow.fetch_token(code=code)
+credentials = flow.credentials
+```
+
+`refresh_token` is only returned on the first authorization. Use `prompt: 'consent'` (Node.js) or `prompt='consent'` (Python) to force re-consent.
+
+For the complete OAuth 2.0 flow (parameters, token exchange, refresh, revocation, incremental auth), see [references/oauth2-web-server.md](references/oauth2-web-server.md).
+
+### 3. Verifying a Google ID Token — the library call
+
+**Node.js**
+
+```js
+const {OAuth2Client} = require('google-auth-library');
+const client = new OAuth2Client();
+
+const ticket = await client.verifyIdToken({
+  idToken: token,
+  audience: WEB_CLIENT_ID,
+});
+const payload = ticket.getPayload();
+```
+
+**Python**
+
+```python
+from google.oauth2 import id_token
+from google.auth.transport import requests
+
+payload = id_token.verify_oauth2_token(token, requests.Request(), WEB_CLIENT_ID)
+```
+
+The call checks signature, `aud`, `exp` and `iss` — **and nothing else**. That is
+the library contract, not the web sign-in contract: for the sign-in security
+checklist (`nonce` binding, `email_verified`, login-CSRF defense, account
+linking) use the **google-signin** skill — it is the one home for that contract,
+and this skill deliberately does not restate it.
+
+### 4. JWT / Service Account
+
+**Node.js**
+
+```js
+const {JWT} = require('google-auth-library');
+const keys = require('./service-account-key.json');
+
+const client = new JWT({
+  email: keys.client_email,
+  key: keys.private_key,
+  scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+});
+const res = await client.fetch(url);
+```
+
+**Python**
+
+```python
+from google.oauth2 import service_account
+
+credentials = service_account.Credentials.from_service_account_file(
+    'service-account-key.json',
+    scopes=['https://www.googleapis.com/auth/cloud-platform']
+)
+
+# Or from a dict already loaded into memory:
+credentials = service_account.Credentials.from_service_account_info(
+    info,
+    scopes=['https://www.googleapis.com/auth/cloud-platform']
+)
+```
+
+### 5. API Key
+
+**Node.js**
+
+```js
+const {OAuth2Client} = require('google-auth-library');
+const client = new OAuth2Client({ apiKey: 'my-api-key' });
+
+// Or via GoogleAuth:
+const {GoogleAuth} = require('google-auth-library');
+const auth = new GoogleAuth({
+  clientOptions: { apiKey: 'my-api-key' }
+});
+```
+
+**Python**
+
+```python
+from googleapiclient.discovery import build
+
+service = build('customsearch', 'v1', developerKey='my-api-key')
+```
+
+### 6. Token Refresh
+
+**Node.js**
+
+```js
+client.on('tokens', (tokens) => {
+  if (tokens.refresh_token) {
+    // Store refresh_token — only sent on first auth
+  }
+  // Record an event name only; token values never enter logs.
+  console.info("google_auth_tokens_refreshed");
+});
+```
+
+**Python**
+
+```python
+from google.auth.transport.requests import Request
+
+if credentials.expired and credentials.refresh_token:
+    credentials.refresh(Request())
+    # credentials.token is the new access token
+    # credentials.expiry is the new expiration datetime
+```
+
+## Security Best Practices
+
+- Never expose `client_secret` or service account keys in client-side code
+- Always validate `state` parameter to prevent CSRF in OAuth flows
+- Use `sub` (not `email`) as the unique user identifier from Google ID tokens
+- Store `refresh_token` securely; it's only returned on first authorization
+- Validate external credential configurations before use (check `token_url`, `service_account_impersonation_url` point to googleapis.com)
+- Prefer Workload Identity Federation over service account keys for non-GCP environments
+- For end-user web sign-in, apply the google-signin skill's full checklist — a partial restatement here is how the two skills drifted apart once already
+- **Fail closed on a missing production secret.** The session signing secret,
+  and any credential-store key, is REQUIRED in production with NO dev fallback —
+  a hardcoded default signs every deployment's cookies with a key that lives in
+  the repo. Missing → refuse to boot, never a warning-and-continue (DV-07).
+- **Logs are sanitized; a credential never reaches one.** No token, no
+  `client_secret`, no `refresh_token`, no session value in a log line, a stack
+  trace, or an error message — a token in a log is a token anyone with log
+  access holds. Redact by allow-list, not by trying to strip the secret out.
+- **HTTPS is mandatory and the credential store can fail.** The auth cookie is
+  `Secure` and the callback refuses plain HTTP (an OAuth code over `http://` is a
+  code on the wire); and a credential-store read/write that FAILS is an auth
+  failure — re-prompt or 503, never proceed as if the credentials loaded.
+- **Python-specific**: reuse a single `google.auth.transport.requests.Request()` instance across verifications for connection pooling; do not create a new one per call in hot paths
+
+## Reference Files
+
+- **[OAuth 2.0 Web Server Flow](references/oauth2-web-server.md)** — Complete OAuth 2.0 flow: parameters, consent, token exchange, refresh, revocation, incremental auth, error handling (Node.js + Python)
+- **[ADC & Service Accounts](references/adc-and-service-accounts.md)** — Application Default Credentials setup, service account keys, JWT, Compute credentials, environment configuration (Node.js + Python)
+- **Sign In with Google** lives in the google-signin skill, one home: its full guide covers GIS, ID token verification (Node.js + Python), the nonce and CSRF contracts, account linking and FedCM
+- **[Workload Identity Federation](references/workload-identity.md)** — AWS, Azure, OIDC/SAML federation, workforce identity, executable-sourced credentials (Node.js + Python)
+
+## Degradation
+
+- **Not Claude Code** (Cursor, Codex, the skills CLI, the API container): the pack's
+  `PreToolUse` gate does not run; a live credential is refused by nothing but you.
+- **Installed by copy rather than as a plugin**: doctrine yes, `hooks/` no.
+- **No browser, or no console access**: the consent screen and the client-id half are a
+  human step. Name the exact screen and what is blocked, do the code half, and do not
+  loop on a login only a person can complete.
+
+## Triggers
+
+More phrases that route here: "OAuth 2.0 Google", "Application Default Credentials",
+"Workload Identity Federation", "Google ID token", "GOOGLE_APPLICATION_CREDENTIALS", "Google
+SSO", "ключи сервисного аккаунта", "проверить ID-токен".
+
+Moved here from the description in 0.16.2: "авторизация Google".

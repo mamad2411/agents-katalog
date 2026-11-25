@@ -1,0 +1,111 @@
+---
+name: changelog-draft-gen
+description: 更新日志草稿生成器 — 发版手写 CHANGELOG 漏三漏四，conventional-changelog 全家桶又太重，只想按规范出个草稿（零依赖，确定性输出，rc=0/1/2，--json 机器可读）
+slug: changelog-draft-gen
+version: 1.0.0
+display_name: 更新日志草稿生成器
+display_name_en: Changelog Generator
+agent_created: true
+author: 诺声(Logos)@SynomosAI
+license: MIT
+compatibility: Cross-platform; zero external dependencies (stdlib only)
+metadata: {dependencies: "none"}
+license_scope: 代码（.py 文件）MIT；本 SKILL.md 与其中理论文本按 CC BY 4.0 授权（见文末「License & attribution」）
+allowed-tools: Read, Glob, Grep, Bash, Write, Edit
+category: 工程方法
+platforms: [claude, codex, cursor, windsurf, workbuddy]
+copyright: SynomosAI
+description_zh: "更新日志草稿生成器 — 发版手写 CHANGELOG 漏三漏四，conventional-changelog 全家桶又太重，只想按规范出个草稿（零依赖，确定性输出，rc=0/1/2，--json 机器可读）"
+description_en: "Generate a spec-compliant CHANGELOG draft from commit history without the heavyweight toolchain (zero-dependency, deterministic output, --json)."
+classification:
+  internal: ["通用工具(跨主轴·待归类)"]
+  skillhub: ["productivity"]
+  clawhub: ["productivity", "development"]
+  iso_25010: ["Maintainability", "Usability"]
+risk_tier: medium
+risk_rationale: "门禁批量补丁默认 medium（Steven 2026-09-28 令：我们的 skill 设计为中等风险）：调用 API/读写文件/本地执行，最小权限，密钥走 Secret；若实际涉对外代执行(push/发布/发送/上架)须人工复评，改 high 并走 Steven 批准。"
+capabilities: [read, write, exec]
+---
+# 更新日志草稿生成器 / Changelog Generator
+
+**changelog-draft-gen** v1.0.0 · LGD-Powered 家族 · 零依赖 · 确定性输出（JSON IR）· 修复回执错误码
+
+## 痛点
+发版手写 CHANGELOG 漏三漏四，conventional-changelog 全家桶又太重，只想按规范出个草稿
+
+## 用法
+```bash
+# 默认：自最近一个 tag 到 HEAD
+python scripts/changelog_gen.py --version v1.2.0
+
+# 指定区间与输出文件（last-good 原子替换）
+python scripts/changelog_gen.py --from v1.1.0 --to HEAD --version v1.2.0 --out CHANGELOG.md
+
+# JSON 输出
+python scripts/changelog_gen.py --version v1.2.0 --json
+```
+
+## 输出示例（真机）
+```
+$ changelog_gen.py --version v1.2.0
+## v1.2.0 - 2026-09-08
+
+### ⚠ Breaking / 破坏性变更
+- `a1b2c3d` refactor(cli)!: rename --dry-run to --preview
+
+### Added / 新增
+- `e4f5a6b` feat: add --json output for machine readers
+
+### Fixed / 修复
+- `b7c8d9e` fix: correct check-digit weighting order
+
+（草稿由 conventional commits 归类生成，发布前请人工润色）
+```
+
+## 退出码与错误码
+- rc=0 通过 / rc=1 发现问题 / rc=2 用法错误
+| 错误码 | 含义 | 建议修复 |
+|---|---|---|
+| CHG_E_NO_GIT | 目录不是 git 仓库 | 在仓库根目录运行或用 --repo 指定路径 |
+| CHG_E_NO_COMMITS | 区间内没有提交 | 检查 --from/--to 区间或 tag 是否存在 |
+| CHG_E_GIT_FAIL | git 命令执行失败 | 确认 git 可用且仓库可读 |
+
+## FAQ
+**支持中文提交信息吗？**
+
+支持。分类只看 conventional 前缀（feat/fix/...），描述语言不限。
+
+**会直接覆盖我的 CHANGELOG.md 吗？**
+
+仅当显式传 --out 时写入，且走临时文件+原子替换；校验失败不会覆盖旧文件。
+
+
+## 免责 / Disclaimer
+changelog-draft-gen 输出为确定性格式/结构判定与规则化建议，不构成法规意见、安全承诺或专业咨询；关键决策请人工复核并以官方最新要求为准。
+
+---
+
+## License & attribution
+**分层许可（务必并读；代码许可不覆盖文档与理论文本）**
+
+| 层 | 载体 | 许可 |
+|---|---|---|
+| 代码 | `changelog_gen.py` | **MIT** |
+| 文档与理论文本 | 本 `SKILL.md`、`README.md`、其中「理论依据」段与一切理论表述 | **不在 MIT 覆盖范围内**：按 **CC BY 4.0** 授权（须保留署名） |
+
+> 即：**代码可依 MIT 使用与再分发；文档与理论文本依 CC BY 4.0 使用，可复制、转载与演绎，须保留署名。**
+
+```
+© 2026 赵兴华 / Steven Zhao·China (ORCID 0009-0001-0512-1237). Theory texts licensed under CC BY 4.0.
+理论署名 (attribution) : LGD（Lifecycle Governance Doctrine / 全程治理论）— SynomosAI initiative
+名称状态 (name status)  : "SynomosAI" / "MedXpert" — 未申请实体注册、未申请商标注册
+                        (not a registered legal entity; no trademark registered)
+生产参考部署 (production reference, self-reported) : MedXpert
+                    ← 非认证、非背书、非监管认可（not a certification or endorsement）
+代码许可 (code license) : 本包未附 LICENSE 文件（许可待定）
+                    本文本与理论表述不在任何代码许可覆盖范围内，按 CC BY 4.0 授权（须保留署名）
+引用格式 (cite as)      : 本资产无 DOI
+```
+（上列为《LGD 对外表述规范》§3.2 统一块，**整体复制、未删改**；发布/重提前须照最新版本复核。）
+
+**本包补充（包级许可事实）**：本包代码文件 `changelog_gen.py` = **MIT**；本 `SKILL.md` / `README.md` 及其中的理论文本**不在任何代码许可（含 MIT / Apache-2.0）覆盖范围内**，按 **CC BY 4.0** 授权（须保留署名）。

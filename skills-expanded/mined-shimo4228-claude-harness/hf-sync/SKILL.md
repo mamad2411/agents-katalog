@@ -1,0 +1,75 @@
+---
+name: hf-sync
+description: "Mirror a research repo's graph.jsonld to its Hugging Face dataset as graph.jsonl. Use after the GitHub release step of release-doi, or to resync the dataset."
+user-invocable: true
+origin: shimo4228
+---
+
+# hf-sync — Local HF Dataset Mirror Sync
+
+`graph.jsonld` を持つ research repo の HF dataset mirror を、手元から 1 コマンドで同期する skill。`jsonld-knowledge-graph` で encode した graph を HF Datasets 上の mirror に反映する operational layer。
+
+## When to use
+
+- `release-doi` の Phase 4 末尾、`gh release create` 後の HF mirror 反映
+- Graph に手を加えた直後の ad-hoc resync（release を切らずに HF だけ更新したい）
+- HF token を rotate した後の動作確認
+
+## When NOT to use
+
+- `graph.jsonld` を持たない repo（HF mirror が存在しない）
+
+## Execution
+
+script のパスは `${CLAUDE_SKILL_DIR}`（この SKILL.md のあるディレクトリ）から始まる:
+
+```
+bash "${CLAUDE_SKILL_DIR}/sync.sh" $ARGUMENTS
+```
+
+`$ARGUMENTS` は HF dataset の repo ID（例: `Shimo4228/agent-knowledge-cycle`）。
+
+cwd 制約: `graph.jsonld` が存在する project root で実行する。
+
+## What it does
+
+1. cwd の `graph.jsonld` の structural sanity check（`@graph` が array で non-empty）
+2. Source の `graph.jsonld` を HF clone dir (`$HF_CLONE_BASE/<dataset>/`, default `~/MyAI_Lab/hf-datasets/<dataset>/`) にコピー
+3. HF clone 側で `jq -c '.["@graph"][]' graph.jsonld > graph.jsonl` を生成（HF Dataset Viewer 用 1 node 1 行 flatten）
+4. `hf upload <Owner/dataset> <hf-clone>/graph.jsonld graph.jsonld --repo-type dataset`
+5. `hf upload <Owner/dataset> <hf-clone>/graph.jsonl graph.jsonl --repo-type dataset`
+6. Success log + HF URL を表示
+
+Source repo は汚さない: `graph.jsonl` は HF clone 側でだけ生成・存在し、source の git tree には残らない。
+
+HF 側の `README.md`（dataset card）はこの sync の対象外。HF 用に customize されている（sibling dataset への link、mirror notice 等）ので、文面を変えるときは手動で `hf upload <Owner/dataset> <hf-clone>/README.md README.md --repo-type dataset`。
+
+Auth は `~/.cache/huggingface/token`（`hf auth login` で保存されたもの）を `hf` CLI が自動で読む。
+
+## Repo mapping
+
+各 project の GitHub repo と HF dataset の対応は project ごとに違う。Skill 本体には embed しない（portability 保持）。Mapping は project の `CLAUDE.md` または同等の場所に記録しておき、起動時にコピペで引数に渡す。
+
+shimo4228 系の現行 mapping は `~/MyAI_Lab/shimo4228/CLAUDE.md` の "HF Datasets mirror" section を参照。
+
+新規 project で記録を起こすときの format:
+
+```markdown
+| GitHub repo | HF dataset |
+|---|---|
+| `owner/project-a` | `Owner/project-a` |
+| `owner/hub` | `Owner/research-program-hub` |
+```
+
+## Related skills
+
+- [`jsonld-knowledge-graph`](../jsonld-knowledge-graph/SKILL.md) — `graph.jsonld` の **設計** layer。本 skill はその **operational mirror** に対応
+- [`release-doi`](../release-doi/SKILL.md) — Zenodo DOI release flow。Phase 4 末尾で本 skill を呼ぶ
+
+## Failure modes
+
+- **`graph.jsonld` not found in cwd** → project root に移動してから起動
+- **HF clone dir not found** → staging dir（`$HF_CLONE_BASE/<dataset>/`、HF 側の README.md と過去 snapshot の置き場）を作る。HF 側が空なら `mkdir -p $HF_CLONE_BASE/<dataset>/`、既存ファイルがあれば `hf download <Owner/dataset> --repo-type dataset --local-dir <hf-clone>` で初期 sync
+- **`@graph` not array / empty** → `graph.jsonld` の構造を見直す（`jsonld-knowledge-graph` skill 参照）
+- **`hf upload` 401 / 403**（未 login、または token が write scope を持たない）→ `hf auth whoami` で token 確認。write scope を持つ token を HF settings で発行し `hf auth login` で入れ直す
+- **HF dataset repo が存在しない (404)**（dataset 未作成の project）→ 先に `hf repo create <Owner/dataset> --repo-type dataset` で repo を作る

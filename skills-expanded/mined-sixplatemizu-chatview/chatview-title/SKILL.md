@@ -1,0 +1,136 @@
+---
+name: chatview-title
+description: Manage ChatView conversation titles for Codex, Claude Code, OpenCode, Pi, CodeBuddy, and WorkBuddy with the project title CLI. Use when the user wants to list or search conversations across providers, rename a title with native persistence, generate titles with an AI CLI, run or roll back batch title generation, or verify that UI and local CLI titles stay synchronized.
+---
+
+# ChatView Title
+
+## Overview
+
+Use ChatView's local title CLI to manage Codex, Claude Code, OpenCode, Pi, CodeBuddy, and WorkBuddy conversations (7 target providers; iFlow is read-only for list, rename/generate are blocked by its capability gate). The CLI and Web UI share the same persistence service:
+
+- Codex uses the native app-server naming path and verifies State DB plus `session_index.jsonl`.
+- Claude Code appends native `/rename` metadata and updates `sessions-index.json`.
+- OpenCode updates SQLite `session.title`.
+- Pi rewrites the `session_info` name row in its session JSONL.
+- CodeBuddy rewrites the `ai-title` row (main sessions only; `codebuddy:sub:*` titles follow the parent).
+- WorkBuddy updates SQLite `sessions.custom_title` (falls back to read-only when the column is missing).
+
+The target conversation provider and the AI title-generation CLI are independent. For example, OpenCode can generate a title for a Codex conversation, then ChatView persists it through Codex's native title path.
+
+Project path:
+
+```bash
+D:/DownloadFiles/code_area/chatview
+```
+
+## Quick Commands
+
+List recent conversations across all managed providers:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- list --provider all --scope all --limit 30
+```
+
+List one provider for the current shell directory exactly. Prefer `--cwd "$PWD"` when using `pnpm --dir`, because the shell expands `$PWD` before pnpm changes directory:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- list --provider claude-code --cwd "$PWD" --exact --limit 30
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- list --provider opencode --project "$PWD" --recursive --limit 30
+```
+
+Search by title, ID, project, provider, model provider, or badge:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- list --provider all --scope all --search "关键词" --limit 20
+```
+
+Rename conversations with native persistence:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- rename codex:<session-id> "新标题"
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- rename claude-code:<session-id> "新标题"
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- rename opencode:<session-id> "新标题"
+```
+
+Generate and persist a title. `--cli` chooses AI engines, not the target provider.
+`--model/--agent/--variant` pass through to the generator (`opencode` supports
+all three, `claude` maps variant to `--effort`, `codex` accepts model only):
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- generate claude-code:<session-id> --cli opencode,codex,claude --json
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- generate-batch --provider opencode --limit 15 --cli opencode --model opencode/exo-free --variant high --json --continue-on-error
+```
+
+Generate titles in batch for one project:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- generate-batch --provider all --cwd "$PWD" --exact --dry-run
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- generate-batch --provider all --cwd "$PWD" --exact --json --continue-on-error
+```
+
+Rollback a batch report:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- rollback --report ~/.backups/chatview-title/<date>/conversation-title-generate-batch-<timestamp>.json
+```
+
+Open interactive mode across all providers:
+
+```bash
+pnpm --silent --dir D:/DownloadFiles/code_area/chatview title -- --provider all
+```
+
+## Workflow
+
+1. List or search first when the conversation is ambiguous. With `--provider all`, use the returned full `codex:<id>`, `claude-code:<id>`, or `opencode:<id>`.
+2. Use `--cwd "$PWD" --exact` for one directory, or `--project <path> --recursive` when intentionally including subdirectories.
+3. `list` excludes internal title-generation sessions by default. Pass `--include-title-sessions` when auditing them.
+4. Use `rename` for manual changes. It writes through the target provider's native title implementation and verifies the persisted value.
+5. Run `generate-batch --dry-run` before a real batch to audit the exact target set.
+6. Use `generate` or `generate-batch` only when AI generation is requested. Report `usedCli`, attempts, duration, cleanup count, failures, and the backup/report path. Context uses only the latest ~10 non-tool messages (no head/middle samples).
+7. Use `rollback --report <path>` when generated titles need to be restored to the report's `oldTitle` values.
+8. When checking synchronization, compare the full conversation ID and provider. Do not infer that an AI engine named `opencode` means the target conversation is an OpenCode conversation.
+
+## Structured Output
+
+Use `--json` for `rename`, `generate`, `generate-batch`, and `rollback`. stdout contains exactly one JSON document; AI CLI diagnostics are written to stderr.
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "generate-batch",
+  "ok": false,
+  "summary": {
+    "total": 20,
+    "success": 19,
+    "failed": 1,
+    "skipped": 0
+  },
+  "entries": [
+    {
+      "id": "codex:<session-id>",
+      "oldTitle": "旧标题",
+      "newTitle": "新标题",
+      "status": "success",
+      "usedCli": "opencode",
+      "attempts": 1,
+      "cleanedTitleSessions": 1,
+      "durationMs": 1234
+    }
+  ],
+  "reportPath": "C:/Users/<user>/.backups/chatview-title/<date>/conversation-title-generate-batch-<timestamp>.json"
+}
+```
+
+Judge the result from `ok` and `summary`, then inspect each `entries[].status`. `dry-run`, unprocessed entries after an early stop, and rollback conflicts count as `skipped`. A completed command with any failed entry exits non-zero. Fatal errors produce the same versioned error shape on stderr and leave stdout empty.
+
+## AI Session Storage
+
+Fresh mode is the default. Codex runs with `--ephemeral`, Claude Code runs with `--no-session-persistence`, and OpenCode deletes the generated session by exact `sessionID` after the title is persisted. OpenCode stores real session, message, and part data globally in `~/.local/share/opencode/opencode.db`; `~/.chatview/ai-title-sessions/opencode` is only the isolated working directory and fixed-session marker location.
+
+## Constraints
+
+- The title CLI manages Codex, Claude Code, OpenCode, Pi, CodeBuddy, and WorkBuddy targets. iFlow is list-only: rename and AI generate are blocked with `iFlow 当前没有稳定的原生标题字段，已禁用修改标题`.
+- Do not edit provider JSONL or SQLite files directly unless the CLI fails and the user explicitly approves a repair.
+- Do not generate a title unless the user asks for AI generation; listing and manual rename are safe first steps.

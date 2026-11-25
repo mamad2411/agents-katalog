@@ -1,0 +1,152 @@
+---
+name: recommend
+description: Profile the current project and recommend a focused, domain-matched loadout of MCP servers, hooks, and skills, then apply only compatible items the user selects. Use when the user wants to set up or optimize a coding agent for a repository.
+---
+
+# Loadout — recommend and apply
+
+Your job: look at THIS project, figure out what it is, and hand the user a short, ranked
+**loadout** of agent extensions worth adding — then apply exactly the ones they choose.
+You are a recommender and installer, not a list-dumper. Never paste the whole catalog.
+
+## Step 0 — Load the catalog (3 tiers)
+
+Resolve the plugin root first from the directory two levels above this `SKILL.md`. A host-provided
+`PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` may be used when available, but the workflow must not depend on
+either variable. Refer to the resolved directory as `<plugin-root>` below.
+
+Read the curated (Tier 1) files fully — they're small and hand-verified:
+
+- `<plugin-root>/catalog/mcp.json`
+- `<plugin-root>/catalog/skills.json`
+- `<plugin-root>/catalog/hooks.json`
+- `<plugin-root>/catalog/domains.json`
+- `<plugin-root>/catalog/community.json` (Tier 3, small)
+
+Each item has `id`, `name`, `description`, `domains`, `signals`. MCP items carry a `config`, hook/setting
+items a `settings` object, skill items an `install` block.
+
+**Tier 2 (official marketplace) is large (`catalog/ecosystem.json`, ~280 entries) — do NOT read it whole.**
+After you know the project's signals (Step 1), `Grep` `ecosystem.json` for those signal tokens to pull only
+the handful of official plugins that match. Each is a `tier: "official"`, verified Anthropic-marketplace
+plugin installed with the `/plugin install <name>@claude-plugins-official` command in its `install.commands`.
+
+Tier meaning: **curated** = auto-apply safe; **official** = trusted, install via `/plugin`; **community**
+(Tier 3) = UNVERIFIED — only surface if the user asks to "discover"/see more, label it clearly, and never
+auto-apply it. Items with `"optIn": "token-saver"` are **never** in discover or the domain loadout — offer
+them only in the separate token-saver step (Step 3).
+
+## Step 1 — Profile the project
+
+Detect what the repo is. Be fast and evidence-based — do not ask the user things you can read:
+
+- **Languages / frameworks / package managers**: look for `package.json` (and its deps — react, next,
+  vue, svelte, express, nestjs, prisma…), `requirements.txt`, `pyproject.toml`, `go.mod`, `Cargo.toml`,
+  `pom.xml`, `Gemfile`, `pubspec.yaml`, `*.xcodeproj`, `build.gradle`.
+- **Infra / CI**: `Dockerfile`, `docker-compose*`, `.github/workflows`, `*.tf`, `k8s`/`helm`.
+- **Data/ML**: `*.ipynb`, `numpy`/`pandas`/`torch`/`tensorflow` in deps, `wandb`/`mlflow`.
+- **Research / academic**: `*.tex`, `*.bib`, `papers/` dir, `arxiv` in deps.
+- **Security surface**: auth/payment/crypto libs, presence of `.env`.
+- **What's already set up**: read existing `.mcp.json`, `.claude/settings.json`,
+  `.claude/settings.local.json`, `.codex/config.toml`, `.codex/hooks.json`, `CLAUDE.md`, and `AGENTS.md`.
+  **Never recommend something already installed.**
+
+Use Glob/Grep/Read. Keep it to a handful of targeted checks. Summarize the profile in 2–3 lines.
+
+## Step 2 — Match domains and build the loadout
+
+1. Score each domain in `domains.json` by how many of its `signals` appear in the profile. A domain
+   whose signal is `"always"` (i.e. `general`) is always in play as the baseline.
+2. Pick the 1–2 best-matching domains plus `general`.
+3. Union their `loadout` id lists. Rank items by: (a) strength of signal match against the project,
+   (b) curated (Tier 1) over official marketplace (Tier 2), (c) whether the item is broadly useful
+   (`signals` includes `"always"`), (d) not already installed.
+4. For Tier 2 official plugins: only include when signals are **specific** (e.g. `react`, `postgres`) —
+   never flood the list with generic `python`/`package.json` matches. Cap official picks at ~2 in the shortlist.
+5. Drop anything already present in the repo's config. Cap the recommendation at ~6–8 items so the
+   choice stays easy. Note (don't hide) anything you cut for length.
+
+## Step 3 — Present the loadout for selection
+
+First show a tight table so the user can decide informed — one row per item with these columns:
+
+| Item | Kind | What it does | Needs |
+| :-- | :-- | :-- | :-- |
+| name | MCP · official/community, hook, or skill | one plain-language line | a token / login, or "—" |
+
+Group by kind (MCP / Hooks & settings / Skills). Then use the host's available user-input UI with
+multi-select. If it has no multi-select UI, present a numbered list and ask for comma-separated numbers.
+**Every option must be self-explanatory** — a user should never have to guess what a checkbox means:
+
+- **label** = the item name.
+- **description** = `[kind · official/community] <one-line what it does>. <auth note>. Source: <homepage>` —
+  e.g. `[MCP · community] Drives a real browser to test/verify web UIs. No auth. Source: github.com/microsoft/playwright-mcp`,
+  or `[MCP · official] Read/write your Notion pages. Needs a Notion integration token. Source: …`.
+
+Put the strongest 2–3 picks first and mark the top one "(Recommended)". Always spell out auth/token needs
+in the option itself (e.g. "needs a Figma token", "needs a Stripe secret key", "OAuth on first use") so no
+one installs something and then hits a wall.
+
+### Token-saver opt-in (separate from the stack loadout)
+
+After the main loadout question, **always** offer token-saver skills in a **second**, separate
+user-input step — never mix them into the domain loadout table or the first multi-select.
+
+1. Read `community.json` for items with `"optIn": "token-saver"` (currently caveman).
+2. These are **not** stack recommendations — they change how verbose the agent is, not what tools the
+   project needs. Label them clearly: optional, unverified community, reduces output tokens.
+3. Use a single-select or yes/no question, e.g. "Add a token-saver skill (terser replies)?" with caveman
+   as the option. Default is **no** — user must opt in.
+4. Never auto-apply token-savers with the main loadout; never include them when the user says "apply all"
+   unless they explicitly pick the token-saver step.
+
+If a project signal is ambiguous (e.g. no clear framework), ask one short clarifying question about the
+project's domain before recommending — don't guess wildly.
+
+## Step 4 — Apply what they picked
+
+Apply each selected item by its kind. **Always show the exact change and confirm before writing.** Determine
+the active host from the plugin environment and configuration; if it is ambiguous, ask one concise question.
+Merge; never overwrite an existing file wholesale. Prefer project scope unless the user says otherwise.
+
+- **MCP items** → for Claude Code, merge `config` into `./.mcp.json` under `mcpServers.<id>`. For Codex,
+  merge into `./.codex/config.toml` under `[mcp_servers.<id>]`: use `command`/`args`/`env` for stdio and
+  `url` for Streamable HTTP. Create the file if absent.
+  If the item has `"auth": true` or an `env` placeholder like `<your-...-token>`, tell the user exactly
+  which token to fill in and where to get it — write the entry but flag the placeholder.
+- **Hook / setting items** → in Claude Code, deep-merge `settings` into `./.claude/settings.json`. In
+  Codex, merge hook entries into `./.codex/hooks.json`; skip Claude-only settings such as `statusLine`.
+  For hooks, append to the matching event array rather than replacing it. Surface each item's `note`
+  (dependencies like `jq`, or platform caveats) so the user isn't surprised.
+- **Skill items**: catalog install commands are Claude Code-specific unless the entry explicitly says
+  otherwise. Do not offer or run them in Codex merely because the Loadout plugin itself works there.
+  - `install.type: "builtin"` → nothing to install; tell the user the command to run (e.g. `/init`,
+    `/code-review`) and what it does.
+  - `install.type: "plugin"` → show the `install.commands` (e.g. `/plugin marketplace add …` then
+    `/plugin install …`) for the user to run. **If the active host is Claude Code and the user explicitly
+    asks you to install them**, use `claude plugin marketplace add <repo>` then
+    `claude plugin install <name>@<mp>` — but only for curated/official items, **never for community
+    (unverified) ones**. In other hosts, explain that the catalog command is not portable.
+  - `install.type: "manual"` / `reference` → give the `homepage` link.
+
+After applying, print a short receipt: what was written to which file, what tokens still need filling,
+and the exact next commands to run. Suggest `npx claude-loadout doctor` if any auth placeholders were
+written. Remind the user to restart the active host so new MCP servers and hooks load.
+
+## Other agents (Cursor, opencode, Gemini, OpenClaw)
+
+MCP servers are portable to these agents; skills and hooks are not currently applied to them.
+If the user wants the same MCP servers set up for another agent, tell them to run
+`npx claude-loadout --target <cursor|opencode|gemini|openclaw|all>` in the project — or, if asked,
+write that agent's config directly from the catalog's MCP `config` fields, using the correct file and shape:
+Cursor `.cursor/mcp.json` (`mcpServers`), Gemini
+`.gemini/settings.json` (`mcpServers`), opencode `opencode.json` (`mcp.NAME`, `type: local`, `command` array,
+`environment`), OpenClaw `~/.openclaw/openclaw.json` (`mcp.servers.NAME`). Never write skills/hooks to these.
+
+## Guardrails
+
+- Read config before writing it; produce a minimal, valid merge. If you can't safely merge, show the
+  snippet and let the user paste it.
+- Every install command you output must come from the catalog's `install`/`config` fields or official
+  Claude Code syntax — never invent package names or endpoints.
+- Recommend fewer, better. A 6-item loadout the user actually applies beats a 30-item dump they ignore.

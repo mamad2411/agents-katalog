@@ -1,0 +1,46 @@
+---
+name: tier-1-standard
+description: Tier-1 standard-change flow — one-line plan note, test-first, single agent, systematic debugging on failures. Use for normal feature work and bug fixes with clear requirements. Promote to the tier-2-risky flow if the same fix fails twice. Part of the tempo plugin.
+license: Apache-2.0
+user-invocable: true
+---
+
+# Tier 1 — standard change
+
+The whole flow is here; no other tempo skills are needed.
+
+**Plan note (one line, in your reply — not a file):** "Plan: <what changes, how
+verified>." Can't state it in one line? The task is tier 2 — switch to
+`tier-2-risky` and say so.
+
+## Test-first
+
+1. Write the smallest failing test that pins the new behavior or the bug. Run
+   it; watch it fail for the expected reason.
+2. Implement the minimal change that makes it pass.
+3. Run the full relevant test suite, not just the new test. All green before
+   claiming done. Rerun failing tests as you fix — but don't rerun the same
+   command just to view different output slices; quote what you need from
+   the run you have.
+
+## When something fails (systematic debugging)
+
+- Reproduce first; never fix what you haven't seen fail.
+- Read the actual error and the actual code path before editing again — root
+  cause, then fix.
+- Change one variable at a time; revert anything that didn't help before trying
+  the next idea. No shotgun fixes.
+
+## Done gate
+
+- tests written and passing; full suite run with output quoted
+- diff matches the plan note — nothing extra snuck in
+- one agent did the work; no subagent fan-out at this tier
+
+**Promotion:** a failure that could signal under-tiering (risk surface, hidden
+scope) — and the router is configured — gets the fail-once check:
+`scripts/triage-router.mjs --promote --task "<task>" --evidence "<what failed>"`;
+`status: "escalate"` promotes to tier 2 now, any other output means continue.
+Either way the backstop stands: the same approach failing twice (test runs,
+edit-revert cycles, debug dead ends) → promote to tier 2 in one line and follow
+`tier-2-risky` from there. Never attempt the same failing approach a third time.

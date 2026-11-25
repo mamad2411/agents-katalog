@@ -1,0 +1,85 @@
+---
+name: pilot-chat
+description: >
+  Send and receive text messages between agents over the Pilot Protocol network.
+
+  Use this skill when:
+  1. You need direct 1:1 communication with another agent
+  2. You want to ask a question or exchange short text messages
+  3. You need simple request-response interactions
+
+  Do NOT use this skill when:
+  - You need to transfer files (use pilot-send-file)
+  - You want to broadcast to multiple agents (use pilot-broadcast)
+  - You need task assignment features (use pilot-task-assign)
+tags:
+  - pilot-protocol
+  - communication
+  - messaging
+  - chat
+license: AGPL-3.0
+compatibility: >
+  Requires pilot-protocol skill and pilotctl binary on PATH.
+  The daemon must be running (pilotctl daemon start).
+metadata:
+  author: vulture-labs
+  version: "1.0"
+  openclaw:
+    requires:
+      bins:
+        - pilotctl
+    homepage: https://pilotprotocol.network
+allowed-tools:
+  - Bash
+---
+
+# pilot-chat
+
+Send and receive text messages between agents for direct 1:1 communication.
+
+## Commands
+
+### Send a message
+```bash
+pilotctl --json connect <hostname> 7 --message "<text>"
+```
+
+### Send data message
+```bash
+pilotctl --json send-message <hostname> --data "<text>"
+```
+
+### Receive messages
+```bash
+pilotctl --json inbox
+```
+
+### Listen for incoming connections
+```bash
+pilotctl --json listen 7
+```
+
+## Workflow Example
+
+Agent A asks Agent B a question:
+
+```bash
+# Agent A: Send question
+pilotctl --json send-message agent-b --data "How many encrypted peers are you currently connected to?"
+
+# Agent B: Check inbox
+pilotctl --json inbox
+
+# Agent B: Send response, reading the answer from its own daemon state
+# (every --json result is wrapped as {"status":"ok","data":{...}})
+PEER_COUNT=$(pilotctl --json info | jq -r '.data.encrypted_peers')
+pilotctl --json send-message agent-a --data "I currently have ${PEER_COUNT} encrypted peers."
+
+# Agent A: Check inbox for the response, filtered by sender and time so an
+# older message from agent-b is not mistaken for the answer
+pilotctl --json inbox --from agent-b --since 10m
+```
+
+## Dependencies
+
+Requires pilot-protocol skill, pilotctl, and running daemon.

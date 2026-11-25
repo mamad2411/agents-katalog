@@ -1,0 +1,163 @@
+---
+name: organisational-dysfunction
+description: Diagnose organisational and team dysfunction as a problem of structure rather than people, using open sociotechnical systems theory. Use whenever someone is grappling with org design, team autonomy, ways of working and everyday rituals (standups, retros, reviews), incentives, leadership, or a stalled agile/change transformation — especially when symptoms are being blamed on individuals, mindset, or "communication".
+---
+
+# Organisational Dysfunction
+
+Approach this as an experienced organisational designer and sociotechnical systems practitioner — someone who has watched the same dysfunctions recur across many organisations and has learned to look past the presenting complaint to the structure beneath it. Assume the person asking is usually *inside* the system they're describing, and half-expects to be told it's their fault, their team's mindset, or a "communication problem". Your job is to give a more accurate and more useful read: name the dysfunction, explain *why the structure produces it*, and offer a realistic next move — both the real fix and what they can do from where they sit.
+
+Hold these defaults as you work:
+
+- **The problem is almost never the people, and rarely the process — it's the design of the system they work in.** Disengagement, "resistance", and passivity are usually rational responses to that design, not character flaws.
+- **Be honest about altitude.** Separate what genuinely needs authority above the person from what they can change locally. Don't hand someone a CEO's to-do list and call it advice.
+- **Diagnose, don't sympathise.** Be accurate about how the dysfunction feels, then move quickly to the structural *why* and concrete moves. People come for a sharper read, not validation.
+- **Dysfunctions interlock.** Follow the "Related" links and show the pattern rather than treating one complaint in isolation.
+
+This skill is grounded in **open sociotechnical systems theory (OST)** and synthesised from Trond Hjorteland's *"Organisational Dysfunction of the Day"* series (the basis for his 2026 book). The 97 reference files describe individual dysfunctions; this file holds the shared lens they all draw on — read it, then route to the specific one.
+
+## The core lens: DP1 vs DP2
+
+Almost every dysfunction in this library is the same underlying mistake wearing a different costume: **a good idea (autonomy, agility, empowerment, learning, measurement) is applied inside a structure that cannot support it.** OST gives us a precise name for the two structures.
+
+- **Design Principle 1 (DP1) — redundancy of parts.** Responsibility for coordinating and controlling work sits *one level above* where the work is done. The organisation is built from interchangeable individuals each doing a fragment; a manager integrates them. This is the familiar hierarchy / command-and-control / "bureaucracy" shape. It is good at predictable, decomposable work and bad at adaptation.
+- **Design Principle 2 (DP2) — redundancy of functions.** Responsibility for coordinating and controlling work sits *with the people doing it*. Multi-skilled, self-managing teams own a whole piece of work, set their own goals, and coordinate peer-to-peer. This is what "agile", "autonomy", and "empowerment" actually require to function.
+
+**The diagnostic move:** when you hear a complaint, ask *"is a DP2 idea being run on a DP1 structure?"* If yes, the symptom is the friction between the two — and the fix is structural (move authority and coordination to where the work happens), **not** a better ritual, a motivational push, or "fixing the people". Treating people or process as the problem when the structure is the cause is itself one of the most common dysfunctions here (see *Fixing people*, *Fixing the process*).
+
+A few corollaries that recur:
+- **Symptoms are downstream of structure.** Metrics, morale, and behaviour are signals, not levers. Chasing the signal (Goodhart's Law) makes it a worse signal.
+- **Don't fix the person, change the conditions.** Disengagement, passivity, and "resistance" are usually rational responses to a DP1 environment, not character flaws.
+- **Half a transformation is often worse than none.** Giving teams DP2 responsibilities while keeping the DP1 scaffolding around them produces the worst frictions (e.g. *The frozen middle*).
+
+## How to use this skill
+
+1. **Name the dysfunction.** Match what the user is describing to one or more entries in the index below. Several may apply — that is normal.
+2. **Read the reference file(s)** for the matched dysfunction(s) before answering. Each is short and gives: how it shows up, the sociotechnical diagnosis, and concrete moves.
+3. **Apply the DP1/DP2 lens** to explain why the problem persists, then give remedies at the right altitude (see the defaults above).
+4. **Connect related dysfunctions** via the "Related" links when it helps reveal the bigger pattern. A link written `[[the-frozen-middle]]` refers to the reference file `references/<number>-the-frozen-middle.md` — find its number in the index above.
+
+If what the user describes doesn't match any entry, say so and reason from the core lens directly rather than forcing a fit.
+
+## Attribution
+
+These references synthesise and paraphrase Trond Hjorteland's publicly posted series through the OST framing he uses; they are not verbatim copies. Point users to the original series and his forthcoming book for his own words. Source list: the "Organisational Dysfunction of the Day — full list" article on LinkedIn.
+
+## Index of dysfunctions
+
+Grouped by theme for navigation. Each entry: number, name, a recognition cue, and the reference file to read.
+
+### Rituals & ceremonies (agile theatre)
+- `#1` **The daily status report** — standups feel like a pointless drag; people report *up*, not to each other. → `references/01-the-daily-status-report.md`
+- `#3` **The powerless retrospective** — retros surface the same issues forever because the team can't change what actually causes them. → `references/03-the-powerless-retrospective.md`
+- `#4` **Passivity in team workshops** — people sit silent and wait to be told; facilitation can't fix it. → `references/04-passivity-in-team-workshops.md`
+- `#5` **Forming–storming–norming–performing** — using Tuckman to explain/await team maturity instead of changing structure. → `references/05-forming-storming-norming-performing.md`
+- `#11` **Workshops not working** — workshops produce sticky notes and no change. → `references/11-workshops-not-working.md`
+- `#28` **Involvement theatre** — people are "consulted" on decisions already made. → `references/28-involvement-theatre.md`
+- `#60` **The output nobody owned** — workshop outputs get curated out of sight, so the group can't trust or own the result. → `references/60-the-output-nobody-owned.md`
+- `#62` **The agenda that sabotaged itself** — a workshop's agenda silently switches design principle (keynote → group work → leader panel), so the room turns. → `references/62-the-agenda-that-sabotaged-itself.md`
+- `#65` **The facilitator's toolkit** — a flawlessly-run workshop leaves people politely disengaged, because the tools themselves say the facilitator owns it. → `references/65-the-facilitators-toolkit.md`
+- `#75` **Divided for efficiency** — a workshop splits into parallel groups to cover more ground, and afterwards nobody can recall what the other tables decided or why. → `references/75-divided-for-efficiency.md`
+- `#82` **The wrong people in the room** — the workshop on how work flows is staffed from the org chart, so the people who live the handoffs aren't there. → `references/82-the-wrong-people-in-the-room.md`
+- `#91` **Endless alignment meetings** — the calendar fills with syncs, check-ins and steering updates, each defensible alone, because the boundaries make coordination a manual job. → `references/91-endless-alignment-meetings.md`
+
+### Metrics, money & measurement
+- `#23` **The error factory** — defects treated as individual mistakes to be counted and punished. → `references/23-the-error-factory.md`
+- `#24` **DORA, the wrong way round** — DORA metrics turned into targets and chased via dashboards. → `references/24-dora-the-wrong-way-round.md`
+- `#18` **OKRs imposed from above** — cascaded OKRs dressed as team ownership. → `references/18-okrs-imposed-from-above.md`
+- `#41` **The performance review** — individual appraisal inside work that is actually collective. → `references/41-the-performance-review.md`
+- `#54` **Pay and reward** — individual bonuses/ratings quietly dismantle the team you built. → `references/54-pay-and-reward.md`
+- `#51` **Budgets are bureaucracy** — annual budgeting locks in plans the org can't adapt. → `references/51-budgets-are-bureaucracy.md`
+- `#94` **The efficiency drive** — a restructuring cuts by visible individual output, removing the connective work that held the whole together and leaving the org measurably less capable. → `references/94-the-efficiency-drive.md`
+
+### Teams & collaboration
+- `#7` **Individualism** — a "team" that is really individuals optimising their own slice. → `references/07-individualism.md`
+- `#9` **Team leads** — a designated lead re-creates the manager-above-the-work pattern. → `references/09-team-leads.md`
+- `#31` **Working alone together** — co-located/Slacked but never actually collaborating. → `references/31-working-alone-together.md`
+- `#32` **The collaboration that isn't** — handoffs and sign-offs mistaken for collaboration. → `references/32-the-collaboration-that-isnt.md`
+- `#49` **The pair that runs everything** — two people become an informal bottleneck of control. → `references/49-the-pair-that-runs-everything.md`
+- `#46` **Them and us** — structural divides (dev/ops, business/IT) reproduce as tribal conflict. → `references/46-them-and-us.md`
+- `#47` **Out of sight, out of sync** — distributed teams drift because coordination was never designed. → `references/47-out-of-sight-out-of-sync.md`
+- `#64` **The code review that became personal** — a recurring two-person conflict read as a personality clash, produced by a structure that makes critique a status contest. → `references/64-the-code-review-that-became-personal.md`
+- `#67` **The IT-business divide** — shared ceremonies and embedded engineers, but roadmap, technical decisions and budgets still sit apart, so only the CEO integrates them. → `references/67-the-it-business-divide.md`
+- `#72` **Hired from above** — a person is added to a late team without the team deciding, and the team gets slower, because membership is the one boundary it doesn't control. → `references/72-hired-from-above.md`
+- `#80` **When the glue leaves** — the person who quietly held the team together resigns, and the org replaces them with a layer above instead of capacity within. → `references/80-when-the-glue-leaves.md`
+- `#89` **We need a resource** — a person is staffed by a label on a profile and an open slot in a calendar, so the expertise the assignment actually needed never reaches it. → `references/89-we-need-a-resource.md`
+- `#90` **Somebody has to chase it** — the topology gave teams control but never designed the negotiation between them, so cross-team work only moves when one person keeps asking. → `references/90-somebody-has-to-chase-it.md`
+- `#96` **Nobody wants to own this** — a service many teams depend on has no owner, because the work was sliced into boxes and the shared thing fell between them; the boundaries are in the wrong place. → `references/96-nobody-wants-to-own-this.md`
+- `#97` **The org chart nobody uses** — the chart groups people by function while the work runs through an informal network that crosses it, so the formal and working structures are two different organisations. → `references/97-the-org-chart-nobody-uses.md`
+
+### Leadership, power & decisions
+- `#13` **HiPPOs and dungeon masters** — the highest-paid opinion (or a gatekeeper) decides. → `references/13-hippos-and-dungeon-masters.md`
+- `#15` **The frozen middle** — middle managers stall everything after a half-done transformation. → `references/15-the-frozen-middle.md`
+- `#16` **Fear of making decisions** — decisions escalate endlessly because no one is allowed to own them. → `references/16-fear-of-making-decisions.md`
+- `#26` **Professional leadership** — "leadership as a profession" detached from the actual work. → `references/26-professional-leadership.md`
+- `#27` **Tyranny of the majority** — voting/consensus used where it suppresses dissent and expertise. → `references/27-tyranny-of-the-majority.md`
+- `#36` **Empowerment** — "we empower you" while keeping all the real authority. → `references/36-empowerment.md`
+- `#44` **Change agents of the status quo** — change roles that exist to keep things the same. → `references/44-change-agents-of-the-status-quo.md`
+- `#63` **The leadership team that isn't** — a leadership "team" that is really serial reporting to the CEO, with no goals none of them can reach alone. → `references/63-the-leadership-team-that-isnt.md`
+- `#68` **The bureaucracy that became the work** — reporting, governance and approvals crowd out the actual task, and the apparatus grows regardless of the work. → `references/68-the-bureaucracy-that-became-the-work.md`
+- `#69` **Playing politics** — getting things done runs on who you know and who owes whom, because authority is concentrated and resources are won, not allocated. → `references/69-playing-politics.md`
+- `#70` **The blind decision** — a senior sign-off on a choice the approver never had the knowledge to make, because authority rose and the knowledge stayed put. → `references/70-the-blind-decision.md`
+- `#73` **What the war room proves** — incident mode grants the team full authority and works brilliantly; the same decision takes three days once nothing is on fire. → `references/73-what-the-war-room-proves.md`
+- `#74` **Matrices** — two reporting lines with equal claim on the same hours, so the person at the intersection absorbs a conflict neither manager has to resolve. → `references/74-matrices.md`
+- `#78` **Back to the office** — a blanket return-to-office mandate that answers no nameable coordination failure, because what remote removed was the stage on which authority is performed. → `references/78-back-to-the-office.md`
+- `#81` **Loose in name only** — "tight–loose–tight" autonomy where the loose middle is a corridor: the team picks the method, someone above still sets the objective and grades the result. → `references/81-loose-in-name-only.md`
+- `#86` **Removing management** — a layer is deleted and teams declared self-managing, so the coordination nobody redesigned reappears as informal leaders without mandate. → `references/86-removing-management.md`
+- `#88` **The gates they removed** — CAB, architecture review and security sign-off are dropped for a product model, but the authority is never relocated, so the decisions belong to no one. → `references/88-the-gates-they-removed.md`
+
+### Disengagement & culture
+- `#8` **Quiet quitting** — people do the minimum; read as laziness, caused by the system. → `references/08-quiet-quitting.md`
+- `#17` **Psychological safety as a patch** — "psych safety" workshops over a structure that punishes candour. → `references/17-psychological-safety-as-a-patch.md`
+- `#22` **Fixing people** — sending individuals on courses to fix a structural problem. → `references/22-fixing-people.md`
+- `#25` **Burned by design** — burnout produced by the operating model, then blamed on resilience. → `references/25-burned-by-design.md`
+- `#34` **The Sunday email** — always-on expectations normalised from the top. → `references/34-the-sunday-email.md`
+- `#48` **It's just a job** — meaning stripped out, so people withdraw discretionary effort. → `references/48-its-just-a-job.md`
+- `#53` **Designed to undermine** — structures that systematically erode trust and agency. → `references/53-designed-to-undermine.md`
+- `#56` **Permanent urgency** — everything is a top priority, so nothing can be planned or owned. → `references/56-permanent-urgency.md`
+- `#83` **The wellness programme** — EAP, app and mindfulness sessions bolted onto a DP1 structure; strain is treated, the thing producing it is not. → `references/83-the-wellness-programme.md`
+- `#95` **The talent myth** — hiring for motivation and perks fail to move engagement, because motivation is an output of job and group design, not a trait to select for. → `references/95-the-talent-myth.md`
+
+### Strategy, direction & environment
+- `#10` **The company's strategy is unclear** — teams can't self-direct without a shared, real purpose. → `references/10-the-companys-strategy-is-unclear.md`
+- `#14` **Local optimisations** — each unit improves its own number, the whole gets worse. → `references/14-local-optimisations.md`
+- `#20` **Built for yesterday** — structure optimised for a context that no longer exists. → `references/20-built-for-yesterday.md`
+- `#30` **The external verdict** — outsourcing judgement to analysts/consultants/benchmarks. → `references/30-the-external-verdict.md`
+- `#33` **The customer we never met** — building for a customer no one in the team has contact with. → `references/33-the-customer-we-never-met.md`
+- `#37` **Outsourcing the future** — handing core capability/strategy to vendors. → `references/37-outsourcing-the-future.md`
+- `#57` **The market we think we shape** — mistaking internal narrative for the actual environment. → `references/57-the-market-we-think-we-shape.md`
+- `#58` **The short-termism machine** — quarterly pressure crowds out adaptation and learning. → `references/58-the-short-termism-machine.md`
+- `#71` **The values on the wall** — five laminated corporate values nobody recalls, standing in for the shared ideals people already hold. → `references/71-the-values-on-the-wall.md`
+- `#76` **We transformed, our suppliers didn't** — the internal redesign worked, and then every request that leaves the building hits a vendor backlog or a ticket tier. → `references/76-we-transformed-our-suppliers-didnt.md`
+- `#79` **The adaptation plan nobody owns** — AI assistants scaled everywhere while the green-coding standards predate them, so the consequences belong to no one. → `references/79-the-adaptation-plan-nobody-owns.md`
+- `#85` **The enterprise architect** — a technically correct target operating model that the organisation outgrows within a year, because a diagram is a closed system and an organisation is not. → `references/85-the-enterprise-architect.md`
+
+### Agile, transformation & change
+- `#6` **Analysis paralysis** — endless analysis because no one is safe to decide and act. → `references/06-analysis-paralysis.md`
+- `#19` **The agile terrarium** — a protected "agile" pocket inside an unchanged org. → `references/19-the-agile-terrarium.md`
+- `#29` **Team Topologies, the wrong way round** — copying team shapes without changing authority. → `references/29-team-topologies-the-wrong-way-round.md`
+- `#35` **People resist change** — "resistance" reframed as rational response to bad change. → `references/35-people-resist-change.md`
+- `#38` **The product owner trap** — a single PO becomes a proxy boss / single point of control. → `references/38-the-product-owner-trap.md`
+- `#39` **Doing the wrong thing right** — flawless delivery of work that shouldn't be done. → `references/39-doing-the-wrong-thing-right.md`
+- `#40` **The project in product clothing** — "product teams" still run as fixed-scope projects. → `references/40-the-project-in-product-clothing.md`
+- `#42` **The pilot trap** — successful pilots that can never scale because the system didn't change. → `references/42-the-pilot-trap.md`
+- `#45` **Fixing the process** — adding process to compensate for a structural fault. → `references/45-fixing-the-process.md`
+- `#50` **The agile scaling trap** — scaling frameworks (SAFe etc.) re-impose DP1 at scale. → `references/50-the-agile-scaling-trap.md`
+- `#61` **Rearranging the furniture** — job-enrichment initiatives that improve individual roles without changing who designs the work. → `references/61-rearranging-the-furniture.md`
+- `#77` **Becoming Teal** — adopting Teal's roles and advice processes while failure is explained by readiness rather than by where control still sits. → `references/77-becoming-teal.md`
+- `#92` **The change they stopped believing in** — the fourth transformation in seven years meets quiet compliance, because each round changed the vocabulary and never the design principle, and the teams have noticed. → `references/92-the-change-they-stopped-believing-in.md`
+- `#93` **Innovation theatre** — the hackathon runs as a self-managing team for a weekend, then its winning ideas vanish into a structure that keeps design authority above the work. → `references/93-innovation-theatre.md`
+
+### AI
+- `#21` **Deploying AI into a broken system** — AI amplifies a dysfunctional structure instead of fixing it. → `references/21-deploying-ai-into-a-broken-system.md`
+- `#43` **The AI we cannot talk about** — shadow/anxious AI use no one will discuss openly. → `references/43-the-ai-we-cannot-talk-about.md`
+- `#84` **Deskilled by AI** — the assistant lands on roles already narrowed to a fragment, completing a deskilling the job design began years earlier. → `references/84-deskilled-by-ai.md`
+
+### Communication, knowledge & growth
+- `#2` **Passing the buck** — accountability bounces around because ownership is fragmented. → `references/02-passing-the-buck.md`
+- `#12` **Communication problems** — "communication" blamed for what is a structural disconnect. → `references/12-communication-problems.md`
+- `#52` **Career paths** — advancement means leaving the work, draining teams of mastery. → `references/52-career-paths.md`
+- `#55` **The learning organisation that doesn't learn** — learning rituals that never change how work is done. → `references/55-the-learning-organisation-that-doesnt-learn.md`
+- `#59` **The corridor conversation** — real decisions happen informally, outside the visible system. → `references/59-the-corridor-conversation.md`
+- `#66` **Everything is fine** — status stays green all the way up because each hop softens bad news and the level above can't act on it anyway. → `references/66-everything-is-fine.md`
+- `#87` **It took an outsider to say it** — the point raised internally for two years lands the moment a consultant says it, because the channel weights the sender's position, not the content. → `references/87-it-took-an-outsider-to-say-it.md`

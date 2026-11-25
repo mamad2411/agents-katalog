@@ -1,0 +1,462 @@
+---
+name: vibey-releasing
+description: The release flow — merge train into develop, vibey-gh promote to main, vibey-engine.yml and krypton-app.yml publishing (develop to TestPyPI, main to PyPI), github-release.yml tags, and release-surfaces.yml docs, book and paper. Read before cutting a release.
+allowed-tools: Read Bash
+---
+
+# vibey releasing
+
+`vibey-gh` owns the release (ADR-0028). There is no release-please step and no
+hand-run publish. The version is *derived*, not chosen: `vibey-gh version` reads
+what changed against `[version] content_paths` and `code_paths` in
+`.vibey-gh.toml` and answers major, minor, patch, or nothing. `vibey-gh promote`
+applies that answer. The changelog is written as fragments, one file per change,
+and the release commit folds them in.
+
+Every workflow on the release path installs the tree's own `vibey-gh` from the
+declared `[install] self_source = "src/vibey_tools/gh"`, and falls back to
+installing `vibey-engine` from PyPI -- which carries `vibey-gh` (ADR-0037) -- only when
+that path does not hold the package. A change to `vibey-gh` therefore changes the
+release path on the next push.
+
+## Where a release goes
+
+PyPI is not the finish line. These are command-line applications, and someone
+installing a CLI reaches for `brew install` or `winget install` -- that it is
+written in Python is an implementation detail they should not have to care about.
+
+Publish to every registry that can carry it, and treat the channel as part of
+shipping rather than a follow-up. Every packaging definition -- formula, PKGBUILD,
+snapcraft.yaml, nuspec, winget manifest -- is to live in this repository and be
+published by automation, never hand-edited in a tap (ADR-0018, ADR-0019,
+sub-doctrine 2.b). A stale formula is worse than no formula: it installs an old
+version silently.
+
+**As of 2026-09-15 none of those packaging definitions exist yet.** The channels
+this repository publishes today are:
+
+- `vibey-engine` on PyPI (from `main`) and on TestPyPI (from `develop`) — `vibey-engine.yml`.
+  It carries the whole engine family (ADR-0037, renamed by ADR-0069)
+- `krypton-app`, the apps and the `krypton` command, on the same two channels —
+  `krypton-app.yml`. Exactly these two packages publish (sub-doctrine 9.e, ADR-0069);
+  no `vibey` package does
+- An OCI release bundle of the exact wheel and sdist at
+  `ghcr.io/<owner>/<repo>/python` — `release-surfaces.yml`
+- The documentation site, book and paper — `release-surfaces.yml` (below)
+- A Git tag and GitHub Release per released version — `github-release.yml`
+
+The container image (`deploy/docker/Dockerfile`) and Helm chart
+(`deploy/helm/vibey`) are defined and tested in CI (`image`, `cluster-smoke`) but
+not pushed to a registry by any workflow. ADR-0019 is the backlog for the rest.
+
+Note what publishing does and does not mean per target. `dpkg`, `rpm` and
+`apk-tools` are formats, not registries. `podman` wants an OCI image, which this
+repository already builds. npm, Maven, Cargo and the rest cannot carry a Python
+library at all -- only a wrapper that fetches the CLI, which is a different
+promise and has to say so. See ADR-0019 for the grouping and the order.
+
+The workspace tenants (`claudeloop`, `codexloop`,
+`qwenloop` — which ships the `gptossloop` and `qwenloop` scripts — `vibey-gh`,
+`vibey-skills`, `vibey-bootstrap`) are no longer separate
+PyPI distributions. Their source lives in this repository (ADR-0021) and they ship
+inside the `vibey-engine` wheel (ADR-0037, ADR-0069), so `vibey-engine.yml` publishes
+`vibey-engine` and that one package is the whole engine family. A tenant's own version in its
+`pyproject.toml` is an in-tree marker, not a release.
+
+## Conventional Commits (enforced)
+
+Every commit message must follow Conventional Commits format. A commit-msg hook
+rejects anything else:
+
+```
+feat: add support for GitHub Actions deployment
+fix: prevent race condition in lease renewal
+docs: update handoff protocol spec
+chore: bump dependencies
+test: add property test for rotation fairness
+```
+
+**Scopes are optional** but recommended for large changes:
+
+```
+feat(domain): add media provider round-robin cursor
+fix(cli): correct --cwd handling in run command
+```
+
+**Breaking changes** carry a `!` or a `BREAKING CHANGE:` footer:
+
+```
+feat!: require Python 3.12+
+
+BREAKING CHANGE: Python 3.12 is now required.
+```
+
+**Why this matters:** commit messages reach the version in exactly one way —
+a breaking marker — and nothing else about them is read. The minor/patch/nothing
+part of the answer is derived from *which paths changed*, never from commit types.
+Conventional Commits are still enforced for a legible history and because the
+provenance gate reads every commit in a range — which is why the automation's own
+release commit is `chore(release): x.y.z`.
+
+A breaking change **is** derived, and this is the one place commit text reaches
+the version: a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer, or a `!` before the
+colon in a subject, anywhere in the released range escalates the answer to
+**major**. `vibey-gh` reads that marker with the same parser it uses when it
+flattens a branch, so the commit it writes and the version it derives can never
+disagree. Nothing else about the message is read: the minor/patch/nothing part of
+the answer is still derived from *which paths changed*.
+
+While `[version] max_major` is set in `.vibey-gh.toml`, a break that would carry the
+major past it is a **minor** instead, and the reason says "capped". This repository
+sets `max_major = 0`, so it stays pre-1.0: `0.3.0` plus a break is `0.4.0`, never
+`1.0.0`. Nothing is derived from or raised to a version above the cap: a version
+already over it is refused (renumber it, or raise the cap), a staged version at or
+under it beside a released one over it is kept as a renumber, and `promote` and the
+merge train refuse a promotion that would publish a version over it. Lifting the cap
+(deleting the key) is the operator's decision to go to 1.0.
+
+## How the version is derived
+
+`uv run vibey-gh version --since origin/main --explain` prints the answer and why.
+It compares `origin/main` to `HEAD`, ignores files whose only change is the
+provenance header, and then:
+
+- any changed file under `[version] content_paths` → **minor**
+- otherwise, any changed file under `[version] code_paths` → **patch**
+- otherwise (docs, workflows, tooling only) → **nothing to release**
+- and then, only if one of the first two matched, a breaking marker anywhere in
+  the range escalates that answer to **major** — or to **minor** while
+  `[version] max_major` caps it (see above)
+
+The order is the implementation's, not a presentation choice. A marker never
+*creates* a release: `docs!: …` still answers "nothing to release", because a
+break is a promise about an interface somebody installed and a range that ships
+nothing has no interface to break.
+
+Since the whole tree ships as one package, `vibey-engine` (ADR-0037, ADR-0069), `content_paths` must
+cover every prefix whose content reaches an installed user: `src/vibey/`, each
+runner's and tool's package root, and the skills marketplace tree. It deliberately
+does *not* cover a tenant's `docs/` or `tests/`, which change nothing a user
+installs. `code_paths` must include `pyproject.toml`, because the root manifest now
+decides what ships, and `clients/`, because every release attaches the clients'
+builds, so a change to the clients alone derives a patch (#1348). Left narrower than that, a release that touches only tenants
+classifies as "nothing to release" and republishes the current version into
+`skip-existing` — a green run that publishes nothing. The literal prefixes are in
+`.vibey-gh.toml`; read them there rather than from memory, because `startswith`
+matching cannot express a glob and the list is spelled out. If the version on `HEAD` already differs from `origin/main`, the
+derivation leaves it alone.
+
+`[version] files` lists what a bump writes: `pyproject.toml` and
+`src/vibey/__init__.py`. `vibey-gh`'s `apply_version` also re-runs `uv lock` when
+`uv.lock` is present, because the lock carries vibey's own version and CI's
+`uv-lock` job runs `uv lock --check` before the other jobs.
+
+## Release workflow
+
+1. **PRs land on `develop` through the merge train.** `pr-evaluate.yml`
+   re-evaluates a PR each time `CI` or `Provenance` completes, and dispatches
+   `pr-review.yml` when a review is called for;
+   `merge-train.yml` runs each time a `PR review` run completes, deliberately
+   whatever its conclusion (with a weekly Monday cron and manual dispatch as
+   backstops); `vibey-gh merge-train` merges only PRs whose head carries a
+   successful `PR automation / gate`. PRs into
+   `develop` are squash-merged. Never implement on `main`.
+2. **Every push to `develop` publishes a dev build.** `vibey-engine.yml` stamps
+   `x.y.z.devN` (`vibey-gh version --dev <run number> --apply`), checks that the
+   project is named `vibey-engine` (pyproject.toml says so itself; nothing is renamed
+   in the runner), publishes to TestPyPI via OIDC trusted publishing (environment
+   `testpypi`), and `verify-testpypi` installs that exact version and runs
+   `vibey --version`. `krypton-app.yml` does the same for `clients/krypton-app`
+   whenever that tree changes, and its verify job runs `krypton --help`.
+3. **Promotion is automatic.** `promote-to-main.yml` runs after the merge train
+   completes (weekly Monday cron backstop; manual dispatch with `dry_run`). It runs
+   `vibey-gh promote`, which:
+   - compares `develop` and `main` **by tree content** and stops if they are identical;
+   - derives the version on `develop` and, when a bump is due, commits
+     `chore(release): x.y.z` (version files plus `uv.lock`, and the changelog:
+     fragments folded in and deleted, `## [Unreleased]` cut to `## [x.y.z] (date)`)
+     and pushes it to `develop`, raising if the push fails;
+   - opens or reuses the `develop` → `main` promotion PR, titled
+     `chore(release): <version>`.
+
+   The PR-automation gate and merge train then merge the promotion PR once its
+   checks pass, with **rebase** (`promote.DEFAULT_METHOD = "rebase"`; the merge
+   train uses rebase for any PR based on `main`). Because `main` is rebase-merged,
+   its commits are rewritten copies with new SHAs.
+4. **Every push to `main` publishes to PyPI.** `vibey-engine.yml` builds the wheel
+   and sdist and publishes `vibey-engine` to PyPI via OIDC trusted publishing
+   (environment `pypi`, `skip-existing: true`); `krypton-app.yml` publishes
+   `krypton-app` the same way.
+5. **`main` realigns `develop`.** The `realign` job runs `vibey-gh realign`, which
+   converges `develop` onto `main` only when the two trees are identical. It skips
+   with a notice when `AUTOMERGE_TOKEN` is not set — harmless, since promotion
+   compares branches by content.
+6. **After a successful Release run on `main`**, `github-release.yml` runs
+   `vibey-gh github-release --target <sha>`: it creates the immutable tag
+   `<tag_prefix><version>` (`[github_release] tag_prefix` is `vibey-v` here, so
+   `vibey-v3.3.0`; the default is `v`) and the GitHub Release, and never moves an
+   existing tag. A manual dispatch must prove the
+   target SHA is on `main` and has a successful Release run.
+7. **After a successful Release run on `develop` or `main`**,
+   `release-surfaces.yml` publishes the documentation surfaces and the OCI bundle
+   (see "The workflows").
+8. **After a successful Release run on `main`**, `release-binaries.yml` builds every
+   client target `scripts/release_binaries.toml` declares, writes `SHA256SUMS`,
+   attests each file's build provenance and attaches them to that GitHub Release
+   (`docs/guides/downloads.md` lists them); `openvsx.yml` publishes the VS Code
+   extension to Open VSX. Both are workflows of their own, so neither can fail the
+   release.
+
+To preview what the next promotion will do, run
+`uv run vibey-gh version --since origin/main --explain`, or dispatch
+`promote-to-main.yml` with `dry_run`.
+
+A ratified change to the doctrine canon is also a release event: Article V.4 of
+the constitution (`src/vibey_tools/gh/docs/constitution.md`) requires every prior
+release to be yanked. See the `vibey-architecture` skill.
+
+## The changelog
+
+**Never edit `CHANGELOG.md` by hand.** Every PR editing the same
+`## [Unreleased]` lines made concurrent PRs conflict on every merge, and the old
+`merge=union` attribute never helped on GitHub, whose mergeability does not run
+it. The changelog is written as fragments instead (`[changelog]` in
+`.vibey-gh.toml`): the PR that lands a user-visible change adds one new file,
+`changelog.d/<slug>.<type>.md` beside the changelog it belongs to
+(`src/vibey_tools/gh/changelog.d/` for vibey-gh's own), holding the entry exactly
+as it should read, bullet included:
+
+```markdown
+* **gh:** what changed, for whom, and why it matters
+  ([#1303](https://github.com/the-vibey-project/vibey/pull/1303)).
+```
+
+The slug is letters, digits, `-` and `_` (the PR number or a short name); the
+type is one of `breaking`, `feature`, `fix`, `perf`, `refactor`, `removed`,
+`docs`, `chore`, which files it under `### BREAKING CHANGES`, `### Features`,
+`### Bug Fixes` and so on. No heading inside a fragment.
+
+`vibey-gh promote` folds every fragment into `## [Unreleased]` under its heading
+in the release commit, deletes it, and cuts the section to `## [x.y.z] (date)`
+with a fresh `## [Unreleased]` above (vibey-gh's own changelog is folded but never
+cut: its releases are the GitHub Releases). No hand step. `uv run vibey-gh
+changelog assemble` does the fold alone, idempotently, if you want to preview it.
+
+The `Changelog fragment` check (`changelog.yml`) refuses a PR into `develop` that
+changes a shipped path (`[changelog] require_for`) without adding a fragment, adds
+a malformed one, or edits an unreleased section directly. Label the PR
+`no-changelog` when no reader of the changelog would miss the change; the label
+never excuses a malformed fragment or a hand edit. The check creates the label
+itself (`vibey-gh changelog ensure-label`), so it always exists.
+
+Entries 0.2.0 through 0.6.0 were reconstructed from the release commits on
+2026-09-15; a released version without an entry is a documentation bug.
+
+## Documentation surfaces
+
+The documentation ships with every release channel, so treat it as release
+content:
+
+- **Site:** `properdocs.yml` at the repository root drives the ProperDocs build of
+  `docs/`. `docs/plans/**` is excluded on purpose (working material, not
+  reference). A page not listed under `nav` is still built but is not reachable
+  from the navigation.
+- **ADRs:** a new decision record is `docs/architecture/decisions/NNNN-slug.md`
+  with the next contiguous number and a `**Status:** · **Date:**` line. It must be
+  added to the `properdocs.yml` nav, and the "(N ADRs" count in `CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`, `README.md` and `docs/index.md` must match the files on
+  disk. `tests/meta/test_adr_counts.py` enforces all three.
+- **The AI-reader index:** `docs/llms.txt` is generated from the `properdocs.yml` nav by
+  `python scripts/llms_txt.py` (configuration in `scripts/llms_txt.toml`), so every nav
+  edit -- a new page, a new ADR -- is followed by that command in the same change.
+  `tests/meta/test_llms_txt.py` runs `--check` and fails until it is (ADR-0076).
+- **Per-page descriptions:** a page's `description:` front matter becomes its meta
+  description through `docs-theme/main.html`; a page without one is described by the
+  publishing workflow's site-wide sentence.
+- **Paper:** `docs/paper.md` is the source for both the HTML page (`/paper/`) and
+  `paper.pdf`.
+  Every update to the paper passes `python scripts/paper_publishability.py check`
+  before it lands and before it is published: `tests/meta/test_paper_publishability.py`
+  runs it on every pull request, and `release-surfaces.yml` runs it again, as the
+  `[documentation] paper_gate` declared in `.vibey-gh.toml`, before the paper's figures
+  are rendered. The criteria it checks, and the reviewer's rubric for what no script can
+  judge, are the `journal-publishability-criteria` skill in vibey-skills' `writing-craft`
+  plugin.
+- **Book:** generated from the built channel site by `vibey-gh book`; there is no
+  separate book source. A page added to the site is in the next book.
+- **Agent surfaces:** every skill exists in four trees — `.claude/skills/`,
+  `.agents/skills/`, `.cursor/rules/`, `.agent/rules/` — and a change to one lands
+  in all four in the same PR.
+
+## A deliberate bump
+
+Use this only when the train is down. A major bump is not a reason: derive it
+with a breaking marker, so the number the repository carries is one the machine
+can reproduce.
+
+1. `uv run vibey-gh version --since origin/main --explain` to see the derived answer.
+2. Pass `--apply` so the tool writes it. `apply_version` also re-runs `uv lock`
+   and re-renders every managed workflow whose `pip install` pin this repository's
+   version decides — both are functions of that number, and a bump that leaves
+   either stale fails the very gates the promotion needs. It folds and cuts the
+   changelog too, exactly as `promote` does. Editing the two files by
+   hand means doing `uv lock` and `vibey-gh install` yourself, in the same commit.
+3. Commit with `chore(release): x.y.z` — the exact subject `vibey-gh promote`
+   writes.
+4. Land it on `develop` through a PR. `vibey-gh promote` sees that `develop`
+   already differs from `main` in version, leaves the bump alone, and still opens
+   the promotion PR.
+
+## Verifying the publish
+
+After `main` builds:
+
+1. Check the `Release` run in GitHub Actions, then `GitHub Release`,
+   `Release surfaces`, `Release binaries` and `Open VSX`.
+2. Verify PyPI: https://pypi.org/project/vibey-engine/ and https://pypi.org/project/krypton-app/
+3. Install and test:
+
+```bash
+uv venv --python 3.12
+source .venv/bin/activate
+pip install vibey-engine==x.y.z
+vibey --version
+# the bundle is the contract now (ADR-0037): every console script must be there
+for c in vibey vibey-gh vibey-skills vibe-skills vibey-bootstrap azbootstrap \
+         claudeloop codexloop gptossloop qwenloop; do
+  command -v "$c" >/dev/null || echo "MISSING: $c"
+done
+```
+
+4. Check the published surfaces for the `main` channel:
+   - Documentation: https://the-vibey-project.github.io/vibey/main/
+   - Paper: https://the-vibey-project.github.io/vibey/main/paper/ and
+     https://the-vibey-project.github.io/vibey/main/paper.pdf
+   - Book: https://the-vibey-project.github.io/vibey/main/book.pdf,
+     https://the-vibey-project.github.io/vibey/main/book.epub,
+     https://the-vibey-project.github.io/vibey/main/book-print.html
+5. Check the release's files: every file `docs/guides/downloads.md` lists is attached
+   (a target built only while a credential is set may be missing, with its tracking
+   issue open), and in a folder holding them all:
+
+```bash
+gh release download vibey-vx.y.z --repo the-vibey-project/vibey
+shasum -a 256 --check --ignore-missing SHA256SUMS
+for f in $(awk '{print $2}' SHA256SUMS); do
+  gh attestation verify "$f" --repo the-vibey-project/vibey >/dev/null || echo "UNATTESTED: $f"
+done
+```
+
+   The attestation is per listed file, not on `SHA256SUMS` itself. Then check that
+   Open VSX lists `the-vibey-project.krypton` at the extension's version.
+
+For a `develop` push, the `verify-testpypi` job already installs the dev build.
+On TestPyPI, read the release history of `vibey-engine` and `krypton-app`, not
+their "latest" version: dev builds (`x.y.z.devN`) are pre-releases, so a project
+page shows the last final version uploaded there while dev builds keep landing.
+(`vibey-dev` is the retired TestPyPI name of the builds before ADR-0069.)
+
+## Common issues
+
+**Nothing ran on `main` after a promotion:** a commit message carrying a GitHub
+skip marker (a bracketed skip-ci spelling, or a skip-checks trailer) makes GitHub run
+no push workflow for it -- no CI, no publish, no tag, no documentation, and nothing red.
+3.0.0 hit this when #1244 was squashed by hand and GitHub's default body concatenated
+old estimate subjects that quoted the marker. Recover by dispatching `vibey-engine.yml`
+and `krypton-app.yml` on `main` (every publishing job is gated on `github.ref`, so a
+dispatch publishes exactly what the push would have). Three things now keep it from
+recurring: `main` accepts rebase merges only (`[rulesets.release]
+allowed_merge_methods`), a squash proposes the pull request's own title and body
+(`[repository_profile] squash_merge_commit_*`), and `skip-markers.yml` ("No skip
+markers") refuses a marker in any commit, title or body on its way into `develop` or
+`main`. Write about the marker in prose; never quote it in a message.
+
+**The PyPI publish succeeded but there is no tag, GitHub Release or docs:**
+`github-release.yml` and `release-surfaces.yml` follow only a *successful* `Release`
+run, so any failing job of `vibey-engine.yml` withholds all three. Optional channels
+therefore live in workflows of their own: the Open VSX publish is `openvsx.yml`, run
+after a successful Release on `main`; without `OVSX_PAT` it warns and keeps one
+tracking issue open rather than failing anything. With the token it first creates the
+publisher's Open VSX namespace (`the-vibey-project`) when it is missing, treating only
+"already exists" as success, so the first publish of `the-vibey-project.krypton` needed no
+hand step (0.2.0, with 3.3.0).
+
+**`develop` is red:** `branch-health.yml` keeps one issue per permanent branch open
+while a CI push run fails one of its required checks, and closes it when the tip is
+green. Fix the branch before merging over it.
+
+**Version didn't change on PyPI:** the derivation found nothing under
+`[version] content_paths` or `code_paths` (docs, workflow and test changes release
+nothing), or the bump was never pushed. An unbumped version with `skip-existing: true` is a green run that
+publishes nothing.
+
+**`uv-lock` fails after a version change:** the lock carries vibey's own
+version. Run `uv lock` and commit it with the bump.
+
+**Publish failed:** check the `Release` run. Common causes: OIDC trusted
+publisher not configured for the `pypi`/`testpypi` environment, wheel build
+failed, or the in-tree `vibey-gh` rejected `.vibey-gh.toml`.
+
+**Promotion PR does not merge:** the checks must pass on the promotion head, and
+a ruleset that requires an approving review needs `AUTOMERGE_TOKEN` (a token whose
+owner holds the required ruleset role).
+
+**`develop` didn't realign after a release:** check whether `AUTOMERGE_TOKEN`
+is set — the `realign` job skips (not fails) without it. To realign by hand, and
+only when the trees match: `git push --force-with-lease origin main:develop`.
+
+**CHANGELOG.md doesn't mention the shipped version:** the release commit cuts
+`## [x.y.z] (date)` from whatever fragments had landed; a change that shipped
+without one was merged without a fragment (labelled `no-changelog`, or before
+fragments existed). Add the entry as a fragment in a follow-up PR; it lands in
+the next version's section (see "The changelog").
+
+## The workflows
+
+- `.github/workflows/pr-evaluate.yml` and `pr-review.yml` — the split PR
+  automation: `pr-evaluate.yml` triages the exact head on each `CI`/`Provenance`
+  completion and publishes `PR evaluate / gate`; `pr-review.yml`, which it dispatches,
+  runs the exact-head review and publishes `PR review / gate`.
+- `.github/workflows/merge-train.yml` — merges ready PRs (squash into `develop`,
+  rebase into `main`).
+- `.github/workflows/promote-to-main.yml` — `vibey-gh promote`.
+- `.github/workflows/vibey-engine.yml` — `build` on every push to `develop`/`main`;
+  `testpypi`/`verify-testpypi` on `develop`; `pypi` and `realign` on `main`.
+- `.github/workflows/krypton-app.yml` — `build` (tests and wheel) for
+  `clients/krypton-app`; `testpypi`/`verify-testpypi` on `develop`, `pypi` on `main`.
+- `.github/workflows/github-release.yml` — tag and GitHub Release after a
+  successful `Release` on `main`.
+- `.github/workflows/release-surfaces.yml` — after a successful `Release` on
+  `develop` or `main` (or manual dispatch per channel):
+  - the ProperDocs site for that channel at
+    `https://the-vibey-project.github.io/vibey/<channel>/`, all channels on one
+    GitHub Pages deployment with a channel chooser at the root;
+  - the book (`vibey-gh book` → `book.epub` and `book-print.html`, plus `book.pdf`
+    when Chromium is available on the runner);
+  - the paper (`docs/paper.md`, served as `paper/`, and `vibey-gh paper` → LaTeX →
+    `paper.pdf`);
+  - the OCI bundle `ghcr.io/<owner>/<repo>/python:<version>`, also tagged with the
+    channel and `sha-<commit>`, and `latest` on `main`.
+- `.github/workflows/provenance.yml` — the server-side provenance check on every
+  push and PR.
+- `.github/workflows/automation-bootstrap.yml` — the admin-only recovery path for a
+  PR that repairs a broken privileged gate.
+- `.github/workflows/openvsx.yml` — the VS Code extension to Open VSX, after a
+  successful `Release` on `main`; outside `Release` so it can never fail the tag.
+- `.github/workflows/release-binaries.yml` — every client's build for the release,
+  after a successful `Release` on `main`: the targets in `scripts/release_binaries.toml`,
+  `SHA256SUMS`, a provenance attestation per file, attached to the GitHub Release;
+  `python scripts/release_binaries.py check` holds the workflow and the downloads page
+  to that file.
+- `.github/workflows/skip-markers.yml` — `No skip markers`, on every pull request and
+  merge-queue group into `develop` or `main`.
+- `.github/workflows/changelog.yml` — `Changelog fragment`, `vibey-gh changelog check`
+  on every pull request into `develop`.
+- `.github/workflows/branch-health.yml` — one tracking issue per red permanent branch.
+- `.github/workflows/ruleset-drift.yml` — `vibey-gh rulesets --check`, read-only, daily
+  and on every change to `.vibey-gh.toml`.
+
+All but `automation-bootstrap.yml` (manual dispatch only) are triggered by pushes,
+pull requests, workflow completions or schedules. Dispatch one by hand only to
+recover or debug -- `vibey-engine.yml` and `krypton-app.yml` accept a dispatch for
+exactly that.

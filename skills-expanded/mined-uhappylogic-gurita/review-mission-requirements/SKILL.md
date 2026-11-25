@@ -1,0 +1,190 @@
+---
+name: review-mission-requirements
+description: Review the named mission's requirements to reconcile its open questions against recorded decisions, surface new gaps, and report whether it has converged.
+---
+
+# review-mission-requirements
+
+The current "work in progress" requirements for the planned mission live in two documents of the named mission's directory: `requirements.md` (the prose — goal, relevant starting state, decisions, any noted contradictions, out of scope) and `open_questions.xml` (one `<open-question>` block per question still open). The overall goal is to make that requirements set ready enough for the work to begin.
+
+This skill is the **repeatable engine** of the requirements-iteration loop — run it each time around:
+
+```
+review → (discuss) → answer → review → answer → … → converged → derive-tasks
+```
+
+Each pass does three jobs: **reconcile** the existing questions against what's now decided, **surface** the new gaps, and report whether the requirements have **converged**.
+
+Every write this skill makes to `open_questions.xml`, and every listing of its blocks, is a call to the plugin's open-question tool, `python3 ${PLUGIN_ROOT}/tools/open_questions.py <subcommand> <MISSION_DIR> …`, written out in full on every call, never through a variable, alias, or function of your own defined to stand for the command or any part of it — the tool is that file's sole writer and owns the document's escaping and layout: a mutator prints nothing on success, `list` prints bare ids one per line, and any failure is one `Error: <reason>` line on stderr with a non-zero exit and the document left unchanged. Reading the document whole to reason over it is the one thing done directly, with the file-reading tool. Never edit `open_questions.xml` yourself.
+
+## review-mission-requirements
+
+```
+/review-mission-requirements --mission <path>
+```
+
+The required leading `--mission <path>` names the mission by its repo-relative path, exactly as the definition tool printed it, trailing slash included, e.g. `mission_user-guide/`.
+
+## Mission requirements document structure
+
+`requirements.md` is prose Markdown in four sections, with an optional fifth between `## Decisions` and `## Out of Scope`:
+```md
+# <name>
+
+## Goal
+
+<description of the goal here>
+
+## Relevant starting state
+
+<description of the Relevant starting state>
+
+## Decisions
+
+<subsections with detailed requirements>
+
+## Noted contradictions
+
+<one bullet per pair of conflicting decisions an answer noted>
+
+## Out of Scope
+
+<what the mission deliberately leaves out>
+```
+
+`## Noted contradictions` is present only while a note stands: a single-question answer skill inserts the heading with its first note, and step 4 of this pass turns each note into an open question or drops it, deleting the heading with the last note.
+
+The open questions live beside it in `<MISSION_DIR>/open_questions.xml` — one `<open-question id="Short Title">` block per question under a single root, each holding a `<question>` child and, once the recommend sweep has annotated it, `<alternative>`, `<applied-principle>`, `<depends-on>`, and `<recommendation>` children. No question block is ever placed inline in `requirements.md`.
+
+## Workflow
+
+### 0. Find the mission
+
+Follow `${PLUGIN_ROOT}/shared/resolve-mission.md` to resolve `<MISSION_DIR>`. Never use a hardcoded path.
+
+### 1. Read the documents and take inventory
+
+Read `<MISSION_DIR>/requirements.md` and `<MISSION_DIR>/open_questions.xml` in full with the file-reading tool. The whole read of `open_questions.xml` is for reasoning only — every listing of the blocks and every change to the question document below is a tool call. Build a mental inventory of four things, because the rest of the pass plays them against each other:
+
+- the **Decisions** already recorded (what's settled),
+- the **notes** under `## Noted contradictions`, when that section stands (pairs of decisions an answer found conflicting, not yet asked),
+- the **`<open-question>` blocks** already present (what's still flagged),
+- every stated requirement, constraint, and assumption.
+
+Beside the two documents, read the overview of the missions around this one's scope, on every pass, with this one fixed call run from the workspace root, written out in full and never through a variable, alias, or function of your own defined to stand for the command or any part of it:
+
+```
+python3 ${PLUGIN_ROOT}/tools/missions.py missions --mission <MISSION_DIR> --last 10
+```
+
+It prints one tab-separated line per mission whose scope overlaps this one's, live or finished: its state, its finish date (`-` while live), its path, and its title, every live line and the ten most recently finished. Read it as context for the inventory, not as a fifth thing to reconcile: only where you judge a listed mission's line to bear on a gap or on a pair of decisions, read that mission more deeply, its finish summary through `python3 ${PLUGIN_ROOT}/tools/missions.py summary <path>` or its recorded decisions through `python3 ${PLUGIN_ROOT}/tools/missions.py show <path>`, `<path>` the mission path exactly as the overview printed it, each written out in full the same way; a line that bears on nothing gets no deeper read.
+
+**Any of these missions-tool calls that fails** — any non-zero exit, whatever its `Error:` line says — is one condition: **stop the pass here**, before any prune, dedup, new block, or note deletion. Report the fixed line `Review stopped — the missions record could not be read.` first, then below it the call's `Error:` line from stderr, verbatim. Make no commit, and print neither the still-open list nor the convergence verdict: that is the whole report, and the run ends there.
+
+### 2. Reconcile the existing question set
+
+This is the step that makes the skill loop-aware: the documents have been edited since questions were last raised, so the existing blocks may be stale. Tidy them — but only with evidence, and never by answering:
+
+- **Prune a settled block** — remove an `<open-question>` block **only when you can point to an entry already in `## Decisions` that covers it**. This is cleanup of cascade-misses and manual drift, not answering. If you can't cite the covering decision, do not remove it.
+- **Dedup repeats** — when two blocks ask materially the same thing, keep the clearest one and remove the other.
+- **When in doubt, flag — don't delete.** If a block *looks* answered but no recorded decision clearly covers it, leave it in place and note it in your report as "possibly resolved — confirm". Silently dropping a still-live question destroys tracked state; that's the one outcome to avoid.
+
+Each removal, on either path, is one bare call — no `--option`, since a prune or dedup records nothing:
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py remove <MISSION_DIR> "<Short Title>"
+```
+
+In that one write the tool deletes the block and strips every block whose embedded pick depended on it — and every block that depended on those in turn — of its `<recommendation>`, `<depends-on>`, and `<applied-principle>` children, keeping its `<alternative>` children, so no `<depends-on>` tag is left naming a removed or stripped block; a stripped block stays in the document as a live question, its alternatives intact, for the next `/recommend-all-open-questions` pass to re-pick. Stripping decides nothing, records nothing under `## Decisions`, and adds nothing to the step-6 report — the committed diff is its record.
+
+You **never** record a decision, fold an answer into `## Decisions`, or otherwise resolve a question here. Recording answers belongs to `/answer-open-question` alone. This step only shapes the question set to match decisions that already exist — removing settled or repeated blocks, and with them the analysis that depended on them.
+
+### 3. Surface new gaps
+
+Now look for questions the documents don't yet capture — paying special attention to gaps the most recent decisions just **exposed** (a settled decision often raises a fresh downstream choice). For each requirement, ask:
+
+- Is the expected behavior fully specified, or does it leave choices ambiguous?
+- Are there edge cases not addressed?
+- Are there dependencies on systems not yet described?
+- Are there constraints implied but not stated?
+- Does a recorded decision rest on a `## Relevant starting state` fact that no longer holds? Ask it as an ordinary open question, authored below like any other gap and never under step 4's conflict opening, since there is no second entry to rewrite, so that its answer supersedes or confirms the decision through the answer's own rewrite of an entry it plainly supersedes. This is the one place a refreshed starting state is weighed against the decisions: the refresh rewrites none of them.
+
+Add only genuinely new questions — don't re-raise anything already present (you just inventoried them in step 1), and do not invent requirements: only annotate gaps relative to what is already written.
+
+Author each new finding as one `add` call, the question text as its heredoc body:
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py add <MISSION_DIR> "<Short Title>" <<'EOF'
+<Question text here.>
+EOF
+```
+
+The tool appends the block after the existing ones and owns its shape — escaping, indentation, and the fold of the text to one line — so you write plain text, no XML and no entities. What you author is the two judgments the block carries:
+
+- **The question text.** Because a block does not sit next to the requirement it concerns, **each question must stand on its own** — brief, self-contained, and question-shaped, fully understandable without the surrounding context, never a design proposal. And **each question asks one choice**: a gap that holds two choices becomes two questions, one per choice. The one exception is choices in one gap that constrain each other, so that not every pairing of them is viable — author those as a single multi-axis question that asks both choices at once.
+- **The Short Title** (the block's `id`): a 2–5 word phrase that uniquely identifies the question within the document (e.g. "Getting-started section order", "Glossary term scope"). It is the stable handle the question is cited by in conversation and located by in the answering and recommendation skills, which match it **case-insensitively** — so keep every Short Title unique across all blocks even ignoring case. The tool refuses an id an existing block already carries (its `Error:` line names it); pick a distinct title and call again.
+
+Do not restructure or rewrite existing content — this pass edits `requirements.md` only to delete the notes step 4 handles under `## Noted contradictions`, and the question document changes only through the `remove` calls of step 2 and the `add` calls here and in step 4.
+
+### 4. Check the recorded decisions against each other
+
+Decisions recorded one answer at a time can come to contradict each other, and this pass is where such a pair becomes an open question: either a single-question answer skill noted the pair under `## Noted contradictions`, or you notice it here. Every conflict question you author, on either path, is one block made with step 3's `add` call under step 3's rules for the question text and the Short Title, and its question text opens with one fixed phrase naming the `###` heading each entry sits under in `## Decisions`:
+
+```
+Which conflicting decision stands: "<first heading>" or "<second heading>"?
+```
+
+Write the opening `Which conflicting decision stands:` exactly as shown, since `/answer-all-open-questions-with-recommendation` recognizes a conflict question by that exact opening, then each heading copied exactly as it stands after `### `, the two in their `## Decisions` order (the same heading twice when both entries sit under one). After the phrase, state briefly what each entry says, quoting enough of each one's lead or opening words to tell them apart where both share one heading or sit among several bullets.
+
+**Noted pairs.** When `## Noted contradictions` stands, handle each note under it against recorded state only — never re-judge whether the noted pair conflicts:
+
+- **Drop a note already covered** — when a standing block already flags the pair, or either entry the note names no longer stands as the note describes it (its heading is gone from `## Decisions`, or its text has been rewritten so the two now hold together), delete the note and author no block. This is cleanup of recorded state, like step 2's prune.
+- **Otherwise ask it as noted** — author one conflict question for the note, stating the conflict as the note describes it, then delete the note.
+
+Delete each note from `requirements.md` with the file-editing tool, one targeted edit per note, and delete the `## Noted contradictions` heading in the same edit as the last note, leaving one blank line between the end of `## Decisions` and `## Out of Scope`, so the section is gone once no note stands. Change nothing else in `requirements.md`.
+
+**Pairs you notice.** Then, from your step-1 read, read the `## Decisions` entries against each other. Two entries conflict when both cannot hold as written — carrying out one breaks the other, or they fix different values for the same name, threshold, or behaviour; an entry that only refines, narrows, or extends another is no conflict. For each conflicting pair that no standing block already flags, a block just authored from a note included, author one conflict question.
+
+Neither path resolves a conflict: never edit, reword, or remove either `## Decisions` entry, and never decide which one stands, since that is an answer's to record. The new blocks and the note deletions ride in step 5's commit, and step 6 shows each new block only as a Short Title in the still-open list.
+
+### 5. Commit the reshaped requirements
+
+Read and follow the shared commit procedure at `${PLUGIN_ROOT}/shared/commit-procedure.md`, running its one commit-tool command yourself as this step's one git tool call. Supply it these two inputs:
+
+- **PATHS** — this skill's own change set, the mission's two requirements documents: `<MISSION_DIR>/open_questions.xml` (where every prune, dedup, and new block of this pass landed) and `<MISSION_DIR>/requirements.md` (where step 4's note deletions landed).
+- **SUBJECT** — `Requirements-review: <MISSION_DIR>`, the mission path exactly as resolved, trailing slash included.
+
+The commit tool runs the dirty-own-path guard, the path-scoped staging, and the commit. Its guard covers this skill's no-op case: a pass that reconciled, pruned, and surfaced nothing and found no note to handle leaves both files unchanged, so the tool prints `Nothing committed — none of the paths changed.` and nothing is staged or committed; a pass that reshaped the question set or deleted a note commits that change.
+
+### 6. Report convergence
+
+Run
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py list <MISSION_DIR>
+```
+
+It prints the Short Title of every `<open-question>` block still in the document, one per line in document order; empty output is a converged document. That print — not your recollection of the pass — is what the two items below are read from.
+
+On the success path, print exactly one fixed terse status line — `Requirements reviewed.` — carrying no identifier (no mission path, no count, no commit subject). Do **not** re-narrate what the pass reshaped: there is no "What changed this pass" summary (blocks pruned, repeats merged, new questions raised, notes deleted, "possibly resolved — confirm" flags) and no handoff pointer toward `/discuss-open-question` or `/answer-open-question`.
+
+Follow that terse line with only the two pieces of decision-critical state git never captures, so the user knows whether to loop again or move on:
+
+- **What's still open** — the Short Titles `list` printed, one per line. No nudge pointer.
+- **Convergence** — `/derive-tasks` requires that **no `<open-question>` block remains**, which is exactly an empty `list`. So:
+  - If `list` printed anything → the requirements are **not** ready; the next loop step is to answer them, then re-run this skill.
+  - If it printed nothing → the requirements are **ready for `/derive-tasks`**, and the convergence verdict is exactly this one fixed line, printed as a whole line of its own and carrying no identifier:
+
+```
+Requirements converged — ready for task derivation.
+```
+
+Print that line whenever `list` printed nothing, on a pass that reshaped the requirements and on a no-op pass alike, and never when it printed anything.
+
+**No-op pass.** When the step-5 commit tool prints `Nothing committed — none of the paths changed.` — this pass reconciled, pruned, and surfaced nothing and found no note, so both files are unchanged and nothing was committed — do **not** print `Requirements reviewed.` Instead print, in its place, this one fixed line:
+
+```
+Requirements unchanged — the review found nothing to reshape.
+```
+
+Still report the still-open list and convergence verdict above, below that line, since that state is unchanged but the user still needs it to decide the next loop step.

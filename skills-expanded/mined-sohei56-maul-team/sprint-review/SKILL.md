@@ -1,0 +1,206 @@
+---
+name: sprint-review
+description: Sprint Review ceremony — present Increment to user
+disable-model-invocation: false
+---
+
+## Inputs
+
+- state.json → phase: review
+- sprint.json (Sprint data)
+- backlog.json (PBI statuses)
+
+## Outputs
+
+- sprint-history.json → sprints[] (SprintSummary appended)
+- .scrum/po/decisions.json → one Sprint-scoped `kind=sprint_acceptance`
+  aggregate verdict (`approve | reject`) persisted through
+  `append-po-decision.sh`, with non-blank per-PBI report evidence
+- backlog.json → new draft PBIs for every leftover (carry-over / doc mismatch / defect / change)
+- state.json → phase: sprint_review
+- sprint.json → status: "sprint_review"
+
+**Output discipline.** Follow `../../rules/scrum-context.md` § Output
+discipline — lead with the outcome, no preamble, no closing recap.
+
+## Preconditions
+
+- state.json phase: "review"
+- sprint.json, backlog.json exist
+
+## PO Mode (po_mode: "agent")
+
+When `.scrum/config.json.po_mode == "agent"`, every PO-approval prompt
+in the Steps below re-targets to the `product-owner` teammate per
+`../../rules/scrum-context.md` § PO seat resolution; the ceremony shape is
+unchanged, and Steps not overridden in this table run verbatim.
+
+| Step                             | Override (po_mode=agent)                                                                                                                                                                                                                                                                                                                                                  |
+|----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 3. Launch app                    | The PO (not SM) launches the app as part of `po-acceptance`. SM still emits the access URL/port observation to the main session for the watching human, but does not wait on a human reply. App-launch failure is `fail`, not skip (the `po-acceptance` skill enforces this in step 1.4).                                                                                  |
+| 4. Demo EVERY completed PBI      | SM sends `[sprint-<N>] PO_DECISION_REQUEST kind=demo_acceptance options=[pass,fail,waive] recommendation=pass` with the completed-PBI list; the PO teammate then runs the `po-acceptance` skill (`mode=demo`) on its own (the skill lives in the PO's `skills:` allowlist, not the SM's). The PO launches and operates the app, verifies each AC by runnable command, and returns one `kind=demo_acceptance` decision per PBI. `fail` routes to step 9. |
+| 5. Doc-implementation consistency | Unchanged — engineering quality, owned by SM/Developer (the PO cannot lower this gate).                                                                                                                                                                                                                                                                                   |
+| 8. Get user feedback             | Replaced by a single structured pass — see step 9 override. No human-input wait.                                                                                                                                                                                                                                                                                          |
+| 9. Defect/change handling        | The "repeat until user says that's all" loop collapses to **one** structured PO pass: the PO returns a single message listing (a) gaps against `docs/product/vision.md` and (b) defects observed during the demo, terminated by `FEEDBACK_COMPLETE`. Each defect is recorded as `kind=defect_triage` with priority; each becomes a draft PBI exactly as in human mode.     |
+| 9.e Aggregate Sprint acceptance  | After the per-PBI `PO_ACCEPTANCE_REPORT` and feedback pass exist, SM sends `[sprint-<N>] PO_DECISION_REQUEST kind=sprint_acceptance options=[approve,reject] recommendation=<evidence-derived> evidence=[<per-PBI transcript/report paths>]`. The PO inspects those results, persists its aggregate ruling through `append-po-decision.sh`, and returns `decision=approve\|reject dec_id=<dec-NNNN>`. SM verifies the referenced record; a recommendation or the per-PBI report alone is not acceptance. |
+| 11. Leftover Summary             | Include any `assumption=true` PO decisions (from `.scrum/po/decisions.json` written this Sprint) as a fourth group: `Assumed decisions to re-examine: <dec-id> <kind> <rationale>`. These are surfaced for next-Sprint Refinement.                                                                                                                                         |
+
+## Steps
+
+1. state.json → phase: "sprint_review", sprint.json → status: "sprint_review":
+   ```bash
+   .scrum/scripts/update-state-phase.sh sprint_review
+   .scrum/scripts/update-sprint-status.sh sprint_review
+   ```
+2. **Present change summary**: Sprint Goal, completed PBIs (status: done), incomplete PBIs (carry-over candidates)
+3. **Launch app (mandatory)**: Detect start command (package.json/Makefile/docker-compose etc)→start→confirm running→fail→fix+retry (never skip demo)→tell user access URL/port
+   - **po_mode=agent**: do not launch the app from SM; the `po-acceptance` skill (mode=demo) launches it. SM still announces access URL/port observed in `_app.log` for the watching human (observation only, no wait). Launch failure is `fail`, not skip.
+4. **Demo EVERY completed PBI (mandatory)**:
+   a. State PBI name
+   b. Show it working by executing the PBI's `demo_plan` (backlog.json)
+      — the local demo path decided at refinement, including its
+      stubs/local substitutes. Legacy PBIs refined before `demo_plan`
+      existed: derive the demo from the ACs (navigate/call API/run
+      command) and record the gap per step 9.
+      For a guard-type deliverable, executing the plan means running
+      **both** labelled steps (`negative:` then `positive:`) and
+      recording the failing output verbatim; a demo showing only the
+      passing direction is "not demonstrated" (rule:
+      `../backlog-refinement/SKILL.md` Step 3.c2)
+   c. Point out what to verify (be specific: "login form with email + password fields")
+   d. Ask user to confirm→wait→next PBI. Skip only if user explicitly says no need.
+      For each PBI, write the observed demo steps and confirmation to
+      `.scrum/po/acceptance/<sprint-id>/<pbi-id>.md`, then persist the
+      separate per-PBI ruling through `append-po-decision.sh` as
+      `kind=demo_acceptance`, `decision=pass|fail|waive`, `--sprint`, `--pbi`,
+      and that transcript as `--evidence`. Keep its returned `dec_id` and path
+      for the aggregate request in step 9.e. This records the demo result; it
+      does not change the PBI's `done` status.
+   - **po_mode=agent**: skip step 4a–d. Send `[sprint-<N>] PO_DECISION_REQUEST kind=demo_acceptance options=[pass,fail,waive] recommendation=pass pbis=[<list>]` — include each PBI's `demo_plan` in the payload; the PO teammate runs `po-acceptance` (mode=demo) on its own — the skill is on the PO's allowlist, not the SM's. PO operates the app itself following each `demo_plan`, verifies each AC by runnable command, and returns one `kind=demo_acceptance` decision per PBI plus the aggregated `PO_ACCEPTANCE_REPORT`. fail → step 9 defect route.
+5. **Doc-implementation consistency**: For every completed PBI→compare docs vs code→mismatch→`add-backlog-item.sh` (status: draft). Track each new pbi-id for the Leftover Summary.
+6. Report remaining backlog scope + Product Goal progress
+7. Append the SprintSummary to `sprint-history.json` via the wrapper
+   (direct edits are blocked by the scrum-state guard). `--id` and
+   `--goal` are required; the rest are optional (`--completed-at`
+   defaults to now). The call is idempotent on `--id`, so a retried
+   Sprint Review does not duplicate the entry:
+   ```bash
+   .scrum/scripts/append-sprint-history.sh \
+     --id "<sprint-id>" \
+     --goal "<sprint goal>" \
+     --type development \
+     --pbis-completed <N_done> \
+     --pbis-total <N_total> \
+     --started-at "<sprint.json started_at>" \
+     --completed-at "<ISO 8601 now>"
+   ```
+8. Get user feedback
+   - **po_mode=agent**: merged into step 9's single structured PO pass; no separate prompt.
+9. **Defect/change handling**:
+   a. **NEVER fix during Sprint Review** (not even quick fixes — inspection ceremony only)
+   b. Each defect/change/feedback item → `add-backlog-item.sh` (status: draft). Track each new pbi-id.
+   b2. **A demo gap is a defect.** A PBI whose `demo_plan` cannot be
+      executed locally — or that has none and cannot be demonstrated,
+      or whose `negative:` step did not make the guard fail — is
+      recorded as a draft PBI (`Demo gap: <pbi-id> — <what blocks a
+      local demo>`). "Read the code instead" and "needs cloud deploy to
+      see it" are never acceptable demo outcomes.
+   c. "Will be prioritized in next Sprint via Backlog Refinement→Sprint Planning"
+   d. After user confirms "that's all"→proceed
+   - **po_mode=agent**: replace the "repeat until user says that's all" loop with **one** PO pass. SM sends `[sprint-<N>] PO_DECISION_REQUEST kind=defect_triage options=[high,medium,low,reject] recommendation=<...>` once; the PO returns a single message listing (a) gaps against `docs/product/vision.md` and (b) demo-observed defects, terminated by `FEEDBACK_COMPLETE`. Each listed defect produces a separate `kind=defect_triage` decision + a draft PBI via `add-backlog-item.sh`. No further round-trips.
+   e. **Obtain and persist aggregate Sprint acceptance (mandatory, both PO
+      modes).** Assemble the per-PBI transcript/report paths and verdicts from
+      step 4. These are the evidence for the Sprint-level ruling; do not infer
+      approval from `done` status, a recommendation, or the presence of a
+      `PO_ACCEPTANCE_REPORT`.
+      - **po_mode=human:** show the evidence list and ask the user for one
+        explicit aggregate `approve | reject` verdict. Wait for it. Persist it
+        on the user's behalf and retain the returned `dec_id`:
+
+        ```bash
+        .scrum/scripts/append-po-decision.sh \
+          --kind sprint_acceptance \
+          --decision "<approve|reject>" \
+          --sprint "<sprint-id>" \
+          --rationale "<evidence-grounded aggregate rationale>" \
+          --request "Aggregate Sprint acceptance after per-PBI demos" \
+          --evidence "<per-PBI transcript-or-report-path>" [...]
+        ```
+
+      - **po_mode=agent:** send `[sprint-<N>] PO_DECISION_REQUEST
+        kind=sprint_acceptance options=[approve,reject]
+        recommendation=<approve|reject> evidence=[<per-PBI paths and verdicts>]`.
+        The recommendation must follow the evidence. Wait for the PO's
+        `PO_DECISION`, then verify its `dec_id` identifies a matching
+        Sprint-scoped record with a non-blank evidence path.
+      - Report the aggregate verdict and `dec_id`. Treat each invocation of
+        step 9.e as one review attempt and append exactly one aggregate ruling
+        for it. Decisions are append-only; the latest Sprint-scoped ruling
+        controls. Do not append a later approval merely to turn a rejection
+        into a passing ceremony.
+      - On `reject`, deterministically materialise every cited defect, change,
+        demo gap, or requested remediation through step 9: create one draft
+        PBI with its source verdict/evidence in the description, or update the
+        already-tracked draft for that same item instead of duplicating it.
+        Include all resulting PBI ids in the Leftover Summary. The rejected
+        Increment may then proceed to Retrospective; rejection does not rewrite
+        completed PBIs or erase their independent demo decisions.
+      - Sprint acceptance records the outcome of this review. It is separate
+        from `kind=release_decision`: neither an `approve` nor a `reject` here
+        authorizes or denies a release by itself.
+10. **Carry-over PBIs (mandatory)**: For every PBI in this sprint where `status` is neither `"done"` nor `"cancelled"` (any `in_progress_*` / `awaiting_cross_review` / `cross_review` / `escalated` / `blocked` / refined-but-not-started — `cancelled` PBIs have no remaining work and are never carried over):
+    a. Create a new draft PBI capturing the remaining work via `add-backlog-item.sh` — embed origin in description (`Carry-over from <pbi-id>: <what is left>`).
+    b. Original PBI keeps its current status (immutable historical record of this Sprint).
+    c. Track each new pbi-id for the Leftover Summary.
+    d. **A PBI still `blocked` at Sprint end must be named explicitly in
+       the review summary together with its external blocker**, and this
+       ceremony decides its fate: carry over to the next Sprint, or return
+       it to the backlog for re-prioritization. The Stop gate accepts
+       `blocked` as a settled Sprint outcome (Issue #94) precisely because
+       that decision belongs here, not to the hook.
+
+    ```bash
+    .scrum/scripts/add-backlog-item.sh \
+      --title "Carry-over: <orig title>" \
+      --description "Continuation of <pbi-id>. Remaining: <concise scope>." \
+      --ac "<criterion 1>" --ac "<criterion 2>"
+    ```
+
+11. **Leftover Summary (mandatory report)**: Print to user a single consolidated list of every draft PBI created during this Sprint Review, grouped:
+    - Carry-overs (from step 10): `<new-pbi-id> ← <orig-pbi-id>: <title>`
+    - Doc/impl mismatches (step 5): `<new-pbi-id>: <title>`
+    - Defects / changes / feedback (step 9): `<new-pbi-id>: <title>`
+
+    State explicitly: "These N items enter the backlog as drafts and will be re-prioritized in the next Sprint's Backlog Refinement → Sprint Planning. Nothing is dropped."
+    - **po_mode=agent**: add a fourth group `Assumed PO decisions to re-examine:` listing every entry from `.scrum/po/decisions.json` written this Sprint with `assumption=true` — `<dec-id> <kind> <rationale>`. These are not new PBIs; they are PO-side risk items surfaced for next-Sprint Refinement.
+12. **Commit Sprint deliverables**: git status→stage relevant files (exclude temp/artifacts/.DS_Store)→commit:
+    ```
+    feat(sprint-N): <Sprint Goal>
+
+    Completed PBIs:
+    - PBI-XXX: <title>
+
+    Co-Authored-By: <contributing developers>
+    ```
+    Report commit hash. Do NOT push.
+
+Ref: FR-010, FR-011
+
+## Exit Criteria
+
+- SprintSummary appended to sprint-history.json
+- User or agent PO reviewed the Increment + gave feedback
+- Every completed PBI retains its separate demo acceptance evidence/decision;
+  PBI `done` semantics are unchanged
+- The latest Sprint-scoped `kind=sprint_acceptance` record has
+  `decision=approve|reject` and at least one non-blank per-PBI
+  transcript/report evidence path. There is exactly one appended ruling per
+  review attempt; the latest controls.
+- If that ruling is `reject`, every cited defect/change/remediation is
+  represented by a tracked draft PBI and the rejected Increment proceeds to
+  Retrospective without being treated as approval or release authorization
+- Doc-implementation consistency checked
+- Every leftover (carry-over + doc mismatch + defect/change/feedback) materialised as a draft PBI in backlog.json — none dropped
+- Leftover Summary reported to user
+- Sprint deliverables committed
+- state.json phase: "sprint_review"

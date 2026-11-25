@@ -1,0 +1,504 @@
+---
+name: ywc-task-generator
+description: >-
+  (ywc) Use when converting a specification into implementation tasks. Triggers: "task 생성", "タスク生成", "spec to tasks", "task breakdown", "작업 분해", "仕様からタスク生成", "任务拆分", "从 spec 生成 task", "generar tareas", "desglosar spec", "implementation tasks", "스펙 분해", or any spec-to-task decomposition request. Do not use for direct code implementation, spec review (use ywc-spec-validate), or planning without a written specification.
+---
+
+# Task Generator
+
+**Announce at start:** "I'm using the ywc-task-generator skill to decompose the specification into dependency-safe tasks."
+
+> **Summary**: Analyzes a specification and generates dependency-safe, reviewable implementation tasks. Each task is output as a structured directory (`README.md`, `task.md`, `test.md`), along with a top-level dependency graph.
+
+You are a senior tech lead responsible for converting a specification into implementation tasks for a production web application. Your goal is to generate tasks that are dependency-safe, small and reviewable, and well-structured for real repository usage.
+
+This skill assumes the upstream ambiguity has already been reduced to a written spec. If the user only has a discovery map or unresolved multi-session exploration notes, route them to `ywc-wayfinder` or back to `ywc-spec-ready` before decomposition.
+
+When the upstream spec cites a persisted `ywc-tech-research --output` artifact, keep that project-relative research path in `Spec Reference` and preserve its provenance markers instead of collapsing it into an untracked summary.
+
+## Rationalization Defense
+
+When tempted to bend a rule, check this table first:
+
+| Excuse | Reality |
+|---|---|
+| "DB migration is small, I'll bundle it with the API task" | DB migration must be its own task — in **every** mode. Safety invariant. |
+| "User did not specify `--mode` / `--granularity`, `human` is the safe default" | Always ask. Wrong mode cascades into every task's size and bundling. |
+| "Phase boundary is fuzzy, I'll let SEQUENCE express the order" | Phase boundaries are **hard gates**. If only some Phase N tasks must finish before a Phase N+1 task starts, that task belongs in Phase N. |
+| "Ownership is just a hint, the implementer will figure it out" | Ownership is an **operational edit boundary**. Vague Ownership = parallel-execution conflicts later. |
+| "Spec Reference is empty for this task, I'll skip the section" | Never omit. Use `N/A — housekeeping/refactor only` when there is no spec. Empty section = ambiguity. |
+| "Library introduction is part of the feature task, no need to split" | Library introduction is its own task — in every mode. Safety invariant. |
+| "20+ tasks in one set is fine if they are small" | At >20, suggest splitting the spec. A task set that does not fit in human review will not be reviewed. |
+
+**Violating the letter of these rules is violating the spirit.** Safety invariants (DB migration separation, library introduction separation, phase hard gates) have no exceptions.
+
+## Arguments
+| Argument | Default | Description |
+|---|---|---|
+| `--lang <language>` | _(resolved or asked)_ | Output language for task documents: `ko` \| `ja` \| `en` \| `es` \| `zh`. Backward-compatible aliases: `korean` \| `japanese` \| `english` \| `spanish` \| `chinese`. |
+| `--mode <mode>` | _(asked)_ | Canonical task granularity option: `human` \| `llm`. |
+| `--granularity <mode>` | _(alias)_ | Backward-compatible alias for `--mode`; accept `human` \| `llm`. If both flags are present and conflict, stop and ask the user to resolve the conflict. |
+| `--tasks-dir <path>` | `tasks/` | Root directory where task directories are written. Override to support re-plan iteration in a separate directory (e.g., `--tasks-dir tasks-v2/`). |
+| `--initials <value>` | _(resolved or asked)_ | Collaborator namespace for new task phases. Must match `^[a-z0-9]{2,4}$`; explicit invalid values are rejected. |
+| `--spec <path>` | required for preview flags; optional for direct generation | Project-relative path for persisted previews and approved consumption. Direct generation retains Step 1 inputs, including inline specs. Preview specs must stay under `docs/` unless the project defines another safe root explicitly. |
+| `--preview-only` | off | Persist the canonical preview and its reservation identity/ref. Do not write task directories or `dependency-graph.md`. |
+| `--preview-path <path>` | `docs/ywc-plans/<slug>.task-preview.md` | Persisted preview artifact path. Must be repository-relative Markdown under a safe root. |
+| `--approve-preview` | off | Consume a previously approved persisted preview with matching identity. Never re-decompose on this path. |
+| `--non-interactive` | off | Required when an autonomous caller consumes a previously approved preview without interactive confirmation. |
+| `--manifest <path>` | off | Optional repository-relative architecture contract; omitted input permits root-only discovery. |
+| `--architecture-evidence <path>` | off | Optional normalized evidence artifact; paired with `--manifest`, never raw evidence text. |
+
+## Language Option
+When `--lang` is not specified, resolve task document language using the shared Codex YWC policy:
+[`../references/language-resolution.md`](../references/language-resolution.md). The order is explicit `--lang` > project `.codex/ywc.json` > project guidance (`AGENTS.md`, `CODEX.md`, `CLAUDE.md`) > user `~/.codex/ywc.json` > ask user.
+
+This skill supports `ko` | `ja` | `en` | `es` | `zh` and backward-compatible aliases `korean` | `japanese` | `english` | `spanish` | `chinese`. Treat `zh` / `chinese` as Simplified Chinese unless the user explicitly asks for another Chinese locale. There is no skill-level output-language default; for non-English output rules, read [references/language-policy.md](references/language-policy.md).
+
+### Collaborator Initials Gate
+Read [references/collaborator-initials.md](references/collaborator-initials.md)
+and resolve validated initials before any scan, compaction, reservation, or
+artifact write. Use explicit value, project config, user config, then one
+interactive Git-identity confirmation; malformed tiers are skipped. Unresolved
+non-interactive generation returns `NEEDS_CONTEXT` without downstream work.
+
+---
+
+## Preview Approval Gate
+For persisted previews and approved-preview writes, `--spec` must resolve inside a project-declared safe spec root; absent a project declaration, use `docs/`. `--preview-only` and `--approve-preview` are mutually exclusive. The preview identity binds the reserved phase and reservation ref; see [wide-refactor-decomposition.md](references/wide-refactor-decomposition.md).
+`--preview-only` returns `DONE` with its path/revision/digest and phase reservation for a separate caller approval step; it writes no task directory or graph.
+`--approve-preview` consumes only an explicitly approved preview whose spec,
+tasks dir, language, mode, path, revision, digest, and phase reservation all
+match; under the lock, verify and reuse that reservation without selecting or
+creating another phase. It never re-decomposes or refreshes the preview. Missing
+approval, identity mismatch, or unsafe paths return `NEEDS_CONTEXT` before task writes. A matching already-approved unchanged preview consumes once without another confirmation. Newly generated previews remain unapproved. Without
+either preview flag, preserve the existing direct-generation path without
+requiring preview approval.
+
+For the canonical preview identity fields, wide-refactor digest invalidation
+rules (`Refactor Phase`, `Batch ID`, `Depends On`), and the consume-only
+guarantee, **read
+[references/wide-refactor-decomposition.md](references/wide-refactor-decomposition.md)**.
+
+---
+
+## Task Design Principles
+
+### 1. Reviewability
+- Each task should be small enough for the intended executor to hold the full context in one session
+- Size guideline depends on the selected **Granularity Mode** (see Step 5):
+  - `human` mode: ~15 files / ~500 LOC (optimized for a single-reviewer PR)
+  - `llm` mode: ~35 files / ~1,200 LOC (optimized for an LLM agent completing a vertical slice in one run)
+- See [references/granularity-modes.md](references/granularity-modes.md) for the full rule set
+- Treat these numeric limits as advisory reviewability guidance, never as automatic authorization to bundle work; split tasks that significantly exceed the selected mode's guideline or cross a safety, feature, ownership, or phase boundary
+- In `llm` mode, bundling is limited to one feature with exclusive Ownership and explicitly declared Shared Surfaces
+- Prefer self-contained change units that leave the codebase buildable on completion
+
+### 2. Dependency Safety
+- Tasks must be strictly ordered by dependency
+- Earlier tasks must not depend on later tasks
+- Every task must be independently implementable at its position
+- If Task B depends on Task A, Task A must fully enable Task B
+- After each task completes, the codebase must remain consistent and buildable
+
+### 3. Database Migration Separation (Safety Invariant)
+- Database migrations must always be separated into their own task — in every mode
+- Include schema/model definitions
+- Never mix migration and feature implementation
+- Point the migration task's `task.md` checklist at the shared schema guide so the implementer applies the eight invariants that fail deterministically when omitted: [../references/schema/core.md](../references/schema/core.md) plus the stack file matching the project (`prisma.md` / `sql-ddl.md` / `drizzle.md` / `typeorm.md`)
+
+### 4. Library Introduction Separation (Safety Invariant)
+- Create a dedicated task when introducing a new library/framework — in every mode
+- Never mix library introduction and feature implementation
+
+---
+
+## Workflow
+### Step 1: Verify Input Specification
+Receive the specification from the user. It may come in one of these forms:
+
+- Markdown document (file path or inline)
+- PRD (Product Requirements Document)
+- Feature requirements description
+- Change requirements for existing code
+
+When `--preview-only` or `--approve-preview` is in play, the input spec must
+come from `--spec <path>`. Persisted preview and approved consume modes do not
+accept an implicit inline spec because the identity must be replay-safe and
+path-bound.
+
+If the specification is unclear, ask specific questions to clarify the scope.
+
+### Step 2: Resolve Initials and Collect Project Context
+
+Gather project context for task verification commands, ownership paths, and category selection.
+
+**Targets to collect:**
+- `AGENTS.md`, `CODEX.md`, `CLAUDE.md` — project rules, language policy, CI commands. Prefer Codex-native instructions (`AGENTS.md` / `CODEX.md`) when they conflict with Claude-only guidance.
+- `package.json`, `Makefile`, `pyproject.toml`, etc. — actual lint/test/build commands
+- Project directory structure — `src/` layout, monorepo status, existing module placement
+- Resolve `--tasks-dir` as a repository-relative path; reject absolute, escaping, or symlink-escaping paths with `NEEDS_CONTEXT`.
+- Resolve the default `tasks/` from the repository root. The default is independent of `--spec` location and the current subdirectory; never infer `<tasks-dir>` from the parent directory of `--spec`. Resolve the output directory once and use that same path for preview analysis, approved consumption, writes, and validation.
+- Existing resolved `<tasks-dir>` and `<tasks-dir>/dependency-graph.md` — whether tasks already exist, numbering collision check
+- Docker environment — whether commands require a `docker exec` prefix
+- `docs/ubiquitous-language.md` (if it exists) — canonical domain terms and "Synonyms to Avoid"; task names, Implementation Steps, and Ownership paths must use canonical terms and never use synonym identifiers
+
+**When existing tasks are present:**
+- Determine the next initials-scoped PHASE by parsing `tasks/dependency-graph.md` first when it exists, then scanning **both** `tasks/` and `tasks/completed/`, plus corresponding linked-worktree sources. Completed tasks are moved out of `tasks/` into `tasks/completed/` by the executors (`ywc-sequential-executor` / `ywc-parallel-executor`), so scanning `tasks/` alone misses them and risks reusing a number that already exists. For resolved `yk`, only `yk-<six-digit-phase>-<sequence>-...` candidates contribute to the maximum; legacy and other-initials IDs remain readable but do not advance `yk`. An empty owned scope starts at `yk-000001-010`. If the graph and directory scan disagree, continue with the union-based next owned PHASE and report the mismatch as a concern.
+- **Proactive compaction gate**: after resolving the starting number above, check the resolved `<tasks-dir>/dependency-graph.md` line count (`wc -l`; `<tasks-dir>` defaults to `tasks`). If it exceeds **300 lines**, run `python3 codex/skills/ywc-task-generator/scripts/compact-dependency-graph.py <tasks-dir>` before generating any new task. Skip compaction during `--preview-only`; defer it until the approved reservation is verified during consumption. Direct generation and approved consumption may compact before task writes. Report the before/after line count; if it remains above 300, active/planned work accounts for the size and no further action is needed. The gate only removes phases whose every task is in `<tasks-dir>/completed/` and never touches a phase with outstanding or unresolvable work.
+- Enumerate `git worktree list --porcelain`; inspect the same relative path in graph, active, and completed sources, reporting inaccessible/mismatched paths.
+- Scope the union maximum to prefixed IDs matching validated initials; keep legacy IDs readable without claiming another namespace. Empty owned scope starts at `<initials>-000001-010`, with sequence `010`.
+- For direct generation and `--preview-only`, hold one common-Git lock across scan, selection, reservation, and task/preview writes. For `--approve-preview`, verify and reuse its digest-bound reservation under the lock; do not select or reserve another phase.
+- Identify dependency relationships with existing tasks, preferring `dependency-graph.md` when present, and reflect them in the new tasks' `Depends On`
+
+### Step 3: Spec Review
+Review the specification for completeness and verify that sufficient information exists for decomposition. The goal is not to demand a perfect spec, but to confirm that the key information needed to determine task boundaries is present.
+
+**When unclear areas are found:**
+- Ask the user specific questions before starting task decomposition
+- Frame questions as choices ("Is it A or B?") rather than vague observations ("This part is unclear")
+- If the spec is sufficiently clear, skip this step and proceed directly
+
+### Step 4: Confirm Language
+
+If `--lang` is provided, skip this step. Otherwise, resolve language using
+[`../references/language-resolution.md`](../references/language-resolution.md):
+project `.codex/ywc.json`, then project guidance (`AGENTS.md`, `CODEX.md`,
+`CLAUDE.md`), then user `~/.codex/ywc.json`, then ask if unresolved.
+
+> "Which language should the task documents be written in? (`ko`, `ja`, `en`, `es`, or `zh`)"
+
+### Step 5: Confirm Granularity Mode
+
+If `--mode` is provided, use it and skip this confirmation. If `--granularity` is provided instead, treat it as a backward-compatible alias for `--mode` and skip this confirmation. If both are provided with different values, stop and ask the user to choose one mode before decomposing tasks.
+
+If neither flag is provided, **always ask** the user which granularity mode to apply. Do not silently default — the correct mode depends on who will execute the tasks.
+
+> "Which mode should the tasks be generated in?
+> - `human` — reviewable units (~15 files / ~500 LOC)
+> - `llm` — larger vertical slices optimized for a single LLM agent run (~35 files / ~1,200 LOC)"
+
+**Mode selection criteria** (share with the user if they are unsure):
+- Choose `human` when a person will implement and code-review each task in sequence
+- Choose `llm` when tasks will be executed autonomously by an LLM agent (Codex, etc.) in isolated worktrees, and reviewed in aggregate after completion
+
+Safety invariants — DB migration separation, Library introduction separation, Phase hard gate, post-task buildability, and single phase per task — apply in **both modes**. Only advisory size and safe internal bundling differ; mode selection never authorizes cross-feature or invariant bundling.
+
+See [references/granularity-modes.md](references/granularity-modes.md) for the full mode specification.
+
+**Persist the decision.** After parsing `--mode` / `--granularity` or receiving confirmation, record the selected mode in a re-checkable location (e.g., a top-line scratchpad note, or `write_memory("granularity_mode", <value>)` when Serena MCP is available) and apply it consistently through Steps 6–9 (size, bundling, Ownership scope, Implementation Steps depth, test.md inclusion). Mode drift mid-generation produces inconsistent task directories.
+
+### Step 5.5: Resolve Architecture Contract Packet
+
+If `--manifest` or `--architecture-evidence` is supplied, resolve the pair
+through the shared `../scripts/architecture-invariants.py` helper before task
+decomposition. A supplied manifest is repository-relative; invalid or missing
+input returns `NEEDS_CONTEXT` without discovery fallback. Evidence without a
+valid manifest is `NEEDS_CONTEXT`. A valid manifest without evidence preserves
+the existing task-generation flow and adds no packet. Derive the bounded
+`--changed-path` set only from paths already named by the specification and
+candidate task Ownership; never scan the repository broadly.
+
+Record only this sanitized packet in preview/task metadata and checklist
+context:
+
+```text
+Architecture Contract Packet:
+- contract_state: <VALIDATED | N/A — no architecture contract | NEEDS_CONTEXT>
+- component_ids: <affected component ids>
+- rule_ids: <affected rule ids>
+- verifier_requirement: v1 validation-only; no verifier execution
+- invariant_verdict: <MAINTAINED | VIOLATED | N/A | NEEDS_CONTEXT>
+- evidence_artifact_path: <repository-relative path or N/A>
+```
+Mapping is separate: `status` controls dispatch; `aggregate_verdict` becomes `invariant_verdict`; rule IDs, sanitized evidence paths, and artifact path remain distinct. Successful audits use `contract_state: VALIDATED`; no-manifest is `N/A — no architecture contract`; `NEEDS_CONTEXT` is terminal before writing.
+The successful helper integration must provide `component_ids` from its bounded changed-path mapping, `contract_state: VALIDATED`, and the normalized `.ywc-architecture-invariants-evidence.json` as `evidence_artifact_path`; missing fields are `NEEDS_CONTEXT`, never values inferred from raw inputs. `verifier_requirement` is a fixed constant rather than a helper output: every rendered packet must carry the literal `v1 validation-only; no verifier execution` value, and a packet missing that line is incomplete. The `## Architecture Contract Packet` sections in `references/README.md.template` and `references/task.md.template` are conditional blocks — render them only when a validated packet exists for that task; when no `--manifest` is supplied, or a valid manifest is supplied without evidence, omit the heading and every field instead of writing an empty or placeholder-filled section.
+Do not copy manifest/evidence contents, raw evidence, command-like fields,
+transcripts, full diffs, or inferred edges into task artifacts. Propagate
+`NEEDS_CONTEXT` before writing any preview or task directory. Surface
+`VIOLATED` as a task-generation finding; `N/A` and `MAINTAINED` permit the
+existing decomposition. The packet does not elevate task-generator authority
+or authorize execution. For the conditional task-owned quality packet, read [references/task-metadata-rules.md](references/task-metadata-rules.md) and apply its exact Ownership, required IDs/digests, bounded evidence paths, redaction, omission, and `NEEDS_CONTEXT` rules; Task Verify remains separate.
+
+### Step 6: Task Decomposition
+
+Analyze the specification and decompose it into tasks following the Task Design Principles and the selected Granularity Mode.
+
+**Scale guidelines** (task counts scale down in `llm` mode due to vertical bundling):
+- **Small** (1–3 tasks expected): A single phase is sufficient. Do not force multiple phases.
+- **Medium** (4–15 tasks in `human` mode, ~3–8 in `llm` mode): Organize into 2–3 phases. This is the typical case.
+- **Large** (15+ tasks in `human` mode, 8+ in `llm` mode): Suggest to the user that the spec itself be split into multiple features. A single task set exceeding 20 tasks becomes difficult to manage.
+
+#### Planning Advisor (optional, Pattern C)
+
+For **Medium** and **Large** specs, phase boundary decisions and task size splits benefit from frontier judgment. A wrong Phase boundary cascades into every subsequent dependency declaration and is expensive to undo once the task directories are generated.
+
+This skill applies **Pattern C** from [advisor-pattern.md](../references/advisor-pattern.md): a **single** upfront higher-capability advisor call before writing any task directories. The executor handles everything else — Task Naming, Directory Generation, Dependency Graph, and Final Validation.
+
+**When to invoke**:
+- Scale is Medium (4–15 tasks) or Large (15+ tasks), AND
+- At least one of: phase boundary is non-obvious, multiple DB migrations or library introductions compete for Phase 1, or the spec touches more than two concurrent feature areas.
+- **Skip for Small specs** (1–3 tasks) — a single-phase decomposition is obvious and does not benefit from frontier reasoning. Adding an advisor call here wastes budget.
+
+**How to invoke**: Use Codex subagent delegation when the current session exposes a delegation tool. Request one higher-capability advisor pass with the bounded payload below. If no delegation tool is available, run the same advisor checklist inline as a separate bounded pass and record the fallback in the final handoff. Do not use Claude Code-only `Task` fields, `subagent_type`, or explicit Claude model pins in the Codex bundle.
+
+- **Spec summary** — ≤20 lines distilled from your Spec Review in Step 3 (not the full spec).
+- **First-pass task list** — task name + one-line description for each candidate task from your Step 6 decomposition.
+- **Selected mode and matching guideline** — the selected `human` or `llm` mode and exactly one corresponding advisory: `human` → ~15 files / ~500 LOC; `llm` → ~35 files / ~1,200 LOC. Do not evaluate a task against the other mode's guideline.
+- **Known conflicts / shared surfaces** — any Ownership overlaps or Shared Surfaces you identified.
+- **Project context essentials** — monorepo structure, existing phases in `tasks/`, tech-stack constraints affecting dependency order.
+
+Ask the advisor for three things:
+
+1. **Phase boundary recommendations** — which tasks belong to which phase, and why each boundary is a hard gate.
+2. **Task size verification** — whether any task exceeds the selected mode's matching advisory guideline and, independently, whether a feature, Ownership, Shared Surface, safety-invariant, phase, or buildability boundary requires a split even when the numeric limit is met.
+3. **Dependency cycle risk** — any tasks with circular implicit dependencies the first-pass missed.
+
+**Budget**: exactly **1** advisor pass per invocation of this skill. Pattern C explicitly rules out re-invocation during execution — if the initial plan proves wrong, re-run the whole skill with refined input rather than calling another advisor mid-generation. This rule exists because mid-generation re-planning leads to inconsistent task directories; a fresh start is cleaner and more auditable.
+
+**Payload rules**: the summary and task list together must not exceed ~200 lines of payload. If the first-pass decomposition is already larger, narrow it before the advisor call (split the spec into sub-specs and plan each separately). Never forward the full spec verbatim.
+
+**Advisor output format** (≤300 words):
+- Phase boundary plan with one-line rationale per boundary
+- Task size concerns (if any)
+- Cycle/ordering warnings (if any)
+- Single "proceed" or "reconsider with refinements" verdict
+
+After receiving the verdict, the executor either continues to Step 7 (Task Naming) with the adjusted plan, or surfaces the "reconsider" verdict to the user for refinement before proceeding.
+
+### Step 7: Task Naming
+Each new task name follows this format:
+
+```
+[INITIALS]-[PHASE]-[SEQUENCE]-[CATEGORY]-[SHORT-DESCRIPTION]
+```
+> Example: `yk-000001-010-db-create-user-table` = INITIALS `yk` + PHASE `000001` + SEQUENCE `010` + category + description.
+
+**Numbering Rules:**
+- PHASE: **6-digit** number (`000001`, `000002`, ...) — the wider width reserves headroom for multi-year project growth
+- INITIALS: validated **2–4 lowercase alphanumeric** characters resolved before allocation
+- SEQUENCE: 3-digit number (`010`, `020`, `030`, ...)
+- Sequence increments by 10 (allows inserting tasks later without renumbering)
+- Always use hyphen (`-`) to separate PHASE and SEQUENCE for readability
+
+**Category:**
+- `lib` — New library/framework introduction
+- `db` — Database migration, schema change
+- `api` — API endpoint implementation
+- `domain` — Business logic, service layer
+- `worker` — Background job, async processing
+- `ui` — Frontend component, page
+- `test` — Test-only task (e2e, load test, etc.)
+- `refactor` — Code structure improvement with no behavior change
+- `infra` — CI/CD, deployment, configuration
+- `config` — Environment variables, feature flags, `.env` setup (distinct from infra: infra covers CI/CD pipelines and deployment, config covers application-level settings)
+
+**Naming Quality Rules:**
+- Use only lowercase and hyphens
+- Keep names concise, descriptive, and filesystem-friendly
+- Express exactly one primary concern (in `llm` mode, "one primary concern" may cover a vertical slice of a single feature)
+- Avoid vague names
+- Do not use "and" in task names — use a unifying noun instead (e.g., `user-auth` rather than `registration-and-login`)
+
+**Examples:**
+- `yk-000001-010-db-create-user-table`
+- `yk-000001-020-lib-setup-auth-library`
+- `yk-000001-030-api-user-registration`
+- `yk-000002-010-ui-login-form`
+
+Existing numeric and unprefixed task IDs remain valid in dependencies, graph
+parsing, compaction, executor ranges, and completion moves. Do not rename
+legacy directories or count them as another collaborator's prefixed namespace.
+
+### Step 8: Phase Organization
+- PHASE represents a meaningful dependency stage (e.g., `000001` = foundation, `000002` = core features, `000003` = integration)
+- Do not create phases arbitrarily — a new phase means "all tasks in the previous phase must be complete before this phase can start"
+- Tasks within the same phase may have internal ordering via SEQUENCE, but conceptually belong to the same stage
+
+**Phase Boundary Rules:**
+- Phase boundaries are **hard gates**. No task in Phase N+1 can start before all tasks in Phase N are complete
+- Dependencies between tasks within the same phase are allowed (order expressed via SEQUENCE)
+- If only some tasks in Phase N need to be complete before a specific Phase N+1 task can start, that task should be placed in Phase N instead
+- Criterion for splitting phases: "Do all outputs from this stage need to be in place for the next stage's work to be meaningful?"
+
+### Step 9: Directory and File Generation
+Use the pre-resolved `--tasks-dir` path for every task output. If omitted, use the repository-root `tasks/`; never derive it from the spec's parent. With `--preview-only`, write the preview and its digest-bound reservation ref, but no task files or graph. With `--approve-preview`, create task files only after explicit approval and identity, reservation, authorization, and containment checks pass. Without preview flags, preserve direct generation after existing validation; no preview approval is required.
+
+Generate the following structure for each task:
+
+```
+tasks/[TASK_NAME]/
+├── README.md
+├── task.md
+└── test.md (optional — included when manual verification is needed)
+```
+
+Refer to templates in the `references/` directory when writing files:
+- `references/README.md.template` — Task overview and dependency documentation
+- `references/task.md.template` — Implementation checklist
+- `references/test.md.template` — Manual test plan
+- `references/dependency-graph.md.template` — Top-level dependency summary
+
+#### README.md Core Elements
+
+Each README.md must include the following:
+
+- **Purpose**: What this task achieves
+- **Scope**: What is included
+- **Spec Reference**: Specification/design documents that must be consulted before implementation (see "Spec Reference Rules" below)
+- **Dependencies**: Bidirectional dependency tracking
+  - **Depends On**: Predecessor tasks this task depends on (specify what each provides)
+  - **Depended By**: Successor tasks that depend on this task (specify what each needs)
+- **Key Files**: List of files expected to be created or modified
+- **Notes**: Important considerations, design decisions
+- **Out of Scope**: What is intentionally excluded
+- **Parallel Execution Metadata**:
+  - **Model Hint**: Exactly one advisory tier and evidence-based rationale per task; use [task-metadata-rules.md](references/task-metadata-rules.md) as the canonical tier definition.
+  - **Ownership**: Files, directories, modules, contracts this task may modify
+  - **Shared Surfaces**: Shared boundaries that may cause merge or design conflicts
+  - **Conflicts With**: Tasks that must not run in parallel
+  - **Parallelizable After**: Minimum merged baseline before isolated execution can safely start
+  - **Task Verify**: Exact commands that prove this task is complete
+
+Bidirectional dependency tracking matters because developers executing a task can immediately see which downstream tasks are affected, allowing them to consider downstream requirements when designing interfaces.
+
+#### Spec Reference Rules
+
+Every task's README.md must include a `## Spec Reference` section with three subsections: **Primary Sources** (links to source-of-truth docs, project-relative by default), **Summary** (2–5 sentence orientation), and **Out of Scope (from spec)** (scope-creep guardrail).
+
+**Hard rule**: never leave Spec Reference empty or omitted — use `N/A — no external spec (housekeeping / refactor / config only)` when no spec exists.
+
+For the full structure, the external-URL policy, the link-vs-summary drift protocol, and the cross-task scope-handoff convention, **read [references/spec-reference-rules.md](references/spec-reference-rules.md)**.
+
+#### Parallel Execution Metadata Rules
+
+Read [references/task-metadata-rules.md](references/task-metadata-rules.md) for advisory tier selection and its runtime boundaries. Every task requires a Model Hint, including tasks that will not run in parallel.
+
+When tasks may be executed via `git worktree`, Codex, or other isolated worker setups, every task's README.md must declare:
+
+- **Ownership** — concrete edit boundary (file paths, globs, modules, contracts). Bad: `backend`, `frontend related files`. Good: `api/src/routes/metrics.ts`, `OpenAPI contract: /api/v1/metrics`.
+- **Shared Surfaces** — shared boundaries (DB schema, API contracts, event payloads, workspace config, CI config) that may cause conflicts even without direct file overlap.
+- **Conflicts With** — tasks that must not run in parallel even when dependencies allow. Write `(None identified)` if none.
+- **Parallelizable After** — the minimum merged baseline for safely starting isolated execution (often, but not always, the same as `Depends On`).
+- **Task Verify** — task-specific commands that prove completion (avoid project-wide gates only).
+
+For the full rule set including good/bad Ownership examples, the complete shared-surfaces taxonomy, and the dependency-graph Parallel Execution Notes format, **read [references/parallel-execution-metadata.md](references/parallel-execution-metadata.md)**.
+
+#### task.md Core Elements
+
+Each task.md must include the following:
+
+- **Prerequisites**: Predecessor task completion status to verify before starting (checkbox format)
+- **Allowed Edit Scope**: A brief restatement of the `README.md` Ownership as an operational boundary
+- **Stop Conditions**: Conditions under which the implementer should stop and report rather than continuing
+- **Implementation Steps**: Specific implementation steps (checkbox format)
+  - Each step must reference specific files, modules, functions, or behaviors
+  - Do not use generic placeholders like "implement core logic" or "handle edge cases"
+  - Example: `Create src/models/user.ts with User entity definition`
+- **Task Verify**: Task-specific verification command checklist
+- **Verification**: Confirm lint, typecheck, test, and build pass (use the project's actual commands)
+For a `ui` task changing end-user layout/styles, link to [`mobile-first-ui.md`](../references/mobile-first-ui.md) and order Implementation Steps narrowest-viewport base first, then outward `min-width` expansion. Require a PC/tablet-only exception only when explicitly stated; do not apply this to logic-only UI, admin/internal, non-UI, or unchanged legacy desktop-first CSS (no retrofit).
+**Duplicate-sensitive write Task Verify rule**: When a task touches payment, order creation, provisioning, credit / balance / stock / quota mutation, or another duplicate-sensitive write flow, its `task.md` must include concrete Task Verify commands or test scenarios for concurrent request behavior, transaction rollback or equivalent consistency rollback on partial failure, and idempotency retry / double-click behavior. The task must name the selected mechanism where applicable: atomic conditional update, row lock, optimistic lock, idempotency key, unique constraint, or persisted request/result record. Expected results must be observable: lock/version conflict response, exhausted stock/balance/quota response, rollback state after a forced mid-flow failure, and duplicate retry returning the prior result without repeating the side effect. If the project has no practical local concurrency harness, the task may record a named exception only with replacement verification such as a code-level lock/transaction proof or an integration-test plan.
+
+#### test.md (optional)
+
+Write structured scenario-based tests (Steps + Expected Result).
+
+**Include when:**
+- UI component or screen behavior verification → always include
+- External service integration (S3, Email, Payment, etc.) → always include
+- Browser-dependent features → always include
+- Complex user workflows (multi-step) → recommended
+
+**May omit when:**
+- Pure API endpoints (coverable by unit + integration tests)
+- Database migrations (schema application verified via task.md Verification)
+- Library introduction tasks (import and basic operation verified via Verification)
+
+### Step 10: Generate Dependency Graph
+After generating tasks in direct-generation or approved-consumption mode, create `<tasks-dir>/dependency-graph.md` at the top level (where `<tasks-dir>` is the value of `--tasks-dir`, defaulting to `tasks/`). This file serves as the single source of truth for execution order. Preview-only stops after writing and validating its preview artifact; it does not create or modify the dependency graph.
+
+Refer to `references/dependency-graph.md.template` for format. List tasks by phase and express each task's dependencies using arrow notation.
+This graph must be consistent with the Dependencies sections in individual README.md files.
+Once every task in a phase reaches `<tasks-dir>/completed/`, the shared completion marker automatically compacts that phase (see `codex/skills/ywc-task-generator/scripts/compact-dependency-graph.py`) — no special markup is required; the script reads the `## Phase NNNNNN`, `## Parallel Execution Notes`, and `## Visual Dependency Graph` headings directly.
+### Step 11: Final Validation
+Before returning a preview, direct task set, or consumed task set, apply [requirement coverage and output validation](references/output-and-validation.md), including its attributable coverage summary and interface/verification mapping. A clean preview returns `DONE` with its preview identity; approval is a separate caller step. Then verify the following, applying task-artifact checks only to direct generation or approved consumption:
+
+**Dependency & Structure:**
+- [ ] No forward dependencies (earlier tasks do not depend on later tasks)
+- [ ] No circular dependencies
+- [ ] Phase boundaries correctly set as hard gates
+- [ ] Database migrations and library introductions separated into their own tasks (Safety Invariant in both modes)
+- [ ] No numbering collisions across the resolved graph, active/completed tasks, and every linked worktree source
+- [ ] Graph/directory numbering mismatches reported as concerns (if any)
+**Naming & Size:**
+- [ ] Naming convention followed (`[INITIALS:2-4]-[PHASE:6]-[SEQUENCE:3]-[CATEGORY]-[SHORT-DESCRIPTION]`)
+- [ ] Direct/preview generation reserves under the common-Git lock; approved consumption verifies and reuses the preview's exact phase reservation under that lock without selecting another phase.
+- [ ] PHASE is 6 digits, SEQUENCE is 3 digits, separated by hyphen
+- [ ] No task name contains "and" (single concern check)
+- [ ] Each task fits within the selected Granularity Mode's size guideline
+- [ ] Selected Granularity Mode applied consistently (bundling, Implementation Steps depth, Ownership scope)
+**README.md Quality:**
+- [ ] Both "Depends On" and "Depended By" included
+- [ ] Parallel Execution Metadata included (Model Hint, Ownership, Shared Surfaces, Conflicts With, Parallelizable After, Task Verify)
+- [ ] Ownership is narrow enough to serve as an actual edit boundary, not just a restatement of Key Files
+- [ ] **Spec Reference** section included — Primary Sources, Summary, and Out of Scope (from spec) all filled in or explicitly marked `N/A`
+- [ ] If Primary Sources include external URLs, only if the project allows it (default is project-relative paths only)
+
+**task.md Quality:**
+- [ ] Specific Implementation Steps included (no generic placeholders)
+- [ ] Prerequisites section included
+- [ ] Allowed Edit Scope and Stop Conditions included
+- [ ] Verification commands match the project's actual commands (based on context collected in Step 2)
+- [ ] Duplicate-sensitive write tasks include concrete concurrent request, rollback, and idempotency retry verification or a named no-harness exception with replacement evidence
+
+**Consistency:**
+- [ ] Every task has a valid advisory Model Hint and rationale; preview, README, and final summary agree before writes.
+- [ ] Dependency Graph Summary matches individual README.md files
+- [ ] If the task set is intended for parallel execution, Dependency Graph includes Parallel Execution Notes
+- [ ] Codebase is buildable after each task completes
+- [ ] Selected language's writing rules are followed
+
+---
+
+## Output Format
+
+The final output includes:
+
+1. **Task list summary** organized by phase with Task ID, Title, and Model Hint (tier plus rationale) for every task, matching the preview when used and every generated README
+2. **Directory generation** under `<tasks-dir>/`
+3. **Dependency Graph** at `<tasks-dir>/dependency-graph.md`, including Parallel Execution Notes when needed
+
+Preview-only returns the task summary and persisted preview identity; it does not claim that task directories or a dependency graph were generated. Items 2 and 3 apply only to direct generation or approved consumption.
+
+When parallel execution is expected, verify that each task is safe for isolated worktree or agent execution.
+
+---
+
+## Validation
+
+For allocation, run:
+```bash
+RESOLVER_LAUNCHER="$(bash "${CODEX_HOME:-$HOME/.codex}/skills/scripts/select-resolver-launcher.sh" 2>&1)" || { echo "BLOCKED: ${RESOLVER_LAUNCHER#BLOCKED: }" >&2; exit 3; }
+INITIALS_TEST="$(bash "$RESOLVER_LAUNCHER" "ywc-task-generator/scripts/test-initials-allocation.sh" bash)" || exit $?
+PARSER_TEST="$(bash "$RESOLVER_LAUNCHER" "ywc-task-generator/scripts/test-parser-ids.sh" bash)" || exit $?
+bash "$INITIALS_TEST" && bash "$PARSER_TEST"
+```
+Task Verify must cover config precedence/malformed tiers, linked-worktree
+graph/active/completed sources, scoped empty-graph maxima, concurrent distinct
+reservations, and missing-initials `NEEDS_CONTEXT` before any write.
+
+Before returning `DONE`, verify:
+
+- [ ] The spec or plan source was read and each task traces to a source requirement.
+- [ ] For preview-only, verify the persisted preview artifact and its identity, and verify that no task directory or dependency graph was created or modified.
+- [ ] For direct generation or approved consumption, verify every emitted task directory contains `README.md` and `task.md`, and `<tasks-dir>/dependency-graph.md` exists. All task artifacts must be under the pre-resolved `<tasks-dir>`; never beside the spec unless explicitly selected.
+- [ ] UI or behavior-changing tasks have a `test.md` or an explicit test exception.
+- [ ] For direct generation or approved consumption, `dependency-graph.md` exists and matches the generated task directories.
+- [ ] Parallel Execution Notes are present when tasks are intended for parallel execution.
+- [ ] The selected output language matches `--lang` or the shared YWC language resolution result.
+- [ ] The selected Granularity Mode matches `--mode`, `--granularity`, or the user's explicit confirmation.
+- [ ] The final response reports the generated directory, task count, graph path, and `Status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT`.
+
+## Task Execution Convention
+
+For execution rules after task generation (completion handling, directory moves, etc.), see `references/execution-convention.md`.

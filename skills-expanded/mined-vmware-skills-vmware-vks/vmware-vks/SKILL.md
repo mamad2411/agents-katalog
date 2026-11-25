@@ -1,0 +1,324 @@
+---
+name: vmware-vks
+description: >
+  Use this skill whenever the user needs to manage vSphere Kubernetes Service (VKS) — Supervisor clusters, vSphere Namespaces, and TKC cluster lifecycle.
+  Directly handles: check VKS compatibility, create/delete namespaces, create/scale/upgrade/delete TKC clusters, get kubeconfig, check Harbor registry.
+  Always use this skill for "create Kubernetes cluster", "scale workers", "upgrade K8s version", "create namespace", "get kubeconfig", or any VKS/TKC task.
+  Do NOT use for vanilla VM operations (use vmware-aiops), non-vSphere Kubernetes (e.g., kubeadm, EKS, AKS), or AVI/AKO load balancing (use vmware-avi).
+  For networking use vmware-nsx.
+installer:
+  kind: uv
+  package: vmware-vks
+allowed-tools:
+  - Bash
+metadata: {"openclaw":{"requires":{"anyBins":["vmware-vks","uvx"]},"optional":{"env":["VMWARE_VKS_CONFIG","VMWARE_VKS_<TARGET>_PASSWORD","VMWARE_VKS_<TARGET>_USERNAME","VMWARE_AUDIT_APPROVED_BY"],"bins":["vmware-policy"]},"homepage":"https://github.com/vmware-skills/VMware-VKS","emoji":"☸️","os":["macos","linux"]}}
+compatibility: >
+  vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). MCP tool calls and remote CLI commands audited to ~/.vmware/audit.db (SQLite, via vmware-policy); write operations also mirrored to ~/.vmware-vks/audit.log.
+  Credentials: Each vCenter target requires a per-target password env var in ~/.vmware-vks/.env following the pattern VMWARE_VKS_<TARGET_NAME_UPPER>_PASSWORD (e.g., target "vcenter-01" → VMWARE_VKS_VCENTER_01_PASSWORD). Passwords are never logged, never echoed, never included in audit entries. issue_supervisor_kubeconfig and issue_tkc_kubeconfig are credential access, not reads: the kubeconfig embeds a Supervisor bearer token (JWT from /wcp/login) that acts as the configured vCenter account until it expires (typically hours, independent of this process). Both are annotated readOnlyHint=false so MCP clients ask before running them; call them only on explicit user request and write the result to an owner-only (0600) file with output_path / -o rather than printing it. The audit log records the call but redacts the returned kubeconfig.
+---
+
+# VMware VKS
+
+> Self-test: [guide](https://github.com/vmware-skills/marketplace/blob/main/MODEL_FIT_SELF_TEST.md).
+
+> **Disclaimer**: This is a community-maintained open-source project and is **not affiliated with, endorsed by, or sponsored by VMware, Inc. or Broadcom Inc.** "VMware" and "vSphere" are trademarks of Broadcom. Source code is publicly auditable at [github.com/vmware-skills/VMware-VKS](https://github.com/vmware-skills/VMware-VKS) under the MIT license.
+
+AI-powered VMware vSphere Kubernetes Service (VKS) management — 25 MCP tools.
+
+> Requires vSphere 8.x+ with Workload Management enabled.
+> **Companion skills**: [vmware-aiops](https://github.com/vmware-skills/VMware-AIops) (VM lifecycle), [vmware-monitor](https://github.com/vmware-skills/VMware-Monitor) (monitoring), [vmware-storage](https://github.com/vmware-skills/VMware-Storage) (storage), [vmware-nsx](https://github.com/vmware-skills/VMware-NSX) (NSX networking), [vmware-nsx-security](https://github.com/vmware-skills/VMware-NSX-Security) (DFW/firewall), [vmware-aria](https://github.com/vmware-skills/VMware-Aria) (metrics/alerts/capacity), [vmware-avi](https://github.com/vmware-skills/VMware-AVI) (AVI/ALB/AKO), [vmware-harden](https://github.com/vmware-skills/VMware-Harden) (compliance baselines).
+> | [vmware-pilot](../vmware-pilot/SKILL.md) (workflow orchestration) | [vmware-policy](../vmware-policy/SKILL.md) (audit/policy)
+
+## What This Skill Does
+
+| Category | Capabilities | Count |
+|----------|-------------|:-----:|
+| **Supervisor** | Compatibility check, 9.1 upgrade risk, status, storage policies | 4 |
+| **Namespace** | List, get, create with quotas, update, delete with TKC guard, VM classes | 6 |
+| **TKC Clusters** | List, get, versions, create, scale, upgrade, delete with workload guard | 7 |
+| **VM Service** | VM snapshots, VM groups + bootOrder, VM multi-NIC readout (vm-operator CRDs, read-only) | 3 |
+| **Access** | Supervisor kubeconfig, TKC kubeconfig, Harbor registry, storage usage | 4 |
+| **Permissions** | Which account is in use and whether it holds each tool's vSphere privileges (read-only) | 1 |
+
+## Quick Install
+
+```bash
+uv tool install vmware-vks==3.7.2
+vmware-vks check
+```
+
+## When to Use This Skill
+
+- Check if vSphere environment supports VKS
+- Create, update, or delete Supervisor Namespaces with resource quotas
+- Deploy, scale, upgrade, or delete TKC (TanzuKubernetesCluster) clusters
+- Get kubeconfig for Supervisor or TKC clusters
+- Check Harbor registry info or storage usage
+
+**Use companion skills for**:
+- VM lifecycle, deployment → `vmware-aiops`
+- Inventory, health, alarms → `vmware-monitor`
+- iSCSI, vSAN, datastore → `vmware-storage`
+- Load balancing, AVI/ALB, AKO, Ingress → `vmware-avi`
+
+## Related Skills — Skill Routing
+
+| User Intent | Recommended Skill |
+|-------------|------------------|
+| Read-only monitoring | **vmware-monitor** |
+| Storage: iSCSI, vSAN | **vmware-storage** |
+| VM lifecycle, deployment | **vmware-aiops** |
+| vSphere Kubernetes Service (vSphere 8.x+) | **vmware-vks** ← this skill |
+| NSX networking: segments, gateways, NAT | **vmware-nsx** |
+| NSX security: DFW rules, security groups | **vmware-nsx-security** |
+| Aria Ops: metrics, alerts, capacity planning | **vmware-aria** |
+| Multi-step workflows with approval | **vmware-pilot** |
+| Compliance baselines (CIS / 等保 / PCI-DSS), drift detection, LLM remediation advisor | **vmware-harden** (`uv tool install vmware-harden`) |
+| Load balancer, AVI, ALB, AKO, Ingress | **vmware-avi** (`uv tool install vmware-avi`) |
+| Audit log query | **vmware-policy** (`vmware-audit` CLI) |
+
+## Common Workflows
+
+### Deploy a New TKC Cluster
+
+**Pre-flight (judgment)**:
+- Supervisor must be vSphere 8.x+ with WCP enabled — `supervisor check` returns pass/fail. If fail, no amount of TKC commands will work; resolve at vSphere/WCP layer first.
+- Account rights: `access-info --tool create_namespace` checks the vSphere side; TKC calls are decided by the namespace's view/edit permission, which it does not check.
+- K8s version: pick a TKR version that's still supported by VMware (not EOL). New clusters on EOL versions look fine until you need a CVE patch and there isn't one.
+- VM class sizing: `best-effort-*` for dev, `guaranteed-*` for prod. A `best-effort` worker can be evicted under host pressure — production workloads need guaranteed.
+- Storage policy: must already exist in vCenter. `list_supervisor_storage_policies` first and pass the returned `policy` ID (not the display name); creating a TKC against a missing policy fails after CP boot, leaving partial state.
+- Control-plane count: `1` for dev, `3` for prod (HA). Cannot upgrade from 1→3 without recreating; choose right the first time.
+- Namespace quota: TKC consumes CP + worker × (cpu, memory) from namespace quota. If quota is too tight, workers fail to schedule with no obvious error.
+- TKC API version (from skill 3.7.0; earlier 3.6.1 is v1beta1-only): live discovery selects served `cluster.x-k8s.io/v1beta1`, otherwise `v1beta2`; failed discovery and unsupported-only schemas stop. Modern creation requires an explicit installed `cluster_class` and optionally `cluster_class_namespace`. MCP preview/apply uses Supervisor admission dry-run; offline CLI YAML remains unvalidated. See [schema and ClusterClass boundaries](references/capabilities.md#measured-cluster-api-schema-support). VCF 9.1 end-to-end deployment remains unverified.
+
+**Steps**:
+1. `vmware-vks supervisor check --target prod` → must pass
+2. `vmware-vks tkc versions -n <ns>` → pick a non-EOL TKR
+3. (If new namespace) `vmware-vks namespace create dev --storage-policy <policy> --cpu <enough-for-cp+workers>` (a dry run by default), then the same with `--apply`
+4. `vmware-vks tkc create dev-cluster -n dev --version <tkr> --control-plane 1 --workers 3 --vm-class best-effort-large` (a dry run by default), then the same with `--apply`
+5. Wait for `phase=running` (typically 10-15 min); do not assume success on apply return
+6. Only if the user asked for cluster access: `vmware-vks kubeconfig get dev-cluster -n dev -o ./kubeconfig` — writes an owner-only file; report the path, never paste the token into the agent context
+
+### Scale Workers for Load Testing
+
+**Judgment**: scaling is fast but reverse-scaling is destructive — workers are deleted, in-flight pods lost. Treat scale-down like a delete.
+
+1. `tkc get dev-cluster -n dev` → record current worker count and any pending pods
+2. **Scale-up**: `tkc scale dev-cluster -n dev --workers 6` → safe, additive operation
+3. Verify new workers reach `Ready` in `kubectl get nodes` before sending traffic
+4. **Scale-down**: drain pods first via `kubectl drain` on the to-be-deleted nodes, THEN `tkc scale --workers 3`. Skipping drain causes pod restarts on remaining nodes — measurable user impact.
+5. Confirm namespace quota leftover supports the new size — quota is enforced at scheduling, not at scale request
+
+### Namespace Resource Management
+
+**Judgment**: quota changes are atomic but consequences are not. Reducing quota below current usage doesn't evict pods — they keep running, but no new pods schedule, looking like a "namespace is broken" symptom.
+
+1. `namespace list` → see all namespaces and their phase
+2. `storage -n dev` → check current CPU/memory/storage usage; **never reduce quota below current usage + 20% headroom**
+3. `namespace update dev --cpu <new> --memory <new> --dry-run` → preview, then real
+4. Validate by attempting a small pod scale-up; if it pends with `Insufficient cpu`, quota is still the bottleneck
+
+## Architecture
+
+```
+User (Natural Language)
+  ↓
+AI Agent (Claude Code / Goose / Cursor)
+  ↓ reads SKILL.md
+  ↓
+vmware-vks CLI  ─── or ───  vmware-vks MCP Server (stdio)
+  │
+  ├─ Layer 1: pyVmomi → vCenter REST API
+  │   Supervisor status, storage policies, Namespace CRUD, VM classes, Harbor
+  │
+  └─ Layer 2: kubernetes client → Supervisor K8s API endpoint
+      TKC CR apply / get / delete  (served cluster.x-k8s.io/v1beta1 or v1beta2)
+      Kubeconfig bearer token from POST /wcp/login (Supervisor JWT)
+  ↓
+vCenter Server 8.x+ (Workload Management enabled)
+  ↓
+Supervisor Cluster → vSphere Namespaces → TanzuKubernetesCluster
+```
+
+## Usage Mode
+
+| Scenario | Recommended | Why |
+|----------|:-----------:|-----|
+| Local/small models (Ollama, Qwen) | **CLI** | ~2K tokens vs ~8K for MCP |
+| Cloud models (Claude, GPT-4o) | Either | MCP gives structured JSON I/O |
+| Automated pipelines | **MCP** | Type-safe parameters, structured output |
+
+## MCP Tools (25 — 16 read, 9 write)
+
+All accept optional `target` parameter to specify a named vCenter.
+
+`list_namespaces`, `list_supervisor_storage_policies` and `list_vm_classes` return the family
+list envelope — `{items, returned, limit, total, truncated, hint}` — rather than a bare array.
+Read the rows from `items`; `truncated` says whether the listing is complete, so it never has
+to be guessed from the row count. These three read their collection in one un-paged call, so
+`total` is the real count and `truncated` is always `false`.
+
+| Category | Tool | Type |
+|----------|------|:----:|
+| **Supervisor** | `check_vks_compatibility` | Read |
+| | `get_supervisor_upgrade_risk` | Read |
+| | `get_supervisor_status` | Read |
+| | `list_supervisor_storage_policies` | Read |
+| **Namespace** | `list_namespaces` | Read |
+| | `get_namespace` | Read |
+| | `create_namespace` | Write |
+| | `update_namespace` | Write |
+| | `delete_namespace` | Write |
+| | `list_vm_classes` | Read |
+| **TKC** | `list_tkc_clusters` | Read |
+| | `get_tkc_cluster` | Read |
+| | `get_tkc_available_versions` | Read |
+| | `create_tkc_cluster` | Write |
+| | `scale_tkc_cluster` | Write |
+| | `upgrade_tkc_cluster` | Write |
+| | `delete_tkc_cluster` | Write |
+| **VM Service** | `list_vm_service_snapshots` | Read |
+| | `list_vm_service_groups` | Read |
+| | `list_vm_service_network_interfaces` | Read |
+| **Access** | `issue_supervisor_kubeconfig` | Write (credential) |
+| | `issue_tkc_kubeconfig` | Write (credential) |
+| | `get_harbor_info` | Read |
+| | `list_namespace_storage_usage` | Read |
+| **Permissions** | `get_access_info` | Read |
+
+`get_tkc_cluster` reports every declared worker pool and a fixed-replica total
+only when all pool counts are known. Its legacy `worker_replicas` field is the
+first pool, not the total. VKS 3.8 chained upgrades and placement policy are
+vendor capabilities, not verified behavior of this skill's single-version
+`upgrade_tkc_cluster` call; see `references/capabilities.md`.
+
+`create_namespace`, `create_tkc_cluster`, `delete_namespace`, `delete_tkc_cluster` take `confirm` (default False). Without it they change nothing and return `blast_radius`: the spec or YAML plan to be created, or what a delete destroys (TKC clusters, VMs and PVCs in the namespace; node counts and running workloads of a cluster). Show it to the user; pass `confirm=True` only after they decide on what they saw.
+
+`confirm=True` is refused while a blocker stands — TKC clusters inside a namespace, running workloads in a cluster (unless `force=True`), a name already taken — or when any part of the blast radius could not be read. the old `confirmed` and `dry_run` aliases were removed in 3.4.2 and are refused as unknown arguments.
+
+**Credential access**: `issue_supervisor_kubeconfig` and `issue_tkc_kubeconfig` are not reads. The kubeconfig embeds a Supervisor bearer token (JWT from `/wcp/login`) that acts as the configured vCenter account until it expires — typically hours, and not revoked when vmware-vks exits. So:
+- Run them only when the user explicitly asks for a kubeconfig; never auto-run them or fetch one as a side step. Both are annotated `readOnlyHint: false` (MCP clients ask first) and `risk_level: medium` (so an operator's `min_risk_level: medium` deny rule covers them).
+- Always pass `output_path` (MCP) or `-o <path>` (CLI) and report only the path. The file is created owner-only (0600) — also when it replaces an existing file — and a symlink target is refused. Delete it when no longer needed.
+- The audit row records who fetched which kubeconfig, but the returned kubeconfig is redacted (`sensitive_result=True`).
+
+> Full capability details and safety features: see `references/capabilities.md`
+
+## CLI Quick Reference
+
+```bash
+# Supervisor
+vmware-vks check [--config <path>]
+vmware-vks preflight-auth [--target <name>]   # live-validate POST /wcp/login (issue #13)
+vmware-vks access-info [--tool <name>] [--target <name>]   # what may this account do?
+vmware-vks supervisor status <cluster-id> [--target <name>]
+vmware-vks supervisor upgrade-risk --to 9.1.1 [--target <name>]   # VUMDB schema remains unmeasured; follow KB 455737
+vmware-vks supervisor storage-policies [--target <name>]
+
+# Namespace
+vmware-vks namespace list [--target <name>]
+vmware-vks namespace get <name> [--target <name>]
+vmware-vks namespace create <name> --cluster <id> [--cpu <n>] [--memory <mb>] [--storage-policy <name>] [--apply]
+vmware-vks namespace update <name> [--cpu <n>] [--memory <mb>] [--target <name>]
+vmware-vks namespace delete <name> [--target <name>]
+
+# TKC Clusters
+vmware-vks tkc list [-n <namespace>] [--target <name>]
+vmware-vks tkc create <name> -n <ns> [--version <v>] [--workers <n>] [--vm-class <name>] [--apply]
+vmware-vks tkc scale <name> -n <ns> --workers <n> [--pool <name>] [--target <name>]
+vmware-vks tkc upgrade <name> -n <ns> --version <v> [--target <name>]
+vmware-vks tkc delete <name> -n <ns> [--skip-workload-check] [--target <name>]
+
+# Kubeconfig
+vmware-vks kubeconfig supervisor -n <namespace> [-o <path>] [--target <name>]
+vmware-vks kubeconfig get <cluster-name> -n <namespace> [-o <path>] [--target <name>]
+
+# Harbor & Storage
+vmware-vks harbor [--target <name>]
+vmware-vks storage -n <namespace> [--target <name>]
+```
+
+> Full CLI reference with all flags and interactive creation: see `references/cli-reference.md`
+
+## Troubleshooting
+
+### "VKS not compatible" error
+
+Workload Management must be enabled in vCenter. Check: vCenter UI → Workload Management. Requires vSphere 8.x+ with Enterprise Plus or VCF license.
+
+### Every command fails with "session is not authenticated"
+
+The password is right. Either the session expired (run the command again; a new session is opened) or the account has no vSphere role, so vCenter shows no session for it and every call fails. VKS does not refuse such a login when it connects, because an account holding only Supervisor namespace permissions can look the same and still work; the error appears on the first call that needs a role. Assign the account a role (Read-Only or higher) on the vCenter root folder under Administration > Access Control > Global Permissions; Namespace and TKC work also needs Workload Management privileges.
+
+### Namespace creation fails with "storage policy not found"
+
+List policies first: `vmware-vks supervisor storage-policies`, then pass the **Policy ID** column value (not the display name) as `--storage-policy`.
+
+### TKC cluster stuck in "Creating" phase
+
+Check Supervisor events in vCenter. Common causes: insufficient resources on ESXi hosts, network issues with NSX-T, or storage policy not available on target datastore.
+
+### Every REST tool returns 401
+
+vCenter keeps two independent session stores, and this skill uses both. Namespace, storage-policy and Supervisor-status tools call the vSphere Automation REST API under `/api`, which authenticates with a session id from `POST https://<vcenter>/api/session` (HTTP Basic on that one call, then the id in a `vmware-api-session-id` header). The pyVmomi SOAP session under `/sdk` is a different store and its key is rejected there — sending it produced a 401 on every REST tool. A 401 is refreshed automatically once; if it persists, check whether a proxy between you and vCenter strips the `vmware-api-session-id` header. A **403**, not a 401, is what an account short of Workload Management permissions gets.
+
+### Validating Supervisor auth (POST /wcp/login)
+
+Supervisor/TKC Kubernetes auth uses a JWT obtained from `POST https://<supervisor>/wcp/login` (HTTP Basic → JSON `session_id` bearer token), not the pyVmomi SOAP session key, and not the `/api/session` id above either — three separate credentials. To validate this end-to-end against your real Supervisor, run:
+
+```bash
+vmware-vks preflight-auth [--target <name>]
+```
+
+It performs the **real** login (no mocks) and reports, per target: vCenter reachable → `/wcp/login` HTTP status → parseable `session_id` → does the JWT authenticate a trivial Supervisor K8s API call. A healthy result is all four steps `✓ PASS` ending in `target '<name>': /wcp/login auth flow validated end-to-end.` (exit code 0). The login goes to the Supervisor API endpoint vCenter publishes, or to `supervisor_host` when that target sets it (vCenter itself answers 404 for `/wcp/login` on 9.1). On failure each step prints a teaching message — e.g. a 404 on `/wcp/login` means the wrong host (set `supervisor_host`) or an endpoint path that differs on your Supervisor version, a 401 on the K8s probe means `session_id` is not the bearer token on your version. It never tracebacks — every failure is status output.
+
+**TKC kubeconfig on VCF 9.1:** One live report found that `issue_tkc_kubeconfig` embeds the Supervisor JWT and the guest TKC API rejects it with 401 ([issue #27](https://github.com/vmware-skills/VMware-VKS/issues/27)). `preflight-auth` checks the Supervisor API only; a pass does not validate guest-cluster access. Verify the generated kubeconfig against the guest API before using it. The guest login request shape is still needed before this skill can issue a distinct TKC token.
+
+### Kubeconfig retrieval fails
+
+Supervisor API endpoint must be reachable from the machine running vmware-vks. Check firewall rules for port 6443.
+
+### Scale operation has no effect
+
+Verify the cluster is in "Running" phase before scaling. Clusters in "Creating" or "Updating" phase reject scale operations.
+
+### Delete namespace rejected unexpectedly
+
+The namespace delete guard prevents deletion when TKC clusters exist inside. Delete all TKC clusters in the namespace first, then retry.
+
+## Prerequisites
+
+- vSphere 8.x+ with Workload Management enabled
+- Enterprise Plus or VCF license
+- NSX-T (recommended) or VDS + HAProxy networking
+- Supervisor Cluster configured and running
+
+## Setup
+
+```bash
+uv tool install vmware-vks==3.7.2
+mkdir -p ~/.vmware-vks
+vmware-vks init
+```
+
+> All tools are automatically audited via vmware-policy. Audit logs: `vmware-audit log --last 20`
+
+> Full setup guide, security details, and AI platform compatibility: see `references/setup-guide.md`
+
+## Audit & Safety
+
+Operations are audited via vmware-policy:
+- Every MCP tool call, and every CLI command that reaches vCenter or the Supervisor (`@guarded` writes and credential reads, `@audited` reads), is logged to `~/.vmware/audit.db` (SQLite). The seven namespace/TKC write operations are also mirrored to `~/.vmware-vks/audit.log` (JSON Lines)
+- Policy rules enforced via `~/.vmware/rules.yaml` (deny rules, maintenance windows, risk levels)
+- Risk classification: each tool tagged as low/medium/high/critical
+- View recent operations: `vmware-audit log --last 20`
+- View denied operations: `vmware-audit log --status denied`
+
+**Local files (sensitive, keep owner-only)**: `~/.vmware-vks/.env` holds per-target passwords (b64-obfuscated, not encrypted; created 0600, `vmware-vks doctor` flags a wider mode). `~/.vmware/audit.db` (+ WAL/SHM, 0600 in a 0700 directory) keeps operation history — resource names, parameters, results with credentials redacted — and rotates at 100 MB, keeping 5 archives. `~/.vmware-vks/audit.log` (0600) is never rotated or pruned. Exported kubeconfigs are 0600 and are never cleaned up by the skill. Delete or rotate these yourself per your retention policy.
+
+**In-memory kubeconfig (v1.5.18+)**: for its own API calls the skill builds the Supervisor/TKC kubeconfig as a Python dict and loads it with `load_kube_config_from_dict()`; the bearer token (also cached in process memory, up to 8 h) is never written to a temp file. Only an explicit export (`output_path` / `-o`) puts it on disk.
+
+vmware-policy is automatically installed as a dependency — no manual setup needed.
+
+## License
+
+MIT — [github.com/vmware-skills/VMware-VKS](https://github.com/vmware-skills/VMware-VKS)

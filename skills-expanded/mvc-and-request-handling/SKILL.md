@@ -1,0 +1,244 @@
+---
+name: mvc-and-request-handling
+description: >
+  How a web request is routed and handled: MVC's actual division of responsibilities, Page
+  Controller versus Front Controller, and Application Controller for flows whose next step
+  is a decision. Use when controllers contain business rules or persistence calls, when the
+  same cross-cutting concern is copied into every handler, when a wizard's navigation logic
+  is spread across handlers as if-chains, when a filter, interceptor and handler contend for
+  one concern, when a controller is tested by starting the whole application, or when
+  classical web patterns are mapped onto a REST API. Does not cover how the response is
+  rendered (view-and-representation-patterns), the remote operation and its payload
+  (remote-facade-and-dto), the use-case layer (service-layer-design), or where conversation
+  state lives across requests (session-state-strategies).
+---
+
+# MVC and Request Handling
+
+## Purpose
+
+Keep the web layer to its actual job — turning a request into a call and a result into a
+response — and put shared request concerns in one place instead of in every handler. Modern
+frameworks implement these patterns for you, so the value here is not in building them but
+in **recognising which pattern a piece of code is playing**, and noticing when a
+responsibility has landed in the wrong one.
+
+## The vocabulary, disambiguated
+
+"Model" means three different things in a typical discussion, and conflating them causes
+real design errors:
+
+```text
+Domain model        the business objects and rules (domain-logic-organization)
+Presentation model  what the view needs: already formatted, already decided
+Framework model     the map of attributes handed to a template (Spring's Model)
+```
+
+The separation used here for a web boundary:
+
+```text
+Controller   interprets the request, invokes the application, selects the response.
+             Delegates business rules and use-case transaction ownership.
+View         renders. Owns no decisions beyond presentation.
+Model        application state/behavior in MVC's broader vocabulary;
+             prefer a deliberate presentation model at the response boundary.
+```
+
+Web MVC is not the original Smalltalk MVC: there is no observer relationship and no
+long-lived view. The name persists; the mechanism is request → controller → model → render.
+
+`Controller → Service → Repository` describes a layered call path, not MVC's three roles.
+[MVC separates interaction and presentation responsibilities](https://martinfowler.com/eaaCatalog/modelViewController.html);
+it can form the web boundary of a layered, hexagonal or clean architecture. For example,
+[Clean Architecture places controllers, presenters and views among interface adapters](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html).
+Do not treat these designs as a maturity ladder or rename packages to claim isolation.
+Use `layering-and-boundaries` for choosing the broader structure; this skill places web
+responsibilities within that decision.
+
+## Page Controller and Front Controller
+
+```text
+Page Controller      one handler per page or action. Simple, local, and every
+                     shared concern needs a shared mechanism such as filters
+                     or composed collaborators.
+
+Front Controller     one entry point receives every request, applies shared
+                     concerns, and dispatches to a handler. Shared concerns
+                     exist once; the handler stays small.
+```
+
+Many Java web frameworks provide a Front Controller (for example Spring's `DispatcherServlet`),
+and handler methods play the page/action role behind it. These patterns can coexist.
+The practical questions are **which
+concerns belong in the front controller's chain and which in the handler**, and whether the
+chain's stages are being used correctly.
+
+## Workflow
+
+Start with the requested responsibility or ordering question. Reuse existing configuration
+and tests; an adequate handler or trivial redirect can close with no change. Apply only the
+steps needed for the actual contract, and state specific missing evidence without requiring
+a full request-chain redesign or an Application Controller on every review.
+
+1. **Check the handler's contents and runtime.** Inspect routing, security configuration,
+   Maven/Gradle release and toolchain settings, resolved framework versions and CI/runtime
+   evidence first. The partial examples use Servlet Spring MVC; `ProblemDetail` requires
+   Spring 6+ (Java 17+). Their source baseline is not permission to upgrade the target.
+   Read the affected consumer contract, application callers, tests and relevant ADRs;
+   distinguish an explicit architecture requirement from an incidental package convention.
+   Trace one operation from binding through application policy and persistence to the
+   response, recording runtime calls separately from imports and public signature types.
+   Locate business rules and transaction ownership; a simple read need not gain a
+   pass-through service (`layering-and-boundaries`).
+2. **Find duplicated policy.** Repetition count alone does not justify indirection; shared
+   authorization, error mapping, correlation, tenant and envelope semantics often belong in the
+   chain when centralization prevents drift and preserves ordering.
+3. **Place it at the right stage.** Filter, interceptor, argument resolver, exception
+   handler, advice: they see different things and run at different times. Choosing wrongly
+   produces a concern that works until it does not. For request state or resources, trace
+   acquisition and release through short-circuit, exception and async paths; a callback's
+   name does not guarantee that it runs on each path.
+4. **Assess flow decisions.** Repeated or independently changing journey decisions can
+   justify an HTTP-independent Application Controller. A local response choice may remain
+   in a handler; authoritative mutation rules still belong to the application/domain contract.
+5. **Keep the response shape a deliberate decision**, not the accidental serialisation of
+   whatever the service returned (`remote-facade-and-dto`).
+6. **Test at the right level.** Focused handler tests cover mapping, validation and status
+   codes with application doubles where useful. Use integration tests when the actual
+   transaction, security or serialization contract requires them.
+
+## Decision rules
+
+```text
+A concern applies to every request (correlation id, security context,
+request logging, tenant resolution)
+        → an appropriate chain stage, with explicit route/dispatch coverage.
+          Order it after required identity/validation prerequisites and before
+          work that depends on it; a filter need not be first to be shared.
+
+A concern applies to a group of handlers and needs to know which handler
+was selected (authorisation on an annotation, feature flags per route)
+        → enabled method security for authorisation; an interceptor can
+          handle non-security route metadata. Keep request security in
+          the security filter chain, with consistent path matching.
+
+A concern turns an exception into a response
+        → consistent error mapping at each boundary: MVC advice for MVC
+          exceptions, security/filter/container handlers for their failures.
+          Share the contract; avoid duplicated generic catches.
+
+A concern turns request data into a domain-shaped parameter
+(the current user, a parsed range, a tenant)
+        → an argument resolver. This removes the boilerplate without
+          hiding a business rule.
+
+The next step of a multi-step flow depends on state, not on a link
+        → consider Application Controller when shared or complex journey
+          decisions need one owner, testable without HTTP. Keep simple
+          response choices local and mutation legality independently enforced.
+
+A screen is one page, one action, no shared concerns beyond the global
+ones
+        → a plain handler. Do not build a flow abstraction for it.
+
+The API is REST over resources
+        → routing is by resource and method, not by page. Page
+          Controller and Front Controller both still describe what the
+          framework does. Choose a deliberate representation; Remote Facade
+          applies when network granularity needs it, not from the REST label alone.
+```
+
+## Rules
+
+- A controller deciding domain policy is a layering defect; `if` itself is not evidence because
+  protocol negotiation, optional input and response mapping legitimately branch. Trace whether the
+  condition must hold for non-HTTP callers.
+- **A controller with a repository call is not automatically wrong.** For a pure read it can
+  be the honest design. For writes, trace actual transaction, invariant and actor/resource
+  authorization ownership, including non-HTTP callers. An existing bounded operation may
+  already enforce the contract; extract a use-case boundary when coordination or independent
+  policy ownership requires it (`service-layer-design`).
+- Cross-cutting concerns implemented per handler can diverge. Repeated policy plus observed drift or
+  ordering/security risk is the signal, and
+  consider a shared chain stage or collaborator before a base controller: Java's single
+  class inheritance makes independently varying base-class policies awkward to combine.
+- **Choose the chain stage by what it must see.** Ordinary Servlet filters run before MVC
+  handler selection. Interceptors see the selected handler but are not a sufficient security
+  boundary: Spring warns of path-matching mismatches. Use the security chain and enabled
+  method security; test uncovered routes and alternate dispatches.
+- The framework's model map is a presentation concern. Putting entities in it couples the
+  template to entity properties and can trigger lazy loading during rendering
+  (`orm-behavioral-patterns`).
+- Keep request-specific actor, tenant, form and response data in method-local values or
+  correctly scoped collaborators. Spring controllers are singleton beans by default;
+  mutable request fields can mix concurrent callers. Inspect actual bean scope and retained
+  state before diagnosing a race; a scoped proxy is not the same as storing its resolved
+  request object. When changing state ownership, exercise overlapping requests from different
+  actors and check that each operation and response uses only its own context.
+- Validate request shape and transport limits at the boundary. Classify other checks by
+  the contract, not the annotation: a positive order quantity is a domain invariant even
+  if a request DTO also checks its range. Enforce business legality regardless of caller;
+  Bean Validation on a web request alone does not protect imports or other entry points.
+- Constrain accepted fields as well as their values. `@Valid` does not authorize binding
+  server-owned properties or a domain object graph. Form property binding and JSON body
+  deserialization have different controls; inspect the actual path before choosing an allowlist.
+- One deliberate error contract across the application's HTTP boundaries. RFC 9457 problem details give a standard
+  target (`rpc-and-api-contracts`); already committed responses require a late-failure
+  policy, since their status and emitted body cannot be replaced.
+- Application Controller can give shared or complex multi-step journey decisions a
+  testable owner instead of spreading them across redirects. Preserve the distinction
+  between navigation and authoritative domain transitions.
+- Do not map classical page-flow patterns onto an HTTP API by analogy. An API may expose resources,
+  commands, workflows and hypermedia; Remote Facade is useful when network granularity requires it,
+  not a synonym for every REST endpoint
+  (`remote-facade-and-dto`).
+- Handler tests cover binding, validation, status codes and error shape with application
+  doubles where useful. Separate integration tests may legitimately include a database to
+  verify transaction, authorization or serialization behavior (`architecture-testing`).
+
+## Complete the selected boundary change
+
+For implementation, finish the smallest complete operation. When business policy must move,
+put it in its application/domain owner, wire the handler to it, and connect existing
+non-HTTP callers where they share that contract. Preserve actor/resource authorization, transaction scope,
+failure outcomes and public representation. A new service, port, presenter or package is
+justified by an actual responsibility or dependency constraint, not the diagram's shape.
+
+Choose evidence for each changed responsibility:
+
+- Exercise the business invariant without the controller, including a forbidden input
+  and relevant actor/resource denial. Keep HTTP negotiation branches at the web boundary.
+- Exercise the route's input, success and error contract through the configured MVC path;
+  assert public response fields and absence of privileged/internal fields. When entities
+  or lazy data were involved, verify serialization does not trigger unintended persistence
+  access rather than assuming a DTO name proves detachment.
+- When moving transaction ownership, verify the actual wired call and failure rollback;
+  a mocked collaborator or an outer test transaction does not establish that boundary.
+  Spring distinguishes [test-managed and application transactions](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/tx.html#testcontext-tx-test-managed-transactions).
+  Reuse existing sufficient tests instead of adding a new test layer for every change.
+
+For Spring Boot 4.x binding, error or documentation mechanics, use `spring-boot-web` with
+the resolved versions, affected operation and consumer contract. For Boot 3 or an older
+target, retain its mechanisms and use version-matched Spring documentation and project
+tests; do not upgrade to fit the specialist's scope. Reuse the established OpenAPI,
+REST Docs or guide pipeline; changing responsibility does not require new documentation tools.
+Keep use-case design with `service-layer-design` when orchestration needs to change.
+
+For a review, return the observed responsibility/ordering issue or supported no-change
+verdict and its evidence. For implementation, report the completed path and checks actually
+run. Missing configuration makes filter coverage, authorization and transaction scope
+conditional: inspect available artifacts, ask only for the missing fact that changes the
+decision, and continue independent work. Identify unexecuted checks and the evidence needed
+to close them; diagrams and source inspection alone do not prove runtime behavior.
+
+## References
+
+- [Page Controller versus Front Controller](references/page-vs-front-controller.md) — both
+  patterns in a modern stack, exactly which shared concern belongs at which stage of the
+  chain (filter, interceptor, argument resolver, advice) with the ordering that matters, the
+  base-controller anti-pattern, and how the same reasoning applies to a message consumer or
+  a scheduled job. Read when placing a cross-cutting concern or reviewing a controller.
+- [Application Controller](references/application-controller.md) — flow logic extracted from
+  handlers: a state machine over an application process, where the flow state lives, how it
+  is tested without HTTP, and when a flow abstraction is overkill. Read when a wizard,
+  approval chain or multi-step process is being built or has become unmanageable.

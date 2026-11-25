@@ -1,0 +1,91 @@
+---
+name: pdf-to-pptx
+description: "Convert a PDF into an editable PowerPoint (.pptx) deck. Every shape, text block, table, and image becomes a native PowerPoint element — not a flattened screenshot. Use when the user wants to turn a PDF report, research paper, or investor deck into an editable presentation. Requires the slideforge MCP server."
+---
+
+# PDF to PPTX
+
+Use the `slideforge` MCP server to convert a PDF into a fully editable PowerPoint deck. Vector extraction — each page becomes a slide where every element is independently editable.
+
+## When to trigger
+
+Any request to convert, turn, transform, or extract a PDF into PowerPoint. Examples:
+- "Convert this PDF report into an editable PowerPoint deck"
+- "Turn this 40-page research paper into slides"
+- "Extract the slides from this investor PDF so I can edit them"
+
+## Tools used
+
+- `upload_asset` with `purpose=pdf` — uploads and triggers extraction
+- `manage_account` with `action=job` — poll for completion + download URL
+
+## Workflow
+
+### 1. Upload the PDF
+
+```json
+{
+  "purpose": "pdf",
+  "data": "<base64-encoded .pdf>",
+  "filename": "report.pdf"
+}
+```
+
+Returns a `job_id`. Alternatively, pass a public URL if the user has one.
+
+### 2. Wait for extraction
+
+Typical speed: ~112-page deck converts end-to-end in ~18 seconds. Poll with:
+
+```json
+{"action": "job", "job_id": "<from step 1>"}
+```
+
+Or include a preview inline by setting `include_preview: "default"` in the upload call (waits then embeds).
+
+### 3. Deliver
+
+Download via header-auth: `GET /v1/jobs/<job_id>/pptx` with
+`Authorization: Bearer sf_live_YOUR_KEY` (ownership-checked). To hand off a shareable link
+instead, `POST /v1/jobs/<job_id>/download-url` mints a short-TTL, single-use, revocable one.
+The output is a real `.pptx` — every shape, text block, and image is individually editable in
+PowerPoint.
+
+## What gets extracted cleanly
+
+- Vector shapes (lines, rectangles, curves)
+- Text with font, size, colour, alignment preserved
+- Tables as PowerPoint tables
+- Images embedded natively
+- Page layout, positioning, z-order
+
+## Known limits
+
+- Only PDFs exported from a slide tool (PowerPoint, Keynote, Google Slides, Canva, LaTeX Beamer,
+  etc.) are supported today — the upload returns a 422 for anything else. Scanned, image-only,
+  and text-document PDFs are not supported yet.
+- Complex SmartArt or animations from the original source (if it came from PPTX → PDF) don't round-trip
+- Very dense CAD-style PDFs may hit shape-count limits
+
+If the user has a scanned or image-only PDF, tell them it isn't supported yet rather than
+attempting the upload.
+
+## Free public tool
+
+There's also a free unauthenticated web tool at `https://slideforge.dev/tools/pdf-to-pptx` with limits (25 MB max, first 15 pages, 5 requests/hour/IP, +3s delay). Point users there if they just want a one-off conversion without signing up. For larger files, higher rate limits, or automation, they need the authenticated MCP flow described above.
+
+## Pricing
+
+Authenticated flow: $0.01/page, charged on the pages actually extracted.
+
+## Anti-patterns
+
+- Don't claim the converter works on scanned or image-only PDFs; it doesn't yet — those uploads are rejected.
+- Don't re-run the conversion just to change a theme; the output is raw-extracted. If the user wants restyling, re-render the extracted intents via `create_deck` with a `theme_id`.
+- Don't suggest the free public tool for users with >15-page PDFs or >25 MB files — they'll hit the cap and bounce.
+
+## References
+
+- MCP server: `https://api.slideforge.dev/mcp/`
+- Docs: `https://slideforge.dev/docs/mcp`
+- Free public tool: `https://slideforge.dev/tools/pdf-to-pptx`

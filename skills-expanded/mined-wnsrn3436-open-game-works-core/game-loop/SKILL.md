@@ -1,0 +1,127 @@
+---
+name: game-loop
+description: The procedure by which the lead agent of the `create game` and `update game` commands runs the loop. Covers the work branch, raising the core version, calling sub-agents, running the checks, play, judge and measurement with `ogw`, filling the defect list, acting on the stop verdict, the main merge, reporting to the human, reproducing PROD problems, play videos and judge calibration. Read on receiving `create game` or `update game`, when the lead agent of `build` runs loop steps, and when the human asks for a play video or judge calibration
+---
+
+# game loop
+
+The lead agent runs the `ogw` commands of this document and acts on what they print. What the commands compute and the formats of the files they write are defined in [`ogw`](../../tools/ogw.md); the lead agent does not need that document to run them.
+
+## start
+
+1. The lead agent runs `ogw loop start <game> --command <create|update> [--limit <iterations>] [--until <unix ms>]`, passing `<request>` of the command on stdin, or empty stdin (`< /dev/null`) when `create game` has no `<request>`. The tool creates the work branch `loop/<run>` from main and checks it out, commits `records/loops/<run>/request.md`, pins the harness repo HEAD as the pinned harness commit of the run, then prints the run name and the main commit the work branch was created from. When the human states a budget for the loop, the lead agent passes it: a number of iterations as `--limit <the number of the last iteration of the run>`, and a time or a duration as `--until <the UTC Unix ms at which it ends>`. The loop then stops with limit reached at the verdict of the iteration that reaches the budget, after that iteration has its loop iteration record, so the lead agent does not stop the loop itself for a budget. When the tool exits with a nonzero code, it created nothing, and the lead agent acts on its output
+   - `setup game is not done`: the lead agent tells the human to do `setup game` first. When every item it names is a game settings value that `ogw settings list game <game> --missing` gives, the lead agent instead fills those values on main as `## procedure` 4, 5 and 7 of [game-setup](../game-setup/SKILL.md) fill them, commits game settings with `ogw settings commit game <game>` as 7 says and runs `ogw loop start` again
+   - files of `records/setup/reference/` are missing: the lead agent tells the human that output and stops
+   - the game has a run that is not closed (a loop run or a build run): the lead agent tells the human that run name and the output of `ogw loop status <game>`, and stops. If the human says to continue that run, the lead agent continues it as `## resume` says; if the human says to close it, the lead agent closes it with `ogw loop end <game>`
+   - the game repo checkout has changes: the lead agent tells the human the list of those changes and stops
+   - the harness secret `claude-code-oauth-token` is not in the secret store of this host: the lead agent stops and tells the human to make a long-lived token with `claude setup-token` and put it into `ogw secret set --harness claude-code-oauth-token` as one line
+   - `invalid --limit` or `invalid --until`: the lead agent corrects the value from the budget the human stated and runs the command again
+2. For `update game`, the lead agent runs `ogw core upgrade <game> --check --background` and waits for it. The tool changes nothing and prints the version that `ogw core upgrade` would raise game settings `coreVersion` to, the versions it would skip because of backward compatibility with the last PROD build, the change list between the two versions and the released core proposals of this game in that range. When it prints a version, the lead agent shows the human that output and asks, with a recommendation, whether to raise the core version. Only when the human says yes, the lead agent starts `ogw core upgrade <game> --version <printed version> --background` and does 3 and 4 without waiting. The loop iterations run only on a game whose core version is the core version of the harness (AGENTS.md `## repo`), so the recommendation is yes when the printed version is that version, and the lead agent tells the human that a no, or a game that `--check` cannot raise to that version, stops the loop before iteration 1. The tool raises `coreVersion` to that version and commits it, then prints the changed version and the skipped versions. When the version to raise to is no longer the printed version, the tool changes nothing and fails, and the lead agent runs the `--check` of this step again
+3. If the `update game` request is a fix of a PROD problem, the lead agent reproduces the problem on an instance started with `ogw instance start <game> --commit <main commit printed by 1> --db postgresql`, handling it with the commands of [instance.md](instance.md). It does not write to PROD
+   - If the request names the problem user by social account (provider and provider account ID) instead of user ID, the lead agent calls the PROD admin operation `find_user_by_social_account` with `ogw admin` to find that user ID
+   - If the state of the PROD user is needed, `ogw clone user <game> <problem user ID> --instance <id> --record` overwrites the user of that instance's client with a snapshot of the problem user
+   - If game state is needed, `ogw clone game-state <game> <kind> <PROD key> --instance <id> --record` overwrites that row on that instance
+   - With `--record`, the tool appends the `replaced_records` and `data_version_matches` it printed (when `false`, also the two data versions) to `## reproduction` of `records/loops/<run>/request.md`. In a reproduction where `data_version_matches` is `false`, a failure to reproduce is not used as evidence that there is no problem, and is written as `unknown`
+   - If a guild is needed, the lead agent calls the PROD admin operation `get_guild` with `ogw admin` to read the guild and its members, and creates a guild with the same fields and role composition as that guild on that instance with `ogw clone guild <game> <guild ID> --instance <id>`. For game state keyed by that guild, it gives the new guild ID to `--target-key` of `ogw clone game-state`
+   - The lead agent reads friend relations and chat messages with the PROD admin operation `list_chat_messages` and the logs, and creates the same state on that instance with `ogw input` and the cheats of `ogw command`
+   - Other admin operations are called with `ogw admin`. What is to be checked on STG is checked with the result of `ogw admin <game> STG <operation>`, and what can be checked only on screen is written in the `--human` file of `## end` 3
+   - `export_user_snapshot` and `import_user_snapshot` are called only through `ogw clone user`, `export_game_state` and `import_game_state` only through `ogw clone game-state`, and `import_guild` only through `ogw clone guild`. Snapshots are not received as files
+   - The lead agent writes the reproduction steps in order and the evidence (capture path, log, server response) in `## reproduction` of `request.md`. If it cannot reproduce the problem, it writes the steps it tried and their results. Then it stops that instance with `ogw instance stop <id>`
+4. The lead agent writes each moment that the request sets or changes and that is not in `## moments` of `records/setup/reference/reference.md` in `## judge moments` of `request.md`, one per line, as `` - `<moment name>`: <description> ``. The name is snake_case. The description is the path from the first screen to that moment; for a moment that comes only after time passes (e.g. the moment of receiving the rewards accumulated while not connected), it also gives the duration (ms) that must pass on that path. When the request adds or changes something that a moment would show but names no moment, the lead agent sets that moment and appends `(set by lead agent)` after the name. When the request adds nothing beyond `## moments`, the lead agent writes nothing here
+5. If 2 was started, the lead agent waits for it with `ogw job wait <id>`. The upgrade writes and commits game settings, so no game settings value is written before it ends
+6. For `update game`, the lead agent fills each value that `ogw settings list game <game> --missing` gives as `## procedure` 4, 5 and 7 of [game-setup](../game-setup/SKILL.md) fill it. It writes with `ogw settings set` each game settings value that the request decides, and adds its path to `humanDecided` in the same call. A value at or below a `humanDecided` path is changed only when the request asks for that change
+7. The lead agent commits what this section changed: game settings with `ogw settings commit game <game>`, then `request.md` and `assumptions.md`. The tool commits game settings without the pre-commit hook, which refuses a value that needs content code the game does not have yet (e.g. the option entry that a language added to `supportedLanguages` needs), and prints the static check failures for which the hook would refuse the commit. The lead agent leaves them to the content agent, which fixes them in iteration 1
+
+## iteration
+
+An iteration starts with `ogw loop next <game>`. If the current iteration number is less than the iteration limit of the run (the smaller of `--limit` and game settings `loopIterationLimit`), the tool raises the number by 1. If it is equal or greater, the tool does not raise the number and exits with a nonzero code, and the loop stops with limit reached. If the previous `ogw loop verdict` gave `confirm`, the new iteration is a confirmation iteration (`## stop`).
+
+An iteration is a fun iteration or a completeness iteration (AGENTS.md `## loop`), and `ogw loop next` prints its kind.
+
+1. The lead agent writes and commits the content input file with `ogw loop input <game> content`, which prints its path `records/loops/<run>/content-input-<iteration>.md`, then calls the content agent with that path as `--input` and waits with `ogw agent wait <id>`. In iteration 1 of `update game`, if the request changes the brief, it gives `--brief`. In a confirmation iteration, the lead agent does not call the content agent and instead waits for `ogw loop sync <game> --wait --background` with `ogw job wait <id>`. The tool waits for the resource work and translation work in progress and merges them into the work branch
+   - In a fun iteration whose `ogw loop next` printed `variants: <n>` with `<n>` greater than 1, the lead agent runs `ogw loop variants <game> --background` after `ogw loop input` instead of calling the content agent, and waits with `ogw job wait <id>`. The tool makes the variants and merges the chosen one into the work branch, and steps 2 to 8 run on the merged commit. When no variant is merged, the tool prints the `ogw agent content` call with the content input of the iteration and exits with a nonzero code, and the lead agent calls the content agent once as when `<n>` is 1
+2. The lead agent starts `ogw check <game> --loop --background`, runs `ogw loop dispatch <game>` without waiting, then waits for the check job with `ogw job wait <id>`. The check prints `gate: pass` or `gate: fail`. On `gate: fail`, steps 3 and 4 are skipped and the loop goes to 5
+   - Failures of UI quality become defects, and the loop continues
+   - A failure of no placeholder does not become a defect. The resource sub-agent and the translation sub-agent remove placeholder resources, missing translations and stale translations
+3. The lead agent runs `ogw loop evaluate <game> --background` and waits with `ogw job wait <id>`. The tool runs step 3 (play) and step 4 (judge) together. When it prints missing files of `records/setup/reference/` and how to put them there and exits with a nonzero code, the lead agent stops without closing the run and tells the human that output. `## start and stop` of [instance.md](instance.md) says what the lead agent does when an instance start fails inside it
+4. Step 4 runs inside `ogw loop evaluate`, and the lead agent does nothing in it. Judge agents play in new contexts, and the tool counts their votes. The loop iteration record holds the result: `vs baseline` (`better`, `worse`, `indistinguishable`, or none without a baseline game) and `vs reference` (`pass`, `fail`, `unknown`, or none in a fun iteration)
+5. `ogw loop findings <game>` writes the finding file, and the lead agent fills in each finding as `## defect list` says
+6. The lead agent runs `ogw loop record <game>`. The tool merges the findings into the defect list, changes `status`, and writes and commits the loop iteration record `records/loops/<run>/iteration-<n>.md`. When `## temporary resources` of that record is not `none`, the lead agent tells the human those keys, that the temporary method made them (the report of the resource job gives the cause), and that the next `update game` makes them again. It does not wait for an answer
+7. No command: `ogw loop evaluate` and `ogw loop variants` decide the baseline game of each iteration from the loop iteration records before it. `ogw loop baseline <game>` prints the baseline game of the current iteration
+8. `ogw loop verdict <game>` prints the stop reason and the evidence for the judgement, or `continue` or `confirm`. When blocker or major defects that are not fixed or refused keep an iteration from success, the tool also prints `success blocked by: <defect ids>`, and the next iteration is a completeness iteration. If the loop stops, the lead agent goes to `## end`. If the loop does not stop, the lead agent waits for `ogw loop sync <game> --background` with `ogw job wait <id>` and goes to the next iteration
+
+- During the loop, the lead agent does not wait for the human
+- The lead agent writes an assumption in `records/loops/<run>/assumptions.md` in the format of `### assumption` of [`game-design`](../game-design/SKILL.md) and commits it
+- If harness settings `useLocalCore` is `true`, `ogw loop next` does not raise the number and exits with a nonzero code. The lead agent then stops without closing the run and tells the human
+- If the core version of the game is not the core version of the harness, `ogw loop next` does not raise the number and exits with a nonzero code. The lead agent closes the run with `ogw loop end <game>` and tells the human the ways out that the output names
+- If the harness repo HEAD is not the pinned harness commit of the run, `ogw loop next` does not raise the number, prints both commits and exits with a nonzero code. The lead agent stops without closing the run and tells the human both commits. When the human says to go on with the harness repo HEAD, the lead agent runs `ogw loop next <game> --repin`, which pins that commit and the values of the run paths of harness settings (AGENTS.md `## settings`) and records the change of the commit in the loop iteration record
+- If the content agent fails, the lead agent calls it again with `ogw agent retry <id> --background` and waits with `ogw agent wait <id>`. If `ogw agent retry` reaches `backgroundRetryLimit` and exits with a nonzero code, the lead agent stops without closing the run and reports to the human
+
+## defect list
+
+A defect has the fields below.
+
+| field | contents |
+|---|---|
+| `id` | kebab-case. Defects with the same cause use the same `id` across iterations |
+| `severity` | `blocker`, `major`, `minor` |
+| `owner` | `client content`, `server content`, `data`, `resource`, `contract`, `design` |
+| `where` | When `source` is `play` or `judge`: scene, moment, screen area. When `check`: the `where` of `<failure>` in `check-<iteration>.json`. When `hardening`: the file:line of the hardening record item |
+| `what` | The observed fact |
+| `why` | Why it is worse than the baseline game or the target range |
+| `evidence` | The path of `check-<iteration>.json` and the check name, a capture path under `records/loops/<run>/evidence/`, a capture of a judge result named `<instance id>-<unix ms>` (its file is in `records/loops/<run>/evidence/judge-<iteration>-<k>/`), a line of play feedback, a hardening record path, the path of `evaluate-<iteration>.json` |
+| `source` | `check`, `play`, `judge`, `hardening` |
+| `status` | `open`, `awaiting confirmation`, `fixed`, `reopened`, `refused`. `ogw loop record` sets it. A defect the content agent reports `fixed` or `not reproduced` awaits confirmation |
+
+`ogw loop findings <game>` writes the findings of this iteration to `records/loops/<run>/findings-<iteration>.json`, and `ogw loop findings <game> --hardening` writes those of the hardening record of a build run to `records/loops/<run>/findings-hardening-<round>.json`.
+
+The tool fills `id`, `severity`, `owner` and `why` of a UI quality failure whose message names its problem kind and the prefab or scene it is in, or only `id` while the placeholder may be what fails. The lead agent may change these fields; to drop such a finding, it sets `id` back to `null` and fills `drop`. Each of `severity`, `owner` and `why` that a finding leaves empty (missing or blank) is taken, in `ogw loop record`, from the first finding of the same `id` in the finding file that has all three, or, when there is none and the finding has one of the three, from the defect of the same `id` in `records/loops/<run>/defects.json`, so they are filled once per `id`.
+
+The lead agent fills in the following for each finding in the finding file. If a finding is not filled in, `ogw loop record` fails. `ogw loop record <game> --hardening` merges the finding file of hardening only into the defect list, without an iteration record.
+
+- `id`: findings with the same cause use the same `id`, both within this iteration and with the defects of `records/loops/<run>/defects.json`. When several play agents report the same cause, the lead agent groups them into one defect whose `owner` is `design` or shared code
+- `drop`: the reason not to make the finding a defect. A play or judge finding whose referenced resources all have `status` `placeholder` or `requested` in `resources.csv` is `drop`. So is a UI quality finding the tool left with only `id` when its prefab or scene draws a resource with that `status`, since the check measures it again on the final resource. A finding with `drop` filled in does not have `id` filled in
+- `severity`, `owner`, `why` when they are empty. `why` holds no direction of the fix
+- the order of the findings, set to the order in which they are to be fixed
+
+## stop
+
+The stop reasons are those of AGENTS.md `## loop`, and their judgement values are harness settings `loopStop`.
+
+- confirmation iteration: the iteration after `ogw loop verdict` gave `confirm`. The content agent does not edit, and steps 2 to 8 run on the state with the finished resource work and translation work merged.
+- When the human makes the loop stop and the request of the run is about UI or art, the loop does not stop before an iteration has judged the final resources of that request: the lead agent waits for `ogw loop sync <game> --wait --background`, runs one more iteration, and then stops. It tells the human this when the human asks to stop
+- When `ogw loop verdict` gives `plateau`, the lead agent checks, before stopping, whether the evidence the judge saw belongs to that instance. If the judge saw another commit or old captures, the lead agent does not call `ogw loop next` and redoes steps 3 to 8 with the same iteration number. `ogw loop evaluate` does not use the earlier results of that iteration and starts anew, and `ogw loop findings` and `ogw loop record` rewrite the files of that iteration
+
+## end
+
+1. The lead agent waits for `ogw loop sync <game> --wait --background` with `ogw job wait <id>`. The tool waits for the resource work and translation work in progress and merges them
+2. The lead agent runs `ogw loop prepare-merge <game>`. The tool decides the commit to merge, and if the HEAD of main is the main commit the work branch was created from, it creates `merge/<run>` and checks it out. Otherwise it does not create `merge/<run>`, prints the two commits and exits with a nonzero code, and nothing is merged into main
+3. The lead agent runs `ogw loop end-record <game> [--stopped-by-human] [--human <file>]`. The tool writes and commits the loop end record `records/loops/<run>/end.md`. If the human made the loop stop, the lead agent gives `--stopped-by-human`. If `ogw loop verdict` gave a stop reason last, the tool rejects `--stopped-by-human`. In `<file>`, the lead agent writes the items to pass to the human, one per line: what can be checked only on screen in `## start` 3, and the PROD problem checks the human is to make on STG
+4. If 2 created `merge/<run>`, the lead agent merges it into main with `ogw loop merge <game>`
+5. The lead agent runs `ogw loop end <game>`. The tool stops all instances and running jobs of that run, deletes the remaining worktrees and branches `agent/<id>` that the `ogw agent` of that run created, and closes the run
+6. The lead agent reports the summary and path of the loop end record to the human. The summary includes the `total` row of `## cost` of that record and each `- flag:` line of its `## time`. A placeholder resource, missing translation or stale translation in `## failures` of that record is reported as failure (AGENTS.md `## loop`)
+
+## resume
+
+When the human says to continue a run that is not closed, the lead agent runs `ogw loop resume <game> [--limit <iterations>] [--until <unix ms>] [--repin]` and continues from the `resume at` that the tool prints: for a loop run `start 2`, `iteration <n> <step>` or `end 5`, each a step of the section of that name, and for a build run `build <step>`, a step of `## procedure` of [`build`](../build/SKILL.md). In the iteration being continued, it does not call `ogw loop next`. When the tool prints `job <id> is still running; run ogw loop resume again` and exits with code 1, the lead agent runs `ogw loop resume` again.
+
+- When the human states a budget for a loop run, the lead agent passes it as `## start` 1 says, and it replaces that limit of the run. `--limit` is the number of the last iteration of the run, so for a number of further iterations the lead agent adds that number to the `iteration` that `ogw loop status <game>` prints
+- When the harness repo HEAD is not the pinned harness commit of the run, the tool prints both commits and exits with a nonzero code without changing anything. The lead agent gives `--repin` only when the human says to go on with the harness repo HEAD; otherwise it tells the human both commits and stops. When the human says to go on with values of run paths of harness settings that changed while the run is open (AGENTS.md `## settings`), the lead agent gives `--repin` too, and the tool pins them. When `--repin` fails because the core version of the game is not the core version of the harness, the lead agent tells the human the ways out that the output names and stops
+
+## sub-agent
+
+A sub-agent is called with `ogw agent <role> --game <game> --input <file> --background`, and in the loop the lead agent calls only the content agent: `ogw loop variants` calls variant agents, `ogw loop dispatch` calls resource sub-agents and translation sub-agents, and `ogw loop evaluate` calls play agents and judge agents. `ogw agent status <id>` returns one of `running`, `done`, `failed`, and `ogw agent wait <id>` waits until the job ends and then returns the result file path. `ogw agent stop <id>` ends that job as `failed` and stops the jobs and instances that agent started.
+
+- The loop does not wait for resource sub-agents and translation sub-agents. `ogw loop sync` merges finished work and reassigns work that failed, hit a conflict while merging or whose `ogw data` failed, up to harness settings `backgroundRetryLimit`. `ogw loop sync` is not run while the content agent works
+- When `ogw loop dispatch` prints `install failed <method>: ...`, the lead agent tells the human that line in its report
+
+## video
+
+When the human requests a play video, the lead agent waits for `ogw video <game> [--commit <sha>] [--language <language tag>] --background` with `ogw job wait <id>`. The tool writes an mp4 to `builds/videos/` of the game repo and prints its path, which the lead agent gives the human.
+
+## judge calibration
+
+Judge calibration measures whether the votes of the step 4 judges can be trusted. When the human asks for it, the lead agent waits for `ogw judge calibrate <game> --background` with `ogw job wait <id>`, then tells the human the report path and the lines of its `## rates` and `## recommendations`.
+
+- While an `ogw judge calibrate` job of the game runs, `ogw loop start` and `ogw build start` print that job id and do not start; the lead agent then waits for that job with `ogw job wait <id>` and runs the command again
+- `ogw judge label <game>` is run by the human in a terminal, and agents do not run it

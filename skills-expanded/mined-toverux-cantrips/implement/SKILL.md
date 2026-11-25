@@ -1,0 +1,33 @@
+---
+name: implement
+description: Implement a spec or a single ticket, driving TDD at the seams agreed in the spec.
+argument-hint: '[spec or ticket; blank asks]'
+disable-model-invocation: true
+version: 1.8.0
+source: mattpocock/skills@1.3.2 (implement)
+---
+
+Implement the work in the spec or the ticket the user names.
+Fetch it in full first — the fetch-spec or fetch-ticket verb — and for a ticket, fetch its parent spec too; state its title before starting, and where the reference is ambiguous, ask.
+The loop config translates the storage verbs: it is `docs/agents/cantrips-loop.md`, and when that doc is absent the plugin defaults ([defaults.md](../setup-cantrips-loop/defaults.md)) govern.
+
+Where the spec agreed a **test seam**, drive `/tdd` at that seam — the seams are already approved, so test at them without re-asking.
+Where no seam was agreed, implement directly: state explicit verification criteria up front (what observable result proves it works), then verify against them before calling the work done.
+
+Run typechecking regularly, single test files regularly, and the full test suite once at the end.
+
+Where a ticket lays out its work in named steps, annotate it at the end of each, and any ticket before you stop with it unfinished: the annotate-ticket verb.
+Write for the agent who resumes from the ticket alone: what would change what it does next and it could not learn from the code, the tests or the spec, never an account of the work done.
+
+When working from a ticket, tick its acceptance criteria as each one is verified.
+When every criterion is verified, resolve the ticket — the resolve-ticket verb from the same loop config, the ticked criteria standing as evidence.
+Resolve on the criteria without second-guessing: a wrong resolve is one human reopen away.
+The spec itself stays as published — no skill ever closes a spec; closing the feature is the human's act through the backend's native machinery.
+
+Done when every criterion is verified, the ticket (if any) is resolved, and the full suite passes → close with a flow pointer (the message's final paragraph, a blockquote in full italics opening `Next:` — or `Next steps:` over one bullet per pointer — each pointer naming its skill the way this skill was itself invoked, same prefix and namespace, and ending in a one-clause rationale after an em dash) naming the review tail, a **chain** rendered whole and in order, all in this session with the working diff as context:
+
+- `/simplify` (user-invoked) — an optional quality pass, rendered as the command to type with one `proof-test:<path>` token per proving test of the whole run and bare where the run has none: a proving test is a `/tdd` test at an agreed seam or a test the agent wrote or changed and ran to tick a criterion, so a test never run for proof, a pre-existing test that merely passed, and a criterion verified by hand name none.
+- `/review-gate [--fix | --loop]` (user-invoked) — suggest `low` for a trivial or mechanical diff, `high` for a large, cross-cutting, or risky one, `medium` otherwise; pair any level with `--fix` to apply the findings once, or with `--loop` to converge the gate to green.
+- `/commit` (user-invoked) — once the gate stands.
+
+Where this session engaged a deputy through `/deputy` and has not dismissed it, a choice is put to the deputy as [ROUNDS.md](../deputy/ROUNDS.md) says and rendered as the one step it chose, any other closing is rendered as written, and each rendered step that names a skill is then taken: one marked `(user-invoked)` by notifying the user where the harness has a tool for it and waiting for them to type it, any other by invoking it, notifying nobody.

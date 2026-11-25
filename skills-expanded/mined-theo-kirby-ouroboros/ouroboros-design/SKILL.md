@@ -1,0 +1,116 @@
+---
+name: ouroboros-design
+description: Interview the user and write the charter for an Ouroboros run - .ouroboros/goal.md and .ouroboros/config.yml. Use when the user wants to set up, redesign, or re-version the goal of an unattended loop. Reads the repo first, then grills the user rung by rung until every horizon has three concrete items.
+---
+
+# Design an Ouroboros charter
+
+You are helping a human write the **charter** for an unattended agent loop. The
+charter is the one document the human owns. Everything else, the records and the
+frontier, is written by agents while the human sleeps. So the charter must say what
+the human would say if they were there, and it must never run out.
+
+Read `DESIGN.md` section 20 in the Ouroboros repo if you can; the short form is below.
+
+## Before you ask anything
+
+1. Read the repo: `AGENTS.md` / `CLAUDE.md`, `README.md`, the memory if
+   there is one (`ouroboros mem orient` is the cheapest read, on either store), `docs/ROADMAP.md` or similar, the test
+   command, the last 30 commits. Form a view of what is broken, what is next, and
+   what the repo's own rules are.
+2. Check for an existing charter: `.ouroboros/goal.md`. If it exists, this is a
+   **re-version**: read it, read `.ouroboros/runs/*/REPORT.md`, and start the
+   interview from what changed.
+3. Check which harnesses are installed and logged in: `claude`, `codex`, `pi`.
+
+## The interview
+
+Ask in rounds. One round per section. Propose a draft from what you read, then ask
+the user to correct it. Never accept a vague answer; ask for the concrete version.
+
+1. **Mission.** One paragraph: what and why, in priority order if there are several
+   thrusts. Ask: "If the loop only achieved one thing this run, what must it be?"
+2. **Done criteria.** Claims about the world, not tasks. Each becomes an open gap
+   on the frontier that work must falsify. Bad: "add tests". Good: "the parser
+   suite passes on a clean clone". Ask for the test or evidence that proves each.
+   Write enough of them that the frontier outlasts the run: only criteria become
+   gaps, and an empty frontier drops the loop to the exhaustion policy. For a long
+   run, write criteria at two grains ("this run" and "beyond"), and prefer ones
+   that scale ("the walk runs on a second mechanism") over ones that close once.
+3. **Horizon ladder.** The trick that makes a run never end. Three rungs of
+   granularity, not time; agents have no clock, so never write hours, days, or
+   weeks into a rung. For each rung, ask "what should it do when the rung above is
+   exhausted?": **short-term** (units, one iteration each), **medium-term** (gaps,
+   several units each), **long-term** (directions, things to prove, and the
+   standing work that never ends).
+   **Refuse to finish until every rung has at least three concrete items.** The
+   long-term rung always ends with maintenance: "keep every gate green, every doc
+   true".
+   Tell the user: the critic picks each next unit from this ladder and the
+   frontier; the ladder is the only plan the loop has.
+4. **Constraints.** Never-do and always-keep. Which directories are off limits,
+   which commands must never run (GUI launches, deploys, GPU boxes), what must
+   never be committed (secrets, machine paths, build outputs), which repo rules
+   are the contract (usually "obey AGENTS.md"). Split them into **Standing**
+   (true for every run) and **This run** (what the human lifts by editing the
+   charter mid-run, which mints a new directive). For a long run add hygiene:
+   artifact size limits, the run branch buildable at every commit.
+5. **Question policy.** How to decide when nobody answers. Reversible over
+   irreversible; smallest unit in the highest-ranked open item; code wins over
+   docs; what to do with pre-existing failures; "never wait for a human".
+6. **Exhaustion policy.** `creative` (the critic names new directions),
+   `maintain` (tests, flakes, docs, refactors forever), or `report_done` (idle and
+   poll). Explain that `creative` is the default behaviour of an empty frontier
+   anyway.
+7. **Quality bar.** What the critic grades against: gates, commit shape, record
+   node rules, doc-with-code rules.
+8. **Profile and report.** Ask what the run is: `research` (a question to
+   answer: the report is a poster, one designed sheet with the finding as its
+   title and a few figures, in the `infographic` style unless they pick `swiss`
+   or `dark`; `publication: {template:
+   paper}` makes it a paper with numbered multi-panel figures, negative results
+   and methods, for a run that answers a whole question), `development` (a product
+   to build: the report shows what it does, with screenshots, status against the
+   criteria, known bugs and how to run it), or `freeform` (neither: the live
+   findings notebook). For a paper, ask whether they want numbered figures, and
+   how many main figures at most. A research
+   charter's done criteria name the question's answer and its check; a development
+   charter's name what a user can do.
+9. **Run shape.** Duration (`stop.after`), harness chain and fallbacks for the
+   actor, the critic and the scribe (the only three roles), memory (`auto` picks governor when
+   the repo has a `.flywheel/` graph and `governor` is on PATH, else `files`: the same records and
+   claims as markdown under `.ouroboros/graph/`).
+
+## Write the files
+
+- `.ouroboros/goal.md` with exactly these sections, in this order:
+  `# Goal: <name>`, `## Mission`, `## Done criteria`, `## Horizon ladder`,
+  `## Constraints`, `## Question policy`, `## Exhaustion policy`, `## Quality bar`,
+  and `## Reconcile` (how the scribe's fold turns records into state). Done criteria are `- [ ]` checkboxes.
+  Ladder rungs are `- **short-term:** ...`, `- **medium-term:** ...`, `- **long-term:** ...` lines.
+- `.ouroboros/config.yml` (run `ouroboros init` first if missing). Example:
+
+```yaml
+run: nt2
+profile: research        # research | development | freeform
+publication: { figures: { main_max: 5 }, consolidate_every: 5 }
+memory: auto
+critic: agent            # rules: no model behind the critic
+roles:
+  actor:  { harness: claude, timeout: 90m, fallback: [{ harness: codex }] }
+  critic: { harness: codex, timeout: 10m, fallback: [{ harness: claude }] }
+stop: { after: 10h, max_usage: 0.8 }   # 0.8 = stop at 80% of a subscription's weekly window
+graph: { reconcile_every: 5, pressure: 3, budget_units: 1 }   # when the scribe folds
+```
+
+- Read both files back to the user in full. Then say: `ouroboros run` starts it,
+  `ouroboros status --watch` watches it, `ouroboros stop` stops it, and the
+  `ouroboros-checkup` skill reads the run, live or finished.
+
+## Rules
+
+- The human owns the charter; do not let it drift into a task list. If the user
+  starts listing tasks, put them on the ladder's short-term rung and turn the
+  outcome into a done criterion.
+- A re-version replaces the file; Ouroboros mints a new directive record for it
+  and declares only the criteria it adds. Say so.

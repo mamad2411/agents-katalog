@@ -1,0 +1,495 @@
+---
+name: schemapin
+title: SchemaPin
+description: Cryptographic tool schema verification to prevent MCP Rug Pull attacks — ECDSA P-256 signing, SHA-256 hashing, TOFU key pinning, .well-known discovery, signed revocation documents, and (v1.4-alpha across all four languages) signature expiration, DNS TXT cross-verification, and schema version binding (lineage chain)
+version: 1.4.0-alpha.2
+stable_version: 1.3.0
+---
+
+# SchemaPin Development Skills Guide
+
+**Purpose**: This guide helps AI assistants quickly integrate SchemaPin into applications for cryptographic tool schema verification.
+
+**For Full Documentation**: See the [README](https://github.com/ThirdKeyAI/SchemaPin/blob/main/README.md), [Technical Specification](https://github.com/ThirdKeyAI/SchemaPin/blob/main/TECHNICAL_SPECIFICATION.md), and language-specific READMEs in each subdirectory.
+
+## What SchemaPin Does
+
+SchemaPin prevents "MCP Rug Pull" attacks by enabling developers to cryptographically sign their tool schemas (ECDSA P-256 + SHA-256) and clients to verify schemas haven't been tampered with. It uses Trust-On-First-Use (TOFU) key pinning and RFC 8615 `.well-known` endpoints for public key discovery.
+
+**Part of the ThirdKey trust stack**: SchemaPin (tool integrity) → AgentPin (agent identity) → Symbiont (runtime)
+
+---
+
+## Quick Start by Language
+
+### Python
+
+```bash
+pip install schemapin
+```
+
+```python
+from schemapin.crypto import KeyManager, SignatureManager
+from schemapin.core import SchemaPinCore
+
+# Generate keys
+private_key, public_key = KeyManager.generate_keypair()
+
+# Sign a schema
+core = SchemaPinCore()
+canonical = core.canonicalize_schema(schema_dict)
+signature = SignatureManager.sign_schema(private_key, canonical)
+
+# Verify
+is_valid = SignatureManager.verify_signature(public_key, canonical, signature)
+```
+
+### JavaScript
+
+```bash
+npm install schemapin
+```
+
+```javascript
+import { KeyManager, SignatureManager, SchemaPinCore } from 'schemapin';
+
+// Generate keys
+const { privateKey, publicKey } = KeyManager.generateKeypair();
+
+// Sign a schema
+const core = new SchemaPinCore();
+const canonical = core.canonicalizeSchema(schema);
+const signature = await SignatureManager.signSchema(privateKey, canonical);
+
+// Verify
+const isValid = await SignatureManager.verifySignature(publicKey, canonical, signature);
+```
+
+### Go
+
+```bash
+go get github.com/ThirdKeyAi/schemapin/go@v1.3.0
+```
+
+```go
+import (
+    "github.com/ThirdKeyAi/schemapin/go/pkg/core"
+    "github.com/ThirdKeyAi/schemapin/go/pkg/crypto"
+)
+
+// Generate keys
+km := crypto.NewKeyManager()
+privKey, pubKey, _ := km.GenerateKeypair()
+
+// Sign a schema
+spc := core.NewSchemaPinCore()
+canonical, _ := spc.CanonicalizeSchema(schema)
+sig, _ := crypto.NewSignatureManager().SignSchema(privKey, canonical)
+
+// Verify
+valid, _ := crypto.NewSignatureManager().VerifySignature(pubKey, canonical, sig)
+```
+
+### Rust
+
+```toml
+[dependencies]
+schemapin = "1.3"
+```
+
+```rust
+use schemapin::crypto::{generate_key_pair, sign_data, verify_signature};
+use schemapin::core::SchemaPinCore;
+
+// Generate keys
+let key_pair = generate_key_pair()?;
+
+// Sign
+let core = SchemaPinCore::new();
+let canonical = core.canonicalize_schema(&schema)?;
+let signature = sign_data(&key_pair.private_key_pem, &canonical)?;
+
+// Verify
+let is_valid = verify_signature(&key_pair.public_key_pem, &canonical, &signature)?;
+```
+
+---
+
+## Core Concepts
+
+### 1. Schema Canonicalization
+
+Schemas are canonicalized (deterministic JSON serialization with sorted keys) before hashing. This ensures identical schemas always produce the same hash regardless of key ordering.
+
+### 2. `.well-known` Discovery
+
+Developers publish their public key at `https://example.com/.well-known/schemapin.json`:
+
+```python
+from schemapin.utils import create_well_known_response
+
+response = create_well_known_response(
+    public_key_pem=public_key_pem,
+    developer_name="Acme Corp",
+    schema_version="1.2",
+    revocation_endpoint="https://example.com/.well-known/schemapin-revocations.json"
+)
+```
+
+### 3. TOFU Key Pinning
+
+On first verification, the developer's public key fingerprint is pinned. Subsequent verifications reject different keys for the same domain — detecting key substitution attacks.
+
+### 4. Verification Workflows
+
+**Online** (standard):
+```python
+workflow = SchemaVerificationWorkflow(pin_store)
+result = workflow.verify_schema(schema, signature, "https://example.com")
+```
+
+**Offline** (v1.2.0 — no HTTP required):
+```python
+from schemapin.verification import verify_schema_offline, KeyPinStore
+
+pin_store = KeyPinStore()
+result = verify_schema_offline(
+    schema, signature_b64, domain, tool_id,
+    discovery_data, revocation_doc, pin_store
+)
+```
+
+---
+
+## v1.2.0 Features
+
+### Standalone Revocation Documents
+
+Full guide with operational playbook, all four languages, and combined inline+standalone semantics: **[docs/revocation.md](docs/revocation.md)**.
+
+```python
+from schemapin.revocation import (
+    build_revocation_document, add_revoked_key,
+    check_revocation, check_revocation_combined, RevocationReason
+)
+
+doc = build_revocation_document("example.com")
+add_revoked_key(doc, fingerprint, RevocationReason.KEY_COMPROMISE)
+check_revocation(doc, some_fingerprint)  # raises if revoked
+
+# In production, always use combined check (inline list + standalone doc):
+check_revocation_combined(
+    revoked_keys_list=discovery.revoked_keys,
+    revocation_doc=doc,
+    fingerprint=some_fingerprint,
+)
+```
+
+### Trust Bundles (Offline / Air-Gapped)
+
+Pre-package discovery + revocation data for environments without internet:
+
+```python
+from schemapin.bundle import SchemaPinTrustBundle
+
+bundle = SchemaPinTrustBundle.from_json(bundle_json_str)
+discovery = bundle.find_discovery("example.com")
+revocation = bundle.find_revocation("example.com")
+```
+
+### Pluggable Discovery Resolvers
+
+```python
+from schemapin.resolver import (
+    WellKnownResolver,    # HTTP .well-known lookups
+    LocalFileResolver,    # Local JSON files
+    TrustBundleResolver,  # In-memory trust bundles
+    ChainResolver,        # First-match fallthrough
+)
+
+# Chain: try bundle first, fall back to HTTP
+resolver = ChainResolver([
+    TrustBundleResolver.from_json(bundle_json),
+    WellKnownResolver(timeout=10),
+])
+```
+
+### Resolver-Based Verification
+
+```python
+from schemapin.verification import verify_schema_with_resolver
+
+result = verify_schema_with_resolver(
+    schema, signature_b64, domain, tool_id,
+    resolver, pin_store
+)
+```
+
+---
+
+## v1.3.0 Features
+
+### SkillSigner — File-Based Skill Folder Signing
+
+Sign entire skill directories (e.g., a folder containing `SKILL.md`) with ECDSA P-256. Produces a `.schemapin.sig` manifest alongside the files, proving no file has been tampered with.
+
+**Python:**
+```python
+from schemapin.skill import sign_skill, verify_skill_offline
+
+# Sign a skill directory
+sig = sign_skill("./my-skill/", private_key_pem, "example.com")
+# Writes .schemapin.sig into ./my-skill/
+
+# Verify offline
+from schemapin.verification import KeyPinStore
+result = verify_skill_offline("./my-skill/", discovery_data, sig, revocation_doc, KeyPinStore())
+```
+
+**JavaScript:**
+```javascript
+import { signSkill, verifySkillOffline } from 'schemapin/skill';
+
+const sig = await signSkill('./my-skill/', privateKeyPem, 'example.com');
+const result = verifySkillOffline('./my-skill/', discoveryData, sig, revDoc, pinStore);
+```
+
+**Go:**
+```go
+import "github.com/ThirdKeyAi/schemapin/go/pkg/skill"
+
+sig, err := skill.SignSkill("./my-skill/", privateKeyPEM, "example.com", "", "")
+result := skill.VerifySkillOffline("./my-skill/", disc, sig, rev, pinStore, "")
+```
+
+**Rust:**
+```rust
+use schemapin::skill::{sign_skill, verify_skill_offline};
+
+let sig = sign_skill("./my-skill/", &private_key_pem, "example.com", None, None)?;
+let result = verify_skill_offline("./my-skill/", &disc, Some(&sig), rev.as_ref(), Some(&pin_store), None);
+```
+
+### `.schemapin.sig` Format
+
+```json
+{
+  "schemapin_version": "1.3",
+  "skill_name": "my-skill",
+  "skill_hash": "sha256:<root_hash>",
+  "signature": "<base64_ecdsa_signature>",
+  "signed_at": "2026-02-14T00:00:00Z",
+  "domain": "example.com",
+  "signer_kid": "sha256:<key_fingerprint>",
+  "file_manifest": {
+    "SKILL.md": "sha256:<file_hash>"
+  }
+}
+```
+
+### Tamper Detection
+
+```python
+from schemapin.skill import detect_tampered_files, canonicalize_skill
+
+_, current_manifest = canonicalize_skill("./my-skill/")
+tampered = detect_tampered_files(current_manifest, sig.file_manifest)
+# tampered.modified, tampered.added, tampered.removed
+```
+
+---
+
+## v1.4.0-alpha.2 Features (all four languages — preview)
+
+### Schema Version Binding (`schema_version` + `previous_hash`)
+
+Two additive optional fields on `.schemapin.sig` give publishers a way to declare lineage and verifiers a way to enforce it. Defends against rug-pull substitutions where an attacker swaps a tampered schema under the same name.
+
+**Rust:**
+```rust
+use schemapin::skill::{sign_skill_with_options, SignOptions, verify_chain};
+
+let v1 = sign_skill_with_options(&dir_v1, &priv_pem, "example.com",
+    SignOptions::new().with_schema_version("1.0.0"))?;
+
+let v2 = sign_skill_with_options(&dir_v2, &priv_pem, "example.com",
+    SignOptions::new()
+        .with_schema_version("1.1.0")
+        .with_previous_hash(&v1.skill_hash))?;
+
+verify_chain(&v2, &v1)?;  // Pure metadata check; both must already be cryptographically verified.
+```
+
+**Python:**
+```python
+from schemapin.skill import SkillSigner, SignOptions, verify_chain
+v2 = SkillSigner.sign_with_options(dir_v2, priv_pem, "example.com",
+    SignOptions(schema_version="1.1.0", previous_hash=v1["skill_hash"]))
+verify_chain(v2, v1)
+```
+
+**JavaScript:**
+```javascript
+import { signSkillWithOptions, verifyChain } from 'schemapin';
+const v2 = signSkillWithOptions(dirV2, privPem, 'example.com',
+    { schemaVersion: '1.1.0', previousHash: v1.skill_hash });
+verifyChain(v2, v1);
+```
+
+**Go:**
+```go
+v2, _ := skill.SignSkillWithOptions(dirV2, privPEM, "example.com", skill.SignOptions{
+    SchemaVersion: "1.1.0",
+    PreviousHash:  v1.SkillHash,
+})
+err := skill.VerifyChain(v2, v1)
+```
+
+`VerificationResult` gains `schema_version` and `previous_hash` fields — verifiers surface these informationally. Chain enforcement is opt-in via `verify_chain` (or the language equivalent). `ChainError` distinguishes two failure modes: `no_previous_hash` (current sig lacks the field) and `mismatch` (both present but unequal — likely substitution).
+
+Full guide: **[docs/schema-version-binding.md](docs/schema-version-binding.md)**.
+
+---
+
+## v1.4.0-alpha.1 Features (all four languages — preview)
+
+Both features are **additive optional fields/records**: v1.3 verifiers ignore them, and v1.4 signatures without these fields behave identically to v1.3. Python, JavaScript, and Go ports follow in subsequent alphas before the v1.4.0 release.
+
+### Signature Expiration (`expires_at`)
+
+Optional RFC 3339 timestamp on `.schemapin.sig`, covered by the signature. Verifiers past the timestamp (plus 5 minutes of skew) fail with `SIGNATURE_EXPIRED`; with the explicit `allow_expired` opt-in the result degrades instead — `valid` stays `true`, `expired` becomes `true`, and a `signature_expired` warning is appended.
+
+```rust
+use schemapin::skill::{sign_skill_with_options, SignOptions, verify_skill_offline};
+
+// Sign with a 180-day TTL — writes expires_at into .schemapin.sig
+let opts = SignOptions::new().with_expires_in(chrono::Duration::days(180));
+let sig = sign_skill_with_options(dir, &priv_pem, "example.com", opts)?;
+
+// Verify — past expires_at returns valid=true with expired=true and a
+// "signature_expired" warning, never a hard failure
+let result = verify_skill_offline(dir, &discovery, None, None, None, Some("tool"));
+if result.expired {
+    log::warn!("signature past {}", result.expires_at.unwrap_or_default());
+}
+```
+
+`SignOptions` is a builder; the legacy `sign_skill(...)` function is preserved for v1.3 callers and writes signatures without `expires_at` (still advertised as `schemapin_version: "1.3"`).
+
+### DNS TXT Cross-Verification (`_schemapin.{domain}`)
+
+Tool providers MAY publish a TXT record alongside `.well-known/schemapin.json`:
+
+```
+_schemapin.example.com.  IN TXT  "v=schemapin1; kid=acme-2026-04; fp=sha256:a1b2c3..."
+```
+
+Cross-checking the TXT against the discovery key gives a *second-channel* verification — the DNS credential chain is independent of the HTTPS hosting one. Mismatch is a hard failure (`DOMAIN_MISMATCH`); absent record is a no-op.
+
+```rust
+use schemapin::dns::{parse_txt_record, fetch_dns_txt};
+use schemapin::skill::verify_skill_offline_with_dns;
+
+// Parser/matcher are always available
+let txt = parse_txt_record("v=schemapin1; fp=sha256:a1b2c3...")?;
+
+// Async fetch lives behind the `dns` Cargo feature (hickory-resolver)
+#[cfg(feature = "dns")]
+let txt = fetch_dns_txt("example.com").await?;
+
+let result = verify_skill_offline_with_dns(
+    dir, &discovery, None, None, None, Some("tool"), txt.as_ref(),
+);
+```
+
+| Cargo feature | Default | Brings in |
+|---------------|---------|-----------|
+| `fetch` | off | `reqwest`, `tokio`, `async-trait` |
+| `dns` *(NEW)* | off | `hickory-resolver`, `tokio`, `async-trait` |
+
+---
+
+## Server-Side Setup
+
+### Publishing `.well-known` Endpoints
+
+Python CLI tools are included:
+
+```bash
+# Generate a keypair
+schemapin-keygen --output-dir ./keys
+
+# Sign a schema
+schemapin-sign --key ./keys/private.pem --schema schema.json
+
+# Verify a signature
+schemapin-verify --key ./keys/public.pem --schema schema.json --signature sig.b64
+```
+
+Go CLI equivalents are also available (`go install github.com/ThirdKeyAi/schemapin/go/cmd/...@v1.3.0`).
+
+---
+
+## Architecture
+
+```
+Developer                          Client (AI Platform)
+─────────                          ────────────────────
+1. Generate ECDSA P-256 keypair
+2. Publish public key at           3. Discover public key from
+   /.well-known/schemapin.json        /.well-known/schemapin.json
+4. Sign tool schema                5. Verify signature
+   (canonicalize → SHA-256            (canonicalize → SHA-256
+    → ECDSA sign)                      → ECDSA verify)
+                                   6. TOFU pin the key fingerprint
+                                   7. Check revocation status
+```
+
+---
+
+## Language API Reference
+
+| Operation | Python | JavaScript | Go | Rust |
+|-----------|--------|------------|----|----|
+| Generate keys | `KeyManager.generate_keypair()` | `KeyManager.generateKeypair()` | `km.GenerateKeypair()` | `generate_key_pair()` |
+| Sign schema | `SignatureManager.sign_schema()` | `SignatureManager.signSchema()` | `sm.SignSchema()` | `sign_data()` |
+| Verify signature | `SignatureManager.verify_signature()` | `SignatureManager.verifySignature()` | `sm.VerifySignature()` | `verify_signature()` |
+| Canonicalize | `SchemaPinCore().canonicalize_schema()` | `new SchemaPinCore().canonicalizeSchema()` | `spc.CanonicalizeSchema()` | `SchemaPinCore::new().canonicalize_schema()` |
+| Discover key | `PublicKeyDiscovery.fetch_well_known()` | `PublicKeyDiscovery.fetchWellKnown()` | `FetchWellKnown()` | `WellKnownResolver` (fetch feature) |
+| Offline verify | `verify_schema_offline()` | `verifySchemaOffline()` | `VerifySchemaOffline()` | `verify_schema_offline()` |
+| Resolver verify | `verify_schema_with_resolver()` | `verifySchemaWithResolver()` | `VerifySchemaWithResolver()` | `verify_schema_with_resolver()` |
+| Sign skill folder | `sign_skill()` | `signSkill()` | `skill.SignSkill()` | `sign_skill()` |
+| Verify skill | `verify_skill_offline()` | `verifySkillOffline()` | `skill.VerifySkillOffline()` | `verify_skill_offline()` |
+| Detect tampering | `detect_tampered_files()` | `detectTamperedFiles()` | `skill.DetectTamperedFiles()` | `detect_tampered_files()` |
+
+---
+
+## Testing
+
+```bash
+# Python
+cd python && python -m pytest tests/ -v
+
+# JavaScript
+cd javascript && npm test
+
+# Go
+cd go && go test ./...
+
+# Rust
+cd rust && cargo test
+```
+
+---
+
+## Pro Tips for AI Assistants
+
+1. **Always canonicalize** before signing or verifying — raw JSON comparison will fail
+2. **Use offline verification** when you have pre-fetched discovery data — avoids HTTP calls during schema validation
+3. **Trust bundles** are ideal for CI/CD and air-gapped deployments
+4. **ChainResolver** lets you layer resolvers: bundle → local files → HTTP as fallback
+5. **TOFU pinning** means the first key seen for a domain is trusted — warn users on key changes
+6. **All languages use the same crypto** — ECDSA P-256 + SHA-256, so cross-language verification works
+7. **Revocation checking** should always be performed — both simple lists and standalone documents
+8. **SkillSigner** signs entire directories — ideal for SKILL.md folders uploaded to registries like ClaWHub
+9. **`.schemapin.sig`** is auto-excluded from hashing — you can re-sign a directory without removing the old signature first

@@ -1,0 +1,150 @@
+---
+name: wtf.changelog
+description: This skill should be used when a developer wants to generate release notes or a changelog entry after merging a Feature or closing an Epic — for example "write the changelog", "generate release notes", "what shipped in this release", "create a GitHub Release for this feature", "document what we built", "update CHANGELOG.md", or "summarize what merged". Derives user-facing language from Feature capability names and canonical Gherkin scenarios, attributed through verified Traces' Scenario Claims, rather than from raw commit messages.
+---
+
+# Changelog
+
+Generate a changelog entry or GitHub Release from merged work.
+
+This skill derives user-facing language from the spec hierarchy (Epic → Feature → canonical Gherkin scenarios), not from raw commit messages.
+The Feature body is canonical for scenario text. Verified Traces' Scenario Claims attribute which shipped behavior each Trace delivered.
+The output reads as product changes, not implementation details.
+
+Shared behavior:
+
+- User-question style → `../references/questioning-style.md`
+- Commit / tag / release syntax → `../references/commit-conventions.md`
+- Durable prose (changelog / release notes) → `../references/ste-writing.md`
+
+## Process
+
+### 0. GitHub CLI setup
+
+Run `../references/gh-setup.md`.
+Stop if `gh` is not installed or not authenticated.
+
+### 1. Identify the release scope
+
+If an Epic or Feature number was already passed in as context (e.g. from `wtf.retro`), skip the question and use it directly.
+
+Otherwise ask the user whether the changelog covers a Feature, an Epic, or a date range.
+Each scope has distinct follow-up queries:
+
+- **Feature scope** — walk the Feature and its closed child Traces per `../references/spec-hierarchy.md`. Extract the capability name, the user stories, and their canonical Gherkin scenarios from the Feature body. Extract each verified Trace's Scenario Claim to attribute shipped behavior. A legacy Task child carries its own Gherkin and Functional Description in-body — extract those instead.
+- **Epic scope** — walk Epic → Features → Traces per the same reference, in parallel at each level.
+- **Date range scope** — fetch merged PRs between two dates via `gh pr list --state merged --json number,title,mergedAt,body` and filter with `--jq`.
+
+### 2. Classify and translate each change
+
+For every closed Feature or Trace in scope, do two things in one pass:
+
+**a. Classify** into one of these buckets using the signal column:
+
+| Type | Signal |
+|---|---|
+| **Added** | New capability — Feature or Trace implements a previously-unavailable user action |
+| **Changed** | Refactor, performance, or UX enhancement reflected in Gherkin `Then` steps |
+| **Fixed** | Linked bug issue, or a claimed scenario describes a failure path that now passes |
+| **Deprecated** | Mentioned in Feature ACs or the Trace's story as phasing out |
+| **Removed** | Trace or Feature explicitly tears down prior behavior |
+| **Breaking** | Contract change in the Trace's Technical Approach (legacy Task: Contracts section), `!` in PR title, or `BREAKING CHANGE:` trailer per `../references/commit-conventions.md` |
+
+**b. Translate into user-facing language:**
+
+- Pull the domain actor and business outcome from the Feature capability name and its user stories (legacy Task: its Functional Description).
+- Use the canonical Gherkin `Then` steps from the Feature body as the concrete observable change, translated to plain language. Take only the scenarios that verified Traces claim (legacy Task: its in-body Gherkin).
+- Do NOT use implementation vocabulary ("refactored X", "migrated Y", "updated the API") — use domain outcomes ("Merchants can now filter settlements by date range").
+- Drop internal-only work (test infra, CI config, internal refactors with no user-facing effect) unless the release contains nothing else.
+
+### 3. Draft the changelog entry
+
+Apply strict STE per `../references/ste-writing.md` before writing any durable body.
+
+Follow [Keep a Changelog](https://keepachangelog.com) conventions.
+Omit any section with no entries.
+For Epic-level changelogs, group entries under Feature headings if there are more than 5 entries.
+
+```markdown
+## [<version or date>] — <YYYY-MM-DD>
+
+### Added
+- <Domain Actor> can now <business action> — [#<issue>](<url>)
+
+### Changed
+- <What changed from the user's perspective> — [#<issue>](<url>)
+
+### Fixed
+- <What was broken and is now resolved> — [#<issue>](<url>)
+
+### Deprecated
+- <What is being phased out and the replacement> — [#<issue>](<url>)
+
+### Removed
+- <What was removed and the migration path> — [#<issue>](<url>)
+
+### Breaking
+- <What requires action from integrators or users> — [#<issue>](<url>)
+```
+
+### 4. Review with user
+
+Show the draft.
+Then call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Does this accurately describe what shipped?"
+- header: "Draft review"
+- options:
+  - **Approve and write** → apply as-is and proceed
+  - **Add missing items** → add items before writing
+  - **Adjust the phrasing** → edit specific entries
+
+Apply edits, then proceed.
+
+### 5. Choose the output target
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Where should I write this changelog?"
+- header: "Output target"
+- options:
+  - **Update CHANGELOG.md** → prepend entry to the changelog file
+  - **Create GitHub Release** → create a tagged GitHub Release
+  - **Both** → update CHANGELOG.md and create a GitHub Release
+
+### 6. Write CHANGELOG.md (if selected)
+
+Read the current file (or create it with a `# Changelog` header if missing).
+Prepend the new entry after the `# Changelog` heading, above any existing entries.
+
+Commit per `../references/commit-conventions.md`:
+
+```bash
+git add CHANGELOG.md
+git commit -m "chore(changelog): add release notes for <scope>"
+```
+
+### 7. Create the GitHub Release (if selected)
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Which tag should I use for this release?"
+- header: "Release tag"
+- options: from `git tag --sort=-version:refname | head -5`. The user can type a new tag.
+
+Write the entry to a temp file (`$NOTES`) with the Write tool.
+Then create the release via the gh body helper (`../references/gh-body-helper.md`) so the notes survive UTF-8 on Windows:
+
+```bash
+# $NOTES is the temp file you wrote the release notes to with the Write tool.
+python3 .wtf/gh-body.py release <tag> \
+  --title "<release title>" \
+  --notes-file "$NOTES"
+```
+
+### 8. Report and offer to continue
+
+Print the release URL and/or `CHANGELOG.md` path.
+Then call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "What's next?"
+- header: "Next step"
+- options:
+  - **Run retro** → run `wtf.retro` to close out the Epic (recommended if changelog covered an Epic)
+  - **Done** → exit, no further action

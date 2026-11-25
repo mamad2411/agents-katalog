@@ -1,0 +1,417 @@
+---
+name: crypto-payments
+description: >-
+  Use when adding or auditing crypto checkout, crypto top-up or payment webhooks: invoice
+  states, signed callbacks, idempotency, underpayment. Not for cards (stripe-billing).
+  Opt out: no wiring, без обвязки. Triggers - "crypto payment", "crypto webhook
+  signature", "оплата криптой", "вебхук платежа".
+license: MIT
+---
+
+# Crypto payments
+
+A card charge either succeeds or fails, and the amount is the amount. A crypto
+payment is a **request that someone may partially satisfy, over-satisfy, satisfy
+late, or satisfy after the price moved**. Almost every defect in a crypto
+checkout comes from writing card-shaped code and meeting one of those cases in
+production.
+
+This skill is provider-neutral. Concrete request/response shapes for one gateway
+live in [`references/heleket-provider.md`](references/heleket-provider.md);
+the invariants below hold for Coinbase Commerce, NOWPayments, BTCPay, Heleket
+and anything else that issues an invoice and calls you back. One thing is NOT
+provider-neutral and is labeled where it appears: the webhook signature
+*algorithm*, which differs per gateway.
+
+> **Choosing a provider is a business and compliance decision, not a technical
+> one.** Crypto payment processors differ sharply in regulatory standing —
+> licensing, AML programme, sanctions exposure — and that standing changes.
+> Check the current position of any processor before you route customer money
+> through it, and re-check it periodically. This skill tells you how to
+> integrate one correctly; it does not tell you which one to trust.
+
+## Contents
+
+- [The lifecycle, and where money goes missing](#the-lifecycle-and-where-money-goes-missing)
+- [Status mapping — and finality](#status-mapping--and-finality)
+- [Webhook signature verification](#webhook-signature-verification)
+- [Idempotent webhook processing](#idempotent-webhook-processing)
+- [Callback route hardening](#callback-route-hardening)
+- [The conversion buffer](#the-conversion-buffer)
+- [Reconciliation fields](#reconciliation-fields)
+- [Crediting: the amount waterfall](#crediting-the-amount-waterfall)
+- [Refunds and AML holds](#refunds-and-aml-holds)
+- [The test/live credential boundary](#the-testlive-credential-boundary)
+- [Local development and the test matrix](#local-development-and-the-test-matrix)
+- [Security checklist](#security-checklist)
+- [Common pitfalls](#common-pitfalls)
+
+---
+
+## The lifecycle, and where money goes missing
+
+```
+your app                gateway                 blockchain
+   │  create invoice ─────►│
+   │◄──── invoice id, address, amount, expiry
+   │                       │
+   │   (user pays) ────────┼──────────────────────►│
+   │                       │◄── confirmations ─────│
+   │◄──── webhook: status change (MAY REPEAT)
+   │  credit the user      │
+   │◄──── webhook: status change (again, later)
+```
+
+Three facts that shape every design decision:
+
+1. **The callback is at-least-once.** Providers retry until you 200. A handler
+   that credits on every delivery credits three times.
+2. **The paid amount is not the invoiced amount.** Underpayment, overpayment and
+   "paid a different currency than quoted" are normal states, not errors.
+3. **Status is not monotonic in the way you expect.** A payment can go
+   `pending → paid → refund_process → refund_paid`, or sit in an AML hold for
+   days. Model the terminal set explicitly.
+
+**Never derive entitlement from the redirect back to your site.** The user's
+browser returning to `/success` proves the user has a browser. Credit on the
+webhook, or on a server-side status poll — never on a client-side landing.
+
+---
+
+## Status mapping — and finality
+
+Every gateway has its own vocabulary. Map it to **your** states once, in one
+function, and define the terminal set explicitly:
+
+```ts
+const FINAL_STATUSES = ['PAID', 'FAILED', 'REFUNDED', 'EXPIRED'] as const;
+
+function mapStatus(providerStatus: string): PaymentStatus {
+  switch (providerStatus) {
+    case 'paid':
+    case 'paid_over':        return 'PAID';       // over-payment still pays
+    case 'wrong_amount':     return 'UNDERPAID';  // partial — DO NOT credit in full
+    case 'confirm_check':    return 'CONFIRMING'; // seen, not yet confirmed
+    case 'cancel':
+    case 'fail':
+    case 'system_fail':      return 'FAILED';
+    case 'refund_process':   return 'REFUNDING';
+    case 'refund_paid':      return 'REFUNDED';
+    case 'locked':           return 'AML_HOLD';   // compliance review, may take days
+    default:                 return 'PENDING';
+  }
+}
+```
+
+`paid_over` is the one people get wrong in both directions: treating it as a
+failure loses a paying customer, treating it as exactly-paid quietly gives away
+the excess. Credit the **received** amount, not the invoiced one — see the
+waterfall below.
+
+---
+
+## Webhook signature verification
+
+The callback is an unauthenticated public endpoint until you prove otherwise.
+
+**The `sign()` below is ONE provider's scheme — Heleket's:
+`md5(base64(json) + apiKey)`.** The *pattern* (constant-time compare, sign the
+raw body, verify before parsing) transfers; the algorithm does not. Checked
+2026-08-30: Coinbase Commerce signs with **HMAC-SHA256** of the raw body
+(`X-CC-Webhook-Signature`), NOWPayments with **HMAC-SHA512** of the
+sorted-key JSON (`x-nowpayments-sig`), BTCPay with **HMAC-SHA256**
+(`BTCPay-Sig`). Take the algorithm from your provider's own reference — for
+Heleket's full shapes see
+[`references/heleket-provider.md`](references/heleket-provider.md).
+
+```ts
+import { createHash, timingSafeEqual } from 'node:crypto';
+
+// Heleket's scheme. Swap the digest for your provider — see the note above.
+function sign(payload: unknown, apiKey: string): string {
+  const json = JSON.stringify(payload);
+  return createHash('md5')
+    .update(Buffer.from(json).toString('base64') + apiKey)
+    .digest('hex');
+}
+
+function verify(body: Record<string, unknown>, apiKey: string): boolean {
+  const { sign: given, ...rest } = body;          // signature is never part of the signed payload
+  if (typeof given !== 'string') return false;
+  const expected = sign(rest, apiKey);
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(given, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);   // length check FIRST — timingSafeEqual throws on mismatch
+}
+```
+
+Three rules, each of which has burned a real integration:
+
+- **Compare in constant time.** `===` on a signature leaks it a byte at a time.
+  And check lengths first: `timingSafeEqual` *throws* on unequal buffers, so a
+  naive call turns a forged signature into a 500 instead of a 403.
+- **Sign exactly what the provider signed.** Re-serializing the parsed body can
+  change it. Keep the raw body if the framework lets you.
+- **Mind the escaping.** Some gateways (PHP-based ones especially) sign JSON
+  produced by `json_encode`, which escapes forward slashes as `\/` and
+  non-ASCII as `\uXXXX`. `JSON.stringify` does neither. If your signature is
+  correct for payloads with no URL and wrong for payloads containing one, this
+  is why. **Try both encodings and accept either** — the alternative is
+  rejecting real callbacks:
+
+  ```ts
+  const candidates = [json, json.replace(/\//g, '\\/')];
+  return candidates.some((c) => timingSafeCompare(md5(b64(c) + key), given));
+  ```
+
+Verify the signature **before** parsing anything into your domain, and return
+403 without detail on failure. A verbose error is an oracle.
+
+---
+
+## Idempotent webhook processing
+
+Do not read-then-write. Make the database refuse the second delivery:
+
+Three things are separate — the payment's LIFECYCLE status, the immutable
+GRANT a confirmed settlement earns, and any refund/hold — and conflating them
+credits money that never settled. The CAS (`updateMany` with a `status notIn
+FINAL_STATUSES` guard) advances the LIFECYCLE only: it returns `count: 1` for
+a transition to FAILED exactly as it does for PAID, so it is not permission to
+credit. **Credit only a confirmed settlement (`mapped === 'PAID'`), once,
+behind a UNIQUE per-invoice grant-ledger row atomic with the credit; refunds
+and holds take their own path and are never swallowed as a duplicate.** The
+worked handler is in
+[`references/callback-route-hardening.md`](references/callback-route-hardening.md).
+
+**Always return 200 for a duplicate.** A 409 makes the provider retry forever.
+
+---
+
+## Callback route hardening
+
+Two things about the *request* rather than about the money in it, and each one is the
+usual cause of "webhooks stopped working after we moved to a load balancer": reading the
+caller IP from the proxy hop you actually own instead of `x-forwarded-for[0]`, and
+exempting the **one** callback path from CSRF by exact match rather than by prefix — a
+prefix on `/api/payments` exempts the checkout endpoint too, which is where the money is.
+
+Both, with the code:
+[`references/callback-route-hardening.md`](references/callback-route-hardening.md).
+Signature verification above is the real gate; these are defence in depth.
+
+---
+
+## The conversion buffer
+
+You quote in USD. The user pays in a coin whose rate moves between your quote
+and their transfer. Without a margin, a rate move of a fraction of a percent
+turns a full payment into `wrong_amount`, and now you are handling a partial
+payment for no reason.
+
+```ts
+const BUFFER = 0.01;                       // 1%
+const invoiceAmount = round(amountUsd * (1 + BUFFER), 2);
+```
+
+Two rules:
+
+- **Buffer the invoice, credit the intent.** Charge the buffered amount, credit
+  the user for what they meant to buy. The buffer covers drift; it is not
+  revenue and should not appear in what the user is told they bought.
+- **Store both numbers.** `amountUsd` (intent) and `invoicedAmount` (what you
+  asked for) are different, and support questions are unanswerable without both.
+
+Pick the buffer from observed rate volatility for the coins you accept, not from
+this document.
+
+---
+
+## Reconciliation fields
+
+Six months later someone asks "did this payment actually arrive, and how much
+did we net". Store enough to answer it **at webhook time** — the gateway's
+retention is not your retention:
+
+| Field | Why |
+|---|---|
+| `merchantAmount` | what you net after the gateway's commission — never equals the invoice |
+| `paidAmount` + `payerCurrency` | what actually arrived, in what coin |
+| `paidAmountUsd` | the gateway's own USD valuation at settlement |
+| `commission` | so net vs gross is arithmetic, not archaeology |
+| `txid` | the only link to the chain; without it a dispute is unresolvable |
+| `network` | TRC20 vs ERC20 vs BEP20 — same coin, different chain, different fee |
+| `from` | payer address, for AML questions you will eventually be asked |
+
+Write them on the settling webhook, in the same update that flips the status.
+
+---
+
+## Crediting: the amount waterfall
+
+Four dimensions, and they never mix implicitly: **Money** (currency + minor
+units — never floats), **Asset** (network + token + decimal amount),
+**Entitlement** (plan units) and a **dated FX quote** (rate + source + time).
+`paidAmountUsd` and `amountUsd` are Money; `tokenAmount` is an **Asset amount**
+(the invoiced base + buffer — NOT plan units). A `??` across dimensions is an implicit
+conversion, so first bring each candidate to USD minor — an Asset amount
+converts only via a dated quote from a known source; an unknown or missing
+quote **blocks** the conversion rather than guessing:
+
+```ts
+const usd = [payment.paidAmountUsd            // Money: gateway's valuation
+  , toUsdMinor(payment.tokenAmount, quote)    // Asset -> Money, dated quote or BLOCKED
+  , payment.amountUsd];                       // Money: the intent — last resort
+const credit = usd.find(v => v != null);
+```
+
+The order matters: valuing an over-payment at the intent silently keeps the
+excess, and valuing an under-payment at the intent gives away product. Write an
+audit row naming the source AND the quote used, or the first disputed balance
+is unprovable.
+
+---
+
+## Refunds and AML holds
+
+Crypto has no chargeback, which people mistake for "no reversals".
+
+- **Refunds are a multi-step state**, not an event: `refund_process` →
+  `refund_paid` | `refund_fail`. A user is not refunded when you asked for it.
+- **AML holds are open-ended.** A `locked` payment may resolve in hours or
+  never. Surface it honestly ("under review by the payment provider"), do not
+  credit, do not auto-cancel, and do not retry the invoice — a second invoice
+  during a hold is how you end up with two payments and one product.
+- **Never auto-refund from the webhook.** Route holds and refunds to a queue a
+  human can see.
+
+**And make it a precondition, not a paragraph.** The three lines above were advice for
+four releases: an agent that never read them, and a shell nobody read, were unaffected by
+all three. This pack now ships a `PreToolUse` gate —
+`plugins/sheleg-dev/hooks/money-gate.js` — that refuses a refund, a payout, closing a
+dispute, an export of `HELEKET_API_KEY` in a run declaring `test`, a live `sk_live_…` key
+and `SKIP_BILLING=true` in production, until the authorised person has signed that
+category off for the session. The pack's `README.md` carries the categories and how one is
+authorised. In your application the same rule is a queue and a human; in the agent's
+shell it is the hook.
+
+---
+
+## The test/live credential boundary
+
+**Establish what the provider actually offers before designing around it.** Card
+processors hand you two parallel worlds — Stripe gives a whole second account and stamps
+the environment into the key itself (`sk_test_` / `sk_live_`). Most crypto gateways do
+not. Answer these three, from the provider's documentation, and write the answers down:
+
+1. **Is there a separate test credential?** Not "a test mode" — a *different secret*.
+2. **Can the environment be read from the key?** A prefix, a scope, anything.
+3. **Does the key also sign webhooks?** If yes, it cannot be scoped down: everything that
+   verifies a callback can also create a charge.
+
+The answers decide the design, and the worst combination is common: one key, no marker,
+"test mode" as a **toggle on the merchant account**. Then the same secret creates play
+invoices before somebody moves a dashboard switch and real ones after — with no deploy and
+no signal to any machine holding it.
+
+**Build the strongest control the provider allows, in this order:**
+
+1. **A separate sandbox account**, so the credential on a dev machine *cannot* reach
+   production. This is the only control that still works after everyone has forgotten why
+   it is there — which is the whole argument for preferring it to a warning in a README.
+2. **A declared environment plus a boot assertion**, when there is no second credential.
+   Keep the declaration in a variable **separate from the secret** (`<PROVIDER>_ENV=test|
+   production`): one variable that both carries the key and names its environment cannot
+   be checked against itself, two can. Pin the production identity with something
+   non-secret — the merchant id, or a truncated hash of the live key — and refuse
+   **both** mismatches at **startup**:
+
+   - a live credential declared test — the obvious loss;
+   - a test credential declared live — the quiet one, where invoices settle to a merchant
+     nobody reconciles and nothing errors until revenue is missing.
+
+   Assert at module load, not in the payment handler: a run that merely *holds* the key
+   must fail too, and it is agent and CI runs that hold keys without ever charging
+   anything. And when the check cannot tell — nothing pinned — refuse on the test side.
+   "Could not prove it was safe" must never read as "it was safe".
+3. **Write down what is left.** Where the provider offers no test credential, a developer
+   holds a production one and the assertion narrows that window without closing it. An
+   unavoidable exposure that is named is a different object from one that is silent: the
+   first gets rotated, monitored and revisited, the second gets rediscovered by an
+   incident.
+
+The same rule applies to the mock path below: `SKIP_BILLING=true` in production is not a
+shortcut, it is a free-money path, and the assertion is what refuses it.
+
+Worked end to end for one gateway with no test credential at all —
+[`references/heleket-provider.md`](references/heleket-provider.md), *The test/live
+boundary* and *Residual exposure*.
+
+---
+
+## Local development and the test matrix
+
+Two development paths you want both of — a `SKIP_BILLING=true` branch that is impossible
+in production, and a real gateway behind a tunnel with a signed mock callback for the sad
+paths a provider will not produce on demand — plus the ten cases to cover before believing
+a green suite, each with the defect it catches:
+[`references/testing-and-local-dev.md`](references/testing-and-local-dev.md).
+
+---
+
+## Security checklist
+
+- [ ] Signature verified before any domain parsing; constant-time compare; lengths checked first
+- [ ] Both JSON escapings accepted, or the raw body signed
+- [ ] Webhook idempotent via a compare-and-swap on a non-final status
+- [ ] Duplicates answered 200, never 409
+- [ ] IP allowlist counts proxy hops from the right; no allow-on-missing-header
+- [ ] CSRF exempted for exactly one path, by exact match
+- [ ] Entitlement never granted from a client-side redirect
+- [ ] API key and merchant id from environment, never in the repository
+- [ ] A sandbox account is used where the provider offers one, or the reason it cannot be is written down
+- [ ] The declared environment is a variable separate from the secret, and a boot assertion refuses **both** mismatches
+- [ ] The assertion runs at module load, so a run that only holds the key fails too
+- [ ] Callback URL is HTTPS in every environment that is not a local tunnel
+- [ ] `SKIP_BILLING` asserted impossible in production
+- [ ] Reconciliation fields written at settlement time
+- [ ] Refunds and AML holds routed to a human, never automated from the webhook
+
+---
+
+## Common pitfalls
+
+| Symptom | Cause |
+|---|---|
+| Signature valid for some payloads, invalid for others | forward-slash / unicode escaping difference |
+| 500s on forged callbacks | `timingSafeEqual` on unequal buffers throws |
+| User credited two or three times | read-then-write instead of compare-and-swap |
+| Provider retries forever | duplicate answered with 409 |
+| Webhooks died after an infra change | `x-forwarded-for` hop counting |
+| "Paid" users with no product | credited from the browser redirect |
+| Half the payments land as `wrong_amount` | no conversion buffer |
+| Cannot answer "how much did we net" | commission and `merchantAmount` never stored |
+| A dev machine, a CI job or an agent run is holding the production key | no separate credential, and no assertion binding the key to a declared environment |
+| Real invoices in a merchant dashboard nobody watches | a staging credential declared live — the mismatch nothing refused |
+
+## Degradation
+
+- **Not Claude Code** (Cursor, Codex, the skills CLI, the API container): the
+  `PreToolUse` gate named above — `plugins/sheleg-dev/hooks/money-gate.js` — does not
+  run there. Nothing refuses a payout, a refund, an exported `HELEKET_API_KEY` in a
+  `test` run, or `SKIP_BILLING=true` in production. The three lines are advice again,
+  which is exactly the state that made them ineffective for four releases: name the
+  surface you are on, and make the authorisation a human step out loud.
+- **Installed by copy rather than as a plugin**: the doctrine arrives, the hook does
+  not. The README carries the categories and how one is authorised for a session.
+- **No node, or the fixtures cannot run**: the invariant fixtures are the executable
+  half of this skill. Say the check did not run rather than reporting the invariant as
+  held — an unrun check and a passing one are indistinguishable from the exit code
+  nobody looked at.
+
+## Triggers
+
+More phrases that route here: "crypto checkout", "pay with crypto", "TRC20", "IPN",
+"Heleket", "NOWPayments", "недоплата".
+
+Moved here from the description in 0.16.2: "USDT payment", "приём криптоплатежей".

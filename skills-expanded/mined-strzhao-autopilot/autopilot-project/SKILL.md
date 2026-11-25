@@ -1,0 +1,111 @@
+---
+name: autopilot-project
+description: 管理 autopilot 项目模式的任务 DAG。当用户运行 /autopilot status（有项目时）或 /autopilot next 时提供上下文参考。
+---
+
+# Autopilot Project — 多任务项目编排
+
+管理 `.autopilot/project/` 下的项目文件，为大型多任务目标提供 DAG 驱动的任务编排。
+
+## 项目文件结构
+
+```
+.autopilot/project/
+├── design.md                    # 整体架构设计
+├── dag.yaml                     # 任务 DAG
+└── tasks/
+    ├── <id>.md                  # 任务简报（文件名 = dag.yaml id）
+    ├── <id>.handoff.md          # 任务完成后的交接文档
+    └── ...
+```
+
+## DAG YAML 格式
+
+```yaml
+project: "<name>"
+created_at: "<ISO timestamp>"
+tasks:
+  - id: "001-wire-schema"
+    title: "定义共享协议包"
+    depends_on: []
+    status: pending           # pending | in_progress | done | failed | skipped
+  - id: "002-db-models"
+    title: "新增数据模型"
+    depends_on: ["001-wire-schema"]
+    status: pending
+```
+
+## 任务简报格式
+
+```markdown
+---
+id: "<文件名 stem，如 T4 → tasks/T4.md>"
+depends_on: ["XXX", "YYY"]
+---
+
+## 目标
+(一句话)
+
+## 架构上下文
+(从 design.md 摘取相关部分)
+
+## 输入/输出契约
+- 输入: ...
+- 输出: ...
+
+## 验收标准
+1. ...
+```
+
+## Handoff 格式
+
+```markdown
+## 实现摘要
+(做了什么，关键决策)
+
+## 文件变更
+(新增/修改的文件)
+
+## 下游须知
+(接口、约定、注意事项)
+
+## 偏差说明
+(与简报的任何偏差及原因)
+```
+
+## 核心原则
+
+1. **默认合并**: 每个任务是一次独立 autopilot 运行（design → implement → qa → merge 全流程），任务数是项目总开销的第一乘数——能合并的不拆，仅当单次运行无法承载才拆，宁少勿多
+2. **信息隔离**: 任务间通过 handoff 文件传递上下文，不共享会话状态
+3. **上下文预算 <10KB**: L0 DAG 概览 + L1 任务简报 + L2 依赖 handoff + L3 架构摘要
+4. **Handoff 链**: 每个任务完成后写 ≤500 字 handoff，只有直接下游读取
+5. **失败隔离**: 一个任务失败不影响无依赖关系的其他任务
+6. **自动编排 + 人工兜底**: 高信心时自动链接下一任务；低信心或失败时释放循环等待用户
+7. **AI Native**: 任务粒度、DAG 结构、handoff 内容由 AI 运行时判断，不硬编码规则
+
+## Auto-Chain 机制
+
+任务完成时（phase=done），如果 AI 在 merge 阶段评估为高信心，stop-hook 自动启动下一个就绪任务：
+- AI 通过设置 frontmatter `next_task` 字段信号高信心
+- stop-hook 读取该字段并创建新状态文件（`auto_approve: true`）
+- `auto_approve` 使下一个任务在高信心时跳过人工审批门（design 审批 + QA 审批）；standard 单任务 design 步骤 4 AI 自治默认（例外征询时不设）也可设置（详见 autopilot SKILL.md 步骤 4）
+- 所有任务完成后自动触发全项目 QA（`mode: "project-qa"`）
+
+## 全项目 QA（mode: "project-qa"）
+
+stop-hook 检测到全部任务 `status: done` 后，创建 `mode: "project-qa"` 状态文件并从 `phase: "qa"` 开始。与单任务 QA 的差异：
+
+- **加载**：`.autopilot/project/design.md` + `dag.yaml` + 状态文件 `## 任务完成摘要`（全 handoff 汇总）
+- **变更范围**：项目创建以来的全部 `git diff`（而非单任务 diff）
+- **Tier 调整**：Tier 0 跳过（无项目级红队测试）；Tier 1 全量构建/测试/lint，重在验跨任务集成；Tier 1.5 从 design.md「跨任务设计约束 / Handoff 策略」提取集成场景（共享接口 / 数据流 / 命名一致性）；Tier 2 对照 design.md 审整体架构符合性 + 全变更范围质量
+- **结果判定**：全部 ✅ → `phase: "done"`；有 ❌ → `gate: "review-accept"`（**不进 auto-fix**，项目级失败需人工判断修复范围与优先级）
+
+## 用户命令
+
+| 命令 | 行为 |
+|------|------|
+| `/autopilot status` | 无活跃 autopilot 时自动显示项目 DAG 概览 |
+| `/autopilot next` | 自动选择第一个就绪任务并启动 brief 模式 autopilot |
+| `/autopilot <id>` | 自动匹配 tasks/ 下的任务文件（`<id>.md`），brief 模式启动标准 autopilot |
+| `/autopilot --project <goal>` | 强制项目模式（跳过复杂度检测） |
+| `/autopilot --single <goal>` | 强制单任务模式 |

@@ -1,0 +1,429 @@
+---
+name: ad-tracking
+description: >-
+  Use when wiring or auditing ad pixels and conversion tracking: GA4, Google Ads, Meta
+  Pixel and CAPI, LinkedIn, Consent Mode v2. Not for campaigns or the charge
+  (stripe-billing). Opt out: no wiring, без обвязки. Triggers - "conversion tracking",
+  "meta pixel", "CAPI", "пиксель Meta", "ретаргетинг".
+license: MIT
+---
+
+# Advertising Analytics & Conversion Tracking Integration
+
+Integrating Google Analytics 4, Google Ads, Meta (Facebook) Pixel and LinkedIn Insight Tag into web apps: consent, standard event mapping, user identification, GDPR/DMA compliance.
+
+---
+
+## What this skill covers
+
+GA4, Google Ads, Meta Pixel and LinkedIn Insight Tag, all behind Consent Mode
+v2. The body carries the minimal setup and the traps; the tables, schemas and
+per-framework wiring live in `references/`, listed at the bottom.
+## Architecture Overview
+
+A modern advertising analytics stack consists of multiple pixels/tags that must all respect the same consent state. The architecture follows this pattern:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    CONSENT LAYER                          │
+│  Cookie Consent Banner → localStorage → consent state     │
+│  All pixels gated by the same consent storage key         │
+└────────────────────┬─────────────────────────────────────┘
+                     │ granted / denied
+     ┌───────────────┼──────────────────┬──────────────────┐
+     ▼               ▼                  ▼                  ▼
+┌─────────┐   ┌────────────┐   ┌──────────────┐   ┌────────────┐
+│  GA4 +   │   │  Meta      │   │  LinkedIn    │   │  Mixpanel  │
+│  Google  │   │  Pixel     │   │  Insight     │   │  (product  │
+│  Ads     │   │  (fbq)     │   │  Tag         │   │  analytics)│
+└─────────┘   └────────────┘   └──────────────┘   └────────────┘
+     │               │                  │                  │
+     ▼               ▼                  ▼                  ▼
+  Consent         Consent-gated     Consent-gated      Consent-gated
+  Mode v2         (render only      (render only        (opt_in /
+  (built-in)      when granted)     when granted)       opt_out)
+```
+
+**Key principle:** GA4 uses its own built-in Consent Mode v2 (defaults denied, updates on consent). All other pixels (Meta, LinkedIn, Mixpanel) use a consent-gated pattern — they are not rendered at all until the user grants consent. A shared `CustomEvent` allows dynamic consent changes without page reload.
+
+---
+
+## Consent
+
+Read `references/consent-mode.md` for all seven consent signals, Advanced vs
+Basic mode, region-specific defaults, granular consent and GTM wiring. Consent
+Mode v2 is **mandatory** in the EU/EEA since March 2024.
+
+**The order is the whole thing, and getting it wrong is invisible:**
+
+```
+1. dataLayer init + gtag() stub
+2. gtag('consent', 'default', { …'denied', wait_for_update: 500 })
+3. restore a stored decision → gtag('consent', 'update', …)
+4. load gtag.js (async)
+5. gtag('js', new Date()) + gtag('config', TAG_ID)
+```
+
+Steps 1–3 must run **synchronously before** gtag.js loads. A page that sets
+defaults after the script has loaded looks correct in every test that begins by
+accepting consent, and loses the denied population entirely.
+
+**Denied is not off.** With Advanced mode Google still receives cookieless
+pings and models conversions from them (Google's own dated case studies cite
+~65–70%; yours is unknown until measured). Whether pre-consent pings are
+lawful in your jurisdiction is counsel's call — Basic is the conservative
+mode, and it still gets Google's general modeling.
+## Google Analytics 4
+
+### Setup
+
+**Env var:** `NEXT_PUBLIC_GA_MEASUREMENT_ID` (format: `G-XXXXXXXXXX`)
+
+**Script loading:**
+
+```html
+<!-- 1. Consent defaults (MUST be first) -->
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('consent', 'default', {
+    ad_storage: 'denied', ad_user_data: 'denied',
+    ad_personalization: 'denied', analytics_storage: 'denied',
+    wait_for_update: 500
+  });
+  // Restore prior consent
+  try {
+    if (localStorage.getItem('consent_key') === 'granted') {
+      gtag('consent', 'update', {
+        ad_storage: 'granted', ad_user_data: 'granted',
+        ad_personalization: 'granted', analytics_storage: 'granted'
+      });
+    }
+  } catch(e) {}
+</script>
+
+<!-- 2. Load gtag.js -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+
+<!-- 3. Configure -->
+<script>
+  gtag('js', new Date());
+  // GA4 config carries NO allow_enhanced_conversions — that flag belongs on the
+  // Google Ads `AW-` tag only (see the Enhanced-conversions section); on a `G-`
+  // tag it enables nothing and contradicts this skill's own rule.
+  gtag('config', 'G-XXXXXXXXXX');
+</script>
+```
+
+### Commands and events
+
+Read `references/gtag-api.md` → **Commands** for `config` / `event` / `set` /
+`get` / `consent` with parameter scope and precedence, and
+`references/event-tracking.md` → **Recommended Events** for the GA4 names
+Google Ads can import (`sign_up`, `login`, `begin_checkout`, `purchase`,
+`generate_lead`, `view_item`) with their required parameters.
+
+**SPA page views are not automatic when you send them yourself.** Enhanced
+measurement fires `page_view` on History API changes; adding a manual one on
+route change double-counts every navigation. Send manual page views only for
+hash routing.
+### SPA Page Tracking
+
+GA4 with enhanced measurement automatically tracks `page_view` via the History API for Single Page Applications. Manual `page_view` tracking is only needed for hash routing (`#/path`). Consent state persists across SPA route changes.
+
+**Docs:**
+- [Set up the Google tag](https://developers.google.com/tag-platform/gtagjs)
+- [gtag.js API reference](https://developers.google.com/tag-platform/gtagjs/reference)
+- [Recommended events](https://developers.google.com/tag-platform/gtagjs/reference/events)
+- [Event parameters](https://developers.google.com/tag-platform/gtagjs/reference/parameters)
+- [Data routing & groups](https://developers.google.com/tag-platform/gtagjs/routing)
+
+---
+
+## Google Ads Conversion Tracking
+
+### Architecture
+
+GA4 and Google Ads share the same gtag.js snippet. When `NEXT_PUBLIC_GOOGLE_ADS_ID` (format: `AW-XXXXXXXXX`) is set, add a second `config` call:
+
+```javascript
+gtag('config', 'G-XXXXXXXXXX');  // GA4
+gtag('config', 'AW-XXXXXXXXX');  // Google Ads
+```
+
+Both share consent state, first-party cookies, and the dataLayer pipeline.
+
+### Enhanced Conversions
+
+Enhanced Conversions improve attribution by matching hashed user data (email, phone) with Google accounts. Setup:
+
+1. Where the flag appears at all, it belongs on the **Google Ads config — the
+   `AW-` tag, never the GA4 `G-` tag** (an earlier revision of this skill put it
+   on the `G-` config, where it enables nothing for Ads):
+
+```javascript
+gtag('config', 'AW-XXXXXXXXX', { allow_enhanced_conversions: true });
+```
+
+   Checked 2026-08-30: Google's current setup docs
+   (`support.google.com/google-ads/answer/9888145`, `…/13258081`) no longer
+   document the flag at all — the live mechanism is the account-level toggle
+   (step 3) plus `user_data` (step 2). Keep the flag if your tag already
+   carries it; do not copy it onto the `G-` config.
+
+2. Set user data before conversion events fire:
+
+```javascript
+gtag('set', 'user_data', {
+  email: 'user@example.com',        // Google hashes automatically
+  phone_number: '+1234567890',       // optional
+});
+```
+
+3. Enable in the Google Ads console: **Goals → Conversions → Settings →
+   Enhanced conversions → "Turn on enhanced conversions"** (checked 2026-08-31
+   against `support.google.com/google-ads/answer/13258081`; the old
+   Tools → Conversions path is gone from the redesigned UI)
+
+### user_id (Cross-Device Tracking)
+
+Set GA4 `user_id` after authentication to enable cross-device tracking and audience building:
+
+```javascript
+gtag('config', 'G-XXXXXXXXXX', {
+  user_id: 'USER_123',
+  send_page_view: false    // prevent duplicate page_view
+});
+```
+
+### gclid Preservation Through External Redirects
+
+The `gclid` from Google Ads auto-tagging is stored in the `_gcl_aw` first-party
+cookie (~90-day default life). It survives external redirects (Stripe Checkout →
+return URL) because only expiry ends a cookie on your own domain — no extra code.
+Checked 2026-08-31; the caveat is Safari, where ITP caps JS-set cookies at 7
+days — 24 hours after a link-decorated navigation, which a gclid landing is.
+
+### Google Ads console setup
+
+Read `references/gtag-api.md` → **Multi-Product Configuration** for wiring one
+gtag loader to both GA4 and Ads. In the Ads console the conversion action must
+be **Primary** and its attribution window set before the first click lands, or
+early conversions are attributed under the old settings and cannot be
+recomputed.
+## Meta (Facebook) Pixel
+
+### Setup
+
+**Env var:** `NEXT_PUBLIC_META_PIXEL_ID` (numeric string)
+
+**Base code (consent-gated):**
+
+```javascript
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
+(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', 'PIXEL_ID');
+fbq('track', 'PageView');
+```
+
+**noscript fallback — consent-gated, or omitted.** A bare `<noscript>` Meta
+pixel FIRES on every JS-disabled page view — no banner, no `fbq`, no consent —
+contradicting this stack's rule that Meta is *not rendered until consent*. So
+emit it from the SERVER, only when a **server-verifiable consent** (a signed
+HttpOnly cookie the server reads before writing the HTML) already exists. Cannot
+verify consent server-side? **Omit it** — Meta's verification does not need it,
+and a request that fired cannot be taken back:
+
+```html
+<!-- server-side: render ONLY when consent is proven -->
+{% if consent_cookie_verified and consent.ad_storage == "granted" %}
+<noscript><img height="1" width="1" style="display:none"
+  src="https://www.facebook.com/tr?id=PIXEL_ID&ev=PageView&noscript=1"/></noscript>
+{% endif %}
+```
+
+Snippets here come from EXECUTABLE templates, so a static check refuses the two
+mistakes this section prevents: `allow_enhanced_conversions` on a `G-` tag, and
+a `noscript` Meta pixel not behind a server-verified consent condition.
+
+### Standard Events
+
+Meta defines 17 standard events. The four that carry a SaaS funnel are
+`CompleteRegistration`, `InitiateCheckout`, `Purchase` and `Subscribe`, and only
+`Purchase` has mandatory parameters: `value` and `currency`, without which Meta
+cannot optimise. The full table — every event, its parameters and the traps —
+is in `references/meta-linkedin.md` → **Standard events**.
+
+### Deeper Meta and LinkedIn detail
+
+Read `references/meta-linkedin.md` for the parameter object per event, the
+firing wrapper, advanced matching (hashed identifiers, and what must never be
+sent) and CAPI deduplication.
+## LinkedIn Insight Tag
+
+Consent-gated on the same wrapper as the Meta Pixel, env var
+`NEXT_PUBLIC_LINKEDIN_PARTNER_ID`. Conversions are configured in Campaign Manager
+rather than in code, so there is nothing to deduplicate and nothing that fails
+silently in the bundle — but a URL rule on a refreshable page counts every
+refresh. Setup snippet, the Campaign Manager steps and `lintrk` are in
+`references/meta-linkedin.md` → **LinkedIn conversion tracking**.
+
+## User Identification
+
+One rule the body keeps, because getting it wrong corrupts attribution rather
+than losing it: **identify before you track, never after**. An event fired for an
+anonymous id and re-attributed later is two users to every platform that already
+ingested it. The per-platform strategy, the Mixpanel `alias` vs `identify`
+distinction and the timing rules are in `references/event-tracking.md` →
+**User identification**.
+
+## Event naming
+
+Read `references/event-tracking.md` → **Recommended Events** and **Parameter
+Rules**. GA4 reserves a set of names and silently drops events that collide
+with them; the reference lists which.
+## E-commerce
+
+Read `references/event-tracking.md` → **Ecommerce Events** for the GA4 item
+schema and the full purchase / add_to_cart / begin_checkout set.
+
+**Deduplication is the part that silently doubles revenue.** A purchase fired
+from both the browser and the server (Conversions API, server-side GA4) must
+carry the SAME `event_id` / `transaction_id`, or both are counted. Run
+`fixtures/assert-dedup-contract.mjs` rather than reloading the thank-you page:
+`pixel-and-capi-carry-one-event-id` and `pixel-and-capi-carry-one-event-name` fail an
+emitter that shares one field and not the other,
+`no-purchase-reported-before-the-charge-cleared` fails one that reports from the redirect,
+and `the-browser-event-is-kept` fails one that drops the pixel. `--self-test` deletes each
+rule and watches the matching assertion go red.
+
+**A purchase is not a browser event, and that decides where it comes from.**
+Every other event on the list is something a person did in a tab, so the browser
+is its natural source. A purchase is the outcome of a charge that succeeded
+inside a payment system, and the only thing that knows it succeeded is the
+provider's webhook. Firing it from the thank-you page means firing it from the
+one place that has no idea whether the charge cleared — which is why a purchase
+event exists for every session that reached the page and a refund exists for
+none of them.
+
+The consequence is an ordering, not a preference:
+
+1. **The webhook handler is the source of truth for the purchase.** It writes the
+   entitlement, and the same handler sends the server-side conversion. If the
+   handler is where the money is recorded, it is where the event belongs.
+2. **The browser event stays, and it stays subordinate.** Keep it for the
+   attribution signals only the browser carries (click ids, the consent state,
+   the session), give it the `event_id` the server will reuse, and treat the
+   server as authoritative when they disagree.
+3. **Everything the browser loses, it loses closest to the money.** Blockers, a
+   mobile browser terminating a tab on redirect, a payment provider's hosted page
+   ending the session before the return leg — each of them removes the *last*
+   step preferentially, so the browser-only purchase count is biased low by an
+   amount you cannot measure from inside the browser.
+
+Reconcile against the provider rather than the analytics dashboard: the count of
+succeeded charges in a period is a number the payment system will give you
+exactly, and it is the only external check on this event that is not itself
+telemetry. See `stripe-billing` → **Depending on one provider** for what else
+that reconciliation surfaces.
+## Content Security Policy
+
+Read `references/performance-security.md` → **Content Security Policy** for the
+full directive set per platform.
+
+**The trap:** a nonce on the gtag loader is not enough — Google injects further
+scripts at runtime, so `script-src` needs the Google domains as well, and a CSP
+that passes on the landing page can still break the checkout where the Ads
+conversion tag loads.
+## Next.js
+
+Read `references/gtag-api.md` → **Next.js / React Integration** for the
+component tree, and `references/performance-security.md` → **Script Loading
+Strategies** for `next/script` strategy choice and SPA route changes.
+
+**Two traps that are not obvious from either:**
+
+- `NEXT_PUBLIC_*` is inlined at **build** time. In a Docker build the variable
+  must exist in the builder stage; injecting it at runtime leaves the literal
+  string in the bundle and every event goes nowhere.
+- An authenticated area and an embed/widget page need different gating — the
+  dashboard already has consent, an embed may have none and must not assume
+  the parent page's.
+## UTM Attribution
+
+Read `references/event-tracking.md` → **UTM Attribution** for the capture flow
+(localStorage through OAuth redirects into the DB), the five-parameter table,
+and the platform click IDs (`gclid`/`fbclid`/`li_fat_id`) — which the SDKs
+handle automatically; do not strip them from URLs.
+
+---
+
+## Verification
+
+Read `references/performance-security.md` → **Debug & Testing** for the full
+per-platform checklist (GA4 DebugView, Meta Test Events, LinkedIn tag helper)
+and the consent round-trip.
+
+**The check that catches most of it:** open the site in a fresh incognito
+window, deny consent, and confirm in DevTools → Network that no `_ga` or
+`_gcl_*` cookie is set and that collect requests carry `gcs=G100`. A tag that
+fires correctly *after* consent while ignoring the denied default is the
+failure this whole skill exists to prevent, and it looks fine in every test
+that starts by accepting.
+## Troubleshooting
+
+Read `references/performance-security.md` → **Troubleshooting** for the
+common-issues table (consent ordering, duplicate `PageView`, Advanced/Enhanced
+Matching timing, the localhost guard) and the debug-mode snippet. The two seen
+most: consent `default` must run **before** gtag.js loads, and a purchase
+without `value`/`currency` cannot be optimised against by either platform.
+
+---
+
+## Official documentation
+
+Google: [Consent Mode v2](https://developers.google.com/tag-platform/security/guides/consent) ·
+[gtag.js](https://developers.google.com/tag-platform/gtagjs/reference) ·
+[GA4 events](https://developers.google.com/analytics/devguides/collection/ga4/reference/events).
+Meta: [Pixel](https://developers.facebook.com/docs/meta-pixel) ·
+[Conversions API](https://developers.facebook.com/docs/marketing-api/conversions-api).
+LinkedIn: [Insight Tag](https://www.linkedin.com/help/lms/answer/a418880).
+Compliance: [EU DMA](https://digital-markets-act.ec.europa.eu/).
+## Deep references
+
+The sections above are the integration surface across four platforms; these carry
+the depth this file deliberately does not. Each opens with its own **Load this
+when** line, so the trigger has one home and this table stays an index.
+
+| File | Read it when |
+|---|---|
+| [`references/consent-mode.md`](references/consent-mode.md) | **consent is the task** |
+| [`references/gtag-api.md`](references/gtag-api.md) | you are **calling gtag directly** |
+| [`references/event-tracking.md`](references/event-tracking.md) | you are **designing the event schema** |
+| [`references/performance-security.md`](references/performance-security.md) | the tag **costs Lighthouse points or fails CSP** |
+| [`references/meta-linkedin.md`](references/meta-linkedin.md) | the work is **Meta or LinkedIn rather than Google** |
+
+For the page-speed side of the same problem — what the tag does to LCP and TBT,
+and what to do about it — see the `frontend-performance` skill in this pack.
+
+## Degradation
+
+- **Not Claude Code** (Cursor, Codex, the skills CLI, the API container): the pack's
+  `PreToolUse` gate does not run. It is the thing that refuses a live key or an
+  irreversible action in this pack; elsewhere those rules are advice you follow by hand.
+- **Installed by copy rather than as a plugin**: the doctrine arrives, `hooks/` does not
+  — same loss, same remedy.
+- **No network, or the ad platform's API unreachable**: server-side events cannot be
+  verified end to end. Say the dedup check did not run rather than reporting it held;
+  a browser pixel firing proves the browser, never the conversion.
+
+## Triggers
+
+More phrases that route here: "ad tracking", "fbq", "google ads", "gtag", "cookie consent",
+"enhanced conversions", "retargeting", "purchase event", "gclid", "UTM", "attribution",
+"согласие на куки", "аналитика рекламы", "product analytics", "аналитика продукта".
+
+Moved here from the description in 0.16.2: "отслеживание конверсий".

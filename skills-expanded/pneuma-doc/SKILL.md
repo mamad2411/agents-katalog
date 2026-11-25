@@ -1,0 +1,113 @@
+---
+name: pneuma-doc
+description: >
+  Write and edit markdown documents in the Pneuma Doc workspace. Use for ANY task in
+  this workspace. Defines how the live-preview environment works and how to edit
+  effectively.
+---
+
+# Pneuma Doc Mode — Document Editing Skill
+
+You are working in Pneuma Doc Mode — a WYSIWYG markdown editing environment where the user views your edits in real-time in a browser preview panel.
+
+## Core Principles
+
+1. **Incremental edits**: Make focused changes — the user sees each edit live as you make it
+2. **Preserve structure**: Don't reorganize content unless explicitly asked
+3. **Quality markdown**: Use proper GFM conventions consistently
+
+## Working with the viewer
+
+The user watches a live markdown preview while you edit. Treat the viewer as a shared surface: read what they're looking at, drop them locator cards back to the result, and reach for the scaffold action only when they want a clean slate.
+
+### Reading what the user sees
+
+Each user message may be preceded by a `<viewer-context>` block describing the panel state, and a `<user-actions>` block describing what they just clicked. Use these to resolve deictic phrases like "this section", "here", "that heading".
+
+Example context:
+
+```
+<viewer-context>
+[Context: file "README.md"]
+[User selected: heading (level 2) "Installation"]
+  Address: {"file":"README.md","heading":"Installation","lineRange":[40,72]}
+</viewer-context>
+```
+
+When you see the above and the user says "tighten this section up", they mean the `## Installation` heading and the prose underneath it in `README.md`. Edit that file directly — don't ask which one. The `Address:` line is a machine-readable ViewerAddress — copy it straight into a `<viewer-locator>` card to point back at the same object.
+
+If no `<viewer-context>` is attached, the user hasn't selected anything specific; default to the most recently edited file or ask only when the request is genuinely ambiguous.
+
+### ViewerAddress — naming an object in the document
+
+A **ViewerAddress** is the one JSON shape that names "which object in the document": it is what a `<viewer-locator>` card points at and what a `<viewer-context>` selection reports back to you. Doc's vocabulary:
+
+| Key | Granularity | Meaning |
+|---|---|---|
+| `file` | coarse | The document path relative to the workspace root (`notes.md`, `docs/README.md`). |
+| `heading` | fine | The text of the selected heading (`"Installation"`) — present only when a heading element is selected. |
+| `lineRange` | fine | `[startLine, endLine]` — the source line range of the selected block. |
+
+A selection in `<viewer-context>` hands you a ready-made ViewerAddress on its `Address:` line — copy that JSON straight back. Line ranges shift as the document is edited, so prefer `heading` as the durable handle when one is available.
+
+### Locator cards
+
+After creating or editing a document, post a `<viewer-locator>` card at the end of your reply so the user can jump straight to the result. The `address` attribute is a ViewerAddress — locators navigate the user to a **document**, so use the coarse `file` key.
+
+Examples:
+
+```
+<viewer-locator label="Open notes.md" address='{"file":"notes.md"}' />
+```
+
+```
+<viewer-locator label="See the rewritten Installation section" address='{"file":"README.md"}' />
+```
+
+One card per file you touched is plenty. Use a label that names what the user will find when they click — "Open the new draft" beats "View file".
+
+### Viewer actions
+
+The viewer exposes one agent-invocable action: `scaffold`. Call it with a POST to `$PNEUMA_API/api/viewer/action`:
+
+```bash
+curl -X POST "$PNEUMA_API/api/viewer/action" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actionId": "scaffold",
+    "params": {
+      "files": "[{\"name\":\"intro.md\",\"heading\":\"Introduction\"},{\"name\":\"methods.md\",\"heading\":\"Methods\"},{\"name\":\"results.md\",\"heading\":\"Results\"}]"
+    }
+  }'
+```
+
+The browser will surface a confirmation prompt before the scaffold runs.
+
+### Scaffold
+
+`scaffold` initializes the workspace with empty markdown files. It clears only the currently viewed files, then writes one file per entry in `files`.
+
+- **`files`** (optional): a JSON-encoded array of `{ name, heading? }`. `name` is the filename (with or without `.md`); `heading` becomes the H1 inside the new file.
+
+Use scaffold only when the user explicitly asks to start fresh — "wipe these and start over", "set up an outline with these chapters", "blank workspace with three files for X / Y / Z". For everyday additions, just `Write` a new `.md` file directly. Scaffold requires user confirmation in the browser, so don't fire it speculatively.
+
+## File Convention
+
+- The workspace contains markdown files (`.md`)
+- Edit existing `.md` files or create new ones as requested
+- Use standard GitHub-Flavored Markdown (GFM)
+- One document per file — separate topics keep the workspace navigable and let the viewer show clean file tabs
+
+## Editing Guidelines
+
+- Use the `Edit` tool (preferred) for surgical changes to existing content
+- Use the `Write` tool for creating new files or full rewrites
+- Make focused, incremental edits — the user sees changes live, so each edit should leave the document in a valid state
+- Preserve existing content structure unless asked to reorganize — the user chose that structure deliberately
+
+## Constraints
+
+- Do not create non-markdown files unless explicitly asked
+- Do not modify `.claude/` directory contents — managed by the runtime, your edits would be overwritten on next session
+- Do not run long-running background processes
+- Do not ask for confirmation before simple edits — just do them. The user sees your edits live and can course-correct immediately

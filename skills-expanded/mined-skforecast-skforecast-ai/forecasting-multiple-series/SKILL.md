@@ -1,0 +1,160 @@
+---
+name: forecasting-multiple-series
+description: >
+  Forecasts multiple time series simultaneously using a global model with
+  ForecasterRecursiveMultiSeries or ForecasterDirectMultiVariate. Covers data
+  formats, encoding, per-series transformers, and multi-series backtesting.
+  Use when the user has two or more related time series.
+---
+
+# Forecasting Multiple Time Series
+
+## When to Use
+
+- **ForecasterRecursiveMultiSeries**: A single global model learns patterns across many series. Each series is predicted independently but the model shares parameters. Best default for multi-series.
+- **ForecasterDirectMultiVariate**: Uses values from multiple series as input features to predict one target series. Use when series are strongly correlated and influence each other.
+
+### Related skills
+
+- **Prerequisite**: `choosing-a-forecaster` (decide between MultiSeries, MultiVariate, Rnn, or Foundation for multi-series problems)
+- **Prerequisite**: `autocorrelation-and-lag-selection` (analyse representative series to inform the shared `lags` argument)
+- **Prerequisite**: `feature-engineering` (build per-series exogenous and rolling features)
+- **Next**: `hyperparameter-optimization` (tune the global model across series)
+- **Next**: `prediction-intervals` (add intervals to the multi-series forecasts)
+
+## Stop Conditions
+
+Scan before writing code. Each row lists a rule, the symptom when it is broken, and the recovery. Full pitfall catalog: the `troubleshooting-common-errors` skill.
+
+| Rule | Symptom | Recovery |
+|------|---------|----------|
+| Use `backtesting_forecaster_multiseries` and the `*_multiseries` search functions | `backtesting_forecaster` / `grid_search_forecaster` raises on a multi-series forecaster | Call the `_multiseries` variant with `series=` instead of `y=` |
+| `ForecasterDirectMultiVariate` defaults to `transformer_series=StandardScaler()` | Series are scaled unexpectedly (other forecasters default to `None`) | Pass `transformer_series=None` explicitly if you do not want scaling |
+| `exog` and `series` formats can be combined (wide, long or dict); a dict or long `exog` is matched to the series by name | `MissingExogWarning` about series without exog, whose exog values are NaN | Use the series names as the keys of the exog dict (or the series IDs of a long exog). A wide exog is shared by all series and aligned with each one by date |
+| Regressors with native categorical support need `encoding='ordinal_category'` | Categoricals silently encoded as plain ordinals, degrading the model | Set `encoding='ordinal_category'` for LightGBM / CatBoost / XGBoost / HistGBR |
+
+## Data Formats
+
+ForecasterRecursiveMultiSeries accepts three input formats:
+
+1. **Wide DataFrame** — columns are series, index is datetime:
+   ```python
+   #            series_1  series_2  series_3
+   # 2020-01-01     1.0       2.5       3.1
+   # 2020-01-02     1.2       2.3       3.4
+   ```
+
+2. **Dictionary** — `{series_id: pd.Series}`:
+   ```python
+   {'series_1': pd.Series([1.0, 1.2, ...]), 'series_2': pd.Series([2.5, 2.3, ...])}
+   ```
+
+> **Note:** Long-format DataFrames are not directly accepted. Use `reshape_series_long_to_dict()` to convert long format to a dictionary first (see Data Reshaping Utilities below).
+
+## Complete Workflow
+
+```python
+import pandas as pd
+from lightgbm import LGBMRegressor
+from skforecast.recursive import ForecasterRecursiveMultiSeries
+from skforecast.model_selection import backtesting_forecaster_multiseries, TimeSeriesFold
+
+# 1. Load data as wide DataFrame (columns = series)
+series = pd.read_csv('data.csv', index_col='date', parse_dates=True)
+series = series.asfreq('D')
+
+# 2. Create forecaster
+forecaster = ForecasterRecursiveMultiSeries(
+    estimator=LGBMRegressor(n_estimators=200, random_state=123),
+    lags=24,
+    encoding='ordinal',       # 'ordinal', 'ordinal_category', 'onehot', or None
+    transformer_series=None,  # Apply same transformer to all series
+    # Per-series options (dict):
+    # transformer_series={'series_1': StandardScaler(), 'series_2': MinMaxScaler()},
+    # weight_func={'series_1': custom_weights_fn, '_default': None},
+    # differentiation={'series_1': 1, 'series_2': None},
+    categorical_features='auto',  # Auto-detect and encode non-numeric exog columns
+    differentiation=None,
+    dropna_from_series=False,     # True to drop NaN rows; False to keep (NaN-tolerant estimators)
+)
+
+# 3. Train
+forecaster.fit(series=series)
+
+# 4. Predict all series
+predictions = forecaster.predict(steps=10)
+
+# 5. Predict specific series only
+predictions = forecaster.predict(steps=10, levels=['series_1', 'series_2'])
+
+# 6. Backtesting (multi-series)
+cv = TimeSeriesFold(
+    steps=10,
+    initial_train_size=len(series) - 100,
+    refit=False,
+)
+
+metric, predictions_bt = backtesting_forecaster_multiseries(
+    forecaster=forecaster,
+    series=series,
+    cv=cv,
+    metric='mean_absolute_error',
+    levels=None,  # Evaluate all series
+)
+print(metric)  # Shows per-series and aggregated metrics
+```
+
+## With Exogenous Variables
+
+```python
+# Exog can also be wide DataFrame, long DataFrame, or dict
+forecaster.fit(series=series, exog=exog_df)
+predictions = forecaster.predict(steps=10, exog=exog_test)
+```
+
+## ForecasterDirectMultiVariate
+
+```python
+from skforecast.direct import ForecasterDirectMultiVariate
+
+# Predicts ONE target series using lags from ALL series as features
+# Note: transformer_series defaults to StandardScaler() (unlike other forecasters)
+forecaster = ForecasterDirectMultiVariate(
+    level='target_series',    # Name of the series to predict
+    steps=10,
+    estimator=LGBMRegressor(n_estimators=100, random_state=123),
+    lags=24,                  # Or dict: {'series_a': 12, 'series_b': 24}
+    transformer_series=StandardScaler(),  # Default — set None to disable scaling
+    categorical_features='auto',  # Auto-detect and encode non-numeric exog columns
+    dropna_from_series=False,     # True to drop NaN rows; False to keep (NaN-tolerant estimators)
+)
+forecaster.fit(series=series_df)
+predictions = forecaster.predict()
+```
+
+## Data Reshaping Utilities
+
+```python
+from skforecast.preprocessing import (
+    reshape_series_wide_to_long,
+    reshape_series_long_to_dict,
+    reshape_exog_long_to_dict,
+    reshape_series_exog_dict_to_long,
+)
+
+# Wide → Long
+series_long = reshape_series_wide_to_long(series_wide)
+
+# Long → Dict (freq is required)
+series_dict = reshape_series_long_to_dict(series_long, freq='D')
+exog_dict = reshape_exog_long_to_dict(exog_long, freq='D')
+```
+
+## Common Mistakes
+
+1. **Mismatched series lengths**: ForecasterRecursiveMultiSeries handles different-length series if `dropna_from_series=True`.
+2. **Wrong encoding for categorical regressor**: Use `encoding='ordinal_category'` with regressors that natively handle categoricals (LightGBM, CatBoost).
+3. **Exog keys not matching the series names**: Any exog format (wide, long or dict) can be combined with any series format. A wide exog is shared by all series and aligned with each one by date; a dict or long exog must use the series names as keys, otherwise those series get NaN exog values (`MissingExogWarning`).
+4. **Forgetting `levels` parameter**: By default `predict()` forecasts all series. Use `levels` to limit predictions.
+5. **Unexpected scaling in ForecasterDirectMultiVariate**: `transformer_series` defaults to `StandardScaler()`, unlike other forecasters that default to `None`. Set `transformer_series=None` explicitly if you don't want automatic scaling.
+6. **Comparing search candidates on different points**: with series of different length, a candidate with more lags does not predict the short series in the first folds. The column `n_evaluated` of the backtesting metrics and of the `*_multiseries` search results counts the points in each metric; when it differs between candidates, the search warns (`MissingValuesWarning`). Pass in `levels` the series that every candidate predicts in every fold to compare them on the same points (see the `hyperparameter-optimization` skill).

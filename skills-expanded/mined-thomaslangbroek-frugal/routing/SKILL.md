@@ -1,0 +1,71 @@
+---
+name: routing
+description: Cost-optimised task routing. Use at the start of any coding, search, extraction, review, or multi-step task to pick the cheapest execution strategy (deterministic tool, haiku worker, sonnet worker, main model, fable worker) and to handle escalation when a worker fails. Also triggers on mentions of cost, budget, routing, or delegation.
+---
+
+# Frugal routing
+
+Route every sub-task to the cheapest strategy that can succeed. Priorities, in order: correctness, cost, latency, extensibility, simplicity.
+
+## Step 0: overrides
+
+If `.claude/routing-overrides.md` exists in the project, read it first. Its rules win over everything below.
+
+## Step 1: tool first
+
+Before any delegation: if a deterministic command solves the task (grep, rg, jq, yq, sed, awk, git, terraform, kubectl, helm, docker, a compiler, a test runner), run it. No LLM call. Reasoning models are for reasoning.
+
+Step 1 covers **one-shot** commands only: you know the exact command and its output answers the question directly. The moment discovery turns iterative — a second search informed by the first, listing directories to decide what to read next, reading files to summarise them — it is no longer a tool call, it is a locate/extract task. Bright line: the third search/list/read operation on the same question means you are exploring inline; stop and hand the whole question to `scout` or `extractor`, including what you already learned. Every raw tool result you ingest is paid at main-loop rates; a haiku worker reads the same bytes at a fraction of the cost and returns a summary.
+
+## Step 1.5: sensitivity gate
+
+Sensitivity is not a task-type signal, so it cannot live in the decision table below. Some data must never leave the main loop for a worker, however cheap the task looks. Decide this **before** tier selection, not by letting a worker fail into it.
+
+If `.claude/frugal-sensitivity.json` exists in the project, it declares rules (content regexes and path globs) and, per rule, which workers may still receive matching data. The `guard_sensitive.py` hook enforces it at spawn: a matching Agent delegation to a non-allowed worker is blocked, and you handle that sub-task inline. The gate fails closed (a broken config blocks delegation), unlike the cost hooks which fail open. With no such file the gate is off. See `examples/frugal-sensitivity.example.json`.
+
+This is an enforced default, not a substitute for judgement: for regulated data the human owns the final call on where it may go.
+
+## Step 2: decision table
+
+Decompose the request into sub-tasks. For each, match signals to the cheapest capable agent. Installed as a plugin, the agents are namespaced: spawn `frugal:scout`, not `scout`:
+
+| Task signals | Required capabilities | Route |
+|---|---|---|
+| "where is X", "what uses Y", map directory, grep logs | locate | `scout` (haiku) |
+| pull fields from docs/logs, classify against given categories, summarise one file or diff, format conversion | extract | `extractor` (haiku) |
+| rename, boilerplate, apply known pattern, config value change, test scaffold from example, with a complete spec | mechanical-edit | `mechanic` (sonnet) |
+| implement one scoped task from an approved plan, write tests from given cases, fix a simple reproduced bug | implement-from-plan | `builder` (sonnet) |
+| design, debugging, ambiguous requirements, reviews, trade-offs, anything regulated or risky | reasoning | main loop (you) |
+| task exceeds the main loop's own tier, or Fable-level work needs an isolated fresh context (parallel deep reviews, synthesis over merged summaries) | deep-reasoning | `sage` (fable) |
+
+`sage` is never a routing default. Check what the main loop actually runs before reaching for it: on Opus 5 (or any tier below Fable) `sage` is a real capability escalation and the decision table's first clause applies; if the main loop already runs Fable, use `sage` only for context isolation, not capability.
+
+**Generic agents are never routing targets.** `Explore`, `general-purpose`, `claude`, `Plan`, and `fork` are reasoning-tier and bill at main-loop rates — never spawn them for locate, extract, or summarise work, no matter how broad the fan-out. Map them down: locate/map -> `scout`; extract/summarise/classify -> `extractor`; mechanical edits -> `mechanic`/`builder`; reasoning stays in the main loop. A bare `Agent` call with no `subagent_type` defaults to `general-purpose` (expensive) — always name a cheap agent explicitly. The exception is a generic agent pinned to a cheap tier with the Agent tool's `model` parameter (`haiku` or `sonnet`): that bills at the pinned tier and is allowed, but prefer the frugal worker when one fits, because its prompt caps the reply. `fork` ignores `model` and always runs on the main-loop model. The `guard_expensive.sh` hook blocks these at spawn time; `FRUGAL_ALLOW_EXPENSIVE=1` is the deliberate, per-session override for when a task genuinely needs main-loop breadth.
+
+Workers pin their own reasoning effort in frontmatter: `low` for `scout`, `extractor` and `mechanic`, `medium` for `builder`, `high` for `sage`. Model tier is one axis of cost and thinking is another, so a session running at high effort no longer makes a haiku scout deliberate over a grep.
+
+## Never delegate
+
+Security-sensitive changes, destructive operations, ambiguous requirements, anything needing user judgement. These stay in the main loop, always.
+
+## Delegation rules
+
+- Delegate only self-contained sub-tasks the prompt can fully specify. If specifying takes longer than doing: do it inline.
+- Delegation has a floor. A spawn costs about the same whether the task is trivial or large, so a job too small to repay that fixed cost is cheaper done inline. `scripts/stats.py` prints the measured floor per agent ("delegating pays off above ~N tokens of reading") from your own runs; under it, read it yourself.
+- Context handoff: pass pointers (`path:line` ranges, commit SHAs, URLs), never pasted file content. Pasting is billed as main-loop output tokens (fable ~$40/MTok, and generating them takes wall-clock time); a worker reads the same bytes as haiku input (~$0.10/MTok) in one round trip. Paste only what the worker cannot retrieve itself — text that exists solely in the conversation (user message, prior tool output, fetched page) — or trivially small snippets (<~200 tokens).
+- Batch independent delegations in one message so they run in parallel. Large fan-outs (e.g. review 50 modules): fan out `scout`/`extractor` workers, merge their summaries, do one final reasoning pass yourself.
+- Workers end with a footer (`RESULT:` / `CHECKS-RUN:` / `UNCERTAINTIES:` / `ESCALATE:`). A worker reporting ambiguity: resolve it yourself; never re-prompt the worker to guess.
+
+## Escalation protocol (verification first)
+
+1. A deterministic check exists for the worker's output (tests, compiler, schema validation, diff applies, `terraform validate`): run it. Pass = done. Fail = re-dispatch one tier up (haiku worker -> equivalent sonnet worker; sonnet worker -> take over yourself), maximum one retry. Include the failed attempt's footer in the retry prompt.
+2. No deterministic check: spot-read the result yourself. You receive it anyway; judging it costs almost nothing.
+3. The worker's `ESCALATE: yes` is advisory input to rules 1 and 2, never the sole trigger.
+4. If the task still exceeds your own tier after you take over: hand it to `sage` with the full failure history. One attempt, final.
+5. Never start at an expensive tier unless the decision table sends you there.
+
+## Budget
+
+`FRUGAL_BUDGET_USD` sets a per-session ceiling, counting main-loop spend as well as delegated spend. Under 80% of it nothing is said. From 80% a warning arrives with each prompt: delegate harder, keep worker replies terse, leave `sage` alone. At 100% stop and confirm with the user before starting new work, and reasoning-tier spawns are denied even with `FRUGAL_ALLOW_EXPENSIVE=1`, because they cost more than the main loop does. Cheap workers stay allowed at every level: they are how you get back under.
+
+Unset means no ceiling and no warnings.

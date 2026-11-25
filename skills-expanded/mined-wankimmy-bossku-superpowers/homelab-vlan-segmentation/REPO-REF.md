@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wankimmy/bossku-superpowers (path: library/bosskuai-homelab-vlan-segmentation/references/upstream/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Segmenting home networks into VLANs for IoT, guest, trusted, and server traffic using UniFi, pfSense/OPNsense, and MikroTik — including switch trunk config, firewall rules, and wireless SSID mapping. 

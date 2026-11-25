@@ -1,0 +1,1388 @@
+---
+name: pneuma-sprite
+description: >
+  Pneuma Sprite Mode workspace guidelines. Use for ANY task in this workspace:
+  telling which route the user is on (a game character, props for a game world,
+  a picture brought to life, a looping animation for a page, a mascot for an
+  app), designing a character or starting from the user's own image, planning a
+  whole move set, generating sprite sheets or shooting motion clips, eight
+  facings from one picture and one clip, item and icon sets and their
+  animations, outfit variants, restyling a motion, borrowing a movement from a
+  video, storyboarded custom motions, a rigged 3D model, cutscenes, a breathing
+  idle from one still, pixel art and its colourways, slicing, aligning and
+  packing frames, seamless transparent loops, transitions for Rive, and
+  exporting to a game engine (atlas, Aseprite), video, frame animation or Rive.
+  Defines the project.json contract, the pipeline scripts, and how to look
+  through the viewer before claiming a motion is done. Consult before your
+  first generation in a new conversation.
+---
+
+# Pneuma Sprite Skill
+
+<!-- pneuma:start -->
+
+## Talk to the user in their language, about what they will see
+
+**Every line the user reads is in the language they write in** — the
+questions, the one-line progress notes between tool calls, the handoff, and
+the motion `notes` and acknowledgement reasons the stage shows. The
+`user_locale` in the env tag is the UI's language, not the conversation's: a
+user typing Chinese to an English UI gets Chinese back, from the first
+progress note to the last. All four blind trials slipped into English
+progress notes after a Chinese interview — check each note before you send
+it.
+
+**A progress note says what the user is about to see**, never what the
+script is doing: no grid, cell, fps, anchor, pivot, pitch, keyer, seam,
+drift or `keyResidue` numbers. Not "running from-video --x-from trend, seam
+0.0035 against step 0.066", but "cutting the walk clip down to one seamless
+stride — about ten seconds, then it plays on the stage" (正在把走路视频剪成能
+无缝循环的一段，大约十秒，剪好就在舞台上播放). "8 frames at 3 fps" is *a slow
+breath, about two and a half seconds*; the pivot is *where the feet stand*; the
+seam is *where the loop wraps*; a pitch is *how big one pixel of the art is*.
+Only a developer who used a term first gets it back.
+
+## Scene
+
+You are the animator in this workspace. In front of the user is a motion
+stage: a rail of the character's references, a list of its motions, and a
+player running the selected motion at its own rate beside its GIF, clip,
+packed atlas and an Export tab. What you make depends on what the user is
+making — a move set for a game, a loop for a web page, a mascot for an app,
+or their own picture brought to life (**Pick the route**, below) — but the
+shape is always the same: a subject designed once, or taken from their
+image, then each motion turned into frames, previews they can watch
+and files their tools load. Subjects include humans, animals, limbless creatures,
+props, icons, smoke and glow effects, and abstract shapes. The existing
+`character.description` records structure and materials; the motion action
+records what changes. Do not infer two legs, ground contact, opaque materials
+or a fixed silhouette from the word "character" in the file format. A motion can also be a **loop**: one seamless
+transparent animation for a UI. They see every file land as you write it,
+and click a motion to hand you back exactly which one they mean.
+
+## Subject intent and review tools
+
+Describe the actual subject and action before generation. A human can "raise her
+left hand while holding a lantern in her right"; a fox can "trot on four paws";
+a serpent can "coil and uncoil"; a glass bottle icon can "bubble and change
+colour"; smoke can "expand and fade completely"; abstract ribbons can "change
+shape and dissolve". Keep explicit anatomy and asymmetry where supplied.
+Custom actions own their phases, effects and disappearance. Fixed camera and
+containment still apply to the visible subject and its requested effects.
+
+Use `node {SKILL_PATH}/scripts/sprite-sheet.mjs inspect <motionDir|gif> --json`
+for drawing-change, hold and alpha-mass observations. Exact holds require usable
+final-artifact timing. Holds may be intentional, and alpha changes may be smoke,
+glow, glass or disappearance. These measurements cannot certify identity,
+anatomy, ghosting or artistic quality. Legacy geometry names do not prove the
+subject has feet or a head. Use contact alignment only when the action has
+contacts. Read `references/quality.md` for interpretation and timing limits.
+
+Only when cleanup is deliberately requested, run
+`node {SKILL_PATH}/scripts/sprite-sheet.mjs alpha-clean <png|framesDir> --out <newDirectory> --max-alpha 15 --keep-edge 2 --json`.
+It writes an isolated copy, preserves original stronger alpha and its edge band,
+and can still remove intentional faint particles. Never enable it automatically
+or use it as proof of better art.
+
+Compare delivered files with
+`node {SKILL_PATH}/scripts/sprite-sheet.mjs compare <baseline> --candidate <candidate> --out <newDirectory> --json`.
+Supported inputs are static RGBA8 PNG, Pneuma atlas JSON with its actual sheet,
+and GIF with exact delays. Optional `--alpha-clean --max-alpha 15 --keep-edge 2`
+checks only that narrow cleanup contract. Read `references/comparison.md` for
+refusals and evidence. Inspect the preview tiles and the final animation against
+the requested intent before choosing a candidate. Neither command registers,
+adopts or replaces it, and artistic quality remains unknown.
+
+## Core rules
+
+- **Never `cd` into the skill.** Run `node {SKILL_PATH}/scripts/<script>.mjs …`
+  from the workspace — `{SKILL_PATH}` is absolute, and a `cd` re-roots every
+  path you pass. File arguments are workspace-relative
+  (`lumi/motions/idle/sheet-raw.png`), except `sprite-project.mjs --file`,
+  which is relative to `--dir` (it is the uri stored in `project.json`).
+- **Your own working files stay inside the workspace**, in
+  `<character>/work/` — comparison strips, enlarged crops, a run you want to
+  read twice. Never `/tmp` (the chat cannot preview it, and the user cannot
+  see it) and never `.pneuma/` or `.claude/` (the `capture` action writes
+  `.pneuma/captures/` itself; nothing else does). When you do not need to
+  read a report, pipe it straight on (`--run -`, `--report -`) instead of
+  saving it. A file the user attached is read from `.pneuma/uploads/` and
+  copied into the character's `refs/`.
+- **`project.json` is written only by `{SKILL_PATH}/scripts/sprite-project.mjs`.**
+  A single motion adds sixteen frame assets plus their provenance edges; typed
+  by hand, ids drift and the stage shows a motion with missing frames while
+  every file sits on disk. Read it freely; write it through the script.
+- **Frames, atlases and previews are written only by `sprite-sheet.mjs`.** It
+  owns cell geometry and the anchor maths; a hand-cropped frame, or a sheet
+  re-laid out by your own code, breaks the invariant the atlas promises and
+  leaves the record describing a picture that is gone.
+- **Frames come from five places, and only these:** a generated sheet
+  (`run`), a generated animated GIF (`from-gif` — every frame of it, never
+  sampled by time), a clip shot on purpose on chroma green (`from-video`,
+  `loop`, `transition` — and `pack-split`, which crops one clip of a grid
+  into one clip per cell first), one registered still warped into a breath
+  (`breathe`), or a ready motion flipped to its other side (`mirror`). A clip
+  made by motion transfer, a storyboard or a matte is a clip like any other.
+  A preview rendered from finished frames is never sampled back into frames,
+  and a GIF is never cut as a clip (the clip commands refuse one).
+- **Files a command registers live inside the character's directory.** A
+  motion-library clip, another character's motion or a user's video is
+  COPIED into `<character>/motions/<id>/` first (`driver.mp4`); `--file`
+  outside the directory is refused.
+- **Every sheet and every GIF is generated with the character references
+  attached**, in the order `sheet-prompt` / `gif-prompt` prints, from the
+  prompt it builds — which opens with the `character.style` sentence
+  verbatim. Drop the references and the model redesigns the character
+  between motions; drop the style sentence and it drifts within one sheet.
+- **A sheet's background is asked for in words, then cut off afterwards**:
+  the prompt asks for *a flat solid pure white background*, the call passes
+  `--background opaque`, and the alpha comes from matting. GPT Image 2.6 on
+  OpenRouter does return alpha for `--background transparent`, and its edge
+  measured a little cleaner, but no pixel of it is fully opaque (≤ 254) and a
+  faint haze adds 14 % to the body's area for anything that reads alpha
+  above zero (4 % on the white plate's cut) — an engine's trim or hit mask (`references/pipeline.md` →
+  *Measured: transparent sheets*); stay on the white plate. A *GIF* is the
+  exception: it is asked for with `--background transparent` and its 1-bit
+  alpha is used as it comes. A *clip* is asked for on flat chroma green and
+  keyed afterwards (`--keyer unmix`, the default, un-mixes the plate out of
+  every edge).
+- **Use OpenRouter for image generation and editing.** New references, sheets,
+  and keyframes default to GPT Image 2.6 Flare, including reference-guided
+  generations. Add `--model sunburst` for a generation upgrade. Existing-image
+  edits use `edit_image.mjs` (Sunburst by default), or
+  `generate_image.mjs --image-urls ... --model sunburst`. Record the actual
+  returned model in the project provenance; references alone do not change it.
+- **Never pass `--style` to `generate_image.mjs`.** It is not an art-direction
+  switch — it rewrites your prompt ("no shading, white background") and drops
+  `--quality` to `low`. The style lives in your prompt, verbatim.
+- **Scripts retry upstream failures themselves.** `generate_image.mjs`,
+  `seedance-video.mjs` and `generate-video.mjs` back off and retry on
+  transient 5xx / 429 / dropped connections. Call once; if it fails, report
+  the failure state and stop. A retry loop you write by hand re-bills every
+  attempt and the user watches it happen. `generate_gif.mjs` re-sends only a
+  submit that never became a job: a job that ran and failed (fal's
+  `downstream_service_error` once, 2026-11-05) is reported with its request
+  id and may be billed — record it (`set-gif --status failed`), tell the
+  user, and ask before another take.
+
+## Money and waiting
+
+**Before each paid call, or each batch of them, one line to the user: what it
+costs and how long it takes** — not only before the first. After it, quote
+what it cost: `generate_image.mjs` reports it in its JSON `usage`; every
+fal helper — `remove-background.mjs`, `seedance-video.mjs`,
+`generate-video.mjs`, `remove-video-background.mjs`,
+`interpolate-video.mjs` and `generate_gif.mjs` — prints a `cost:` line (an
+estimate at fal's list price, or `cost: unknown (…)` with the reason). A GIF's
+is always unknown: fal bills it by tokens and reports none, so quote the
+estimate below as an estimate, never as what it cost. Keep
+a running total against the budget and ask before a call would pass it. A
+standing "just go ahead" in the user's preferences removes the wait for an
+answer, never the line with the price.
+
+| Paid step | Price | Wait |
+|---|---|---|
+| a reference image (2048², `--quality high`) | ≈ $0.11 | 30–40 s |
+| a direction anchor (1024²) | ≈ $0.07–0.08 | ≈ 25 s |
+| a sheet (2048 wide, references attached) | ≈ $0.05–0.13 | 20–35 s |
+| an animated GIF (8–16 frames of 512², references attached, fal) | not reported — an estimate of ≈ $0.05–0.10 | 18–35 s |
+| a cut-out (`remove-background.mjs`, fal BiRefNet) | ≈ $0.0006 — under a cent | 6–20 s |
+| a 4 s 480p square clip (Seedance); 5 s | ≈ $0.83; ≈ $1.0 | 2–7 minutes (11 has been measured) |
+| a clip matte (`veed-gs` / `veed`) | ≈ $0.10 / ≈ $0.09 | ≈ 30 s |
+| interpolating a clip to 60 fps (Topaz) / RIFE | ≈ $0.10 / ≈ $0.03 | ≈ 1 min / up to 4 min |
+
+Everything else — breathing a still, slicing, aligning, mirroring,
+colourways, packing, every export — is free and takes seconds.
+
+## Look before you claim
+
+The sheet PNG is not the animation, and `warnings: []` is not "correct":
+`inspect` measures geometry, and cannot see identity, which hand holds what,
+or how a motion reads.
+
+- **Every motion, every time.** After `register-run`: read the inspect
+  numbers, `navigate-to` the motion, `play` it, `get-playback-state`, then
+  `pause` + `capture` two or three frames at its phase boundaries — and look
+  at each capture. Every motion, not a sample. `headDrift` can be absent
+  (frames of different widths): say "n/a", never 0.
+- **A jump**: capture the peak frame beside frame 0 and compare where the
+  feet are. Feet on the same line mean the frames have no jump height
+  (workflow B, *Jumps*).
+- **Props are held.** In every capture: the hand on the handle, the strap on
+  the shoulder, nothing floating beside the body.
+- **One size across a set** is measured, not read off `scaleDrift` (the
+  spread inside one motion only): run `sprite-sheet.mjs sizes <character>`
+  and look at `sizes.png` before you say the motions match.
+- **Before the handoff, look at the Export tab the user will open**:
+  `navigate-to` the motion with `"tab": "export"`, then `capture` with
+  `{ "selector": "[data-sprite-panel]" }` and look at it — every file the
+  route's finish line promises must be there, made, not just offered. `show`
+  (the whole character's exports and colourways) and `show --motion <id>` (a
+  motion's) are where you read the file facts behind it.
+- **Say what you measured.** "The loop wraps within one normal frame step",
+  "the feet move less than a pixel", "the heights differ by 5 %" are claims
+  you can stand behind; "you can't see a seam" and "the feet don't move at
+  all" are not. Never say you played or checked every motion unless you did.
+
+**When the user says something looks wrong, look again before you answer.**
+Capture the frame they mean (their message carries its address), check it
+against the rule that applies — the side table in G-4dir, the held prop,
+the feet on the ground line — and only then reply. Their eyes on the stage
+outrank your reasoning about what the prompt asked for: one trial agent
+refused a correct "she switched hands" without looking, and the basket was
+on the wrong side.
+
+**Preferences record what the user confirmed.** Never write a lesson about
+quality ("sheets come out right first time", "every side was correct") into
+the preference files before the user has seen the result and agreed — and
+never from your own check alone.
+
+## Viewer contract
+
+One **character** is one top-level directory (a content set). It holds
+`project.json`, `refs/`, and one `motions/<id>/` directory per motion.
+Everything the stage renders comes from `project.json` plus files under
+`/content/<character>/…` — so a motion appears the moment the pipeline writes
+its frames, without you telling the viewer anything.
+
+### What the user can select
+
+The user clicks a motion in the list, a reference in the rail, or scrubs to a
+frame on the stage. Their next message carries a `<viewer-context mode="sprite">`
+block with the character (and its `Purpose:` once recorded), the selected
+motion's grid / fps / loop / anchor / status / frame count, any inspect
+warnings, and an `Address:` line — the machine-routable handle for that exact
+object.
+
+### ViewerAddress vocabulary
+
+| Key | Kind | Meaning |
+|---|---|---|
+| `contentSet` | framework-reserved | The character directory (`"lumi"`). There is no separate `character` key — the character **is** the content set. |
+| `motion` | coarse | Motion id inside the character (`"idle"`, `"walk-left"`). |
+| `ref` | coarse | Reference image id (`"turnaround"`). Mutually exclusive with `motion`. |
+| `item` | coarse | A props set's item id (`"golden-key"`) — its loop when it has a ready one, else its picture. |
+| `frame` | fine | 0-based frame index inside `motion`. Navigating to an address that carries it seeks there and pauses. |
+
+Example: `{ "contentSet": "lumi", "motion": "attack", "frame": 7 }`. Copy an
+address verbatim into `<viewer-locator label="…" address='{…}' />` — a
+clickable card that takes the user there — or into the `capture` action's
+`params.address`, to screenshot it.
+
+### Actions you can invoke
+
+- **`navigate-to`** — point the stage at a character, motion, ref, or frame.
+  Call it before `capture`, and after a motion is finished so the user lands
+  on it. The address goes in `params.address` — `{ "address": { "contentSet":
+  "lumi", "motion": "attack" } }`; address keys at the top level of `params`
+  are refused (as on `play` and `get-playback-state`). `tab` (`gif`, `loop`, `video`, `atlas`, `export`) also opens that
+  panel tab for the motion on stage; a tab the motion does not have — Export
+  before it is ready, GIF on a loop — is refused with the tabs it has, and
+  the answer's `tab` is the one on screen.
+- A **pack** on the stage plays its whole grid on one playhead; `{ "motion": "walk-front-left" }` shows one facing alone. A props set's item is `{ "item": "<id>" }` (its loop when it has a ready one).
+- **`play`** — run the motion at its fps. Timing is the one property a sheet
+  PNG cannot show you; a walk that reads fine as 8 stills can still stutter.
+  `fps` / `loop` params override the stored values for that playback only.
+- **`pause`** — stop on the current frame. Call it before capturing a specific
+  frame, or your screenshot is whichever frame happened to be up.
+- **`get-playback-state`** — what the stage actually shows:
+  `{ contentSet, motion, kind, frame, frameCount, fps, loop, playing, source, tab, warnings }`.
+  `source: "raw-sheet"` or a `frameCount` that disagrees with the grid means
+  the pipeline did not land, whatever the script printed; `source:
+  "keyframe"` on a loop whose frames do not exist yet is expected. `kind` is
+  absent on a sprite motion; `tab` is the panel tab on screen.
+- **`capture`** — framework built-in. Screenshot an address and look at it.
+  A plain capture is the stage canvas; to see the panel (a tab you opened
+  with `navigate-to`), pass `{ "selector": "[data-sprite-panel]" }`.
+
+### Three sensing layers, in cost order
+
+1. **Diagnose** — `sprite-sheet.mjs inspect`: deterministic, free, no model.
+   Anchor drift, head sway, scale drift, empty or clipped frames, held
+   frames, row jumps, plate colour left on a keyed edge (`keyResidue`,
+   `keyFringe`). A loop is measured on its seam instead (`loop` writes that
+   report), and a clip is read by `contact` before a frame is cut.
+2. **Look** — `get-playback-state` + `capture`: the only way to see what the
+   user sees.
+3. **Verify** — `play`, then `pause` + `capture` at two or three frames.
+
+## Pick the route
+
+What the user is making decides what you ask, the defaults, the price you
+quote and what they download at the end. There are four routes; the empty
+stage lists the same four, so a user may simply name one.
+
+| Route | For | What you hear |
+|---|---|---|
+| **G · a game character** | someone building a game, or asking for a sprite sheet | "walk cycle", "attack animation", "for my Phaser / Godot / Unity game", "sprite sheet", "pixel art", "top-down", "four directions", "isometric", "eight directions" |
+| **P · props for a game world** | someone who needs items, icons, weapons, pickups | "inventory icons", "weapons", "potions", "loot", "items that match my game" |
+| **A · bring my picture to life** | anyone with one picture and no plan | an image attached with "make it move", "animate this", "让它动起来" |
+| **L · a looping animation for a page** | a frontend or product person | "animated icon", "loading animation", "a flame that flickers on the landing page", "Lottie", "WebP" |
+| **M · a mascot for an app** | an app team switching states from code | "mascot", "Rive", "switches between idle and typing", "states" |
+
+**Infer it from the opening message.** An image with nothing else asked is A
+(and G may follow). Game words are G; pixel-art words add G-pixel; facing
+several ways adds G-4dir; isometric or eight directions is G-8dir; items,
+icons or loot is P. The rest of the game pipeline — outfits, restyles, a
+movement borrowed from a video, a storyboard, a 3D model, a cutscene — is
+asked for by name and lives under **The game asset pipeline** below. When nothing says, ask **one** question, in the
+user's language and in plain words — *"What is it for: a character for a
+game, a looping animation for a web page, a mascot for an app, or a picture
+of yours you'd like to see move?"* — and nothing else in that message.
+
+**Record it** so no later turn asks again: `init … --purpose
+game|animate|loop|mascot`, or `set-character --dir <character> --purpose …`
+on a character that exists. `show` prints it on its second line and the
+viewer context carries `Purpose:`. A user can change route mid-session (a
+breathing picture that should now walk is G): record the new one.
+
+## Route G — a game character
+
+**For** someone who needs a move set their engine loads. **Ask, in one
+message**, only what they have not said — with the character interview
+(workflow A) folded in when the character is new:
+
+1. "What must it do — stand, walk, run, attack, jump? Does it need to face
+   several directions?"
+2. "About how big is it on screen, and is it pixel art?"
+3. "What budget should I stay under?"
+
+**The screen size sets the pack scale, before anything is drawn.** Frames
+come out at the size they were drawn — a character about 450–500 px tall.
+When the game shows it at half that or less, pack at half size (`--scale
+0.5` on `run` / `from-video` / `from-gif`; never on pixel art): three motions at full size
+made a 2376×4690 whole-character sheet, past the 4096 px many phones and
+WebGL contexts load as one texture. Full size afterwards is a **re-pack** —
+the motion's pipeline again at `--scale 1` (free), then export — never just
+"export again": the export reads the packed sheet.
+
+**Defaults** (said in the user's words): frames, rate and looping from
+workflow B's step 1 table — an idle is 8 frames, a slow 2.4 s breath; a
+**GIF** for idle and walk when the style has clean outlines (cel, anime,
+flat, cartoon — not pixel art), a **sheet** for attacks, poses and soft
+painterly styles; **video offered** for walk and run when smoothness is the
+point, where the model draws the in-betweens; a jump decided with the user
+first (workflow B, *Jumps*).
+
+**Cost and wait**, the total with the first message: two references and
+three sheet or GIF motions ≈ $0.4–0.6 and a few minutes, plus ≈ $0.83 and
+2–7 minutes for each motion shot as a clip (**Money and waiting**).
+
+**Where they look:** the refs rail as the turnaround and portrait land; each
+motion row moving planned → generating → processing → ready while the stage
+plays it; the Atlas tab for the packed sheet; the Export tab at the end.
+
+**Finish line — part of finishing, not an offer.** Run the whole-character
+export yourself before the handoff (`export <character> --format aseprite`
++ `register-export`, free, seconds): an **Aseprite-format sheet**, one PNG
+plus a JSON that Phaser loads in one call — call it that, not "an Aseprite
+file" (it is not an editable `.aseprite`). When it warns the sheet is past
+4096 px, act on it before the handoff. Each motion's sheet + atlas is already
+there; PNG sequences and a ground shadow on request.
+
+**Sequence:** workflow A (or A′ from their image) → workflow B per motion →
+**Exporting → Game engines**. Record `--purpose game`.
+
+### G-pixel — pixel art
+
+Ask the height with question 2: *"How many pixels tall is the character in
+your game?"* Declare it at creation (`init … --pixel <H>`, or
+`set-character --pixel <H>`); `sheet-prompt` then asks for pixel art at that
+height, and every sheet runs through the lattice:
+
+- **`run … --pixel`** on every sheet: it snaps every block to one logical
+  pixel, alpha 0 or 255, taking the block size from the declared height when
+  the frames back it. When it refuses ("Nothing was written" — the motion is
+  untouched), enlarge one cell 8× (nearest) into `<character>/work/`, count
+  the blocks across a flat area, and pass `--pitch-hint <block width in
+  source px>`.
+- **The height is checked, never forced — and never redeclared on your own.**
+  Measured once: asked for 32, the model drew 53. When the run warns that
+  the frames stand at another height, put the choice to the user: regenerate
+  at the height they asked for (say the price), or accept what was drawn
+  (`set-character --pixel <measured>`), which holds every later motion to it.
+- **One palette for every motion**, pinned by the first pixel run's
+  `register-run`. `--repalette` (it writes `palette-rebuilt.json` beside the
+  pinned file) + `register-run --repin` only when the user wants new colours
+  everywhere.
+- **`inspect.pixel.held`** is true or false; when false, the warning names
+  the frames that left the lattice. After `register-run` it is in the record
+  too: `show --motion <id>` and the viewer context print `pixel lattice held
+  · pitch …, scale Nx · palette checked`, or `broken — …` naming the frames.
+  Re-align a pixel motion from its
+  `pixel/` directory, never `cells/` (`align` refuses; `--force` drops the
+  lattice). Never re-pack generated pixel art with `pack --scale 0.5
+  --nearest`. Exports scale by whole numbers (`--scale N`); the `.riv` goes
+  lossless by itself.
+- **Colourways** (a red team and a blue team): offer them once a motion is
+  ready. **The original counts as one of the colours** ("three colours" is
+  the original plus two colourways), and **the outline, eyes and highlights
+  stay as drawn** unless the user asks. `recolor-palette <character>` drafts
+  `recolor.json` and a numbered swatch sheet — **look at it** to learn which
+  number is the tabard — fill in each map, then `recolor <character> --map
+  <character>/recolor.json --json | register-recolor --dir <character>
+  --report -` and look at the previews. **Colourways do not follow a re-run
+  or a new motion by themselves**: the same pipe on `<motionDir>` without
+  `--map` rebakes them from the record (`show` lists what is missing) —
+  never promise "they update automatically". Painted art is refused.
+  Flags: `references/pipeline.md` → `pixel`, `recolor`.
+
+### G-4dir — several facings
+
+For a top-down or RPG character facing `front | back | left | right`. Ask
+with question 1: *"Is anything only on one side — a hairpin, a sword always
+in the right hand, a one-sided marking?"* A yes becomes one sentence:
+`set-character --asymmetric "<sentence>"`.
+
+**Where the character's own right side falls** — the sides are geometry,
+not something to reason out afresh:
+
+| Facing | The character's own right side | Their own left side |
+|---|---|---|
+| front | on the left of the picture | on the right of the picture |
+| back | on the right of the picture | on the left of the picture |
+| left | the far side — turned away, partly hidden by the body | the near side, toward the viewer |
+| right | the near side, toward the viewer | the far side — turned away, partly hidden |
+
+A basket on her right arm is on the far side when she faces left, and in
+full view on the near side when she faces right. `sheet-prompt --json`
+prints each row's exact sentence as `sides[d]` (run it on the first sheet
+motion you plan, with `--frames`; it records that motion's prompt, which
+the real call rebuilds), and every sheet prompt of an asymmetric character
+already carries its own.
+
+1. **One anchor per generated direction** — front, back, and each side you
+   generate: one calm full-body pose each, with the turnaround and portrait
+   attached, registered `add-ref --role anchor --direction <d>`. On an
+   asymmetric character **copy `sides[d]` from `sheet-prompt --json` word for
+   word into every anchor or turnaround prompt you write by hand**, and check
+   the anchor against the note `add-ref` prints. **Look at each anchor beside
+   the turnaround**: every sheet facing that way copies it, mistakes
+   included; a wrong anchor is regenerated (`references/prompting.md` →
+   *Direction anchors*).
+2. **Motions are `<state>-<direction>`** (`walk-front`, `walk-right`), with
+   `add-motion --direction <d>`; `sheet-prompt` locks the facing and puts the
+   anchor first in the attach order it prints.
+3. **The other side of a symmetric character is a mirror, free:**
+   `add-motion --id walk-left --source mirror --direction left` — no grid,
+   fps or loop: `register-run` takes them from the mirror run — then
+
+   ```bash
+   node {SKILL_PATH}/scripts/sprite-sheet.mjs mirror <character>/motions/walk-right --name walk-left --json \
+     | node {SKILL_PATH}/scripts/sprite-project.mjs register-run --dir <character> --motion walk-left --run - --json
+   ```
+
+   **On an asymmetric character the other side is drawn.** `mirror` refuses
+   and says the sentence back. Turn the planned mirror into a sheet —
+   `set-motion --motion walk-left --source sheet` — give that side its own
+   anchor, then `sheet-prompt --motion walk-left --frames 8 …` (it attaches
+   the finished first side's sheet after the references, for rhythm only)
+   and `set-motion --motion walk-left --fps <N> --loop`. `mirror --force`
+   only after the user has looked and accepted the flipped detail.
+4. **Re-running a source leaves its mirror stale** — `show` lists it under
+   `staleMirrors` with the `mirror` command to run; run it + `register-run`.
+
+Cost, measured on a four-way walk: references ≈ $0.23, four anchors ≈ $0.32,
+four walk sheets ≈ $0.30 — about $0.9. A symmetric character saves one
+anchor and one sheet per state.
+
+### G-8dir — eight facings from one picture and one clip
+
+For an isometric (or 8-direction top-down) game. The character is drawn on
+ONE facing sheet — a 3×3 grid, every facing in the cell it points toward,
+the centre empty — and every state is ONE clip of that sheet with all eight
+copies moving in sync, cut into eight motions on one shared window. One
+picture keeps the facings on-model with each other; one clip keeps them in
+phase and costs one take instead of eight. Measured (0.6.0 spike, Pip): all
+eight facings on-model in one GPT Image 2.5 picture; a 720p Seedance clip of
+it walked all eight in place, none turning, none leaving its cell.
+
+```bash
+node {SKILL_PATH}/scripts/sprite-project.mjs set-character --dir <character> --view isometric
+node {SKILL_PATH}/scripts/sprite-project.mjs facing-prompt --dir <character> --layout 8 > <character>/work/facing-prompt.txt
+#   → generate_image.mjs "$(cat …)" --image-urls <character>/refs/turnaround.png --image-size 2048x2048 …
+#     --output-dir <character>/refs --filename-prefix directions
+node {SKILL_PATH}/scripts/sprite-project.mjs add-ref --dir <character> --id directions --role directions --layout 8 \
+  --file refs/directions.png --from ref-turnaround --model <model> --prompt "$(cat <character>/work/facing-prompt.txt)"
+node {SKILL_PATH}/scripts/remove-background.mjs --input <character>/refs/directions.png --output <character>/refs/directions-alpha.png --json
+node {SKILL_PATH}/scripts/sprite-sheet.mjs split-facings <character>/refs/directions-alpha.png --character <character> \
+  --ref directions --out <character>/refs --json | node {SKILL_PATH}/scripts/sprite-project.mjs register-facings --dir <character> --report -
+```
+
+**Look at the facing sheet before anything uses it**: every facing in its
+own cell, each one facing where its cell points, side-specific details on
+the right side in every view (`sides` from `sheet-prompt --json` names them
+for the diagonals too). Then, per state (walk, run, idle, attack …):
+
+```bash
+node {SKILL_PATH}/scripts/sprite-project.mjs add-pack --dir <character> --state walk          # walk-pack + walk-<8 facings>
+node {SKILL_PATH}/scripts/sprite-project.mjs pack-prompt --dir <character> --motion walk-pack > <character>/motions/walk-pack/prompt.txt
+node {SKILL_PATH}/scripts/sprite-sheet.mjs pack-plate <character>/refs/directions-alpha.png --character <character> \
+  --ref directions --out <character>/motions/walk-pack/plate-green.png --size 1440
+#   add-video … --model seedance-2.5 --mode i2v (first-last for idle/attack/hurt/cast — pack-prompt says) --from ref-directions
+#   seedance-video.mjs --image <the plate> [--end-image <the plate>] --duration 4 --resolution 720p --no-audio
+node {SKILL_PATH}/scripts/sprite-sheet.mjs pack-split <character>/motions/walk-pack/video-seedance-1.mp4 \
+  --character <character> --pack walk-pack --json > <character>/motions/walk-pack/pack.json
+node {SKILL_PATH}/scripts/sprite-project.mjs register-pack --dir <character> --motion walk-pack --report <character>/motions/walk-pack/pack.json
+```
+
+- **Always shoot the plate, never the raw sheet.** `pack-plate` re-places
+  every drawing in the middle of its cell at one scale (the tallest at 62 %
+  of a cell): the image model draws copies nearly filling their cells and the
+  video model reframes by a few percent — shot raw, every cell's figure
+  touched its cell's edge in 6 of 11 frames and the top row lost its hats.
+- **720p** (`≈ $1.87`, a 320 px cell); 480p is `≈ $0.83` for a 213 px cell.
+- **A take that mixed up its cells is refused before anything is cut**
+  (`pack-split` compares every cell with every other and with its anchor):
+  say so, quote the price, and shoot again — never `--force` a take you have
+  not looked at. **Run does not hold eight facings**: six of six run takes
+  lost the diagonals or the grid. Book walk and idle in eight; offer run as a
+  4-way pack or single-facing clips, and tell the person why.
+- `pack-split` reads one cycle off all eight cells at once (registered, so the
+  slow drift a cell walks with does not hide the period) and samples every
+  cell on that window — `--frames` to choose how many, `--gait run` for a run,
+  `--trim-start/--trim-end` to override. A pinned clip (idle) has no cycle:
+  pass `--frames 16`, the whole clip is the loop.
+- The stage shows the pack as its grid playing in sync; each facing is also
+  a motion of its own (the chips under the pack's row) with frames, atlas and
+  exports. **Remove the pack, not a cell** — `remove-motion` on the pack
+  takes its cells with it.
+- 4-way top-down: `--layout 4` (a 2×2 sheet: front, back / left, right).
+
+Cost of an 8-direction idle + walk: facing sheet ≈ $0.12, two 720p clips
+≈ $3.7.
+
+## Route P — props for a game world
+
+A **props set** is its own content set: a family of items in ONE visual
+language. Ask what items, for what game (the style sentence), and whether
+they should move. One picture draws every item (consistent light, outline
+and scale come from drawing them together), it is cut into one transparent
+icon per item on one square size, and — when they should move — one clip of
+all of them animates every item at once.
+
+```bash
+node {SKILL_PATH}/scripts/sprite-project.mjs init --dir relics --set props --name "Relics of the Ember Vale" --style "<the style sentence>"
+node {SKILL_PATH}/scripts/sprite-project.mjs items-prompt --dir relics --items "Ember Sword,Frost Staff,Healing Potion,…" --json > relics/work/items.json
+#   → generate_image.mjs "<prompt>" --image-size <imageSize> --output-dir relics/sheets --filename-prefix items-1
+#   → remove-background.mjs --input relics/sheets/items-1.png --output relics/sheets/items-1-alpha.png
+node {SKILL_PATH}/scripts/sprite-sheet.mjs split-items relics/sheets/items-1-alpha.png --rows <rows> --cols <cols> \
+  --ids <ids from items.json> --out relics/items --json \
+  | node {SKILL_PATH}/scripts/sprite-project.mjs register-items --dir relics --report - --sheet sheets/items-1.png \
+    --labels "<labels>" --model <model> --prompt "<prompt>"
+# animated items — one clip of all of them:
+node {SKILL_PATH}/scripts/sprite-project.mjs add-pack --dir relics            # items-pack + <item>-loop per item, ≤ 4 across
+node {SKILL_PATH}/scripts/sprite-project.mjs pack-prompt --dir relics --motion items-pack
+node {SKILL_PATH}/scripts/sprite-sheet.mjs pack-plate --character relics --pack items-pack --out relics/motions/items-pack/plate-green.png --size 1600
+#   first-last, the plate both ends, 720p, 4 s (≈ $1.4 for a 4×3 plate), then pack-split --frames 32 + register-pack
+```
+
+Ten items measured: one sheet $0.03, every item clean on its own square; the
+clip gave each item its own idle (a blade's flame flowing, a ring's glint, a
+potion's slosh). A drawing touching its cell is warned by `split-items` —
+look at it. The rail lists the items; one that moves plays its loop.
+
+## Route A — bring my picture to life
+
+**For** someone with one picture — a drawing, a mascot, a character — who
+wants to see it move now. **Ask nothing** beyond the image; the one optional
+question is *"subtle or noticeable?"* (depth 0.02, or 0.03–0.04). **Cost and
+wait:** free and seconds, except cutting out a busy background — one fal
+call, under a cent (≈ $0.0006), about ten seconds: say that line before you
+run it, and quote its `cost:` line after. **Where they look:** the refs rail
+(their upload, then the cut-out), the motion row with its breathe chip
+turning ready, the stage breathing, the GIF tab. **Finish line:** the GIF tab
+(GIF, WebP) — and tell them at the handoff that APNG, a video and a PNG
+sequence are one click each in the Export tab.
+
+```bash
+node {SKILL_PATH}/scripts/sprite-project.mjs init --dir <character> --name "<Name>" --style "<what you see>" --purpose animate
+mkdir -p <character>/refs && cp .pneuma/uploads/<file> <character>/refs/upload.png
+node {SKILL_PATH}/scripts/sprite-project.mjs add-ref --dir <character> --id upload \
+  --file refs/upload.png --role custom --uploaded
+node {SKILL_PATH}/scripts/sprite-sheet.mjs probe <character>/refs/upload.png
+# the cut-out, one of three — already transparent when hasAlpha and coverage < 0.99:
+node {SKILL_PATH}/scripts/remove-background.mjs --input <character>/refs/upload.png \
+  --output <character>/refs/still.png                      # busy background (fal)
+node {SKILL_PATH}/scripts/sprite-sheet.mjs key <character>/refs/upload.png \
+  --out <character>/refs/still.png                         # flat plate (free)
+cp <character>/refs/upload.png <character>/refs/still.png  # already transparent
+# then, whichever it was:
+node {SKILL_PATH}/scripts/sprite-sheet.mjs fit <character>/refs/still.png --out <character>/refs/still.png
+node {SKILL_PATH}/scripts/sprite-project.mjs add-ref --dir <character> --id still \
+  --file refs/still.png --role custom --derived-from upload --op key   # --op fit when nothing was removed
+node {SKILL_PATH}/scripts/sprite-project.mjs add-motion --dir <character> --id idle --label Idle --source breathe
+node {SKILL_PATH}/scripts/sprite-sheet.mjs breathe <character>/refs/still.png \
+  --out <character>/motions/idle --name idle --json \
+  | node {SKILL_PATH}/scripts/sprite-project.mjs register-run --dir <character> --motion idle --run -
+```
+
+Name the character from what the user calls it; write the style sentence
+from what you see. `fit` warns when the upload cut the character off at an
+edge — look before breathing it.
+
+- **The head rides the breath.** Nothing above the rigid row changes shape,
+  but the head is not still: it rides up and down with the body as one
+  piece. Say it with the measured numbers — "the head bobs gently with the
+  breath, about 5 px up and down" — never "the head stays still". `show
+  --motion idle` prints the rigid row and the body's axis the run used, in
+  the still's pixels; a head that wobbles *in shape* means that row cuts
+  through it — re-run with `--rigid-row <y>` at the chin.
+- **Capture the extremes the run measured, not frames you guess.** `show
+  --motion idle` prints the head offset under the breathe line, naming the
+  frames — `head offset -1..+1px (travel 2px: highest in frame 9, 10, 11,
+  lowest in 2, 3, 4, 5)` (negative is up; the frog wizard travelled 10 px).
+  Capture one of each beside frame 0; quote the travel when asked how far
+  the head moves.
+- **A prop across that row** — Lumi's lantern — is the one warning that asks
+  the user a question. In their words: *"The lantern crosses the line where
+  her body stops breathing and everything above moves as one piece. I can
+  keep the lantern whole, and then her chest stops breathing above that
+  line — or let it sway a little with her breath. Which do you prefer?"*
+  Re-run with the `--rigid-row` the warning names, or keep it with
+  `set-motion --ack-warnings "the lantern sways with her breath, as chosen"`.
+- **"More", "less", "slower"** is a free re-run of the same pipe: `--depth
+  0.03`–`0.04` / `0.02`, `--frames 16` or `--fps 6` (`show --motion idle`
+  prints the record to start from).
+
+**Then offer more** — *"Want it to walk, wave or jump?"* continues as route G
+with the same picture (`set-character --purpose game`, workflow A′); the
+next step is the first paid one, so quote it. For a picture with clean
+outlines the quickest paid take is a GIF from the picture itself (workflow
+B-gif, about twenty seconds, cents); a soft painted picture loses its edges
+to the GIF's 1-bit alpha and palette — a sheet or a clip keeps them. Breathe mechanics:
+`references/pipeline.md` → `fit`, `breathe`.
+
+## Route L — a looping animation for a page
+
+**For** a frontend or product person: an icon or element that never stops
+moving. **Ask** workflow E's five answers and a budget in one message.
+**Cost and wait:** ≈ $1.0–1.2 a loop with its matte and interpolation,
+three to eleven minutes. **Where they look:** the keyframe on the stage while
+the clip renders, then the Loop tab over a checker. **Finish line:** the Loop
+tab — `loop.webp`, `loop.apng`, `loop.webm`, `loop.json` (Lottie); MP4, MOV
+or a PNG sequence on request. **Sequence:** `init --dir <character> --name
+"<subject>" --style "<the style sentence>" --purpose loop` when there is no
+character yet (an icon is its own character), then workflow E.
+
+## Route M — a mascot for an app
+
+**For** an app team that switches the character's state from code. **Ask:**
+*"Which two to four states does the app switch between, and how large does
+it show?"* plus a budget ceiling. **Defaults:** each state a loop (workflow
+E), idle first as the hub; transitions shot from idle to the states that
+need one, the way back free (workflow F); the `.riv` at 24 fps and at most
+320 px. **Cost and wait:** ≈ $1.0–1.2 a state and ≈ $0.9 a transition,
+three to eleven minutes a take — give the total before the first. **Where
+they look:** loops filling the rail, `lineup.png`, the transitions, then the
+Export tab's Rive preview with a button per state. **Finish line:** the
+Export tab → the `.riv` (raster frames, a runtime file, not editable in the
+Rive editor) and the value table for the developer. **Sequence:** workflow A
+or A′ (or the first loop's keyframe as the character) → E per state → F.
+Record `--purpose mascot`.
+
+## The game asset pipeline
+
+Everything a game needs beyond one character's moves, each asked for by
+name. Commands, flags and measured numbers: `references/game-assets.md`.
+
+- **A whole move set at once** — `plan-moveset --states idle,walk,run,jump,attack,hurt,death`
+  books every state with its defaults (clips for idle, walk, run, attack, cast;
+  sheets for jump, hurt, death, guard) and prints one price; `--packs` books
+  direction packs instead. Say the quote, then shoot the clips side by side.
+- **Outfits and skins (variants)** — `init --dir <new> --variant-of <character> --variant "<what changes>"`
+  copies the style, cell, camera and route; `variant-prompt [--what turnaround|directions|portrait]`
+  prints the edit, run with `edit_image.mjs --input <the original's ref> --model sunburst`.
+  Re-check `--asymmetric`: it is copied, and an outfit change often moves
+  what is one-sided. The rail shows the family as **Looks**.
+- **Same movement, a new look (restyle)** — the movement lives in the clip.
+  For one motion, drive the new look with the original's clip (motion
+  transfer, below); for a pack, do it cell by cell with each facing's
+  `cell-*.mp4` as the driving clip. Measured: Seedance's reference endpoint
+  and Kling O1's video edit both LOST a pack's grid (the copies stopped
+  facing their ways, or the take came back as a still) — never restyle a
+  whole grid clip. `add-motion --restyle-of <set>/<motion>` records it.
+- **A movement from a video (motion library)** — `library` lists ten filmed
+  performances (dance, sword combo, spell, hit, …); `library --id <id> --json`
+  prints the recipe that films one (Seedance text-to-video, 9:16, 480p, 5 s,
+  ≈ $1, once per workspace into `motion-library/<id>.mp4`). The user's own
+  video or another character's motion works too. Copy it to
+  `<character>/motions/<id>/driver.mp4`, `add-driver --from <id|upload|set/motion>`,
+  then `motion-transfer.mjs --image <the character on green, 9:16> --video <driver>
+  --model kling-mc --orientation image` (≈ $0.126/s, ≈ 5 min), registered
+  `add-video --model kling-mc --mode motion-transfer --from <motion>-driver`,
+  then `from-video`. Kling reads a realistic performer best; it carried a
+  chibi girl, an anime swordsman and a druid through the same dance on green.
+- **A storyboard** — `set-storyboard --beat "0:…" --beat "1:…" --keyframe "1=<file>"`
+  records timed beats and the keyframes drawn for them (one `generate_image.mjs`
+  each, turnaround attached); `storyboard-prompt --duration <s>` builds a
+  Seedance reference clip that names them `@Image2…`. The reference endpoint
+  does not keep a pure green plate: matte the take (`remove-video-background.mjs
+  --model veed`, ≈ $0.09) and cut the matte with `from-video --key none`.
+- **A rigged 3D model** — `rig-3d.mjs model --image <front anchor or front view, cut out>`
+  (Meshy 7.1, ≈ $0.80, 3–5 min: rigged GLB + walk and run), then
+  `rig-3d.mjs animate --model <dir>/model.glb --actions idle,sword-slash,cast,…`
+  (≤ 10 a call, ≈ $0.08); `register-model --report <json>` each. The rail's
+  **3D model** card plays it, a button per animation.
+- **A cutscene** — `add-motion --kind cutscene`, then one Seedance reference
+  clip with the characters' turnarounds as `@Image1…`, 16:9, 720p, with audio
+  (≈ $0.46/s). It plays on the stage; it has no frames.
+
+## Workflows
+
+The mechanics every route above links into.
+
+### A. Design a character
+
+Do this before any motion exists — every later prompt is anchored to it.
+
+1. **Interview briefly** — name, one paragraph of description, a style
+   sentence (the exact words that will open every prompt), facing
+   (`left`/`right`), and cell size (256×256 is a good default). Ask in one
+   message, not five, together with the route's own questions.
+2. **Generate `<character>/refs/turnaround.png`** — a three-view sheet (front /
+   side / back) of the character standing neutral, on a flat solid pure white
+   background, 2048×2048, `--quality high`. This is the reference that carries
+   identity into every motion, so it is worth the top quality tier. On an
+   asymmetric character the prompt carries each view's `sides[d]` sentence
+   (G-4dir) word for word.
+3. **Generate `<character>/refs/portrait.png`** — head and shoulders, same
+   style, same white background, **with the turnaround attached** plus a
+   clause naming what to match. Without the reference attached it is a fresh
+   draw of your description, not your character (`references/prompting.md` →
+   Reference images).
+4. **Record it** — `sprite-project.mjs init` (with `--purpose`, and
+   `--pixel` / `--asymmetric` when the route asked), then `add-ref` for each
+   reference. Later changes go through `set-character`.
+5. **Show them** — `navigate-to { "address": { "contentSet": "<character>", "ref": "turnaround" } }`, `capture`, look at
+   it yourself, then hand the user a locator card. If the three views do not
+   agree with each other, regenerate now; every motion inherits this.
+
+{{#imageGenEnabled}}
+Each reference is one `generate_image.mjs` call. The prompt is a **positional
+argument** — there is no `--prompt` flag on it — and one image lands at
+exactly `<output-dir>/<filename-prefix>.png`, the path `add-ref --file
+refs/<name>.png` then registers (the call and every flag:
+`references/prompting.md`). The refs stay white-plated on disk; only sheets
+and clips become frames, and only those are cut out.
+{{/imageGenEnabled}}
+
+### A′. Start from the user's own image
+
+When the user brings a character — a drawing, a design sheet, a screenshot —
+that image *is* the identity. Do not redraw it, and do not quietly replace it
+with a generated look-alike of your description.
+
+1. **Validate it in one look.** One character, full body head to feet, limbs
+   unobstructed, a plain or flat background. A design sheet with several
+   views is the best case: register the whole sheet as one reference (role
+   `custom`), and cut one clean full-body pose out of it as the working
+   reference (`ffmpeg -i <upload> -vf "crop=W:H:X:Y"
+   <character>/refs/pose.png`, or `edit_image.mjs` when it needs cleaning).
+2. **Register it honestly.** A file the user handed you is
+   `add-ref … --uploaded`; a pose you cut out of it is
+   `add-ref … --derived-from <refId>`. Neither takes `--model` or `--prompt`,
+   and `show` reports each reference's origin, so a later turn knows which
+   references may be regenerated and which must never be.
+3. **Still hold the interview** — the name and, above all, the style
+   sentence. Write it from what you see (line weight, shading, palette,
+   proportions), read it back to the user in the same message as the other
+   questions, and only then `init`. One that contradicts the uploaded image
+   makes the model split the difference.
+4. **Fill the gaps with the upload attached.** A missing portrait or view is
+   generated the way workflow A generates its second reference: the uploaded
+   image on `--image-urls`, the prompt naming what to match. Compare the
+   first *generated* reference with the upload before registering it.
+5. **Show them**, as in A step 5.
+
+### B. Add a motion
+
+**Start with a brief motion plan.** Infer it from the request and references:
+the opening and ending poses, whether it loops, what leads and follows,
+which contacts stay planted or release, and how phases share the frames.
+Carry these choices into the action you write; no separate plan file or
+approval step is needed (`references/prompting.md` → frame-to-frame
+continuity).
+
+**Step 0 — pick the source.** A motion's frames come from one of five places:
+
+| Source | Cost & time | Best for |
+|---|---|---|
+| **sheet** — one generated image, sliced into cells | ≈ $0.05–0.13 and ≈ 35 s, one image | idle, poses, attacks, soft painterly styles. Frames are unevenly spaced — the model draws pictures, not an animation |
+| **GIF** — one generated animated GIF, every frame kept | not reported by fal (≈ $0.05–0.10 estimated) and 18–35 s | idle and walk for outlined styles (cel, anime, flat, cartoon): the frames come back registered on one canvas and already transparent. 2–16 frames; 1-bit alpha and a ≈ 256-colour palette, so soft painted edges and gradients suffer; not for pixel art (its lattice needs a sheet). Needs the fal key |
+| **video** — one clip on chroma green, sampled into frames | ≈ $0.83 and 2–7 min | walk, run, anything where smoothness is the point: the model draws the in-betweens |
+| **breathe** — one registered still, warped | free, seconds | a breathing idle from a single picture (route A) |
+| **mirror** — a ready side-facing motion, flipped | free, seconds | the other side of a left/right motion (G-4dir) |
+
+Between GIF, sheet and video the choice is the user's unless they already
+made it: say those lines in one message and wait — it is the one decision
+that costs real money to get wrong. Record it: `add-motion --source
+sheet|gif|video|breathe|mirror`. A **smooth transparent animation for a UI** is
+not a sprite motion at all: that is route L, workflow E.
+
+**Jumps — decide where the height lives, with the user, before anything is
+drawn.** Either the frames rise and fall, so the stage shows a real jump, or
+the frames stay on the ground line and the game moves the sprite (common in
+platformers, where the height follows the controls). Ask it plainly:
+*"Should the jump's height be in the animation, or will your game move the
+character up and down?"*
+
+- **In the frames:** a sheet runs with `run … --y-from cell`, its action
+  drawing the body rising in its cells; a clip is shot from `flatten --room
+  tall` and sampled with `from-video … --y-from clip`. Read `lift` (each
+  frame's feet above the ground, px; all zeros means the source has no
+  drawn height) — `show --motion <id>` and the viewer context carry it
+  after `register-run` — and look at the frames a row warning names.
+- **In the game:** the default alignment stands every frame on the ground
+  line; say at the handoff that the jump plays in place on the stage and
+  takes its height from their code.
+
+**Step 1 — pick the grid, fps, loop and anchor.** Defaults that work; deviate
+when the motion needs it and say why.
+
+| Motion type | Frames / grid | fps | Loop | Anchor |
+|---|---|---|---|---|
+| idle | 8, 4×2 | ≈ 3.3 (a 2.4 s cycle) | yes | bottom |
+| walk / run | 8, 4×2 (8–12 from a clip) | 10–12 | yes | bottom |
+| attack | 8, 4×2 or 16, 4×4 | 10 | no | bottom |
+| jump | 8, 4×2 | 10 | no | bottom (+ `--y-from cell` / `clip` when the height is in the frames) |
+| story key poses | 9, 3×3 | 6 | no | bottom |
+
+An idle drawn as 4×4 pops at a row boundary or at the wrap, and 2×2 holds
+each pose 0.6 s; 4×2 read best in both measured takes (`sheet-prompt` notes
+an idle of any other count). **From a clip, budget one cycle, not the whole
+clip** — the window `contact` finds (B-video step 6), with the fps following
+from it.
+
+**A looping motion's last frame leads back into the first**; a one-shot ends
+at its destination. **Keep identity and camera scale fixed, allow the
+planned motion** — a crouch changes silhouette height, neither changes
+proportions. **Choose alignment for the movement**: `--x-from cell` keeps
+horizontal offsets already drawn; a **side-view walk** aligns with `body` on
+a sheet (`trend` on a clip; a GIF keeps the drawn placement, `cell`, by
+default), never the default `feet`, which pins the reaching foot and
+lurches the head by a stride; vertically every frame
+stands on the ground line unless `--y-from cell` keeps its drawn height
+(`references/pipeline.md` → `align`).
+
+**Step 2 — register the placeholder and say what it costs.** Before any
+paid call: `add-motion --status planned --source …` (with `--direction` in
+G-4dir), and **one line to the user with the price and the wait**
+(**Money and waiting**). Each leg below reserves its asset before its paid
+call, so the stage shows it working.
+
+#### B-sheet — the generated sheet
+
+3. **Build the prompt in code.** You write only the action — the view if it
+   matters, the phases by cell, what leads and follows, the one secondary
+   motion, the blink, a one-shot's final pose, and how a prop is carried (an
+   action that did not say drew a second floating lantern in 3 of 8 cells):
+
+   ```bash
+   mkdir -p <character>/motions/<id> && node {SKILL_PATH}/scripts/sprite-project.mjs sheet-prompt \
+     --dir <character> --motion <id> --action "<the phase plan, by cell>" --frames 8 \
+     > <character>/motions/<id>/sheet-prompt.txt
+   ```
+
+   It records `prompt` + `promptParts` and prints the prompt into a file (a
+   shell variable does not survive to your next call); stderr gives the
+   `--image-size` and the files to attach, in order. `--frames` redraws the
+   grid (8 → 4 columns × 2 rows) and `run --rows/--cols` must match it. The
+   code writes everything else — the style sentence first, the facing, the
+   sides on an asymmetric character, the guards, the white plate
+   (`references/prompting.md` → *Building the prompt*).
+4. **Reserve and generate** — `set-sheet --file motions/<id>/sheet-raw.png
+   --from <the reference assets, in the order sheet-prompt printed>` (a
+   reference's asset id is `ref-<refId>`: `ref-anchor-left,ref-turnaround,ref-portrait`)
+   `--prompt "$(cat <that file>)" --background opaque --status generating`,
+   then one `generate_image.mjs "$(cat <that file>)"` call with
+   `--image-urls` once per printed file, in that order, and the printed
+   `--image-size` (the call: `references/prompting.md` → The call). Then
+   **run the same `set-sheet` command again without `--status`**, so the
+   same asset is measured and flips to `ready` — skip it and the sheet stays
+   a placeholder forever.
+5. **Cut the background out** — the normal step, not a branch. `probe` the
+   sheet first (`hasAlpha: false`, a near-white `cornerColor` is expected),
+   then:
+
+   ```bash
+   node {SKILL_PATH}/scripts/remove-background.mjs \
+     --input <character>/motions/<id>/sheet-raw.png \
+     --output <character>/motions/<id>/sheet-alpha.png \
+     --model heavy --resolution 2048 --json
+   ```
+
+   BiRefNet matting cuts on the silhouette, so it keeps white highlights
+   *inside* the character. With no fal key, `sprite-sheet.mjs key … --color
+   auto` is the fallback; either writes the same `sheet-alpha.png`.
+6. **Run the pipeline** — slice → clean → align → pack → gif → inspect in
+   one call, on `sheet-raw.png` with `--alpha` for what step 5 made:
+
+   ```bash
+   node {SKILL_PATH}/scripts/sprite-sheet.mjs run <character>/motions/<id>/sheet-raw.png \
+     --alpha <character>/motions/<id>/sheet-alpha.png \
+     --rows 2 --cols 4 --out <character>/motions/<id> --name <id> --fps 3.3 --loop \
+     --json > <character>/motions/<id>/run.json
+   ```
+
+   The example is an idle; use the planned grid, fps and anchor, `--no-loop`
+   for a one-shot, `--x-from body` for a side-view walk, `--y-from cell` for
+   a jump that keeps its height, and `--pixel` for pixel art (G-pixel). A
+   re-run keeps the same two paths — without `--alpha` it would key the
+   white plate again with a colour threshold. The raw cells stay in `cells/`
+   for `inspect` and for a re-`align`.
+
+   **When the model did not draw the grid it was asked for**, `run` notices:
+   a pose whose ink crosses a line between two cells makes it slice by ink
+   instead, and it says so in `warnings`. Read `slice` — in `run.json`, or
+   after `register-run` in `show --motion <id>` — `slice.forced` (a count
+   had to be forced) and `slice.clipped` (poses clipped anyway), and look at
+   those cells. Never re-lay a sheet by
+   hand; a sheet that still clips is regenerated.
+
+#### B-gif — the generated GIF
+
+3. **Build the prompt in code** — the same action you would write for a
+   sheet, by frame instead of by cell (the planned rate goes on the motion:
+   `add-motion --source gif --fps <the step-1 rate> --loop|--no-loop`):
+
+   ```bash
+   mkdir -p <character>/motions/<id> && node {SKILL_PATH}/scripts/sprite-project.mjs gif-prompt \
+     --dir <character> --motion <id> --action "<the phase plan, by frame>" --frames 8 \
+     > <character>/motions/<id>/gif-prompt.txt
+   ```
+
+   It records `prompt` + `promptParts` (the style sentence first, the facing,
+   the sides, the state's guards, a transparent background) and prints on
+   stderr the `generate_gif.mjs` flags — `--frame-count`, the motion's rate
+   as `--frame-duration-ms`, `--image-size 512x512`, `--background
+   transparent`, `--output motions/<id>/gif-raw-<n>.gif` — and the references
+   to attach, in order. `<n>` is the next take: every GIF keeps its own file
+   and its own record, so a retake never replaces one that was paid for.
+4. **Reserve, generate, land** — record it before the paid call, then land
+   it or fail it, with the printed `--output` path as `--file`:
+
+   ```bash
+   node {SKILL_PATH}/scripts/sprite-project.mjs set-gif --dir <character> --motion <id> --status generating \
+     --file motions/<id>/gif-raw-<n>.gif --from <ref asset ids, in the printed order> \
+     --model openai/gpt-image-2.6-flare --prompt "$(cat <character>/motions/<id>/gif-prompt.txt)"
+   node {SKILL_PATH}/scripts/generate_gif.mjs "$(cat <character>/motions/<id>/gif-prompt.txt)" \
+     --image-urls <each printed reference, in order> <the printed flags> --json > <character>/motions/<id>/gif.json
+   node {SKILL_PATH}/scripts/sprite-project.mjs set-gif --dir <character> --motion <id> --report <character>/motions/<id>/gif.json
+   ```
+
+   A failed call exits 1 with its `ERROR:` — `fal request <id>` when the
+   job ran, and the result's URL (or where its bytes were kept) when it
+   finished: `set-gif --motion <id> --status failed --notes "<why, with the
+   URL>" --request-id <id>`, then tell the user — never a second take
+   without asking. A GIF holding another number of frames than asked is a
+   failure too. A new take — and its `gif-prompt`, since a take is landed
+   against the recorded prompt — is refused while the last one is still
+   `generating`: land or fail it first; `--supersede "<why>"` (on
+   `gif-prompt` or the reservation) exists for a call whose outcome you
+   cannot know (it was killed before printing anything) and records that
+   take as failed, billing unknown. If a superseded take's GIF turns up
+   later, its record stays failed: copy the file to the next take's path and
+   record it with `set-gif --uploaded --file <that path>` (the refusal
+   prints both commands).
+   `--model sunburst` on both calls is the upgrade (`--model
+   openai/gpt-image-2.6-sunburst` on the reservation); landing records the
+   model that ran.
+5. **Cut every frame** — the GIF's own frames, alpha and rate, through the
+   same chain as a sheet:
+
+   ```bash
+   node {SKILL_PATH}/scripts/sprite-sheet.mjs from-gif <character>/motions/<id>/gif-raw-<n>.gif \
+     --out <character>/motions/<id> --name <id> --loop --cols 4 --json > <character>/motions/<id>/run.json
+   ```
+
+   Its alignment default is `--x-from cell`, the placement as drawn — the
+   frames share one canvas (`feet` pinned a stepping foot and added 7–20 px
+   of head sway on the measured GIFs). `--x-from trend` only when the
+   character slides across the canvas; `--y-from cell` for a jump that keeps
+   its height. The GIF is drawn on a 512 px canvas whatever the cell, so
+   `from-gif` brings the figure to the character's height itself — the
+   height its other ready motions ship at, or one declared cell per canvas
+   for the first motion — and says so in `bodyHeight`; pass `--scale` only
+   when the character's other motions are packed at one (the screen-size
+   rule above). Never `from-video` or `contact` on a GIF: they refuse it — a
+   GIF has no frame rate, and sampled by time it repeats some drawings and
+   skips others.
+6. **Look at the wrap, the props and the facing.** A looping GIF can end on
+   a copy of frame 0 (`inspect` names a near-duplicate `07→00`), and a prop
+   can vanish for a frame (measured: the lantern in 2 of 12 attack frames) —
+   capture the frames the plan says hold the prop. Before calling it done,
+   check it faces the way the character's other motions do — `sizes` draws
+   one frame of each side by side (a trial's cheer came out front-facing
+   beside a right-facing idle, and nobody noticed).
+
+#### B-video — the sampled clip
+
+3. **Register the clip first** — `add-video --motion <id> --file
+   motions/<id>/video-seedance-1.mp4 --model seedance-2.5 --mode i2v --from
+   <the asset you feed it> --prompt "…" --status generating` (`--mode
+   first-last` for idle and attack, step 5): every frame's provenance hangs
+   off it.
+4. **Flatten the input onto pure green, with room for the motion** —
+   `sprite-sheet.mjs flatten <a cut-out: a ready motion's frame 00, or a ref
+   through remove-background> --out <character>/motions/<id>/first-green.png
+   --bg "#00ff00"`, plus `--room`:
+
+   | Motion | `flatten` adds |
+   |---|---|
+   | jump, hop | `--room tall` (34 % empty above the head) |
+   | attack | `--room wide` (room above, in front, behind) |
+   | wave, cheer | `--room wide --headroom 0 --lead 0.3 --trail 0` |
+   | a figure much taller than wide (a standing adult) | `--room square` |
+   | everything else | nothing |
+
+   A model keeps the input's framing (a jump from a tight frame lost its head
+   in 38 of 97 frames, from a `tall` one in none) — and pads a shape it does
+   not take with black bars (a 0.35-wide swordsman came back letterboxed in a
+   square clip, his sword drawn over the bars; `from-video` warns when a
+   clip's corners are black). Read `plateCheck` before
+   paying — a subject colour inside the key radius is cut away with the
+   plate. Never flatten a white-plated reference: it has white *inside* the
+   character too.
+5. **Shoot the clip** — one `seedance-video.mjs` call, `--duration 4
+   --resolution 480p --no-audio`, with the chroma-green template and the
+   per-state sentence from `references/video-preview.md`. **Idle and attack
+   pin their first frame**: first-last with the same image as `--image` and
+   `--end-image`, ending "The last frame returns to the exact pose of the
+   first frame." Timing words and "one jump" do not hold on Seedance (spare
+   seconds become holds, a jump came back as two hops); you cut those
+   afterwards. Then `set-video --video <the id add-video printed> --status
+   ready` (or `--status failed --notes "…"`).
+6. **Look at the clip before you cut it** —
+
+   ```bash
+   node {SKILL_PATH}/scripts/sprite-sheet.mjs contact \
+     <character>/motions/<id>/video-seedance-1.mp4 \
+     --out <character>/motions/<id>/contact.png --json
+   ```
+
+   Open `contact.png` and look, then read the verdict: **`cycle.verdict:
+   "periodic"`** — sample `loops[0].start`–`.end` (an `ambiguous` entry names
+   a step and a stride: look at both windows, or re-run with `--gait
+   walk|run`); **`"none"`** — nothing repeats: sample a `oneShots[]` entry's
+   whole `start`–`end` (one strike, one hop), else `stillStart`–`stillEnd`.
+   The contact sheet is a working file; nothing registers it
+   (`references/pipeline.md` → `contact`).
+7. **Sample that window** —
+
+   ```bash
+   node {SKILL_PATH}/scripts/sprite-sheet.mjs from-video \
+     <character>/motions/<id>/video-seedance-1.mp4 \
+     --out <character>/motions/<id> --name <id> \
+     --trim-start <start> --trim-end <end> --frames 8 --cols 4 --loop --x-from trend \
+     --json > <character>/motions/<id>/run.json
+   ```
+
+   **`--x-from trend` is for a walk or run cycle only** (on a one-shot it
+   reads the lunge as drift — leave those at the default); a jump that keeps
+   its height adds `--y-from clip`. **One `--body-height N`** on every video
+   motion puts the character at one size across clips shot with different
+   room. **`--cols` is the packed layout**: 8 frames with `--cols 4` is 4×2
+   (left out, 3×3), and the motion's grid and fps become the run's. Uneven
+   beats are named, not counted: `--at 0.917,1.09,1.26,…` replaces `--frames`
+   and the trim flags.
+
+#### Every source ends the same way
+
+8. **Record the run** —
+   `node {SKILL_PATH}/scripts/sprite-project.mjs register-run --dir <character> --motion <id> --run <character>/motions/<id>/run.json`
+   (or piped, `--run -`; `--video <videoId>` when the motion has more than
+   one clip). It registers every frame, the atlas and the previews, copies
+   the inspect summary, takes the grid and fps from the run, and sets the
+   motion `ready`. A GIF's frames are refused until its GIF has landed
+   (`set-gif --report`).
+9. **Read the numbers, then look** (**Look before you claim**). Report the
+   inspect values, not "no warnings"; check identity, contacts, direction and
+   held props in the captures; the last-to-first transition of a loop or the
+   final pose of a one-shot.
+10. **Keep it or fix it, and say which.** A warning you keep is acknowledged
+    in one sentence the user reads: `set-motion --motion <id> --ack-warnings
+    "the lantern swings out of the bbox by design"`. Scale drift over 15 %:
+    a crouch or a prop, or a real proportion change (regenerate that, and
+    clipped cells). Head sway the alignment added: re-align from `cells/`
+    with `--x-from trend` (clip) or `body` (sheet), from `pixel/` on pixel
+    art. Near-duplicates: resample a clip with `--at`. Row jumps: fewer rows
+    (4×2). **`keyFringe`**: the edge is still blended with the green at full
+    opacity — a yellow-green rim on warm colours, a teal one on blue; look at
+    an edge at 4× on dark. `--keyer unmix` (the default) takes it out; a
+    wider `--similarity` does not, and eats the character's own colours. One
+    bad cell → `edit_image.mjs` on it and re-run. Every warning's fix:
+    `references/pipeline.md` → `inspect`.
+
+**Waiting on a clip.** A Seedance take looks broken and is not: 140 s and
+400 s have both been measured for a 4 s clip — the queue decides. Quote the
+range, register the placeholder, and wait: no polling, no second call.
+Every step's wall time: `references/pipeline.md` → *How long each step
+takes*.
+
+### C. Render a preview clip
+
+{{#videoGenEnabled}}
+A *preview* clip is rendered **from finished frames** so the user can feel the
+motion; it is never sampled back into frames (that is B-video, which shoots a
+clip on green on purpose). Default model `{{defaultVideoModel}}`, or whatever
+the user picked in the `render-video` command.
+
+1. **Flatten frame 00** onto a colour that suits the character
+   (`sprite-sheet.mjs flatten`) — video models mishandle alpha.
+2. **Pick the mode**: `i2v` (`--image`), `first-last` (add `--end-image`, or
+   frame 00 again when the motion loops), or `r2v` (`--ref-image` the
+   turnaround and the packed sheet, addressed as `@Image1` / `@Image2`) when
+   the clip must perform *these* beats.
+3. **Register around the call**: `add-video … --status generating` before,
+   `set-video --video <id> --status ready|failed [--notes]` after.
+4. **Say the price (≈ $0.83 for 4 s at 480p on Seedance) and the wait, then
+   leave it alone**; quote the `cost:` line when the script prints one.
+
+Flags, endpoints, the reference-binding grammar and the cost/latency table are
+in `references/video-preview.md`.
+{{/videoGenEnabled}}
+
+{{#videoGenDisabled}}
+Video needs a fal.ai key and this session has none, so there is nothing to
+render a clip with — and no video or GIF motion source either: B-video and
+B-gif are not available, so every motion is a generated sheet, a breathe or
+a mirror. Say
+that plainly when the user asks and point them at session settings to add the
+key. The GIF and WebP previews are built from the real frames and always work.
+{{/videoGenDisabled}}
+
+### E. A seamless loop for the UI
+
+{{#videoGenEnabled}}
+A **loop motion** is a different deliverable, not a sprite motion exported
+differently: one transparent animation (`loop.webp`, `loop.apng`,
+`loop.webm`, `loop.json`) carrying **every** frame of the cycle, unaligned
+and uncleaned — the bobbing *is* the content, so there is no atlas, no GIF
+and no anchor.
+
+The clip is shot **first-last with the same image at both ends**: a target
+for the model, not a guarantee. The proof is the **measured** seam — `loop`
+reports `seam` against `seamLimit` (max(2·step, 0.005)), and `seam ≤
+seamLimit` is a loop that closes. Say "it closes" from that number, never
+from the recipe.
+
+**Interview in one message, money included**: the subject (an icon in its
+own right, or the character), the motion verb, the style sentence (the
+3D-icon anchor in `references/prompting.md`, or `character.style`
+verbatim), the duration (4 s; 5 s for two beats), the width the UI renders
+it at, and a budget ceiling — a take is ≈ $0.83 for 4 s (≈ $1.0 for 5 s),
+the matte ≈ $0.10, the interpolation ≈ $0.10, three to eleven minutes a
+take. Say the frame ceiling while the duration is still a question: `loop`
+writes at most 400 frames, so 60 fps fits up to 6.6 s. Interpolation is the
+user's choice — Topaz (exactly 60 fps), RIFE (≈ $0.03, closes the wrap) or
+free `minterpolate`; this session's default is
+**`{{defaultInterpolator}}`**. Record the answers right after `add-motion
+--kind loop` with `set-motion --brief-duration … --brief-width …
+--brief-interpolator … --brief-budget …`: `add-video` **refuses** the paid
+clip on a loop with no brief, and a recorded brief is never asked again.
+
+**The steps** (every command and measured number: `references/loops.md`):
+
+1. **The keyframe** — reserve it (`set-keyframe --status generating`), one
+   `generate_image.mjs` call (1024², white plate), cut it out, close
+   `set-keyframe` with `--alpha`, flatten it onto green; then `capture` it and
+   check one subject, a clear margin, no floor or shadow, no text, and
+   `plateCheck`.
+2. **The clip** — `add-video --mode first-last --status generating`, the
+   price-and-wait line, one `seedance-video.mjs` call, `set-video --video
+   <id> --status ready|failed`.
+3. **Look before cutting** (`contact`). **A second take is the user's money
+   too**: put the numbers, the price and the wait in front of them with the
+   free alternative — a `retime` of the take you have, which fixes the apex
+   freeze and double blink no prompt wording does.
+4. Optional, **interpolate, then matte** (`veed-gs` on a green plate), each
+   registered with `add-video --derived-from`.
+5. **Cut it** — `loop <the last clip in the chain> --width <brief.width>`
+   (`--key alpha` on a matted clip), then `register-run --video <that clip>`.
+6. **Read the seam, then look at it** — report `seam` against `seamLimit`
+   (and `seamFill` when not 0), `play`, `capture` the **last** frame and
+   frame 0. Close with the frame count, fps, duration, the four export sizes
+   and the running cost; a 28 MB Lottie ships nowhere — a narrower
+   `--width` is the remedy.
+{{/videoGenEnabled}}
+
+{{#videoGenDisabled}}
+A loop starts with a paid clip, so this workflow is unavailable in a session
+with no fal key. Say that plainly and point the user at session settings; a
+sprite motion from a generated sheet (workflow B-sheet) or a breathe is the
+only animation path left, and it is not the same thing — its frames are
+drawn or warped, not filmed, and it exports an atlas rather than a
+transparent loop.
+{{/videoGenDisabled}}
+
+### F. Connect the loops for Rive
+
+When the user wants **one Rive file whose loops switch in an app**. Loops
+shot from their own keyframes jump when switched, and Rive cannot blend two
+frames: the continuity has to be in the pictures — a **hub** loop (idle),
+**transition clips** from one loop's frame 0 to another's, and a state
+machine that switches only where they meet.
+
+{{#videoGenEnabled}}
+1. **Look first, free** — `lineup <character>` writes `lineup.png` (every
+   loop's frame 0 beside the hub's) and a `poseGap` + `suggestion` per loop.
+   Open it. Only **hub → X** is shot; X → hub is the entry played backwards,
+   free (`transition --reverse-of`).
+2. **Price it and ask for a budget** — per entry one take ≈ $0.83 and one
+   matte ≈ $0.10 (no interpolation: a Rive file plays at 24 fps); five
+   entries ≈ $4.7, three to eleven minutes a take. Keep a running total.
+3. **Register, brief, shoot, matte and cut each entry**
+   (`references/loops.md` → *Workflow F*). Quote `startGap`, `endGap` and
+   `step`: `gap ≤ 2·step` lands; a later `--trim-start` or earlier
+   `--trim-end` is free, a new take is the user's money. Play every exit;
+   when a reversed exit reads wrong (a mug put down is not a mug picked up
+   backwards), say so and offer a real exit take at an entry's price.
+4. **Export and look through the preview** — `rive <character>
+   --include-loops`, registered; open the Export tab (`navigate-to` with
+   `"tab": "export"`), capture it, press a loop's button in its Rive preview
+   and watch the state line. Report the routes, each loop's
+   wait and every direct cut with its `poseGap` from `stateMachine`.
+
+**Say the limits plainly.** Leaving a loop waits for the end of its cycle
+(`stateMachine.waits`; 3.8–5.1 s on tanka). Routes go through the hub. A pair
+with no transition cuts, and the report says where and how far apart.
+{{/videoGenEnabled}}
+
+{{#videoGenDisabled}}
+The transition clips are paid Seedance takes, so this workflow needs the fal
+key. Without one, `lineup` still runs and `rive` still routes through the
+hub: say which switches will cut, and how far apart their poses are.
+{{/videoGenDisabled}}
+
+## Exporting
+
+What a motion's own run made — a sprite motion's GIF, WebP, sheet + atlas; a
+loop's four files; baked colourways — is already a download and needs **no
+export step**. The Export tab lists them beside everything else a **ready**
+motion can be made into. Match the format to where it is going:
+
+| Where it goes | Format | How |
+|---|---|---|
+| Editing software — Premiere, Final Cut, After Effects, DaVinci | MOV, ProRes 4444 with alpha | `export --format mov` |
+| Anywhere a plain video plays — chat, slides, social | MP4, H.264 on a solid colour | `export --format mp4 --bg "#rrggbb"` |
+| A web page | WebM (VP9 with alpha), or the animated WebP the run made | `export --format webm` |
+| Lossless frame animation; an app that plays Lottie | APNG; Lottie (raster frames) | `export --format apng` / `lottie` |
+| A game engine | the sheet + atlas the run made; an Aseprite-format sheet of one motion or the whole character; a PNG sequence | `export --format aseprite` (motion or `<character>`) / `png-seq` — see **Game engines** |
+| Product or app animation driven from code — a mascot switching states | Rive — the whole character: a number input picks the loop, a trigger per one-shot | `rive <character>` (loops and transitions: `--include-loops` or `--motions`) |
+
+Each export is one command and one registration, piped — the same for
+`export <character> --format aseprite` and `rive <character> --motions …`:
+
+```bash
+node {SKILL_PATH}/scripts/sprite-sheet.mjs export lumi/motions/attack --format mp4 --bg "#ffffff" --json \
+  | node {SKILL_PATH}/scripts/sprite-project.mjs register-export --dir lumi --report - --json
+```
+
+Files land in `<character>/motions/<id>/exports/` (a motion) or
+`<character>/exports/` (the whole character); exporting again replaces the
+file and its record. A failed export prints its `ERROR:` and registers
+nothing. Re-running a motion retires the exports made from its old frames
+(`register-run` says so): export again if the user still wants them.
+
+Quote the size and duration from the report (every video is probed, and
+refused when it is not what it claims); a looping motion's video repeats
+until it lasts at least 3 s unless `--repeat N` says otherwise — tell the
+user the length. **`--shadow`** casts a ground shadow on request (the tab has
+no switch): into the frames of a video, whose canvas grows — the default
+slant nearly doubles a tall figure's width, so offer a smaller
+`--shadow-shear` — or as a separate shadow sheet beside an Aseprite export.
+Every flag: `references/pipeline.md` → `export`.
+
+### Game engines
+
+Every sprite run already made `sheet.png` + `atlas.json` (TexturePacker
+JSON-hash), each frame's `anchor` / `pivot` on where the feet stand — Phaser
+and PixiJS 8 load it (engine notes: `references/pipeline.md` →
+`atlas.json`). The **Aseprite-format sheet** — one motion, or every ready
+sprite motion of the character on one sheet with a tag per motion and each
+frame's duration — is a PNG and a JSON, not an editable `.aseprite` file;
+loops and transitions are left out, mirrors go in as ordinary tags. Hand the
+developer:
+
+```js
+this.load.aseprite('lumi', 'lumi.png', 'lumi.json');
+this.anims.createFromAseprite('lumi');
+sprite.play({ key: 'idle', repeat: -1 });  // looping is not in the file: repeat: -1
+```
+
+Pixel art exports at whole-number `--scale`; a colourway is the same atlas
+over another sheet — swap the directory.
+
+**Rive** — say these plainly, every time: the frames are **raster
+images**, and the `.riv` plays in every Rive runtime but **cannot be edited
+in the Rive editor**. It holds every ready sprite motion; loops go in only
+when asked (`--include-loops`, or `--motions a,b,c` — ask which states the
+app switches between), resampled to **24 fps** and at most **320 px**:
+quote each motion's `frames`, `fps`, `width` × `height` from the report.
+Say `estimatedDecodeBytes`, the memory once opened (over 128 MB warns, over
+768 MB is refused — offer a lower `--fps`, a smaller `--max-size` or fewer
+motions). Give the developer the wiring: `State Machine 1`, a number input
+**`motion`** naming the loop (values in `stateMachine.inputs`), a trigger
+`play_<motionId>` per one-shot, and that setting `motion` moves the
+character at the **end of the current cycle**; say how many direct cuts
+`stateMachine.cuts` lists and the largest `poseGap`. Every flag and field:
+`references/pipeline.md` → `rive`.
+
+## Commands
+
+The user can press four kinds of button on the stage. Each arrives as a
+notification naming the selected motion — or, for a whole-character file, the
+character.
+
+- **`render-video`** — they picked a model and a mode in the popover. Use
+  their choices, not your defaults, and follow workflow C.
+- **`regenerate-motion`** — redraw the selected motion, folding in any note
+  they attached, from the source it already has (`motion.source`), under the
+  same id: `register-run` replaces the old frames, never duplicates them. Say
+  the price first when it is paid. **A GIF** is a new take: `gif-prompt` with
+  the note folded into the action, then the B-gif steps from the
+  reservation on, at the new `--output` it prints (the earlier take, its
+  file and its request stay on record). **A breathe** is free: the same pipe with
+  the parameter the note asks for, the rest from `show --motion <id>`. **A
+  mirror**'s drawing lives in its source: regenerate that and mirror again
+  (say so). **A pixel motion** keeps `--pixel`, then rebakes its colourways.
+  **A loop** gets a new *take* from the keyframe it has (workflow E, the clip
+  step); redraw the keyframe only when the note asks for a different look —
+  a new keyframe is a new subject the user never approved. Say which of the
+  two you are doing before you spend the clip.
+- **`fix-alignment`** — the character swims or jumps between frames (not
+  offered on a breathe or a mirror: their frames share one footing by
+  construction). Read the inspect warnings against the motion plan:
+  unintended `bodyDrift` → re-run `align` from `cells/` with `--x-from feet`
+  or `cell`; head sway the alignment added (`headDrift` over
+  `sourceHeadDrift`) on a walk → `--x-from trend` for a clip, `body` for a
+  sheet; unintended `maxJump` → `--smooth` or the other anchor. A GIF motion
+  re-runs `from-gif` with another `--x-from` (free; `cell` is its default).
+  Pixel frames re-align from `pixel/`. Check whether `scaleDrift` is a pose or prop change
+  before regenerating; clipped cells need a drawing fix. Preserve intended
+  movement. `references/pipeline.md` has the table and alignment limits.
+- **`export`** — they pressed Generate (or Regenerate) on a row of the Export
+  tab. The facts line names `character`, `motion` (absent for a
+  whole-character file), `format` and, for `mp4`, the `background`. Run
+  exactly that export — the colour quoted (`--bg "#1a2b3c"`; unquoted, the
+  shell reads `#` as a comment) — and register it (**Exporting**). `format:
+  aseprite` with `scope: whole character` is `export <character> --format
+  aseprite`. For `riv` the facts line lists `motions` and any `transitions` —
+  run `rive <character> --motions <the motions>,<the transitions>` at the
+  defaults; a transition is never a Rive file of its own. Report the file and
+  its size, and for Rive the caveats above. Never swap in another format; if
+  the export refuses, say why in their words.
+
+<!-- pneuma:end -->
+
+## References — read when you need depth on the topic
+
+| Topic | File |
+|---|---|
+| Eight facings and packs, props sets, move sets, variants, restyles, the motion library and transfer, storyboards, the 3D model, cutscenes — every command, price and measurement | `references/game-assets.md` |
+| `sheet-prompt`, the sheet grammar and state guards, the idle recipe, worked prompts, the 3D-icon keyframe, fixing one cell, reference images, direction anchors and the sides | `references/prompting.md` |
+| Every `sprite-sheet.mjs` / `sprite-project.mjs` subcommand, flag, report field and warning, the atlas schema, and the measured numbers behind every default | `references/pipeline.md` |
+| Workflow E and F command by command: the brief, the keyframe, the clip, retime, interpolation and matting, `loop`, transitions and their reverses | `references/loops.md` |
+| The chroma-green source clip, per-state motion sentences, the loop and transition clip templates, Seedance and H3 Max flags, video matting and interpolation, cost, latency (needs the fal key) | `references/video-preview.md` |
+| The `project.json` schema — the sprite sidecar, loop and transition motions, derived clips, exports, asset id conventions | `references/project-json.md` |

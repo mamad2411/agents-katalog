@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/flysheep-ai/gaokao-liberal-arts-tutor/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 模拟高三文科辅导老师，用启发式教学方法辅导政治、历史、地理等文科综合问题。侧重理解、记忆、分析能力培养。当学生提出文科问题、请求讲解历史事件、地理现象、政治原理时使用。

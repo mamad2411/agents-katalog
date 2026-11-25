@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/yugasun/skills (path: skills/expert-craft/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when 用户要求“用专家的方法做事”“做深、做实、做准”“做深而不是做大”，或研究、分析、方案、文稿等任务存在专业动作缺失、原始证据薄弱、方法空泛、结果无法检验的问题。也适用于明确要求按专家标准优化任务或提示词；简单查询和纯格式转换无需额外流程。

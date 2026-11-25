@@ -1,0 +1,132 @@
+---
+name: colgen
+description: "Colgen — коллекции и конвертеры Go-структур. Используй, когда пишешь цикл, который собирает id, строит map по полю, группирует, заполняет связи или конвертирует список между слоями (включая лямбды в `Map`/`mcp.Map`); при новом DTO или модели домена; при правке collection.go."
+---
+
+# Colgen
+
+Upstream: https://github.com/vmkteam/colgen
+Docs: https://vmkteam.dev/colgen/
+
+Генерирует коллекции (`XxxList []Xxx`) с утилитарными методами из директив в `collection.go`. Также: inline-сниппеты, LLM-режимы.
+
+## Директивы
+
+- `//go:generate colgen` — запуск генератора в файле
+- `//colgen:News,Tag` — базовая генерация типов + `IDs()` + `Index()` (если есть поле `ID`)
+- `//colgen:News:<Method>[,<Method>...]` — дополнительные методы
+- Код **должен компилироваться** перед запуском — парсинг через AST
+
+### Методы
+
+| Директива | Эффект |
+|-----------|--------|
+| `NewsID` | `NewsIDs() []int` (если поле ID нестандартное) |
+| `Index(Field)` | `IndexByField() map[T]News` |
+| `UniqueField` | уникальные значения (поддерживает `*T` c nil-check) |
+| `Count(Field)` | `CountByField(v) int` |
+| `Group(Field)` | `GroupByField() map[T]NewsList`; для `[]T` — fan-out |
+| `Fill(Target,Junction)` | заполняет связи; режим определяется типом junction |
+| `Cast(Interface)` | `Interfaces() []Interface` через pointer receiver |
+| `Map(pkg)` / `MapP(pkg)` | конструктор `NewNewsList(in []pkg.News) NewsList` |
+| `map`/`mapp` | то же в lowercase (приватный конструктор) |
+
+### Поведение `<Field>` по типу
+
+- Скаляр `StatusID int` → `StatusIDs() []int`
+- Слайс `TagIDs []int` → **flatten** в `[]int` (не `[][]int`)
+- Указатель `Author *Author` → `[]Author` с nil-check и разыменованием
+
+### Fill — определение режима
+
+`Fill(Tags,TagIDs)` где `TagIDs []int` → many-to-many через `related.Index()` + append
+`Fill(Author,AuthorID)` где `AuthorID *int` → one-to-one с nil-check
+Все `FillXxx` возвращают `ll` для чейнинга: `news.FillTags(tags).FillAuthor(authors)`
+
+## Map / MapP — конвертеры между слоями
+
+```go
+//go:generate colgen -imports=newsportal/pkg/db
+//colgen:News,Tag
+//colgen:News:UniqueTagIDs,Map(db)
+```
+
+Требования:
+- Проект должен содержать дженерики `Map[T,M]` / `MapP[T,M]` (pointer-версия)
+- `MapP(db)` — если `NewNews` принимает `*db.News`
+- `map`/`mapp` (lowercase) — приватные конструкторы
+- Разное имя в `db`-слое: `Map(db.News)` (полный путь)
+- Структура не в базовой директиве → конструктор вернёт `[]News` вместо `NewsList`
+- Другой пакет для `Map/MapP`: `-funcpkg=<pkg>` + имя пакета в `-imports` через запятую. Дженерики `Map`/`MapP` живут в пакете домена, API-пакеты берут их оттуда, а не заводят свои:
+  ```go
+  // pkg/rpc/collection.go (vmkteam-reviewer)
+  //go:generate colgen -funcpkg=reviewer -imports=reviewsrv/pkg/reviewer
+  //colgen:Review:mapp(reviewer)
+  ```
+
+### Порядок первой генерации (gotcha)
+
+1. Базовые директивы + методы (без Map/MapP)
+2. Inline-сниппеты конструкторов (`//colgen@NewNews(db)`)
+3. Добавить дженерики `Map/MapP` в проект
+4. **Только теперь** добавить `Map(db)` в colgen
+
+Если добавить Map(db) сразу — не скомпилируется (нет `NewNews`), AST-парсинг упадёт.
+
+### Восстановление
+
+Если всё сломалось — удалить `*_colgen.go` и перегенерировать. Но: если сгенерированные функции уже используются в коде — удаление даст нерабочий код, и генератор не запустится. Временно удалить использования, перегенерировать, вернуть.
+
+Рекомендация: один `colgen` на пакет, директивы в `collection.go`.
+
+### Ручные сборки — сигнал применить colgen
+
+Если в коде собирается вручную то, что генерирует colgen, — замени на метод коллекции, а не пиши ещё один цикл:
+
+| Ручная сборка | Метод colgen |
+|---|---|
+| цикл с `map[int]bool` для уникальных id поля | `Unique<Field>s()` |
+| `map[id]entity` из списка | `Index()` / `IndexBy<Field>()` |
+| `[]int` id из поля элементов списка | `<Field>s()` / `IDs()` |
+| `map[key][]entity` | `Group<Field>()` |
+| `mcp.Map(list, func(x dom.X) Y {…})` | именованный `newY(dom.X) Y` + `//colgen:Y:map(dom.X)` с `-funcpkg=mcp` |
+| второй `Map`/`MapP` в пакете API | `-funcpkg=<domain>` |
+| цикл по `[]db.X` в домене | из репозитория — сразу `NewXs` (`MapP(db)`), коллекция и её методы — в `collection.go` домена |
+
+Нужного метода нет — добавь директиву в `collection.go` и `make generate`.
+
+Коллекции — на моделях домена и API. В `pkg/db` colgen не кладём, если есть domain-слой: db тонкий (/gold-arch).
+
+## Inline-сниппеты
+
+`//colgen@<Name>(<pkg>)` заменяется прямо в файле на тип + конструктор.
+
+```go
+//colgen@NewNews(db)                       // embed-стиль (домен-слой)
+//colgen@newNewsSummary(db.News,full,json) // full + json-теги (API-слой)
+```
+
+Embed-вариант:
+```go
+type News struct { db.News }
+func NewNews(in *db.News) *News { ... }
+```
+
+Full-вариант — явные поля с тегами `json:"..."` (поле `ID` получает тег `json:"<entityName>Id"`).
+
+На сложных объектах сниппет может быть невалиден — редактировать вручную.
+
+## LLM-режимы
+
+Нужен API-ключ. Отправляется содержимое файла (+ тест) + промт.
+
+- `//colgen@ai:review` → `.md` с ревью
+- `//colgen@ai:readme` → `README.md` по файлу
+- `//colgen@ai:tests` → `_test.go`
+
+Суффикс `(deepseek)` или `(claude)`. DeepSeek по умолчанию.
+
+## Маркеры
+
+- Generated: `*_colgen.go` с `// Code generated by colgen; DO NOT EDIT.`
+- Редактируемые: `collection.go` (директивы), файлы inline-сниппетов после первой генерации

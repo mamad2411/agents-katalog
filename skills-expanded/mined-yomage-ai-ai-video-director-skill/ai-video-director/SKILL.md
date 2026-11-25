@@ -1,0 +1,92 @@
+---
+name: ai-video-director
+description: Recorded talking-head editing with content and rough-cut review, audiovisual style samples, captions, evidence visuals, sound, editable delivery and feedback. 真人口播自动剪辑：内容确认、粗剪、视听精剪样片、字幕声音、验收与经验沉淀。
+---
+
+# AI Video Director
+
+Reply in the user's language. Support Simplified Chinese and English. Own setup, probing, transcription, conversion, rendering and checks; ask only for decisions or actions the Agent cannot take on the user's behalf. Reuse existing authorization.
+
+使用用户当前语言。Agent 完成安装、环境检查、转写、转换、渲染与验收；内容、粗剪、整体视听方向和最终成片由用户确认，已有授权不重复询问。
+
+## Scope / 适用范围
+
+The production path is recorded talking-head footage, including screen-demo footage with a baked-in webcam. Inspect flattened footage before promising to reposition the person: independent layers require separate sources or an explicitly reviewed reconstruction. Do not require separate recordings when the current trial explicitly uses one flattened source.
+
+真人口播与屏幕演示是当前生产路径。屏幕和摄像头已经录成一张画面时，先检查素材，不承诺能无损移动人物；本轮明确采用一体录屏时，不强求重录分轨。
+
+Digital-human/avatar production is paused. Never use SadTalker or the legacy `ai-auto-editing-director`. An explicitly authorized short voice sample uses [voice-clone.md](references/voice-clone.md); this does not authorize full voice replacement. New tool or model adoption uses [tool-governance.md](references/tool-governance.md).
+
+数字人暂停；旧版导演 Skill 和 SadTalker 禁用。声音样本、付费、账号、身份与素材权利沿用各自已确认范围，不扩大授权。
+
+## Start Or Resume / 开始或续接
+
+**Route first:** when the user supplies an already edited master and asks to preserve its selections/order/speed/audio while changing visual layers, read [locked-master-revisions.md](references/locked-master-revisions.md) before setup or project initialization. Use its bounded `locked-master` route, not an unnecessary fresh rough cut. Structural or audio changes retain the normal gates below. / 用户给出自己剪好的母版，只要求补画面、字幕、顶部进度或调整指定视觉层时，先走母版锁定修订，不重新选段、变速或上传素材。变更内容或声音仍走正常验收。
+
+1. Resolve the real Skill directory and read [dependency-setup.md](references/dependency-setup.md). Agent runs `sh scripts/bootstrap.sh --stage intake --apply` on macOS/Linux or `scripts/bootstrap.ps1 --stage intake --apply` in PowerShell on Windows. Reuse healthy dependencies; install missing ones. A Skill folder install has no universal dependency hook: do this on first use even if the folder already exists. Run `doctor` after repairs, using the resolved Node. Setup receipts are local installation evidence, not editor connectivity. Keep the first content card fast; prepare rough tools before rough execution and the selected renderer before fine work.
+2. Keep projects and private media outside this repository. Create a project with `director.mjs init-project` or load its existing state. On resume run `node scripts/migrate-creator-review.mjs <project>/pipeline.json` to retire obsolete listening prerequisites while preserving approvals and real recovery records. Never overwrite approved media, timelines or components; create a new version and retain the old one until the replacement passes.
+3. Load the bundled Xiaoxiong style described in [xiaoxiong-public-style.md](references/xiaoxiong-public-style.md). Its audio, caption, color, palette, layout and content-fit defaults work without a private profile. Read the effective defaults and optional overrides with `memory.mjs show --stage intake --include-candidates`. Use `--stage rough|fine|release`, `--key`, `--style` and project overrides as needed. When Xiaoxiong identity use is selected, load `$xiaoxiong-ip` and pass its resolved directory with `--identity-skill`; otherwise no Xiaoxiong character or signoff is inserted. Prepare the exact font and neutral reference assets with `prepare-style-assets.mjs --out <external-project>/assets/xiaoxiong-style`. History is opt-in. Pending feedback is a proposal, not an effective default. Follow [memory-and-feedback.md](references/memory-and-feedback.md).
+4. For a fresh project read [workflow.md](references/workflow.md). Read only the current stage's references below; query machine contract sections with `director.mjs contract --section roughCut` (or `bRollContinuity`, `finishingPass`) when needed. Do not load the entire contract or all references by default.
+
+默认带入公开的小熊字幕、响度、配色和画面风格，新机不需要旧私人画像。小熊形象与片尾才加载 `xiaoxiong-ip`。首次核对真实安装、工程位置和当前偏好；续接时复用未变化的环境结果。私有素材不进入公共仓库。按阶段读取规范和有效偏好，历史与待试反馈不能自动覆盖当前决定。
+
+首次使用必须由 Agent 补齐依赖，不能只运行 Doctor 后把安装清单交给用户。入口会复用或下载校验 Node 22+，补齐脚本依赖和 FFmpeg；粗剪前执行 `setup.mjs --stage rough --apply --codex <当前桌面宿主内置CLI绝对路径>`，补齐官方 ChatCut 连接及内置上传适配，再核对真实连接与转写。网页版插件的正常上传和重试，Agent 都必须调用 `chatcut-upload.mjs --helper <当前官方助手绝对路径> -- <官方上传参数>`；具体见 [上传恢复](references/chatcut-media-recovery.md)，不能仅阅读说明后仍调用旧的 120 秒入口，也不要求用户另传文档。精剪前执行 `setup.mjs --stage fine --apply`，复用或安装固定版本 HyperFrames、配套创作 Skill 和渲染浏览器；抠像才加 `--renderer cutout`。Agent 必须继续处理回执中的 `agentActions`，完成实际小样验证；仅登录、宿主不允许自动重载工具、系统权限或新费用需要用户参与。不能把 `localReady` 当作能剪辑，也不能用缺少可选模型阻塞首份分析。
+
+For hosted ChatCut imports and retries, Agent must execute `chatcut-upload.mjs --helper <active-official-helper> -- <official arguments>` from this Skill. Rough setup reuses the hosted connection regardless of installed plugin version, or registers it if missing. It prepares the verified compatibility helper; the upload entry also prepares/reuses it on demand. Do not leave this as a document-only recommendation or ask the user to transport a separate guide. Follow [media recovery](references/chatcut-media-recovery.md).
+
+## Progress and recovery / 阶段交代与恢复
+
+On resume, after a stage changes, and before ending a blocked turn, report the current creative stage from actual artifacts and valid approvals: content plan → Agent rough preparation and delivery → creator feedback/approval → audiovisual sample → fine edit → final review/delivery. Deliver the prepared editable rough cut for creator feedback; content approval does not approve a visual style. State what exists, what remains, the next deliverable and its owner. Reuse prior approvals rather than asking again. When the Agent owns the next operation, continue it; do not ask the user how to proceed. An error receipt is a recovery instruction for the Agent, not the deliverable.
+
+续接、阶段变化或阻塞收尾时，Agent 依据实际工程和有效批准交代：内容方案 → Agent 规范粗剪与交付 → 创作者反馈和确认 → 视听样片 → 精剪 → 最终验收交付。拼好时间线只能叫结构候选；内容方案通过不等于视听风格通过。明确已有结果、未完成项、下一份交付和由谁执行；已有批准不重问。技术恢复由 Agent 继续做，不能把报错当成果交回用户。真正无法代办时，给出唯一具体动作、原因和完成后从哪一步恢复；当前不需要用户行动就明确说清。
+
+## Stage Routing / 阶段路由
+
+| Stage / 阶段 | Action and required reference / 动作与必读 |
+|---|---|
+| Content / 内容 | Use a reliable manuscript and local media probe for a fast first card. Follow [first-approval-and-style-gates.md](references/first-approval-and-style-gates.md). Lock the claim, evidence, intended cuts and meaningful constraints; support count follows content and duration. Defer unapproved styling. / 先给人能读懂的内容与粗剪方案，有可靠稿件时不提前做重型处理。 |
+| Rough / 粗剪 | Before importing or resuming media, read [chatcut-media-recovery.md](references/chatcut-media-recovery.md): distinguish host connection, pending upload and real playback; preserve the edit and use bounded recovery. Then read [production-standard.md](references/production-standard.md) and [dialogue-join-audit.md](references/dialogue-join-audit.md). Compare takes quality-first, verify every actual join and all repeated defect classes, preserve word onsets/tails, review pauses and early/middle/late pace. Normalize color and dialogue once using explicit processing. / 导入前核对素材路线；上传失败按有限恢复流程处理，不能无限重试或丢掉已有剪辑。全量核对拼接、气口与语速。 |
+| Handoff / 交接 | Read [chatcut-handoff.md](references/chatcut-handoff.md). Export reviewed timing to canonical EDL; explicit constant retiming, video EQ and audio processing use a hash-bound processing plan. Unsupported XML effects must fail; use a reviewed source-quality derivative for complex processing. / 不支持的效果不能悄悄丢弃。 |
+| Rough approval / 粗剪确认 | Prepare the exact A-roll and schema 6 checks with `prepare-rough-review.mjs`; follow [creator feedback](references/creator-feedback-review.md) and run `audit-rough-cut-review.mjs`. Deliver after Agent preparation, then bind creator feedback to that version. For rough-cut-only scope, use the delivery branch below and finish here. / 生成检查表不等于检查完成；用户正常审片，无需听审模型。只做粗剪的任务在此确认后直接交付。 |
+| Style / 整体样片 | Read [fine-edit-direction.md](references/fine-edit-direction.md) and [curated-style-library.md](references/curated-style-library.md). Exact approved reference → explicit user reference → curated candidates → [dynamic-style-adaptation.md](references/dynamic-style-adaptation.md). Recommend a complete 6–12 second audiovisual sample; include captions, evidence, presenter and BGM/SFX decisions together. Run `audit-fine-edit-direction.mjs`. / 用户确认整套视听方向，已有参考只审实际差异。 |
+| Fine edit / 精剪 | Route per shot using [tool-selection.md](references/tool-selection.md). Read the conditional references below. Use [full-program-review.md](references/full-program-review.md) to derive all whole-program states from the canonical timeline and check them before and after rendering. Run targeted caption, matte, sound and color checks. / 每镜选择合适工具，先局部验证再全片。 |
+| Release / 发布版 | Use [release-render-operations.md](references/release-render-operations.md) for heavy output. Apply a matching approved host preset as a whole bundle, preserve one heavy job, monitor memory and change strategy after failure. Check and fully decode the exact final file. / 代理通过不能代替正式尺寸验收。 |
+| Delivery / 交付 | Use the stage gate and `audit-delivery-manifest.mjs`; deliver the master, editable project, timing, captions, rights, QA and learning records. Read [platform-release-and-publish-package.md](references/platform-release-and-publish-package.md) and run `audit-publish-package.mjs` only when publication is in scope. / 交付本地可打开文件与明确限制。 |
+
+## Conditional References / 按需读取
+
+- UI evidence: [evidence-state-roi-audit.md](references/evidence-state-roi-audit.md). Lock exact navigation and semantic ROI; use isolated demo data and a visible-module allowlist before capture. / 界面证据先锁状态、语义区域和隐私白名单。
+- Presenter and simultaneous A/B coverage: [presenter-coverage-modes.md](references/presenter-coverage-modes.md), then `audit-coverage-boundaries.mjs`. Treat `B-base-A-cutout` independently from PiP; preserve canonical audio and test moving alpha. / 人物小窗、抠像与分屏分开判断，版式切点以整数帧为准。
+- Captions: [caption-semantic-pagination.md](references/caption-semantic-pagination.md), then `audit-caption-pages.mjs`. Portrait short-form starts with one semantic line; readability or exact approved references may justify two. / 竖屏单行是可覆盖的推荐，不是绝对限制。
+- Portrait safe layout: [portrait-talking-head-safe-layout.md](references/portrait-talking-head-safe-layout.md), including `layout.portrait-talking-head.safe-v1` when it matches the approved series. / 小熊风格的可缩放字幕与配色参数已经内置，实际占位按内容和平台复核。
+- Semantic progress: [semantic-progress-rmcu.md](references/semantic-progress-rmcu.md), `rmcu.semantic-progress.v1`. Use only when it helps navigation. Inactive long labels use ellipsis; active overflow follows the component contract. / 进度条按内容需要使用。
+- Code motion reuse: [code-motion-components.md](references/code-motion-components.md); classify the component as `G`, `P`, `T`, `A`, or `X` and separate the general mechanism, private adapter and project instance. / 公共机制、私人适配与单片参数分开。
+- ChatCut: follow its active host's basics, talking-head, transcription, verification and export skills as applicable. HyperFrames authoring reads `$hyperframes`; a renderer owns one shot. / 使用当前宿主支持的工具，不根据插件缓存猜测连接可用。
+
+## Executable Gates / 可执行门禁
+
+Read [execution-and-evidence.md](references/execution-and-evidence.md) before the first render. Use `stage.mjs check|run pipeline.json rough-render|fine-render|deliver` as the normal execution path. The A-roll candidate necessarily exists before its own rough-cut review; fine render requires the approved rough cut and style sample. Delivery binds the exact final file and rechecks dependency hashes.
+
+使用统一阶段入口。Agent 先完成粗剪与技术/内容检查，再交付创作者审片反馈；正式精剪必须通过粗剪和样片门禁；交付必须对应实际批准的最终文件。上游变动使旧证据失效。此机制约束正常工作流，不宣称是操作系统级防绕过。
+
+For a rough-cut-only request, set `outputScope: "rough-cut"`, bind `roughDelivery.editableProject` and `roughDelivery.captions`, then run `stage.mjs run pipeline.json deliver` after rough approval. Deliver approved A-roll, EDL, the editable timing project and captions. Skip style, fine render and publication; no additional final-master approval is needed for the same approved rough file. See [execution-and-evidence.md](references/execution-and-evidence.md).
+
+只做粗剪：Agent 设置上述范围并绑定可编辑工程和字幕，粗剪批准后直接运行交付。相同粗剪文件不重复确认；不要求样片、精剪或发布包。
+
+Never mark a file reviewed from a successful tool call, an ASR transcript, a checked boolean or one attractive still. Record the actual technical/content checks and their limits; do not invent Agent listening. Missing native audio input is not a delivery blocker. Preserve creator approval with its source, timestamp and the exact artifact or editor snapshot hash.
+
+Keep ChatCut as the rough-editing route. Follow [creator-feedback-review.md](references/creator-feedback-review.md): Agent completes content, interval/join, picture, pause, pace and audio-level checks, then delivers the rough cut for creator feedback. Do not propose, install, test or call Qwen audio understanding, GPT-Audio-1.5 or a substitute listening model. Missing native audio input never blocks rough delivery or continuation after creator approval. Record actual checks honestly; creator acceptance does not mean the Agent independently listened.
+
+粗剪继续使用 ChatCut。Agent 按规范剪好并检查内容、保留段、剪点、画面、气口、语速和音量，然后交付给创作者反馈，确认后继续精剪。不再提议、安装、测试或调用千问、GPT-Audio-1.5 或替代听审模型，不因缺少听觉输入暂停、询问、收费或换路线。保留真实检查方法，不能把用户确认冒充 Agent 听过。具体执行、旧工程迁移和证据规则见上述参考。
+
+## Feedback And Verification / 反馈与验证
+
+Use [interaction.md](references/interaction.md) to keep four normal user decisions compact: content, rough cut, audiovisual style and final master. Merge caption/music/presenter decisions into the style sample; inherit existing authorization. Follow [memory-and-feedback.md](references/memory-and-feedback.md) for public rules, curated styles, private preferences and project-only lessons.
+
+优先保留四个清楚的确认点，不把各个样式细节拆成重复审批。已采用的决定不再询问；已授权共享的小熊风格随公共 Skill 版本维护；个人形象进 IP Skill，其他用户覆盖和单片经验各自保存。
+
+Track the next independent real project with `analysis/trial-metrics.json`: first-card latency, revisions, repeated defects, render count, active time and measured resources. Test results are not proof of stable editing quality. Follow the current recorded promotion decision; publishing source code does not mark a pending real-project trial as completed.
+
+New rough reviews use schema 6 creator feedback and cover every retained interval as well as every join; new fine directions use schema 2 with information ownership and a complete dynamic presentation contract. Legacy formats remain readable with a warning, not a recommended path for new work. Use the version-bound iteration events described in [locked-master-revisions.md](references/locked-master-revisions.md); never infer creator approval or real-world quality from generated fields. / 新工程使用 schema 6 全保留区间技术与内容检查、创作者反馈及完整动态样片合同，旧格式只兼容读取。每轮记录真实版本、修改原因和结果，不能把生成字段或测试通过冒充用户验收。
+
+下一条独立实片记录等待时间、返工、重复缺陷、重渲染次数与资源曲线。代码通过不等于成片稳定；遵守当前推广决定，提交源码不能把待做的实片验证改为已完成。

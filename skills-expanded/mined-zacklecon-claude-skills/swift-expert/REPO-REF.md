@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/zacklecon/claude-skills (path: skills/swift-expert/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when building iOS/macOS applications with Swift 5.9+, SwiftUI, or async/await concurrency. Invoke for protocol-oriented programming, SwiftUI state management, actors, server-side Swift.

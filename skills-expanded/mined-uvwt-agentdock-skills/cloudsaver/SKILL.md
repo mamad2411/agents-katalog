@@ -1,0 +1,43 @@
+---
+name: cloudsaver
+description: Use this skill when calling the local CloudSaver API for status checks, resource search, Douban hot lists, share parsing, or transfer actions.
+---
+
+# CloudSaver Skill
+
+调用 DockMini 本机 CloudSaver HTTP API，支持状态、登录、资源搜索、豆瓣热门、115/夸克分享解析与转存、设置、赞助信息和 Telegram 图片。
+
+## 安全
+
+- CloudSaver 地址仅允许 localhost/127.0.0.1。
+- 登录凭据与 token 不写入 Skill 包。
+- AgentDock managed 运行时的持久化状态位于宿主注入的 `SKILL_DATA_DIR`；其他宿主默认使用 `$XDG_STATE_HOME/cloudsaver-skill/`，未设置 XDG 时使用 `~/.local/state/cloudsaver-skill/`。
+
+## 辅助脚本执行
+
+Skill 本体是本说明文档。确需调用包内辅助脚本时，在 Skill 包根目录使用相对路径执行；运行宿主负责切换到包根目录并把所需变量注入当前子进程。
+
+```bash
+printf '%s' '{"skill_action":"<动作>"}' | python3 run.py
+```
+
+输入必须是 JSON 对象。写操作仍按本文档中的确认规则执行。
+
+| 动作 | 用途 |
+|---|---|
+| `cloud115-folders` | List 115 folders. Requires token and configured 115 cookie in CloudSaver settings. |
+| `cloud115-save` | Save 115 shared files. Requires token and configured 115 cookie. Body: shareCode, receiveCode?, folderId, fids, fidTokens?. |
+| `cloud115-share-info` | Get 115 share info. Requires token. Params: shareCode, optional receiveCode. |
+| `douban-hot` | Get Douban hot list via CloudSaver. Inputs: `type` (default `全部`), `category` (default `热门`), `api` (default `movie`), `limit` (default `50`), optional `start`. |
+| `get-setting` | Get CloudSaver user/global settings. Requires token. |
+| `login` | Login to CloudSaver and return token in response data. Password is passed only to local CloudSaver API. |
+| `quark-folders` | List Quark folders. Requires token and configured Quark cookie in CloudSaver settings. |
+| `quark-save` | Save Quark shared files. Requires token and configured Quark cookie. Body: shareCode, receiveCode?, folderId, fids, fidTokens?. |
+| `quark-share-info` | Get Quark share info. Requires token. Params: shareCode, optional receiveCode. |
+| `register` | Register a CloudSaver user with register code. |
+| `save-setting` | Save CloudSaver settings. Requires token. Body should include userSettings and optionally globalSetting. |
+| `search` | Search CloudSaver resources. Input: required `keyword`, optional `channelId` and `lastMessageId`. Supports auto-login on token expiry. |
+| `search-with-login` | Refresh login from the Skill's isolated `CLOUDSAVER_USERNAME/CLOUDSAVER_PASSWORD`, then search. Input: required `keyword`, optional `channelId` and `lastMessageId`; do not pass credentials in tool arguments. |
+| `sponsors` | Get CloudSaver sponsors list. |
+| `status` | Check CloudSaver container and HTTP endpoint status. |
+| `tele-images` | Get Telegram images from CloudSaver. |

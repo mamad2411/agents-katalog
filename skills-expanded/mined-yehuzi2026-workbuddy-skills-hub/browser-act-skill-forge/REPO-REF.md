@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/yehuzi2026/workbuddy-skills-hub (path: categories/03-browser-crawling/browser-act-skill-forge/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Forges reusable Skill packages (SKILL.md + scripts) from website exploration via browser-act — no re-exploration later. Use when: user wants a reusable Skill for any website, needs to understand a sit

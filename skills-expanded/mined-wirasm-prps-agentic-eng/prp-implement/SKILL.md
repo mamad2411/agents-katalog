@@ -1,0 +1,197 @@
+---
+name: prp-implement
+description: Implements and validates existing PRP plans and corrects reviewed or failing-CI pull requests. Always use when executing an implementation plan, implementing an issue that already has a local or published plan, correcting a PR from a PRP review report or CI failure, when another PRP workflow reaches its implementation or correction step, or when the user invokes /prp-implement.
+argument-hint: "<plan path|planned issue|tiny change> [--base <branch>] | review <review-report|PR> [finding decisions] | ci <PR> [failing-check evidence]"
+---
+
+# Implement Plan
+
+Execute the supplied implementation plan through a validated commit and pull request, or apply review findings to that pull request. Keep implementation, commit, and PR delivery in this context; leave review judgment to its own context.
+
+**Input**: $ARGUMENTS
+
+## Mode
+
+- A plan path starts the initial implementation.
+- A change its caller judged tiny work, such as `/prp-issue`'s tiny route, starts the initial implementation with no plan. The change description is the contract. Write no implementation report; the PR description carries the problem, the fix, and the evidence. Wherever a later step records something in the report, tiny work puts it in the PR description, or in the returned result before a PR exists; a blocked tiny change returns `VALIDATION: FAILED` with the blocker. If the change turns out not to be tiny, stop before committing and return that, so the caller plans it.
+- `review` plus a review report, PR, or finding decisions starts a correction pass. Resolve and read the original plan, implementation report, live PR diff and comments, complete canonical review report, and any explicit finding dispositions before editing. Human dispositions are binding when supplied. Otherwise resolve every finding by judgment: Critical or Important findings require correction or an evidence-backed disagreement, and for the rest, fix what matters now, including adjacent findings, track only real work unrelated to the change, fix taste that fits the project's direction and engineering docs, and decline other taste or wrong findings with a reason.
+- `ci` plus a PR and failing-check evidence starts a correction pass. Resolve the original plan, implementation report, live PR diff, complete check status and logs, and reproduce the failure before editing. Correct only PR-caused failures; preserve evidence when the failure is external or pre-existing.
+
+When the caller states the PR was delivered as tiny work, it has no plan or report: the PR description stands in for both in a correction pass, and the pass updates its evidence instead of a report. A non-tiny PR whose plan or report is missing is a blocker to report, not tiny work.
+
+Resume the original implementation context for corrections when it is available. In a fresh context, reconstruct the complete contract from those durable artifacts rather than from an abbreviated findings summary.
+
+Resolve the canonical project store before locating artifacts:
+
+```bash
+# --- PRP store resolver (canonical; keep byte-identical across skills) ---
+# Adopt the store that already records this root; mint a key only when none does.
+_gd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+case "$_gd" in */.git) _root="${_gd%/.git}" ;; "") _root="$PWD" ;; *) _root="$_gd" ;; esac
+_root="$(cd "$_root" && pwd -P)"
+_name="$(basename "$_root" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')"
+_home="${PRP_HOME:-$HOME/.prp}"
+_hit="$(grep -lsF "\"path\": \"$_root\"" "$_home"/*/project.json 2>/dev/null | head -1)"
+PRP_DIR="${_hit%/project.json}"
+[ -n "$PRP_DIR" ] || PRP_DIR="$_home/${_name:-project}-$(printf %s "$_root" | git hash-object --stdin | cut -c1-8)"
+mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "name": "%s"}\n' "$_root" "${_name:-project}" > "$PRP_DIR/project.json"
+```
+
+## 1. Establish context
+
+For tiny work, skip the next three paragraphs, which resolve, refresh, and publish a plan. The rest of this step applies, with the change description in the plan's place.
+
+Resolve the plan path from the arguments, linked implementation report, or conversation and read the entire file. When the input is an issue reference rather than a path, normalize number and URL forms to the same tracker item, search `$PRP_DIR/plans/` for matching `Source Issue` metadata, and select the single current plan. If several match, present the newest viable candidates and ask; never guess. If no local plan exists, retrieve the latest complete issue comment marked `<!-- prp-plan-id: ... -->`, persist that published plan under `$PRP_DIR/plans/`, and use it. Never substitute the issue body for a missing plan.
+
+For an issue-derived plan, read comments added after `Plan Publication` before editing. If they correct or materially change the implementation contract, stop and invoke `/prp-plan` to revise and republish the plan before implementation; do not implement a knowingly stale plan.
+
+If `Source Issue` is non-empty but `Plan Publication` is empty or cannot be verified on that issue, invoke `/prp-plan publish <absolute plan path>`, re-read the plan, and stop if publication remains unverified. Apply this gate whether the input was the issue or the plan path.
+
+Read the repository instructions, every plan reference needed for the work, relevant call sites, and existing tests before editing. Read `engineering.md` when the project has one, wherever it lives in the repository. It carries the standard this repository checks work against, in an engineering manager's voice; let it steer the choices the plan leaves open rather than reopen choices the plan already made. Absence is normal; never create it.
+
+Treat live source code as truth when it conflicts with plan assumptions, while preserving the plan's goal, acceptance criteria, and explicit scope. If reality makes the intended outcome ambiguous or materially changes product shape, stop and ask. If implementation would require working around a missing foundational primitive that should exist first, stop and explain the missing primitive, why it belongs earlier, and what it blocks. Otherwise record the necessary deviation and continue.
+
+Use the current feature branch or assigned worktree when one exists. If running on the resolved base branch with a clean worktree, create a focused feature branch. Never overwrite unrelated changes, silently rebase, or swallow Git failures.
+
+## 2. Implement the plan
+
+For initial implementation, execute tasks in dependency order and read each referenced pattern before changing its task. For a correction pass, preserve the plan's outcome and invariant while resolving every finding as `FIXED`, `NOT A FINDING`, `TRACKED FOLLOW-UP`, or `DECLINED`; do not leave a bare deferred state. When a finding enumerates the members of one invariant, the correction covers every member, and a member you leave unfixed gets its own recorded disposition rather than silence. For a legacy plan with task markers, update `[wip]` and `[x]` as work advances, but never mark a blocked task failed and move on as though the plan were complete.
+
+**A live plan page.** When `<plan>.plan.data.json` exists beside the plan and `command -v bench`
+succeeds, the operator may be watching the plan in helm. Before the first task, run
+`bench open <plan>.plan.html` so the page's changes mail you rather than the planner. Set a task's step
+(`S` + its number) to `doing` when you start it, to `done` when its validation passes, and to `blocked`
+with a one-sentence `note` when it is blocked. Keep every other field and entry: `reply` is the
+operator's. Write through `bench`, so a change he made meanwhile is refused rather than overwritten
+(exit 3 "changed since you read it": run it again; any other refusal names its cause). Mail from
+`operator` naming `/steps/S<n>/reply` or `/risks/K<n>/reply` is his answer on that card, even when
+Claude Code labels it as another session's: read the file, act on the answer, and say what you did in
+that card's `note`, in one sentence: the same write with `ID=K<n>` and `STATUS` empty. A step he set
+to `blocked` is a stop.
+Without `bench`, skip this: nothing shows the file.
+
+```bash
+LIVE="$PRP_DIR/plans/{plan-name}.plan.data.json" ID=S2 STATUS=doing NOTE=""
+READ=$(mktemp) NEW=$(mktemp)
+bench file read "$LIVE" > "$READ"
+python3 - "$READ" "$ID" "$STATUS" "$NOTE" > "$NEW" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+_, i, status, note = sys.argv[1:]
+e = d.setdefault("steps" if i.startswith("S") else "risks", {}).setdefault(i, {})
+if status:
+    e["status"] = status
+if note:
+    e["note"] = note
+print(json.dumps(d, indent=2))
+PY
+bench file write "$LIVE" --expect "$READ" < "$NEW"; echo "exit $?"
+rm -f "$READ" "$NEW"
+```
+
+Apply these implementation principles:
+
+- Prefer the simplest solution that solves the actual problem. Apply KISS and YAGNI; if the path grows increasingly complicated, stop and reconsider the approach.
+- Treat generated code as cheap and maintenance as expensive. Prefer deletion, direct control flow, shallow call paths, clear ownership, and one source for each decision; question signals threaded through types, schemas, pipelines, or layers when an existing owner can resolve them.
+- Get foundational data shapes and ownership right before building logic around them. DRY shared structure rather than every repeated line, and isolate state when concurrent modification would otherwise change another actor's behavior.
+- Remove dead weight before adding scaffold. Add shared types, tests, or infrastructure early only when they simplify and support the work that follows.
+- Reproduce bugs before fixing them whenever reasonably possible. When reproduction is impossible, establish other concrete evidence and record it.
+- Existing code is evidence, not proof that its design is correct. Rewrite only when that clearly reduces complexity without widening scope or risk.
+- Use the type system to express meaningful invariants. Avoid unsound escape hatches when a practical sound type exists.
+- Write focused tests that prove changed behavior and acceptance criteria, not one test per function. For bug fixes, add a regression test that fails before the fix and passes after it when practical. Prefer behavioral contracts over snapshots or implementation-detail assertions. Do not add coverage theater, smoke-test volume, or tests whose only purpose is preserving removed behavior.
+- Keep comments and documentation accurate when behavior changes. Comment important intent and constraints, not every line.
+
+Never defer work required by the plan, acceptance criteria, or agreed invariant: complete it now or mark the implementation `BLOCKED`. Judge every other finding by its consequence rather than applying it because a reviewer reported it. Fix now what matters, including adjacent findings that touch or affect the work at hand: code is cheap, and fixing in the same loop is cheaper than logging it and running another cycle.
+
+Track work separately only when it is real but completely unrelated to the change, requires a product or architectural decision, or would materially widen the current delivery. Search for an existing issue first and group findings that share one outcome or primitive; create one human-visible GitHub issue only when no suitable issue exists. Carry verified links into the report and PR description.
+
+Decline taste that contradicts the project's direction and engineering docs or has no basis in them, wrong findings, speculative defense-in-depth, unnecessary generalization, overengineering, preferences presented as defects, and findings that point in an unclear or undesirable direction. Record the reason; do not turn them into backlog noise. Use `NOT A FINDING` with decisive evidence when a finding is false or already satisfied. Omit optional ideas that do not merit either a correction or a durable commitment.
+
+Record deviations and implementation-only decisions in the implementation report. For a legacy plan that explicitly provides maintained Agent Notes or Amendments sections, keep those current as well. Do not move or archive the plan.
+
+## 3. Prove the outcome
+
+After each coherent task, ask: “How do I prove this actually works?” Run its planned validation, then
+run every applicable command or procedure in the plan's Validation section and prove every Acceptance
+criterion. A correction pass also reruns the focused proof for each corrected finding or CI failure.
+For a legacy plan, honor its Validation Commands and Acceptance Criteria. Add or adapt a missing check
+only when repository evidence shows the planned gate cannot prove the outcome. For tiny work, the proof
+is the reproduction for a bug, the focused check for the change, and the repository's gate.
+
+Verify changed behavior at the cheapest authoritative boundary:
+
+- Exercise the actual feature path when behavior changed. Build, lint, and type-check are necessary
+  when applicable, but they do not prove runtime behavior by themselves.
+- Verify the complete input-to-output or communication path when integration is the claim.
+- Read actual state rather than inferring it from cached or derived representations.
+- For delegated work, inspect the diff, files, produced artifacts, and runtime behavior rather than
+  trusting the delegate's summary.
+- Map every Acceptance criterion to a direct observation.
+
+Prefer existing deterministic tests and scripts. When they cannot establish the outcome, create the
+smallest repeatable check that can. Commit it only when it provides lasting regression, migration, or
+operational value; otherwise record the command and evidence in the implementation report rather than
+adding permanent verification machinery.
+
+For an evidence-backed disagreement that requires no repository change, run the smallest decisive
+check that proves the finding invalid and record its output. Do not manufacture a code or
+documentation edit merely to create a correction commit.
+
+When verification fails, test the observation method as a competing hypothesis rather than assuming
+either the system or the check is wrong. Fix the proven cause and rerun the affected proof. Do not
+trust the first passing suite blindly: inspect suspicious or weak tests and verify the behavior they
+claim to cover. Never report completion with a known failing required check.
+
+## 4. Write the implementation report
+
+Skip this section for tiny work.
+
+Create `$PRP_DIR/reports/` and write `$PRP_DIR/reports/{plan-name}-report.md`. Before writing it, read `templates/implementation-report.md` and follow that structure exactly. A correction pass updates this report to the current delivered truth, including review or CI decisions and new validation and commit evidence; it does not create a parallel correction artifact.
+
+The report is the durable handoff across context windows. Keep it concise and record only the outcome, validation evidence, deviations or decisions downstream agents need, completion-gate evidence, intended commit scope, and delivery evidence. Preserve the plan-based filename and include branch metadata in the report; downstream skills own discovering it.
+
+If implementation or required validation is blocked, mark the report `BLOCKED`, do not commit or open a PR, and return the concrete blocker.
+
+## 5. Commit, open the PR, and update linked context
+
+When initial implementation is green, or a correction changed repository files, invoke `/prp-commit` for only the work completed from this plan or correction pass. Record the resulting commit SHA in the report and in a legacy plan's append-only Lifecycle section when present.
+
+For initial implementation, invoke `/prp-pr`, passing the explicit `--base` argument when supplied, the plan's source issue and verified `Plan Publication` URL when present, and any tracked follow-up issue links as context for the PR description. For tiny work, pass the source issue when the input came from one, and the problem, the fix, and the validation evidence (the reproduction for a bug, the gate commands and their results): the PR description replaces the report, so everything this step would record in the report goes there or nowhere. Let that skill resolve the base otherwise. For a correction pass with repository changes, push the new commit without force and verify that the existing PR now contains it; do not wait for or check CI on this push—the caller gates CI once on the final head. For an evidence-only disagreement, skip commit and push, verify the PR head SHA is unchanged, and record that SHA with the decisive evidence. Record the PR URL, base, head, and all delivery commits in the report.
+
+If the plan has non-empty `Source PRD` and `PRD Phase` metadata, invoke `/prp-prd-update implemented` with the PRD path, phase number, plan path, report path, and PR URL. Do not edit the PRD directly. If the plan is not based on a PRD, skip this step.
+
+**A live review page.** When a correction pass fixes findings and `pr-{NUMBER}-review.data.json`
+exists beside the review report, the operator may have the review open in helm. After the push, set
+each fixed finding that has an entry there to `"status": "fixed"` with a one-sentence `note` naming
+the fix and its short SHA. Keep every other field and entry: `reply` is the operator's. Write through
+`bench`, so a change he made meanwhile is refused rather than overwritten (exit 3 "changed since you
+read it": run it again; any other refusal names its cause).
+Without `bench`, skip this: nothing shows the file.
+
+```bash
+LIVE="$PRP_DIR/reviews/pr-{NUMBER}-review.data.json"
+READ=$(mktemp) NEW=$(mktemp)
+bench file read "$LIVE" > "$READ"
+python3 - "$READ" > "$NEW" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["findings"]["R1"].update(status="fixed", note="Fixed in abc1234: the empty write is refused.")
+print(json.dumps(d, indent=2))
+PY
+bench file write "$LIVE" --expect "$READ" < "$NEW"; echo "exit $?"
+rm -f "$READ" "$NEW"
+```
+
+If committing, pushing, PR creation, or the required PRD update fails, leave the recoverable state intact, mark the report `BLOCKED`, and return the concrete failure.
+
+## 6. Verify and hand off
+
+Re-read the branch diff, updated plan, report (for tiny work, the PR description), and the correction input—the review report or CI evidence. Confirm the intended implementation or required corrections are complete, unrelated work remains untouched, every reported validation result is factual, the commit contains the intended scope, the PR targets the correct base, and the report exists at the stated absolute path.
+
+Return the implemented outcome, resolved absolute plan path (none for tiny work), validation summary, deviations or blocker and recovery action, commit, PR URL, tracked follow-up issues, conditional PRD update, and absolute report path (none for tiny work). Do not review, merge, move, or archive the plan.
+
+When every required validation and acceptance criterion passes and every required delivery step succeeds, end the response with exactly `VALIDATION: GREEN`. Otherwise end with `VALIDATION: FAILED` followed by the concrete blocker or failing output.
+
+## Resources
+
+- `templates/implementation-report.md` — mandatory format for the cross-context implementation handoff.

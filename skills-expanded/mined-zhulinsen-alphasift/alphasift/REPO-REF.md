@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/zhulinsen/alphasift (path: .github/skills/alphasift/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: 全市场选股 Skill。Use when: 用户要按策略筛选 A 股、美股、港股、日股、韩股、台股或印度股票，列出可用策略，运行双低/放量突破/全球低估值等选股，或保存运行并做 T+N 后验评估。通过 alphasift CLI 或 Python 接口输出候选股票列表。"

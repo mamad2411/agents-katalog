@@ -1,0 +1,68 @@
+---
+name: muggle-pr-followup
+model: sonnet
+description: "Use when the user wants a pull request's incoming review feedback handled for them — it watches a PR's review threads and, each time a reviewer submits new comments, dispatches the work to address them. Covers one PR or several: with no PR named it auto-tracks every PR opened in this session, one watcher each. Engage on PR-review-follow-up intent: \"watch my PR and address review comments as they come in\", \"keep polling the PR I just pushed and deal with reviews\", \"track all the PRs I opened this session and follow up on their reviews\", \"follow up on review threads for the branch I just pushed\", \"I'm stepping away — handle my PR's reviews while I'm gone\". Invoke it before looking the PRs up — finding them is its own first step. This is PR-review-specific automation — prefer it over the generic loop skill. It only watches and dispatches; the actual edits and replies are muggle-do. Not for posting test results to a PR (use muggle-pr-visual-walkthrough)."
+---
+
+# muggle-pr-followup
+
+> Telemetry first step: see [`../_shared/telemetry-emit.md`](../_shared/telemetry-emit.md). Use `skillName: "muggle-pr-followup"`.
+
+> Running outside Claude Code (in Codex, for one)? Read [`../_shared/host-tool-equivalents.md`](../_shared/host-tool-equivalents.md) first — it maps the tools and paths this skill names to your host's.
+
+A watcher that babysits one open PR toward **merge-ready** — review threads addressed, CI green, and the branch rebased on its base. Polls for actionable feedback, check-run state, and the branch's standing against its base; when feedback lands, CI goes red, or the branch falls behind or conflicts with its base, hands the work to `/muggle-do` and exits. On merge or close, it hands the terminal wrap-up to `/muggle-do` the same way — teardown when merged, then a next-step suggestion. `/muggle-do` is the executor — it classifies the reviews, fixes the failing checks, or rebases onto the base (resolving any conflicts), pushes, replies per comment, and respawns the watcher.
+
+**The watcher is a dumb pipe.** It does not classify reviews, iterate cycles, post replies, or escalate. All of that lives in `/muggle-do`. See [stage-8 design](../../../../muggle-ai-brain/architecture/2026-05-08-muggle-do-pr-comment-loop-design.md) for the rationale.
+
+**Per-PR isolation.** One watcher per PR. Multi-PR work runs N independent watchers.
+
+**Arming.** Bootstrap, auto-track, and the executor's post-cycle respawn all arm the watch the same way — one drain tick, then one background watch loop per PR — visible as a running task for as long as the PR is polled, gone at terminal ([`arm-watcher.md`](arm-watcher.md)). The loop polls token-free and reaches the session only by exiting, on the poll that finds something to act on, so a quiet PR costs no turns; the tick that answers it re-arms the loop ([`contract.md`](contract.md) Step 7.5). Crons only ever deliver a recovery tick, never the ongoing cadence: a cron-delivered tick re-arms the loop and cancels its own cron, because every cron fire is a model turn.
+
+**One reminder when blocked pending a human.** When a PR can't progress without the user — an escalated rebase/CI budget spent, or an ambiguous review awaiting direction — the tick that flags the block emits **one** one-line reminder: the pending act plus a reference back to the decision context ([`contract.md`](contract.md) Steps 2.5, 7). After that the watch stays visible and silent — no repeat nagging — and the block clears the instant a wake finds a push, review, or CI/deploy state moved.
+
+**Cron lifecycle.** Each tick records its `/loop` cron id to `cron.json` while `CronList` can still see it ([`record-cron-id.md`](record-cron-id.md)), so teardown can delete the cron by id after a session continue / compaction blinds `CronList` to it. Reconcile ([`reconcile.md`](reconcile.md)) sweeps crons whose PR is terminal or whose slot is gone, and re-arms an open slot whose watcher stopped silently — loop-first, never with a recurring cron.
+
+**Session death.** A loop a session armed reports into that session, so a session that ends or hits its usage limit stops hearing its watches. For a registered slot, the muggle watch service restarts the loop as a program outside every session and wakes the owner only when that loop reports on the owner's own PR ([`state-schemas.md`](state-schemas.md#watch-registrationjson)). Nothing addresses a review out of session: the report goes to the session that carries the context to address it, never to a headless process replying context-blind.
+
+**A watcher belongs to the session that armed it.** Each slot records its owning session in `owner.json` ([`state-schemas.md`](state-schemas.md#ownerjson)), and recovery is owner-scoped: [`reconcile`](reconcile.md#triggers) re-arms a dead watcher only inside the session that armed it, and reports the rest as orphans it declined to touch. Starting a session therefore picks up nothing new — the same context argument that rules out a headless daemon rules out inheriting a stranger's PR, which would hand review work to a session that never saw the design. A PR whose owning session is gone stays unwatched until the user adopts it by name ([`adopt.md`](adopt.md)).
+
+## Routing
+
+The skill recognizes its mode by inspecting `$ARGUMENTS` and falling back to on-disk state. It never runs procedure inline — it identifies the mode and routes to the appropriate procedure file.
+
+| Input | On-disk check | Mode |
+| :---- | :------------ | :--- |
+| First arg matches `https?://github\.com/[^/]+/[^/]+/pull/\d+` | — | **bootstrap** → [`bootstrap.md`](bootstrap.md) |
+| `<slug> <pr-number>` | session dir for `<slug>` exists; slot's `watch.pid` is dead, or `--wake` passed | **tick** → [`contract.md`](contract.md) |
+| `<slug> <pr-number>` | session dir for `<slug>` exists; `watch.pid` names a live process and no `--wake` | **watch-status** — report the slot from on-disk state (`prs.json` state + head, newest `followup.log` tick line, loop liveness, watermark floors). **Zero provider calls:** a live loop owns the cadence, and the session never polls unwoken. |
+| `<slug> <pr-number>` | session dir missing, `<slug>.stopped` exists (or the global kill file `~/.muggle-ai/muggle-do/polling.disabled`) | **absorb** — one line, nothing else ([`contract.md`](contract.md) Step 0) |
+| `<slug> <pr-number>` | session dir missing | **error:** "no session at `<path>`; pass a PR URL to start one" |
+| `stop` (optional `<slug>`) | — | **stop** → [`stop.md`](stop.md) — tear down loop + cron, mark slot(s) `.stopped`; no slug stops everything and writes the kill file |
+| `<pr-number>` alone | exactly one existing session contains it | **tick** or **watch-status** for that PR, by the same `watch.pid` gate |
+| `<pr-number>` alone | zero or multiple matches | **error:** ambiguous; list candidates and exit |
+| empty | — | **auto-track** → [`auto-track.md`](auto-track.md) |
+| `help` / `?` | — | **help:** list active loops per [`output-templates/help.md`](output-templates/help.md) |
+| `reconcile` / `sweep` (optional `<slug>`) | — | **reconcile** → [`reconcile.md`](reconcile.md) |
+| `adopt` (optional `<slug>`) | — | **adopt** → [`adopt.md`](adopt.md) — take over a slot owned by a dead session; no slug lists the adoptable ones |
+
+**`--wake=<event>`** is passed only by an event wake's dispatch ([`arm-watcher.md`](arm-watcher.md) step 5), or by the follow-through Stop gate's instruction (`--wake=follow-through`) when the watch recorded due work nothing attempted — either asserts something is waiting, so the tick's poll is justified. Manual invocations never pass it; with a live watcher they get watch-status, because a poll that nothing prompted is a main-session poll wasted. Recovery fires need no flag — a recoverable slot's watcher is dead by definition, so the gate falls through to tick. A stale cron firing against a re-armed slot hits the live-`watch.pid` branch and is absorbed as a status line, no provider calls.
+
+Auto-track runs **reconcile** first, so a no-arg invocation also finalizes any slot whose PR merged or closed while its watcher was down (expired cron, ended session) and re-arms this session's own open slots whose watcher stopped silently (a dropped respawn). Reconcile recovers a watcher that was already running; it never seeds a first watcher for a PR — that is auto-track's / bootstrap's job — and never re-arms one this session does not own. A no-arg invocation is a request to track *your* PRs, so it can only ever end with the session watching PRs it pushed plus watchers it already had.
+
+**Reconcile also runs at session start** — a `SessionStart` hook ([`../../hooks/README.md`](../../hooks/README.md)) surfaces the sweep when the session owns open slots the muggle watch service does not keep, catching a watcher that died with its session (end, or 7-day `/loop` expiry) before a manual sweep would. It reports orphaned slots without acting on them; treat that report as inventory, never as a to-do. See [`reconcile.md`](reconcile.md#triggers).
+
+Bootstrap accepts three optional trailing flags:
+
+- `--slug=<name>` — override the default `<repo>-pr<n>` slug
+- `--resume` — opt in to reusing an existing session slot (default is refuse on conflict)
+- `--forward-only` — pin `lastBodyReviewId` past existing **body-only** reviews and `lastConversationCommentId` past existing conversation comments (skip history on those). Line-comment threads are always picked up from live thread state, regardless of this flag.
+
+## Preferences
+
+| Preference | Gate |
+| :--------- | :--- |
+| `autoReuseValidationContext` | Bootstrap reuses an existing validation context instead of re-asking — fired in the Step 6.5 gather per [`../_shared/resolve-e2e-validation-context.md`](../_shared/resolve-e2e-validation-context.md) |
+
+## Folder TOC
+
+See [`CLAUDE.md`](CLAUDE.md) for the one-line index of every file in this folder.

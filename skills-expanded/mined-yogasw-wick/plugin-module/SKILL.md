@@ -1,0 +1,371 @@
+---
+name: plugin-module
+description: Use when building, packaging, or releasing a connector (or later a tool/job) as an EXTERNAL wick PLUGIN — a separate binary in the plugins monorepo that wick downloads and runs over gRPC, instead of an in-tree module compiled into wick. Covers the plugins repo layout (one folder per plugin under connector/<key>/), the key==folder one-identity rule, `wick plugin build` (zip output, --kind, --target list / --all, BUILD_TARGETS, signing), `wick plugin catalog` (regenerate plugins.json from releases), DefaultTags categorization via plugins/tags, install/enable/disable via the app, the install dir resolved from appname.Resolve(), and the dispatch-driven release CI flow. The MODULE contract itself (Meta, Configs, Operations, Ctx, wick:"..." tags) is identical to in-tree modules — defer to the connector-module / tool-module skills for that; this skill is ONLY the plugin packaging + shipping layer on top.
+allowed-tools: Read, Grep, Glob, Edit, Write, Bash
+paths:
+  - "plugins/**"
+  - "cmd/cli/plugin.go"
+  - "cmd/cli/plugin_manifest.go"
+  - "cmd/cli/plugin_cosign.go"
+  - "pkg/plugin/**"
+  - "internal/connectors/plugin/**"
+  - "internal/manager/plugins_api.go"
+  - "internal/plugins/replace/**"
+  - "app/plugin_cmd.go"
+  - ".github/workflows/release-plugins.yml"
+  - ".vscode/tasks.json"
+---
+
+# Plugin Module — connectors (and later tools/jobs) shipped as external plugins
+
+> **Scope:** this skill is the **packaging + shipping** layer. A plugin's *module*
+> — `Meta`, `Configs`, `Operations`, `Ctx`, the `wick:"..."` tag grammar,
+> destructive-opt-in, `http.NewRequestWithContext`, typed responses — is **exactly
+> the same** as an in-tree connector. For all of that, use the **`connector-module`**
+> skill (or `tool-module` for tools). This skill covers only what's different when
+> the module is a separate binary wick downloads and runs, not code compiled into
+> wick.
+
+## Mental model: in-tree module vs plugin
+
+| | In-tree (connector-module skill) | Plugin (this skill) |
+|---|---|---|
+| Lives in | `internal/connectors/<name>/` | `plugins/connector/<key>/` (nested module in the wick repo) |
+| Registered by | `RegisterBuiltins()` at compile time | downloaded → scanned from `~/.<appName>/plugins/connectors/<key>/` at runtime |
+| Runs | in the wick process (function call) | own subprocess, gRPC over UDS (`hashicorp/go-plugin`) |
+| `main()` | none — it's a package | `package main` → `wickplugin.Serve(Module())` |
+| Ships as | part of the wick binary | `<key>-<ver>-<os>-<arch>.zip` (binary + `plugin.json`) |
+
+The **module value is identical** — a plugin's `connector.Module` is built the same
+way. The only code difference is the `main.go` wrapper and that it's a separate Go
+module. So: write the connector exactly as connector-module teaches, then wrap +
+package per below.
+
+## The plugins repo
+
+```
+plugins/
+├── go.mod                 # ONE module; repo-root go.work wires it to local wick
+│                          # (pkg/plugin isn't in a published wick release yet, so
+│                          #  there is NO `replace` in go.mod — go.work handles it)
+├── plugins.json           # the marketplace CATALOG (see below)
+├── connector/
+│   ├── _template/         # scaffold — copy this; skipped by tooling (leading _)
+│   │   ├── main.go        #   wickplugin.Serve(Module())
+│   │   ├── connector.go   #   the connector.Module (this is the connector-module part)
+│   │   └── VERSION        #   source of truth for the plugin version
+│   └── httpbin/           # a real, working sample
+├── tool/                  # (later) kind=tool, same flow
+├── job/                   # (later) kind=job, same flow
+├── README.md  RELEASE.md  POLYGLOT.md
+```
+
+## THE ONE RULE: `Meta.Key` == folder name == slug
+
+`key` is the single identity used for the source folder, the zip name, the on-disk
+install dir (`~/.<appName>/plugins/connectors/<key>`), the runtime registry key, and
+the catalog match. They must all be the same string, so:
+
+- **`Meta.Key` MUST equal the folder name.** `wick plugin build` fails loudly if they
+  differ (enforced in `cmd/cli/plugin_manifest.go`).
+- **`key` must be a slug:** lowercase `a-z`, digits, `_` only. **No `-`** (it would
+  break the `<key>-<ver>-<os>-<arch>.zip` split), no spaces/slashes/dots (it's a dir
+  name). Enforced by `pkg/plugin.ValidateKey` at build AND install AND load time.
+  Multi-word → `google_workspace`, never `google-workspace`.
+- `Meta.Name` is the free display string (spaces/caps OK) — shown in the UI.
+
+## Authoring a new plugin connector
+
+1. `cp -r plugins/connector/_template plugins/connector/<key>`
+2. Edit `connector.go` — set `Meta.Key` to `<key>` (must match the folder), write the
+   `Module` exactly as the **connector-module** skill describes (Configs, Operations,
+   per-op typed Input, `http.NewRequestWithContext(c.Context(), ...)`, etc.).
+3. Set `Meta.DefaultTags` for categorization — works EXACTLY like a built-in
+   connector. Use the shared catalog `github.com/yogasw/wick/plugins/tags` so your
+   plugin lands in the same section as built-ins (don't hand-write tag structs):
+   ```go
+   import (
+       "github.com/yogasw/wick/pkg/entity"
+       "github.com/yogasw/wick/plugins/tags"
+   )
+   Meta.DefaultTags = []entity.DefaultTag{tags.Connector, tags.API}
+   ```
+   `tags.Connector` is the umbrella; add one category (`tags.API`, `.Communication`,
+   `.Development`, `.Observability`). The app derives the connector-list category from
+   these — no category? falls under "Other". A category not in the catalog: declare it
+   inline as `entity.DefaultTag{Name: "...", IsGroup: true, SortOrder: …}`.
+4. `main.go` stays a one-liner: `wickplugin.Serve(Module())`.
+5. `echo 0.1.0 > plugins/connector/<key>/VERSION`
+6. Build + smoke-test locally (below).
+
+`main.go`/`Module()` split is convention; `wickplugin.Serve` is the whole runtime —
+it serves the gRPC plugin, and answers `--dump-manifest` at build time.
+
+## Building: `wick plugin build`
+
+Production side, run from the `wick` dev CLI (NOT the app). Output is a **zip**, not a
+native installer.
+
+```bash
+# one plugin, host target → one zip in plugins/bin
+cd plugins && wick plugin build <key> --target $(go env GOOS)/$(go env GOARCH)
+
+# --target also takes a comma-separated LIST (CI threads BUILD_TARGETS through this)
+wick plugin build <key> --target darwin/amd64,darwin/arm64,windows/amd64
+
+# one plugin, every supported os/arch → N zips (linux/arm64 first — Termux)
+wick plugin build <key> --all
+
+# every plugin under connector/ (skips _template)
+wick plugin build --all-plugins
+
+# only plugins whose folder changed since a ref (local dev; CI rebuilds all)
+wick plugin build --changed --since origin/main
+
+# other kinds (later)
+wick plugin build --kind tool <key>
+
+# sign: ed25519 manifest sig and/or cosign binary sig (external cosign CLI)
+wick plugin build <key> --all --sign-key key.ed25519 --cosign-key cosign.key
+```
+
+CI builds plugins for the os/arch set in the `BUILD_TARGETS_PLUGINS` Actions
+variable — a SEPARATE knob from `BUILD_TARGETS` (the wick binary set), because
+plugin releases usually want a wider set (users can build wick themselves, but
+self-building plugins is a chore). Falls back to `BUILD_TARGETS` when unset, then
+to the default `darwin/amd64,darwin/arm64,windows/amd64`; `all` = every target.
+
+To backfill a new os/arch across ALL already-released plugins (after widening
+`BUILD_TARGETS_PLUGINS`): run `release-plugins.yml` via workflow_dispatch with
+name empty/`all` + `force=true` — every plugin rebuilds at its current VERSION and
+the zips replace/extend the assets on the existing `<name>/v<ver>` release (no
+VERSION bumps, tags stay put, catalog regenerates after).
+
+Each zip = `{<key>[.exe], plugin.json}`. `plugin.json` is generated FROM the binary
+(`--dump-manifest`) so it can never drift. sha256 + signature live INSIDE plugin.json.
+Plugins are pure Go (no cgo) so darwin/windows cross-build from a linux runner works.
+
+## Installing / enabling: `<app> plugin ...`
+
+Consumption side — run from the **app binary** (the built downstream app), not the dev
+CLI. The plugins dir + enable/disable DB belong to the running app.
+
+```bash
+<app> plugin search [query]            # marketplace catalog (Available)
+<app> plugin install <key>             # resolve from catalog → download → verify → install
+<app> plugin install ./x.zip           # or a local zip / dir / url
+<app> plugin list                      # installed + version + arch + signature + enabled
+<app> plugin enable|disable <key>      # toggle (reloader reconciles ~5s, no restart)
+<app> plugin remove <key>
+```
+
+Install ALWAYS verifies (`VerifyManifest`: os/arch, proto_version range, sha256, and
+signature when a trusted key is configured) before writing into the plugins dir. A
+running app's reloader poller picks up an install/enable within ~5s.
+
+In the manager UI, plugins live in the **same connector list** as built-ins, grouped
+by their DefaultTags category (NOT a separate "Available to install" page). Filter
+chips are `All · Installed · <category…>`; "Installed" = built-ins + downloaded
+plugins (excludes not-yet-downloaded ones). A catalog entry not yet installed renders
+in its category with a **Download** button; if it has no build for the server's
+os/arch the button is disabled with a "No build for <os/arch>" note instead of being
+hidden. Install/enable/disable/remove trigger an immediate reload (no ~5s wait).
+
+## The marketplace catalog (`plugins.json`)
+
+`plugins/plugins.json` on the default branch is the catalog. wick fetches it RAW
+(`raw.githubusercontent.com/.../master/plugins.json`) — **not** the GitHub Releases
+API, so no rate limit / no token. Listing is metadata-only; the binary is pulled from
+the per-os/arch release URL in `assets` only on install.
+
+```json
+[{ "key": "httpbin", "name": "HTTPBin", "description": "...", "version": "0.1.0",
+   "default_tags": [{ "Name": "Connector", "IsGroup": true, "SortOrder": 50 },
+                    { "Name": "API", "IsGroup": true, "SortOrder": 30 }],
+   "assets": { "linux/arm64": "https://github.com/.../httpbin-0.1.0-linux-arm64.zip" } }]
+```
+
+`key` is the identity; `name`/`description`/`default_tags` are display + categorization
+(the SAME `[]entity.DefaultTag` the manifest carries — the app categorizes a plugin
+identically to a built-in). Override the catalog URL with `WICK_PLUGIN_CATALOG`.
+
+The catalog is **generated by `wick plugin catalog`** (Go, struct-typed — the shape is
+`connplugin.Available`, shared with the reader so the JSON can't drift), NOT a jq
+pipeline. It lists the repo's GitHub releases, keeps the highest version per plugin,
+maps each zip asset to its os/arch URL, and lifts name/description/default_tags from
+the released manifest:
+
+```bash
+wick plugin catalog --repo yogasw/wick --out plugins/plugins.json   # --token raises rate limit
+```
+
+On release, CI runs this automatically and commits the result (below).
+
+## Releasing: PR → `release` (CI does the rest)
+
+You do steps 1–3; CI does 4–8. See `plugins/RELEASE.md` for the full flow.
+
+```
+1. author + set Meta.Key == folder
+2. bump VERSION
+3. open PR  master → release
+   ── single entry: .github/workflows/release.yml ──
+   check-source-branch decides core-vs-plugin from the VERSION tag, then fires
+   release-plugins.yml via repository_dispatch (event_type=core-released) in
+   exactly one of two cases:
+     • core VERSION bumped → core jobs run, THEN dispatch (plugins rebuild against
+       the new wick)
+     • core VERSION unchanged → core jobs skip, dispatch immediately
+   ── .github/workflows/release-plugins.yml (dispatch-only, never a bare PR) ──
+4. detect     rebuild EVERY plugin (the build's tag-exists check is idempotent, so
+              only plugins whose VERSION changed actually cut a release)
+5. test       go test pkg/plugin + internal/connectors/plugin + cmd/cli  (hard gate)
+6. build      wick plugin build <key> --target <BUILD_TARGETS_PLUGINS> → gh release "<key>/v<ver>"
+              with make_latest:false (so a plugin never steals "Latest" from core)
+              (skipped if that tag already exists — bump VERSION for a new one)
+7. update-catalog  `wick plugin catalog` regenerates plugins.json + commits to master
+```
+
+Single entry point: `release.yml` is the only PR-triggered release workflow; the
+plugin pipeline is reached ONLY via `repository_dispatch`, so the two never run at the
+same time on one PR. `release-plugins.yml` uses its own concurrency group
+(`wick-release-plugins`, cancel-in-progress: true) so a re-dispatched run supersedes
+the in-flight one.
+
+## Replacing a built-in: `Replaces`
+
+A tool/job plugin extracted from a built-in gets a new key (`-` is illegal in
+plugin keys, so `notion-ticket-sync` → `notion_ticket_sync`). Declare the old key
+so wick treats the plugin as the **same item**, not a new empty one:
+
+```go
+// job plugin — pkg/job.Meta
+job.Meta{Key: "notion_ticket_sync", Replaces: []string{"notion-ticket-sync"}}
+// tool plugin — pkg/tool.Tool (copied into ToolMeta.Replaces)
+tool.Tool{Key: "text_counter", Replaces: []string{"text-counter"}}
+```
+
+`--dump-manifest` carries it (`job.meta.Replaces`, `tool.meta.replaces`), so it
+needs no plugin.json hand edit. Host side (`internal/plugins/replace`):
+
+- `Prepare` (web + worker boot, after all registrations, before validation and
+  the configs/jobs bootstrap) unregisters the old key and marks it replaced;
+  `manager.Service.SetHidden(replace.IsReplaced)` drops the old job row from
+  every listing and from the scheduler.
+- `ApplyAll` (web boot only) migrates once per pair, marker row
+  `plugin_replacements(old_key,new_key)` + `plugin_audits` action `replace.migrate`:
+  config fields the new module declares (stored value copied as-is — secrets stay
+  ciphertext; filled only when the new value is empty or a non-secret still at its
+  declared default; secret-flag mismatch skipped), job schedule/enabled/max_runs/
+  max_timeout_min while the new row is pristine, tags/visibility/bookmarks of
+  `/jobs|/tools/<old>` merged in. The old job row is disabled on every boot. Run
+  history stays on the old row (the report counts it); old rows are never deleted.
+- Admin: `GET /manager/api/plugins/{key}/replace` = dry run (secrets `set`/`empty`),
+  `POST` = apply (`?force=1` re-runs a migrated pair; manual values still win).
+
+Connector plugins don't support `Replaces` yet (connector data is per-instance rows).
+
+## Constraints / gotchas
+
+- **Never let `Meta.Key` ≠ folder name**, and keep `key` a `[a-z0-9_]` slug — both are
+  enforced; a `-` or mismatch fails the build.
+- **`_`-prefixed folders are invisible to `go ./...`** and to `--all-plugins` (that's
+  intentional — `_template` is a scaffold). Build it explicitly by path to smoke-test.
+- **Don't add a sigstore-go dependency** for cosign — it would bloat every plugin
+  binary. cosign is invoked as an external CLI at build time only.
+- **Don't make the path-filtered release workflows required status checks** — a skipped
+  run never reports and would block the PR forever.
+- Plugin tags are `<key>/v<ver>` (start with the key) so they never collide with the
+  core `v*` release tags.
+- **The install dir resolves from `appname.Resolve()`** (ldflag → `wick.yml` `name:` →
+  "wick") in `internal/connectors/plugin/paths.go` — the SAME source as `wick.db`, so
+  plugins always sit in the same `~/.<appName>/` tree as the DB. Don't derive it from
+  the binary basename: a debug build / MCP subprocess named differently would scan a
+  different dir than where the DB (and installs) live, and plugins would silently
+  vanish from the list.
+- **A plugin that stores state (downloads, caches, sessions) MUST use
+  `wickplugin.DataDir(key)`, never `os.TempDir()`.** `DataDir` returns
+  `~/.<appName>/plugins/<key>/` — a persistent dir ALONGSIDE the `connectors/<key>/`
+  binary dir (so wiping data never touches the installed binary or `plugin.json`). It
+  resolves this plugin-side from the running binary's own path (`.../plugins/connectors/<key>/<bin>`
+  → up two levels → `.../plugins/<key>`), so it needs no env var and no host cooperation.
+  `os.TempDir()` is wiped by the OS / Windows Storage Sense — a plugin that put a
+  ~hundreds-of-MB download there (e.g. playwright's cloakbrowser) finds it silently gone
+  on the next run. `DataDir` falls back to `<temp>/wick-plugins/<key>` ONLY for a bare
+  `go run` / test where the binary isn't under an installed `plugins/connectors/` tree.
+
+## Verify a plugin end-to-end (local, no CI)
+
+Fastest path in this repo: VSCode. The **"plugin: build all → lab"** task builds every
+plugin from current source and drops the unzipped `{binary, plugin.json}` into
+wick-lab's plugin dir, so a running lab (launch config **"wicklab"**) hot-reloads them
+within ~5s — manifests reflect the latest source (e.g. new DefaultTags) WITHOUT cutting
+a release. **"plugin: clear lab"** wipes them.
+
+When iterating on ONE connector, prefer **"plugin: build ONE → lab"** — it pops a
+dropdown (the `pluginName` input in `.vscode/tasks.json`) so only the picked plugin
+rebuilds, not all of them. Adding a new connector folder means adding a line to that
+input's `options` list too (statically maintained — no dynamic listing).
+
+To breakpoint a plugin's code (not just run it), see **Debug a plugin with
+breakpoints** below — a plain build-to-lab run isn't debuggable.
+
+By hand:
+
+```bash
+# build the dev CLI from source (go.work resolves local pkg/plugin)
+go build -o /tmp/wick .
+cd plugins && /tmp/wick plugin build <key> --target $(go env GOOS)/$(go env GOARCH)
+# unzip the result and confirm the manifest verifies against the binary:
+#   unzip bin/<key>-*.zip -d /tmp/x  &&  the binary's plugin.json must pass VerifyManifest
+go test ./pkg/plugin/... ./internal/connectors/plugin/... ./cmd/cli/...
+```
+
+## Debug a plugin with breakpoints (reattach)
+
+A plugin runs as a separate gRPC subprocess wick-lab spawns, so a plain `wicklab`
+F5 can't breakpoint its code. Debug via **reattach**: dlv runs the plugin
+standalone and wick-lab attaches to it instead of spawning its own child.
+
+1. `.env`: `WICK_DEBUG_PLUGIN=<key>` (blank = normal spawn, no reattach).
+2. Breakpoint in the plugin's `service.go` / `repo.go` **op handler** — NOT in
+   `Module()` / `Operations()` / init (those run once at startup, before the
+   host ever dispenses, and just freeze the serve goroutine).
+3. Launch the **`lab + plugin debug`** compound (VSCode). It runs
+   `plugin debug (<key>)` (dlv on `plugins/connector/<key>`, env
+   `WICK_PLUGIN_REATTACH_OUT=bin/plugin-<key>.reattach.json`) + `wicklab`, and a
+   preLaunchTask installs the plugin's `{binary, plugin.json}` to the lab dir so
+   it registers and shows in the list.
+4. Trigger the op from the UI → breakpoint binds.
+
+The launch config's `program` hardcodes the plugin folder (vscode-go resolves
+`program` before `envFile`, so `${env:}` can't select it). To debug a different
+plugin, change BOTH the launch `program` and `.env` `WICK_DEBUG_PLUGIN`.
+
+**Mechanism** (`pkg/plugin/debug.go`, `internal/connectors/plugin/{manager,pool}.go`):
+`WICK_PLUGIN_REATTACH_OUT` makes `Serve` run in go-plugin test mode + write the
+reattach file. Host `reattachPathFor` resolves the path; `ReadReattachConfig`
+**dials the addr** for liveness so a stopped/relaunched debugger cleanly falls
+back to a normal spawn; `Manager.Client` takes over a spawned child when a live
+debugger appears (and reverts when it dies).
+
+**THE gotcha (cost ~1.5h once):** go-plugin SKIPS version negotiation on
+reattach, so it never copies the matching `VersionedPlugins` entry into
+`config.Plugins`. The dispense then fails with `unknown plugin type: connector`
+— which looks like a proto / build / dlv-pause problem but is none of those. FIX
+(already in tree): set `ClientConfig.Plugins = wickplugin.ReattachPluginSet()` on
+the reattach path. Regression test: `pkg/plugin/debug_reattach_test.go`
+reproduces the failure WITHOUT dlv — **when reattach misbehaves, write/run a
+no-dlv round-trip test first**, don't debug through the UI.
+
+**Operational rules that bite:**
+- Never stack processes. Before relaunch, kill ALL `wick-lab.exe`,
+  `__debug_bin.exe`, and `<key>.exe`. A stale wick-lab (locked binary) silently
+  runs OLD code — a rebuild that "can't overwrite bin/wick-lab.exe" means it's
+  still running.
+- `dlv debug` alone writes NO `plugin.json`, so the connector vanishes from the
+  list — always install to lab (the preLaunchTask / `plugin: build ONE → lab`)
+  so the manifest is present.
+- Build-to-lab scripts must resolve the lab home from `USERPROFILE`, not `$HOME`:
+  the VSCode task shell is msys2/zsh whose `$HOME` (`/home/<user>`) is a
+  DIFFERENT folder than `C:\Users\<user>` the Windows binary scans.

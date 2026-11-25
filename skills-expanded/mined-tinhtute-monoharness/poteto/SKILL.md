@@ -1,0 +1,39 @@
+---
+name: poteto
+version: "1.0.0"
+description: "Entry router: match a task to one of seventeen playbooks (feature, bug-fix, refactoring, perf, research, ship, ...) and run its skill steps as a todo list. Use when the route is unclear."
+argument-hint: "[task]"
+compatibility: Designed for Claude Code
+---
+
+Name the matched playbook first.
+
+Ask the user only through the agent's question tool (Claude Code `AskUserQuestion`, Codex `request_user_input`, Pi `ask_user_question`, Gemini CLI `ask_user`, omp `ask`): ≤4 per call, recommended option first and labelled `(Recommended)`; plain text only without one.
+
+| Task | Playbook |
+|---|---|
+| Build or change behavior | [playbooks/feature.md](playbooks/feature.md) |
+| Error, crash, failing test, regression | [playbooks/bug-fix.md](playbooks/bug-fix.md) |
+| Restructure code without changing behavior | [playbooks/refactoring.md](playbooks/refactoring.md) |
+| Slow, latency, memory, throughput regression | [playbooks/perf.md](playbooks/perf.md) |
+| Push one metric toward a target over many keep-or-revert attempts | [playbooks/hillclimb.md](playbooks/hillclimb.md) |
+| Decide a design by building throwaway variants | [playbooks/prototype.md](playbooks/prototype.md) |
+| Question, review, diagnosis, "how does X work"; nothing to change | [playbooks/investigation.md](playbooks/investigation.md) |
+| Web research, read sources, deep dive into a topic | [playbooks/research.md](playbooks/research.md) |
+| "Be ambitious", make a task deeper, "what would an expert do" | [playbooks/ambition.md](playbooks/ambition.md) |
+| Get PRs green, address review comments, "check on PR X" | [playbooks/babysit.md](playbooks/babysit.md) |
+| Land PRs, release, tag, publish, deploy, "is this worth a release" | [playbooks/ship.md](playbooks/ship.md) |
+| Resume, "where was I", an active plan exists | [playbooks/session-pickup.md](playbooks/session-pickup.md) |
+| Pause, "stop here", save state to resume later | [playbooks/pause.md](playbooks/pause.md) |
+| Learn from recent sessions, retrospective | [playbooks/retro.md](playbooks/retro.md) |
+| One in-session wave of parallel sub-agents, swarm | [playbooks/swarm.md](playbooks/swarm.md) |
+| Multi-day program of many units or PRs, "orchestrate" | [playbooks/orchestrate.md](playbooks/orchestrate.md) |
+| Carry a queue of PRs to verified (merge only in `full`), "autopilot" | [playbooks/autopilot.md](playbooks/autopilot.md) |
+
+Read the matched playbook. Open a todo list whose first items are its steps copied verbatim, in order. A step you choose not to do stays in the list as `skip: <reason>`; never drop it silently. No playbook fits → say so and ask which one applies.
+
+Each step names a skill; that skill owns the procedure. Resolve it through the host's skill metadata. If a required skill is unavailable, report the missing dependency and stop.
+
+Gated skill — `retro` — runs only from a playbook step here or when the user names it.
+
+Defer to: the skill each playbook step names; `git` only on the owner's explicit request.

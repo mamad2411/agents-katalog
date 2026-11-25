@@ -1,0 +1,20 @@
+---
+name: mcp-doc-scan
+description: >
+  Scan project and report documentation coverage. Finds undocumented
+  directories, stale manifest entries, and prioritized recommendations.
+user-invocable: true
+allowed-tools: Read, Glob, Grep, Bash
+argument-hint: "[path]"
+---
+
+# MCP Doc Coverage Scan
+
+This skill is a slash-command launcher. The authoritative workflow lives in the MCP Doc MCP prompt `mcp_doc_scan` and resource `mcp-doc://prompts/mcp-doc-scan`.
+
+1. Fetch the MCP prompt `mcp_doc_scan` with the caller-supplied host, current project path, and raw command arguments.
+2. If MCP prompts are not directly available, call MCP Doc MCP tool `get_prompt({ command: "mcp-doc-scan", host, project_path, arguments })` and follow the returned prompt text.
+3. The returned prompt may instruct you to call MCP Doc MCP tools or host-native file/shell tools. Use MCP tools for deterministic guidance when available.
+4. If the MCP Doc MCP server is unavailable, stop and tell the user to enable the MCP Doc MCP server for this plugin.
+
+Do not reimplement the workflow in this file; update the MCP prompt instead.

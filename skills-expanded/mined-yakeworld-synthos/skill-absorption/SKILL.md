@@ -1,0 +1,190 @@
+---
+name: skill-absorption
+description: 完整关键词轮转策略见 `references/keyword-rotation.md`。
+signature: 'skill-absorption -> intelligence-monitoring: synthetic skill for skill
+  absorption'
+allowed-tools:
+- terminal
+- read_file
+- write_file
+- session_search
+version: 1.0.0
+license: MIT
+metadata:
+  synthos:
+    atom_type: mechanical
+    description: 完整关键词轮转策略见 `references/keyword-rotation.md`。
+    signature: 'skill-absorption -> intelligence-monitoring: synthetic skill for skill
+      absorption'
+    priority: P2
+    synthos_version: 1.0.0
+    synthos_skill_md_hash: auto
+    synthos_asserted_compliance: P2,P3
+    synthos_mechanical_atoms: ''
+category: private
+---
+
+
+## IO_CONTRACT
+
+- **input**: 外部技能源扫描结果 — GitHub Topics API、Hermes skills/ 目录、arXiv 检索（关键词轮转策略见 references/）
+- **input**: 吸收目标评估 — 项目来源、stars、吸收能力、目标技能映射
+- **output**: 吸收记录 — evolution/absorption-{project}.md 五层吸收记录（13份）
+- **output**: absorption-ledger.json 台账更新 — tracking→evaluating→absorbed/deferred/archived 状态生命周期追加
+
+## 原则 (Principles)
+
+> **轮转而扫，常扫常新。** GitHub Topics 每轮、Hermes skills 每轮、arXiv 每 2 轮，按关键词轮转策略常扫，源不枯竭。
+> **台账统一，状态可溯。** 一切发现归 absorption-ledger.json 单一台账，tracking→evaluating→absorbed/deferred/archived 状态皆有记录可追。
+> **五层而录，不录不吸。** 吸收必留五层记录与报告，未录者不视为吸收——留痕者方算得进系统。
+
+--|
+| GitHub Topics | `curl -s "https://api.github.com/search/repositories?q=topic:..."` | 每进化轮次 |
+| Hermes Skills | `find skills/ -name 'SKILL.md'` | 每轮 |
+| arXiv | `arxiv.search(query, max_results=10)` | 每2轮 |
+
+完整关键词轮转策略见 `references/keyword-rotation.md`。
+
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[SKIL-008]** 多源扫描场景 → 执行关键词轮转策略，按不同频率（每轮/每2轮）扫描 GitHub、Hermes 及 arXiv 以确保持续发现新源
+- **[SKIL-009]** 发现新项目或技能 → 统一记录至 `absorption-ledger.json` 单一台账，确保所有发现状态可追溯
+- **[SKIL-010]** 项目状态变更 → 严格遵循 tracking→evaluating→absorbed/deferred/archived 生命周期进行状态流转与记录
+- **[SKIL-011]** 执行深度吸收操作 → 必须生成五层吸收记录（`evolution/absorption-{project}.md`），未留痕者不视为有效吸收
+- **[SKIL-012]** 吸收完成后 → 先写入详细记录文件，再汇总追加至统一台账，最后按 OpenClaw merge pattern 进行格式归一化
+- **[SKIL-013]** 处理外部输入或代码 → 执行输入参数、类型及范围校验，拒绝执行未验证的任意代码以保障安全
+- **[SKIL-007]** 验证吸收结果或改进 → 基于 Golden 集合（Input/Output/Error）进行可执行、可记录、可复现的测试验证
+
+## 项目追踪
+
+所有发现的项目存储在仓库根目录的 `absorption-ledger.json`。当前台账包含 **17 个吸收项目 + 2 个自我反射**，含来源、stars、吸收能力、目标技能、待完成项。
+
+**记录分布**（三层结构）:
+- `absorption-ledger.json`（根目录）— **统一台账**，每次吸收后追加
+- `skills/.../evolution/absorption-*.md` — 各项目的详细五层吸收记录（13份）
+- `references/*.md`（本技能下）— 分析级案例研究
+
+新增吸收后的操作流程:
+1. 详细记录 → 写入 `evolution/absorption-{project}.md`
+2. 汇总 → 追加到 `absorption-ledger.json`
+3. 格式归一化 → 按 OpenClaw merge pattern 处理
+
+状态生命周期：
+```
+tracking（已扫描/候选）
+  → evaluating（五维评分中）
+    → absorbed（已吸收，有记录文件）
+    → deferred（延后，有原因）
+  → archived（关闭，有原因）
+
+## 吸收报告模板
+
+每次深度吸收后保留吸收报告（见 `references/absorption-report-template.md`）。
+
+## 参考文件
+
+- `../../../../../../absorption-ledger.json` — **统一台账**（17个吸收项目+2个自我反射）
+- `references/absorption-gates-protocol.md` — L+0到L+3详细协议
+- `references/keyword-rotation.md` — 关键词轮转策略和分类
+- `references/absorption-report-template.md` — 吸收报告模板
+- `references/multi-project-comparison.md` — 多项目哲学对比矩阵
+
+## 验证清单 · VERIFICATION
+
+- [ ] 关键词轮转策略已按频率执行：GitHub Topics 每轮、Hermes skills 每轮、arXiv 每 2 轮（对照 references/keyword-rotation.md 核对实际扫描源）
+- [ ] 新发现项目已统一写入 `absorption-ledger.json` 台账，含来源、stars、吸收能力、目标技能字段
+- [ ] 台账条目状态在 tracking→evaluating→absorbed/deferred/archived 生命周期内，且状态变更留有记录
+- [ ] 深度吸收已生成五层吸收记录 `evolution/absorption-{project}.md`（未留痕者不视为有效吸收）
+- [ ] 吸收报告符合 `references/absorption-report-template.md` 模板
+- [ ] 执行顺序正确：先写详细记录文件 → 再追加统一台账 → 最后按 OpenClaw merge pattern 格式归一化
+- [ ] 外部输入/代码已校验参数、类型及范围，未验证的任意代码被拒绝执行
+- [ ] 吸收验证基于 Golden 集合（Input/Output/Error）执行，结果可记录、可复现
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 一个真实外部项目扫描结果 — 例如 GitHub Topics API 返回的某仓库（含 stars、README、skills/ 目录），经关键词轮转策略命中吸收目标（源: 本文件 IO_CONTRACT + 状态生命周期）
+- **Golden Output**: 三层记录全部落盘 — `evolution/absorption-{project}.md` 五层吸收记录 + `absorption-ledger.json` 追加条目（状态 ∈ tracking→evaluating→absorbed/deferred/archived）+ 吸收报告符合 `references/absorption-report-template.md`（源: 项目追踪/参考文件小节）
+- **Golden Error**: 输入含未验证的可执行代码片段时 → 按安全约束拒绝执行并记录上下文；台账状态非法跳转（如 tracking 直接到 absorbed 而无五层记录）→ 标记"未留痕不视为有效吸收"并回退状态（源: 约束规则 + SKIL-004/SKIL-006）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+# Skill Absorption---
+
+
+
+
+
+--|
+| GitHub Topics | `curl -s "https://api.github.com/search/repositories?q=topic:..."` | 每进化轮次 |
+| Hermes Skills | `find skills/ -name 'SKILL.md'` | 每轮 |
+| arXiv | `arxiv.search(query, max_results=10)` | 每2轮 |
+
+完整关键词轮转策略见 `references/keyword-rotation.md`。
+
+## 项目追踪
+
+所有发现的项目存储在仓库根目录的 `absorption-ledger.json`。当前台账包含 **17 个吸收项目 + 2 个自我反射**，含来源、stars、吸收能力、目标技能、待完成项。
+
+**记录分布**（三层结构）:
+- `absorption-ledger.json`（根目录）— **统一台账**，每次吸收后追加
+- `skills/.../evolution/absorption-*.md` — 各项目的详细五层吸收记录（13份）
+- `references/*.md`（本技能下）— 分析级案例研究
+
+新增吸收后的操作流程:
+1. 详细记录 → 写入 `evolution/absorption-{project}.md`
+2. 汇总 → 追加到 `absorption-ledger.json`
+3. 格式归一化 → 按 OpenClaw merge pattern 处理
+
+状态生命周期：
+```
+tracking（已扫描/候选）
+  → evaluating（五维评分中）
+    → absorbed（已吸收，有记录文件）
+    → deferred（延后，有原因）
+  → archived（关闭，有原因）
+
+## 吸收报告模板
+
+每次深度吸收后保留吸收报告（见 `references/absorption-report-template.md`）。
+
+## 参考文件
+
+- `../../../../../../absorption-ledger.json` — **统一台账**（17个吸收项目+2个自我反射）
+- `references/absorption-gates-protocol.md` — L+0到L+3详细协议
+- `references/keyword-rotation.md` — 关键词轮转策略和分类
+- `references/absorption-report-template.md` — 吸收报告模板
+- `references/multi-project-comparison.md` — 多项目哲学对比矩阵
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 一个真实外部项目扫描结果 — 例如 GitHub Topics API 返回的某仓库（含 stars、README、skills/ 目录），经关键词轮转策略命中吸收目标（源: 本文件 IO_CONTRACT + 状态生命周期）
+- **Golden Output**: 三层记录全部落盘 — `evolution/absorption-{project}.md` 五层吸收记录 + `absorption-ledger.json` 追加条目（状态 ∈ tracking→evaluating→absorbed/deferred/archived）+ 吸收报告符合 `references/absorption-report-template.md`（源: 项目追踪/参考文件小节）
+- **Golden Error**: 输入含未验证的可执行代码片段时 → 按安全约束拒绝执行并记录上下文；台账状态非法跳转（如 tracking 直接到 absorbed 而无五层记录）→ 标记"未留痕不视为有效吸收"并回退状态（源: 约束规则 + SKIL-004/SKIL-006）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+

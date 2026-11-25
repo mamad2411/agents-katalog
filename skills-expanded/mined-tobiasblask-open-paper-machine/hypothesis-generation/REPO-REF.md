@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tobiasblask/open-paper-machine (path: scientific-skills/hypothesis-generation/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Structured hypothesis formulation from observations. Use when you have experimental observations or data and need to formulate testable hypotheses with predictions, propose mechanisms, and design expe

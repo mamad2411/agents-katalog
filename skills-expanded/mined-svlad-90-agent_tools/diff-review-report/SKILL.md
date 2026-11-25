@@ -1,0 +1,90 @@
+---
+name: diff-review-report
+description: Generate GitHub-style HTML diff review reports with file-level and inline comments using the workspace agent_tools.tools.diff_report CLI. Use when reviewing a repository, PR, commit, git diff, working tree changes, or creating/updating annotated HTML review reports under a task report/diff directory.
+rule: agent_tools/rules/diff-reports.md
+---
+
+# Diff Review Report
+
+Prefer the Agent Workspace MCP `diff_report_*` tools when they are available
+in the active agent client. Use `tool_search` to discover them if they are not
+already visible. The CLI implementation at `agent_tools/tools/diff_report` is
+the fallback path when MCP tools are unavailable or when a workflow needs
+shell composition. Do not depend on a globally installed Codex skill for this
+workflow.
+
+Before generating or updating a report, read and follow
+`agent_tools/rules/diff-reports.md`; it contains the workspace-specific report
+policy, naming rules, refresh workflow, and requirements for diagrams, logs,
+story blocks, and reviewer prose.
+
+## Workflow
+
+1. Inspect the target repository and choose the diff source.
+   Use `--repo <repo> --range <base>..<head>` for committed changes, or
+   `--diff-file <patch>` when the report must include a prepared patch or
+   working-tree diff.
+2. Store the source `.patch`/`.diff`, comments `.json`, and generated `.html`
+   under the task's `report/diff/` directory.
+3. Create or update one canonical comments JSON with the same basename as the
+   HTML report.
+4. Render with MCP `diff_report_render`, `diff_report_render_json`,
+   `diff_report_init_comments`, or `diff_report_compose_findings` when
+   available. Otherwise run `python -m agent_tools.tools.diff_report` from the
+   workspace root.
+   Use PlantUML as the default format for AI-authored diagrams because it owns
+   layout and repeatable SVG rendering. Use draw.io only when the user
+   explicitly wants to manually edit the diagram from the report or continue
+   polishing it in diagrams.net. Draw.io editing support is included by
+   default for reports that contain writable draw.io artifacts. Pass MCP
+   `enable_drawio_editing=false` or CLI `--disable-drawio-editing` only for
+   public/static artifacts that should not probe the local feedback server.
+5. Verify the generated HTML contains the expected title, files, and comment
+   count with `rg`.
+6. When the source diff changes, regenerate with the existing comments JSON
+   and use the tool-assisted refresh path before manually changing anchors.
+
+## Commands
+
+Committed range:
+
+```sh
+python -m agent_tools.tools.diff_report \
+  --repo path/to/repo \
+  --range HEAD^..HEAD \
+  --comments task/report/diff/01-change.json \
+  --output task/report/diff/01-change.html \
+  --title "Commit 01 Review"
+```
+
+Prepared diff:
+
+```sh
+python -m agent_tools.tools.diff_report \
+  --diff-file task/report/diff/01-change.patch \
+  --comments task/report/diff/01-change.json \
+  --output task/report/diff/01-change.html \
+  --title "Commit 01 Review"
+```
+
+Static report without draw.io feedback probing:
+
+```sh
+python -m agent_tools.tools.diff_report \
+  --diff-file task/report/diff/01-change.patch \
+  --comments task/report/diff/01-change.json \
+  --output task/report/diff/01-change.html \
+  --title "Commit 01 Review" \
+  --disable-drawio-editing
+```
+
+## Checks
+
+After generation, verify the report instead of assuming success:
+
+```sh
+rg -n "review comments loaded|Commit 01|known comment title" task/report/diff/01-change.html
+```
+
+If comments are missing, first confirm that `comments.inline[].file` matches
+the diff path and `comments.inline[].line` is a rendered new-file line number.

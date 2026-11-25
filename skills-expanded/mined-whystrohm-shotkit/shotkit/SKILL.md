@@ -1,0 +1,278 @@
+---
+name: shotkit
+description: Run the whole Shotkit pipeline from one line of brief and open the board. Use when the user types /shotkit, or asks to "plan a video", "storyboard this and show me", "make a shot plan with prompts", or wants a storyboard, the prompts for their image or video generator and one page to see it all on. Also use when the user points at a folder of their own photos and clips, or says "use my footage", "make a video from these", "what can we make from this shoot". Plans the shots, writes the prompts, renders the board and opens it in a browser. For one step only, such as prompts for an existing shots.json or a check of one frame, use that step's own skill.
+---
+
+# Shotkit
+
+One line of brief in. A plan, prompts and an open board out.
+
+This skill runs the other five in order and puts the result on screen. The user should
+not have to know the skills' names, ask for each step, or go looking for files. They
+type a brief and a browser tab opens with every shot on it.
+
+## What the user sees
+
+1. They type a brief, for example `/shotkit 30-second founder explainer for our studio, 9:16`.
+2. About two minutes later a browser tab opens: the board, with every shot on a timeline
+   and a contact sheet.
+3. The board fills in with a prompt for each shot.
+4. Your reply is short: what was made, what you assumed, and the one next step.
+
+## Where the tools are
+
+Use the first of these that exists, and write it as `SK` below:
+
+| Installed how | `SK` | Brand packs |
+|---|---|---|
+| `./install.sh` | `~/.claude/shotkit-tools/sk` | `~/.claude/shotkit-brand-packs/` |
+| `./install.sh --project` | `./.claude/shotkit-tools/sk` | `./.claude/shotkit-brand-packs/` |
+| As a plugin, or from a clone | `tools/sk`, two folders above this skill's own folder | `brand-packs/`, beside `tools/` |
+
+Where another Shotkit skill writes `~/.claude/shotkit-tools/sk` or
+`~/.claude/shotkit-brand-packs/`, use the row that matches this install.
+
+If none exists, the skills were copied without the tools. Tell the user, and offer to run
+`git clone https://github.com/whystrohm/shotkit.git && cd shotkit && ./install.sh`.
+
+`SK` needs no setup: the checks make their own Python environment the first time they
+run.
+
+## Steps
+
+### 1. Read the brief and fill the gaps yourself
+
+Take from the brief: what the video is for, who it is for, the length, the aspect ratio,
+the brand, and the generators the user names.
+
+Do not stop to ask for what a sensible default covers. State each default in your final
+reply so the user can change it.
+
+| Missing | Use |
+|---|---|
+| Length | 30 seconds |
+| Aspect | 9:16 when the brief says Reels, Shorts, TikTok, Stories or "vertical"; otherwise 16:9 |
+| Framework | the one `storyboard-architect` would pick for this brief |
+| Voiceover | on-screen text only, unless the brief mentions a speaker or a script |
+| Sound | none planned and clips silent, unless the brief asks for music, sound effects or clips with sound. Then fill `project.audio` as `storyboard-architect` describes |
+| Generators | Flux for stills and Kling for motion |
+
+Ask one question, and only one, when the brief does not say what the video is about.
+
+Record where each item came from in `run.json`, under `brief_sources`, as
+`storyboard-architect` describes: `given` for what the brief or the user's files said,
+`suggested` for every default from the table above, `to_confirm` for anything the user
+has to settle before real work, such as the starter brand.
+
+### 2. Settle the brand
+
+In this order, first match wins:
+
+1. A brand lock the user names, or a `brand-lock.md` or `brand/*.md` in the project.
+2. A site URL, a PDF or screenshots in the brief: run `brand-lock-extractor` on them
+   and save the result as `brand/<name>.brand-lock.md`.
+3. A pack named in the brief, from `~/.claude/shotkit-brand-packs/`.
+4. None of these: use `~/.claude/shotkit-brand-packs/_starter.md`. Set
+   `brand_lock_configured: false` in `run.json`. Do not invent a palette for a real
+   company, and do not put the company's name on a palette you made up.
+
+When the run used the starter, say so in your reply and ask for the site address, a
+brand book PDF or screenshots, so `brand-lock-extractor` can write the real lock. Do not
+ask the user to fill in `_template.md`. That is the manual route, for a user who asks to
+set every value by hand.
+
+### 3. Plan the shots
+
+Follow `storyboard-architect` and write its five files into `./output/`. If `./output/`
+already holds a run, write to `./output-<short-name>/` instead and say so. Never
+overwrite a run.
+
+Then check them:
+
+```bash
+SK validate output/
+```
+
+Fix what it reports and run it again until it passes.
+
+### 4. Open the board
+
+Start the live board in the background, so it stays up while you work and reloads by
+itself as files land:
+
+```bash
+SK board output/ --serve --open
+```
+
+Run that as a background command. If you cannot run background commands, write the page
+and open it instead:
+
+```bash
+SK board output/ --open
+```
+
+Tell the user in one line that the board is open.
+
+### 5. Write the prompts
+
+Follow `visual-prompt-forge` for the generators from step 1. Then:
+
+```bash
+SK validate output/
+SK board output/
+```
+
+A live board reloads on its own. The second command keeps `output/board.html` current
+for when the live board is closed.
+
+### 6. Report
+
+Keep it short. The board carries the detail.
+
+- One line: what was made and where (`output/`, and the board address or path).
+- The defaults you used, as a short list: every item tagged `suggested` in
+  `brief_sources`. Then anything tagged `to_confirm`, as a question the user can answer
+  in one line.
+- The next step, which is the one the board shows: make the frames from the prompts.
+  Say the three ways: paste each prompt into a generator, drop frames on the live board,
+  or say "make the frames on fal" to have Shotkit make them with their fal key.
+
+## Starting from the user's own photos and clips
+
+Use this route when the brief names a folder, when files were dropped on the board
+(`output/media/media.json` exists), or when the user says the footage is theirs. The
+plan is built around what they have. A generator only fills what is missing.
+
+1. **List it.**
+   ```bash
+   SK media scan <their folder> --out output/
+   ```
+   Their files are never moved or changed. Each one gets an id (`m01`, `m02`) and a
+   thumbnail in `output/media/thumbs/`. A clip gets three: first, middle and last frame.
+2. **Look at every file.** Read each thumbnail with the Read tool. Do not plan from file
+   names. For each item write one or two plain sentences into its `note` in
+   `output/media/media.json`: what is in it, where the subject sits, what in it is
+   usable and what is not (soft focus, a logo, a face, shake, bad light). For a clip say
+   which seconds are the good ones. Describe only what you can see.
+3. **Plan around it.** Follow `storyboard-architect`, with these additions in
+   `shots.json`:
+   - A shot that uses their media: `"source": {"type": "own", "media": "m03"}`. For a
+     clip add `"in"` and `"out"` in seconds, cut to the shot's length.
+   - Put the strongest picture where the framework needs it most, usually the first shot
+     and the payoff. Not every file has to be used. Leave weak ones out.
+   - A shot the story needs and the folder does not have:
+     `"source": {"type": "generate", "why": "<what is missing>", "model": "flux"}`.
+     Keep gaps few. Each one costs the user money or a reshoot.
+   - Two of their shots that do not cut together (a jump in place, scale or light): add
+     a short bridge between them,
+     `"source": {"type": "generate", "why": "...", "model": "kling", "start": "shot_03", "end": "shot_05"}`.
+     The clip starts on the last frame of `start` and ends on the first frame of `end`.
+   - Write each `subject` from what the picture shows, so the check has something true
+     to compare with.
+   - Take the series lock (place, light, grade) from their footage, not from the brand
+     pack's defaults, so generated shots match what was shot.
+4. **Place it and open the board.**
+   ```bash
+   SK media place output/
+   SK validate output/
+   SK board output/ --serve --open
+   ```
+5. **Write prompts for the gaps only.** Follow `visual-prompt-forge` for shots whose
+   source is `generate`. For a gap, describe the missing picture in the look of the
+   user's footage. For a bridge, write a motion prompt: how the camera or the subject
+   gets from the first picture to the second, and nothing that is in neither.
+6. **Report.** How many of their files were used and on which shots, which were left out
+   and why in a few words, and the gaps with the reason for each. The next step is the
+   one on the board: fill the gaps. Offer the three ways: shoot it, make it in their own
+   generator, or `SK generate` with their fal key. The cost rule below applies.
+
+If the folder is empty or holds nothing Shotkit can read, say so and stop. Do not plan a
+generated video and call it theirs.
+
+## Frames drawn in code (designed frames)
+
+Use this for a shot that shows interface, data or words: a screen of the user's product,
+a list, a number, a quote, a notice, a logo card. A generator cannot spell and has never
+seen their product. Also use it when the user says "draw the screens", "do not generate
+it", "make it from the brand".
+
+1. In `shots.json` give the shot `"source": {"type": "design", "card": "<kind>"}`.
+   Run `SK design --kinds` for the kinds and their fields: `lines`, `list`, `detail`,
+   `action`, `notices`, `mark`, `stat`, `quote`.
+2. Write the card to `output/design/cards.json`, under the shot's id. Put in only what
+   the user gave you or confirmed. Never invent a customer, a number or a feature. If you
+   need an example value, say it is an example and ask for the real one.
+3. Keep the on-screen text out of the card. Text is still composited from
+   `text-overlays.json`, and the panel is placed where that text is not.
+4. Draw and check:
+   ```bash
+   SK design output/
+   SK validate output/
+   SK board output/ --serve --open
+   ```
+5. Review each frame with `visual-asset-critic`. In the critique set `prompt_ref` to
+   `design/cards.json` with its hash, and `generator`, `model_version` and `seed` to null.
+6. To change a frame, edit its card and run `SK design output/` again. Do not write a
+   prompt for a designed shot, and `SK generate` skips it.
+
+Mix freely: designed frames for the screens, the user's footage or a generator for the
+people and places.
+
+## Later turns
+
+The user comes back with frames, or asks for changes. Do the step and refresh the board
+every time, without being asked:
+
+| The user says | Do |
+|---|---|
+| "check the frames", or frames have appeared in `output/frames/` | `visual-asset-critic` on each new frame, then `SK board output/` |
+| "revise", or the board says a shot needs another pass | `visual-prompt-forge` in revision mode, then `SK board output/` |
+| "add Midjourney", or names another generator | `visual-prompt-forge` for that generator, then `SK board output/` |
+| "make the frames", "generate", names fal | See "Making frames and clips" below |
+| "make the clips", "animate these" | `SK generate output/ --model kling`, same rule |
+| "I approve", "the client signed off", names who approved | `SK approve output/ --by "<their name>"`, with `--what frames` for the frames, then `SK board output/`. Only when a person says so, and with the name they give. Never approve on your own, and never invent a name |
+| "a shot list", "for the editor", "an EDL", "subtitles", "hand this to my editor", "what do I shoot" | `SK export output/ edit`. It writes `shot-list.csv` in a crew's words, `text.srt` and `cut.edl` to `output/export/edit/`. Needs nothing installed |
+| "draw the screens", "do not generate it", "make it from the brand", or a shot that shows interface, data or words | See "Frames drawn in code" |
+| "export", "give me the stills", "a carousel", "a deck", "a PowerPoint", "a rough cut", "something I can play" | `SK export output/ stills`, `deck` or `cut`, or `SK export output/` for everything. Say where the files are (`output/export/`) and repeat what the tool reports as left out or skipped. Stills need Chrome, Edge, Brave or Chromium. The cut needs `ffmpeg`. If one is missing, say which and that the deck still works |
+| "use my photos", names a folder, or files were dropped on the board | See "Starting from the user's own photos and clips" |
+| "fill the gaps", "make the bridges" | `SK generate output/ --model flux` for stills, `--model kling` for bridges, same rule. Shots on the user's own media are skipped. |
+| "open the board" | `SK board output/ --open` |
+| "send this to the client" | `SK preview output/`, and give them `output/preview.html` |
+
+## Making frames and clips
+
+Shotkit can send its prompts to fal.ai with the user's own key. It costs them money, so
+it never runs on its own.
+
+1. Show the plan. It spends nothing:
+   ```bash
+   SK generate output/ --model flux
+   ```
+   Use the generator the prompts were written for. For video use a video model
+   (`kling`, `seedance`, `hailuo`); it starts from each shot's frame, so stills come
+   first.
+2. Tell the user how many requests it would send and to which model, and that fal bills
+   their account at the price on that model's page. Ask for a yes. Do not state a price
+   yourself. Clips are made silent unless `project.audio.clips_have_sound` is true in
+   `shots.json`. When it is, the plan shows `generate_audio=True`. Say that the clips
+   will carry sound and that some models bill more for it. If the user asks for sound
+   after the plan is written, add `--sound` to the command. Never edit `shots.json` to
+   switch it on: the file is pinned by hash in `run.json` and the edit fails validation.
+3. On a yes, run it with `--yes`. If it reports no key, tell them: make a key at
+   fal.ai/dashboard/keys and put `FAL_KEY=...` in a `.env` file in this folder. Never ask
+   them to paste the key into the chat.
+4. When it finishes, check the new frames with `visual-asset-critic`, then
+   `SK board output/`.
+
+To use a model that has no generator name: `SK generate --list <words>` searches fal's
+models, and `--model <fal id> --prompts <generator>` sends that generator's prompts to it.
+
+## Rules
+
+- The board opens without the user asking. That is the point of this skill.
+- Never claim a frame exists that is not on disk.
+- Never move, rename, edit or delete the user's own media. Shotkit works on copies.
+- Never describe a photo or clip you have not looked at.
+- Never spend the user's money without a yes. A generation run costs them on fal.
+- Never put a fact, a number, a price or a customer on screen that the brief did not give.
+- Never overwrite a finished run.

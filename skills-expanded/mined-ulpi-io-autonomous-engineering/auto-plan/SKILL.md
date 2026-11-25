@@ -1,0 +1,284 @@
+---
+name: auto-plan
+version: 0.1.0
+disable-model-invocation: true
+user-invocable: true
+description: |
+  Turn a spec into a self-reviewed DAG of atomic build tasks: each task gets acceptance criteria, a disjoint write scope (≤3 files), and a slice-scoped validate; dependencies are wired and layered topologically so nothing builds on a missing base. Adversarial critics then attack the graph (cycles, phantom paths, coverage vs spec, task independence) until it is clean. Writes .ulpi/plans/<name>.json. Use when a spec needs an implementable, ordered breakdown before building.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - Agent
+  - Workflow
+effort: high
+argument-hint: "<spec path, or the feature to plan (will look for .ulpi/spec/*)>"
+arguments:
+  - spec
+when_to_use: |
+  Use when you have a spec (from auto-spec or supplied) and need an implementable, ordered task breakdown
+  before building. Do NOT use to define WHAT to build (that's auto-spec) or to write code (auto-build);
+  and do NOT plan from a vague, untestable spec — send it back to auto-spec first, since a plan can only
+  be as grounded as the spec it decomposes.
+---
+
+<EXTREMELY-IMPORTANT>
+A plan's job is to make the build safe and parallelizable; a bad graph makes the build fail on a broken
+base. Non-negotiable:
+1. GROUND EVERY TASK IN THE REAL REPO. File paths, modules, and validate commands must reference things
+   that exist (or that an earlier task creates). No phantom paths — the build will try to touch them.
+2. TASKS ARE ATOMIC AND INDEPENDENTLY VERIFIABLE. Each task has ONE coherent change, a DISJOINT write
+   scope, and a validate command that can go green once that slice + its dependencies integrate. If two
+   pieces cannot each validate on their own, they are ONE task — not two.
+3. THE GRAPH IS ACYCLIC AND TOPOLOGICALLY LAYERED. Every task lists its `dependsOn`; `layers` must be a
+   topological order (each task strictly after everything it depends on). A cycle or a mis-order is a
+   PLAN defect to fix, never something the build should paper over with a retry.
+4. DEPENDENCY MEANS "NEEDS ITS OUTPUT". If task B needs A's migration/route/exported symbol/registry row,
+   B `dependsOn` A. Getting this wrong makes the build construct on a missing base.
+5. FAIL CLOSED. The self-review loop exits only when the graph is clean OR it stalls — a stalled review
+   reports the remaining defects; it never signs off a graph it couldn't validate.
+</EXTREMELY-IMPORTANT>
+
+# Auto Plan
+
+## Overview
+
+Decompose a spec into the smallest set of build tasks that can each be implemented, tested, and committed
+on their own, wired into a dependency DAG and layered so the build walks it safely and parallelizes where
+the graph allows. The plan is self-reviewed to catch the defects (cycles, mis-ordering, fat tasks,
+phantom paths) that would otherwise surface as build failures.
+
+## Phase 0: Require and read the spec; ground in the repo
+
+- Resolve the spec (`$spec` path, or the newest `.ulpi/spec/*`). If none, or if it's vague/untestable,
+  STOP and route back to `auto-spec` — a plan inherits the spec's groundedness.
+- Require the independent, write-once intake snapshot and read its **Binding selected scope** checklist.
+  The plan's `selectedScope[]` is an exact copy, not its own authority. If the spec or plan omitted,
+  changed, or added an id/title/source, keep the mismatch visible and route it back for correction.
+- Read the repo to ground the plan: existing structure, modules, build/test commands, the workspace
+  validate, and the load-bearing invariants.
+- **Honor the prior-run lessons already in your loaded context** — `auto-learn` writes plan-shape
+  lessons into CLAUDE.md and `.claude/rules` (which Claude Code loads automatically), so a task pattern
+  that blocked last run is a BINDING input here: decompose it differently, don't re-attempt it verbatim.
+- Open a `checkpoint-resume` run.
+
+**Success criteria:** a testable spec is loaded; the repo's structure + validate commands are known.
+
+## Phase 1: Decompose into atomic tasks
+
+Break the spec's acceptance criteria into tasks. Each task carries:
+
+- `id` + a one-line title;
+- **acceptance criteria** — from the spec, the subset this task satisfies (testable);
+- **scope mapping** — `scopeItems[]`, the selected-scope ids this task covers (technical support tasks may
+  map none, but every selected id must map to at least one task);
+- **write scope** — the files/dirs it may modify (disjoint from sibling tasks in the same layer);
+- **validate** / **validateCommand** — a human-readable slice-scoped command that explains the proof
+  (greenable once this slice + deps integrate; never a whole-suite e2e that only passes at end-state);
+- **validateExec** (executable plans only) — the actual inert argv authority:
+  `{command,args,cwd,envAllowlist,timeoutMs}`. It is parsed identically by planning, approval, and runtime;
+  no shell command string is executed;
+- **specialist routing** — `agent` / `skill` / `reviewer` chosen for this task (see below; null when
+  nothing fits and the build should run generic);
+- notes / patterns to follow.
+
+### Assign a specialist per task (match the INSTALLED set by description, not by name)
+
+For each task, pick the best-fit specialist FROM WHAT IS ACTUALLY INSTALLED — the subagent types in
+your options and the domain skills in your available-skills list. **Match on the agent's/skill's own
+description of what it does and when to use it, never on its name**: a user's Next.js specialist might
+be called `frontend-wizard` and their Rust one `crab`, so read what each is FOR and route the task to
+the one whose description fits the work (a Next.js page task → the agent/skill for React/SSR; a
+migration → the DB/framework specialist; a UI/design task → the design skill; and so on). Record on the
+task: `agent` (the installed subagent to build it), `skill` (the installed domain/design skill the
+engineer should invoke for correct patterns), and `reviewer` (the installed specialist to review it) —
+each the real installed name, or **null** when nothing genuinely fits (the build then runs a general
+engineer). Never invent an agent/skill that isn't installed, and never route on a guessed name.
+
+Keep tasks thin: a task should be a single vertical slice with **at most 3 write-scope entries** (files or
+dirs) — split anything bigger; MERGE two that can't validate independently. Four planning failure modes to design out per task:
+
+- **Capability providers** — a task claiming a side effect (persistence, network I/O, registration,
+  queueing) must STATE where that capability comes from (an existing module, or the task that provides
+  it as a dependency). A capability from nowhere is a phantom.
+- **Export/registration ownership** — every NEW file needs a named owner for its export/barrel/registry/
+  router wiring: this task or a specific dependent. Unowned wiring is how "done" tasks ship dead code.
+- **Semantic-hardening splits** — if a task could be "completed" with placeholders or dead wiring, split
+  the semantic hardening into an explicit follow-up task; never let structure-only pass as behavior.
+- **No vague contract language** — "graceful degradation", "eventually consistent", "internal update"
+  are banned unless the task defines owner, concrete behavior, and recovery path.
+
+Make the display `validate` genuinely slice-scoped in COMMAND FORM, not just intent: scope it to the task's
+own test files (e.g. `pnpm --filter <pkg> exec vitest run <file>` — NOT `pnpm --filter <pkg> test --
+<file>`, where the `--` makes vitest ignore the positional and run the whole package, leaking unrelated
+failures into this task's gate). For an executable plan, encode that same command without shell parsing in
+`validateExec` (for example `{"command":"pnpm","args":["--filter","<pkg>","exec","vitest","run","<file>"],"cwd":"worktree","envAllowlist":[],"timeoutMs":120000}`). Every test file it runs must be in this
+task's writeScope or guaranteed green by an integrated dependency. Also add top-level
+`finalValidateExec` for the independent whole-workspace end-state gate.
+
+**Success criteria:** a set of atomic tasks, each with criteria, disjoint write scope, and a slice-scoped
+validate.
+
+## Phase 2: Wire the DAG and layer it
+
+- For each task, set `dependsOn` = the tasks whose OUTPUT it needs (a migration it reads, a route it
+  extends, a symbol it imports, a test another task grows).
+- Compute `layers`: a topological order where every task appears strictly after all it depends on. Tasks
+  within a layer must be independent (disjoint write scope) so the build can run them in parallel.
+- Verify the graph is acyclic.
+
+Write ONE canonical artifact: `.ulpi/plans/<name>.json`, including top-level `selectedScope[]`, task-level
+`scopeItems[]`, top-level `scopeDrops[]`, and — for executable plans — top-level `finalValidateExec`. A
+drop record is valid only after the user separately
+acknowledges that exact id and the record contains `acknowledgedByUser: true` plus the acknowledgement
+evidence; general plan approval is not evidence. There is deliberately NO stored markdown
+twin — a second artifact is a drift class (the copies diverge and the validator only gates one). The
+human view is DERIVED on demand:
+`node <skill-dir>/scripts/validate-plan.mjs <plan.json> --intake <absolute-snapshot.json> --render`
+prints the layered, checklisted markdown — use its OUTPUT in-conversation when presenting the plan
+(e.g. the approval gate); it can never disagree with what the build will execute. NEVER write the
+rendering to a file unless the user explicitly asks for one — an unrequested .md on disk is exactly
+the drift-prone twin this design deletes.
+
+**Success criteria:** a complete `{tasks[], layers[][]}` graph — acyclic, topologically ordered,
+intra-layer independent.
+
+## Phase 2.5: Run the structural gate — it is CODE
+
+```bash
+node <skill-dir>/scripts/validate-plan.mjs .ulpi/plans/<name>.json --intake <absolute-snapshot.json>
+```
+
+The DAG's safety properties are deterministic, so they are enforced by script, not prose: acyclicity,
+topological layer order (nothing builds on a missing base), intra-layer write-scope disjointness
+(prefix-aware), the ≤3-entry atomicity cap, ≥2 acceptance criteria per task, and BLOCKING on whole-suite
+e2e validates (a bare `playwright test`/`cypress run`). The ambiguous `<runner> test -- <file>` form is a
+non-blocking WARNING — it is the vitest footgun but ALSO canonical for Jest, and the gate can't know the
+runner, so it advises an explicit runner rather than blocking a correct plan. Exit 1 = fix the graph and
+re-run until 0. The critics below argue SEMANTICS; this script owns STRUCTURE.
+
+It also owns intake fidelity plus binding-scope coverage for executable plans: `--intake` is mandatory;
+plan `selectedScope[]` must exactly match the snapshot's ids/titles/sources; `task.scopeItems[]` and
+`scopeDrops[]` may reference only snapshot ids; duplicates fail; and every intake id must be task-mapped
+or separately user-acknowledged in `scopeDrops[]`. Missing/changed intake ids and unacknowledged drops exit 1.
+
+### Executable plans (coordinator-run) get HARDENED checks
+
+A plan is **executable** when a coordinator will construct a git worktree/branch from each task's `id`
+and execute validation — i.e. `auto-build`'s per-task contract or the deterministic pipeline coordinator.
+The gate treats a plan as executable when it opts in explicitly (`"executable": true`, or `"mode"` one of
+`executable`/`expansion`/`codex`) or implicitly carries any `validateExec`, `finalValidateExec`, or legacy
+coordinator `validateCommand`. A purely descriptive plan (tasks carry only display `validate`, never reach
+git/exec) is NOT executable and these extra checks skip it.
+
+For an executable plan, the gate additionally enforces (each failure carries task-specific evidence):
+
+- **Safe task ids (path/shell-inert).** An executable `id` is constructed into
+  `git worktree add -b task/<id>` and a worktree filesystem path, so it must match the safe charset
+  **`^[A-Za-z0-9][A-Za-z0-9_-]*$`** — only `[A-Za-z0-9_-]`, and it MUST start with an alphanumeric.
+  Canonical form: **`TASK-<n>`** (e.g. `TASK-001`). This bars path traversal (`../`), shell
+  metacharacters (spaces, `;`, `$`, backticks), and a leading `-` (which git would read as a flag) from
+  ever reaching worktree/branch construction. An unsafe id is a BLOCKING violation — rename the task.
+- **Display validate (normalized).** `validateCommand` and legacy `validate` normalize to one trimmed
+  human-readable slice command (`validateCommand` preferred). It is checked for slice/end-state mistakes
+  but is never passed to a shell.
+- **Execution descriptors (required).** Every executable task carries `validateExec`, and the plan carries
+  `finalValidateExec`. Each is exactly `{command,args,cwd,envAllowlist,timeoutMs}` and must pass the shared
+  provider-neutral parser. Empty/flag-like/compound commands, non-string args, cwd traversal, unknown or
+  unapproved environment names, unsafe timeouts, missing fields, and unknown fields are blocking. The
+  runtime executes command + args with `shell:false` inside the assigned worktree.
+- **Required execution fields present.** Every executable task must carry the fields the coordinator
+  needs to run it: a nonempty **`writeScope[]`**, **≥2 acceptance criteria**
+  (`acceptance`/`acceptanceCriteria`), and one nonempty **slice validate command**. A missing field is a
+  BLOCKING violation.
+- **End-state-only validate is refused.** Beyond the bare-e2e block above, an executable task's validate
+  that is a bare whole-suite runner with NO task slice (e.g. `pnpm -w test`, `npm test`, `jest`,
+  `vitest run`, `go test ./...`, `pytest`) only greens at end-state, so the slice always looks red
+  mid-build — BLOCKING. A compound command that references a slice file/path (e.g.
+  `node scripts/validate-skills.mjs && bash scripts/test-plan-validate.sh`) is correctly NOT flagged.
+
+## Phase 3: Adversarial self-review (converge until clean)
+
+Run `converge-loop` with `adversarial-verify` critics attacking the plan each round:
+
+- **acyclicity + topological order** — any task ordered before a dependency? any cycle?
+- **phantom paths** — any write scope / validate referencing something that doesn't (and won't) exist?
+- **task independence** — do two same-layer tasks share write scope (a race)? does a task secretly need
+  another's output without a `dependsOn`?
+- **atomicity** — is a task actually two changes? Can each task's validate really go green at its slice?
+  If two can't validate independently, MERGE them.
+- **coverage** — does the union of `task.scopeItems[]` cover the entire intake `selectedScope[]`, even if
+  the spec under-covered it? Flag every id with no task as `UNCOVERED`. Also check spec criteria, but never
+  use spec coverage as a substitute for intake coverage.
+
+Fix findings in the JSON (the only artifact); re-review; exit clean or report the remaining defects.
+
+**Success criteria:** the graph passes every check, or the loop reports the specific unresolved defects.
+
+## Phase 4: Finalize
+
+Close the checkpoint; report the plan location, task count, layer count, and the parallelism the graph
+allows (widest layer). This plan is the input to `auto-build`.
+
+**Success criteria:** a clean, self-reviewed plan is written and ready to build.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "This task is a bit big but splitting is annoying." | A fat task can't be verified or rolled back cleanly. Split it, or the build inherits the mess. |
+| "These two touch the same file but should be fine in parallel." | Same write scope in one layer is a race. Separate layers or merge them — don't hope. |
+| "I'll let the build figure out the order at runtime." | Order is a plan property. A runtime retry building on a missing base is not ordering. |
+| "The validate can be the full e2e suite." | A whole-suite validate only greens at end-state, so every slice looks broken. Make validate slice-scoped. |
+| "The self-review found nothing, one pass is enough." | Cycles and phantom paths hide. Loop until a review pass is genuinely clean. |
+| "Two tasks that can't validate alone is fine, they're logically separate." | If neither is independently greenable, they are one unit of work. Merge them. |
+| "The plan covers the whole spec, so scope is covered." | The spec or plan can be the thing that shrank. Compare both to the independent intake snapshot; every missing/changed id is blocking. |
+
+## Red Flags
+
+- A task's write scope or validate points at a path nothing creates.
+- Two tasks in the same layer writing the same file.
+- A task ordered before something it depends on (or a cycle).
+- A validate command that's the full test suite rather than a slice.
+- An executable task without a valid `validateExec`, or an executable plan without `finalValidateExec`.
+- Spec acceptance criteria with no task covering them.
+- A selected-scope id with no `task.scopeItems[]` mapping, or a drop inferred from general plan approval.
+- The self-review loop ran once.
+
+## Guardrails
+
+- Never emit phantom paths or ungrounded validate commands.
+- Never make a command string execution authority; executable validation is an exact inert argv
+  `validateExec`/`finalValidateExec` descriptor parsed by the shared gate.
+- Never create a task touching more than 3 files, claiming an unsourced capability, leaving a new file's
+  export/registration unowned, or hiding placeholder-completable work without a hardening follow-up.
+- Never put dependent or write-scope-overlapping tasks in the same layer.
+- Never order a task before its dependencies; never ship a cyclic graph.
+- Never leave a spec criterion uncovered by some task.
+- Never leave a selected-scope id uncovered. A drop requires a separate per-id user acknowledgement;
+  approving the plan never implies one.
+- Never sign off a plan the self-review couldn't make clean — report the defects.
+
+## When To Load References
+
+- `scripts/validate-plan.mjs` — the deterministic structural gate (Phase 2.5), CI-tested by
+  `scripts/test-plan-validate.sh`. auto-build's preflight and the pipeline preflight run it too — a plan
+  that fails it never builds.
+- `adversarial-verify` (skill) — the plan critics in Phase 3.
+- `converge-loop` (skill) — the until-clean review loop.
+- `checkpoint-resume` (skill) — durable plan-run state.
+
+## Output Contract
+
+Report:
+
+1. plan path (`.ulpi/plans/<name>.json` — single canonical artifact), independent intake snapshot
+   path/hash, task count, layer count
+2. the DAG shape — dependency edges and the widest parallel layer
+3. **SCOPE COVERAGE: N of M selected-scope items covered**, with covered ids, explicit per-id drops, and
+   every `UNCOVERED` id; then spec-coverage confirmation
+4. self-review outcome (rounds to clean, or the remaining defects)
+5. specialist routing — which installed agents/skills tasks were matched to (and the tasks left generic)

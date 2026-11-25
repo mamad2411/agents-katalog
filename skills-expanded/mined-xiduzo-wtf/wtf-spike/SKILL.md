@@ -1,0 +1,172 @@
+---
+name: wtf.spike
+description: This skill should be used when a developer or tech lead needs to investigate a technical unknown before committing to an approach — for example "run a spike on X", "I need to research this before writing the epic", "we don't know how to approach this yet", "investigate if we can use X for Y", "time-box this exploration", "what's the right architecture for this?", or "should we use A or B?". Produces a findings document and a concrete recommendation that feeds directly into write-epic or write-trace.
+---
+
+# Spike
+
+Run a time-boxed technical investigation.
+
+This skill turns an unknown into a decision.
+It produces concrete findings and a recommendation.
+The team can then write specs with confidence rather than guess.
+
+## Process
+
+### 0. GitHub CLI setup
+
+Run steps 1–2 of `../references/gh-setup.md` (install check and auth check).
+Stop if `gh` is not installed or not authenticated.
+Extensions are not required for this skill.
+
+Skip this step if gh-setup was already confirmed this session.
+
+### 1. Define the question
+
+If the user described the investigation in their request, extract the core question from it.
+Otherwise call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "What question should this spike answer?"
+- header: "Spike question"
+- options: specific questions inferred from any context provided (e.g. linked Epic, conversation)
+
+The question must be specific and answerable.
+Scope it to a decision the team actually needs to make.
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "How much time should this spike take?"
+- header: "Time box"
+- options:
+  - **1 hour** → quick feasibility check
+  - **Half day** → moderate investigation
+  - **1 day** → deep dive with proof of concept
+
+### 2. Identify the linked issue (optional)
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Is this spike linked to an existing issue?"
+- header: "Linked issue"
+- options:
+  - Candidates from open Epics/Features — list per the **List issues of a kind** (several kinds) query in `../references/issue-classification.md`. Use `--label "epic,feature"` in labels mode. Use `--search 'type:"Epic" OR type:"Feature"'` in types mode.
+  - **No linked issue** — standalone investigation
+
+If linked: fetch the issue to extract domain context, constraints, and success metrics that inform the investigation scope.
+
+### 3. Research
+
+Run all research in parallel using the Agent tool:
+
+**Codebase exploration:**
+- Search for existing implementations, prior attempts, or ADRs addressing the same question (domain nouns, patterns, imports)
+- Load `docs/steering/TECH.md` per the **best-effort consumer-side load** in `../references/steering-doc-process.md` for constraints that rule out certain approaches
+- Identify integration points and dependencies the solution must respect
+
+**External research (if available):**
+- Use WebSearch/WebFetch for relevant documentation, benchmarks, or known trade-offs
+
+Synthesise findings internally.
+Do not dump raw research at the user.
+
+### 4. Derive 2–3 concrete approaches
+
+For each approach:
+
+- **Name**: short label (e.g. "Redis session store", "In-memory with TTL")
+- **Summary**: one sentence describing what it involves
+- **Pros**: 2–3 concrete advantages relevant to this codebase and constraints
+- **Cons**: 2–3 concrete risks or costs
+- **Effort estimate**: rough implementation cost (hours or days)
+- **Fit with TECH.md**: does it align with the established stack and patterns?
+
+### 5. Recommend
+
+State a single recommendation:
+
+> "Recommend [Approach N] because [1–2 key reasons]. Main risk: [X], mitigated by [Y]."
+
+If evidence is genuinely ambiguous or the spike revealed the question is harder than expected, say so clearly.
+Recommend a proof of concept or a follow-up spike with a narrower question.
+
+### 6. Review with user
+
+Show the full analysis (approaches + recommendation).
+Then call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Does this answer the question well enough to proceed?"
+- header: "Spike review"
+- options:
+  - **Yes — record the findings** → write the spike doc
+  - **Need more depth on one approach** → explore a specific area further
+  - **Question changed** → the investigation revealed a different question
+
+Apply any adjustments, then proceed.
+
+### 7. Write the findings doc
+
+Apply strict STE per `../references/ste-writing.md` before writing any durable body.
+
+Write to `docs/spikes/<YYYY-MM-DD>-<slug>.md` where `<slug>` is a 2–4 word kebab-case summary of the question (e.g. `session-store-strategy`).
+
+Structure:
+
+```markdown
+# Spike: <question>
+
+**Date:** <YYYY-MM-DD>  
+**Time box:** <duration>  
+**Linked issue:** #<n> or —
+
+## Question
+
+<the specific question this spike answered>
+
+## Approaches considered
+
+### <Approach 1 name>
+**Summary:** ...  
+**Pros:** ...  
+**Cons:** ...  
+**Effort:** ...  
+
+### <Approach 2 name>
+...
+
+## Recommendation
+
+<recommendation text>
+
+## Decision
+
+<!-- Fill when the team decides -->
+- [ ] Accepted — proceeding with [approach]
+- [ ] Rejected — reason: ...
+- [ ] Needs follow-up: ...
+```
+
+```bash
+mkdir -p docs/spikes
+git add docs/spikes/<filename>
+git commit -m "docs(spike): <question summary>"
+```
+
+Print the file path.
+
+### 8. Post to linked issue (if applicable)
+
+If a linked issue exists, write this comment to a temp file with the Write tool.
+Then post it via the gh body helper (`../references/gh-body-helper.md`):
+
+> 🔬 Spike concluded: **<question>** → Recommendation: <one-line summary>. Full findings: docs/spikes/<filename>.md
+
+```bash
+# $COMMENT is the temp file you wrote the comment above to.
+python3 .wtf/gh-body.py comment <issue_number> --body-file "$COMMENT"
+```
+
+### 9. Offer next steps
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "What's next?"
+- header: "Next step"
+- options:
+  - **Write an Epic from this** → follow `wtf.write-epic`, seeding it with the spike's recommendation (default)
+  - **Write a Trace from this** → follow `wtf.write-trace` with the spike recommendation as Technical Approach context
+  - **Stop here** → exit. The team will decide separately.

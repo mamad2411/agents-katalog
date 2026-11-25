@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tonydzi/second-brain-starter-kit (path: skills/screenpipe-focus-review/SKILL.md, branch: master)
+- mined: 2026-11-24
+- desc: Review focus and context switching over a chosen period without inventing productivity scores."

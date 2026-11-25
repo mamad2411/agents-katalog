@@ -1,0 +1,86 @@
+---
+name: python-code-map
+description: Navigate, inspect, safely edit, validate, and audit Python source files with the workspace agent_tools.tools.code_map AST-based tool. Use when Codex works on Python code, needs symbol maps, guarded function/class edits, import insertion, batch edits, parse-check validation, class diagrams, facade audits, or protocol audits.
+rule: agent_tools/rules/python-code.md
+---
+
+# Python Code Map
+
+Prefer the Agent Workspace MCP `code_map_*` tools when they are available in
+the active agent client. Use `tool_search` to discover them if they are not
+already visible. The CLI implementation at `agent_tools/tools/code_map` is the
+fallback path when MCP tools are unavailable or when a workflow needs shell
+composition. Do not depend on a globally installed Codex skill for this
+workflow.
+
+Also follow `agent_tools/rules/python-code.md`; that rule is authoritative for
+workspace Python work.
+
+## Core Workflow
+
+With MCP, use workspace-relative target paths through `code_map_map`,
+`code_map_symbol_get`, `code_map_parse_check`, `code_map_imports_add`,
+`code_map_replace_symbol`, `code_map_replace_symbol_body`,
+`code_map_insert_before_symbol`, `code_map_insert_after_symbol`,
+`code_map_batch`, `code_map_class_diagram`, `code_map_facade_audit`, and
+`code_map_protocol_audit`.
+
+For CLI fallback, run commands from the workspace root or another directory
+where `agent_tools` is importable. Target file paths are resolved relative to
+the `agent_tools` package root, not the current shell directory. For repository
+files under `agent_tools/`, omit the leading `agent_tools/` prefix:
+
+```sh
+python -m agent_tools.tools.code_map <command> ...
+python -m agent_tools.tools.code_map map agent_workspace/components/agent_status/src/status.py
+```
+
+Do not pass `agent_tools/tools/...` as the target path; from the workspace root
+that resolves to `agent_tools/agent_tools/tools/...`.
+
+Before reading or changing a Python file, inspect its symbol map:
+
+```sh
+python -m agent_tools.tools.code_map map tools/path/to/file.py
+```
+
+Before changing a function, method, class, or other symbol, get a guarded
+snapshot:
+
+```sh
+python -m agent_tools.tools.code_map symbol-get tools/path/to/file.py \
+  --symbol QualifiedName --json
+```
+
+Use `hash` for whole-symbol edits and `body_hash` for body-only edits.
+
+## Guarded Edits
+
+Prefer guarded edits when replacing or inserting Python code:
+
+```sh
+python -m agent_tools.tools.code_map replace-symbol-body tools/path/to/file.py \
+  --symbol function_name \
+  --expect-hash <body_hash> \
+  --replacement-file /tmp/replacement.py
+```
+
+Use `imports-add` for imports so duplicate imports are not introduced:
+
+```sh
+python -m agent_tools.tools.code_map imports-add tools/path/to/file.py \
+  --import 'from pathlib import Path'
+```
+
+Use `--check-only` first for risky edits or broad files.
+
+## Validation
+
+After every Python edit, run:
+
+```sh
+python -m agent_tools.tools.code_map parse-check tools/path/to/file.py
+```
+
+For larger Python design work, use `class-diagram`, `facade-audit`, or
+`protocol-audit` when they match the local architecture question.

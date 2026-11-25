@@ -1,0 +1,322 @@
+---
+name: improve-agent
+description: Improve an agent's formula TOML based on post-execution learnings. Use after a formula run required manual intervention, produced incorrect artifacts, or left cleanup work for the operator. Classifies the failure type, scans for sibling vulnerabilities, selects the appropriate fix pattern, and surgically inserts corrective steps into the formula.
+---
+
+# Improve Agent Formula
+
+Surgical improvement of a formula TOML based on observed execution failures or required manual intervention.
+
+## Invocation
+
+`/improve-agent <formula-path>` or `/improve-agent <agent-name>`
+
+If agent-name given, resolve to `$AF_ROOT/.agentfactory/store/formulas/<agent-name>.formula.toml`.
+
+## Phase 1: Gather Evidence
+
+Collect what went wrong. Ask the user if not already clear from conversation context:
+
+1. **What manual work was required after the formula ran?**
+2. **Which files/paths were affected?**
+3. **What was the expected state vs actual state?**
+
+Record as a structured gap:
+
+```
+GAP: <one-line description>
+EXPECTED: <what should have happened>
+ACTUAL: <what happened instead>
+MANUAL FIX: <what the operator had to do>
+AFFECTED PATHS: <specific files/directories>
+```
+
+## Phase 1.5: Context Review
+
+Phase 1 collects what the operator noticed. This phase collects what the run **measured** — the
+per-step context figures the formula's own step records carry. Do it before reading the formula, so
+Phase 2 already knows which steps are suspect.
+
+1. **Find this run's instance.** Read `.runtime/improvement_pending` (relative to your own agent
+   directory) and take its `instance_id` field. The marker survives the whole improvement session —
+   it is consumed only by `af improvement complete`.
+
+2. **Pull the report.**
+
+    ```bash
+    af telemetry report --instance <instance_id> --json
+    ```
+
+    Read the JSON body, not the exit code: this command reports infrastructure failure as data and
+    still exits 0. Branch on the `state` VALUE, which every payload carries: `"error"` means the
+    read failed, `"ok"` and `"degraded"` both mean the payload is the report.
+
+3. **Select the steps worth reviewing.** From `rows[]`, take every step matching any of:
+
+    | Class | How it reads in `--json` | Table twin |
+    |-------|--------------------------|------------|
+    | Recycled mid-step | `"status":"INTERRUPTED"` (see `interrupted_trigger`) | `INTERRUPTED` |
+    | Consumption unattributable | `"consumption_state":"unattributable"` | `recycled mid-step — consumption unattributable` |
+    | Over-bound occupancy | `"over_occupancy":true` | `over_occupancy` |
+    | Over-bound consumption | `"over_consumption":true` | `over_consumption` |
+
+    The supporting figures are `ctx_tokens_start`, `ctx_tokens_end`, `ctx_tokens_total`,
+    `ctx_used_pct`, `cum_tokens_delta` and `ctx_bound_tokens`; the drift markers are
+    `compacted_mid_step`, `ctx_observed_stale` and `bound_exceeds_window`.
+
+    **`null` means NOT JUDGED, never `false` and never `0`.** A `null` `over_occupancy` says the
+    verdict could not be computed, not that the step stayed inside its bound. Never round a `null`
+    into a finding.
+
+    **INTERRUPTED and unattributable steps are the worst class** — their true cost is unknown and
+    unbounded, so rank them above any step whose overrun you can actually measure.
+
+4. **Classify each selected step into exactly one of two arms.**
+
+    - **Upstream, with evidence** — use this ONLY when the step's consumption is dominated by
+      *intake of a named incoming artifact the step does not control*, and you can state the
+      evidence: the artifact's byte size, and/or a start-to-end pattern exceeding a stated fraction
+      of `ctx_bound_tokens`. Then use the Skill tool to load `/github-issue`, and hand it the step
+      id, the measured figures, and the artifact's identity. Do not prescribe a fix — the issue
+      carries evidence.
+    - **ANY OTHER CASE — own the formula.** Split the step, slim its instructions, or externalize
+      its intermediates to files. This is the default arm; "upstream" is the exception, and an
+      upstream issue without the evidence above is noise the operator has to triage.
+
+5. **If the report returns no context data, say so — do not guess.** No rows for the instance, or
+   rows whose context figures are all `null`, means this run was not measured (usually the factory
+   telemetry gate was off: `af telemetry on` arms it). State that plainly in the Phase 8 summary and
+   proceed on Phase 1's evidence alone. Absence of measurement is never evidence of a healthy step.
+
+**Output** — state explicitly:
+- **Measured?**: "no context data for instance `<id>`" or the count of steps reviewed
+- **Per selected step**: step id, the class from the table above, the arm chosen, and the figures
+  that justify it
+
+Carry the step-owned findings into Phase 2's insertion-point reasoning and Phase 3's
+classification; a context finding names the step, it does not by itself name the failure category.
+
+## Phase 1.5b: Efficiency Review
+
+Phase 1.5 asks what the run's context window **held**. This phase asks what it **cost** — which
+steps generated the most tokens, and whether the formula's own authoring is what made them do it.
+Run it before Phase 2 as well, so the insertion-point reasoning sees both.
+
+Skip it only when `.runtime/improvement_pending` carries `"tokenomics_state":"off"`. The factory is
+then not running the efficiency objective, and a ranking nobody will act on is spend, not evidence.
+
+1. **Pull both payloads.**
+
+    ```bash
+    af telemetry report --instance <instance_id> --json
+    af telemetry band --instance <instance_id> --json
+    ```
+
+    Branch on the `state` VALUE in each, exactly as Phase 1.5 does. `band` answers with no rows
+    when the formula has not been run often enough to have learned medians; that is an answer, not
+    a failure, and it means step 3 below is the whole review.
+
+2. **Rank the steps by what they generated.** Score each of the report's `rows[]` as
+   `out_tokens + subagent_tokens` and take the top three.
+
+    **Both keys are `null` on any step the run did not measure.** `null` is not `0`. An unmeasured
+    step must never rank as a cheap one — say it was not measured and leave it out of the ranking.
+
+    Then read, on the same rows:
+
+    | Figure | What it tells you |
+    |--------|-------------------|
+    | `thinking_share` | the fraction of `out_tokens` attributed to thinking; high means the step deliberated rather than produced |
+    | `think_tokens_est` | the estimate that share is computed from |
+    | `peak_ctx_tokens` | the fullest the window got while the step ran |
+    | `subagent_tokens` | what the step's sub-agents spent — often the larger half of its cost |
+
+    From `band`'s `rows[].figures[]`, read the figures named `out_tokens`, `subagent_tokens` and
+    `think_tokens` — that last one is the host's EXACT thinking figure, not the estimate above —
+    and take each one's `median`, `verdict` and `direction`. A step that you ranked in the top
+    three AND that `band` reports `"direction":"above"` is the strongest evidence this review can
+    produce: it is expensive, and it is expensive *for itself*.
+
+3. **Name the authoring pattern.** For each top-ranked step, read its text in the formula and say
+   which of these it does. This is what makes a cost the FORMULA's rather than the task's:
+
+    - **Top-to-bottom re-read** of an artifact the run has already produced
+    - **Re-verification sub-agent** that re-derives a fact an earlier step established
+    - **Re-copy table** — a directive to reproduce content that already exists in a file
+    - **Whole-artifact sub-agent prompt** — a sub-agent handed a large file when it needs a section
+
+    If none of them fits, the step's cost belongs to the task and the formula cannot fix it. Say so
+    and stop. Inventing an edit here spends tokens to save none.
+
+4. **Classify under `## Authoring-Artifact Waste`** in [PATTERNS.md](./PATTERNS.md), and carry that
+   fix pattern into Phase 5.
+
+**What this review may never trade away.** Every fix it produces must leave the step-id set, the
+gate steps, the artifact paths named in step text, and the protected capture directives
+(`Verbatim`, `RE-COPY`, `byte-for-byte`, `read it top to bottom`) exactly as they were.
+`af improvement complete` counts all four before and after and reports the delta in the outcome
+mail, so an edit that buys tokens by dropping a gate is not a saving — it is a finding against you.
+
+**Output** — state explicitly:
+- **Measured?**: "no generation figures for instance `<id>`", or the top three steps with their
+  `out_tokens + subagent_tokens` scores
+- **Per ranked step**: step id, the authoring pattern named (or "task-inherent"), and the band
+  `direction` where `band` returned data
+
+## Phase 2: Read and Understand the Formula
+
+Read the full formula TOML. For each step, note:
+- What it produces (artifacts, signals, commits)
+- Where it writes (paths relative to `$AF_ROOT`)
+- What it commits and pushes
+
+**Output** — state explicitly:
+- **Insertion point**: Step ID, action number
+- **Why here**: What precedes it (must be after X) and what follows it (must be before Y)
+
+## Phase 3: Classify the Failure
+
+Before designing any fix, categorize the gap. State which type:
+
+| Category | Symptoms | Pattern file section |
+|----------|----------|---------------------|
+| **Artifact pollution** | Unwanted files in PR, wrong paths committed, intermediate outputs visible | `## Artifact Pollution` |
+| **Missing step** | Agent skipped work the formula assumed would happen, no enforcement | `## Missing Step` |
+| **Wrong output location** | Artifacts written to wrong path (relative vs absolute, variable resolution) | `## Wrong Output Location` |
+| **Signal/ordering failure** | Agent didn't send required signal, steps ran out of order, race condition | `## Signal Ordering` |
+| **Enforcement gap** | Step instructions exist but agent can bypass without consequence | `## Enforcement Gap` |
+| **Authoring-artifact waste** | Step re-reads, re-copies or re-derives something the run already produced; high `out_tokens`/`subagent_tokens` for little new output | `## Authoring-Artifact Waste` |
+
+State: "This is a **<category>** failure because <one sentence>."
+
+Then read the corresponding section in [PATTERNS.md](./PATTERNS.md) for the fix template.
+
+## Phase 4: Sibling Scan
+
+The same vulnerability rarely exists in only one place. Scan ALL other steps in the formula for the same pattern:
+
+1. **Identify the pattern**: What structural weakness allowed this failure? (e.g., "commit enforcement without cleanup", "signal polling without artifact fallback", "path resolution without absolute prefix")
+2. **Scan every step**: For each step in the formula, does it exhibit the same structural weakness?
+3. **Record siblings**: List step IDs that share the vulnerability
+
+**Output**: "Sibling vulnerabilities found in steps: [list]" or "No siblings — isolated to step [X]."
+
+If siblings are found, the fix in Phase 5 should address ALL instances, not just the reported one.
+
+## Phase 5: Design the Fix
+
+Using the pattern from PATTERNS.md:
+
+1. Adapt the pattern template to the specific gap
+2. Replace placeholder paths/variables with actual formula variables
+3. If siblings were found in Phase 4, design a fix that covers all affected steps
+
+### Validation Gate (MANDATORY)
+
+Before finalizing, enumerate the impact. Run mentally or actually:
+
+```
+For each path my fix touches:
+  - Does this path contain files on the base branch? [YES/NO]
+  - If YES: does my fix PRESERVE them? [MUST BE YES]
+  - If NO: safe to remove/modify
+```
+
+If any base-branch file would be destroyed, STOP and redesign.
+
+## Phase 6: Surgical Insertion
+
+1. Write the new action as a numbered step within the identified insertion point
+2. Renumber subsequent actions if needed
+3. Update the step's `**Exit criteria:**` to include the new guarantee
+4. Do NOT modify other steps unless the gap spans multiple steps (or siblings require it)
+
+### Insertion Template
+
+```toml
+N. **<Title describing what this action prevents>:**
+    <One sentence explaining WHY this exists — what went wrong without it.>
+    ```bash
+    <commands>
+    ```
+```
+
+## Phase 7: Validate (Simulation)
+
+Walk through the fix as if executing it. Produce this checklist — all must pass:
+
+```
+[ ] FRESH BRANCH: Runs without error on a branch with no pipeline artifacts
+[ ] NO-OP SAFE: Silently passes when the problematic artifacts don't exist
+[ ] BASE PRESERVED: Permanent files (CLAUDE.md, configs, settings) untouched
+[ ] IDEMPOTENT: Running twice produces the same result
+[ ] UNSKIPPABLE: Executing agent cannot misinterpret or skip this action
+[ ] SEMANTICS PRESERVED: step-id set, gate set, artifact paths and verbatim-capture directives unchanged
+```
+
+The SEMANTICS PRESERVED check is the one an efficiency fix is most likely to fail, because deleting
+a gate or a capture directive is the cheapest way to make a step generate fewer tokens. Check it
+against the formula as it was when this session started, not against your intent.
+`af improvement complete` counts the same four things independently and puts the delta in the
+outcome mail, so a failure here becomes visible whether or not you notice it.
+
+For the UNSKIPPABLE check, attempt these escape paths against your fix:
+- **Skip**: Can the agent proceed to the next action without executing this one?
+- **Misinterpret**: Can the instruction be read a different way than intended?
+- **Context loss**: Is this action far from related actions? (>50 lines = risk)
+
+If any check fails, return to Phase 5 and redesign.
+
+## Phase 8: Present and Apply
+
+Present findings to the user interactively:
+
+1. **Summary**: The gap, classification, sibling scan results, the Phase 1.5 context review — the
+   steps reviewed and the arm chosen for each, or "no context data for instance `<id>`" — and the
+   Phase 1.5b efficiency review: the ranked steps and the authoring pattern named for each, or "no
+   generation figures for instance `<id>`"
+2. **Proposed changes**: List each insertion/modification with before→after
+3. **Validation results**: The Phase 7 checklist (all passing)
+4. **Ask**: "Which improvements should I apply?"
+
+Apply accepted changes. Do NOT commit — leave as local modification for user to handle agent regeneration and formula sync.
+
+## Phase 9: Repository-Neutral Sweep (MANDATORY)
+
+Run this after every apply, over the WHOLE formula, not only the lines this session wrote. A formula
+runs in any repository, where a PR or issue number from the one this session worked in names a
+different item or none. This is the one edit allowed outside the steps Phase 6 touched.
+
+```bash
+grep -nEi '#[0-9]|(^|[^[:alpha:]])(PRs?|pull requests?|issues?)[ #]+[0-9]|/(pull|issues)/[0-9]' <formula-path>
+```
+
+Classify every hit:
+
+- **A PR or issue reference** (`on PR 123`, `#123`, `PRs 123 and 456`, a link to a real repository's
+  pull or issue): delete the number and the story it anchors. Keep the sentence's instruction, and
+  keep its reason only when the reason changes what the agent does, stated without the number.
+  `Evidence outside the worktree trips WORKTREE_CONTAINMENT, and on PR 123 it sent an investigator
+  back to re-fetch the page.` becomes `Evidence outside the worktree trips WORKTREE_CONTAINMENT.`
+- **Not a reference, leave it**: placeholder examples (`https://github.com/owner/repo/pull/42`,
+  `owner/repo#42`), ordinal labels (`Reviewer #1`, `Why #2`), and template variables (`{{issue}}`).
+
+The grep finds only a number with a marker in front of it, so read each sentence you edit for further
+bare numbers it lists and remove them too. Never change a step id, gate, artifact path or capture
+directive to remove a number; name such a hit in the output instead. Re-run the grep: every remaining
+hit must be in the leave-it class.
+
+**Output**: "Repository-neutral sweep: N references removed", or "Repository-neutral sweep: clean".
+
+## Anti-Patterns
+
+| Anti-Pattern | Why it fails | Correct approach |
+|--------------|-------------|------------------|
+| Designing a fix before classifying the failure | May apply wrong pattern (git cleanup for a signal problem) | Classify first (Phase 3), then select pattern |
+| Fixing only the reported instance | Same vulnerability exists in sibling steps — will recur next run | Sibling scan (Phase 4) catches all instances |
+| `git rm -r <directory>` to "clean up" | Destroys permanent files that exist on the base branch | Use zero-diff pattern from PATTERNS.md |
+| Targeting paths without checking base branch state | May delete agent identity files, configs, or shared resources | Always enumerate impact in Phase 5 validation gate |
+| Adding cleanup as a separate formula step | Adds DAG complexity; cleanup belongs in the finalize step | Insert as an action within existing step |
+| Fixing the symptom without understanding the flow | Agents commit during intermediate steps — later steps can't undo earlier pushes | Accept earlier commits happened; add corrective action after all agent work |
+| Skipping validation simulation | Fix may break when target paths are empty or base branch evolves | Phase 7 checklist is mandatory, not advisory |
+| Writing a fix without checking if agent can skip it | Agent may never execute the new action if it's advisory-only | Escape path check in Phase 7 catches this |

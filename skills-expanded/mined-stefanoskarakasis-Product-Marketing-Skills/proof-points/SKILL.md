@@ -1,0 +1,350 @@
+---
+name: proof-points
+description: >
+  Builds and maintains a sourced, gated registry of the proof points your messaging relies
+  on (metrics, customer quotes, case study results, analyst citations), then deepens brain
+  Section 6. Use when pulling proof points out of a deck or battlecard, checking whether a
+  stat is safe to use, sourcing a new claim before it ships, or auditing claims for
+  anything unsourced, stale or unapproved.
+---
+
+# Proof Points
+
+## How This Works
+
+Every stat, quote, and case study in your messaging is a promise someone can ask you to back up. Most companies have a mash of decks, battlecards and case study PDFs repeating stale numbers. This skill is both the intake and the gate: it mines claim
+candidates out of that mess, then makes sure nothing gets called "approved"
+without a source, no customer name ships without documented permission to use
+it, and every forbidden claim carries a stated reason — not a bare
+prohibition nobody can act on. It deepens your brain's existing Section 6 in
+place, the same Proof Points Registry `message-house` and
+`positioning-messaging` already read.
+
+---
+
+## Trigger
+
+- **When:** Building a proof points registry from scratch out of existing
+  sales decks, battlecards, case studies, or pricing pages; adding a single
+  new metric, quote, or case study directly; checking whether a specific
+  stat or phrase is safe to use before it ships in copy; or auditing brain
+  Section 6 for unsourced claims, stale proof, undocumented customer names,
+  or unsupported superlatives.
+- **Not for:** Structuring raw, unstructured customer conversation — a call
+  recording or interview transcript nobody's synthesized yet — into
+  discovery insights → `interview-summary`, run first. That's a
+  qualitatively different task (JTBD synthesis of what customers said) from
+  this skill's Extract mode, which mines already-written claims out of
+  already-somewhat-structured GTM collateral (a deck, a battlecard, a case
+  study doc) — if Extract mode turns up a customer quote that traces back to
+  a raw call nobody's written up, route that call through
+  `interview-summary` first, then bring the resulting quote back here.
+  Vocabulary, tone, and forbidden *language* (not claims) → `brand-voice`.
+  Building the positioning statement or messaging hierarchy itself →
+  `positioning-messaging`, run this first so it has a gated registry to cite
+  from. Packaging Section 6 evidence into a rep-ready handoff document →
+  `product-messaging-playbook`, run this first so it pulls clean, sourced proof.
+- **Example prompts:**
+  - "Pull proof points out of this battlecard"
+  - "We don't have a registry — start one from these 3 sales decks"
+  - "Add a proof point: 40% faster onboarding, from our Q3 customer survey"
+  - "Can I say 'industry-leading' in this deck?"
+  - "Audit our proof points — anything stale or unsourced?"
+
+---
+
+## Inputs
+
+- **Args:** For Extract mode — one or more source documents or pasted text
+  (a sales deck, battlecard, case study, pricing page, one-pager). For Add
+  mode — a single claim with its source. For Verify mode — a claim to check.
+  For Audit mode — no additional args beyond "audit." If the mode isn't
+  clear from what's given, ask.
+- **Defaults:** If brain Section 6 already has entries but they're missing
+  the layers this skill requires (source, approval-to-use, staleness date),
+  treat this as additive — fill the missing layers on the existing entries
+  rather than re-litigating claims that are already sourced and current. If
+  Section 6 is empty or near-empty and the user hasn't specified a mode,
+  ask whether they have source material to extract from before assuming
+  claims will be added one at a time — most first-time registries start
+  from Extract mode, not Add mode.
+- **Context keys:**
+  - `/foundation/brain.md` — optional (created on the first confirmed
+    write if missing). Section 6 (Proof Points Registry).
+    Section 1 (Product Context) read for plausibility only — never to
+    invent a claim the user didn't supply.
+  - **Brain contract:** Reads Section 6, Section 8 (`prohibited`, `approvals`), and Section 1 for context only.
+    Writes Section 6 only — approved metrics, customer quotes/case
+    studies, and forbidden claims, appended on explicit confirmation.
+    Never writes to any other section. If no brain exists, creates
+    `/foundation/brain.md` holding Section 6 alone (cold start).
+
+---
+
+## Connectors (Optional)
+
+| Connector | What it adds |
+|---|---|
+| `~~call recordings` | Customer quotes (enter as unverified) |
+| `~~CRM` | Metric candidates (enter as unverified) |
+| `~~product analytics` | Usage evidence (paste export) |
+| `~~team chat` | Win announcements and customer praise (enter as unverified) |
+| `~~cloud storage` | Case studies and decks in Drive |
+
+> **No connectors?** Paste the material and I'll work from that. The output has the same shape.
+> Pulled facts are drafts: each is tagged with category, tool and date, and nothing is written until you confirm.
+
+---
+
+## Pre-flight
+
+- Load `/foundation/brain.md` Section 6 if it exists. Also read Section 8 `prohibited` and `approvals` if present: a claim that touches a prohibited topic is flagged and not added as approved, and each customer number or quote notes the approver Section 8 names.
+- **Brain absent: continue, don't block.** This skill works from the evidence you give it. Say once: "No PMM brain found, so I'll work from your material and start the brain with this section only. Run `product-marketing-context` later (a separate plugin) to build the rest." The write step handles the cold start.
+- **Soft block:** request doesn't clearly state Extract, Add, Verify, or
+  Audit → ask which applies. If Section 6 is empty and the user just says
+  "build our proof points," default the question toward Extract mode first:
+  *"Do you have decks, battlecards, or case studies I can pull from, or are
+  you adding claims one at a time?"*
+- **Soft block (Add mode only):** a claim offered with no source → do not
+  reject it outright; proceed to Step 3, where it gets flagged
+  `[NEEDS PROOF]` instead of silently marked approved.
+
+---
+
+## Steps
+
+### Step 0 — Load Context
+
+Load brain Section 6 as it currently exists, and Section 1 for product-name
+context only.
+
+**Gate check:** brain absent → surface: *"Brain not found. Run
+`product-marketing-context` first — even a thin Section 6 gives this skill
+something real to work from."*
+
+### Step 1 — Classify the Request
+
+Determine which of four modes applies. If ambiguous, ask:
+> "Do you want to pull proof points from existing material (decks,
+> battlecards, case studies), add one claim directly, check whether a
+> specific claim is safe to use, or audit the existing registry?"
+
+### Step 2 — Extract Mode: Mine Claims from Source Material
+
+This is the on-ramp for the common case: no clean registry exists, only a
+mash of sales decks, battlecards, one-pagers, and case study documents.
+
+1. Read through every piece of source material provided and pull out every
+   claim-shaped statement: a number or stat, a named customer outcome, a
+   direct quote, a case study reference, or a superlative/comparison claim
+   ("industry-leading," "fastest," "the only platform that...").
+2. Classify each extracted candidate by type — Metric, Customer quote, Case
+   study result, Analyst citation, or Superlative — same taxonomy Add mode
+   uses.
+3. **Every extracted claim starts `[NEEDS PROOF]`, regardless of whether the
+   source material itself cites a source.** A deck slide that says "per Q3
+   earnings" is not the same as a confirmed-current source — decks get
+   copied forward for quarters after the number goes stale. If the source
+   material does cite something, carry that citation through as a proposed,
+   unconfirmed source attached to the flag: `[NEEDS PROOF — deck cites Q3
+   2025 earnings, unconfirmed]`. This gives the user something concrete to
+   confirm or reject rather than a blank slate, without treating an in-deck
+   citation as verified provenance on its own.
+4. A customer name or quote pulled from a deck gets `[NEEDS APPROVAL]` in
+   addition to `[NEEDS PROOF]` — sales enablement material routinely reuses
+   customer names before (or after the expiry of) actual legal/customer
+   sign-off. A name appearing in a deck is not documented permission to use
+   it.
+5. When the same claim (or a near-duplicate phrasing) appears across
+   multiple source documents, surface it once as a single candidate, noting
+   how many source documents it appeared in — never register the same claim
+   twice because it showed up in two decks.
+6. Return the full candidate list before writing anything, grouped by type:
+   > "Found [N] claim-shaped statements across [source documents]. All
+   > flagged `[NEEDS PROOF]` until confirmed current — here they are:
+   > [list]. Register all of them as flagged candidates, or go through and
+   > confirm/reject first?"
+7. On confirmation, batch-append to Section 6 via Step 6 — still flagged.
+   Extraction never promotes a claim to approved on its own; that only
+   happens later, through Add mode's explicit source confirmation or Verify
+   mode, once the user has actually checked the source is current.
+
+### Step 3 — Add Mode: Register a New Claim Directly
+
+Classify the claim by type — Metric, Customer quote, Case study result, or
+Analyst citation — and require a source for each:
+
+| Claim type | What "sourced" means |
+|---|---|
+| Metric | Where the number comes from and when it was pulled (internal dashboard, public filing, survey — with date) |
+| Customer quote | Who said it, their role and company, and confirmation they've approved being named — not just that they said it on a call |
+| Case study result | A published or internally-approved case study the number traces back to |
+| Analyst citation | The named report, firm, and publication date |
+
+No source → the claim is registered as `[NEEDS PROOF]`, not silently
+promoted to approved. A customer quote with no documented approval-to-use
+gets `[NEEDS APPROVAL]` even if the quote itself is real — a customer
+saying something on a call is not the same as a customer agreeing to be
+named in your marketing.
+
+Reject vague quantifiers as claims on their own: "many customers report..."
+is not a proof point. Either name the number and its source, or don't
+register it yet.
+
+### Step 4 — Verify Mode: Check a Claim Before It Ships
+
+User supplies a specific stat or phrase they want to use. Check it against
+the current registry and return one of three answers:
+
+1. **Approved** — it's in the registry with a source (and approval-to-use,
+   if it names a customer). Cite the source back to the user.
+2. **Forbidden** — it matches or resembles an entry in the Forbidden Claims
+   list. State which entry and why (see Step 5's Forbidden Claims layer,
+   built or updated in either Extract or Add mode).
+3. **Not yet registered** — it isn't in the registry either way. This is
+   not automatic approval or automatic rejection — route to Extract mode
+   (if it likely lives in existing collateral) or Add mode (if the user has
+   the source in hand) rather than flagging it unusable with no path
+   forward.
+
+Superlatives ("industry-leading," "best-in-class," "the only platform
+that...") without a named comparison are flagged as unsupported even if no
+Forbidden Claims entry names them specifically — a superlative with no
+comparison is a claim with no evidence, whether or not it's been banned
+outright.
+
+### Step 5 — Audit Mode: Review the Existing Registry
+
+Walk every entry currently in Section 6 — not a sample — and flag:
+
+- **No source** — mark `[NEEDS PROOF]`.
+- **Customer name with no documented approval-to-use** — mark
+  `[NEEDS APPROVAL]`.
+- **Stale** — a dated metric or citation older than 12 months with no
+  refresh noted. Flag `[STALE — recheck]`, don't silently drop it.
+- **Unsupported superlative** — language claiming "best," "most," "only,"
+  or similar with no named comparison anywhere in the entry.
+
+Also build or update the Forbidden Claims list here: every forbidden claim
+requires a stated reason — legal exposure, unproven, competitively risky,
+or previously retracted — never a bare "don't say this."
+
+```markdown
+**Forbidden Claims:**
+- "[claim or claim pattern]" — [reason: legal / unproven / competitively
+  risky / retracted]. [One sentence of context if useful.]
+```
+
+Return the full flagged list as the punch list — this is the output of
+Audit mode; it does not also rebuild the registry from scratch.
+
+### Step 6 — Deepen Brain Section 6 (on Confirmation)
+
+Show the exact addition before writing:
+> "Adding to brain Section 6 — [new approved metric(s) / flagged
+> candidate(s) / customer quote(s) / case study result(s) / forbidden
+> claim(s)], sourced from [source]. Existing content stays unchanged.
+> Here's what I'll append: [show exact text]. Save this?"
+
+Append to `/foundation/brain.md` Section 6 — do not replace existing
+content, do not create a separate file:
+
+```markdown
+## Section 6: Proof Points Registry
+[existing content unchanged]
+
+### Registry Update (added via proof-points, [date])
+**Approved Metrics:**
+- [claim] — [source, date] `[NEEDS PROOF]` if unsourced
+
+**Customer Quotes & Case Study Results:**
+- "[quote]" — [name, role, company] ([approval-to-use confirmed / `[NEEDS APPROVAL]`])
+
+**Forbidden Claims:**
+- "[claim]" — [reason]
+
+**Extracted this session (if Extract mode ran):**
+- [candidate] — [claim type] `[NEEDS PROOF — <proposed source if the
+  material cited one, else blank>]`, found in [source document(s)]
+
+**Audit flags (if this session ran Audit mode):**
+- [entry] — [NEEDS PROOF / NEEDS APPROVAL / STALE / unsupported superlative]
+```
+
+**Cold start (no brain file yet).** If `/foundation/brain.md` does not exist, create it after the same confirmation, containing only this section:
+
+```markdown
+# PMM Brain — [product name, or "not set"]
+🟡 Cold start — built via proof-points on [date]. Run `product-marketing-context` to build the other sections.
+
+## Section 6: Proof Points Registry
+[the addition shown above]
+```
+
+Do not invent content for the other sections. If this environment cannot write files, show the block and tell the user to save it as `brain.md` in their working folder or Project knowledge so later sessions can read it. Never say it was saved unless the write succeeded.
+
+Never write without this explicit confirmation.
+
+### Step 7 — Learning Close
+
+Append one entry to `/context/skill-sessions.md`, in the canonical format
+defined in `product-marketing-context/.claude-plugin/skill-sessions-format.md`
+(Type A — execution session):
+
+```yaml
+type: execution
+skill: proof-points
+session_date: [YYYY-MM-DD]
+pattern: [one falsifiable statement about this session, or "none"]
+source: [surprised / wrong / missing / N/A]
+```
+
+Write directly, no permission needed — separate from the brain write above,
+which still requires explicit confirmation.
+
+---
+
+## Outputs
+
+- **Files written:** `/foundation/brain.md` Section 6 — appended approved
+  metrics, extracted candidates, customer quotes/case studies, and
+  forbidden claims (Step 6), only after explicit confirmation.
+  `/context/skill-sessions.md` — one appended entry per session (Step 7).
+- **Chat output format:** Mode stated (Extract / Add / Verify / Audit) →
+  candidate list, findings, or new registry entries → confirmation prompt
+  for the brain write.
+- **External side effects:** N/A
+- **Next skill:** After brain Section 6 is deepened, check
+  `product-marketing-context/.claude-plugin/next-skill-map.md` for "After
+  proof-points" and surface that prompt. Do not auto-run — ask.
+
+---
+
+## Operating Rules
+
+The source, approval and confirmation rules live in the Steps and are tested in the Quality Gate. These are stated only here.
+
+- **No source means not approved, full stop.** A plausible number with no traceable origin is a liability.
+- **Extraction never grants approval.** A claim pulled from a deck is a candidate even when the deck cites a source; that citation is carried as unconfirmed.
+- **Customer names need documented approval-to-use.** A customer saying something to a rep, or appearing in a battlecard, is not agreement to be quoted publicly.
+- **Never silently promote an unsourced or extracted claim.** Flag it and move on.
+- **Deepen brain Section 6, never fork a second claims file.** `message-house` and `positioning-messaging` expect it to be the single source of truth for proof.
+- **Superlatives get flagged, not auto-blocked.** The decision stays with the user.
+
+## Quality Gate
+
+| Check | Standard | Pass = |
+|---|---|---|
+| Every approved claim sourced | No claim marked approved without a cited source | Yes |
+| Extracted claims start flagged | Every Extract-mode candidate registered `[NEEDS PROOF]` regardless of in-deck citation | Yes |
+| Customer approval-to-use documented | Every named customer quote/case study has confirmed permission, not just evidence they said it or appeared in a deck | Yes |
+| Forbidden claims carry a reason | Every entry states legal / unproven / competitively risky / retracted | Yes |
+| Duplicates merged | The same claim across multiple source documents is registered once, with occurrence count | Yes |
+| Audit covers full registry | Every existing Section 6 entry reviewed, not a sample | Yes |
+| Superlatives flagged | Unsupported superlatives caught even with no matching Forbidden Claims entry | Yes |
+| Existing content preserved | Prior Section 6 content untouched unless explicitly revised | Yes |
+| Brain write confirmed | Exact addition (including bulk Extract-mode writes) shown and confirmed before writing | Yes |
+| Cold start handled | With no brain file the skill proceeded without redirecting; the only file created held Section 6 alone (or the block was shown for pasting) | Yes |
+| Learning Close ran | `/context/skill-sessions.md` has a new `type: execution` row for this session | Yes |
+
+---

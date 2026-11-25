@@ -1,0 +1,195 @@
+---
+name: web-prototype
+description: >-
+  Build a clickable multi-screen product prototype (WeChat mini program, mobile app or web app screens) on the
+  platform's fixed shell: you write only gg-artifact.json, one HTML file per screen and the design system's
+  DESIGN.md and tokens.css into design/<slug>/; the platform hosts and previews it (without hosting, publish it with
+  preview_static). Use when a creation request names this
+  plugin, or when someone asks for app screens, a mini program page, a mobile mockup, a UI prototype or a
+  clickable flow.
+---
+
+# Product Prototype Skill
+
+You write the business content of a prototype — screens, copy, layout, links between screens. The platform owns everything around it: the device frame, status bar and capsule, screen navigation, base styles and (later) element editing. Keep to that split: it is what lets people edit your screens directly afterwards.
+
+## Resource map
+
+All paths are relative to this skill's directory.
+
+```
+web-prototype/
+├── SKILL.md                       ← this file (shared workflow and contract)
+├── kit/                           ← platform-owned shell and runtime: never edit (copied only without hosting)
+│   ├── index.html                 ← the shell: canvas of all screens with link arrows, plus a click-through play view
+│   ├── gg-kit.css                 ← base styles, device variables, .gg-ph / .gg-scroll-x
+│   └── gg-kit.js                  ← data-gg-link / data-gg-back navigation, data-gg-when / data-gg-set screen states
+├── templates/<id>/GUIDE.md        ← per-template instructions; templates/<id>/example/ is a finished reference
+├── design-systems/<id>/           ← DESIGN.md (source of truth) + tokens.css (generated from its front matter)
+├── craft/                         ← cross-template rules (imagery, anti-ai-slop, accessibility, states, forms, UX laws)
+└── references/critique.md         ← five-dimension self-review before publishing
+```
+
+## Template index
+
+<!-- TEMPLATE-INDEX -->
+- `app-screens` 多屏应用原型 — 小程序或 App 的多屏可点击原型：每屏一个文件，平台外壳负责设备框与跳转
+
+## What the creation message gives you
+
+A creation message @-mentions you and names the template id, the design system, whether to explore visual directions first (`先出 2–3 个视觉方向：是` / `否`), and parameters as `label：value` lines: `需求` (the request in the requester's own words — product, users, screens, what to stress; required) and `设备` (device). Older messages may instead carry `主题`, `内容要点`, `页面清单`, `目标受众` and the design sources `粘贴 DESIGN.md`, `参考网站`, `参考仓库`. Attachments (logos, screenshots, photos, copy, data) beat anything you would invent.
+
+The design system line is one of:
+- a preset: `设计系统：<title>（<id>）` with its directory under `design-systems/`;
+- 自动: `设计系统：未指定…` with the presets listed — pick the one whose mood fits the request best and say which and why in your reply;
+- one the group imported: `设计系统：本群导入的设计系统「<title>」` followed by its `DESIGN.md 原文` (treat it as `粘贴 DESIGN.md`) and/or `参考网站` / `参考仓库` lines (extract from them as below).
+
+`设备` sets `device` in gg-artifact.json and `data-gg-device` on every screen: `小程序` → `miniprogram`, `手机 App` → `mobile`, `桌面 Web` → `desktop`. Without it, follow the template guide.
+
+A plain chat request (no creation message) is confirmed first: pick the template and design system (gonggong's `plugin_catalog` with `plugin: web-prototype` lists them), fill in what the conversation says, and post a 创作确认卡 with `creation_propose`. Build nothing until the creation message arrives. Without those tools, build directly with `app-screens` and the design system that fits the request best.
+
+## Hosted or not
+
+The creation message says which:
+
+- **Hosted** (it names the artifact directory and says no `preview_static` is needed): gonggong checked the folder out before your turn and uploads it as a new version afterwards; the server serves `index.html` and `_gg/` from this plugin's `kit/`. Do **not** copy `index.html` or `_gg/` into the folder and do not call `preview_static`. People may edit the folder between turns (texts, styles, links, DESIGN.md, tokens.css): start from what is there.
+- **Not hosted** (older daemons; the message asks you to publish with `preview_static`): copy `kit/index.html` to `index.html` and `kit/gg-kit.css`, `kit/gg-kit.js` to `_gg/` verbatim so the folder previews on its own, then publish with `preview_static`.
+
+## Output contract
+
+```
+design/<slug>/
+├── gg-artifact.json        ← { "title", "device": "miniprogram" | "mobile" | "desktop", "entry": "<screen id>",
+│                               "screens": [{ "id", "title", "file": "screens/<id>.html", "statusBar"?: "light" | "dark",
+│                                             "prompt": "<设计说明, ≤ 4000 chars>" }] }
+├── DESIGN.md               ← copied verbatim from the design system (the artifact's design source of truth)
+├── tokens.css              ← copied verbatim from the design system
+├── screens/<id>.html       ← one full HTML document per screen (skeleton below)
+├── assets/                 ← images you were given or fetched, referenced relatively
+├── refs/                   ← reference files people put on the canvas (images, PDFs, text); read them, don't edit
+├── rules/<id>.md           ← the screen's business rules (see "Page business rules"); rules/shared.md for shared ones
+├── index.html              ← not hosted only: copied verbatim from kit/index.html (platform shell)
+└── _gg/                    ← not hosted only: copied verbatim from kit/gg-kit.css and kit/gg-kit.js (platform runtime)
+```
+
+People may add reference nodes to the canvas: `gg-artifact.json` then has `"refs": [{ "id", "title", "file": "refs/<id>.<ext>", "kind", "x"?, "y"? }]`. Keep `refs` as it is whenever you rewrite the manifest, and leave `refs/` alone. Web pages people put on the canvas (a Feishu doc, say) are in `"links": [{ "id", "url", "title", … }]`: context to read when you can, keep them as they are too. A screen people dragged on the canvas has `"x"` and `"y"`: keep them too. People sort pages into groups in the canvas's page list: `"groups": [{ "id", "title", "parent"? }]` (kebab-case ids, nested by `parent`, at most 7 levels) and a screen's `"group"`; the order of `screens` is the list's order. Keep them when you rewrite the manifest, and put a screen you add in the group it belongs to.
+
+## Screen states
+
+One screen often looks different by state: an order's stage (待付款 / 已发货 / 已退款), its data (正常 / 空 / 加载失败), who looks (会员 / 游客), an open sheet. Show them as **states of one screen**, not as copies of it: people switch them on the canvas, in the play view and in shared links.
+
+```json
+{
+  "dims": [{ "id": "role", "label": "角色", "values": [{ "id": "member", "label": "会员" }, { "id": "guest", "label": "游客" }] }],
+  "screens": [{
+    "id": "order-detail", "title": "订单详情", "file": "screens/order-detail.html", "uses": ["role"],
+    "dims": [
+      { "id": "order", "label": "订单状态", "values": [{ "id": "unpaid", "label": "待付款" }, { "id": "shipped", "label": "已发货" }, { "id": "refunded", "label": "已退款" }] },
+      { "id": "data", "label": "数据", "values": [{ "id": "normal", "label": "正常" }, { "id": "error", "label": "加载失败" }] }
+    ]
+  }]
+}
+```
+
+- **Global dims** (top-level `dims`, at most 3; usually only role or signed-in) hold across screens; a screen opts in with `uses`. A global dim a screen does not list does not apply to it. **A screen's own dims** (`screens[].dims`, at most 2) are only its. Each has 2–8 values; **the first value is the default** (the populated, primary case) — screenshots and thumbnails show it. Ids are kebab-case; labels are the request's language.
+- In the screen, write every state's content as static HTML and mark it: `data-gg-when="order=refunded"` shows an element only in that state; spaces mean and, `|` means or (`data-gg-when="order=unpaid|shipped role=member"`). No `!=` or brackets. Never write CSS or JS that shows or hides states yourself — gg-kit does it.
+- `data-gg-set="data=error"` on a button switches this screen's state in place (a 模拟失败 control, a tab whose content differs by state). With `data-gg-link`, it opens the target screen in that state: `<a data-gg-link="order-detail" data-gg-set="order=unpaid">`. Keep `data-gg-link`'s value a plain screen id.
+- **State or screen.** Same structure, different content → a state (empty list, error, no permission, order stage, validation errors, an open sheet). Different layout, or reached on its own by a link → its own screen (payment result, 404, each wizard step, an admin-only page).
+- **States show, flows act.** A state shows a moment; what people must try — submit fails, the input stays, retry succeeds — is a real clickable flow: link the steps with `data-gg-set` (or in-screen JS for toggles), not states alone.
+- Cover what `craft/state-coverage.md` asks for the screen's kind (lists: empty and error; forms: validation errors; detail pages: their business stages) with a dim only where the content really differs. The platform lints conditions naming dims or values a screen lacks, and dims declared but never used.
+
+## Page business rules
+
+What the prototype cannot show — edge and error cases, how numbers are computed and rounded, permissions, state changes — lives in `rules/<screen id>.md`, one file per screen, versioned with the artifact. People edit them on the canvas; read them before changing a screen and implement what they say.
+
+```markdown
+# 确认订单
+
+1. **提交按钮** `#submit-btn`：库存为 0 时置灰，文案改为「已售罄」
+2. **优惠券** `#coupon` [待确认]：建议同一订单只能用一张
+3. 金额计算见 S1
+```
+
+- One numbered item per rule, one sentence: `**<element>**` (optional), `` `#<anchor>` `` (optional; none means the whole page), `[待确认]` (optional), then `：` and the rule.
+- An anchor is the element's `data-gg-anchor="<kebab>"` in the screen's HTML, unique within the screen. Add it when a rule hangs on an element; never rename or drop an existing one (rules point at it), and keep it when you rewrite the screen.
+- Rules several screens share go to `rules/shared.md` as `## S1 <title>` sections (a table or list each); page rules cite them as `见 S1`.
+- Write rules only when asked (`补全业务规则`) or when the request states them; keep existing ones. Never invent: what you cannot infer gets `[待确认]` and a suggested value. Delete or copy a screen's rule file along with the screen.
+
+`index.html` and `_gg/` belong to the platform: never edit them and never put your own files there; the platform replaces them when it renders. Once `DESIGN.md` and `tokens.css` are in the folder they are the artifact's own: later turns read and follow those copies (people may have changed them), not the plugin's originals.
+
+Screen skeleton:
+
+```html
+<!doctype html>
+<html lang="zh-CN" data-gg-device="miniprogram">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>首页</title>
+<link rel="stylesheet" href="../_gg/gg-kit.css">
+<link rel="stylesheet" href="../tokens.css">
+<script src="../_gg/gg-kit.js" defer></script>
+<style>/* this screen's styles, tokens only */</style>
+</head>
+<body>
+  <section data-section="hero">…</section>
+</body>
+</html>
+```
+
+## Workflow
+
+### Step 0 — Pre-flight
+
+1. **Folder.** If the creation message names a directory, use it. Otherwise `slug` = short kebab-case ASCII from the product name; if `design/<slug>/` exists and is not this prototype, append `-2`, `-3`…
+2. **Template.** Read `templates/<id>/GUIDE.md`, then open `templates/<id>/example/` (manifest and every screen) to see the expected finish.
+3. **Design system.** Pick its source, first match wins:
+   1. `粘贴 DESIGN.md` or a `DESIGN.md 原文` block is given, or an attachment is named `DESIGN.md`: that is the design system. Use it as the artifact's `DESIGN.md` (keep its wording; add the front matter sections the naming rule below needs if it lacks them) and generate `tokens.css` from its front matter.
+   2. `参考网站` is given: fetch the page (WebFetch, or a headless browser for script-rendered sites) and extract its palette, font families and sizes, radii, spacing and component styles (buttons, cards, inputs, navigation). `参考仓库`: read its style sources (CSS variables, theme or Tailwind config, design tokens) the same way. Write what you found as `DESIGN.md` in the same format as this plugin's design systems (front matter tokens, then Overview, Colors, Typography, Layout, Components, Do's and Don'ts), generate `tokens.css` from it, and say in your reply what you extracted and from where. Do not copy logos, images or wording from the source.
+   3. Otherwise the preset the creation message names, or under 自动 the one you picked.
+
+   Read the resulting `DESIGN.md` fully (front matter tokens, components, Do's and Don'ts) and `tokens.css`. A top-level `seed` (the seed colour picked in the design system panel) is optional metadata, not a token: keep it as is, generate nothing from it. Token names follow the front matter: `colors.x` → `--color-x`, `rounded.x` → `--rounded-x`, `spacing.x` → `--space-x`, `typography.x` → class `.t-x` (and `--text-x-size/-weight/-leading`). Generating `tokens.css`: one `:root` rule with those custom properties in front-matter order (colours, then radii, then spacing), `--font-sans` from the first typography family plus system fallbacks, and one `.t-x { font-family: var(--font-sans); font-size: …; font-weight: …; line-height: … }` rule per typography entry using its variables; open with a comment naming the system — see any `design-systems/*/tokens.css`. Only custom properties, comments and `.t-*` rules: no `@import`, `url(` or other selectors.
+4. **Craft.** Read `craft/imagery.md` and skim `craft/anti-ai-slop.md`; for forms read `craft/form-validation.md`, for empty/loading/error states `craft/state-coverage.md` (and model them as screen states, see「Screen states」).
+5. **Design brief.** Before writing any file, expand the request into a brief the way a product designer would — the request is a starting point, not a spec:
+   - One line on the product and its mood, in the words of the folder's `DESIGN.md` Overview.
+   - Per screen: its job, its sections top to bottom, and its **signature module** — the one thing that makes it this product rather than a generic list (a live map with boats on the lake, a countdown order card, a ticket stub). Give it the most space and the strongest visual.
+   - The domain details a shipped product would have and the request did not spell out: statuses, prices and how they add up, times and distances, safety or trust notes, empty and edge states. Keep the numbers consistent across screens.
+   - The image slots and where each image comes from (`craft/imagery.md`).
+   The brief becomes the screens' `prompt` in `gg-artifact.json`.
+
+### Progress card
+
+Report the stages with gonggong's `progress_card` so the group sees where you are (skip it only when the tool is not available). Create the card when you start — title `生成「<产品名>」` (a short name for what `需求` asks for), stages `搭建设计系统`, `搭建应用骨架`, one `生成 <屏幕标题>（<i>/<n>）` per screen, then `自检与连线` — and update the same card (pass its `id`, send the whole `stages` list) as each stage starts (`running`) and ends (`done`, or `failed` with the reason in `detail`). 搭建设计系统 covers Step 0's design system and copying or writing `DESIGN.md` / `tokens.css`; 搭建应用骨架 is the images in `assets/` and `gg-artifact.json` with every screen's `prompt`; 自检与连线 is Step 3. A card holds at most 12 stages: past nine screens, group them (`生成 首页等 3 屏（1/4）`). Changing an existing prototype: one stage per screen you touch plus `自检与连线`.
+
+### Step 1 — Build
+
+1. Copy the design system's `DESIGN.md` and `tokens.css` to `design/<slug>/` (or write the ones you made in Step 0). Not hosted only: also copy `kit/index.html` to `design/<slug>/index.html` and `kit/gg-kit.css`, `kit/gg-kit.js` to `design/<slug>/_gg/`.
+2. Fetch or make the images planned in the brief into `assets/` (`craft/imagery.md`) and write `assets/CREDITS.md`.
+3. Write `gg-artifact.json`, then each screen following the template guide. Give every screen a `prompt`: its design brief in the request's language, one paragraph — what the screen is for, its sections in order, the key copy and where its links go (see the example's manifest). People read it in the screen's details and you read it when changing the screen later; when you change a screen, update its `prompt` to match. Links may carry `data-gg-transition` (`push`, `push-back`, `slide-up`, `fade`, `none`; the default is `push`) for the play view.
+
+### Step 2 — Visual directions (only when asked)
+
+1. Build only the entry screen in 2–3 directions as `design/<slug>/directions/<n>-<name>.html` (same skeleton, `../_gg/` and `../tokens.css` paths unchanged). Directions differ in composition — layout, density, imagery treatment, hierarchy — never in colours outside the tokens.
+2. Screenshot each to `<n>-<name>.png` at the device size (375×812 for miniprogram, 390×844 for mobile) with headless Chrome/Chromium; skip the PNG if no browser is available.
+3. Call `ask_group_members` with one `single` question (`选哪个视觉方向？`), one short Chinese option name per direction, `recommended` set to your pick, and `option_meta` per option: `description` (one sentence, ≤ 120 chars) and `image` (the workspace-relative PNG, or the HTML when there is no PNG).
+4. Build all screens in the chosen direction, then delete `directions/`. On timeout use your pick and say so.
+
+### Step 3 — Check and critique
+
+1. Serve the folder over a local HTTP server (the shell reads `gg-artifact.json` with `fetch`) and screenshot with headless Chrome. Hosted folders have no `index.html` or `_gg/`: copy the folder to a temporary directory outside the workspace, add the kit there (`index.html`, `_gg/`) and serve that copy — never add them to `design/<slug>/`. `index.html` shows the canvas (every screen plus link arrows: check each link lands where intended), `index.html#play:<id>` shows one screen in the device frame, `index.html#play:<id>?order=refunded` in that state: screenshot each state you added once. Screenshot each screen at the device size too (375×812 miniprogram, 390×844 mobile) to judge the first view. Look for: nothing under the status bar, capsule or bottom bars; no empty band above a fixed bar; floating labels clear of pins and of each other; lists full; text not clipped; every image loads and fits its slot; no screen is a stack of same-looking grey rows — each has its signature module and visual anchor from the brief.
+2. Run the template's checklist in its GUIDE.md (every P0 must pass), then `references/critique.md`, and fix what they find.
+
+### Step 4 — Publish and reply
+
+1. Not hosted only: call the gonggong `preview_static` tool with `dir` = `design/<slug>` and `title` = the prototype title. Hosted folders are uploaded and previewed by the platform after your turn.
+2. Reply briefly: the folder, template and design system, the screens and how they link in one line, what the critique fixed, and remaining placeholders or assumptions. Do not paste HTML into chat.
+
+## Hard rules
+
+- **Tokens only.** No hex, `rgb()`, named colours, font sizes or radii in screen files except through the tokens; tints via `color-mix()` on a token.
+- **Static first.** Write content as static HTML. JavaScript in a screen is allowed only for in-screen interaction (tabs, toggles) and never to generate content: generated elements cannot be edited later.
+- **No external code.** No frameworks, CDNs or web fonts; the kit and tokens are all the CSS and JS you get besides your own inline `<style>` (and inline `<script>` when needed).
+- **Real content and real images** (`craft/imagery.md`): attachments, generated images or free photos downloaded into `assets/`, SVG illustrations for maps and diagrams; a labelled `.gg-ph` only for a slot nothing can fill. Never hotlinks, never invented logos, testimonials or awards.
+- **`data-section` on every top-level region** so people can point at a part. When asked to change one part, edit only that region and leave the rest byte-for-byte.
+- **Keep the split.** Never edit `index.html` or `_gg/`; never draw the status bar, capsule or home indicator.
+- **The folder's design system rules.** Follow the folder's own `DESIGN.md` and `tokens.css`; when asked to restyle, change them first and keep screens on the tokens.

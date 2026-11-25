@@ -1,0 +1,224 @@
+---
+name: sisense-mcp-server
+description: >-
+  Context, pitfalls, and patterns for working on the sisense-mcp-server repo.
+  Covers session state architecture, ID generation, MCP app vs tool mode,
+  analytics view layout, security constraints,
+  and lessons from past bugs.
+---
+
+# Sisense MCP Server — Repo Guide
+
+Use this skill whenever you're about to add a tool, touch session state, generate artifact IDs, or handle credentials. It captures lessons learned from real bugs in this codebase.
+
+---
+
+## Project Commands
+
+```bash
+bun run test                # unit tests (bun + preloaded setup.ts)
+bun run test:e2e            # end-to-end tests (requires built server)
+bun run build               # vite view build + bun SSE server bundle
+bun run dev                 # watch mode (no build needed)
+bun run type-check          # tsc --noEmit (run before committing)
+bun run lint                # eslint src/**/*.ts
+```
+
+### Commit Messages — Conventional Commits
+
+Format: `<type>[(optional scope)]: <description> (SNS-XXXXX)`
+
+The Jira ticket `(SNS-xxx)` is **mandatory** at the end of the header line.
+
+```
+fix(buildChart): use crypto.randomUUID() for toolCallId (SNS-128032)
+
+Replace requestId with randomUUID so chartIds are unique per tool call.
+JSON-RPC requestId is always 1 from Claude, causing every chart to get
+the same ID.
+```
+
+Supported `<type>` values:
+
+| Type       | When to use                                                |
+| ---------- | ---------------------------------------------------------- |
+| `feat`     | New feature                                                |
+| `fix`      | Bug fix                                                    |
+| `refactor` | Code change that neither fixes a bug nor adds a feature    |
+| `style`    | Whitespace, formatting, semicolons — no logic change       |
+| `docs`     | Documentation only                                         |
+| `build`    | Build system or dependency changes (scopes: `vite`, `bun`) |
+| `ci`       | CI configuration changes (scope: `gitlab`)                 |
+| `perf`     | Performance improvement                                    |
+| `test`     | Adding or correcting tests                                 |
+| `chore`    | Anything that doesn't modify src or test files             |
+| `revert`   | Reverts a previous commit                                  |
+
+Changelog follows [common-changelog.org](https://common-changelog.org/) conventions.
+
+---
+
+## Architecture at a Glance
+
+```
+HTTP request → sse-server.ts
+                 ├── credential hash → persistentStates Map
+                 │     (survives client reconnects for same user)
+                 └── MCP session ID → sessions Map (transport + state ref)
+                       └── setupMcpServer(sessionState) → mcp-server.ts
+                             ├── tools/build-chart.ts
+                             ├── tools/get-data-sources.ts
+                             └── tools/get-data-source-fields.ts
+```
+
+**`SessionState = Map<string, unknown>`** — the single source of truth per session.
+
+---
+
+## SessionState Key Taxonomy
+
+| Key                   | Type                                | Persists across MCP re-initialize?                                                    |
+| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `sisenseUrl`          | `string`                            | YES — credential                                                                      |
+| `sisenseToken`        | `string`                            | YES — credential                                                                      |
+| `httpClient`          | `HttpClient`                        | YES — credential                                                                      |
+| `openAIClient`        | `SessionOpenAIClient`               | YES — credential                                                                      |
+| `baseUrl`             | `string`                            | REFRESHED — updated from request headers on each re-init (tool-mode screenshot URLs)  |
+| `query-${id}`         | `QueryResult`                       | YES — per credential; bounded by `MCP_QUERY_CACHE_MAX_ENTRIES` (default 10)           |
+| `chart:summaries`     | `ChartSummary[]`                    | YES — shared across ChatGPT model/app sessions for same credentials                   |
+| `chart-${id}`         | `ExtendedChartWidgetProps`          | YES — key = chartId (same pattern as query cache)                                     |
+
+---
+
+## Pitfall: `extra.requestId` Is NOT a Unique Tool Call ID
+
+The MCP SDK exposes `extra.requestId` in tool handlers, but Claude sends `requestId=1` for every invocation — it's a JSON-RPC correlation ID, not a per-call unique ID. Never use it to identify artifacts.
+
+Use `generateArtifactId()` instead:
+
+```ts
+import { generateArtifactId } from '../utils/string-utils.js';
+
+const toolCallId = generateArtifactId('chart'); // → 'chart-3f2504e0'
+```
+
+First 8 hex chars of a UUID — short enough for LLMs to reference, unique enough in practice.
+
+---
+
+## Pitfall: Global Sisense SDK Client Fallback
+
+> **Bug hit in SNS-128031**: Tools without credentials were silently falling through to the global Sisense SDK `httpClient`, causing requests to succeed under the wrong user context.
+
+Always get clients from session — never assume a global fallback:
+
+```ts
+import { getSessionHttpClient, getSessionOpenAIClient } from '../utils/sisense-session.js';
+
+const httpClient = getSessionHttpClient(sessionState); // throws MISSING_SISENSE_SESSION_MESSAGE if absent
+const openAIClient = getSessionOpenAIClient(sessionState);
+```
+
+These functions throw explicitly. That's intentional — a missing client is a bug, not a fallback case.
+
+---
+
+## Pitfall: Large Payloads in `_meta` Break Clients
+
+> **Bug hit in SNS-128032**: Chart payload (serialized widget props + credentials) was returned in the `_meta` field of the tool response. Cursor and ChatGPT couldn't handle it.
+>
+> **Follow-up (SNS-129470)**: Replacing `_meta` with an MCP `ResourceTemplate` + `readServerResource()` fixed Cursor but broke ChatGPT — its MCP App host doesn't proxy `resources/read`. Claude.ai also has a dual-session issue where the Model session stores the payload but the AppBridge session can't find it.
+
+**Current pattern — inline `artifactPayload` in `structuredContent`:**
+
+1. `buildChart` sets `artifactPayload: { type: 'chart', sisenseUrl, sisenseToken, serializedWidgetProps }` on `structuredContent` (not in LLM-visible `content[0].text`).
+2. The analytics app reads `toolResult.structuredContent.artifactPayload` from the postMessage `toolresult` event and renders directly — no HTTP fetch, works across ChatGPT (CSP), Claude dual-session, Goose, and Cursor.
+
+**Adding a new artifact type** (e.g. `buildDashboard`): set `artifactPayload` in the tool's `structuredContent`, add the type to the `BiArtifact` union in `analytics-app.tsx`, and handle it in `renderArtifact`.
+
+---
+
+## MCP App Mode vs Tool Mode
+
+Controlled by `MCP_APP_ENABLED` env var. The feature flag pattern used throughout:
+
+```ts
+function isMcpAppEnabled(): boolean {
+  return process.env.MCP_APP_ENABLED !== 'false' && process.env.MCP_APP_ENABLED !== '0';
+}
+```
+
+Feature flags are **enabled by default** (opt-out, not opt-in). Check both `'false'` and `'0'`.
+
+| Mode               | How chart is delivered                                         | Tool registered via     |
+| ------------------ | -------------------------------------------------------------- | ----------------------- |
+| App mode (default) | Inline `artifactPayload` in `structuredContent` → postMessage   | `registerAppTool()`     |
+| Tool mode          | PNG screenshot, `imageUrl` in response                         | `server.registerTool()` |
+
+When adding a new tool, decide up-front which mode applies and wire it conditionally if needed.
+
+---
+
+## Pitfall: MCP App resize loop (analytics view)
+
+> **ext-apps ≥ 1.7.2:** Unbounded `ChartWidget` layout + `autoResize` causes infinite loading / `host-context-changed` spam.
+
+**Do:** Keep default `autoResize: true`. Wrap `ChartWidget` in `.chartContainer` (`width: 100%`, tuned `min-height`) so CSDK has a stable size anchor.
+
+**Don't:** `min-height: 100vh` on `#root` or `.main`; `autoResize: false` without `sendSizeChanged`; gate render on `hostContext` (gate on `!app` only).
+
+See `src/analytics-view/`.
+
+---
+
+## Adding a New Tool — Checklist
+
+1. **Get credentials from session** — use `getSessionHttpClient()`, `getSessionOpenAIClient()`, `getSessionSisenseUrl()`, `getSessionSisenseToken()` from `src/utils/sisense-session.ts`. Never touch globals.
+2. **Generate session artifact IDs with `generateArtifactId(type)`** — not `Date.now()`, not `extra.requestId`, not session counters. Same rule applies to S3 filenames (`randomUUID()` not `Date.now()`).
+3. **Wrap CSDK calls** in `csdkBrowserMock.withBrowserEnvironment(async () => { ... })`.
+4. **Wrap engine calls** in `runWithUserAction('MCP', 'ASSISTANT', () => ...)` for telemetry.
+5. **Sanitize errors before logging** — `console.warn(sanitizeError(err).message)`. Never log raw errors; they may contain tokens in URLs.
+6. **Sanitize user input** — `sanitizeForText(userPrompt)` for prompts, `sanitizeForDescription()` for short strings.
+7. **Return `isError: true`** in catch blocks alongside structured content (see `buildChart` error path).
+8. **Register in `mcp-server.ts`** — add tool registration in `setupMcpServer()`.
+9. **Write unit tests** with `bun test` preload (`src/__test-helpers__/setup.ts` mocks browser globals).
+10. **Query cache** — stored under `queryId` in [build-query.ts](src/tools/build-query.ts); trimmed via `trimQueryCache` in [session-query-cache.ts](src/utils/session-query-cache.ts). Do not clear on MCP re-initialize.
+
+---
+
+## Pitfall: ChatGPT multiple MCP sessions (re-initialize)
+
+ChatGPT opens **several** MCP HTTP sessions per chat (model tools, MCP app iframe, `resources/read`). Each sends `initialize` without `mcp-session-id`. That is **not** a new user conversation.
+
+**Do not** clone/clear `persistentStates` on re-init — it breaks `buildQuery` → `buildChart` (`retrieveQuery_miss`). Re-init only calls `refreshSessionBaseUrl()` and reuses the same `SessionState` Map ([sse-server.ts](src/sse-server.ts)).
+
+Debug with `NODE_ENV=development` and `[mcp-session]` logs from `devDebug`. Expect `initialize_reuse` with `conversationKeys` still containing the `queryId` after `buildQuery_stored`.
+
+**Query cache size:** `MCP_QUERY_CACHE_MAX_ENTRIES` (default `10`) — oldest `query-*` keys evicted on each new `buildQuery`.
+
+---
+
+## AJV / Bun Compatibility
+
+The MCP SDK's JSON Schema validation is bypassed with a no-op validator because AJV has compatibility issues with Bun:
+
+```ts
+const noOpValidator: any = {
+  getValidator: () => (input: unknown) => ({ valid: true, data: input, errorMessage: undefined }),
+};
+new McpServer({ ... }, { jsonSchemaValidator: noOpValidator });
+```
+
+**Zod handles all validation internally.** Don't remove this or try to wire in AJV — it will break.
+
+---
+
+## Credential Key (Persistent State)
+
+The `persistentStates` Map is keyed by a 16-char hex credential hash:
+
+```ts
+createHash('sha256').update(`${sisenseUrl}:${sisenseToken}`).digest('hex').slice(0, 16);
+```
+
+This means: same user with same credentials → same persistent state, regardless of how many times they reconnect. New conversation resets per-conversation keys but preserves credentials and reusable payloads.

@@ -1,0 +1,114 @@
+---
+name: performing-iot-security-assessment
+description: Use when performs comprehensive security assessments of IoT devices and
+  their ecosystems by testing hardware interfaces, firmware, network communications,
+  cloud APIs, and companion mobile applications. The tester uses firmware extraction
+  and analysis, hardware debugging via UART and JTAG, network protocol analysis, and
+  runtime exploitation to identify vulnerabilities across all layers of the IoT stack.
+  Use when working with performing iot security assessment.
+domain: cybersecurity
+tags:
+- IoT-security
+- firmware-analysis
+- embedded-systems
+- hardware-hacking
+- UART-JTAG
+subdomain: penetration-testing
+version: 1.0.0
+author: oyi77
+license: Apache-2.0
+nist_csf:
+- ID.RA-01
+- ID.RA-06
+- GV.OV-02
+- DE.AE-07
+category: cybersecurity
+---
+
+# Performing Iot Security Assessment
+
+## Overview
+
+Cybersecurity skill for performing iot security assessment. Follows industry best practices and security standards.
+
+## When to Use
+**Trigger phrases:**
+- "performing iot security assessment"
+- "Performs comprehensive security assessments of IoT devices and their ecosystems "
+
+
+- Evaluating the security of IoT devices before deployment in enterprise or critical infrastructure environments
+- Assessing consumer IoT products for security vulnerabilities as part of product security review or certification
+- Testing industrial IoT (IIoT) devices for vulnerabilities that could affect operational technology environments
+- Analyzing firmware for backdoors, hardcoded credentials, and known vulnerabilities in embedded components
+- Evaluating the security of the complete IoT ecosystem including device, cloud backend, and mobile companion app
+
+**Do not use** against IoT devices without written authorization, for modifying firmware on devices you do not own, or against medical devices or safety-critical systems without specific medical device testing authorization and safety protocols.
+
+
+## When NOT to Use
+
+- When you lack proper authorization for testing
+- For production systems without change management
+- When the task requires legal or compliance expertise beyond technical scope
+
+
+## Prerequisites
+
+- Physical access to the target IoT device(s) for hardware analysis and testing
+- Hardware tools: USB-to-UART adapter (FTDI), Bus Pirate, logic analyzer, JTAG debugger (Segger J-Link), SPI flash programmer (CH341A)
+- Firmware analysis tools: Binwalk, Firmwalker, Firmware Analysis Toolkit (FAT), Ghidra, QEMU for emulation
+- Network analysis: Wireshark, tcpdump, Bluetooth tools (Ubertooth, nRF Connect), Zigbee tools (KillerBee)
+- Soldering equipment for accessing hardware debug points if needed
+
+## Workflow
+
+```python
+# Example: IOC detection
+import re
+
+IOC_PATTERNS = {
+    "ip": r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
+    "domain": r"\b[a-z0-9-]+\.[a-z]{2,}\b",
+    "hash_md5": r"\b[a-f0-9]{32}\b",
+    "hash_sha256": r"\b[a-f0-9]{64}\b",
+}
+
+def extract_iocs(text: str) -> dict:
+    return {k: re.findall(v, text) for k, v in IOC_PATTERNS.items()}
+```
+
+1. **Plan Operations** — Define objectives, scope, and success criteria for iot security assessment operations.
+2. **Prepare Environment** — Set up tools, access, and data sources required for iot security assessment.
+3. **Execute Core Workflow** — Perform the iot security assessment operations following established procedures.
+4. **Validate Results** — Verify that results meet quality standards and objectives.
+5. **Report Findings** — Document results, observations, and recommendations.
+6. **Follow Up** — Track remediation actions and verify fixes where applicable.
+
+## Tools
+
+- **Analysis Platform** — Data processing and visualization
+- **Collaboration Tools** — Team coordination and knowledge sharing
+
+
+## Process
+
+1. **Reconnaissance** — Gather target information, identify attack surface, enumerate services
+1. **Analysis/Exploitation** — Execute the technique, analyze results, document findings
+1. **Reporting** — Document IOCs, write findings, provide remediation recommendations
+
+## Verification
+
+- [ ] All iot security assessment procedures executed completely and documented
+- [ ] Findings validated against multiple data sources
+- [ ] False positives identified and filtered
+- [ ] Results documented with evidence and timestamps
+- [ ] Recommendations provided with risk-based prioritization
+
+## Anti-Rationalization Table
+
+| Rationalization | Reality |
+|---|---|
+| "We are too small to be targeted" | Automated attacks target everyone. Size does not matter. |
+| "Security slows us down" | A breach slows you down 100x more. Build security in from the start. |
+| "We will fix it after launch" | Vulnerabilities in production are exploited within hours. Fix before deploy. |

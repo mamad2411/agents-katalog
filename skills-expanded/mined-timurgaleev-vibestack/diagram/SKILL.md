@@ -1,0 +1,211 @@
+---
+name: diagram
+description: |
+  Render Mermaid to self-contained HTML, SVG, PNG and an Excalidraw scene; no diagram toolchain.
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+triggers:
+  - draw a diagram
+  - make a mermaid diagram
+  - render this flowchart
+  - diagram this
+  - visualize this as a graph
+---
+
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
+## When to invoke
+
+Use to turn a description or some Mermaid source into a picture — "draw a
+diagram", "make a flowchart", "diagram this architecture", "visualize this as a
+graph".
+
+# /diagram — Render a Mermaid diagram
+
+vibestack renders **Mermaid** offline. The repo ships the whole renderer as one
+self-contained page (`lib/diagram-render/dist/diagram-render.html`, mermaid
+pinned at build time), so the browse shim turns your source into SVG with no
+network at all. The SVG is inlined into the HTML artifact you keep — it opens in
+any browser, on any machine, forever, with nothing to fetch — and the PNG comes
+from the same `$B` you already use for QA. The same page also converts the
+source into an editable `.excalidraw` scene.
+
+{{include lib/snippets/browse-setup.md}}
+
+### 1. Get the Mermaid source
+
+If the user gave Mermaid, use it. Otherwise write it from their description
+(`flowchart`, `sequenceDiagram`, `erDiagram`, `classDiagram`, `gantt`, etc.).
+
+Authoring rules, all in service of one thing — a diagram nobody can read is
+worse than a paragraph:
+
+- **Direction follows the subject.** `graph LR` for pipelines and flows, where
+  the eye should travel with the data; `graph TD` for hierarchies and
+  decompositions, where depth is the point.
+- **5-15 nodes is the readable range.** Keep labels to a few words. If the ask
+  genuinely needs more, split it into two diagrams along a seam the reader
+  already understands (one per subsystem, or overview plus detail) rather than
+  shrinking everything to fit.
+- **Say what the arrows mean** when a graph mixes kinds of edge — a call, a
+  data flow and a deploy step look identical otherwise.
+
+Then pick an output base path. In a git repo, default to a diagram directory
+the repo already uses (or `docs/`) with a slug from the diagram's subject, so
+the artifacts land somewhere tracked and stop overwriting each other. Outside a
+repo, default to `./diagram`. Confirm the path with the user if the diagram is
+one they will commit.
+
+Write the Mermaid source to `$OUT.mmd` with the Write tool. Passing it through a
+heredoc mangles quotes and backslashes in edge labels, and it is the artifact the
+user edits to re-render anyway.
+
+### 2. Render the source to SVG with the offline bundle
+
+The staged copy is content-addressed, so concurrent sessions and mixed vibestack
+versions never clobber each other:
+
+```bash
+B='<BROWSE_BIN>'
+OUT="${OUT:-./diagram}"            # base path; produces $OUT.mmd/.svg/.html/.png/.excalidraw
+mkdir -p "$(dirname "$OUT")"
+echo "OUT: $OUT"
+
+# The renderer is linked into this skill's own directory at install time
+# (skills/diagram/renderer -> lib/diagram-render), so it resolves the same way
+# in a user-scope install, a project-scope install, and the checkout itself.
+BUNDLE=""
+for c in "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/diagram}/renderer/dist/diagram-render.html" \
+         "$(git rev-parse --show-toplevel 2>/dev/null)/lib/diagram-render/dist/diagram-render.html"; do
+  [ -f "$c" ] && BUNDLE="$c" && break
+done
+if [ -z "$BUNDLE" ] || [ -z "${B:-}" ] || [ "$("$B" status 2>/dev/null)" = "BROWSE_NOT_AVAILABLE" ]; then
+  echo "RENDER_UNAVAILABLE"
+else
+  SHA=$(shasum -a 256 "$BUNDLE" | cut -c1-16)
+  # A shared temp dir is writable by others: stage in a dir only this user owns,
+  # and reuse a staged copy only when its hash still matches the bundle.
+  STAGE_DIR="${TMPDIR:-/tmp}/vibestack-diagram-$(id -u)"
+  mkdir -p -m 700 "$STAGE_DIR" 2>/dev/null
+  { [ -O "$STAGE_DIR" ] && [ ! -L "$STAGE_DIR" ] && chmod 700 "$STAGE_DIR"; } || STAGE_DIR=$(mktemp -d)
+  STAGED="$STAGE_DIR/diagram-render-$SHA.html"
+  if [ ! -f "$STAGED" ] || [ "$(shasum -a 256 "$STAGED" | cut -c1-16)" != "$SHA" ]; then
+    (umask 077; cp "$BUNDLE" "$STAGED.$$") && mv -f "$STAGED.$$" "$STAGED"
+  fi
+  TAB=$("$B" newtab --json | sed -n 's/.*"tabId":[[:space:]]*\([0-9]*\).*/\1/p')
+  [ -z "$TAB" ] && { echo "TAB_OPEN_FAILED — daemon busy? check browse status"; } || {
+    "$B" load-html "$STAGED" --tab-id "$TAB"
+    "$B" wait '#done' --tab-id "$TAB"
+    echo "RENDER_TAB_READY: tab $TAB"
+    echo "TAB: $TAB"
+  }
+fi
+```
+
+**Both failure lines are terminal — STOP, do not continue to Step 3.** With no
+`$TAB` and no `$OUT.svg`, the steps below would build an HTML file around a
+file that does not exist and screenshot a blank page, reporting success. On
+`RENDER_UNAVAILABLE`, say which half is missing. A missing bundle means an
+incomplete checkout — re-run `./install` from it. A missing shim means the
+browse dependencies were never fetched; `$B status` bootstraps them on first
+use and prints `BROWSE_NOT_AVAILABLE` when it cannot (npm absent). On
+`TAB_OPEN_FAILED`, report what `$B status` says — the daemon is busy, wedged,
+or unable to open a tab — and re-run.
+
+Every `$B js` / `$B wait` / `$B closetab` below MUST pass `--tab-id $TAB`. Without
+it the call hits whatever tab is active, which may be a live `/qa` or `/scrape`
+session sharing the daemon.
+
+Render the source, reading it from disk inside the page call so no shell quoting
+touches the Mermaid text. The blocks below start from fresh shells: replace
+`<OUT>` and `<TAB>` with the values the render block printed on its `OUT:` and
+`TAB:` lines.
+
+```bash
+B='<BROWSE_BIN>'
+OUT='<OUT>'
+TAB='<TAB>'
+SRC=$(python3 -I -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT.mmd")
+"$B" js "__renderMermaid('diagram-1', $SRC)" --tab-id "$TAB" --out "$OUT.svg"
+"$B" js "__mermaidToExcalidraw($SRC)" --tab-id "$TAB" --out "$OUT.excalidraw"
+"$B" closetab "$TAB" >/dev/null 2>&1 || true
+```
+
+If the first call errors, the Mermaid has a syntax problem — read the error, fix
+`$OUT.mmd`, and re-render. If only the scene call errors, keep the SVG and
+report the scene as not produced; it is a bonus artifact, not a gate. Do not fall back to a CDN page: rendering is offline
+by design, and a silent network fallback turns an air-gapped failure into a
+blank diagram nobody notices.
+
+#### Re-render an edited scene
+
+When the user edits `$OUT.excalidraw` (excalidraw.com, the VS Code extension)
+and wants the picture back, open a render tab exactly as above and swap the
+render block for the scene call, then continue with Step 3:
+
+```bash
+B='<BROWSE_BIN>'
+OUT='<OUT>'
+TAB='<TAB>'
+"$B" js "__excalidrawToSvg($(python3 -I -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT.excalidraw"))" \
+  --tab-id "$TAB" --out "$OUT.svg"
+"$B" closetab "$TAB" >/dev/null 2>&1 || true
+```
+
+Image elements render only from the scene's own embedded `files`; an image that
+points at a URL stays blank, because the page never fetches. Flowcharts convert
+shape by shape; a diagram type the converter does not support comes back as one
+image element, so the scene opens but is not editable piece by piece — say so
+when it happens.
+
+### 3. Inline the SVG into the HTML artifact, then screenshot it
+
+```bash
+B='<BROWSE_BIN>'
+OUT='<OUT>'
+{
+  printf '%s' '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Diagram</title>'
+  printf '%s' '<style>body{margin:0;padding:20px;background:#fff;font-family:system-ui}svg{max-width:100%}</style>'
+  printf '%s' '</head><body>'
+  cat "$OUT.svg"
+  printf '%s' '</body></html>'
+} > "$OUT.html"
+
+if [ -n "${B:-}" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
+  # The tab verbs above need the full daemon, so this chain uses its single
+  # pipe-separated argument; the shim's one-argument-per-step form would run
+  # only the goto here.
+  "$B" chain "goto \"file://$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT").html\" | wait --load | screenshot \"$OUT.png\""
+  echo "DIAGRAM: $OUT.png (and $OUT.html, $OUT.svg, $OUT.mmd, $OUT.excalidraw)"
+else
+  echo "DIAGRAM_HTML_ONLY: $OUT.html — open it in a browser (no shim for PNG)"
+fi
+```
+
+The SVG is already drawn, so the capture waits on page load rather than on a
+fixed timer — nothing is still rendering when the screenshot fires.
+
+### 4. Report
+
+List the artifacts: `.mmd` (the source to edit), `.svg` (vector for docs),
+`.html` (opens anywhere, offline), `.png` (for chat and READMEs), `.excalidraw`
+(a scene to hand-edit, then re-render as above).
+
+## Notes
+
+- **Mermaid is the source format.** The Excalidraw scene is derived from it and
+  can be edited and re-rendered here; DOCX and multi-page exports are not — hand
+  the user the HTML or use a dedicated tool.
+- **Fully offline.** The renderer is vendored in the repo, and the HTML artifact
+  carries the finished SVG inline — no CDN, no network, at render time or later.
+- **PDF-bound diagrams belong to `/make-pdf`.** It renders a ```` ```mermaid ````
+  fence as a vector figure inside the document, which beats pasting this skill's
+  PNG into a page. Say so when the user's real target is a PDF.
+- If `RENDER_UNAVAILABLE` printed, say what is missing and how to get it back
+  (`./install` from the checkout for the bundle; `$B status` to bootstrap the
+  browse dependencies). Never fall back to a CDN behind the user's back.
+
+{{include lib/snippets/capture-learnings.md}}

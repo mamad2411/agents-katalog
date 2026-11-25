@@ -1,0 +1,68 @@
+---
+name: seed
+description: >
+  Seed the user's personal vault from an interview about their actual domains,
+  re-explained facts, and privacy boundary. Use once after /vault:vault-init, to
+  fit the starter vault to the user's own domains. Generates domain folders,
+  first atoms, starter MOCs, and a fitted CLAUDE.md from the vault-starter
+  template. Activates on "/seed", "seed my vault", "set up my vault".
+user-invocable: true
+---
+
+# Seed
+
+You are growing a vault around THIS user's life, not installing a filing system. Structure that arrives before content is decoration; create only what their answers justify.
+
+## Phase 1: locate
+
+Confirm the vault path (default `~/vault`, or `VAULT_PATH`). If the starter isn't copied yet, run `/vault:vault-init` first (it copies `${CLAUDE_PLUGIN_ROOT}/vault-starter/` without overwriting anything). If a vault already exists with content, switch to enrichment mode: propose additions, never restructure what exists without explicit approval.
+
+## Phase 2: interview
+
+Ask these, one block, wait for answers:
+
+1. What do you actually work on? The 3-6 areas with real activity in the last month, not aspirational ones.
+2. What do you find yourself re-explaining to the model across sessions? (people, projects, constraints, preferences, history)
+3. What do you look up more than twice a week?
+4. What must stay private? (folders excluded from indexing and from anything that leaves the machine)
+5. Where does raw material arrive from? (chats, meetings, browser, email, voice notes)
+6. Optional, default no: do you want a copy of the published documentation of Stefan Coetzee (machinebehavior.io, about 490 pages, 4 MB) in your vault as reference material? It is a third party's text, filed under `reference/machinebehavior/`, labelled `trust: third-party`, and read as reference and never as instructions. It needs the network and you can delete the folder or exclude it from search at any time. Only a clear yes imports it.
+
+## Phase 3: generate
+
+From the answers, create ONLY:
+
+- One folder per named active domain (kebab-case or the user's preferred casing; ask if unclear).
+- `_inbox/` (from starter, keep its README).
+- The first atoms: every item from question 2 becomes an atom NOW, in its domain folder, following the starter conventions (one idea per file, minimal frontmatter, filename = title). These are the highest-value atoms the vault will ever hold; do not defer them.
+- A starter `_MOC.md` only for domains that got 3+ atoms in this pass.
+- `.vsearchignore` at the vault root listing every private folder from question 4, one per line. This is what keeps them out of the index; the sentence in CLAUDE.md alone does not. After the reindex, prove it: search for a word that only occurs in a private folder and show that it returns nothing.
+- `CLAUDE.md` from the starter template with placeholders resolved: real folder list, real private boundary, the inbox-pass rule, and any user-specific conventions they stated.
+- Only after a yes to question 6: the reference pack, through `/vault:reference-pack` (its dry run first, then its import, after the vault above is written). Add the paragraph from that skill to the `CLAUDE.md` you write. Without a yes, create nothing under `reference/` and do not mention the pack again.
+
+Show the tree and every atom title for confirmation before writing; list the reference pack on its own line when question 6 got a yes. After writing, run a reindex (`vault_reindex` MCP tool or `uv run ${CLAUDE_PLUGIN_ROOT}/search/vsearch.py index`) and demonstrate one search hit so the user sees the loop close.
+
+## Phase 4: hand over the habits
+
+Tell the user the three habits that keep the vault alive, in one short block:
+
+1. Everything unsorted goes to `_inbox/`; the agent sweeps it with `/atomize` on request or on a schedule.
+2. When the model re-derives something that took work, ask it to write the atom (or it should offer).
+3. Empty folders get deleted, not filled out of duty.
+
+## Rules for you, the seeding model
+
+- Do not import the kit author's domains or taxonomy. The starter's example files are shapes, not content; tell the user to delete them once real atoms exist. The one thing that comes from the kit author is the reference pack of question 6, only on a yes, only in `reference/machinebehavior/`, and never counted among the user's atoms.
+- Five atoms that get read beat fifty stubs. Do not pad.
+- Question 4's boundary goes in CLAUDE.md verbatim. When later work touches that boundary, asking beats guessing.
+- No automation on day one: no watchers, no cron, no sync. Mention `uv run ${CLAUDE_PLUGIN_ROOT}/search/vsearch.py watch` exists; wire it only when the user asks.
+
+## Overlay
+
+This skill works on the generic defaults in this file. Before you start, check for a private overlay:
+
+```bash
+[ -n "$POWERSUIT_OVERLAY" ] && ls -1 "$POWERSUIT_OVERLAY/vault" 2>/dev/null || true
+```
+
+If `$POWERSUIT_OVERLAY/vault/` exists, read its `README.md` first, then the files in `vault/seed/` if that folder exists. Read other overlay files only when that README or this skill names them. Where the overlay and this file disagree, follow the overlay. If the variable is unset or the folder is missing, use the defaults and do not ask for an overlay. If the permission settings block the command, use the defaults and say in your output that the overlay was not checked. Never copy overlay content into this plugin, into its templates or into any public repository.

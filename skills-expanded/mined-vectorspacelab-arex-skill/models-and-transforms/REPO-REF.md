@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/vectorspacelab/arex-skill (path: skills/repositories/repo-skills/torchgeo/sub-skills/models-and-transforms/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use for TorchGeo model registry, pretrained weights, model

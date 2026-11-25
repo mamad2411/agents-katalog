@@ -1,0 +1,144 @@
+---
+name: answer-open-question-with-alternative
+description: Record a chosen alternative from an open question's embedded analysis as that question's answer in the named mission's requirements.md.
+---
+
+# answer-open-question-with-alternative
+
+Records a **named `<alternative>`** from one open question's embedded analysis as its answer
+**inline, in the current conversation** — never in a subagent — so the recording reasoning
+(which block was resolved, which alternative was chosen, what decision was folded in, what
+cascaded) stays in context for follow-up.
+
+This is the sibling of `answer-open-question-with-recommendation`: same recommend-sweep
+annotations, same recording core, but the answer is the `<alternative>` **you** name by its
+`id` rather than the one `<recommendation>` the sweep picked — which lets you record a
+decision that *overrides* the recommendation, or resolve a question the sweep left genuinely
+tied. There is deliberately **no** batch or agent form of this skill; to record every
+recommendation-bearing question at its *recommended* option unattended, use
+`/answer-all-open-questions-with-recommendation`.
+
+## Invocation
+
+```
+/answer-open-question-with-alternative --mission <path> <Short Title>. <Alternative Id>
+```
+
+First strip the leading `--mission <path>` from the argument by the rule in
+`${PLUGIN_ROOT}/shared/resolve-mission.md`, holding its value for step 1, then split
+the rest on the **first `.`** — exactly as `answer-open-question` does. Everything
+before it is `<Short Title>` (the question handle); everything after it is `<Alternative Id>`
+(the `id` of the `<alternative>` to record). Trim surrounding whitespace from both halves.
+
+- `<Short Title>` must match (case-insensitive, against the block's `id`) an existing
+  `<open-question>` block in `<MISSION_DIR>/open_questions.xml` that the
+  `/recommend-all-open-questions` sweep has already annotated with `<alternative>` elements.
+- `<Alternative Id>` must match (case-insensitive, against the `id` attribute) one of that
+  block's embedded `<alternative id="...">` elements.
+
+The required leading `--mission <path>` names the mission by its repo-relative path,
+exactly as the definition tool printed it, trailing slash included, e.g.
+`mission_user-guide/`; nothing else needs to be looked up first.
+
+## Workflow
+
+### 1. Find the mission
+
+Follow `${PLUGIN_ROOT}/shared/resolve-mission.md` to resolve `<MISSION_DIR>`. Never use a hardcoded
+task-list path. Hold `<MISSION_DIR>` — you need it for the lift, the delegated recording,
+and the commit.
+
+### 2. Lift the chosen alternative into the answer
+
+A whole read of `<MISSION_DIR>/open_questions.xml` with the file-reading tool is for
+reasoning only, and every locate, list, lift, and write of it is a call to the plugin's
+open-question tool, that file's sole writer. Run
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py lift <MISSION_DIR> "<Short Title>" --alternative "<Alternative Id>"
+```
+
+On success it prints one line, "`<id>` — `<what-it-is>`": the chosen alternative's `id` as the
+document holds it, a spaced em dash, then the element's own what-it-is text, both as plain
+text, with its `<advantage>` and `<drawback>` children excluded (they are the trade-off
+analysis, not the decision). That whole line is **ANSWER** — the same anchor form the
+recommendation path uses for "`<option>` — `<rationale>`" — and its text before the first
+spaced em dash is **RECORDED OPTION**. Derive both from this print alone; never invent
+answer text.
+
+**Guard — clean stop, change nothing.** If the call fails, stop without editing anything and
+report why: the fixed line `Alternative not recorded — the lift was refused.` first, then
+below it the tool's `Error:` line quoted verbatim, which names the failed lookup:
+- no block's `id` matches `<Short Title>` — the line lists the ids the document holds, so the
+  user can retry;
+- the matched block carries **no** `<alternative>` elements at all — the
+  `/recommend-all-open-questions` sweep never annotated it; point the user at that sweep first;
+- the block has alternatives but none whose `id` matches `<Alternative Id>` — the line lists
+  that block's alternative ids, so the user can retry.
+
+### 3. Record the answer via the shared hand-answer procedure
+
+Hand the **`<MISSION_DIR>`** from step 1 as its `MISSION_DIR` input, the resolved
+**`<Short Title>`**, the derived **ANSWER**, and the **RECORDED OPTION** from step 2 (the same
+value ANSWER opens with, passed separately so the core hands it to the tool as an exact id
+rather than parsing it out of ANSWER) to `${PLUGIN_ROOT}/shared/hand-answer-procedure.md` and
+follow it unchanged **yourself, in this conversation**. That procedure reads
+`open_questions.xml` whole, names the standing picks on the other open questions that the
+answer undermines, and delegates the recording work to the shared recording core, handing it
+those names — locate, analyse, fold the decision into `## Decisions` of `requirements.md` as
+clean prose, remove the block from `open_questions.xml`, and cascade to any mooted siblings.
+
+Do **not** spawn any subagent — there is no `answer-open-question-with-alternative` agent.
+
+If the recording core stops on the tool's `Error:` line, it has changed nothing: print the
+fixed line `Alternative not recorded — the recording core stopped.` first, then below it that
+`Error:` line quoted verbatim.
+
+### 4. Commit the alternative answer
+
+Read and follow the shared commit procedure at
+`${PLUGIN_ROOT}/shared/commit-procedure.md`, running its one commit-tool command yourself as
+this step's one git tool call. Supply it these three inputs, using the `<MISSION_DIR>` from
+step 1:
+
+- **PATHS** — this skill's own edits: `<MISSION_DIR>/open_questions.xml` and
+  `<MISSION_DIR>/requirements.md`.
+- **SUBJECT** — exactly `Alternative-answer: <Short Title>` (the answered question's handle).
+  This distinct subject marks an override of the embedded recommendation: when
+  `/capture-mission-principle-updates` walks a mission's answer commits across all three
+  subjects, it reads this one as an override signal, like `Manual-answer:`, and — because the
+  body below carries no user rationale — asks the user then why the alternative was preferred;
+  `Recommendation-answer:` commits are evidence about existing principles only.
+- **BODY** — the lifted alternative: the "`<id>` — `<what-it-is>`" line the `lift` call printed
+  in step 2, verbatim — the answer that was recorded.
+
+The commit tool runs the dirty-own-path guard, the path-scoped staging, and the commit. Its
+guard also covers this skill's clean-stop cases: if step 2 stopped on the tool's `Error:` line
+or the recording core in step 3 stopped on one, neither file changed, so the commit tool
+prints its no-op line `Nothing committed — none of the paths changed.` and nothing is staged
+or committed.
+
+### 5. Report findings
+
+On the success path — the alternative was recorded and committed — print exactly one fixed
+terse status line, carrying no identifier (no Short Title, no alternative id, no commit
+subject):
+
+```
+Answer recorded.
+```
+
+Do **not** re-narrate which question resolved, which alternative you recorded (its id or how it
+read), or how the documents changed (the removed block, the decision folded into
+`## Decisions`, any cascading resolutions). Alongside the terse line keep only the one piece of
+genuinely git-absent advisory output: any new open questions the recorded decision may have
+introduced — surface these but do **not** add them to the document without user confirmation.
+
+**No-op case:** if step 4's commit tool printed
+`Nothing committed — none of the paths changed.` — nothing was committed because neither file
+changed (step 2 or the recording core in step 3 stopped on the tool's `Error:` line) — do
+**not** print the terse success line. The report is that stop's own message,
+opening with the fixed line its step gives.
+
+Then stay available: the user may now ask follow-up questions or request adjustments, with the
+full recording context still in hand.

@@ -1,0 +1,810 @@
+---
+name: xray-cli
+description: "Run Xray Cloud test management through the `bun xray` CLI. Use when creating or listing tests, executions, plans or sets; importing JUnit, Cucumber or Xray JSON results; updating run status or linking defects; backing up or restoring a project; syncing or verifying coverage traceability; authenticating to Xray. Not for documenting test cases or ROI (test-documentation)."
+license: MIT
+compatibility: [claude-code, copilot, cursor, codex, opencode, pi]
+allowed-tools: Bash(bun xray:*)
+complementary_categories: [tms]
+metadata:
+  kind: utility
+---
+
+# Xray CLI - Test Management
+
+This skill owns the literal `bun xray` syntax for Xray Cloud. Workflow skills describe what they need as `[TMS_TOOL]` pseudocode and load this skill to turn it into commands, so every Xray write goes through one place that knows the traps below.
+
+## Compact Rules
+
+- Confirm the project is in Modality jira-xray before invoking anything here. A jira-native project (no Xray plugin) routes to `/acli` instead. `/test-documentation` Phase 0 resolves the modality once and later phases inherit it; never mix the two modalities in one phase.
+- Call this CLI only from this skill. Workflow skills write `[TMS_TOOL]` pseudocode and load this skill.
+- Pass an explicit `--limit` above the expected count on every list command. All of them default to a small `--limit` (see `cli/xray`) and truncate silently. Read the true count from the `(N total)` header, not by counting rows; a truncated read looks exactly like data loss.
+- Capture the key of anything you create from the bare `KEY <PROJ-123>` line or from `--json`, not from the decorated success line. A create whose key was not captured leaves an orphan artifact nothing downstream can link.
+- Create a Manual test without inline steps, add one step per call, then verify the steps landed. Xray Cloud silently drops steps passed at creation.
+- Pin every ATR execution to a Test Environment (value from `active_env`) so results stay comparable across runs. Repair an execution that slipped through without one in place.
+- Keep the Set-first cascade: the per-Story ATS holds the membership, and the Plan (ATP) and Execution (ATR) derive their test lists from it instead of keeping their own.
+- Fill Story coverage with the Jira-layer issue link from the ATS to the Story. Plan to Story and Execution to Story links are administrative traceability and cover nothing; a direct Test to Story link is a last resort for an instance with no Test Set work type. Plan, Execution and Set membership is Xray-internal GraphQL; membership of the Story's ATS is also a TC to ATS `test` issue link (`link create <TC> <ATS> --type test`), in both modalities (`agentic-qa-core/references/traceability-linking.md` §9).
+- State the coverage direction as the raw field: on a Story, the counting edge is the `issuelinks` entry carrying the artifact under `inwardIssue`. The artifact-first argument order produces it. Verify against Xray coverage (the three-edge check or the coverage panel), never against Jira link semantics, because a Jira link list looks correct in both directions.
+- Replace an inverted coverage link; do not add a corrected one on top. Jira dedupes a link between the same pair and type regardless of direction, so the create is a silent no-op until the wrong link is deleted by its own link id. Read the id first, dry-run, then delete with an explicit confirmation.
+- Verify traceability with the one-call three-edge check, not from the coverage edge alone. A missing ATP to Story or ATR to Story link is a FAIL, and the same call compares the ATS membership against the Plan and Execution test lists. Sweep a whole project (several keys or a JQL query) at least once per engagement: an inverted link is invisible per Story and only shows as a pattern in aggregate.
+- Treat Xray run statuses as per-instance vocabulary. `TODO`, `EXECUTING`, `PASSED` and `FAILED` are the safe floor; `ABORTED` and `BLOCKED` are Xray defaults a project may not define, and the mutation is rejected when it does not. Record a blocked case in a status the project does define and explain it in the run comment. A run left `TODO` reads as never executed.
+- When a Jira-fallback path created the container without authenticated Xray, the Xray layer never registered the tests and runs come back empty. Reconcile with the per-entity sync (or the bulk repair scan) before importing results.
+- Import results onto an existing Execution key, never scoped to a project. The import API cannot set a parent, so a project-scoped import mints a fresh unparented Execution on every run, outside the artifact ladder.
+- Import nothing that could create or rewrite a Test. `import junit` refuses any testcase without a `test_key` / `test_id` inside its own `<properties>` (or with two keys, or with `test_summary` / `test_description` / `tags`) and `import xray` refuses `testInfo` or a missing, malformed or repeated `testKey`, naming each one. Import a KATA run per ATC with explicit keys (`bun run xray:payload`, then `import xray`), not as its `junit.xml`. A missing Test is created by `/test-documentation` behind a signed ROI verdict, never by an import.
+- Build Xray JSON payloads only with this CLI, and re-authenticate once the bearer token passes its 24h TTL. A stale token produces silent 401s mid-import that read like network blips.
+- Dry-run any import or backup restore before applying, and verify the target Test Plan and Test Execution keys exist first (`exec get` / `plan get`); orphan results are rejected and abort the whole import. Both commands write irreversibly across hundreds of tests and runs.
+- When moving between sites, restore in sync-by-key mode (GraphQL ids are re-assigned per site, keys are not), re-authenticate between export and restore because auth holds one site at a time, and finish with the Jira instance-migration flow: field ids are reassigned and an old id silently resolves to a different field.
+- Push no run results for TCs the ROI verdict marked terminal-Manual (`to_be_automated=no`). It creates audit noise and breaks the Candidate / Manual / Deferred reporting.
+- When Xray credentials are missing or broken, stop per Critical Rule #10: name `XRAY_CLIENT_ID` / `XRAY_CLIENT_SECRET`, point at `.env`, and ask for a session restart. Nothing reaches the Xray GraphQL layer without them.
+- Two writes are irreversible and need an approval source: applying a `backup restore` after its dry-run, and the credential fix (Critical Rule #10). With a person present, ask. With a supervised worker, the conductor holds the gate. In a routine with nobody, the delegating brief is the approval when it names the restore; otherwise do the dry-run, stop and report (`agentic-qa-core/references/decision-protocol.md`). Importing results onto an existing Execution, after the dry-run and the key check, is the stage's normal write and needs no extra confirmation. `link delete` runs with `--yes` after its dry-run, inside the repair the trace call justified.
+
+**Read full SKILL.md when**: composing a specific command, wiring the canonical end-to-end Story flow, running backup/restore or a cross-site migration, or enriching the synced PBI cache.
+
+## Modality check
+
+This skill owns `[TMS_TOOL]` only in Modality jira-xray (Jira Cloud with the Xray plugin). The resolution logic is `test-documentation/SKILL.md` §Phase 0. If you arrive from a `[TMS_TOOL] ...` pseudocode block without a resolved modality, resolve it first. In Modality jira-native, load `/acli` instead: TMS operations map to native Jira issues (`test-documentation/references/jira-setup.md`).
+
+## Quick start
+
+```bash
+# Check authentication status
+bun xray auth status
+# Login with credentials
+bun xray auth login --client-id ABC123 --client-secret xyz789
+# List tests in a project
+bun xray test list --project DEMO
+# Create a test execution
+bun xray exec create --project DEMO --summary "Sprint 1 Tests"
+# Import results onto an existing Execution (build the payload with `bun run xray:payload`)
+bun xray import xray --file xray-results.json --execution DEMO-200
+```
+
+## Issue references: Jira keys vs numeric IDs
+
+Every flag that takes an issue reference (`--execution`, `--plan`, `--set`, `--tests`, plus the positional argument of `exec get` / `set get`) accepts both forms interchangeably:
+
+- A Jira key such as `{{PROJECT_KEY}}-194` is resolved through Jira REST in-process. It needs Jira credentials: `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` from `.env` with the host from `.agents/project.yaml`, or the `auth login --jira-url --jira-email --jira-token` override flags.
+- A numeric Xray issueId such as `1042389` is used as-is, with no resolution call.
+
+With only Xray credentials configured, a Jira key fails with an error that names the missing flags. Test Run identifiers (`run get`, `run status --id`, etc.) are GraphQL run ids, not Jira keys, so resolution does not apply to them.
+
+```bash
+# Both forms work identically
+bun xray exec get {{PROJECT_KEY}}-194
+bun xray exec get 1042389
+bun xray exec add-tests --execution {{PROJECT_KEY}}-194 --tests {{PROJECT_KEY}}-100,{{PROJECT_KEY}}-101,{{PROJECT_KEY}}-102
+bun xray exec add-tests --execution 1042389 --tests 1041000,1041001,1041002
+```
+
+## Commands
+
+### Authentication
+
+`auth login` reads every credential from `.env` by default
+(`XRAY_CLIENT_ID/SECRET`, `ATLASSIAN_EMAIL/API_TOKEN`); bun auto-loads `.env`. The Jira site host is not an env var: it comes from `.agents/project.yaml`.
+Pass a flag only to override the environment, for example when switching to another site
+mid-migration. With a populated `.env`, `bun xray auth login` with no arguments is enough.
+Login prints which source (env/flag/unset) each credential resolved from.
+
+```bash
+bun xray auth login                                    # all creds from .env
+bun xray auth login --client-id <id> --client-secret <secret>   # override XRAY creds (other site)
+bun xray auth login --client-id <id> --client-secret <secret> --project DEMO
+bun xray auth login --jira-url https://your-instance.atlassian.net --jira-email user@email.com --jira-token <token>
+bun xray auth logout
+bun xray auth status
+```
+
+### Test Management
+
+```bash
+# Create tests
+bun xray test create --project DEMO --summary "Verify login"
+bun xray test create --project DEMO --summary "Verify login" --type Manual
+bun xray test create --project DEMO --summary "API check" --type Generic --definition "curl http://api.test"
+bun xray test create --project DEMO --summary "Login flow" --type Cucumber --gherkin "Feature: Login..."
+
+# Manual test with steps: two-step pattern (create, then one add-step per step)
+bun xray test create --project DEMO --summary "Verify login" --type Manual
+bun xray test add-step --test <issueId> --action "Open app" --result "Login form is displayed"
+bun xray test add-step --test <issueId> --action "Enter credentials" --data "user@test.com" --result "Success message"
+
+# Get test details
+bun xray test get DEMO-123
+bun xray test get --id <issueId>
+
+# List tests
+bun xray test list --project DEMO
+bun xray test list --project DEMO --limit 50
+bun xray test list --jql "project = DEMO AND labels = critical"
+```
+
+Every `create` in this CLI (`test`, `precondition`, `exec`, `plan`, `set`) ends
+with a bare, ANSI-free `KEY <PROJ-123>` line and accepts `--json` for the same
+value as a field. Use one of those two. The decorated `✔ Test created: …` line
+puts colour codes, an icon and a label between you and the value, which is how
+"created the TC but could not get its id" keeps happening.
+
+```bash
+TC_KEY=$(bun xray test create --project DEMO --summary "Verify login" | grep '^KEY ' | cut -d' ' -f2)
+bun xray test create --project DEMO --summary "Verify login" --json   # {"key":"DEMO-123","issueId":"1042389",...}
+```
+
+The `issueId` (numeric) is in the `--json` object too. Prefer the KEY for
+anything a human will read or link; the numeric id is what `add-step` and the
+other Xray-internal mutations take, and every command here accepts either.
+
+Every `list` command (`test`, `exec`, `set`, `plan`) prints the true total in its
+header (`Tests (N total, showing M)`) while listing only the default page, so
+pass an explicit `--limit` above the expected count whenever you count, iterate
+or decide from the result. This bites hardest in post-migration verification.
+
+```bash
+# Add step to existing test (the reliable way to add Manual steps: one call per step)
+bun xray test add-step --test <issueId> --action "Click button" --result "Form submits"
+bun xray test add-step --test <issueId> --action "Submit form" --data "valid payload" --result "200 OK"
+
+# Remove a step from a test
+bun xray test remove-step --test <issueId> --step <stepId>
+
+# Update an existing step in place: only the flags you pass change; the rest keep their value
+bun xray test update-step <issueId> --step <stepId> --action "Click submit"
+bun xray test update-step <issueId> --step <stepId> --data "valid payload" --result "201 Created"
+
+# Enrich an EXISTING test (e.g. Stage-4 regression promotion: add rich Gherkin to a sprint test)
+bun xray test update-gherkin --test <issueId> --gherkin "Feature: Login..."
+bun xray test update-definition --test <issueId> --definition "curl http://api.test"
+bun xray test update-type --test <issueId> --type Cucumber
+```
+
+Manual steps do not persist on `create`. Xray Cloud silently drops any steps
+passed to the `createTest` mutation (observed `stepCount:0` after a "Test created"
+success), so the `--step` flag on `test create` is deprecated: the test is still
+created, and the CLI prints a warning listing the exact `test add-step` calls to
+run. The reliable path is `test create --type Manual` with no inline steps, then
+one `test add-step` per step. Verify the steps landed with `bun xray test get <key>`
+(or the GraphQL `getTest { steps { id } }` / `stepCount`).
+
+### Enrich the synced PBI cache (`test enrich`)
+
+`scripts/sync-jira-issues.ts` mirrors Jira over REST, so it cannot see the two
+associations that are Xray-internal (not Jira issue links): Precondition
+content and Test Set membership. `test enrich` backfills them. It reads Xray
+GraphQL and writes local files only (no Jira or Xray writes): it splices a
+delimited enrichment section into each synced `TEST-*.md` under
+`.context/PBI/epics/**/test-cases/` (Precondition definitions inlined; Test Set
+membership as metadata) and writes one Set-first index per Test Set to
+`.context/PBI/test-sets/<KEY>.md`. Run it after every sync that touches Tests.
+
+```bash
+# Enrich every synced Test file under .context/PBI (default --dir)
+bun xray test enrich
+
+# Scope to one project's keys / a different cache root
+bun xray test enrich --project {{PROJECT_KEY}}
+bun xray test enrich --dir .context/PBI
+
+# Preview without writing; tune batch size; skip the test-sets/ indexes
+bun xray test enrich --dry-run
+bun xray test enrich --batch 25
+bun xray test enrich --no-set-index
+```
+
+It is additive and pipeline-safe: missing Xray credentials, or a Test the
+Jira cache knows but Xray does not, are reported and skipped, never thrown, so a
+sync pipeline that chains enrichment cannot be failed by it. Unchanged files
+are not rewritten (mtimes stay stable), and a batch JQL that fails on one stale
+key degrades to per-key queries instead of blanking the batch.
+
+### Preconditions
+
+Preconditions are first-class Xray issues (issuetype `Precondition`) that hold setup
+state shared across Tests. These commands wrap the GraphQL mutations, so there is no
+need to drop to raw GraphQL.
+
+```bash
+# Create a precondition (default --type Manual; also Generic / Cucumber)
+bun xray precondition create --project DEMO --summary "User is logged in"
+bun xray precondition create --project DEMO --summary "DB seeded" --type Generic \
+  --definition "bun run db:seed" --labels setup,smoke --folder /Auth
+
+# Attach precondition(s) to a test (keys or numeric ids, both forms accepted)
+bun xray precondition add-to-test --test {{PROJECT_KEY}}-123 --preconditions {{PROJECT_KEY}}-90,{{PROJECT_KEY}}-91
+
+# Update a precondition's definition and/or type
+bun xray precondition update --precondition {{PROJECT_KEY}}-90 --definition "Seed with v2 fixtures"
+bun xray precondition update --precondition {{PROJECT_KEY}}-90 --type Generic
+
+# List preconditions in a project (same --limit truncation rules as every list command)
+bun xray precondition list --project {{PROJECT_KEY}}
+bun xray precondition list --project {{PROJECT_KEY}} --limit 50
+
+# Get one precondition's full detail (type, definition, linked tests)
+bun xray precondition get {{PROJECT_KEY}}-90
+
+# Detach precondition(s) from a test (the inverse of add-to-test)
+bun xray precondition remove-from-test {{PROJECT_KEY}}-90 --test {{PROJECT_KEY}}-123
+```
+
+### Parametrized Tests (convention, not a CLI feature)
+
+Verified against the Xray Cloud GraphQL schema: datasets and parametrization are
+read-only (`getDataset` / `getDatasets` queries exist; there are no dataset
+mutations). No CLI command can create or edit parameter values, and
+shared "Parameter Lists" stay UI-managed in Xray. Encode parameters by
+convention instead:
+
+```bash
+# Preferred: Cucumber Scenario Outline + Examples, parameters live in the Gherkin
+# (via --gherkin on create, or update-gherkin on an existing test)
+bun xray test create --project {{PROJECT_KEY}} --summary "Login matrix" --type Cucumber --gherkin "
+Feature: Login
+  Scenario Outline: Login as <role>
+    Given I log in as \"<role>\"
+    Then I see the \"<landing>\" page
+  Examples:
+    | role  | landing   |
+    | admin | dashboard |
+    | guest | catalog   |
+"
+
+# Manual tests: encode the parameter matrix in each step's --data field
+bun xray test add-step --test <issueId> --action "Log in" --data "role=admin" --result "Dashboard shown"
+bun xray test add-step --test <issueId> --action "Log in" --data "role=guest" --result "Catalog shown"
+```
+
+Pick one convention per test: Gherkin `Scenario Outline` + `Examples` when the
+variations share a flow (preferred), or explicit Manual steps with the variation
+in `--data` when steps genuinely differ. Datasets edited by hand in the UI are not
+round-tripped by the CLI or by backup/restore.
+
+### Test Executions
+
+```bash
+# Create execution
+bun xray exec create --project DEMO --summary "Sprint 1 Regression"
+bun xray exec create --project DEMO --summary "Sprint 1" --tests <id1>,<id2>,<id3>
+
+# Pin the execution to a Test Environment (repeatable or comma-separated).
+# Required for every ATR: the CLI warns when --environment is omitted.
+bun xray exec create --project DEMO --summary "Sprint 1" --environment staging
+bun xray exec create --project DEMO --summary "Sprint 1" --environment staging --environment chrome
+bun xray exec create --project DEMO --summary "Sprint 1" --environment staging,chrome
+
+# Get execution details
+bun xray exec get <issueId>
+
+# List executions
+bun xray exec list --project DEMO
+
+# Manage tests in execution
+bun xray exec add-tests --execution <id> --tests <id1>,<id2>
+bun xray exec remove-tests --execution <id> --tests <id1>,<id2>
+
+# Derive the execution's test list from a Test Set's membership (Set-first cascade)
+bun xray exec add-set {{PROJECT_KEY}}-194 --set {{PROJECT_KEY}}-180
+
+# Associate Test Environment(s) with an EXISTING execution
+bun xray exec set-environment --execution <id> --environment staging
+bun xray exec set-environment --execution {{PROJECT_KEY}}-194 --environment staging,chrome
+```
+
+Every ATR execution needs a Test Environment. An execution pinned to an
+environment (`staging` vs `production`, or `chrome` vs `firefox`) keeps results
+comparable, so a staging run is never read against a prod run. Pass `--environment`
+on `exec create` with the value resolved from `active_env` in `.agents/project.yaml`.
+If an execution slipped through without one, repair it with `exec set-environment`.
+
+### Test Runs
+
+```bash
+# Get run details
+bun xray run get <runId>
+
+# List runs from execution
+bun xray run list --execution <issueId>
+
+# Update run status
+bun xray run status --id <runId> --status PASSED
+bun xray run status --id <runId> --status FAILED
+bun xray run status --id <runId> --status TODO
+bun xray run status --id <runId> --status EXECUTING
+# ABORTED and BLOCKED are Xray defaults, not guaranteed on the instance: a
+# project that did not define them rejects the mutation. Record the case in a
+# status the project does define and explain it in the run comment.
+bun xray run status --id <runId> --status ABORTED
+bun xray run status --id <runId> --status BLOCKED
+
+# Update step status
+bun xray run step-status --run <runId> --step <stepId> --status PASSED
+
+# Add comment to a specific step (overwrites the previous step comment)
+bun xray run step-comment --run <runId> --step <stepId> --comment "Reproduced on 2026-04-29 build 4172"
+
+# Add comment
+bun xray run comment --id <runId> --comment "Test completed successfully"
+
+# Link defects
+bun xray run defect --id <runId> --issues DEMO-456,DEMO-789
+
+# Attach evidence files (PNG/JPG/PDF/log/JSON/...) to a run
+bun xray run evidence --id <runId> --file ./screenshots/error.png
+bun xray run evidence --id <runId> --file a.png --file b.png --file c.png
+bun xray run evidence --id <runId> --dir ./.context/PBI/epics/EPIC-{{PROJECT_KEY}}-100-<epic-slug>/stories/STORY-{{PROJECT_KEY}}-8-<slug>/evidence/
+
+# Attach evidence to a specific step within a run
+bun xray run step-evidence --run <runId> --step <stepId> --file step3.png
+
+# Inspect what is already attached
+bun xray run evidence-list --id <runId>
+
+# Remove an attachment (by id or by filename)
+bun xray run evidence-rm --id <runId> --evidence <evidenceId>
+bun xray run evidence-rm --id <runId> --filename error.png
+```
+
+Xray Cloud rejects requests larger than 20 MB. The CLI auto-chunks large `--dir` uploads into batches under that limit (chunk size and GraphQL-envelope headroom are constants in `cli/xray/lib/evidence.ts`), so a folder of small PNGs ships in one round trip, while a folder with one 30 MB recording is rejected. Split or compress such a file before uploading.
+
+### Test Plans
+
+```bash
+# Create plan
+bun xray plan create --project DEMO --summary "Q1 2025 Test Plan"
+bun xray plan create --project DEMO --summary "Release 2.0" --tests <id1>,<id2>
+
+# Get plan details (summary, status, attached tests), key or numeric id
+bun xray plan get {{PROJECT_KEY}}-110
+
+# List plans
+bun xray plan list --project DEMO
+
+# Manage tests in plan
+bun xray plan add-tests --plan {{PROJECT_KEY}}-110 --tests {{PROJECT_KEY}}-100,{{PROJECT_KEY}}-101
+bun xray plan remove-tests --plan {{PROJECT_KEY}}-110 --tests {{PROJECT_KEY}}-100
+
+# Derive the plan's test list from a Test Set's membership (Set-first cascade)
+bun xray plan add-set {{PROJECT_KEY}}-110 --set {{PROJECT_KEY}}-180
+
+# Associate Test Execution(s) with the plan (Plan <-> Execution, Xray-internal)
+bun xray plan add-executions {{PROJECT_KEY}}-110 --executions {{PROJECT_KEY}}-194,{{PROJECT_KEY}}-195
+```
+
+### Sync & Repair (Jira-layer ↔ Xray-layer reconciliation)
+
+When a Test Execution or Test Plan is created through a Jira fallback path
+without authenticated Xray, the Jira layer (issuelinks, custom fields)
+accepts the issue but the Xray layer never registers the test attachment, so
+runs come back empty and statuses cannot be set. These commands detect and
+repair the drift.
+
+```bash
+# Diff a single Test Execution (dry-run by default)
+bun xray exec sync --execution {{PROJECT_KEY}}-194
+bun xray exec sync --execution {{PROJECT_KEY}}-194 --apply       # re-attach missing tests at the Xray layer
+
+# Same for a Test Plan
+bun xray plan sync --plan {{PROJECT_KEY}}-110
+bun xray plan sync --plan {{PROJECT_KEY}}-110 --apply
+
+# Same for a Test Set (dry-run by default, --apply to re-attach)
+bun xray set sync --set {{PROJECT_KEY}}-180
+bun xray set sync --set {{PROJECT_KEY}}-180 --apply
+
+# Bulk scan every Test Execution + Test Plan + Test Set in a project
+bun xray repair --project {{PROJECT_KEY}}                        # report only
+bun xray repair --project {{PROJECT_KEY}} --apply                # re-attach every drift detected
+bun xray repair --project {{PROJECT_KEY}} --apply --limit 200    # scan up to 200 of each type
+```
+
+What sync reports:
+
+- Missing at the Xray layer: tests linked at the Jira layer but not registered with Xray. `--apply` re-attaches them.
+- Missing at the Jira layer: tests registered with Xray but without a Jira issuelink. Reported only; sync never deletes.
+
+Both Xray and Jira credentials must be configured (`auth login --jira-url --jira-email --jira-token`), because the Jira-layer view comes from Jira REST, separate from the Xray GraphQL API.
+
+### Test Sets
+
+```bash
+# Create set
+bun xray set create --project DEMO --summary "Smoke Tests"
+bun xray set create --project DEMO --summary "Regression" --tests <id1>,<id2>
+
+# Get set details
+bun xray set get <issueId>
+
+# List sets
+bun xray set list --project DEMO
+
+# Manage tests in set
+bun xray set add-tests --set <id> --tests <id1>,<id2>
+bun xray set remove-tests --set <id> --tests <id1>,<id2>
+```
+
+The per-Story Acceptance Test Set is titled `ATS: {US_ID}: {story title}` and is
+the coverage backbone of the Set-first flow (see the Canonical End-to-End Flow
+below). Feature-level sets keep the `TS:` prefix. Membership drift is repaired
+with `set sync` (see Sync & Repair).
+
+### Jira Issue Links (`link create`, the coverage write-path)
+
+Xray's GraphQL API has no coverage mutation: requirement coverage is a Jira issue
+link of the `test` type between the artifact and the Story. `link create` writes
+it via Jira REST and is the only command in this CLI that fills the Story's
+coverage panel. `--type` takes a slug resolved from `.agents/jira-required.yaml`
+key `link_types` (default `test`), not a literal Jira link-type name.
+
+#### Direction: the one measured statement
+
+> **On a Story, the coverage-correct edge is the `issuelinks` entry that carries
+> the artifact under `inwardIssue`.** `bun xray link create <ARTIFACT> <STORY>
+> --type test` produces exactly that shape. The opposite shape
+> (`outwardIssue: <ARTIFACT>` on the Story) is a link that exists, reads as a
+> link, and carries zero coverage.
+
+Name the direction by its raw field, not by an outward/inward description. The
+descriptions ("tests" / "is tested by") can be read either way by a careful
+reader: agents have read the same sentence in opposite directions and rewired
+live coverage links on the strength of it. A field name has one reading.
+
+The measurement is auditable: Xray Cloud GraphQL `getCoverableIssue(issueId).tests`,
+read-only, on a live Story carrying both shapes over two disjoint sets of real
+Tests. Xray returned one set under `inwardIssue` and none of the other under
+`outwardIssue`, with the same Story, link type and artifact type, so direction was
+the only variable. It reproduced across a project; the figures are in ADR-0006
+(`.context/ADR/ADR-0006-forensic-measurements-ledger.md`).
+
+Verify against Xray's coverage with `bun xray trace <STORY>` (below) or the Story's
+coverage panel; a Jira link list looks correct in both directions.
+
+```bash
+# Coverage: the Set tests the Story (Story then carries inwardIssue: -180)
+bun xray link create {{PROJECT_KEY}}-180 {{PROJECT_KEY}}-42 --type test
+
+# Default --type is test, equivalent to the above
+bun xray link create {{PROJECT_KEY}}-180 {{PROJECT_KEY}}-42
+
+# Any other slug from jira-required.yaml link_types works the same way
+bun xray link create {{PROJECT_KEY}}-110 {{PROJECT_KEY}}-42 --type test_design
+```
+
+The confirmation line is rendered from the payload actually sent and prints the
+raw shape the Story ends up with. Read it: a command that described the link it
+intended while storing the other one would invert every coverage link it creates
+without a visible error.
+
+#### Repairing an inverted link (`link delete`)
+
+Jira dedupes a link between the same pair and type regardless of direction, so
+creating the corrected link on top of a wrong one is a silent no-op. The wrong one
+goes first, addressed by the link's own id (not an issue key or issue id).
+`trace --json` prints that id for a failing coverage edge whose link exists.
+
+```bash
+# 1. Read the offending link id
+bun xray trace {{PROJECT_KEY}}-42 --json
+
+# 2. Look at what you are about to remove
+bun xray link delete --id <LINK_ID> --dry-run
+
+# 3. Delete, then recreate the right way round
+bun xray link delete --id <LINK_ID> --yes
+bun xray link create {{PROJECT_KEY}}-180 {{PROJECT_KEY}}-42 --type test
+
+# 4. Confirm
+bun xray trace {{PROJECT_KEY}}-42
+```
+
+`--yes` is required: deleting a link is irreversible, and Jira says nothing when
+the id belongs to a different pair than you expected.
+
+`link create` writes Jira-layer issue links (coverage, traceability). Plan,
+Execution and Set membership (`plan add-tests`, `exec add-set`, `set add-tests`,
+...) is Xray-internal GraphQL and writes no issue link. Membership of the Story's
+ATS needs both: `set add-tests` and one `link create <TC> <ATS> --type test` per
+member, the membership link IQL reads in both modalities
+(`agentic-qa-core/references/traceability-linking.md` §9).
+
+### Traceability verification (`trace`, the three-edge check in one call)
+
+`trace` is the read-only counterpart of `link create`. It verifies, in one call,
+every edge the three-edge check requires
+(`agentic-qa-core/references/traceability-linking.md` §10). Four separate reads
+are a check nobody runs in full: consumers verify the coverage edge alone and log
+"traceability verified", leaving a Story whose ATP or ATR is unlinked.
+
+It reports PASS/FAIL per edge:
+
+| Edge | What must hold |
+|---|---|
+| `Story↔ATS` | a Test Set is linked by the `test` link type and appears under `inwardIssue` in the Story's `issuelinks` entry. The only edge Xray's coverage panel counts |
+| `ATP↔Story` | same link type and same shape, from the Test Plan. Administrative, covers nothing |
+| `ATR↔Story` | same, from the Test Execution. Administrative |
+| list parity | ATS membership == ATP test list == ATR test list. Read over GraphQL, because that membership is Xray-internal and invisible to a link read. It does not compare the `TC→ATS` links against the membership: that read stays manual (`traceability-linking.md` §10) |
+
+```bash
+# Verify one Story; exits 0 only when all four edges hold
+bun xray trace {{PROJECT_KEY}}-42
+
+# Machine-readable: per-edge status, the resolved ATS/ATP/ATR keys, the three test
+# lists, and the LINK ID of a failing coverage edge whose link exists
+bun xray trace {{PROJECT_KEY}}-42 --json
+
+# Several Stories at once (also comma-separated)
+bun xray trace {{PROJECT_KEY}}-42 {{PROJECT_KEY}}-43
+
+# Whole-project sweep, gives a repair worklist
+bun xray trace --jql "project = {{PROJECT_KEY}} AND issuetype = Story" --limit 100
+```
+
+Every failed edge prints the exact command that repairs it: a `link create` for
+a missing link, the `link delete` then `link create` pair for an inverted one, a
+`plan add-set` / `exec add-set` cascade for a list that drifted from the ATS. An
+inverted link fails even though the link exists, because it carries no coverage.
+The link-type name is resolved from `.agents/jira-required.yaml` key `link_types`, so
+a workspace that renamed its `Test` type is matched by its own name.
+
+Run the sweep as well as the per-Story check. An inverted coverage link is
+invisible on one Story: the link is there, the panel is merely empty, and nothing
+reports it. On one measured project roughly half the linked Stories were wired
+the wrong way (ADR-0006). A sweep prints one worklist and keeps going past a Story
+it cannot read, so a permission error on row 3 does not hide rows 4-40. With
+more than one key the `--json` output wraps the per-Story objects in
+`{ stories, unreadable, summary }`; a single key keeps the original shape.
+
+Artifact selection follows the ratified title grammar: among several linked Test
+Sets, `ATS: {STORY_KEY}` wins over a feature-level `TS:` Set, and every unpicked
+candidate is reported as ambiguity rather than dropped.
+
+### Import Results
+
+```bash
+# Import JUnit XML (refused when a testcase has no test_key)
+bun xray import junit --file results.xml
+bun xray import junit --file results.xml --project DEMO   # refused without test keys
+bun xray import junit --file results.xml --plan DEMO-100
+bun xray import junit --file results.xml --execution DEMO-200
+
+# Import Cucumber JSON
+bun xray import cucumber --file cucumber-report.json
+bun xray import cucumber --file cucumber-report.json --project DEMO
+
+# Import Xray JSON format
+bun xray import xray --file xray-results.json
+```
+
+An import never creates a Test. Xray creates a new Generic Test for every JUnit testcase
+that carries no `test_key` / `test_id` property (matching it by `classname` + `name` first), and
+a Test for every Xray JSON entry that carries `testInfo` (Xray Cloud docs: "Taking advantage of
+JUnit XML reports", "Using Xray JSON format to import execution results"). So `import junit`
+refuses a file with any testcase lacking a key inside its own `<properties>` (a key in
+`<system-out>` or outside `<properties>` is not read), holding two, carrying a `test_key` that
+is not a Jira key, or carrying `test_summary` / `test_description` / `tags` (they rewrite the
+Test); `import xray` refuses `testInfo`, a missing, malformed or repeated `testKey`, and any
+body whose `tests` is not an array. The error names every offending testcase or entry and
+nothing is sent. A key that does not exist makes Xray return an error. Cucumber results imports
+need no guard: they map only to existing Tests through scenario tags and never create one;
+untagged results fail with "No tests found in execution result" (Xray Cloud docs, BDD "Common
+problems"). Only a `.feature` import creates Cucumber Tests, and `bun xray` exposes none.
+
+A KATA run is not imported as its `junit.xml`: one Playwright testcase holds zero, one or
+several ATCs, and the setup and teardown projects land in it with no key. Import it per
+ATC from `reports/atc_results.json`, one entry per `@atc` id (which is the Test key):
+`bun run xray:payload --execution <EXEC-KEY> --out xray-results.json reports/atc_results.json`,
+then `bun xray import xray --file xray-results.json`. That is what the regression workflow's
+XrayImport job runs; `bun run test:sync` does the same from a local run.
+
+`import junit --plan <RTP-KEY>` with no `--execution` mints a new Test Execution. The
+CLI appends `testPlanKey` and omits `testExecKey` (`cli/xray/commands/import.ts`), and Xray's
+import endpoints create the Execution whenever no `testExecKey` is given, associating it with
+the plan (Xray Cloud REST docs, import execution JUnit). That is the RTR fallback path, and the
+Execution it mints is unparented and untitled by the ladder grammar, so `/regression-testing`
+creates the RTR first and passes `--execution <RTR-KEY>` instead. Use `--plan` alone only when
+nothing better exists.
+
+### Backup & Restore
+
+Backup schema v2.0 captures the full footprint: tests, preconditions, test
+plans, test sets, repository folders, and (opt-in) executions and run statuses.
+v1.0 backups (tests and executions only) still restore. Full detail and the
+cross-site runbook are in [references/backup-restore.md](references/backup-restore.md).
+
+```bash
+# Export the full footprint (everything except executions)
+bun xray backup export --project DEMO --output demo-backup.json
+
+# Export EVERY project on the site that has Xray data -> .backups/<KEY>-backup.json
+# (lists projects via Jira, prints an inventory, 504-resilient). One login per SITE.
+bun xray backup export --all --include-runs
+
+# Add executions + run statuses (heavier)
+bun xray backup export --project DEMO --output demo-backup.json --include-runs
+
+# Legacy v1.0 shape (tests only) / skip a specific entity
+bun xray backup export --project DEMO --tests-only
+bun xray backup export --project DEMO --no-preconditions --no-folders
+
+# Dry run restore (preview changes)
+bun xray backup restore --file demo-backup.json --project NEW_PROJ --dry-run
+
+# Full restore (creates new issues; emits key-mapping CSV)
+bun xray backup restore --file demo-backup.json --project NEW_PROJ
+
+# Sync mode: match existing issues by KEY (needs target Jira creds).
+# Use this for site->site migration where keys were preserved.
+bun xray backup restore --file demo-backup.json --project {{PROJECT_KEY}} --sync
+
+# Restore with explicit key mapping (when keys changed)
+bun xray backup restore --file demo-backup.json --project {{PROJECT_KEY}} --map-keys mappings.csv
+
+# Preflight: report destination config gaps before importing (read-only, authed to dest)
+bun xray backup preflight --dir .backups
+```
+
+For a full cross-site migration, follow the runbook in
+[references/migration-runbook.md](references/migration-runbook.md): credential
+inventory and backup, prove prerequisites, auth source, `export --all`, auth
+dest, configure Xray per project (a manual UI gate), `preflight`,
+`restore --sync`, verify, then `/jira-administration instance-migration`. Keep that
+order: step 0 exists because `auth login` overwrites the only on-disk copy of
+the source credentials.
+
+- Xray's GraphQL addresses by numeric `issueId`, which is re-assigned per Jira site; a project migration preserves the key, not the id. Use `--sync` for site to site moves so restore re-resolves ids by key. Auth config holds one site at a time, so re-run `auth login` to switch sites between export and restore, and confirm with `auth status`.
+- Xray API keys are per Xray instance. A client id/secret generated on site A does not authenticate against site B; create the destination pair in Jira > Apps > Xray > Global Settings > API Keys (Xray admin, secret shown once). `auth status` reports only the configured Jira URL, so it cannot tell which site the Xray keys resolve to: compare numeric `issueId` ranges instead (the runbook has a site-discriminator recipe).
+- Installing Xray on the destination is not enough. Each project must also be configured (Miscellaneous, Test Coverage, Defect Mapping, Test Environments) and re-indexed, all manual UI work with no API. Until then `test list` prints a nonzero total with zero rows and `test get <KEY>` returns "Test not found", while `backup preflight` still passes. Restoring in that state makes `--sync` fall back to CREATE and duplicates the whole project.
+- A site move also breaks the repo's Jira custom-field catalogs. Field IDs are reassigned, and an old ID usually resolves to a different field on the new site, so a silent `200 OK` writes into the wrong place. Finish any cross-site migration with `/jira-administration instance-migration`.
+
+## Environment Variables
+
+```bash
+# Xray Cloud API (required for xray-cli auth)
+XRAY_CLIENT_ID      # Xray API Client ID
+XRAY_CLIENT_SECRET  # Xray API Client Secret
+
+# Atlassian credentials: single source of truth, no overrides
+# Atlassian site URL: not an env var. Read from .agents/project.yaml ->
+# issue_tracker.atlassian_url (print it with `bun run --silent jira:url`).
+ATLASSIAN_EMAIL     # Atlassian account email
+ATLASSIAN_API_TOKEN # Atlassian API token
+```
+
+Pass these to `bun xray auth login` via `--jira-url` / `--jira-email` / `--jira-token` for explicit flags, or let the binary pick them up from the environment.
+
+## Config Files
+
+- `~/.xray-cli/config.json` - Stored credentials and default project
+- `~/.xray-cli/token.json` - Cached auth token (24h validity)
+
+## Fallback: acli / REST
+
+There is no MCP fallback for this skill (the Atlassian MCP is opt-in and does not
+expose Xray entities). If `bun xray` cannot authenticate:
+
+- With Xray credentials missing or broken, Critical Rule #10 applies: stop, name the
+  missing env vars (`XRAY_CLIENT_ID` / `XRAY_CLIENT_SECRET`), point at `.env` /
+  `.env.example`, and ask the user to fix and restart the session. No workaround
+  reaches the Xray GraphQL layer without those credentials.
+- For Jira-layer operations only (issue links, summaries, transitions, comments
+  on Test/Plan/Execution/Set issues), fall back to `/acli`, or to Jira REST
+  (`curl` with `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN`) for endpoints acli does
+  not cover, e.g. `POST /rest/api/3/issueLink`. These paths create the Jira
+  issues and links but cannot register Xray-internal membership. After Xray
+  auth is restored, run `exec sync` / `plan sync` / `set sync` (or `repair`) to
+  re-attach what the fallback path could not.
+
+## Example: Complete Test Workflow
+
+```bash
+# 1. Login
+bun xray auth login --client-id $XRAY_CLIENT_ID --client-secret $XRAY_CLIENT_SECRET --project DEMO
+
+# 2. Create a manual test, then add each step (steps do not persist on create)
+bun xray test create --project DEMO --summary "Verify user registration" --type Manual
+#    -> note the issueId returned, then:
+bun xray test add-step --test <issueId> --action "Navigate to signup page" --result "Signup form displayed"
+bun xray test add-step --test <issueId> --action "Fill required fields" --result "Fields accept input"
+bun xray test add-step --test <issueId> --action "Submit form" --result "Success message shown"
+
+# 3. Create a test execution pinned to the environment under test
+bun xray exec create --project DEMO --summary "Registration Tests - Sprint 5" --environment staging
+#    -> DEMO-7123
+
+# 4. Run automated tests and import results INTO the execution created above.
+#    Import onto an existing Execution key, not with --project: Xray's import
+#    API cannot set a parent, so a --project import mints a fresh, unparented
+#    Execution on every run, outside the QA Test Artifacts epic and the ladder.
+#    One entry per ATC with its Test key, not the junit.xml (see Import Results).
+bun run xray:payload --execution DEMO-7123 --out xray-results.json reports/atc_results.json
+bun xray import xray --file xray-results.json
+
+# 5. Check execution status
+bun xray exec list --project DEMO --limit 5
+```
+
+## Example: Canonical End-to-End Flow (Set-first: ATS -> coverage -> ATP/ATR -> results)
+
+This is the authoritative order when wiring a Story's test artifacts by hand.
+Set-first: the per-Story Test Set (ATS) is the single source of truth for
+which Tests cover the Story, and the Plan (ATP) and Execution (ATR) derive their
+test lists from the ATS membership. Membership operations (`set add-tests`,
+`plan add-set`, `exec add-set`) are Xray-internal (GraphQL layer) and distinct
+from Jira-layer issue links; `link create` is the Jira-layer step, run for the
+ATS→Story edge and for each TC→ATS membership link. When only the Jira layer is
+wired, runs come back empty: repair with `exec sync` / `plan sync` / `set sync`
+(see Sync & Repair).
+
+```bash
+# 0. Create the Tests, adding steps one call at a time (Manual)
+bun xray test create --project {{PROJECT_KEY}} --summary "Verify login" --type Manual   # -> {{PROJECT_KEY}}-100
+bun xray test add-step --test <id-100> --action "Open app" --result "Login form displayed"
+bun xray test add-step --test <id-100> --action "Enter credentials" --data "user@test.com" --result "Dashboard shown"
+#    (repeat create + add-step per Test, e.g. {{PROJECT_KEY}}-101 ...)
+
+# 1. Create the ATS (per-Story Test Set) with the Story's TCs as members
+bun xray set create --project {{PROJECT_KEY}} --summary "ATS: {{PROJECT_KEY}}-42: User can log in" \
+  --tests {{PROJECT_KEY}}-100,{{PROJECT_KEY}}-101
+#    -> {{PROJECT_KEY}}-180
+#    ...and give every member its TC->ATS membership link (Xray membership alone
+#    is invisible to IQL and the PBI sync; traceability-linking.md §9):
+bun xray link create {{PROJECT_KEY}}-100 {{PROJECT_KEY}}-180 --type test
+bun xray link create {{PROJECT_KEY}}-101 {{PROJECT_KEY}}-180 --type test
+
+# 2. Link the ATS to the Story: the primary link that fills the coverage panel.
+#    Artifact first, Story second: the Story must end up carrying
+#    `inwardIssue: {{PROJECT_KEY}}-180`, the only shape Xray counts.
+#    (ATP->Story and ATR->Story links are administrative
+#    traceability and contribute nothing to coverage). A direct TC->Story link
+#    is the only other link that covers, and it is a last resort for an
+#    instance with no Test Set work type. Prefer the ATS.
+bun xray link create {{PROJECT_KEY}}-180 {{PROJECT_KEY}}-42 --type test
+#    Verify the shape landed before moving on (cheap, read-only):
+bun xray trace {{PROJECT_KEY}}-42
+
+# 3. Create the Test Plan (ATP container) and derive its list from the ATS
+bun xray plan create --project {{PROJECT_KEY}} --summary "ATP: {{PROJECT_KEY}}-42: User can log in"
+#    -> {{PROJECT_KEY}}-110
+bun xray plan add-set {{PROJECT_KEY}}-110 --set {{PROJECT_KEY}}-180
+
+# 4. Create the Test Execution (ATR container); --environment is required
+#    (value = active_env from .agents/project.yaml; the CLI warns if omitted)
+bun xray exec create --project {{PROJECT_KEY}} --summary "ATR: {{PROJECT_KEY}}-42: Sprint 12" --environment staging
+#    -> {{PROJECT_KEY}}-194
+bun xray exec add-set {{PROJECT_KEY}}-194 --set {{PROJECT_KEY}}-180
+
+# 5. (Optional) Associate the Execution with the Plan
+bun xray plan add-executions {{PROJECT_KEY}}-110 --executions {{PROJECT_KEY}}-194
+
+# 6. Run / import results (one entry per ATC, see Import Results), then set run statuses
+bun run xray:payload --execution {{PROJECT_KEY}}-194 --out xray-results.json reports/atc_results.json
+bun xray import xray --file xray-results.json
+#    or drive runs manually:
+bun xray run list --execution {{PROJECT_KEY}}-194
+bun xray run status --id <runId> --status PASSED
+```
+
+## Example: Project / Site Migration
+
+```bash
+# 1. Point CLI at SOURCE site, export the full footprint
+bun xray auth login --client-id $A_ID --client-secret $A_SECRET   # source Xray creds
+bun xray backup export --project PROJ --output backup.json --include-runs
+
+# 2. (Site->site only) migrate the Jira project natively (JCMA/CSV), keys preserved.
+#    Reinstall Xray on the destination so it re-detects the migrated Test issues.
+
+# 3. Point CLI at TARGET site (Xray + target Jira creds), preview, then restore
+bun xray auth login \
+  --client-id $B_ID --client-secret $B_SECRET \
+  --jira-url $B_URL --jira-email $B_EMAIL --jira-token $B_TOKEN   # target site
+bun xray backup restore --file backup.json --project PROJ --sync --dry-run
+
+# 4a. Keys preserved (same project key)  -> sync by key
+bun xray backup restore --file backup.json --project PROJ --sync
+# 4b. Keys changed (different project)    -> create fresh, then reconcile via emitted CSV
+bun xray backup restore --file backup.json --project NEW_PROJ
+```
+
+## Specific tasks
+
+- Backup and restore operations: [references/backup-restore.md](references/backup-restore.md)
+- GraphQL API reference: [references/graphql-api.md](references/graphql-api.md)
+- Test type management: [references/test-types.md](references/test-types.md)

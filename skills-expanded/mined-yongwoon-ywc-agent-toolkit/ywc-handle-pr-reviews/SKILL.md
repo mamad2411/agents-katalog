@@ -1,0 +1,277 @@
+---
+name: ywc-handle-pr-reviews
+description: >-
+  (ywc) Use when an open GitHub PR has review threads, comments, or feedback
+  that must be fetched, fixed, replied to, marked, pushed,
+  and CI-verified. Triggers: "handle PR reviews", "review comments",
+  "리뷰 대응", "レビュー対応", "ywc-handle-pr-reviews". Do not use for
+  standalone feedback before PR automation (use ywc-receive-review), new PR
+  creation (use ywc-create-pr), doing the code review yourself (use
+  ywc-impl-review), review learnings (use ywc-review-learnings), or changes
+  outside open-PR context.
+---
+
+# Handle PR Review Health
+
+**Announce at start:** "I'm using the ywc-handle-pr-reviews skill to run a PR health sweep across review artifacts, CI status, and merge-readiness."
+
+Review PR review artifacts, CI status, and merge-readiness blockers; fix issues where needed; and reply with an addressed marker for each comment-like artifact.
+
+## Rationalization Defense
+
+When tempted to skip a step, check this table first:
+
+| Excuse | Reality |
+|---|---|
+| "This comment is just opinion, no fix needed" | Even disagreement requires a reply explaining why. Silent skip looks like neglect. |
+| "I'll batch all replies after fixing everything" | Reply per thread as fixes land. Reviewers track which threads are resolved. |
+| "Push without reply, the diff speaks for itself" | Reviewers cannot tell intent from diff alone. Always pair fix with reply. |
+| "Resolving the thread without reply is fine" | Resolving without reply implies the reviewer's concern was wrong. Always state how it was addressed. |
+| "Conflict in suggestions, pick one and move on" | Surface the conflict to the user. Do not silently choose between reviewer A and reviewer B. |
+| "PR not found for this branch, scan recent PRs" | Stop and ask. Acting on a wrong PR overwrites unrelated reviewer threads. |
+| "All review comments are addressed — CI is a separate concern" | Fixes to source code (refactors, new imports, logic changes) can break CI. Always re-verify CI after pushing review fixes. A PR with all comments addressed but failing CI is still blocked from merging. |
+| "The comments only needed replies, no code changed — so CI is fine to skip" | CI can already be red for reasons unrelated to the comments (a flaky earlier push, a base-branch change, a dependency break). Handling a PR means leaving it mergeable. Always check current CI status when handling a PR, even when your replies pushed no code. |
+| "CI is green and comments are addressed — the PR is mergeable" | While the review was in progress the base branch may have advanced and the PR may now be `CONFLICTING`. Handling a PR means leaving it mergeable, which requires checking `gh pr view --json mergeable,mergeStateStatus`, not just CI. A conflicting PR is blocked from merge regardless of how many comments were resolved. |
+| "The PR conflicts with base — rebase the branch to clear it" | Rebasing rewrites SHAs and orphans the very review threads you are replying to. Merge the base *into* the feature branch (`git merge --no-ff origin/<base>`) instead. See `../references/pr-conflict-resolution.md`. |
+| "The poller found a top-level review/check, but the line-comment script returned empty" | Top-level reviews, PR comments, and review-like checks are first-class review artifacts. Fetch the artifact list and block merge until each one is fixed, answered, or explicitly deferred. |
+| "I replied but did not include the marker" | The polling gate is marker-based for non-threaded artifacts. Every reply must include `<!-- <review_comment_addressed:<fingerprint>> -->` so the next poll can distinguish handled feedback from unresolved feedback. |
+
+**Violating the letter of these rules is violating the spirit.** Code review is a conversation, not a checklist.
+
+## Context
+
+- Current branch: !`git branch --show-current`
+- Recent commits: !`git log --oneline -5`
+
+## Arguments
+
+- `PR#`: supplied PR number, optional in the existing no-flag workflow.
+- `--worktree`: opt into a clean same-repository PR head worktree; requires the explicit number. Without it, preserve the existing workflow and do not create or switch worktrees.
+
+## Task
+
+Follow the steps below to handle PR review comments.
+
+### 1. Identify PR Number
+
+- Without `--worktree`, use a supplied PR number or identify the current branch's PR with `gh pr view --json number`; stop if no PR exists.
+- With `--worktree`, require an explicit positive PR number matching `^[1-9][0-9]*$` before lookup or mutation; missing/invalid input returns `NEEDS_CONTEXT`.
+- Pin the validated `PR_NUMBER` and repository identity for the invocation. Every later artifact/reply/CI/merge-readiness command uses that number, never a fresh branch/cwd lookup.
+
+Resolve `{owner}/{repo}` dynamically at this stage — it's used throughout the workflow:
+
+```bash
+REPOSITORY=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+```
+
+### 1.5 Select and guard the PR worktree (`--worktree` only)
+
+For `--worktree`, read [references/pr-worktree-identity.md](references/pr-worktree-identity.md) before any review read or mutation. It owns pinned same-repository/open/head validation, canonical in-place/reused/created selection, exact fetch/fast-forward, one cwd re-entry, and failure preservation. An owner/input/output/status mismatch returns `NEEDS_CONTEXT`. Without the flag, skip this section.
+
+### 2. Retrieve PR Health Artifacts
+
+In worktree mode, run the identity/cwd guard first and pass the pinned `PR_NUMBER` and repository to the fetcher. Retrieve review artifacts, CI status, and merge-readiness in one normalized artifact list. Review artifacts may be empty; that is not terminal success. Continue through CI status and merge-readiness gates because a PR with no comments can still be blocked by failed checks or conflicts.
+
+```bash
+RESOLVER_LAUNCHER="$(bash "${CODEX_HOME:-$HOME/.codex}/skills/scripts/select-resolver-launcher.sh" 2>&1)" || { echo "BLOCKED: ${RESOLVER_LAUNCHER#BLOCKED: }" >&2; exit 3; }
+FETCH_ARTIFACTS_SCRIPT="$(bash "$RESOLVER_LAUNCHER" "ywc-handle-pr-reviews/scripts/fetch-pr-review-artifacts.sh" bash)" || exit $?
+bash "$FETCH_ARTIFACTS_SCRIPT" \
+  {owner}/{repo} {pr_number}
+# exit 0 -> normalized JSON artifact array on stdout (may have empty review artifacts)
+# exit 2 -> usage error
+# exit 3 -> gh CLI or GitHub API failure
+```
+
+The script fetches unresolved review threads, PR comments, review submissions, `statusCheckRollup`, `mergeable`, `mergeStateStatus`, and PR `url`. It emits a normalized JSON array. Each artifact includes `artifact_type`, `fingerprint`, `reply_api`, `body`, `path`, `line`, `user`, and `state` where applicable. Comment-like artifacts use `artifact_type` values such as `review_thread`, `pr_comment`, and `review_submission`; CI artifacts use `status_check`; merge blockers use `merge_readiness`.
+
+If no comment-like review artifacts are present, continue to Step 6.5 and Step 6.6 rather than reporting success early.
+
+### 3. Group and Analyze Review Artifacts
+
+Before fixing anything, group all remaining comment-like review artifacts by file. Processing file-by-file is more efficient — you read each file once, apply all related fixes together, and create one coherent commit per file instead of jumping back and forth.
+
+**Processing strategy:**
+
+1. Collect all unresolved comment-like artifacts and group by target file path
+2. For each file, read the file once and analyze all related comments together
+3. Apply fixes for that file and commit as a unit
+4. Move to the next file
+5. Keep `status_check` and `merge_readiness` artifacts out of marker replies; resolve them by making the check pass or clearing the merge blocker.
+
+### 4. Classify and Fix Comments
+
+For each comment, classify it into one of these categories:
+
+| Category                                                                                                   | Action                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Approval / Acknowledgment** (tagged `review_comment_addressed`)                                          | Skip — already resolved                                                                                                                                                                 |
+| **Clear code change request** (the fix is straightforward and unambiguous)                                 | Apply the fix                                                                                                                                                                           |
+| **Controversial or ambiguous change request** (disagreement, architectural concern, or trade-off involved) | Do NOT auto-fix. Present the comment to the user with context, explain the trade-off, and ask for a decision. Reviewer feedback deserves thoughtful consideration, not blind acceptance |
+| **Question only** (no code change implied)                                                                 | Reply with an explanation — no fix needed                                                                                                                                               |
+
+**Security guardrails (never auto-apply, always defer to user):**
+
+- Removal of authentication, authorization, or security middleware
+- Addition of `eval()`, `exec()`, or dynamic code execution
+- Disabling RLS, bypassing tenant isolation, or weakening input validation
+- Hardcoded credentials or secrets
+
+**When applying fixes:**
+
+- Read the target file and identify the exact problem area referenced by the comment
+- Apply the minimal fix that addresses the reviewer's concern
+- If the comment references outdated code (the file has changed since the review), check whether the concern still applies to the current code. If it does, fix the current version. If not, reply explaining the code has already changed
+
+**Commit rules:**
+
+- One commit per file (group all fixes for the same file into a single commit)
+- Use commit message format: `fix: summary of the fix`
+- Push to remote after all commits are ready — pushing once at the end is cleaner than pushing after each commit
+
+With `--worktree`, guard identity first and use only `git push origin "HEAD:refs/heads/$H"`, including an approved review retry or base-merge update. On any required command failure, stop further retries and mutations; report each commit or push already completed and the failed gate.
+
+### 5. Reply to Comments
+
+**Attitude layer (mandatory)**: every reply must go through the discipline defined in `ywc-receive-review` — verify each artifact against the codebase before agreeing; replies state the fix or a technical pushback ending in a question; the forbidden vocabulary list ("You're absolutely right!", "Great point!", "Thanks!") applies to all `body` content surfaced via the reply API below.
+
+Reply to every processed artifact that has `reply_api != "none"` so the reviewer knows the feedback was addressed. Every reply must include the exact marker for that artifact:
+
+```markdown
+<!-- <review_comment_addressed:{fingerprint}> -->
+```
+
+For `review_thread`, use the thread reply API to keep conversations organized:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pull_number}/comments/{in_reply_to_id}/replies -F body=@- <<'REPLY_BODY'
+...
+REPLY_BODY
+```
+
+For `pr_comment` and `review_submission`, add a PR-level comment that references the artifact author/type and includes the marker:
+
+```bash
+gh pr comment {pull_number} --body-file -
+```
+
+For `status_check`, do not add a marker-only reply unless no code change is needed and the check is known to be a false positive. A failed review-like status check normally remains unresolved until the check passes.
+
+**Reply language:** Match the language of the original comment. If the reviewer wrote in Korean, reply in Korean. If in English, reply in English. If in Japanese, reply in Japanese. If in Chinese, reply in Simplified Chinese unless the reviewer used another Chinese locale. If in Spanish, reply in Spanish. Do not translate code suggestions, command output, file paths, API names, or quoted reviewer text.
+
+**Reply format by category:**
+
+- **Fixed:**
+  ```markdown
+  <!-- <review_comment_addressed:{fingerprint}> -->
+  Fixed: [commit-hash](https://github.com/{owner}/{repo}/pull/{pr}/commits/{full_sha})
+  Description of what was changed and why
+  ```
+- **Deferred to user:** Do not include the marker before the user decides; return `NEEDS_CONTEXT` with the artifact `fingerprint`, reviewer, and trade-off.
+- **No fix needed:** Include the marker and explain the reasoning (e.g., intentional design choice, already handled elsewhere)
+- **Outdated comment:** Include the marker and explain why the concern no longer applies.
+
+### 6. Error Handling
+
+Things can go wrong during the process. Handle these gracefully:
+
+| Error                                 | How to handle                                                                           |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| `gh pr view` fails (no PR for branch) | Stop and tell the user. Don't guess the PR number                                       |
+| Push fails (non-fast-forward, remote feature branch advanced) | Without `--worktree`, retain `git pull --rebase origin <feature-branch>` then re-push; never force-push without approval. With `--worktree`, stop retries and later mutations, return `BLOCKED`, and report prior commits/pushes. See `../references/pr-conflict-resolution.md` |
+| Comment reply API returns 403/404     | Without `--worktree`, log/skip/report the reply. With `--worktree`, stop later mutations and return `BLOCKED` with prior side effects                      |
+| Referenced file no longer exists      | Reply to the comment explaining the file was removed, and skip the fix                  |
+
+### 6.5 CI Status Check & Fix
+
+**Always run this step — do not skip it, even when your replies pushed no code.** A PR review thread and CI status are two independent blockers on the same PR. Addressing every comment but leaving CI red still leaves the PR unmergeable, so handling a PR means checking both. This step covers two cases at once: CI regressions introduced by the fixes in Step 4, **and** pre-existing CI failures that were already red before you touched the PR (a flaky earlier push, a base-branch change, a broken dependency).
+
+```bash
+# Keep the PR_NUMBER resolved in Step 1; never rediscover it here.
+# With --worktree, run the guard before each check/wait.
+gh pr checks "$PR_NUMBER" --repo "$REPOSITORY"
+# exit 0 = all checks passed; non-zero = one or more checks failed or are pending
+```
+
+For `--worktree`, a required CI command error or failed check is terminal: return `BLOCKED`, stop subsequent mutations/retries, and report prior commits/pushes. A successfully parsed pending state may be watched under the same guard. The repair-attempt path below applies only without `--worktree`.
+
+- **All checks pass**: proceed to Step 7.
+- **Checks still pending**: wait for completion with `gh pr checks "$PR_NUMBER" --repo "$REPOSITORY" --watch`, then re-evaluate.
+- **Any check fails**:
+  1. Get failure logs:
+     ```bash
+     gh run list --branch $(git branch --show-current) \
+       --json databaseId,conclusion \
+       --jq '.[] | select(.conclusion == "failure") | .databaseId' | head -1
+     gh run view <run-id> --log-failed
+     ```
+  2. Categorize and fix:
+     | Failure type | Fix action |
+     |---|---|
+     | Lint / format | Run the project's auto-fix command, commit, push |
+     | Type / test / build | Analyze output, fix implementation, commit, push |
+     | Infra / flaky / clearly unrelated to this PR's scope | Do **not** blindly patch. Surface the failing check and logs to the user and ask how to proceed (e.g., re-run the job, or fix in a separate PR) |
+  3. Re-check CI after each push. Up to **2 fix attempts**.
+  4. If CI still fails after 2 attempts: record the failing check names in Step 7's summary and set the overall outcome to `DONE_WITH_CONCERNS` (not `DONE`).
+
+### 6.6 Merge-Readiness (Conflict) Check
+
+**Always run this step.** CI green and all comments addressed still does not guarantee the PR can merge — while the review was in progress the base branch may have advanced into a conflict. A PR review thread, CI status, and merge-readiness are three independent blockers on the same PR; handling a PR means leaving all three clear.
+
+For `--worktree`, retain pinned `PR_NUMBER`/`H`, apply the guard before every API/read/update/CI operation, and use the explicit push refspec. Skip any current-branch PR-number rediscovery in the reference; a required failure stops the flow.
+
+> **Action required**: Read [`../references/pr-conflict-resolution.md`](../references/pr-conflict-resolution.md) before proceeding — it defines the `mergeable` / `mergeStateStatus` semantics and the merge-not-rebase update procedure.
+
+```bash
+gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json number,state,headRefName,mergeable,mergeStateStatus --jq '{number, state, headRefName, mergeable, mergeStateStatus}'
+```
+
+With `--worktree`, a `state` other than `OPEN` or a `headRefName` other than the pinned `H` is `BLOCKED` before any merge-readiness action or push.
+
+- `MERGEABLE` / `CLEAN` → proceed to Step 7.
+- `BEHIND` → the branch is merely out of date (no textual conflict). Follow **Update Branch From Base** (merge the base into the feature branch — never rebase, since that orphans the review threads you just replied to), push, and re-verify CI (one additional cycle).
+- `CONFLICTING` / `DIRTY` → follow **Update Branch From Base** in the reference. If it auto-resolves, push and re-verify CI (one additional cycle). If it reports real textual conflicts, surface the conflicting files + PR URL to the user, stop, and set the outcome to `BLOCKED` — do not auto-resolve or force-push.
+- `BLOCKED` → a required check or review gate is missing — **not** a conflict. Do not run the base-merge procedure; surface which required check or review is outstanding and set the outcome to `BLOCKED`.
+- `UNKNOWN` → poll briefly per the reference, then re-read.
+
+### 7. Final Summary
+
+Report the results so the user has a clear picture of what happened:
+
+- Total review artifacts processed vs skipped
+- CI status outcome and any status_check artifacts handled
+- Merge-readiness outcome and any merge_readiness artifacts handled
+- List of applied fixes with file paths and commit hashes
+- Any artifacts deferred to the user (with links)
+- Any errors encountered during the process
+- With `--worktree`, include the canonical path and `created` / `reused` / `in-place` state. Only `created` gets separate cleanup guidance from the saved canonical main checkout, after verifying the same resolved root/path: `ywc-worktrees --mode prune --task-name "pr-$PR_NUMBER" --branch "$H" --keep-branch` guidance. Never auto-delete reused/in-place worktrees; preserve the PR head branch.
+- A retained review worktree may be `Leaked` in a later executor audit. Preserve audit classifications and resolve review-owned paths with their owner before another lifecycle.
+
+## Notes
+
+- Follow any additional instructions in `$ARGUMENTS`
+- When in doubt about a reviewer's intent, ask the user rather than guessing — misinterpreting feedback wastes more time than a quick clarification
+
+## Output Format
+
+Return a PR review handling report:
+
+```text
+Status: <DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT>
+PR: <number or URL>
+Worktree path: <canonical path or N/A>
+Worktree state: created | reused | in-place | N/A
+Processed: <count and source of comments handled>
+Skipped: <comments deferred with reason>
+Validation: <tests or CI checks rerun; CI status; merge-readiness>
+Next action: <remaining review/CI action or "none">
+```
+
+## Validation
+
+Before finalizing, verify that every actionable comment-like artifact is either addressed or explicitly deferred, reviewer intent was not guessed when ambiguous, fixes stay within PR scope, CI status is green or explicitly reported, and merge-readiness is clean or explicitly reported.
+
+## Integration
+
+- **upstream**: ywc-create-pr (a PR must exist before review comments can be handled); ywc-sequential-executor / ywc-parallel-executor (executors that generate the PRs being reviewed)
+- **conditional provider**: `ywc-worktrees` supplies existing-head creation after the caller validates/pins the PR and selects no reusable path.
+- **downstream**: None — this skill closes the PR review loop; subsequent work is driven by the reviewer's approval or further comments

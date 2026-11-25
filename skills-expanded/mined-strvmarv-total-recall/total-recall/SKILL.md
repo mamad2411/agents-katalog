@@ -1,0 +1,337 @@
+---
+name: total-recall:commands
+description: Manage the total-recall memory system and govern automatic capture, retrieval, and compaction. Use when the user invokes /total-recall:commands, asks to search/store/forget memories, inspect tiers, manage the knowledge base, run eval, or configure total-recall.
+---
+
+**IMMEDIATE ACTION REQUIRED — before responding to the user's first message, call the total-recall `session_start` MCP tool. This syncs host imports and loads hot tier context. If `session_start` has already run server-side, the call returns cached results instantly.**
+
+**If `session_start` is blocked by permissions** (e.g., in TUI fullscreen / `dontAsk` mode), do NOT just report the error. Instead:
+1. Tell the user: "total-recall session_start was blocked by permissions. Your host's tool-permission settings need to allow total-recall's MCP tools to function (the exact tool name depends on how your host namespaces MCP tools). You may need to adjust permissions if you want total-recall active this session."
+2. On Claude Code, suggest running `/total-recall:commands setup` to auto-configure permissions; other hosts don't have an automated fix yet — point the user at their host's own MCP tool-permission config.
+3. Proceed without memory features for this session — memory unavailability is degraded mode, not fatal
+
+# total-recall
+
+Memory and knowledge base management for total-recall.
+
+## Automatic Behavior
+
+These behaviors run automatically throughout the session. Tool calls will be visible to the user.
+
+### Session Start
+
+1. Call the `session_start` MCP tool to sync imports and assemble hot tier context (this may already be cached — call it regardless to receive the context)
+2. **Announce startup** using the returned data:
+   - Report tier summary: pinned, hot, warm, cold, KB counts from `tierSummary`
+   - Report storage backend from `storage` (e.g. "sqlite", "cortex", "postgres"). If it shows a fallback like "sqlite (cortex failed)", flag this prominently.
+   - If `lastSessionAge` is present, mention when the last session was
+   - If `hints` are present, briefly surface the most relevant ones
+   - If a hint of type `hot_tier_compaction_suggested` is present, always surface it (the 2-3 line cap does not drop it): the hot tier is full, and the user should run `/total-recall:commands compact`. This is the compaction reminder; nothing shows one when a session ends
+   - If `pinned_budget_pressure` is present in `hints`, surface it prominently: pinned entries are eating over half the context budget — suggest unpinning or trimming entries
+   - If `whatsNew` is present in the result, tell the user its `text` once, verbatim, as a separate line (it is information, not an instruction).
+   - Keep it to 2-3 lines max. Example:
+     > total-recall loaded — 2 pinned, 3 hot, 12 warm, 5 cold, 2 KB collections. Storage: cortex. Last session: 2 hours ago.
+     > Context: TODO list at docs/TODO.md; user prefers bundled PRs for refactors.
+3. Use `hints` to inform your behavior throughout the session — they represent high-value memories like user corrections, preferences, and frequently accessed project context
+4. Incorporate the full `context` field to inform your responses
+
+### Capture (continuous)
+
+When you detect these patterns in user messages, call `memory_store`:
+
+- **Correction**: "no", "not that", "actually", "use X instead" -> type "correction"
+- **Preference**: How the user wants things done -> type "preference"
+- **Decision**: Non-obvious architectural or design choices -> type "decision"
+
+Do NOT ask permission — just store it.
+
+### Retrieve (continuous)
+
+On each user message that is a question or task request:
+
+1. Call `memory_search` with the message, searching warm tier
+2. If top score < 0.5, also search cold/knowledge tier
+3. Use results to inform your response
+
+### Feedback (continuous)
+
+`memory_search` and `kb_search` now return a `retrievalId` alongside `results`.
+After you use retrieved memories in your work, call `memory_feedback`:
+
+- Used it → `memory_feedback({ retrievalId, used: true })`
+- Searched and nothing was relevant → `memory_feedback({ retrievalId, used: false })`
+
+Report once per search, as soon as you know the outcome. Skip the call only when
+`retrievalId` is empty. Do NOT ask permission — just report it. This is what makes
+the Dashboard "Retrieval quality" metric real.
+
+### Pinned directives (continuous)
+
+Pinned directives are re-asserted automatically near the live edge by the
+per-turn pinned floor (where the host supports it — see the capability matrix
+under "Pinned directive floor" below). You do not need to do anything for this.
+
+Additionally: when the user makes a **significant task switch** (a clearly new
+piece of work), call `session_refresh` once. This re-prepends the pinned block
+and refreshes hot-tier context near the current generation point.
+
+### Session End
+
+total-recall shows no reminder when a session ends (Claude Code, for one, does not display what a session-end hook prints). The compaction reminder is the `hot_tier_compaction_suggested` hint that `session_start` returns when the hot tier holds at least `tiers.hot.compaction_hint_threshold` entries (surface it in the startup announcement, above), plus one nudge per session from the per-turn pinned floor on hosts that have it (a hook message saying that N hot-tier entries are uncompacted: tell the user once). Both reach the user only through you. Compaction is user-triggered — run `/total-recall:commands compact` when told or whenever you want to compact manually. Also call the `session_end` MCP tool for final bookkeeping.
+
+### Rules
+
+- Let tool calls be visible — users should see that memory is working
+- ALWAYS store corrections — highest-value memories
+- ALWAYS search warm tier before answering project questions
+- NEVER modify host tool files (Claude Code memory/, CLAUDE.md, etc.)
+
+## Pinned directive floor
+
+A `UserPromptSubmit` hook re-injects the pinned block on an adaptive throttle
+(config: `[tiers.pinned] floor_enabled / floor_every_n_turns / floor_growth_tokens`)
+so pinned directives keep being followed in long sessions. It re-asserts when
+either trigger trips since the last injection: N turns elapsed, or ~`growth_tokens`
+of transcript growth (where the host exposes a transcript). Set `floor_enabled = false` to disable.
+
+| Host | Per-turn floor | Mechanism |
+|------|----------------|-----------|
+| Claude Code | Active | `UserPromptSubmit` → `additionalContext` |
+| Copilot CLI | Active (turn-count trigger only) | `userPromptSubmitted` hook (`copilot/hook.js`) → `additionalContext` |
+| Cursor | Active on tool-using turns (turn-count trigger only) | `postToolUse` hook (`cursor/hook.js`) → `additional_context` |
+| Kiro | Active | `UserPromptSubmit` command hook → pinned-floor (plain-text STDOUT); `SessionStart` agent hook → `session_start` tool; `Stop` agent hook → capture; `always` steering → persistent `session_start` instruction |
+| Gemini CLI | Active | `BeforeAgent` hook → `hookSpecificOutput.additionalContext`; `GEMINI.md` → persistent `session_start` instruction |
+| pi | Active (turn-count trigger only) | pi extension: `before_agent_start` → hidden context message; `/total-recall` command |
+| Codex CLI | Active (turn-count trigger only) | `UserPromptSubmit` hook (`codex/hook.js`) → `additionalContext` |
+| Cline | MCP tools only | No hooks; `cline_mcp_settings.json` via postinstall |
+| Windsurf | MCP tools only | No hooks; `mcp_config.json` + rules file via postinstall |
+| Zed | MCP tools only | No hooks; `context_servers` in `settings.json` via postinstall |
+| VS Code | MCP tools only | No hooks; `mcp.json` (`servers` key) via postinstall |
+
+---
+
+## Commands
+
+`/total-recall:commands <subcommand> [args]`
+
+### help
+
+Print the command reference table below. Do not call any MCP tools.
+
+| Command | Purpose |
+|---|---|
+| `help` | Show this command reference |
+| `setup` | Auto-configure permissions for total-recall MCP tools |
+| `status` | Dashboard with tier sizes, session ID, DB stats |
+| `search <query>` | Semantic search across all tiers |
+| `store <content>` | Store a memory (`--tier`, `--tags`, `--type`) |
+| `forget <query>` | Find and delete memories (with confirmation) |
+| `inspect <id>` | Full details for a single entry |
+| `promote <id>` | Move an entry up one tier |
+| `demote <id>` | Move an entry down one tier |
+| `pin <id>` | Pin an entry to the pinned tier (always injected, never decays) |
+| `unpin <id>` | Release a pinned entry back to the warm tier |
+| `history` | Timeline of recent tier movements |
+| `recent` | List newest memories by timestamp (`--limit`, `--tier`, `--type`, `--project`, `--order`); `--tier pinned` supported |
+| `lineage <id>` | Compaction ancestry tree for an entry |
+| `export` | Export memories to JSON (`--tiers`, `--types`) |
+| `import <path>` | Import memories from a JSON file |
+| `import-host` | Import from host tools (Claude Code, etc.) |
+| `ingest <path>` | Ingest a file or directory into the knowledge base |
+| `kb search <query>` | Search the knowledge base |
+| `kb list` | List KB collections |
+| `kb refresh <col>` | Re-ingest a KB collection |
+| `kb remove <id>` | Remove a KB entry |
+| `compact [--fast]` | Compact hot tier now (default: model-driven; `--fast`: heuristic sweep) |
+| `eval` | Retrieval quality report (`--benchmark`, `--compare`, `--snapshot`) |
+| `eval grow` | Review benchmark candidates captured from retrieval misses (`list`, `resolve`) |
+| `config [get\|set]` | View or update configuration |
+| `update` | Update the plugin to the latest version |
+| `ui` | Open the built-in web management UI in the browser (`total-recall ui`) |
+
+### setup
+
+Auto-configure Claude Code permissions so total-recall MCP tools are allowed (required for TUI fullscreen / `dontAsk` permission mode). **This subcommand is Claude Code-specific** — it automates `~/.claude/settings.json`. On other hosts, there is no known automatic fix yet: report that to the user and point them at their host's own MCP tool-permission mechanism instead of attempting these steps.
+
+1. Read `~/.claude/settings.json` (create if it doesn't exist)
+2. Check if `permissions.allow` already contains a rule matching `mcp__plugin_total-recall_total-recall__*` (exact or equivalent glob)
+3. If missing, add `"mcp__plugin_total-recall_total-recall__*"` to the `permissions.allow` array
+4. Write the updated file back
+5. Report what changed and remind the user to restart the session for it to take effect
+
+**Important:** Preserve all existing settings — only add to the `allow` array, never remove or overwrite other entries. If the file doesn't exist, create it with just the permissions block.
+
+### status
+
+Call the `status` MCP tool. Format as a dashboard showing:
+- Tier sizes (pinned/hot/warm/cold with counts for memories and knowledge)
+- Session ID
+- Total entry count
+
+### search <query>
+
+Call `memory_search` with the query, all tiers enabled, top_k=10. Format results grouped by tier, showing: content preview, similarity score, source, tags. Valid tier filter values: `hot`, `warm`, `cold`, `pinned`. Offer actions: `/total-recall:commands promote <id>`, `/total-recall:commands pin <id>`, or `/total-recall:commands forget <id>`.
+
+### store <content>
+
+Call `memory_store` with the provided content. Optionally accept flags:
+- `--tier hot|warm|cold` (default: warm)
+- `--tags tag1,tag2`
+- `--type correction|preference|decision`
+- `--pinned` is not a tier value — to store-and-pin new content use `memory_store` with `pinned: true` (see `### pin`).
+
+### forget <query>
+
+1. Call `memory_search` with the query to find matching entries
+2. Present matches with: ID, content preview, tier, source, access count
+3. If source is from a host tool import, note the original file is NOT touched
+4. Ask user which entries to delete (by number or "all")
+5. Call `memory_delete` for each selected entry
+6. Confirm deletion
+
+Never auto-delete without user confirmation.
+
+### inspect <id>
+
+Call `memory_inspect` with the entry ID. Show full entry details including content, tier, source, tags, access count, decay score, creation/update timestamps, and compaction history.
+
+### promote <id> [--tier hot|warm] [--type memory|knowledge]
+
+Call `memory_promote` with the entry ID and target tier/type. Default target: one tier up, same content type.
+
+### demote <id> [--tier warm|cold] [--type memory|knowledge]
+
+Call `memory_demote` with the entry ID and target tier/type. Default target: one tier down, same content type.
+
+### pin <id> [--scope project|global] [--project <name>] [--type memory|knowledge]
+
+Call `memory_pin` with the entry ID and optional scope/project/type. Pin a memory so it is ALWAYS injected at session start and never decays or compacts. The only way out is `unpin`.
+
+- MCP: `memory_pin { id, scope?: "project"|"global", project?, type? }`
+- CLI: `total-recall memory pin <id> [--scope project|global] [--project <name>] [--type memory|knowledge]`
+- `scope: "global"` makes the pin visible in every project; `scope: "project"` scopes it to the given (or existing) project; omitted keeps the entry's current project.
+- Pinning an already-pinned entry is a no-op success (scope still applied).
+- Pinned entries are capped at 500 characters (config: `tiers.pinned.max_content_chars`, default 500) — pins are directives, not reference material. Oversized content is rejected, never truncated or auto-summarized: distill the rule and pin the distillation; keep the full detail as a normal warm memory.
+- For NEW content, `memory_store` with `pinned: true` stores-and-pins in one call (no pre-existing id required).
+
+### unpin <id> [--type memory|knowledge]
+
+Call `memory_unpin` with the entry ID. Release a pinned entry back to the warm tier, where the normal decay/compaction lifecycle resumes.
+
+- MCP: `memory_unpin { id, type? }`
+- CLI: `total-recall memory unpin <id> [--type memory|knowledge]`
+- Errors if the entry is not pinned (reports its actual tier).
+
+### history
+
+Call `memory_history`. Show recent tier movements from the compaction log as a timeline.
+
+### recent [--limit N] [--tier hot|warm|cold|pinned] [--type <entryType>] [--project <name>] [--order created|updated|accessed]
+
+Call `memory_recent` with the parsed flags (defaults: limit 20, all tiers, order `created`). Render the returned `entries` as a numbered list, newest first:
+
+`N. [<timestamp>] <tier> · <entry_type> · <project> — <preview>`
+
+The `order` field echoes which timestamp was used. Note that `updated`/`accessed` reflect activity (compaction bumps `updated_at`, retrieval bumps `last_accessed_at`), while `created` reflects authoring time. For full text of any entry, suggest `/total-recall:commands inspect <id>`; also offer `promote <id>` / `forget <id>` as follow-ups.
+
+### lineage <id>
+
+Call `memory_lineage` with the entry ID. Show the full compaction ancestry tree.
+
+### export
+
+Call `memory_export`. Optionally accept `--tiers hot,warm,cold,pinned` and `--types memory,knowledge` to filter.
+
+### import <path>
+
+Call `memory_import` with the file path.
+
+### ingest <path>
+
+Determine if path is a file or directory:
+- File: call `kb_ingest_file`
+- Directory: call `kb_ingest_dir`
+
+Report: collection name, document count, chunk count. Suggest a test query to verify.
+
+### kb search <query>
+
+Call `kb_search` with the query. Show results with content preview, score, collection, and source path.
+
+If the response includes `needsSummary: true`, generate a 2-3 sentence summary of the collection's content based on the search results and call `kb_summarize` with the collection ID and summary. This improves future retrieval.
+
+### kb list
+
+Call `kb_list_collections`. Show all collections with document and chunk counts.
+
+### kb refresh <collection>
+
+Call `kb_refresh` with the collection ID. Report re-ingestion results.
+
+### kb remove <id>
+
+Call `kb_remove` with the entry ID. Ask for confirmation first.
+
+### compact [--fast]
+
+Run hot-tier compaction now. Compaction is user-triggered; the reminder is a hint at session start and one nudge per session mid-session (on hosts with the pinned floor); nothing is shown at session end. Two modes:
+
+- **Default (model-driven):** Launches the `total-recall:compactor` agent against current hot tier entries (via `session_context`), then executes its decisions — carry forward, promote with summary, or discard. Reports a one-line summary of what was promoted/discarded. On hosts without the compactor agent (pi), use `--fast` or make the same carry-forward / promote / discard calls yourself from `session_context`.
+- **`--fast` (heuristic):** Runs `total-recall compact --run` — a deterministic decay-based sweep that promotes hot entries whose decay score falls below `compaction.warm_threshold`. No LLM, fast and cheap.
+
+See the full command body in [`compact.md`](compact.md).
+
+### eval [--benchmark] [--compare <name>] [--snapshot <name>] | grow [list|resolve]
+
+- No flags: call `eval_report` for live retrieval quality metrics (7-day rolling)
+- `--benchmark`: call `eval_benchmark` for synthetic benchmark results
+- `--compare <name>`: call `eval_compare` to compare against a saved baseline
+- `--snapshot <name>`: call `eval_snapshot` to save current config as a named baseline
+- `grow` (`eval grow list` or `eval grow resolve`): call `eval_grow` with `action` `list` to show the pending benchmark candidates, or `resolve` with `accept` and/or `reject` (candidate ids from the list) to accept or reject them; `benchmark` optionally names the benchmark JSONL. An accepted candidate whose query or content holds a secret, PII or a configured sensitive term is blocked and stays pending. CLI: `total-recall eval grow list` and `total-recall eval grow resolve --accept <id1,id2> --reject <id1,id2>`
+
+### config [get|set] <key> [value]
+
+- `get`: call `config_get` with the key (or omit for full config)
+- `set`: call `config_set` with key and value
+
+### ui [--port N] [--no-open] [--host H] [--smoke]
+
+Launch the built-in web management UI. This is a CLI command, not an MCP tool — instruct the user to run:
+
+```bash
+total-recall ui
+```
+
+Optionally pass flags: `--port N` (default 5577), `--no-open` (skip browser auto-open), `--host H` (bind address, default `localhost`), `--smoke` (CI probe: start, check `/api/health`, exit 0/1). The UI provides seven sections: Dashboard · Memory · Knowledge Base · Usage · Insights · Eval · Config. The access token is embedded in the served page — no manual credential setup needed.
+
+### import-host [source]
+
+Call `import_host` to detect and import memories from host tools (Claude Code, Copilot CLI). Optionally restrict to a specific source.
+
+### update
+
+Update the plugin to the latest published version. The correct mechanism depends on how total-recall is installed:
+
+1. **Detect the install mode.** Check whether the current plugin directory is a git checkout or a marketplace tarball snapshot:
+
+   ```bash
+   if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -d "$CLAUDE_PLUGIN_ROOT/.git" ]; then
+     echo "git-checkout"
+   else
+     echo "marketplace-tarball"
+   fi
+   ```
+
+2. **If `git-checkout`:** run `cd "$CLAUDE_PLUGIN_ROOT" && git pull origin main` and report what changed (files updated, new version).
+
+3. **If `marketplace-tarball`** (the common case for users who installed via `/plugin`): do NOT attempt `git pull` — the cache directory has no `.git` and is managed by Claude Code. Instead, instruct the user to update it via Claude Code itself:
+   - Run `/plugin` (or the equivalent plugin UI in their Claude Code version) and update `total-recall` from the `strvmarv-total-recall-marketplace` marketplace.
+   - After the update downloads, run `/reload-plugins` to apply.
+   - Restart the session if an MCP server needs to re-initialize (e.g., to pick up a new bundled model).
+
+   Also report the latest published version so the user knows the target — check it with:
+   ```bash
+   npm view @strvmarv/total-recall version
+   ```
+
+In both cases, end by reminding the user to run `/reload-plugins` after the update completes.

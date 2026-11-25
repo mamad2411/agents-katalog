@@ -1,0 +1,142 @@
+---
+name: thebrain-organize
+description: >
+  Tidy up TheBrain: find duplicates, thoughts with no links, empty stubs,
+  scattered branches about the same thing. Use when asked to "clean up my
+  brain", "find duplicates", "what is dangling with no links", "sort this out",
+  "the structure has drifted". Covers: how to hunt for disorder, what you may
+  fix yourself, and what you may only propose.
+---
+
+# Tidying up a brain
+
+A brain accumulates disorder quietly: duplicates born of different phrasings,
+orphan thoughts, stubs with no notes, two branches about the same thing under
+different names.
+
+The governing rule: **propose, do not act silently.** The structure is authored,
+and what looks like a duplicate may be a deliberate distinction.
+
+## What to look for
+
+### Duplicates
+
+Search for one concept through several phrasings and see whether different
+thoughts about the same thing come back:
+
+```
+brain_search { query: "<concept>", variants: ["synonym", "translation", "acronym"], limit: 20 }
+```
+
+A duplicate candidate is a pair of semantically close thoughts with different
+identifiers and overlapping notes. Before proposing a merge, read both in full:
+the difference may be substantive.
+
+### Orphans
+
+Thoughts with no links get lost: traversal cannot reach them, only search can.
+
+```
+brain_recent_changes { limit: 200, identifiers: true }
+```
+
+`identifiers: true` adds a `Thoughts` section under the table: every thought the
+rows name that is still there, once, as `name — identifier`. Without `since` the
+rows cover the last seven days; give an earlier `since` to look further back.
+Take the identifiers from that section and check each thought's neighbourhood:
+
+```
+brain_get_thought { thoughtId: "<identifier from the Thoughts section>" }
+```
+
+Empty in every link section means an orphan. Propose where to attach it, based on
+a search for something similar.
+
+A thought the rows show as `name (deleted)` is gone, and is not in the section:
+there is nothing to attach.
+
+That holds for an ordinary thought only. A type or a tag is vocabulary, not a
+thought that lost its place: nothing is meant to sit above it, and one that
+nothing uses yet shows a heading and no sections at all, which is exactly what
+an orphan looks like. Tell them apart by the mark that only a type or a tag
+carries, `[type]` or `[tag]`: after the name in the rows of
+`brain_recent_changes`, after the identifier in its `Thoughts` section and in
+`brain_get_thought`. Leave a marked thought out of the hunt, and never propose a
+parent for it. One that is in use lists its thoughts under `Thoughts of this
+type` or `Thoughts with this tag`; one that is not is unused vocabulary, worth at
+most a line of its own in the report.
+
+`brain_recent_changes` reads sixty thoughts a call for their names and kinds.
+When the rows name more, `Totals` says how many were not read. Those are in the
+section all the same, under the name the log kept or as `(name not read)`, and
+none of them carries a mark, a type or a tag included: go by the mark
+`brain_get_thought` prints for them.
+
+### Stubs
+
+The thought exists, the note does not, and there are one or two links. Either a
+forgotten placeholder or a deliberate rubric node. Tell them apart by context: a
+rubric usually has children. A `brain_get_thought` result that says the note
+was not read is no stub: read the thought again before judging it.
+
+### Drifted branches
+
+Two areas about the same thing under different names. Visible through traversal:
+
+```
+brain_traverse { thoughtId: "<root of the area>", depth: 3 }
+```
+
+## What you may do yourself
+
+Safe and reversible, after showing the person the list:
+
+- **Link** things that are clearly about the same subject (`brain_link` with a
+  meaningful label).
+- **Extend** a note with missing context (`brain_append_note`).
+- **Attach an orphan** to a suitable parent (`brain_link` with `relation: "child"`).
+
+## What you may only propose
+
+- **Merging duplicates.** Requires deciding which thought is primary and what
+  happens to both notes. Describe the option, wait for agreement.
+- **Renaming.** The name is an authorial choice.
+- **Aliases.** The name that loses a merge or a rename can stay on the thought
+  as an alias (`brain_update_thought` with `addAliases`), so a search for it
+  still lands. Propose it rather than do it: the first alias in a brain makes
+  that brain require TheBrain 15.0.621 or later on every device.
+- **Deleting.** Even with deletion permitted, ask separately for each thought,
+  never as a list — "shall I delete all of these?".
+- **Restructuring the hierarchy.** Mass-moving branches is almost always a bad
+  idea without an explicit request. A single link that is the wrong kind, a
+  jump that should be a parent link or the other way, is `brain_link` with
+  `replace: true` once the person agrees.
+- **Removing a link** (`brain_unlink`). It asks the person itself, and takes
+  the link's label with it. A thought it leaves with no parent, child or jump
+  is shown next to nothing: give it another link first.
+
+## How to report
+
+As a list, most important first, with identifiers so the person can open and look:
+
+```
+Duplicates (2 pairs)
+  "Vector databases" — abc123  and  "Vector DB" — def456
+     both about embedding stores, notes do not overlap
+     proposal: keep "Vector databases", append the other's content
+
+Orphans (3)
+  "Hybrid search" — ghi789
+     proposal: attach to "Vector databases"
+```
+
+Do not dump a hundred items. A dozen of the most important ones is more useful
+than a complete list nobody will read.
+
+## After changes
+
+```
+brain_index { action: "sync" }
+```
+
+Otherwise the edits will not reach search.

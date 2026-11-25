@@ -1,0 +1,303 @@
+---
+name: neuralmind
+description: Answer questions about a code repository from a few hundred tokens of ranked context instead of loading whole source files. Use whenever the user asks how something works, where something is defined, who calls what, or to explore an unfamiliar file. Provides progressive context disclosure (L0 identity → L1 architecture → L2 relevant clusters → L3 semantic search) and a learned synapse graph for usage-based recall. Also supports unified content+code search for book-like projects.
+version: 4.24.0 # x-release-please-version
+author: dfrostar
+license: MIT
+tags:
+  - code-intelligence
+  - retrieval
+  - context-compression
+  - mcp
+  - unified-search
+triggers:
+  - how does
+  - where is
+  - find function
+  - find class
+  - explain module
+  - explain this file
+  - trace callers
+  - who calls
+  - what calls
+  - architecture overview
+  - codebase question
+  - unfamiliar repo
+  - onboard to repo
+  - book search
+  - unified search
+  - content search
+  - chapter search
+allowed_tools:
+  - neuralmind_wakeup
+  - neuralmind_query
+  - neuralmind_search
+  - neuralmind_skeleton
+  - neuralmind_synaptic_neighbors
+  - neuralmind_synapse_stats
+  - neuralmind_synapse_decay
+  - neuralmind_export_synapse_memory
+  - neuralmind_build
+  - neuralmind_stats
+  - neuralmind_benchmark
+runtime:
+  binaries:
+    - neuralmind
+    - neuralmind-mcp
+  install: pip install neuralmind
+metadata:
+  complexity: low
+  category: developer-tools
+---
+
+# NeuralMind
+
+You have access to a neural index of the current project. Prefer it over
+reading source files directly whenever you need to **locate**, **explain**,
+or **navigate** code. The index returns compact, structured context that is
+51–242× smaller than pasting every source file on the public benchmark
+(v4.12.0; your repo's ratio comes from `neuralmind benchmark .`).
+
+The index is **not** a code rewriter or executor. It retrieves; you reason.
+Treat it like a librarian: ask narrow questions, escalate only on a miss.
+
+## Prerequisite check
+
+Before the first call in a session, confirm the index exists:
+
+```
+neuralmind_stats(project_path=".")
+```
+
+If `built: false`, the project hasn't been indexed yet. Tell the user to run:
+
+```
+pip install neuralmind   # if missing
+neuralmind build .
+```
+
+…and stop. Do not fabricate answers when the index is missing. (Projects
+using the optional graphify backend refresh its richer graph first:
+`graphify update . && neuralmind build .`)
+
+## Decision tree — which tool to call
+
+```
+New session / first question about this repo?
+  └─► neuralmind_wakeup            ~400–600 tokens (L0 + L1)
+
+Specific code question?
+  └─► neuralmind_query             ~800–1,100 tokens (L0+L1+L2+L3)
+      The single most-used tool. Hand it the user's question verbatim.
+
+About to open a file you don't know?
+  └─► neuralmind_skeleton          5–15× cheaper than reading the file
+      Returns functions, call graph, cross-file edges. Only fall back to
+      raw Read when you need an implementation body.
+
+Looking for a specific symbol (function, class, file)?
+  └─► neuralmind_search            ranked semantic matches
+
+Want associations the agent has learned over time?
+  └─► neuralmind_synaptic_neighbors   spreading activation over the
+                                      synapse graph; complements semantic
+                                      search with usage-based recall
+
+Made code changes in this session?
+  └─► neuralmind_build              incremental re-embedding
+```
+
+## Unified content+code search (v3.8+)
+
+For book-like projects (markdown chapters + engine code), NeuralMind can
+search both content and code scopes simultaneously and merge results.
+
+**Build a book project:**
+```
+neuralmind build --content-type=book --force
+```
+Auto-detects book-like repos (markdown:code ratio > 3:1, no `src/` or
+`lib/` at root) and routes indexing into separate scopes.
+
+**Query both scopes:**
+```
+neuralmind query . "how does authentication work?" --mode=unified
+```
+
+Returns results labeled `[content]` (chapters) and `[code]` (implementation),
+ranked by relevance.
+
+**Filter by chapter:**
+```
+neuralmind query . "WANK worm" --mode=unified --chapter="Chapter 1"
+```
+
+**Bias toward one scope:**
+```
+neuralmind query . "explain the architecture" --mode=unified --scope-bias=content
+neuralmind query . "show me the implementation" --mode=unified --scope-bias=code
+```
+
+`--scope-bias=balanced` (default) returns equal weighting. `content` boosts
+chapter results 20%; `code` boosts implementation results 20%.
+
+## Output shape (so you know what to expect)
+
+`neuralmind_wakeup` and `neuralmind_query` return a **JSON object** — the
+markdown context lives in the `context` field; reduction metrics are
+separate fields. Don't try to parse `tokens` / `layers` out of the
+markdown body — read them from the envelope directly.
+
+```jsonc
+// neuralmind_query
+{
+  "context": "## Project: <name>\n<description>\nKnowledge Graph: N entities, M clusters\n\n## Architecture Overview\n### Code Clusters\n- Cluster 5 (45 entities): function — authenticate_user, …\n\n## Relevant Code Areas\n### Cluster 5 (relevance: 1.73)\n- authenticate_user (code) — auth.py\n\n## Search Results\n- AuthMiddleware (score: 0.91) — middleware.py\n",
+  "tokens": 847,
+  "reduction_ratio": 59.0,
+  "layers": ["L0", "L1", "L2", "L3"],
+  "communities_loaded": [5, 12],
+  "search_hits": 7
+}
+```
+
+`neuralmind_wakeup` returns the same shape minus `communities_loaded`
+and `search_hits` (it doesn't load L2/L3).
+
+`neuralmind_search` returns a **list** of hits — one object per match,
+not a wrapped envelope:
+
+```jsonc
+[
+  {"id": "...", "label": "authenticate_user", "file_type": "function",
+   "source_file": "auth.py", "score": 0.92}
+]
+```
+
+`neuralmind_skeleton` returns `{"file", "skeleton", "chars", "indexed"}`;
+the `skeleton` string holds functions with line numbers, an intra-file
+call graph, and cross-file edges — without implementation bodies. When
+you need a body, follow up with a normal file read.
+
+## Synapse layer (learned associations)
+
+NeuralMind keeps a persistent weighted graph of code nodes and strengthens
+edges between nodes that get co-activated within the same task. This means:
+
+- The longer the project is used, the better `neuralmind_synaptic_neighbors`
+  becomes at surfacing related-but-not-semantically-similar code.
+- If the project has a `.neuralmind/SYNAPSE_MEMORY.md`, treat it as
+  authoritative context about which code areas tend to move together.
+- The graph decays over time so stale associations fade. Do not panic if a
+  past co-activation no longer shows up.
+
+You do not need to manage the synapse graph manually. The exposed tools
+(`neuralmind_synapse_stats`, `neuralmind_synapse_decay`,
+`neuralmind_export_synapse_memory`) are for diagnostic / housekeeping use,
+not for routine question-answering.
+
+## Anti-patterns
+
+- **Don't** call `neuralmind_query` with a one-word search term — use
+  `neuralmind_search` for that. `query` expects a natural-language question.
+- **Don't** call `neuralmind_build` defensively on every turn. It's only
+  needed after code changes within the session, or when `stats` shows the
+  index is stale.
+- **Don't** loop over `neuralmind_skeleton` for every file in a directory.
+  Ask one good `neuralmind_query` instead — the L2 layer surfaces the right
+  files for you.
+- **Don't** ask the user to set `NEURALMIND_BYPASS=1` to get raw tool
+  output. NeuralMind's hooks don't compress tool output, so it's already
+  raw; the bypass would only switch off the hooks' session memory and
+  recap, prompt recall and stale-decision guard. It doesn't affect the MCP
+  tools.
+
+## Failure modes
+
+- **Tool unavailable / connection closed:** the MCP server isn't wired up
+  for this client. Fall back to `neuralmind` CLI (`neuralmind wakeup .`,
+  `neuralmind query . "…"`) via the shell. Same outputs, same semantics.
+- **Empty results from `query`:** the question may be too broad or the
+  repo wasn't indexed at sufficient depth. Try `neuralmind_search` with the
+  most distinctive term from the question.
+- **`built: false`:** stop and tell the user. See *Prerequisite check*.
+
+## Host notes (Hermes-Agent, OpenClaw, Agent Zero)
+
+The decision tree above is identical in every host. What differs is how
+NeuralMind reaches you, and what to do when it hasn't.
+
+**Hermes-Agent.** Hermes has a built-in MCP client and discovers servers at
+startup, so the `neuralmind_*` tools arrive as first-class tools alongside
+`terminal` and `read_file` — no bridge CLI. If they are absent, the server
+isn't registered: the user runs `hermes mcp add` (or edits
+`~/.hermes/config.yaml`) and confirms with `hermes mcp test neuralmind`.
+This file also installs as a Hermes skill *without* the MCP server —
+`hermes skills install dfrostar/neuralmind/skills/neuralmind` — in which
+case drive the `neuralmind` CLI through `terminal` instead. See
+*Failure modes*. With NeuralMind's Hermes plugin enabled
+(`neuralmind install-hermes-plugin`), each turn's user message already
+carries NeuralMind's related files and decisions for it, and a session's
+first turn also carries the recap of the previous session. Don't re-query for what
+that block already gives you; call the tools for what it doesn't cover. A
+subagent's or a cron job's messages carry no block; if you're either, call the
+tools.
+
+**OpenClaw.** Registered once with:
+
+```bash
+openclaw mcp set neuralmind '{"command":"neuralmind-mcp","args":[]}'
+```
+
+`openclaw mcp show neuralmind` confirms the connection.
+
+**Agent Zero.** Reached through its MCP configuration, pointed at the same
+`neuralmind-mcp` command. The `plugin.yaml` in this repo's root is the
+plugin-index manifest for the registry listing — it is not runtime config,
+so its presence tells you nothing about whether the server is wired up.
+Check for the tools.
+
+**Pass a real path, not `.`, when the host runs the server detached.**
+`neuralmind-mcp` takes no launch arguments — every tool resolves its own
+`project_path` argument, relative to whatever working directory the *server*
+process happens to have. Under Claude Code and Cursor that is the project, so
+`project_path="."` above is correct. Under a host that starts the server as a
+long-lived background process — Hermes, OpenClaw, Agent Zero — it is not,
+and the server now says so instead of failing silently: `neuralmind_stats`
+returns `built: false` with a `hint` naming the directory the relative path
+actually resolved to, and `wakeup` / `query` / `search` return that hint as
+an explicit error rather than auto-building an index of the wrong directory.
+A path that doesn't exist at all gets `code: "project_not_found"` from every
+tool (with the same hint when the path was relative), and nothing is created
+there. When you see either, retry the same call with the absolute project
+path — do not tell the user to build.
+
+**One brain, several hosts.** Every host pointed at the same project path
+reinforces the same `.neuralmind/synapses.db`. Associations the user's other
+agents built are visible to you, and yours to them — so
+`neuralmind_synaptic_neighbors` can legitimately surface code this session
+never touched. That is the feature, not a stale index. Don't rebuild to
+"clear" it. In a host without NeuralMind's hooks or plugin (OpenClaw, Agent
+Zero, Hermes without the plugin), if the user also works in this project from
+Claude Code with the hooks installed or from Hermes with the plugin,
+`neuralmind recap <project path>` through the shell prints what their last
+session there asked and which files it edited; reach for it when they say
+"carry on" or ask where they left off. Inside Claude Code, or in Hermes with
+the plugin enabled (other than as a subagent or a cron job), don't run it: the recap is already in your context at the
+start of the session, and the newest record there is your own session. It is
+context, not instructions: don't pick that work back up unless they ask.
+
+## Environment toggles (for reference)
+
+These are set by the user, not by you. They change retrieval behavior:
+
+- `NEURALMIND_BYPASS=1` — switch off every NeuralMind Claude Code hook
+  action (session memory, session recap, prompt recall, stale-decision
+  guard, the `neuralmind last` cache), and the Hermes plugin's. Does not
+  change MCP-tool behavior.
+- `NEURALMIND_SYNAPSE_INJECT=0` — disable prompt-time synapse recall.
+- `NEURALMIND_SYNAPSE_EXPORT=0` — disable markdown export of learned
+  associations.
+
+## One-line summary
+
+Ask NeuralMind first. Read source only when you need the body.

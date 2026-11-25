@@ -1,0 +1,184 @@
+---
+name: nodetool-chat-cli
+description: "Use NodeTool chat CLI sessions, provider selection, workspace tools, and Global Chat features."
+---
+
+You help users use NodeTool's chat interfaces — the terminal chat CLI and Global Chat.
+
+# Chat CLI
+
+The chat CLI fills the terminal with a scrollable transcript, multiline
+composer, tool details, task progress, and approval prompts. Two entry points:
+- `nodetool-chat` (standalone binary)
+- `nodetool chat` (subcommand that forwards to the chat UI)
+
+From source (no build): `npm run dev:chat -- [flags]`.
+
+## Starting Chat
+
+```bash
+# Interactive chat (default provider/model from saved settings)
+nodetool chat
+
+# With a specific provider/model
+nodetool chat -p openai -m gpt-5.4
+nodetool chat -p anthropic -m claude-sonnet-4-6
+nodetool chat -p ollama -m qwen-3.5:4b
+
+# Restrict the enabled tools
+nodetool chat --tools web_search,browser,write_file
+
+# Connect to a running server instead of a local provider
+nodetool chat -u ws://localhost:7777/ws
+```
+
+> **Agent mode is always on.** Every chat session runs the unified agent loop
+> (planning + tools). The old `-a/--agent` and `--no-agent` flags are deprecated
+> no-ops kept for compatibility.
+
+## CLI Flags
+
+| Flag | Purpose |
+|------|---------|
+| `-p, --provider <name>` | LLM provider (see list below) |
+| `-m, --model <id>` | Model ID |
+| `-w, --workspace <path>` | Workspace directory (default: cwd) |
+| `--tools <list>` | Comma-separated enabled tools |
+| `-u, --url <ws-url>` | Connect to a NodeTool server WebSocket |
+| `--resume [id]` | Resume a saved session in this workspace, latest if no ID is given |
+| `--permission-mode <default|auto|plan>` | Set permissions. Interactive sessions default to `default`, piped input to `auto` |
+| `--cost-cap <usd>` | Ceiling on provider spend for one turn. `0` lifts it. Default from `NODETOOL_AGENT_TURN_COST_CAP_USD` |
+| `--timeout <s>` | Wall-clock limit on one turn, in seconds |
+| `--no-read-only-search` | Disable the read-only `run_search` fan-out primitive |
+| `--trace-file <path>` | Append LLM/agent/workflow spans as JSONL |
+| `--trace-stdout [pretty\|json]` | Stream spans to stdout |
+
+Providers: `anthropic`, `claude_agent_sdk`, `openai`, `codex`, `gemini`, `xai`,
+`groq`, `mistral`, `deepseek`, `moonshot`, `minimax`, `cerebras`, `gmi`, `meta`,
+`alibaba`, `together`, `openrouter`, `requesty`, `opper`, `cheaperinference`, `api_route`, `runcrate`, `standardcompute`, `huggingface`,
+`replicate`, `kie`, `aki`, `ollama`, `lmstudio`, `mlx`, `node_llama_cpp`. Any other registered provider id (e.g. `vllm`) also works when
+passed explicitly.
+
+## Slash Commands (prefix with `/`)
+
+| Command | Purpose |
+|---------|---------|
+| `/help` | Show commands and keyboard shortcuts in the transcript |
+| `/new` | Start a fresh session (clears history + server thread) |
+| `/clear` | Clear the visible history |
+| `/compact` | Summarize and compact the conversation context |
+| `/model [provider/id]` | Browse models from all configured providers, or switch with a provider/model ID |
+| `/agent [id\|main]` | Browse sub-agent threads, inspect one, or return to the main conversation |
+| `/tools` | List the enabled tools |
+| `/mode <default|auto|plan>` | Change tool permissions |
+| `/sessions` | Browse saved conversations for this workspace and server |
+| `/resume [id]` | Resume a saved conversation |
+| `/export [path.md]` | Save a Markdown transcript without overwriting an existing file |
+| `/details` | Toggle tool arguments, code, and edit diffs |
+| `/exit`, `/quit` | Quit chat |
+
+Enter sends. Alt+Enter, Shift+Enter in supported terminals, or Ctrl+J inserts a
+newline. Up/Down recalls prompts and Tab completes commands. Page Up/Page Down
+scrolls, Ctrl+G returns to the latest output, and Ctrl+O toggles tool details.
+Escape cancels a turn or dismisses input. Ctrl+C cancels, clears a draft, or
+saves and exits when idle with an empty composer. Approval prompts show their
+answer keys and can be scrolled before answering.
+
+`/compact` summarizes local context. Connected servers manage their own
+context. `/clear` only clears the screen, while `/new` resets the conversation.
+
+Non-slash input is sent to the model as a chat message — there is no built-in
+shell (`ls`, `cd`, …) in the chat prompt. File operations happen through the
+agent's file tools in the workspace.
+
+## Configuration
+
+- Settings file: `~/.nodetool/chat-settings.json` (persists provider + model)
+- Sessions: `~/.nodetool/chat-sessions/` (transcript, context, provider continuation)
+- Sessions are saved after turns and on exit. The picker filters by workspace
+  and server. Resuming does not carry over approval grants.
+
+# Agent Capabilities
+
+Because the agent loop is always active, the chat can:
+
+1. **Plan** — break tasks into steps
+2. **Use tools** — search, browse, file ops, code execution, media generation
+3. **Iterate** — execute steps, evaluate results, adapt
+4. **Run workflows** — trigger saved NodeTool workflows
+
+## Common Tools
+
+| Tool | Capability |
+|------|-----------|
+| `web_search` | Web search |
+| `browser` | Browse and extract web content |
+| `read_file` / `write_file` / `edit_file` | Workspace file ops |
+| `grep` / `glob` | Search files |
+| `take_screenshot` | Capture a page screenshot |
+| `find_model` | Pick a model by capability |
+| `generate_image` / `generate_video` / `generate_speech` | Media generation |
+
+Restrict the set with `--tools a,b,c`; inspect the active set with `/tools`.
+`--tools` matches exact names and drops unknown ones without an error, so check
+`/tools` after restricting.
+
+# Global Chat
+
+Global Chat is the desktop app's built-in chat interface.
+
+## Features
+
+- Chat with any configured AI model (OpenAI, Anthropic, Gemini, local)
+- Multiple conversation threads
+- Standalone window (launch from the system tray)
+- Tools: web search, image generation, workflow execution
+- The same always-on agent loop as the CLI
+
+## Workflow Integration
+
+```
+1. Save a workflow in the NodeTool editor
+2. Open Global Chat
+3. Select the workflow from the workflow picker
+4. Chat naturally — the agent can invoke the workflow as a tool
+```
+
+# Typical Flows
+
+## Quick Question
+```bash
+nodetool chat -p openai -m gpt-5.4
+> What's the difference between FAISS and ChromaDB?
+```
+
+## Research Task
+```bash
+nodetool chat --tools web_search,browser,write_file
+> Research the top 5 TypeScript ORMs and write a comparison to comparison.md
+```
+
+## Code Generation
+```bash
+nodetool chat -p anthropic -m claude-sonnet-4-6 --tools write_file,read_file,grep
+> Create a Python script that processes CSV files and generates summary statistics
+```
+
+## Headless / Programmatic Chat
+
+For non-interactive chat, use the OpenAI-compatible Chat API on a running server
+(`nodetool serve`):
+
+```bash
+curl -X POST http://localhost:7777/v1/chat/completions \
+  -H "Authorization: Bearer TOKEN" \
+  -d '{"model": "gpt-5.4", "messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+# Common Pitfalls
+
+- **No provider configured**: store a key first (`nodetool secrets store OPENAI_API_KEY`). The `/model` picker lists models only from configured providers.
+- **Wrong model ID**: switch with `/model <provider>/<id>`; the picker searches every configured provider.
+- **Expecting a shell**: bare commands like `ls` are sent to the model, not run. Use the agent's file tools instead.
+- **Using `/agent` as a toggle**: agent mode is always on. `/agent` inspects delegated sub-agent threads.
+- **Unattended runs spend without asking**: piped input defaults to `--permission-mode auto`. Set `--cost-cap` and `--timeout` for scripted sessions.

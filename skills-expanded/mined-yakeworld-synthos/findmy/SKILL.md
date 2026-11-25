@@ -1,0 +1,210 @@
+---
+name: findmy
+description: findmy
+version: 1.0.0
+category: apple
+signature: 'findmy -> apple: Track Apple devices and AirTags via the FindMy.app on
+  macOS. Since Apple doesn''t'
+license: MIT
+author: Synthos
+metadata:
+  synthos:
+    signature: 'task_desc: str, params: dict -> result: dict'
+    atom_type: skill
+    priority: P2
+    related_skills:
+    - apple
+    - macos-computer-use
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `device_query: str` — 用户请求描述、上下文信息
+- **output**: `location_data: dict — 设备位置`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# Find My (Apple)
+
+Track Apple devices and AirTags via the FindMy.app on macOS. Since Apple doesn't
+provide a CLI for FindMy, this skill uses AppleScript to open the app and
+screen capture to read device locations.
+
+## Prerequisites
+
+- **macOS** with Find My app and iCloud signed in
+- Devices/AirTags already registered in Find My
+- Screen Recording permission for terminal (System Settings → Privacy → Screen Recording)
+- **Optional but recommended**: Install `peekaboo` for better UI automation:
+  `brew install steipete/tap/peekaboo`
+
+## When to Use
+
+- User asks "where is my [device/cat/keys/bag]?"
+- Tracking AirTag locations
+- Checking device locations (iPhone, iPad, Mac, AirPods)
+- Monitoring pet or item movement over time (AirTag patrol routes)
+
+## Method 1: AppleScript + Screenshot (Basic)
+
+### Open FindMy and Navigate
+
+```bash
+# Open Find My app
+osascript -e 'tell application "FindMy" to activate'
+
+# Wait for it to load
+sleep 3
+
+# Take a screenshot of the Find My window
+screencapture -w -o /tmp/findmy.png
+```
+
+Then use `vision_analyze` to read the screenshot:
+```
+vision_analyze(image_url="/tmp/findmy.png", question="What devices/items are shown and what are their locations?")
+```
+
+### Switch Between Tabs
+
+```bash
+# Switch to Devices tab
+osascript -e '
+tell application "System Events"
+    tell process "FindMy"
+        click button "Devices" of toolbar 1 of window 1
+    end tell
+end tell'
+
+# Switch to Items tab (AirTags)
+osascript -e '
+tell application "System Events"
+    tell process "FindMy"
+        click button "Items" of toolbar 1 of window 1
+    end tell
+end tell'
+```
+
+## Method 2: Peekaboo UI Automation (Recommended)
+
+If `peekaboo` is installed, use it for more reliable UI interaction:
+
+```bash
+# Open Find My
+osascript -e 'tell application "FindMy" to activate'
+sleep 3
+
+# Capture and annotate the UI
+peekaboo see --app "FindMy" --annotate --path /tmp/findmy-ui.png
+
+# Click on a specific device/item by element ID
+peekaboo click --on B3 --app "FindMy"
+
+# Capture the detail view
+peekaboo image --app "FindMy" --path /tmp/findmy-detail.png
+```
+
+Then analyze with vision:
+```
+vision_analyze(image_url="/tmp/findmy-detail.png", question="What is the location shown for this device/item? Include address and coordinates if visible.")
+```
+
+## Workflow: Track AirTag Location Over Time
+
+For monitoring an AirTag (e.g., tracking a cat's patrol route):
+
+```bash
+# 1. Open FindMy to Items tab
+osascript -e 'tell application "FindMy" to activate'
+sleep 3
+
+# 2. Click on the AirTag item (stay on page — AirTag only updates when page is open)
+
+# 3. Periodically capture location
+while true; do
+    screencapture -w -o /tmp/findmy-$(date +%H%M%S).png
+    sleep 300  # Every 5 minutes
+done
+```
+
+Analyze each screenshot with vision to extract coordinates, then compile a route.
+
+## Limitations
+
+- FindMy has **no CLI or API** — must use UI automation
+- AirTags only update location while the FindMy page is actively displayed
+- Location accuracy depends on nearby Apple devices in the FindMy network
+- Screen Recording permission required for screenshots
+- AppleScript UI automation may break across macOS versions
+
+## Rules
+
+1. Keep FindMy app in the foreground when tracking AirTags (updates stop when minimized)
+2. Use `vision_analyze` to read screenshot content — don't try to parse pixels
+3. For ongoing tracking, use a cronjob to periodically capture and log locations
+4. Respect privacy — only track devices/items the user owns
+
+## 验证清单 · VERIFICATION
+
+- [ ] 终端已授予「屏幕录制」权限，`screencapture -w -o /tmp/findmy.png` 产出非黑屏截图
+- [ ] `osascript -e 'tell application "FindMy" to activate'` 后 FindMy 窗口在前台（sleep 3 后截图可见）
+- [ ] `vision_analyze` 能读出设备/物品名称与位置文本，而非空白或无关内容
+- [ ] AirTag 追踪期间 FindMy 保持前台且目标页激活，位置坐标随周期捕获持续更新
+- [ ] 截图解析出的位置仅属于用户自己的设备/物品（隐私边界确认）
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+# Findmy
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[FIND-001]** 当需要获取 FindMy 设备位置且无 CLI/API 可用时 → 使用 AppleScript 激活应用并结合屏幕截图与视觉分析 (vision_analyze) 提取数据
+- **[FIND-002]** 当需要更可靠的 UI 交互或元素定位时 → 优先使用 `peekaboo` 工具进行标注、点击和截图，而非纯 AppleScript
+- **[FIND-003]** 当追踪 AirTag 实时位置时 → 必须保持 FindMy 应用处于前台激活状态，因为最小化或后台运行会停止位置更新
+- **[FIND-004]** 当需要长期监控物品移动轨迹（如宠物巡逻路线）时 → 建立周期性循环（如每 5 分钟）捕获屏幕并记录坐标，以编译完整路径
+- **[FIND-005]** 当解析截图中的位置信息时 → 始终使用 `vision_analyze` 读取文本内容，禁止尝试直接解析像素数据
+- **[FIND-006]** 当执行屏幕捕获操作前 → 必须确认终端已授予“屏幕录制”权限，否则截图将失败或为黑屏
+
+## 示例 · EXAMPLES
+
+1. **查询设备位置（基础法）**：输入「我的 iPhone 在哪？」→ 先确认终端有屏幕录制权限 → `osascript -e 'tell application "FindMy" to activate'` + `sleep 3` + `screencapture -w -o /tmp/findmy.png` → 验证：`vision_analyze` 读出的设备名与位置文本非空白，且截图非黑屏。
+2. **用 peekaboo 精确定位 AirTag（推荐法）**：输入「背包上的 AirTag 现在在哪？」→ `peekaboo see --app "FindMy" --annotate --path /tmp/findmy-ui.png` 标注元素 → 切到 Items 页签并 `peekaboo click --on B3 --app "FindMy"` 选中目标 → 验证：`peekaboo image` 截到的详情页经 `vision_analyze` 读出地址/坐标。
+3. **追踪猫巡逻路线（周期捕获）**：输入「记录这只猫一小时的移动轨迹」→ FindMy 保持前台并停留在 AirTag 页（最小化会停更），循环 `screencapture -w -o /tmp/findmy-$(date +%H%M%S).png; sleep 300` → 验证：每个周期截图的坐标单调可追踪，编译出的路径点数量 = 捕获次数，且仅涉及用户自有物品。

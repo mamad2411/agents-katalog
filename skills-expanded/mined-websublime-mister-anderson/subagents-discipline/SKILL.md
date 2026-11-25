@@ -1,0 +1,242 @@
+---
+name: subagents-discipline
+description: Core engineering principles for implementation tasks
+---
+
+# Implementation Principles
+
+## Foundational Axiom: Tasks are WHAT; Specs are HOW
+
+**Tasks define WHAT to do. Specs define HOW to do it.**
+
+- A **task** (bead) answers: *Why does this work exist? What must be true when it's done?*
+- A **spec** answers: *How should it be built? What patterns, interfaces, types, and architecture to use?*
+
+This separation is non-negotiable. Tasks contain verifiable acceptance criteria and pointers to specs — never implementation details. Specs contain the technical contract — never project management metadata. When both exist, the spec is the implementation authority; the task is the tracking authority.
+
+---
+
+## Rule 0: Follow Instructions Exactly — No Unilateral Decisions
+
+**This is the highest-priority rule. It overrides any "good idea" you might have.**
+
+You MUST execute skill instructions exactly as written. You are NOT allowed to:
+
+- **Add parameters, flags, or options** not specified in the instructions (e.g., adding `isolation: "worktree"` to an Agent() call when the skill doesn't mention it)
+- **Remove or modify parameters** that are explicitly specified
+- **Change the execution strategy** (e.g., switching from sequential to parallel, or vice-versa)
+- **Add "safety" measures** the instructions didn't ask for
+- **Simplify, optimize, or "improve"** the approach beyond what was requested
+
+**If you believe the instructions are wrong, incomplete, or could be improved — ASK THE USER FIRST.** Do not act on your own judgement. The cost of asking is near zero. The cost of a unilateral decision can break the entire workflow.
+
+This applies to:
+- Tool calls (Agent, Bash, etc.)
+- Git operations (branch naming, commit strategy)
+- File operations (paths, naming conventions)
+- Any deviation from what the skill/spec/design doc defines
+
+**Violations of this rule are treated as bugs, not as helpful initiative.**
+
+---
+
+## Rule 1: Read Before You Implement
+
+Before writing any code, build your full picture by reading three layers — **context**, **contract**, and **code** — in order. Each layer may or may not exist. Use what's available.
+
+### Layer 1: Context (bead comments)
+
+```bash
+bd show {BEAD_ID}
+bd comments {BEAD_ID}
+```
+
+Comments may contain investigation findings (`INVESTIGATION:`), dispatch context (`DISPATCH:`), root cause analysis, affected files, gotchas. **Use this context** — don't re-investigate what Sherlock already traced.
+
+**Important:** The INVESTIGATION comment may include an `Approach:` field with tactical steps (which files to edit, in what order). This is **navigation guidance** — it tells you WHERE to start and WHAT order to follow. It does NOT replace the spec's HOW (patterns, interfaces, types). When both exist, the spec defines the architecture; the investigation guides the execution path.
+
+If no comments exist, you have no prior investigation. Proceed to the next layers — they become more important.
+
+### Layer 2: Contract (spec / design doc)
+
+The spec or design doc defines **how** to implement — field names, types, interfaces, architecture decisions. This is your implementation contract.
+
+**For epic children** (BEAD_ID contains a dot, e.g., BD-001.2):
+```bash
+bd show {EPIC_ID} --json | jq -r '.[0].design // empty'
+```
+If a design doc path exists, read it. Match it exactly — same field names, same types, same shapes.
+
+**For any bead**: check these fields in `bd show {BEAD_ID} --json` for spec references:
+- `design` — one-line pointer to spec section (e.g., "See spec.md § Section 3")
+- `external-ref` — pipe-separated doc references (e.g., "SPEC §7.4 | PLAN task 06.03")
+- `spec-id` — PRD reference (e.g., "PRD 9.14")
+- `notes` — may contain additional context
+
+If a spec exists, it takes precedence over your own judgement. Follow it. If you believe the spec is wrong, log a `DEVIATION:` comment explaining why — don't silently diverge.
+
+If no spec or design doc exists, proceed to Layer 3.
+
+### Layer 3: Code (confrontation)
+
+When there is no spec defining the HOW, **the existing code is your contract**. Before implementing:
+
+1. Read the files you will modify (already identified in Layer 1, or find them yourself)
+2. Understand the patterns, conventions, and interfaces in the surrounding code
+3. Implement following what you observed — same patterns, same style, same abstractions
+
+This is not re-investigating. The investigation found WHERE and WHAT. Code confrontation tells you HOW the codebase expects you to work.
+
+### What you have determines your approach
+
+| Context (comments) | Contract (spec) | Code | Approach |
+|---|---|---|---|
+| Yes | Yes | — | Spec is the contract. Comments guide you to the right files. |
+| Yes | No | Read | Follow existing code patterns. Log `DECISION:` for non-obvious choices. |
+| No | Yes | — | Spec is the contract. Find entry points yourself. |
+| No | No | Read | Read the bead description and acceptance criteria — that's your minimal spec. Confront the code. Log `DECISION:` for every choice. |
+
+---
+
+## Rule 2: Look Before You Code
+
+Before writing code that touches external data (API, database, file, config):
+
+1. **Fetch/read the ACTUAL data** - run the command, see the output
+2. **Note exact field names, types, formats** - not what docs say, what you SEE
+3. **Code against what you observed** - not what you assumed
+
+```
+WITHOUT looking first:
+  Assumed: column is "reference_images"
+  Reality: column is "reference_image_url"
+  Result:  Query fails
+
+WITH looking first:
+  Ran: SELECT column_name FROM information_schema.columns WHERE table_name = 'assets';
+  Saw: reference_image_url
+  Coded against: reference_image_url
+  Result: Works
+```
+
+## Rule 3: Test Functionally (Close the Loop)
+
+**Principle: Optimize for the fastest way to verify your work actually works.**
+
+| You built | Fast verification | Slower alternative |
+|-----------|------------------|--------------------|
+| API endpoint | `curl` the endpoint, check response | Write integration test |
+| Database change | Run migration, query the result | Write migration test |
+| Frontend component | Load in browser, interact with it | Write component test |
+| CLI tool | Run the command, check output | Write unit test |
+| Config change | Restart service, verify behavior | N/A — just verify |
+
+**Two strategies:**
+
+1. **User Journey Tests** — Test actual behavior as a user experiences it:
+   ```bash
+   # API: curl with real data
+   curl -X POST localhost:3000/api/users -d '{"name":"test"}' -H "Content-Type: application/json"
+
+   # CLI: run the command
+   bd create "Test" -d "Testing" && bd list
+
+   # Error case: curl with invalid auth
+   curl -X POST localhost:3000/api/users -H "Authorization: Bearer invalid"
+   ```
+
+2. **Component Tests** — Supplement for regression prevention when fast verification isn't possible:
+   - Complex logic with many edge cases
+   - Code that runs in environments you can't easily replicate
+   - Shared libraries used by multiple consumers
+
+**"Close the Loop" principle:** Run the actual thing. Verify it works. Check error cases.
+
+Good: "Curled endpoint with invalid auth, got 401 as expected"
+Bad: "Wrote tests, they compile"
+
+## Rule 4: Use Your Tools
+
+Before claiming you can't fully test:
+
+1. **Check what MCP servers you have access to** - list available tools
+2. **If any tool can help verify the feature works**, use it
+3. **Be resourceful** - browser automation, database inspection, API testing tools
+
+## Rule 5: Log Decisions and Deviations (Mandatory when applicable)
+
+During implementation, log every non-trivial decision and any deviation from the spec/design doc as bead comments. This creates a traceable decision trail that the QA agent and humans can review.
+
+### Decisions
+
+When you choose between alternatives, pick a pattern, or make a non-obvious choice:
+
+```bash
+bd comments add {BEAD_ID} "DECISION: [what you chose] instead of [alternative] because [reason]"
+```
+
+Examples:
+- `DECISION: Used Strategy pattern instead of switch/case because the spec lists 5+ payment providers and more will be added`
+- `DECISION: Stored session in Redis instead of memory because the spec requires horizontal scaling`
+- `DECISION: Used batch insert instead of individual inserts because the dataset exceeds 1000 rows`
+
+### Deviations
+
+When you implement something differently from what the spec/design doc defined — **always log why**:
+
+```bash
+bd comments add {BEAD_ID} "DEVIATION: Spec said [X], implemented [Y] because [reason]"
+```
+
+Examples:
+- `DEVIATION: Spec said use REST endpoint, implemented WebSocket because the data requires real-time push`
+- `DEVIATION: Spec defined field as 'user_id: string', implemented as 'user_id: number' because the DB schema uses integer PKs`
+- `DEVIATION: Spec included pagination, deferred to separate task because it requires a new dependency`
+
+### When to log:
+- **DECISION**: Always log when multiple valid approaches exist and you picked one
+- **DEVIATION**: Always log when your implementation differs from the spec in any way
+- Skip if the choice is trivially obvious and self-explanatory from the code
+
+---
+
+## Rule 6: Log Completion Summary (Mandatory)
+
+Before marking the bead as in-review, you MUST leave a structured completion comment summarizing what was done. This is consumed by the code-reviewer agent and the orchestrator to understand the scope of changes without reading every diff.
+
+```bash
+bd comments add {BEAD_ID} "COMPLETED:
+Summary: [1-2 sentences describing what was implemented/fixed]
+Files changed: [list of files modified, created, or deleted]
+Decisions: [count of DECISION comments logged, or 'none']
+Deviations: [count of DEVIATION comments logged, or 'none — implemented as spec']
+Tests: [what was tested and how — functional verification, unit tests, etc.]"
+```
+
+Then record the canonical implementation state (**enforced by the SubagentStop hook — skipping this blocks the workflow**):
+
+```bash
+bd set-state {BEAD_ID} impl=done --reason "Implementation completed on branch {branch-name}"
+```
+
+Neither step is optional. Every implementation task must have both the COMPLETED comment and `impl=done` state before marking in-review.
+
+---
+
+## Rule 7: Never Close Beads
+
+Your job ends at `in-review`. After pushing and marking the bead `in-review` with `needs-review` label, **stop**. Do NOT run `bd close`.
+
+Closing beads is the user's decision after review and QA gates pass. This is non-negotiable.
+
+---
+
+## Red Flags - Stop and Verify
+
+When you catch yourself thinking:
+- "This should work..." → run it and see
+- "I assume the field is..." → look at the actual data
+- "I'll test it later..." → test it now
+- "It's too simple to break..." → verify anyway
+
+---

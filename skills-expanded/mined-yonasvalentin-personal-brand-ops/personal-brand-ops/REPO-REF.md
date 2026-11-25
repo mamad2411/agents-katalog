@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/yonasvalentin/personal-brand-ops (path: SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Build personal brands that convert customers, not just rack up views. Use this skill whenever the user wants to define, scale, or operationalize a personal brand or content operation — including brand

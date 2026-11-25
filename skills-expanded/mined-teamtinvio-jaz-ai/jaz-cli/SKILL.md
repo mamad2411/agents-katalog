@@ -1,0 +1,407 @@
+---
+name: jaz-cli
+version: 9.7.2
+description: >-
+  Use this skill when running Clio CLI commands, building shell scripts with
+  Clio, debugging auth issues, understanding --json output, paginating results,
+  or chaining multi-step accounting workflows from the terminal. Covers auth
+  precedence, output formats, entity resolution, and common workflow patterns.
+  Also use when the user asks how to use clio, what commands are available, or
+  how to automate accounting tasks from the command line. Covers all
+  80 command groups and 521 tools, including employee-expense claims.
+license: MIT
+compatibility: Requires Node.js >= 18.0.0. Install via npm install -g jaz-clio.
+---
+
+# Clio CLI Skill
+
+> **Audience note:** for power users and CI/automation. Load this skill only when you're scripting from a terminal, building shell pipelines, or debugging from `clio --json` output. For day-to-day accounting inside Claude Desktop / Cowork, the MCP tools cover the common flows without dropping to the CLI.
+
+You are working with **Clio** (`jaz-clio`), the CLI for the Jaz accounting platform. 80 command groups, 13 calculators, 12 job playbooks (jaz-jobs skill), 521 tools. Also fully compatible with Juan Accounting (same API, same endpoints).
+
+## When to Use This Skill
+
+- Running or composing `clio` commands from the terminal
+- Building shell scripts or CI pipelines that automate Jaz workflows
+- Debugging authentication issues (wrong org, missing key, env var conflicts)
+- Understanding `--json` output structure for piping into `jq` or downstream tools
+- Paginating large result sets (`--all`, `--limit`, `--offset`, `--max-rows`)
+- Chaining multi-step accounting workflows (create -> finalize -> pay -> verify)
+- Answering "what commands are available?" or "how do I do X from the CLI?"
+
+## Skill Relationships
+
+| Need | Skill |
+|------|-------|
+| CLI command syntax, flags, output | **jaz-cli** (this skill) |
+| API field names, error codes, 158 API rules | **jaz-api** |
+| IFRS transaction recipes (depreciation, leases, loans) | **jaz-recipes** |
+| Month-end close, bank recon, GST filing workflows | **jaz-jobs** |
+| Migration from Xero/QuickBooks/Sage | **jaz-conversion** |
+
+Use **jaz-cli** when running commands. Use **jaz-api** when debugging API errors or understanding field mappings.
+
+## OAuth sign-in (default)
+
+Run `clio auth login` on the user's intended machine and guide browser sign-in. With `--json`, stdout returns organization choices and verification status; the sign-in URL goes to stderr. If there is one organization, it is selected automatically. Otherwise show the choices and run `clio auth select <resourceId> --json`. Use `--org oauth:<resourceId>` on each scoped CLI command. Local MCP shares the session and refreshes tokens automatically; hosted MCP uses its host's OAuth session. `auth organizations --json` refreshes accessible organizations. `auth logout` removes only local OAuth credentials.
+
+Never put tokens in chat or workspace files. Keep the login process alive until the callback completes. Browser callbacks must reach the computer running Jaz; use the user's persistent environment or hosted OAuth when an isolated sandbox cannot receive them. The key-profile commands below remain optional. Use `--org oauth:<resourceId>` for OAuth or `--org <label>` for a saved key profile, even when `JAZ_API_KEY` is inherited.
+
+## Auth Precedence
+
+Explicit `--org` wins over inherited credentials. Do not combine `--api-key` and `--org`. If both `JAZ_API_KEY` and `JAZ_ORG` are set, select explicitly with `--org` or remove one environment override.
+
+| Priority | Source | How to set |
+|----------|--------|------------|
+| 1 | `--api-key <key>` | Per-command flag |
+| 2 | `--org <selector>` flag | Saved key profile or `oauth:<resourceId>` |
+| 3 | `JAZ_API_KEY` env | `export JAZ_API_KEY=jk-...` |
+| 4 | `JAZ_ORG` env | `export JAZ_ORG=acme-sg` (pinned session) |
+| 5 | Preferred OAuth session | `clio auth login` / `clio auth select <resourceId>` |
+| 6 | Active API-key profile | `clio auth switch <label>` (stored in `~/.config/jaz-clio/credentials.json`) |
+
+**Key access**: Use `--org <label>` to select a saved API-key profile. Without `--org`, `JAZ_API_KEY` remains the default when set. An unknown explicit selection fails without falling back to the environment key.
+
+Auth subcommands:
+```
+clio auth add <key>          # Validate key + save profile (auto-slugifies org name)
+clio auth add <key> --as prod-sg   # Save with custom label
+clio auth switch <label>     # Set active profile
+clio auth list               # Show all saved profiles
+clio auth whoami             # Show current org + auth source
+clio auth remove <label>     # Delete a profile
+clio auth clear              # Remove all profiles and the OAuth sign-in
+clio auth shell-init         # Print shell exports (for eval)
+clio auth unpin              # Unset JAZ_ORG from current shell
+```
+
+## Output Formats
+
+**`--json` is the contract; `--format` is an extra.** Every command that talks to the API accepts `--json` (all 398 of them), so a script never needs to special-case a command. `--format` exists only where a MULTI-ROW rendering is meaningful: 31/31 `search` and 33/39 `list` leaves have it, and `get` has it on 0 of 33, because CSV or YAML of a single record is not a table. `clio bills get --format json` is therefore an `unknown option`, by design; use `--json`.
+
+This rule is enforced by `surface-honesty.test.ts`, which also guarantees the flags are HONEST: 58 leaves once declared `--format` and never read it, so `--format csv` printed a human table and exited 0. Those declarations were deleted rather than left lying.
+
+| Flag | Format | Use case |
+|------|--------|----------|
+| (default) | `table` | Human-readable, colored, truncated at 500 rows |
+| `--json` | `json` | Structured JSON envelope for piping/scripting |
+| `--format csv` | `csv` | Spreadsheet import |
+| `--format yaml` | `yaml` | Config files, readable structured output |
+
+JSON envelope for list commands:
+```json
+{ "totalElements": 142, "totalPages": 2, "truncated": false, "data": [...] }
+```
+
+When `truncated: true`, a `_meta` object appears with `fetchedRows` and `maxRows`.
+
+Single-record commands (`get`, `create`) output the raw object in `--json` mode.
+
+**Stderr vs stdout**: Resolution feedback (e.g., "Contact: Acme Corp (abc1234-...)") goes to stderr. Only data goes to stdout. This means `clio invoices list --json | jq .` works cleanly.
+
+## Entity Resolution
+
+Flags like `--contact`, `--account`, `--bank-account`, and `--tax-profile` accept either a UUID or a human-readable name. Resolution order:
+
+1. **UUID passthrough**: if the value matches UUID format, use it directly (no API call)
+2. **Server-side search**: contacts use name-contains search; accounts/tax-profiles fetch all (orgs have 50-200 accounts)
+3. **Exact match**: case-insensitive match on billingName/name/code
+4. **Fuzzy match**: score >= 0.7 auto-resolves; multiple close matches throw with candidates
+5. **Error with suggestions**: shows available entities (up to 10) for the user to choose
+
+Examples:
+```bash
+clio invoices create --contact "Acme"           # Fuzzy-resolves to "Acme Corp Pte Ltd"
+clio invoices create --contact abc12345-...     # UUID passthrough, no API call
+clio cash-in create --account "Bank - SGD"      # Resolves by account name
+clio cash-in create --account "1000"            # Resolves by account code
+```
+
+> **IMPORTANT for agents:** Fuzzy matching works for `--contact` and top-level `--account` flags. It does NOT work inside `--lines` JSON arrays. Line item `accountResourceId` must be a UUID or exact account name.
+
+**Resolve a name to a resourceId without writing anything:**
+```bash
+clio resolve account "Operating Expense" --json   # → {"resourceId":"...","displayName":"..."}
+clio resolve bank "DBS Current" --json
+clio resolve contact "Acme" --json
+clio resolve tax-profile "Standard GST" --json
+clio resolve report-template "Board P&L" --json
+```
+`clio resolve <account|contact|bank|tax-profile|report-template> <name>` runs the **same** resolver the write flags use (UUID→exact→fuzzy) and exits non-zero with candidates on an ambiguous/no match. Prefer it over `accounts search … | jq` when you just need the id: search is fuzzy and paginated (an exact name can be buried on a polluted org), whereas `resolve` fetches the full set and prefers an exact hit.
+
+## Pagination
+
+All list/search commands support pagination. Two modes:
+
+**Single-page mode** (default):
+```bash
+clio invoices list                    # First 100 results
+clio invoices list --limit 50         # First 50 results
+clio invoices list --offset 2         # Page 3 (0-indexed)
+```
+
+**Auto-paginate mode** (`--all`):
+```bash
+clio invoices list --all              # Fetch all pages (concurrent, progress on stderr)
+clio invoices list --all --max-rows 500   # Cap at 500 rows
+clio invoices list --all --json       # Full dataset as JSON (progress suppressed)
+```
+
+Rules:
+- `--all` and `--offset` cannot be combined (throws error)
+- **Default `--max-rows` is 1,000** (lowered from 10,000 in 2026-04; fan-out lookups like attachment counts in `bills draft list` could spiral on busy accounts). Pass `--max-rows N` explicitly when you need more.
+- **`--max-rows` now caps the FETCH, not just the slice** (early-stop in `paginatedFetch`). Previously it pulled every page then sliced: multi-minute hangs on large datasets.
+- Table display caps at 500 rows regardless (use `--format json` for full output)
+- Progress display on stderr is TTY-aware (suppressed for `--json` and pipes)
+- **`bills draft list` / `invoices draft list` / `customer-credit-notes draft list` / `supplier-credit-notes draft list` fan out one attachment lookup per draft** (5 in flight). On accounts with hundreds of drafts, this is slow even with `--max-rows`. Pass `--max-rows 10` for spot checks; expect 30s+ wall time at higher counts.
+
+## Common Flags
+
+| Flag | Scope | Purpose |
+|------|-------|---------|
+| `--api-key <key>` | All online commands | Override auth for this command |
+| `--org <label>` | All online commands | Use a specific saved profile |
+| `--json` | All commands | Structured JSON output |
+| `--format <type>` | List/search commands ONLY, not `get` | table, json, csv, yaml |
+| `--limit <n>` | List/search commands | Max results per page |
+| `--offset <n>` | List/search commands | Page offset (0-indexed) |
+| `--all` | List/search commands | Auto-paginate all pages |
+| `--max-rows <n>` | With `--all` | Cap total rows (default 10,000) |
+| `--finalize` | Create commands | Approve immediately (skip draft) |
+| `--jot <text>` | Write commands (create/update/delete/pay/finalize/…) | Log the judgment behind this write in one line, inline (piggybacks a judgment-journal entry after the write succeeds; optional leading kind, e.g. `"MATCH: …"`). Quick LOW/MEDIUM one-liners only; for HIGH or CRITICAL calls, or when the why matters, use `clio jots create` (doctrine in its `--help`: tier anchors, kind boundaries, style). Without it, a successful write prints a one-line reminder to stderr; silence with `JAZ_JOTS_NUDGES=0`. |
+| `--date <YYYY-MM-DD>` | Create/update commands | Transaction date |
+| `--due <YYYY-MM-DD>` | Create/update commands | Due date |
+| `--query <expression>` | Search commands (14 entities) | Jaz search expression (see below) |
+| `--filter <json>` | Search commands | Raw API filter JSON (merged with flags; flags win) |
+| `--status <status>` | Search commands | Filter by status |
+| `--from / --to` | Search/report commands | Date range filter |
+| `--contact <name>` | Transaction commands | Fuzzy-resolve contact |
+| `--account <name>` | Transaction commands | Fuzzy-resolve account |
+| `--ref <reference>` | Search/create commands | Reference string |
+| `--tag <name>` | Search/create commands | Tag filter or assignment |
+| `--input <file>` | Create/update commands | Read full JSON body from file |
+
+## Search Query Expressions (`--query`)
+
+14 entity search commands accept `--query <expression>` for human-readable filtering using Jaz search operators. Supported: `invoices`, `bills`, `customer-credit-notes`, `supplier-credit-notes`, `journals`, `cashflow`, `bank records`, `contacts`, `items`, `capsules`, `fixed-assets`, `subscriptions` (scheduled), `accounts`, `tax-profiles`.
+
+```bash
+# Status
+clio invoices search --query "status:unpaid"
+clio invoices search --query "status:unpaid AND $500+"
+clio invoices search --query "(status:paid OR status:partial) AND date:this month"
+
+# Amounts: bare $, ranges, suffixes (k=1k, m=1M, b=1B)
+clio invoices search --query '$100-500'
+clio invoices search --query 'amount:>2m'
+clio invoices search --query 'amount:4k-5k'
+
+# Absolute value: for mixed-sign fields (cashflow, journals)
+clio cashflow search --query 'abs:1000+'
+
+# Dates
+clio invoices search --query "date:-30d"            # last 30 days
+clio invoices search --query "due:overdue"          # past due + unpaid/partial
+clio invoices search --query "date:jan-mar 2025"
+clio invoices search --query "date:this quarter"
+clio invoices search --query "submitted:last week"
+clio invoices search --query "lastpayment:-7d"
+
+# String fields
+clio invoices search --query "customer:acme AND ref:INV-*"
+clio invoices search --query 'ref:/INV-\d{8}/'     # regex
+clio invoices search --query '=ref:INV-20260314'   # exact match (= prefix)
+clio contacts search --query "customer:yes"
+clio contacts search --query 'name:"Sakura Trading"'
+
+# Blank / empty
+clio invoices search --query "ref:blank"
+clio invoices search --query "tag:!blank"
+
+# Negation (never use - for negation)
+clio invoices search --query "!status:void"
+clio invoices search --query "NOT (status:paid OR status:void)"
+
+# Multi-value (comma = OR)
+clio invoices search --query "status:unpaid,partial"
+clio invoices search --query "currency:SGD,USD,EUR"
+
+# Combine --query with named flags (named flags win on conflict)
+clio invoices search --query "date:this year" --status UNPAID
+
+# Inline sort
+clio invoices search --query "status:unpaid sort:amount:desc" --limit 10
+```
+
+**Gotchas**:
+- Bad enum values (e.g. `--query "status:BADVALUE"`) return empty results silently, no error.
+- Unknown field names return an error (`query_not_understood`).
+- Unsupported entities have no `--query` flag (background-jobs, tags, contact-groups, etc.).
+- Never use `-` for negation; it means negative amount (e.g. `$-500` = amount is -500). Use `!` or `NOT`.
+
+See `references/search-reference.md` in the `jaz-api` skill for the full syntax spec.
+
+## Body Input
+
+Create/update commands accept payloads three ways (priority order):
+
+1. `--input <file>`: read JSON from a file
+2. Stdin pipe: `echo '{"contact":...}' | clio invoices create`
+3. CLI flags: `--contact "Acme" --date 2026-01-15 --lines '[...]'`
+
+When `--input` or stdin provides a body, CLI flags are ignored.
+
+### Bulk-upsert: FLAT vs NESTED variants
+
+For invoices and bills, there are TWO bulk-upsert commands per entity:
+
+- **FLAT** (`clio invoices bulk-upsert` / `clio bills bulk-upsert`): ONE line per row. Each row carries `itemDescription` + `totalAmount` + `invoiceAccountResourceId` (or `billAccountResourceId`) at the top level. Use for CSV-like imports where each row = one transaction with a single line.
+- **NESTED** (`clio invoices bulk-upsert-line-items` / `clio bills bulk-upsert-line-items`): multi-line per row. Each row carries nested `lineItems[]` with per-line `itemDescription` + `quantity` + `unitPrice` + `accountResourceId`. Use when each transaction needs multiple lines.
+
+Sending `lineItems[]` to the FLAT endpoint silently ignores them and creates a $0 transaction. Sending the FLAT shape to the NESTED endpoint creates an empty `lineItems` array and 422s. Match the variant to your data shape.
+
+## Command Quick Reference
+
+**Transactions**: `invoices`, `bills`, `customer-credit-notes`, `supplier-credit-notes`, `journals`, `cash-in`, `cash-out`, `cash-transfer`, `payments`, `unapplied-payments`, `cashflow`
+
+**Contacts & Configuration**: `contacts`, `contact-groups`, `accounts`, `items`, `tags`, `currencies`, `currency-rates`, `tax-profiles`, `custom-fields`, `bookmarks`, `nano-classifiers`
+
+**Bank & Reconciliation**: `bank` (accounts, get, records, add-records, import, auto-recon), `bank-rules` (a rule needs `--search-filter` or auto-reconciliation never suggests it; on `update`, omitting the flag keeps the stored condition and `--clear-search-filter` removes it)
+
+**Employee Claims & Settings**: `claims` (lifecycle + `create` + `from-attachment` + convert + payout), `employees`, `claim-types`, `claim-profiles`, `posting-rules`
+
+**Fixed Assets & Inventory**: `fixed-assets` (alias: `fa`), `inventory` (alias: `inv`)
+
+**Payruns (setup)**: `pay-types`, `payrun-posting-rules` (not `posting-rules`, which is claims), `pay-profiles`, `employee-pay-details` (a raise is a new pay detail, not an update)
+**Payruns**: `payruns` (create `--populate`, search `--payslip <json>`, add/remove employees, `save-lines`, `populate`, `validate`, `preview-journal`, `finalize`, `bulk-finalize`, `unpost`, `void`, `preview-payouts`, `record-payouts` (books only), `void-payout`), `payslips` (search, get, `refresh`, `refresh-payrun`, `generate`)
+
+**Subscriptions & Schedulers**: `subscriptions` (alias: `subs`), `schedulers`
+
+**Reports & Exports**: `reports` (16 report types), `exports`
+
+**AI & Automation**: `magic` (create, status), `quick-fix`, `ledger-find-fix` (preview, apply), `capsules`
+
+**Judgment journal**: `jots` (create, recall, dispose). Every write command also takes `--jot "<one line>"` to log the judgment behind that specific write inline, no extra call (see `--jot` in Common Flags).
+
+**Calculators**: `calc` (loan, lease, depreciation, prepaid-expense, deferred-revenue, fx-reval, ecl, provision, fixed-deposit, asset-disposal, accrued-expense, leave-accrual, dividend)
+
+**Jobs**: `jobs` (`bank-recon match`, `payment-run outstanding`, `document-collection ingest`, `statutory-filing sg-cs`, `statutory-filing sg-ca`). The job playbooks themselves are in the **jaz-jobs** skill.
+
+**Organization**: `org` (info), `org-users`, `auth`
+
+**Introspection**: `schema` (list groups, inspect tools, show params), `health` (version, connectivity, environment checks)
+
+**Utilities**: `help-center` (alias: `hc`), `context`, `mcp`, `serve`, `init`, `versions`, `update`
+
+See `references/command-catalog.md` for the full catalog with subcommands and flags.
+
+## Offline vs Online
+
+Offline commands (no auth needed): `calc`, `jobs bank-recon match`, `jobs statutory-filing sg-cs` / `sg-ca`, `help-center`, `init`, `versions`, `update`
+
+Everything else requires authentication (API key).
+
+## Dashboard Deep Links
+
+`clio navigate` (alias `nav`) builds dashboard URLs for the user ("open this invoice", "take me to the P&L"). Offline: no API key, no request.
+
+```
+clio navigate --query "profit"           # discover the key
+clio navigate reports.profit-and-loss    # build the link
+clio navigate sales.modal.view-sale --resource-id <id>
+```
+
+Only the URL goes to stdout, so `clio nav <key> | pbcopy` copies a link and nothing else. **Never hand-construct a dashboard URL and never guess a key**; routes are not guessable and a wrong link is worse than no link. An unknown key comes back with near-matches; follow them rather than improvising.
+
+The same operation is `navigate` on the MCP surface. Full usage rules live in the jaz-api skill under "Dashboard Deep Links"; the flag reference is in `references/command-catalog.md`.
+
+## Error Handling
+
+CLI commands exit with standard codes:
+- **Exit 0**: success
+- **Exit 1**: your input needs changing (missing flags, malformed id, over-limit or duplicate batch, blank required text, unknown enum value). Also a business refusal on some commands, e.g. `approvals`, and a partial success on `reconciliations magic-match` (outcome on stdout; re-read the lines before any retry).
+- **Exit 2**: the request was fine and the API refused or failed, OR an internal defect
+- **Exit 3**: auth (invalid, missing or unresolvable key)
+
+**Branch on the `code` in the `--json` error envelope, not on the number alone.** Exit 1 is
+`VALIDATION_ERROR` for bad input but is also used by commands that report a refusal (there the
+outcome is on stdout, not stderr). Exit 2 splits into `API_ERROR` (the server refused; a
+different request may work) and `UNKNOWN_ERROR` (our defect; an identical retry fails
+identically). The code is the signal for whether retrying with different input can help.
+
+Error messages go to stderr. When `--json` is set, the error is still on stderr so stdout stays parseable. Common errors:
+
+```bash
+# Missing required flag
+Error: missing required option(s): --contact, --lines
+
+# Fuzzy resolution ambiguity
+Multiple contacts match "Acme":
+  Acme Corp Pte Ltd (92%)
+  Acme Holdings (87%)
+Be more specific, or use the full billingName.
+
+# Auth not configured
+No Jaz authentication configured. Run `clio auth login`, or use optional API-key access.
+
+# API validation error (422)
+API error 422: lineItems[0].accountResourceId is required when saveAsDraft is false
+```
+
+## Draft Validation
+
+Transaction create commands (`invoices`, `bills`, `customer-credit-notes`, `supplier-credit-notes`, `journals`) perform client-side draft validation before hitting the API. The validation:
+
+1. Checks required fields are present (contact, date, at least one line item)
+2. Sanitizes line items (strips unknown fields, normalizes dates)
+3. Prints a draft report showing what will be created
+4. When `--finalize` is set, validates that every line item has `accountResourceId`
+
+This catches mistakes before the API call, saving round-trip time and providing clearer error messages.
+
+## Calculated Schedules (calculate, capsule, post)
+
+There is no one-shot recipe command. A loan, lease, prepaid, deferred revenue, accrual, ECL, provision, fixed deposit, disposal or dividend is three steps:
+
+1. **Calculate (offline):** `clio calc <type> ... --json` returns the schedule and, when `--start-date` is given, a `blueprint`: the capsule type and name plus dated steps with journal lines. It posts nothing.
+2. **Create the capsule:** `clio capsules types` to find the type id (`clio capsules create-type --name <name>` if it is missing), then `clio capsules create --type <typeId> --title <title>`.
+3. **Post each step** with `clio journals create` / `clio bills create` / `clio invoices create` / `clio cash-in create` / `clio cash-out create`, passing a JSON body via `--input` that includes `capsuleResourceId`. A fixed amount repeating every period can be one `clio schedulers create-journal`.
+
+```bash
+clio calc loan --principal 100000 --rate 5 --term 60 --start-date 2026-01-01 --json > loan.json
+clio capsules types --json
+clio capsules create --type <typeId> --title "Bank loan 2026" --json
+clio journals create --input step-2.json --json   # body includes capsuleResourceId
+```
+
+`clio calc fx-reval` is verification only: Jaz revalues foreign-currency balances at period end, so do not post its result.
+
+## Tips
+
+1. **Pipe JSON to jq**: `clio invoices list --json | jq '.data[] | {ref: .reference, amount: .totalAmount}'`
+2. **Export to CSV**: `clio contacts list --all --format csv > contacts.csv`
+3. **Multi-org scripts**: `clio invoices list --org acme-sg --json && clio invoices list --org acme-ph --json`
+4. **Draft-then-finalize**: The CLI defaults to saving as draft (overrides the API default of `saveAsDraft: false`). Use `--finalize` to create a finalized transaction immediately. Note: `cash-in`, `cash-out` and `cash-transfer` have no draft state and so take no `--finalize`; they always post ACTIVE.
+5. **Idempotent creates**: Use `--input` with the same JSON to get consistent results. The API dedup guards catch duplicate contacts, items, and accounts.
+6. **Check before bulk ops**: Always preview with `--json | jq length` before piping IDs into `quick-fix`. To find & fix (recode, retag, re-date) records found by a condition, across record types, `clio ledger-find-fix preview` lists what would change and why anything is excluded, and `clio ledger-find-fix apply -- <previewId>` runs exactly that, once.
+7. **Offline calculators for exploration**: `clio calc` commands need no auth -- use them to explore scenarios before posting anything.
+8. **Help center for guidance**: `clio hc "how to reconcile"` searches the full Jaz help center locally (hybrid: embeddings + keyword).
+
+See `references/common-workflows.md` for end-to-end multi-command patterns.
+
+## Agent Gotchas (Top 5)
+
+1. **Create returns only {resourceId}.** Always `get` afterward for full data.
+2. **Line-item accounts don't fuzzy-resolve.** Use UUID or exact name.
+3. **Cash entries finalize immediately.** Unlike invoices which default to draft.
+4. **--offset is page number (0-indexed), not row count.** Exceptions, where `--offset` is a ROW offset (next page = offset + limit): `purchase-items list/search`, `currency-rates list`, `claims payouts` and `reports generate general-ledger`. Each command's `--offset` help says which it is, and `--all` pages both kinds correctly.
+5. **Explicit organization selection wins.** `--org` uses the selected OAuth organization or saved key profile even when `JAZ_API_KEY` is set.
+
+See [references/agent-gotchas.md](./references/agent-gotchas.md) for the full list of 19 critical gotchas. See [references/output-shapes.md](./references/output-shapes.md) for `--json` output structures. See [references/error-recovery.md](./references/error-recovery.md) for 30+ error patterns with fixes.
+
+## See Also
+
+- See [references/field-guide.md](./references/field-guide.md) for field mapping and CLI-specific gotchas
+- **jaz-recipes**: 16 IFRS-compliant transaction recipes with calculators and capsules
+- **jaz-jobs**: 12 accounting job playbooks (month-end close, bank recon, GST/VAT filing, etc.)
+- **jaz-conversion**: Data migration workflows from Xero, QuickBooks, Sage, MYOB, and Excel

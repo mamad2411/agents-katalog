@@ -1,0 +1,293 @@
+---
+name: audience-fit
+description: 'Post-production audience-adaptation pass (受眾調校) for anything a NON-BUILDER reads: (A) turn an engineering-voiced deliverable (report, summary HTML, README, release notes) into a reader-facing version in a NEW file, or draw a NEW diagram for a non-builder reader (README flow, promo image, audience page) even with no original; (B) write or fix UI copy (設定頁、狀態列、錯誤訊息) from the user''s stance, not the engine''s. Trigger on 「使用者導向」「白話版」「寫給非工程師看」「UI 文案」「這段太工程」「AI味」 "rewrite for end users"; OFFER once, unprompted, after any skill produces a deliverable whose primary consumer is not its builder. NOT machine-read docs (phase logs, specs), NOT layout/theming (→ artifact-design), NOT technical docs from code (→ engineering:documentation), NOT task/flow/state evaluation 「走得通嗎」「停用還是隱藏」 (→ ux-walkthrough; findings hand off both ways).'
+---
+
+# audience-fit — adapt finished output to the human who will actually read it
+
+The environment's output taxonomy stops at machine / LLM / human. This skill
+supplies the missing split inside "human": different readers need different
+granularity AND a different stance, and a document that is correct for its
+builder can be unusable for its consumer. Two observed failure shapes:
+
+1. **Engineering-voiced deliverables shown to non-builders** — e.g. a
+   diagram-authoring audit page whose main text is 「聚合表 (code 元件 → 圖上
+   方塊)」「漂移表 (claim vs 量測)」, or a research summary that walks the
+   reader through the author's debugging history before the answer.
+2. **UI copy written from the builder's stance** — e.g. 「引擎已就緒」 and
+   「還不能用」 true simultaneously on one screen (media-fetch-pipeline ASR
+   settings, corrected by user ruling 2026-08-28: 文案要從開發者視角換成
+   使用者視角).
+
+This is a POST-production pass: it runs after another skill has produced its
+artifact, and never weakens that artifact — the engineering version stays
+canonical and untouched. One product class has no earlier artifact: a
+reader diagram with no engineering original (Mode A1, "A1 with no
+original").
+
+## Step 0 — decide whether to fire at all
+
+Ask: **who acts on this text next?**
+
+- Builder, maintainer, or an LLM/tool → do NOT fire. Phase logs, decisions
+  files, specs, machine-read config are already governed by the global
+  language policy; "improving" them for a general reader is a regression.
+- A human who did not build it (stakeholder, evaluator, end user, 未來的
+  自己-as-user) → candidate for **Mode A**.
+- The text renders inside a product UI → candidate for **Mode B**.
+- The question is whether a person can FIND, COMPLETE, RECOVER, or
+  CONTINUE (a flow, a control's show/disable/hide, waiting and cancel,
+  keyboard or narrow layout) → not this skill: `ux-walkthrough`. This
+  skill is the expression layer; that one verifies the stance as a task
+  result (split 2026-09-07 after the codex Mode C review — a flow treated
+  as content to explain is not a flow that has been walked).
+- Unclear who consumes it → default by provenance and SAY SO: audit / eval /
+  bench artifacts → evaluator; usage-facing artifacts (README, release
+  notes, GUI copy) → end_user. Declare the choice in the companion's
+  provenance block. Ask the one short question ONLY when two candidate
+  audiences would change the document's CONTENT, not just its tone — a
+  directed or offered run must not block on a question a default can
+  answer (round-1 field data: the executor had to decide off-script).
+
+When another skill has just produced a qualifying deliverable, OFFER this
+pass in one line — never run it unprompted (it costs a document and the user
+may want the engineering version only).
+
+## Step 1 — pick the primary audience (Mode A)
+
+One document, ONE primary audience; serving others gets reading paths and
+appendices, never a blended voice. Granularity and description method per
+audience:
+
+| Audience | Their question | Granularity | Describe by | Drop from main text |
+|---|---|---|---|---|
+| end_user | 能做什麼、怎麼用、出問題找誰 | task-level steps | user actions & visible results | code paths, internals, commit history |
+| power_user | 怎麼調、錯誤怎麼讀 | config/flow level | settings, flows, log reading | implementation detail |
+| evaluator | 該不該採用、風險成本 | claims + evidence + limits | verified vs designed vs known-broken | mechanism detail, war stories |
+| maintainer | 怎麼改 | full engineering | the original artifact | nothing — they get the canonical version, not a rewrite |
+
+If the named audience is "maintainer", stop: Mode A has no work to do.
+
+## Step 2 — route by mode
+
+### Mode A — reader-facing companion document
+Pick the FORM first (round-1 G-6, user correction — the old default was
+the wrong output):
+
+- **A1 same-spec re-render (同規格受眾版) — the DEFAULT.** Keep the
+  original's genre, carrier, and spec: a diagram page stays a diagram
+  page, a dashboard a dashboard. Same SPEC never means same CONTENT: a
+  diagram original is REDRAWN presentationally — load
+  `references/presentational-view.md` BEFORE choosing the form. The
+  deliverable-doc-refs audience-edition pattern (add a guide layer, keep
+  every slide and value) is the DECK/slide-edition rule and never
+  substitutes for the redraw on a diagram original (round-2 rejection,
+  2026-08-31: same-diagram + guide blocks was rejected as the wrong
+  output). What changes is selection and rendering
+  — content re-scoped to the audience and drawn presentationally as a
+  real node-and-edge diagram (保留真實情況做展示性的描繪). What good
+  public examples teach is the translation of concrete program behaviour
+  into few readable nodes — never their layout (a copied card-grid reads
+  as a classification table, G-7), and never prose ABOUT the original.
+  Method + integrity rules (element→canonical mapping, truth
+  markers survive aggregation, invent nothing):
+  `references/presentational-view.md`. For diagram-carrier originals
+  audience-fit owns the presentational view end to end, content and
+  rendering (D-071): it reads diagram-authoring's structural model as input
+  data (R5 maps to its element ids) and renders a node-and-edge SVG page
+  per that file's R1–R16 (R16: two kinds of line never share one run; R15: a line stays near its relation; R13: crossings hop via the shared
+  `tools/archdiag/hops.mjs` `hopEdges()`), calling a shared `tools/` renderer directly when
+  the node count outgrows hand placement — never by handing the job to
+  diagram-authoring. The card-grid form is a named user rejection
+  (G-7), never a fallback (round-2 field proof:
+  `ccfg-retrieval-audit-f1-owner-view.html` v2, user gate PASS 2026-08-31).
+  **Lead views first:** when the reader asked a question (「X 長怎樣」), the
+  A1 page opens with that question's lead views
+  (`skills/product-design-thinking/references/representation-models.md`
+  «Lead views»: structure view + one task flow) redrawn from
+  diagram-authoring's precise versions; other views of the round follow as
+  analysis material. A1 never invents the structure: units and edges come
+  from the precise view (owner ruling 2026-11-06).
+  **A1 with no original:** a diagram whose reader is not its builder (a
+  public README's pipeline, a promo or ad image) is an A1 product whether
+  or not an engineering original exists; a diagram's reader decides its
+  owner. A public README's reader is a first-pass visitor, so the audience
+  is declared like any other (a developer audience is a declared
+  audience, R3 still applies). With no original, the parts that assume
+  one are replaced: R5 maps each node to the source material it depicts
+  (file, section, step); R8/R9 take the carrier and vocabulary of the
+  host page (the README's other images), or with none the R14 default; the provenance block
+  cites the source material and the regeneration script instead of a
+  canonical link; the delivery pair is the render beside its R5 table and
+  the nearest real baseline (a previous render, or "none"); the afgate
+  pair gate, which needs an `<original>`, is reported as not run, never as
+  passed. Geometry is checked, not eyeballed: R10/R11 plus the endpoint and
+  edge-through-node asserts of diagram-authoring
+  `skills/diagram-authoring/references/notation-precision.md` §4, run with a known-bad control in
+  the renderer that produces the delivered pixels. Excuse answered: "it is
+  just a promo picture, there is nothing to re-render" (2026-11-03: a
+  hand-drawn README flow shipped squeezed arrowheads; D-071 in
+  diagram-authoring Handoffs).
+- **A2 prose digest (整理性報告) — only when a summary/report is what was
+  asked for,** or when the original is itself prose. Answer-first
+  structure per the honest-data guide.
+
+Naming: A1 `<basename>-<audience>-view.<ext>`; A2 `<basename>-digest.<ext>`.
+Both are NEW files next to the original (file-hygiene rule), opening with
+a provenance block: canonical link, declared audience, as-of anchor (date
++ commit or regeneration source), and one line saying the companion must
+be revised when the canonical regenerates — without the anchor it lies
+silently after the next rebuild. Load, per artifact type:
+
+- Project/feature/usage docs (README, 功能說明, install, release notes) →
+  `references/project-info-for-general-readers.md` — reader profiles,
+  information layers (user_facing 正文 / architecture 附錄 / engineering
+  技術附錄), per-section sentence templates, release checklist.
+- Anything carrying numbers, comparisons, audit findings, or evaluation
+  results → `references/honest-data-readability.md` — answer-first ordering,
+  發現→證據→意義→界線→追溯 finding units, claim-strength matrix, number
+  presentation (every number gets baseline + direction + scope; 1.336× is
+  written as 比基準高 33.6%), corrections disclosure.
+- Both apply to a typical audit/summary page; read both indexes, load the
+  sections the artifact actually needs.
+
+Core moves (A2 in full; A1 applies them to its text surfaces), in order:
+before drafting, sample 1–2 accepted human-read
+documents from the same environment and match their register (de-ai-flavor
+B-4 — half of measured AI-ness is register mismatch; the symptom-triggered
+load below cannot fire before a draft exists, so this one move is inlined
+here); answer first (結論 before 證據 before 方法); reroute
+engineering-only content to an appendix instead of deleting it; first-mention
+terms as 白話名稱（術語）; keep limitations in the main text; translate every
+number; never let the reader walk the author's debugging path to reach the
+conclusion. A paragraph that de-ai-flavor check 12 makes you rewrite is planned
+first and its section's leads re-read as an outline afterwards
+(`~/.claude/references/writing-norms/paragraph-plan.md` §1–§2); the rest stay
+under Restraint. One term per thing across title, prose, diagram node labels and
+table headers — a step that walks the diagram is titled with the label of
+the node it points at, so the reader can find it on the drawing. Recompute
+every derived number before delivery and show the arithmetic once; table
+totals add up (re-borrow ledger B-14/B-15, from archify's explainer guide).
+
+Delivery is a PAIR, never the companion alone: hand over the canonical
+original in the same delivery, plus a 前後對照 of 3–6 verbatim excerpt
+pairs (original → companion, one line naming the rule that fired, and a
+fact-check note wherever a number moved). A rewrite delivered alone is an
+unverifiable improvement claim — the acceptance judge needs the baseline
+in the same field of view (round-1 acceptance data: the user could not
+judge the rewrite without it). The claim the pair supports is "the
+original serves a different audience", never "the original is badly
+written". When no textual original exists (a born-reader-facing report),
+say so and pair against the nearest REAL baseline — never fabricate a
+strawman original. For an A1 diagram re-render the 對照 is the R5
+aggregation mapping table plus the two renders side by side — verbatim
+excerpt pairs apply to text surfaces (A2, and A1's prose blocks).
+
+### Mode B — UI copy stance flip
+Load `references/ui-copy-stance.md` (string roles first; then, for STATUS
+statements only, the component/capability/inventory vocabulary and
+distinct-states-look-distinct; the decision-point trio; mechanism detail
+placed by decision use; location-free instructions; label distinctness).
+The unit of work is the DECISION POINT, not the string: a label may stay
+two words as long as the point — title, hint, button together — answers
+what is true, what can be done, what happens next (codex review
+2026-09-07 §4.1: per-string trios turn a screen into a wall of sentences).
+
+Deliver as a proposal table
+(位置 | 現行 | 建議 | 對應程式狀態 | 理由 (Rn) | 類別), where 類別 is one of:
+- **純措辭** — same program state, same expectation of what happens next.
+  Apply directly within the task's authorization and say so; the table is
+  the record, not a gate (global Interaction-style rule: only a change of
+  interaction semantics needs the question).
+- **語意** — the wording changes what the person will expect to happen
+  (「開始示範」 vs 「閱讀示範對話」 when the code keeps the position). Wait
+  for the ruling; the row carries the evidence behind the question.
+
+「讀不讀得懂」 items go to a UAT checklist because only a human can judge
+them — into `B. 體驗` rung B1, not into `A. 必驗` (`ops/references/uat.md`).
+The exception is wording that hides a distinct state (R2): that is an
+observability failure and ranks in A.
+
+Hand-off: a row whose real layer is interaction, state model, flow,
+layout-change, or keyboard/narrow parity is not a copy finding — pass it
+to `ux-walkthrough` as its Step 3 record instead of rewording around it (a
+friendlier name cannot fix 「繼續閱讀」 resetting the position; a lossy
+boolean cannot be repaired by vaguer words). ux-walkthrough passes wording
+findings back as rows of this table. Neither re-runs the other.
+
+### Mode C — review only
+Diagnose without editing: audience verdict (who this text currently serves
+vs who it should), defect list with quoted evidence, and stop. Use when the
+user asks 「這份給一般人看行不行」 or wants the finding before paying for a
+rewrite.
+
+## Hard guardrails (all modes)
+
+- **Truth before simplicity.** A rewrite may not change numbers, causal
+  strength, scope, or uncertainty; 「觀察到」 never becomes 「證明」. Claim
+  strength stays on the 可描述／可比較／可推論因果／尚不可判定 ladder it was on
+  (spelled as in `references/honest-data-readability.md`, so one grep finds both).
+  The ladder's finer axes (magnitude, significance, equivalence, mechanism,
+  simulated vs real) and the limitation-vs-defect split live in
+  `~/.claude/references/writing-norms/claim-reach.md`; a rewrite keeps each
+  claim on the axes it had.
+- **Readability is layering, not deletion.** Unfavorable findings and
+  limitations move UP into the main text, not out of it.
+- **Add zero facts.** A translation pass invents nothing — no specifics,
+  no promises the code doesn't check (UI strings included).
+- **The canonical artifact survives.** Mode A output is a separate file;
+  if asked to overwrite the engineering version, surface the file-hygiene
+  rule and ask.
+- **Restraint.** 3–5 targeted interventions per pass, deletion over
+  addition; when output smells AI-written or the user says 「AI味」, load
+  `references/de-ai-flavor.md` and run its checks one at a time.
+
+## Gate (Mode A, run before delivery — 2026-09-10)
+
+Two of the guardrails above are determinable and are no longer left to the
+reader's patience:
+
+```powershell
+python ~\.claude\tools\audience-fit-gate\afgate.py all <original> <companion>
+```
+
+- `voice` — a bare `<n> PASS`, a file path, a sha, a run id or a gate id in the
+  reader's MAIN text is a FAIL ("add zero facts" has a twin: add no builder
+  addresses). The provenance block and the 對照 table are the delivery
+  apparatus, not the reader's text: the gate splits there, closes only over the
+  main text, and prints both zone sizes. Baseline: the three accepted owner
+  views return 0 FAIL.
+- `values` — a number the canonical original does not explain, by identity or a
+  named transform, is invented. Legitimate reformatting (`1.336×` →
+  `比基準高 33.6%`) is a named transform and passes; the check certifies only
+  3+ significant digits and prints what it left uncertified.
+- `limits` — reports the original's limitation lines with no counterpart and
+  RULES ON NOTHING; whether a reworded limitation still says it is the pass's
+  own judgment, not the gate's.
+- `scope` — a universal quantifier (每篇 / 一定 / 固定 / 所有 / always) the
+  original never used is a WARN: the rewrite turned "some" into "all". Go back
+  to the original's data and state the proportion instead. Never FAIL.
+- `terms` · `sums` · `style` (2026-10-23, B-14/B-15/B-16) — screens on the
+  companion alone, WARN only, never FAIL:
+  - `terms`: a prose near-name of a node label of the page's own drawing (one thing, two names).
+  - `sums`: a table total row that is not the sum of its rows. A % total inside the rows' range reads as a rate (INFO).
+  - `style`: zh-TW sentences too long, too many 的, 進行/做出 + noun, or stock phrases.
+  Each WARN is a pointer to re-read that spot, not a verdict.
+
+Quote the gate line in the delivery beside the 前後對照 pair. It replaces no
+guardrail — three of the five above stay unmeasurable and stay yours.
+
+## References
+
+- `references/project-info-for-general-readers.md` — user-supplied guide
+  (zh-TW): project-level info for general readers. Load in Mode A.
+- `references/honest-data-readability.md` — user-supplied guide (zh-TW):
+  honest data + readability for reports/audits. Load in Mode A when numbers
+  or claims are present.
+- `references/ui-copy-stance.md` — UI copy rules from the MFP correction.
+  Load in Mode B.
+- `references/de-ai-flavor.md` — sepia-derived (MIT, attributed) slop
+  checks + borrow ledger. Load on AI-flavor symptoms, any mode.
+- `~/.claude/references/design-axes/part-principles.md` §1 — the
+  cross-medium audience rules (one named audience, only what it needs).
+  Step 1's audience table is this skill's domain form of them.

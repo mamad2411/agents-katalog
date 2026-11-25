@@ -1,0 +1,61 @@
+---
+name: plan-organic-growth
+description: 规划和诊断合规的自然增长，覆盖 SEO、GEO 与 AI 搜索、Reddit 调研和社区参与、Product Hunt 发布、SaaS 冷启动、创始人内容、数字公关及海外品牌发现。适用于出海增长、SEO/GEO 方案、AI 搜索可见度、社区洞察、内容增长、外链策略和 30/60/90 天自然增长路线图。
+---
+
+# Plan Organic Growth
+
+Build a compounding growth system, not a list of platform tricks.
+
+Use `$wepr-market-signal-research` when channel planning needs a traceable public-feedback ledger covering user needs, pains, objections, alternatives, and audience language. Use `$wepr-client-discovery` when client goals, approval, scope, or acceptance criteria are still unresolved.
+
+## Workflow
+
+1. Define the business stage, target user, problem, value proposition, economics, capacity, and target action.
+2. Collect demand evidence from customer conversations, search results, community discussions, competitor reviews, and product data.
+3. Preserve the user's language: problems, alternatives, objections, triggers, and desired outcomes.
+4. Assign channels distinct roles in discovery, trust, active-demand capture, conversion, retention, and referral.
+5. Build durable assets: product facts, topic architecture, useful content, cases, research, tools, community relationships, and conversion paths.
+6. Launch small experiments with explicit hypotheses, owners, metrics, stop rules, and review dates.
+7. Measure business outcomes alongside visibility, mentions, citations, rankings, engagement, and traffic.
+8. Convert results into reusable content units, channel playbooks, and a 30/60/90-day roadmap.
+
+## Community intelligence loop
+
+For Reddit and other public communities, separate listening from participation:
+
+1. Start with the communities where the target user discusses the problem, not only communities named after the product category.
+2. Maintain a dated community profile covering recurring jobs, urgency, attempted alternatives, objections, native terminology, accepted formats, moderation rules, and uncertainty. Mark inferred demographics or motivations as hypotheses.
+3. Keep raw observations and permalinks behind every important synthesis. Count repeated problems with a declared window and deduplication rule; do not mistake loud anecdotes for prevalence.
+4. Match product problems semantically, not only by keywords. Exclude stale discussions, already-solved questions, sensitive situations outside competence, and contexts where a commercial reply would be intrusive.
+5. Draft useful, self-contained responses before considering promotion. A human must review the thread context, disclose material affiliation where relevant, and perform any posting or messaging.
+6. Feed legitimate questions, removals, objections, conversions, and product gaps back into the profile. Treat community understanding—not posting volume—as the durable asset.
+
+Public feeds and search surfaces may support research only when their use complies with current platform rules and reasonable request rates. Verify availability and limits at execution time; do not encode a claimed rate limit or endpoint as permanent fact.
+
+## Content-to-growth operating model
+
+- Assign distinct stages for research, topic brief, draft, fact and policy review, human approval, distribution, and performance review.
+- Give every stage an explicit input, output, owner, stop condition, and acceptance test. Persist important handoffs in files or a system of record rather than relying on conversational memory.
+- Begin with one audience, one offer, one primary channel, and a manual closed loop. Automate only stable, low-risk, observable steps after several successful runs.
+- Use profile surfaces and pinned or evergreen content to orient new visitors; use individual posts for discovery, usefulness, proof, or participation.
+- Interpret engagement by function: views indicate exposure, saves future utility, shares social expression, profile visits curiosity, and qualified actions business progress. Do not collapse them into one score.
+
+## Route by need
+
+- SEO, technical search, content architecture, or backlinks: read [references/seo-geo.md](references/seo-geo.md) and [references/seo-system.md](references/seo-system.md).
+- Backlink and brand-mention audits, directory qualification, linkable assets, digital PR, outreach, or link monitoring: use `$wepr-link-authority-workbench`.
+- GEO, AI search, brand entities, citations, prompt baselines, diagnostic scoring, or 30/60/90-day GEO execution: read [references/seo-geo.md](references/seo-geo.md), [references/geo-evidence.md](references/geo-evidence.md), and [references/georank-measurement.md](references/georank-measurement.md).
+- Operating a live self-hosted GEOrank instance: hand off to `$operate-georank-workbench`; do not mix platform mutations into a general strategy deliverable.
+- Reddit research, participation, monitoring, or crisis response: read [references/community-launch.md](references/community-launch.md) and [references/reddit-community.md](references/reddit-community.md).
+- Product Hunt, SaaS launch, or first users: read [references/community-launch.md](references/community-launch.md).
+- Multi-platform content or founder-led growth: read [references/content-growth.md](references/content-growth.md).
+- International market entry, creators, social channels, or independent-product growth: read [references/international-growth.md](references/international-growth.md).
+
+## Output standard
+
+Return the relevant subset of: demand evidence, user-language library, channel-role map, technical/content/entity audit, fixed GEO prompt panel, evidence ledger, community map, launch plan, content system, experiment backlog, measurement plan with denominators, risk register, and 30/60/90-day roadmap.
+
+## Guardrails
+
+Verify current platform rules, algorithms, products, communities, tools, prices, and examples with official or first-party sources before client delivery. Never promise rankings, AI recommendations, virality, followers, registrations, or revenue. Do not use fake accounts, purchased karma/votes, coordinated manipulation, spam links, hidden sponsorship, policy evasion, piracy, or unauthorized personal data.

@@ -1,0 +1,188 @@
+---
+name: k230-development-lessons
+description: '**核心发现**：K230 的 `ampy run`（raw REPL）不可用，但可以直接通过 Python 调用 `ampy.pyboard.Pyboard`
+  实现所有功能。'
+signature: 'k230-development-lessons -> private: synthetic skill for k230 development
+  lessons'
+allowed-tools:
+- terminal
+- read_file
+- write_file
+- session_search
+version: 1.0.0
+license: MIT
+metadata:
+  synthos:
+    atom_type: mechanical
+    description: '**核心发现**：K230 的 `ampy run`（raw REPL）不可用，但可以直接通过 Python 调用 `ampy.pyboard.Pyboard`
+      实现所有功能。'
+    signature: 'k230-development-lessons -> private: synthetic skill for k230 development
+      lessons'
+    priority: P2
+    synthos_version: 1.0.0
+    synthos_skill_md_hash: auto
+    synthos_asserted_compliance: P2,P3
+    synthos_mechanical_atoms: ''
+category: private
+---
+
+
+|
+| references/deployment-notes.md | 安静模式部署完整流程、ampy 协议差异、设备通信协议 |
+| references/debugging-playbook.md | 故障诊断树：从症状到根因到修复 |
+| references/ampy-rawrepl-failure.md | ampy run (raw REPL) 始终失败的根因分析和替代方案 |
+| references/video-test-report.md | 录像功能测试报告，含硬件管线和帧率分析 |
+| references/hardware-specs.md | K230 硬件规格参考，含 NPU 算力说明和固件信息 |
+| references/button-failure-diagnosis.md | K230 按键无效根因：TOUCH vs Pin 混用 |
+
+## K230 自动化管理
+
+### 设备管理器 — k230_manager.py
+
+**核心发现**：K230 的 `ampy run`（raw REPL）不可用，但可以直接通过 Python 调用 `ampy.pyboard.Pyboard` 实现所有功能。
+
+**端口**: `/dev/openmvcam` (115200 baud)
+
+**核心 API**：
+```python
+from ampy.pyboard import Pyboard
+
+board = Pyboard('/dev/openmvcam', baudrate=115200)
+board.enter_raw_repl()       # 进入 raw REPL（含软重启）
+result = board.exec_(code)   # 执行代码并获取输出
+board.exit_raw_repl()        # 退出 raw REPL
+board.close()
+```
+
+**功能封装**（在 k230_manager.py 中）：
+- `k230_exec(code)` — 执行代码返回输出
+- `k230_execfile(local, remote)` — 上传并执行脚本
+- `k230_reboot()` — 通过 machine.reset() 软重启
+- `k230_listdir(path)` — 列出目录内容
+- `k230_get(remote, local)` — 下载文件
+- `k230_put(local, remote)` — 上传文件
+
+### 自动化操作管线
+
+1. **软重启**: 通过串口发送 `import machine; machine.reset()` 实现设备重启，**不依赖物理操作**
+2. **文件上传**: 通过 `Pyboard.exec_()` 发送文件内容，设备端用 `open().write()` 写入
+3. **代码执行**: 通过 `Pyboard.exec_()` 发送代码并获取输出
+4. **目录列举**: 通过 `Pyboard.exec_()` 执行 `os.listdir()`
+5. **文件下载**: 通过 `Pyboard.exec_()` 执行 `open().read()` + hexlify
+
+### 已验证操作
+
+1. ✅ **清理空目录**: 删除 `/data/320p_photos/` 下所有空子目录（025-034）
+2. ✅ **拍照测试**: 左摄 320x240 拍照正常，~20 FPS，文件正常写入
+3. ✅ **录像测试**: H264 硬件编码 + MP4 Muxer，5秒录制99帧，18.8MB
+4. ✅ **状态检查**: `state.current_mode`, `state.is_running`
+5. ✅ **目录枚举**: `os.listdir('/data/')`
+6. ✅ **配置读取**: `get_video_config()` 获取完整配置
+7. ✅ **设备重启**: `machine.reset()` 实现完全软重启
+
+### 录像功能管线
+
+**硬件管线**: VI(传感器) → VENC(H264编码器) → MP4 Muxer
+
+- `video_mode_start()`: 初始化传感器、MP4 Muxer、H264 编码器，启动管线
+- `video_mode_record()`: 消费编码器输出并写入 MP4（需在主循环中周期性调用）
+- `video_mode_stop()`: 停止管线，关闭文件
+
+**录像测试结果**:
+- 分辨率: 1280x720 @ 90fps
+- 编码: H264, 200 Mbps (配置) / ~240 Mbps (实际)
+- 帧数: 99帧 / 5秒 ≈ 20 FPS
+- 文件大小: 18.8 MB / 5秒
+
+### 已知陷阱
+
+1. **串口洪水**: main.py 的 print 淹没 REPL → 已通过移除 main.py 的 print 解决
+2. **ampy run 失败**: K230 raw REPL 协议不兼容 → 使用 Python Pyboard 直接调用
+3. **右摄 CSI1 故障**: 初始化导致设备挂死
+4. **空目录积累**: `ensure_dir()` 无条件创建 → 需定期清理
+5. **Micropython 限制**: 不支持 f-string、列表推导式、f-string、triple-quoted
+6. **设备死锁**: 串口完全无输出时 sendBreak/Ctrl+C/Ctrl+D 均无效 → 物理断开 USB 重插
+7. **lsusb 假阳性**: lsusb 成功 ≠ 串口可用，设备可能处于哑状态
+8. **gvfs PTP 只读**: PTP 挂载仅支持枚举，不支持读写
+9. **GPIO 按键 FPIOA 映射 — 分固件版本**:
+    - **标准 CanMV 固件**: `machine.Pin()` 内部自动处理 FPIOA 映射，不需要显式调用 FPIOA。直接用 `machine.Pin(pin, Pin.IN, Pin.PULL_UP)` 即可，额外 FPIOA 调用会覆盖正确映射。
+    - **RT-Smart 固件**（从 revision.txt 的 `rtsmart` 字符串确认）: `machine.Pin()` 不自动配置 FPIOA，**必须**先显式调用 `fpioa.set_function(pin, FPIOA.GPIO0 + pin)` 再 `machine.Pin(pin, Pin.IN, Pin.PULL_UP)`。官方示例 `examples/16-AI-Cube/DataCollectionCamera.py` 验证了此模式。
+    - **判断方法**: 检查 `/revision.txt` 中是否包含 `rtsmart`。如果板子上运行的是 RT-Smart 固件，FPIOA 是必需的。
+    - **注意**: `FPIOA.GPIO0 + pin` 中 `pin` 是 GPIO 逻辑编号（如 18, 19），K230 的 FPIOA.GPIO0 到 GPIO63 是连续整数 0-63，所以 `GPIO0 + 18 = GPIO18` 是正确的 GPIO 函数值。
+
+10. **不同 K230 板型的按键 GPIO 号不同**: 通过 `os.uname()[-1]` 检测板型：
+    - `k230_canmv_01studio`: 按键在 GPIO21，按键值 0（按下=低电平）
+    - `k230_canmv_lckfb`: 按键在 GPIO53，按键值 1（按下=高电平）
+    - 其他板型：默认 GPIO21，按键值 0
+    - 开发者应当在代码中检测板型并分配不同的 GPIO 号，见 `examples/16-AI-Cube/DataCollectionCamera.py`
+
+11. **`inference_mode_start()` 缺少 `state.current_mode` 设置**: 初始化推理模式时必须同时设置 `state.current_mode = "inference"` 和 `state.is_running = True`，否则主循环不会进入推理模式分支。这是除硬件之外的常见逻辑错误。
+
+12. **主循环 idle `time.sleep()` 扼杀按键轮询**: `key_manager.check()` 必须高频调用才能可靠检测按键按下。如果空闲态添加 `time.sleep(0.1)`，每次循环间隔 100ms，短按（<100ms）的按键事件会被完全错过。正确的 idle 处理是 `pass` 或者 `time.sleep_us(1000)`（1ms 级别的微小延迟），保持微秒级轮询频率。
+
+13. **重复 `main()` 调用导致 Pin 对象冲突**: `main.py` 末尾如果有两个 `if __name__ == "__main__": main()` 块，第一个 `main()` 意外退出后会再运行第二个。第二个 KeyManager 会尝试在已被第一个 KeyManager 占用的引脚上创建 Pin 对象，导致 GPIO 引脚处于不一致状态。必须使用 `while True: main(); time.sleep(1)` 无限重启循环（如同 `main_origin.py`），确保一次只有一个 `main()` 在运行。
+
+14. **主循环结构必须与 `main_origin.py` 一致**: 分模块重构时容易破坏主循环的语义等价性。关键点：
+    - 必须使用 `while True: main(); time.sleep(1)` 无限重启循环
+    - idle 态不得有超过 1ms 的 sleep
+    - 避免任何 `if __name__ == "__main__": main()` 的重复写法
+    - 所有 GPIO 相关的异常必须被捕获并打印到串口，不能静默吞掉
+
+## 契约层 · BOUNDARY
+
+**边界**：技能功能边界。
+
+## 契约层 · IO_CONTRACT
+
+**输入**：请求描述、上下文信息。
+**输出**：执行结果、状态反馈。
+
+## 验证清单 · VERIFICATION
+## 原则 (Principles)
+
+- **协议不通则直调**：`ampy run`（raw REPL）不可用，改以 Python 直调 `ampy.pyboard.Pyboard`；工具受限于协议，则绕协议而用底层。
+- **软重启不倚物理**：`machine.reset()` 串口下发即成重启，不倚物理拔插；自动化当全链无人干预。
+- **板型固件分治**：FPIOA 与否、GPIO 号高低，因固件（CanMV vs RT-Smart）与板型而异；先查 `revision.txt` 与 `os.uname()[-1]` 再定其策。
+- **主循环保真**：重构分模块必保 `while True: main(); time.sleep(1)` 之原结构，idle 态无 sleep，GPIO 异常必打印不静默；语义失一则全机失稳。
+
+
+- [ ] `ampy run` 失败时，已改用 Python 直调 `ampy.pyboard.Pyboard`（`/dev/openmvcam` @115200，`enter_raw_repl`/`exec_`/`exit_raw_repl`）完成代码执行与文件传输
+- [ ] 重启通过串口下发 `import machine; machine.reset()` 软重启实现，全链无人工拔插 USB
+- [ ] 配置 GPIO 前已查 `/revision.txt`：RT-Smart 固件（含 `rtsmart`）显式 `fpioa.set_function(pin, FPIOA.GPIO0 + pin)`，标准 CanMV 固件直接用 `machine.Pin` 不叠 FPIOA
+- [ ] 按键 GPIO 已按 `os.uname()[-1]` 检测板型分配：`01studio`→GPIO21(按下=0)、`lckfb`→GPIO53(按下=1)
+- [ ] 主循环保持 `while True: main(); time.sleep(1)` 原结构，idle 态无超 1ms 的 sleep，无重复 `main()` 入口，GPIO 异常均打印不静默吞掉
+- [ ] `inference_mode_start()` 同时设置了 `state.current_mode = "inference"` 与 `state.is_running = True`
+- [ ] 设备死锁（串口完全无输出，sendBreak/Ctrl+C/Ctrl+D 均无效）时以物理拔插 USB 恢复，且以 `lsusb` 成功≠串口可用做假阳性判断
+- [ ] 代码规避 MicroPython 限制（无 f-string/列表推导式/三引号），main.py 无 print 避免串口洪水
+
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[SK-016]** 当 `ampy run` (raw REPL) 协议不可用或失败时 → 直接通过 Python 调用 `ampy.pyboard.Pyboard` 底层 API 实现代码执行与文件传输
+- **[SK-017]** 当需要重启 K230 设备且希望实现全自动化时 → 通过串口发送 `import machine; machine.reset()` 执行软重启，避免依赖物理拔插
+- **[SK-018]** 当配置 GPIO 引脚且固件版本未知时 → 检查 `/revision.txt` 确认固件类型，RT-Smart 固件需显式调用 FPIOA 映射，标准 CanMV 固件则直接使用 `machine.Pin`
+- **[SK-019]** 当不同 K230 板型按键 GPIO 编号不一致时 → 通过 `os.uname()[-1]` 检测具体板型，动态分配对应的 GPIO 号及电平逻辑
+- **[SK-020]** 当主循环处于 idle 状态且需检测短按按键时 → 避免使用超过 1ms 的 `time.sleep`，保持微秒级高频轮询以防止错过短按事件
+- **[SK-021]** 当进行主循环重构或分模块开发时 → 严格保持 `while True: main(); time.sleep(1)` 的无限重启结构，确保 GPIO 异常被捕获并打印而非静默吞掉
+- **[SK-022]** 当初始化推理模式 (`inference_mode_start`) 时 → 必须同时设置 `state.current_mode = "inference"` 和 `state.is_running = True`，否则主循环无法进入正确分支
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 自动化管理 K230（`/dev/openmvcam` @115200）：Python 直调 `Pyboard.enter_raw_repl()` → `exec_()` → `exit_raw_repl()`，完成代码执行/文件传输/软重启全链无人工拔插 USB
+- **Golden Output**: `exec_("import machine; machine.reset()")` 软重启成功、文件上传下载正常；配置 GPIO 前已查 `/revision.txt`（RT-Smart→显式 FPIOA，CanMV→直接 Pin）并按 `os.uname()[-1]` 分配按键 GPIO（01studio→GPIO21 按下=0，lckfb→GPIO53 按下=1）
+- **Golden Error**: `ampy run`（raw REPL）始终失败 → 改 Python 直调 `ampy.pyboard.Pyboard`；串口完全无输出且 sendBreak/Ctrl+C/Ctrl+D 均无效（设备死锁）→ 物理拔插 USB 恢复
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。

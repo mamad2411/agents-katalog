@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/raulvidis/clawingtrap/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Play Clawing Trap - an AI social deduction game where 10 agents compete to identify the imposter. Use when the user wants to play Clawing Trap, register an agent, join a game lobby, or participate in 

@@ -1,0 +1,97 @@
+---
+name: ui-conventions
+description: Which Platypus frontend primitive a screen uses, and how it reads — the need → primitive table, and empty states (EmptyCard vs ListState). Use when building or changing any screen, list or section in apps/frontend.
+---
+
+# Frontend UI Conventions
+
+## Shared primitives
+
+Reach for the shared primitive before building the need by hand. The last
+column points at the rules that govern it; empty states have their own picker
+under [§ Empty states](#empty-states).
+
+| Need                                                    | Primitive                                                                     | Governed by                                                               |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| A list of entity cards                                  | `EntityCardList`                                                              | [`card-conventions`](../card-conventions/SKILL.md)                        |
+| A row's ⋮ menu                                          | `RowActionsMenu`                                                              | [`card-conventions`](../card-conventions/SKILL.md) § The ⋮ menu order     |
+| A disabled item's title-row badge                       | `DisabledBadge`                                                               | [`card-conventions`](../card-conventions/SKILL.md) § Icons and badges     |
+| A count that lists its names on hover                   | `CountTooltip`                                                                | [`card-conventions`](../card-conventions/SKILL.md) § Card height          |
+| A list's create controls and pagination                 | `ListFooter`                                                                  | [§ Empty states](#empty-states)                                           |
+| A loading skeleton that announces what loads            | `LoadingRegion`                                                               | —                                                                         |
+| A labelled text field, textarea, select or switch       | `FormTextField` / `FormTextareaField` / `FormSelectField` / `FormSwitchField` | —                                                                         |
+| A long-text field, optionally with a full-screen editor | `ExpandableTextarea`                                                          | —                                                                         |
+| A collapsed "Advanced settings" block                   | `FormAdvancedSection`                                                         | [`form-conventions`](../form-conventions/SKILL.md) § How the form submits |
+| A write-backed entity form                              | `useEntityForm`                                                               | [`form-conventions`](../form-conventions/SKILL.md)                        |
+| A one-shot write with a pending state                   | `useMutation`                                                                 | —                                                                         |
+| A read-only value with a copy button                    | `CopyRow`                                                                     | —                                                                         |
+| A delete behind a confirm dialog                        | `DeleteConfirmDialog` + `useDeleteFlow` (lists) or `useEntityDelete` (forms)  | [`form-conventions`](../form-conventions/SKILL.md) § When a delete fails  |
+
+## Empty states
+
+Every empty state renders through one of two components, picked by what the
+empty thing _is_ on the page:
+
+| The empty thing is…                                            | Component                   | Examples                                                                                           |
+| -------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
+| A **screen's** main content: a settings page, a top-level list | `EmptyCard`                 | Providers, MCP, Sandbox, Webhooks, A2A endpoints, Organization Skills, Blueprints, Agents, Boards, Members |
+| A **section** within a page, or a list **filtered** to nothing | `ListState variant="empty"` | Workspace home Skills / Triggers, "No skills match your filters", "No boards match your filters", A2A tokens |
+| A picker or command list inside a popover                      | `CommandEmpty`              | Command menu, timezone and model pickers                                                           |
+
+The same list can take both: `SkillsList` shows `EmptyCard` on the
+Organization Skills screen and `ListState` inside the workspace home section.
+A `border-dashed` div in a diff is the tell of a hand-rolled empty state;
+route it through one of the two components instead.
+
+A screen that **failed to load** uses `EmptyCard` too, titled
+`Couldn't load …` (trigger runs, plugins, `FetchErrorNotice`). A list's read
+failure is `ListError`, which stays unbordered because it also renders inside
+dialogs and chat.
+
+### EmptyCard
+
+`components/empty-card.tsx`: `icon`, `title`, `description`, `action`.
+
+- **Icon**: the bare Lucide icon the sidebar uses for that screen (the link
+  lists in `lib/settings-links.ts`), no size class (the frame sizes it). A concept keeps one icon everywhere it appears;
+  MCP is `Wrench`, even on the Organization surface.
+- **Title**: `No X configured` for things you set up or connect (providers,
+  MCP servers, sandbox, webhooks, endpoints); `No X yet` for things users
+  author or that accumulate (skills, blueprints, agents, invitations, runs).
+  No trailing period.
+- **Description**: what the thing is for, or why you'd want one. It adds to
+  the title rather than restating it. At Organization scope, say where it
+  goes next: "Add a provider here, then attach it to the workspaces that
+  should use it."
+- **Action**: the buttons that fill the gap, main one first with the default
+  (solid) variant, the rest `outline` (Attach shared, Import). The same
+  buttons render once: inside the card while the list is empty, below the
+  list (all `outline`) once it has rows. Build them as one `actions` element
+  and place it by emptiness — see `resource-list.tsx`, `skills-list.tsx`.
+- **Read-only viewer**: no button, and the description names who can act —
+  "Ask an organization admin to add one." for admin-gated resources, "Only
+  the workspace owner can add one." for Owner-only ones (Org Admins see other
+  Workspaces read-only). A card with nothing to do, like Organization Agents
+  (shared agents only arrive by Promote), explains how one arrives instead.
+
+### ListState
+
+One short line in the same dashed frame: `No triggers yet.`,
+`No Cron triggers to show.` The section's buttons sit below it, so the line
+states the fact and leaves the instruction to the buttons. They sit there in
+every state, loading and failed included — the footer of a section never
+blinks out. An `EmptyCard` screen is the other way round: it holds the
+buttons itself while empty, and the footer appears only once there are rows.
+
+## Button verbs
+
+An entry button (the one that starts the create flow) says `Add` for things
+you connect to and `Create` for things you author:
+
+| Verb     | For                                                                   |
+| -------- | --------------------------------------------------------------------- |
+| `Add`    | provider, MCP server, webhook, endpoint, workspace, workspace context |
+| `Create` | agent, skill, blueprint, board, trigger, organization                 |
+
+Name the noun in full (`Add MCP server`). The form's own submit button
+follows `form-conventions`.

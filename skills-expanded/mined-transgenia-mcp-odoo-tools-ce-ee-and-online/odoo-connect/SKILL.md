@@ -1,0 +1,59 @@
+---
+name: odoo-connect
+description: Discover a target Odoo instance — version, edition (CE/EE) and deployment (onprem/SaaS) — before running operations, and choose the right surface (MCP vs CLI).
+---
+
+# Odoo — connection & environment discovery
+
+Run this first against a new instance so later operations account for its
+version and edition.
+
+**Before you call an Odoo tool:** if `odoo_version` is not in your tool list,
+this plugin's MCP server is not running in this session. Follow step 0 of
+`/odoo-tools:odoo-doctor` before anything else, and do not run shell commands,
+check Python or give Odoo-side advice first. In Cowork and Claude chat the Odoo
+tools do not run at all: the user can open the **Code** tab of Claude Desktop or
+Claude Code, where the plugin is synced to the same account, or ask Transgenia for
+assisted setup (dev@transgenia.org · WhatsApp +52 55 8034 0405).
+
+## 1. Identify the environment (MCP)
+
+Call `odoo_version`. It returns:
+- `version` (major int, 10-19)
+- `edition` (`community` | `enterprise` | `unknown`)
+- `deployment` (`onprem` | `saas`)
+- `transport` (`json2` on Odoo saas~18.4 / 19.0+ with an API key; `jsonrpc(auto)`,
+  or `jsonrpc` / `xmlrpc` after a fallback, elsewhere)
+- `transport_notice` (null, or why the deprecated `/xmlrpc`/`/jsonrpc` is in use on
+  Odoo 19+ and how to switch to JSON-2; pass it on to the user)
+- `policy` (the odoo-tools permission policy in force; missing means a copy older
+  than 1.5.0 answered: stop and run `/odoo-tools:odoo-doctor`)
+- `plugin` (the odoo-tools `version` that answered and, in Claude Code, its `copy`,
+  such as `odoo-tools@transgenia-odoo-tools`)
+
+Record these. The compat layer uses them to resolve model/field names, so you
+almost never need version-specific branching in your queries.
+
+## 2. Sanity read
+
+Confirm data access with a bounded read:
+```
+odoo_search_read { "model": "res.partner", "fields": ["name"], "limit": 1 }
+```
+
+## 3. Explore before assuming
+
+Each instance differs (custom `x_studio_*` fields, installed modules). Use
+`odoo_fields_get { "model": "<model>" }` to discover the real schema before
+building filters. `odoo_list_models { "like": "<fragment>" }` finds models.
+
+## 4. Edition-gated models
+
+Enterprise-only models (e.g. `documents.document`, `sign.request`,
+`helpdesk.ticket`) raise a clear `CompatError` on Community instances. If you
+hit one, the instance is CE — pick a Community-available alternative.
+
+## Surface choice
+
+- **MCP server (primary):** full tool set + compat layer + export. Default.
+- **CLI fallback:** when the MCP server can't run, or for shell/batch scripts.

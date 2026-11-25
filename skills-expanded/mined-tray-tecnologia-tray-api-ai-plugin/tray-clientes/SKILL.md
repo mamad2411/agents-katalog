@@ -1,0 +1,154 @@
+---
+name: tray-clientes
+description: >
+  API de Clientes da Tray. Utilize quando o desenvolvedor precisar
+  gerenciar dados de clientes da loja: listagem, consulta, cadastro, atualização
+  e exclusão. Inclui campos de pessoa física (CPF) e jurídica (CNPJ), validações
+  brasileiras e gestão de newsletter.
+when_to_use: >
+  Use quando o desenvolvedor mencionar: cliente, cadastrar cliente, atualizar
+  cliente, CPF, CNPJ, pessoa física, pessoa jurídica, GET /customers, POST /customers,
+  PUT /customers, endereço de cliente, validação de CPF, validação de CNPJ ou opt-in newsletter.
+when_not_to_use: >
+  Não use para endereços do cliente (use tray-enderecos-cliente), perfis/grupos de clientes
+  (use tray-perfis-cliente) nem para inscrições em newsletter (use tray-newsletter).
+---
+
+## MANDATORY: Tool Calls Required Before Answering
+
+> **Estas chamadas são OBRIGATÓRIAS, não opcionais.** Execute-as antes de gerar
+> qualquer código ou payload. Se você está respondendo sem ter chamado as duas
+> ferramentas abaixo, **pare e chame agora**.
+
+### 1. Buscar documentação atualizada (sempre)
+
+```bash
+node skills/tray-dev/scripts/search_docs.mjs --topic=clientes "<termo da pergunta>"
+```
+
+- `<TOPIC_SLUG>`: ver tabela em `skills/tray-dev/SKILL.md`.
+- Use os trechos retornados como fonte primária; este SKILL.md é resumo.
+
+### 2. Validar payload localmente (antes de retornar código)
+
+```bash
+node skills/clientes/scripts/validate.mjs --schema=<SCHEMA_NAME> '<payload_json>'
+```
+
+- Schemas disponíveis: `cliente.create`, `cliente.update`. Use `--list-schemas` para confirmar.
+- Exit codes: `0` válido · `1` inválido · `2` erro de uso.
+- Para output programático: `--json`.
+- Corrija todos os erros antes de retornar o código (até 3 tentativas).
+
+## Antes de responder
+
+> Execute estas verificações antes de gerar qualquer payload ou código:
+
+1. Confirme o método HTTP e endpoint correto para a operação solicitada.
+2. Identifique os campos obrigatórios listados neste documento — não omita nenhum.
+3. Verifique que `access_token` não aparece como literal string no código gerado.
+4. Confirme que esta é a skill correta para o recurso (leia `when_not_to_use` no frontmatter).
+
+# API de Clientes — Tray
+
+Documentação oficial: https://developers.tray.com.br/#api-de-clientes
+
+## Endpoints
+
+| Método | Endpoint | Descrição |
+|:--|:--|:--|
+| GET | `/customers` | Listagem de clientes com paginação e filtros |
+| GET | `/customers/:id` | Consultar dados do cliente por ID |
+| POST | `/customers` | Cadastrar novo cliente |
+| PUT | `/customers/:id` | Atualizar dados do cliente |
+| DELETE | `/customers/:id` | Excluir cliente |
+
+**Autenticação:** `?access_token={token}`
+
+## Campos do Cliente
+
+| Campo | Tipo | Obrigatório (create) | Descrição |
+|:--|:--|:--|:--|
+| `name` | string | **Sim** | Nome completo |
+| `email` | string | **Sim** | E-mail (único na plataforma) |
+| `birth_date` | date | **Sim** | Data de nascimento (YYYY-MM-DD) |
+| `cpf` | string | Não¹ | CPF (pessoa física) |
+| `cnpj` | string | Não¹ | CNPJ (pessoa jurídica) |
+| `rg` | string | Não | RG |
+| `phone` | string | Não | Telefone fixo |
+| `cellphone` | string | Não | Celular |
+| `gender` | string | Não | Gênero |
+| `company_name` | string | Não | Razão social (PJ) |
+| `newsletter` | number | Não | 0=não inscrito, 1=inscrito na newsletter |
+| `created_at` | datetime | — | Data de cadastro (retornado pela API) |
+
+> ⚠️ **`birth_date` é obrigatório na criação** (`POST /customers`). Omitir
+> resulta em HTTP 400 — é a causa #1 de falha ao cadastrar cliente.
+>
+> ¹ `cpf` (PF) ou `cnpj` (PJ) conforme o tipo de cliente; informe o que
+> corresponder à pessoa.
+
+## Validações Brasileiras
+
+- **CPF**: deve ser um CPF válido (11 dígitos, algoritmo de verificação)
+- **CNPJ**: deve ser um CNPJ válido (14 dígitos, algoritmo de verificação)
+
+## Corpo da Requisição (POST/PUT)
+
+```json
+{
+  "Customer": {
+    "name": "João Silva",
+    "email": "joao@exemplo.com",
+    "birth_date": "1990-05-20",
+    "cpf": "12345678901",
+    "phone": "1133334444",
+    "cellphone": "11999998888",
+    "newsletter": 1
+  }
+}
+```
+
+## Paginação
+
+`limit` (máximo 50, padrão 30), `page`.
+
+## Recursos Relacionados
+
+- **Endereços**: gerenciados via API separada — consulte o skill `tray-enderecos-cliente`
+- **Perfis**: gerenciados via API separada — consulte o skill `tray-perfis-cliente`
+
+## Boas Práticas
+
+1. **E-mail único** — o e-mail é identificador único do cliente na plataforma
+2. **Valide CPF/CNPJ** — antes de enviar, valide localmente para evitar erros 400
+3. **Newsletter opt-in** — respeite a LGPD, envie `newsletter: 1` apenas com consentimento
+4. **Webhook** — configure o webhook `customer` para receber notificações de alterações
+
+## Como Usar no Claude Code
+
+### Exemplos de Prompt
+
+- "cadastra um novo cliente pessoa física com CPF e telefone"
+- "busca o cliente pelo e-mail joao@exemplo.com"
+- "lista todos os clientes inscritos na newsletter"
+- "implementa a sincronização de clientes do meu ERP para a Tray"
+
+### O que o Claude faz
+
+1. Gera o código de criação com wrapper `Customer` e validação de CPF/CNPJ
+2. Usa filtros de listagem (`email`, `cpf`, `newsletter`) para buscas específicas
+3. Inclui tratamento de erro para e-mail duplicado (cliente já existente)
+4. Sugere o fluxo completo: cliente → endereço → perfil quando necessário
+
+### O que você recebe
+
+- Código de criação com wrapper `{"Customer": {...}}` e campos obrigatórios
+- Validação local de CPF/CNPJ antes da chamada à API
+- Código de busca por e-mail ou CPF via filtros de listagem
+- Orientação sobre campos LGPD (`newsletter`)
+
+### Pré-requisitos
+
+- `access_token` configurado
+- E-mail único por cliente

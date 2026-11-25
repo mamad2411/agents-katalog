@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/tryboy869/dojutsu-for-ai (path: senjutsu/skills/azure-mgmt-mongodbatlas-dotnet/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Manage MongoDB Atlas Organizations as Azure ARM resources using Azure.ResourceManager.MongoDBAtlas SDK. Use when creating, updating, listing, or deleting MongoDB Atlas organizations through Azure Mark

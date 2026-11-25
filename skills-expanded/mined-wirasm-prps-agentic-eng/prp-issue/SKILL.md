@@ -1,0 +1,78 @@
+---
+name: prp-issue
+description: Autonomously owns one workstream from an issue, PRD, document, existing plan, or free-form request through planning, implementation, pull request, independent review, corrections, and green CI. Always use when the user asks to implement or ship work end to end, take an issue or idea to a reviewed PR, run plan to PR, invokes /prp-issue, or when prp-orchestrate needs an end-to-end delivery engine.
+argument-hint: "<issue|PRD|document|plan|description|reviewed PR> [--base <branch>] [review scopes]"
+---
+
+# Deliver One Workstream
+
+Own planning through PR and every correction in this context. Preserve accumulated reasoning across that implementation lifecycle; use fresh contexts only where independence is the feature—review.
+
+**Input**: $ARGUMENTS (if absent, use the conversation).
+
+## Contract
+
+- Continue autonomously through plan, implementation, PR, review, correction, re-review, and CI.
+- Compose `/prp-plan`, `/prp-implement`, and `/prp-review`; do not reproduce their craft.
+- Keep the plan, implementation report, PR, review report, publication URL, validation, and CI as the workstream's proof. Tiny work (§1) has no plan or report; its PR description carries that proof. Never reduce a handoff to a private summary.
+- Stop only for a product decision, missing prerequisite primitive, inaccessible dependency, permission boundary, or repeated no-progress failure that cannot be resolved in this context.
+- Do not merge. The caller or outer orchestrator owns that gate.
+- Never end a turn with nothing armed to wake you. Wait in one of three ways:
+  - **Another agent's result** comes by message. In Claude Code a message wakes its recipient, so there is nothing to poll.
+  - **External state with no sender** (CI, a PR comment, a file appearing) needs a watcher that wakes you when the condition holds. In Claude Code, run a bounded command in the background, which notifies when it exits, such as `timeout 1800 gh pr checks <n> --required --watch --fail-fast`, or arm the Monitor tool with a command that exits on the condition. Codex and pi have neither, so there a bounded foreground poll is the fallback.
+  - **A child you launched** that is still running wakes you when it finishes.
+
+  A watcher that times out is a result: act on it or re-arm it.
+
+## 1. Resolve and plan in this context
+
+Accept an issue or tracker URL, PRD, document, existing `.plan.md`, free-form request, conversation context, or reviewed PR.
+
+- Review-only request or contributor PR: use `/prp-review` and stop.
+- Existing plan: use it; publish it first with `/prp-plan publish <path>` when issue-derived publication is missing.
+- Issue with a published plan: let `/prp-implement` resolve and persist its absolute path from source metadata.
+- Existing reviewed PR: resolve its plan and implementation report, or for tiny work its PR description, then resume correction or verification without repeating completed work.
+- Tiny work: skip `/prp-plan` and go straight to §2 with the change itself as the input. If `/prp-implement` returns that it is not tiny after all, invoke `/prp-plan` and continue as for any other input.
+- Every other input: invoke `/prp-plan` now in this context. Keep its reasoning available for implementation.
+
+Paperwork scales with risk, like review. Work is **tiny** when the change is a one-line or few-line fix, test-only, or docs-only, and touches no wire format, schema, persisted state, data-loss path, isolation, or security surface. Judge it from what the change does, not by counting lines; when unsure, it is not tiny. Tiny work writes no plan file and no implementation report: the PR description carries the problem, the fix, and the evidence. It still reproduces a bug before fixing it, still passes the repository's gate, and is still reviewed when §3 says so: prose only skips review, and anything else gets `/prp-review`, which scales a tiny change to the code reviewer alone.
+
+For a non-trivial change, run `prp-core:code-simplifier` early, on the plan before implementing it and again on the first working implementation, and fold what it finds into this loop. It catches an overcomplicated direction while it is still cheap to change; a late review gate cannot.
+
+Require the absolute plan path and, for issue-derived plans, the verified publication URL before review; tiny work has neither.
+
+## 2. Implement through PR in this context
+
+Invoke `/prp-implement` with the plan path—or source issue when resolving a published plan, or for tiny work the change itself, stated as tiny—and any explicit base. Keep ownership in this context through validation, scoped commit, PR creation, linked PRD updates, and the implementation report.
+
+Do not start review without `VALIDATION: GREEN`, the absolute plan and report paths (for tiny work, a PR description holding the problem, fix, and evidence), and a live PR.
+
+## 3. Review in a fresh context
+
+Scale review to risk. A change to prose only (documentation, comments, or configuration wording) skips
+review: CI or the repository's local gate is its check. A documented snippet that runs is code, not prose.
+Everything else is reviewed, and only through `/prp-review`, which picks reviewers by risk and gives them
+a detached checkout. Never point a reviewer at your own working tree.
+
+Start a fresh agent with this prompt:
+
+> Invoke `/prp-review` on `<PR URL or number>` with scopes `<requested scopes, if any>`. Applicable caller decisions and scope constraints, verbatim: `<decisions or "None">`. Read the linked plan and implementation report, or for tiny work the PR description, publish the complete review to GitHub, and return the verdict, canonical review-report path, verified publication URL, and any blocker. Do not modify the PR.
+
+Require the complete canonical review report and verified GitHub publication. Read the reviewer's result from its returned output or its published PR comment. A reviewer you launched wakes you when it finishes; for one you did not, arm a watcher on its published comment.
+Wait until all selected review agents have finished and the review coordinator has produced the complete canonical report before addressing any finding; never start correction from partial reviewer messages.
+
+## 4. Disposition findings and re-review
+
+Read the complete report in this implementation context and disposition every finding by judgment, not by applying reported findings blindly: reviewers can be wrong or just have taste. Fix what matters by the review's severity definition now, in this loop, including adjacent findings that touch or affect what this change works on; code is cheap, and fixing in the same loop is cheaper than logging and rerunning. Give a real finding that is completely unrelated to the change `TRACKED FOLLOW-UP` with a verified issue link. A taste-level finding that fits the project's direction and engineering docs is fixed now like any other. Use `DECLINED` with the reason for taste that contradicts those docs or has no basis in them, a wrong finding, speculative defense-in-depth, or overengineering, and do not create an issue; use `NOT A FINDING` with decisive evidence when it is false or already satisfied. Never leave a bare deferred state.
+
+Batch every accepted correction and evidence-backed disposition into one coherent pass, then invoke `/prp-implement` in review-correction mode in this same context. What goes is the extra round to confirm routine fixes, not the fixes. Start a fresh `/prp-review --verify-corrections` agent only when the pass fixed a blocking finding, when a fix is itself risky (it changes behavior, or touches a wire format, persisted state, isolation, or security), or when a disposition is disputed. Give it the previous reviewed head, current PR head, complete canonical report, and dispositions, so it verifies those fixes' diff. Every other fix needs no review round: post one PR comment giving each finding's disposition (fixed at `<sha>`, declined with the reason, or tracked with its issue), and a `READY TO MERGE` verdict stands for the new head. Do not wait for or check CI between rounds; CI clears once, at the end of the workstream, on the final head.
+
+Repeat correction and focused verification only for an unresolved prior blocker, a disproven disposition, or a defect caused by the correction. Return to a full review only when the correction materially changed the PR's outcome, architecture, or scope. Continue until the independent verdict is `READY TO MERGE` and every finding has a terminal disposition. Resolve `REVIEW INCOMPLETE` by obtaining its missing validation or evidence; stop only when that is genuinely unavailable.
+
+## 5. Require green CI
+
+After `READY TO MERGE`, arm a watcher on the required CI checks, such as `timeout 1800 gh pr checks <n> --required --watch --fail-fast` run in the background; nothing else tells you when CI finishes. A head that only brought the base in, with the PR's own diff unchanged, keeps the verdict; CI on that head is its proof. A pending check is not green. For a PR-caused failure, invoke `/prp-implement` in CI-correction mode with the PR and complete failing-check evidence in this context, then run `/prp-review --verify-corrections` against the changed head. When no required CI exists, rerun the repository's authoritative local gate and record it instead.
+
+## 6. Return proof and follow-ups
+
+Only after review and CI are green, return the outcome, absolute plan and implementation-report paths (none for tiny work), PR URL, latest review verdict, review-report path, publication URL, validation, and CI evidence. Then suggest only meaningful remaining non-blocking follow-ups, including already-created tracking issues; do not present required unfinished work as optional follow-up.

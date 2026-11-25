@@ -1,0 +1,199 @@
+---
+name: nika-debugging
+description: Diagnose failed, paused or suspicious Nika runs from traces. Use for runtime failures, integrity checks and recovery; static workflow edits belong to authoring.
+---
+
+# Debugging Nika runs
+
+Execution journals are enabled by default under `.nika/traces/`. A refusal
+before execution, disabled recording or lost ownership can leave no complete
+journal. Start from the available runtime evidence, not a memory of terminal
+scroll; a receipt alone does not prove a sealed journal exists.
+
+## The forensic loop (evidence first)
+
+0. **A failed run already names its trace**: the card's `autopsy:`
+   line carries the FULL trace path — start there when you have it.
+1. **Locate the run**: `nika trace ls` — age · size · workflow ·
+   terminal state (completed/failed/paused) · `★` marks the newest
+   trace of each workflow (the resume candidate). Address a trace by
+   its store path — `.nika/traces/<name>` — everywhere below (`ls`
+   prints bare names; the readers take the path form on every
+   version).
+2. **Read the card**: `nika trace show <trace>` — the final verdict,
+   the waves, per-task outcome. `nika trace replay <trace>` re-renders
+   the run live (replay = re-render, NEVER re-execute).
+3. **Find the failing task**: `nika trace outputs <trace>` — verb ·
+   duration · tokens · a bounded preview per task (full value:
+   `nika trace peek`). Follow its recorded dependencies and diagnostics;
+   concurrent tasks can fail independently, so display order alone does
+   not identify a root cause.
+4. **Decode the finding**: `nika explain NIKA-XXXX` teaches the cause ·
+   category · fix-form of any code the trace carries.
+5. **Re-audit the file**: `nika check <file>` — a run that failed often
+   fails again at check once you know what to look for (a model that no
+   longer resolves, a missing env var, a permits violation).
+6. **Fix minimally, rerun surgically** (below). Re-check before any
+   rerun.
+
+## Prompts and confirm gates
+
+At a terminal, `nika:prompt` asks the human directly and the run
+continues. Headless — which is where an agent lives — a prompt
+without a `default:` **pauses durably** (exit 4 · `workflow_paused`
+in the trace · never a failure frame) and the frame prints its exact
+resume line. Three ways to answer, all recorded tamper-evident the same way:
+
+```
+nika run <file> --answer <task>=<value>                    # pre-answer at launch
+nika run <file> --resume <trace> --answer <task>=<value>   # resume the pause
+args: { …, default: <value> }                              # unattended default
+```
+
+Use only answers or defaults the user supplied or authorized. A paused run
+does not authorize choosing its answer. Adding a default changes the
+workflow's approval policy; it is not a mechanical repair for a pause.
+
+Confirm gates take booleans (`--answer approve=true`). A recorded success
+is reused only when the runtime's resume eligibility and identity checks
+match; changed definitions or resolved inputs can require execution again.
+Inspect the reported cache hits rather than predicting them from a success
+line alone. Removing a paused trace refuses
+without `--force` and names the prompt it would destroy — that
+refusal is protecting an answer, not being difficult.
+
+A failed run's card prints its own forensics line (`autopsy:
+nika trace peek <trace> <task>`) — start there, it points at the
+exact failing task.
+
+## Surgical reruns and uncertain effects
+
+Preserve prior results when the runtime admits their reuse. Before a rerun,
+check the intended changes, resolved inputs, available evidence and effects
+already observed. A lost response can follow a successful remote write:
+reconcile it with the destination before resubmission. If its state remains
+unknown, report that uncertainty; a retry or resume key alone does not prove
+deduplication. Keep the existing execution authorization and ask only for a
+missing decision or gate answer.
+
+- `nika run <file> --resume <trace> --from <task-id>` forces that task
+  and its transitive downstream to rerun; upstream reuse still depends on
+  eligibility. Review effects before choosing this override.
+- `nika run <file> --task <task-id>` includes that task and its transitive
+  upstream dependencies. It can execute their effects too; it does not
+  mean exactly one task runs.
+- After an intentional behavior change, refresh the pin:
+  `nika test <file> --update` rewrites the golden from an offline mock
+  run only when the workflow fits the simulated plane (no network,
+  subprocess or write effects). Otherwise use an authorized isolated
+  rehearsal and artifact assertions; `--model mock/echo` does not disable
+  tools or per-task model pins. Never hand-edit a `.golden.json` to make
+  red green, or repeat irreversible effects merely to obtain a green run.
+
+## Observed failure → remedy
+
+| Observed | Remedy |
+|---|---|
+| The client shows no `nika_*` MCP tools though the kit is installed | Restart the client session so it starts `nika mcp` again (it needs `nika` on the client's PATH); `nika doctor` names the per-client fix |
+| `NIKA-1800 · no access path is ready for <model>` (run exit 3, or a child task failing) | Configure the key or the local server it names: `nika catalog` lists each provider's variable, and `--access` pins how a model is reached. `nika wire` connects an editor client, never a model |
+| A child fails `NIKA-1800` under `--model mock/echo` | The override does not reach a child that pins its own `model:`: give that model access, or change the child's pin with the person |
+| Exit 4 · `paused · awaiting an answer for <task>` | Surface the gate's question; resume with `--resume <trace> --answer <task>=<value>` once the person answers |
+| Exit 130 · `cancelled by the operator` | Reconcile the in-flight task's effects, then `--resume <trace>` |
+| `NIKA-BUILTIN-READ-001 · file not found` for a file that exists | The run started outside the project root: builtin paths resolve from the launch directory |
+| `NIKA-BUILTIN-WRITE-002` | `overwrite: false` kept an existing file: write elsewhere, or replace it only when asked |
+| `NIKA-AUTH-006` | No `permits:` block: review `nika check <file> --infer-permits` and grant the requested effects |
+| `NIKA-PARSE-005` on a `schedule:` key | A cadence is a beat in `nika.yaml`, never a workflow key |
+| `cadence.tz-missing` | Put the IANA zone inside the cadence: `TZ=Europe/Paris 0 8 * * *` |
+| `[UNREADY]` with a blocker in `nika arm --json` | Repair what the blocker names (a missing workflow, a required input with no value, a policy this firer does not support); `nika arm --emit` refuses it until then |
+| `arm --emit · … UNREADY`, no unit printed | No unit arms a beat that cannot run: repair what `nika arm` names, or suspend the beat (`actif: false`, `raison:`, `jusqu_au:`) |
+| `[READY]` naming « a nested workflow's routes are judged only at its own dispatch » | Not a defect: an unknown alone leaves the beat READY and it fires; `nika serve --once --dry` shows what a firing would do |
+| `arm fire … unité périmée` | The unit was written for an earlier revision of the schedule: run the re-emit it names (`nika arm --emit launchd --write`, or `systemd`), then load the unit again |
+| `NIKA-COMP-001` | The child path resolves from the parent file's directory, and the child must exist when the parent is checked |
+| `NIKA-COMP-002` | The parent's `permits:` must contain every effect of the child |
+| A green check from one `nika`, a refusal from another | Two binaries: call the one the work targets by its path (`NIKA_BIN` for the check-on-edit hook, which names its oracle) |
+
+## Common root causes (check these before anything exotic)
+
+- **Provider connection interrupted**: `NIKA-INFER-001` names the service
+  endpoint and a transport cause when available. Check that endpoint's service;
+  a declared `retry:` can retry a connection failure within its attempt and
+  timeout limits. Without `retry:`, there is one attempt. Authentication errors,
+  malformed responses and capability refusals do not become transient because
+  their message mentions a connection. An interrupted call may still have
+  generated or billed tokens: absent usage is unknown, never proof of zero spend.
+  An agent whose tools already ran suppresses whole-task replay after a connection
+  failure, even with `on_codes`; reconcile those effects before a manual rerun.
+  `--model mock/echo` can rehearse the envelope model; per-task pins and tools
+  retain their own behavior.
+- **Model does not resolve**: `nika check <file> --json` →
+  `models_resolve` says whether every `model:` runs in THIS binary;
+  `nika catalog` names the env var each provider needs.
+- **Missing credential**: secrets ride `${{ secrets.X }}`, declared in
+  the `secrets:` block (`source: env` + `key:`) — the trace shows the
+  task, the shell shows the variable. `nika doctor` audits the machine
+  side. Non-sensitive settings ride an `inputs:` entry with
+  `required: false` and a `default:`.
+- **Timeout too tight**: compare observed latency with the task's timeout,
+  model and workload. Change the limit within the admitted budget; a longer
+  timeout is not a general repair for a stalled or uncertain effect.
+- **Permits violation**: the run was blocked by its own declared
+  boundary — read the finding, then either the task is wrong or the
+  boundary is (widen it consciously, never delete it). Read the recorded
+  grant/refusal events when available; an admission refusal before the
+  prologue can have no journal, so retain its typed diagnostic too.
+  A workflow with NO `permits:` block has
+  zero authority (`NIKA-AUTH-006`), and check refuses it before the
+  run ever starts.
+- **A child process cannot see a variable**: the environment is
+  composed from a cleared slate, so an unnamed variable simply is not
+  there. Name it in `permits: { env: [NAME] }` or in the task's own
+  `env:` map.
+- **Cost cap hit**: a known over-budget floor refuses before execution.
+  During execution, crossing the metered budget stops new admissions;
+  already-started calls finish and count, so the total can exceed the cap.
+  Inspect the recorded spend and unpriced calls before deliberately changing
+  the cap, concurrency or task limits.
+
+## Tamper evidence
+
+`nika run --json` is an ordered execution journal, not a live provider-token
+feed. Task lifecycle frames are emitted together at task settlement to preserve
+deterministic wave order; a slow earlier task can delay a later task's frames.
+Consequently, adjacent `task_started` and terminal timestamps describe emission,
+not the actual request start. Use the terminal `duration_ms` for elapsed task
+work and `nika trace ls --json` for the writer's liveness. A live writer does not
+prove that its provider is responding. The provider stream API is a separate
+door; workflow `infer:` currently uses buffered inference.
+
+`nika trace verify <trace>` checks the recorded hash links. A consistent
+unkeyed chain alone does not rule out rewriting the entire journal; compare
+the head with independently trusted evidence or verify its trusted seal.
+Exit 0 verified · 2 broken · 3 unchained or missing input · 5 incomplete. The
+verdict also names the highest tier honestly attained — chain OK ·
+**SEALED** (the `run_sealed` signature verifies against a custody
+key) · **ANCHORED** (the detached sidecar verifies fully offline) ·
+**REPLAYED** (`--replay <fresh-trace>` compares a fresh run; verify never
+re-executes). A journal that never reached a lifecycle-terminal frame
+verifies **INCOMPLETE**: the verifier's finding about a run that died
+mid-flight — not a pass, and not a tamper claim. Say which one you
+have. Cite the trace and the actual proof tier; `nika trace evidence <trace>`
+exports the pack an auditor can inspect independently. Verification reads
+existing evidence: it never creates or seals a journal, and a signature
+does not prove that the producer told the truth.
+
+## Honesty lines
+
+- The trace tells you what the engine did. It cannot tell you WHY a
+  provider returned garbage — a provider-side outage or a model
+  regression is named as a hypothesis, never asserted as fact.
+- Never edit a trace. Never delete a paused trace to "clean up".
+- If the binary is missing: `brew install supernovae-st/tap/nika` —
+  do not reconstruct runs from memory.
+
+## Completion
+
+A diagnosis names the evidenced cause, remaining hypotheses and the smallest
+repair. When repair and recovery are requested and authorized, continue through
+the affected check, reconciled retry and output inspection; do not stop at the
+first plausible explanation. Preserve the original effect scope and budget,
+and ask only for a missing decision or a human gate's actual answer.

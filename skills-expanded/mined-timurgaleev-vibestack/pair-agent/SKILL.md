@@ -1,0 +1,462 @@
+---
+name: pair-agent
+description: |
+  Pair a remote agent with your browser: generate a setup key and instructions so it can connect over HTTP.
+triggers:
+  - pair with agent
+  - connect remote agent
+  - share my browser
+allowed-tools:
+  - Bash
+  - Read
+  - AskUserQuestion
+---
+
+If this session was compacted, the copy of this skill in context may be cut off.
+Read `${CLAUDE_SKILL_DIR}/SKILL.md` from disk and resume at the step you are on.
+
+## When to invoke
+
+Use when asked to "pair agent", "connect agent", "share browser", "remote browser", "let another agent use my browser", or "give browser access".
+
+## Preamble
+
+```bash
+eval "$("${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-slug" 2>/dev/null)" 2>/dev/null || SLUG="unknown"
+_LEARN_FILE="${VIBESTACK_HOME:-$HOME/.vibestack}/projects/${SLUG:-unknown}/learnings.jsonl"
+if [ -f "$_LEARN_FILE" ]; then
+  _LEARN_COUNT=$(wc -l < "$_LEARN_FILE" 2>/dev/null | tr -d ' ')
+  echo "LEARNINGS: $_LEARN_COUNT entries loaded"
+  if [ "$_LEARN_COUNT" -gt 5 ] 2>/dev/null; then
+    "${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-learnings-search" --limit 5 2>/dev/null || true
+  fi
+else
+  echo "LEARNINGS: none yet"
+fi
+```
+
+{{include lib/snippets/session-host.md}}
+
+{{include lib/snippets/decision-brief.md}}
+
+{{include lib/snippets/working-protocols.md}}
+
+{{include lib/snippets/state-protocols.md}}
+
+# /pair-agent — Share Your Browser With Another AI Agent
+
+You're sitting in Claude Code with a browser running. You also have another AI agent
+open (OpenClaw, Hermes, Codex, Cursor, whatever). You want that other agent to be
+able to browse the web using YOUR browser. This skill makes that happen.
+
+## How it works
+
+Your vibestack browser runs a local HTTP server. This skill creates a one-time setup
+key, prints a block of instructions, and you paste those instructions into the other
+agent. The other agent exchanges the key for a session token, creates its own tab,
+and starts browsing. Each agent gets its own tab. They can't mess with each other's
+tabs.
+
+The setup key expires in 5 minutes and can only be used once. If it leaks, it's dead
+before anyone can abuse it. The session token lasts 24 hours.
+
+**Same machine:** If the other agent is on the same machine (like OpenClaw running
+locally), you can skip the copy-paste ceremony and write the credentials directly to
+the agent's config directory.
+
+**Remote:** If the other agent is on a different machine, you need an ngrok tunnel.
+The skill will tell you if one is needed and how to set it up.
+
+## SETUP (run this check BEFORE any browse command)
+
+```bash
+B="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/pair-agent}/../browse/bin/vibe-browse"
+[ -x "$B" ] || B="$(command -v vibe-browse || true)"
+if [ -n "$B" ] && [ -x "$B" ] && [ "$("$B" status 2>/dev/null)" != "BROWSE_NOT_AVAILABLE" ]; then
+  echo "READY: $B"
+  echo "BROWSE_BIN: $B"
+else
+  echo "NEEDS_SETUP"
+fi
+```
+
+Every Bash call starts a fresh shell, so `$B` is unset in every later block.
+A block that runs a browse command starts with `B='<BROWSE_BIN>'`: replace
+`<BROWSE_BIN>` with the path printed on the `BROWSE_BIN:` line.
+
+If `NEEDS_SETUP`, stop and tell the user the browse binary could not be found or
+could not start — node is missing, or first-run setup was declined.
+
+Pairing needs the full browse daemon: the stateless fallback shim has no token
+registry to mint against and answers `NOT_SUPPORTED:pair-agent`. If you see
+that, say the daemon is not running in this checkout and stop — never describe a
+pairing that did not happen.
+
+## Step 1: Check prerequisites
+
+```bash
+B='<BROWSE_BIN>'
+$B status 2>/dev/null
+```
+
+If the browse server is not running, start it:
+
+```bash
+B='<BROWSE_BIN>'
+$B goto about:blank
+```
+
+This ensures the server is up and healthy before pairing. Note whether a daemon
+was already answering before this step: one you just started holds no tabs or
+logins, so Step 4's live-daemon question does not apply to it.
+
+## Step 2: Ask what they want
+
+Use AskUserQuestion:
+
+> Which agent do you want to pair with your browser? This determines the
+> instructions format and where credentials get written.
+
+Options:
+- A) OpenClaw (local or remote)
+- B) Codex / OpenAI Agents (local)
+- C) Cursor (local)
+- D) Another Claude Code session (local or remote)
+- E) Something else (generic HTTP instructions — use this for Hermes)
+
+Based on the answer, set `TARGET_HOST`:
+- A → `openclaw`
+- B → `codex`
+- C → `cursor`
+- D → `claude`
+- E → generic (no host-specific config)
+
+## Step 3: Local or remote?
+
+Use AskUserQuestion:
+
+> Is the other agent running on this same machine, or on a different machine/server?
+>
+> **Same machine** skips the copy-paste ceremony. Credentials are written directly to
+> the agent's config directory. No tunnel needed.
+>
+> **Different machine** generates a setup key and instruction block. If ngrok is
+> installed, the tunnel starts automatically. If not, I'll walk you through setup.
+>
+> RECOMMENDATION: Choose A if the agent is local. It's instant, no copy-paste needed.
+
+Options:
+- A) Same machine (write credentials directly)
+- B) Different machine (generate instruction block for copy-paste)
+
+## Step 4: Execute pairing
+
+**Live-daemon consent (one-way door).** Pairing can relaunch the browse daemon,
+and a relaunch KILLS the running headless daemon: its open tabs, cookies and
+signed-in sessions die with it. The CLI never kills a live daemon unless it is
+given `--force-restart`, so check first:
+
+```bash
+B='<BROWSE_BIN>'
+BROWSE_NO_AUTOSTART=1 $B status 2>/dev/null | head -5
+```
+
+- No status output, it shows `Mode: headed`, or Step 1 started the daemon
+  itself: nothing to lose — continue without asking. A daemon Step 1 started
+  may be relaunched, so pass `--force-restart` if the CLI asks for it.
+- A live daemon without `Mode: headed`, and `SESSION_KIND` is `spawned` or
+  `headless`: do not ask and do not pass `--force-restart`. Pair against the
+  live daemon as-is; if the CLI refuses without a relaunch, show its output and
+  stop.
+- A live daemon without `Mode: headed` in an interactive session: ask via
+  AskUserQuestion — lost tabs, cookies and logins cannot be recovered:
+
+> "A headless browse daemon is live (tabs and logins may be active). Pairing a
+> visible browser means relaunching it, and everything in the current daemon is
+> lost.
+>
+> RECOMMENDATION: Choose B unless the other agent specifically needs a visible
+> browser window; pairing works against the existing daemon."
+
+Options:
+- A) Relaunch (pass `--force-restart`; current tabs, cookies and logins are lost)
+- B) Keep the live daemon (pair against it as-is)
+
+Only add `--force-restart` to the `pair-agent` commands below after an explicit
+A. Never default to A on a vague reply — this is a destructive confirmation. If
+the CLI refuses on B because it needs a relaunch, show its output and stop;
+never retry with `--force-restart` on your own.
+
+### If same machine (option A):
+
+Run pair-agent with --local flag:
+
+```bash
+B='<BROWSE_BIN>'
+$B pair-agent --local TARGET_HOST
+```
+
+Replace `TARGET_HOST` with the value from Step 2 (openclaw, codex, cursor, etc.).
+
+If it succeeds, tell the user:
+"Done. TARGET_HOST can now use your browser. It will read credentials from the
+config file that was written. Try asking it to navigate to a URL."
+
+If it fails (host not found, write permission error), show the error and suggest
+using the generic remote flow instead.
+
+### If different machine (option B):
+
+**Consent gate (once per machine).** The tunnel exposes this browser beyond the
+machine, so it stays off until the user opts in. The daemon enforces the same
+flag: with `pair_agent` not `on` it refuses `/tunnel/start` and ignores
+`BROWSE_TUNNEL=1`, so a remote pairing fails closed rather than opening a tunnel
+nobody agreed to. Never set the flag yourself to get past that refusal — not
+`pair_agent` in the config and not `VIBESTACK_PAIR_AGENT=on` in the environment,
+which overrides it. Only the user's answer below turns it on. Check the standing consent:
+
+```bash
+"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" get pair_agent 2>/dev/null || echo "unset"
+```
+
+If the value is not `on`, ask via AskUserQuestion. This is a one-way door — it
+opens a path from the internet to a browser that is already logged into the
+user's accounts — so ask it every time consent is absent, and never let a
+question preference suppress it:
+
+> "Remote pairing runs an ngrok tunnel from the internet to this machine's
+> browser. The remote agent gets a scoped token and a command allowlist, but the
+> browser it reaches is the one holding your sessions. Enable pair-agent on this
+> machine?"
+
+Options: A) Enable — run `"${VIBESTACK_HOME:-$HOME/.vibestack}/bin/vibe-config" set pair_agent on`, confirm
+it reads back `on`, and continue. B) No — stop here; local pairing (option A
+above) still works and exposes nothing.
+
+If the value is already `on`, say nothing and continue — consent stands until
+`vibe-config set pair_agent off`.
+
+Then detect ngrok status:
+
+```bash
+which ngrok 2>/dev/null && echo "NGROK_INSTALLED" || echo "NGROK_NOT_INSTALLED"
+ngrok config check 2>/dev/null && echo "NGROK_AUTHED" || echo "NGROK_NOT_AUTHED"
+```
+
+**If ngrok is installed and authed:** Just run the command. The CLI will auto-detect
+ngrok, start the tunnel, and print the instruction block with the tunnel URL:
+
+```bash
+B='<BROWSE_BIN>'
+$B pair-agent --client TARGET_HOST
+```
+
+**What a paired agent gets by default.** The daemon grants read + write +
+admin + meta — the trust boundary is the pairing ceremony, not the scope, so a
+default agent CAN execute JavaScript and read cookies and storage. `--control`
+(and its `--admin` alias) adds the browser-wide destructive commands: stop,
+restart, disconnect. `--restrict` is what narrows access. Say this plainly when
+you present the pairing: the person approving it is granting more than the flag
+names suggest.
+
+If the user also needs the control commands (stop, restart, disconnect):
+
+```bash
+B='<BROWSE_BIN>'
+$B pair-agent --control --client TARGET_HOST
+```
+
+**CRITICAL: You MUST output the full instruction block to the user.** The block
+runs from its first `====` divider line to its last, both included. Copy the ENTIRE block verbatim into your
+response so the user can copy-paste it into their other agent. Do NOT summarize it,
+do NOT skip it, do NOT just say "here's the output." The user needs to SEE the block
+to copy it. Output it inside a markdown code block so it's easy to select and copy.
+
+Then tell the user:
+"Copy the block above and paste it into your other agent's chat. The setup key
+expires in 5 minutes."
+
+**If ngrok is installed but NOT authed:** Walk the user through authentication.
+
+SECURITY: the ngrok authtoken must NEVER pass through this chat, a Bash tool
+call, or shell history — a token pasted here lands in the transcript, and in
+anything the transcript is synced or shared to. The user runs the auth command in
+their OWN terminal; you only verify the result.
+
+Tell the user:
+"ngrok is installed but not logged in. Let's fix that — in your own terminal
+(not here; the token should never enter this chat):
+
+1. Go to https://dashboard.ngrok.com/get-started/your-authtoken
+2. Copy your auth token
+3. In YOUR terminal, run: ngrok config add-authtoken <paste your token>
+4. Tell me 'done' when finished."
+
+STOP here and wait for the user to say they have run it. Do NOT ask for the
+token and do NOT accept a pasted one. If the user pastes it anyway, tell them to
+rotate it at https://dashboard.ngrok.com — it is in the transcript now — and to
+re-auth in their terminal with the new one.
+
+When they say done, verify without ever touching the token:
+```bash
+ngrok config check 2>/dev/null && echo "NGROK_AUTHED" || echo "NGROK_NOT_AUTHED"
+```
+
+If `NGROK_AUTHED`: retry `$B pair-agent --client TARGET_HOST`.
+
+**If ngrok is NOT installed:** Walk the user through installation:
+
+Tell the user:
+"To connect a remote agent, we need ngrok (a tunnel that exposes your local
+browser to the internet securely).
+
+1. Go to https://ngrok.com and sign up (free tier works)
+2. Install ngrok:
+   - macOS: `brew install ngrok`
+   - Linux: `snap install ngrok` or download from ngrok.com/download
+3. Auth it: `ngrok config add-authtoken YOUR_TOKEN`
+   (get your token from https://dashboard.ngrok.com/get-started/your-authtoken)
+4. Come back here and run `/pair-agent` again."
+
+STOP here. Wait for the user to install ngrok and re-invoke.
+
+## Step 5: Verify connection
+
+After the user pastes the instructions into the other agent, wait a moment then check:
+
+```bash
+B='<BROWSE_BIN>'
+$B status
+```
+
+Look for the connected agent in the status output. If it appears, tell the user:
+"The remote agent is connected and has its own tab. You'll see its activity in the
+side panel if you have vibestack Browser open."
+
+## What the remote agent can do
+
+With default access (read + write + admin + meta):
+- Navigate to URLs, click elements, fill forms, take screenshots
+- Read page content (text, HTML, snapshot)
+- Create new tabs (each agent gets its own)
+
+`--control` (and its `--admin` alias) adds the browser-wide destructive
+commands: stop, restart, disconnect. `--restrict` is what narrows access.
+
+**Scope is not the only gate.** A remote agent reaches the daemon through the
+tunnel surface, which serves a fixed command allowlist on top of whatever the
+token grants. `eval` is on it; `js`, `cookies` and `storage` are not, and no
+scope makes them dispatchable remotely. `eval --out` is also refused there —
+`--out` is a disk write, and the tunnel surface never grants disk-write
+capability. An agent paired with `--local` talks to the daemon directly and gets
+all four. Explain the asymmetry when a remote agent reports a command "missing":
+it is a boundary, not a bug.
+
+**Never pass `root` as a client name.** `root` is the daemon's own identity, and
+the scope, domain and rate-limit checks all short-circuit for it — an agent
+paired under that name would inherit unrestricted access no `--restrict` could
+claw back.
+
+## Troubleshooting
+
+**"Tab not owned by your agent"** — The remote agent tried to interact with a tab
+it didn't create. Tell it to run `newtab` first to get its own tab.
+
+**"Domain not allowed"** — The token has domain restrictions. Re-pair with broader
+domain access or no domain restrictions.
+
+**Re-pairing replaces, but only under the same name.** Re-pairing a client name
+revokes that name's unexchanged setup keys at once. If the new grant is narrower
+(a scope dropped, or a domain restriction added or tightened) the daemon also
+revokes the live session immediately; a broader grant keeps the session until
+the new key is exchanged. So tightening a live agent means re-pairing it with the
+**same `--client` name** and the narrower `--restrict`. A new name tightens
+nothing — the over-scoped agent keeps its token until it expires or you run
+`$B tunnel revoke <old-name>`.
+
+**"Rate limit exceeded"** — The agent is sending > 10 requests/second. It should
+wait for the Retry-After header and slow down.
+
+**"Token expired"** — The 24-hour session expired. Run `/pair-agent` again to
+generate a new setup key.
+
+**Agent can't reach the server** — If remote, check the ngrok tunnel is running
+(`$B status`). If local, check the browse server is running.
+
+## Platform-specific notes
+
+### OpenClaw / AlphaClaw
+
+OpenClaw agents use the `exec` tool instead of `Bash`. The instruction block uses
+`exec curl` syntax which OpenClaw understands natively. When using `--local openclaw`,
+credentials are written to `~/.openclaw/skills/vibestack/browse-remote.json`.
+
+### Codex
+
+Codex agents can execute shell commands via `codex exec`. The instruction block's
+curl commands work directly. When using `--local codex`, credentials are written
+to `~/.codex/skills/vibestack/browse-remote.json`.
+
+### Cursor
+
+Cursor's AI can run terminal commands. The instruction block works as-is.
+When using `--local cursor`, credentials are written to
+`~/.cursor/skills/vibestack/browse-remote.json`.
+
+## Revoking access
+
+**See who holds access first.** This lists every live agent (name, scopes,
+domain restrictions, expiry, command count) and every setup key nobody has
+redeemed yet, marked `(pending)`:
+
+```bash
+B='<BROWSE_BIN>'
+$B tunnel agents
+```
+
+**Revoke one agent.** This cuts that name's session token and its setup keys,
+spent or pending, and hands its tabs back. It then re-lists to confirm the name
+is gone and exits non-zero if it is not:
+
+```bash
+B='<BROWSE_BIN>'
+$B tunnel revoke <agent-name>
+```
+
+Both read the root token from the daemon's state file and never start a daemon.
+Report the revoke only after its `Revoked "<agent-name>"` line. On a non-zero
+exit, show the output: an unknown name means check `$B tunnel agents`; any other
+failure means access was NOT confirmed cut — say so and fall back to `$B stop`.
+
+**Stopping the daemon revokes everything.** Scoped tokens live in daemon memory
+and are never written to the state file, so the next command boots a fresh daemon
+with a new root token and every previously issued token — session tokens and
+unexchanged setup keys alike — is dead:
+
+```bash
+B='<BROWSE_BIN>'
+$B stop
+```
+
+That also drops the tunnel: the daemon holds the ngrok listener in-process, so
+it goes down with the daemon and the public URL stops resolving. Do NOT reach
+for `pkill -f ngrok` — it would kill every unrelated ngrok the user is running
+and still not be the thing serving this tunnel.
+
+`$B tunnel rotate` does NOT exist — never tell a user to run it.
+
+Tokens expire on their own (24h by default), and a setup key expires in 5
+minutes if never exchanged.
+
+## Orchestrator injection prompts
+
+When a remote/orchestrating agent spawns a vibestack coding session (rather than
+just sharing the browser), it can inject a ready-made discipline prompt from
+`lib/orchestrator/` into the target repo's `CLAUDE.md`:
+
+- `lite.md` — planning discipline for any spawned coding task
+- `full.md` — `/autoplan` → implement → `/ship`, report the PR URL
+- `plan.md` — `/office-hours` → `/autoplan`, save the reviewed plan, don't build
+
+These are plain prompts (nothing installs them); the orchestrator reads the file
+and appends its body. See `lib/orchestrator/README.md`.

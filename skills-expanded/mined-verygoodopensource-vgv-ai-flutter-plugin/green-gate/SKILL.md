@@ -1,0 +1,331 @@
+---
+name: green-gate
+description: >
+  Drives a Dart or Flutter package fully green through a verify-fix-rerun loop across four gates:
+  analyze, format, test, coverage. It owns gate configuration, so plan-only questions belong
+  here: which tool and arguments run each gate, in what order, the coverage target, and what
+  leaves the coverage denominator. Use it for "green gate", "make it green", "get CI green",
+  fixing all analyze and test failures, cleaning a package up before a PR, bringing coverage to
+  100, looping until everything passes, or confirming a package is green. Use it too when the
+  user wants a gate weakened or skipped: lowering the coverage threshold, coverage ignore
+  comments on untested or generated code, skipping analyze and format because they passed
+  earlier, calling a 94% package done, or retrying while the same failures repeat. Prefer it over
+  the single-gate testing or analysis skills.
+argument-hint: "[directory]"
+allowed-tools: Bash Read Glob Grep Edit Write mcp__dart__analyze_files mcp__dart__dart_format mcp__very-good-cli__test
+effort: medium
+---
+
+# Green Gate
+
+Autonomous quality-gate loop for Dart and Flutter packages. Runs four gates —
+analyze, format, test, coverage — reads real tool output, edits code and tests
+to fix failures, and loops until one final iteration proves all four pass
+simultaneously with observed numbers. Acts autonomously on objective failures;
+escalates only on stalls, genuine ambiguity, or infrastructure failure.
+
+This skill orchestrates tools and edits files. It defers the _how_ of writing
+tests to the `testing` skill — it never duplicates mocking, structure, or
+coverage-pattern guidance.
+
+---
+
+## Core Standards
+
+Apply these to all green-gate work:
+
+- **MCP tools only, never the Bash equivalent** — analyze via
+  `mcp__dart__analyze_files`, format via `mcp__dart__dart_format`, test and coverage
+  via `mcp__very-good-cli__test`. Every gate has an MCP tool; none of them runs
+  through a shell command. The Bash test path (`very_good test`, `flutter test`,
+  `dart test`) is hook-blocked by `block-cli-workarounds.sh` and will be denied, and
+  `dart analyze` / `dart format` via Bash are redundant with the MCP tools.
+  **The only Bash the loop runs is the fallback `coverage/lcov.info` parse**, and
+  only when the test result carries no `Lines not covered:` block. This MCP-only
+  rule is a Claude Code constraint enforced by that hook; the hook does not run on
+  other hosts. **Cross-harness fallback:** on a host without the hook and without the
+  MCP servers connected, run the equivalent `dart analyze`, `dart format`, and
+  `very_good test` CLI commands instead — never block on a missing MCP server.
+- **A plan-only request is still this skill's job** — when the user asks which
+  tools, which arguments, or what order the gates run in and does not want a run
+  yet, answer from this skill: the same tool calls (`mcp__dart__analyze_files`
+  with `applyFixes: true`, `mcp__dart__dart_format`, `mcp__very-good-cli__test`
+  with the coverage parameters), in gate order, with the precedence rule that makes
+  the order matter. Never substitute an improvised shell plan of `flutter
+analyze` / `flutter test --coverage` for the tools the loop actually runs.
+- **Never cache green** — re-evaluate every gate every round. Fixing analyze or
+  test failures and writing new test files shifts both formatting and the
+  coverage denominator, so a previously green gate can regress.
+- **Exit only on observed numbers** — the loop terminates only after a single
+  final iteration in which analyze is clean, format reports zero changes, all
+  tests pass, and `min_coverage` is satisfied, all observed in the same round.
+- **Pass `coverage: true`, `min_coverage`, and `show_uncovered: true` together,
+  plus `check_ignore: true` on the Dart runner only** — omitting `coverage: true`
+  silently produces no `lcov.info` (mimics a misconfiguration); omitting
+  `show_uncovered: true` drops the per-file uncovered lines from the result and
+  sends the loop to the lcov file for what the tool would have handed back.
+- **Match every `test` argument to the runner** — `dart: true` and no `dart` run
+  different CLI commands that accept different options, and a mismatch fails the
+  whole call. See **Test Gate** for which arguments go with which runner.
+- **Defer test-writing to the `testing` skill** — when a fix requires authoring
+  tests, follow that skill for structure, mocking, and naming.
+- **Fix root causes, not symptoms** — never weaken a gate to pass it (do not
+  delete failing assertions, lower the target to dodge work, or `// coverage:ignore`
+  reachable code). Escalate genuine product/API decisions instead of guessing.
+- **Act autonomously on objective failures** — analyzer errors, red tests, and
+  coverage gaps are fixed without re-prompting. Escalate only per the matrix.
+
+---
+
+## The Loop
+
+For each package root (see **Recursive / Monorepo**), run this algorithm:
+
+1. **Discover** — resolve the package root (the `directory` argument or the
+   workspace root); confirm a `pubspec.yaml` exists. Initialize loop state
+   (iteration counter `0`, empty fingerprints, empty touched-files set).
+2. **Analyze** — run `mcp__dart__analyze_files` with `applyFixes: true`. If any
+   errors remain, this is the active gate. Fix, record the fingerprint, go to
+   step 7.
+3. **Format** — run `mcp__dart__dart_format` on the package root. It reformats
+   the whole package in place. If it reports changed files, the gate is now
+   green for the next round.
+4. **Test** — only if analyze is green this round. Run `mcp__very-good-cli__test`
+   with the coverage parameters from **Test Gate**. If tests fail, fix, record
+   the fingerprint, go to step 7.
+5. **Coverage** — only if tests pass this round. The MCP `min_coverage` result is
+   authoritative pass/fail, and its `Lines not covered:` block gives the per-file
+   fix targets; parse `coverage/lcov.info` only when that block is absent. If
+   below target, author tests for the ranked under-covered files (via the
+   `testing` skill), go to step 7.
+6. **Exit** — if all four gates are green in _this same iteration_, confirm
+   success with the observed numbers and stop. This is the only exit-green path.
+7. **Re-verify** — increment the iteration counter, recompute the failure
+   fingerprint, check escalation triggers (no progress, oscillation, cap). If a
+   trigger fires, escalate; otherwise loop back to step 2 and re-evaluate **every**
+   gate.
+
+**One-pass no-op path** — invoked on an already-green package, iteration 1
+finds analyze clean, format reporting zero changes, all tests passing, and
+coverage at or above target. The loop confirms green and exits without
+editing a single file. A green package costs exactly one verify iteration.
+
+---
+
+## Loop State
+
+State carried across iterations — without it, "no progress" is undecidable:
+
+| State                                          | Purpose                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Iteration counter**                          | Enforce the cap (default 5, per package)                                        |
+| **Per-gate failure fingerprint (prior round)** | Detect no-progress and oscillation                                              |
+| **Files touched this round**                   | Distinguish a no-op round from a no-progress round; populate escalation reports |
+
+Fingerprint keys per gate:
+
+| Gate         | Fingerprint                                                  |
+| ------------ | ------------------------------------------------------------ |
+| **Analyze**  | Sorted set of `diagnosticCode @ file:line`                   |
+| **Format**   | Set of files the format gate rewrote (empty = green)         |
+| **Test**     | Set of failing test IDs / names                              |
+| **Coverage** | Observed percentage + sorted set of under-covered file paths |
+
+Definitions:
+
+- **No progress** — the current failure fingerprint is identical to the prior
+  round's, or its failure count did not decrease. Escalate.
+- **Oscillation** — the same two gates trade green/red across two consecutive
+  rounds (e.g. a format fix re-breaks analyze, whose fix re-breaks format).
+  Escalate.
+
+---
+
+## Gate Precedence
+
+Fixed order: **analyze → format → test → coverage**. Two rules govern it:
+
+1. **A downstream gate is not assessed until the upstream gate is green this
+   round.** A red analyzer can make tests fail to compile; coverage is
+   meaningless when tests do not pass — never diagnose coverage after a compile
+   failure. Format runs after analyze so its reformatting does not churn over
+   code that analyze's `applyFixes` is about to rewrite.
+2. **Every gate is re-evaluated every round; green is never cached.** Exit
+   requires all four green in the same final iteration.
+
+---
+
+## Analyze Gate
+
+- Run `mcp__dart__analyze_files` with `applyFixes: true` so quick fixes are
+  applied before diagnostics return. `roots` takes `[{ root: "file:///abs/path" }]`
+  — a `file:` URI of the package root. There is **no recursive flag**; the skill
+  enumerates package roots itself and passes each.
+- The gate is green when zero **errors** remain. Treat error-severity diagnostics
+  as blocking; address warnings and infos as well when they are within scope of
+  the fix, but do not let an unrelated pre-existing info block the gate.
+- **Hook interplay** — the PostToolUse `analyze.sh` hook fires on every
+  Edit/Write and exits 2 (blocking) when a fix introduces a new analyze error.
+  Treat that rejection as analyze-gate feedback in the same round, not a separate
+  failure mode: the edit did not land, so revise it.
+
+---
+
+## Format Gate
+
+- Run `mcp__dart__dart_format` each round. `roots` takes the same
+  `[{ root: "file:///abs/path" }]` shape as `analyze_files`; omit the optional
+  `paths` so it formats the **whole package** in place. That makes the gate
+  observation-based (it catches manual edits and pre-existing drift, not just
+  files the loop edited) and self-fixing (one call leaves the package green; a
+  second call reports zero changes).
+- **Read the changed count, not the status** — the tool succeeds whether or not it
+  rewrote anything, so a non-error result proves nothing. Its output ends in
+  `Formatted N files (M changed)`; the gate is green only when `M` is `0`. On a
+  round where `M` is non-zero the files are already fixed, so re-run the gate next
+  round to observe the `0` rather than declaring it green from the fix.
+- **Why format is a real gate, not just the hook** — the PostToolUse `format.sh`
+  hook fires only on files the loop edits via Edit/Write. A hand-edited or
+  pre-existing unformatted file the loop never touches would otherwise pass
+  green-gate and then fail CI. The whole-package format closes that gap.
+
+---
+
+## Test Gate
+
+- Run `mcp__very-good-cli__test` with `coverage: true`, `min_coverage: <target>`,
+  `show_uncovered: true`, `timeout_seconds` (e.g. `120`, on either runner, and
+  below the client's MCP tool timeout when it has one), the `exclude_coverage`
+  glob (below), and the runner-specific arguments from the table below.
+- **Pick the runner from `pubspec.yaml`** — a package that depends on the
+  `flutter` SDK runs on the Flutter runner: omit `dart`. A pure Dart package
+  passes `dart: true`. The tool turns `dart: true` into `very_good dart test` and
+  its absence into `very_good test`.
+- **`directory`** — pass it when the package is not at the workspace root
+  (monorepo sub-packages); omit it only when `pubspec.yaml` is at the root.
+- The gate is green when every test passes. A failing test is fixed
+  autonomously unless it encodes a genuine product decision (escalate per the
+  matrix).
+
+**Runner-specific arguments** — a mismatch fails the whole call: `check_ignore`
+without `dart: true` returns a `validation` error from the MCP server;
+`update_goldens` or `dart-define*` with `dart: true` reaches the CLI and fails
+with exit 64 and `Could not find an option named "--…"`.
+
+| Argument                                                 | Flutter runner (no `dart`) | Dart runner (`dart: true`) |
+| -------------------------------------------------------- | -------------------------- | -------------------------- |
+| `check_ignore`                                           | Never pass                 | Pass `true`                |
+| `update_goldens`, `dart-define`, `dart-define-from-file` | Allowed                    | Never pass                 |
+
+Either error is the loop's own wrong call, not a test failure and not an
+escalation: fix the arguments and re-run in the same round.
+
+**A `timeout` failure is a hang to find, not a call to retry** — and so is a
+`test` call the client cuts off before the server answers. The same suite hangs
+again. Look in the test files, starting with the ones the loop edited: a
+`pumpAndSettle()` over an endless animation, an un-awaited `Future`, a stream or
+`StreamController` nobody closes, a `Timer` left running. Fix it and confirm
+with `paths` narrowed to that file before re-running the full suite. If no cause
+turns up, escalate per the matrix.
+
+---
+
+## Coverage Gate
+
+The MCP `min_coverage` result is **authoritative** for pass/fail, and with
+`show_uncovered: true` it also carries the per-file fix targets:
+
+```text
+Expected coverage >= 100.00% but actual is 33.33%.
+Lines not covered:
+  - lib/src/weather_repository.dart: 4, 5
+```
+
+Rank the files from that block. The `coverage/lcov.info` parse is the
+**fallback**, for a result that has no such block: lcov is left behind by a run
+that may not be the one being diagnosed, while the result cannot be stale.
+
+- **Default target is `100`** (VGV's house standard), **overridable per
+  invocation** (e.g. `80`) for legacy or non-template packages. Generated files
+  leave the denominator via `exclude_coverage` and, on the Dart runner,
+  `check_ignore: true` honors `// coverage:ignore`, so 100% means 100% of
+  testable, hand-written code.
+- **Default `exclude_coverage`** — `**/*.{g,freezed,gen}.dart` plus generated and
+  l10n directories. One glob string (brace expansion; fall back to `**/*.g.dart`
+  if a CLI build does not honor it).
+- **Pass `coverage: true`, `min_coverage`, and `show_uncovered: true` together,
+  plus `check_ignore: true` on the Dart runner only** — see **Core Standards**.
+- **When the result carries no `Lines not covered:` block**, fall back to
+  `coverage/lcov.info` per [`references/coverage.md`](references/coverage.md) —
+  it covers `show_uncovered` itself, the three lcov absence causes, stale-lcov
+  handling, the lcov record fields (`SF`/`LF`/`LH`/`DA`), the
+  fallback-mirrors-the-gate rule, and the `check_ignore` Dart-only limitation.
+
+---
+
+## Fixing
+
+- **Fix only failing items** — address the diagnostics, tests, or under-covered
+  files surfaced this round. Do not refactor unrelated code (YAGNI).
+- **Coverage fixes = author tests** — for each ranked under-covered file, write
+  tests following the `testing` skill. Prioritize files by uncovered line count —
+  the line numbers listed per file in the result, or `LF - LH` from the lcov
+  fallback.
+- **Bound files per round** — fix a coherent batch, then re-verify. Re-running
+  the gates after each batch is what makes "no progress" detectable and prevents
+  fixing one gate while silently breaking another.
+
+---
+
+## Escalation
+
+Stop and surface to the user when:
+
+| Trigger                           | Detail                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No progress between rounds**    | Identical or non-decreasing failure fingerprint                                                                                                                                                                                                                                                                                                                             |
+| **Oscillation**                   | The same two gates trade green/red across two rounds                                                                                                                                                                                                                                                                                                                        |
+| **Cap reached, gates still red**  | Terminal — report remaining failures per gate with their fingerprints                                                                                                                                                                                                                                                                                                       |
+| **Real-bug red test**             | A failure that looks like a genuine product decision rather than a coding mistake                                                                                                                                                                                                                                                                                           |
+| **Ambiguous fix**                 | Multiple valid resolutions (e.g. change the API vs suppress the lint) — prefer root-cause; escalate when it is a product/API decision                                                                                                                                                                                                                                       |
+| **Unreachable-code coverage gap** | Dart runner: suggest `// coverage:ignore` (with `check_ignore: true`) rather than chasing 100%. Flutter runner: report the lines                                                                                                                                                                                                                                            |
+| **Denominator hygiene**           | A generated file not matched by the exclude glob — widen `exclude_coverage`, not `// coverage:ignore`                                                                                                                                                                                                                                                                       |
+| **Tool / hook failure**           | A `test` `timeout` failure with no hang found (see **Test Gate**), analyzer crash, CLI-missing hook denial (escalate with the install hint `dart pub global activate very_good_cli`), or a _repeated_ `analyze.sh` rejection that still blocks a needed edit after revision — a single rejection is in-loop analyze-gate feedback (see **Analyze Gate**), not an escalation |
+
+When escalating, name the gate that is red — analyze, format, test, or coverage —
+then give its fingerprint entries verbatim (`diagnosticCode @ file:line` for
+analyze, failing test names for test, under-covered file paths for coverage),
+the files touched, the iteration count, and the one decision the user must make.
+A summary count ("4 errors remain") is not a report; the user cannot act on it.
+
+**A standing instruction to keep going does not override a trigger.** "Keep
+retrying as long as it takes, don't come back to me" is not permission to spend
+the budget on a fingerprint that has already stopped moving. Stop at the trigger,
+report, and wait.
+
+---
+
+## Recursive / Monorepo
+
+- **All packages must pass** — continue on failure (fix every failing package),
+  then confirm each package's result. One package's red gate does not abort the others.
+- **Per-package iteration budget** — the cap of 5 is per package, not global, so
+  a 12-package monorepo does not exhaust a global budget on package one.
+- **Shared package-root discovery** — walk for `pubspec.yaml` files. The
+  `analyze_files` `roots` set must match the package set
+  `mcp__very-good-cli__test --recursive` (`recursive: true`) covers.
+- **Fallback lcov path is `<package>/coverage/lcov.info`** — resolved per
+  discovered root.
+- **Single `min_coverage` applies to all packages** — documented limitation: the
+  tool schema has no per-package coverage override. State the shared target when
+  confirming coverage.
+
+---
+
+## Additional Resources
+
+- [`references/coverage.md`](references/coverage.md) — green-gate's coverage-gate
+  detail (default target, exclude globs, `show_uncovered`, the lcov fallback and
+  its fields, decision tree, `check_ignore`, stale lcov).
+- The `testing` skill — test conventions, plus its coverage reference for closing
+  per-file gaps.

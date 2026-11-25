@@ -1,0 +1,68 @@
+---
+name: cold-offer-architect
+description: >-
+  Builds or audits the offer behind cold outreach, scoring it against eight criteria with evidence
+  before any copy is written. Use when cold email, DM or ad replies are low, nobody is booking,
+  the user asks what to offer or to score an offer, or copy changes did nothing. Not for writing
+  the email itself (use cold-email).
+metadata:
+  version: 1.0.0
+  adapted_from: swan-gtm/tanyo-gochev/cold-offer-architect
+---
+
+Applies before copy, not after. Produces an offer architected as a deal, plus an evidence-aware score against the eight criteria below.
+
+## Fix in this order, or you'll rewrite copy forever
+
+**Market → offer → copy → list → volume.** When something isn't working, work down that list and stop at the first thing that's broken. Almost every "our cold email isn't working" problem is an offer problem being treated as a copy problem, which is why the rewrite never helps.
+
+Evaluate the offer alongside audience fit, delivery evidence and copy. Treat relative impact as a hypothesis to test in the campaign, not a universal ranking.
+
+## An offer is not an opener
+
+"Worth a quick call?" · "Can I send it over?" · "Open to a chat?" — those ask for interest in exchange for nothing the reader can value yet. They are openers.
+
+An **offer** is a complete value-for-value deal: a specific outcome they already want, a mechanism that makes it believable, the risk moved off them, and the terms. **Architect the deal first. The message is only the vehicle that delivers it.** Write the email before the deal exists and you will produce a polite opener every single time.
+
+## The review — eight criteria with evidence status
+
+Score each criterion pass, fail, or unknown with supporting evidence. Do not average away a material gap. Separate a useful draft from a verified offer ready for use; criteria are design prompts, not a license to fabricate proof or guarantees.
+
+| # | Criterion | A "no" looks like |
+|---|---|---|
+| 1 | Specific, quantified, time-bound outcome | "more pipeline", "better data" — no number, no clock |
+| 2 | Believable mechanism | A skeptic can't see why this works, or why *you* |
+| 3 | Risk sits on the seller | The buyer spends money, time, or face to find out |
+| 4 | Near-zero effort for the prospect | **A meeting before any value lands — that meeting *is* the effort** |
+| 5 | A reason why it's this good | Generosity with no explanation reads as a trick |
+| 6 | Proof embedded, not deferred | "Happy to send a case study" — deferring the one thing that earns belief |
+| 7 | Leads with them | The first line contains "we are / we do / we help" |
+| 8 | Meaningful value within delivery capacity | A trivial offer, or a promise the seller cannot sustainably fulfill |
+
+A soft "want it?" opener typically fails 1, 3, and 8 at once. That's why it feels weak even when the writing is clean.
+
+When a criterion fails, pull its lever and re-score — the ladders for risk, proof, effort, and specificity are in `references/amplification-ladders.md`. To find which criterion is causing a live campaign to die, work the symptom table in `references/diagnose-a-dead-offer.md`.
+
+## The forcing loop
+
+Architect the deal → score the evidence → make one justified refinement → re-score. If proof, authority, capacity or other inputs are missing, stop the loop and present a clearly labeled provisional draft, unresolved criteria and a bounded validation plan. Do not claim it is ready to send. A pre-revenue team can propose a pilot or diagnostic deliverable without inventing a past result. A quantified delivery commitment is not a guaranteed business outcome; use only commitments the seller can defend and is authorized to make.
+
+## What good looks like
+
+The tell of a good operator: they can name which of the eight is currently weakest without being asked, and they treat offers like ad creative — many, tested, killed fast — rather than as a brand decision made once.
+
+The mediocre version is a well-written email around a hollow deal: correct structure, real personalization, a polite ask, and a value proposition the reader has no reason to believe or care about. It gets praised internally and produces nothing.
+
+Good output makes a *fitting stranger* think one of: "this is a no-brainer", "I'd be an idiot to pass", or "what's the catch?" — and the catch is answered inside the offer. If your ideal prospect could comfortably ignore it, it isn't done.
+
+## Rules
+
+- MUST architect the deal before writing any message.
+- Embed verified proof when available, with permission for named comparables. If proof is missing, state the gap and propose a validation step; never invent a number or testimonial.
+- MUST deliver value before asking for a meeting, never the reverse.
+- Present incomplete offers only as provisional drafts with explicit failed or unknown criteria and the evidence needed to resolve them.
+- NEVER promise an outcome you can't defend, and never invent a number to pass criterion 1.
+
+---
+
+*Adapted from [swan-gtm/gtm-skills](https://github.com/swan-gtm/gtm-skills) (`tanyo-gochev/cold-offer-architect`), MIT.*

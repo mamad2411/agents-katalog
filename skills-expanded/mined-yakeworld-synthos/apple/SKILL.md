@@ -1,0 +1,112 @@
+---
+name: apple
+description: apple
+version: 1.0.0
+category: apple
+signature: 'apple -> apple: Apple生态工具链 — macOS/iOS设备管理、提醒事项、备忘录、查找设备。'
+author: Synthos
+license: MIT
+triggers:
+- 需要执行apple下的子技能
+metadata:
+  synthos:
+    priority: P2
+    atom_type: parent-skill
+    description: 父级技能 — Apple生态工具链 — macOS/iOS设备管理、提醒事项、备忘录、查找设备。
+    signature: 'apple -> sub-skills: [apple-notes, apple-reminders, findmy]'
+    related_skills:
+    - apple-notes
+    - apple-reminders
+    - findmy
+    - imessage
+    - macos-computer-use
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `request: str, context: dict` — 用户请求描述、上下文信息
+- **output**: `result: dict — 技能执行结果（结构因技能而异）`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# apple
+
+> 父级技能目录，包含 5 个子技能。
+> 子技能通过Hermes技能加载机制自动发现，无需显式调用。
+
+## 子技能
+
+- `apple-notes`
+- `apple-reminders`
+- `findmy`
+- `imessage`
+- `macos-computer-use`
+
+## 使用方式
+
+直接调用子技能名称即可：
+
+## 验证清单 · VERIFICATION
+
+- [ ] 子技能路由正确：用户请求已映射到 apple-notes / apple-reminders / findmy / imessage / macos-computer-use 之一，而非在父级直接执行（APPL-001）
+- [ ] 子技能调用方式正确：通过 `skill_view(name='...')` 加载子技能执行，父级仅作目录索引
+- [ ] 请求参数符合子技能 IO_CONTRACT：传入的 request/context 被完整转交，无父级吞并
+- [ ] 结果归属正确：返回结果由被调用子技能产生并符合其 output 契约，非父级伪造
+- [ ] 失败时有恢复指引：子技能报错时错误信息包含上下文（哪个子技能、哪一步）和恢复建议（APPL-003）
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+```
+skill_view(name='apple-notes')  # 加载第一个子技能
+```
+
+父级SKILL.md仅作为目录索引，实际执行由子技能完成。
+
+# Apple
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[APPL-001]** 涉及 Apple 生态操作 → 优先通过 Hermes 机制自动发现并调用对应子技能（如 apple-notes, findmy），而非在父级直接执行
+- **[APPL-002]** 执行核心操作前 → 必须确认输入参数（request, context）完整且符合 IO_CONTRACT 规范
+- **[APPL-003]** 处理异常或失败场景 → 错误信息必须包含具体上下文和明确的恢复指引，禁止仅返回通用错误
+- **[APPL-004]** 验证输出结果 → 需同时检查格式一致性、内容预期符合度及边界条件（空输入/极大值）的处理
+- **[APPL-005]** 执行未验证的代码或操作 → 必须拒绝或隔离，严禁暴露内部状态以遵守安全约束
+- **[APPL-006]** 进行技能改进或测试 → 必须以 Golden 集合（Input/Output/Error）为单一真理来源，确保所有变更通过 golden 测试

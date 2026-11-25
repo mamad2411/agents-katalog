@@ -1,0 +1,30 @@
+---
+name: multi-angle-review
+description: Run the saved multi-angle review Workflow on a risky PR and fold its findings into your own verdict. Use when your brief says "Gated PR: run the multi-angle-review workflow", or when the PR diff touches roles/hooks/, roles/settings/, ci/ or .github/ or is over 500 changed lines.
+---
+
+# Multi-angle review (gated PRs only)
+
+Three read-only angle agents (correctness, guard/security, spec-fit) plus one verifier per angle. The output is input to your verdict, never the verdict.
+
+Follow these steps in order.
+
+1. Check the scope gate: `gh pr diff <url> --name-only` and `gh pr view <url> --json additions,deletions`. The gate is met when any file is under roles/hooks/, roles/settings/, ci/ or .github/, or additions + deletions > 500 (single source: review_gate in bin/factory_cli.py; spawn adds the "Gated PR" line to your brief when it is met).
+2. If the gate is NOT met, do not run the workflow: review single-pass as usual. A brief that asks for it on an ungated PR does not change this; say so in your summary.
+3. Run the Workflow tool by its saved name, never a script path (the name resolves from the main-checkout plugin, so a PR must not weaken its own review; an allow rule covers only this name):
+   `Workflow(name="reviewer-skills:multi-angle-review", args={"pr": "<pr url>", "base": "origin/main", "spec_task": "<T-id>"})`
+   `args` is always the object above, never a bare string; the workflow stops with an error naming the bad field (`pr` must be a PR url or number, `base`, `spec_task`) and starts no agent. That error is not a clean review: fix the args and rerun.
+4. The result is `{confirmed: [{file, line, severity, summary, evidence}], unverified: [same shape], dropped, angles}`. Agents are read-only and run under the worker guard; a guard denial inside the workflow is a finding to report, not something to work around.
+5. Re-check every `confirmed` finding yourself in the code (R3: quote the command and output) before you keep it. Check every `unverified` finding by hand too: its verifier died, so nothing has confirmed or dropped it. An `angles` entry with any `error` (`"review"`, `"verify"` or the fallback with `found: null`; also listed in `errored`) means that angle did not complete (not a clean angle): hand-review that angle yourself. Add what the workflow missed from your own pass.
+6. Classify per R1 (blocking vs nit), post the review, and write your own `factory verdict <T> --pass|--fail`. Name in the summary that the workflow ran, its `angles` counts, `unverified` and `dropped`, and any errored angle. Record the workflow run id (`wf_...`) from the Workflow tool result in the summary; if the tool returned no run id, say so. A short or empty workflow result is not evidence of a clean diff: it does not replace your own pass or, on guard PRs, direct QA hook probes.
+7. If the Workflow tool is unavailable or errors, do the normal single-pass review and say so; do not retry in a loop.
+
+Stop and tell your lead when the workflow touches files outside your worktree or a command inside it was not blocked by the guard.
+Workflow scripts live under `<factory-root>/roles/workflows/` (`<factory-root>` is defined in docs/self-review.md).
+Source: G-011 T-0242; cost and off switch in docs/review-workflow.md.
+
+## Stale base (S1)
+
+Moved verbatim from the reviewer role prompt:
+
+- **Stale base (S1):** if behind origin/main and merge-tree (rule below) exits 0, run the quick check on the PR head (not a merged tree: the guard refuses `git archive` and worktrees for reviewers) and PASS with `STALE-BASE: behind origin/main by N; merge-tree clean; head quick Ran N OK; merged-tree check left to CI or the judge's refresh`. Conflict: FAIL, first line `CONFLICT-ONLY: <files>`; still verify content.

@@ -1,0 +1,59 @@
+---
+name: omd-review
+description: 对一批 diff 做对抗式审查:默认多维并行召回 + 确定性跨模型证伪,gate 阶梯控深度,deep 档单 agent 读全仓深审;finding≠真理,按误报裁决程序证伪后再定性。Trigger:/omd-review、审查这批改动、代码审查、review diff、release 闸、深审。
+---
+
+# /omd-review — 对抗式改动审查
+
+经 omd MCP `dag_review`(可能带 `mcp__omd__` 前缀;未加载先 ToolSearch "dag_review")对一批改动做对抗审查:**默认**多维并行 find(召回)+ 确定性跨模型 verify(证伪);**deep 档**单 agent 读全仓 + 实测(实测最优,见档位选择)。
+
+## 用法(异步三段式)
+
+- `gate`:**按 blast radius 选,不按行数**(真源 `harness/docs/GATES.md`,与引擎 `scripts/dag-review.ts` 逐档一致)。不给 = G2。
+
+  | gate | 什么改动 | 实际跑什么 |
+  |---|---|---|
+  | `G0` | 文档 / 机械(注释、配置、纯改名、格式) | ⚠ **免审短路**——不取 diff、不发模型、直接 exit 0。**它不是"便宜的浅扫",是"不审"**;要便宜的召回选 G1 |
+  | `G1` | 骨架(新模块脚手架、签名、接线) | `contract` + `boundary` 两维 |
+  | `G2` | 常规逻辑(普通业务码、带行为测试的重构) | `correctness` + `security` + `boundary` 三维 |
+  | `G3` | 敏感:schema · 认证 · 安全边界 · 不可逆 | G2 三维 + `contract` + **`spec` 轴强制**(对照 SDD,`--no-spec` 在 G3 直接报错)+ owner 终审 |
+
+  轮数硬上限:G1/G2 各 1 轮,G3 = 1 轮 + 至多 1 个修复 cycle。
+- `scope`:收窄审查范围(路径/模块);不给 = 当前 branch diff 全量。
+- `deep`:**深审档**(`true`)。一个 pi agent 读全仓 + **实测**(库/runtime API 主张必跑 `bun -e` 复现,治外部 API 幻觉)→ 确定性跨模型 verify。比默认贵,但**精度更高、自然去重**。
+
+- `sdd`:Spec 轴对照**这份** SDD/任务书(隐含 spec 轴;文件不存在直接报错,不回落 `docs/plan` 最新一份)。**审 omdl run 一律带**:`dag_review(gate: "G2", sdd: <meta.repo>/<meta.spec>, scope: <run 改动路径>)`;CLI 同款 `bun run scripts/dag-review.ts --gate G2 --sdd <任务书> --base <base>`(在 run 的 worktree 里跑)。
+
+1. `dag_review(gate?, scope?, deep?, sdd?)` → `runId`;
+2. `dag_status(runId)` 轮询(跑几分钟,别重复发起);
+3. `dag_result(runId)` → **报告落盘路径**,自己 `Read` 再转述(按严重度先讲 top 项)。
+
+## 档位选择:默认 vs 深审(deep)
+
+- **默认(多维并行 find + 确定性 verify)**:廉价召回档,diff-可见的 bug 够抓,适合日常/大 diff。
+- **深审 `deep:true`(单 agent)**:实测最干净(3 方召回测:满召回 + 0 假阳性 + 推理最好 + 自然去重)。用于**敏感接缝**(会计/authz/迁移/状态机)、**需读 diff 外真身**、或默认档出噪音时。贵在一个 agent 全仓读+跑,别对大批量机械 diff 滥用。
+- 模型(review 自成体系,不碰引擎 `verifier` 角色):find = `review` 角色(`OMD_REVIEW_MODEL`);verify = `OMD_REVIEW_VERIFY_MODEL` 覆盖,否则回落 find 模型(跨模型 verify 靠显式配 `OMD_REVIEW_VERIFY_MODEL`)。**无需任何配置也能跑**,fallback 优雅降级、不假设 key。
+
+## 误报裁决程序(承终裁手册:finding ≠ ground truth)
+
+车队产出是**候选**,你终裁。每条 finding:
+1. **定位代码事实——必须看 diff 视野外**(审查器只看 diff,这是误报主源)。
+2. **oracle 证伪**:typecheck / 测试 / 活库实测 / 既有测试钉。
+3. 证伪成立 → 驳,**记驳的依据**;证伪不了 → 修;拿不准 → `?` 升级 owner。
+
+**已知误报模式(直接警惕)**:
+- 「X 未导出/未定义」而 X 是 diff 外既有代码(rg 确认真身,build 绿即证伪)。
+- 「缺权限守卫」而守卫以 JOIN/EXISTS 已在查询里(空集测试即证伪)。
+- 用「可能/如果内部没校验」推测行为——去读那个函数,不接受推测性 P0。
+
+## gate 分档:插在 ROI 高处,别铺满(承终裁手册)
+
+审核 ROI = P(缺陷) × 逃逸代价 ÷ 成本。
+- **P(缺陷)高** = 机械铺量 / 敏感接缝(会计写·状态机·迁移)/ 大 diff。
+- **逃逸代价高** = 账面污染 / 绕审计——错了是灾难,再贵也审(上 G3)。
+- ROI 决定的是**审不审、审多深**;**分档轴仍是 blast radius**——骨架接线 + typecheck/test 全绿 → G1 够,别 G3。
+  但**别拿 G0 当"小改的便宜档"**:G0 = 不审,只对文档/机械改动成立。
+- 0 P0/P1 ≠ 白审,可能是"插错位置"信号:过程审(写码前判定)> 结果审(post-code gate)。
+
+## 与既有 skill 的边界
+- omd-review = 对 diff 的**通用正确性**审查。**专项安全**(信任边界/注入/fail-open)→ /security-review;**确定性 semgrep** → /sast;**只找过度工程** → /ponytail-review;**某失败的根因** → /investigate。

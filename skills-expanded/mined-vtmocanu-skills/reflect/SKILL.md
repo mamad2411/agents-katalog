@@ -1,0 +1,143 @@
+---
+name: reflect
+description: Analyze the current session and improve the whole source skill package based on what worked, what failed, and edge cases discovered, including SKILL.md, bundled scripts, tests, references, templates, assets, and hooks. Use when the user says "reflect", "improve skill", "learn from this", "update the skill", or at the end of skill-heavy sessions. Supports targeting a skill with /reflect [skill-name] or auto-detecting which skills were used.
+---
+
+# Reflect
+
+Analyze the current session and turn what was learned into concrete edits to the skill's authored source package. A skill is the whole folder, not only `SKILL.md`.
+
+## Workflow
+
+### 1. Identify the Skill
+
+**Auto-detect** which skills were used by scanning the conversation for:
+
+- `<command-name>/skill-name</command-name>` tags
+- Reads of a skill's source file (a `SKILL.md` or `<skill-name>.md` in a skills directory)
+
+If a skill name was provided as an argument, use that directly.
+
+If multiple skills were detected, ask which to analyze. If none were detected and no argument was given, list the available skills and ask.
+
+An installed skill's source repository is recorded in the skills lockfile: `~/.agents/.skill-lock.json` for global installs, `<project-root>/skills-lock.json` for project installs. Use it to find the skill's source package in the matching local checkout before proposing or applying edits (different skills may live in different repositories).
+
+After locating the authored source, inventory the package before deciding what to change: `SKILL.md`, `scripts/`, script tests, `references/`, `templates/`, `assets/`, hooks, manifests, and package-specific validation. Check git status first. Existing dirty work belongs to someone else unless proven otherwise; do not overwrite or silently absorb it.
+
+Resolve the selected checkout's git root, remote URL, and current branch with
+read-only commands. Show all three in the proposed-change summary and ask the
+user to confirm that exact publication target before editing. A stale
+`source:` path, unexpected remote, detached HEAD, or missing confirmation stops
+the apply phase; do not infer the intended repository from the skill name.
+
+### 2. Analyze the Conversation
+
+Scan the conversation for these signals:
+
+| Signal | Confidence | What to look for |
+|--------|-----------|-------------------|
+| **Corrections** | HIGH | User said "no", "not like that", "I meant..."; explicitly corrected output; asked for changes immediately after generation |
+| **Successes** | MEDIUM | User said "perfect", "great", "exactly"; accepted output without modification; built on top of the output |
+| **Edge Cases** | MEDIUM | Questions the skill didn't anticipate; scenarios requiring workarounds; features not covered |
+| **Preferences** | LOW | Repeated patterns in user choices; implicit style/tool preferences |
+| **Trigger misfire** | HIGH | The skill should have fired but didn't, or the wrong skill fired for the request (a `description`/trigger problem, not a body problem) |
+
+**Do not capture** as skill changes: one-off or context-specific instructions ("just this time", "only in this repo"), questions, vague praise with no identifiable cause, or anything that would not generalize to future runs. Reflect durable, generalizable signals only.
+
+Route each signal to the resource that owns the behavior:
+
+- Runtime or transformation defect: inspect and change the bundled script or hook, and add a regression test. Do not paper over executable behavior with prompt text.
+- Usage, ordering, safety, or trigger defect: change `SKILL.md` or its `description`.
+- Detailed factual guidance: change the owning reference; update `SKILL.md` only when routing or the public contract changes.
+- Template/asset defect: change the source template/asset and the validation that covers it.
+- CLI or output contract change: update implementation, tests, `SKILL.md`, and affected references together.
+
+Read only the relevant bundled resources, but read every file needed to understand and verify the selected behavior.
+
+### 3. Propose Changes
+
+A change can target any authored package resource. Pick the smallest coherent set the evidence points to. A script fix without its regression test is incomplete; a changed user-facing command without its skill/reference update is incomplete.
+
+If no actionable signals are found, report that the skill performed well and end:
+
+> No improvements identified for [skill-name]. The skill performed well in this session.
+
+Otherwise, present findings:
+
+```
++-- Skill Reflection: [skill-name] ----------------------------+
+|                                                               |
+|  Signals: X corrections, Y successes, Z edge cases           |
+|                                                               |
+|  Proposed changes:                                            |
+|                                                               |
+|  [HIGH] + Files: "specific change description"                |
+|  [MED]  + Files: "specific change description"                |
+|  [LOW]  ~ Note: "observation for review"                      |
+|                                                               |
+|  Target: "<git root> | <remote> | <branch>"                   |
+|                                                               |
+|  Validation: "tests/lint/commands to run"                     |
+|                                                               |
+|  Commit: "[skill]: [summary of changes]"                      |
+|                                                               |
++---------------------------------------------------------------+
+
+Apply these changes? [Y/n] or describe tweaks
+```
+
+### 4. Apply (if approved)
+
+1. Locate the authored source package; show and obtain confirmation of its git root, remote, and branch; then recheck its git status. Stop and ask if the target is not confirmed or existing changes overlap.
+2. Read `SKILL.md`, inventory the package, and read the relevant implementation/resources/tests completely.
+3. Apply the approved changes to every owning source file. Preserve unrelated work.
+4. Run the package's focused tests plus its documented skill lint/validation. A script behavior change requires a regression that fails on the old behavior and passes on the fix.
+5. Review the final package diff. Immediately before commit/push, re-resolve and show the git root, remote, and branch and ask the user to reconfirm that same target. Stop if any value changed or confirmation is absent. Commit only the intended files and push to the confirmed source repository.
+6. Confirm: "Skill package updated, tested, and pushed."
+
+If declined, acknowledge and end.
+
+### 5. Consolidate (when the skill is getting bloated)
+
+Reflection should not only add. When the package has grown long or accumulated overlapping guidance/resources (for `SKILL.md`, a rough signal is more than 100 lines), do a consolidation pass:
+
+- Merge duplicate or near-duplicate entries into one.
+- Remove guidance that is outdated or superseded by a newer entry.
+- Regroup related points under the right section.
+- Remove or merge obsolete scripts, references, templates, tests, and assets only when their consumers and removal path are proven.
+
+Present it through the same propose/approve flow (Steps 3-4). A net reduction in length is a good outcome.
+
+## Example
+
+User runs `/reflect` after a frontend-design session where they corrected gradient usage and dark background colors:
+
+```
++-- Skill Reflection: frontend-design -------------------------+
+|                                                               |
+|  Signals: 2 corrections, 3 successes                         |
+|                                                               |
+|  Proposed changes:                                            |
+|                                                               |
+|  [HIGH] + Constraints: "Never use gradients unless            |
+|           explicitly requested"                               |
+|  [HIGH] + Color & Theme: "Dark backgrounds: use #000,         |
+|           not #1a1a1a"                                        |
+|  [MED]  + Layout: "Prefer CSS Grid for card layouts"          |
+|                                                               |
+|  Commit: "frontend-design: no gradients, #000 dark bg"        |
+|                                                               |
++---------------------------------------------------------------+
+
+Apply these changes? [Y/n] or describe tweaks
+```
+
+## Constraints
+
+- Always show the exact proposed changes before applying.
+- Never modify a skill package without explicit user approval.
+- Push only after a successful commit.
+- Edit the authored source package in its repository, never a generated/installed copy in an agent's skills directory (it is overwritten on refresh).
+- Add or update regression tests for script, hook, parser, transformation, or output-contract changes.
+- Update instructions/references whenever executable behavior or CLI usage changes.
+- Prefer editing or merging existing resources over appending parallel guidance; keep the package tight.

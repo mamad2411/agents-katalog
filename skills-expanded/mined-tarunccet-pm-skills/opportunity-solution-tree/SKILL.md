@@ -1,0 +1,80 @@
+---
+name: opportunity-solution-tree
+description: "Build an Opportunity Solution Tree (OST) to structure product discovery — map a desired outcome to opportunities, solutions, and experiments. Based on Teresa Torres' Continuous Discovery Habits. Use when structuring discovery work, mapping opportunities to solutions, or deciding what to build next."
+---
+
+## Opportunity Solution Tree (OST)
+
+A visual framework for structuring continuous product discovery. Connects a desired **outcome** to customer **opportunities**, possible **solutions**, and **experiments** to validate them.
+
+### What You'll Need
+| Input | Required? | Example |
+|-------|-----------|---------|
+| Desired outcome (measurable) | ✅ Required | "Increase 7-day retention from 28% to 40%" |
+| Product description | ✅ Required | B2B collaboration tool, enterprise segment |
+| Customer research / known pain points | 🟡 Recommended | Interview themes, NPS feedback, churn exit surveys |
+| Existing solution ideas to evaluate | ⚪ Optional | Feature backlog, team ideas |
+
+> **Don't have everything?** Start anyway — the skill will work with what you provide and flag where richer input would improve the output.
+
+### Domain Context
+
+The **Opportunity Solution Tree** (Teresa Torres, *Continuous Discovery Habits*) is the backbone of modern product discovery. It prevents teams from jumping to solutions by forcing them to first map the opportunity space.
+
+**Structure (4 levels):**
+
+1. **Desired Outcome** (top) — The measurable business or product outcome the team is pursuing. Should be a single, clear metric (e.g., "increase 7-day retention to 40%"). This comes from your OKRs or product strategy.
+
+2. **Opportunities** (second level) — Customer needs, pain points, or desires discovered through research. These are problems worth solving — not features. Frame them from the customer's perspective: "I struggle to..." or "I wish I could..." Prioritize using Opportunity Score: **Importance × (1 − Satisfaction)** (Dan Olsen, *The Lean Product Playbook*). Normalize Importance and Satisfaction to 0–1.
+
+3. **Solutions** (third level) — Possible ways to address each opportunity. Generate multiple solutions per opportunity — don't commit to the first idea. The **Product Trio** (PM + Designer + Engineer) should ideate together. "Best ideas often come from engineers."
+
+4. **Experiments** (bottom) — Fast, cheap tests to validate whether a solution actually addresses the opportunity. Use assumption testing (Value, Usability, Viability, Feasibility risks). Prefer experiments with "skin-in-the-game" (Alberto Savoia) over opinion-based validation.
+
+**Key principles:**
+
+- **One outcome at a time.** Don't try to solve everything. Focus the tree on a single desired outcome.
+- **Opportunities, not features.** "Never allow customers to design solutions. Prioritize opportunities (problems), not features."
+- **Compare and contrast.** Always generate at least 3 solutions per opportunity before choosing. Avoid the "first idea" trap.
+- **Discovery is not linear.** Loop back if experiments fail. Kill solutions that don't validate. Explore new branches.
+- **Continuous, not periodic.** Update the tree weekly as you learn from interviews, analytics, and experiments.
+
+### Instructions
+
+You are helping a product team build an Opportunity Solution Tree for **$ARGUMENTS**.
+
+### Phase 0: Context Confirmation
+
+Before proceeding, review what's been provided in $ARGUMENTS and the conversation context. **Only ask about what's missing — don't re-ask what's already clear.**
+
+1. **Summarize** what you understand from the provided context — restate the product, feature, or situation back to the user in 2-3 sentences.
+2. **Identify gaps** — if any of the following are unclear, ask:
+   - What is the desired outcome (the metric the team owns)?
+   - What research data is available (interview transcripts, survey data, analytics)?
+   - Has opportunity mapping been done before for this area?
+3. **Confirm**: _"Here's my understanding: [summary]. I plan to [brief description of what the skill will produce]. Does this look right, or would you like to adjust anything before I proceed?"_
+
+If the user provides additional context, incorporate it. If the user confirms, proceed.
+
+### Input Requirements
+- A desired outcome or business metric to improve
+- Customer research data (interviews, surveys, analytics, feedback)
+- Optionally: existing opportunities or solution ideas to organize
+
+### Process
+
+1. **Define the desired outcome** — Confirm or help articulate a single, measurable outcome at the top of the tree.
+
+2. **Map opportunities** — From provided research, identify 3-7 customer opportunities (needs/pains). Group related opportunities. Frame each from the customer's perspective.
+
+3. **Prioritize opportunities** — Use Opportunity Score or qualitative assessment to rank. Focus on the top 2-3.
+
+4. **Generate solutions** — For each prioritized opportunity, brainstorm 3+ solutions from PM, Designer, and Engineer perspectives.
+
+5. **Design experiments** — For the most promising solutions, suggest 1-2 fast experiments. Specify: hypothesis, method, metric, success threshold.
+
+6. **Visualize the tree** — Present the full OST in a clear hierarchical format.
+
+Think step by step. Save as markdown if substantial.
+
+---

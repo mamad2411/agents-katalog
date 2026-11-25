@@ -1,0 +1,233 @@
+---
+name: agent-harness
+description: >-
+  Use when deciding an agent's system prompt and tools, not how its loop is wired:
+  system prompt, tool choice, workflow or agent, harness audits. Triggers: "system prompt" /
+  "системный промпт", "аудит промпта и инструментов агента". Not for the loop
+  (agent-orchestrator), evals (agent-evals) or protocols (agent-interop).
+license: MIT
+compatibility: >-
+  The bundled scripts run with python3 (standard library only); no network or
+  package install. References need no runtime dependencies.
+---
+
+# Agent harness — what the agent is told, and how to audit what someone else told theirs
+
+`agent-orchestrator` wires the loop. `agent-evals` proves it behaves. `agent-interop` gets
+it talking to other processes. **This skill is the layer between them and the model: the
+prompt, the tools, and the choice of technique.** Harness engineering includes
+context management as well as instructions. Its effect depends on the task,
+model and evaluation; benchmark gains do not establish a universal improvement.
+
+It runs in both directions. Building one and auditing one are the same checklist read
+forwards and backwards, which is why they live together here.
+
+---
+
+## Triggers
+
+"tool description", "agent loops forever", "prompt engineering", "harness engineering", "ReAct loop", "react pattern", "static or dynamic", "embed an agent", "agent SDK", "Pi harness", "встроить агента", "аудит системного промпта агента".
+
+Moved here from the description in 0.31.3: "agent picks the wrong tool", "агент не
+вызывает тул", "audit this agent".
+
+## Rule zero — check the prompt first (a diagnostic heuristic, with exceptions)
+
+For failures in tool selection or usage, inspect instructions and descriptions
+before adding architecture. [Anthropic's tool guidance](https://www.anthropic.com/engineering/writing-tools-for-agents)
+(read 2026-10-09) supports evaluating description changes; it is **not a measured
+share of defects**. This orders the diagnosis, never the verdict. **The exceptions
+are findings a prompt cannot touch:** a deterministic race, a hardcoded secret,
+a timeout wired to the wrong operation — source-level invariant violations are
+code bugs, and no rewording treats them.
+
+Before adding a retry, a router, or a sub-agent, check in this order:
+
+1. **Does the tool description say when to use it, not just what it does?**
+2. **Does the system prompt name the vocabulary?** An agent told to track status will invent
+   `pending` and `to-do` and `done` and `completed` in the same run unless the allowed values
+   are enumerated.
+3. **Does the agent know today's date?** A model with a training cutoff will answer from
+   memory rather than search unless the current date is injected.
+4. **Is the instruction flexible where it should be strict?** *"Use the tools in the order
+   that makes most sense to you"* is right while you are learning the task and wrong in
+   production, where *"you MUST execute a web search for each task"* is what stops a step
+   from being skipped.
+
+Only then reach for architecture. Reaching for it first is how a prompt defect becomes a
+permanent structural cost.
+
+---
+
+## Workflow or agent — decide this before anything else
+
+An **agent** dynamically directs its own process. A **workflow** follows predefined code
+paths. The choice is not about sophistication; it is about whether the number of steps is
+knowable in advance.
+
+| Build a workflow when | Build an agent when |
+|---|---|
+| requirements are clear and stable | the task is open-ended or exploratory |
+| predictability and explicit control matter | flexibility outweighs predictability |
+| debugging and cost control are priorities | adaptive reasoning across variables is needed |
+| you can name every step now | step count is unpredictable and cannot be hardcoded |
+
+**Start at the simplest thing that works, and stop there.** An agent adds latency, cost and
+a class of failure a workflow does not have — it needs *trust in its own decisions*. Pay for
+that only where a fixed path genuinely cannot be written.
+
+### The five workflow patterns, before you reach for autonomy
+
+| Pattern | Shape | Reach for it when |
+|---|---|---|
+| **Prompt chaining** | sequential calls, each on the last output, with programmatic checks between | the task decomposes into fixed steps — outline then draft, draft then translate |
+| **Routing** | classify the input, send it to a specialist | categories are distinct and each wants its own prompt |
+| **Parallelization** | *sectioning* (independent subtasks at once) or *voting* (same task N times) | subtasks are independent, or confidence needs more than one sample |
+| **Orchestrator–workers** | a central model decomposes and delegates, then synthesizes | the subtasks **cannot be predefined** — this is the honest boundary with routing |
+| **Evaluator–optimizer** | one model produces, another critiques, loop | clear evaluation criteria exist and iteration measurably helps |
+
+**Orchestrator–workers versus routing is the distinction people get wrong.** Routing picks
+from a known set. Orchestration invents the set per request. If you can enumerate the
+branches, you wanted routing and it is cheaper.
+
+### Static or dynamic — the second question, and it is not the same one
+
+Having chosen a workflow, one thing is still open: **is its shape known before it runs?**
+A **static** graph has every node and edge decided up front; a **dynamic** one grows as
+nodes read their own output and decide what comes next.
+
+**Static first, always** — go dynamic only after the static version hits a wall you can
+name, because dynamic is more powerful and much harder to control. But **auditability is
+NOT the same axis as static structure** — that conflates the plan drawn beforehand with
+the execution graph saved afterward. A run is auditable when its EXECUTION RECORD is
+complete: every node, edge and event that actually ran, the policy version in force, and
+deterministic bounds (budget / depth / node caps) with provenance. A static graph is the
+PREFERENCE because its executed shape usually matches the drawn one; a dynamic graph is
+auditable too when it keeps that record within those caps. What is never evidence is a
+design DIAGRAM on its own — *"here is what I planned"* is not *"here is what happened"*,
+in either mode.
+
+The six-row table, the rest of the model — the fake-edge test, the diamond, the checker
+node before a convergence — and what a host actually executes when it fans out are one
+home away: `agent-orchestrator/references/graph-engineering.md`. It is not restated here,
+because a decision table with two homes is one that will disagree with itself.
+---
+
+## References
+
+Each opens with its own **Load this when** line and a revision stamp — this material moves,
+and this pack's repository validator fails the build on a reference that does not say when it was read.
+
+| File | Read it when |
+|---|---|
+| [`references/context-lifecycle.md`](references/context-lifecycle.md) | stale context, conflicting retrieved notes, or research promoted into skill guidance — current pointers, archive boundaries and source admission |
+| [`references/instruction-budget.md`](references/instruction-budget.md) | instruction files overflow, duplicate each other, or need splitting without losing requirements; includes an explicit-input measurement script |
+| [`references/system-prompt.md`](references/system-prompt.md) | you are **writing or fixing the prompt** — altitude, structure, vocabulary, dynamic context, and what changes for reasoning models |
+| [`references/tools.md`](references/tools.md) | the model **picks the wrong tool, or none** — the agent–computer interface: how many, named how, described how, returning what |
+| [`references/techniques.md`](references/techniques.md) | you are choosing between **ReAct, reflection, voting, planning** and the rest — every entry carries a verdict for production, not a benchmark score |
+| [`references/workbench-contracts.md`](references/workbench-contracts.md) | assembling a **harness around an existing agent** — install ownership, bounded hooks, handoff, artifact-bound evidence and observation limits; selective ECC methods |
+| [`references/layers.md`](references/layers.md) | deciding **what your harness owns** — kernel, workbench and product layers, and why permission boundaries are usually somebody else's job |
+| [`references/audit.md`](references/audit.md) | reviewing **an agent system you did not build** — seven tracks, evidence tiers, and a prioritized plan |
+| [`references/pi.md`](references/pi.md) | you want the doctrine above as a **worked implementation** — Pi's sessions, compaction, config, skills, trust and containerization, each matched to the rule it implements, and the places it deliberately disagrees |
+| [`references/pi-sdk.md`](references/pi-sdk.md) | you are **embedding or extending** a harness — the SDK, the RPC protocol, JSON mode, and the eight extension seams where a permission gate, a context rewrite or a cost hook can actually live |
+
+**`scripts/audit_agent.py`** — the mechanical half of the audit. It finds what is visible
+without understanding intent (an unbounded loop, a tool with no description, a swallowed
+tool error, a hardcoded model, a missing timeout) and **prints the list of things it cannot
+see**, so its silence is never read as a pass.
+
+**Instruction cleanup gotcha:** an eager `@file` import reorganizes text but does
+not save its runtime context cost. Keep essential rules loaded, move optional
+detail behind explicit task triggers, and verify the fresh host load separately
+from file-size measurements (`references/instruction-budget.md`).
+
+---
+
+## Auditing an agent system — the short version
+
+The long version is `references/audit.md`. The shape:
+
+1. **Run the scanner first.** It is cheap, and its blind-spot list tells you what the rest of
+   the audit must cover by hand.
+2. **Walk the seven tracks** — prompt, tools, control flow, context, failure, permission,
+   evidence — and record a finding only with an observation attached.
+3. **Tier every recommendation** by what backs it: measured here, documented upstream, or
+   judgement.
+4. **Output a prioritized plan, not a score.** A number tells nobody what to change on
+   Monday. This is the same rule `agent-evals` applies to eval rubrics and
+   `seo-aeo-audit` to sites.
+
+**The finding most audits surface first:** the system has no evals. That is a finding
+about UNKNOWN RELIABILITY — every *behavioural estimate* downstream is unfalsifiable,
+including this audit's. It does NOT dissolve what is provable at the source: a
+demonstrable double charge, a hardcoded secret, a deterministic race keep their own
+findings and their own priority, set by the concrete harm — a general "no evals" never
+masks a specific proven harm.
+
+---
+
+## Boundaries
+
+**Against `agent-orchestrator`.** That skill owns the loop's *plumbing*: iteration guards,
+trimming, sub-agent dispatch, provider routing, memory layers, checkpoints. This one owns
+what the model is *told*. They meet at four seams, each crossing in exactly one place:
+
+1. **Describing a tool** so the model picks the right one is this skill's
+   `references/tools.md`; assembling the tool *list* per request from capability flags is
+   the orchestrator's §3, which points here for the wording.
+2. **What the prompt says** — altitude, vocabulary, enumerated statuses — is this skill's
+   `references/system-prompt.md`; *rebuilding* that prompt per request, in the same pass
+   as the tools, is the orchestrator's §10.
+3. **The shape of the work** — the static/dynamic table, the fake-edge test, the checker
+   before a convergence — has ONE home, and it is not here:
+   `agent-orchestrator/references/graph-engineering.md`. This skill's static-or-dynamic
+   section stops at the decision and links there for the model.
+4. **The context window:** `agent-orchestrator/references/context-engineering.md` covers
+   **compaction** — what to drop when the window fills — while this skill's
+   `system-prompt.md` covers what to put there in the first place. Filling and emptying,
+   two files.
+
+**Against `agent-evals`.** That skill measures whether an agent behaves, from execution
+records. This one reviews how it was *built*, from its source and prompts. An audit that
+finds no evals hands over to it; an eval suite that keeps failing on the same axis hands
+back here.
+
+**Against `agent-interop`.** MCP, A2A, the registry, gateways — the wire between processes.
+Tool *descriptions* are here; tool *protocol* is there.
+
+**Against `fabric-agents:assessing-agents`.** A bare «аудит агента» names two jobs.
+Assessing a whole agent against the private agents database (its modules, the base's
+matching templates and patterns) is that skill's. Auditing what an agent is told and the
+tools it holds, the seven tracks above, is this one: «аудит промпта и инструментов агента».
+
+**Model and budget for an agent template.** Before choosing either, read the host's
+recorded model map and per-agent spend default (for example a wiki page such as
+`synthesis/llm-models.md`). Route user content as that map says, respect the provider
+refusals it records, and set the agent's key limit and in-code monthly stop just under
+the recorded default. A host that records none: say so and pick conservatively. Detail:
+`agent-orchestrator/references/llm-proxy-billing.md` → *The host's model map and
+per-agent budget default*.
+
+**Not covered:** provider pricing (see the `claude-api` skill for Anthropic's), the
+wallet under resale (`agent-orchestrator/references/llm-proxy-billing.md`), and RAG
+retrieval quality, which is a search problem this skill only touches where it enters the
+prompt.
+
+---
+
+## Checklist — a harness worth shipping
+
+- [ ] Kernel or workbench harness named explicitly; installed, loaded and enforced capabilities distinguished
+- [ ] Workflow-versus-agent decided deliberately, and the simpler option was actually tried
+- [ ] Static-versus-dynamic decided too — static preferred for predictability; a run that must be auditable keeps a complete execution record (not merely a static shape)
+- [ ] System prompt at the **right altitude** — heuristics, not hardcoded branches, not vague hope
+- [ ] Every status, category and enum the agent must produce is **enumerated in the prompt**
+- [ ] Today's date, and any other volatile context, injected rather than assumed
+- [ ] Tools: a few high-impact ones, namespaced, each described as if to a new colleague
+- [ ] Tool responses carry **meaning, not identifiers**, and are paginated or truncated by default
+- [ ] Tool errors **teach the next attempt** instead of restating a stack trace
+- [ ] One technique chosen per problem, with a reason — not ReAct because it was in a paper
+- [ ] Sub-agents return **distilled summaries**, not transcripts
+- [ ] The agent can be observed: which tool, which arguments, which observation, how many tokens
+- [ ] An observable before the implementation, an eval before the prompt is tuned, or the
+      tuning is folklore — only the corpus waits for production

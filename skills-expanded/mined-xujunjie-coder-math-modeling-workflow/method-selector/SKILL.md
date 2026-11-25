@@ -1,0 +1,162 @@
+---
+name: method-selector
+description: Build and risk-screen a compact role-based method shortlist for a mathematical-modeling subquestion. Use after problem framing and data profiling, before model code generation, to propose a main candidate, a usable baseline, and at most one conditional fallback without padding the pool.
+---
+
+# Purpose
+
+Convert the framed problem and data profile into a small executable decision surface. Screen methods for load-bearing data, assumption, degeneracy, sensitivity, and scale risks before asking the human to choose.
+
+This skill proposes and probes methods. The human chooses the method.
+
+# Preconditions
+
+- G1 problem framing passed.
+- Required output and evaluation criteria are known.
+- Relevant data inventory or audit exists.
+- `planning/symbol_table.md` and `planning/model_assumptions.md` exist when the problem needs them.
+
+If these are missing, return to the producer skill rather than guessing.
+
+# Inputs
+
+- Problem parse and classification.
+- Data audit, including missingness, effective sample size, imbalance, cardinality, and distribution summaries.
+- Literature analysis and temporary knowledge base artifacts from `workspace/literature/` (`candidate_models.json`, `scholar_search_records.json`, `literature_summary.md`).
+- Contest deadline, implementation language, interpretability needs, and compute limits.
+- `planning/session_config.json`.
+- Existing `methods/Qx/qx_method_card.md` and decision ledger when revising.
+
+# Workflow
+
+1. **Align the decision surface.**
+   - Invoke `decision-prompt-builder` before generating an open-ended shortlist.
+   - Ask about human-owned trade-offs, not algorithm names.
+   - Reuse answers already present in the decision ledger.
+
+2. **Derive method requirements and ingest literature models.**
+   - Ingest candidate mathematical models from `workspace/literature/candidate_models.json`. Ground hypotheses and state equations in real mechanisms published in authoritative literature.
+   - Start from required output, hard constraints, data characteristics, validation criteria, explanation burden, and experiment budget.
+   - Enforce the simplicity-first principle (Occam's razor): among candidate formulations from literature or statistical toolkits, strictly prioritize the simpler model (favoring interpretability, numerical stability, and robustness over gratuitous complexity).
+   - Identify the failure modes that would make a method unusable.
+
+3. **Create a role-based shortlist and generate model justification defense.**
+   - One `main_candidate`: best fit to the chosen trade-off; must strictly favor the simpler viable model when multiple candidates can solve the problem.
+   - One `usable_baseline`: completes the real task and yields directly comparable outputs.
+   - At most one `conditional_fallback`: differs in a meaningful mathematical way and has an explicit activation trigger (e.g., activated only if the simpler main candidate fails to capture critical non-linear dynamics).
+   - If a simple reference cannot complete the real task, label it `diagnostic_reference`; it does not satisfy the baseline requirement.
+   - Do not add a method merely to reach a candidate count.
+   - **Mandatory Justification Defense (为论文提供选型辩护材料)**:
+     - 必须明确选型支撑路径（供后续 `paper-section-writer` 直接引用）：
+       - **路径 A（第一性原理推导）**：从物理守恒、微元速率或几何边界推导出闭式方程并赋予参数明确物理含义；
+       - **路径 B（多模型打擂台对比消歧表）**：列出典型备选方案（如高阶多项式、纯黑盒机器学习），指出其致命缺陷（如多项式外推产生虚假极值或越界，黑盒模型过拟合且无 $P$ 值与机理解释），并生成对比三线表。
+
+4. **Define method-specific risk checks.**
+   - Use the contract in `references/risk-probe-contract.md`.
+   - Select only relevant assumption checks.
+   - Always check output degeneracy or concentration with metrics appropriate to the output.
+   - Bound probe runtime rather than source-line count.
+
+5. **Run the risk probe on the main candidate and usable baseline.**
+   - Use a representative slice or full-data diagnostic as appropriate; never rely only on the first rows.
+   - The probe may use reusable scripts and may save detailed metrics, but its canonical output is one compact summary.
+   - Probe the fallback only enough to establish that its trigger and risk profile are credible. Do not fully implement it.
+
+6. **Write canonical artifacts.**
+   - `methods/Qx/qx_method_card.md`
+   - `methods/Qx/probes/risk_probe_summary.json`
+   - Update `planning/manifests/Qx.json` if present.
+
+7. **Record method choice (Human or Autonomous).**
+   - In autonomous mode (default): automatically select the passing `main_candidate` adhering strictly to Occam's razor (simple model first), record the decision in `methods/Qx/qx_decisions.jsonl` with `decided_by: "autonomous_agent"` citing probe evidence and rationale, and proceed directly to code generation.
+   - In interactive mode with an active human prompt: present the probe evidence through a choice card and await human response.
+
+# Method Card Contract
+
+`qx_method_card.md` stays compact and contains:
+
+```markdown
+# Qx Method Card
+
+## Goal and success criteria
+
+## Human constraints
+- Output form:
+- Priority:
+- Unacceptable failure:
+- Experiment budget:
+
+## Shortlist
+| ID | Role | Mathematical idea | Why eligible | Main risk | Implementation cost |
+
+## Baseline validity
+- Real task completed:
+- Comparable output/metric:
+- If no, classification: diagnostic_reference
+
+## Risk-probe summary
+| ID | Executability | Data/assumptions | Degeneracy | Sensitivity | Scale | Verdict |
+
+## Fallback trigger
+- Trigger:
+- Evidence to evaluate:
+
+## Compact history
+- One line per material change, with decision_id when human-owned.
+```
+
+Do not maintain a separate iteration log for new work.
+
+# Probe Verdicts
+
+- `PASS`: eligible for the human choice.
+- `CONDITIONAL`: eligible only with a stated mitigation or fallback trigger.
+- `FAIL`: not offered as a selectable main or baseline.
+
+A method fails screening when a load-bearing assumption fails, the output degenerates, it cannot produce a legal result, or its cost violates the user's budget. A method does not fail merely because an irrelevant generic diagnostic is unavailable.
+
+# Output and Handoff
+
+After G2 screening:
+
+- In autonomous mode (default): automatically record the method choice for the simpler main candidate, pass G2.5, and hand off directly to `model-code-analyzer`.
+- In interactive mode: if the human choice is absent, return the evidence-backed choice card.
+- If G2.5 is decided: hand the method card, probe summary, chosen IDs, and experiment budget to `model-code-analyzer`.
+- Instruct code generation to implement only the approved main method and usable baseline.
+- Keep the fallback dormant until its recorded trigger fires.
+
+# Rules
+
+- Support autonomous auto-selection: in autonomous mode, automatically select the simplest passing candidate as main_candidate, log it with decided_by: "autonomous_agent", and proceed without blocking.
+- Strictly enforce the simplicity-first principle: if a simple model and a complex model can both solve the problem, prioritize the simpler model as the main candidate.
+- Ground method selection and assumptions in online background research, physical/chemical principles, domain priors, and reference papers.
+- Do not use a fixed candidate count.
+- Do not use source-line count as validation quality.
+- Do not invent missing data fields, constraints, labels, or evaluation metrics.
+- Do not call a nonfunctional toy method a baseline.
+- Do not fully implement all shortlisted methods.
+
+# Compatibility
+
+When revising an older workspace, read:
+
+- `methods/Qx/qx_method_candidates.md`
+- `methods/Qx/qx_method_iteration_log.md`
+- `methods/Qx/poc/`
+
+Migrate material evidence into the method card and probe summary. Do not require new legacy PoCs or iteration logs.
+
+# References
+
+- Risk checks and summary schema: `references/risk-probe-contract.md`
+- Method-family routing cues: `references/method-family-guide.md`
+
+# Verification
+
+- Shortlist contains a main candidate and a genuinely usable baseline.
+- Optional fallback has a concrete trigger.
+- Main and baseline have evidence-backed probe verdicts.
+- Output-degeneracy checks are present.
+- Method card and probe summary exist.
+- No per-skill pending decision file was created.
+- No code-generation handoff occurs before a human method choice is recorded.

@@ -1,0 +1,210 @@
+---
+name: lattice
+description: Lattice agent coordination guide — mental model, CLI commands, lifecycle discipline, and reference for file-based task tracking across agents and sessions.
+homepage: https://github.com/Stage-11-Agentics/lattice
+metadata: {"openclaw":{"emoji":"clipboard","requires":{"bins":["lattice"]},"install":[{"id":"pip","kind":"command","command":"pip install lattice-tracker","bins":["lattice"],"label":"Install Lattice (pip)"},{"id":"pipx","kind":"command","command":"pipx install lattice-tracker","bins":["lattice"],"label":"Install Lattice (pipx)"},{"id":"uv","kind":"command","command":"uv tool install lattice-tracker","bins":["lattice"],"label":"Install Lattice (uv)"}]}}
+---
+
+# Lattice — Agent-Native Task Tracker
+
+Lattice is a file-based, event-sourced task tracker. Everything lives in `.lattice/` in the project root. Every change is an immutable event. No accounts, no API keys, no network required.
+
+## The Lifecycle — Opening and Closing Rituals
+
+Every unit of work follows this arc: **claim → understand → work → complete**. The opening and closing rituals are non-negotiable.
+
+### Opening Ritual
+
+```bash
+# 1. Claim the next task (or create one)
+lattice next --actor agent:claude-cli --claim --json
+
+# 2. If the task needs planning (empty plan file), plan first
+lattice status <task_id> in_planning --actor agent:claude-cli
+# ... write the plan to .lattice/plans/<task_id>.md ...
+lattice status <task_id> planned --actor agent:claude-cli
+lattice status <task_id> in_progress --actor agent:claude-cli
+
+# 3. Working on a branch or worktree? Link it — BEFORE you reach review.
+lattice branch-link <task_id> <branch> --actor agent:claude-cli
+```
+
+`lattice next --claim` atomically assigns the highest-priority ready task to you and moves it to `in_progress`. If you already have a task in progress, it returns that one (resume-first logic).
+
+**Link the branch, or review reads the wrong code.** `code-review` resolves its diff from the task's linked branch — authoritative, and a hard error if the branch does not resolve rather than a quiet fall back to whatever the checkout holding `.lattice/` has checked out. Under one-worktree-per-task that would be a *sibling's* branch. `--head`/`--base`/`--worktree` override the resolution; `code-review <task> --dry-run` prints the resolved range (and `--json` makes it assertable) without spending a model run.
+
+If there's no existing task, create one:
+
+```bash
+lattice create "Fix the login bug" --actor agent:claude-cli --priority high
+```
+
+### One Review Owner Per Gate Cycle
+
+Use the reviewer auto-fired by the `→ planned`/`→ review` transition or one manually spawned fresh-context reviewer, never both. For a manual owner, put `--no-auto-review` on that status transition before spawning the reviewer:
+
+```bash
+lattice status <task> planned --no-auto-review --actor agent:<id>
+lattice status <task> review --no-auto-review --actor agent:<id>
+```
+
+### Closing Ritual
+
+**`lattice complete` is THE way to finish work.** It performs the full completion ceremony in one command: posts a review comment, attaches a review artifact, transitions through review to done.
+
+```bash
+lattice complete <task_id> --review "What was done. Key decisions. Test results. What remains." --actor agent:claude-cli
+lattice complete <task_id> --review-file review.md --actor agent:claude-cli   # multi-paragraph review
+```
+
+The `--review` text is your breadcrumb for every future agent and human who reads this task. Be specific: files changed, approach taken, edge cases considered, anything left undone.
+
+**Long prose goes in a file, not in quotes.** `--review-file` on `complete`; `--file` on `comment`, `comment-edit`, and `needs-human`. Inside a double-quoted shell argument, backticks and `$(...)` are command substitution — that has silently eaten a clause from one comment and spliced 15 KB of pytest output into another. A file is read byte-for-byte.
+
+**Do not use raw `lattice status ... done` to finish work.** The `complete` command exists because completion requires evidence — a review comment and artifact. Skipping this ceremony leaves the task without an audit trail.
+
+| Outcome | Action |
+|---------|--------|
+| **Done** | `lattice complete <task_id> --review "..." --actor agent:claude-cli` |
+| **Need human input** | `lattice needs-human <task_id> "<what you need>" --actor agent:claude-cli` (the task keeps its status — the flag is orthogonal) |
+| **Blocked on dependency** | `lattice status <task_id> blocked --actor agent:claude-cli` + comment explaining the blocker |
+
+## The Work In Between
+
+Between opening and closing:
+
+1. **Read before writing.** `lattice show <task_id> --json`. Check `.lattice/plans/<task_id>.md` and `.lattice/notes/<task_id>.md` for context from previous minds.
+2. **Check previous work.** If the task has prior events, investigate what happened. `git log --oneline --grep="<short_id>"` for prior commits.
+3. **Baseline tests.** Run the test suite before changing anything. You own new failures, not pre-existing ones.
+4. **Commit as you go.** Each meaningful unit of progress gets a commit.
+5. **Push when done.** Each task is durable on the remote immediately.
+
+## Core Commands
+
+```bash
+# Create
+lattice create "Title" --actor agent:claude-cli --priority high --type bug
+
+# List
+lattice list                           # All active tasks
+lattice list --status in_progress      # Filter by status
+lattice list --assigned agent:claude-cli
+
+# Show
+lattice show PROJ-1                    # Summary
+lattice show PROJ-1 --events           # Full event history
+
+# Status transitions
+lattice status PROJ-1 in_progress --actor agent:claude-cli
+
+# Complete (the closing ritual)
+lattice complete PROJ-1 --review "Review text" --actor agent:claude-cli
+
+# Assign
+lattice assign PROJ-1 agent:claude-cli --actor agent:claude-cli
+
+# Comment (--file for anything long — a quoted arg runs backticks/$() as shell)
+lattice comment PROJ-1 "Found root cause" --actor agent:claude-cli
+lattice comment PROJ-1 --file findings.md --actor agent:claude-cli
+
+# Link
+lattice link PROJ-1 blocks PROJ-2 --actor agent:claude-cli
+
+# Flag for human attention (orthogonal to status — task keeps its current status)
+lattice needs-human PROJ-1 "Which OAuth provider?" --actor agent:claude-cli
+lattice needs-human PROJ-1 --clear --note "Decided: use Google" --actor agent:claude-cli
+lattice list --needs-human          # scannable queue of flagged tasks, any status
+
+# Next task
+lattice next --actor agent:claude-cli --claim --json
+
+# File-decision links
+lattice file-link PROJ-1 src/auth/jwt.ts --reason "JWT validation" --actor agent:claude-cli
+lattice file-unlink PROJ-1 src/auth/jwt.ts --actor agent:claude-cli
+lattice explain src/auth/jwt.ts              # what decisions shaped this file?
+lattice explain src/auth/                    # directory prefix
+lattice explain "src/auth/*.ts"              # glob
+
+# Health
+lattice weather    # Daily digest
+lattice stats      # Statistics
+lattice doctor     # Data integrity check
+
+# Archive
+lattice archive PROJ-1 --actor agent:claude-cli
+```
+
+Options for `create`: `--priority` (critical/high/medium/low/none), `--type` (task/bug/chore), `--description "..."`, `--assign agent:claude-cli`
+
+**No `epic` or `spike` types — just items of work with a dependency graph.** Lattice intentionally rejects umbrella/exploratory ticket types. Express multi-phase or umbrella work as a plain `task` with `subtask_of` links from its children. Express exploratory/investigation work as a plain `task` whose deliverable is a concrete artifact (plan doc, prototype, decision). The subtask + dependency graph (`subtask_of`, `blocks`, `depends_on`) gives you epic-shape and spike-shape without dedicated types. Every ticket is a chunk of work with a real output, not a bucket or a question.
+
+**Task description depth:** Match description detail to task ambiguity. Bug fixes and chores can be one-liners ("Add regex validation to frequency names"). Features and integration tasks should include: (1) what it does, (2) acceptance criteria, (3) architectural context, (4) what the user/operator experiences when done. Structured task-local criterion records are optional; add them when stable IDs and evidence traceability help, not as a universal task or workflow requirement.
+
+**Optional acceptance-criteria operations:**
+
+```bash
+lattice criterion add PROJ-1 "OAuth callback returns to the requested page" --id oauth-return --actor agent:claude-cli
+lattice criterion edit PROJ-1 oauth-return "OAuth callback returns to the original requested page" --actor agent:claude-cli
+lattice criterion list PROJ-1 --history
+lattice comment PROJ-1 "Observed a live callback return to /settings." --criterion oauth-return --actor agent:claude-cli
+lattice comment-edit PROJ-1 ev_01ABC "Observed a live callback return to /settings." --clear-role --actor agent:claude-cli
+lattice criterion retire PROJ-1 oauth-return --actor agent:claude-cli
+lattice criterion list PROJ-1 --include-retired
+```
+
+Use structured criteria only when stable IDs help. Treat `--criterion` as traceability, not proof: state the observed result in the evidence and follow the task's configured role and completion policy. `--clear-role` removes only the role; it preserves criterion links.
+
+Relationship types for `link`: `blocks`, `blocked_by`, `subtask_of`, `parent_of`, `depends_on`, `depended_on_by`, `related_to`
+
+## Status Workflow
+
+```
+backlog → in_planning → planned → in_progress → review → in_validation → pr_open → done
+                                       ↕
+                                    blocked
+```
+
+Transitions are enforced. Use `--force --reason "..."` to override when genuinely needed.
+
+**`needs-human` is a flag, not a status.** It rides orthogonally on top of whatever status a task is in — a task can be `in_progress` and flagged, `blocked` and flagged, even `done` and flagged. Set it with `lattice needs-human <task> "<reason>"` (reason required) and clear it with `lattice needs-human <task> --clear`. The flag never moves the task. `blocked` stays a status for generic external dependencies; `needs-human` means "waiting on a human specifically," and the two can coexist.
+
+**`in_validation` is the e2e gate.** After local review passes, prove the change works against a running system — browser automation for web, simulator MCP for mobile, curl flows for APIs. Exercise the actual flow the ticket touched, then record evidence with `lattice attach <task> --role validation` (or `lattice comment <task> --role validation`). Transitioning to `pr_open` is blocked until validation evidence is recorded; if e2e genuinely doesn't apply, record a one-line N/A justification instead — explicit, never silent. Validation failure routes back to `in_progress` (impl-level) or `in_planning` (plan-level), and counts toward the 3-cycle rework valve. The bar: **"I saw it work," not "I think it should work."**
+
+`--criterion` on a comment or artifact records a traceability link only. It does not prove that criterion passed or was satisfied; state the observed result in the evidence itself and follow the configured role-based validation policy.
+
+## Actor IDs
+
+Every command requires `--actor`. Format: `prefix:identifier`
+
+- `agent:claude-cli` — default for your own actions
+- `agent:worker-1`, `agent:worker-2` — multi-agent setups
+- `human:username` — when acting on behalf of a human
+
+## Task IDs
+
+- **Short ID:** `PROJ-1`, `PROJ-42` (use these in conversation)
+- **Full ULID:** `task_01HQ...` (internal, always accepted)
+
+All commands support `--json` for structured output: `{"ok": true, "data": ...}` or `{"ok": false, "error": {"code": "...", "message": "..."}}`.
+
+## Heartbeat Mode
+
+Check if enabled: look for `"heartbeat": {"enabled": true}` in `.lattice/config.json`.
+
+When enabled, keep advancing after each task: complete the current task → `lattice next --claim` → work the next one → repeat. Stop after `max_advances` (default 10), when the backlog is empty, or when a task is flagged `needs-human` or hits `blocked`.
+
+## Rules
+
+1. **Open before you work.** Every unit of work starts with a Lattice task. Not after. Not during. Before.
+2. **Close with `lattice complete`.** Never raw `lattice status ... done`.
+3. **One task at a time.** Finish or transition before claiming the next.
+4. **Don't force transitions.** If a transition fails, investigate why.
+5. **Don't cancel human tasks.** Flag them with `lattice needs-human` instead — let the human decide.
+6. **Comment liberally.** The next agent has no hallway to find you in.
+
+## References
+
+Detailed guides live in `{baseDir}/references/`:
+
+- **[Multi-Agent Guide](references/multi-agent-guide.md)** — orchestrator/worker patterns, actor ID conventions, concurrency safety
+- **[Worktree Guide](references/worktree-guide.md)** — git worktree protocol for parallel development with shared Lattice state

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/zigcc/skills (path: zig-0-17/SKILL.md, branch: main)
+- mined: 2026-11-23
+- desc: Zig 0.17.0 API guidance and porting notes. Use this when writing or upgrading Zig code to the 0.17.0 stable release (@backingInt/@fromBackingInt, SafeAllocator, SoA type reflection, build system maker

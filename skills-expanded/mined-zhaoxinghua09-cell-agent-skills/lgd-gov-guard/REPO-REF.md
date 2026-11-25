@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/zhaoxinghua09-cell/agent-skills (path: skills/lgd-gov-guard/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: lgd-gov-guard — 把 LGD 三律（有籍·有证·有门禁）翻译进政务 / 公共部门 AI 应用（决策辅助·公开答复·数据治理）的合规守门器，对 AI 系统做三律自评与门禁判定（零依赖）。

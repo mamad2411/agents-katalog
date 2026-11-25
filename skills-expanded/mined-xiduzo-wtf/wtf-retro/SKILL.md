@@ -1,0 +1,245 @@
+---
+name: wtf.retro
+description: This skill should be used when a team wants to close out a completed Epic or sprint, capture what was planned vs. what shipped, learn from deviations, and formally mark the Epic done — for example "run a retro on this epic", "close out the epic", "what deviated from the plan", "retrospective for epic #X", "what did we learn from this epic", "mark this epic as complete", or "write up the post-mortem". Routes learnings into steering docs and generates a final Epic summary. Pairs naturally with the changelog skill for the user-facing output.
+---
+
+# Retro
+
+Close a completed Epic with a structured retrospective.
+
+This skill compares what was planned (original Epic spec and the Features' Trace Plans) against what shipped (closed Traces + PRs).
+It reports deviations.
+It routes learnings into steering docs.
+It closes the Epic so the team starts the next initiative with a clean slate.
+
+## Process
+
+### 0. GitHub CLI setup
+
+Run steps 1–2 of `../references/gh-setup.md`.
+Stop if `gh` is not installed or not authenticated.
+
+### 1. Identify the Epic
+
+If an Epic number was passed in, use it directly.
+Otherwise call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Which Epic are you closing out?"
+- header: "Epic"
+- options: from open Epics — list them per the **List issues of a kind** query (kind `Epic`) in `../references/issue-classification.md` (`--label epic` in labels mode, `--search 'type:"Epic"'` in types mode)
+
+Fetch the Epic and its full hierarchy:
+
+```bash
+gh issue view <epic_number>
+gh sub-issue list <epic_number>              # feature numbers
+# For each feature (in parallel):
+gh issue view <feature_number>               # body holds the Trace Plan
+gh sub-issue list <feature_number>           # trace numbers (legacy Task issues appear here too)
+# For each trace (in parallel):
+gh issue view <trace_number>
+```
+
+Treat legacy Task children as legacy Traces per `../references/issue-classification.md`.
+
+Also fetch:
+- All PRs that closed issues under this Epic (search by `Closes #<n>` in merged PRs):
+  ```bash
+  gh pr list --state merged --json number,title,body,mergedAt --limit 100
+  ```
+- Each Feature's issue comments, to collect refine's Re-aim audit trail (headings `## Refinement — <date>` and `## Re-aim (headless) — after Trace #<n> — <date>`):
+  ```bash
+  gh issue view <feature_number> --comments
+  ```
+- The original Epic creation date and the date of the last merged PR (actual duration)
+
+### 2. Check completion status
+
+Verify all work is actually done before you run a retro:
+
+- All child Features are closed
+- All child Traces (and legacy Tasks) are closed (or explicitly marked `won't implement`)
+- No open PRs targeting feature branches under this Epic
+
+If anything is still open, call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Not all work is closed yet — [list open items]. Run the retro anyway?"
+- header: "Incomplete work"
+- options:
+  - **Run retro anyway** → some items are open. Note them as incomplete.
+  - **Wait until complete** → exit. Finish the remaining work first.
+
+### 3. Compare planned vs. shipped
+
+Build a side-by-side comparison:
+
+**Planned** (from original Epic spec and Feature bodies):
+- Goal statement
+- Success Metrics
+- Feature Breakdown (original list from Epic body)
+- Each Feature's Trace Plan (current state, plus its first shape from the Re-aim audit trail)
+- Bounded Context
+
+**Shipped** (from closed issues and PRs):
+- Features actually created and merged
+- Traces actually created and merged (legacy Tasks counted with them, marked legacy)
+- Actual calendar duration (Epic opened → last PR merged)
+
+Identify deviations:
+- Features planned but not built (descoped or deferred)
+- Features added that were not in the original breakdown (scope growth)
+- Traces that took significantly more iterations than expected (PR re-open, multiple verify cycles)
+- Re-aim history per Feature, from the audit comments collected in step 1: how many re-aims, scenarios added, scenarios moved between Traces, and every human-approved drop. Heavy re-aiming is a signal — the first aim missed, and that is retro input, not a failure.
+- Success Metrics: were they actually achieved? State what you can verify from the spec. Flag ones that require manual measurement.
+
+### 4. Gather learnings
+
+Only ask what is not already evident from the issue history.
+For each question below, call `AskUserQuestion` (per `../references/questioning-style.md`).
+
+**Q1 — What was harder than expected?**
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "What was harder or took longer than planned in this Epic?"
+- header: "Friction points"
+- options: 2–3 inferences from the deviation analysis (e.g. "Feature #X needed 3 verify cycles", "Feature #Y re-aimed 4 times before its Trace Plan settled")
+
+**Q2 — What should we do differently next time?**
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "If you ran this Epic again, what would you change about how it was planned or executed?"
+- header: "Process improvements"
+- options:
+  - **Better scoping upfront** → scope drift was the main issue
+  - **Earlier design** → design gaps caused implementation rework
+  - **Clearer contracts** → interface ambiguity caused re-work
+  - **Nothing significant** → execution was smooth
+
+**Q3 — Any domain model insights?**
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Did this Epic reveal anything new about the domain model — new concepts, corrected names, missing bounded contexts?"
+- header: "Domain insights"
+- options:
+  - **Yes — describe them** → new terms or corrections to capture
+  - **No domain changes** → model held up well
+
+### 5. Route learnings to steering docs
+
+For each learning gathered, determine where it belongs using the same routing table as `wtf.reflect`:
+
+| Learning type | Target doc |
+|---|---|
+| Architecture pattern, implementation gotcha | `TECH.md` |
+| Test failure pattern, QA gap | `QA.md` |
+| Design inconsistency, component misuse | `DESIGN.md` |
+| Scope confusion, domain language drift | `VISION.md` |
+| Does not clearly fit | `TECH.md` (default) |
+
+For each target doc, append under `## Hard-Won Lessons` using the format:
+
+```
+- **[Short label]** — [Concrete rule or observation]. *Learned <YYYY-MM-DD> during Epic #<n>.*
+```
+
+Commit the steering doc updates:
+
+```bash
+git add docs/steering/
+git commit -m "docs(steering): lessons from Epic #<epic_number>"
+```
+
+If any domain model insights were gathered (Q3), also update the glossary.
+Use the same pattern as `wtf.write-epic` step 10.
+Include the greppable **STE allowlist** table in `docs/glossary.md` per `../references/ste-writing.md`.
+
+### 6. Write the retro summary
+
+Apply strict STE per `../references/ste-writing.md` before writing any durable body (retro comment and any Hard-Won Lessons prose).
+
+Post a structured retro comment on the Epic issue:
+
+```bash
+# Write the retro summary to a temp file with the Write tool; $COMMENT is that path.
+python3 .wtf/gh-body.py comment <epic_number> --body-file "$COMMENT"
+```
+
+The retro summary must include:
+
+```markdown
+## Retrospective — <YYYY-MM-DD>
+
+**Duration:** <Epic opened> → <last PR merged> ([n] days)
+
+### Planned vs. shipped
+
+| Item | Planned | Shipped | Delta |
+|------|---------|---------|-------|
+| Features | [n] | [n] | [+n added / -n descoped] |
+| Traces | [n in first Trace Plans] | [n] | ... |
+
+**Descoped:** [list Features/Traces that were planned but not built — with reason]  
+**Added:** [list Features/Traces added beyond original scope — with reason]  
+**Re-aims:** [n] across [n] Features — scenarios added [n], moved [n], dropped [n, human-approved]
+
+### Success Metrics
+
+| Metric | Target | Achieved |
+|--------|--------|----------|
+| <from Epic spec> | <value> | ✅ / ❌ / ⚠️ needs manual check |
+
+### Lessons learned
+
+[Bullet list of the learnings gathered in step 4 — in plain language, not the steering doc format]
+
+### Steering docs updated
+
+[List which docs were updated with new lessons]
+```
+
+### 7. Offer to generate a changelog
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Would you like to generate a changelog entry or GitHub Release for this Epic?"
+- header: "Changelog"
+- options:
+  - **Yes — run changelog** → run `wtf.changelog` for this Epic (recommended)
+  - **Not now** → skip. The user will handle the release notes separately.
+
+If yes → follow the `wtf.changelog` process with the Epic number pre-loaded as context.
+
+### 8. Close the Epic
+
+The Epic closes automatically when all child Feature PRs contain `Closes #<feature_number>`, which in turn contains `Closes #<epic_number>` — via GitHub's auto-close chain.
+Confirm this has happened:
+
+```bash
+gh issue view <epic_number> --json state -q .state
+```
+
+If the Epic is already `CLOSED` → print: "Epic #<n> is already closed via merged PRs. Retro complete."
+
+If still open (e.g. auto-close chain did not fire): ask the user whether to close it via a merged PR reference or directly:
+
+Call `AskUserQuestion` (per `../references/questioning-style.md`):
+- question: "Epic #<n> is still open. How would you like to close it?"
+- header: "Close Epic"
+- options:
+  - **Close as completed** → mark as closed. All work is done.
+  - **Leave open** → the user will close it separately.
+
+If "Close as completed":
+```bash
+gh issue close <epic_number> --comment "Closed after retro — all Features and Traces merged."
+```
+
+### 9. Print the final summary
+
+```
+Retro complete — Epic #<n>: <title>
+──────────────────────────────────────
+Duration:      [n] days
+Features:      [n] shipped / [n] descoped
+Traces:        [n] merged
+Re-aims:       [n]
+Learnings:     [n] captured → TECH.md, QA.md, ...
+Epic status:   closed ✅
+```

@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/trompetilla/skills (path: skills/crazypeace/telegram-pairing-message-customization/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Add custom messages to Telegram pairing replies for unapproved users. Insert custom text (e.g., group links, instructions) above the approval command in pairing messages. Use when unpaired Telegram us

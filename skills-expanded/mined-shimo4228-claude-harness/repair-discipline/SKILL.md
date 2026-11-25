@@ -1,0 +1,80 @@
+---
+name: repair-discipline
+description: "Establish what is true now from primary evidence before a fix. Use when fixing a bug (このバグ直して), picking up a stale task, diagnosing something stuck or flaky, or changing a schema or storage format that anything else reads. Also holds the format of the internal research report written before a plan."
+user-invocable: true
+origin: shimo4228
+replaces: contemplative-agent の feedback memory 5 本（verify-before-work / substrate-migration-sweep / verify-bypass-hides-all-gates / io-bound-process-diagnosis / no-background-retry-loop、2026-08-25 昇格）
+---
+
+# Repair Discipline
+
+直す前に、いま何が真かを一次証拠で確定する。原則 1–3 は着手するとき、4–6 は原因を
+診断するときに効く。6 原則とも実地の失敗から取った — どの repo でも同じ形で壊れる。
+
+## 1. 着手前に既済照合
+
+残課題ファイル・古い TODO・引き継ぎメモは書かれた時点の観測。着手前に **git log と
+実コードで「もう直っていないか」を照合**する。台帳だけが古いまま残る drift は
+「作業 → 資料 → 台帳」の最後の 1 ホップで起きる — 見つける経路は日付でなく
+正本資料との突き合わせ（決着済みのタスクが数ヶ月 open のまま残る）。
+
+## 2. schema / storage 変更は全消費者を同じ変更で棚卸す
+
+データ形式・保存場所・フィールドを変えたら、**その形式を読む側を全部 grep して同じ
+PR で追随させる**。書き手だけ直した変更は、読み手が静かに空を返す形で壊れる —
+エラーでなく「何も無い」に見えるのが最悪の壊れ方。消費者は自コードとは限らない
+（skill 本文・doc・別 script が名指しで読んでいることがある）。
+
+## 3. bypass は単一ゲートでなく全ゲートを短絡すると知って使う
+
+1 つの hook が複数の検査（例: format / lint / security）を束ねているとき、その hook の bypass は
+既知の 1 件を通すためのつもりでも**束ねた検査を全部一緒に飛ばす**。使う前にその hook を読み、
+bypass が黙らせる検査を全部挙げる。挙げきれないなら個別の除外手段を探す。
+
+## 4. プロセスの CPU が低い ≠ stuck
+
+I/O バウンドなプロセス（LLM 推論・ネットワーク待ち）は CPU がほぼ 0 でも正常に進行
+している。**kill する前に一次ログと相手側の状態**（サーバの load 状況・進捗ログの
+タイムスタンプ）を見る。「反応がない気がする」は証拠でない。
+
+## 5. テストの再試行はフォアグラウンド 1 回
+
+失敗したテストをバックグラウンドで連発しない。1 回フォアグラウンドで走らせ、出力を
+読み切ってから次の仮説へ。連発は失敗ログを積むだけで情報を増やさず、リソース競合で
+新しい偽の失敗を作る。
+
+## 6. 断続的な失敗と時間の飛びは、環境の覆いを先に外す
+
+「たまに成功する外部 API」と「wall time が job 自身のログの時刻より大きく飛ぶ処理」は、
+コードの仮説より先に環境で説明できないかを一次記録で見る。**成功した応答の `x-cache` /
+`age` / `via`**（HIT なら origin を通っていない。比較は cache に無い新しい query を client
+ごとに 1 本ずつ）と、**macOS の `pmset -g log | grep -E " Sleep | Wake "`**（その区間の
+sleep / hibernate）。cache hit だけが成功して見える API を相手側の罰則と誤診し、
+hibernate の空白をコードの遅さと誤診する。
+
+## 使い方
+
+修理・変更の着手時と、原因の診断中に該当原則を 1 つ名指しして通す（「原則 1 — この課題、
+git log で既済照合した？」「原則 4 — kill する前に一次ログを見た？」）。機構を**足す**
+修理で「そもそも存在すべきか」を別の目で見たいときは agent: architect に聞ける。
+
+## plan の前の内部調査 report
+
+plan の依頼で調査の種別が内部（repo 内で答えが出るバグ・refactor）のとき、主ループが再現と原因の確認を
+自分で行い、そのまま `<repo>/docs/plans/research/YYYY-MM-DD-<slug>.md` に書く。plan はこの report にリンクする。
+
+```
+kind: internal
+# <問い>
+## 再現       手順と観測した結果（実行したコマンドと出力の要点）
+## 原因       file:line と、その行が原因だと言える根拠
+## 確認       原因を確かめた方法（Read した箇所、テスト結果）
+## Still unknown
+```
+
+外部調査の report は skill: search-first の Full で researcher が統合する（形は agents/researcher.md）。
+
+## 失効条件
+
+- substrate がこれらの照合を診断時と着手時に自発するようになったら退役（足場は不要になったら外す）
+- 原則の出所となった実測が反証されたら該当原則を削る

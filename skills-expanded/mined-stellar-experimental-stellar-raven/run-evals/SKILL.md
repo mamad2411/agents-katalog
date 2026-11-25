@@ -1,0 +1,249 @@
+---
+name: run-evals
+description: Plan and run scoped evaluations, check routing gates, compare answer quality or client models, review stored verdicts, or close an eval round. Name the decision first, run the smallest instrument that can change it, call the result early, and route evidence-backed findings.
+---
+
+# Run evals
+
+The instruments and their contracts live in [`eval/EVALS.md`](../../../eval/EVALS.md) (map),
+[`eval/README.md`](../../../eval/README.md) (routing), and
+[`eval/qa/README.md`](../../../eval/qa/README.md) (QA flags, identity pins, judge contract). This
+skill decides what to run, how much, and what to do with the result.
+
+## 1. Decide before you spend
+
+Routing, plan, lint, and self-test checks are free: run them whenever their inputs changed. Before
+any paid call or long agent task, write four lines in the round ledger or pull request:
+
+1. **Decision.** What changes with the result: ship or revert, switch a model, file a finding.
+2. **Smallest run.** The fewest cases, arms, and clients that can change that decision. Reuse a
+   stored result when its case, model, rubric, pack, and source identities match. A new session is
+   not a reason to collect again.
+3. **Stop rule, cap, and estimate.** The observation that ends the run for each outcome, the
+   dollar cap (`--max-budget-usd`) or call count, and the expected time and cost.
+4. **Review coverage.** Which rows get transcript review: safety rows, failures, and
+   decision-changing disagreements first, plus a fixed sample of agreements.
+
+Then hold to it:
+
+- Call the result as soon as the evidence meets the stop rule. Do not buy a confirmation round, a
+  second look, or a re-judge that cannot change the decision.
+- A no-switch or inconclusive result finishes the round. Never expand collection or review to get a
+  preferred answer.
+- A changed scope or stop rule is a named amendment: keep the old results, failures, and
+  denominator, and report the new sample separately.
+- No run needs approval. One cap covers one method run; a re-run gets its own cap and its own
+  ledger line, even when it repairs the method.
+- Get an independent review of the four lines only when the owner asks for one, or when the run is
+  a multi-arm comparison or a source-addition lane
+  ([`references/source-addition.md`](references/source-addition.md)). Reuse that review while its
+  inputs hold. A missed review blocks launch; it does not invalidate data already collected.
+  [`research/audits/2026-07-11-eval-round-orchestration.md`](../../../research/audits/2026-07-11-eval-round-orchestration.md)
+  records what such reviews catch.
+
+**Cost counts.** Report cost per answer beside correctness for every arm. Prefer the more correct
+path only when the alternative is far less correct (new wrong answers, fabrication, or failed
+safety/trap behavior); a much cheaper, slightly less correct path can be the better product.
+
+## 2. Clients, models, and billing
+
+The client set and its CLI flags are in
+[`.agents/model-roster.md`](../../model-roster.md#models-for-evals-and-tests). The roster names
+families. Pass `run-qa.mjs --model` an alias (`sonnet`) or an exact ID. The run records the
+resolved ID, and that ID is the measurement's identity.
+
+- One client is enough when the decision does not depend on the client. Add clients only for a
+  client-dependent decision.
+- **Subscriptions first, on `hc`.** Development tests and evals use the local `wrangler dev` server
+  (`npm run dev:eval`) and subscription CLIs driven through `hc`. The billing rule, pre-run checks,
+  OpenCode probe, and the only two API-billed exceptions (Playground lanes E1 and E2, for
+  Playground-specific questions or the conditional shared-text rule) live in
+  [`eval/EVALS.md`](../../../eval/EVALS.md#model-call-billing). Every API-billed run carries a
+  dollar cap and logged cost; an unlisted path first joins that list in a reviewed pull request.
+  Judges run on the Claude Code CLI; there is no AI Gateway judge.
+- The QA runner and the discovery agent arm spawn headless `claude -p` themselves. Start the runner
+  as an `hc` child (`hc run --bg --name <lane> ...`) and `hc wait` for it. `--model` selects the
+  Claude client.
+- Codex and Grok have no committed runner. Run them as `hc` lanes with the launch lines in
+  [`.agents/model-roster.md`](../../model-roster.md), register the loopback MCP URL with
+  `codex mcp add` or `grok mcp add`, and have each lane write its answers to a file. A Codex lane
+  launched with `-a never` cannot approve MCP tool calls; read the roster's Codex note before you
+  rely on the registration. Report the result as a client diagnostic with its own denominator;
+  never merge it with QA-runner results.
+
+Keep three roles separate: the **orchestrating agent** runs this skill and never answers cases; the
+runner spawns the **answering agent** (`AGENT_MODEL` in `eval/qa/run-qa.mjs`) and **judge**
+(`JUDGE_MODEL` in `eval/qa/judge.mjs`). Defaults are family aliases; a changed resolved model starts
+a new baseline, while resumed or re-judged files keep their recorded judge. Report resolved
+answering model, resolved judge model, rubric, pack, case count, and results stamp with every QA
+number.
+
+## 3. Pick the instrument
+
+| What changed or what you ask | Run |
+|---|---|
+| Scoring, catalog, or manifest | `npm run eval:routing -- --gate` (free, seconds, always) |
+| Retrieval work (decomposition, vocabulary) | Routing; the extended lane is the target, the legacy lane the non-regression gate |
+| Skill routing or skill store | Routing; read the skills lane against its floor |
+| Upstream drift refresh landed | Routing gate; refresh `improvements/` statuses |
+| Tool descriptions, MCP instructions, nudges | Small QA sample plus plan regrade; routing math does not move |
+| Answer quality before and after a big change | QA battery on matched IDs (headline, paid) |
+| Executor, adapter, or envelope | QA live lane (`--cases eval/qa/corpus/live/live-cases.json`) |
+| Search behavior of agents | Agentic lane (paid, Claude Code Workflow tool, live server) |
+| Tool-plan question on a stored run | `npm run eval:plan -- <results>` (free, offline) |
+| Stale-gospel gate fired | `truth-maintenance` owns the queue; each case goes through `golden-truth` |
+| Playground transport, model path, prompt or loop | `eval/playground/README.md` (API-billed E1/E2; path rules in [Model-call billing](../../../eval/EVALS.md#model-call-billing)) |
+
+Open `.agents/rounds/<YYYY-MM-DD>-<slug>.md` for a round with paid instruments or several lanes;
+a single free check needs no ledger. Use `truth-maintenance` only for an explicitly broad round.
+
+## 4. Free checks
+
+```sh
+npm run eval:selftest            # grader math and frozen live-contract pins
+npm run eval:compile             # corpus -> eval/routing-cases.json
+npm run eval:routing -- --gate   # exit 1 on a breach or a changed denominator
+npm run eval:qa:compile          # only when QA cases changed
+node eval/plan/build-op-classes.mjs   # catalog -> eval/plan/op-classes.json; rerun after a catalog change
+npm run eval:qa:lint -- --stale --enforce-floors  # the CI form
+```
+
+Add `--since <base-ref>` to the lint after editing judge-facing gospel. Without `--since`, the
+gospel-change lane skips locally while CI enforces it. Generated files (`routing-cases.json`,
+`qa/cases.json`, `qa/sample.json`, `qa/tool-cases.json`, `qa/lifecycle-registry.json`,
+`plan/op-classes.json`) come from these scripts; CI byte-pins them. The two live contracts are
+frozen: change them only with a provenance note, a contract-version bump, and a digest update.
+
+`npm run eval:qa:selftest` is **paid** (seven judge calls) although it needs no server. Run it only
+when the rubric, prompt, evidence pack, or judge adapter changed, or when the resolved judge model
+changed. A new resolved judge model needs it before its first
+headline judged run, and that run sets the new baseline. It requires an exact `--judge-model` (resolve
+the alias first), not an alias.
+
+## 5. Paid runs
+
+1. **Server.** Reuse a terminal already running `npm run dev:eval` (`hc ls`, then `hc read <t>` for
+   its port). If none exists, start your own: `hc run --bg --name dev-eval npm run dev:eval --
+   --port <port>`, then `hc wait dev-eval --output Ready`. Stop only a server you started. Use
+   `dev:eval`, not `dev`: only the eval launcher refuses a dirty worktree and stamps the revision
+   in MCP `serverInfo`, which the run's `--server-revision` pin checks.
+2. **Readiness.** A plain GET on `/mcp` proves nothing. Expect `200` from a real initialize:
+
+   ```sh
+   curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:${PORT}/mcp" \
+     -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
+   ```
+3. **Pins and cap.** Compute the identity pins in the collection shell as
+   [`eval/qa/README.md`](../../../eval/qa/README.md#identity-and-budget-requirements) describes,
+   and pass exactly one `--max-budget-usd`. A changed pin stops the method; a new pin starts a
+   new run. Never resume a stopped artifact under the same budget ledger.
+4. **Estimate cost from stored runs**, not from a per-case figure in a README: read
+   `meta.totalCostUsd` with `jq` from the results files that the round ledgers name for the same
+   lane, model, rubric, and pack (`eval/qa/results/<stamp>-variantA.json`), never by glob, and
+   quote the observed range and median.
+5. **Run.**
+
+   ```sh
+   # QA sample (variant A = the shipped search tool); add the pin flags from eval/qa/README.md
+   node eval/qa/run-qa.mjs --variant A --sample 30 --port "$PORT" --max-budget-usd "$MAX_BUDGET_USD" ...
+   # smallest run: --ids a,b,c   collect only: --no-judge   other client: --model <id>
+   # live lane: replace --sample 30 with --cases eval/qa/corpus/live/live-cases.json
+   npm run eval:plan -- eval/qa/results/<stamp>-variantA.json   # free regrade of the stored run
+   ```
+
+   The agentic lane needs the Claude Code Workflow tool; follow `eval/agentic/README.md`. Report
+   QA by the five-track contract in `eval/qa/README.md`, and never emulate a retry with an ad hoc
+   rerun.
+
+Before reading any aggregate, assert the expected job count. A harness that filters failed jobs
+shrinks the denominator silently. A short run forbids an aggregate or a baseline delta; a paired
+per-row comparison on the completed jobs stays valid. When attributing a delta across several
+landed changes, name the cases each change can affect before the run, or claim only a diagnostic.
+The noise floor bounds what variance can explain; it is not a significance threshold.
+
+## 6. Read the result
+
+**Gates first.** `eval/gates.json` owns the legacy, skills, and holdout thresholds. On a failure,
+a regression is fixed or reverted. Re-baseline only when the numbers moved for a legitimate, named
+reason (drift, a deliberate policy change): update `gates.json` in the same commit, check per-case
+hit-to-miss regressions (zero is the standard), and fill its provenance fields.
+
+**QA verdicts are evidence, not ground truth.** Review the declared rows against the full
+transcript and the exact golden. `caseInput` on each row holds the judge input; a review packet
+needs the question, golden, `trap` and `freshness` tags, as-of metadata, and transcript. Truncated
+execute results end in a `--- SOURCE BASIS ---` block.
+
+- Check the shape before you match stored results. `rows[].transcript` is an array of objects, and
+  `verdict` is an object whose label is `verdict.score`. String or identity comparisons on either
+  return a wrong answer without an error.
+- Read `wrong` counts before `correct` counts. Compare runs only on the same case IDs, model,
+  rubric, and pack; the sampler can change membership when the corpus grows.
+- Untagged cases are judged corpus-blind, so a grounded specific that the judge cannot see can be
+  graded as fabrication. Resolve a decision-bearing dispute from the transcript.
+- A verdict is one sample. A flip does not show which grade is right; keep both observations.
+  Re-judge (`eval/qa/re-judge.mjs`, one `--max-budget-usd`) only when it can settle the decision.
+- For freshness cases, a sourced difference from the golden snapshot is fine; a confident unsourced
+  contradiction is not.
+- A `wrong` whose rationale cites a must-avoid item phrased as "beyond corpus support" is a suspect
+  judge artifact until verified live.
+- The paired verdict (`npm run eval:qa:paired`) is experimental and never a ship gate.
+
+## 7. Triage reviewed failures
+
+Classify each reviewed failure and surprising pass. Disclose unreviewed rows; they are not passes.
+
+| Root cause | How to recognize | Where it goes |
+|---|---|---|
+| Judge artifact | Live re-execution contradicts the verdict | Round ledger; rubric note if the mode is new |
+| Agent failure | Tool use or synthesis is wrong in the transcript | Round ledger; `.agents/TODO.md` only for a pattern |
+| Own-repo gap (scoring, catalog, executor, adapters) | Search buried the right entry, or a normalizer misread a payload | `.agents/TODO.md`, never `improvements/` |
+| Eval-side gap (stale golden, mislabeled case) | The golden disagrees with the service's own live answer | `.agents/TODO.md`; fix through `golden-truth` |
+| Upstream data or content gap | Correct agent and plumbing still cannot answer from what the service returns | `improvements/` finding |
+| Upstream semantics or spec gap | The service's self-description misleads any consumer | `improvements/` finding |
+| Corpus-coverage diagnostic | The truth lives with another canonical owner and no tested surface undertakes to host it | Keep truth in the golden; record a coverage result, not a Docs issue |
+
+- **Bar for acting:** same failure in two unrelated cases, a contract mismatch, a reproducible
+  infra bug, or trace evidence the model was asked the wrong thing. Put single-case findings on a
+  named monitor-only list in the round ledger.
+- **No overfitting:** fix a general mechanism or leave the case red with a note. No
+  query-to-service maps and no per-question vocabulary; keep case IDs, question phrases, and golden
+  fragments in the round ledger, out of descriptions, keywords, scorer constants, prompts, and docs
+  scoping ([`docs/stellar-docs.md`](../../../docs/stellar-docs.md#maintenance)). File upstream gaps
+  before proposing local wording.
+- **Check thresholds before special-casing** a dropped keyword or rank (e.g., document-frequency
+  cut).
+- **Wording ladder:** read what the model saw at failure, nearest first — guard/`codemode.*` errors
+  (`src/executor/providers.ts`), truncation footers (`src/policy/truncate.ts`), adapter hints
+  (`src/adapters/`), `search` `nextSteps`, tool descriptions/`SERVER_INSTRUCTIONS`
+  (`src/mcp/tools.ts`), then catalog descriptions (generated via `scripts/`). If existing prose
+  already teaches the behavior, prefer a mechanism (fail-loud guard, fix-carrying error) over more
+  words; if it is absent or wrong, edit only the nearest surface, measure before/after on the same
+  instrument, revert edits with no measured shift, and re-run the routing gate after catalog
+  description edits.
+- **Findings and goldens:** use `improvements-pipeline` (`verified` requires own live re-execution;
+  dedupe first) and `golden-truth` (live evidence + root cause; never a desired score).
+
+## 8. Close
+
+Results JSON is local-only evidence under ignored `results/` directories. Record in the ledger or
+pull request: the decision and the evidence that met the stop rule, result stamps, models, cost,
+review coverage, retained failures, and limits. Keep dated evidence in `research/audits/` or
+`eval/qa/reviewed/` only when a current artifact needs it
+([retention](../../README.md#retention)). Then check:
+
+- Gate verdict recorded; `gates.json` re-baselined in-commit if the movement was legitimate.
+- Verified findings filed or explicitly deferred; own-repo fixes are `.agents/TODO.md` entries.
+- After case edits, `npm run eval:qa:lint -- --since <ref> --stale --enforce-floors` is green and
+  `npm run eval:qa:register` re-stamped the clusters.
+- A requested independent review finished and every finding was reconciled.
+
+## Hard rules
+
+- The four instrument rules (one headline and three routing gates, separate denominators, no
+  per-question tuning, freshness graded as behavior) are the "Evaluation rules" in
+  [`eval/EVALS.md`](../../../eval/EVALS.md#evaluation-rules).
+- When two instruments disagree, the one closer to the headline wins.
+- No schemas or judge code copied from prior-art repos.
+- Never print or commit secrets. Paid Lumenloop research stays off; eval runs use free operations.
+- Sandbox and network posture is never relaxed for eval convenience.

@@ -1,0 +1,396 @@
+---
+name: operating-a-store
+description: Operate a contextdb store with retention, declared compaction, parent-following purge, historical-index verification, backups, and sync liveness inspection.
+---
+
+# Operating a store
+
+The recovery/maintenance verbs (`diagnose`, `reset --force`) and the destructive-op
+confirmation rule already live in
+[`AGENTS.md`'s destructive-op table](../../AGENTS.md#destructive-commands-need-explicit-confirmation) —
+read that first; this skill does not repeat it. What this skill covers instead: driving `RETAIN`
+expiry on demand, permanently erasing rows with `purge`, backing up before any destructive op, and
+telling a healthy-but-slow sync pull apart from a genuinely stuck one.
+
+**Prerequisite:** needs the `contextdb` binary. In a checkout of this repo:
+`cargo build --release -p contextdb-cli`. Other install options:
+[`docs/getting-started.md`](../../docs/getting-started.md).
+
+## Recipe checklist
+
+1. **Enforce a `RETAIN` window right now** (don't wait for the background cycle) → `.maintenance
+   run`, recipe 1.
+2. **Erase rows permanently** → `contextdb purge <path> --table <t> --force`, recipe 2. **Only
+   legal on a store that has never connected to a sync hub** — read the honest caveat in recipe 2
+   before you reach for this on a synced edge.
+3. **Take a backup before ANY destructive op** (`reset`, `purge`) → `contextdb snapshot
+   export <path> <dest>`, recipe 3. This is the safe prerequisite AGENTS.md's table already points
+   at; the worked example here is the copy-paste form.
+4. **Tell a healthy long-running pull apart from a stuck one** → recipe 4, `pull_pages_read`.
+5. **If you need `diagnose`/`reset`**, go straight to
+   [AGENTS.md's destructive-op table](../../AGENTS.md#destructive-commands-need-explicit-confirmation)
+   — this skill doesn't re-derive those, it composes with them (recipe 3 is the backup step you take
+   before using them).
+6. **Need to just look at a store without any destructive risk?** Plain `contextdb <path>` (no
+   `--write`) already is a bounded read session — see
+   [AGENTS.md's "Reading is safe by default"](../../AGENTS.md#reading-is-safe-by-default).
+
+## Recipe 1 — enforce `RETAIN` on demand with `.maintenance run`
+
+1. Declare `RETAIN <n> <unit>` on the table (`SECONDS`, `MINUTES`, `HOURS`, `DAYS`).
+2. Insert a row and let its window pass.
+3. Run `.maintenance run` — this drives one on-demand maintenance cycle **synchronously**, instead
+   of waiting for the background schedule. It is the only way to make retention observable inside
+   a short session or test.
+4. Validate: re-read the table and confirm the row is gone; the `.maintenance run` result itself
+   also reports `pruned_rows`.
+5. **If `pruned_rows` is `0` and you expected a prune**, the window hasn't actually elapsed yet —
+   re-check the wall-clock math, not the command.
+
+### Worked example 1 — a 1-second window, `--json`
+
+```bash
+contextdb ./life.db --write --json <<'SQL'
+CREATE TABLE pings (id UUID PRIMARY KEY, note TEXT) RETAIN 1 SECONDS;
+INSERT INTO pings (id, note) VALUES ('bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb', 'short-lived');
+SQL
+sleep 1.2
+printf '.maintenance run\nSELECT COUNT(*) AS n FROM pings;\n' | contextdb ./life.db --write --json
+```
+
+```json
+{"maintenance_cycle":{"compaction":{"bytes_after":40960,"bytes_before":40960,"duration_micros":3233,"file_shrank":false,"fragmentation_before":0.9239153180803571,"ran":true},"currency_pruned_versions":0,"currency_redb_compacted":false,"currency_versions_deferred_for_readers":0,"file_shrank":true,"pruned_rows":1,"pruned_trigger_audit_rows":0,"reclaimed_bytes":558,"rows_deferred_for_readers":0,"vector":{"built_indexes":0,"built_partitions":0,"first_failure":null,"first_failure_details":null,"nonempty_partitions":0,"ready_partitions":0,"remaining_indexes":0,"remaining_partitions":0}}}
+{"result":{"columns":["n"],"rows":[{"n":0}]}}
+```
+
+`pruned_rows:1` confirms the expiry actually fired; `n:0` confirms the row is gone.
+
+### Worked example 2 — human output, and checking which maintenance mode is in force
+
+The CLI starts engine-owned maintenance by default. A writable file-backed session
+spawns the worker when the store has something to maintain (a `RETAIN` table, a
+currency table, a durable trigger audit, or a declared vector index). Use
+`--maintenance caller-driven` <!-- enforced by: crates/contextdb-cli/tests/read_cli_journeys_invocation.rs::maintenance_flags_require_write_and_configure_the_writer --> for a predictable, synchronous-only session that
+never spawns the worker <!-- enforced by: tests/integration/maintenance_ownership_tests.rs::caller_driven_spawns_no_thread_however_much_is_declared --> and leaves scheduling to `.maintenance run`.
+
+```bash
+printf '.maintenance status\n' | contextdb ./life.db --write --json
+```
+
+```json
+{"maintenance":{"active_maintenance_loops":0,"currency_compaction_enabled":false,"policy":"engine_owned","retention_enabled":true,"running":false}}
+```
+
+```bash
+printf '.maintenance status\n' | contextdb ./life.db --write --maintenance caller-driven --json
+```
+
+```json
+{"maintenance":{"active_maintenance_loops":0,"currency_compaction_enabled":false,"policy":"caller_driven","retention_enabled":true,"running":false}}
+```
+
+`policy` is the mode: `engine_owned` (the default) or `caller_driven`.
+`retention_enabled:true` means some table in this store declares `RETAIN`, so
+there is something for a cycle to reclaim. `running` is whether a cycle is in
+flight at the moment of the status read — a short-lived CLI process often
+reads `running:false` because it asked before a tick, which is why
+`.maintenance run` exists as the synchronous door. Do not read `running:false`
+as "this process started no worker."
+
+```bash
+printf '.maintenance run\nSELECT COUNT(*) AS n FROM pings;\n' | contextdb ./life.db --write
+```
+
+```text
+pruned_rows=0 rows_deferred_for_readers=0 currency_pruned_versions=0 pruned_trigger_audit_rows=0 auto_compact_ran=true vector_built_indexes=0 vector_remaining_indexes=0 vector_nonempty_partitions=0 vector_ready_partitions=0 vector_built_partitions=0 vector_remaining_partitions=0 vector_first_failure=none vector_failure_operation=none vector_failure_requested_bytes=none vector_failure_available_bytes=none vector_failure_current_bytes=none vector_failure_budget_limit_bytes=none vector_failure_message=none vector_failure_recovery_action=none vector_failure_recovery_instruction=none
++---+
+| n |
++---+
+| 0 |
++---+
+(1 rows)
+```
+
+Run right after Worked example 1 on the same `life.db`, `pruned_rows` here is honestly `0`, not `1`
+— example 1's `.maintenance run` already pruned the one expired row, so this second cycle has
+nothing left to reclaim; `n:0` still confirms the table stays empty. If you want to see `pruned_rows`
+fire again, insert and let expire a fresh row first (repeat Worked example 1's setup).
+
+`retention_enabled:false` on `.maintenance status` means no table in this store declared `RETAIN`
+at all — that's a sign to go back to step 1, not a broken maintenance loop.
+
+## Recipe 2 — `purge`: permanent erasure, and the honest limits on it
+
+1. Run `contextdb purge <path> --table <t> --force`. There is **no `WHERE` support at this door** —
+   it erases every row of the named table. <!-- enforced by: crates/contextdb-cli/tests/purge_cli_verb_tests.rs::purge_with_force_erases_rows_and_the_erasure_survives_a_restart --> For a narrower selection, use the engine's `PURGE FROM
+   <table> WHERE ...` SQL statement directly instead of the CLI verb.
+2. **`--force` is mandatory.** Omitting it refuses with a usage error (exit `2`) <!-- enforced by: crates/contextdb-cli/tests/purge_cli_verb_tests.rs::purge_without_force_refuses_and_leaves_data_untouched --> that names the
+   exact command to rerun — this is deliberate friction, not a bug to route around.
+3. Validate: re-read the table's row count; also `contextdb purge` itself prints how many rows it
+   erased.
+4. **The honest limit: `purge` only runs on a store that has never connected to a sync hub.** A
+   store that has EVER had a `--sync-endpoint` configured refuses purge with `PURGE must originate
+   at authoritative hub <hub-node-id>; run PURGE there` <!-- enforced by: crates/contextdb-server/tests/durable_deletion_and_purge_tests.rs::configured_edge_refuses_purge_before_first_connection_and_after_restart --> — purge must run at the hub, not on an
+   edge, so that a purge is never invisible to peers that still hold the row. **If you hit that
+   refusal on an edge, go run purge against the hub's own database file directly** (with the hub
+   process stopped, or via whatever administrative path the hub operator uses) — there is no edge
+   workaround.
+5. **A subtlety worth knowing before you rely on purge as a privacy tool:** purging a row on a
+   store that has *never* connected does NOT create a tombstone. If that store *later* connects to
+   a hub for the first time and the hub independently holds a row with the same key, that row
+   legitimately arrives on the first pull — purge only erases local history, it does not forbid a
+   genuinely independent future arrival of the same key. This is the correct contract (a purge on
+   an isolated store cannot know about or block a hub it has never talked to), not a leak — but
+   don't rely on "I purged it once" as a permanent guarantee once you connect that store to
+   anything.
+
+### Worked example 1 — refused without `--force`, then erased
+
+```bash
+contextdb ./p.db --write --json <<'SQL'
+CREATE TABLE scratch (id UUID PRIMARY KEY, note TEXT);
+INSERT INTO scratch (id, note) VALUES ('11111111-1111-1111-1111-111111111111', 'a');
+INSERT INTO scratch (id, note) VALUES ('22222222-2222-2222-2222-222222222222', 'b');
+SQL
+contextdb purge ./p.db --table scratch
+```
+
+```text
+Error: purge permanently and irreversibly erases rows, so it requires the explicit --force flag; rerun as `contextdb purge ./p.db --table scratch --force` once you're certain.
+```
+
+Exit code `2`. Now with `--force`:
+
+```bash
+contextdb purge ./p.db --table scratch --force
+echo "SELECT COUNT(*) AS n FROM scratch;" | contextdb ./p.db --json
+```
+
+```text
+purge './p.db': erased 2 row(s) from 'scratch'.
+```
+```json
+{"result":{"columns":["n"],"rows":[{"n":0}]}}
+```
+
+### Worked example 2 — the never-connected limit and the first-connect honesty case
+
+A store that has connected refuses purge outright:
+
+```bash
+# edge.db already pushed/pulled against a hub earlier in this session
+contextdb purge ./edge.db --table scratch --force
+```
+
+```text
+Error: purge failed for './edge.db': PURGE must originate at authoritative hub 6bcbbbbf6b3a64ea01ec48231276958f8c074c5e34838e9c42562dd163a9a333; run PURGE there
+```
+
+Exit code `1` — **note this is `1`, not `2`**: the invocation was valid and `--force` was present,
+but the operation itself is disallowed on this store. And on a store that purged a row **before
+ever connecting**, then connects to a hub for the first time where an independent peer has the
+same key:
+
+```text
+Pulled: 1 applied, 0 skipped, 0 conflicts
++--------------------------------------+----------------------+
+| id                                   | note                 |
++--------------------------------------+----------------------+
+| 11111111-1111-1111-1111-111111111111 | from-hub-independent |
++--------------------------------------+----------------------+
+(1 rows)
+```
+
+The row is back — this is step 5's honesty case, verified live, not a hypothetical. **If you need
+a row to stay gone across every future sync, `purge` alone is not that primitive** — pair it with
+never connecting that store to a hub that could reintroduce the key, or purge at the hub itself so
+every current and future peer converges on the erasure.
+
+## Recipe 3 — back up before any destructive op
+
+1. `contextdb snapshot export <path> <dest>` before `reset --force` or `purge`.
+2. Validate: the command's own output line states the row/edge/vector counts and byte size it
+   captured — compare that against what you expect before proceeding to the destructive step.
+
+### Worked example — export, then read the exported counts back
+
+```bash
+contextdb ./snap.db --write --json <<'SQL'
+CREATE TABLE t (id UUID PRIMARY KEY, x TEXT);
+INSERT INTO t (id, x) VALUES ('11111111-1111-1111-1111-111111111111', 'v');
+SQL
+contextdb snapshot export ./snap.db ./snap-backup
+```
+
+```text
+snapshot exported to './snap-backup' at LSN 2 (1 rows, 0 edges, 0 vectors, 110592 bytes)
+```
+
+`1 rows` matches the one row inserted — that's the validation. **If the row count in the export
+line doesn't match what you expect, stop before running `reset`/`purge`** — the backup
+itself may be incomplete (a concurrent writer, a wrong path), and a destructive op after a bad
+backup has no recovery path.
+
+## Recipe 4 — is this pull alive or stuck? `pull_pages_read`
+
+1. In an **interactive** terminal session, you don't need to do anything: a `.sync pull` that
+   takes a while prints its own periodic `Pulling... N page(s) read so far` lines automatically —
+   this is a background printer the CLI runs for you when stdin is a real terminal.
+2. In a **scripted/piped** session, or from your own Rust code driving a `SyncClient` directly, the
+   counter is exposed as `pull_pages_read` — cumulative pages this client process has read across
+   every pull it has issued, reset only when the process restarts. Read it from `.sync status` in a
+   `--json` session after a pull completes, <!-- enforced by: crates/contextdb-cli/tests/sync_pull_progress_counter_tests.rs::sync_status_json_carries_a_monotonically_advancing_pull_pages_read_field --> or poll it from your own code on a background thread
+   the way the CLI's own interactive printer does (`client.pull_pages_read()` before and after a
+   delay while a pull runs on another thread) — **a genuinely live two-shell-process poll won't
+   work**. A second process can certainly read the store while the puller holds it (that read is
+   served by the puller over its owner channel), but `pull_pages_read` counts what *this client
+   process* has read; it is not store state, so no other process can observe it.
+3. Validate a completed pull's liveness retroactively: `pull_pages_read > 0` on a pull that
+   `applied` more than a handful of rows means real multi-page work happened, not an instant no-op.
+
+Both examples below assume a hub is already up and `$TICKET` holds its enrollment ticket — see the
+`sync` skill's §1 if you need to stand one up first.
+
+### Worked example 1 — `.sync status` under `--json`, after a push and pull
+
+```bash
+printf '.sync status\n' | contextdb ./edge-a.db --write --tenant-id p --sync-endpoint "$TICKET" --json
+```
+
+```json
+{"sync":{"committed_txid":1,"configured":true,"database_lsn":2,"endpoint":"iroh:?to=...&identity=./edge-a.db.fabric-identity.key","pull_in_progress":false,"pull_pages_read":0,"pull_watermark":0,"push_watermark":2,"tenant":"p","transport":"connected"}}
+```
+
+`pull_pages_read:0` here is correct and not a bug — this edge has only ever pushed, never pulled.
+`pull_in_progress` is a live cross-thread signal, not a durable fact — it turns `true` only while a
+pull sharing this exact `SyncClient` handle is actively running, <!-- enforced by: crates/contextdb-server/tests/sync_pull_in_progress_tests.rs::pull_in_progress_is_true_only_while_a_pull_is_running --> so a one-shot CLI process (which
+blocks until its own pull returns) always reports `false` here regardless of history.
+
+### Worked example 2 — after a real pull, human output
+
+```bash
+contextdb ./edge-b.db --write --tenant-id p --sync-endpoint "$TICKET" <<'SQL'
+.sync pull
+.sync status
+SQL
+```
+
+```text
+Pulled: 1 applied, 0 skipped, 0 conflicts
+Sync: tenant=p, endpoint=iroh:?to=...&identity=./edge-b.db.fabric-identity.key
+Transport: connected
+Database LSN: 3
+Push watermark: LSN 0
+Pull watermark: LSN 8
+Pull pages read: 1
+Committed TxId: 4
+```
+
+**If `Pull pages read` stays at `0` after a pull you expected to move real data**, check
+`Pull watermark` against the sender's `push_watermark` (§4 of the `sync` skill) before assuming a
+hang — a `0`-page pull with `applied:0` is often just "already converged," not stuck.
+
+## Gotchas
+
+- **`purge` has no `WHERE`.** It erases the whole table. Use `PURGE FROM <table> WHERE ...` SQL
+  directly (not the CLI verb) for a narrower erasure.
+- **`purge`'s refusal on a connected store is exit `1`, not `2`** — `--force` was present and
+  correctly formed, but the operation itself is disallowed; don't treat this the same as a missing
+  flag.
+- **A purge is local history, not a fleet-wide tombstone**, unless it runs at the hub. See recipe
+  2, step 5.
+- **`pull_pages_read` is per-process, not per-database.** It resets to `0` every time you start a
+  new `contextdb` process — it is not a durable counter you can compare across separate CLI
+  invocations days apart.
+
+## Next
+
+- The destructive-op table and the safe-reading-by-default contract this skill builds on → [`AGENTS.md`](../../AGENTS.md)
+- Open a database, run SQL, read `--json`, branch on exit codes → [`skills/using-contextdb/SKILL.md`](../using-contextdb/SKILL.md)
+- Push/pull, watermarks, the delete-durability recipe → [`skills/sync/SKILL.md`](../sync/SKILL.md)
+- Wire up sinks/routes/schedules so there's something to observe here → [`skills/running-triggers-and-schedules/SKILL.md`](../running-triggers-and-schedules/SKILL.md)
+
+## Recipe 5 — declare when storage compacts
+
+Prerequisite: the binary installed above and write access to a file store. This example
+creates a task-scoped store; use the confirmation rule above for an operator's existing store.
+
+1. Set only the clauses you intend to override: `START_RATIO`, `MIN_INTERVAL`, `STOP_RATIO`,
+   and `MAX_SWEEPS`. Omitted clauses keep their current values.
+2. Inspect `SHOW STORAGE_COMPACTION`: each row names its value and whether its source is
+   `declared` or `default`. The declaration persists across reopen and is local to the store.
+3. Use `SET STORAGE_COMPACTION DEFAULT` to reset all four clauses. A zero ratio, zero sweep
+   count or zero interval is refused and leaves the previous declaration intact. Declaring a policy
+   does not itself run a sweep; `.maintenance compact` is the explicit compaction command.
+<!-- enforced by: storage_compaction_is_declarable_and_unmeasured_fragmentation_reads_unknown::storage_compaction_declarations_show_their_source_and_survive_reopen, storage_compaction_is_declarable_and_unmeasured_fragmentation_reads_unknown::a_declared_stop_rule_changes_how_many_sweeps_compact_now_runs -->
+
+```bash
+db="$(mktemp -d)/compact.db"
+contextdb "$db" --write --json > /dev/null <<'SQL'
+SET STORAGE_COMPACTION START_RATIO 0.4 MIN_INTERVAL 30 MINUTES;
+SET STORAGE_COMPACTION MAX_SWEEPS 4;
+SQL
+printf 'SHOW STORAGE_COMPACTION;\n' | contextdb "$db" --write --json
+```
+
+```json
+{"result":{"columns":["setting","value","source"],"rows":[{"setting":"start_ratio","source":"declared","value":0.4},{"setting":"min_interval_ms","source":"declared","value":1800000},{"setting":"stop_ratio","source":"default","value":0.05},{"setting":"max_sweeps","source":"declared","value":4}]}}
+```
+
+## Recipe 6 — erase declared children with a parent
+
+Prerequisite: the binary installed above; run this destructive example only against its own
+new temporary store. Back up an operator's store first, as in recipe 3.
+
+1. Declare the child's reference with `REFERENCES parents(id) FOLLOWS PARENT PURGE`.
+2. Purge the parent through the SQL erasure door. Every retained life of a declared child
+   follows its parent into erasure. This is a purge declaration, not an ordinary DELETE cascade.
+3. Check both tables. Invalid reference shapes are refused at schema admission; inspect the
+   referenced primary key and the declaration instead of removing the erasure policy.
+<!-- enforced by: custody_purge_and_discard_contract::a_purge_erases_every_retained_life_of_a_declared_child, custody_purge_and_discard_contract::follows_parent_purge_is_validated_on_the_projected_catalog -->
+
+```bash
+db="$(mktemp -d)/family.db"
+contextdb "$db" --write --json > /dev/null <<'SQL'
+CREATE TABLE parents (id UUID PRIMARY KEY) SYNC OFF;
+CREATE TABLE children (id UUID PRIMARY KEY, parent_id UUID REFERENCES parents(id) FOLLOWS PARENT PURGE) SYNC OFF;
+INSERT INTO parents VALUES ('11111111-1111-1111-1111-111111111111');
+INSERT INTO children VALUES ('22222222-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111');
+PURGE FROM parents WHERE id = '11111111-1111-1111-1111-111111111111';
+SQL
+printf 'SELECT COUNT(*) AS children_left FROM children;\n' | contextdb "$db" --write --json
+```
+
+```json
+{"result":{"columns":["children_left"],"rows":[{"children_left":0}]}}
+```
+
+## Recipe 7 — verify historical indexes
+
+Prerequisite: the binary installed above and a table whose historical index you want to check.
+The example creates a temporary store.
+
+1. Run `.verify history <table>` from a reading session. Under `--json`, use the
+   `verify_history` document and each index's `postings` and `versions` counts.
+2. A verification error means the check failed; retain the store and diagnostic before
+   attempting repair. The command verifies rather than rewriting the historical index.
+<!-- enforced by: read_cli_journeys_metadata::verify_history_checks_each_historical_index_from_a_read_session -->
+
+```bash
+db="$(mktemp -d)/history.db"
+contextdb "$db" --write --json > /dev/null <<'SQL'
+CREATE TABLE tagged (id INTEGER PRIMARY KEY, tag TEXT);
+CREATE INDEX tagged_tag ON tagged(tag);
+INSERT INTO tagged VALUES (1, 'a');
+UPDATE tagged SET tag = 'b' WHERE id = 1;
+SQL
+printf '.verify history tagged\n' | contextdb "$db" --json
+```
+
+```json
+{"verify_history":{"indexes":[{"index":"__pk_id","postings":1,"versions":2},{"index":"tagged_tag","postings":2,"versions":2}],"table":"tagged"}}
+```
+
+The route notice, including its snapshot timestamp, is emitted on stderr separately from this
+stdout document.
+<!-- enforced by: read_cli_journeys_session_shape::the_route_notice_is_emitted_once_on_stderr_at_the_first_store_reading_command -->

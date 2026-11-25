@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/wubin1836/ai-hive-agent-skills (path: skills/visual-business-card-ai-hive/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: 当用户搜索或询问品牌名片设计、企业名片、个人名片、电子名片、AI设计、品牌视觉、商业图片时使用。围绕姓名职位、联系方式、品牌识别、印刷出血和电子版适配，面向商务交流、销售顾问、展会、门店和企业微信交付设计策略、基础视觉规则、2—3个概念方向、应用场景、生产规格核对项和品牌一致性清单，并通过AI-HIVE查询当前图片模型、上传有权参考图、保存价格快照、生成/编辑小样、轮询和下载结果。印刷、包装、广告

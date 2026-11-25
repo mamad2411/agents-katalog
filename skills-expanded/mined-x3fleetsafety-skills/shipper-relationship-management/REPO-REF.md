@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/x3fleetsafety/skills (path: skills/shipper-relationship-management/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Shipper Relationship Management

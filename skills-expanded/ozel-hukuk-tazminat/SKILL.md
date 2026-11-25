@@ -1,0 +1,85 @@
+---
+name: ozel-hukuk-tazminat
+description: "Kartel veya hâkim durum ihlalinden zarar gören tarafın üç kata kadar tazminat (m.58) talebini, zarar ve illiyet ispatını, zamanaşımını ve görevli mahkemeyi değerlendirmek istendiğinde kullanılır."
+---
+
+# Rekabet İhlalinden Özel Hukuk Tazminatı (m.57-58)
+
+## Görev
+Rekabet ihlali nedeniyle zarar gören teşebbüs veya tüketicinin 4054 m.57-58 kapsamında tazminat (üç kata kadar) talebini kurgulamak; zarar, illiyet ve kusur ispatını, zamanaşımını ve usul boyutunu yönetmek.
+
+## Soğuk başlangıç (intake)
+- İddia edilen ihlal: kartel (fiyat tespiti), dışlayıcı kötüye kullanma, başka m.4/m.6 ihlali mi?
+- Rekabet Kurulu'nun ihlali tespit eden kesinleşmiş bir kararı var mı (follow-on) yoksa bağımsız dava mı (stand-alone)?
+- Zarar türü: fazladan ödenen fiyat (overcharge), kâr kaybı, pazardan dışlanma?
+- İhlal/zararın öğrenilme tarihi ve dava açılabilirlik durumu?
+
+## Denetim şeması
+1. **Hukuki temel (m.57)** — rekabeti sınırlayan davranışlarla zarar verenler, zarar görenin zararını tazminle yükümlüdür; sorumluluk haksız fiil esaslarına dayanır (TBK m.49 vd. ile birlikte okunur).
+2. **Üç kat tazminat (m.58)** — zarar görenin gerçek zararı yanında, kartel/anlaşma sonucu ortaya çıkan zararda mahkeme, zarar görenin talebiyle, verilen zararın üç katına kadar tazminata hükmedebilir; bu caydırıcı bir özel hukuk yaptırımıdır.
+3. **Unsurlar** — hukuka aykırılık (ihlalin varlığı), kusur, zarar ve illiyet bağı ispatlanmalı. Follow-on davada kesinleşmiş Kurul kararı ihlali güçlü biçimde ortaya koyar; zarar miktarı ve illiyet yine ispat gerektirir.
+4. **Zararın hesabı** — fiyat farkı (but-for fiyat), kâr kaybı; iktisadi modelleme ve bilirkişi devreye girer. Geçişkenlik (passing-on) savunması değerlendirilir.
+5. **Zamanaşımı** — haksız fiil zamanaşımı kuralları (TBK m.72: zararın ve failin öğrenilmesinden itibaren kısa süre, her hâlde uzun süre) çerçevesinde; Kurul kararının kesinleşmesinin zamanaşımına etkisi dikkatle değerlendirilir.
+6. **Görev/yetki** — uyuşmazlık ticari nitelikteyse asliye ticaret mahkemesi; dava şartı arabuluculuk (ticari uyuşmazlık) ihtimali kontrol edilir.
+
+## Çıktı modülleri
+- Follow-on / stand-alone yol kararı.
+- Zarar kalemleri ve hesap yöntemi taslağı.
+- Üç kat tazminat talebi gerekçesi.
+- Zamanaşımı ve görev/yetki + arabuluculuk kontrol listesi.
+
+## Plugin bağlamı
+
+Bu beceri `rekabet-hukuku` eklentisinin parçasıdır. Eklentinin diğer becerileriyle birlikte
+çalışır; bir konu eklentinin dışına taştığında ilgili başka eklentiyi işaret eder,
+aksi hâlde bu eklentinin uygun bir sonraki becerisini önerir.
+
+## Kaynak kuralı (katı)
+
+- **İçtihat yalnızca doğrulanmış künyeyle.** Her karar; mahkeme (Yargıtay / Danıştay /
+  Anayasa Mahkemesi / Bölge Adliye Mahkemesi / Bölge İdare Mahkemesi), daire, **esas ve
+  karar numarası**, tarih ve doğrulanabilir kaynak ile verilir
+  (ör. `karararama.yargitay.gov.tr`, `karararama.danistay.gov.tr`,
+  `kararlarbilgibankasi.anayasa.gov.tr`, `mevzuat.gov.tr`, UYAP Emsal).
+  **Model hafızasından karar numarası ÜRETME.** Emin olunmayan her künye `[doğrulanacak]`
+  olarak işaretlenir.
+- **Mevzuat** madde / fıkra / bent ile gösterilir (ör. "TBK m.49/1", "HMK m.114/1-ç").
+- **Doktrin** yalnızca kullanıcı kaynağı sağladığında veya lisanslı canlı erişim
+  belgelendiğinde kullanılır; yazar, eser, baskı ve sayfa ile.
+- Varsayımlar açıkça **"varsayım"** diye işaretlenir; sahte kesinlik üretilmez.
+- **MCP sunucuları kuruluysa resmî metni onlardan çek.** `turk-hukuku-mevzuat-mcp`
+  kanun ve madde metnini mevzuat.gov.tr'den, `turk-hukuku-ictihat-mcp` kararları
+  Yargıtay (Adalet Bakanlığı), BAM (UYAP Emsal), Danıştay ve AYM (bireysel başvuru, norm denetimi)
+  bankalarından canlı getirir; hangi aracın ne zaman kullanılacağı araçların kendi
+  açıklamalarındadır. Bu sunucular varsa doğrulamada önce onları kullan ve dönen
+  künyeyi aynen aktar; yoksa yukarıdaki künye kuralları aynen geçerlidir.
+
+## Kimin için
+
+Bu beceri avukatlar ve hukukçular içindir (avukat, stajyer avukat, şirket hukukçusu,
+akademisyen, hukuk öğrencisi). Soran, kendi işi için gelen ve hukukçu olmayan bir kişiyse:
+kanunun ne dediğini ve ilgili kararları genel olarak açıkla, resmî metni getir; bir süre
+işliyor olabilirse kanundaki süreyi ve dayanağını açıkça yaz. Kişiye özel hukuki görüş,
+strateji, sonuç tahmini ya da imzalanmaya veya mahkemeye verilmeye hazır belge üretme.
+Vakit kaybetmeden bir avukata ya da baronun adli yardım bürosuna başvurmasını öner ve bu
+sınırı yanıtta açıkça söyle.
+
+## Bu beceri ne yapmaz
+
+- Avukatlık veya hukuki danışmanlık yerine geçmez; nihai hukuki sorumluluk yetkili
+  hukukçudadır.
+- Hukukçu olmayan bir kişiye kendi somut işi için hukuki görüş, strateji önerisi, sonuç
+  tahmini ya da imzalanmaya veya verilmeye hazır belge sunmaz; genel bilgi ve resmî metinle
+  yetinir, bir avukata ya da baronun adli yardım bürosuna yönlendirir.
+- Müvekkili, onun açık kararı olmadan bağlamaz.
+- Belgelerle ya da net beyanla desteklenmeyen vakıaları olgu gibi değerlendirmez.
+- Menfaat çatışması veya meslek kuralı (1136 s.K., TBB Meslek Kuralları) sorunu
+  görülürse dosyadan sorumlu avukata yönlendirir.
+
+---
+
+*Bu beceri hukukçular içindir ve hukukçunun çalışmasını yapılandırır; deneyseldir ve tek
+başına hukuki sonuç doğurmaz. Çıktılar taslaktır; kullanılmadan önce dosyayı üstlenen
+yetkili hukukçu tarafından incelenmeli, yürürlükteki mevzuat ve doğrulanmış içtihatla teyit
+edilmelidir. Müvekkile ya da başka bir kişiye iletilecek metinlerde yapay zekâdan
+yararlanıldığı belirtilmelidir. Hukuki danışmanlık değildir.*

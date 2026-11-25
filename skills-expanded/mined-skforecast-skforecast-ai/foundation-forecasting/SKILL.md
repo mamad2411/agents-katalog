@@ -1,0 +1,297 @@
+---
+name: foundation-forecasting
+description: >
+  Forecasts time series zero-shot with pre-trained foundation models
+  (Amazon Chronos-2, Google TimesFM 2.5/3.0, Salesforce Moirai-2, Soda-INRIA TabICL,
+  Prior Labs TabPFN-TS, The Forecasting Company T0, EDF Lab TS-ICL, Synthefy Nori,
+  Mistral AI Timestral, NX-AI TiRex-2) via ForecasterFoundation and
+  FoundationModel. Covers single and multi-series
+  workflows, exogenous variables, prediction intervals / quantiles,
+  backtesting, and inference-time parameter search (context_length tuning).
+  Use when the user wants accurate forecasts without task-specific
+  training, forecasts for short or new (cold-start) series, or pre-trained
+  generalist models.
+---
+
+# Foundation Model Forecasting (Zero-Shot)
+
+## When to Use
+
+Use `ForecasterFoundation` when:
+- You want **accurate forecasts without training** a model. The best pre-trained models are among the top performers in public benchmarks (GIFT-Eval, fev-bench).
+- You have **very short histories** where ML models struggle.
+- You need to forecast **cold-start** series (new product, new sensor).
+- You have **many heterogeneous series** (different lengths, exogenous variables or missing values).
+
+Trade-offs: prediction needs more computing resources (usually a GPU), and a forecaster trained on the user's data with well-designed features and exogenous variables can still be more accurate for a specific problem. Compare them with backtesting on the same folds.
+
+Foundation models are **pre-trained on massive corpora** — `fit()` does not train them; it only stores the recent context and metadata.
+
+### Related skills
+
+- **Prerequisite**: `choosing-a-forecaster` (decide whether a zero-shot model fits the problem at all)
+- **Alongside**: `baseline-forecasting` (compare the zero-shot model against a naive rule with MASE)
+- **Next**: `hyperparameter-optimization` (tune `context_length` with `bayesian_search_foundation`)
+- **Next**: `metric-selection` (probabilistic metrics for the native quantile output)
+
+## Stop Conditions
+
+Scan before writing code. Each row lists a rule, the symptom when it is broken, and the recovery. Full pitfall catalog: the `troubleshooting-common-errors` skill.
+
+| Rule | Symptom | Recovery |
+|------|---------|----------|
+| `fit()` stores context only; it never trains the model | Expecting training to happen or weights to update | Treat the model as pre-trained; evaluate with `backtesting_foundation` |
+| `cv.refit` and `cv.fixed_train_size` are overridden by `backtesting_foundation` | `IgnoredArgumentWarning` when `refit=True` or `fixed_train_size=False` | Leave them at their defaults; the context window expands per fold either way |
+| Only Chronos-2, TimesFM 3.0, TabICL, TabPFN-TS, T0, Nori, TS-ICL, Timestral, and TiRex-2 use `exog`; TimesFM 2.5 and Moirai-2 ignore it | `IgnoredArgumentWarning`, forecast made without `exog` | Pick an exog-capable adapter when covariates matter |
+| TimesFM (2.5 and 3.0), Moirai-2 and TiRex-2 restrict quantiles to `[0.1, 0.2, ..., 0.9]`; TS-ICL to a 0.01 grid; Timestral to 21 levels (`0.01`, `0.05`, `0.1`, ..., `0.95`, `0.99`) | Requested quantile rejected or unsupported | Request only supported quantiles, or use an adapter allowing any quantile in (0, 1) |
+| Each backend library must be installed separately | `ModuleNotFoundError` / `ImportError` on first use | `pip install` the matching backend (see Installation) |
+| Tuning uses `bayesian_search_foundation`, never `bayesian_search_forecaster*` | `TypeError` on the forecaster type or on `OneStepAheadFold` | Call `bayesian_search_foundation` with a `TimeSeriesFold` |
+| Weights for TimesFM 3.0, Moirai-2, TabPFN-TS, TS-ICL, and Timestral are released under licenses that restrict commercial use (terms vary, e.g. TabPFN-TS allows commercial use under an enterprise license, Timestral excludes companies above USD 20 million of monthly revenue); no warning does not mean a model is unrestricted | `LicenseWarning` on first model load | Review the linked license before commercial use; suppress the warning with `suppress_warnings=True` if already reviewed |
+
+## Installation
+
+Foundation model backends are **not** bundled with skforecast. Install only the backend(s) you need:
+
+```bash
+pip install chronos-forecasting    # For Chronos-2
+pip install "timesfm[torch]"       # For TimesFM 2.5 and 3.0
+pip install uni2ts                 # For Moirai-2
+pip install tabicl[forecast]       # For TabICL
+pip install "tabpfn-time-series>=1.3"  # For TabPFN-TS
+pip install "tfc-t0[torch]>=0.6"   # For T0
+pip install tsicl                  # For TS-ICL
+pip install synthefy-nori          # For Nori
+pip install "timestral @ git+https://github.com/mistralai/timestral.git"  # For Timestral (not on PyPI)
+pip install tirex-2                # For TiRex-2 (Python >= 3.11)
+```
+
+Models are downloaded from HuggingFace on first use.
+
+## Quick Start (single series)
+
+```python
+import pandas as pd
+from skforecast.foundation import FoundationModel, ForecasterFoundation
+
+# Data must have a DatetimeIndex with a frequency
+data = pd.read_csv('data.csv', index_col='date', parse_dates=True).asfreq('h')
+
+# 1. Configure a foundation model (adapter is resolved from model_id)
+model = FoundationModel(
+    model_id='autogluon/chronos-2-small',
+    context_length=2048,      # Adapter-specific default: see reference
+    device_map='auto',        # 'auto' picks CUDA > MPS > CPU
+)
+
+# 2. Wrap it in ForecasterFoundation for the skforecast API
+forecaster = ForecasterFoundation(estimator=model)
+
+# 3. "Fit" only stores the last context_length observations (no training)
+forecaster.fit(series=data['target'])
+
+# 4. Point forecast — returns long-format DataFrame: columns ['level', 'pred']
+predictions = forecaster.predict(steps=24)
+```
+
+## Multi-Series (Global Zero-Shot Model)
+
+Pass a wide `DataFrame`, a long-format `DataFrame` (MultiIndex), or a
+`dict[str, pd.Series]` to `fit`.
+
+The series do not need to be aligned: they can have different lengths and
+time spans, a different subset of exog columns each, and NaN values. Each series
+is forecast from its own context and horizon, so no padding or imputation is
+required before `fit`. See the user guide
+[Foundation models with heterogeneous series](https://skforecast.org/latest/user_guides/foundation-forecasting-with-heterogeneous-series.html)
+for the per-backend rules.
+
+```python
+# series: wide DataFrame — each column is one series
+forecaster.fit(series=series)
+
+# Forecast all series
+predictions = forecaster.predict(steps=24)
+
+# Forecast a subset
+predictions = forecaster.predict(steps=24, levels=['series_1', 'series_2'])
+```
+
+Chronos-2 supports `cross_learning=True` to share information across series
+in the batch (ignored in single-series mode):
+
+```python
+model = FoundationModel(
+    model_id='autogluon/chronos-2-small',
+    cross_learning=True,
+)
+```
+
+## With Exogenous Variables (Chronos-2, TimesFM 3.0, TabICL, TabPFN-TS, TFC-T0, Nori, TS-ICL, Timestral, and TiRex-2)
+
+Chronos-2, TimesFM 3.0, TabICL, TabPFN-TS, TFC-T0, Nori, TS-ICL, Timestral, and TiRex-2 (`allow_exog=True`) accept exogenous variables. TimesFM 2.5 and Moirai-2 ignore them. At predict time the future `exog` columns are validated per series against the historical exog: a future column with no history raises `ValueError`; a historical column with no future values is a past-only covariate, used by Chronos-2, TS-ICL, TimesFM 3.0, Timestral and TiRex-2 (`supports_past_only_covariates=True`) and ignored with an `IgnoredArgumentWarning` by TabICL, TabPFN-TS, TFC-T0 and Nori. Series in a multi-series input may differ in length and in their exog columns: each series is forecast with its own columns, and adapters whose backend needs identical columns per batch (`supports_heterogeneous_covariates=False`: Chronos-2, TS-ICL, TabICL, TimesFM 3.0, TFC-T0, Timestral) are called once per group of series sharing the same columns, so the forecast of a series never depends on the exog of the others.
+
+```python
+# Historical + future exog (must cover the forecast horizon)
+forecaster.fit(series=data['target'], exog=exog_train)
+
+predictions = forecaster.predict(steps=24, exog=exog_test)
+```
+
+## Prediction Intervals and Quantiles
+
+Foundation models output native quantile forecasts — no bootstrapping or conformal calibration is required.
+
+```python
+# Interval (lower/upper bounds from the model's quantiles)
+predictions = forecaster.predict_interval(
+    steps=24,
+    interval=[0.1, 0.9],   # 80% prediction interval (quantiles, 0-1 scale)
+)
+# Columns: ['level', 'pred', 'lower_bound', 'upper_bound']
+
+# Explicit quantiles
+predictions = forecaster.predict_quantiles(
+    steps=24,
+    quantiles=[0.1, 0.5, 0.9],
+)
+# Columns: ['level', 'q_0.1', 'q_0.5', 'q_0.9']
+```
+
+For TimesFM (2.5 and 3.0), Moirai-2 and TiRex-2, requested quantiles must be a subset of `[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]`. TS-ICL accepts any level on a finer 0.01 grid in `[0.01, 0.99]` (e.g. `0.05`, `0.37`); off-grid levels raise a `ValueError`. Timestral returns 21 fixed levels: `0.01`, `0.05`, every multiple of `0.05` up to `0.95`, and `0.99`; any other level raises a `ValueError`. Chronos-2, TabICL, TabPFN-TS, TFC-T0 and Nori support any quantile in `(0, 1)`.
+
+## Choosing a Model
+
+| Model (`model_id` prefix)              | Exog | Default context | Best for                                          |
+|----------------------------------------|:----:|----------------:|---------------------------------------------------|
+| `autogluon/chronos-2-*` (Amazon)       | Yes  | 8192            | General-purpose, exog-friendly, cross-series info |
+| `google/timesfm-2.5-*` (Google)        | No   | 512             | Long-horizon point/quantile forecasts             |
+| `google/timesfm-3.0-*` (Google)        | Yes  | 2048            | Long-horizon point/quantile forecasts, exog-aware |
+| `Salesforce/moirai-2.0-*` (Salesforce) | No   | 2048            | Multivariate pretraining, probabilistic forecasts |
+| `soda-inria/tabicl` (Soda-INRIA)       | Yes  | 4096            | Tabular in-context learning, exog-aware           |
+| `priorlabs/tabpfn-ts` (Prior Labs)     | Yes  | 32768           | Tabular foundation model, exog-aware, long context |
+| `theforecastingcompany/t0` (TFC)       | Yes  | 8192            | Probabilistic forecasts, exog-aware (future covariates) |
+| `Synthefy/Nori` (Synthefy)             | Yes  | 4096            | Tabular foundation model, exog-aware               |
+| `taharnbl/TS-ICL` (EDF Lab)            | Yes  | 4096            | Past & future covariates, fine-grained (0.01) quantile grid |
+| `mistralai/Timestral-*` (Mistral AI)   | Yes  | 4096            | Long context, past, future and categorical covariates (the 209M checkpoint is the most accurate) |
+| `NX-AI/TiRex-2` (NX-AI)                | Yes  | 2048            | Past & future covariates, series with different covariates in one call, horizons up to 320 steps |
+
+The adapter is resolved automatically from the `model_id` prefix — no need to import adapter classes directly.
+
+To check what a model supports before installing its backend or loading its weights, use `get_model_info` (one `model_id`) or `list_adapters` (one entry per adapter, or a DataFrame with `as_frame=True`). Both return a frozen `FoundationModelInfo` read from the adapter classes, so it always matches the installed skforecast version; prefer it over hard-coding the table above.
+
+```python
+from skforecast.foundation import get_model_info, list_adapters
+
+info = get_model_info('google/timesfm-3.0-pytorch')
+info.allow_exog, info.supported_quantiles  # supported_quantiles None = any level in (0, 1)
+info.backend_package                       # 'timesfm[torch]', as passed to pip install
+info.license, info.license_url             # SPDX id (or model card license name) and link, always informed
+info.commercial_use_restricted             # True if the license restricts commercial use
+info.requires_hf_auth                      # gated on the Hugging Face Hub
+info.requires_provider_auth                # provider account/license acceptance (TabPFN, Prior Labs)
+info.weights_repo_id                       # HF repo the weights come from, e.g. 'jingang/TabICL' for TabICL
+info.weights_in_hf_cache                   # False when the weights are not in the HF Hub cache (TabPFN)
+
+list_adapters(as_frame=True)  # DataFrame, one row per adapter; default: list of FoundationModelInfo
+```
+
+TimesFM 3.0, Moirai-2, TabPFN-TS, TS-ICL, and Timestral weights are released under licenses that restrict commercial use (Timestral grants no rights to companies above USD 20 million of monthly revenue); loading them raises a `LicenseWarning` naming the license and a link to the model card. Terms vary by provider (e.g. TabPFN-TS permits commercial use under an enterprise license), so review the linked license rather than the warning text alone. A model id not covered by this warning is not confirmed to be unrestricted.
+
+## Backtesting
+
+Use the dedicated `backtesting_foundation` function — it is the only backtester that accepts a `ForecasterFoundation`. Internally `cv` is deep-copied and forced to `refit=True`, `fixed_train_size=False`, so the context window expands with each fold up to `context_length`; no weights are ever trained. Probabilistic output is requested via `quantiles`, not `interval`.
+
+```python
+from skforecast.model_selection import backtesting_foundation, TimeSeriesFold
+
+cv = TimeSeriesFold(
+    steps=24,
+    initial_train_size=len(series) - 200,
+    refit=False,      # Overridden internally; passing True emits IgnoredArgumentWarning
+)
+
+metric, predictions = backtesting_foundation(
+    forecaster=forecaster,
+    series=series,
+    cv=cv,
+    metric='mean_absolute_error',
+    quantiles=[0.1, 0.5, 0.9],   # Native model quantiles; no bootstrapping
+)
+# metric columns: levels, mean_absolute_error, coverage, interval_width, n_evaluated
+# predictions columns: level, fold, step, y_true, q_0.1, q_0.5, q_0.9
+```
+
+The metrics (and `n_evaluated`) use `q_0.5` as the point forecast. With two quantiles, optionally
+with the median (`[0.1, 0.9]` or `[0.1, 0.5, 0.9]`), `metric` also reports the
+empirical `coverage` of the interval they define and its mean width
+(`interval_width`). With other quantiles they are not added.
+
+## Tuning Inference-Time Parameters
+
+No weights are trained, so tuning means choosing how the pre-trained model is
+queried. `context_length` is the highest-impact parameter. Use
+`bayesian_search_foundation` (`TimeSeriesFold` only, no `lags`, no `n_jobs`):
+
+```python
+from skforecast.model_selection import bayesian_search_foundation, TimeSeriesFold
+
+def search_space(trial):
+    return {
+        'context_length': trial.suggest_categorical('context_length', [512, 1024, 2048, 4096]),
+    }
+
+results, study = bayesian_search_foundation(
+    forecaster=forecaster,
+    series=series,
+    cv=cv,
+    search_space=search_space,
+    metric='mean_absolute_error',
+    n_trials=30,
+    return_best=True,
+)
+```
+
+Keys are validated against the adapter's `get_params()`. Search
+`context_length` and the adapter's quality-relevant parameters; runtime
+settings (`device`, `torch_dtype`, `mode`, `show_progress`, `max_horizon`) are
+accepted but cannot improve accuracy, and several parameters force an expensive
+model reload per trial. Per-adapter matrix:
+[references/adapter-parameters.md](references/adapter-parameters.md).
+
+## Override the Stored Context
+
+Pass `context` at predict time to forecast from a different window without
+refitting — useful for one-off predictions or custom backtesting loops:
+
+```python
+predictions = forecaster.predict(
+    steps=24,
+    context=new_window,        # pandas Series / DataFrame / dict
+    context_exog=new_exog,     # Only with exog-aware adapters
+    exog=future_exog,
+)
+```
+
+If `context` is longer than the adapter's `context_length`, it is trimmed
+automatically to the last `context_length` observations.
+
+## Common Mistakes
+
+1. **Expecting `fit()` to train the model**: it only stores context. The weights come from HuggingFace.
+2. **Index without frequency**: call `series.asfreq('h')` (or similar) before `fit` — skforecast requires a frequency.
+3. **Passing `exog` to TimesFM 2.5 / Moirai-2**: ignored with an `IgnoredArgumentWarning`. Only Chronos-2, TimesFM 3.0, TabICL, TabPFN-TS, TFC-T0, Nori, TS-ICL, Timestral, and TiRex-2 support exogenous variables.
+4. **Requesting unsupported quantiles**: TimesFM (2.5 and 3.0), Moirai-2 and TiRex-2 are restricted to the nine deciles `0.1 … 0.9` ; TS-ICL is restricted to a 0.01 grid in `[0.01, 0.99]`; Timestral to its 21 levels (`0.01`, `0.05`, `0.1`, ..., `0.95`, `0.99`).
+5. **Large model downloads**: first call can be slow; consider using smaller variants (`*-small`) for experimentation.
+6. **Forgetting to install the backend**: each foundation model requires its own library (`chronos-forecasting`, `timesfm`, `uni2ts`, `tabicl`, `tabpfn-time-series`, `tfc-t0`, `synthefy-nori`, `tsicl`, `timestral`, `tirex-2`). Install only the one(s) you need. `tfc-t0` needs its PyTorch runtime, the `torch` extra (`pip install "tfc-t0[torch]>=0.6"`). `tirex-2` requires Python >= 3.11.
+7. **Tuning a parameter that forces a model reload**: `model_id` and device/dtype arguments reload the model on every trial, and `context_length` does the same on TimesFM 2.5 (but **not** TimesFM 3.0), Moirai-2, TabICL and TabPFN-TS.
+8. **Assuming TimesFM 3.0 accepts categorical covariates**: it does not, and neither do Nori, T0, TS-ICL, and TiRex-2 (`ValueError`). Only Chronos-2 and Timestral accept them natively. `ForecasterFoundation` has no `transformer_exog`, so encode categoricals as numbers in `exog` before passing it to `fit` and `predict`.
+9. **Passing a future `exog` column that was not in the historical exog** (`fit` without that column, or `context` without `context_exog`): `ValueError` on every adapter. Pass the same columns to `fit` (or `context_exog`) and to `predict`.
+10. **Predicting without `exog` after fitting with exog on TabICL, TabPFN-TS, T0 or Nori**: the historical columns are ignored (`IgnoredArgumentWarning`) and the forecast uses no covariates, as if the model had been fitted without exog. Only Chronos-2, TS-ICL, TimesFM 3.0, Timestral and TiRex-2 use them as past-only covariates.
+11. **Timestral with a known covariate that is constant over the context and changes over the horizon** (a price that has not moved, or a 0/1 holiday or promotion indicator that is 0 over the whole context): the upper quantiles, and sometimes the median, can become very large ([mistralai/timestral#7](https://github.com/mistralai/timestral/issues/7)). The adapter issues a `FeatureOutOfRangeWarning` naming the series and columns; set the historical values of those columns to NaN. With known covariates, Timestral's forecast of the first steps also depends on `steps`, so do not compare backtests with a different `steps` step by step.
+12. **Asking TiRex-2 for more than 320 steps**: `NX-AI/TiRex-2` forecasts at most 320 steps ahead (`future_len` of the checkpoint; 928 for the gifteval checkpoints), so a longer `steps` raises a `ValueError` (the backend would silently return a shorter forecast). Use another adapter for longer horizons.
+
+## References
+
+See [references/adapter-parameters.md](references/adapter-parameters.md) for the per-adapter constructor parameters of `ChronosAdapter`, `TimesFM25Adapter`, `TimesFM3Adapter`, `MoiraiAdapter`, `TabICLAdapter`, `TabPFNAdapter`, `T0Adapter`, `NoriAdapter`, `TSICLAdapter`, `TimestralAdapter`, and `TiRex2Adapter`. Each adapter section is self-contained; the last two sections (tunable parameters and model reload cost, common behavior) apply to every adapter, so read them too.
+
+See the user guide [Foundation models with heterogeneous series](https://skforecast.org/latest/user_guides/foundation-forecasting-with-heterogeneous-series.html) for a worked example with series of different lengths, different exog columns and NaN, and for the table of what each backend requires and tolerates.

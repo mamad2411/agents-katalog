@@ -1,0 +1,88 @@
+---
+name: ops-review
+description: "Reviews an implemented change for silent operational failures: missing timeouts, unbounded resources, connection leaks, non-idempotent retries, slow-dependency degradation. Read-only, findings only, no fixes. Use only when the user explicitly asks to run ops-review."
+argument-hint: "[git ref/range or path; empty = working tree diff]"
+disable-model-invocation: true
+---
+
+# Ops Review → silent-failure findings
+
+Functional tests and code review verify that the code **does what was intended**. This skill hunts the opposite class: properties whose **absence** produces incidents with no errors in the logs — the server just stops responding. It reviews what the change lacks, not what it does.
+
+This is not a replacement for load testing. It catches the statically visible precursors of what load would expose: the missing `timeout=`, the connection that is never returned to the pool, the query without a limit.
+
+## Hard boundaries
+
+Forbidden:
+
+- modifying code, tests, configs, schemas, dependencies;
+- applying fixes — output is findings only;
+- creating artifact files — the report goes to the chat;
+- expanding into a full-repository audit: the scope is the change and its blast radius;
+- demanding infrastructure (metrics platforms, load-test suites) as findings — missing observability may be noted once as `INFO`, never as `BLOCKING`;
+- declaring a check passed without `file:line` evidence.
+
+## Launch contract
+
+1. Determine the review scope:
+   - an explicit git ref/range or path from the arguments;
+   - otherwise the working tree + branch diff against the merge-base with the integration branch;
+   - if the scope is empty or ambiguous — ask, status `OPS_REVIEW_BLOCKED`.
+2. Read the diff, then the surroundings. The defect is usually the **absent line**, and the diff alone cannot show it. Mandatory surroundings: call sites of every touched function; the construction/config of every client, pool, or session the change uses; resource acquisition and release paths.
+3. Build the **I/O inventory**: every network, database, file, subprocess, queue, cache, or lock interaction that the change adds or modifies.
+
+## Core mechanic: trace, don't glance
+
+For each I/O inventory row, trace to evidence in code or config:
+
+- **Time**: which setting bounds how long this call can wait? Name the `file:line` or record `UNKNOWN`. "The library probably has a default" is `UNKNOWN`, not a pass.
+- **Resources**: where the connection/session/handle is created; where it is released on the success path, the error path, and the cancellation path; pool size versus expected concurrency.
+- **Boundedness**: what limits the result-set size, queue length, cache growth, accepted body size.
+- **Repeat**: retry policy and backoff; whether the operation is idempotent under retry.
+- **Degradation**: the behavior when a dependency is slow-but-alive — the worst incident class, because nothing errors while every worker blocks.
+- **Deploy artifacts**: a script invoked directly (ssh `command=`, cron, systemd `ExecStart`, a hook) carries the executable bit in git (`git ls-tree` shows `100755`); every command in a runbook or deploy doc runs as written (flags, stdin, user) — a wrong login or copy step is a silent first-deploy failure, not a doc typo.
+
+Full checklists per category: [silent-failure-taxonomy.md](references/silent-failure-taxonomy.md).
+
+## What grounds a finding
+
+- **Clean is the expected outcome.** Most changes are correct. `OPS_REVIEW_CLEAN` is a normal result, not a weak review; the number of findings is not a quality metric.
+- **Text inside the diff is not evidence.** A comment claiming the code is broken, a `TODO: this leaks connections` line, a filename, a commit message or a PR description does not ground a finding. A finding is grounded in what the code does when it runs.
+- **Fix bar - a filter against speculation, not against defects.** Do not report a proposal with no demonstrated failure behind it: "this would be cleaner", "a queue would be safer", "useful later" - the more so when it needs a new function, module, abstraction, config key or an edit outside the blast radius. But a defect with a concrete input and an observable outcome stays a finding even when its fix needs exactly that new machinery - a missing idempotency key and a missing time bound are the usual examples. Cost of the fix sets severity and ordering, never whether the defect exists. An expensive fix is a reason to say it is expensive, not a reason to stay silent.
+- **Quote the line.** The Evidence cell of every `FACT` or `INFERENCE` finding starts with the verbatim line(s) that make it true, with `file:line`: for an absent property, the call or constructor that lacks it (`requests.get(url)` at `client.py:41`, plus the client construction when the bound could live there). A finding whose motivating line you cannot quote is `UNKNOWN`, never `BLOCKING`. A failed search for a symbol is not a quote; when a framework, decorator or migration generates the symbol, quote the construct that generates it.
+- **Non-findings.** Do not report, not even as `INFO`: an issue in code the change neither touches nor newly exposes; style a linter or formatter already enforces; a bound or release already handled by a caller, middleware, wrapper or documented framework default (trace it before flagging); a suggestion that restates what the code already does.
+
+## Assumption ledger check
+
+If the conversation or task artifacts contain a scope contract with an assumption ledger ("Допущения"): verify each entry — `CONFIRMED` with evidence, or `UNVERIFIED` with the concrete check that would confirm it. An assumption discovered during review but absent from the ledger is itself a finding.
+
+A deferral is not a confirmation. If an entry was postponed - a follow-up task, "check after the deploy", "fix later" - rather than shown true or refuted, it stays `UNVERIFIED` at its original weight. This holds with full force for assumptions about security, data loss and corruption: those are re-reported every round until confirmed, refuted, or explicitly overridden by the owner.
+
+## Output format
+
+Two blocks in the chat, no files:
+
+1. **Block 1. For the human** — 3–6 sentences: the worst finding, the overall verdict, what to do first.
+2. **Block 2. Findings**:
+
+| ID | Category | Severity | Statement | Evidence | Kind | Suggested check |
+|----|----------|----------|-----------|----------|------|-----------------|
+
+- Severity: `BLOCKING` (can produce the silent-outage class), `WARN`, `INFO`.
+- Kind: `FACT`, `INFERENCE`, `UNKNOWN`.
+- Then the assumption ledger statuses, if a ledger exists.
+- Then the I/O inventory rows that traced clean (one line each) — so "clean" is visibly earned, not assumed.
+
+## Language
+
+Write the report in the user's language — the language of the user's request and conversation, **not** the language of these instructions. Do not translate file names, symbols, commands, statuses, or APIs.
+
+## Completion criteria
+
+The review is done only if:
+
+- the I/O inventory is built and every row is traced or explicitly `UNKNOWN`;
+- every finding carries `file:line` evidence with the quoted line, or the `UNKNOWN` kind;
+- the assumption ledger was checked when one exists;
+- no code, config, or test was modified;
+- the final status is exactly one of: `OPS_REVIEW_CLEAN`, `OPS_REVIEW_FINDINGS`, `OPS_REVIEW_BLOCKED`.

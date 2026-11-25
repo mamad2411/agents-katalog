@@ -1,0 +1,499 @@
+---
+name: assemblash
+description: Create, inspect, edit, validate, render, or export Assemblash visual-document projects through its CLI, HTTP API, or MCP server. Use for work on an Assemblash document or integration; not for unrelated repository maintenance.
+---
+
+# Assemblash
+
+Assemblash is a local-first, structured visual-document engine. Treat a
+document as an editable layer tree. Do not treat it as a flattened image or as
+a graphical interface to click through. The CLI, HTTP API, MCP server, and
+reference editor are clients of the same validated operation layer.
+
+## Start with the current state
+
+When you work in the Assemblash repository, read `README.md` for released
+behavior. Read `PRD.md`, `AGENTS.md`, and `CONTRIBUTING.md` before you change
+the engine or its public surfaces. The committed schemas are the precise
+contracts:
+
+- `schema/document.schema.json`
+- `schema/operation.schema.json`
+
+Inspect the target project, layer tree, document version, validation result,
+and rendered preview before you propose an edit. Use explicit layer IDs.
+Selection belongs to the client session and is not document state.
+
+## Make changes safely
+
+Use MCP, the HTTP API, or the CLI. Do not edit `document.json` directly. Those
+interfaces validate mutations, enforce locks and protection, journal history,
+and support undo. A normal edit follows this sequence:
+
+1. Read the document, layers, version, and preview.
+2. Identify the exact layer IDs and the intended operation.
+3. Dry-run the mutation when the interface supports it. Use the current
+   expected document version.
+4. Apply the validated operation. Keep its transaction ID when available.
+5. Validate and render a new preview. Export only after you check the result.
+
+Do not bypass a refusal by editing files or by an attempt to clear protected
+content. If another actor changed the document, refresh the state. Do not reuse
+a stale expected version.
+
+## Preserve the engine's guarantees
+
+- Keep filesystem work inside the configured project or workspace boundary.
+- Respect `locked`, `protected`, and `readOnly` layers, including group
+  containment.
+- Keep compositions deterministic. Use known local assets and the configured
+  font store. Report a missing font or asset. Do not substitute one.
+- Treat templates, presets, and slots as journalled operations. A slot must not
+  target protected or read-only chrome.
+- Do not add behavior that exists only in the reference editor or that
+  duplicates the core operation logic.
+- Do not imply that AI provider adapters ship with the core. They do not.
+
+## Contract and release discipline
+
+The document schema and operation API are stable throughout 1.x. A breaking
+change requires a major release and a migration. Additive changes still need
+schema and type generation, validation, compatibility tests, and documentation.
+
+Do not report a feature as working until you run the relevant validation or
+test. Keep public examples neutral. Never commit credentials, private brand
+kits, customer assets, or downstream workflow data.
+
+## Useful entry points
+
+- `assemblash new`, `add-text`, `add-image`, `add-svg`, and `export` for a
+  straightforward local workflow. `add-image` and `add-svg` take the input file
+  positionally or through `--file`, so `assemblash add-svg ./poster logo.svg`
+  works.
+- `assemblash set <PROJECT> --layer <ID>` reaches every updatable layer
+  property: `--name` (an empty string removes the name), `--x`, `--y`,
+  `--width`, `--height`, `--rotation`, `--opacity`, `--visible`, `--locked`,
+  `--blend`, `--effects`, `--effects-file`, `--text`, `--text-file`, `--font`,
+  `--size`, `--color`, `--align`, `--line-height`, `--weight`, `--font-style`,
+  `--letter-spacing`, `--paragraph-spacing`, `--runs`, `--runs-file`,
+  `--vertical-align`, `--fit`, `--asset`, and
+  `--allow-locked`. The invocation can carry many flags, but it is one `update`
+  operation: journalled once, undone once. The layer's kind refuses a property
+  it does not have, and the refusal names it. `assemblash style` still exists
+  and is the same builder.
+- `assemblash styles` lists what this build renders — blend modes and effects
+  with examples. `assemblash styles --json` prints the same listing as JSON;
+  it is byte-for-byte what `GET /api/capabilities` and the MCP
+  `list_capabilities` tool serve. Check it (or the endpoint, or the tool)
+  before you use a blend mode or effect: what a build cannot render, it
+  refuses.
+- `assemblash render` and `assemblash export` take the output path positionally
+  or through `--out`, and print `<path>`, a tab, and the written file's
+  `sha256:<hex>` digest on stdout. Compare that digest. Do not re-hash the
+  file.
+- `assemblash serve` for the local HTTP API and reference editor. It binds to
+  loopback by default; a non-loopback bind requires an access token. From 1.5.0
+  `--reclaim-stale-locks` (also on `mcp`) lets it clear a stale project lock on
+  its own, but only one this machine wrote whose process is gone; anything else
+  still needs `assemblash unlock` or a person in the editor.
+- `assemblash mcp` for agent access over stdio. Inspect, preview, and validate
+  before you use mutating tools. From 1.9.0, prefer the running editor: when
+  a person has Assemblash open, `assemblash mcp` on the same workspace sends
+  your requests to that editor, and a client that takes a URL can connect to
+  its `/mcp` endpoint directly (`http://127.0.0.1:8787/mcp` by default). The
+  person then sees your edits in the editor, and you never lock them out.
+- Never delete a project's `.assemblash-lock` file. A `projectLocked` refusal
+  usually means that the person has the project open in the editor. Connect
+  to the running editor instead. If the lock is really stale, a person decides:
+  in the editor's recovery dialog, or with `assemblash unlock`.
+- An `expectedVersion` conflict is normal when a person edits the same
+  project. Read the document again, then retry the change.
+- Read the `warnings` in a write result. You cannot see the picture: these
+  tell you that text does not fit its box, that a word was split, or that
+  another layer covers the text.
+- Use `set_layer_box` to place or resize a layer in absolute values. It is
+  one journalled change. `update_layer` does not change the box.
+- `export_document` refuses to replace a file of the same name. Pass
+  `overwrite` only when you mean to replace it.
+- `assemblash variants` for deterministic template variants. Its `--values` is
+  already a file path.
+
+For exact arguments, payloads, and supported properties, use
+`assemblash --help` and the committed schemas. Do not guess.
+
+## Colour effects (1.13.0 and newer)
+
+Check `list_capabilities`, `GET /api/capabilities`, or `assemblash styles --json` before using these effects.
+
+- `hueRotate` takes finite `degrees`. Zero and complete turns are neutral. Negative angles rotate in reverse.
+- `invert` takes `amount` from zero to one. Zero is neutral. One gives full inversion.
+- Both effects preserve alpha and run in stored stack order.
+- Pass the array through CLI `--effects-file`, HTTP `update.effects`, or MCP `update_layer.effects`.
+- Released 1.12.0 preserves these unknown effects during unrelated edits. Its renderer refuses them.
+
+The document schema stays at version 1. Use the existing operation checks and undo.
+
+## Text and resize controls (1.12.0 and newer)
+
+Check the running binary version before you use these properties.
+
+- `runs` stores inline text styles. Run text must join to the layer text exactly.
+  Use `--runs-file` for CLI JSON. Rendering requires each exact font face.
+  Ordinary style updates preserve runs and unknown nested values. Text-only updates clear runs.
+- `paragraphSpacing` adds finite, nonnegative pixels between explicit paragraphs. Its default is zero.
+  CLI uses `--paragraph-spacing`. HTTP and MCP use `paragraphSpacing`.
+- `align: "justify"` expands regular spaces (U+0020) between words on eligible wrapped lines.
+  Leading and trailing whitespace receive no extra width. Paragraph-final lines keep their natural width.
+  CLI uses `--align justify`. Presets store paragraph spacing and justified alignment.
+- Older consumers can ignore paragraph spacing and styled runs. Older history replay can discard these updates.
+  Versions 1.0.0, 1.10.0, and 1.11.0 refuse snapshots and journals that contain justified alignment.
+
+In the reference editor, Shift preserves the resize ratio. Image corners reverse this default.
+Alt preserves the centre. These keys update an active resize without pointer movement.
+A resize keeps text font sizes and uses one undo transaction.
+Text selections and unsupported preview combinations keep the authoritative image while the outline moves.
+Canvas handles omit zero-size boxes, unsupported ancestor transforms, and parent-with-child selections.
+Use the existing box operations for programmatic resizing. No modifier fields are added to the operation API.
+
+## Canvas editing (1.4.0 and newer)
+
+Check the running binary's help or MCP tool list before you use `canvas set` or
+`update_canvas`; 1.3.1 does not include them. Canvas resizing never scales
+layers. The default `top-left` anchor preserves positions; other anchors
+translate root layers. Respect a refusal caused by locked or protected content.
+Omit `background` to preserve it. Send JSON `null` or use `--no-background` to
+clear it. Apply dimensions and background together for one undoable change.
+
+After `updateCanvas` enters a project's journal, 1.3.1 refuses both `show` and
+`history`, including after undo. Keep using the newer binary and preserve the
+journal. The document schema version remains 1.
+
+## Gradient paints and canvas images (1.11.0 and newer)
+
+Check the running binary's version before you use gradient paints or canvas images.
+Paint inputs accept existing solid colour strings and gradient objects.
+Use `{ "kind": "linear", "angle": 0, "stops": [...] }` for a linear gradient.
+Use `{ "kind": "radial", "center": { "x": 0.5, "y": 0.5 }, "radius": 0.5, "stops": [...] }` for a radial gradient.
+Each stop has `offset`, a solid `color`, and optional `alpha`.
+Offsets must increase strictly within `0` to `1`. Alpha defaults to `1`.
+CLI colour arguments accept hexadecimal colours, inline JSON, and `@file.json`.
+Use these paints for backgrounds, text, shape fills, strokes, and presets.
+Keep colour slot values as solid strings. Gradient shadow colours are refused.
+Use an image layer with a clip for an image shape fill.
+
+Import an image asset before you set `backgroundImage: { "asset": "<ASSET_ID>", "fit": "cover" }`.
+Send that field through `updateCanvas` or MCP `update_canvas`.
+Use `fill`, `contain`, or `cover`. The default fit is `fill`.
+Set `clearBackgroundImage: true` to remove the image. Omit both fields to preserve it.
+Do not set and clear the image in one request.
+CLI uses `canvas set --background-image <ASSET_ID> --background-image-fit cover`.
+CLI uses `canvas set --clear-background-image` to remove it.
+The canvas colour appears below the image. All layers appear above it.
+Release 1.10.0 refuses documents with gradient paints.
+It preserves `backgroundImage` as an unknown field, but its renderer ignores the image.
+Use 1.11.0 or newer to edit these documents.
+
+## Fonts (1.5.0 and newer)
+
+Check `GET /api/fonts` before you assume a family exists. It returns
+`{ families, faces }`; `faces` is new in 1.5.0 and `families` is unchanged, so
+the family list is safe to read against any release. A font that renders on
+your machine is not evidence that this store holds it.
+
+The rest of the font store is reachable over HTTP from 1.5.0. Check the running
+binary before you use these; 1.4.0 serves only `GET /api/fonts`. All of them sit
+behind the same access token as every other route.
+
+- `POST /api/fonts?filename=<name>` with the raw bytes, up to 64 MB, imports a
+  TTF, OTF, TTC, OTC, WOFF or WOFF2 file. `201 {imported, families}`, or `200`
+  when those exact bytes were already stored. Refusals are
+  `400 unsupportedFontFormat`, `400 invalidFilename` and `422 invalidFont`;
+  from 1.6.0 a body over the limit is `413 payloadTooLarge` (the same code
+  the asset upload route answers with).
+- `DELETE /api/fonts/{family}` — `200 {removed, families}`, or
+  `404 unknownFontFamily`. Every project using that family then reports a
+  missing font, so remove one only when the user asked for it. From
+  1.6.0 a family literally named `catalogue` or `install` is removed with
+  `DELETE` on its own fixed path; 1.5.0 answered 405 for those two names.
+- `GET /api/fonts/catalogue` — what the bundled manifest offers: `packs`, and
+  `families` with a license and a byte size.
+- `POST /api/fonts/install` with `{"pack":"default"}` or `{"family":"…"}` —
+  `201 {installed, families}`; `404 unknownFontFamily` or `404 unknownFontPack`;
+  `502 fontInstallFailed`. **This is the one route in the product that reaches
+  the network.** It downloads font files, so confirm before you call it, and do
+  not expect anything else here to make a network request. A pack install is
+  atomic: a download that fails leaves the store exactly as it was. An unknown
+  key in the body is refused, like every other typed request envelope.
+
+## SVG asset text (1.5.0 and newer)
+
+Check the running binary before you rely on either behavior. From 1.5.0 a
+render **refuses** when an imported SVG asset draws text that no loaded font can
+provide; 1.4.0 and earlier export that document successfully with the text
+simply absent, and report only the `svgAssetTextWithoutFont` warning.
+
+The rule 1.5.0 applies: an asset draws text only if every `<text>` in it names
+at least one non-generic font family that the render loaded. Text that names no
+family, or only a generic one (`serif`, `sans-serif`, …), is refused too — the
+pinned store never holds the renderer's fallback family, so the render draws nothing there, guaranteed. The error names the asset id and, where there is
+one, the family. The CLI exits non-zero and writes no file, HTTP answers
+`422 renderFailed`, and MCP returns a tool error. Fix the document. Do not
+retry: name a loaded family in the asset, or outline the text before
+you import it.
+
+## Shapes and shadows (1.6.0 and newer)
+
+Check the running binary first. A `shape` layer draws a rectangle, an ellipse
+or a line, and its transform box *is* the geometry: a rect fills the box, an
+ellipse is inscribed in it, a line runs across its middle — `width` is the
+line's length, `rotation` its angle, and `height` layout only.
+
+Paint is `fill` (a colour, or absent for none) and `stroke`
+(`{ color, width }`, or absent); a shape with neither is valid. On a rect and
+an ellipse the stroke is painted inward, so the box stays the visual box —
+except below width 1, where it is drawn as a hairline that may spill up to
+half a pixel outside.
+
+- `update` takes `fill`, `stroke` and `cornerRadius`. An explicit JSON `null`
+  on `fill` or `stroke` clears that paint; omission of the key leaves it alone.
+  `cornerRadius` is not nullable (0 is the square corner) and an ellipse or a
+  line refuses it by name.
+- MCP `update_layer` cannot use `null` here, because a null argument is
+  indistinguishable from an omitted one: pass `clearFill: true` or
+  `clearStroke: true` instead, never beside `fill` or `stroke`.
+- MCP `add_shape_layer` takes `shape` (`rect`, `ellipse`, `line`),
+  `cornerRadius`, `fill`, `stroke` as `{ color, width }` and `name`, beside the
+  usual placement, box, `expectedVersion` and `dryRun` arguments.
+- CLI `add-rect`, `add-ellipse` and `add-line` take `--x`, `--y`, `--width`,
+  `--height`, `--rotation`, `--opacity`, `--layer-name`, plus `--fill`,
+  `--stroke`, `--stroke-width` and, for a rect, `--corner-radius`. `set` takes
+  the same four paint flags; `--fill none` and `--stroke none` clear a paint,
+  and `--stroke-width` alone is refused when the layer has no stroke to take a
+  colour from.
+- A `dropShadow` effect takes `dx`, `dy`, `blur` and `color`; an `#rrggbbaa`
+  alpha is its opacity, `dx` and `dy` at 0 is a glow, whole pixels are
+  crispest.
+- A colour slot may target a shape's `fill` as well as a text layer's `color`.
+  Stroke colour is not slot-able anywhere in 1.x — do not offer it.
+
+1.0 through 1.5 refuse a document that contains a shape layer outright: every
+command exits 1 and names `shape` as an unknown layer kind, and nothing in the
+file is repairable — open it with 1.6.0 or newer. A `dropShadow` is milder:
+1.3.0 and newer keep it and refuse only the render.
+
+## Paths, dashes, and markers (1.10.0 and newer)
+
+Check the running binary first. A shape can be a path, a stroke can be
+dashed, and a line can end in markers.
+
+- A path shape is `{"kind":"path","d":"M0 0 L100 0 Z"}`. The `d` string
+  accepts `M L H V C S A Z` in either case, starts with one `M`, ends with
+  `Z`, holds at most 30 commands and 2048 bytes, and every number must be
+  finite. A rule break is refused with the command and its byte position —
+  build `d` strings that obey the grammar, and treat a refusal message as
+  data, not as a retry loop.
+- A clip can be a path too: `{"shape":"path","d":"..."}` with the same
+  grammar. The clip geometry is the transform box.
+- `stroke` carries `dashArray` (an array of at most 8 numbers, each greater
+  than zero), `lineCap` (`butt`, `round`, `square`) and `lineJoin`
+  (`miter`, `round`, `bevel`). All three are optional; unset means the SVG
+  default.
+- A line carries `markerStart` and `markerEnd` from `arrow`, `circle`,
+  `none`. Markers are payload, not paint: presets never carry them.
+- MCP: `add_shape_layer` takes `shape:"path"` with `d`, and
+  `markerStart`/`markerEnd` on a line. `update_layer` takes `shape` with
+  `path`, and both marker fields. Markers on a non-line shape refuse by
+  name. CLI: `add-path` and `set --path --dash --cap --join
+  --marker-start --marker-end`.
+- A preset carries the dash, cap and join fields with the whole stroke.
+- 1.6.0 through 1.9.x keep a path shape or clip as written, refuse to draw
+  it, and refuse an update that touches it.
+
+## Clipping, cropping, and flips (1.8.0 and newer)
+
+Check the running binary first. Three update-only properties arrived in 1.8.0.
+None of them can be set when a layer is created; set them afterwards.
+
+- **`clip`** masks a layer to its own box. It is an object tagged by `shape`:
+  `{"shape":"rect","cornerRadius":12}` or `{"shape":"ellipse"}`. The geometry
+  is the transform box, so the clip carries no coordinates. A radius larger
+  than the box makes a stadium. An explicit JSON `null` clears the clip;
+  omission leaves it alone.
+- **`crop`** shows part of an image layer's source: `{"x":0,"y":0,"width":400,
+  "height":400}`, in source pixels. It composes with `fit`. Values outside the
+  source clamp to it; a rectangle that shares no area with the source is
+  refused. Image layers only — text, shapes, groups and SVG layers refuse it by
+  name. The asset must record its pixel size, which an import does; a crop of
+  an asset with no recorded size is refused.
+- **`flipHorizontal`** and **`flipVertical`** are booleans on any layer: a
+  mirror about the box centre, never a negative size.
+
+Composition: the clip is applied inside the layer's effect stack, so a shadow
+follows the clipped shape. A rotated clipped layer is cut to the box in its
+parent's space — the mask does not turn with the content.
+
+- CLI `set` takes `--clip-rect`, `--clip-radius PX` (rect only), `--clip-ellipse`,
+  `--no-clip`, `--crop X,Y,W,H`, `--no-crop`, `--flip-h true|false`, and
+  `--flip-v true|false`.
+- MCP `update_layer` takes `clip` (object), `clearClip`, `crop` (object),
+  `clearCrop`, `flipHorizontal`, and `flipVertical`. As with the paints, a null
+  argument is indistinguishable from an omitted one: use `clearClip` or
+  `clearCrop` to remove one.
+- HTTP needs nothing new. `POST /operations` deserialises the operation union,
+  so the fields travel with the update.
+
+1.0 through 1.7 preserve all four values and render the layer unclipped,
+uncropped and unflipped. That is a silent degrade, not a refusal: the values
+survive a round trip through an older build.
+
+## Pass JSON in a file, not on the command line
+
+PowerShell rewrites an inline JSON argument, so a payload typed after a flag
+does not always reach the process intact. Three flags exist for that reason:
+`preset define --properties-file`, `set --effects-file`, and `set --text-file`.
+Write the JSON — or, for `--text-file`, the literal text, which is the only way
+to set text that contains a newline — to a file and pass the path. Each flag
+conflicts with its inline twin, so pass one or the other.
+
+## An export may return warnings
+
+Every export reports what it could not do well, with these codes:
+
+- `wordBrokenMidWord` — a single word was too wide for its box and was split.
+- `textOverflowsBox` — the laid-out text is taller than the box that holds it.
+- `lockReclaimed` — the server reclaimed a stale project lock while it produced
+  this export (1.5.0 and newer).
+- `svgAssetTextWithoutFont` — still a defined code, but from 1.5.0 no longer
+  produced for the case it was added for. That render refuses instead; see
+  "SVG asset text" above.
+- `contentOutsideMargins`, `contentInsideBleed`, `assetBelowTargetResolution`
+  — print proofing (1.14.0 and newer). They come only from a document that
+  has `canvas.bleed` or `canvas.margins`. See "Page sets and print geometry"
+  below.
+
+Each warning is `{ code, message, layerId?, project? }`. Only a page-set
+export sets `project`. **A warning is not a failure.**
+It changes no pixel and no exit status; the file is written either way. Report
+it and fix the document. Do not treat the export as failed.
+`POST /api/projects/{id}/export` and MCP `export_document` return a `warnings`
+array. The CLI prints one line per warning on stderr as
+`code<TAB>layerId<TAB>message`; `--warnings-json` on `render` and `export`
+prints the whole array as JSON on stdout instead and leaves stderr quiet.
+
+## Page sets and print geometry (1.14.0 and newer)
+
+- A page set is an ordered list of projects in
+  `<workspace>/page-sets/<name>.json`:
+  `{"pages":[{"project":"cover"},{"set":"middle"},{"project":"back"}]}`.
+  A nested set adds its pages in place.
+- Read a set with `get_page_set` (MCP), `GET /api/page-sets/{name}`, or
+  `assemblash page-set show <name>`. The answer is the flat page list in
+  order. A loop (`pageSetLoop`), a missing member (`pageSetMemberMissing`,
+  all of them listed), a project on two pages (`pageSetDuplicatePage`), or
+  sets nested more than 32 deep (`pageSetTooDeep`) is refused. No page is dropped. No tool writes a set: write the file.
+- `canvas.bleed` and `canvas.margins` are optional `{top, right, bottom,
+  left}` distances in pixels. The canvas is the trim box. Bleed goes outward,
+  margins go inward. A PNG, SVG, JPEG, or WebP export does not change with
+  them. Only a print PDF reads `bleed`. Set them
+  with `updateCanvas` / MCP `update_canvas` (`bleed`, `margins`: omit to keep,
+  `null` to clear) or `assemblash canvas set --bleed 9 --margins 36`.
+  `updateCanvas` refuses a negative side, and margins that leave no safe area
+  after the change. A document always loads, whatever these fields hold. A
+  `marginsLeaveNoSafeArea` export warning says that the margins need fixing.
+- Exports are sRGB only. `colorSpace: "cmyk"` on an export is refused with
+  `colorSpaceNotSupported`. Do not promise a CMYK file.
+
+## Export formats and page-set export (1.14.0 and newer)
+
+- `format` on `export` (`--format`), `POST /api/projects/{id}/export`, and MCP
+  `export_document`: `png` (the default), `svg`, `pdf`, `jpeg` (or `jpg`), or
+  `webp`. The format never comes from the file extension. A JPEG file is
+  always `<name>.jpg`.
+- Every format is byte-identical on every run and every target: PNG, SVG,
+  raster PDF, JPEG, and lossless WebP.
+- `quality` is for JPEG only: 1 to 100, 90 when omitted. WebP is lossless
+  only. `webp` with a `quality` is refused with `lossyWebpNotSupported`. For a
+  lossy file, use `jpeg` with a quality.
+- JPEG has no transparency. Transparent pixels become white.
+- The PDF is a raster PDF: one image for each page, the PNG pixels of that
+  page. 1 canvas pixel is 1 point. `scale` changes the image resolution, not
+  the page size. The text is part of the image and cannot be selected. The
+  file has no date.
+- `print` (`--print`) is for PDF only. It adds a trim box, a bleed box from
+  `canvas.bleed`, an 18 pt mark zone, and crop marks. The image covers the
+  trim box only. Nothing is rendered into the bleed in this release.
+- `pages` (`--pages`): `deck` for every page of the set, or `deck:1-3,5`.
+  Pages are numbered from 1 in manifest order, nested sets expanded. A `pdf`
+  holds every selected page. Any other format needs exactly one page, or the
+  export is refused with `pagesNeedPdf`.
+- A page-set or variants PDF holds at most 200 pages (`pdfPageLimitExceeded`)
+  and 400 000 000 output pixels, all pages together
+  (`pdfPixelLimitExceeded`). An empty `pdf` variants batch is refused with
+  `invalidPageSelection`. A refused export writes no file.
+- The CLI writes a page-set export to the path you give:
+  `assemblash export --workspace ./ws --pages deck --format pdf deck.pdf`.
+  HTTP and MCP write it to the `exports/` of the project in the request. That
+  project need not be a page of the set.
+- Variants (`variants`, `POST .../variants`, MCP `render_variants`) take
+  `format`, `quality`, and `name`. `pdf` writes one PDF, `exports/<name>.pdf`
+  (`variants.pdf` without a name), one page for each variant in order. `name`
+  with another format is refused with `variantsNameNeedsPdf`.
+- Other refusals: `exportFormatNotSupported`, `exportQualityOutOfRange`,
+  `exportQualityNotApplicable`, `printNeedsPdf`, `invalidPageSelection`,
+  `timestampNeedsPng` (CLI), and `exportEncodingFailed`. HTTP answers `422`.
+  A refused export writes no file.
+- A page-set export reports the warnings of each page in page order. Each has
+  a `project` field. The CLI prints it as a fourth column.
+- 1.13.1 has no `--format`. Its HTTP export refuses the new fields with
+  `400 malformedRequest`. Its MCP `export_document` ignores the new
+  arguments and writes a PNG. Check the version before you ask for a PDF.
+
+## MCP tools beyond the read/mutate set
+
+- `create_project` — `project`, `width`, `height`, and optional `background`
+  (`#rrggbb` or `#rrggbbaa`) and `name`. It also becomes the current project,
+  so later calls need not repeat it. A server started with `--project` refuses
+  it.
+- `add_svg_layer` — `asset`, `x`, `y`, `width`, `height`, and optional
+  `rotation`, `fit`, `parent`, `index`, `name`. An asset id only: a layer can
+  draw only an asset that was already imported and sanitized, and no tool takes
+  markup.
+- `render_document` — `project`; returns `svg`, `width`, `height`. The same
+  vector render `GET /api/projects/{id}/preview.svg` serves.
+- `find_overlaps` — `project`, `layerIds`; returns `pairs`. An empty `layerIds`
+  means the whole document; an id that is not in the document is refused, not
+  ignored.
+- `update_layer` takes `lineHeight`, `fontWeight`, `fontStyle`,
+  `letterSpacing`, `paragraphSpacing`, `runs`, and `verticalAlign` beside `opacity`, `text`,
+  `fontFamily`, `fontSize`, `color`, `align`, `fit`, `blendMode`, and
+  `effects`. The render refuses a `fontWeight` that the font store has no face
+  for, and names family, weight and style — never substituted.
+- `list_capabilities` takes no arguments and returns this build's blend modes
+  and effects with examples — the same JSON `GET /api/capabilities` and
+  `assemblash styles --json` serve.
+- `export_document` returns `warnings` beside `path`, `bytes`, `width`, and
+  `height`, and `pages` for a page-set export.
+- Six parity tools (1.10.0): `insert_layer_tree` pastes a copied layer tree
+  (the same expansion the HTTP batch runs), `list_fonts` reads the font
+  store's families and faces, `install_font_pack` fetches the pinned
+  default pack (a network action only on this call), `remove_font_family`
+  removes one family, and `delete_project` / `rename_project` manage
+  projects — a project another process holds is refused `projectLocked`,
+  never deleted or renamed past. The tool surface holds 55 tools. 1.14.0
+  adds the read-only `list_page_sets` and `get_page_set`. Before 1.14.0, the
+  surface held 53 tools.
+- In the `insert_layer_tree` input schema and the `get_document_state` output
+  schema, the `children` of a group is an untyped object. Each child has the
+  same layer shape as an item of `layers`.
+
+## HTTP notes
+
+- `GET /api/projects/{id}/overlaps` returns `{"pairs": [["layer_a","layer_b"],
+  …]}` — the same pairs in the same order as `assemblash overlaps` and MCP
+  `find_overlaps`. Narrow it with `?layers=`, repeated or comma-separated. A
+  layer id that is not in the document is `422 operationRefused`.
+- A `create` or `update` that carries a property the operation does not define
+  is refused: `422` with code `operationRefused` and the property named in the
+  message. The document version does not move and nothing is journalled. Do not
+  resend the same payload — correct the property name, or use the operation
+  schema to find the one that exists.

@@ -1,0 +1,315 @@
+---
+name: dayz-clothing
+description: "Use when: clothing mod, worn model, ClothingTypes, chaleco, armadura, la ropa flota/rígida/girada, slot Vest/Body/Armband, NBCHead/NBCTop/NBCPants/NBCBoots/NBCGloves, NBCBag, Waterskin, gas mask filter, headSelectionsToHide, wet clothing. Worn clothing (_m/_f). Not humanoids/rigging: dayz-characters; not proxy triangles: dayz-proxy-align."
+---
+
+# DayZ Worn Clothing — the verified pipeline
+
+Distilled from ArmorHneck (2026-08-03): third-party body armor RAR → fully working
+worn item, ~6 in-game cycles to isolate three independent SILENT failure modes.
+Everything below is in-game verified on DayZ 1.29 diag unless labeled otherwise.
+(until 1.29: the worn pipeline below is the 1.29-diag contract.) (since 1.30: killers #1–#3 and the worn p3d/model.cfg contract still hold. Config-side NBC layering, mask-filter protection, ItemBaseType wet/hide keys, shoe `itemSize`, Waterskin rename, and wash/wet actions: [dayz-1-30-clothing.md](references/dayz-1-30-clothing.md) and ## DayZ 1.30.)
+
+## THE THREE SILENT KILLERS (check these FIRST, in this order)
+
+A worn item can fail three independent ways, each with ZERO RPT errors. Any one
+of them wastes cycles if you chase the others first.
+
+1. **Config must be TEXT in the PBO.** A `config.bin` produced by CfgConvert in
+   this environment does NOT register (class absent: `CreateObjectEx` →
+   `unknown_type`, invisible to VPP). Pack `config.cpp` as text (packonly);
+   every working local mod ships text. Gate: live spawn of the classname —
+   never trust static PBO inspection for "it registered".
+2. **Worn mesh must be in the canonical clothing frame** (see next section).
+   A mesh built facing +Z renders as EXPLODED rigid pieces floating ~1 m above
+   the player (each 0/1-weighted plate is transformed by its bone from a
+   flipped frame). Fix: rotate 180° about +Y (det=+1 — do NOT touch winding)
+   AND swap left*/right* selection pairs in every LOD. That fix keeps a mirror
+   (CANONICAL WORN FRAME → handedness); with the Blender source, re-export it
+   with `(x, z, y)` (Rule 12) instead.
+3. **The clothing skeleton must be named `DayzTemporarySkeleton`.** ALL vanilla
+   worn clothing compiles with that name (verified via ODOL
+   `model_info.skeleton.name` on armbend_dynamic_m + chainmail_m): same 159
+   bones and hierarchy as OFP2_ManSkeleton, ONLY the name differs — it is the
+   placeholder the engine swaps for the wearer's skeleton at bind time. With
+   `skeletonName="OFP2_ManSkeleton"` the engine treats the p3d as having its
+   OWN skeleton and never re-binds: the item renders as a rigid block anchored
+   above the player, not animating. The community 114-bone OFP2 template fails
+   clothing TWICE (bone count and name). Template: `references/model.cfg.template`.
+
+## CANONICAL WORN FRAME (measured on chainmail_m / hoodie_m)
+
+- **-Z = chest/front** · **+X = anatomical LEFT** · **+Y = up** · origin at feet
+  (ground Y=0); mesh authored over the vanilla A-pose body.
+- Measure orientation with ANATOMICAL COMPONENTS, never a global Z histogram
+  (both ±Z masses are ~55/45 on real clothing — the histogram false-negatives a
+  180° flip). Reliable signals: front detail components (hoodie drawstrings at
+  Z −0.14..−0.07), pelvis/spine weighted centroids (vanilla ≈ Z −0.04..−0.08),
+  `left*` selection centroids on +X.
+- Torso clothing spans Y ≈ 0.61..1.66 m. Reference garment for overlay checks:
+  `dz\characters\tops\chainmail_m.p3d` (body armor, full-body bone set).
+- **Handedness (added 2026-10-01).** This frame holds a non-mirrored body in
+  DayZ's left-handed space. A Blender garment (right-handed; front −Y and left
+  +X, like the official rig) lands on it with `(x, y, z) → (x, z, y)`: det −1,
+  faces in Blender order, normals negated (dayz-model-pipeline Rule 12). A
+  det +1 map mirrors it: `(x, z, −y)` faces +Z (killer #2), and `(−x, z, y)`
+  faces −Z with `left*` on −X. A mesh that needs "rotate 180° + swap L/R" was
+  exported with such a map. ArmorHneck's received p3d was the `(x, z, −y)` of
+  the artist's Blender file (`ArmorHneck_dev\CLAUDE.md`, 2026-08-04). Rotation
+  + swap fixes the binding but keeps the mirror: text, logos, buckles and
+  one-sided straps read reversed. The properly handed fix is a re-export of
+  the Blender source with Rule 12, with no swap. With only the p3d, reflect it
+  on the axis its state calls for: a p3d as received from `(x, z, −y)` (facing
+  +Z, never rotated or swapped) takes `z → −z`; one that already had "rotate
+  180° + swap L/R", i.e. `(−x, z, y)` like the shipped ArmorHneck, takes
+  `x → −x` AND the L/R swap undone (`z → −z` on it would face +Z again).
+  Either reflection moves every point (memory points included), reverses
+  every face and reflects the normals the same way; `P3D.transform()` with
+  that diagonal matrix (det −1) does all three.
+- **Chiral in-game check [run 2026-10-02, DayZDiag 1.29.163709].** The anatomical test above
+  rules out a det +1 export only while the L/R selections were never swapped by
+  hand; a swapped build needs an asymmetric feature. Put an "F" in relief on the
+  left chest of a test garment (weighted 100 % to `spine3`). Export it once with
+  Rule 12 and once with the old `(x, z, −y)` + rotate + swap as the control,
+  wear each with an item in hands and set the camera in front. Pass: the "F"
+  reads correctly and sits on the side opposite the item hand (items sit on
+  `RightHand_Dummy`). Expected on the control: the "F" mirrored, on the item
+  side. On ArmorHneck itself, compare one asymmetric detail against the
+  artist's Blender file.
+  Result, on a vest-like test garment worn in the `Armband` slot (binarized,
+  ODOL skeleton `DayzTemporarySkeleton`, driven by dayz-mcp): the Rule 12
+  build (`py3d.blender_to_dayz()`), worn by the player with a crowbar in the
+  right hand, shows the "F" reading correctly on the wearer's left chest,
+  opposite the crowbar. The control (`ROT_X_NEG90`, every face reversed and
+  every normal negated, then 180° about +Y) shows the "F" mirrored on the
+  wearer's right chest. The garment carries only `spine3`, so the control's
+  L/R swap renamed nothing. dayz-mcp cannot take a worn item off the player,
+  so the control was worn by a `SurvivorM_Francis` spawned beside the player,
+  facing the camera with empty hands; its right side was read from its facing.
+  (claim: CLAIM-CLOTHING-CHIRAL-INGAME)
+  Result with left/right sleeves [run 2026-11-12, DayZDiag 1.30.164289.70]: on
+  `MCP_ChiralSleeves` (`Armband_ColorBase` classes in the `Armband` slot,
+  binarized to ODOL v56 with `DayzTemporarySkeleton`, driven by dayz-mcp), a
+  `spine3` torso tube with a left-chest relief "F" adds two shoulder-to-elbow
+  sleeves, one weighted to `leftarm` and one to `rightarm`, and a protruding
+  ring on the left sleeve only. Worn in turn by the player (`loadout_apply`) and
+  checked front and back standing still and during `greeting` (which raises the
+  left arm), the garment rendered grey (untextured), so the "F" and the ring
+  were read from the geometry. `R12` (Rule 12, `py3d.blender_to_dayz()`, no
+  selection swap) shows the "F" reading correctly on the left chest, the ring
+  on the left arm, and each sleeve following its arm. `OLD` (the reflected
+  `(-x, z, y)` export with `leftarm`/`rightarm` swapped) shows the "F" mirrored
+  on the right chest and the ring on the right arm, while each sleeve still
+  follows its arm. `NOSWAP` (the same `(-x, z, y)` export without the swap)
+  mirrors the "F" and ring side like `OLD`; standing still, both sleeves float
+  at head height off the arms, and with the left arm raised the left-side
+  sleeve stays at head height while the right-side sleeve drops to the lower
+  back. (claim: CLAIM-CLOTHING-CHIRAL-SLEEVES-INGAME)
+  Not covered: ArmorHneck itself, a female body.
+
+## THE CLOTHING CONTRACT (structure of a working wearable)
+
+config.cpp (text!):
+- Class inherits a vanilla clothing base for the slot (`Armband_ColorBase`,
+  `Chainmail`, vest/top bases...). `model=` the GROUND p3d (`*_g.p3d`).
+- `class ClothingTypes { male="..._m.p3d"; female="..._f.p3d"; };`
+- `inventorySlot[]` names the worn slots. (until 1.29: NBC pieces listed only the primary slot — `"Headgear"`, `"Body"`, `"Legs"`, `"Feet"`, `"Gloves"`.) (since 1.30: those NBC bases also list secondary slots `"NBCHead"`, `"NBCTop"`, `"NBCPants"`, `"NBCBoots"`, `"NBCGloves"` so they can coexist with regular clothing.)
+- `hiddenSelections[]` per model section; textures/materials arrays aligned.
+- (since 1.30) Type metadata lives on `ItemBaseType`: `headSelectionsToHide[]`, `hideSelectionsByinventorySlot`, `varWetMax`, `temperaturePerQuantityWeight`, `EnvironmentWetnessIncrements`. The config keys existed in 1.29 (parsed on `ItemBase`); 1.30 centralizes them on the type. Dual-slot headgear (bandana/shemag) still uses `hideSelectionsByinventorySlot = 1` plus `simpleHiddenSelections[]`.
+- Damage rvmats referenced only from healthLevels must be re-added at pack
+  time (AddonBuilder whitelist gap — see dayz-pbo-build SP-155).
+
+Worn p3d (_m/_f):
+- Visual LODs skinned by NAMED SELECTIONS in lowercase = bone names
+  (leftarm, rightarm, leftforearm, rightforearm, leftupleg, rightupleg,
+  neck, pelvis, spine, spine3 — more is better: vanilla also weights
+  shoulder/roll/extra transition bones for smooth joints).
+- Per-vertex weight sums MUST be 1.0 (vanilla ODOL encodes raw bytes summing
+  255). 0/1 plate-rigid weights WORK but articulate coarsely.
+- Camo sections: tops/vests use `camoMale` / `camoFemale` alone; ONLY armbands
+  carry the 4 complexion variants (camoMale_big_a/b + small_a/b). + `zbytek`.
+- Empty Geometry LOD with `autocenter=0` = the vanilla worn pattern (keep it).
+- Ground `_g`: normal item p3d (Geometry+mass+Component01, memory points,
+  ViewGeo, FireGeo with a penetration rvmat).
+
+model.cfg:
+- Copy `references/model.cfg.template` VERBATIM (CfgSkeletons
+  DayzTemporarySkeleton, 159 exact pairs, isDiscrete=0) and add one CfgModels
+  class per p3d (class name == p3d filename) with
+  `skeletonName="DayzTemporarySkeleton"` and its sections.
+
+## BUILD (staged — see ArmorHneck_dev\tools\build.ps1 as template)
+
+1. Stage the mod to %TEMP% (binarize with -addon=P:\ dies on any broken
+   third-party config in the tree — "Error 3", names the wrong culprit).
+   Stage beside it every file the p3d cite outside the mod's prefix, the
+   vanilla penetration rvmat of the Fire Geometry included, or binarize
+   embeds those materials EMPTY (dayz-pbo-build SP-155 rules 1 and 5,
+   corrected 2026-10-03: ArmorHneck's ODOL of 2026-08-04 carries
+   `dz\data\data\penetration\armor_5mm_plate.rvmat` empty).
+2. Full AddonBuilder pass to binarize the p3d (model.cfg NEXT TO the p3d in
+   the staging; ODOL must come out with skeleton name DayzTemporarySkeleton —
+   verify with the external ODOL parser, `model_info.skeleton.name`).
+3. Assemble pack tree: config.cpp TEXT + model.cfg + ODOL p3d + ALL paa/rvmat
+   (including damage/destruct) → AddonBuilder `-packonly` (separate -temp!).
+4. Verify PBO entries (classname, NO config.bin, ODOL magic) → deploy by hash.
+5. Gate = in-game: spawn (registers?) → equip (worn renders on body?) → move
+   (follows animations?). A worn item CANNOT be validated offline-only.
+
+## DIAGNOSIS LADDER (when a worn item misbehaves)
+
+| Symptom | Cause | Verify with |
+|---|---|---|
+| Item unknown/unspawnable, no RPT error | config.bin in PBO (killer #1) | spawn gate; PBO entry list |
+| Worn = rigid block floating ~1 m, rotated, no anim | skeleton name != DayzTemporarySkeleton (killer #3) | ODOL `model_info.skeleton.name` vs vanilla |
+| Worn = EXPLODED separate pieces above head | mesh frame flipped 180° (killer #2) | anatomical component Z-signs vs chainmail |
+| Fits but plates misaligned (arms/legs) | rip proportions vs canonical bind | alignment viewer (below) or artist pass |
+| Body/arms invisible when equipped | expected: torso-slot hide (Body/Vest classes hide skin) | wear it with the intended slot class |
+| Coarse joints while moving | 0/1 plate weights, no transition bones | optional weight-smoothing pass |
+| Gas mask worn, still takes bio/gas damage | (since 1.30) GP5/Airborne `Protection` no longer carries biological/dust_particle_breath; those come from attached `GasMask_Filter` | config `class Protection` vs slot `GasMaskFilter` |
+| Custom backpack cannot attach NBC pack | (since 1.30) backpack `attachments[]` missing `"NBCBag"` (not every vanilla bag has it) | compare `TaloonBag_ColorBase` vs `SmershBag` / `ChildBag_ColorBase` |
+
+**Config-vs-p3d bisection (one config-only rebuild, answers "which side is broken"):**
+add two test classes — {your slot class + a VANILLA worn p3d (chainmail)} and
+{a vanilla clothing class + YOUR p3d}. Vanilla-p3d-OK + custom-p3d-broken in
+both classes = the p3d. Both OK = your main class fields. Both broken = pipeline.
+
+**ODOL parity check vs a debinarized vanilla worn** (external ODOL parser):
+skeleton name + 159 bones, per-vertex weight sums, sub_skeleton palette (unused
+palette entries with 0 weight are normal in vanilla), sections, ModelInfo flags.
+SP-034 caveat: vanilla CHARACTER BODY vertex positions decode corrupt, but
+clothing worn p3ds decoded fine (armband, chainmail, hoodie all plausible).
+
+## ALIGNMENT VIEWER (fit plates to the body interactively)
+
+`references/alignment_viewer_extract.py` → JSON of mesh + per-region bone
+weights + pivots (+ vanilla chainmail ghost as the placement reference);
+`references/alignment_viewer_build.py` → self-contained HTML (embedded
+three.js UMD): per-region rotation/offset sliders (weight-masked, around the
+region pivot), L/R mirroring, front/back/side views, exports an adjustments
+JSON. `references/apply_alignment_json.py` applies that JSON to the MLOD
+sources with the EXACT same math (three.js Euler XYZ replicated; cross-check
+a sample vertex against the live viewer before batch-applying — err ~1e-8).
+Works for arbitrary region sets (arm/leg/abdomen masks, combined selections).
+
+## ARTIST HANDOFF (when a human does the fitting — the usual best route)
+
+`references/export_clothing_fbx.py` (Blender headless + py3d): MLOD worn →
+FBX with geometry, UVs (V flipped for Blender), the diffuse as PNG
+(ImageToPAA paa→png), and the bone weights carried by a 10-bone WEIGHT-CARRIER
+armature (FBX drops loose vertex groups — verified: without an armature
+deformer the groups vanish on reimport; with it, round-trip keeps all 10
+groups at exact weight sums). Axis map DayZ→Blender: `(x, z, y)`, det −1 and
+its own inverse, so the return trip is the same map with faces in the order
+they come back and normals negated (dayz-model-pipeline Rule 12); with py3d
+≥ 1.8.0 that is `py3d.blender_to_dayz()` on the model rebuilt from the FBX in
+Blender coordinates. The artist sees the garment like the official rig: Z up,
+front −Y, left +X, faces outward. [OFFLINE MEASURED 2026-10-01, ArmorHneck
+`_m`, Blender 5.1.1 + py3d 1.7.0] FBX round trip back to DayZ exact to 2.7e-7 m
+with the same face order; `leftarm` centroid x = +0.34, pelvis/spine centroid
+y = −0.045; signed volume +0.026 in Blender, i.e. faces outward. Until
+2026-10-01 the script used `(x, −z, y)` (det +1) with `py3d.BLENDER_TO_DAYZ`
+for the return. The artist then saw a mirror image (front +Y, left +X) with
+inward faces (signed volume −0.026), and only that exact inverse brought it
+back. A package made by the old script returns through `(x, z, −y)`, i.e.
+`transform(py3d.ROT_X_NEG90)` (the name py3d 1.8.0 gives that matrix; the
+old `py3d.BLENDER_TO_DAYZ` still works but is deprecated and warns), never
+through Rule 12 or `py3d.blender_to_dayz()`, which would land it facing +Z,
+mirrored and inside-out. ALWAYS verify by reimporting the FBX in a clean
+scene (counts + vgroups + weight sums) before shipping.
+Package: FBX m/f + PNG + the MLOD p3ds + model.cfg + README from
+`references/LEEME-ARTISTA.template.md` (states the three do-not-undo fixes,
+the group-preservation rule, and the return flow). Scripts carry the
+ArmorHneck paths — adapt per garment.
+
+## PROVENANCE
+
+ArmorHneck case (full trail): `ArmorHneck_dev\CLAUDE.md`, research workspace
+`%TEMP%\armorhneck_research_ws\REPORT.md` (Codex dual research: canonical frame
+measurement + transform prescription). Cross-refs: dayz-characters §2026-08-03
+(same finding, humanoid context), dayz-pbo-build SP-155 (staged build + rvmat
+gap), dayz-test-ingame (launch/lifecycle), external ODOL parsing (converter not distributed).
+
+## DayZ 1.30
+
+Worn-mesh killers #1–#3, the canonical frame, `DayzTemporarySkeleton`, and the
+staged packonly build are unchanged. What 1.30 adds is **config/script contract**
+around slots, protection, wetness, and one classname rename. Details and `[EXACT]`
+blocks: [dayz-1-30-clothing.md](references/dayz-1-30-clothing.md).
+
+### What changes
+
+- **NBC secondary slots.** Vanilla NBC hood/jacket/pants/boots/gloves list both
+  the primary clothing slot and `NBCHead` / `NBCTop` / `NBCPants` / `NBCBoots` /
+  `NBCGloves` (`CfgSlots` in `exp\scripts\scripts\config.cpp:3115-3150`).
+- **`NBCBag` on some backpacks, not all.** `TaloonBag_ColorBase`, `TortillaBag`,
+  `DryBag_ColorBase`, `HuntingBag`, `MountainBag_ColorBase`, `AssaultBag_ColorBase`,
+  `Attack2Bag_ColorBase`, `CoyoteBag_ColorBase`, `AliceBag_ColorBase` append
+  `"NBCBag"` next to `"Chemlight"`, `"WalkieTalkie"`, `"Backpack_1"`. `SmershBag`
+  and `ChildBag_ColorBase` do not. The pack item is scripted as `NBCPack_ColorBase`
+  (`Container_Base`); its `CfgVehicles` entry is not in this extract (`[UNVERIFIED]`).
+- **GP5 / Airborne protection moved to the filter.** (until 1.29: `class Protection`
+  on both masks included `biological = 1` and `dust_particle_breath = 1`.) (since
+  1.30: those two keys are omitted; only `dust_particle_eyes = 1` remains.
+  `GetProtectionLevel` reads the attached `GasMask_Filter`. The sealed `GasMask`
+  class still has full passive Protection. There is no class named `FilterBase`.)
+- **`ItemBaseType`** parses `headSelectionsToHide`, `hideSelectionsByinventorySlot`,
+  `varWetMax`, `temperaturePerQuantityWeight`, `EnvironmentWetnessIncrements`.
+  `ItemBase.GetHeadHidingSelection` / `HidesSelectionBySlot` / `GetWetMax` read
+  the type. Defaults for soaking/drying live on `Inventory_Base`.
+- **Shoe `itemSize` width.** Most footwear bases went from width 4 to width 3
+  (height also shrank on several boots). `LeatherShoes_ColorBase` stays `{4,2}`.
+- **`WaterPouch_*` → `Waterskin_*`** in `CfgVehicles`. Script stub
+  `WaterPouch_ColorBase: Bottle_Base{}` remains. Craft: 2 `TannedLeather` +
+  `LeatherSewingKit` (−10) → `Waterskin_Natural`. De-craft: empty
+  `Waterskin_ColorBase` + blade (−12 HP) → 1 `TannedLeather`.
+- **`CraftArmbandFlag.CanDo`** no longer requires `IsEmpty()`; it only rejects a
+  flag that is already an attachment. Extra knives (`Jambiya`, `Scimitar`,
+  `DonerKnife`, `Akinaka`) are valid tools.
+- **Wash head / wet clothing.** New `ActionWashHead*` / `ActionWetClothing*` apply
+  per-slot wetness and `GetThermalBiasHandler().Add(-THERMAL_BIAS_WASH_HEAD_DECREMENT)`.
+  `[CHANGELOG]` known issue: bottles can still Wash Head while frozen;
+  `ActionWashHeadItemContinuous.ActionCondition` does not call `GetIsFrozen()`.
+- **Nasdara/Badlands garments** (Kameez, Shalwar, Pakol, DustGoggles, …) have
+  scripts under `ItemBase\Clothing\` but no `characters_*` config in this public
+  extract (`[UNVERIFIED]` heatIsolation / cargo).
+
+### What breaks for a 1.29 clothing/gear mod
+
+1. NBC clothing that lists only the primary slot cannot layer with regular
+   Headgear/Body/Legs/Feet/Gloves.
+2. Custom backpacks without `"NBCBag"` cannot take the NBC pack attachment.
+3. GP5/Airborne clones with hardcoded `biological` on the mask, or that skip
+   `attachments[] = {"GasMaskFilter"}`, will not match 1.30 filter-gated protection.
+4. `CreateObject("WaterPouch_Natural")` / recipes naming `WaterPouch_*` fail:
+   the config class is `Waterskin_Natural`.
+5. Shoe mods still at width 4 occupy more grid than vanilla 1.30 footwear.
+6. Dual-slot headgear that omits `headSelectionsToHide[]` /
+   `hideSelectionsByinventorySlot` will clip or hide the wrong head selections.
+
+### Migration checklist
+
+- [ ] NBC pieces: `inventorySlot[]` includes the matching `NBC*` slot.
+- [ ] Backpacks that should carry the NBC pack: `attachments[]` includes `"NBCBag"`.
+- [ ] Filter masks: `attachments[] = {"GasMaskFilter"}`; biological protection
+      lives on `GasMask_Filter`, not on the mask `Protection` block.
+- [ ] Declare `headSelectionsToHide[]` / `varWetMax` / optional
+      `EnvironmentWetnessIncrements` on the clothing class (read via `ItemBaseType`).
+- [ ] Replace `WaterPouch_*` with `Waterskin_*` (optional 1.29 alias: empty
+      `WaterPouch_Natural: Waterskin_Natural { scope = 1; }` `[DESIGN]`).
+- [ ] Recheck shoe `itemSize[]` if you balanced against vanilla width 4.
+- [ ] Armband-from-flag: `CanDo` must not assume `IsEmpty()`.
+- [ ] Gate remains in-game: spawn → equip → move (killers #1–#3 unchanged).
+
+## On Linux
+
+Everything above is the Windows workflow and stays valid there. On Linux, the Proton setup, the measured tool matrix and the pitfalls are in [`_shared/linux-proton.md`](../_shared/linux-proton.md); this section only says what changes for this skill.
+
+- Pack, sign and binarize with dayzmake >= 3.1.0, bzed's DayZ fork of armake2 (https://github.com/bzed/dayzmake), pinned to `v3.1.0`; 3.x fixes a lot of security and file-handling issues of the earlier releases, so do not use an older build. Install the release binary `dayzmake-v3.1.0-debian-trixie-x86_64.tar.gz` from https://github.com/bzed/dayzmake/releases/tag/v3.1.0 only after verifying it against the release's GPG-signed `SHA256SUMS` (key fingerprint `6624 41B3 6A57 85AD 18FB  8667 DF75 3D99 D064 EB7E`; commands and the list of fixes in `dayz-pbo-build/references/dayzmake-linux.md`, "Get the right dayzmake"), or `cargo install --locked --git https://github.com/bzed/dayzmake --tag v3.1.0`: use `dayzmake build`, `keygen`, `sign`, and `build --proton-binarize` where needed. Upstream armake2 is no substitute: it is built for Arma, its V3 file hash omits `*.c` files (dayzmake includes them) and lacks the DayZ-only functions dayzmake keeps adding. `skills/_shared/scripts/dayz-mod-pack.sh` wraps them (`init`, `keygen`, `build [--binarize-models]`, `check`, `publish-hint`; `dayz-pbo-build/references/dayzmake-linux.md`). The author's 2026-11-03 textured-cube comparison with BI binarize from a `P:` root matched byte for byte (fork commit `7dcb3cf`, then still named armake2; `v1.0.0` and later contain it); this is not an in-game ODOL check. See `skills/_shared/linux-proton.md` for setup and limits.
+- `P:\` is a plain directory mapped by `skills/_shared/scripts/dayz-proton.sh init <dir>`; a `P:\<Mod>\...` path in this skill is `<dir>/<Mod>/...`.
+- Object Builder and TexView run under Proton: `dayz-proton.sh gui ObjectBuilder <p3d>`, `gui TexView <paa>`. Object Builder opened and displayed a model; editing in it was not exercised. Offline checks (`py3d`, `dayz-model-preflight`, `dayz-3d-viewer`) are Python and run natively.
+- In-game checks: the Linux notes of `dayz-test-ingame`.
+
+## Building, testing and publishing the mod
+
+When this work has to end in a mod that builds, loads and ships (`config.cpp`/`CfgMods`, `requiredAddons`, the PBO and its signature, a boot on a local server, the Workshop), follow the loop and the rules every mod task needs in [`dayz-mod-dev`](../dayz-mod-dev/SKILL.md), the Pack's entry point for mod development.

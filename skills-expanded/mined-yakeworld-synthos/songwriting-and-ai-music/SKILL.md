@@ -1,0 +1,374 @@
+---
+name: songwriting-and-ai-music
+description: songwriting-and-ai-music
+version: 1.0.0
+category: creative
+signature: 'songwriting-and-ai-music -> creative: Everything here is a GUIDELINE,
+  not a rule. Art breaks rules on purpose.'
+license: MIT
+author: Synthos
+metadata:
+  synthos:
+    signature: 'task_desc: str, params: dict -> result: dict'
+    atom_type: skill
+    priority: P2
+    related_skills: []
+---
+
+
+## Operational Steps
+1. 确认输入参数完整
+2. 执行核心操作（参考本目录下的 scripts/ 或 references/）
+3. 验证输出符合契约
+4. 保存结果并报告
+
+## Pitfalls
+- 
+- 
+
+## Verification
+- 
+- 
+- 
+- 
+1. 
+2. 
+3. 
+## IO_CONTRACT
+
+- **input**: `request: str, context: dict` — 用户请求描述、上下文信息
+- **output**: `result: dict — 技能执行结果（结构因技能而异）`
+
+> 对应原则：P2（机械原子暴露输入输出规范）
+
+# Songwriting & AI Music Generation
+
+Everything here is a GUIDELINE, not a rule. Art breaks rules on purpose.
+Use what serves the song. Ignore what doesn't.
+
+---
+
+## 1. Song Structure (Pick One or Invent Your Own)
+
+Common skeletons — mix, modify, or throw out as needed:
+
+```
+ABABCB  Verse/Chorus/Verse/Chorus/Bridge/Chorus    (most pop/rock)
+AABA    Verse/Verse/Bridge/Verse (refrain-based)    (jazz standards, ballads)
+ABAB    Verse/Chorus alternating                    (simple, direct)
+AAA     Verse/Verse/Verse (strophic, no chorus)     (folk, storytelling)
+```
+
+The six building blocks:
+- Intro      — set the mood, pull the listener in
+- Verse      — the story, the details, the world-building
+- Pre-Chorus — optional tension ramp before the payoff
+- Chorus     — the emotional core, the part people remember
+- Bridge     — a detour, a shift in perspective or key
+- Outro      — the farewell, can echo or subvert the rest
+
+You don't need all of these. Some great songs are just one section
+that evolves. Structure serves the emotion, not the other way around.
+
+---
+
+## 2. Rhyme, Meter, and Sound
+
+RHYME TYPES (from tight to loose):
+- Perfect: lean/mean
+- Family: crate/braid
+- Assonance: had/glass (same vowels, different endings)
+- Consonance: scene/when (different vowels, similar endings)
+- Near/slant: enough to suggest connection without locking it down
+
+Mix them. All perfect rhymes can sound like a nursery rhyme.
+All slant rhymes can sound lazy. The blend is where it lives.
+
+INTERNAL RHYME: Rhyming within a line, not just at the ends.
+  "We pruned the lies from bleeding trees / Distilled the storm
+   from entropy" — "lies/flies," "trees/entropy" create internal echoes.
+
+METER: The rhythm of stressed vs unstressed syllables.
+- Matching syllable counts between parallel lines helps singability
+- The STRESSED syllables matter more than total count
+- Say it out loud. If you stumble, the meter needs work.
+- Intentionally breaking meter can create emphasis or surprise
+
+---
+
+## 3. Emotional Arc and Dynamics
+
+Think of a song as a journey, not a flat road.
+
+ENERGY MAPPING (rough idea, not prescription):
+  Intro: 2-3  |  Verse: 5-6  |  Pre-Chorus: 7
+  Chorus: 8-9  |  Bridge: varies  |  Final Chorus: 9-10
+
+The most powerful dynamic trick: CONTRAST.
+- Whisper before a scream hits harder than just screaming
+- Sparse before dense. Slow before fast. Low before high.
+- The drop only works because of the buildup
+- Silence is an instrument
+
+"Whisper to roar to whisper" — start intimate, build to full power,
+strip back to vulnerability. Works for ballads, epics, anthems.
+
+---
+
+## 4. Writing Lyrics That Work
+
+SHOW, DON'T TELL (usually):
+- "I was sad" = flat
+- "Your hoodie's still on the hook by the door" = alive
+- But sometimes "I give my life" said plainly IS the power
+
+THE HOOK:
+- The line people remember, hum, repeat
+- Usually the title or core phrase
+- Works best when melody + lyric + emotion all align
+- Place it where it lands hardest (often first/last line of chorus)
+
+PROSODY — lyrics and music supporting each other:
+- Stable feelings (resolution, peace) pair with settled melodies,
+  perfect rhymes, resolved chords
+- Unstable feelings (longing, doubt) pair with wandering melodies,
+  near-rhymes, unresolved chords
+- Verse melody typically sits lower, chorus goes higher
+- But flip this if it serves the song
+
+AVOID (unless you're doing it on purpose):
+- Cliches on autopilot ("heart of gold" without earning it)
+- Forcing word order to hit a rhyme ("Yoda-speak")
+- Same energy in every section (flat dynamics)
+- Treating your first draft as sacred — revision is creation
+
+---
+
+## 5. Parody and Adaptation
+
+When rewriting an existing song with new lyrics:
+
+THE SKELETON: Map the original's structure first.
+- Count syllables per line
+- Mark the rhyme scheme (ABAB, AABB, etc.)
+- Identify which syllables are STRESSED
+- Note where held/sustained notes fall
+
+FITTING NEW WORDS:
+- Match stressed syllables to the same beats as the original
+- Total syllable count can flex by 1-2 unstressed syllables
+- On long held notes, try to match the VOWEL SOUND of the original
+  (if original holds "LOOOVE" with an "oo" vowel, "FOOOD" fits
+   better than "LIFE")
+- Monosyllabic swaps in key spots keep rhythm intact
+  (Crime -> Code, Snake -> Noose)
+- Sing your new words over the original — if you stumble, revise
+
+CONCEPT:
+- Pick a concept strong enough to sustain the whole song
+- Start from the title/hook and build outward
+- Generate lots of raw material (puns, phrases, images) FIRST,
+  then fit the best ones into the structure
+- If you need a specific line somewhere, reverse-engineer the
+  rhyme scheme backward to set it up
+
+KEEP SOME ORIGINALS: Leaving a few original lines or structures
+intact adds recognizability and lets the audience feel the connection.
+
+---
+
+## 6. Suno AI Prompt Engineering
+
+### Style/Genre Description Field
+
+FORMULA (adapt as needed):
+  Genre + Mood + Era + Instruments + Vocal Style + Production + Dynamics
+
+```
+BAD:  "sad rock song"
+GOOD: "Cinematic orchestral spy thriller, 1960s Cold War era, smoky
+       sultry female vocalist, big band jazz, brass section with
+       trumpets and french horns, sweeping strings, minor key,
+       vintage analog warmth"
+```
+
+DESCRIBE THE JOURNEY, not just the genre:
+```
+"Begins as a haunting whisper over sparse piano. Gradually layers
+ in muted brass. Builds through the chorus with full orchestra.
+ Second verse erupts with raw belting intensity. Outro strips back
+ to a lone piano and a fragile whisper fading to silence."
+```
+
+TIPS:
+- V4.5+ supports up to 1,000 chars in Style field — use them
+- NO artist names or trademarks. Describe the sound instead.
+  "1960s Cold War spy thriller brass" not "James Bond style"
+  "90s grunge" not "Nirvana-style"
+- Specify BPM and key when you have a preference
+- Use Exclude Styles field for what you DON'T want
+- Unexpected genre combos can be gold: "bossa nova trap",
+  "Appalachian gothic", "chiptune jazz"
+- Build a vocal PERSONA, not just a gender:
+  "A weathered torch singer with a smoky alto, slight rasp,
+   who starts vulnerable and builds to devastating power"
+
+### Metatags (place in [brackets] inside lyrics field)
+
+STRUCTURE:
+  [Intro] [Verse] [Verse 1] [Pre-Chorus] [Chorus]
+  [Post-Chorus] [Hook] [Bridge] [Interlude]
+  [Instrumental] [Instrumental Break] [Guitar Solo]
+  [Breakdown] [Build-up] [Outro] [Silence] [End]
+
+VOCAL PERFORMANCE:
+  [Whispered] [Spoken Word] [Belted] [Falsetto] [Powerful]
+  [Soulful] [Raspy] [Breathy] [Smooth] [Gritty]
+  [Staccato] [Legato] [Vibrato] [Melismatic]
+  [Harmonies] [Choir] [Harmonized Chorus]
+
+DYNAMICS:
+  [High Energy] [Low Energy] [Building Energy] [Explosive]
+  [Emotional Climax] [Gradual swell] [Orchestral swell]
+  [Quiet arrangement] [Falling tension] [Slow Down]
+
+GENDER:
+  [Female Vocals] [Male Vocals]
+
+ATMOSPHERE:
+  [Melancholic] [Euphoric] [Nostalgic] [Aggressive]
+  [Dreamy] [Intimate] [Dark Atmosphere]
+
+SFX:
+  [Vinyl Crackle] [Rain] [Applause] [Static] [Thunder]
+
+Put tags in BOTH style field AND lyrics for reinforcement.
+Keep to 5-8 tags per section max — too many confuses the AI.
+Don't contradict yourself ([Calm] + [Aggressive] in same section).
+
+### Custom Mode
+- Always use Custom Mode for serious work (separate Style + Lyrics)
+- Lyrics field limit: ~3,000 chars (~40-60 lines)
+- Always add structural tags — without them Suno defaults to
+  flat verse/chorus/verse with no emotional arc
+
+---
+
+## 7. Phonetic Tricks for AI Singers
+
+AI vocalists don't read — they pronounce. Help them:
+
+PHONETIC RESPELLING:
+- Spell words as they SOUND: "through" -> "thru"
+- Proper nouns are highest failure rate — test early
+- "Nous" -> "Noose" (forces correct pronunciation)
+- Hyphenate to guide syllables: "Re-search", "bio-engineering"
+
+DELIVERY CONTROL:
+- ALL CAPS = louder, more intense
+- Vowel extension: "lo-o-o-ove" = sustained/melisma
+- Ellipses: "I... need... you" = dramatic pauses
+- Hyphenated stretch: "ne-e-ed" = emotional stretch
+
+ALWAYS:
+- Spell out numbers: "24/7" -> "twenty four seven"
+- Space acronyms: "AI" -> "A I" or "A-I"
+- Test proper nouns/unusual words in a short 30-second clip first
+- Once generated, pronunciation is baked in — fix in lyrics BEFORE
+
+---
+
+## 8. Workflow
+
+1. Write the concept/hook first — what's the emotional core?
+2. If adapting, map the original structure (syllables, rhyme, stress)
+3. Generate raw material — brainstorm freely before structuring
+4. Draft lyrics into the structure
+5. Read/sing aloud — catch stumbles, fix meter
+6. Build the Suno style description — paint the dynamic journey
+7. Add metatags to lyrics for performance direction
+8. Generate 3-5 variations minimum — treat them like recording takes
+9. Pick the best, use Extend/Continue to build on promising sections
+10. If something great happens by accident, keep it
+
+EXPECT: ~3-5 generations per 1 good result. Revision is normal.
+Style can drift in extensions — restate genre/mood when extending.
+
+---
+
+## 9. Lessons Learned
+
+- Describing the dynamic ARC in the style field matters way more
+  than just listing genres. "Whisper to roar to whisper" gives
+  Suno a performance map.
+- Keeping some original lines intact in a parody adds recognizability
+  and emotional weight — the audience feels the ghost of the original.
+- The bridge slot in a song is where you can transform imagery.
+  Swap the original's specific references for your theme's metaphors
+  while keeping the emotional function (reflection, shift, revelation).
+- Monosyllabic word swaps in hooks/tags are the cleanest way to
+  maintain rhythm while changing meaning.
+- A strong vocal persona description in the style field makes a
+  bigger difference than any single metatag.
+- Don't be precious about rules. If a line breaks meter but hits
+  harder, keep it. The feeling is what matters. Craft serves art,
+  not the other way around.
+
+## 验证清单 · VERIFICATION
+
+- [ ] Suno Style 字段遵循"流派+情绪+时代+乐器+人声+制作"公式，且描述的是动态旅程（如 whisper→roar）而非仅罗列流派；无艺术家名或商标
+- [ ] 歌词元标签每节 5-8 个且互相不矛盾（同一节内无 [Calm]+[Aggressive] 并存），关键标签在 Style 与 Lyrics 两处均出现
+- [ ] 专有名词、数字、缩写已做音韵处理（数字拼写、缩写加空格、非常见词先用 30 秒片段试发音）
+- [ ] 使用 Custom Mode 且歌词含结构标签 [Verse]/[Chorus]/[Bridge] 等，避免 Suno 默认平直 verse/chorus 无情感弧线
+- [ ] 已生成 ≥3 个变体再择优；Extend/Continue 时重申 genre/mood 以防风格漂移
+- [ ] 歌词朗读/跟唱无顿挫（重音音节与节拍对齐），押韵混合了完美韵与近韵而非单一类型
+
+## 约束规则 · RULES
+
+1. **输入约束**: 参数类型、范围、格式必须校验
+2. **输出约束**: 返回值结构、编码、命名必须一致
+3. **异常约束**: 错误信息必须包含上下文和恢复建议
+4. **安全约束**: 不执行未验证的任意代码，不暴露内部状态
+
+## Golden 集合 · GOLDEN SET
+
+- **Golden Input**: 标准输入样本（覆盖正常路径）
+- **Golden Output**: 预期输出（精确匹配或格式校验）
+- **Golden Error**: 预期错误信息（覆盖失败路径）
+
+> Golden 集合是测试的单一真理来源。所有改进必须通过 golden 测试。
+
+> 违反规则的操作视为不安全，必须拒绝或隔离。
+
+> 每项验证必须可执行、可记录、可复现。验证失败时记录原因和修复。
+
+# Songwriting And Ai Music
+
+## Genes (策略基因)
+
+> 紧凑策略表示。条件→策略。需要深度时参考完整文档。
+
+- **[SONG-008]** 当需要构建歌曲结构时 → 根据情感需求选择骨架（如 ABABCB），让结构服务于情绪而非反之
+- **[SONG-009]** 当处理韵律与节奏时 → 混合使用完美押韵与近韵，并优先确保重音音节匹配以保障可唱性
+- **[SONG-010]** 当设计动态变化时 → 利用对比原则（如先低后高、先静后动）来增强情感冲击力，将沉默视为乐器
+- **[SONG-011]** 当撰写歌词意象时 → 遵循“展示而非告知”原则，用具体细节代替抽象情感，除非平实陈述本身具有力量
+- **[SONG-012]** 当进行改编或戏仿时 → 先映射原曲的音节数、重音及韵脚骨架，再填入新词并保留部分原句以维持辨识度
+- **[SONG-013]** 当编写 AI 音乐风格提示词时 → 使用“流派+情绪+时代+乐器+人声+制作”公式，描述声音旅程而非仅指定流派
+- **[SONG-007]** 当使用元标签控制生成时 → 在歌词中嵌入 5-8 个不冲突的结构/动态/氛围标签，并在风格字段中同步强化
+
+## 示例 · EXAMPLES
+
+1. **写一首"低语到嘶吼"的 cinematic ballad（Suno Custom Mode）**
+   - 输入: 情感核 = 失去后的释然，结构选 ABABCB。
+   - 操作: 按 流派+情绪+时代+乐器+人声+制作 公式写 Style（如 "sparse piano ballad, minor key, weathered alto, builds from whisper to full orchestra"）；歌词嵌入 [Verse]/[Chorus]/[Bridge] 结构标签，每节 5-8 个不冲突标签，Style 与 Lyrics 双处强化。
+   - 验证: 朗读歌词无顿挫；生成 ≥3 个变体择优；Extend 时重申 genre/mood 防漂移。
+
+2. **戏仿改编已有歌曲**
+   - 输入: 原曲歌词 + 新主题概念。
+   - 操作: 逐行统计音节数、标注韵式与重音；新词重音对齐原节拍，长延音处匹配原元音，单音节词做干净替换（Crime→Code），保留数句原词增加辨识度。
+   - 验证: 新词跟唱原曲不磕绊；保留原句存在且新主题贯穿全曲。
+
+3. **AI 歌手发音纠错**
+   - 输入: 含专有名词 "Nous" 与数字 "24/7" 的歌词行。
+   - 操作: 音韵改拼 "Nous"→"Noose"，数字拼出 "twenty four seven"；先跑 30 秒短片段试发音。
+   - 验证: 短片段中发音正确后再全曲生成；发音一旦烘焙进音频只能在歌词层面重改。

@@ -1,0 +1,476 @@
+---
+name: autopilot
+description: 当用户需要从目标描述到代码合并的端到端自动化、或说"自动驾驶"时使用。
+---
+
+!`bash "${CLAUDE_PLUGIN_ROOT}/scripts/setup.sh" '$ARGUMENTS'`
+
+# Autopilot — AI 自动驾驶工程闭环
+
+你是 autopilot 的编排器。你的职责是读取状态文件（路径由 active 指针确定，非 worktree 指向 `.autopilot/runtime/requirements/<slug>/state.md`，worktree 中指向 `.autopilot/runtime/sessions/<name>/requirements/<slug>/state.md`），根据当前 `phase` 执行对应阶段的工作流。setup.sh 输出的 `状态文件:` 行即正确路径，无需手动推断。
+
+> **Worktree 隔离 + 二级分层**：worktree 中 `runtime/sessions/<wt>/` 为本地真实目录；共享项 per-item symlink 指向主仓库 `.autopilot/{knowledge/*, runtime/{active.ptr,requirements/,worktree-links.txt,doctor-report.md}}`（knowledge 入库、runtime gitignored）。每次运行自动创建 `requirements/<slug>/` 归档产出，`task_dir` frontmatter 指向该文件夹。
+
+## 核心铁律
+
+1. **严格按阶段执行**：只做当前 phase 的事，不跨阶段操作
+2. **写入状态文件**：每个阶段的产出必须写入状态文件对应区域
+3. **范围控制**：严格按照设计文档和实现计划执行，不擅自扩大范围；**包括禁止修改 `.autopilot/` 下当前 task 之外的元数据（其他 task 的 brief / state.md）**
+4. **失败不隐藏**：任何失败都如实记录，不伪造通过
+5. **成功需要证据** / 假设需要证据：任何阶段声称"完成"必须附可验证的证据（命令输出、测试结果、截图等），"我检查了"不算；对外部系统行为的假设（API 响应结构、数据格式、字段名）必须通过运行时验证确认，先验证再实现。
+
+## 启动流程
+
+每次被唤起时：
+
+1. 读取状态文件（路径由 active 指针确定，setup.sh 输出的 `状态文件:` 即为正确路径）
+2. **模式自适应**（仅 `fast_mode` 为空时）：不在本步判定——此刻零代码上下文，推迟到 design 阶段步骤 1 探针后定（判据见步骤 1）
+3. 解析 frontmatter 中的 `phase` 字段
+4. 路由到对应阶段的工作流
+5. 执行完毕后更新状态文件（phase/gate/retry_count 等）
+6. 正常结束（Stop hook 会自动决定继续循环还是放行）
+
+## 用户子命令处理
+
+- **`/autopilot approve`**：setup.sh 处理状态更新，你按新 phase 继续执行
+- **`/autopilot revise <反馈>`**：setup.sh 更新状态，你读取反馈并纳入考虑
+- **`/autopilot status`**：setup.sh 输出状态，无需额外处理
+- **`/autopilot next`**：setup.sh 自动选择就绪任务并启动 brief 模式
+- **`/autopilot cancel`**：setup.sh 清理，无需额外处理
+- **`/autopilot commit`**：触发 autopilot-commit skill，无需状态文件
+
+---
+
+## Phase: design — 设计阶段
+
+### ⚠️ 关键规则（模式决策）
+完成设计文档并获得用户审批后进入实现阶段（设计文档直接写入状态文件）。按以下优先级决定设计模式：
+
+1. `auto_approve: true` → Auto-Approve 快速路径
+2. `fast_mode: true` → Fast Mode 快速路径
+3. 其他（默认）→ Standard Design 模式。`headless: true`（`--headless`）正交于此表：全部 AskUserQuestion 交互点确定性化，SSOT 见 [references/headless-protocol.md](references/headless-protocol.md)
+
+三模式完整步骤 diff 见 [references/design-modes.md](references/design-modes.md)。失败回退：任何 Auto-Approve / Fast Mode 环节失败 → 设 `auto_approve: false` / 触发 AskUserQuestion，回退人工审批；`headless: true` 不问——按显式失败出口处置并 `[headless]` 留痕（headless-protocol.md 矩阵行 4）。
+
+### Standard Design 模式（默认，含 brainstorm）
+
+先查复用：扫描 `$TASK_DIR` 同级的 `*/brainstorm.md`（非 worktree 即 `.autopilot/runtime/requirements/`，worktree 即 `.autopilot/runtime/sessions/<name>/requirements/`——独立 brainstorm 产物落本地 sessions 目录，共享 requirements symlink 指向主仓，扫它会漏本地产物），Read 候选「## 探索的目的与约束」段判定与当前目标相关性——相关则搬入 `$TASK_DIR/brainstorm.md` 跳过 Q&A 直接接力；无相关产物再委托 `Skill: "autopilot-brainstorm"`。`headless: true` 且未命中复用 → 不委托，编排器自答（推演关键问题与假设写入 `$TASK_DIR/brainstorm.md`，`[headless]` 留痕）。
+
+接力：读 brainstorm.md → 写设计文档+实现计划 → plan-reviewer Agent 审查 → 步骤 4（自治默认 / 例外征询）（详见 references/design-modes.md §3）。
+
+### Fast Mode 快速路径（仅 fast_mode=true 时）
+
+跳过 brainstorm Q&A，1 个 Explore agent 探索代码；不启动 scenario-generator / plan-reviewer Agent；设计文档写入状态文件后 `html_review: true` 仍走步骤 4c HTML 评审，否则直接 `phase: "implement"`（跳过审批，fast 信任 AI 判断）。完整 diff 见 references/design-modes.md §4。
+
+### Auto-Approve 快速路径（仅 auto_approve=true 时）
+
+跳过 AskUserQuestion 审批，plan-reviewer Agent 审查 PASS 即推进，FAIL 设 `auto_approve: false` 回退正常审批。`auto_approve: true` 来源：auto-chain 子任务（stop-hook 设）或 **standard 单任务 design 步骤 4 自治默认设置**（详见步骤 4）。完整 6 步见 references/design-modes.md §2。
+
+### 工作流程
+
+每个阶段开始时立即用 `todo-write` 创建当前阶段任务列表。详细 phase 检查清单参见 [references/phase-checklists.md](references/phase-checklists.md)。
+
+#### 步骤 0. 知识上下文加载
+
+`.autopilot/` 存在时快速加载（<=15s，最多 3 个文件），两跳发现：有 `index.md` → 关键词匹配 tags 按需加载 + `ls` `inbox/` 按需读未收编条目 | 无 `index.md` → 全量加载 `decisions.md` + `patterns.md`。详见 `references/knowledge-engineering.md`。
+
+#### 步骤 1. 模式检测与分流
+
+读取状态文件 frontmatter 的 `mode` 和 `brief_file` 字段。**若 `fast_mode` 为空，先定它再分流**（所有 mode 路径先行，避免 single/brief 漏判）：1-2 个 Glob/Grep 探针估算改动半径（`brief_file` 非空时改用内联简报 + 架构摘要），据结果 Edit 写回 `fast_mode`——小改 / 同质 search-replace → `fast`，架构权衡 / 陌生模块 → `standard`，不确定 → `fast`（多文件 ≠ 复杂，`contract_required` / `html_review` 正交，变更日志记一行理由）。探针结论写入 `$TASK_DIR/context.md`——固定五节 `## 技术栈` / `## 测试框架` / `## 测试命令` / `## 构建命令` / `## 相关历史知识`（步骤 0 加载到的相关条目一句话摘要 ≤3 条；无则 N/A），节内 bullet、空节写 `N/A`；`## 测试命令` / `## 构建命令` 必须写**实测过（exit=0）的完整可执行命令行**（含环境加载前缀），供下游直接复制执行，禁止描述性文字——下游蓝队/QA 据此免除重复环境探测。然后按 `mode` 分流：
+
+- **`mode: "single"` 或 `brief_file` 非空** → 跳过检测，继续步骤 2（标准单任务流程）。brief 模式下，目标区域已内联任务简报 + 依赖 handoff + 架构摘要，优先使用这些上下文。
+- **`mode: "project"`** → 跳过检测，直接走 [项目模式设计](#项目模式设计内容)
+- **`mode: ""` (空)** → 进行复杂度评估：
+  1. 快速探索（复用上面的探针）估算范围
+  2. 如果任务你认为太复杂，通过一次 autopilot 无法高质量完成 → 使用 `AskUserQuestion` 确认（`headless: true` 不问：按单任务继续，分流假设写入设计文档并 `[headless]` 留痕）：
+     - 选项 1: 「项目模式」— 生成架构设计 + 任务 DAG，每个任务独立执行
+     - 选项 2: 「单任务模式」— 在当前会话一次性完成
+  3. 用户选择项目模式 → 走 [项目模式设计](#项目模式设计内容)
+  4. 用户选择单任务模式 → 继续步骤 2
+
+##### 项目模式设计内容
+
+将项目级内容（Context / 整体架构设计 / 任务 DAG 概览 / 跨任务设计约束 / Handoff 策略）写入状态文件 `## 设计文档` 区域。完整 markdown 模板参见 [references/state-file-guide.md](references/state-file-guide.md)。完成后执行步骤 3（Plan 审查）和步骤 4（审批）。审批通过后走 [步骤 5b. 项目模式文件创建](#步骤-5b-项目模式文件创建)。
+
+#### 步骤 2. 代码探索与设计文档编写
+
+- 根据任务涉及的代码面**自行决定** Explore agent 数量：聚焦的小改动 1 个通常足够，跨多个模块 / 范围不确定时可并行多个。每个 agent 指定具体搜索目标。
+- **并行启动验收场景生成器**：在同一轮 Agent 调用中，与 Explore agent 一起启动验收场景生成器（model: "sonnet"），prompt 短桩——指示 Agent 先 Read `references/scenario-generator-prompt.md` 按模板执行，prompt 内只内联两个小字段（目标描述原文 + 技术栈摘要，信息隔离铁律要求内联，不走路径）。该 Agent 从纯目标视角（不看代码和设计文档）生成 e2e 验收场景含预注册验收谓词（EARS-OST + 观测绑定）。**编排器收到输出后必须冻结写入状态文件 `## 验收场景` 区域，作为全链路谓词唯一权威源（SSOT）——下游 plan-reviewer / 红队 / QA 皆从此读**。降级：生成器失败时 Plan 审查照常执行（详见验收场景降级）。
+- 查找可复用的代码和工具函数
+- **范围控制**：如果任务你认为太复杂，通过一次 autopilot 无法高质量完成，应在步骤 1 中选择项目模式拆分为独立任务
+- **Skill 识别**：检查系统 prompt 中列出的可用 skill，如果有 skill 与目标高度匹配（用户提到了 skill 名称，或 skill 的触发描述与目标吻合），在设计文档中声明委托
+- 将设计文档写入状态文件的 `## 设计文档` 和 `## 实现计划` 区域
+- **契约硬要求**（contract_required=true 时）：设计文档必须包含 `## 契约规约` 章节，详见 references/contract-protocol.md
+
+#### 步骤 3. Plan 审查
+
+设计文档写入状态文件后，启动审查 sub-agent 确保方案质量。
+
+**触发条件**：状态文件已包含完整设计文档（Context / 设计文档 / 实现计划 / 验证方案 四个核心节全非空）；明显不完整则先补全再触发。
+
+**执行流程**：
+
+1. **启动 plan-reviewer Agent**（model: "sonnet"）：prompt 短桩——指示 Agent 先 Read `references/plan-reviewer-prompt.md` 按模板执行；输入路径传递（大块内容不内联复制，Agent 自行 Read）：state.md 路径（Read `## 目标` / `## 设计文档` + `## 实现计划` / `## 验收场景`，N/A 则省略）+ 项目根目录路径
+2. **结果**：**PASS**（无 BLOCKER）→ 继续步骤 4 | **FAIL**（有 BLOCKER）→ 修改状态文件设计文档后重审
+3. **重审控制**：最多 5 轮（初审 + 4 次重审）；**停点由 BLOCKER 决定而非轮数**——任一轮 0 BLOCKER 即 PASS 进步骤 4，**不得自行加轮去消除重要问题（80-89）**（重要问题不阻断，附设计文档末尾即可）；第 5 轮仍有 BLOCKER → 附未解决 BLOCKER 标注 `[审查未通过，交由用户判断]` 后继续步骤 4
+
+**验收场景降级**：生成器 Agent 失败/未产出 → plan-reviewer 照常执行（无场景覆盖分析），对话中说明并继续。
+
+**审查报告处理**：PASS → 追加 `> ✅ Plan 审查通过（全部维度通过）` | FAIL 修复后 PASS → 追加轮次信息 | 最终仍 FAIL → 追加报告全文标注交由用户判断。
+
+#### 步骤 4. 审批（AI 判断是否需要用户确认）
+
+按优先级判断：
+1. 用户上下文明确「跳过/直接做」→ 设 `auto_approve: true` + `phase: "implement"`（必须同轮，跳过审批 + QA gate）；明确「先看方案/先给我审」→ AskUserQuestion（preview 模板见 html-review-guide.md）
+2. `html_review: true`（env `AUTOPILOT_HTML_REVIEW=1` 或 frontmatter 设置）→ HTML 评审：前台同步调 `bash ${CLAUDE_PLUGIN_ROOT}/scripts/visual-companion/launch-plan-review.sh "$task_dir"`（timeout 600000，禁 run_in_background），解析 stdout JSON `choice`，详见 [html-review-guide.md](references/html-review-guide.md)
+3. 默认（AI 自治）：完成风险评估后同轮设 `auto_approve: true` + `phase: "implement"`，并在 `## 变更日志` 留痕一行 `[design-auto] <风险点与依据> → 放行`；**仅当 AI 自判命中例外才 AskUserQuestion**——例外 =「存在不可逆且无证据门禁可兜底的动作」或「含必须由用户裁决的取舍」（`headless: true` 时例外不征询——自答假设 + `[headless]` 留痕）；判据与正反例见 [design-modes.md](references/design-modes.md)
+
+> `auto_approve` 仅在步骤 4 设置；revise 回 design（用户给修改意见）须重置 `auto_approve: false`；复用步骤 1 fast_mode 探针信号辅助判断。
+
+#### 步骤 5. 审批通过后
+- 检查 frontmatter `mode` 字段：如果步骤 1 中选择了项目模式（或 `mode: "project"`），走步骤 5b
+- 否则（单任务模式）：设计文档已在步骤 2 写入状态文件，无需复制
+- 更新 frontmatter：`phase: "implement"`
+
+#### 步骤 5b. 项目模式文件创建（仅项目模式）
+
+审批通过后，创建项目文件结构：
+
+1. `mkdir -p .autopilot/project/tasks/`
+2. 写 `.autopilot/project/design.md`（从状态文件复制完整架构设计）+ `.autopilot/project/dag.yaml`（机器可读任务 DAG，格式参见 autopilot-project skill）
+3. 为 DAG 每个任务写 `.autopilot/project/tasks/<id>.md`（`<id>` = dag.yaml id 字段，文件名 stem ≡ id）— 任务简报含 YAML frontmatter（`id`、`depends_on`）+ 目标（一句话）+ 架构上下文（从 design.md 摘取）+ 输入/输出契约 + 验收标准
+4. 更新状态文件 frontmatter：`mode: "project"`、`knowledge_extracted: "skipped"`、`phase: "done"`
+5. 输出下一步指引：`项目已创建，包含 N 个任务。使用 /autopilot status 查看 DAG 状态，/autopilot next 查找就绪任务`
+
+---
+
+## Phase: implement — 红蓝对抗并行实现
+
+### 目标
+通过红蓝对抗模式并行完成编码和验收测试编写。蓝队（实现者）负责按计划编码，红队（验证者）仅基于设计文档编写验收测试，确保测试独立于实现。
+
+### 防合理化指南
+
+> 防合理化指南见 references/anti-rationalization.md（仅在你想跳过测试/重做时阅读）。
+
+### 工作流程
+
+从状态文件读取 `## 设计文档`。检查是否包含 `## 领域 Skill 委托` 字段：
+- **有委托声明** → 走 [1b. Skill 委托路径](#1b-skill-委托路径)
+- **无委托声明** → 走 [1a. 蓝/红队对抗路径](#1a-蓝红队对抗路径默认)
+
+#### 1a. 蓝/红队对抗路径（默认）
+
+从状态文件读取 `## 设计文档` 和 `## 实现计划`，然后**立即**使用 Agent 工具同时启动两个子代理（在同一轮响应中发出两个 Agent 调用）。测试框架信息由编排器在 prompt 填入 `$TASK_DIR/context.md` 路径（design 步骤 1 探针产物）。
+
+##### 蓝队 Agent（实现者）
+
+使用 Agent 工具启动蓝队（model: "sonnet"）：prompt 短桩——指示 Agent 先 Read `references/blue-team-prompt.md` 按模板执行；输入路径传递（不内联复制）：
+- state.md 路径（Agent 自行 Read `## 设计文档` + `## 实现计划` 两节）
+- 项目目录路径和 `$TASK_DIR/context.md` 路径
+
+##### 红队 Agent（验证者）
+
+使用 Agent 工具启动红队（model: "sonnet"）：prompt 短桩——指示 Agent 先 Read `references/red-team-prompt.md` 按模板执行；输入路径传递（不内联复制）：
+- state.md 路径（Agent 自行 Read，**仅限** `## 目标` / `## 设计文档` / `## 验收场景` 三节）
+- 信息隔离：禁读 `## 实现计划` 与蓝队相关区域，实现代码绝不读（红队铁律）
+- `$TASK_DIR/context.md` 路径（测试框架信息；命名约定从现有测试文件提取）
+
+**⚠️ 红队铁律**：红队**绝对不能**读取蓝队新写的实现代码。红队测试代表设计意图，是验收标准的代码化表达。
+
+#### 1b. Skill 委托路径
+
+当设计文档声明了 `## 领域 Skill 委托` 时，走此路径。领域 Skill 封装了验证过的工作流，比蓝队从零实现更可靠。
+
+1. 调用 `Skill: "{skill-name}"`，传递委托输入 → 2. `git status` 收集产出 → 3. **必须**启动红队 Agent 编写验收测试（信息隔离不变）→ 4. 红队有测试文件 → 合流 | 无测试 → 降级为文本验收清单
+   - **⚠️ 不允许跳过此步直接进入合流**。Skill 内部的验证（如 Gemini 评分）不替代 autopilot 框架的独立红队验收。
+
+**降级**：Skill 失败 → 回退蓝/红队路径 | 红队失败 → 纯文本验收清单。**不允许**绕过红队验收。
+
+#### 审查后修改铁律
+
+**任何在外部审查/评分之后的代码修改，必须重新运行对应验证。** 不允许"评分通过后优化一下就合入"。
+
+| 场景 | 要求 |
+|------|------|
+| 外部 AI 评分后修改代码 | 重新评分或至少重跑 tsc + 测试 |
+| 红队通过后"小优化" / Review 后追加改动 | 重跑红队测试 / 重跑受影响 Tier |
+
+#### 2. 合流 — 两个 Agent 都完成后
+
+1. **收集蓝队产出**：实现摘要、文件列表、困难任务标记
+2. **写 `## 蓝队自检` 区域**：从蓝队返回摘要提取自检清单（`- <命令> ｜ exit=<码> ｜ <范围>`），`source ${CLAUDE_PLUGIN_ROOT}/scripts/lib.sh` 调 `tree_sig`，Edit 写入 state.md——**首行 `tree_sig: <64-hex>`**，随后清单条目（staging 合流只加测试文件，不影响 sig）；供 QA Tier 1 沿用复用
+3. **红队验收测试合流由 stop-hook 在 implement→qa 转换时自动完成**（暂存→target 搬运 + `git add` + `lock_acceptance_tests` + 写状态文件 `## 红队验收测试` 区域），编排器无需手动操作；详见 `scripts/stop-hook.sh` §8.5.0.5
+4. 更新 frontmatter：`phase: "qa"`
+
+#### 3. 降级策略
+
+- **项目没有测试框架** → 红队仅产出验收检查清单（纯文本），qa 阶段由 AI 逐项人工验证
+- **红队 Agent 失败** → 在对话中说明警告，继续只用蓝队产出进入 qa（不阻塞流程）
+- **蓝队 Agent 失败** → 严重错误，在对话中说明，设置 `gate: "review-accept"` 等待用户介入
+- **Skill 委托失败** → 在对话中说明失败原因，自动回退到蓝/红队对抗路径重新执行
+
+---
+
+## Phase: qa — 质量检查阶段
+
+### 目标
+全面质量检查。每项检查必须附上命令输出作为证据。
+
+### 工作流程
+
+分两波执行，最大化并行效率。每项检查产出明确的 ✅/⚠️/❌ 状态。
+
+#### 前置：选择性重跑判断
+
+检查 frontmatter `qa_scope` 字段：
+- **`qa_scope: "smoke"`**（stop-hook 自动检测 diff 体积小或 fast_mode=true 时设置）→ 只执行 Wave 1 (Tier 0/1) + Wave 1.5 验收谓词求值（优先 det-machine 谓词），qa-reviewer 缩到 Section A 关键项 + Section D + OWASP；**不得用"编排器自审"替代独立审查**（需独立审查而 Agent 不可得时按 Wave 2 降级策略处理）。Tier 1.5 铁律不变：每条预注册谓词必须对真实产物求值并附 artifact。
+- **`qa_scope: "selective"`**（auto-fix 修复后设置）→ 只重跑上一轮 `### 失败 Tier 清单` 中列出的 Tier + Tier 1.5，其余 Tier 直接沿用上轮结果标记 ✅
+- **无 `qa_scope` 或值为空** → 执行全量 QA（所有 Wave/Tier）
+- 全部通过后，清除 `qa_scope` 字段（Edit 为空字符串）
+
+#### 前置：变更分析
+
+在 Wave 1 之前必须完成（后续所有检查的输入）：`git diff`/`git status` 识别变更文件 + 分类（前端/后端/配置/测试/文档/样式/依赖）+ 判断影响半径（低→轻量 / 中→精准 / 高→综合）+ 扫描项目配置识别可用测试框架和工具。
+
+#### Wave 1 — 命令执行（并行）
+
+**在同一轮响应中发出多个 Bash 工具调用**，所有命令独立运行、互不依赖。**例外**：Tier 3.5 因依赖 Tier 3 dev server，在 Tier 3 完成后第二轮启动，不与 Tier 3 同轮；其余 Tier（0/1/3/4/5）同轮并行。**Tier 5: 量化指标门禁** 判定由 stop-hook §8.5.3 + lib.sh 产出 `tier5_status`；coverage 子项复用 Tier 1 的 coverage 产物（freshness_check FRESH 则不二次执行套件），详见 references/quantitative-metrics.md。
+
+**Tier 0: 红队验收测试**（最高判定权重 — 失败=实现偏离设计；与 Tier 1 同轮并行）：运行所有 `.acceptance.test` 文件（从状态文件 `## 红队验收测试` 读取列表）；红队未生成测试时降级为 Wave 2 AI 逐项人工验证
+
+**Tier 1: 基础验证**（四项并行，各超时 60s）：类型检查(`tsc --noEmit`) | Lint(`eslint`) | 单元测试(`jest/vitest`；检出 coverage 工具时改以 coverage 形态执行，产物供 Tier 5 复用，命令与降级口径见 references/quantitative-metrics.md §3) | 构建(`npm run build`)
+**蓝队自检沿用**：每项执行前先读 state.md `## 蓝队自检` 区域——**同语义命令 ∧ `exit=0` ∧ 当前 `tree_sig` 输出与首行 `tree_sig:` 一致，三条件缺一重跑**；沿用时不重跑、QA 报告标注「沿用蓝队自检」，区域缺失 → 照常执行。命令等价性从严：同套件子集（`npm test -- <file>` ≈ `npm test`）可沿用，缺项/近似不同命令一律重跑。
+
+**Tier 3: 集成验证**（条件性）：Dev server 启动、API 端点验证、导入完整性
+
+**Tier 3.5: 性能保障验证**（条件性，需同时满足以下条件才触发）：
+- **启动时机**：等 Tier 3 完成后第二轮启动，**不与 Tier 3 同轮**（依赖 Tier 3 启动的 dev server）
+- 项目是前端/全栈（有 next.config / vite.config / webpack.config + build 产出 HTML）
+- 本次变更涉及前端代码（git diff 包含 .tsx/.vue/.svelte/.css/前端组件文件）
+- 至少有一个性能工具就位（Lighthouse CI / Playwright 性能断言 / size-limit）
+- 检查项：运行项目已配置的性能工具记录结果；❌ → ⚠️（建议修复），**不阻塞** review-accept gate、不计入 Wave 1 快速路径计数
+- 无工具 / 非前端 → N/A 跳过
+
+**Tier 4: 回归检查**（影响范围跨 3+ 文件时）
+
+**执行原则**：遇到失败不中断，标记后继续。记录每项的命令、耗时、退出码、关键输出（前 50 行）。
+
+#### Wave 1 失败快速路径（Early Exit to Auto-fix）
+
+Wave 1 完成后统计 Tier 0+1 ❌ 数量：≥3 → 跳过 Wave 1.5/2 直接 auto-fix | <3 → 继续 Wave 1.5 → Wave 2 | auto-fix 后回来执行全量 QA
+Tier 5 ❌ 数字达不到阈值 → 与 Tier 0/1 ❌ 同权重计数
+
+#### Wave 1.5 — 真实场景验证（Wave 1 之后，Wave 2 之前，必须执行）
+
+**⚠️ 这是独立的必做步骤，不是 Wave 1 的一部分。Wave 1 所有命令执行完毕后，必须先完成 Wave 1.5 的全部场景，再启动 Wave 2。**
+
+##### 前置：变更类型覆盖检查
+
+对照「前置：变更分析」的分类结果，确保验证方案覆盖**核心变更层级**：
+
+| 核心变更类型 | 必须的场景类型 |
+|-------------|---------------|
+| UI 组件 | dev server + 渲染验证 |
+| API 端点 | curl/fetch 调用 |
+| CLI/脚本 | 运行命令验证输出 |
+
+**Tier 1.5: 真实场景验证（谓词求值）**
+- **驱动源 = 状态文件 `## 验收场景` 的预注册谓词清单**（非散文场景）。`## 验证方案 > 真实测试场景` 降为"如何驱动真实产物"的前置说明。
+- 执行者 = **编排器**：对每条谓词 → 驱动真实产物 → 按 `observe:` 观测 → 按 `assert:`/`channel:` 求值 → 产出三元组 `(谓词id, artifact 路径, PASS/FAIL)`。`det-machine` 谓词优先（零主观）。
+- **新鲜度谓词求值**：谓词 `channel: det-machine` 且 `observe: freshness_check` 时，调用 `freshness_check <product> <src_dir>`（lib.sh 实现），stdout 作 artifact；`UNKNOWN` 按 INCONCLUSIVE→FAIL 铁律（不放行）、`STALE` 同 FAIL、仅 `FRESH`（rc0）算 PASS。骑既有谓词闸门，不新增 Tier。
+- **不可跳过**：`## 验收场景` 为 N/A 时，编排器据变更内容现场推导至少 1 条谓词并求值。
+- 超时：单条 60s，总计 180s。Tier 0/1 验证「代码是否正确」，Tier 1.5 验证「真实产物是否满足预注册谓词」。
+
+**Dev server 启动规范**：先 `lsof -ti:3000 -ti:4000` 检查已有进程 → 有则直接用 → 无则 `npm run dev &` 后台启动 + `sleep 8` 等待 → 不要将多条命令拼接为一行（避免参数解析错误）。
+
+| 场景类型 | 示例 |
+|----------|------|
+| CLI/Hook/配置 | 运行命令验证输出和退出码，模拟 stdin 验证 stdout |
+| API/UI/库函数 | curl 调用端点验证响应，启动 dev server 验证渲染，临时脚本验证返回值 |
+
+##### 防合理化指南（Tier 1.5 专用）
+
+> 防合理化指南见 references/anti-rationalization.md（仅在你想跳过测试/重做时阅读）。
+
+#### Wave 2 — qa-reviewer Agent 审查（单 Agent，合并两类审查）
+
+使用 Agent 工具启动 qa-reviewer（model: "sonnet"）：prompt 短桩——指示 Agent 先 Read `references/qa-reviewer-prompt.md` 按模板执行；输入路径传递（Agent 自行 Read）：
+- state.md 路径（Read `## 设计文档`；contract_required=true 时同读 `## 契约规约`，缺失 → Section D 输出 N/A）
+- `$TASK_DIR/context.md` 路径（技术栈/测试框架/测试命令/构建命令/相关历史知识五节）
+- Wave 1 + Wave 1.5 各 Tier 通过/失败状态摘要（对话内小字段，内联）
+- Tier 1.5 中所有 ⚠️/❌ 场景的原始命令输出（完整 stdout/stderr 片段，不是摘要；仅异常项，内联）
+- 项目根目录路径
+- CLAUDE.md 路径（存在时给路径，Agent 自行 Read）
+
+**核心原则**：
+- Section A: 不信任，独立验证 — 必须读取实际代码逐项比对设计要求
+- Section B: 置信度评分过滤 — 只报告置信度 ≥80 的问题
+
+##### 合流
+qa-reviewer 完成后：收集 Section A/B/C/D 审查结果合并为 QA 报告的 Tier 2 部分。
+
+##### 降级策略
+- qa-reviewer Agent 失败 → 重试一次；仍失败 → `gate: "review-accept"` 等用户介入，**不以编排器自审替代**（自审无独立性，是抽卡来源）
+- 红队未生成测试 → qa-reviewer Section A 额外承担验收检查清单的逐项人工验证
+
+#### 产出报告
+
+在对话中产出 QA 报告（用户直接看），frontmatter 写 gate/phase + 分级字段。报告格式和示例参见 `references/qa-report-template.md`。
+
+#### 结果判定
+
+**谓词闸门**（取代旧的场景计数 / 格式检查 / ⚠️ 复盘 / 打分）：
+
+三元组来自 Tier 1.5 对 `## 验收场景` 谓词的逐条求值。每条预注册验收谓词产出 `(谓词, artifact 路径, PASS/FAIL)`：
+- 闸门 = **∀ 谓词 PASS 且 Section A/B/C/D 无 Critical**。无分数、无 "Ready to merge"。
+- **有 FAIL 或 Critical** → `phase: "auto-fix"`，报告末尾列出每条 FAIL 谓词（含其 artifact 与期望值）
+- **全绿** → 同轮产出**验收决策卡**（对话顶格 + 写 `$TASK_DIR/acceptance-card.md`，结构契约见 `references/qa-report-template.md`）+ 据卡写分级字段 `e2e_status` / `leftover_critical`（语义见 `references/state-file-guide.md`）+ `gate: "review-accept"`——stop-hook 据分级字段机械分级：auto_approve=true ∧ verified ∧ 0 → 自动 merge；字段缺失/非法 → block 回本轮补判
+- **收口点名问**（auto_approve=false 且 e2e≠verified ∨ leftover>0）：QA 报告后 AskUserQuestion，问题文本点名具体未实证链路/遗留项（禁泛泛「是否通过」），选项：**补验证后合入 / 带遗留合入 / 回炉修复**（回炉 → `phase: "auto-fix"`）；预授权（auto_approve=true 或用户明确「不要问」）不问，gate 停等由用户对卡决策；用户「要细看」→ tunnel 详审页（`references/tunnel-review-guide.md`，降级 AskUserQuestion 复用同三选项）
+
+> Tier 3.5 性能 ⚠️ 仍按既有降级（不阻塞、不计入谓词闸门）。
+
+#### 改进建议
+
+如果 QA 失败项集中在某类基础设施缺失（无测试框架、无类型检查、无 lint 等），在报告末尾追加：
+> 💡 多项 QA 检查因项目基础设施不足而跳过或降级。建议运行 `/autopilot doctor` 诊断并改进工程基础设施。
+
+---
+
+## Phase: auto-fix — 自动修复阶段
+
+### 目标
+读取 QA 失败项，批量分析根因并统一修复（max 3 次重试）。
+
+### ⚠️ 红队测试铁律
+**默认不允许修改红队验收测试**——问题在实现，不在测试。红队铁律唯一例外：明确属红队测试本身问题（断言与契约矛盾 / 引用未声明私有 seam / 断言机制错）且证据链闭合（E1-E3）→ AI 自决改测试 + 重锁 + 留痕，无需打断用户；证据链不闭合（U1-U4）→ `AskUserQuestion` 升级（`headless: true` 不问：`[headless]` 留痕 + 保守处置——不改红队测试、实现修复优先，记入 QA 报告遗留）。双层决策树与判据详见 references/auto-fix-phase.md §6。
+
+### 工作流程
+
+#### 1. 读取失败项
+从最近一轮 QA 报告中提取所有 ❌ 标记的项目。
+
+#### 2. 区分失败来源并确定修复策略
+
+**并行判断**：如果多个失败项涉及**不同文件且互不依赖**，可以并行修复（多个 Edit 调用）。涉及**同一文件或有依赖关系**时必须串行。
+
+##### 红队验收测试失败（Tier 0）— 最高优先级
+- **含义**：实现不符合设计要求
+- **修复目标**：修改实现代码使其满足设计文档的要求
+- 修改红队测试文件（`.acceptance.test.*`）：仅铁律例外三情形允许——证据链闭合 AI 自决 + 重锁 + 留痕；证据不足 / 边缘情形走 `AskUserQuestion` 升级（`headless: true` 不问，同上保守处置留痕；详见 references/auto-fix-phase.md §6）
+- **修复方式**：
+  1. 阅读失败的验收测试，理解它期望的行为
+  2. 对照设计文档确认期望是正确的
+  3. 定位实现代码中的偏差
+  4. 修改实现代码以满足期望
+
+##### 蓝队单元测试失败（Tier 1 测试部分）
+- **含义**：实现内部有 bug
+- **修复方式**：修复实现代码中的 bug
+- **特殊情况**：如果蓝队测试与红队测试矛盾（测试同一行为但期望不同），以红队测试（设计意图）为准，修改蓝队测试
+
+##### 类型/Lint/构建失败（Tier 1 其他部分）
+- 类型错误 → 修正类型声明或实现
+- Lint 错误 → `eslint --fix` 或手动修复
+- 构建失败 → 检查导入、依赖、配置
+
+##### 代码质量/安全问题（Tier 2-4）
+- 最小化重构，保持行为不变
+
+##### 真实场景验证失败（Tier 1.5）
+- **含义**：功能在真实用户场景下不可用（可能单元测试全通过但真实运行失败）
+- **修复方式**：
+  1. 分析场景执行的实际输出（错误信息、日志、退出码）
+  2. 与预期结果对比，定位偏差点
+  3. 这类问题通常是集成问题（路径、环境、权限、配置），而非逻辑错误
+  4. 修复后必须重新执行该场景验证，附上成功输出作为证据
+
+#### 3. 统一修复 — 批量调试方法论（四阶段细节见 references/auto-fix-phase.md §3）
+
+**阶段一 · 分析**：对全部失败项逐项完成 观察→假设→验证（此阶段不改代码），再共同上游根因分析——看似独立的失败优先找共同上游脆弱点，一个根因可能解释多个失败项。
+
+**阶段二 · 修复**：统一修复全部失败项（互不依赖可并行 Edit）→ `git add` → **一轮**跑齐所有失败项对应检查命令（同一命令只跑一次），输出作证据。触及任何测试文件 → 作废 state.md `## 蓝队自检` 区域。
+
+#### 4. 重试控制
+- 读取 frontmatter 的 `retry_count`
+- `retry_count++`，更新状态文件
+- **retry_count < max_retries** → 设置 `qa_scope: "selective"`，更新 `phase: "qa"` 回去选择性重跑失败 Tier（参见 QA 阶段「前置：选择性重跑判断」）
+  - 例外：如果本次 auto-fix 是从 Wave 1 快速路径进入的（QA 报告标注了 `[快速路径]`），不设置 `qa_scope`，执行全量 QA
+- **retry_count >= max_retries** → 停止自动修复：
+  - 在 QA 报告中标注哪些已修复、哪些仍未解决
+  - 更新 `gate: "review-accept"`（让用户决定）
+
+#### 5. 修复优先级
+1. **红队验收测试失败**（Tier 0）→ 实现不符合设计，必须修复实现
+2. **真实场景验证失败**（Tier 1.5）→ 功能在用户场景下不可用，根据场景输出定位根因
+3. **lint/类型错误** → 通常可自动修复
+4. **蓝队单元测试失败** → 分析是实现 bug 还是测试本身问题
+5. **构建失败** → 检查导入、依赖、配置
+6. **安全问题** → 添加输入验证、转义、权限检查
+7. **代码质量问题** → 重构，保持最小改动
+
+---
+
+## Phase: merge — 合并阶段
+
+### 目标
+完成代码提交和最终收尾。
+
+### 工作流程
+
+#### 1. 知识提取与沉淀
+
+进入 merge 阶段后，立即回顾本次全流程产出，提取值得持久化的知识（时间限制 2 分钟，宁可少写高质量条目不要穷举）。写入 `.autopilot/knowledge/inbox/`（一任务一独立新文件）后设 `knowledge_extracted: true/skipped`，**不单独 commit**——普通模式下由步骤 3 commit Agent 的 `git add -A` 一并提交。
+
+1. 读取 `references/knowledge-engineering.md` 获取完整提取规则和格式模板。**写入** = `inbox/YYYY-MM-DD-<slug>.md` 独立新文件（写侧不做 Integration，语义合并移至收编侧）；**写入后**按 Anti-Overfitting Principles 5 问自检 Lesson/Choice 字段
+2. 分析状态文件设计文档/QA 报告/变更日志/auto-fix 修复历程，仅记录有真实学习价值的条目（设计权衡、调试教训、项目特有约定）；无值得记录 → 跳过
+3. 有条目时：自动生成 tags（模块名/技术栈/问题类型）→ 写 `inbox/` 独立新文件（`<!-- tags: ... -->` 格式，同名 `-2` 递增）。**主检出侧**（`.git` 为目录）且 inbox 有积压 → 收编：Integration 合并进聚合层（`decisions.md`/`patterns.md`/`domains/*.md`）+ 重建 `index.md`（≤100 行）+ 删已收编文件；worktree 会话只写 inbox 永不收编。
+
+#### 2. 写入 Handoff（brief 模式）
+
+如果 frontmatter `brief_file` 非空（任务来自项目 DAG）：
+
+1. 从 `brief_file` 路径推导 handoff 路径：将 `.md` 替换为 `.handoff.md`（如 `tasks/<id>.md` → `tasks/<id>.handoff.md`）
+2. 写入 handoff 文件（≤500 字），包含：实现摘要、文件变更列表、下游须知、偏差说明
+3. 更新 `.autopilot/project/dag.yaml` 中对应任务的 `status` 从 `pending`/`in_progress` 改为 `done`
+
+#### 3. 调用 commit Agent（上下文隔离提交）
+
+使用 Agent 工具启动 commit-agent（model: "sonnet"），**不要使用 `Skill: "autopilot-commit"`**（会继承完整父上下文，导致 3-5M token 开销）。
+
+**预收集 Agent 输入**：设计文档目标一句话（`## 设计文档`）+ commit type 判断依据（feat/fix/refactor 等）+ 项目根目录路径。**diff 不预收集**——commit Agent 在项目根自行执行 `git diff --stat` + `git diff`，编排器不把 diff 生成进 prompt。
+
+**启动 Agent**：prompt 短桩——指示 Agent 先 Read `references/commit-agent-prompt.md` 按模板执行，填入上述输入，Agent 执行分析变更 → 生成 commit message（中文） → `git add -A` → `git commit` → 版本号升级 → CLAUDE.md 更新。编排器收到结果后验证 `git log --oneline -1` 确认提交成功。
+
+> `git add -A` 会自动包含步骤 1 写入的知识库文件和步骤 2 写入的 handoff/dag.yaml（普通模式一次 commit）。
+
+#### 4. Auto-Chain 评估（brief 模式专用）
+
+`brief_file` 非空时评估信心：QA 全 ✅ + handoff 偏差说明为空 → 用 `bash plugins/autopilot/scripts/lib.sh` 中的 `get_first_ready_task .autopilot/project/dag.yaml` 选下一个任务 → Edit frontmatter `next_task: "<task-id>"`；任一不满足或无就绪任务 → 保持 `""`。stop-hook 检测到 `next_task` 非空会自动 auto-chain。详见 `references/auto-chain-guide.md`。
+
+#### 5. 最终总结
+
+输出完成报告（顶部复用验收决策卡结构，过程细节按需；模板见 `references/completion-report-template.md`）。
+
+#### 6. 清理
+- 更新 frontmatter：`phase: "done"`，**同时确认 `gate: ""` 清空**（若 QA 阶段曾设 `gate: "review-accept"` 且本次走过 auto-chain 或 setup.sh approve 自动推进，gate 应已被清；若 AI 自行从 review-accept 推进到 merge 则必须显式清以保持 state 一致）
+- Stop hook 检测到 done 后会自动清理状态文件并发送完成通知
+- 如果已设置 `next_task`，stop-hook 会自动创建下一个任务的状态文件并继续循环
+
+---
+
+## 状态文件更新规范
+
+### frontmatter 更新
+
+**⚠️ 绝对不要用 Write 工具重写整个状态文件。** 必须使用 Edit 工具精确修改 frontmatter 中的字段值。重写会丢失 stop-hook 必需的字段（`iteration`、`max_iterations`、`session_id`），导致 stop-hook 误判文件损坏并删除。
+
+**Read 操作精简**：每个阶段开始时 Read 一次状态文件获取全局信息，后续操作使用 Edit 精确修改。不需要在每次 Edit 前重复 Read 整个文件。
+
+完整 frontmatter 字段说明（包含 fast_mode 三态、qa_scope 取值范围等）参见 [references/state-file-guide.md](references/state-file-guide.md)。AI 可写字段：`phase` / `gate` / `retry_count` / `mode` / `qa_scope` / `next_task` / `knowledge_extracted` / `fast_mode`（仅在 design 步骤 1 探针后自适应判断时，且当前为空字符串才写）/ `auto_approve`（仅 design 步骤 4 自治默认设 true（例外征询时不设），或 revise 回 design 重置 false；其余由 stop-hook auto-chain 设置）/ `e2e_status` / `leftover_critical`（仅 QA 结果判定轮与决策卡同轮写）。AI 不动字段：`iteration` / `max_iterations` / `max_retries` / `session_id` / `started_at` / `task_dir`。（各枚举字段合法值见 references/state-file-guide.md 闭合枚举；shell 仅认 canonical，越界会被 stop-hook 退回纠正）
+
+### 内容区域更新
+- `## 设计文档`：design 阶段写入，后续不修改（除非 revise 回到 design）
+
+### 知识文件（.autopilot/knowledge/）
+知识文件独立于状态文件。merge 阶段写入 `.autopilot/knowledge/` 目录（`inbox/` 收件箱新文件 + `index.md` 收编基索引、`decisions.md`/`patterns.md` 全局、`domains/*.md` 领域分区），随 commit Agent 一并提交（普通模式）或按 `references/knowledge-engineering.md` 提交到主仓库（worktree 模式），格式参见 `references/knowledge-engineering.md`。

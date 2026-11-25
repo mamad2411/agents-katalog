@@ -1,0 +1,351 @@
+---
+name: ai-visual-production-director
+description: >-
+  The entry-point orchestrator for this whole skill bundle — turning a
+  story/script into a consistent, identity-locked sequence of AI-generated
+  images and video. Reads what phase of work the user is asking for
+  (raw screenplay parsing, character/reference setup, turning prose into a
+  shot list, shot sizing and continuity, reference assembly, still-image
+  prompt writing, camera/transition tracking, video-prompt writing) and
+  routes to the correct companion skill(s) in the correct order, instead of
+  leaving skill sequencing to memory. Tool-agnostic — works with any image/video
+  generation platform; two companion skills (`loveart-video-animation`,
+  `loveart-project-director`) are the Lovart-specific implementation of
+  some of these phases if that's the platform in use. Use whenever starting
+  or resuming a visual-production project, or when it's unclear which skill
+  in this bundle applies to the current request. Triggers on which skill do
+  I need, project pipeline, what's next for this project, start a new
+  visual project, production pipeline. Also runs the WHOLE pipeline for one project (full run, from brand link to results), with approval gates, a progress report and post-launch ad results. Triggers on run the full pipeline, full run, from link to final.
+---
+
+# AI Visual Production Director
+
+## This project first (binding)
+
+This skill arrives at every project knowing nothing about it. Before applying any default written below:
+
+1. **Study this project.** Read its brief or script, every file in its references folder (images, video frames, saved prompts and their notes) and the results already approved in it. Say what you see in concrete terms before generating or writing anything.
+2. **Learn from this project's results.** After each approved result, add to this project's `LESSONS.md` what was asked, the prompt or setting that produced it and why it worked; after each rejection, what failed and the fix. Read `LESSONS.md` before the next task. For this project it overrides the defaults below.
+3. **Stay inside this project.** Never open, copy or imitate material from another project, brand or earlier job: no images, fonts, prompts, names or folders from elsewhere. What is missing comes from this project's own sources or from the user.
+4. **Examples here are samples.** Every name, date, place or line used as an example in this skill is invented sample data. Do not carry it into the work.
+5. **Improve the skill, not a memory of one project.** When a lesson would help any project, propose it to the user as a general rule with no project names in it.
+
+## Why this exists
+
+This bundle is a set of narrow, single-purpose skills (character locking,
+narrative segmentation, shot sizing, continuity, reference assembly,
+still-prompt writing, camera tracking, video-prompt writing) deliberately
+kept separate so each one stays sharp and independently correctable. The
+failure mode that creates is picking the wrong skill for the moment,
+running them out of order, or silently skipping one. This skill is the
+dispatcher: it doesn't replace any of the specialist skills, it decides
+which ones apply right now and in what order.
+
+## The skill roster, by phase
+
+**Phase -2 — Generation backend** (once per project, before anything is
+generated; re-run when a tool or key changes)
+- `generation-backend-setup` — asks whether a CLI, an API or an MCP
+  connector is available, connects it safely (keys only in environment
+  variables, never in files), tests it and records it in
+  `pipeline.config.json`. If nothing can be connected it switches the
+  project to MANUAL MODE: it collects the references, sorts them into
+  `references/<Category>/<name>/` with an index, and hands over the
+  prompt list plus a manual pack (`manual-image-pack`).
+
+**Phase -1 — Script/Story Parsing** (whenever the source material is a
+formatted screenplay OR any narrative text — a short story, novel
+excerpt, literary adaptation — with actual scenes, characters, and
+dialogue, rather than an already-itemized shot list)
+- `script-extractor` — reads the source scene by scene (or scene-equivalent
+  unit, for prose) and extracts five categories per scene (location with
+  INT/EXT and day/night, characters present, props, key actions,
+  wardrobe/appearance), keeping every detail tied to its specific scene
+  and building a cross-reference index for anything recurring (a
+  character's standing wardrobe rule, a prop that reappears, a location
+  used more than once). This is what turns raw source material into
+  usable input for Phase 0 (which characters need locking, what their
+  default look is) and Phase 3 (what a shot's props/wardrobe/day-night
+  should resolve to). If the source is pure camera-direction prose
+  ("camera flies toward X, then we see Y" — no scenes/characters to
+  extract, just a shot path already), skip straight to Phase 1 —
+  `storyboard-narrative-breakdown` handles that case directly instead.
+
+  **Its output is binding downstream, not just informational.** Once a
+  script-extractor breakdown exists for a project, Phase 3 and Phase 4
+  below must resolve a shot's day/night, wardrobe, and location facts from
+  that breakdown's per-scene entry and cross-reference index — never
+  re-derive or re-guess them from the shot's own one-line description in
+  isolation. This is the specific mechanism that stops day/night from
+  flipping between shots of one continuous scene, and stops a character's
+  established wardrobe or a location's established look from silently
+  drifting shot to shot — see each skill's own Process for exactly how it
+  applies this.
+
+**Phase 0 — Character & Reference Setup** (run once per character/asset,
+before any scene generation)
+- `character-identity-lock-setup` — for every recurring character, build a
+  locked reference set (turnaround sheet + bust portrait per age/stage)
+  from real photo identity sources, hosted and indexed so every later
+  generation attaches the correct one instead of drawing the face freehand.
+- `detail-reference-intake` — if the project keeps a "working detailed
+  references" intake folder for ad hoc captured details (props, location
+  angles found during other work), run this at the start of every session
+  to catalogue anything new before storyboarding.
+
+**Phase 1 — Narrative → Shot List** (only if starting from continuous
+prose rather than an already-itemized shot list)
+- `storyboard-narrative-breakdown` — segments a paragraph of "camera does
+  X, then Y, then we see Z" narrative into discrete, numbered mini-scenes
+  (location, event, incoming/outgoing visual bridge), and writes the first
+  pass of prompts for each. If the shot list already exists as discrete
+  items, skip straight to Phase 2.
+- Run `storyboard-camera-continuity-ledger` **alongside** this phase, not
+  after it — as each mini-scene gets its camera action and bridge data
+  extracted, log it into the ledger immediately (see that skill's own
+  Process). This keeps the camera-movement/transition record synchronized
+  with the shot list from the start instead of reconstructed later.
+
+**Phase 2 — Shot Refinement** (on the text shot list, before any image
+exists)
+1. `storyboard-shot-selection` — for every beat, determine which shot
+   size's defined narrative job (orientation / gesture / action / emotion
+   / object contact / detail accent / dialogue / relationship) it actually
+   needs, and write the reason inline. Flags/fixes adjacent shots sharing
+   the same job without justification.
+2. `storyboard-continuity-tracker` — build the state ledger for the
+   character and every recurring subject/object/handled prop across the
+   shot list, and verify each shot's starting state is either identical
+   carryover or an explicit shown consequence of the previous shot's
+   ending state. Fixes or flags state-teleportation.
+
+**Phase 3 — Reference Assembly** (per shot, before generation)
+- `storyboard-reference-assembly` — reads the project's locked-reference
+  index in full, resolves every noun in the shot (including the full
+  canonical environment of its location, not just what the one-line
+  description names) to its exact locked asset from Phase 0, and produces
+  the attachment manifest for generation.
+
+**Phase 4 — Still-Image Prompt Writing**
+- `cinematic-prompt-writer` — writes the actual wide/medium/close-up
+  prompt text for a shot, in the project's locked style (or a sensible
+  default if none exists yet), using the Phase 3 attachment manifest.
+- If the project's generation platform is Lovart specifically, use
+  `loveart-video-animation` (and its orchestrator `loveart-project-director`)
+  instead — those two skills cover the same phases with Lovart-specific
+  technique (face-replacement method, master-shot chaining, the "Change
+  to:" reframe discipline, Nano Banana/GPT Image 2.0 specifics).
+- If the user generates the frames BY HAND (automation is slow, blocked or
+  too costly), use `manual-image-pack`: it packs every frame still to make
+  into its own folder (PROMPT.txt + numbered reference images + INFO.txt),
+  then collects the user's RESULT files back into the project, QCs them and
+  wires them into the storyboard and the video prompts.
+- Before writing prompts for a real historical event, run `period-fact-check`
+  (sourced facts become explicit ACCURACY lines in the prompt).
+- Micro-stories, reveals, time-of-day transitions and any start/end frame
+  pairs: `keyframe-chain-builder` (K1 → K2 → K3 in waves, physical realism,
+  time moves forward, full style + grade on every keyframe).
+
+**Presentations (any time)**
+- `otf-presentations` — announcement / explainer / teaser video of the project
+  or the pipeline: context manifest from the chat + references (+ fonts tested
+  for the language), then a HyperFrames composition in the project's look.
+
+**Phase 4b — Generation, QC and placement (small, single-purpose skills)**
+- `style-lock-guard` — ALWAYS on: lock the look to the director's references,
+  lint every prompt before sending (runner gate), measure results vs the refs.
+- `generation-queue-runner` — workers, limits, back-off on rate limits, never
+  auto-confirm cost, waves for chained frames.
+- `frame-qc-contact-sheet` — QC every batch on labelled contact sheets, pair
+  sheets and face crops; reject with one fix line.
+- `generation-failure-fixes` — look up the symptom of a rejected frame and paste
+  the proven fix line.
+- `identity-fix-pass` — wrong face in a good frame: replace only the head,
+  verify with face crops, keep the slot.
+- `storyboard-insert-ops` — place delivered frames (replace / after / before /
+  *_late after a beat rebuild / fixes of fixes last).
+- `animation-handoff-folder` — one flat folder of FINAL frames in story order
+  plus one prompt list, synced after every delivery.
+
+**Phase 5 — Video/Animation Prompt Writing** (then Phases 6 to 8 below)
+- `seedance-prompt-writer` — writes production-grade Seedance-format video
+  prompts, reading the camera-movement and transition data straight out of
+  the Phase 1 ledger instead of re-deriving it from the original narrative.
+  Merges in a project's own mandatory rules (no-music, color-fidelity
+  doctrine, etc.) when the project defines them.
+- `cinema-director-v3` — a newer, tool-agnostic alternative covering the
+  same ground on a locked 16-slot prompt spine (assets, geometry map,
+  FOV-degree optics, physics, acting, audio, a locks chain), plus dialogue/
+  performance scenes and lipsync, which `seedance-prompt-writer` doesn't
+  cover. Prefer this one for a project with no established Seedance-prompt
+  conventions of its own; use `seedance-prompt-writer` when the project
+  already has mandatory rules this skill should inherit.
+- Edits of existing footage (Seedance 2.5 Edit / Higgsfield / video-to-video):
+  `video-cut-timecodes` (one block per cut, auto or manual) →
+  `segment-reference-lock` (references + LOOK LOCK + motion + voice per block,
+  auto or manual) → `seedance-edit-prompting` assembles and verifies the prompt.
+- Whenever a scene is split into more than one clip meant to play
+  consecutively, run `video-clip-continuity-chain` before writing each clip
+  after the first — it forces the new clip's prompt to explicitly restate
+  the exact inherited state of every tracked entity from the end of the
+  previous clip, rather than leaving it implied.
+- Once a batch of clips is finalized, run `seedance-shotlist-tracker` to
+  package them into one interactive, checkbox-per-clip production tracker —
+  a delivery/tracking layer only; it never writes or simplifies prompt
+  content, it packages what the video-prompt skill already produced.
+
+## Full run — one project from link to results
+
+Use this when the user asks to run the whole pipeline. Every stage below uses the skills already named in this file; this section only fixes the order, the gates and the reports. One project at a time, inside its own folder.
+
+### Start (ask once, in one message)
+
+1. The brand link or the project, the goal (trial, sale, awareness), the platforms and aspects, the deliverables (how many ads, how long, which languages), the deadline.
+2. The **delivery target**: platform and loudness (for example Reels at -14 LUFS). It is used by the sound mix and the package.
+3. Then run `project-scaffold`, write the answers to `00_BRIEF/BRIEF.md`, and run `generation-backend-setup` (below).
+
+### Gates — stop and wait for the user's yes
+
+| Gate | After | What the user sees |
+|---|---|---|
+| `brief` | the brief | one paragraph: goal, audience, deliverables, delivery target, budget |
+| `research` | `ad-research-glossary` | audience categories, top pains, the do-not-say list |
+| `script` | `ad-copy-director` + `ad-script-writer` | one script per chosen category |
+| `refs` | cast, location and look references | the locked references; nothing is animated before this yes |
+| `frames` | a test batch of 7 to 8 keyframes | the test batch, checked; then the rest |
+| `video` | video prompts, before any paid generation | the clip list with the cost of each |
+| `cut` | the timeline | the cut with titles and sound |
+| `delivery` | the encoded-file check | the files, their checks, the package |
+
+Record each yes with `scripts/pipeline_status.py --project <dir> --approve <gate>`. Never start the next stage on silence.
+
+### Analytics, three kinds
+
+1. **Before the work:** `ad-research-glossary` (the research gate above).
+2. **During the work:** `scripts/pipeline_status.py --project <dir>` writes `PIPELINE_STATUS.md`: every stage, what it produced, which gate waits, and the generations and cost read from `GENERATION_LOG.jsonl`. Run it after every stage and show the user the "Next" line. Every generation is logged with `generation-log`, or the cost line stays empty.
+3. **After launch:** the ad results. With the ads running, use the listening app's ad tracker (`listen` skill, "Ad tracker"): KILL / WATCH / SCALE per ad, the drop-off second and the fix. Write the verdicts to `07_POSTING/RESULTS_<date>.md`, and feed what won back into the glossary (proof bank, best hook per category) for the next round.
+
+### Images and video — decided per project
+
+`generation-backend-setup` asks how this project will generate; never assume the last project's answer. Recommend, and let the user choose:
+
+| Situation | Recommendation |
+|---|---|
+| A free or unlimited image tool is connected | Generate references and keyframes there; it is slow, so run in the background and report what is pending |
+| Video costs credits | Write the video prompts and a manual pack; generate only after the `video` gate, with the cost per clip stated |
+| The user prefers to generate by hand | `manual-image-pack` for stills, the shotlist tracker for clips; collect the results back into `03_GENERATED` and log them |
+| The piece is pure motion graphics (text, product screens, the brand's own photos) | No generation: build on the CODE route (`motion-graphics-director`) with the brand's own images |
+| Real people or a real product must look exact | The brand's or the user's own photos as locked references; generated faces never stand next to a real name |
+
+### Order
+
+Brief → backend → research → texts → script → references → keyframes → video → titles → sound → edit → encoded-file check → finals → delivery → results. For a piece rendered as one motion-graphics file, sound comes right after the titles render (see Phase 7).
+
+## Ads and commercials — the entry before Phase -1
+
+When the job is an ad, a commercial or a promo for a brand, start here, in this order, before any story or image phase:
+
+0. `project-scaffold` — the project's own folder tree first. The edit, finals and delivery skills expect it (`04_EDIT`, `FINAL_OUTPUTS`, `06_DELIVERY`); without it each one invents its own folder.
+1. `ad-research-glossary` — research THIS brand from its own link; writes the Ad Glossary (audience categories, their words, product terms, pain map, proof, do-not-say list).
+2. `ad-copy-director` — hooks, ad lines, captions and title-card texts per audience category, looked up in that glossary.
+3. `ad-script-writer` — one category, one pain, one result: a 6 to 30 s beat sheet plus the production handoff (cast, location, props, title cards, sound).
+
+The script's handoff is the brief for the phases below: cast and locations go to Phase 0, title cards to Phase 6, the Sound column to Phase 8.
+
+Decide the delivery target (platform, aspect, loudness) here, at the script, not at the end: the sound mix in Phase 8 and the package in Phase 8 must use the same loudness target.
+
+## Phase 6 — Titles and motion graphics (after the stills or clips exist)
+
+Place every title on the REAL frame it sits on, never on a plan written before the frame existed.
+
+- `motion-graphics-director` — picks the route per shot (CODE or VIDEO) and the style pack. Start here for any title, card, chart or graphic.
+- `cinematic-motion-graphics` — title cards, lower thirds, date stamps, maps, fact cards and overlays inside a film's look, with a spec lint, an alpha check and the NLE hand-off. For an ad end card (logo, line, button in brand colours) its film-look bans do not apply: the brand's own look does.
+- `motion-style-core` — the project's style pack. For a brand, fonts and colours come from the brand's own site or files, never from another project.
+- `text-behind-subject` — a title placed between the background and the person.
+- `seamless-motion-loops` — looping backgrounds under titles and filler between shots.
+- `cinematic-poster-designer` — key art and posters.
+- `hyperframes` (if installed) — the engine the CODE route renders with.
+
+Checks every title passes: whole phrases stay on one line (no single word left alone), nothing sits on a face or hands, platform safe zones for the aspect, read time of about 0.5 s plus 0.3 s a word.
+
+Scene changes: a hard cut, or a fade in which the outgoing text has left before the incoming text arrives. The new scene's background must never arrive before its first element; start that element on the cut frame, already partly visible. Check every scene change on the encoded file (`render-cut-verification`): it reports black or flash frames and shows overlapping text in its strips.
+
+## Phase 7 — Timeline and edit
+
+Order for a piece rendered as one finished motion-graphics file (titles, images and animation in one render): make the sound from the animation's own timing right after the render (`opus-sound-layer`, Phase 8), then bins and timeline here. The cue sheet comes from the animation, and the timeline needs the finished sound file. For footage-based films keep the usual order: edit first, sound to the locked cut.
+
+**Reference-first ads (edit before generation).** When the user gives reference ads and wants the generations to copy their motion, rhythm and transitions, the edit comes BEFORE the video stage: `ad-reference-edit-library` (shots, transitions, rhythm, tags, library page) → `reference-rough-cut` (the reel cut from reference shots, previews, then one generation slot per shot) → video prompts with `cinema-director-v3` and its `references/ad-transitions-and-pace.md` → the generated shots replace the reference shots on the same timeline.
+
+- `ad-reference-edit-library` — edit library from reference films: shots, soft cuts, transitions by kind, rhythm, edit grammar, tags.
+- `reference-rough-cut` — rough cut built from reference shots, Resolve timeline, preview, generation slots.
+- `edit-media-bins` — copy the generated material into ordered edit bins first.
+- `nle-timeline-assembly` — the rough cut from a shot list or cut list, NLE-agnostic.
+- `davinci-series-assembly` — a series of finished parts onto one DaVinci Resolve timeline, never overwriting an existing one.
+- `music-beat-grid` — cuts on a measured beat grid for music-driven pieces.
+- `dialogue-cut` — the dialogue or voice-over cut from several takes.
+- `retention-packaging-plan` — cue sheet for talking-head and creator-style videos (hook, punch-ins, captions, calls to action).
+- `video-cut-timecodes` — frame-accurate cut points of any source video.
+- `otf-project-trailer` / `otf-presentations` — trailer, teaser, announcement or explainer cuts of the project.
+- `auto-editor` and its companions (if installed) — silence and dead-space cutting, and editor exports.
+
+## Phase 8 — Effects, sound, finish and delivery
+
+- `animation-effects-catalog` — proven effect tricks for video prompts (used back in Phase 5 when a shot needs one).
+- `video-color-grade` — deterministic grade and look match across the cut. Only when there is footage or generated video to match; a fully rendered motion-graphics piece has nothing to grade.
+- `dialogue-audio-finish` — clean dialogue and voice edges, loudness.
+- `opus-sound-layer` (if installed) — sound effects placed from the picture's timing, with an audio check on the encoded file. Set its loudness target (`"lufs"` in the cue sheet) to the delivery target chosen at the script, for example -14 LUFS for Reels, TikTok and Shorts.
+- `render-cut-verification` — checks the ENCODED final: cuts, black frames, audio, safe areas.
+- `delivery-package` — the package per client or platform.
+- `final-outputs-organizer` — every finished video in one predictable tree.
+- `versions-and-archive` — versions, archive and disk space.
+
+## Motion graphics — a separate, parallel track
+
+Everything above assumes character-driven narrative scenes. If the work
+is instead animated charts, typographic explainers, or collage/camera-move
+motion graphics with no characters to lock, that's a different track
+entirely: start at `motion-graphics-director` instead of Phase -1. It
+owns its own routing (CODE via `motion-remotion-build` vs VIDEO via
+`motion-video-route`), its own reference-locking skill
+(`motion-design-references`), and its own style system
+(`motion-style-core`) in place of this bundle's character/location
+reference-locking phases. Don't mix the two tracks on one shot — a shot
+either has characters and a scene (use the phases above) or is a
+chart/typography/collage shot with a locked style pack (use
+`motion-graphics-director`).
+
+## Process
+
+0. **Check `pipeline.config.json`.** If it is missing, run
+   `generation-backend-setup` first. If it says `"type": "manual"`, every
+   generation step ends in prompts + a manual pack instead of a call.
+1. **Identify the phase the current request actually belongs to** — don't
+   assume. "Let's build a shot list for this scene" is Phase 1/2 even if
+   some Phase 0 references are still missing (in which case, flag the gap
+   and route back to Phase 0 for just the missing piece, rather than
+   skipping it). If the user hands over a formatted screenplay rather than
+   prose or a shot list, that's Phase -1 first, regardless of what phase
+   they think they're asking for.
+2. **Run the skills for that phase in the documented order.** Don't skip a
+   step because it "seems obvious this time" — skipping the
+   obvious-seeming step is exactly where continuity drift and identity
+   drift come from in practice.
+3. **If a phase surfaces a problem** (continuity break, missing reference,
+   unjustified shot, missing bridge detail), fix or flag it before moving
+   to the next phase — don't carry a known problem forward into generation
+   "to save time." A mismatch caught at the text stage is free to fix; the
+   same mismatch caught after a paid generation is not.
+4. **When resuming a project across sessions**, re-check Phase 0 first — a
+   references-intake folder may have gained new files, or the user may
+   want to add an age/stage to an already-locked character, since the last
+   session even if nothing else changed.
+5. **State which phase and which skill(s) are active** when doing the
+   work, so the user can follow and correct the routing itself if it's
+   wrong — this routing is a working assumption, not a black box.
+
+## What this skill is not
+
+It doesn't contain generation rules, taxonomy, style blocks, or continuity
+logic itself — all of that stays in the specialist skills so each one can
+be corrected independently. This skill only owns the map of which one
+applies when.

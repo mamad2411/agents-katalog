@@ -1,0 +1,45 @@
+---
+name: prp-review
+description: Reviews GitHub pull requests through specialist review agents, runs repository validation, verifies corrections, aggregates findings, and posts the result. Scales reviewers to risk by default (code review alone for small or mechanical changes; code, seam, and simplification review for contracts, state, and security); the operator can add scopes or explicitly request only selected scopes. Use when the operator asks to review a PR, re-review fixes, check whether a PR is ready to merge, run review agents, or invokes /prp-review.
+argument-hint: "<pr-number|pr-url|branch> [add <scopes>|only <scopes>|all] [--verify-corrections] [--approve|--request-changes]"
+---
+
+# Review a Pull Request
+
+Coordinate an evidence-based PR review. Reviewer agents are the only path for judging the code:
+do not add an inline review pass before or after them.
+
+**Input**: $ARGUMENTS (if absent, use the current branch's PR).
+
+Let `workflows/agents.md` own scope selection, reviewer dispatch, correction verification,
+aggregation, and publication. Pass the operator's scope intent and flags through without rebuilding
+those contracts here.
+
+Resolve the canonical store before starting:
+
+```bash
+# --- PRP store resolver (canonical; keep byte-identical across skills) ---
+# Adopt the store that already records this root; mint a key only when none does.
+_gd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+case "$_gd" in */.git) _root="${_gd%/.git}" ;; "") _root="$PWD" ;; *) _root="$_gd" ;; esac
+_root="$(cd "$_root" && pwd -P)"
+_name="$(basename "$_root" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')"
+_home="${PRP_HOME:-$HOME/.prp}"
+_hit="$(grep -lsF "\"path\": \"$_root\"" "$_home"/*/project.json 2>/dev/null | head -1)"
+PRP_DIR="${_hit%/project.json}"
+[ -n "$PRP_DIR" ] || PRP_DIR="$_home/${_name:-project}-$(printf %s "$_root" | git hash-object --stdin | cut -c1-8)"
+mkdir -p "$PRP_DIR"; [ -f "$PRP_DIR/project.json" ] || printf '{"path": "%s", "name": "%s"}\n' "$_root" "${_name:-project}" > "$PRP_DIR/project.json"
+```
+
+Read `workflows/agents.md` and execute it end-to-end. Before producing the report, read
+`templates/review-report.md` and follow its output contract exactly.
+
+In helm, `/prp-companion` makes the review's page live: it writes `pr-{NUMBER}-review.data.json`
+beside the page and opens it, so the operator's status changes and replies on the page reach you as
+mail. Answer them as the companion's live mode says, and return the data file's path with the
+companion's.
+
+## Resources
+
+- `workflows/agents.md` — PR resolution, validation, agent scopes, aggregation, and publication
+- `templates/review-report.md` — canonical local and GitHub review format

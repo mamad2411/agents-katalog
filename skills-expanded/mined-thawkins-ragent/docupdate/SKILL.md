@@ -1,0 +1,50 @@
+---
+description: "Update all the Major DOC file"
+user-invocable: true
+disable-model-invocation: true
+argument-hint: "[N | uncommitted]"
+allowed-tools:
+ - any
+---
+Perform an update of key documentation files.
+
+The skill accepts one optional argument `$ARGUMENTS`:
+
+- If omitted, treat it as `10`.
+- If it is a positive integer `N`, use the last `N` commits.
+- If it is the literal word `uncommitted` or `uncommited` (both spellings accepted, case-insensitive), document the current uncommitted working-tree changes (staged and unstaged) **in addition to** the last 10 commits.
+
+Steps:
+
+* **Read the current version** from the workspace `Cargo.toml` (the `version = "..."` line near the top).
+* **Run `cargo check`** to ensure the change doesn't break the build.
+* **Run `cargo audit`** to ensure that there are no new security issues introduced; stop if there are security issues.
+* Gather the source changes to document:
+
+  Uncommitted changes: `git status --short`, `git diff --stat`, and `git diff --cached --stat` (if any).
+
+  The last 10 commits: `git log --oneline -n 10`.
+* Update the following files with the gathered changes:
+
+  - `CHANGELOG.md` — add a new entry for each commit and, when the `uncommitted`/`uncommited` argument is used, an additional "uncommitted" entry summarising the worktree changes, including the commit hash or "uncommitted" marker and a short description.
+  - `README.md` — update any relevant sections to reflect recent changes.
+  - `STATS.md` — Update the project stats.
+  - `SPEC.md` - Update the master spec file's feature content only.
+  - `QUICKSTART.md` - Update the quickstart file's feature content only.
+  - `TUI-QUICKSTART.md` - Update the tui info file's feature content only.
+
+  Release history has one home: `CHANGELOG.md`. Do **not** add "Version x",
+  "Highlights (vX)", "Release Highlights" or version-history sections or table
+  rows to `SPEC.md`, `QUICKSTART.md` or `TUI-QUICKSTART.md`; each of them carries
+  a single link to `CHANGELOG.md` instead. In those three files, edit the live
+  section that describes the changed feature (command syntax, flags, config
+  keys, behaviour) so it states the current behaviour, without release prose.
+
+  ###### Update the following files in the docs/howtos folder:
+
+
+  - `docs/howtos` directory — update any relevant documentation files with new information or corrections.
+  - convert each howto .md file to pdf using the command sequence `pandoc ./[howtofile] -o ./pdf/[howtofile].pdf --pdf-engine=xelatex -V mainfont="Liberation Serif" -V geometry:a4paper`.The command should be run in the`docs/howtos` folder. The `-V geometry:a4paper` flag ensures the generated PDFs use the A4 page size.
+  - convert each slashcommand howto .md file to pdf using the command sequence `pandoc ./slashcommands/[howtofile] -o ./slashcommands/pdf/[howtofile].pdf --pdf-engine=xelatex -V mainfont="Liberation Serif" -V geometry:a4paper`.The command should be run in the`docs/howtos` folder. The `-V geometry:a4paper` flag ensures the generated PDFs use the A4 page size.
+  - convert each tool-category howto .md file to pdf using the command sequence `pandoc ./tools/[howtofile] -o ./tools/pdf/[howtofile].pdf --pdf-engine=xelatex -V mainfont="Liberation Serif" -V geometry:a4paper`. The command should be run in the`docs/howtos` folder, and covers every `.md` file directly inside `tools/` (the tool-category documents such as `tools/file-operations.md`, `tools/git.md`, etc.). The `-V geometry:a4paper` flag ensures the generated PDFs use the A4 page size.
+* **Stage all modified files** with `git add -A`.

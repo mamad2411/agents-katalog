@@ -1,0 +1,225 @@
+---
+name: muggle-works-npm-release
+description: >-
+  Cut @muggleai/works release: AskUserQuestion (major/minor/patch), sync master, stop if
+  nothing ships, semver baseline + Electron from GitHub, confirm plan, bump
+  package.json + sync:versions, full local verify, chore(release) PR, merge via gh,
+  dispatch publish-works-to-npm.yml—no local npm publish.
+---
+
+# Muggle Test Works — npm release (single playbook)
+
+> Maintainer-only. Lives at `.claude/skills/` (mirrored to `.cursor/skills/`), not in the published plugin (`plugin/skills/`). Invokable as `/mrelease` while working in this repo; run `pnpm run link:maintainer-skills` to invoke it from any project.
+
+Repo: **`multiplex-ai/muggle-ai-works`**. Workflow: **`.github/workflows/publish-works-to-npm.yml`** (“Publish Works to npm”). **Never** run local **`npm publish`** (OIDC trusted publishing in CI).
+
+---
+
+## Phase 1 — Ask bump type (do this first)
+
+**Stop until the user answers.**
+
+**Prefer `AskUserQuestion`** with exactly these three options: **major**, **minor**, **patch** (fix). If the environment has no structured question tool, ask the same in plain text:
+
+> Is this release a **major**, **minor**, or **patch** (fix)?
+
+You may **recommend** a bump from commit subjects (e.g. `feat!` / breaking → major, `feat` → minor, `fix` / `chore` → patch) but **do not** choose for them. **Do not** edit files yet.
+
+---
+
+## Phase 2 — Sync, surface state, empty-release gate
+
+Run from **`muggle-ai-works`**:
+
+```bash
+git checkout master && git pull --ff-only && git fetch --tags
+```
+
+Show what is shipping:
+
+```bash
+node -e 'console.log("master package.json:", require("./package.json").version)'
+npm view @muggleai/works version 2>&1 | sed 's/^/npm latest: /'
+```
+
+**Commits since the last release commit** (stop if there is nothing to ship):
+
+```bash
+LAST_RELEASE_SHA=$(git log --grep='chore(release)' --format='%H' -1)
+NON_SHIPPING=(':(exclude)internal/' ':(exclude)docs/' ':(exclude)ops/' ':(exclude)test/' ':(exclude).github/' ':(exclude).claude/' ':(exclude).cursor/' ':(exclude)README.md' ':(exclude)eslint.config.js' ':(exclude)vitest.config.ts')
+git log --oneline "$LAST_RELEASE_SHA..HEAD"
+git diff --name-only "$LAST_RELEASE_SHA..HEAD" -- . "${NON_SHIPPING[@]}"
+```
+
+The log is for reading; the **diff decides**. `NON_SHIPPING` drops paths that cannot reach the npm tarball — the shipping surface is `package.json` → `files`, plus the sources `dist/` is built from (`src/`, `packages/`, `tsup.config.ts`) and the lockfile pinning what gets bundled. The gate is a diff rather than a pathspec'd `git log` because path filtering makes `git log` simplify merge commits out of the range, which a tree-to-tree diff cannot do.
+
+`NON_SHIPPING` is a denylist on purpose: a new top-level path counts as shipping until someone proves it inert, so the gate errs toward releasing rather than silently swallowing a fix.
+
+- If the **diff** is **empty**, tell the user there is **nothing to ship** and **stop** (no branch, no bump, no PR) — name the non-shipping commits that were skipped, so the decision is visible.
+- If non-empty, present the commits as a short table (subject; PR number from title/body if present).
+
+---
+
+## Phase 3 — Version baseline, Electron, print summary, confirm
+
+### npm version (`nextNpmVersion`)
+
+1. **`npm view @muggleai/works version`** — last published on npm.
+2. Root **`package.json` → `version`** on current **`master`** checkout.
+3. **Baseline** = **semver-higher** of those two (never target below repo or npm).
+4. Apply the user’s **major / minor / patch** to that baseline → **`nextNpmVersion`** (semver-correct).
+
+### Electron (`muggleConfig`)
+
+1. Read **`package.json` → `muggleConfig.electronAppVersion`**.
+2. **Latest desktop on GitHub:** the highest version, compared as semver, among non-draft **`electron-app-v*`** releases that carry all four zips, each zip's `.sigstore.json` bundle and `checksums.txt` → strip prefix → **`latestElectronVersion`**. Read every page of `https://api.github.com/repos/multiplex-ai/muggle-ai-works/releases?per_page=100`, following the `Link: rel="next"` header. GitHub does not list releases in version order, so the first match is not the newest. This is the pick `muggle upgrade` makes (`src/cli/studio-release/newest-release.ts`), held to every platform instead of one.
+
+### Print (always)
+
+| Item | Value |
+| :--- | :---- |
+| Last **@muggleai/works** on npm | … |
+| **Baseline** for bump | … |
+| **`nextNpmVersion`** (to publish) | … |
+| Current **`electronAppVersion`** | … |
+| Latest **`electron-app-v…`** on GitHub | … |
+
+### Electron bump decision
+
+If **`latestElectronVersion`** ≠ current **`electronAppVersion`**, ask: **bump** Electron + every **`muggleConfig.checksumsByStream`** entry to **`latestElectronVersion`**, or **keep** current.
+
+If bumping, take checksums from **both** release streams — that is **eight** values, four per stream, and a stream left behind is exactly how a stale pin ships:
+
+- production → `https://github.com/multiplex-ai/muggle-ai-works/releases/download/electron-app-vVERSION/checksums.txt`
+- staging → `https://github.com/multiplex-ai/muggle-ai-works/releases/download/electron-app-staging-vVERSION/checksums.txt`
+
+Map zip artifacts → **`darwin-arm64`**, **`darwin-x64`**, **`win32-x64`**, **`linux-x64`** under each stream (same mapping rules as today).
+
+`pnpm run verify:electron-release-checksums` fails on any pin that disagrees with its published release, so run it after editing rather than eyeballing the values.
+
+**Stop again:** user must **confirm** the full plan (**`nextNpmVersion`** + Electron choice). If they cancel, **do not** branch, merge, or dispatch CI.
+
+---
+
+## Phase 4 — After explicit confirmation only
+
+### 1. Branch and bump
+
+```bash
+git checkout -b "chore/release-<VERSION>"
+npm version "<VERSION>" --no-git-tag-version
+```
+
+Replace **`<VERSION>`** with **`nextNpmVersion`** (dots in the branch name are fine, e.g. `chore/release-4.8.0`).
+
+- If Electron bump agreed: set **`muggleConfig.electronAppVersion`** and every **`muggleConfig.checksumsByStream`** entry — all eight, both streams — in **`package.json`**.
+
+### 2. Propagate versions (do not hand-edit manifests)
+
+```bash
+pnpm run sync:versions
+```
+
+Never hand-edit **`.claude-plugin/marketplace.json`**, **`.cursor-plugin/marketplace.json`**, **`.agents/plugins/marketplace.json`**, **`plugin/.claude-plugin/plugin.json`**, **`plugin/.cursor-plugin/plugin.json`**, **`plugin/.codex-plugin/plugin.json`**, or **`server.json`** — **`sync-versions`** (and **`build`**) owns them.
+
+If you changed Electron after the first sync, run **`pnpm run sync:versions`** again.
+
+### 3. Full local verify (before push)
+
+```bash
+pnpm run lint:check && pnpm run typecheck && pnpm test && pnpm run build && pnpm run verify:plugin && pnpm run verify:contracts && pnpm run verify:electron-release-checksums
+```
+
+- **`pnpm run build`** is required before **`verify:plugin`** — the verifier reads the **built** plugin under **`dist/plugin/`**, not source under **`plugin/`**.
+- If **anything** fails, **stop** and surface the error; **do not** push a broken release.
+
+### 4. Commit (**`chore(release)`**)
+
+Stage version-touched files (at minimum **`package.json`** plus whatever **`sync:versions`** changed — typically the marketplace/plugin **`server.json`** paths above).
+
+**Subject:** `chore(release): @muggleai/works <VERSION>`
+
+**Body:** one bullet per shipping PR / theme, note **Electron** bump or unchanged, and any coordinated follow-ups in sibling repos (e.g. teaching-service, UI). Use a **heredoc** for `git commit` so newlines are preserved.
+
+### 5. PR, merge, update local **`master`**
+
+```bash
+git push -u origin HEAD
+gh pr create --repo multiplex-ai/muggle-ai-works --base master --head <branch> \
+  --title "chore(release): @muggleai/works <VERSION>" \
+  --body "<PR body: version delta, bump rationale, shipping list, Electron status, manifests touched by sync:versions, short test plan checklist>"
+```
+
+**Merge:** when the human has approved the release in this session, run **`gh pr merge`** (squash is fine unless the repo prefers merge commits), then:
+
+```bash
+git checkout master && git pull --ff-only
+node -e 'console.log("master now:", require("./package.json").version)'
+```
+
+Confirm **`package.json`** on **`master`** matches **`nextNpmVersion`** before publishing.
+
+---
+
+## Phase 5 — Trigger publish (CI only)
+
+Prefer **explicit version** (not “auto bump”):
+
+```bash
+gh workflow run publish-works-to-npm.yml --repo multiplex-ai/muggle-ai-works --ref master \
+  --field "version=<VERSION>" --field "channel=production"
+```
+
+**`channel=production` is required and easy to miss.** The input defaults to `staging`, deliberately — so a hand-run cannot move the `latest` dist-tag by accident. Omit it and the run publishes `<VERSION>-staging.<run-number>` under the `staging` tag, **every job reports success**, and `latest` never moves. The release looks shipped and is not.
+
+`bump` is read only when `version` is empty, so it is unnecessary alongside an explicit version.
+
+**Or** **`git tag "v<VERSION>"`** && **`git push origin "v<VERSION>"`** only if that tag **does not** already exist on the remote; if the tag exists, use **`workflow_dispatch`** with **`version`**. A tag push carries no inputs and still resolves to production — pushing a version tag is already an explicit release act.
+
+Watch the run and confirm jobs succeed:
+
+```bash
+gh run watch <RUN_ID> --repo multiplex-ai/muggle-ai-works --exit-status
+echo "exit=$?"
+```
+
+**Never pipe `gh run watch`.** `gh run watch … | tail` reports the *pipe’s* exit status, not the run’s, so a failed run reads as green. Redirect to a file when you need the output.
+
+### Verify against the registry
+
+A green run is not evidence the release shipped. Read the dist-tags, which expose a staging publish that `npm view <pkg> version` hides:
+
+```bash
+npm view @muggleai/works dist-tags --json
+```
+
+`latest` must equal **`<VERSION>`**. If the run succeeded and `latest` did not move, the publish went to `staging` — re-dispatch with `channel=production`. Never read an unmoved `latest` as registry lag.
+
+Give the user the **Actions run URL**.
+
+### Staging guard is not a reason to re-cut
+
+Under `channel=staging` only, `package-audit` derives `<VERSION>-staging.<run-number>` and refuses a candidate not greater than the current `staging` tag:
+
+```
+Refusing to publish 5.12.1-staging.90: not greater than the current staging tag 5.13.0-staging.89.
+```
+
+Auto-staging publishes a pre-release on every green master build, deriving its base as `major.(minor+1).0` from `latest` — so the `staging` tag normally sits a minor **ahead** of the version being released. That refusal means the **channel** is wrong, not the version. Fix the channel; never bump the release version to climb over a staging tag.
+
+---
+
+## Rules
+
+- **No local `npm publish`.**
+- **Phase 1:** use **`AskUserQuestion`** for major / minor / patch when available (see Phase 1).
+- Phases 1–3: keep chat concise; Phase 4–5 can be terse status lines.
+- If the user cancels after Phase 3, **do not** merge or dispatch CI.
+- **Tag vs npm:** **`v*`** tags are for the **npm** package; **`electron-app-v*`** is separate — **`electronAppVersion`** can move independently of **`version`**.
+
+---
+
+## Notes (troubleshooting)
+
+- Workflow **`name:`** / filename is tied to npm **Trusted Publishing** — see the comment block at the top of **`publish-works-to-npm.yml`** if auth fails.
+- If commits land on **`master`** between opening the PR and merging, re-check **`git log`** vs the last **`chore(release)`** before merging; rebasing the release branch may be needed so **`master`** still matches what you intend to ship.

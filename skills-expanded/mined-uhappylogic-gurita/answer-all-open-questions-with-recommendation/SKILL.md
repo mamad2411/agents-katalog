@@ -1,0 +1,328 @@
+---
+name: answer-all-open-questions-with-recommendation
+description: Record the embedded recommendation as the answer for every question in the named mission that carries one, reasoning over the whole set inline.
+---
+
+# answer-all-open-questions-with-recommendation
+
+This is the batch path that records every open question's **embedded recommendation** as its
+answer, unattended. The recommendation pass (`/recommend-all-open-questions`) annotates each
+question by embedding a `<recommendation>` element in its `<open-question>` block in the named
+mission's `open_questions.xml`; this skill walks the blocks that carry one and records each
+pick — the decision lands under `## Decisions` of `requirements.md` and the answered block leaves
+`open_questions.xml` — one commit per answer, leaving recommendation-less blocks untouched
+(annotating them is the recommendation pass's job, not this one's).
+
+It runs **inline and dispatches no agent**: you are the single writer of this run, composing
+every answer yourself, in this conversation, and recording the whole run in **one fixed
+batched shell call** (step 3) that takes the questions in the order the tool gives you and
+commits each answer before the next question is touched. You record **every pick as given**
+and never judge it — a pick is never re-weighed, replaced, or skipped on its merits.
+Every gather, order, view, re-check, and change of `open_questions.xml` is a call to the
+plugin's open-question tool, every change of `requirements.md` is a call to its fold tool, every
+commit is a call to its commit tool, and this run edits neither document by hand and runs no
+git write of its own; `open_questions.xml` is never read with the
+file-reading tool: the gather, the order, and the view of it are one fixed shell call (step 1).
+Every tool call the run makes — this skill's own, those inside step 1's loop and step 3's
+sections included — is written out in full as its fenced block shows it, never through a
+variable, alias, or function of your own defined to stand for the command or any part of it.
+`requirements.md` is read whole once with the file-reading tool, in the same turn as step 1's
+call (step 2), for reasoning only. It requires **no** clean working tree beyond the mission's
+two files: step 3's call stops before any write while either of them holds a change, and every
+commit is made with them as its pathspec, so a dirty tree elsewhere, a change another run has
+staged included, stays out of it.
+
+## Usage
+
+```
+/answer-all-open-questions-with-recommendation --mission <path>
+```
+
+It sweeps every `<open-question>` block in the named mission's `open_questions.xml` that
+contains a `<recommendation>` element. The required leading `--mission <path>` names the
+mission by its repo-relative path, exactly as the definition tool printed it, trailing slash
+included, e.g. `mission_user-guide/`.
+
+## Workflow
+
+### 0. Find the mission, once
+
+Follow `${PLUGIN_ROOT}/shared/resolve-mission.md` to resolve `<MISSION_DIR>`. Never use
+a hardcoded path. Resolve it **once per run** and hold it: every tool call, every recorded
+answer, and every commit below uses this one directory, the one the run walked.
+
+### 1. Gather, order, and view the questions in one fixed shell call
+
+Run this one fixed shell call, written out in full exactly as shown, with only
+`<MISSION_DIR>` replaced:
+
+```
+python3 ${PLUGIN_ROOT}/tools/open_questions.py list --with-question <MISSION_DIR> &&
+python3 ${PLUGIN_ROOT}/tools/open_questions.py walk <MISSION_DIR> | while IFS= read -r id; do
+  printf '%s\n' "$id"
+  if pick="$(python3 ${PLUGIN_ROOT}/tools/open_questions.py lift <MISSION_DIR> "$id" 2>&1)"; then
+    printf '%s\n' "$pick"
+    python3 ${PLUGIN_ROOT}/tools/open_questions.py lift --alternative "${pick%% — *}" <MISSION_DIR> "$id"
+  else
+    printf '%s\n' "$pick"
+  fi
+done
+```
+
+Its `list --with-question` prints every `<open-question>` block in document order, one line
+each: the block's `id` (its Short Title), a tab, and its `<question>` text —
+recommendation-less blocks included. Its `walk` then yields the `id` of every block that
+carries a `<recommendation>` element, each placed after every yielded block its `<depends-on>`
+tags name, and for each one in that order the loop prints three lines: the `id`, bare; the
+block's lifted line, "`<option>` — `<rationale>`"; and the picked alternative's line,
+"`<option>` — `<what-it-is>`", lifted with the option taken from the held line as its text
+before the first spaced em dash. A walked `id` whose lift fails is followed by that lift's
+`Error:` line in place of the pick and by no alternative line: it has no pick to record and
+gets no section in step 3's call. `id` and `pick` are each one quoted value per walked
+question, set and used within this one call, never a tool command or a path list.
+
+That one call is the whole gather, the whole ordering, and the whole view of the question
+document: never read `open_questions.xml` with the file-reading tool, to gather, to order, or
+to reason over. The walked ids, in the order printed, are the run's order; a block printed only
+in the tab-separated lines carries no `<recommendation>` and is left untouched.
+
+If the call prints no walked id — nothing after the tab-separated lines, or nothing at all — no
+block carries a `<recommendation>` element: print the first no-op line of step 4 and stop. If
+it prints an `Error: <reason>` line that follows no walked id, the gather itself failed: print
+the fixed line `Sweep stopped — the question gather failed.` first, then that `Error:` line
+verbatim below it, and stop.
+
+You walk this printed order **exactly once** (step 3), and this call is never run again to
+re-check a question or confirm a skip: each section's own `lift` in step 3's call is its
+question's re-check and its skip. There is **no** outer re-gather loop: recording only removes
+blocks or strips their picks, so the order never gains a question under you.
+
+### 2. Read `requirements.md` whole, in the same turn as step 1's call
+
+Read `<MISSION_DIR>/requirements.md` **whole**, once, with the file-reading tool, never
+through shell output. Neither this read nor step 1's call needs the other's output, so send
+the two in the same turn, as two independent tool calls.
+
+This read and step 1's print are the context every section of step 3 is composed from — the
+decisions already recorded and their `###` subsections, and each question's text and pick — so
+no question pays for its own re-read. Write each question's decision — or a conflict
+question's new body, over its subsection as this read shows it — from its question text, its
+lifted line, and its picked alternative's what-it-is line, as the view printed them.
+
+### 3. Record every question in one batched shell call
+
+**a. Compose each question's section.** For every walked `id` step 1 printed with a pick, in
+the printed order, first tell its kind, then decide three values before writing the call.
+
+A question is a **conflict question** when its question text, as step 1's
+`list --with-question` printed it after the tab, starts with exactly
+`Which conflicting decision stands:` — the fixed opening `/review-mission-requirements` gives
+every conflict question it authors, followed by the `###` headings of the two conflicting
+`## Decisions` entries in double quotes. That exact-prefix check of the printed text is the
+whole test. Every other question is an **ordinary question**, a block asking about a conflict
+but written before that opening existed, or worded any other way, included: its section folds
+a new decision, as the three values below describe.
+
+- **The decision** — the statement folded under `## Decisions`, written by the rules
+  `${PLUGIN_ROOT}/shared/answer-procedure.md` sets in its fold step (step 3) for what a
+  decision says and the shape its entry takes in the subsection it lands in. To decide what it
+  says, ask only the first two questions of that procedure's analyse step (step 2) — whether
+  the pick resolves the question completely, and what constraint it imposes — and record the
+  pick as given whatever you conclude. Its other two questions are not this run's: the run
+  carries no cascade, so an entry a decision moots stays in the document for the next
+  `/review-mission-requirements` pass to clean up or flag, and it forms no contradiction
+  judgment, since that pass's `## Decisions` consistency step is where a conflicting pair is
+  noticed. A new open question the decision may raise is not reported and never added: it is
+  that pass's to find. That procedure's tool steps are never followed: this call runs the fold,
+  the removal, and the commit.
+- **The heading** — the `###` subsection under `## Decisions` the decision lands in, the one
+  that fits it among those step 2's read shows, or a new heading where none fits; the fold
+  tool folds into the subsection whose heading matches after whitespace and case folding, and
+  creates a new heading's subsection at the end of `## Decisions`.
+- **The option** — the text of the question's lifted line before its first spaced em dash (the
+  whole line when there is none), copied from step 1's print as a literal: the option reaches
+  `remove` as an exact id, never derived in the call and never corrected.
+
+A conflict question takes its option the same way but its heading and its decision
+differently, because its whole record is the rewrite of the entry the pick sets aside — no
+new statement is folded anywhere under `## Decisions`:
+
+- **The heading** — the losing entry's `###` heading: of the two headings the opening names,
+  copied exactly as it quotes them, the one whose entry the pick does not keep as it stands
+  (one heading named twice, when both entries sit under it). Where the pick keeps neither
+  entry as written, take the one it changes more.
+- **The new body** — everything that subsection will hold below its heading line, down to the
+  next `###` heading or the end of `## Decisions`, since the fold tool replaces that whole
+  span: the losing entry with its conflicting text rewritten, by the same fold-step rules as a
+  decision, so it agrees with the pick, keeping whatever of it still holds and its shape, and
+  every other entry of the subsection carried unchanged — in a topical subsection every
+  unchanged bullet, the entry that stands included when it sits there too. Compose it from the
+  subsection as the call will leave it when the section runs: step 2's read with every earlier
+  section's write into that subsection applied, so the rewrite drops none of them.
+
+The call rewrites exactly one subsection per conflict question: the entry that stands, and any
+clause elsewhere in `requirements.md` the pick bears on, stay as written, and any conflict left
+standing is the next `/review-mission-requirements` pass's `## Decisions` consistency step to
+flag. Telling a conflict question by its opening and rewriting its losing entry is still
+recording the pick as given: no contradiction is judged and no pick is weighed.
+
+**b. Run the call.** Run this one fixed shell call, written out in full exactly as shown, with
+only `<MISSION_DIR>` and each question section's `<Short Title>`, `<Heading>`, decision, and
+`<Option>` replaced, and each conflict question's section written as the conflict section
+shown after it:
+
+```
+if [ -n "$(git status --porcelain -- <MISSION_DIR>/open_questions.xml <MISSION_DIR>/requirements.md)" ]; then
+  echo 'dirty before start'
+  git status --porcelain -- <MISSION_DIR>/open_questions.xml <MISSION_DIR>/requirements.md
+  false
+fi &&
+if pick="$(python3 ${PLUGIN_ROOT}/tools/open_questions.py lift <MISSION_DIR> "<Short Title>" 2>/dev/null)"; then
+  python3 ${PLUGIN_ROOT}/tools/requirements.py fold <MISSION_DIR> --section "<Heading>" <<'EOF' &&
+<the decision>
+EOF
+  python3 ${PLUGIN_ROOT}/tools/open_questions.py remove <MISSION_DIR> "<Short Title>" --option "<Option>" &&
+  out="$(python3 ${PLUGIN_ROOT}/tools/commit.py --subject "Recommendation-answer: <Short Title>" --body "$pick" -- <MISSION_DIR>/open_questions.xml <MISSION_DIR>/requirements.md)" &&
+  if [ -z "$out" ]; then
+    echo 'answer commit landed'
+  fi ||
+  { printf 'stopped at\t%s\n' "<Short Title>"; false; }
+fi &&
+echo 'completeness walk' &&
+python3 ${PLUGIN_ROOT}/tools/open_questions.py walk <MISSION_DIR>
+```
+
+**The question section** — the lines from `if pick=` through the column-0 `fi &&` that closes
+it — is written once per question composed in **a**, every one in the one call however many
+there are, with no cap and no splitting, in step 1's printed order and never reordered: `walk`
+places each block after the blocks its `<depends-on>` tags name, so every commit that lands
+records a pick whose assumed siblings are already recorded. Each copy carries that question's
+Short Title in its four places, its heading after `--section`, its decision between the
+`<<'EOF'` line and the `EOF` line (the delimiter is quoted so nothing inside is expanded; pick a
+delimiter line the decision does not contain), and its option after `--option`. Every Short
+Title, heading, and option is written inside double quotes, with any `"`, `$`, `` ` ``, or `\`
+it holds escaped by a backslash. The lines before the first section and the lines from
+`echo 'completeness walk'` to the end are written once.
+
+A conflict question's copy is the **conflict section** instead — again the lines from
+`if pick=` through the column-0 `fi &&` that closes it, identical to the question section but
+for the one `replace` call standing where the `fold` call stands, its heredoc carrying the new
+body:
+
+```
+if pick="$(python3 ${PLUGIN_ROOT}/tools/open_questions.py lift <MISSION_DIR> "<Short Title>" 2>/dev/null)"; then
+  python3 ${PLUGIN_ROOT}/tools/requirements.py replace <MISSION_DIR> --section "<Heading>" <<'EOF' &&
+<the new body>
+EOF
+  python3 ${PLUGIN_ROOT}/tools/open_questions.py remove <MISSION_DIR> "<Short Title>" --option "<Option>" &&
+  out="$(python3 ${PLUGIN_ROOT}/tools/commit.py --subject "Recommendation-answer: <Short Title>" --body "$pick" -- <MISSION_DIR>/open_questions.xml <MISSION_DIR>/requirements.md)" &&
+  if [ -z "$out" ]; then
+    echo 'answer commit landed'
+  fi ||
+  { printf 'stopped at\t%s\n' "<Short Title>"; false; }
+fi &&
+```
+
+It is filled exactly as the question section is, with the losing entry's heading after
+`--section` and the new body between the `<<'EOF'` line and the `EOF` line, and it stands at
+the conflict question's place in step 1's printed order like any other section. Every section
+thus makes the same tool calls — one `lift`, one fold-tool call, one `remove`, one commit-tool
+call — and a conflict section holds exactly one `replace` and no `fold`.
+
+The call's first lines are the **stranded-fold guard**: when either mission file holds any
+staged or unstaged change, whatever its origin — a fold or rewrite a stopped run left
+uncommitted, or a hand edit — the call prints `dirty before start` and the
+`git status --porcelain` lines beneath it, then ends before any lift, fold, removal, or
+commit, so no leftover rides into an answer's commit.
+
+In each section the `lift` is the question's re-check against the live document, with only its
+stderr silenced. When it fails — an earlier section's `remove` stripped this block's pick,
+because its `<depends-on>` assumed an option other than the one recorded — the section does
+nothing and prints nothing: that is the **silent skip**, kept in no record and confirmed by no
+read, the stripped block being the recommendation pass's to re-pick. When it succeeds, its one
+line, "`<option>` — `<rationale>`", is held in `pick` as the commit body, since once the answer
+is recorded the block is gone. Then the fold tool splices the decision verbatim at the end of
+the `<Heading>` subsection of `## Decisions` — in a conflict section its `replace` instead
+rewrites everything below that existing subsection's heading line with the new body, the
+heading line and every byte outside the subsection kept — so the recorded decision always
+lands before the block is removed; `remove` deletes the block with `--option` naming the
+recorded option and, in the same write, strips the pick of every block whose `<depends-on>`
+assumed another option of it, keeping their alternatives; and the section runs the one
+command of the shared commit procedure at `${PLUGIN_ROOT}/shared/commit-procedure.md`, the
+plugin's commit tool, with the two mission files as its paths, `Recommendation-answer:
+<Short Title>` as its subject, and the held line as its body. The tool runs the dirty-own-path
+guard over the two files, stages exactly them, and commits them with them as the commit's
+pathspec, so nothing else the index holds — a change another run has staged included — rides
+in the answer's commit, and it repeats a git write another process's lock refused before
+giving up. Its stdout is captured in `out`: empty when the commit landed, its fixed no-op line
+when neither file changed, so `answer commit landed` is printed only when `out` is empty and a
+no-op commits and prints nothing. One commit per answer is what lets a single answer be
+reverted and re-answered on its own. `pick` and `out` are each one quoted value per section,
+set and used within it, never a tool command or a path list; no shell variable carries
+anything from one section to the next.
+
+A **stop**: when the fold, the `remove`, or the commit fails after a successful lift — the fold
+tool refusing (a `replace` whose heading no `###` subsection of `## Decisions` carries
+included), `remove` refusing the option, the commit tool failing with git's own message in its
+line — the failing tool's own `Error:` line reaches the output unredirected, the section
+prints `stopped at`, a tab, and the Short Title, and the call ends there: no later section and
+no completeness walk runs. The tree is left exactly as it stands — no rollback, no restore, no
+skip-and-continue, and never a change to `open_questions.xml` outside the tool — so every
+earlier answer is committed and only this question is unfinished: clean when the fold was
+refused, its decision folded or its rewrite written, uncommitted, with its block still
+standing when a later step failed. That stop is what keeps a stranded fold out of the next
+answer's commit.
+
+After the last section the call prints the fixed header line `completeness walk` and runs the
+tool's `walk` once more as the completeness check. A single pass either records a block or
+finds its pick stripped by an earlier section's `remove`, so this walk is expected to print
+nothing; any id it prints is an **anomaly** — a recommendation-bearing block the run left
+unrecorded. The check never records, lifts, or re-walks those ids and names no skipped
+question.
+
+What the call prints is the whole outcome:
+
+- **`dirty before start`**, with `git status --porcelain` lines beneath it — nothing ran.
+- **`answer commit landed`** — one per committed answer.
+- **`stopped at`, a tab, and a Short Title**, beside the `Error:` line printed just before it —
+  the run stopped at that question.
+- **`completeness walk`** — the call reached its end; every line after it is an id the walk
+  printed, or its `Error:` line.
+
+A skipped question prints nothing at all. Hold these lines for step 4.
+
+### 4. Report
+
+On the success path print exactly one fixed terse status line for the whole run, with no
+identifier and no count, chosen by the call's markers:
+
+```
+Recommendations recorded.
+```
+
+when step 3's call printed at least one `answer commit landed`. When the run committed nothing,
+print instead the one fixed no-op line its case gives:
+
+- **Step 1 printed no walked id** — `No recommendations recorded — no question carries one.`
+- **The call reached its `completeness walk` line with no marker before it**, because no
+  section's lift succeeded — `No recommendations recorded — every pick was stripped before its turn.`
+
+Beside that line print only the **completeness anomaly**, when it fired, since git records it
+nowhere: each line the call printed after `completeness walk` (an id, or the walk's `Error:`
+line), stated as a recommendation-bearing block the run left unrecorded.
+
+Print nothing else: no skipped question is named, no contradiction or new-question advisory is
+given, no recommendation-less block is enumerated, and no recorded answer is re-narrated — the
+commits are the record.
+
+Two stops replace the status line, each opening with its own fixed line:
+
+- **Dirty start** — the call printed `dirty before start`: print the fixed line
+  `Sweep stopped — the mission files already held changes.` first, then below it the
+  porcelain lines the call printed beneath its marker verbatim, and the remedy — commit or
+  discard those changes, then re-run this skill. The run recorded nothing.
+- **Stopped at a question** — the call printed `stopped at`, a tab, and a Short Title: print
+  the fixed line `Sweep stopped — an answer could not be recorded.` first, then below it that
+  Short Title paired with the `Error:` line printed beside it, quoted verbatim. Every answer
+  before it is committed; whatever this question left uncommitted in the two files stays as it
+  is, and the next run's guard stops on it until it is committed or discarded.

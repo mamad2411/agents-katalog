@@ -1,0 +1,580 @@
+---
+name: implement-spec
+license: MIT
+description: "Spec-driven, autonomous end-to-end: branch → plan + test matrix → implement (tests alongside) → self-review → gap-analysis vs spec → close gaps → rigorous downstream verification → PR + evidence report"
+inputs:
+  - name: spec
+    required: true
+    description: "The authoritative spec/ticket to implement — a file path (preferred) or inline instructions. This is the CONTRACT the gap-analysis phase diffs the implementation against."
+  - name: base_branch
+    required: false
+    description: "Branch to create from (default: current branch)"
+  - name: branch_name
+    required: false
+    description: "Name for the feature branch (username/short-description; will ask if not provided and not autonomous)"
+  - name: worktree
+    required: false
+    description: "If given, run in this git worktree path instead of the current checkout (isolation from other concurrent agents). The workflow assumes the worktree + branch already exist unless told to create them."
+  - name: autonomous
+    required: false
+    description: "Default true. When true, run to completion without check-ins — surface only at the end with the PR link + evidence report. When false, pause for plan confirmation on large/cross-cutting tasks."
+  - name: ledger
+    required: false
+    description: "Default true. Maintain the durable run ledger (Phase 0.4). Disabling removes crash/compaction resumability — only for short single-sitting tasks."
+  - name: self_review
+    required: false
+    description: "Default true. Run Phase 3 two-pass self-review. When false, the Phase 6.0 green gate still applies."
+  - name: gap_analysis
+    required: false
+    description: "Default true. Run Phase 4 spec gap analysis. When false, acceptance criteria are only checked implicitly by Phase 5 verification."
+  - name: tests
+    required: false
+    description: "Default true. Derive the AC test matrix (1.4), write tests alongside implementation (Phase 2), run unit/integration suites (5.1–5.2). When false, existing suites must still pass."
+  - name: live_verification
+    required: false
+    description: "Default true. Run Phase 5.3 interactive/agentic live verification where the change has a runtime surface."
+  - name: evidence_report
+    required: false
+    description: "Default true. Produce the Phase 6.4 evidence report + PR AC/evidence table. When false, finish with a standard PR summary."
+---
+
+# Implement Spec
+
+Turn an **authoritative spec** into a reviewable, spec-complete, rigorously-verified PR — autonomously.
+
+This extends a conventional implement-and-PR workflow (context-loading, implementation discipline,
+self-review-before-commit, clean PR) with the two phases a spec-driven autonomous run needs: **gap analysis vs
+the spec** (Phase 4) and **rigorous downstream verification** (Phase 5). The output is a PR **plus an evidence
+report** that proves completeness/correctness against the spec — not just "it builds."
+
+> **When to use this skill:** when there is an authoritative written spec, when the run must be fully
+> autonomous to completion, and when "done" means *provably matches the spec* (not just "compiles +
+> self-reviewed"). For a rough idea that just needs a quick clean PR, use a lighter ticket workflow instead.
+
+## Configuration
+
+Every rigor phase can be disabled independently (all default **on**). Opting out trades assurance for speed —
+the table states what you lose. No toggle disables the Phase 6.0 green gate: existing builds and affected test
+suites must pass regardless.
+
+| Input | Disables | You lose |
+|---|---|---|
+| `ledger=false` | Phase 0.4 run ledger (keep that state in-context instead) | Crash/compaction resumability; durable gap-table evidence |
+| `self_review=false` | Phase 3 | Design critique + mechanical checklist pass before the spec diff |
+| `gap_analysis=false` | Phase 4 | The explicit spec-completeness proof; ACs checked only via Phase 5 |
+| `tests=false` | 1.4 test matrix, new tests in Phase 2, 5.1–5.2 new-test runs | Regression protection for the new logic |
+| `live_verification=false` | Phase 5.3 | End-to-end proof on the running system |
+| `evidence_report=false` | Phase 6.4 + the PR AC/evidence table | The per-AC evidence trail; PR gets a standard summary |
+
+Sensible presets: **full** (all on — the default); **fast-follow** (`gap_analysis=false live_verification=false`)
+for small mechanical changes against a precise spec; **prototype** (`tests=false evidence_report=false`) for
+explicitly throwaway spikes. When in doubt, leave everything on.
+
+---
+
+## Phase 0: Setup
+
+### 0.1 — Resolve the working checkout
+
+If `worktree` was provided, all git/build/test commands run **inside that worktree**. Pin it up front so no
+command leaks into the wrong checkout (critical when other agents share the machine):
+
+```bash
+export TASK_ROOT="${worktree:-$(git rev-parse --show-toplevel)}"
+# Run EVERY subsequent command with cwd = $TASK_ROOT: `cd` once in a persistent shell, or set the command's
+# working directory in harnesses that forbid `cd`.
+# If the repo's local-dev tooling needs a worktree/instance pin (ports, slots), export it here too.
+git rev-parse --show-toplevel   # confirm you are where you think you are
+```
+
+If the worktree does not yet exist and the operator asked you to create it, create it from the base ref (see
+0.2). Otherwise assume it exists and is on the intended branch.
+
+**Resolve the build-memory root (portability).** A repo may commit its build memory under `docs/build/` (the
+multi-session build layout the `build-memory` skill owns). Resolve which mode applies once, up front:
+
+```bash
+bash skills/build-memory/scripts/memory-root.sh "$TASK_ROOT"   # prints: mode=<committed|scratch>  root=<abs path>
+```
+
+In **committed** mode the run ledger (0.4), ADRs, `DEFERRALS.md` rows and the `BUILD_INDEX.md`/`LEDGER.md` close
+(6.5) live under that root and are committed with the change. **`<memoryRoot>`** below is that `root=`; in a
+monorepo subproject (`BUILD_MEMORY_ROOT=<sub>/docs/build`, build-memory BM-ROOT-03) every `docs/build/…`,
+`docs/tickets/…` and `docs/adr/…` path in this skill means `<memoryRoot>/…`, `<memoryRoot>/../tickets/…` and
+`<memoryRoot>/../adr/…` (`memory-root.sh --paths` prints them) — with the variable unset they are the literal
+`docs/…` paths. Keep `BUILD_MEMORY_ROOT` set for every build-memory script call (it is not inherited by a fresh
+shell unless the harness exports it); `memory-root.sh` exits non-zero rather than guess. In **scratch** mode — any repo without a
+`docs/build/README.md` marker — everything below is byte-for-byte the 0.1.x behaviour, so a repo that never opted
+in sees no change. (Resolve the script by its installed skill name, or by an absolute skills root when running in
+another repo's worktree, exactly as Phase 3 resolves `self-review`.)
+
+### 0.2 — Determine base + feature branch
+
+- `BASE_BRANCH` = provided `base_branch`, else `git branch --show-current`.
+- `branch_name`: if not provided and `autonomous=false`, ask; if not provided and `autonomous=true`, derive one
+  (`username/short-description`) from the spec title and proceed. Branch names follow `username/short-description`.
+
+If the branch/worktree still need creating:
+
+```bash
+git fetch origin
+# either an in-place branch:
+git checkout "$BASE_BRANCH" && git pull origin "$BASE_BRANCH" && git checkout -b "$branch_name"
+# …or an isolated worktree off a remote ref (preferred when other agents are active):
+git worktree add -b "$branch_name" "$TASK_ROOT" "$BASE_BRANCH"
+```
+
+Record the exact base commit for the gap-analysis + PR:
+
+```bash
+git rev-parse HEAD          # base tip you branched from
+```
+
+### 0.3 — Load the spec + codebase context
+
+1. **Read the spec in full.** If `spec` is a file path, read the whole file (and any companion docs it points
+   to). Extract two structured lists you will use in Phase 4:
+   - **Requirements** — every "shall/add/wire/implement" item, by section.
+   - **Acceptance criteria** — the spec's explicit AC list (if present) plus any implied "must hold" invariants.
+   This becomes the ledger's working checklist (0.4) for the whole run.
+2. **Read the agent-docs hierarchy** (repo root → subproject → package) for conventions and "ask-first"
+   boundaries: the root `AGENTS.md` (or `CLAUDE.md`), each affected subproject's `AGENTS.md`, and any
+   `agent_docs/` reference library the repo maintains (style guides, common pitfalls, data-model docs,
+   local-dev and build/test guides).
+3. **Read the spec's integration anchors.** A good spec names file:line anchors — open each so you implement
+   against the real current code, not an assumed shape. Anchors drift: if the referenced code moved or changed
+   since the spec was written, record the drift in the run ledger (0.4) and adapt; if the drift invalidates the
+   spec's design, that is a hard blocker per the autonomy contract — surface it rather than silently improvising
+   a new design.
+4. **In committed mode, read the build-memory contract for this run.** Read the `AGENTS.md` "Build memory"
+   section, then **`docs/tickets/DEFERRALS.md` first** — a deferral not in that file did not happen, and closing
+   any `OPEN` row this ticket (or a landed prerequisite it depends on) unblocks is **in scope** for this run
+   (verify for real, then flip to `DONE` with the `date -u` date + evidence). Read the ticket's own header:
+   `Depends on`, `Gate status`, `Live stage`, `Production mutations`. **If the ticket is `Kind: skeleton`,
+   STOP** — a skeleton has no runnable body until its gate opens (BM-TICKET-03); report that and do nothing else.
+   If the `Gate status` block has unticked items, the operator's answers are in `docs/build/LEDGER.md` GATE
+   DECISIONS — copy them into your first commit and act on them; an answer of "skip" runs the ticket ungated and
+   records the gated remainder as `DEFERRALS.md` rows (the ticket is then listed in `RETURN PASS`). This step is
+   inert in scratch mode.
+
+### 0.4 — Create the run ledger (durable state) *(skip if `ledger=false`)*
+
+Context is lossy over a run this long — compaction and session resets degrade exactly the fine-grained early
+details Phase 4 depends on. Everything the later phases need must live on disk, not in the context window.
+The ledger's location depends on the mode resolved in 0.1:
+
+```bash
+# Committed mode (docs/build/README.md marker present): the run ledger is COMMITTED at runs/<ID>.md,
+# where <ID> is this ticket's id (from its header/filename); it lands with the change (§6.5).
+LEDGER="<memoryRoot>/runs/<ID>.md"        # e.g. docs/build/runs/T3.md
+
+# Scratch mode (no marker) — unchanged 0.1.x behaviour: a gitignored, branch/date-named ledger,
+# honoring the repo's canonical agent scratch dir if it defines one.
+SCRATCH="${AGENT_SCRATCH_DIR:-$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.agents/scratch}"
+mkdir -p "$SCRATCH"   # must be gitignored; never commit ledger files
+LEDGER="$SCRATCH/implement-spec_${branch_name//\//-}_$(date +%Y%m%d).md"
+```
+
+In every mode the run ledger's header carries `Harness: <harness>/<model-id>/<tier>` (e.g.
+`devin-desktop/swe-2-high/manual`, `claude-code/claude-opus-5-5/headless` — what this session actually is),
+`Skills:` (the skills version you loaded, e.g. `git -C <skills root> rev-parse --short HEAD`, or `unknown`),
+`Started:` now and, at close, `Closed:` — both `date -u +%FT%TZ`. In committed mode the run ledger's sections
+follow `runs/<ID>.md` (BM-INDEX-02): `Spec / Base / Branch / Config` + those header lines, `## Deferrals read`,
+`## Requirements`, `## Acceptance criteria`, `## Plan`, `## Test matrix`, `## Progress`, `## Gap table`,
+`## Evidence log`, `## Evidence report`. Seed it with: spec path, base commit, branch, and the
+Phase 0.3 requirements + acceptance-criteria checklist;
+leave placeholder sections for the test matrix (1.4), the gap table (4.1), and the evidence log (5.4). Keep it
+current at every phase transition. The ledger is three things at once:
+- the **compaction-proof working checklist** for the whole run,
+- the **resume point** if the session dies (a fresh session reads ledger + `git log` and continues), and
+- the **seed of the Phase 6 evidence report**.
+
+### 0.5 — The clock rule (every mode; BM-CLOCK-01)
+
+Every date or time you write comes from `date -u` **at the moment of writing** (ISO-8601 `Z`; date-only fields
+take the UTC date), or from the git/GitHub time of the event it records with the source named
+(`(git 3f2a1c0 committer time)`). That covers run-ledger stamps, `updatedAt`, PHASE LOG lead dates, BUILD_INDEX
+`landed`, DEFERRALS status dates, ADR `Date:`, readout stamps, migration `planned_at`, and product constants that
+name an event. Never a "chain date" or "dated-entry convention", never "previous entry + 1 day", never a
+scenario or fixture date, never a date inferred from other records. A date later than now is a bug; a
+legitimately future value (a schedule, a deadline) carries
+`future-ok: <scheduled|real-world|synthetic|illustrative>: <reason>`. Before any time-triggered action, compare
+`date -u` with the live scheduler state, never with the latest recorded date. If the memory you read holds dates
+later than the clock, record that as a finding — do not continue their sequence.
+
+---
+
+## Phase 1: Plan
+
+Produce a brief implementation plan (skip only for genuinely trivial specs) and record it in the ledger.
+
+### 1.1 — Scope + targets
+- Which files change, which packages are affected, which "ask-first" boundaries are touched
+  (e.g. shared data models/schemas, new third-party dependencies, public API contracts)?
+- Map verification targets upfront: if the repo provides a changed-files → build/test target mapper (a
+  `detect-targets` script or equivalent), run it on your planned file list; otherwise derive the exact
+  build/test/lint commands for each affected package from its agent docs or build system.
+- **Coverage guard:** if the repo's verification tooling does not cover an affected area, a green run of it
+  proves nothing — derive the real build/test commands from that area's docs/build system, use them everywhere
+  this workflow says "verify," and say so in the final report.
+
+### 1.2 — Baseline health check
+Before changing anything, confirm the baseline is green: the mapped targets build/pass at the base commit, and —
+if the change has a runtime surface you will dev-test in Phase 5 — the local stack starts clean. Pre-existing
+breakage discovered mid-run gets misattributed to your change and burns hours; find it now, while attribution is
+unambiguous.
+
+### 1.3 — Approach + PR shape
+- Summarize the approach in a few bullets: what changes in what files, which existing code is the template,
+  and any design decisions/tradeoffs.
+- If the spec suggests a PR shape / logical grouping, adopt it as your implementation order.
+
+### 1.4 — Test matrix from the acceptance criteria *(skip if `tests=false`)*
+Translate **every** acceptance criterion into concrete planned tests *before implementing*: unit tests for pure
+logic, integration tests for the seams, live scenarios for runtime behavior (these become the 5.3 matrix). Write
+the matrix into the ledger. Deriving tests from the spec now — rather than from the finished code later — keeps
+them asserting *what the spec demands* instead of *what the implementation happens to do*. The test matrix never
+plans a living-record pin (BM-TEST-01, §5.1).
+
+### 1.5 — Confirmation gate
+- **`autonomous=true` (default):** do NOT pause. Record the plan (you'll include it in the final report) and
+  proceed. The spec is the pre-approved contract — a mid-run check-in defeats the autonomous mandate.
+- **`autonomous=false`, large/cross-cutting task:** present the plan and wait for confirmation before Phase 2.
+
+---
+
+## Phase 2: Implement
+
+Adopt the implementation persona:
+
+> You are a Staff Engineer who writes production-quality code — code your most critical colleague would approve
+> on first review. Before writing, think about the contract (in/out/failure modes), what adjacent code looks
+> like (match its idioms and level of abstraction), the edge cases (empty inputs, missing data, concurrency,
+> network failures), and what the reviewer will look for. While writing: follow existing patterns over personal
+> preference; prefer simple/obvious over clever; handle errors explicitly; name for the reader; make the minimum
+> change that fully addresses the requirement.
+
+Implement the spec in the planned order, **writing each logical group's tests (per the 1.4 matrix) as part of
+implementing that group** — not as a Phase-5 afterthought. Keep the build green as you go — after each logical
+group, run that subproject's build/test/lint commands (the ones its AGENTS.md / `agent_docs` prescribe) rather than accumulating
+a large unverified diff. **Do not commit yet** — verification and review happen before the first commit (the
+one-clean-commit principle), except that a long autonomous run MAY checkpoint-commit between
+logical groups if that de-risks the run; if so, keep messages descriptive and squash-or-keep at your discretion.
+
+Honor the conventions established by the AGENTS.md hierarchy and `agent_docs` you loaded in Phase 0.3, and by the
+code adjacent to your change — the language/style rules, build-system constraints, and any "ask-first"
+boundaries for the subproject you're in. Match the surrounding code over personal preference; when a convention
+is documented (style guide, common-pitfalls doc), follow it exactly.
+
+---
+
+## Phase 3: Self-review (design + mechanical) *(skip if `self_review=false`)*
+
+**Invoke the `self-review` skill (`skills/self-review/SKILL.md`) and follow it completely.** Pass 1
+(mechanical: the repo's verification command + mechanical checklists) and Pass 2 (Staff-Engineer design
+critique with full file reads). Fix everything it
+surfaces and re-verify. Max 3 verify-fix-review iterations. If *design* concerns persist after 3, record them in
+the ledger for the final report and proceed; a *mechanical* failure (red build or failing tests) is different —
+it may never be carried forward and blocks the PR gate (6.0).
+
+**Independence matters more than effort here.** A reviewer that just wrote the code is a biased reviewer — it
+"knows what it meant." Where the harness supports subagents, run Pass 2 in a **fresh context** given only the
+spec, the diff, and the ledger — not your implementation history. Where it doesn't, enforce the discipline
+manually: re-read every changed file from disk in full and argue each judgment from what is actually there,
+never from memory of writing it.
+
+---
+
+## Phase 4: Gap analysis vs the spec *(skip if `gap_analysis=false`)*
+
+The core addition of this workflow. Self-review asked *"is this good code?"*; this phase asks *"does it fully
+satisfy what the spec demanded?"* — an orthogonal check. A change can be beautiful and still miss half the spec.
+
+### 4.1 — Re-read the spec, then build the gap table
+**Start by re-reading the spec file in full and rebuilding the requirements + AC list fresh.** Do not diff the
+code against your Phase 0.3 extraction alone: that extraction is itself unverified — a gap analysis against your
+own summary inherits its blind spots, and hours of context churn degrade it further. Diff the fresh list against
+the ledger's list (catches extraction drift), then against the implementation (catches real gaps).
+
+For **every** requirement and **every** acceptance criterion from the spec, record a row **in the ledger's gap
+table**:
+
+| item (spec §) | required layer | achieved layer | status: met / met-engineered(D-id) / partial / missed | evidence (file:line, symbol, test) | if not met: why + the fix |
+
+Rules:
+- **Layers (BM-STATUS-01).** `required layer` is the AC's own tag (an untagged AC reads `engineered`);
+  `achieved layer` is what your evidence actually reached: `engineered` · `fixture-verified` ·
+  `staging-verified` · `live-executed` · `public`, plus `human-completed` (a human leg done by a human). `met`
+  holds only when the achieved layer reaches the required one and any human leg was done by a human; otherwise
+  the row is `met-engineered(D-id)`, citing an OPEN `DEFERRALS.md` row that names the owed leg. Fixtures and
+  stand-ins never carry retrieval or observation dates (they carry `capture_kind: stand-in`); no agent-produced
+  label is recorded as a human label.
+- **Evidence is mandatory for "met."** "I think I did that" is not met — cite the file:line/symbol/test that
+  proves it. If you can't cite it, it's `partial` or `missed`.
+- Read the actual implemented code to confirm, don't trust memory of what you wrote.
+- Include the spec's **out-of-scope** list and confirm you did NOT implement those (scope creep is a gap too).
+- Include cross-cutting invariants (e.g. "additive / back-compat when the new table is empty", "no change to the
+  external verifier's write scope") — these are the ACs most easily missed.
+
+Like Pass 2, the gap walk benefits from independence: where the harness supports it, have a fresh-context
+subagent (spec + diff + ledger only) perform or double-check it.
+
+### 4.2 — Reason about the optimal closure
+For each `partial`/`missed`, don't just patch mechanically — reason from first principles about the *best* way
+to close it given the codebase patterns and the spec's intent. Prefer the fix that a reviewer familiar with the
+spec would consider obviously correct. If a spec requirement turns out to be genuinely infeasible or wrong,
+do NOT silently skip it — record the conflict explicitly for the final report and choose the closest faithful
+alternative.
+
+**Record the decisions (committed mode).** Every `MET-DIFFERENTLY` verdict in the gap table, every SHOULD-level
+deviation, and every decision the ticket's `## Notes` says it owns gets an ADR at
+`docs/adr/ADR-NNN-<slug>.md` (the `build-memory` template's Context / Decision / Consequences / Alternatives /
+Revisit-trigger shape, BM-ADR-01/03); regenerate the index with the `build-memory` `adr-index` mode
+(`scripts/adr-index.sh docs/adr`); the ADR lands in **this** PR. In scratch mode, record deviations in the
+evidence report as before.
+
+### 4.3 — Close the gaps, then re-review
+Implement every closure (with tests, per 1.4). After closing, **re-run Phase 3 self-review** on the new changes
+(design + mechanical), then re-walk the gap table until **every row is `met` with evidence** (or explicitly,
+defensibly deferred with a recorded reason). Keep the ledger's gap table current as rows close. Max 3
+close-verify iterations.
+
+---
+
+## Phase 5: Rigorous downstream verification
+
+Prove correctness + completeness at three levels. Do as many as *apply* to the change; skip a level only when
+the change genuinely has no surface for it, and say so in the report. Use the build/test tooling the AGENTS.md /
+`agent_docs` for this subproject prescribe (build wrappers, test-runner invocation, lint/typecheck commands,
+local-dev launcher) — discover them in Phase 0.3 rather than assuming a stack.
+
+### 5.1 — Unit / component
+Run the full suites for the affected packages — the tests written in Phase 2 per the 1.4 matrix, plus the spec's
+required suites; all green. If gap closure (4.3) introduced logic whose tests don't exist yet, write them now.
+Tests must verify **behavior and contracts**, not just exercise code paths for coverage (see the self-review
+Pass-2 test criteria). Any pure logic the spec
+introduces (algorithms, selectors, scorers, state machines) gets direct, deterministic tests over its real
+edge cases.
+
+**Invariants, not living records (BM-TEST-01).** A test asserts what holds at every commit — schema, vocabulary
+membership, uniqueness, generated == source, references resolve, append-only. It never asserts the *current
+value* of a living record: `nextTicket`, a project, readout or obligation status, or the counts, row ranges and
+dates of living registers (LEDGER, BUILD_INDEX, DEFERRALS, the coverage matrix, README/CHANGELOG wording); a
+validator derives expected counts from their source. When such a pin fails, convert it to an invariant or delete
+it in its own commit — never relax it in place. Assertions over frozen artifacts (a dated report, a closed
+round's plan) are fine, and the test says why.
+
+### 5.2 — Integration
+Exercise the wired components end-to-end against the real seams the change touches (public interfaces, storage,
+config, cross-module calls) — not just the units in isolation. Assert the spec's integration acceptance criteria
+(round-trips, state transitions, inclusion/exclusion behavior, toggles, back-compat when the new surface is
+empty). Use whatever driving mechanism fits the seam (in-process test, CLI invocation, HTTP request, etc.).
+
+### 5.3 — Interactive / agentic live verification *(skip if `live_verification=false`)* (the heart of this phase — do this wherever the change has a runtime surface)
+
+Goal: **prove to yourself, empirically, that the change behaves as the spec says** — the way a careful human
+would, by running the real thing and inspecting real signals. Not "a test passed" — *"I drove the live system
+through representative cases and observed the expected behavior."*
+
+1. **Stand up a safe local environment.** Launch the relevant local services / dev setup for this subproject
+   (per its `agent_docs`/local-dev guide). Keep it isolated from other agents on the machine — use this
+   worktree's own slot/ports/instances, not shared ones. If the change is compiled, ensure the *running* process
+   actually contains your change before trusting anything: assert the live build == your HEAD (a version/gitSha
+   endpoint, a process-start-time-after-build check, or the subproject's documented freshness guard). **A
+   compiled change that isn't actually running invalidates every interactive result** — this is the single most
+   common way live verification lies to you.
+2. **Design representative test cases from the spec.** Enumerate the behaviors + acceptance criteria and turn
+   each into a concrete scenario, including the *negative/precision* cases (what should NOT happen), boundaries,
+   and the empty/back-compat case — not just the happy path. These scenarios are your live test matrix.
+3. **Interact agentically to exercise each case.** Do whatever drives the behavior: HTTP requests, one-off
+   scripts, CLI commands, seeding a scratch fixture, triggering the real flow. **Never mutate production /
+   canonical state** unless the ticket's `Production mutations:` header names that exact mutation (BM-PROD-01;
+   no header means none). Then run it only through the scripted path the header names, after recording the
+   pre-state and the rollback command in the run ledger. Never trigger a paid or expensive operation the header
+   does not name. Otherwise use throwaway/tagged test fixtures. "Local"
+   services often still hit shared dev datastores: record every fixture/record you create in shared stores in
+   the ledger as you create it, and clean up from that list at the end — not from memory.
+4. **Verify by inspecting every useful signal.** Confirm the observed result against the expectation using
+   whatever data is available: command/script output, HTTP response bodies + status, database/state reads,
+   **server logs**, metrics, rendered UI — cross-check more than one signal where you can. Actively look for the
+   behavior being *wrong* (the negative cases), not just present.
+5. **Iterate until convinced.** If a case doesn't behave as specified, that's a Phase-4 gap — fix it and re-run.
+   Continue until every representative case demonstrably matches the spec.
+
+**Gate-pending, never fabricated (committed mode, BM-DEFER-02).** When a live check cannot run because the
+ticket's `Live stage` is operator-gated (a budget the operator has not released) or the infrastructure is
+absent, do **not** fail and do **not** invent a pass: append a `DEFERRALS.md` row (its proxy now, what unblocks
+it, how to verify it when unblocked) and report **"gate pending"** for that criterion — its gap-table row is
+`met-engineered(D-id)` at the layer you did reach, never `met`. The ticket still opens its PR; the gate-pending
+item is carried in `RETURN PASS` and the `BUILD_INDEX` "live verification" column reads `gate-pending`.
+
+### 5.4 — Evidence capture + synthesis
+As you run each level, capture concrete evidence **in the ledger's evidence log** — the command/interaction and
+the salient observed output (test summaries, sample responses, log excerpts, state reads, screenshots/render
+confirmations). Synthesize the
+interactive verification into a short narrative: what you drove, what you observed, and why it proves the
+behavior — the same account you'd give a colleague who asked "how do you know this works?" If any check couldn't
+be run (missing fixture, environment limitation), say so explicitly — **an unrun check is never reported as
+passed.**
+
+---
+
+## Phase 6: Finalize — commit, PR, evidence report
+
+### 6.0 — Green gate
+If any code changed since the last clean mechanical-verification pass (Phase 4/5 fixes), re-run it now. **A red build or
+failing test may never reach a ready-for-review PR.** If it can't be fixed within the bounded iterations, either
+stop and surface it as a hard blocker, or open the PR as `--draft` with the failure stated at the top of the
+body. Unresolved *design* notes may ship with the report; a red build may not.
+
+### 6.1 — Commit (intentional staging)
+Review `git status` and stage **intentionally** — every staged file should correspond to the change (cross-check
+against the gap table's evidence column). Do not blanket `git add -A`: long runs produce stray one-off
+scripts/fixtures, and those belong in the scratch dir, not the PR. Exclude agent-harness dirs
+(e.g. `.windsurf/`, `.claude/`, `.cursor/`, `.dev/`, `.agents/`) **unless the spec's scope explicitly includes
+them**. **In committed mode, the change's build-memory files ARE part of the diff** — stage the
+`docs/build/**`, `docs/adr/**`, and `docs/tickets/DEFERRALS.md` rows this run wrote (the run ledger, ADRs,
+deferrals, any `reports/*`) alongside the code; a legacy `.agents/` scratch dir is still excluded. The close
+commit (6.5) is a second, separate commit.
+
+```bash
+git status --short                       # review everything the run touched
+git add <files that belong to the change>
+git diff --cached --stat                 # confirm the staged set matches the intended change
+git diff --cached --quiet || git commit -m "<descriptive message: what changed + why, ≤72-char summary line>"
+```
+
+### 6.2 — Push
+```bash
+git push -u origin "$branch_name"
+```
+
+### 6.3 — Open PR (no merge-main, no Slack — see "does NOT do"; CI is read in 6.5 step 0)
+In committed mode, write the PR body to `docs/build/pr/<ID>.md` first (it is the submitted body, committed with
+the change) and create the PR with `--body-file`, so the proof lives in the tree, not only on GitHub:
+```bash
+# committed mode: the PR body is a committed artifact
+gh pr create --base "$BASE_BRANCH" --head "$branch_name" \
+  --title "<concise title>" --body-file docs/build/pr/<ID>.md
+# scratch mode (or no pr/ file): pass the body inline
+gh pr create --base "$BASE_BRANCH" --head "$branch_name" --title "<concise title>" --body "<structured description>"
+# or, if it exists: gh pr edit "$branch_name" --title "<title>" --body-file docs/build/pr/<ID>.md
+```
+PR body: **Summary** (what + why) · **What changed** (files/areas) · **Design decisions** · **Verification**
+(what was built/tested/driven) · a link/reference to the spec it implements · the requirement ids stamped · a
+**condensed acceptance-criteria → evidence table** (from the ledger), so the PR is self-reviewing and the proof
+survives outside the chat transcript.
+
+### 6.4 — Evidence report (the proof — this is the deliverable) *(if `evidence_report=false`: replace with a concise standard summary)*
+The ledger is the source of truth — derive the report from it, don't reconstruct from memory. In committed mode
+the evidence report is **also** the `## Evidence report` section of `runs/<ID>.md` and the body of
+`pr/<ID>.md` — write it once, in the ledger, and reuse it. Return to the operator, in the final message:
+1. **PR link** (`gh pr view "$branch_name" --json url --jq '.url'`).
+2. **Acceptance-criteria table**: every AC from the spec → its required and achieved layer → met /
+   met-engineered(D-id) / deferred → the concrete evidence (test output, observed live behavior, file:line) that
+   proves it. This is the gap table from Phase 4, now backed by Phase 5 evidence; a fixture-only result never
+   reads `met` for a `live-executed` AC.
+3. **Gap-analysis summary**: gaps found after first implementation + how each was closed (shows the phase did
+   real work).
+4. **Verification summary**: unit / integration / interactive results, with the commands run and headline
+   outcomes; explicitly list anything not run and why.
+5. **Deviations/deferrals** (if any): where the implementation intentionally differs from the spec, with the
+   rationale.
+6. **CI:** the `ci:` line from 6.5 step 0 (in scratch mode, read it the same way) — `pass`, `locally-green`,
+   `none-declared`, or the not-green line. A ticket is never reported green on local results alone.
+
+### 6.5 — Close the ticket *(committed mode, when the spec is a chain ticket)*
+When this run implemented a **chain ticket** — detected by a `Sequence:` header on the ticket plus a
+`LEDGER.md` in the resolved root (`<memoryRoot>/LEDGER.md`; `docs/build/LEDGER.md` by default) — the worker closes its own ticket (BM-INDEX-01, and D4 of the
+build-memory design: on the manual floor there is no orchestrator to advance the ledger). After the PR exists,
+in **one** closeout commit:
+
+0. **Read CI on the pushed code head (BM-CI-01).** `bash <skills>/orchestrate-build/scripts/ci-boundary.sh --pr
+   <n> --json <memoryRoot>/logs/ci-<ID>.json` (bounded wait; a repo hook `<memoryRoot>/tools/ci_boundary.*` — found via `BUILD_MEMORY_ROOT` in a subproject — runs
+   instead when present; without the script, `gh pr checks <n>` until no check is pending). Record its last line
+   as the run ledger's `ci:` field — `ci: <pass|pending|unknown|none-declared> #<n>@<sha7> (<check> <run-id>; …)`.
+   - Red, cancelled or a missing required check **this ticket caused** → fix it here, re-push, re-read.
+   - Red **inherited from the base** (the same check is red on the base PR's head:
+     `ci-boundary.sh --pr <base PR> --no-wait`) → append a PHASE LOG `blocked` entry, set
+     `blockedOn: CI fail on #<n> (<check>)`, do not advance `nextTicket`, and report **blocked** — the closeout
+     commit then carries only that entry, `blockedOn`, the run ledger and its trace line (step 3, `--outcome
+     blocked`; no BUILD_INDEX row, no advance). Never fix it silently here and never relax a test.
+   - Pending after the wait, or unreadable → record `ci: pending …` / `ci: unknown …` with the script's detail
+     (never "green"); the orchestrator's next boundary read decides. Local results alone are `locally-green`.
+1. **`BUILD_INDEX.md` row** — append one row for this ticket:
+   `| seq | ticket | kind | branch | PR | base | landed | ADRs | deferrals opened → closed | live verification | evidence |`
+   (+ a trailing `harness` cell where the table has that column), with exactly the header's cells (escape a `|`
+   inside a cell as `\|`), `landed` = `date -u +%F`, the `PR` cell the real `#<n>` — never `PR pending` —, `live
+   verification` one of `live-executed | staging | fixture-only | engineered | n-a | gate-pending`, and `evidence`
+   pointing at `runs/<ID>.md#evidence` or `pr/<ID>.md`.
+2. **`LEDGER.md`** — advance `CURRENT STATE` (`lastCompleted: <ID>`, `nextTicket:` = the next chain row, set
+   `updatedAt` from `date -u`, advance `chainTip` for a chained ticket; leave `harness:` as is when it already
+   names this session — a different value is a harness switch, recorded at orient (orchestrate-build §0), never
+   overwritten here) and append the PHASE LOG "done" entry
+   **at the end of the file**, in the fixed shape with no markup before the kind, ≤ 2 KiB (details belong in
+   `runs/<ID>.md`): `- <date -u +%F> — <ID> done — branch · PR #<n> · base · summary · **Verify:** … ·
+   **Deferrals:** opened/closed ids · **Deviations:** … · chainTip → … · next → … · ci: … · layer: <BM-STATUS-01
+   word> · harness: …`. A pending gate is a `RETURN PASS` row, **not** a `blockedOn`. Protected records only gain
+   lines — GATE DECISIONS, PHASE LOG, DEFERRALS rows, readouts, BUILD_INDEX rows, executed contracts, ADR bodies
+   and `*.jsonl`; a correction is a new dated entry naming the sha and line it corrects.
+3. **Trace, then validate** — set the run ledger's `Closed:` from `date -u`, then append this attempt's trace
+   line to `<memoryRoot>/runs/<ID>.trace.jsonl` (BM-TRACE-01) with a shell call **in this session** (it finds
+   its own call in the transcript to know which agent it is, so never delegate it to a sub-agent):
+   ```bash
+   python3 -I <skills>/build-memory/scripts/build-trace.py record --ticket <ID> \
+     --outcome <done|blocked|gate-pending> --pr <n> --base-sha <the base commit from 0.2> --ci "<the ci: line>" \
+     --live <live verification> --layer <BM-STATUS-01 word> --ac met=<n>,met-engineered=<n>,partial=<n>,missed=<n>
+   ```
+   It reads `Started:`, `Harness:` and `Spec:` from the run ledger's header and the branch, head and diff from git,
+   names the harness by the nearest harness process above it (not by inherited variables), and measures this run's
+   tokens, peak context and compactions from that harness's own session store — Claude Code transcripts, Codex
+   rollouts, the Devin CLI/Desktop session database; elsewhere it records `usage: not-measured` with the reason. Never type usage figures in — pass `--usage-json <file>` only for a figure another tool measured.
+   Then stage the closeout (step 4's `git add`), then
+   `bash skills/build-memory/scripts/check-build-memory.sh .` and `check-build-memory.sh . --staged` (history mode,
+   BM-HIST-01: the staged lines only append, at the regions' ends, with dates from the clock; in a monorepo
+   subproject both run with `BUILD_MEMORY_ROOT` set, from the worktree toplevel) must both exit 0 —
+   any non-zero exit is a real block, not something to commit past — plus the repo's own docs/memory check if its
+   AGENTS.md names one.
+4. **Commit + push** the closeout as a **second, separate** commit:
+   ```bash
+   M="$(bash skills/build-memory/scripts/memory-root.sh | sed -n 's/^root=//p')"   # <memoryRoot>; docs/build by default
+   git add "$M/LEDGER.md" "$M/BUILD_INDEX.md" "$M/runs/<ID>.md" "$M/runs/<ID>.trace.jsonl"   # = docs/build/… in a single-repo layout
+   git commit -m "docs(build): close <ID>"
+   git push
+   ```
+
+`orchestrate-build` then only *confirms* the advance (ledger moved, index row present, run ledger present,
+validator green) rather than performing it. In scratch mode this step is skipped.
+
+### 6.6 — Notify (optional, macOS example)
+```bash
+osascript -e 'display notification "PR is up with a spec-completeness evidence report" with title "implement-spec" sound name "Glass"'
+```
+
+---
+
+## Autonomy contract
+
+When `autonomous=true` (default): run Phases 0→6 to completion **without stopping for check-ins**. The only
+surfaces are (a) a hard blocker you genuinely cannot resolve (missing creds, an ambiguous spec contradiction that
+changes the design) — surface it concisely and stop; and (b) the final report. Do not ask "should I proceed?"
+between phases — the spec is the approval. Prefer making a defensible decision and recording it in the report
+over pausing.
+
+If the run is interrupted (crash, context exhaustion, reboot), a fresh session resumes from the ledger +
+`git log`: re-read the spec, the ledger's phase status, and the gap table, then continue from the first
+incomplete step. Never restart a partially-complete run from scratch.
+
+---
+
+## What this workflow does NOT do (deliberate omissions)
+
+- **No merge-main.** Only merge base when there's a real conflict/stale CI; run your merge/conflict workflow
+  separately if needed.
+- **No CI fixing outside the ticket's scope.** CI is *read* after push (6.5 step 0). A red this ticket caused is
+  fixed here; a red it inherited is reported as blocked — never silently fixed or relaxed here.
+- **No chat/notification post.** Separate, human-invoked concern.
+- **No retention/cleanup of scratch fixtures beyond the run's own** — but DO clean up any test state you created
+  in shared stores (Phase 5.3).
+
+These compose on top when needed; they are not on the default critical path.

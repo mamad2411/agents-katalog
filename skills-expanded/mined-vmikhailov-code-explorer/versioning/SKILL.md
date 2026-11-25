@@ -1,0 +1,180 @@
+---
+name: versioning
+description: Semantic Versioning (SemVer) and unified release lifecycle skill for CodeExplorer (CLI and VS Code Extension). Use whenever bumping versions, fixing bugs, releasing features, or preparing git release tags.
+---
+
+# Semantic Versioning (SemVer) & Release Lifecycle
+
+
+This skill defines the strict versioning and release lifecycle for CodeExplorer (CLI and VS Code Extension).
+
+Both the CLI and VS Code Extension share a **single, unified version number** and are released together via a unified GitHub Actions workflow.
+
+---
+
+## 1. SemVer Version Increment Rules
+
+Versions strictly follow the format: `MAJOR.MINOR.PATCH` (e.g. `1.44.0`).
+
+### 1.0. No Version Bump (No Release)
+- **When to use**: the change does not touch shipped code (CLI, MCP server, SDK libraries, VS Code extension):
+  - Website (`site/`), benchmarks (`benchmarks/`), case studies, and their sync scripts.
+  - Docs, proposals, roadmap, READMEs, agent rules and skills.
+  - CI workflow tweaks that do not change the produced artifacts.
+- **Action**: commit to `main` without bumping versions, without changelog release sections, and without a release tag. Website changes are deployed separately via `site/deploy.sh`.
+- **Rule**: website and benchmark work **never** justifies a MINOR bump, even when it is large or user-visible on `code-explorer.app`.
+
+### 1.1. Patch Version (`MAJOR.MINOR.PATCH` -> `MAJOR.MINOR.(PATCH + 1)`)
+- **When to use** (shipped code changed, but no new capability):
+  - Fixing bugs or crashes.
+  - Fixing regressions or edge-case parsing anomalies.
+  - Improving error handling, diagnostics, or logging.
+  - Internal refactoring, project/module extraction, or performance work that does not add a new capability (even if it is architecturally large).
+  - Build, packaging, or target framework changes (e.g. multi-targeting).
+  - Maintenance, dependency bumps without breaking changes, or test suite additions.
+- **Action**: Increment ONLY the last digit (`PATCH`). `MAJOR` and `MINOR` remain unchanged.
+- **Example**: `1.44.0` -> `1.44.1`.
+
+### 1.2. Minor Version (`MAJOR.MINOR.PATCH` -> `MAJOR.(MINOR + 1).0`)
+- **When to use**: **ONLY** when at least one **new user-facing feature** ships in the CLI, MCP server, SDK, or VS Code extension:
+  - New CLI verbs, commands, or flags (e.g., `ce test`, `ce coverage`, `ce gate check --since`).
+  - New MCP tools or new tool parameters.
+  - New language parsers, ecosystem/library extractors, or new graph node/edge kinds users can query.
+  - New built-in gates or gate capabilities (e.g., ratchet, new output formats).
+  - New UI views, panels, graph layouts, or filters in the VS Code extension.
+- **Not a MINOR**: refactors, performance improvements, fixes, packaging, docs, website, or benchmarks (use PATCH or no bump).
+- **Test before bumping**: name the new feature in one sentence from the user's point of view (*"You can now run X"*). If you cannot, it is not a MINOR.
+- **Action**: Increment the middle digit (`MINOR`) and reset `PATCH` to `0`.
+- **Example**: `1.44.0` -> `1.45.0`.
+
+### 1.3. Major Version (`MAJOR.0.0` -> `(MAJOR + 1).0.0`)
+- **When to use**:
+  - Fundamental paradigm shift in architecture or execution model.
+  - Breaking changes to public APIs, CLI flags/output schemas, or MCP tool contracts.
+  - Complete overhaul of the graph ontology schema requiring migration.
+- **CRITICAL CONSTRAINT**:
+  > **MAJOR version increments are STRICTLY PROHIBITED without explicit prior user consent/approval.**
+  > The agent must NEVER bump the MAJOR version autonomously. Always propose the major bump to the user, explain why the paradigm shift requires it, and wait for explicit confirmation before changing the major version.
+- **Action** (upon user approval): Increment the first digit (`MAJOR`), reset `MINOR` to `0`, and reset `PATCH` to `0`.
+- **Example**: `1.44.0` -> `2.0.0`.
+
+---
+
+## 2. Synchronized Version & Changelog Files
+
+When updating the version, all of the following files **must** be updated simultaneously:
+
+1. **`cli/Directory.Build.props`**:
+   ```xml
+   <!-- Versioning -->
+   <Version Condition="'$(Version)' == ''">MAJOR.MINOR.PATCH</Version>
+   ```
+   *(All assembly, file, informational, and NuGet package versions automatically inherit `$(Version)`)*.
+
+2. **`vscode-extension/package.json`**:
+   ```json
+   "version": "MAJOR.MINOR.PATCH"
+   ```
+
+3. **`vscode-extension/package-lock.json`**:
+   - Update `"version"` at the top level.
+   - Update `"version"` inside `packages[""]`.
+
+4. **Agent Plugin Manifests & `Dockerfile`**:
+   - `"version"` in `gemini-extension.json`
+   - `"version"` in `plugins/code-explorer/plugin.json`
+   - `"version"` in `plugins/code-explorer/.claude-plugin/plugin.json`
+   - `"version"` in `plugins/code-explorer/.cursor-plugin/plugin.json`
+   - `"version"` in `plugins/code-explorer/.codex-plugin/plugin.json`
+   - `ARG CE_VERSION=MAJOR.MINOR.PATCH` in `Dockerfile` (ensures Glama / Docker BuildKit invalidates the binary download layer on every release).
+
+5. **`CHANGELOG.md` AND `vscode-extension/CHANGELOG.md` (Mandatory Dual-Changelog Rule)**:
+   - Every release **must** document its changes under `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD` in **both** root [`CHANGELOG.md`](../../../CHANGELOG.md) and [`vscode-extension/CHANGELOG.md`](../../../vscode-extension/CHANGELOG.md).
+   - Because `vsce package` bundles `vscode-extension/CHANGELOG.md` into the VS Code Marketplace & Open VSX extension page, `vscode-extension/CHANGELOG.md` must never lag behind root `CHANGELOG.md`.
+   - When proposals in `docs/proposals/` or plans in `docs/roadmap/` are 100% completed as part of a release, fold their delivered summary into the changelog and remove the completed proposal file.
+
+---
+
+## 3. Automation Helper Script
+
+Use the provided PowerShell script in this skill to safely bump all files in one step:
+
+```powershell
+# For bug fixes (bumps PATCH):
+pwsh .agents/skills/versioning/scripts/bump-version.ps1 -Type patch
+
+# For new user-facing features ONLY (bumps MINOR, resets PATCH to 0):
+pwsh .agents/skills/versioning/scripts/bump-version.ps1 -Type minor
+
+# For fundamental paradigm change (requires user consent, pass -Force):
+pwsh .agents/skills/versioning/scripts/bump-version.ps1 -Type major -Force
+
+# Or specify exact version:
+pwsh .agents/skills/versioning/scripts/bump-version.ps1 -TargetVersion 1.44.1
+```
+
+---
+
+## 4. Verification Checklist (Prior to Tagging & Release)
+
+Before committing and tagging a new version, run the full verification suite:
+
+### 4.1. CLI Verification
+- **Build**:
+  ```bash
+  dotnet build cli/CodeExplorer.slnx -c Release
+  ```
+  *(Must compile with **0 warnings** and **0 errors**; `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` is enforced globally)*.
+- **Core Tests**:
+  ```bash
+  dotnet test cli/tests/CodeExplorer.Tests/CodeExplorer.Tests.csproj
+  ```
+- **Cypher Engine Tests**:
+  ```bash
+  dotnet test cli/tests/CodeExplorer.Cypher.Tests/CodeExplorer.Cypher.Tests.csproj
+  ```
+
+### 4.2. VS Code Extension Verification
+- **Typecheck & Tests**:
+  ```bash
+  cd vscode-extension
+  npm run typecheck
+  npm run test
+  ```
+
+---
+
+## 5. Release & Tagging Protocol
+
+Once verified:
+
+1. **Commit Changes**:
+   Use Conventional Commits:
+   - For bug fixes: `fix: <description>` or `chore(release): vX.Y.Z`
+   - For features: `feat: <description>` or `chore(release): vX.Y.Z`
+   - Example:
+     ```bash
+     git commit -am "chore(release): v1.44.1"
+     ```
+
+2. **Create Git Tag**:
+   The tag **must** have the format `v<MAJOR>.<MINOR>.<PATCH>`:
+   ```bash
+   git tag v1.44.1
+   ```
+
+3. **Push to Remote**:
+   ```bash
+   git push origin main --tags
+   ```
+
+4. **CI/CD Automation (Unified Tag Release)**:
+   The unified GitHub Actions workflow ([`.github/workflows/release.yml`](../../../.github/workflows/release.yml)) is triggered strictly by the tag:
+   - Builds native single-file binaries for **win-x64** and **osx-arm64** (reduced native matrix).
+   - Packs and publishes universal `codeexplorer.cli` NuGet tool package to NuGet.org and GitHub Releases (serving non-native architectures: `linux-*`, `osx-x64`, `win-arm64`).
+   - Updates `vmikhailov/homebrew-tap` formula (`ce.rb`) with the latest macOS Apple Silicon binary and sha256 checksum (when `HOMEBREW_TAP_TOKEN` secret is configured).
+   - Packages lightweight universal `.vsix` extension and publishes to VS Code Marketplace & Open VSX Registry.
+   - **Important**: Do **NOT** schedule any timer/hook or background check to monitor GitHub Actions after pushing the tag. The user monitors GitHub Actions manually.
+
+
+

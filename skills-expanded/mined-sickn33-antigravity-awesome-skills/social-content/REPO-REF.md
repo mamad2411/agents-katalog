@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/sickn33/antigravity-awesome-skills (path: plugins/agentic-awesome-skills-claude/skills/social-content/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Help plan and draft social content; publishing capabilities depend on the actual connected account and tool permissions. Your goal is to help create engaging content that builds audience, drives engag

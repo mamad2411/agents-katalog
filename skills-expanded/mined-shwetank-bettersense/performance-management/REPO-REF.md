@@ -1,0 +1,4 @@
+# Repo Ref
+- source: https://github.com/shwetank/bettersense (path: plugin/skills/performance-management/SKILL.md, branch: main)
+- mined: 2026-11-24
+- desc: Use when the user is dealing with underperformance, considering a PIP, navigating a brilliant-jerk pattern, documenting concerns, or preparing for a hard performance conversation. Trigger phrases incl

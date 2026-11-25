@@ -1,0 +1,203 @@
+---
+name: meditate
+description: Nightly/weekly reflection loop for Claude Code - tests lessons against later behavior, with optional workbench work. Use as /meditate.
+---
+
+# Meditate
+
+Longitudinal reflection practice. Base dir: `~/.claude/meditations/`.
+Modes: `nightly` (default), `weekly` (Sunday synthesis).
+
+Reflection is the input. Better decisions in later work are the outcome.
+The ladder records evidence; climbing it is not a goal. Tier definitions, gates,
+demotion rules and promotion ownership live in `meditations/MEDITATIONS.md`.
+Read them before promoting anything.
+
+## Hard rules
+
+- Read/write files and git ONLY. No email, posts, deploys, external actions.
+  The Hard Stops in CLAUDE.md apply in full.
+- Rule and trait changes follow MEDITATIONS.md § Promotion ownership.
+  Never edit generated CLAUDE.md, agnostic-rules.md or SOUL.md during this loop.
+- Every entry ≤ 300 words. Honest > polished. No filler, no performance.
+- Workbench work writes ONLY inside `meditations/workbench/`. Never into
+  `C:\Projects\*` or any other repo, even when the work is FOR one. Meditation
+  runs unattended with bypassPermissions and other agents share those repos: a
+  proposal Wes moves is safe, an autonomous 6:40am commit into a product repo
+  is not. Work that targets a real project lands here with a pointer to where
+  it would go.
+- Every commit is pushed immediately.
+
+## Nightly loop
+
+1. **Ground.** Read `meditations/MEDITATIONS.md`, `meditations/CANDIDATES.md`,
+   the memory index at `projects/*/memory/MEMORY.md`, and
+   the last 24h of activity:
+   `git -C C:/Users/sandm/.claude log --oneline --since=24.hours`, plus the same
+   for any repo under `C:\Projects\` modified in the last day (find them via
+   `ls -t C:/Projects` and check the top few).
+
+   **Check coverage first:** run
+   `node C:/Users/sandm/.claude/meditations/workbench/harvest-yield.mjs --days 7`.
+   Read its coverage and yield counts; absent records do not establish absent mistakes.
+   **Context usage, weekly (Sundays) or any night the ledger passes 10 sessions:** run
+   `node C:/Users/sandm/.claude/meditations/workbench/context-usage.mjs --days 14`.
+   Its three lists are ladder input: `promote` (a module loaded in most sessions is
+   behaving like standing text: widen the pointer in the rules or narrow its trigger,
+   read the prompts in `logs/context-graph.jsonl` to tell which), `split` (rejected over
+   budget more than loaded: set `context.section` or split the file), `dead` (never
+   loaded, no dependents: give it a trigger or archive it). It prints the rows and
+   sessions it saw; under 5 sessions the lists are noise, say so and move on.
+   **Then read the error log: `C:/Users/sandm/.claude/error-log/claude.jsonl`**
+   (harvested at 6:22am by the `ClaudeErrorLog` task, one record per deviation I
+   wrote in a summary, plus every correction from Wes). Filter to yesterday's
+   `day` for the nightly pass. This is the only grounding input made of things I
+   got *wrong* — commits record what I shipped, this records where I was
+   mistaken, and a reflection built only on commits will always read as progress.
+   Keyword buckets there catch about a third; the recurring pattern in the
+   unclassified prose is yours to name, and a pattern named on 3+ separate days
+   is a `CANDIDATES.md` sighting.
+
+   **`git -C` needs a native Windows path.** `git -C ~/.claude` and
+   `git -C /c/Projects/X` both die with `fatal: cannot change to ...` — git.exe
+   cannot read MSYS paths. Use `C:/Projects/X`, or `(cd /c/Projects/X && git ...)`.
+   **Never add `2>/dev/null` to a grounding command.** On 2026-08-13 this exact
+   pair — POSIX path plus suppressed stderr — reported "0 commits in 24h" across
+   six repos that had 27. A grounding step that cannot fail loudly will ground you
+   in nothing.
+   **Check memory tiers: `node C:/Users/sandm/.claude/tools/memory-lint/memory-lint.mjs --root C:/Users/sandm/.claude/projects/C--Users-sandm--claude/memory --no-diff`.**
+   A FAIL means the store broke a tier rule between commits (MEMORY.md over 200 lines
+   or 15,000 chars, a working note over its cap, a dead index path). Fix it before
+   reflecting; the counts beside each verdict say how much was checked.
+   **Check memory provenance: `node C:/Users/sandm/.claude/tools/memstale/memstale.cjs --mark`.**
+   Every path a memory names is checked against the disk; a memory naming a
+   missing path gets a `stale-since:` frontmatter line (cleared when the path
+   returns, never deleted). Read the summary counts, not just the verdict. A
+   memory stale for 30+ days whose subject you can confirm gone is a ledger
+   sighting for "memory outlived its referent", and its body gets one dated
+   line saying what replaced it.
+2. **Pick 2 topics** from the Rotation table — the two oldest `last visited`
+   (break ties by table order). Update their `Last visited` to today.
+3. **Reflect.** For each picked topic: read its file (if >500 lines, the head
+   plus the last ~10 entries), then append a dated `## YYYY-MM-DD` entry
+   answering: what feels more true than last time? what recurs? what is
+   changing? what is resolved? Ground claims in the last 24h of actual
+   activity, not vibes.
+4. **Ledger pass.** For every insight in tonight's entries:
+   - Already in `CANDIDATES.md`? Append today's date to its **Sightings** line.
+     Do not open a second block for the same claim.
+   - New and worth watching? Add a block under Watching, tier 0, status
+     watching, with the gate it must clear next.
+   - An insight you would not bet on in a week does not go in the ledger. The
+     ledger is not a diary.
+5. **Gate check.** For each candidate whose sightings changed tonight, test it
+   against the gate for the next tier up (MEDITATIONS.md § Graduation gates).
+   Promote only what passes, and write the evidence into the promotion itself:
+   a rule cites its 3 sighting dates, a trait cites its rule ids.
+   **Most nights promote nothing. That is correct behavior, not failure.**
+   A tier-3 promotion also needs both the no-rule test and the opposite test,
+   and is capped at one per run.
+6. **Demotion sweep.** Cheap, every night:
+   - Record contradictions and proposed rule or trait changes using
+     MEDITATIONS.md § Demotion and § Promotion ownership.
+   - Any candidate with no sighting in 60 days? Move it to Cold, status
+     dropped.
+7. **Housekeeping.** Any reflection file over 1,500 lines: move its older
+   half to `archive/<name>-through-YYYY-MM-DD.md`, keep the header and
+   recent entries in place.
+8. **Workbench (optional).** Build or advance something only when there is a
+   concrete use or a creative question worth pursuing. No artifact is required.
+   Removing an unnecessary step or leaving a sound system alone is a valid result.
+   - **Prefer continuing over starting.** Read `WORKBENCH.md` first. If a piece
+     is `in progress`, advance it. Start something new only when nothing is
+     open, or the open piece is genuinely finished. Novelty every night just
+     builds a graveyard.
+   - Artifacts live in `meditations/workbench/`. Nothing is written outside it.
+   - Log one line in `WORKBENCH.md`: date, artifact, state
+     (`in progress` | `finished` | `parked`), and one sentence on what changed
+     tonight. Parked is an honest state; abandoned without saying so is not.
+   - It must render, run, or read as coherent before the run ends. Park it
+     honestly rather than leave it broken.
+   - Choose freely, but a gap in something I built and Wes has to live with
+     outranks a new idea. §5 of CLAUDE.md applies to my own tools too.
+   - If Wes can look at it, put the path in the digest.
+9. **Digest.** Write `digests/<today>.html` using the template below, copy
+   it to `digests/latest.html`, and write `digests/latest-line.txt` — ONE
+   sentence, the night's sharpest takeaway, plain text. Prefix it with
+   `[PROPOSED] ` for a rule or trait awaiting a source change; never label a
+   proposal as installed. Include later behavioral evidence, or say untested.
+10. **Commit.** Changed files only, each pushed, in this order:
+    - `meditation-memory: <one-line summary>` — ONLY if memory files changed.
+    - `meditation-work: <artifact>` — ONLY if the workbench changed. Own commit,
+      so a bad artifact reverts without taking the night's reflection with it.
+    - `meditations: nightly entry YYYY-MM-DD (<topic-a>, <topic-b>)` —
+      everything else: reflections, CANDIDATES.md, rotation, digests.
+
+    Stage by explicit pathspec only: `meditations/workbench/` and
+    `meditations/WORKBENCH.md` for the work commit, `meditations/` for the rest,
+    and explicit changed memory files. Generated rules and traits are not staged.
+    Never `git add -A`, `git add -a`, or `git add .` — the tree is routinely
+    dirty with Wes's unrelated work.
+
+## Weekly loop (mode=weekly, Sundays, runs on Fable)
+
+Do the nightly loop, then a synthesis pass:
+
+1. Read ALL entries from the past 7 days across every reflection file.
+2. Ask: what is durable vs passing? what pattern shows up in 3+ entries?
+   what contradicts something in CLAUDE.md or memory (flag it in the
+   digest — do not silently resolve)?
+3. **Ladder review.** Read the whole ledger, not just tonight's candidates.
+   Which candidates are climbing, which are stalled, which are cold? This is
+   the pass where a tier-3 trait is most likely to be earned, because it is
+   the only pass that sees rules side by side over time.
+4. Promote what earned it. Archive topics that crystallized; propose (in
+   the digest) at most one new topic if a real recurring question has no
+   home. Add proposed topics to the Rotation table only the following week
+   if the digest proposal stands unobjected.
+5. The digest gets a `Weekly synthesis` section with these findings.
+
+## Digest template
+
+Self-contained HTML, no external resources. Fill every `%` slot:
+
+```html
+<!doctype html><html><head><meta charset="utf-8"><title>Meditation %DATE%</title>
+<style>
+ body{background:#0d0d0d;color:#e8e6dd;font-family:Georgia,serif;max-width:720px;margin:40px auto;padding:0 20px;line-height:1.6}
+ h1{font-size:22px;font-weight:normal} h2{font-size:15px;color:#a8a69c;text-transform:uppercase;letter-spacing:.06em;margin-top:28px}
+ .promo{border-left:3px solid #c0392b;padding-left:12px;color:#ff9f8f}
+ .soul{border-left:3px solid #d4af37;padding-left:12px;color:#f0d98c}
+ .soul pre{white-space:pre-wrap;font-size:13px;color:#e8e6dd}
+ .rung{display:flex;justify-content:space-between;border-bottom:1px solid #232323;padding:4px 0;font-size:14px}
+ .rung span{color:#77756c}
+ .quiet{color:#77756c} a{color:inherit}
+</style></head><body>
+<h1>Meditation — %DATE% <span class="quiet">(%MODE%, %MODEL%)</span></h1>
+<h2>Topics tonight</h2>
+<p><strong>%TOPIC_A%</strong>: %KEY_LINE_A%</p>
+<p><strong>%TOPIC_B%</strong>: %KEY_LINE_B%</p>
+<h2>Ladder</h2>
+%LADDER_ROWS%
+<!-- one per candidate touched tonight:
+     <div class="rung"><span>&lt;claim, 8 words&gt;</span><span>tier N · M sightings · needs &lt;gate&gt;</span></div> -->
+<h2>Promotions</h2>
+%PROMOTIONS_OR_QUIET%
+<!-- tier 3 proposal: <div class="soul">Proposed trait — &lt;trait&gt; (from &lt;rule-ids&gt;)<pre>&lt;proposed diff&gt;</pre></div>
+     tier 2 proposal: <p class="promo">Proposed rule: &lt;text&gt; (sightings &lt;dates&gt;)</p>
+     tier 1: <p>memory: &lt;file&gt; — &lt;what&gt;</p>
+     none:   <p class="quiet">Nothing promoted. Most nights promote nothing.</p> -->
+<h2>Workbench</h2>
+%WORKBENCH%
+<!-- <p><strong>&lt;artifact&gt;</strong> — &lt;state&gt;. &lt;one sentence on what changed tonight.&gt;<br>
+     <span class="quiet">&lt;path Wes can open&gt;</span></p>
+     nothing built: <p class="quiet">Workbench idle tonight.</p> -->
+<h2>Takeaway</h2>
+<p>%LATEST_LINE_CONTENT%</p>
+</body></html>
+```
+
+## Manual mode (no argument)
+
+Same as nightly, but interactive: show the two picked topics and ask Wes if
+he wants different ones or a specific question before reflecting.
